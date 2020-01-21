@@ -13,13 +13,11 @@ module Ouroboros.Storage.ImmutableDB.Impl.State
   , InternalState (..)
   , dbIsOpen
   , OpenState (..)
-  , ClosedState (..)
     -- * State helpers
   , mkOpenState
   , getOpenState
   , modifyOpenState
   , withOpenState
-  , closedStateFromInternalState
   , closeOpenStateHandles
   ) where
 
@@ -71,13 +69,13 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     }
 
 data InternalState m hash h =
-    DbClosed !ClosedState
+    DbClosed
   | DbOpen !(OpenState m hash h)
   deriving (Generic, NoUnexpectedThunks)
 
 dbIsOpen :: InternalState m hash h -> Bool
-dbIsOpen (DbClosed _) = False
-dbIsOpen (DbOpen _)   = True
+dbIsOpen DbClosed   = False
+dbIsOpen (DbOpen _) = True
 
 -- | Internal state when the database is open.
 data OpenState m hash h = OpenState
@@ -97,19 +95,8 @@ data OpenState m hash h = OpenState
       -- ^ The write handle for the current secondary index file.
     , _currentTip             :: !(ImmTipWithHash hash)
       -- ^ The current tip of the database.
-    , _nextIteratorID         :: !BaseIteratorID
-      -- ^ The ID of the next iterator that will be created.
     , _index                  :: !(Index m hash h)
       -- ^ An abstraction layer on top of the indices to allow for caching.
-    }
-  deriving (Generic, NoUnexpectedThunks)
-
--- | Internal state when the database is closed. This contains data that
--- should be restored when the database is reopened. Data not present here
--- will be recovered when reopening.
-data ClosedState = ClosedState
-    { _closedNextIteratorID :: !BaseIteratorID
-      -- ^ See '_nextIteratorID'.
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -125,11 +112,10 @@ mkOpenState
   -> ErrorHandling ImmutableDBError m
   -> Index m hash h
   -> EpochNo
-  -> BaseIteratorID
   -> ImmTipWithHash hash
   -> AllowExisting
   -> m (OpenState m hash h)
-mkOpenState registry HasFS{..} _err index epoch nextIteratorID tip existing = do
+mkOpenState registry HasFS{..} _err index epoch tip existing = do
     eHnd <- allocateHandle $ hOpen (renderFile "epoch" epoch)     appendMode
     pHnd <- allocateHandle $ Index.openPrimaryIndex index epoch existing
     sHnd <- allocateHandle $ hOpen (renderFile "secondary" epoch) appendMode
@@ -143,7 +129,6 @@ mkOpenState registry HasFS{..} _err index epoch nextIteratorID tip existing = do
       , _currentPrimaryHandle   = pHnd
       , _currentSecondaryHandle = sHnd
       , _currentTip             = tip
-      , _nextIteratorID         = nextIteratorID
       , _index                  = index
       }
   where
@@ -167,7 +152,7 @@ getOpenState :: (HasCallStack, IOLike m)
 getOpenState ImmutableDBEnv {..} = do
     internalState <- readMVar _dbInternalState
     case internalState of
-       DbClosed _       -> throwUserError _dbErr ClosedDBError
+       DbClosed         -> throwUserError _dbErr ClosedDBError
        DbOpen openState -> return (SomePair _dbHasFS openState)
 
 -- | Modify the internal state of an open database.
@@ -225,15 +210,14 @@ modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
               -- threads, not necessarily the one that opened the ImmutableDB
               -- and the registry, so we must use 'unsafeReleaseAll' instead of
               -- 'releaseAll'.
-              ( DbClosed (closedStateFromInternalState st)
-              , unsafeReleaseAll _dbRegistry )
+              (DbClosed, unsafeReleaseAll _dbRegistry)
           -- In case a user error, just restore the previous state
           ExitCaseSuccess (Left (UserError {}))       -> (st, return ())
 
     mutation :: HasCallStack
              => InternalState m hash h
              -> m (r, OpenState m hash h)
-    mutation (DbClosed _) = throwUserError _dbErr ClosedDBError
+    mutation DbClosed     = throwUserError _dbErr ClosedDBError
     mutation (DbOpen ost) = runStateT (action hasFS) ost
 
 -- | Perform an action that accesses the internal state of an open database.
@@ -275,9 +259,7 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
 
     shutDown :: m ()
     shutDown = do
-      -- We need to get the most recent state because it might have changed
-      -- behind our back
-      updateMVar_ _dbInternalState $ DbClosed . closedStateFromInternalState
+      void $ swapMVar _dbInternalState DbClosed
       -- This function ('withOpenState') can be called from all threads, not
       -- necessarily the one that opened the ImmutableDB and the registry, so
       -- we must use 'unsafeReleaseAll' instead of 'releaseAll'.
@@ -286,7 +268,7 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
     access :: HasCallStack
            => InternalState m hash h
            -> m r
-    access (DbClosed _) = throwUserError _dbErr ClosedDBError
+    access DbClosed     = throwUserError _dbErr ClosedDBError
     access (DbOpen ost) = action hasFS ost
 
 closeOpenStateHandles :: Monad m => HasFS m h -> OpenState m hash h -> m ()
@@ -297,10 +279,3 @@ closeOpenStateHandles HasFS { hClose } OpenState {..}  = do
     hClose _currentEpochHandle
     hClose _currentPrimaryHandle
     hClose _currentSecondaryHandle
-
--- | Create a 'ClosedState' from an internal state, open or closed.
-closedStateFromInternalState :: InternalState m hash h -> ClosedState
-closedStateFromInternalState (DbClosed cst) = cst
-closedStateFromInternalState (DbOpen OpenState {..}) = ClosedState
-    { _closedNextIteratorID  = _nextIteratorID
-    }

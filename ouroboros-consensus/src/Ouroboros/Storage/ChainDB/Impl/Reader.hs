@@ -17,9 +17,9 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Exception (assert)
 import           Control.Monad (sequence_)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity (Identity (..))
-import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack, callStack)
 
@@ -29,8 +29,8 @@ import           Control.Tracer (contramap, traceWith)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
-                     HeaderHash, Point, Serialised (..), SlotNo, blockSlot,
-                     castPoint, genesisPoint, pointHash, pointSlot)
+                     HeaderHash, Point, SlotNo, blockSlot, castPoint,
+                     genesisPoint, pointHash, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (GetHeader (..), headerHash,
@@ -39,10 +39,9 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
-import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
-                     ChainDbError (..), Deserialisable (..), Reader (..),
-                     ReaderId, deserialisablePoint)
-
+import           Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB,
+                     ChainDbError (..), Reader (..), getPoint)
+import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Storage.ChainDB.Impl.Types
@@ -51,56 +50,36 @@ import           Ouroboros.Storage.ChainDB.Impl.Types
   Accessing the environment
 -------------------------------------------------------------------------------}
 
-getReadersVar
-  :: ChainDbEnv m blk
-  -> BlockOrHeader blk b
-  -> StrictTVar m (Map ReaderId (StrictTVar m (ReaderState m blk b)))
-getReadersVar env = \case
-    Block  -> cdbBlockReaders  env
-    Header -> cdbHeaderReaders env
-
-getReaderVar
-  :: IOLike m
-  => ChainDbEnv m blk
-  -> BlockOrHeader blk b
-  -> ReaderId
-  -> STM m (Maybe (StrictTVar m (ReaderState m blk b)))
-getReaderVar env blockOrHeader readerId =
-  fmap (Map.lookup readerId) $ readTVar $ getReadersVar env blockOrHeader
-
 -- | Check if the ChainDB is open. If not, throw a 'ClosedDBError'. Next,
--- check whether the reader with the given 'ReaderId' still exists. If not,
+-- check whether the reader with the given 'ReaderKey' still exists. If not,
 -- throw a 'ClosedReaderError'.
 --
--- Otherwise, execute the given function on the 'ChainDbEnv' and 'ReaderState'
--- 'StrictTVar'.
+-- Otherwise, execute the given function on the 'ChainDbEnv'.
 getReader
-  :: forall m blk b r. (IOLike m, HasCallStack)
+  :: forall m blk r. (IOLike m, HasCallStack)
   => ChainDbHandle m blk
-  -> ReaderId
-  -> BlockOrHeader blk b
-  -> (ChainDbEnv m blk -> StrictTVar m (ReaderState m blk b) -> m r)
+  -> ReaderKey
+  -> (ChainDbEnv m blk -> m r)
   -> m r
-getReader (CDBHandle varState) readerId blockOrHeader f = do
-    (env, varRdr) <- atomically $ readTVar varState >>= \case
+getReader (CDBHandle varState) readerKey f = do
+    env <- atomically $ readTVar varState >>= \case
       ChainDbClosed _env -> throwM $ ClosedDBError callStack
-      -- See the docstring of 'ChainDbReopening'
       ChainDbReopening   -> error "ChainDB used while reopening"
-      ChainDbOpen    env -> getReaderVar env blockOrHeader readerId >>= \case
-        Nothing     -> throwM $ ClosedReaderError readerId
-        Just varRdr -> return (env, varRdr)
-    f env varRdr
+      ChainDbOpen env    -> do
+        readerOpen <- Map.member readerKey <$> readTVar (cdbReaders env)
+        if readerOpen
+          then return env
+          else throwM ClosedReaderError
+    f env
 
 -- | Variant 'of 'getReader' for functions taking one argument.
 getReader1
-  :: forall m blk b a r. IOLike m
+  :: forall m blk a r. IOLike m
   => ChainDbHandle m blk
-  -> ReaderId
-  -> BlockOrHeader blk b
-  -> (ChainDbEnv m blk -> StrictTVar m (ReaderState m blk b) -> a -> m r)
+  -> ReaderKey
+  -> (ChainDbEnv m blk -> a -> m r)
   -> a -> m r
-getReader1 h rdrId blockOrHeader f a =
-    getReader h rdrId blockOrHeader (\env varReader -> f env varReader a)
+getReader1 h readerKey f a = getReader h readerKey (\env -> f env a)
 
 {-------------------------------------------------------------------------------
   Reader
@@ -111,75 +90,93 @@ newReader
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
-     , HeaderHash blk ~ HeaderHash b
      )
   => ChainDbHandle m blk
   -> (Header blk -> Encoding)
      -- ^ Needed to serialise a deserialised header that we already had in
      -- memory.
-  -> BlockOrHeader blk b
   -> ResourceRegistry m
-  -> m (Reader m blk (Deserialisable m blk b))
-newReader h encodeHeader blockOrHeader registry = getEnv h $ \cdb@CDB{..} -> do
-    readerId  <- atomically $ updateTVar cdbNextReaderId $ \r -> (succ r, r)
+  -> BlockComponent (ChainDB m blk) b
+  -> m (Reader m blk b)
+newReader h encodeHeader registry blockComponent = getEnv h $ \CDB{..} -> do
+    -- The following operations don't need to be done in a single transaction
+    readerKey  <- atomically $ updateTVar cdbNextReaderKey $ \r -> (succ r, r)
     varReader <- newTVarM ReaderInit
-    let readersVar = getReadersVar cdb blockOrHeader
-    atomically $ modifyTVar readersVar $ Map.insert readerId varReader
-    let reader = makeNewReader h encodeHeader readerId blockOrHeader registry
-    traceWith cdbTracer $ TraceReaderEvent $ NewReader readerId
+    let readerHandle = mkReaderHandle cdbImmDB varReader
+    atomically $ modifyTVar cdbReaders $ Map.insert readerKey readerHandle
+    let reader = makeNewReader h encodeHeader readerKey varReader registry
+          blockComponent
+    traceWith cdbTracer $ TraceReaderEvent NewReader
     return reader
+  where
+    mkReaderHandle
+      :: ImmDB m blk
+      -> StrictTVar m (ReaderState m blk b)
+      -> ReaderHandle m blk
+    mkReaderHandle cdbImmDB varReader = ReaderHandle
+      { rhClose      = do
+          -- This is only called by 'closeAllReaders'. We just release the
+          -- resources. We don't check whether the Reader is still open.
+          -- We don't have to remove the reader from the 'cdbReaders',
+          -- 'closeAllReaders' will empty that map already.
+          readerState <- atomically $ readTVar varReader
+          closeReaderState cdbImmDB readerState
+      , rhSwitchFork = \ipoint newChain -> modifyTVar varReader $
+          switchFork ipoint newChain
+      }
 
 makeNewReader
   :: forall m blk b.
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
-     , HeaderHash blk ~ HeaderHash b
      )
   => ChainDbHandle m blk
   -> (Header blk -> Encoding)
-  -> ReaderId
-  -> BlockOrHeader blk b
+  -> ReaderKey
+  -> StrictTVar m (ReaderState m blk b)
   -> ResourceRegistry m
-  -> Reader m blk (Deserialisable m blk b)
-makeNewReader h encodeHeader readerId blockOrHeader registry = Reader {..}
+  -> BlockComponent (ChainDB m blk) b
+  -> Reader m blk b
+makeNewReader h encodeHeader readerKey varReader registry blockComponent = Reader {..}
   where
-    readerInstruction :: m (Maybe (ChainUpdate blk (Deserialisable m blk b)))
-    readerInstruction = getReader h readerId blockOrHeader $
-      instructionHelper registry encodeHeader blockOrHeader id
+    readerInstruction :: m (Maybe (ChainUpdate blk b))
+    readerInstruction = getReader h readerKey $
+      instructionHelper registry varReader blockComponent encodeHeader id
 
-    readerInstructionBlocking :: m (ChainUpdate blk (Deserialisable m blk b))
+    readerInstructionBlocking :: m (ChainUpdate blk b)
     readerInstructionBlocking = fmap runIdentity $
-      getReader h readerId blockOrHeader $
-      instructionHelper registry encodeHeader blockOrHeader (fmap Identity . blockUntilJust)
+      getReader h readerKey $
+      instructionHelper registry varReader blockComponent encodeHeader
+        (fmap Identity . blockUntilJust)
 
     readerForward :: [Point blk] -> m (Maybe (Point blk))
-    readerForward = getReader1 h readerId blockOrHeader $
-      forward registry blockOrHeader
+    readerForward = getReader1 h readerKey $
+      forward registry varReader blockComponent
 
     readerClose :: m ()
-    readerClose = getEnv h $ close blockOrHeader readerId
+    readerClose = getEnv h $ close readerKey varReader
 
+-- | Implementation of 'readerClose'.
+--
+-- To be called using 'getEnv' to make sure the ChainDB is still open.
+--
+-- Idempotent: the reader doesn't have to be open.
+--
+-- Unlike 'closeAllReaders', this is meant to be called by the user of the
+-- ChainDB.Reader.
 close
   :: forall m blk b. IOLike m
-  => BlockOrHeader blk b -> ReaderId -> ChainDbEnv m blk -> m ()
-close blockOrHeader readerId cdb@CDB { cdbImmDB } = do
-    mbReaderState <- atomically $ do
-      readers <- readTVar varReaders
-      let (mbReader, readers') = delete readerId readers
-      writeTVar varReaders readers'
-      traverse readTVar mbReader
-    -- If the ReaderId is not present in the map, the Reader must have been
+  => ReaderKey
+  -> StrictTVar m (ReaderState m blk b)
+  -> ChainDbEnv m blk
+  -> m ()
+close readerKey varReader CDB { cdbReaders, cdbImmDB } = do
+    -- If the ReaderKey is not present in the map, the Reader must have been
     -- closed already.
-    mapM_ (closeReaderState cdbImmDB) mbReaderState
-  where
-    varReaders = getReadersVar cdb blockOrHeader
-
-    -- | Delete the entry corresponding to the given key from the map. If it
-    -- existed, return it, otherwise, return 'Nothing'. The updated map is of
-    -- course also returned.
-    delete :: forall k a. Ord k => k -> Map k a -> (Maybe a, Map k a)
-    delete = Map.updateLookupWithKey (\_ _ -> Nothing)
+    atomically $ modifyTVar cdbReaders $ Map.delete readerKey
+    readerState <- atomically $ readTVar varReader
+    closeReaderState cdbImmDB readerState
 
 -- | Close the given 'ReaderState' by closing any 'ImmDB.Iterator' it might
 -- contain.
@@ -200,8 +197,7 @@ closeReaderState immDB = \case
 -- * 'Maybe' in case of 'readerInstruction'.
 -- * 'Identity' in case of 'readerInstructionBlocking'.
 --
--- The returned 'ChainUpdate' contains a 'b', which can either be a @blk@ or a
--- @'Header' blk@.
+-- The returned 'ChainUpdate' contains a 'b', as defined by 'BlockComponent'.
 --
 -- When in the 'ReaderInImmDB' state, we never have to block, as we can just
 -- stream the next block/header from the ImmutableDB.
@@ -213,12 +209,12 @@ instructionHelper
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
-     , HeaderHash blk ~ HeaderHash b
      , Traversable f, Applicative f
      )
   => ResourceRegistry m
+  -> StrictTVar m (ReaderState m blk b)
+  -> BlockComponent (ChainDB m blk) b
   -> (Header blk -> Encoding)
-  -> BlockOrHeader blk b
   -> (    STM m (Maybe (ChainUpdate blk (Header blk)))
        -> STM m (f     (ChainUpdate blk (Header blk))))
      -- ^ How to turn a transaction that may or may not result in a new
@@ -226,9 +222,8 @@ instructionHelper
      -- Identity . 'blockUntilJust'@ to block or 'id' to just return the
      -- @Maybe@.
   -> ChainDbEnv m blk
-  -> StrictTVar m (ReaderState m blk b)
-  -> m (f (ChainUpdate blk (Deserialisable m blk b)))
-instructionHelper registry encodeHeader blockOrHeader fromMaybeSTM CDB{..} varReader = do
+  -> m (f (ChainUpdate blk b))
+instructionHelper registry varReader blockComponent encodeHeader fromMaybeSTM CDB{..} = do
     -- In one transaction: check in which state we are, if in the
     -- @ReaderInMem@ state, just call 'instructionSTM', otherwise,
     -- return the contents of the 'ReaderInImmDB' state.
@@ -259,12 +254,9 @@ instructionHelper registry encodeHeader blockOrHeader fromMaybeSTM CDB{..} varRe
           -> return $ Left (rollState, Nothing)
     case inImmDBOrRes of
       -- We were able to obtain the result inside the transaction as we were
-      -- in the 'ReaderInMem' state.
-      Right fupdate -> case blockOrHeader of
-        -- We only got the header, so we have to read the whole block if
-        -- that's requested.
-        Block  -> traverse (traverse toDeserialisableBlock)  fupdate
-        Header -> traverse (traverse toDeserialisableHeader) fupdate
+      -- in the 'ReaderInMem' state. We only got a header, which we must first
+      -- convert to the right block component.
+      Right fupdate -> headerUpdateToBlockComponentUpdate fupdate
       -- We were in the 'ReaderInImmDB' state or we need to switch to it.
       Left (rollState, mbImmIt) -> case rollState of
         RollForwardFrom pt -> do
@@ -274,48 +266,71 @@ instructionHelper registry encodeHeader blockOrHeader fromMaybeSTM CDB{..} varRe
             -- 'ReaderInImmDB' state.
             Nothing    -> do
               trace $ ReaderNoLongerInMem rollState
-              ImmDB.streamAfterKnownBlock cdbImmDB registry blockOrHeader pt
+              ImmDB.streamAfterKnownBlock cdbImmDB registry
+                ((,) <$> getPoint <*> blockComponent) pt
           rollForwardImmDB immIt pt
         RollBackTo      pt -> do
           case mbImmIt of
             Just immIt -> ImmDB.iteratorClose cdbImmDB immIt
             Nothing    -> trace $ ReaderNoLongerInMem rollState
-          immIt' <- ImmDB.streamAfterKnownBlock cdbImmDB registry blockOrHeader pt
+          immIt' <- ImmDB.streamAfterKnownBlock cdbImmDB registry
+            ((,) <$> getPoint <*> blockComponent) pt
           let readerState' = ReaderInImmDB (RollForwardFrom pt) immIt'
           atomically $ writeTVar varReader readerState'
           return $ pure $ RollBack pt
   where
     trace = traceWith (contramap TraceReaderEvent cdbTracer)
 
-    toDeserialisableHeader :: Header blk -> m (Deserialisable m blk (Header blk))
-    toDeserialisableHeader hdr = return Deserialisable
-      { serialised         = Serialised $ toLazyByteString (encodeHeader hdr)
-      , deserialisableSlot = blockSlot hdr
-      , deserialisableHash = headerHash hdr
-      , deserialise        = return hdr
-      }
+    headerUpdateToBlockComponentUpdate
+      :: f (ChainUpdate blk (Header blk)) -> m (f (ChainUpdate blk b))
+    headerUpdateToBlockComponentUpdate =
+      traverse (traverse (`getBlockComponentFromHeader` blockComponent))
 
-    toDeserialisableBlock :: Header blk -> m (Deserialisable m blk blk)
-    toDeserialisableBlock hdr = Query.getAnyKnownDeserialisableBlockOrHeader
-      cdbImmDB cdbVolDB Block (headerPoint hdr)
+    -- | We only got the header for the in-memory chain fragment, so depending
+    -- on the 'BlockComponent' that's requested, we might have to read the
+    -- whole block.
+    getBlockComponentFromHeader
+      :: forall b'. Header blk -> BlockComponent (ChainDB m blk) b' -> m b'
+    getBlockComponentFromHeader hdr = \case
+        GetBlock      -> getBlockComponent GetBlock
+        GetRawBlock   -> getBlockComponent GetRawBlock
+        GetHeader     -> return $ return hdr
+        GetRawHeader  -> return $ toLazyByteString $ encodeHeader hdr
+        GetHash       -> return $ headerHash hdr
+        GetSlot       -> return $ blockSlot hdr
+        GetIsEBB      -> return $ cdbIsEBB hdr
+        GetBlockSize  -> getBlockComponent GetBlockSize
+        -- We could look up the header size in the index of the VolatileDB,
+        -- but getting the serialisation is cheap because we keep the
+        -- serialisation in memory as an annotation, and the following way is
+        -- less stateful
+        GetHeaderSize -> return $
+          fromIntegral $ Lazy.length $ toLazyByteString $ encodeHeader hdr
+        GetPure a     -> return a
+        GetApply f bc ->
+          getBlockComponentFromHeader hdr f <*>
+          getBlockComponentFromHeader hdr bc
+      where
+        -- | Use the 'ImmDB' and 'VolDB' to read the 'BlockComponent' from
+        -- disk (or memory).
+        getBlockComponent :: forall c. BlockComponent (ChainDB m blk) c -> m c
+        getBlockComponent bc =
+          Query.getAnyKnownBlockComponent cdbImmDB cdbVolDB bc (headerPoint hdr)
 
     next
-      :: ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk b)
-      -> m (Maybe (Deserialisable m blk b))
+      :: ImmDB.Iterator (HeaderHash blk) m (Point blk, b)
+      -> m (Maybe (Point blk, b))
     next immIt = ImmDB.iteratorNext cdbImmDB immIt <&> \case
-      ImmDB.IteratorResult _ _ b -> Just b
-      ImmDB.IteratorEBB    _ _ b -> Just b
-      ImmDB.IteratorExhausted    -> Nothing
+      ImmDB.IteratorResult  b -> Just b
+      ImmDB.IteratorExhausted -> Nothing
 
     rollForwardImmDB
-      :: ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk b)
+      :: ImmDB.Iterator (HeaderHash blk) m (Point blk, b)
       -> Point blk
-      -> m (f (ChainUpdate blk (Deserialisable m blk b)))
+      -> m (f (ChainUpdate blk b))
     rollForwardImmDB immIt pt = next immIt >>= \case
-      Just b -> do
-        let pt' :: Point blk
-            pt' = castPoint (deserialisablePoint b)
-            readerState' = ReaderInImmDB (RollForwardFrom pt') immIt
+      Just (pt', b) -> do
+        let readerState' = ReaderInImmDB (RollForwardFrom pt') immIt
         atomically $ writeTVar varReader readerState'
         return $ pure $ AddBlock b
       Nothing  -> do
@@ -344,9 +359,9 @@ instructionHelper registry encodeHeader blockOrHeader fromMaybeSTM CDB{..} varRe
                 (RollForwardFrom pt)
                 curChain
                 (writeTVar varReader . ReaderInMem)
-            case blockOrHeader of
-              Header -> traverse (traverse toDeserialisableHeader) fupdate
-              Block  -> traverse (traverse toDeserialisableBlock)  fupdate
+            -- We only got the header, we must first convert it to the right
+            -- block component.
+            headerUpdateToBlockComponentUpdate fupdate
 
           -- Two possibilities:
           --
@@ -358,7 +373,8 @@ instructionHelper registry encodeHeader blockOrHeader fromMaybeSTM CDB{..} varRe
           --    opened the iterator.
           _  -> do
             trace $ ReaderNewImmIterator pt slotNoAtImmDBTip
-            immIt' <- ImmDB.streamAfterKnownBlock cdbImmDB registry blockOrHeader pt
+            immIt' <- ImmDB.streamAfterKnownBlock cdbImmDB registry
+              ((,) <$> getPoint <*> blockComponent) pt
             -- Try again with the new iterator
             rollForwardImmDB immIt' pt
 
@@ -396,12 +412,12 @@ forward
      , HasHeader (Header blk)
      )
   => ResourceRegistry m
-  -> BlockOrHeader blk b
-  -> ChainDbEnv m blk
   -> StrictTVar m (ReaderState m blk b)
+  -> BlockComponent (ChainDB m blk) b
+  -> ChainDbEnv m blk
   -> [Point blk]
   -> m (Maybe (Point blk))
-forward registry blockOrHeader CDB{..} varReader = \pts -> do
+forward registry varReader blockComponent CDB{..} = \pts -> do
     -- The current state of the reader doesn't matter, the given @pts@ could
     -- be in the current chain fragment or in the ImmutableDB.
 
@@ -434,7 +450,8 @@ forward registry blockOrHeader CDB{..} varReader = \pts -> do
             else ImmDB.hasBlock cdbImmDB pt
           if inImmDB
             then do
-              immIt <- ImmDB.streamAfterKnownBlock cdbImmDB registry blockOrHeader pt
+              immIt <- ImmDB.streamAfterKnownBlock cdbImmDB registry
+                ((,) <$> getPoint <*> blockComponent) pt
               updateState $ ReaderInImmDB (RollBackTo pt) immIt
               return $ Just pt
             else findFirstPointOnChain curChain slotNoAtImmDBTip pts
@@ -518,11 +535,8 @@ switchFork ipoint newChain readerState =
 -- | Close all open block and header 'Reader's.
 closeAllReaders :: IOLike m => ChainDbEnv m blk -> m ()
 closeAllReaders CDB{..} = do
-    (blockReaderStates, headerReaderStates) <- atomically $ do
-      blockReaderStates  <- readTVar cdbBlockReaders  >>= traverse readTVar . Map.elems
-      headerReaderStates <- readTVar cdbHeaderReaders >>= traverse readTVar . Map.elems
-      writeTVar cdbBlockReaders  Map.empty
-      writeTVar cdbHeaderReaders Map.empty
-      return (blockReaderStates, headerReaderStates)
-    mapM_ (closeReaderState cdbImmDB) blockReaderStates
-    mapM_ (closeReaderState cdbImmDB) headerReaderStates
+    readerHandles <- atomically $ do
+      readerHandles  <- Map.elems <$> readTVar cdbReaders
+      writeTVar cdbReaders  Map.empty
+      return readerHandles
+    mapM_ rhClose readerHandles

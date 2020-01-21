@@ -3,10 +3,12 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingVia       #-}
 {-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE TypeFamilies      #-}
 module Ouroboros.Storage.ImmutableDB.API
   ( ImmutableDB (..)
   , Iterator (..)
   , IteratorResult (..)
+  , traverseIterator
   , iteratorToList
 
   , module Ouroboros.Storage.ImmutableDB.Types
@@ -16,8 +18,6 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      ThunkInfo (..))
 
 import           Data.ByteString.Builder (Builder)
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Function (on)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
@@ -89,8 +89,7 @@ data ImmutableDB hash m = ImmutableDB
   , getTip
       :: HasCallStack => m (ImmTipWithHash hash)
 
-    -- | Get the block as a 'ByteString' and its header hash stored at the given
-    -- 'SlotNo'.
+    -- | Get the block component of the block at the given 'SlotNo'.
     --
     -- Returns 'Nothing' if no blob was stored at the given slot.
     --
@@ -98,37 +97,24 @@ data ImmutableDB hash m = ImmutableDB
     -- i.e > the result of 'getTip'.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
-  , getBlock
-      :: HasCallStack => SlotNo -> m (Maybe (hash, ByteString))
+  , getBlockComponent
+      :: forall b. HasCallStack
+      => BlockComponent (ImmutableDB hash m) b -> SlotNo -> m (Maybe b)
 
-    -- | Variant of 'getBlock' that only reads the header.
-  , getBlockHeader
-      :: HasCallStack => SlotNo -> m (Maybe (hash, ByteString))
-
-    -- | Variant of 'getBlock' that only reads the hash.
-  , getBlockHash
-      :: HasCallStack => SlotNo -> m (Maybe hash)
-
-    -- | Get the EBB (Epoch Boundary Block) as a 'ByteString' and its header
-    -- hash of the given epoch.
+    -- | Get the block component of the EBB (Epoch Boundary Block) of the
+    -- given epoch.
     --
     -- Returns 'Nothing' if no EEB was stored for the given epoch.
     --
     -- Throws a 'ReadFutureEBBError' if the requested EBB is in the future.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
-  , getEBB
-      :: HasCallStack => EpochNo -> m (Maybe (hash, ByteString))
+  , getEBBComponent
+      :: forall b. HasCallStack
+      => BlockComponent (ImmutableDB hash m) b -> EpochNo -> m (Maybe b)
 
-    -- | Variant of 'getEBB' that only reads the header.
-  , getEBBHeader
-      :: HasCallStack => EpochNo -> m (Maybe (hash, ByteString))
-
-    -- | Variant of 'getEBB' that only returns the hash.
-  , getEBBHash
-      :: HasCallStack => EpochNo -> m (Maybe hash)
-
-    -- | Get the block or EBB at the given slot with the given hash.
+    -- | Get the block component of the block or EBB at the given slot with
+    -- the given hash.
     --
     -- Also return 'EpochNo' in case of an EBB or the given 'SlotNo' in case
     -- of a regular block.
@@ -140,14 +126,9 @@ data ImmutableDB hash m = ImmutableDB
     -- Throws a 'ReadFutureSlotError' if the requested slot is in the future.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
-  , getBlockOrEBB
-      :: HasCallStack
-      => SlotNo -> hash -> m (Maybe (Either EpochNo SlotNo, ByteString))
-
-    -- | Variant of 'getBlockOrEBB' that only returns the header.
-  , getBlockOrEBBHeader
-      :: HasCallStack
-      => SlotNo -> hash -> m (Maybe (Either EpochNo SlotNo, ByteString))
+  , getBlockOrEBBComponent
+      :: forall b. HasCallStack
+      => BlockComponent (ImmutableDB hash m) b -> SlotNo -> hash -> m (Maybe b)
 
     -- | Appends a block at the given slot.
     --
@@ -214,26 +195,25 @@ data ImmutableDB hash m = ImmutableDB
     --
     -- The iterator is automatically closed when exhausted, and can be
     -- prematurely closed with 'iteratorClose'.
-  , streamBlocks
-      :: HasCallStack
-      => Maybe (SlotNo, hash)
+  , stream
+      :: forall b. HasCallStack
+      => BlockComponent (ImmutableDB hash m) b
+      -> Maybe (SlotNo, hash)
       -> Maybe (SlotNo, hash)
       -> m (Either (WrongBoundError hash)
-                   (Iterator hash m ByteString))
-
-    -- | Same as 'streamBlocks', but only the headers are streamed, not the
-    -- whole blocks.
-  , streamHeaders
-      :: HasCallStack
-      => Maybe (SlotNo, hash)
-      -> Maybe (SlotNo, hash)
-      -> m (Either (WrongBoundError hash)
-                   (Iterator hash m ByteString))
+                   (Iterator hash m b))
 
     -- | Throw 'ImmutableDB' errors
   , immutableDBErr :: ErrorHandling ImmutableDBError m
   }
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "ImmutableDB" (ImmutableDB hash m)
+
+instance DB (ImmutableDB hash m) where
+  -- The ImmutableDB doesn't have the ability to parse blocks and headers, it
+  -- only returns raw blocks and headers.
+  type DBBlock      (ImmutableDB hash m) = ()
+  type DBHeader     (ImmutableDB hash m) = ()
+  type DBHeaderHash (ImmutableDB hash m) = hash
 
 -- | An 'Iterator' is a handle which can be used to efficiently stream binary
 -- blobs. Slots not containing a blob and missing EBBs are skipped.
@@ -251,7 +231,7 @@ data Iterator hash m a = Iterator
     -- The iterator is automatically closed when exhausted
     -- ('IteratorExhausted'), and can be prematurely closed with
     -- 'iteratorClose'.
-    iteratorNext    :: HasCallStack => m (IteratorResult hash a)
+    iteratorNext    :: HasCallStack => m (IteratorResult a)
 
     -- | Read the blob the 'Iterator' is currently pointing.
     --
@@ -261,7 +241,7 @@ data Iterator hash m a = Iterator
     -- be returned.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
-  , iteratorPeek    :: HasCallStack => m (IteratorResult hash a)
+  , iteratorPeek    :: HasCallStack => m (IteratorResult a)
 
     -- | Return the epoch number (in case of an EBB) or slot number and hash
     -- of the next blob, if there is a next. Return 'Nothing' if not.
@@ -273,52 +253,42 @@ data Iterator hash m a = Iterator
     --
     -- Idempotent operation.
   , iteratorClose   :: HasCallStack => m ()
-
-    -- | A identifier for the 'Iterator' that is unique for @m@.
-    --
-    -- This used for the 'Eq' instance, which is needed for testing.
-    --
-    -- TODO how can we avoid this abstraction leak?
-  , iteratorID      :: IteratorID
-  }
+  } deriving (Functor)
 
 -- | This only contains actions, we don't check anything
 instance NoUnexpectedThunks (Iterator hash m a) where
   showTypeOf _ = "Iterator"
   whnfNoUnexpectedThunks _ctxt _itr = return NoUnexpectedThunks
 
-instance Functor m => Functor (Iterator hash m) where
-  fmap f itr = Iterator{
-        iteratorNext    = fmap f <$> iteratorNext itr
-      , iteratorPeek    = fmap f <$> iteratorPeek itr
-      , iteratorHasNext = iteratorHasNext itr
-      , iteratorClose   = iteratorClose itr
-      , iteratorID      = DerivedIteratorID $ iteratorID itr
-      }
-
--- | Equality based on 'iteratorID'
-instance Eq (Iterator hash m a) where
-  (==) = (==) `on` iteratorID
-
-instance Ord (Iterator hash m a) where
-  compare = compare `on` iteratorID
+-- | Variant of 'traverse' instantiated to @'Iterator' hash m@ that executes
+-- the monadic function when calling 'iteratorNext' and 'iteratorPeek'.
+traverseIterator
+  :: Monad m
+  => (a -> m b)
+  -> Iterator hash m a
+  -> Iterator hash m b
+traverseIterator f itr = Iterator{
+      iteratorNext    = iteratorNext itr >>= traverse f
+    , iteratorPeek    = iteratorPeek itr >>= traverse f
+    , iteratorHasNext = iteratorHasNext itr
+    , iteratorClose   = iteratorClose itr
+    }
 
 -- | The result of stepping an 'Iterator'.
-data IteratorResult hash a
+data IteratorResult a
   = IteratorExhausted
-  | IteratorResult    SlotNo  hash a
-  | IteratorEBB       EpochNo hash a
+  | IteratorResult a
   deriving (Show, Eq, Generic, Functor, Foldable, Traversable)
 
 -- | Consume an 'Iterator' by stepping until it is exhausted. A list of all
 -- the 'IteratorResult's (excluding the final 'IteratorExhausted') produced by
 -- the 'Iterator' is returned.
 iteratorToList :: (HasCallStack, Monad m)
-               => Iterator hash m a -> m [IteratorResult hash a]
-iteratorToList it = go
+               => Iterator hash m a -> m [a]
+iteratorToList it = go []
   where
-    go = do
+    go acc = do
       next <- iteratorNext it
       case next of
-        IteratorExhausted -> return []
-        _                 -> (next:) <$> go
+        IteratorExhausted  -> return $ reverse acc
+        IteratorResult res -> go (res:acc)

@@ -538,7 +538,7 @@ runThreadNetwork ThreadNetworkArgs
         , cdbNodeConfig       = cfg
         , cdbEpochInfo        = epochInfo
         , cdbHashInfo         = nodeHashInfo (Proxy @blk)
-        , cdbIsEBB            = nodeIsEBB . getHeader
+        , cdbIsEBB            = nodeIsEBB
         , cdbCheckIntegrity   = nodeCheckIntegrity cfg
         , cdbGenesis          = return initLedger
         , cdbBlockchainTime   = btime

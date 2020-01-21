@@ -1,85 +1,86 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 module Test.Ouroboros.Storage.ImmutableDB.Mock (openDBMock) where
 
-import           Control.Monad.Except (Except, runExcept)
-import           Control.Monad.State (StateT, runStateT)
-import           Data.Proxy
+import           Control.Monad (void)
+import           Data.Bifunctor (first)
+import           Data.Tuple (swap)
 
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Consensus.Util ((..:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.Common (EpochNo, EpochSize)
+import           Ouroboros.Storage.Common (BlockComponent, EpochSize)
 import           Ouroboros.Storage.ImmutableDB.API
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 
-type MockM hash = StateT (DBModel hash) (Except ImmutableDBError)
 
 openDBMock  :: forall m hash. (IOLike m, Eq hash)
             => ErrorHandling ImmutableDBError m
-            -> (EpochNo -> EpochSize)
+            -> EpochSize
             -> m (DBModel hash, ImmutableDB hash m)
 openDBMock err epochSize = do
     dbVar <- uncheckedNewTVarM dbModel
     return (dbModel, immDB dbVar)
   where
-    db :: ImmutableDB hash (MockM hash)
-    (dbModel, db, _internal) = openDBModel err' epochSize
-
-    err' :: ErrorHandling ImmutableDBError (MockM hash)
-    err' = EH.liftErrState (Proxy @(DBModel hash)) EH.exceptT
+    dbModel = initDBModel epochSize
 
     immDB :: StrictTVar m (DBModel hash) -> ImmutableDB hash m
     immDB dbVar = ImmutableDB
-        { closeDB             = wrap  $   closeDB             db
-        , isOpen              = wrap  $   isOpen              db
-        , reopen              = wrap  .   reopen              db
-        , getTip              = wrap  $   getTip              db
-        , getBlock            = wrap  .   getBlock            db
-        , getBlockHeader      = wrap  .   getBlock            db
-        , getBlockHash        = wrap  .   getBlockHash        db
-        , getEBB              = wrap  .   getEBB              db
-        , getEBBHeader        = wrap  .   getEBBHeader        db
-        , getEBBHash          = wrap  .   getEBBHash          db
-        , getBlockOrEBB       = wrap  .:  getBlockOrEBB       db
-        , getBlockOrEBBHeader = wrap  .:  getBlockOrEBBHeader db
-        , appendBlock         = wrap  ..: appendBlock         db
-        , appendEBB           = wrap  ..: appendEBB           db
-        , streamBlocks        = wrapI .:  streamBlocks        db
-        , streamHeaders       = wrapI .:  streamHeaders       db
-        , immutableDBErr      = err
+        { closeDB                = return ()
+        , isOpen                 = return True
+        , reopen                 = \_valPol -> void $ update reopenModel
+        , getTip                 = query      $ getTipModel
+        , getBlockComponent      = queryE    .: getBlockComponentModel
+        , getEBBComponent        = queryE    .: getEBBComponentModel
+        , getBlockOrEBBComponent = queryE   ..: getBlockOrEBBComponentModel
+        , appendBlock            = updateE_ ..: appendBlockModel
+        , appendEBB              = updateE_ ..: appendEBBModel
+        , stream                 = updateEE ..: \bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
+        , immutableDBErr         = err
         }
       where
-        wrap  = wrapModel dbVar
-        wrapI = wrapModel dbVar . fmap (wrapIter dbVar)
+        iterator :: BlockComponent (ImmutableDB hash m) b
+                 -> IteratorId
+                 -> Iterator hash m b
+        iterator blockComponent itId = Iterator
+          { iteratorNext    = update  $ iteratorNextModel    itId blockComponent
+          , iteratorPeek    = query   $ iteratorPeekModel    itId blockComponent
+          , iteratorHasNext = query   $ iteratorHasNextModel itId
+          , iteratorClose   = update_ $ iteratorCloseModel   itId
+          }
 
-    wrapModel :: forall a. StrictTVar m (DBModel hash)
-              -> MockM hash a -> m a
-    wrapModel dbVar m = atomically $ do
-        st <- readTVar dbVar
-        case runExcept (runStateT m st) of
-          Left e           -> throwM e
-          Right (res, st') -> do
-            writeTVar dbVar st'
-            return res
+        update_ :: (DBModel hash -> DBModel hash) -> m ()
+        update_ f = atomically $ modifyTVar dbVar f
 
-    wrapIter :: forall a.
-                StrictTVar m (DBModel hash)
-             -> Either (WrongBoundError hash) (Iterator hash (MockM hash) a)
-             -> Either (WrongBoundError hash) (Iterator hash m a)
-    wrapIter _dbVar (Left e)   = Left e
-    wrapIter  dbVar (Right it) = Right Iterator
-        { iteratorNext    = wrap $ iteratorNext    it
-        , iteratorPeek    = wrap $ iteratorPeek    it
-        , iteratorHasNext = wrap $ iteratorHasNext it
-        , iteratorClose   = wrap $ iteratorClose   it
-        , iteratorID      = iteratorID it
-        }
-      where
-        wrap = wrapModel dbVar
+        update :: (DBModel hash -> (a, DBModel hash)) -> m a
+        update f = atomically $ updateTVar dbVar (swap . f)
+
+        updateE_ :: (DBModel hash -> Either ImmutableDBError (DBModel hash)) -> m ()
+        updateE_ f = atomically $ do
+          db <- readTVar dbVar
+          case f db of
+            Left  e   -> throwM e
+            Right db' -> writeTVar dbVar db'
+
+        updateEE :: (DBModel hash -> Either ImmutableDBError (Either e (a, DBModel hash)))
+                 -> m (Either e a)
+        updateEE f = atomically $ do
+          db <- readTVar dbVar
+          case f db of
+            Left  e                -> throwM e
+            Right (Left e)         -> return (Left e)
+            Right (Right (a, db')) -> writeTVar dbVar db' >> return (Right a)
+
+        query :: (DBModel hash -> a) -> m a
+        query f = fmap f $ atomically $ readTVar dbVar
+
+        queryE :: (DBModel hash -> Either ImmutableDBError a) -> m a
+        queryE f = query f >>= \case
+          Left  e -> EH.throwError err e
+          Right a -> return a

@@ -14,26 +14,27 @@ import           GHC.Stack (callStack)
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (ChainUpdate)
-import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util ((..:))
+import           Ouroboros.Consensus.Util ((...:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
 import           Ouroboros.Storage.ChainDB.API
 
-import           Test.Ouroboros.Storage.ChainDB.Model (Model)
+import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId, Model,
+                     ModelSupportsBlock, ReaderId)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 
 openDB :: forall m blk. (
             IOLike m
           , ProtocolLedgerView blk
           , CanSelect (BlockProtocol blk) blk
+          , ModelSupportsBlock blk
           )
        => NodeConfig (BlockProtocol blk)
        -> ExtLedgerState blk
@@ -85,18 +86,17 @@ openDB cfg initLedger btime = do
         update_ :: (Model blk -> Model blk) -> m ()
         update_ f = update (\m -> ((), f m))
 
-        iterator :: IteratorId -> Iterator m (Deserialisable m blk blk)
-        iterator itrId = Iterator {
-              iteratorNext  = update  $ Model.iteratorNextDeserialised itrId
-            , iteratorClose = update_ $ Model.iteratorClose            itrId
-            , iteratorId    = itrId
+        iterator :: BlockComponent (ChainDB m blk) b -> IteratorId -> Iterator m blk b
+        iterator blockComponent itrId = Iterator {
+              iteratorNext  = update $ Model.iteratorNext itrId blockComponent
+            , iteratorClose = update_ $ Model.iteratorClose itrId
             }
 
         reader :: forall b.
-                  (blk -> b)
-               -> CPS.ReaderId
+                  BlockComponent (ChainDB m blk) b
+               -> ReaderId
                -> Reader m blk b
-        reader toB rdrId = Reader {
+        reader blockComponent rdrId = Reader {
               readerInstruction =
                 updateE readerInstruction'
             , readerInstructionBlocking = atomically $
@@ -105,15 +105,13 @@ openDB cfg initLedger btime = do
                 updateE $ Model.readerForward rdrId ps
             , readerClose =
                 update_ $ Model.readerClose rdrId
-            , readerId =
-                rdrId
             }
           where
             readerInstruction'
               :: Model blk
               -> Either ChainDbError
                         (Maybe (ChainUpdate blk b), Model blk)
-            readerInstruction' = Model.readerInstruction toB rdrId
+            readerInstruction' = Model.readerInstruction rdrId blockComponent
 
     void $ onSlotChange btime $ update_ . Model.advanceCurSlot cfg
 
@@ -122,7 +120,7 @@ openDB cfg initLedger btime = do
       , getCurrentChain     = querySTM $ Model.lastK k getHeader
       , getCurrentLedger    = querySTM $ Model.currentLedger
       , getPastLedger       = query    . Model.getPastLedger cfg
-      , getBlock            = queryE   . Model.getBlockByPoint
+      , getBlockComponent   = queryE  .: Model.getBlockComponentByPoint
       , getTipBlock         = query    $ Model.tipBlock
       , getTipHeader        = query    $ (fmap getHeader . Model.tipBlock)
       , getTipPoint         = querySTM $ Model.tipPoint
@@ -130,10 +128,8 @@ openDB cfg initLedger btime = do
       , getIsFetched        = querySTM $ flip Model.hasBlockByPoint
       , getIsInvalidBlock   = querySTM $ (fmap (fmap (fmap fst) . flip Map.lookup)) . Model.invalid
       , getMaxSlotNo        = querySTM $ Model.maxSlotNo
-      , streamBlocks        = updateE  ..: const (fmap (first (fmap iterator)) ..: Model.streamBlocks k)
-      , newBlockReader      = update   .   const (first (reader Model.toDeserialisable) . Model.readBlocks)
-      , newHeaderReader     = update   .   const (first (reader (Model.toDeserialisable . getHeader)) . Model.readBlocks)
-
+      , stream              = updateE ...: const (\bc from to -> fmap (first (fmap (iterator bc))) . Model.stream k from to)
+      , newReader           = update   .:  const (\bc -> (first (reader bc) . Model.newReader))
       , closeDB             = atomically $ modifyTVar db Model.closeDB
       , isOpen              = Model.isOpen <$> readTVar db
       }

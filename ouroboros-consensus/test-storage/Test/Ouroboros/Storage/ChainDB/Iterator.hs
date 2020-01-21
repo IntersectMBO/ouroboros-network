@@ -27,18 +27,19 @@ import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (IsEBB (..))
+import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.ChainDB.API (Iterator (..), IteratorId (..),
-                     IteratorResult (..), StreamFrom (..), StreamTo (..),
-                     UnknownRange (..), deserialiseIterator)
+import           Ouroboros.Storage.ChainDB.API (BlockComponent (..),
+                     Iterator (..), IteratorResult (..), StreamFrom (..),
+                     StreamTo (..), UnknownRange (..), traverseIterator)
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, mkImmDB)
 import           Ouroboros.Storage.ChainDB.Impl.Iterator (IteratorEnv (..),
                      newIterator)
-import           Ouroboros.Storage.ChainDB.Impl.Types (TraceIteratorEvent (..))
+import           Ouroboros.Storage.ChainDB.Impl.Types (IteratorKey (..),
+                     TraceIteratorEvent (..))
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
 import           Ouroboros.Storage.Common (BinaryInfo (..), EpochSize)
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
@@ -344,13 +345,13 @@ runIterator setup from to = runSimOrThrow $ withRegistry $ \r -> do
     (tracer, getTrace) <- recordingTracerTVar
     itEnv <- initIteratorEnv setup tracer
     res <- runExceptT $ do
-      it <- ExceptT $ newIterator itEnv ($ itEnv) r from to
-      lift $ consume (deserialiseIterator it)
+      it <- ExceptT $ newIterator itEnv ($ itEnv) r GetBlock from to
+      lift $ consume (traverseIterator id it)
     trace <- getTrace
     return (trace, res)
   where
     consume :: Monad m
-            => Iterator m TestBlock
+            => Iterator m TestBlock TestBlock
             -> m [Either (HeaderHash TestBlock) TestBlock]
     consume it = iteratorNext it >>= \case
       IteratorResult blk -> (Right blk :) <$> consume it
@@ -371,16 +372,16 @@ initIteratorEnv
   -> Tracer m (TraceIteratorEvent TestBlock)
   -> m (IteratorEnv m TestBlock)
 initIteratorEnv TestSetup { immutable, volatile } tracer = do
-    iters      <- uncheckedNewTVarM Map.empty
-    nextIterId <- uncheckedNewTVarM $ IteratorId 0
-    volDB      <- openVolDB volatile
-    immDB      <- openImmDB immutable
+    iters       <- uncheckedNewTVarM Map.empty
+    nextIterKey <- uncheckedNewTVarM $ IteratorKey 0
+    volDB       <- openVolDB volatile
+    immDB       <- openImmDB immutable
     return IteratorEnv
-      { itImmDB          = immDB
-      , itVolDB          = volDB
-      , itIterators      = iters
-      , itNextIteratorId = nextIterId
-      , itTracer         = tracer
+      { itImmDB           = immDB
+      , itVolDB           = volDB
+      , itIterators       = iters
+      , itNextIteratorKey = nextIterKey
+      , itTracer          = tracer
       }
   where
     -- | Open a mock VolatileDB and add the given blocks
@@ -416,8 +417,8 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     -- | Open a mock ImmutableDB and add the given chain of blocks
     openImmDB :: Chain TestBlock -> m (ImmDB m TestBlock)
     openImmDB chain = do
-        (_immDBModel, immDB) <- ImmDB.openDBMock EH.monadCatch (const epochSize)
-        forM_ (Chain.toOldestFirst chain) $ \block -> case isEBB block of
+        (_immDBModel, immDB) <- ImmDB.openDBMock EH.monadCatch epochSize
+        forM_ (Chain.toOldestFirst chain) $ \block -> case isEBB (getHeader block) of
           Nothing -> ImmDB.appendBlock immDB
             (blockSlot block) (blockHash block)
             (CBOR.toBuilder <$> encodeWithBinaryInfo block)
@@ -428,7 +429,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
           encodeWithBinaryInfo epochInfo isEBB addHdrEnv EH.monadCatch
       where
         epochInfo = fixedSizeEpochInfo epochSize
-        isEBB     = testBlockEpochNoIfEBB epochSize
+        isEBB     = testHeaderEpochNoIfEBB epochSize
 
 encodeWithBinaryInfo :: TestBlock -> BinaryInfo Encoding
 encodeWithBinaryInfo blk = BinaryInfo

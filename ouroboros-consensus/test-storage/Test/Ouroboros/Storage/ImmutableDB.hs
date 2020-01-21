@@ -16,6 +16,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Ouroboros.Consensus.Block (getHeader)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -79,7 +80,7 @@ openTestDB registry hasFS err = fst <$> openDBInternal
   where
     parser = epochFileParser hasFS (const <$> S.decode) isEBB getBinaryInfo
       testBlockIsValid
-    isEBB  = testBlockEpochNoIfEBB fixedEpochSize
+    isEBB  = testHeaderEpochNoIfEBB fixedEpochSize . getHeader
     getBinaryInfo = void . testBlockToBinaryInfo
 
 -- Shorthand
@@ -99,7 +100,7 @@ test_ReadFutureSlotErrorEquivalence :: HasCallStack => Assertion
 test_ReadFutureSlotErrorEquivalence =
     apiEquivalenceImmDB (expectUserError isReadFutureSlotError) $ \hasFS err ->
       withTestDB hasFS err $ \db -> do
-        _ <- getBlock db 0
+        _ <- getBlockComponent db GetBlock 0
         return ()
   where
     isReadFutureSlotError ReadFutureSlotError {} = True
