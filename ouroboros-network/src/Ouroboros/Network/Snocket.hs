@@ -18,7 +18,12 @@ import           Control.Tracer (Tracer)
 import           Network.Socket (Socket, SockAddr)
 import qualified Network.Socket as Socket
 #if defined(mingw32_HOST_OS)
+import           Data.Bits
+import qualified System.Win32            as Win32
+import qualified System.Win32.NamedPipes as Win32
 import qualified System.Win32.Async      as Win32.Async
+
+import           Network.Mux.Bearer.NamedPipe (namedPipeAsBearer)
 #endif
 
 import           Network.Mux.Types (MuxBearer)
@@ -60,7 +65,7 @@ import           Ouroboros.Network.IOManager
 -- 'berkeleyAccept' below.  Creation of the socket / named pipe is part of
 -- 'Snocket', but this means we need to have different recursion step for named
 -- pipe & sockets.  For sockets its recursion step will always return 'accept'
--- syscall; for named pipes the first callback wil reuse the file descriptor
+-- syscall; for named pipes the first callback will reuse the file descriptor
 -- created by 'open' and only subsequent calls will create a new file
 -- descriptor by `createNamedPipe`, see 'namedPipeSnocket'.
 --
@@ -99,7 +104,7 @@ berkeleyAccept iocp sock = go
 
 
 -- | Abstract communication interface that can be used by more than
--- 'Socket'.  Snockets are polymorphic over moand which is used, this feature
+-- 'Socket'.  Snockets are polymorphic over monad which is used, this feature
 -- is useful for testing and/or simulations.
 --
 data Snocket m fd addr = Snocket {
@@ -209,7 +214,7 @@ socketSnocket iocp = Snocket {
 
 
 -- | Create a snocket for the given 'Socket.Family'.  This snocket does not set
--- any options on the underlaying socket.
+-- any options on the underlying socket.
 --
 rawSocketSnocket
   :: AssociateWithIOCP
@@ -247,3 +252,88 @@ rawSocketSnocket iocp = Snocket {
           Socket.close sd
           throwIO e
       return sd
+      
+
+#if defined(mingw32_HOST_OS)
+type HANDLESnocket = Snocket IO Win32.HANDLE FilePath
+
+-- | Create a Windows Named Pipe Snocket.
+--
+namedPipeSnocket
+  :: AssociateWithIOCP
+  -> FilePath
+  -> HANDLESnocket
+namedPipeSnocket iocp name = Snocket {
+      getLocalAddr  = \_ -> return name
+    , getRemoteAddr = \_ -> return name
+    , addrFamily  = \_ -> NamedPipeFamily
+
+    , open = \_addrFamily -> do
+        hpipe <- Win32.createNamedPipe
+                   name
+                   (Win32.pIPE_ACCESS_DUPLEX .|. Win32.fILE_FLAG_OVERLAPPED)
+                   (Win32.pIPE_TYPE_BYTE .|. Win32.pIPE_READMODE_BYTE)
+                   Win32.pIPE_UNLIMITED_INSTANCES
+                   maxBound
+                   maxBound
+                   0
+                   Nothing
+        associateWithIOCP iocp (Left hpipe)
+          `catch` \(e :: IOException) -> do
+            Win32.closeHandle hpipe
+            throwIO e
+          `catch` \(SomeAsyncException _) -> do
+            Win32.closeHandle hpipe
+            throwIO e
+        pure hpipe
+
+    -- To connect, simply create a file whose name is the named pipe name.
+    , openToConnect  = \pipeName -> do
+        hpipe <- Win32.createFile pipeName
+                   (Win32.gENERIC_READ .|. Win32.gENERIC_WRITE )
+                   Win32.fILE_SHARE_NONE
+                   Nothing
+                   Win32.oPEN_EXISTING
+                   Win32.fILE_FLAG_OVERLAPPED
+                   Nothing
+        associateWithIOCP iocp (Left hpipe)
+          `catch` \(e :: IOException) -> do
+            Win32.closeHandle hpipe
+            throwIO e
+          `catch` \(SomeAsyncException _) -> do
+            Win32.closeHandle hpipe
+            throwIO e
+        return hpipe
+    , connect  = \_ _ -> pure ()
+
+    -- Bind and listen are no-op.
+    , bind     = \_ _ -> pure ()
+    , listen   = \_ -> pure ()
+
+    , accept   = \hpipe -> Accept $ do
+          Win32.Async.connectNamedPipe hpipe
+          return (hpipe, name, acceptNext)
+
+    , close    = Win32.closeHandle
+
+    , toBearer = namedPipeAsBearer
+    }
+  where
+    acceptNext :: Accept FilePath Win32.HANDLE
+    acceptNext = Accept $ do
+      hpipe <- Win32.createNamedPipe
+                 name
+                 (Win32.pIPE_ACCESS_DUPLEX .|. Win32.fILE_FLAG_OVERLAPPED)
+                 (Win32.pIPE_TYPE_BYTE .|. Win32.pIPE_READMODE_BYTE)
+                 Win32.pIPE_UNLIMITED_INSTANCES
+                 maxBound
+                 maxBound
+                 0
+                 Nothing
+              `catch` \(e :: IOException) -> do
+                 putStrLn $ "accept: " ++ show e
+                 throwIO e
+      associateWithIOCP iocp (Left hpipe)
+      Win32.Async.connectNamedPipe hpipe
+      return (hpipe, name, acceptNext)
+#endif
