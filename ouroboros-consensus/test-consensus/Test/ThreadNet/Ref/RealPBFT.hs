@@ -142,12 +142,8 @@ extendOutcome params State{forgers, nomCount, nextSlot, outs} out = State
 --
 tooMany :: PBftParams -> State -> Bool
 tooMany params st@State{forgers} =
-    not $
-    Seq.length forgers < k || count i forgers <= pbftLimit params
+    count i forgers > pbftLimit params
   where
-    k :: forall a. Num a => a
-    k = oneK params
-
     i = nextLeader params st
 
 -- | How many blocks in the latest @k@-blocks that a single core node is
