@@ -28,10 +28,14 @@ import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (SockAddr, AddrInfo)
 import qualified Network.Socket as Socket
 
+import           Ouroboros.Network.Snocket (SocketSnocket)
+import qualified Ouroboros.Network.Snocket as Snocket
+
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import           Ouroboros.Network.Protocol.Handshake.Version
 
 import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToClient ( NodeToClientProtocols (..)
                                                 , NodeToClientVersion (..)
@@ -143,7 +147,12 @@ runDataDiffusion tracers
                                     , daIpProducers
                                     , daDnsProducers
                                     }
-                 applications@DiffusionApplications { daErrorPolicies } = do
+                 applications@DiffusionApplications { daErrorPolicies } =
+    withIOManager $ \iocp -> do
+
+    let snocket :: SocketSnocket
+        snocket = Snocket.socketSnocket iocp
+
     -- networking mutable state
     networkState <- newNetworkMutableState
     networkLocalState <- newNetworkMutableState
@@ -156,22 +165,23 @@ runDataDiffusion tracers
         Async.withAsync (cleanNetworkMutableState networkLocalState) $ \cleanLocalNetworkStateThread ->
 
           -- fork server for local clients
-          Async.withAsync (runLocalServer networkLocalState) $ \_ ->
+          Async.withAsync (runLocalServer snocket networkLocalState) $ \_ ->
 
             -- fork servers for remote peers
-            withAsyncs (runServer networkState <$> daAddresses) $ \_ ->
+            withAsyncs (runServer snocket networkState . Socket.addrAddress <$> daAddresses) $ \_ ->
 
               -- fork ip subscription
-              Async.withAsync (runIpSubscriptionWorker networkState) $ \_ ->
+              Async.withAsync (runIpSubscriptionWorker snocket networkState) $ \_ ->
 
                 -- fork dns subscriptions
-                withAsyncs (runDnsSubscriptionWorker networkState <$> daDnsProducers) $ \_ ->
+                withAsyncs (runDnsSubscriptionWorker snocket networkState <$> daDnsProducers) $ \_ ->
 
                   -- If any other threads throws 'cleanNetowrkStateThread' and
                   -- 'cleanLocalNetworkStateThread' threads will will finish.
                   Async.waitEither_ cleanNetworkStateThread cleanLocalNetworkStateThread
 
   where
+    -- TODO: this is POSIX only, Windows support will be built later
 
     DiffusionTracers { dtIpSubscriptionTracer
                      , dtDnsSubscriptionTracer
@@ -207,21 +217,23 @@ runDataDiffusion tracers
     remoteErrorPolicy = NodeToNode.remoteNetworkErrorPolicy <> daErrorPolicies
     localErrorPolicy  = NodeToNode.localNetworkErrorPolicy <> daErrorPolicies
 
-    runLocalServer :: NetworkMutableState SockAddr -> IO Void
-    runLocalServer networkLocalState =
+    runLocalServer :: SocketSnocket -> NetworkMutableState SockAddr -> IO Void
+    runLocalServer sn networkLocalState =
       NodeToClient.withServer
+        sn
         (NetworkServerTracers
           dtMuxLocalTracer
           dtHandshakeLocalTracer
           dtErrorPolicyTracer)
         networkLocalState
-        daLocalAddress
+        (Socket.addrAddress daLocalAddress)
         (daLocalResponderApplication applications)
         localErrorPolicy
 
-    runServer :: NetworkMutableState SockAddr -> AddrInfo -> IO Void
-    runServer networkState address =
+    runServer :: SocketSnocket -> NetworkMutableState SockAddr -> SockAddr -> IO Void
+    runServer sn networkState address =
       NodeToNode.withServer
+        sn
         (NetworkServerTracers
           dtMuxTracer
           dtHandshakeTracer
@@ -231,8 +243,11 @@ runDataDiffusion tracers
         (daResponderApplication applications)
         remoteErrorPolicy
 
-    runIpSubscriptionWorker :: NetworkMutableState SockAddr -> IO Void
-    runIpSubscriptionWorker networkState = NodeToNode.ipSubscriptionWorker
+    runIpSubscriptionWorker :: SocketSnocket
+                            -> NetworkMutableState SockAddr
+                            -> IO Void
+    runIpSubscriptionWorker sn networkState = NodeToNode.ipSubscriptionWorker
+      sn
       (NetworkIPSubscriptionTracers
         dtMuxTracer
         dtHandshakeTracer
@@ -247,8 +262,12 @@ runDataDiffusion tracers
         }
       (daInitiatorApplication applications)
 
-    runDnsSubscriptionWorker :: NetworkMutableState SockAddr -> DnsSubscriptionTarget -> IO Void
-    runDnsSubscriptionWorker networkState dnsProducer = NodeToNode.dnsSubscriptionWorker
+    runDnsSubscriptionWorker :: SocketSnocket
+                             -> NetworkMutableState SockAddr
+                             -> DnsSubscriptionTarget
+                             -> IO Void
+    runDnsSubscriptionWorker sn networkState dnsProducer = NodeToNode.dnsSubscriptionWorker
+      sn
       (NetworkDNSSubscriptionTracers
         dtMuxTracer
         dtHandshakeTracer

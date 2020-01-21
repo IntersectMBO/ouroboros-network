@@ -43,6 +43,7 @@ import           Data.Void (Void)
 import qualified Network.Socket as Socket
 import           Text.Printf
 
+import           Ouroboros.Network.Snocket (Snocket)
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.PeerState
@@ -76,13 +77,14 @@ type IPSubscriptionParams a = SubscriptionParams a IPSubscriptionTarget
 --
 ipSubscriptionWorker
     :: forall a.
-       Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+       Snocket IO Socket.Socket Socket.SockAddr
+    -> Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams a
     -> (Socket.Socket -> IO a)
     -> IO Void
-ipSubscriptionWorker subscriptionTracer errorPolicyTracer
+ipSubscriptionWorker snocket subscriptionTracer errorPolicyTracer
                      networkState@NetworkMutableState { nmsPeerStates }
                      SubscriptionParams { spLocalAddresses
                                         , spConnectionAttemptDelay
@@ -90,7 +92,8 @@ ipSubscriptionWorker subscriptionTracer errorPolicyTracer
                                         , spErrorPolicies
                                         }
                      k =
-    subscriptionWorker subscriptionTracer'
+    subscriptionWorker snocket
+                       subscriptionTracer'
                        errorPolicyTracer
                        networkState
                        workerParams
@@ -173,7 +176,8 @@ mainTx PeerStates{}       = retry
 -- callback is left as it's useful for testing purposes.
 --
 subscriptionWorker
-    :: Tracer IO (SubscriptionTrace Socket.SockAddr)
+    :: Snocket IO Socket.Socket Socket.SockAddr
+    -> Tracer IO (SubscriptionTrace Socket.SockAddr)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> NetworkMutableState Socket.SockAddr
     -> WorkerParams IO Socket.SockAddr
@@ -183,7 +187,8 @@ subscriptionWorker
     -> (Socket.Socket -> IO a)
     -- ^ application to run on each connection
     -> IO x
-subscriptionWorker tracer
+subscriptionWorker snocket
+                   tracer
                    errorPolicyTracer
                    NetworkMutableState { nmsConnectionTable, nmsPeerStates }
                    workerParams
@@ -193,7 +198,7 @@ subscriptionWorker tracer
            errorPolicyTracer
            nmsConnectionTable
            nmsPeerStates
-           ioSocket
+           snocket
            WorkerCallbacks
              { wcSocketStateChangeTx   = socketStateChangeTx
              , wcCompleteApplicationTx = completeApplicationTx errorPolicies

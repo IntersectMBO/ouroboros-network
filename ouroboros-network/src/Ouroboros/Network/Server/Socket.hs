@@ -28,7 +28,7 @@ import Control.Concurrent.Async (Async)
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM (STM)
 import qualified Control.Concurrent.STM as STM
-import Control.Monad (forever, forM_, join)
+import Control.Monad (forM_, join)
 import Control.Monad.Class.MonadTime (Time, getMonotonicTime)
 import Control.Tracer (Tracer, traceWith)
 import Data.Foldable (traverse_)
@@ -43,7 +43,7 @@ import Ouroboros.Network.ErrorPolicy (CompleteApplicationResult (..), WithAddr, 
 -- It's not defined in here, though, because we don't want the dependency
 -- on typed-protocols or even on network.
 data Socket addr channel = Socket
-  { acceptConnection :: IO (addr, channel, IO ())
+  { acceptConnection :: IO (addr, channel, IO (), Socket addr channel)
     -- ^ The address, a channel, IO to close the channel.
   }
 
@@ -52,7 +52,7 @@ ioSocket :: IO (addr, channel) -> Socket addr channel
 ioSocket io = Socket
   { acceptConnection = do
       (addr, channel) <- io
-      pure (addr, channel, pure ())
+      pure (addr, channel, pure (), ioSocket io)
   }
 
 type StatusVar st = STM.TVar st
@@ -158,9 +158,13 @@ acceptLoop
   -> ApplicationStart addr st
   -> (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
   -> Socket addr channel
-  -> IO x
-acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptException socket = forever $
-  acceptOne resQ threadsVar statusVar beginConnection applicationStart acceptException socket
+  -> IO ()
+acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptException socket = do
+    mNextSocket <- acceptOne resQ threadsVar statusVar beginConnection applicationStart acceptException socket
+    case mNextSocket of
+      Nothing -> pure ()
+      Just nextSocket ->
+        acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptException nextSocket
 
 -- | Accept once from the socket, use the `Accept` to make a decision (accept
 -- or reject), and spawn the thread if accepted.
@@ -173,13 +177,15 @@ acceptOne
   -> ApplicationStart addr st
   -> (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
   -> Socket addr channel
-  -> IO ()
+  -> IO (Maybe (Socket addr channel))
 acceptOne resQ threadsVar statusVar beginConnection applicationStart acceptException socket = mask $ \restore -> do
   -- mask is to assure that every socket is closed.
   outcome <- try (restore (acceptConnection socket))
-  case outcome :: Either IOException (addr, channel, IO ()) of
-    Left ex -> restore (acceptException ex)
-    Right (addr, channel, close) -> do
+  case outcome :: Either IOException (addr, channel, IO (), Socket addr channel) of
+    Left ex -> do
+      restore (acceptException ex)
+      pure Nothing
+    Right (addr, channel, close, nextSocket) -> do
       -- Decide whether to accept or reject, using the current state, and
       -- update it according to the decision.
       t <- getMonotonicTime
@@ -199,6 +205,7 @@ acceptOne resQ threadsVar statusVar beginConnection applicationStart acceptExcep
       case choice of
         Nothing -> close
         Just io -> spawnOne addr statusVar resQ threadsVar applicationStart (io channel `finally` close)
+      pure (Just nextSocket)
 
 -- | Main server loop, which runs alongside the `acceptLoop`. It waits for
 -- the results of connection threads, as well as the `Main` action, which

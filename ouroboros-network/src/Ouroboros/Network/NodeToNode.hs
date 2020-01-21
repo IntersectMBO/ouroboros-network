@@ -114,6 +114,7 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , WithDomainName (..)
                                                     )
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
+import           Ouroboros.Network.Snocket
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
@@ -185,27 +186,33 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --
 connectTo
-  :: NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+  :: Snocket IO fd Socket.SockAddr
+  -> NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
   -> Versions NodeToNodeVersion
               DictVersion
               (OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
-  -> Maybe Socket.AddrInfo
-  -> Socket.AddrInfo
+  -> Maybe Socket.SockAddr
+  -> Socket.SockAddr
   -> IO ()
-connectTo = connectToNode cborTermVersionDataCodec
+connectTo sn =
+    connectToNode sn cborTermVersionDataCodec
 
 
 -- | Like 'connectTo' but specific to 'NodeToNodeV_1'.
 --
+-- TODO: do not leak 'Snocket' abstraction
+--
 connectTo_V1
-  :: NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+  :: Snocket IO fd Socket.SockAddr
+  -> NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
   -> NodeToNodeVersionData
   -> (OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
-  -> Maybe Socket.AddrInfo
-  -> Socket.AddrInfo
+  -> Maybe Socket.SockAddr
+  -> Socket.SockAddr
   -> IO ()
-connectTo_V1 tracers versionData application localAddr remoteAddr =
+connectTo_V1 sn tracers versionData application localAddr remoteAddr =
     connectTo
+      sn
       tracers
       (simpleSingletonVersions
           NodeToNodeV_1
@@ -223,16 +230,23 @@ connectTo_V1 tracers versionData application localAddr remoteAddr =
 -- * when an async exception is thrown to kill the main thread the server thread
 --   will be cancelled as well (by 'withAsync')
 --
+-- TODO: specialise to use `Socket`, node-to-node protocol is only used over
+-- TCP sockets.
+--
 withServer
-  :: ( HasResponder appType ~ True)
-  => NetworkServerTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
-  -> NetworkMutableState Socket.SockAddr
-  -> Socket.AddrInfo
-  -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
-  -> ErrorPolicies Socket.SockAddr ()
+  :: ( HasResponder appType ~ True
+     , Ord addr
+     )
+  => Snocket IO fd addr
+  -> NetworkServerTracers addr NodeToNodeProtocols NodeToNodeVersion
+  -> NetworkMutableState addr
+  -> addr
+  -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType (ConnectionId addr) NodeToNodeProtocols IO BL.ByteString a b)
+  -> ErrorPolicies addr ()
   -> IO Void
-withServer tracers networkState addr versions errPolicies =
+withServer sn tracers networkState addr versions errPolicies =
   withServerNode
+    sn
     tracers
     networkState
     addr
@@ -245,18 +259,23 @@ withServer tracers networkState addr versions errPolicies =
 
 -- | Like 'withServer' but specific to 'NodeToNodeV_1'.
 --
+-- TODO: do not leak 'Snocket' abstraction, specialise this over `Socket`.
+--
 withServer_V1
-  :: ( HasResponder appType ~ True )
-  => NetworkServerTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
-  -> NetworkMutableState Socket.SockAddr
-  -> Socket.AddrInfo
+  :: ( HasResponder appType ~ True
+     , Ord addr
+     )
+  => Snocket IO fd addr
+  -> NetworkServerTracers addr NodeToNodeProtocols NodeToNodeVersion
+  -> NetworkMutableState addr
+  -> addr
   -> NodeToNodeVersionData
-  -> (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString x y)
-  -> ErrorPolicies Socket.SockAddr ()
+  -> (OuroborosApplication appType (ConnectionId addr) NodeToNodeProtocols IO BL.ByteString x y)
+  -> ErrorPolicies addr ()
   -> IO Void
-withServer_V1 tracers networkState addr versionData application =
+withServer_V1 sn tracers networkState addr versionData application =
     withServer
-      tracers networkState addr
+      sn tracers networkState addr
       (simpleSingletonVersions
           NodeToNodeV_1
           versionData
@@ -270,7 +289,8 @@ withServer_V1 tracers networkState addr versionData application =
 ipSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+    => Snocket IO Socket.Socket Socket.SockAddr
+    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
     -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> Versions
@@ -283,6 +303,7 @@ ipSubscriptionWorker
           IO BL.ByteString x y)
     -> IO Void
 ipSubscriptionWorker
+  sn
   NetworkIPSubscriptionTracers
     { nistSubscriptionTracer
     , nistMuxTracer
@@ -293,11 +314,13 @@ ipSubscriptionWorker
   subscriptionParams
   versions
     = Subscription.ipSubscriptionWorker
+        sn
         nistSubscriptionTracer
         nistErrorPolicyTracer
         networkState
         subscriptionParams
         (connectToNode'
+          sn
           cborTermVersionDataCodec
           (NetworkConnectTracers nistMuxTracer nistHandshakeTracer)
           versions)
@@ -308,7 +331,8 @@ ipSubscriptionWorker
 ipSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+    => Snocket IO Socket.Socket Socket.SockAddr
+    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
     -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> NodeToNodeVersionData
@@ -319,12 +343,14 @@ ipSubscriptionWorker_V1
           IO BL.ByteString x y)
     -> IO Void
 ipSubscriptionWorker_V1
+  sn
   tracers
   networkState
   subscriptionParams
   versionData
   application
     = ipSubscriptionWorker
+        sn
         tracers
         networkState
         subscriptionParams
@@ -341,7 +367,8 @@ ipSubscriptionWorker_V1
 dnsSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion (ConnectionId Socket.SockAddr)
+    => Snocket IO Socket.Socket Socket.SockAddr
+    -> NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion (ConnectionId Socket.SockAddr)
     -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> Versions
@@ -354,6 +381,7 @@ dnsSubscriptionWorker
           IO BL.ByteString x y)
     -> IO Void
 dnsSubscriptionWorker
+  sn
   NetworkDNSSubscriptionTracers
     { ndstSubscriptionTracer
     , ndstDnsTracer
@@ -365,12 +393,14 @@ dnsSubscriptionWorker
   subscriptionParams
   versions =
     Subscription.dnsSubscriptionWorker
+      sn
       ndstSubscriptionTracer
       ndstDnsTracer
       ndstErrorPolicyTracer
       networkState
       subscriptionParams
       (connectToNode'
+        sn
         cborTermVersionDataCodec
         (NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer)
         versions)
@@ -381,7 +411,8 @@ dnsSubscriptionWorker
 dnsSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion (ConnectionId Socket.SockAddr)
+    => Snocket IO Socket.Socket Socket.SockAddr
+    -> NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion (ConnectionId Socket.SockAddr)
     -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> NodeToNodeVersionData
@@ -392,12 +423,14 @@ dnsSubscriptionWorker_V1
           IO BL.ByteString x y)
     -> IO Void
 dnsSubscriptionWorker_V1
+  sn
   tracers
   networkState
   subscriptionParams
   versionData
   application =
      dnsSubscriptionWorker
+      sn
       tracers
       networkState
       subscriptionParams
