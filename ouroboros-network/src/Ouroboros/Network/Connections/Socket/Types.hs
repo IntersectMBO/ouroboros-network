@@ -4,6 +4,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Ouroboros.Network.Connections.Socket.Types
   ( SockType (..)
@@ -12,6 +13,7 @@ module Ouroboros.Network.Connections.Socket.Types
   , makeConnectionId
   , connectionIdPair
   , Some (..)
+  , someSockType
   , withSockType
   , matchSockType
   , matchSockAddr
@@ -99,11 +101,17 @@ connectionIdPair connId = case connId of
 data Some (ty :: l -> Type) where
   Some :: ty x -> Some ty
 
-withSockType :: Socket.SockAddr -> Some SockAddr
-withSockType sockAddr = case sockAddr of
+someSockType :: Socket.SockAddr -> Some SockAddr
+someSockType sockAddr = case sockAddr of
   Socket.SockAddrInet  pn ha       -> Some (SockAddrIPv4 pn ha)
   Socket.SockAddrInet6 pn fi ha si -> Some (SockAddrIPv6 pn fi ha si)
   Socket.SockAddrUnix  st          -> Some (SockAddrUnix st)
+
+-- | Use a typical `SockAddr` as a type-annotated `SockAddr`, in a continuation
+-- which doesn't care about the socket type.
+withSockType :: Socket.SockAddr -> (forall sockType . SockAddr sockType -> t) -> t
+withSockType addr k = case someSockType addr of
+  Some sockAddr -> k sockAddr
 
 -- | Gives `Just` if the second socket address is of the same type as the
 -- first one.

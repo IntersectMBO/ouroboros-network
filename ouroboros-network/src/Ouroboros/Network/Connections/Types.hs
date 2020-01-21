@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Ouroboros.Network.Connections.Types
   ( Provenance (..)
@@ -9,6 +10,8 @@ module Ouroboros.Network.Connections.Types
   , Decision (..)
   , Connections (..)
   , Resource (..)
+
+  , CannotReject
 
   , Client
   , Server
@@ -23,10 +26,16 @@ data Initiated (provenance :: Provenance) where
   Incoming :: Initiated Remote
   Outgoing :: Initiated Local
 
+deriving instance Show (Initiated provenance)
+
 data Decision (provenance :: Provenance) reject accept where
   Rejected :: reject provenance -> Decision provenance reject accept
   Accepted :: accept provenance -> Decision provenance reject accept
   deriving (Show)
+
+-- | Useful type with kind `Provenance -> Type` to express that rejection is
+-- not possible.
+data CannotReject (provenance :: Provenance) where
 
 data Resource provenance m r where
   -- | An existing resource, with a close action.

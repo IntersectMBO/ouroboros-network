@@ -1,5 +1,9 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
@@ -42,28 +46,36 @@ import System.IO.Error (isAlreadyExistsError, isAlreadyInUseError, ioeGetErrorTy
 -- If it passes 1, throw an error. Each thread can wait until the map is
 -- 1 for every connection pair.
 
+data Request (provenance :: Provenance) where
+  Request :: Request provenance
+
 data Node = forall sockType . Node
   { address :: SockAddr sockType
-  , server  :: Server ConnectionId Socket IO
-  , client  :: SockAddr sockType -> Client ConnectionId Socket IO
+  , server  :: Server ConnectionId Socket IO Request
+  , client  :: SockAddr sockType -> Client ConnectionId Socket IO Request
   }
 
 -- | When the continuation goes, there is a socket listening.
 node :: Some SockAddr -> (Node -> IO t) -> IO t
-node addr@(Some bindAddr) k = Server.server addr $ \server -> do
-  let client = Client.client bindAddr
-  k (Node bindAddr server client)
+node (Some (bindAddr :: SockAddr sockType)) k =
+  Server.server bindAddr (const Request) $ \server -> do
+    -- Type sig is required; GHC struggles with the higher-rank type (Client
+    -- has foralls).
+    let client :: SockAddr sockType -> Client ConnectionId Socket IO Request
+        client = \remoteAddr -> Client.client bindAddr remoteAddr Request
+    k (Node bindAddr server client)
 
 -- | What a node does when a new connection comes up. It'll just print a
 -- debug trace (thread safe) and then wait for a very long time so that the
 -- connection does not close.
 withConnection
-  :: Provenance
+  :: Initiated provenance
   -> ConnectionId
   -> Socket
-  -> IO (Connection.Decision () ())
-withConnection provenance connId _socket = do
-  Debug.traceM $ mconcat [show provenance, " : ", show connId]
+  -> Request provenance
+  -> IO (Connection.Decision provenance CannotReject ())
+withConnection initiated connId _socket Request = do
+  Debug.traceM $ mconcat [show initiated, " : ", show connId]
   pure $ Connection.Accept $ \_ -> pure (Handler () (threadDelay 1000000000))
 
 -- | For each node, we want to run its accept loop, and concurrently connect
@@ -122,7 +134,7 @@ main = do
   -- Get addresses for the same host on a bunch of different consecutive ports.
   addrs <- forM range $ \port -> do
     (addrInfo : _) <- Socket.getAddrInfo Nothing (Just host) (Just (show port))
-    pure (withSockType (Socket.addrAddress addrInfo))
+    pure (someSockType (Socket.addrAddress addrInfo))
   -- For each address, create servers and clients and package them up into
   -- `Node`s. Once the continuation is called, every node's server will be
   -- listening (but accept loops not running).
