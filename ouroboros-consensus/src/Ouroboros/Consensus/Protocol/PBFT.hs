@@ -333,7 +333,6 @@ pbftWindowSize (SecurityParam k) = CS.WindowSize k
 -- | Does the number of blocks signed by this key exceed the threshold?
 --
 -- Returns @Just@ the number of blocks signed if exceeded.
--- Returns 'Nothing' if not 'shouldCheckThreshold'
 exceedsThreshold :: PBftCrypto c
                  => PBftWindowParams
                  -> PBftChainState c -> PBftVerKeyHash c -> Maybe Word64
