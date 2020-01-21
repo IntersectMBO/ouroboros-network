@@ -9,7 +9,8 @@ module Ouroboros.Network.Connections.Socket.Server
   , acceptLoopOn
   ) where
 
-import Control.Exception (Exception, bracket, catch, mask, onException)
+import Control.Exception (Exception, bracket, bracketOnError, catch, mask,
+         onException)
 import Control.Monad (forever, when, void)
 import Data.Void (Void)
 import Network.Socket (Socket)
@@ -33,23 +34,16 @@ server
   -- ^ When this is called, the server is up and listening. When the callback
   -- returns or dies exceptionally, the listening socket is closed.
   -> IO t
-server bindaddr mkRequest k = bracket
-    openSocket
-    closeSocket
-    (\sock -> k (acceptOne bindaddr sock mkRequest))
+server bindaddr mkRequest k = bracket openSocket closeSocket $ \sock ->
+    k (acceptOne bindaddr sock mkRequest)
   where
 
+  -- Use bracketOnError to ensure the socket is closed if any of the preparation
+  -- (setting options, bind, listen) fails. If not, the socket is returned
+  -- and the caller is responsible for closing it (the bracket at the top level
+  -- of this server definition).
   openSocket :: IO Socket
-  openSocket = mask $ \restore -> do
-    sock <- restore createSocket
-    restore (prepareSocket sock) `onException` closeSocket sock
-    return sock
-
-  createSocket :: IO Socket
-  createSocket = Socket.socket family Socket.Stream Socket.defaultProtocol
-
-  prepareSocket :: Socket -> IO ()
-  prepareSocket sock = do
+  openSocket = bracketOnError createSocket closeSocket $ \sock -> do
     when isInet $ do
       Socket.setSocketOption sock Socket.ReuseAddr 1
       -- SO_REUSEPORT is not available on Windows.
@@ -62,6 +56,10 @@ server bindaddr mkRequest k = bracket
     when isInet  $ do
       Socket.bind sock (forgetSockType bindaddr)
       Socket.listen sock 1
+    return sock
+
+  createSocket :: IO Socket
+  createSocket = Socket.socket family Socket.Stream Socket.defaultProtocol
 
   closeSocket :: Socket -> IO ()
   closeSocket = Socket.close
