@@ -67,9 +67,10 @@
           };
         "demo-connections" = {
           depends = [
-            (hsPkgs.ouroboros-network)
+            (hsPkgs.base)
             (hsPkgs.async)
             (hsPkgs.network)
+            (hsPkgs.ouroboros-network)
             ];
           };
         };
