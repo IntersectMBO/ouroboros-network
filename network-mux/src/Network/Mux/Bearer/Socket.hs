@@ -16,7 +16,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
-import qualified Network.Socket as Socket hiding (recv)
+import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 
 import qualified Network.Mux as Mx

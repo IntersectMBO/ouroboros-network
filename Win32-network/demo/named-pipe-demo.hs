@@ -51,7 +51,7 @@ server = Win32.withIOManager loop
                                      512
                                      0
                                      Nothing
-      Win32.associateWithIOCompletionPort hpipe iocp
+      Win32.associateWithIOCompletionPort (Left hpipe) iocp
       putStrLn_ "created pipe, waiting for client"
       Win32.connectNamedPipe hpipe
       putStrLn_ "client connected"
@@ -98,7 +98,7 @@ client = Win32.withIOManager $ \iocp -> do
                               Win32.oPEN_EXISTING
                               Win32.fILE_FLAG_OVERLAPPED
                               Nothing
-    Win32.associateWithIOCompletionPort hpipe iocp
+    Win32.associateWithIOCompletionPort (Left hpipe) iocp
     putStrLn "opened pipe"
     clientLoop hpipe
       `finally` Win32.closeHandle hpipe

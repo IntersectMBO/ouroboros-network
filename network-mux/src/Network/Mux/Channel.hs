@@ -24,7 +24,7 @@ import           Data.Time.Clock (DiffTime)
 import qualified System.Process as IO (createPipe)
 import qualified System.IO      as IO
                    ( Handle, withFile, IOMode(..), hFlush, hIsEOF )
-import qualified Network.Socket            as Socket hiding (send, recv)
+import qualified Network.Socket            as Socket
 import qualified Network.Socket.ByteString as Socket
 
 import           Control.Monad.Class.MonadSTM

@@ -140,10 +140,20 @@ void HsAsyncWrite(HANDLE handle, void *buf, int size,
     }
 }
 
-void HsAssociate(HANDLE handle, HANDLE port)
+BOOL HsAssociateHandle(HANDLE handle, HANDLE port)
 {
-  CreateIoCompletionPort(handle, port, MAGIC_COMPLETION_KEY, 0);
-  return;
+  return (CreateIoCompletionPort(handle, port, MAGIC_COMPLETION_KEY, 0)
+          == port);
+}
+
+// 'CreateIoCompletionPort' can accept any system abstraction that represents
+// overlapped I/O endpoint, including sockets.
+// https://docs.microsoft.com/en-us/windows/win32/fileio/createiocompletionport#createiocompletionport-function
+//
+BOOL HsAssociateSocket(SOCKET socket, HANDLE port)
+{
+  return (CreateIoCompletionPort((HANDLE) socket, port, MAGIC_COMPLETION_KEY, 0)
+          == port);
 }
 
 

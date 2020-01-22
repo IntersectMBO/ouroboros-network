@@ -77,6 +77,10 @@ type OpenMode = UINT
 -- * 'pIPE_READMODE_BYTE'
 -- * 'pIPE_READMODE_MESSAGE'
 --
+-- We're not exposing 'PIPE_NOWAIT' (and the default 'PIPE_WAIT'), as these
+-- should not be used for async I/O (ref:
+-- <https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipe-type-read-and-wait-modes>).
+--
 type PipeMode = UINT
 
 #{enum PipeMode,
