@@ -312,7 +312,7 @@ prop_mux_snd_recv messages = ioProperty $ do
                       [ Mx.MuxMiniProtocol {
                           Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_mp)
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_mp
                         }
                       ]
 
@@ -320,15 +320,15 @@ prop_mux_snd_recv messages = ioProperty $ do
                       [ Mx.MuxMiniProtocol {
                           Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_mp)
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_mp
                         }
                       ]
 
     clientAsync <-
-      async $ Mx.runMuxWithQueues activeTracer "client"
+      async $ Mx.runMuxWithQueues (contramap (Mx.WithMuxBearer "client") activeTracer)
                                   clientApp client_w client_r sduLen Nothing
     serverAsync <-
-      async $ Mx.runMuxWithQueues activeTracer "server"
+      async $ Mx.runMuxWithQueues (contramap (Mx.WithMuxBearer "server") activeTracer)
                                   serverApp server_w server_r sduLen Nothing
 
     r <- waitBoth clientAsync serverAsync
@@ -441,12 +441,12 @@ prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
                       [ Mx.MuxMiniProtocol {
                           Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_mp0)
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_mp0
                         }
                       , Mx.MuxMiniProtocol {
                           Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_mp1)
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_mp1
                         }
                       ]
 
@@ -454,17 +454,21 @@ prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
                       [ Mx.MuxMiniProtocol {
                           Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_mp0)
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_mp0
                         }
                       , Mx.MuxMiniProtocol {
                           Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_mp1)
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_mp1
                         }
                       ]
 
-    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" clientApp client_w client_r sduLen Nothing
-    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" serverApp server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues
+                             (contramap (Mx.WithMuxBearer "client") activeTracer)
+                             clientApp client_w client_r sduLen Nothing
+    serverAsync <- async $ Mx.runMuxWithQueues
+                             (contramap (Mx.WithMuxBearer "server") activeTracer)
+                             serverApp server_w server_r sduLen Nothing
 
 
     r <- waitBoth clientAsync serverAsync
@@ -513,12 +517,12 @@ prop_mux_starvation (Uneven response0 response1) =
                       [ Mx.MuxMiniProtocol {
                           Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_short)
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_short
                         }
                       , Mx.MuxMiniProtocol  {
                           Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_long)
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_long
                         }
                       ]
 
@@ -526,17 +530,23 @@ prop_mux_starvation (Uneven response0 response1) =
                       [ Mx.MuxMiniProtocol {
                           Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_short)
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_short
                         }
                       , Mx.MuxMiniProtocol {
                           Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_long)
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_long
                         }
                       ]
 
-    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" clientApp client_w client_r sduLen (Just traceQueueVar)
-    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" serverApp server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues
+                             (contramap (Mx.WithMuxBearer "client") activeTracer)
+                             clientApp client_w client_r
+                             sduLen (Just traceQueueVar)
+    serverAsync <- async $ Mx.runMuxWithQueues
+                             (contramap (Mx.WithMuxBearer "server") activeTracer)
+                             serverApp server_w server_r
+                             sduLen Nothing
 
     -- First verify that all messages where received correctly
     r <- waitBoth clientAsync serverAsync
@@ -633,7 +643,7 @@ prop_demux_sdu a = do
                            [ Mx.MuxMiniProtocol {
                                Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                                Mx.miniProtocolLimits = smallMiniProtocolLimits,
-                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
+                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (serverRsp stopVar)
                              }
                            ]
 
@@ -659,7 +669,7 @@ prop_demux_sdu a = do
                            [ Mx.MuxMiniProtocol {
                                Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                                Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
+                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (serverRsp stopVar)
                              }
                            ]
 
@@ -687,7 +697,7 @@ prop_demux_sdu a = do
                            [ Mx.MuxMiniProtocol {
                                Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                                Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
+                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (serverRsp stopVar)
                              }
                            ]
 
@@ -709,7 +719,9 @@ prop_demux_sdu a = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
 
-        said <- async $ Mx.runMuxWithQueues activeTracer "server" server_mps server_w server_r 1280 Nothing
+        said <- async $ Mx.runMuxWithQueues
+                          (contramap (Mx.WithMuxBearer "server") activeTracer)
+                          server_mps server_w server_r 1280 Nothing
 
         return (server_r, said)
 

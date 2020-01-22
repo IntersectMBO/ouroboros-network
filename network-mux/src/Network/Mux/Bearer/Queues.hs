@@ -87,17 +87,16 @@ runMuxWithQueues
      , Eq  (Async m ())
      )
   => Tracer m (Mx.WithMuxBearer String Mx.MuxTrace)
-  -> peerid
-  -> Mx.MuxApplication appType peerid m a b
+  -> Mx.MuxApplication appType m a b
   -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
   -> Word16
   -> Maybe (TBQueue m (Mx.MiniProtocolNum, Mx.MiniProtocolMode, Time))
   -> m (Maybe SomeException)
-runMuxWithQueues tracer peerid app wq rq mtu trace = do
+runMuxWithQueues tracer app wq rq mtu trace = do
     let muxTracer = Mx.WithMuxBearer "Queue" `contramap` tracer
         bearer    = queuesAsMuxBearer muxTracer wq rq mtu trace
-    res_e <- try $ Mx.muxStart muxTracer peerid app bearer
+    res_e <- try $ Mx.muxStart muxTracer app bearer
     case res_e of
          Left  e -> return (Just e)
          Right _ -> return Nothing

@@ -239,7 +239,7 @@ connectToNode' versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshak
              throwIO err
          Right app -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             Mx.muxStart muxTracer connectionId (toApplication app connectionId) bearer
+             Mx.muxStart muxTracer (toApplication app connectionId) bearer
 
 
 -- |
@@ -315,7 +315,7 @@ beginConnection muxTracer handshakeTracer versionDataCodec acceptVersion fn t ad
             throwIO err
           Right app -> do
             traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
-            Mx.muxStart muxTracer' peerid (toApplication app peerid) bearer
+            Mx.muxStart muxTracer' (toApplication app peerid) bearer
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 
 

@@ -126,8 +126,8 @@ demo chain0 updates delay = do
                         (encodeTip encode) (decodeTip decode))
                         producerPeer)
 
-    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "consumer" (Mx.toApplication consumerApp "consumer") client_w client_r sduLen Nothing
-    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "producer" (Mx.toApplication producerApp "producer") server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues activeTracer (Mx.toApplication consumerApp "consumer") client_w client_r sduLen Nothing
+    serverAsync <- async $ Mx.runMuxWithQueues activeTracer (Mx.toApplication producerApp "producer") server_w server_r sduLen Nothing
 
     updateAid <- async $ sequence_
         [ do

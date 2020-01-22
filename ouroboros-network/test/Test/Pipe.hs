@@ -124,8 +124,8 @@ demo chain0 updates = do
                                               (encodeTip encode) (decodeTip decode))
                     (ChainSync.chainSyncServerPeer server)
 
-    _ <- async $ Mx.runMuxWithPipes activeTracer "producer" (toApplication producerApp "producer") hndRead1 hndWrite2
-    _ <- async $ Mx.runMuxWithPipes activeTracer "consumer" (toApplication consumerApp "consumer") hndRead2 hndWrite1
+    _ <- async $ Mx.runMuxWithPipes activeTracer (toApplication producerApp "producer") hndRead1 hndWrite2
+    _ <- async $ Mx.runMuxWithPipes activeTracer (toApplication consumerApp "consumer") hndRead2 hndWrite1
 
     void $ fork $ sequence_
         [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest

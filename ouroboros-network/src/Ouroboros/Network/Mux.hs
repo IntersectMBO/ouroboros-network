@@ -69,7 +69,7 @@ toApplication :: (Enum ptcl, Bounded ptcl,
                   ProtocolEnum ptcl, MiniProtocolLimits ptcl)
               => OuroborosApplication appType peerid ptcl m LBS.ByteString a b
               -> peerid
-              -> MuxApplication appType peerid m a b
+              -> MuxApplication appType m a b
 toApplication (OuroborosInitiatorApplication f) peerid =
     MuxApplication
       [ MuxMiniProtocol {
@@ -80,7 +80,7 @@ toApplication (OuroborosInitiatorApplication f) peerid =
                                },
           miniProtocolRun    =
             InitiatorProtocolOnly
-              (\_peerid channel -> f peerid ptcl (fromChannel channel))
+              (\channel -> f peerid ptcl (fromChannel channel))
         }
       | ptcl <- [minBound..maxBound] ]
 
@@ -94,7 +94,7 @@ toApplication (OuroborosResponderApplication f) peerid =
                                },
           miniProtocolRun    =
             ResponderProtocolOnly
-              (\_peerid channel -> f peerid ptcl (fromChannel channel))
+              (\channel -> f peerid ptcl (fromChannel channel))
         }
       | ptcl <- [minBound..maxBound] ]
 
@@ -108,8 +108,8 @@ toApplication (OuroborosInitiatorAndResponderApplication f g) peerid =
                                },
           miniProtocolRun    =
             InitiatorAndResponderProtocol
-              (\_peerid channel -> f peerid ptcl (fromChannel channel))
-              (\_peerid channel -> g peerid ptcl (fromChannel channel))
+              (\channel -> f peerid ptcl (fromChannel channel))
+              (\channel -> g peerid ptcl (fromChannel channel))
         }
       | ptcl <- [minBound..maxBound] ]
 

@@ -89,7 +89,7 @@ import           Network.Mux.Trace
 -- 'Wanton'
 --
 muxStart
-    :: forall m appType peerid a b.
+    :: forall m appType a b.
        ( MonadAsync m
        , MonadSTM m
        , MonadThrow m
@@ -98,11 +98,10 @@ muxStart
        , Eq (Async m ())
        )
     => Tracer m MuxTrace
-    -> peerid
-    -> MuxApplication appType peerid m a b
+    -> MuxApplication appType m a b
     -> MuxBearer m
     -> m ()
-muxStart tracer peerid (MuxApplication ptcls) bearer = do
+muxStart tracer (MuxApplication ptcls) bearer = do
     ctlPtclInfo <- mkMiniProtocolInfo (MiniProtocolNum 0)
                                       (MiniProtocolLimits 0xffff 0xffff)
     appPtclInfo <- sequence [ mkMiniProtocolInfo (miniProtocolNum ptcl)
@@ -195,27 +194,27 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
       -> Int64
       -> StrictTVar m BL.ByteString
       -> StrictTVar m BL.ByteString
-      -> RunMiniProtocol appType peerid m a b
+      -> RunMiniProtocol appType m a b
       -> [(m (), String)]
     mpsJob cnt tq mc msgMax initQ respQ run =
         case run of
           InitiatorProtocolOnly initiator ->
             [ ( do chan <- mkChannel ModeInitiator
-                   _    <- initiator peerid chan
+                   _    <- initiator chan
                    mpsJobExit cnt
               , show mc ++ " Initiator" )]
           ResponderProtocolOnly responder ->
             [ ( do chan <- mkChannel ModeResponder
-                   _    <- responder peerid chan
+                   _    <- responder chan
                    mpsJobExit cnt
               , show mc ++ " Responder" )]
           InitiatorAndResponderProtocol initiator responder ->
             [ ( do chan <- mkChannel ModeInitiator
-                   _    <- initiator peerid chan
+                   _    <- initiator chan
                    mpsJobExit cnt
               , show mc ++ " Initiator" )
             , ( do chan <- mkChannel ModeResponder
-                   _    <- responder peerid chan
+                   _    <- responder chan
                    mpsJobExit cnt
               , show mc ++ " Responder" )
             ]
