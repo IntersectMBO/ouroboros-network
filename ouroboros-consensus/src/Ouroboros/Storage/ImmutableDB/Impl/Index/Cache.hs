@@ -22,7 +22,8 @@ module Ouroboros.Storage.ImmutableDB.Impl.Index.Cache
     -- * Background thread
   , expireUnusedEpochs
     -- * Operations
-  , reset
+  , close
+  , restart
     -- ** On the primary index
   , readOffsets
   , readFirstFilledSlot
@@ -52,6 +53,8 @@ import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
 
+import           Control.Monad.Class.MonadSTM.Strict (StrictTMVar, isEmptyTMVar,
+                     newEmptyTMVarM, putTMVar, tryTakeTMVar)
 import           Control.Monad.Class.MonadThrow (bracketOnError)
 import           Control.Monad.Class.MonadTime (Time (..))
 
@@ -353,6 +356,7 @@ data CacheEnv m hash h = CacheEnv
   , tracer      :: Tracer m TraceCacheEvent
   , cacheVar    :: StrictMVar m (Cached hash)
   , cacheConfig :: CacheConfig
+  , bgThreadVar :: StrictTMVar m (Thread m Void)
   }
 
 -- | Creates a new 'CacheEnv' and launches a background thread that expires
@@ -375,8 +379,10 @@ newEnv hasFS err hashInfo registry tracer cacheConfig epoch = do
 
     currentEpochInfo <- loadCurrentEpochInfo hasFS err hashInfo epoch
     cacheVar <- newMVarWithInvariants $ emptyCached epoch currentEpochInfo
+    bgThreadVar <- newEmptyTMVarM
     let cacheEnv = CacheEnv {..}
-    void $ forkLinkedThread registry $ expireUnusedEpochs cacheEnv
+    bgThread <- forkLinkedThread registry $ expireUnusedEpochs cacheEnv
+    atomically $ putTMVar bgThreadVar bgThread
     return cacheEnv
   where
     CacheConfig { pastEpochsToCache } = cacheConfig
@@ -581,19 +587,34 @@ getEpochInfo cacheEnv epoch = do
   Operations
 ------------------------------------------------------------------------------}
 
--- | Empties the cache and restarts the background expiration thread.
+-- | Stops the background expiration thread.
+--
+-- This operation is idempotent.
+close :: IOLike m => CacheEnv m hash h -> m ()
+close CacheEnv { bgThreadVar } = do
+    mbBgThread <- atomically $ tryTakeTMVar bgThreadVar
+    mapM_ cancelThread mbBgThread
+
+-- | Restarts the background expiration thread, drops all previously cached
+-- information, loads the given epoch.
 --
 -- PRECONDITION: the background thread expiring unused past epochs must have
 -- been terminated.
-reset
+restart
   :: IOLike m
   => CacheEnv m hash h
   -> EpochNo  -- ^ The new current epoch
   -> m ()
-reset cacheEnv@CacheEnv { hasFS, err, hashInfo, registry, cacheVar } epoch = do
+restart cacheEnv epoch = do
     currentEpochInfo <- loadCurrentEpochInfo hasFS err hashInfo epoch
     void $ swapMVar cacheVar $ emptyCached epoch currentEpochInfo
-    void $ forkLinkedThread registry $ expireUnusedEpochs cacheEnv
+    noRunningBgThread <- atomically $ isEmptyTMVar bgThreadVar
+    if noRunningBgThread then do
+      bgThread <- forkLinkedThread registry $ expireUnusedEpochs cacheEnv
+      atomically $ putTMVar bgThreadVar bgThread
+    else error "background thread still running"
+  where
+    CacheEnv { hasFS, err, hashInfo, registry, cacheVar, bgThreadVar } = cacheEnv
 
 {------------------------------------------------------------------------------
   On the primary index

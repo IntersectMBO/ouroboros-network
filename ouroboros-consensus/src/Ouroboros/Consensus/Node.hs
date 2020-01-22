@@ -1,6 +1,5 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
-{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -28,7 +27,7 @@ module Ouroboros.Consensus.Node
   , DnsSubscriptionTarget (..)
   , ConnectionId (..)
     -- * Internal helpers
-  , withChainDB
+  , openChainDB
   , mkChainDbArgs
   , mkNodeArgs
   ) where
@@ -124,62 +123,58 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
         (nodeStartTime (Proxy @blk) cfg)
         (focusSlotLengths slotLengths)
 
-      withChainDB
-        chainDbTracer
-        registry
-        btime
-        dbPath
-        cfg
-        initLedger
-        customiseChainDbArgs
-        $ \chainDB -> do
+      (_, chainDB) <- allocate registry
+        (\_ -> openChainDB
+          chainDbTracer registry btime dbPath cfg initLedger
+          customiseChainDbArgs)
+        ChainDB.closeDB
 
-          let nodeArgs = customiseNodeArgs $ mkNodeArgs
-                registry
-                cfg
-                initState
-                tracers
-                btime
-                chainDB
-                isProducer
+      let nodeArgs = customiseNodeArgs $ mkNodeArgs
+            registry
+            cfg
+            initState
+            tracers
+            btime
+            chainDB
+            isProducer
 
-          nodeKernel <- initNodeKernel nodeArgs
-          onNodeKernel registry nodeKernel
-          let networkApps :: NetworkApplication
-                               IO ConnectionId
-                               ByteString ByteString ByteString ByteString ByteString
-                               ()
-              networkApps = consensusNetworkApps
-                nodeKernel
-                nullProtocolTracers
-                (protocolCodecs (getNodeConfig nodeKernel))
-                (protocolHandlers nodeArgs nodeKernel)
+      nodeKernel <- initNodeKernel nodeArgs
+      onNodeKernel registry nodeKernel
+      let networkApps :: NetworkApplication
+                           IO ConnectionId
+                           ByteString ByteString ByteString ByteString ByteString
+                           ()
+          networkApps = consensusNetworkApps
+            nodeKernel
+            nullProtocolTracers
+            (protocolCodecs (getNodeConfig nodeKernel))
+            (protocolHandlers nodeArgs nodeKernel)
 
-              diffusionApplications = DiffusionApplications
-               { daResponderApplication =
-                   simpleSingletonVersions
-                     NodeToNodeV_1
-                     nodeToNodeVersionData
-                     (DictVersion nodeToNodeCodecCBORTerm)
-                     (responderNetworkApplication networkApps)
-               , daInitiatorApplication =
-                   simpleSingletonVersions
-                     NodeToNodeV_1
-                     nodeToNodeVersionData
-                     (DictVersion nodeToNodeCodecCBORTerm)
-                     (initiatorNetworkApplication networkApps)
-               , daLocalResponderApplication =
-                   simpleSingletonVersions
-                     NodeToClientV_1
-                     nodeToClientVersionData
-                     (DictVersion nodeToClientCodecCBORTerm)
-                     (localResponderNetworkApplication networkApps)
-               , daErrorPolicies = consensusErrorPolicy
-               }
+          diffusionApplications = DiffusionApplications
+           { daResponderApplication =
+               simpleSingletonVersions
+                 NodeToNodeV_1
+                 nodeToNodeVersionData
+                 (DictVersion nodeToNodeCodecCBORTerm)
+                 (responderNetworkApplication networkApps)
+           , daInitiatorApplication =
+               simpleSingletonVersions
+                 NodeToNodeV_1
+                 nodeToNodeVersionData
+                 (DictVersion nodeToNodeCodecCBORTerm)
+                 (initiatorNetworkApplication networkApps)
+           , daLocalResponderApplication =
+               simpleSingletonVersions
+                 NodeToClientV_1
+                 nodeToClientVersionData
+                 (DictVersion nodeToClientCodecCBORTerm)
+                 (localResponderNetworkApplication networkApps)
+           , daErrorPolicies = consensusErrorPolicy
+           }
 
-          runDataDiffusion diffusionTracers
-                           diffusionArguments
-                           diffusionApplications
+      runDataDiffusion diffusionTracers
+                       diffusionArguments
+                       diffusionApplications
   where
     ProtocolInfo
       { pInfoConfig     = cfg
@@ -192,8 +187,8 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
     nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = networkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = networkMagic }
 
-withChainDB
-  :: forall blk a. RunNode blk
+openChainDB
+  :: forall blk. RunNode blk
   => Tracer IO (ChainDB.TraceEvent blk)
   -> ResourceRegistry IO
   -> BlockchainTime IO
@@ -204,14 +199,13 @@ withChainDB
      -- ^ Initial ledger
   -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
       -- ^ Customise the 'ChainDbArgs'
-  -> (ChainDB IO blk -> IO a)
-  -> IO a
-withChainDB tracer registry btime dbPath cfg initLedger customiseArgs k = do
+  -> IO (ChainDB IO blk)
+openChainDB tracer registry btime dbPath cfg initLedger customiseArgs = do
     epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) cfg
     let args = customiseArgs $
           mkChainDbArgs tracer registry btime dbPath cfg initLedger
           epochInfo
-    ChainDB.withDB args k
+    ChainDB.openDB args
 
 mkChainDbArgs
   :: forall blk. RunNode blk

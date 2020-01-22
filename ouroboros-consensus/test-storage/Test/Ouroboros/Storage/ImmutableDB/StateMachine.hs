@@ -745,12 +745,13 @@ postcondition model cmdErr resp =
 
 semantics :: StrictTVar IO Errors
           -> StrictTVar IO Id
+          -> ResourceRegistry IO
           -> HasFS IO h
           -> ImmutableDB   Hash IO
           -> ImmDB.Internal Hash IO
           -> At CmdErr IO Concrete
           -> IO (At Resp IO Concrete)
-semantics varErrors varNextId hasFS db internal (At cmdErr) =
+semantics varErrors varNextId registry hasFS db internal (At cmdErr) =
     At . fmap (reference . Opaque) . Resp <$> case opaque <$> cmdErr of
 
       CmdErr Nothing       cmd its -> try $
@@ -794,6 +795,8 @@ semantics varErrors varNextId hasFS db internal (At cmdErr) =
       -- Close the database in case no errors occurred and it wasn't
       -- closed already. This is idempotent anyway.
       closeDB db
+      -- Release any handles that weren't closed because of a simulated error.
+      releaseAll registry
       reopen db ValidateAllEpochs
       deleteAfter internal tipBefore
       -- If the cmd deleted things, we must do it here to have a deterministic
@@ -820,19 +823,20 @@ semanticsCorruption hasFS db _internal (MkCorruption corrs) = do
 -- | The state machine proper
 sm :: StrictTVar IO Errors
    -> StrictTVar IO Id
+   -> ResourceRegistry IO
    -> HasFS IO h
    -> ImmutableDB    Hash IO
    -> ImmDB.Internal Hash IO
    -> DBModel Hash
    -> StateMachine (Model IO) (At CmdErr IO) IO (At Resp IO)
-sm varErrors varNextId hasFS db internal dbm = StateMachine
+sm varErrors varNextId registry hasFS db internal dbm = StateMachine
   { initModel     = initModel dbm
   , transition    = transition
   , precondition  = precondition
   , postcondition = postcondition
   , generator     = Just . generator
   , shrinker      = shrinker
-  , semantics     = semantics varErrors varNextId hasFS db internal
+  , semantics     = semantics varErrors varNextId registry hasFS db internal
   , mock          = mock
   , invariant     = Nothing
   , distribution  = Nothing
@@ -1182,8 +1186,8 @@ showLabelledExamples' mbReplay numTests focus stateMachine = do
 
 showLabelledExamples :: IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True) $
-    sm (error "varErrors unused") (error "varNextId unused") hasFsUnused
-      dbUnused internalUnused
+    sm (error "varErrors unused") (error "varNextId unused")
+       (error "registry unused") hasFsUnused dbUnused internalUnused
 
 prop_sequential :: Index.CacheConfig -> Property
 prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
@@ -1203,7 +1207,7 @@ prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.mona
           (db, internal) <- QC.run $ openDBInternal registry hasFS
             EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
             ValidateMostRecentEpoch parser tracer cacheConfig
-          let sm' = sm varErrors varNextId hasFS db internal dbm
+          let sm' = sm varErrors varNextId registry hasFS db internal dbm
           (hist, model, res) <- runCommands sm' cmds
           trace <- QC.run getTrace
           QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
@@ -1254,7 +1258,7 @@ prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.mona
   where
     dbm = mkDBModel
     smUnused = sm (error "varErrors unused") (error "varNextId unused")
-      hasFsUnused dbUnused internalUnused dbm
+      (error "registry unused") hasFsUnused dbUnused internalUnused dbm
     isEBB = testHeaderEpochNoIfEBB fixedEpochSize . getHeader
     getBinaryInfo = void . testBlockToBinaryInfo
 

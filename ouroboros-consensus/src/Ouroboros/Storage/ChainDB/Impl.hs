@@ -8,6 +8,7 @@ module Ouroboros.Storage.ChainDB.Impl (
     ChainDbArgs(..)
   , defaultArgs
   , withDB
+  , openDB
     -- * Trace types
   , TraceEvent (..)
   , TraceAddBlockEvent (..)
@@ -73,6 +74,12 @@ withDB
   -> (ChainDB m blk -> m a)
   -> m a
 withDB args = bracket (fst <$> openDBInternal args True) closeDB
+
+openDB
+  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
+  => ChainDbArgs m blk
+  -> m (ChainDB m blk)
+openDB args = fst <$> openDBInternal args True
 
 openDBInternal
   :: forall m blk. (IOLike m, ProtocolLedgerView blk)

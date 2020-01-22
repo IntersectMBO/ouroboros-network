@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE RankNTypes                #-}
@@ -18,7 +19,7 @@ module Ouroboros.Storage.ImmutableDB.Impl.State
   , getOpenState
   , modifyOpenState
   , withOpenState
-  , closeOpenStateHandles
+  , cleanUpOpenState
   ) where
 
 import           Control.Monad.State.Strict
@@ -33,7 +34,7 @@ import           Control.Monad.Class.MonadThrow hiding (onException)
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     allocate, unsafeReleaseAll)
+                     allocate)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -206,11 +207,7 @@ modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
           -- In case of an unexpected error (not an exception), close the DB
           -- for safety
           ExitCaseSuccess (Left (UnexpectedError {})) ->
-              -- This function ('modifyOpenState') can be called from all
-              -- threads, not necessarily the one that opened the ImmutableDB
-              -- and the registry, so we must use 'unsafeReleaseAll' instead of
-              -- 'releaseAll'.
-              (DbClosed, unsafeReleaseAll _dbRegistry)
+              (DbClosed, cleanUp hasFS st)
           -- In case a user error, just restore the previous state
           ExitCaseSuccess (Left (UserError {}))       -> (st, return ())
 
@@ -259,11 +256,8 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
 
     shutDown :: m ()
     shutDown = do
-      void $ swapMVar _dbInternalState DbClosed
-      -- This function ('withOpenState') can be called from all threads, not
-      -- necessarily the one that opened the ImmutableDB and the registry, so
-      -- we must use 'unsafeReleaseAll' instead of 'releaseAll'.
-      unsafeReleaseAll _dbRegistry
+      st <- swapMVar _dbInternalState DbClosed
+      cleanUp hasFS st
 
     access :: HasCallStack
            => InternalState m hash h
@@ -271,11 +265,17 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
     access DbClosed     = throwUserError _dbErr ClosedDBError
     access (DbOpen ost) = action hasFS ost
 
-closeOpenStateHandles :: Monad m => HasFS m h -> OpenState m hash h -> m ()
-closeOpenStateHandles HasFS { hClose } OpenState {..}  = do
+cleanUpOpenState :: Monad m => HasFS m h -> OpenState m hash h -> m ()
+cleanUpOpenState HasFS { hClose } OpenState {..}  = do
+    Index.close _index
     -- If one of the 'hClose' calls fails, the error will bubble up to the
     -- bracketed call to 'withRegistry', which will close the
     -- 'ResourceRegistry' and thus all the remaining handles in it.
     hClose _currentEpochHandle
     hClose _currentPrimaryHandle
     hClose _currentSecondaryHandle
+
+cleanUp :: Monad m => HasFS m h -> InternalState m hash h -> m ()
+cleanUp hasFS = \case
+    DbClosed         -> return ()
+    DbOpen openState -> cleanUpOpenState hasFS openState

@@ -1,17 +1,17 @@
-{-# LANGUAGE BangPatterns              #-}
-{-# LANGUAGE ConstraintKinds           #-}
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE DeriveAnyClass            #-}
-{-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE GADTs                     #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE NamedFieldPuns            #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE RecordWildCards           #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE TypeApplications          #-}
-{-# LANGUAGE TypeFamilies              #-}
-{-# LANGUAGE UndecidableInstances      #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Setup network
 module Test.ThreadNet.Network (
@@ -93,8 +93,8 @@ import           Ouroboros.Consensus.Util.STM
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Storage.Common (EpochNo (..))
-import           Ouroboros.Storage.EpochInfo (EpochInfo, epochInfoFirst,
-                     epochInfoEpoch, newEpochInfo)
+import           Ouroboros.Storage.EpochInfo (EpochInfo, epochInfoEpoch,
+                     epochInfoFirst, newEpochInfo)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
@@ -426,9 +426,6 @@ runThreadNetwork ThreadNetworkArgs
             let chainDB = getChainDB kernel
             finalChain <- ChainDB.toChain chainDB
 
-            -- TODO workaround Issue 1470
-            releaseAll nodeRegistry
-
             pure (again, finalChain)
 
           atomically $ writeTVar vertexStatusVar $ VDown finalChain
@@ -596,8 +593,8 @@ runThreadNetwork ThreadNetworkArgs
                 s <- atomically $ getCurrentSlot btime
                 traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno))
             nodeInfoDBs
-          openChainDB _ = fmap fst $ ChainDB.openDBInternal chainDbArgs True
-      chainDB <- fmap snd $ allocate registry openChainDB ChainDB.closeDB
+      chainDB <- snd <$>
+        allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
 
       -- We have a thread (see below) that forges EBBs for tests that involve
       -- them. This variable holds the slot of the next EBB to be forged.
