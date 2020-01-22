@@ -117,17 +117,17 @@ toApplication (OuroborosInitiatorAndResponderApplication f g) =
 -- This type is only necessary to use the @'simpleMuxClient'@ and
 -- @'simpleMuxServer'@ smart constructors.
 --
-data MuxPeer peerid failure m bytes a where
-    MuxPeer :: Tracer m (TraceSendRecv ps peerid failure)
+data MuxPeer failure m bytes a where
+    MuxPeer :: Tracer m (TraceSendRecv ps)
             -> Codec ps failure m bytes
             -> Peer ps pr st m a
-            -> MuxPeer peerid failure m bytes a
+            -> MuxPeer failure m bytes a
 
     MuxPeerPipelined
-            :: Tracer m (TraceSendRecv ps peerid failure)
+            :: Tracer m (TraceSendRecv ps)
             -> Codec ps failure m bytes
             -> PeerPipelined ps pr st m a
-            -> MuxPeer peerid failure m bytes a
+            -> MuxPeer failure m bytes a
 
 
 -- |
@@ -139,15 +139,14 @@ runMuxPeer
      , MonadAsync m
      , Exception failure
      )
-  => MuxPeer peerid failure m bytes a
-  -> peerid
+  => MuxPeer failure m bytes a
   -> Channel m bytes
   -> m a
-runMuxPeer (MuxPeer tracer codec peer) peerid channel =
-    runPeer tracer codec peerid channel peer
+runMuxPeer (MuxPeer tracer codec peer) channel =
+    runPeer tracer codec channel peer
 
-runMuxPeer (MuxPeerPipelined tracer codec peer) peerid channel =
-    runPipelinedPeer tracer codec peerid channel peer
+runMuxPeer (MuxPeerPipelined tracer codec peer) channel =
+    runPipelinedPeer tracer codec channel peer
 
 
 -- |
@@ -160,10 +159,10 @@ simpleInitiatorApplication
   => MonadCatch m
   => MonadAsync m
   => Exception failure
-  => (ptcl -> MuxPeer peerid failure m bytes a)
+  => (ptcl -> MuxPeer failure m bytes a)
   -> OuroborosApplication InitiatorApp peerid ptcl m bytes a Void
-simpleInitiatorApplication fn = OuroborosInitiatorApplication $ \peerid ptcl channel ->
-  runMuxPeer (fn ptcl) peerid channel
+simpleInitiatorApplication fn = OuroborosInitiatorApplication $ \_peerid ptcl channel ->
+  runMuxPeer (fn ptcl) channel
 
 
 -- |
@@ -174,7 +173,7 @@ simpleResponderApplication
   => MonadCatch m
   => MonadAsync m
   => Exception failure
-  => (ptcl -> MuxPeer peerid failure m bytes a)
+  => (ptcl -> MuxPeer failure m bytes a)
   -> OuroborosApplication ResponderApp peerid ptcl m bytes Void a
-simpleResponderApplication fn = OuroborosResponderApplication $ \peerid ptcl channel ->
-  runMuxPeer (fn ptcl) peerid channel
+simpleResponderApplication fn = OuroborosResponderApplication $ \_peerid ptcl channel ->
+  runMuxPeer (fn ptcl) channel

@@ -280,7 +280,6 @@ prop_channel createChannels chain points = do
       runConnectedPeers
         createChannels nullTracer
         codec
-        "client" "server"
         (blockFetchClientPeer (testClient chain points))
         (blockFetchServerPeer (testServer chain))
     return $ reverse bodies === concat (receivedBlockBodies chain points)

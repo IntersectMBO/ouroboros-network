@@ -214,10 +214,9 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     let -- Server Node; only req-resp server
         responderApp :: OuroborosApplication Mx.ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void ()
         responderApp = OuroborosResponderApplication $
-          \peerid ReqRespPr channel -> do
+          \_peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
-                         peerid
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
@@ -226,10 +225,9 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
         -- Client Node; only req-resp client
         initiatorApp :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
         initiatorApp = OuroborosInitiatorApplication $
-          \peerid ReqRespPr channel -> do
+          \_peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
-                         peerid
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
             atomically $ putTMVar cv r
@@ -282,10 +280,9 @@ prop_socket_recv_close f _ = ioProperty $ do
 
     let app :: OuroborosApplication ResponderApp () TestProtocols2 IO BL.ByteString Void ()
         app = OuroborosResponderApplication $
-          \peerid ReqRespPr channel -> do
+          \_peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
-                         peerid
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
@@ -338,10 +335,9 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     let app :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
         app = OuroborosInitiatorApplication $
-                \peerid ReqRespPr channel -> do
+                \_peerid ReqRespPr channel -> do
                   _ <- runPeer nullTracer
                           ReqResp.codecReqResp
-                          peerid
                           channel
                           (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs)
                                   :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO [Int])

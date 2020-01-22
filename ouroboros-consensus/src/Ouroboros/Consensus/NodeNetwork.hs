@@ -288,13 +288,13 @@ protocolCodecsId = ProtocolCodecs {
 type ProtocolTracers m peer blk failure = ProtocolTracers' peer blk failure (Tracer m)
 
 data ProtocolTracers' peer blk failure f = ProtocolTracers {
-    ptChainSyncTracer            :: f (TraceSendRecv (ChainSync (Header blk) (Tip blk))               peer failure)
-  , ptChainSyncSerialisedTracer  :: f (TraceSendRecv (ChainSync (Serialised (Header blk)) (Tip blk))  peer failure)
-  , ptBlockFetchTracer           :: f (TraceSendRecv (BlockFetch blk)                                 peer failure)
-  , ptBlockFetchSerialisedTracer :: f (TraceSendRecv (BlockFetch (Serialised blk))                    peer failure)
-  , ptTxSubmissionTracer         :: f (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))         peer failure)
-  , ptLocalChainSyncTracer       :: f (TraceSendRecv (ChainSync (Serialised blk) (Tip blk))           peer failure)
-  , ptLocalTxSubmissionTracer    :: f (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)) peer failure)
+    ptChainSyncTracer            :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Header blk) (Tip blk))))
+  , ptChainSyncSerialisedTracer  :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Serialised (Header blk)) (Tip blk))))
+  , ptBlockFetchTracer           :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch blk)))
+  , ptBlockFetchSerialisedTracer :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch (Serialised blk))))
+  , ptTxSubmissionTracer         :: f (TraceLabelPeer peer (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))))
+  , ptLocalChainSyncTracer       :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Serialised blk) (Tip blk))))
+  , ptLocalTxSubmissionTracer    :: f (TraceLabelPeer peer (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))))
   }
 
 -- | Use a 'nullTracer' for each protocol.
@@ -310,9 +310,8 @@ nullProtocolTracers = ProtocolTracers {
   }
 
 showProtocolTracers :: ( Show blk
-                       , Show (Header blk)
                        , Show peer
-                       , Show failure
+                       , Show (Header blk)
                        , Show (GenTx blk)
                        , Show (GenTxId blk)
                        , Show (ApplyTxErr blk)
@@ -450,9 +449,8 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
           (getNodeCandidates kernel)
           them $ \varCandidate->
         runPipelinedPeer
-          ptChainSyncTracer
+          (contramap (TraceLabelPeer them) ptChainSyncTracer)
           pcChainSyncCodec
-          them
           channel
           $ chainSyncClientPeerPipelined
           $ phChainSyncClient varCandidate
@@ -463,9 +461,8 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       -> m ()
     naChainSyncServer them channel = withRegistry $ \registry ->
       runPeer
-        ptChainSyncSerialisedTracer
+        (contramap (TraceLabelPeer them) ptChainSyncSerialisedTracer)
         pcChainSyncCodecSerialised
-        them
         channel
         $ chainSyncServerPeer
         $ phChainSyncServer registry
@@ -477,9 +474,8 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
     naBlockFetchClient them channel =
       bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx ->
         runPipelinedPeer
-          ptBlockFetchTracer
+          (contramap (TraceLabelPeer them) ptBlockFetchTracer)
           pcBlockFetchCodec
-          them
           channel
           $ phBlockFetchClient clientCtx
 
@@ -489,9 +485,8 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       -> m ()
     naBlockFetchServer them channel = withRegistry $ \registry ->
       runPeer
-        ptBlockFetchSerialisedTracer
+        (contramap (TraceLabelPeer them) ptBlockFetchSerialisedTracer)
         pcBlockFetchCodecSerialised
-        them
         channel
         $ blockFetchServerPeer
         $ phBlockFetchServer registry
@@ -502,9 +497,8 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       -> m ()
     naTxSubmissionClient them channel =
       runPeer
-        ptTxSubmissionTracer
+        (contramap (TraceLabelPeer them) ptTxSubmissionTracer)
         pcTxSubmissionCodec
-        them
         channel
         (txSubmissionClientPeer phTxSubmissionClient)
 
@@ -514,9 +508,8 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       -> m ()
     naTxSubmissionServer them channel =
       runPipelinedPeer
-        ptTxSubmissionTracer
+        (contramap (TraceLabelPeer them) ptTxSubmissionTracer)
         pcTxSubmissionCodec
-        them
         channel
         (txSubmissionServerPeerPipelined phTxSubmissionServer)
 
@@ -526,9 +519,8 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       -> m ()
     naLocalChainSyncServer them channel = withRegistry $ \registry ->
       runPeer
-        ptLocalChainSyncTracer
+        (contramap (TraceLabelPeer them) ptLocalChainSyncTracer)
         pcLocalChainSyncCodec
-        them
         channel
         $ chainSyncServerPeer
         $ phLocalChainSyncServer registry
@@ -539,9 +531,8 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       -> m ()
     naLocalTxSubmissionServer them channel =
       runPeer
-        ptLocalTxSubmissionTracer
+        (contramap (TraceLabelPeer them) ptLocalTxSubmissionTracer)
         pcLocalTxSubmissionCodec
-        them
         channel
         (localTxSubmissionServerPeer (pure phLocalTxSubmissionServer))
 

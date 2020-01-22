@@ -59,7 +59,6 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
 import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Term     as CBOR
-import           Codec.CBOR.Read (DeserialiseFailure)
 import           Codec.Serialise (Serialise)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
@@ -99,9 +98,8 @@ data NetworkConnectTracers ptcl vNumber = NetworkConnectTracers {
       nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId Mx.MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nctHandshakeTracer   :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
-                                                       ConnectionId
-                                                       (DecoderFailureOrTooMuchInput DeserialiseFailure))
+      nctHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer ConnectionId
+                                          (TraceSendRecv (Handshake vNumber CBOR.Term)))
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
     }
@@ -230,9 +228,8 @@ connectToNode' versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshak
     !mapp <- runPeerWithByteLimit
               maxTransmissionUnit
               BL.length
-              nctHandshakeTracer
+              (contramap (Mx.WithMuxBearer connectionId) nctHandshakeTracer)
               codecHandshake
-              connectionId
               (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator))
               (handshakeClientPeer versionDataCodec versions)
     ts_end <- getMonotonicTime
@@ -291,7 +288,7 @@ beginConnection
        , Show vNumber
        )
     => Tracer IO (Mx.WithMuxBearer peerid Mx.MuxTrace)
-    -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (Mx.WithMuxBearer peerid (TraceSendRecv (Handshake vNumber CBOR.Term)))
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber extra peerid ptcl IO BL.ByteString))
@@ -308,9 +305,8 @@ beginConnection muxTracer handshakeTracer versionDataCodec acceptVersion fn t ad
         mapp <- runPeerWithByteLimit
                 maxTransmissionUnit
                 BL.length
-                handshakeTracer
+                (contramap (Mx.WithMuxBearer peerid) handshakeTracer)
                 codecHandshake
-                peerid
                 (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeResponder))
                 (handshakeServerPeer versionDataCodec acceptVersion versions)
         case mapp of
@@ -376,9 +372,8 @@ data NetworkServerTracers ptcl vNumber = NetworkServerTracers {
       nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId Mx.MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nstHandshakeTracer   :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
-                                                       ConnectionId
-                                                       (DecoderFailureOrTooMuchInput DeserialiseFailure)),
+      nstHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer ConnectionId
+                                          (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
       nstErrorPolicyTracer :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
