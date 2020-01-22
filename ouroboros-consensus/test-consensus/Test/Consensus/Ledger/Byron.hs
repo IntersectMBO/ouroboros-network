@@ -35,7 +35,7 @@ import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as DH
-import           Ouroboros.Consensus.Mempool.API (ApplyTxErr)
+import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTxId)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Protocol.Abstract (ChainState,
@@ -472,7 +472,7 @@ instance Arbitrary (GenTx ByronBlock) where
     fromMempoolPayload . reAnnotateUsing toCBOR fromCBOR <$>
     hedgehog (CC.genMempoolPayload protocolMagicId)
 
-instance Arbitrary (GenTxId ByronBlock) where
+instance Arbitrary (TxId (GenTx ByronBlock)) where
   arbitrary = oneof
       [ ByronTxId             <$> hedgehog CC.genTxId
       , ByronDlgId            <$> hedgehog genCertificateId

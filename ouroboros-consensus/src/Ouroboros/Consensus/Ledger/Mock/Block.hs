@@ -35,7 +35,6 @@ module Ouroboros.Consensus.Ledger.Mock.Block (
   , genesisSimpleLedgerState
     -- * 'ApplyTx' (mempool support)
   , GenTx(..)
-  , GenTxId(..)
   , mkSimpleGenTx
     -- * Crypto
   , SimpleCrypto
@@ -73,7 +72,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Address
 import           Ouroboros.Consensus.Ledger.Mock.State
-import           Ouroboros.Consensus.Ledger.Mock.UTxO
+import qualified Ouroboros.Consensus.Ledger.Mock.UTxO as Mock
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
@@ -133,7 +132,7 @@ data SimpleStdHeader c ext = SimpleStdHeader {
   deriving anyclass (Serialise, NoUnexpectedThunks)
 
 data SimpleBody = SimpleBody {
-      simpleTxs :: [Tx]
+      simpleTxs :: [Mock.Tx]
     }
   deriving stock    (Generic, Show, Eq)
   deriving anyclass (Serialise)
@@ -205,17 +204,17 @@ instance (SimpleCrypto c, Typeable ext) => StandardHash (SimpleBlock c ext)
   HasUTxO instance
 -------------------------------------------------------------------------------}
 
-instance HasUtxo (SimpleBlock' c ext ext') where
-  txIns      = txIns      . simpleBody
-  txOuts     = txOuts     . simpleBody
-  confirmed  = confirmed  . simpleBody
-  updateUtxo = updateUtxo . simpleBody
+instance Mock.HasUtxo (SimpleBlock' c ext ext') where
+  txIns      = Mock.txIns      . simpleBody
+  txOuts     = Mock.txOuts     . simpleBody
+  confirmed  = Mock.confirmed  . simpleBody
+  updateUtxo = Mock.updateUtxo . simpleBody
 
-instance HasUtxo SimpleBody where
-  txIns      = txIns      . simpleTxs
-  txOuts     = txOuts     . simpleTxs
-  confirmed  = confirmed  . simpleTxs
-  updateUtxo = updateUtxo . simpleTxs
+instance Mock.HasUtxo SimpleBody where
+  txIns      = Mock.txIns      . simpleTxs
+  txOuts     = Mock.txOuts     . simpleTxs
+  confirmed  = Mock.confirmed  . simpleTxs
+  updateUtxo = Mock.updateUtxo . simpleTxs
 
 {-------------------------------------------------------------------------------
   Update the ledger
@@ -252,7 +251,7 @@ updateSimpleLedgerState :: (Monad m, SimpleCrypto c, Typeable ext)
 updateSimpleLedgerState b (SimpleLedgerState st) =
     SimpleLedgerState <$> updateMockState b st
 
-updateSimpleUTxO :: (Monad m, HasUtxo a)
+updateSimpleUTxO :: (Monad m, Mock.HasUtxo a)
                  => a
                  -> TickedLedgerState (SimpleBlock c ext)
                  -> ExceptT (MockError (SimpleBlock c ext))
@@ -271,19 +270,12 @@ genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
 instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
       => ApplyTx (SimpleBlock c ext) where
   data GenTx (SimpleBlock c ext) = SimpleGenTx
-    { simpleGenTx   :: !Tx
-    , simpleGenTxId :: !TxId
+    { simpleGenTx   :: !Mock.Tx
+    , simpleGenTxId :: !Mock.TxId
       -- ^ This field is lazy on purpose so that the TxId is computed on
       -- demand.
     } deriving stock    (Generic)
       deriving anyclass (Serialise)
-
-  newtype GenTxId (SimpleBlock c ext) = SimpleGenTxId
-    { unSimpleGenTxId :: TxId
-    } deriving stock   (Generic)
-      deriving newtype (Show, Eq, Ord, Serialise)
-
-  txId = SimpleGenTxId . simpleGenTxId
 
   txSize _ = 2000  -- TODO #745
 
@@ -296,14 +288,22 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
       mustSucceed (Left  _)  = error "reapplyTxSameState: unexpected error"
       mustSucceed (Right st) = st
 
+instance HasTxId (GenTx (SimpleBlock c ext)) where
+  newtype TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId
+    { unSimpleGenTxId :: Mock.TxId
+    } deriving stock   (Generic)
+      deriving newtype (Show, Eq, Ord, Serialise)
+
+  txId = SimpleGenTxId . simpleGenTxId
+
 instance (Typeable p, Typeable c) => NoUnexpectedThunks (GenTx (SimpleBlock p c)) where
   showTypeOf _ = show $ typeRep (Proxy @(GenTx (SimpleBlock p c)))
 
-instance HasUtxo (GenTx (SimpleBlock p c)) where
-  txIns      = txIns      . simpleGenTx
-  txOuts     = txOuts     . simpleGenTx
-  confirmed  = confirmed  . simpleGenTx
-  updateUtxo = updateUtxo . simpleGenTx
+instance Mock.HasUtxo (GenTx (SimpleBlock p c)) where
+  txIns      = Mock.txIns      . simpleGenTx
+  txOuts     = Mock.txOuts     . simpleGenTx
+  confirmed  = Mock.confirmed  . simpleGenTx
+  updateUtxo = Mock.updateUtxo . simpleGenTx
 
 instance Condense (GenTx (SimpleBlock p c)) where
     condense = condense . simpleGenTx
@@ -314,7 +314,7 @@ instance Show (GenTx (SimpleBlock p c)) where
 instance Condense (GenTxId (SimpleBlock p c)) where
     condense = condense . unSimpleGenTxId
 
-mkSimpleGenTx :: Tx -> GenTx (SimpleBlock c ext)
+mkSimpleGenTx :: Mock.Tx -> GenTx (SimpleBlock c ext)
 mkSimpleGenTx tx = SimpleGenTx
     { simpleGenTx   = tx
     , simpleGenTxId = hash tx

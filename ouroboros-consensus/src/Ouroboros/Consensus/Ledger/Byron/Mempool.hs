@@ -17,7 +17,7 @@
 module Ouroboros.Consensus.Ledger.Byron.Mempool (
     -- * Mempool integration
     GenTx(..)
-  , GenTxId(..)
+  , TxId(..)
     -- * Serialisation
   , encodeByronGenTx
   , decodeByronGenTx
@@ -81,18 +81,6 @@ instance ApplyTx ByronBlock where
     deriving (Eq, Generic)
     deriving NoUnexpectedThunks via UseIsNormalForm (GenTx ByronBlock)
 
-  data GenTxId ByronBlock
-    = ByronTxId             !Utxo.TxId
-    | ByronDlgId            !Delegation.CertificateId
-    | ByronUpdateProposalId !Update.UpId
-    | ByronUpdateVoteId     !Update.VoteId
-    deriving (Eq, Ord)
-
-  txId (ByronTx             i _) = ByronTxId             i
-  txId (ByronDlg            i _) = ByronDlgId            i
-  txId (ByronUpdateProposal i _) = ByronUpdateProposalId i
-  txId (ByronUpdateVote     i _) = ByronUpdateVoteId     i
-
   txSize tx =
         1 {- encodeListLen -}
       + 1 {- tag -}
@@ -122,6 +110,19 @@ instance ApplyTx ByronBlock where
         applyByronGenTx validationMode cfg tx st
     where
       validationMode = CC.ValidationMode CC.NoBlockValidation Utxo.NoTxValidation
+
+instance HasTxId (GenTx ByronBlock) where
+  data TxId (GenTx ByronBlock)
+    = ByronTxId             !Utxo.TxId
+    | ByronDlgId            !Delegation.CertificateId
+    | ByronUpdateProposalId !Update.UpId
+    | ByronUpdateVoteId     !Update.VoteId
+    deriving (Eq, Ord)
+
+  txId (ByronTx             i _) = ByronTxId             i
+  txId (ByronDlg            i _) = ByronDlgId            i
+  txId (ByronUpdateProposal i _) = ByronUpdateProposalId i
+  txId (ByronUpdateVote     i _) = ByronUpdateVoteId     i
 
 {-------------------------------------------------------------------------------
   Conversion to and from 'AMempoolPayload'

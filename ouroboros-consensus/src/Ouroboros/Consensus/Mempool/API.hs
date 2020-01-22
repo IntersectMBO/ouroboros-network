@@ -10,6 +10,8 @@ module Ouroboros.Consensus.Mempool.API (
   , BlockSlot(..)
   , MempoolSnapshot(..)
   , ApplyTx(..)
+  , HasTxId(..)
+  , GenTxId
   , MempoolSize (..)
   , TraceEventMempool(..)
     -- * Re-exports
@@ -27,7 +29,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 
 class ( UpdateLedger blk
-      , Ord (GenTxId blk)
       , NoUnexpectedThunks (GenTx blk)
       ) => ApplyTx blk where
   -- | Generalized transaction
@@ -36,14 +37,6 @@ class ( UpdateLedger blk
   -- transactions"; this could be "proper" transactions (transferring funds) but
   -- also other kinds of things such as update proposals, delegations, etc.
   data family GenTx blk :: *
-
-  -- | A generalized transaction, 'GenTx', identifier.
-  data family GenTxId blk :: *
-
-  -- | Return the 'GenTxId' of a 'GenTx'.
-  --
-  -- Should be cheap as this will be called often.
-  txId :: GenTx blk -> GenTxId blk
 
   -- | Return the post-serialization size in bytes of a 'GenTx'.
   txSize :: GenTx blk -> TxSizeInBytes
@@ -83,6 +76,22 @@ class ( UpdateLedger blk
                      -> GenTx blk
                      -> TickedLedgerState blk
                      -> TickedLedgerState blk
+
+-- | Transactions with an identifier
+--
+-- The mempool will use these to locate transactions, so two different
+-- transactions should have different identifiers.
+class Ord (TxId tx) => HasTxId tx where
+  -- | A generalized transaction, 'GenTx', identifier.
+  data family TxId tx :: *
+
+  -- | Return the 'GenTxId' of a 'GenTx'.
+  --
+  -- Should be cheap as this will be called often.
+  txId :: tx -> TxId tx
+
+-- | Shorthand: ID of a generalized transaction
+type GenTxId blk = TxId (GenTx blk)
 
 -- | Mempool
 --
