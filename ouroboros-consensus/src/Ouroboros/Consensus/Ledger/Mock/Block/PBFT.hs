@@ -129,6 +129,8 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => ProtocolLedgerView (SimplePBftBlock c PBftMockCrypto) where
+  ledgerConfigView _ =
+      SimpleLedgerConfig
   protocolLedgerView PBftNodeConfig{..} _ls =
       pbftExtConfig
   anachronisticProtocolLedgerView PBftNodeConfig{..} _ _ =

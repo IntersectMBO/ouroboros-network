@@ -242,7 +242,6 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
       mustSucceed (Left  err) = error ("reapplyLedgerBlock: unexpected error: " <> show err)
       mustSucceed (Right st)  = st
   ledgerTipPoint (SimpleLedgerState st) = mockTip st
-  ledgerConfigView _ = SimpleLedgerConfig
 
 updateSimpleLedgerState :: (Monad m, SimpleCrypto c, Typeable ext)
                         => SimpleBlock c ext

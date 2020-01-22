@@ -115,7 +115,6 @@ instance UpdateLedger TestBlock where
   data LedgerConfig TestBlock = LedgerConfig
   type LedgerError  TestBlock = ()
 
-  ledgerConfigView _ = LedgerConfig
   applyChainTick _ _ = TickedLedgerState
 
   applyLedgerBlock   = notNeeded

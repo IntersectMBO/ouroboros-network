@@ -670,7 +670,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
     classify (not (null testInitialTxs)) "non-empty Mempool" $
     runSimOrThrow setUpAndRun
   where
-    cfg = ledgerConfigView singleNodeTestConfig
+    cfg = LedgerConfig
 
     setUpAndRun :: forall m. IOLike m => m Property
     setUpAndRun = do
