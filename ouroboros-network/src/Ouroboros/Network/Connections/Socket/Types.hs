@@ -46,9 +46,13 @@ instance Eq (SockAddr sockType) where
 instance Show (SockAddr sockType) where
   show = show . forgetSockType
 
--- | A connection is identified by a pair of addresses. For IPv* this is fine,
--- but not for Unix domain sockets: these can be unnamed, so that a connecting
--- socket which does not bind will get the address `SockAddrUnix ""`.
+-- | A connection is identified by a pair of addresses.
+-- The first (left) address is the bound address of the socket, and the second
+-- is the remote address.
+--
+-- For IPv* this is fine, but not for Unix domain sockets: these can be unnamed,
+-- so that a connecting socket which does not bind will get the address
+-- `SockAddrUnix ""`.
 --
 -- How to deal with this?
 -- One obvious way is to simply make up an ephemeral identifier for any

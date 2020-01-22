@@ -89,6 +89,9 @@ acceptOne bindaddr socket mkRequest = \includeConnection -> mask $ \restore -> d
     -- have the same sockType parameter, so we can make a connection ID for
     -- the pair.
     Just peeraddr -> do
+      -- Note the order of the addresses in the identifier: we always put our
+      -- bind address first. The client (sibling module Client.hs) also puts
+      -- the bind address first.
       let connId = makeConnectionId bindaddr peeraddr
       -- Including the connection could fail exceptionally, in which case we
       -- are still responsible for closing the socket.
