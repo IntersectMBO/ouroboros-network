@@ -627,7 +627,7 @@ runThreadNetwork ThreadNetworkArgs
             , blockMatchesHeader  = nodeBlockMatchesHeader
             , maxUnackTxs         = 1000 -- TODO
             , maxBlockSize        = NoOverride
-            , mempoolCap          = MempoolCapacityBytes 3000 -- TODO
+            , mempoolCap          = NoMempoolCapacityBytesOverride
             , chainSyncPipelining = pipelineDecisionLowHighMark 2 4
             }
 
