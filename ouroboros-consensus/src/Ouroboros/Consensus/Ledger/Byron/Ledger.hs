@@ -70,9 +70,6 @@ instance UpdateLedger ByronBlock where
       unByronLedgerConfig :: Gen.Config
     }
 
-  ledgerConfigView PBftNodeConfig{..} = ByronLedgerConfig $
-      pbftGenesisConfig pbftExtConfig
-
   applyChainTick cfg slotNo ByronLedgerState{..} =
       TickedLedgerState ByronLedgerState {
           byronDelegationHistory = byronDelegationHistory
@@ -105,6 +102,9 @@ instance ConfigContainsGenesis (LedgerConfig ByronBlock) where
   getGenesisConfig = unByronLedgerConfig
 
 instance ProtocolLedgerView ByronBlock where
+  ledgerConfigView PBftNodeConfig{..} = ByronLedgerConfig $
+      pbftGenesisConfig pbftExtConfig
+
   protocolLedgerView _cfg =
         toPBftLedgerView
       . Aux.getDelegationMap

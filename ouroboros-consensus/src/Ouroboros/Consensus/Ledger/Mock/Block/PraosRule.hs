@@ -90,6 +90,7 @@ instance SimpleCrypto c
 
 instance SimpleCrypto c
       => ProtocolLedgerView (SimplePraosRuleBlock c) where
+  ledgerConfigView _ = SimpleLedgerConfig
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right ()
 

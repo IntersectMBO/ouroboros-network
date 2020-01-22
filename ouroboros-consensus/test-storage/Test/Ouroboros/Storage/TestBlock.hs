@@ -326,8 +326,6 @@ instance UpdateLedger TestBlock where
   data LedgerConfig TestBlock = LedgerConfig
   type LedgerError  TestBlock = TestBlockError
 
-  ledgerConfigView _ = LedgerConfig
-
   applyChainTick _ _ = TickedLedgerState
 
   applyLedgerBlock _ tb@TestBlock{..} TestLedger{..}
@@ -344,6 +342,7 @@ instance UpdateLedger TestBlock where
   ledgerTipPoint = lastAppliedPoint
 
 instance ProtocolLedgerView TestBlock where
+  ledgerConfigView _ = LedgerConfig
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right ()
 
