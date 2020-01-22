@@ -18,7 +18,7 @@ module Test.Consensus.Mempool.TestBlock
     -- * Test infrastructure: mempool support
   , TestTxError (..)
   , GenTx (..)
-  , GenTxId (..)
+  , TxId (..)
     -- * Re-exported
   , TestTx (..)
   , TestTxId (..)
@@ -41,7 +41,7 @@ import qualified Ouroboros.Network.Block as Block
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Mempool (ApplyTx (..))
+import           Ouroboros.Consensus.Mempool (ApplyTx (..), HasTxId (..))
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -139,14 +139,6 @@ instance ApplyTx TestBlock where
     deriving stock (Show, Eq, Ord, Generic)
     deriving newtype (Condense)
 
-  newtype GenTxId TestBlock = TestGenTxId
-    { unTestGenTxId :: TestTxId
-    }
-    deriving stock (Show, Eq, Ord)
-    deriving newtype (Condense)
-
-  txId (TestGenTx tx) = TestGenTxId (testTxId tx)
-
   txSize _ = 2000 -- TODO #745
 
   type ApplyTxErr TestBlock = TestTxError
@@ -160,6 +152,15 @@ instance ApplyTx TestBlock where
   reapplyTxSameState cfg tx ledger = mustBeRight $ applyTx cfg tx ledger
     where
       mustBeRight = either (error "cannot fail") id . runExcept
+
+instance HasTxId (GenTx TestBlock) where
+  newtype TxId (GenTx TestBlock) = TestGenTxId
+    { unTestGenTxId :: TestTxId
+    }
+    deriving stock (Show, Eq, Ord)
+    deriving newtype (Condense)
+
+  txId (TestGenTx tx) = TestGenTxId (testTxId tx)
 
 instance NoUnexpectedThunks (GenTx TestBlock) where
   showTypeOf _ = "GenTx TestBlock"

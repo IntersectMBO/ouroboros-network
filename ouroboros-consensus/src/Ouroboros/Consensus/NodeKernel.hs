@@ -549,7 +549,7 @@ newtype PRNG = PRNG ChaChaDRG
 -------------------------------------------------------------------------------}
 
 getMempoolReader
-  :: forall m blk. (IOLike m, ApplyTx blk)
+  :: forall m blk. (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
   => Mempool m blk TicketNo
   -> TxSubmissionMempoolReader (GenTxId blk) (GenTx blk) TicketNo m
 getMempoolReader mempool = Outbound.TxSubmissionMempoolReader
@@ -570,7 +570,7 @@ getMempoolReader mempool = Outbound.TxSubmissionMempoolReader
         }
 
 getMempoolWriter
-  :: (Monad m, ApplyTx blk)
+  :: (Monad m, HasTxId (GenTx blk))
   => Mempool m blk TicketNo
   -> TxSubmissionMempoolWriter (GenTxId blk) (GenTx blk) TicketNo m
 getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
