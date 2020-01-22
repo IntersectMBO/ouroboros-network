@@ -42,7 +42,7 @@ data Decision (provenance :: Provenance) reject accept where
 
 -- | Useful type with kind `Provenance -> Type` to express that rejection is
 -- not possible.
-data CannotReject (provenance :: Provenance) where
+data CannotReject (provenance :: Provenance)
 
 -- | Description of a resource: something that can be acquired in the bracket
 -- pattern, or something that already exists but can be closed.
