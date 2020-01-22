@@ -177,11 +177,18 @@ concurrent withResource k = do
   includeOne stateVar connId resource request = mask $ \restore -> modifyMVar stateVar $ \state ->
     case Map.lookup connId (connectionMap state) of
       Nothing   -> case resource of
+        -- The caller gave an existing resource, and we don't have anything
+        -- for this identifier. So, use `withResource` to get a handler.
+        -- This action is intended to allow for setting up shared state etc.
+        -- and should not be expensive. Exceptions thrown by it will not be
+        -- caught here (will be re-thrown to the caller). In this case, the
+        -- caller is responsible for closing the resource.
+        --
+        -- However, if it passes normally, the resulting handler action will
+        -- be run in a thread and registered here. In this case, the caller
+        -- must _not_ close the resource; we will ensure that happens when the
+        -- handler ends (exceptionally or normally).
         Existing res closeResource -> do
-          -- User must ensure that the handler does not take very long to.
-          -- set up. It should just be creating shared state.
-          -- Do not catch exceptions: the caller is responsible for closing
-          -- the resource in case of exception.
           outcome <- restore (withResource Incoming connId res request)
           case outcome of
             Reject reason -> pure (state, Types.Rejected (DomainSpecific reason))
@@ -203,6 +210,9 @@ concurrent withResource k = do
                     }
                   !state' = insertConnection connId conn state
               pure (state', Types.Accepted (Accepted (connectionHandle conn)))
+        -- Caller indicates how to make a new resource. Similar story for the
+        -- above Existing case, except that we create the resource first and
+        -- ensure that it gets closed no matter what.
         New acquire release -> do
           -- If acquiring the resource fails, we just re-throw the exception.
           -- Thus `include`ing a new resource is just like bracketing the
