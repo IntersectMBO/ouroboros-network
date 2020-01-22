@@ -304,7 +304,7 @@ prop_socket_recv_close f _ = ioProperty $ do
              (\(sd',_) -> Socket.close sd') $ \(sd',_) -> do
                let bearer = Mx.socketAsMuxBearer nullTracer sd'
                Mx.traceMuxBearerState nullTracer Mx.Connected
-               Mx.muxStart nullTracer () (toApplication app) bearer
+               Mx.muxStart nullTracer () (toApplication app ()) bearer
           )
           $ \muxAsync -> do
 

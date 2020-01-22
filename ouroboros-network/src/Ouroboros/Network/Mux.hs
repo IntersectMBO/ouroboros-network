@@ -68,8 +68,9 @@ class MiniProtocolLimits ptcl where
 toApplication :: (Enum ptcl, Bounded ptcl,
                   ProtocolEnum ptcl, MiniProtocolLimits ptcl)
               => OuroborosApplication appType peerid ptcl m LBS.ByteString a b
+              -> peerid
               -> MuxApplication appType peerid m a b
-toApplication (OuroborosInitiatorApplication f) =
+toApplication (OuroborosInitiatorApplication f) peerid =
     MuxApplication
       [ MuxMiniProtocol {
           miniProtocolNum    = fromProtocolEnum ptcl,
@@ -79,11 +80,11 @@ toApplication (OuroborosInitiatorApplication f) =
                                },
           miniProtocolRun    =
             InitiatorProtocolOnly
-              (\peerid channel -> f peerid ptcl (fromChannel channel))
+              (\_peerid channel -> f peerid ptcl (fromChannel channel))
         }
       | ptcl <- [minBound..maxBound] ]
 
-toApplication (OuroborosResponderApplication f) =
+toApplication (OuroborosResponderApplication f) peerid =
     MuxApplication
       [ MuxMiniProtocol {
           miniProtocolNum    = fromProtocolEnum ptcl,
@@ -93,11 +94,11 @@ toApplication (OuroborosResponderApplication f) =
                                },
           miniProtocolRun    =
             ResponderProtocolOnly
-              (\peerid channel -> f peerid ptcl (fromChannel channel))
+              (\_peerid channel -> f peerid ptcl (fromChannel channel))
         }
       | ptcl <- [minBound..maxBound] ]
 
-toApplication (OuroborosInitiatorAndResponderApplication f g) =
+toApplication (OuroborosInitiatorAndResponderApplication f g) peerid =
     MuxApplication
       [ MuxMiniProtocol {
           miniProtocolNum    = fromProtocolEnum ptcl,
@@ -107,8 +108,8 @@ toApplication (OuroborosInitiatorAndResponderApplication f g) =
                                },
           miniProtocolRun    =
             InitiatorAndResponderProtocol
-              (\peerid channel -> f peerid ptcl (fromChannel channel))
-              (\peerid channel -> g peerid ptcl (fromChannel channel))
+              (\_peerid channel -> f peerid ptcl (fromChannel channel))
+              (\_peerid channel -> g peerid ptcl (fromChannel channel))
         }
       | ptcl <- [minBound..maxBound] ]
 
