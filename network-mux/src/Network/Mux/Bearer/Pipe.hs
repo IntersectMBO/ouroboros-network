@@ -78,13 +78,12 @@ pipeAsMuxBearer tracer pcRead pcWrite = do
 
 runMuxWithPipes
     :: Tracer IO (Mx.WithMuxBearer String Mx.MuxTrace)
-    -> peerid
-    -> Mx.MuxApplication appType peerid IO a b
+    -> Mx.MuxApplication appType IO a b
     -> Handle -- ^ read handle
     -> Handle -- ^ write handle
     -> IO ()
-runMuxWithPipes tracer peerid app pcRead pcWrite = do
+runMuxWithPipes tracer app pcRead pcWrite = do
     let muxTracer = Mx.WithMuxBearer "Pipe" `contramap` tracer
         bearer    = pipeAsMuxBearer muxTracer pcRead pcWrite
-    Mx.muxStart muxTracer peerid app bearer
+    Mx.muxStart muxTracer app bearer
 

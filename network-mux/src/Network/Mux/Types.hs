@@ -116,36 +116,36 @@ type family HasResponder (appType :: AppType) :: Bool where
 --   serving downstream peers using server side of each protocol and getting
 --   updates from upstream peers using client side of each of the protocols.
 --
-newtype MuxApplication (appType :: AppType) peerid m a b =
-        MuxApplication [MuxMiniProtocol appType peerid m a b]
+newtype MuxApplication (appType :: AppType) m a b =
+        MuxApplication [MuxMiniProtocol appType m a b]
 
-data MuxMiniProtocol (appType :: AppType) peerid m a b =
+data MuxMiniProtocol (appType :: AppType) m a b =
      MuxMiniProtocol {
        miniProtocolNum    :: !MiniProtocolNum,
        miniProtocolLimits :: !MiniProtocolLimits,
-       miniProtocolRun    :: !(RunMiniProtocol appType peerid m a b)
+       miniProtocolRun    :: !(RunMiniProtocol appType m a b)
      }
 
-data RunMiniProtocol (appType :: AppType) peerid m a b where
+data RunMiniProtocol (appType :: AppType) m a b where
   InitiatorProtocolOnly
     -- Initiator application; most simple application will be @'runPeer'@ or
     -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
     -- @ptcl@.  But it allows to handle resources if just application of
     -- @'runPeer'@ is not enough.  It will be run as @'ModeInitiator'@.
-    :: (peerid -> Channel m -> m a)
-    -> RunMiniProtocol InitiatorApp peerid m a Void
+    :: (Channel m -> m a)
+    -> RunMiniProtocol InitiatorApp m a Void
 
   ResponderProtocolOnly
     -- Responder application; similarly to the @'MuxInitiatorApplication'@ but it
     -- will be run using @'ModeResponder'@.
-    :: (peerid -> Channel m -> m a)
-    -> RunMiniProtocol ResponderApp peerid m Void a
+    :: (Channel m -> m a)
+    -> RunMiniProtocol ResponderApp m Void a
 
   InitiatorAndResponderProtocol
     -- Initiator and server applications.
-    :: (peerid -> Channel m -> m a)
-    -> (peerid -> Channel m -> m b)
-    -> RunMiniProtocol InitiatorAndResponderApp peerid m a b
+    :: (Channel m -> m a)
+    -> (Channel m -> m b)
+    -> RunMiniProtocol InitiatorAndResponderApp m a b
 
 --
 -- Mux internal types
