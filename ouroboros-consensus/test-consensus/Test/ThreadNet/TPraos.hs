@@ -18,11 +18,11 @@ import qualified Data.Map.Strict as Map
 import Data.Time (Day (ModifiedJulianDay))
 import Data.Time.Clock (UTCTime (..))
 import qualified Keys
-import OCert (KESPeriod(..), OCert (..))
+import OCert (KESPeriod (..), OCert (..))
 import Ouroboros.Consensus.BlockchainTime
 import Ouroboros.Consensus.BlockchainTime.Mock
 import Ouroboros.Consensus.Node.ProtocolInfo
-import Ouroboros.Consensus.NodeId (CoreNodeId(..))
+import Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import Ouroboros.Consensus.Protocol
 import Ouroboros.Consensus.Util.Random (seedToChaCha)
 import Ouroboros.Network.Magic
@@ -113,26 +113,28 @@ tests =
               )
 
 genCoreNodes :: MonadRandom m => ShelleyGenesis -> NumCoreNodes -> m [CoreNode]
-genCoreNodes ShelleyGenesis {sgKESPeriod} (NumCoreNodes n) = replicateM n genCoreNode
-  where
-    kesIdx = 0
-    kesPeriod = KESPeriod $ fromIntegral sgKESPeriod
-    genCoreNode = do
-      genKey <- SignKeyEd448DSIGN <$> generateSecretKey
-      delKey <- SignKeyEd448DSIGN <$> generateSecretKey
-      vrfKey <- genKeyVRF
-      kesKey <- genKeyKES $ fromIntegral sgKESPeriod
-      let kesPub = Keys.VKeyES $ deriveVerKeyKES kesKey
-      sigma <- signedDSIGN () (kesPub, kesIdx, kesPeriod) delKey
-      let ocert =
-            OCert
-              { ocertVkHot = kesPub,
-                ocertVkCold = Keys.VKey $ deriveVerKeyDSIGN delKey,
-                ocertN = kesIdx,
-                ocertKESPeriod = KESPeriod $ fromIntegral sgKESPeriod,
-                ocertSigma = Keys.UnsafeSig $ sigma
-              }
-      pure $ CoreNode genKey delKey vrfKey kesKey ocert
+genCoreNodes
+  ShelleyGenesis {sgKESPeriod}
+  (NumCoreNodes (fromIntegral -> n)) = replicateM n genCoreNode
+    where
+      kesIdx = 0
+      kesPeriod = KESPeriod $ fromIntegral sgKESPeriod
+      genCoreNode = do
+        genKey <- SignKeyEd448DSIGN <$> generateSecretKey
+        delKey <- SignKeyEd448DSIGN <$> generateSecretKey
+        vrfKey <- genKeyVRF
+        kesKey <- genKeyKES $ fromIntegral sgKESPeriod
+        let kesPub = Keys.VKeyES $ deriveVerKeyKES kesKey
+        sigma <- signedDSIGN () (kesPub, kesIdx, kesPeriod) delKey
+        let ocert =
+              OCert
+                { ocertVkHot = kesPub,
+                  ocertVkCold = Keys.VKey $ deriveVerKeyDSIGN delKey,
+                  ocertN = kesIdx,
+                  ocertKESPeriod = KESPeriod $ fromIntegral sgKESPeriod,
+                  ocertSigma = Keys.UnsafeSig $ sigma
+                }
+        pure $ CoreNode genKey delKey vrfKey kesKey ocert
 
 prop_simple_praos_convergence ::
   ShelleyGenesis ->
@@ -163,7 +165,7 @@ prop_simple_praos_convergence
           testConfig
           TestConfigBlock
             { forgeEBB = Nothing,
-              nodeInfo = \(CoreNodeId nid) ->
+              nodeInfo = \(CoreNodeId (fromIntegral -> nid)) ->
                 protocolInfo $
                   ProtocolRealTPraos sg protocolVersion (Just $ coreNodeCreds nid),
               rekeying = Nothing

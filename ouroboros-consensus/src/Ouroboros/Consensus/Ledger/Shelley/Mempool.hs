@@ -34,23 +34,16 @@ import qualified TxData as TxData
 
 type Tx = TxData.Tx TPraosStandardCrypto
 
-type TxId = TxData.TxId TPraosStandardCrypto
+type ShelleyTxId = TxData.TxId TPraosStandardCrypto
 
 instance ApplyTx ShelleyBlock where
 
   data GenTx ShelleyBlock
-    = ShelleyTx !TxId !Tx
+    = ShelleyTx !ShelleyTxId !Tx
     deriving (Eq, Generic)
     deriving (NoUnexpectedThunks) via UseIsNormalForm (GenTx ShelleyBlock)
 
-  newtype GenTxId ShelleyBlock
-    = ShelleyTxId TxId
-    deriving (Eq, Ord)
-    deriving newtype (FromCBOR, ToCBOR)
-
   type ApplyTxErr ShelleyBlock = ApplyTxError TPraosStandardCrypto
-
-  txId (ShelleyTx i _) = ShelleyTxId i
 
   txSize (ShelleyTx _ _tx) = 2000 -- TODO
 
@@ -80,6 +73,15 @@ instance ApplyTx ShelleyBlock where
       $ applyTx cfg tx ls
     where
       err = error "reapply TX with same state failed"
+
+instance HasTxId (GenTx ShelleyBlock) where
+
+  newtype TxId (GenTx ShelleyBlock)
+    = ShelleyTxId ShelleyTxId
+    deriving (Eq, Ord)
+    deriving newtype (FromCBOR, ToCBOR)
+
+  txId (ShelleyTx i _) = ShelleyTxId i
 
 {-------------------------------------------------------------------------------
   Serialisation

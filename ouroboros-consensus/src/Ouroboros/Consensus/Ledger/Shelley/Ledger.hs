@@ -66,18 +66,6 @@ instance UpdateLedger ShelleyBlock where
   newtype LedgerConfig ShelleyBlock = ShelleyLedgerConfig SL.Globals
     deriving (Generic)
 
-  ledgerConfigView TPraosNodeConfig {tpraosParams} =
-    ShelleyLedgerConfig $
-      SL.Globals
-        { SL.epochInfo = tpraosEpochInfo tpraosParams,
-          SL.slotsPerKESPeriod = tpraosKESPeriod tpraosParams,
-          SL.securityParameter = sp,
-          SL.startRewards = 3 * sp,
-          SL.slotsPrior = 3 * sp
-        }
-    where
-      SecurityParam sp = tpraosSecurityParam tpraosParams
-
   applyChainTick
     (ShelleyLedgerConfig globals)
     slotNo
@@ -120,6 +108,18 @@ instance NoUnexpectedThunks (LedgerState ShelleyBlock)
 
 instance ProtocolLedgerView ShelleyBlock where
   protocolLedgerView _cfg (ShelleyLedgerState _ _ ls) = currentLedgerView ls
+
+  ledgerConfigView TPraosNodeConfig {tpraosParams} =
+    ShelleyLedgerConfig $
+      SL.Globals
+        { SL.epochInfo = tpraosEpochInfo tpraosParams,
+          SL.slotsPerKESPeriod = tpraosKESPeriod tpraosParams,
+          SL.securityParameter = sp,
+          SL.startRewards = 3 * sp,
+          SL.slotsPrior = 3 * sp
+        }
+    where
+      SecurityParam sp = tpraosSecurityParam tpraosParams
 
   anachronisticProtocolLedgerView
     cfg
