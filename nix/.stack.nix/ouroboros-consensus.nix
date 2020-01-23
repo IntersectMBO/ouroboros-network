@@ -119,6 +119,7 @@
             (hsPkgs.cardano-ledger-test)
             (hsPkgs.cardano-prelude)
             (hsPkgs.cardano-slotting)
+            (hsPkgs.delegation)
             (hsPkgs.typed-protocols)
             (hsPkgs.network-mux)
             (hsPkgs.ouroboros-network)
