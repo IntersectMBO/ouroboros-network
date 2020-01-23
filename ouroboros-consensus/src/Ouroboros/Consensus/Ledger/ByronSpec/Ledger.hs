@@ -23,14 +23,12 @@ import           Data.Bifunctor
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
-import           Cardano.Slotting.Slot (WithOrigin (..))
 
 import qualified Cardano.Ledger.Spec.STS.UTXO as Spec
 import qualified Cardano.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Control.State.Transition as Spec
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Point (Block (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.ByronSpec.Block
@@ -90,12 +88,12 @@ instance UpdateLedger ByronSpecBlock where
         Left  _ -> error "reapplyLedgerBlock: unexpected error"
         Right b -> b
 
-  ledgerTipPoint state = Point $
+  ledgerTipPoint state =
       case byronSpecLedgerTip state of
-        Nothing   -> Origin
-        Just slot -> At $ Block
-                            slot
-                            (ChainState.getHash (byronSpecLedgerState state))
+        Nothing   -> GenesisPoint
+        Just slot -> BlockPoint
+                       slot
+                       (ChainState.getHash (byronSpecLedgerState state))
 
 {-------------------------------------------------------------------------------
   Working with the ledger state

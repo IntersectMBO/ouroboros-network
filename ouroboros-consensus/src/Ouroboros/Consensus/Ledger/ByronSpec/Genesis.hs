@@ -95,7 +95,7 @@ toChainEnv ByronSpecGenesis{..} = disableConsensusChecks (
 
 -- | Construct genesis config from CHAIN environment
 --
--- This doens't make an awful lot of sense, but the abstract spec doesn't /have/
+-- This doesn't make an awful lot of sense, but the abstract spec doesn't /have/
 -- a concept of a genesis config, and instead the CHAIN environment fulfills
 -- that role. In order to be able to reuse the test generators, we therefore
 -- also define a translation in the opposite direction.

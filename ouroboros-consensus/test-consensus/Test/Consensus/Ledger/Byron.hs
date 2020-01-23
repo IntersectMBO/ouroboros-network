@@ -472,7 +472,7 @@ instance Arbitrary (GenTx ByronBlock) where
     fromMempoolPayload . reAnnotateUsing toCBOR fromCBOR <$>
     hedgehog (CC.genMempoolPayload protocolMagicId)
 
-instance Arbitrary (TxId (GenTx ByronBlock)) where
+instance Arbitrary (GenTxId ByronBlock) where
   arbitrary = oneof
       [ ByronTxId             <$> hedgehog CC.genTxId
       , ByronDlgId            <$> hedgehog genCertificateId

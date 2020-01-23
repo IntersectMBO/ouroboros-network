@@ -4,7 +4,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Ouroboros.Consensus.Node.Run.Byron (
-    -- * Exported for the benfit of ByronDual
+    -- * Exported for the benefit of ByronDual
     extractEpochSlots
   ) where
 

@@ -88,6 +88,15 @@ import           Ouroboros.Consensus.Util.Condense
 -- meaningful 'NoUnexpectedThunks' checks here.
 data DualBlock m a = DualBlock {
       dualBlockMain :: m
+
+      -- | Optional auxiliary block
+      --
+      -- 'Nothing' here can be used if some " main " blocks should have no
+      -- effect on the auxiliary ledger state at all. The motivating example
+      -- is EBBs: if the main blocks are real Byron blocks, and the auxiliary
+      -- blocks are Byron spec blocks, then regular Byron blocks correspond to
+      -- Byron spec blocks, but EBBs don't correspond to a spec block at all
+      -- and should leave the Byron spec ledger state unchanged.
     , dualBlockAux  :: Maybe a
     }
   deriving (Show, Eq)

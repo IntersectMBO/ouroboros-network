@@ -105,15 +105,20 @@ data Index m hash h = Index
       -> WithBlockSize (Secondary.Entry hash)
       -> m Word64
 
-    -- | Reset the index, drop all cached information.
+    -- | Close the index and stop any background threads.
     --
-    -- To be called when the index files were manipulated without using
-    -- 'Index'. Any cached information could have become stale.
+    -- Should be called when the ImmutableDB is closed.
+  , close
+      :: HasCallStack
+      => m ()
+
+    -- | Restart a closed index using the given epoch as the current epoch,
+    -- drop all previously cached information.
     --
     -- NOTE: this will only used in the testsuite, when we need to truncate.
-  , reset
+  , restart
       :: HasCallStack
-      => EpochNo  --  The (new) current epoch
+      => EpochNo
       -> m ()
   }
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "Index" (Index m hash h)
@@ -158,8 +163,9 @@ fileBackedIndex hasFS err hashInfo = Index
     , readAllEntries      = Secondary.readAllEntries    hasFS err hashInfo
     , appendEntry         = \_epoch h (WithBlockSize _ entry) ->
                             Secondary.appendEntry       hasFS     hashInfo h entry
-      -- Nothing to reset, as nothing is cached
-    , reset              = \_newCurEpoch -> return ()
+      -- Nothing to do
+    , close               = return ()
+    , restart             = \_newCurEpoch -> return ()
     }
 
 {------------------------------------------------------------------------------
@@ -191,5 +197,6 @@ cachedIndex hasFS err hashInfo registry tracer cacheConfig epoch = do
       , readEntries         = Cache.readEntries         cacheEnv
       , readAllEntries      = Cache.readAllEntries      cacheEnv
       , appendEntry         = Cache.appendEntry         cacheEnv
-      , reset               = Cache.reset               cacheEnv
+      , close               = Cache.close               cacheEnv
+      , restart             = Cache.restart             cacheEnv
       }
