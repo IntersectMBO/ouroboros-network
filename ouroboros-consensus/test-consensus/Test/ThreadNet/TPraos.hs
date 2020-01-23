@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Test.ThreadNet.TPraos
   ( tests,
@@ -6,7 +7,9 @@ module Test.ThreadNet.TPraos
 where
 
 import Cardano.Crypto.DSIGN
+import Cardano.Crypto.KES
 import Cardano.Crypto.ProtocolMagic
+import Cardano.Crypto.VRF
 import Cardano.Slotting.Slot (EpochSize (..))
 import Control.Monad (replicateM)
 import Crypto.PubKey.Ed448 (generateSecretKey)
@@ -15,10 +18,11 @@ import qualified Data.Map.Strict as Map
 import Data.Time (Day (ModifiedJulianDay))
 import Data.Time.Clock (UTCTime (..))
 import qualified Keys
+import OCert (KESPeriod(..), OCert (..))
 import Ouroboros.Consensus.BlockchainTime
 import Ouroboros.Consensus.BlockchainTime.Mock
 import Ouroboros.Consensus.Node.ProtocolInfo
-import Ouroboros.Consensus.Node.ProtocolInfo.Shelley
+import Ouroboros.Consensus.NodeId (CoreNodeId(..))
 import Ouroboros.Consensus.Protocol
 import Ouroboros.Consensus.Util.Random (seedToChaCha)
 import Ouroboros.Network.Magic
@@ -35,7 +39,10 @@ import Test.Util.Orphans.Arbitrary ()
 data CoreNode
   = CoreNode
       { cnGenesisKey :: SignKeyDSIGN Ed448DSIGN,
-        cnDelegate :: SignKeyDSIGN Ed448DSIGN
+        cnDelegate :: SignKeyDSIGN Ed448DSIGN,
+        cnVRF :: SignKeyVRF SimpleVRF,
+        cnKES :: SignKeyKES (SimpleKES Ed448DSIGN),
+        cnOCert :: OCert TPraosStandardCrypto
       }
 
 tests :: TestTree
@@ -91,23 +98,41 @@ tests =
               sgGenDelegs = coreNodesToGenesisMapping coreNodes,
               sgInitialFunds = Map.empty
             }
-        coreNodes = fst $ withDRG (seedToChaCha initSeed) (genCoreNodes numCoreNodes)
+        coreNodes =
+          fst $
+            withDRG
+              (seedToChaCha initSeed)
+              (genCoreNodes shelleyGenesis numCoreNodes)
         coreNodesToGenesisMapping =
           Map.fromList
             . fmap
-              ( \(CoreNode skg skd) ->
-                  ( Keys.GenKeyHash . Keys.hash $ deriveVerKeyDSIGN skg,
-                    Keys.KeyHash . Keys.hash $ deriveVerKeyDSIGN skd
+              ( \(CoreNode {cnGenesisKey, cnDelegate}) ->
+                  ( Keys.GenKeyHash . Keys.hash $ deriveVerKeyDSIGN cnGenesisKey,
+                    Keys.KeyHash . Keys.hash $ deriveVerKeyDSIGN cnDelegate
                   )
               )
 
-genCoreNodes :: MonadRandom m => NumCoreNodes -> m [CoreNode]
-genCoreNodes (NumCoreNodes n) = replicateM n genCoreNode
+genCoreNodes :: MonadRandom m => ShelleyGenesis -> NumCoreNodes -> m [CoreNode]
+genCoreNodes ShelleyGenesis {sgKESPeriod} (NumCoreNodes n) = replicateM n genCoreNode
   where
-    genCoreNode =
-      CoreNode
-        <$> (SignKeyEd448DSIGN <$> generateSecretKey)
-        <*> (SignKeyEd448DSIGN <$> generateSecretKey)
+    kesIdx = 0
+    kesPeriod = KESPeriod $ fromIntegral sgKESPeriod
+    genCoreNode = do
+      genKey <- SignKeyEd448DSIGN <$> generateSecretKey
+      delKey <- SignKeyEd448DSIGN <$> generateSecretKey
+      vrfKey <- genKeyVRF
+      kesKey <- genKeyKES $ fromIntegral sgKESPeriod
+      let kesPub = Keys.VKeyES $ deriveVerKeyKES kesKey
+      sigma <- signedDSIGN () (kesPub, kesIdx, kesPeriod) delKey
+      let ocert =
+            OCert
+              { ocertVkHot = kesPub,
+                ocertVkCold = Keys.VKey $ deriveVerKeyDSIGN delKey,
+                ocertN = kesIdx,
+                ocertKESPeriod = KESPeriod $ fromIntegral sgKESPeriod,
+                ocertSigma = Keys.UnsafeSig $ sigma
+              }
+      pure $ CoreNode genKey delKey vrfKey kesKey ocert
 
 prop_simple_praos_convergence ::
   ShelleyGenesis ->
@@ -121,13 +146,25 @@ prop_simple_praos_convergence
     prop_general sgSecurityParam testConfig Nothing (const False) testOutput
     where
       protocolVersion = ProtVer 0 0 0
+      coreNodeCreds nid =
+        let CoreNode
+              { cnDelegate,
+                cnVRF,
+                cnKES,
+                cnOCert
+              } = coreNodes !! nid
+         in TPraosIsCoreNode
+              { tpraosIsCoreNodeSKSHot = cnKES,
+                tpraosIsCoreNodeOpCert = cnOCert,
+                tpraosIsCoreNodeSignKeyVRF = cnVRF
+              }
       testOutput =
         runTestNetwork
           testConfig
           TestConfigBlock
             { forgeEBB = Nothing,
-              nodeInfo = \nid ->
+              nodeInfo = \(CoreNodeId nid) ->
                 protocolInfo $
-                  ProtocolRealTPraos sg protocolVersion Nothing,
+                  ProtocolRealTPraos sg protocolVersion (Just $ coreNodeCreds nid),
               rekeying = Nothing
             }
