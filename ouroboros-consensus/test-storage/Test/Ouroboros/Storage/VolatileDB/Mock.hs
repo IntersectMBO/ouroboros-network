@@ -9,6 +9,7 @@ import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (simStateT)
 
+import           Ouroboros.Storage.Common (castBlockComponent)
 import           Ouroboros.Storage.Util.ErrorHandling (ThrowCantCatch)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
@@ -28,18 +29,17 @@ openDBMock err maxNumPerFile = do
 
     db :: StrictTVar m (DBModel blockId) -> VolatileDB blockId m
     db dbVar = VolatileDB {
-          closeDB        = wrapModel' dbVar  $ closeModel
-        , isOpenDB       = wrapModel' dbVar  $ isOpenModel
-        , reOpenDB       = wrapModel' dbVar  $ reOpenModel         err'
-        , getBlock       = wrapModel' dbVar  . getBlockModel       err'
-        , getHeader      = wrapModel' dbVar  . getHeaderModel      err'
-        , putBlock       = wrapModel' dbVar .: putBlockModel       err' Nothing
-        , garbageCollect = wrapModel' dbVar  . garbageCollectModel err' Nothing
-        , getIsMember    = wrapModel  dbVar  $ getIsMemberModel    err'
-        , getBlockIds    = wrapModel' dbVar  $ getBlockIdsModel    err'
-        , getSuccessors  = wrapModel  dbVar  $ getSuccessorsModel  err'
-        , getPredecessor = wrapModel  dbVar  $ getPredecessorModel err'
-        , getMaxSlotNo   = wrapModel  dbVar  $ getMaxSlotNoModel   err'
+          closeDB           = wrapModel' dbVar  $  closeModel
+        , isOpenDB          = wrapModel' dbVar  $  isOpenModel
+        , reOpenDB          = wrapModel' dbVar  $  reOpenModel            err'
+        , getBlockComponent = wrapModel' dbVar .: (getBlockComponentModel err' . castBlockComponent)
+        , putBlock          = wrapModel' dbVar .:  putBlockModel          err' Nothing
+        , garbageCollect    = wrapModel' dbVar  .  garbageCollectModel    err' Nothing
+        , getIsMember       = wrapModel  dbVar  $  getIsMemberModel       err'
+        , getBlockIds       = wrapModel' dbVar  $  getBlockIdsModel       err'
+        , getSuccessors     = wrapModel  dbVar  $  getSuccessorsModel     err'
+        , getPredecessor    = wrapModel  dbVar  $  getPredecessorModel    err'
+        , getMaxSlotNo      = wrapModel  dbVar  $  getMaxSlotNoModel      err'
         }
 
     err' :: ThrowCantCatch VolatileDBError

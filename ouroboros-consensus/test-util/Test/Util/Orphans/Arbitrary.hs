@@ -27,7 +27,7 @@ import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
 import           Ouroboros.Storage.ImmutableDB.Layout
 
 
-minNumCoreNodes :: Int
+minNumCoreNodes :: Word64
 minNumCoreNodes = 2
 
 minNumSlots :: Word64

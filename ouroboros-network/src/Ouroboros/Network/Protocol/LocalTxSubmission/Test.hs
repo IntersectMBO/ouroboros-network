@@ -143,8 +143,6 @@ prop_channel createChannels p txs =
       createChannels
       nullTracer
       codec
-      "client"
-      "server"
       (localTxSubmissionClientPeer $
        localTxSubmissionClient txs)
       (localTxSubmissionServerPeer $ pure $

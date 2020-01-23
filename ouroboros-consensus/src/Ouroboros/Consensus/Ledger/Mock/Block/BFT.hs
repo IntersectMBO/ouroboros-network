@@ -111,6 +111,7 @@ instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          ) => ProtocolLedgerView (SimpleBftBlock c c') where
+  ledgerConfigView _ = SimpleLedgerConfig
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right ()
 

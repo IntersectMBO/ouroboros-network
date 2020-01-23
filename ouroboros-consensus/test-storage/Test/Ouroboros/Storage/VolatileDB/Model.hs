@@ -1,10 +1,10 @@
-{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 -- | In-memory Model implementation of 'VolatileDB' for testing
 module Test.Ouroboros.Storage.VolatileDB.Model
     (
@@ -15,8 +15,7 @@ module Test.Ouroboros.Storage.VolatileDB.Model
     , duplicateBlockModel
     , garbageCollectModel
     , getBlockIdsModel
-    , getBlockModel
-    , getHeaderModel
+    , getBlockComponentModel
     , getIsMemberModel
     , getSuccessorsModel
     , getPredecessorModel
@@ -30,7 +29,6 @@ module Test.Ouroboros.Storage.VolatileDB.Model
 
 import           Control.Monad
 import           Control.Monad.State (MonadState, get, modify, put)
-import           Data.Bifunctor (second)
 import           Data.ByteString.Builder
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
@@ -49,6 +47,7 @@ import           Ouroboros.Network.Point (WithOrigin)
 import           Ouroboros.Consensus.Block (IsEBB)
 import           Ouroboros.Consensus.Util (safeMaximum)
 
+import           Ouroboros.Storage.Common (BlockComponent (..))
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ThrowCantCatch)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -116,21 +115,38 @@ reOpenModel err = do
             else return dbm
     put dbm' {open = True}
 
-getBlockModel :: forall m blockId. (MonadState (DBModel blockId) m, Ord blockId)
-              => ThrowCantCatch VolatileDBError m
-              -> blockId
-              -> m (Maybe (SlotNo, IsEBB, ByteString))
-getBlockModel err sl = do
+getBlockComponentModel
+  :: forall m blockId b. (MonadState (DBModel blockId) m, Ord blockId)
+  => ThrowCantCatch VolatileDBError m
+  -> BlockComponent (VolatileDB blockId m) b
+  -> blockId
+  -> m (Maybe b)
+getBlockComponentModel err blockComponent blockId = do
     DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
-    else return $ Map.lookup sl mp
+    else return $
+      (\info -> extractBlockComponent blockId info blockComponent) <$>
+      Map.lookup blockId mp
 
-getHeaderModel :: forall m blockId. (MonadState (DBModel blockId) m, Ord blockId)
-               => ThrowCantCatch VolatileDBError m
-               -> blockId
-               -> m (Maybe (SlotNo, IsEBB, ByteString))
-getHeaderModel err sl = do
-    fmap (second extractHeader) <$> getBlockModel err sl
+extractBlockComponent
+  :: blockId
+  -> (SlotNo, IsEBB, ByteString)
+  -> BlockComponent (VolatileDB blockId m) b
+  -> b
+extractBlockComponent blockId info@(slot, isEBB, block) = \case
+    GetBlock      -> ()
+    GetRawBlock   -> block
+    GetHeader     -> ()
+    GetRawHeader  -> extractHeader block
+    GetHash       -> blockId
+    GetSlot       -> slot
+    GetIsEBB      -> isEBB
+    GetBlockSize  -> fromIntegral $ BL.length block
+    GetHeaderSize -> headerSize
+    GetPure a     -> a
+    GetApply f bc ->
+      extractBlockComponent blockId info f $
+      extractBlockComponent blockId info bc
   where
     extractHeader = BL.take (fromIntegral headerSize)
                   . BL.drop (fromIntegral headerOffset)

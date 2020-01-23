@@ -1,6 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
@@ -9,6 +8,7 @@
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE UndecidableInstances      #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
@@ -28,12 +28,10 @@ module Ouroboros.Storage.ChainDB.Impl.VolDB (
   , computePath
   , computePathSTM
     -- * Getting and parsing blocks
-  , getKnownHeader
   , getKnownBlock
-  , getKnownDeserialisableBlockOrHeader
-  , getHeader
-  , getBlock
-  , getDeserialisableBlockOrHeader
+  , getKnownHeader
+  , getKnownBlockComponent
+  , getBlockComponent
     -- * Wrappers
   , getIsMember
   , getPredecessor
@@ -53,11 +51,12 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
+import           Control.Monad (join)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Functor ((<&>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (mapMaybe)
+import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
@@ -70,8 +69,8 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader (..), HeaderHash,
-                     MaxSlotNo, Point, Serialised (..), SlotNo, StandardHash,
-                     pointHash, withHash)
+                     MaxSlotNo, Point, SlotNo, StandardHash, pointHash,
+                     withHash)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (..))
 
@@ -79,10 +78,11 @@ import           Ouroboros.Consensus.Block (Header, IsEBB)
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
-                     ChainDbError (..), ChainDbFailure (..),
-                     Deserialisable (..), StreamFrom (..), StreamTo (..))
-import           Ouroboros.Storage.Common
+import           Ouroboros.Storage.ChainDB.API (ChainDB)
+import           Ouroboros.Storage.ChainDB.API hiding (ChainDB (..), closeDB,
+                     getMaxSlotNo)
+import           Ouroboros.Storage.ChainDB.Impl.BlockComponent
+import           Ouroboros.Storage.Common (BinaryInfo (..))
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
 import           Ouroboros.Storage.FS.IO (ioHasFS)
@@ -435,77 +435,43 @@ deriving instance Show (HeaderHash blk) => Show (Path blk)
   Getting and parsing blocks
 -------------------------------------------------------------------------------}
 
-getKnownBlock :: (MonadCatch m, StandardHash blk, Typeable blk)
-              => VolDB m blk -> HeaderHash blk -> m blk
-getKnownBlock db hash = do
-    mBlock <- mustExist hash <$> getBlock db hash
+getKnownBlock
+  :: (MonadCatch m, HasHeader blk)
+  => VolDB m blk
+  -> HeaderHash blk
+  -> m blk
+getKnownBlock volDB = join . getKnownBlockComponent volDB GetBlock
+
+getKnownHeader
+  :: (MonadCatch m, HasHeader blk)
+  => VolDB m blk
+  -> HeaderHash blk
+  -> m (Header blk)
+getKnownHeader volDB = join . getKnownBlockComponent volDB GetHeader
+
+getKnownBlockComponent
+  :: (MonadCatch m, HasHeader blk)
+  => VolDB m blk
+  -> BlockComponent (ChainDB m blk) b
+  -> HeaderHash blk
+  -> m b
+getKnownBlockComponent db blockComponent hash = do
+    mBlock <- mustExist db hash <$>
+      getBlockComponent db blockComponent hash
     case mBlock of
       Right b  -> return b
       Left err -> throwM err
 
-getKnownHeader :: (MonadCatch m, HasHeader blk)
-               => VolDB m blk -> HeaderHash blk -> m (Header blk)
-getKnownHeader db hash = do
-    mHeader <- mustExist hash <$> getHeader db hash
-    case mHeader of
-      Right b  -> return b
-      Left err -> throwM err
-
-getKnownDeserialisableBlockOrHeader
-  :: (MonadCatch m, StandardHash blk, Typeable m, Typeable b, Typeable blk)
+getBlockComponent
+  :: forall m blk b. (MonadCatch m, HasHeader blk)
   => VolDB m blk
-  -> BlockOrHeader blk b
+  -> BlockComponent (ChainDB m blk) b
   -> HeaderHash blk
-  -> m (Deserialisable m blk b)
-getKnownDeserialisableBlockOrHeader db blockOrHeader hash = do
-    mBlock <- mustExist hash <$>
-      getDeserialisableBlockOrHeader db blockOrHeader hash
-    case mBlock of
-      Right b  -> return b
-      Left err -> throwM err
-
-getBlock :: (MonadCatch m, StandardHash blk, Typeable blk)
-         => VolDB m blk -> HeaderHash blk -> m (Maybe blk)
-getBlock db hash =
-    traverse deserialise =<<
-    getDeserialisableBlockOrHeader db Block hash
-
-getHeader :: (MonadCatch m, StandardHash blk, Typeable blk)
-          => VolDB m blk -> HeaderHash blk -> m (Maybe (Header blk))
-getHeader db hash =
-    traverse deserialise =<<
-    getDeserialisableBlockOrHeader db Header hash
-
-getDeserialisableBlockOrHeader
-  :: (MonadCatch m, StandardHash blk, Typeable blk)
-  => VolDB m blk
-  -> BlockOrHeader blk b
-  -> HeaderHash blk
-  -> m (Maybe (Deserialisable m blk b))
-getDeserialisableBlockOrHeader db blockOrHeader hash =
-    getBlob db blockOrHeader hash <&> \case
-      Nothing           -> Nothing
-      Just (slotNo, bs) -> Just Deserialisable
-        { serialised         = Serialised bs
-        , deserialisableSlot = slotNo
-        , deserialisableHash = hash
-        , deserialise        = case parse db blockOrHeader hash bs of
-            Left  err -> throwM err
-            Right blk -> return blk
-        }
-
-getBlob
-  :: (MonadCatch m, HasCallStack)
-  => VolDB m blk
-  -> BlockOrHeader blk b
-  -> HeaderHash blk
-  -> m (Maybe (SlotNo, Lazy.ByteString))
-getBlob db@VolDB { addHdrEnv } blockOrHeader hash = withDB db $ \vol ->
-    case blockOrHeader of
-      Block  -> VolDB.getBlock  vol hash <&>
-        fmap (\(slot, _isEBB, bs) -> (slot, bs))
-      Header -> VolDB.getHeader vol hash <&>
-        fmap (\(slot,  isEBB, bs) -> (slot, addHdrEnv isEBB bs))
+  -> m (Maybe b)
+getBlockComponent db blockComponent hash = withDB db $ \vol ->
+    VolDB.getBlockComponent vol blockComponent' hash
+  where
+    blockComponent' = translateToRawDB (parse db) (addHdrEnv db) blockComponent
 
 {-------------------------------------------------------------------------------
   Auxiliary: parsing
@@ -559,20 +525,22 @@ withSTM :: VolDB m blk
         -> STM m x
 withSTM VolDB{..} k = k volDB
 
-mustExist :: forall blk. (Typeable blk, StandardHash blk)
-          => HeaderHash blk
-          -> Maybe blk
-          -> Either ChainDbFailure blk
-mustExist hash Nothing  = Left  $ VolDbMissingBlock @blk hash
-mustExist _    (Just b) = Right $ b
+mustExist :: forall proxy blk b. (StandardHash blk, Typeable blk)
+          => proxy blk
+          -> HeaderHash blk
+          -> Maybe b
+          -> Either ChainDbFailure b
+mustExist _ hash Nothing  = Left  $ VolDbMissingBlock (Proxy @blk) hash
+mustExist _ _    (Just b) = Right $ b
 
-parse :: forall m blk b. (Typeable blk, StandardHash blk)
+-- TODO unify with ImmDB.parse
+parse :: forall m blk b. (HasHeader blk, MonadThrow m)
       => VolDB m blk
       -> BlockOrHeader blk b
-      -> HeaderHash blk
+      -> BlockRef blk
       -> Lazy.ByteString
-      -> Either ChainDbFailure b
-parse db blockOrHeader hash bytes =
+      -> m b  -- ^ Throws 'ChainDbFailure'
+parse db blockOrHeader blockRef bytes =
     aux (CBOR.deserialiseFromBytes dec bytes)
   where
     dec :: forall s. Decoder s (Lazy.ByteString -> b)
@@ -582,11 +550,11 @@ parse db blockOrHeader hash bytes =
 
     aux :: Either CBOR.DeserialiseFailure
                   (Lazy.ByteString, Lazy.ByteString -> b)
-        -> Either ChainDbFailure b
+        -> m b
     aux (Right (bs, b))
-      | Lazy.null bs = Right (b bytes)
-      | otherwise    = Left $ VolDbTrailingData @blk hash bs
-    aux (Left err)   = Left $ VolDbParseFailure @blk hash err
+      | Lazy.null bs = return $ b bytes
+      | otherwise    = throwM $ VolDbTrailingData blockRef bs
+    aux (Left err)   = throwM $ VolDbParseFailure blockRef err
 
 {-------------------------------------------------------------------------------
   Auxiliary

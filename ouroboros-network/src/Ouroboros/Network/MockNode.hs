@@ -283,7 +283,7 @@ relayNode :: forall m block.
           -> Chain block
           -> NodeChannels m block (Tip block)
           -> m (StrictTVar m (ChainProducerState block))
-relayNode nid initChain chans = do
+relayNode _nid initChain chans = do
   -- Mutable state
   -- 1. input chains
   upstream <- zipWithM startConsumer [0..] (consumerChans chans)
@@ -306,12 +306,11 @@ relayNode nid initChain chans = do
     startConsumer :: Int
                   -> Channel m (AnyMessage (ChainSync block (Tip block)))
                   -> m (StrictTVar m (Chain block))
-    startConsumer cid channel = do
+    startConsumer _cid channel = do
       chainVar <- atomically $ newTVar Genesis
       let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
       void $ fork $ void $ runPeer nullTracer
                                    codecChainSyncId
-                                   (ConsumerId nid cid)
                                    channel
                                    consumer
       return chainVar
@@ -320,13 +319,12 @@ relayNode nid initChain chans = do
                   -> Int
                   -> Channel m (AnyMessage (ChainSync block (Tip block)))
                   -> m ()
-    startProducer producer pid channel =
+    startProducer producer _pid channel =
       -- use 'void' because 'fork' only works with 'm ()'
       -- No sense throwing on Unexpected right? since fork will just squelch
       -- it. FIXME: use async...
       void $ fork $ void $ runPeer nullTracer
                                    codecChainSyncId
-                                   (ProducerId nid pid)
                                    channel
                                    producer
 

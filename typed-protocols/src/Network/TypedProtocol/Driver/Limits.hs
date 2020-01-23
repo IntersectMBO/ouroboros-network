@@ -64,16 +64,15 @@ data ProtocolLimitFailure = ExceededSizeLimit
 instance Exception ProtocolLimitFailure
 
 
-driverWithLimits :: forall ps peerid failure bytes m.
+driverWithLimits :: forall ps failure bytes m.
                     (MonadThrow m, MonadTimer m, Exception failure)
-                 => Tracer m (TraceSendRecv ps peerid failure)
-                 -> peerid
+                 => Tracer m (TraceSendRecv ps)
                  -> Codec ps failure m bytes
                  -> ProtocolSizeLimits ps bytes
                  -> ProtocolTimeLimits ps
                  -> Channel m bytes
                  -> Driver ps (Maybe bytes) m
-driverWithLimits tr peerid Codec{encode, decode}
+driverWithLimits tracer Codec{encode, decode}
                  ProtocolSizeLimits{sizeLimitForState, dataSize}
                  ProtocolTimeLimits{timeLimitForState}
                  channel@Channel{send} =
@@ -85,7 +84,7 @@ driverWithLimits tr peerid Codec{encode, decode}
                 -> m ()
     sendMessage stok msg = do
       send (encode stok msg)
-      traceWith tr (TraceSendMsg peerid (AnyMessage msg))
+      traceWith tracer (TraceSendMsg (AnyMessage msg))
 
     recvMessage :: forall (pr :: PeerRole) (st :: ps).
                    PeerHasAgency pr st
@@ -100,7 +99,7 @@ driverWithLimits tr peerid Codec{encode, decode}
                                        channel trailing decoder
       case result of
         Just (Right x@(SomeMessage msg, _trailing')) -> do
-          traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
+          traceWith tracer (TraceRecvMsg (AnyMessage msg))
           return x
         Just (Left (Just failure)) -> throwM failure
         Just (Left Nothing)        -> throwM ExceededSizeLimit
@@ -155,20 +154,19 @@ runDecoderWithLimit limit size Channel{recv} =
 
 
 runPeerWithLimits
-  :: forall ps (st :: ps) pr peerid failure bytes m a .
+  :: forall ps (st :: ps) pr failure bytes m a .
      (MonadTimer m, MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps peerid failure)
-  -> peerid
+  => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
   -> ProtocolTimeLimits ps
   -> Channel m bytes
   -> Peer ps pr st m a
   -> m a
-runPeerWithLimits tr peerid codec slimits tlimits channel peer =
+runPeerWithLimits tracer codec slimits tlimits channel peer =
     fst <$> runPeerWithDriver driver peer (startDState driver)
   where
-    driver = driverWithLimits tr peerid codec slimits tlimits channel
+    driver = driverWithLimits tracer codec slimits tlimits channel
 
 
 -- | Run a pipelined peer with the given channel via the given codec.
@@ -179,18 +177,17 @@ runPeerWithLimits tr peerid codec slimits tlimits channel peer =
 -- 'MonadSTM' constraint.
 --
 runPipelinedPeerWithLimits
-  :: forall ps (st :: ps) pr peerid failure bytes m a.
+  :: forall ps (st :: ps) pr failure bytes m a.
      (MonadAsync m, MonadTimer m, MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps peerid failure)
-  -> peerid
+  => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
   -> ProtocolTimeLimits ps
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
   -> m a
-runPipelinedPeerWithLimits tr peerid codec slimits tlimits channel peer =
+runPipelinedPeerWithLimits tracer codec slimits tlimits channel peer =
     fst <$> runPipelinedPeerWithDriver driver peer (startDState driver)
   where
-    driver = driverWithLimits tr peerid codec slimits tlimits channel
+    driver = driverWithLimits tracer codec slimits tlimits channel
 

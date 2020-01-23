@@ -18,13 +18,11 @@
       "library" = {
         depends = [
           (hsPkgs.base)
-          (hsPkgs.typed-protocols)
           (hsPkgs.io-sim-classes)
           (hsPkgs.contra-tracer)
           (hsPkgs.array)
           (hsPkgs.binary)
           (hsPkgs.bytestring)
-          (hsPkgs.cborg)
           (hsPkgs.containers)
           (hsPkgs.network)
           (hsPkgs.process)

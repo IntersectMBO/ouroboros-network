@@ -56,7 +56,6 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
 import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Term     as CBOR
-import           Codec.CBOR.Read (DeserialiseFailure)
 import           Codec.Serialise (Serialise)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
@@ -76,8 +75,6 @@ import           Network.TypedProtocol.Driver (TraceSendRecv)
 import qualified Network.Mux as Mx
 import Network.Mux.DeltaQ.TraceTransformer
 import qualified Network.Mux.Types as Mx
-import           Network.Mux.Types (MuxBearer)
-import           Network.Mux.Interface
 import qualified Network.Mux.Bearer.Socket as Mx
 
 import           Ouroboros.Network.ErrorPolicy
@@ -87,6 +84,7 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Mux
 import qualified Ouroboros.Network.Server.ConnectionTable as CT
+import           Ouroboros.Network.Channel
 
 import           Ouroboros.Network.Connections.Concurrent hiding (Accept, Reject)
 import qualified Ouroboros.Network.Connections.Concurrent as Connection
@@ -100,12 +98,11 @@ import           Ouroboros.Network.Connections.Types hiding (Decision(..))
 -- 'Ouroboros.Network.NodeToClient.connectTo).
 --
 data NetworkConnectTracers ptcl vNumber = NetworkConnectTracers {
-      nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId (Mx.MuxTrace ptcl)),
+      nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId Mx.MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nctHandshakeTracer   :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
-                                                       ConnectionId
-                                                       (DecoderFailureOrTooMuchInput DeserialiseFailure))
+      nctHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer ConnectionId
+                                          (TraceSendRecv (Handshake vNumber CBOR.Term)))
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
     }
@@ -152,7 +149,7 @@ maxTransmissionUnit = 4 * 1440
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode
   :: forall appType ptcl vNumber vDataT a b.
-     ( Mx.ProtocolEnum ptcl
+     ( ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
@@ -162,8 +159,8 @@ connectToNode
      , Typeable vNumber
      , Show vNumber
      , Show ptcl
-     , Mx.MiniProtocolLimits ptcl
-     , HasInitiator appType ~ True
+     , MiniProtocolLimits ptcl
+     , Mx.HasInitiator appType ~ True
      )
   => VersionDataCodec vDataT CBOR.Term
   -> NetworkConnectTracers ptcl vNumber
@@ -205,7 +202,7 @@ connectToNode versionDataCodec tracers versions localAddr remoteAddr =
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode'
   :: forall appType ptcl vNumber vDataT a b.
-     ( Mx.ProtocolEnum ptcl
+     ( ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
@@ -215,8 +212,8 @@ connectToNode'
      , Typeable vNumber
      , Show vNumber
      , Show ptcl
-     , Mx.MiniProtocolLimits ptcl
-     , HasInitiator appType ~ True
+     , MiniProtocolLimits ptcl
+     , Mx.HasInitiator appType ~ True
      )
   => VersionDataCodec vDataT CBOR.Term
   -> NetworkConnectTracers ptcl vNumber
@@ -227,17 +224,16 @@ connectToNode'
 connectToNode' versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } versions sd = do
     connectionId <- ConnectionId <$> Socket.getSocketName sd <*> Socket.getPeerName sd
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
-    bearer <- Mx.socketAsMuxBearer muxTracer sd
-    Mx.muxBearerSetState muxTracer bearer Mx.Connected
+    let bearer = Mx.socketAsMuxBearer muxTracer sd
+    Mx.traceMuxBearerState muxTracer Mx.Connected
     traceWith muxTracer $ Mx.MuxTraceHandshakeStart
     ts_start <- getMonotonicTime
     !mapp <- runPeerWithByteLimit
               maxTransmissionUnit
               BL.length
-              nctHandshakeTracer
+              (contramap (Mx.WithMuxBearer connectionId) nctHandshakeTracer)
               codecHandshake
-              connectionId
-              (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
+              (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator))
               (handshakeClientPeer versionDataCodec versions)
     ts_end <- getMonotonicTime
     case mapp of
@@ -246,7 +242,7 @@ connectToNode' versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshak
              throwIO err
          Right app -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             Mx.muxStart muxTracer connectionId (toApplication app) bearer
+             Mx.muxStart muxTracer (toApplication app connectionId) bearer
 
 
 -- |
@@ -275,12 +271,11 @@ data AcceptConnection st peerid where
 -- | Tracers required by a server which handles inbound connections.
 --
 data NetworkServerTracers ptcl vNumber = NetworkServerTracers {
-      nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId (Mx.MuxTrace ptcl)),
+      nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId Mx.MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nstHandshakeTracer   :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
-                                                       ConnectionId
-                                                       (DecoderFailureOrTooMuchInput DeserialiseFailure)),
+      nstHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer ConnectionId
+                                          (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
       nstErrorPolicyTracer :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
@@ -333,12 +328,12 @@ data RejectConnection (p :: Provenance) where
 
 data SomeVersionedApplication ptcl vNumber vDataT provenance where
   SomeVersionedResponderApp
-    :: ( HasResponder appType ~ True )
+    :: ( Mx.HasResponder appType ~ True )
     => NetworkServerTracers ptcl vNumber
     -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
     -> SomeVersionedApplication ptcl vNumber vDataT Remote
   SomeVersionedInitiatorApp
-    :: ( HasInitiator appType ~ True )
+    :: ( Mx.HasInitiator appType ~ True )
     => NetworkConnectTracers ptcl vNumber
     -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
     -> SomeVersionedApplication ptcl vNumber vDataT Local
@@ -353,7 +348,7 @@ data SomeVersionedApplication ptcl vNumber vDataT provenance where
 data ConnectionData ptcl vNumber provenance where
   -- | Locally-initiated connection data.
   ConnectionDataLocal
-    :: ( HasInitiator appType ~ True )
+    :: ( Mx.HasInitiator appType ~ True )
     => NetworkConnectTracers ptcl vNumber
     -> NetworkMutableState
     -> VersionDataCodec vDataT CBOR.Term
@@ -361,7 +356,7 @@ data ConnectionData ptcl vNumber provenance where
     -> ConnectionData ptcl vNumber Local
   -- | Data for a remotely-initiated connection.
   ConnectionDataRemote
-    :: ( HasResponder appType ~ True )
+    :: ( Mx.HasResponder appType ~ True )
     => NetworkServerTracers ptcl vNumber
     -> NetworkMutableState
     -> ErrorPolicies Socket.SockAddr ()
@@ -377,8 +372,8 @@ data ConnectionData ptcl vNumber provenance where
 --
 withConnections
   :: forall ptcl vNumber request t.
-     ( Mx.ProtocolEnum ptcl
-     , Mx.MiniProtocolLimits ptcl
+     ( ProtocolEnum ptcl
+     , MiniProtocolLimits ptcl
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
@@ -403,8 +398,8 @@ withConnections mk = Connection.concurrent (connection mk)
 -- socket addresses, and referencing that `Connections` term.
 connection
   :: forall ptcl vNumber provenance request.
-     ( Mx.ProtocolEnum ptcl
-     , Mx.MiniProtocolLimits ptcl
+     ( ProtocolEnum ptcl
+     , MiniProtocolLimits ptcl
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
@@ -450,8 +445,8 @@ connection mk _ connid socket request = case mk request of
 -- incoming side, but not outgoing?
 outgoingConnection
   :: forall ptcl vNumber vDataT appType a b.
-     ( HasInitiator appType ~ True
-     , Mx.ProtocolEnum ptcl
+     ( Mx.HasInitiator appType ~ True
+     , ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
@@ -461,7 +456,7 @@ outgoingConnection
      , Typeable vNumber
      , Show vNumber
      , Show ptcl
-     , Mx.MiniProtocolLimits ptcl
+     , MiniProtocolLimits ptcl
      )
   => VersionDataCodec vDataT CBOR.Term
   -> NetworkConnectTracers ptcl vNumber
@@ -480,17 +475,16 @@ outgoingConnection versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHand
                     -- guarantees consistent protocols).
                     connectionId = ConnectionId localAddr remoteAddr
                 muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
-                bearer <- Mx.socketAsMuxBearer muxTracer sd
-                Mx.muxBearerSetState muxTracer bearer Mx.Connected
+                let bearer = Mx.socketAsMuxBearer muxTracer sd
+                Mx.traceMuxBearerState muxTracer Mx.Connected
                 traceWith muxTracer $ Mx.MuxTraceHandshakeStart
                 ts_start <- getMonotonicTime
                 !mapp <- runPeerWithByteLimit
                           maxTransmissionUnit
                           BL.length
-                          nctHandshakeTracer
+                          (contramap (Mx.WithMuxBearer connectionId) nctHandshakeTracer)
                           codecHandshake
-                          connectionId
-                          (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
+                          (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator))
                           (handshakeClientPeer versionDataCodec versions)
                 ts_end <- getMonotonicTime
                 case mapp of
@@ -501,20 +495,20 @@ outgoingConnection versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHand
                          throwIO err
                      Right app -> do
                          traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-                         Mx.muxStart muxTracer connectionId (toApplication app) bearer
+                         Mx.muxStart muxTracer (toApplication app connectionId) bearer
         pure $ Handler { handle = connectionHandle, action = action }
 
 -- | What to do on an incoming connection: run the given versions, which is
 -- known to have a responder side.
 incomingConnection
     :: forall ptcl vNumber vDataT appType a b.
-       ( HasResponder appType ~ True
-       , Mx.ProtocolEnum ptcl
+       ( Mx.HasResponder appType ~ True
+       , ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
        , Show ptcl
-       , Mx.MiniProtocolLimits ptcl
+       , MiniProtocolLimits ptcl
        , Ord vNumber
        , Enum vNumber
        , Serialise vNumber
@@ -608,16 +602,15 @@ incomingConnection NetworkServerTracers { nstMuxTracer
               -- releaser callback as well.
               action = fmap fst $ generalBracket register unregister $ \_ -> do
                   muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` nstMuxTracer
-                  (bearer :: MuxBearer ptcl IO) <- Mx.socketAsMuxBearer muxTracer' sd
-                  Mx.muxBearerSetState muxTracer' bearer Mx.Connected
+                  let bearer = Mx.socketAsMuxBearer muxTracer' sd
+                  Mx.traceMuxBearerState muxTracer' Mx.Connected
                   traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
                   mapp <- runPeerWithByteLimit
                           maxTransmissionUnit
                           BL.length
-                          nstHandshakeTracer
+                          (contramap (Mx.WithMuxBearer peerid) nstHandshakeTracer)
                           codecHandshake
-                          peerid
-                          (Mx.muxBearerAsControlChannel bearer Mx.ModeResponder)
+                          (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeResponder))
                           (handshakeServerPeer versionDataCodec acceptVersion versions)
                   case mapp of
                     Left err -> do
@@ -625,7 +618,7 @@ incomingConnection NetworkServerTracers { nstMuxTracer
                       throwIO err
                     Right app -> do
                       traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
-                      Mx.muxStart muxTracer' peerid (toApplication app) bearer
+                      Mx.muxStart muxTracer' (toApplication app peerid) bearer
           in  pure $ Handler { handle = connectionHandle, action = action }
   where
 
@@ -673,7 +666,7 @@ data WithServerNodeRequest (p :: Provenance) where
 -- incoming connections, as in a peer-to-peer node.
 withServerNode
     :: forall appType ptcl vNumber extra t a b.
-       ( HasResponder appType ~ True
+       ( Mx.HasResponder appType ~ True
        , ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl

@@ -535,8 +535,8 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
       client :: ChainSyncClient Block (Tip Block) m ()
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
 
-  void $ fork (void $ runPeer nullTracer codec "server" serverChan (chainSyncServerPeer server))
-  void $ fork (void $ runPeer nullTracer codec "client" clientChan (chainSyncClientPeer client))
+  void $ fork (void $ runPeer nullTracer codec serverChan (chainSyncServerPeer server))
+  void $ fork (void $ runPeer nullTracer codec clientChan (chainSyncClientPeer client))
 
   atomically $ do
     done <- readTVar doneVar
@@ -603,8 +603,8 @@ chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTes
       client :: ChainSyncClientPipelined Block (Tip Block) m ()
       client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
 
-  void $ fork (void $ runPeer nullTracer codec "server" serverChan (chainSyncServerPeer server))
-  void $ fork (void $ runPipelinedPeer nullTracer codec "client" clientChan (chainSyncClientPeerPipelined client))
+  void $ fork (void $ runPeer nullTracer codec serverChan (chainSyncServerPeer server))
+  void $ fork (void $ runPipelinedPeer nullTracer codec clientChan (chainSyncClientPeerPipelined client))
 
   atomically $ do
     done <- readTVar doneVar

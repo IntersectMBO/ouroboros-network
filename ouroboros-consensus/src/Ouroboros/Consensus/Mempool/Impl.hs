@@ -52,7 +52,7 @@ import           Ouroboros.Consensus.Util.STM (onEachChange)
   Top-level API
 -------------------------------------------------------------------------------}
 
-openMempool :: (IOLike m, ApplyTx blk)
+openMempool :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
             => ResourceRegistry m
             -> LedgerInterface m blk
             -> LedgerConfig blk
@@ -69,7 +69,7 @@ openMempool registry ledger cfg capacity tracer = do
 --
 -- Intended for testing purposes.
 openMempoolWithoutSyncThread
-  :: (IOLike m, ApplyTx blk)
+  :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
   => LedgerInterface m blk
   -> LedgerConfig blk
   -> MempoolCapacityBytes
@@ -78,7 +78,7 @@ openMempoolWithoutSyncThread
 openMempoolWithoutSyncThread ledger cfg capacity tracer =
     mkMempool <$> initMempoolEnv ledger cfg capacity tracer
 
-mkMempool :: (IOLike m, ApplyTx blk)
+mkMempool :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
           => MempoolEnv m blk -> Mempool m blk TicketNo
 mkMempool env = Mempool
     { addTxs         = implAddTxs         env []
@@ -382,7 +382,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
                                   -- validated).
 
 implRemoveTxs
-  :: (IOLike m, ApplyTx blk)
+  :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
   => MempoolEnv m blk
   -> [GenTxId blk]
   -> m ()

@@ -40,8 +40,6 @@ import           Text.Show.Functions ()
 
 import           Test.Tasty.QuickCheck (shuffle, testProperty)
 
-import qualified Network.Mux as Mx
-import           Network.Mux.Interface
 import           Network.Mux.Time (microsecondsToDiffTime)
 
 import           Network.TypedProtocol.Driver
@@ -72,13 +70,10 @@ defaultMiniProtocolLimit = 3000000
 data TestProtocols1 = ChainSyncPr
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance Mx.ProtocolEnum TestProtocols1 where
-  fromProtocolEnum ChainSyncPr = 2
+instance ProtocolEnum TestProtocols1 where
+  fromProtocolEnum ChainSyncPr = MiniProtocolNum 2
 
-  toProtocolEnum 2 = Just ChainSyncPr
-  toProtocolEnum _ = Nothing
-
-instance Mx.MiniProtocolLimits TestProtocols1 where
+instance MiniProtocolLimits TestProtocols1 where
   maximumMessageSize ChainSyncPr  = defaultMiniProtocolLimit
   maximumIngressQueue ChainSyncPr = defaultMiniProtocolLimit
 
@@ -88,13 +83,10 @@ instance Mx.MiniProtocolLimits TestProtocols1 where
 data TestProtocols2 = ReqRespPr
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance Mx.ProtocolEnum TestProtocols2 where
-  fromProtocolEnum ReqRespPr = 4
+instance ProtocolEnum TestProtocols2 where
+  fromProtocolEnum ReqRespPr = MiniProtocolNum 4
 
-  toProtocolEnum 4 = Just ReqRespPr
-  toProtocolEnum _ = Nothing
-
-instance Mx.MiniProtocolLimits TestProtocols2 where
+instance MiniProtocolLimits TestProtocols2 where
   maximumMessageSize ReqRespPr  = defaultMiniProtocolLimit
   maximumIngressQueue ReqRespPr = defaultMiniProtocolLimit
 
@@ -534,10 +526,9 @@ prop_send_recv f xs first = ioProperty $ do
     let -- Server Node; only req-resp server
         responderApp :: OuroborosApplication ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void ()
         responderApp = OuroborosResponderApplication $
-          \peerid ReqRespPr channel -> do
+          \_peerid ReqRespPr channel -> do
             r <- runPeer (tagTrace "Responder" activeTracer)
                          ReqResp.codecReqResp
-                         peerid
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
@@ -546,10 +537,9 @@ prop_send_recv f xs first = ioProperty $ do
         -- Client Node; only req-resp client
         initiatorApp :: OuroborosApplication InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
         initiatorApp = OuroborosInitiatorApplication $
-          \peerid ReqRespPr channel -> do
+          \_peerid ReqRespPr channel -> do
             r <- runPeer (tagTrace "Initiator" activeTracer)
                          ReqResp.codecReqResp
-                         peerid
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
             atomically $ putTMVar cv r
@@ -664,10 +654,9 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp ConnectionId TestProtocols2 IO BL.ByteString () ()
     appX ReqRspCfg {rrcTag, rrcServerVar, rrcClientVar, rrcSiblingVar} = OuroborosInitiatorAndResponderApplication
             -- Initiator
-            (\peerid ReqRespPr channel -> do
+            (\_peerid ReqRespPr channel -> do
              r <- runPeer (tagTrace (rrcTag ++ " Initiator") activeTracer)
                          ReqResp.codecReqResp
-                         peerid
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
              atomically $ putTMVar rrcClientVar r
@@ -675,10 +664,9 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
              waitSiblingSub rrcSiblingVar
             )
             -- Responder
-            (\peerid ReqRespPr channel -> do
+            (\_peerid ReqRespPr channel -> do
              r <- runPeer (tagTrace (rrcTag ++ " Responder") activeTracer)
                          ReqResp.codecReqResp
-                         peerid
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL
                            (\a -> pure . f a) 0))

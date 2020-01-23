@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.BlockchainTime.Mock (
@@ -11,6 +12,7 @@ module Ouroboros.Consensus.BlockchainTime.Mock (
   , TestClock(..)
   , TestBlockchainTime(..)
   , newTestBlockchainTime
+  , cloneTestBlockchainTime
   , countSlotLengthChanges
   ) where
 
@@ -82,7 +84,7 @@ newTestBlockchainTime
     -> SlotLengths        -- ^ Slot duration
     -> m (TestBlockchainTime m)
 newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
-    slotVar <- newTVarM initVal
+    slotVar <- newTVarM Initializing
     doneVar <- newEmptyMVar ()
 
     void $ forkLinkedThread registry $ loop slotVar doneVar
@@ -98,7 +100,7 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
         btime = BlockchainTime {
             getCurrentSlot = get
           , onSlotChange_  = fmap cancelThread .
-              onEachChange registry Running (Just initVal) get
+              onEachChange registry Running (Just Initializing) get
           }
 
     return $ TestBlockchainTime
@@ -120,7 +122,29 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
             threadDelay (nominalDelay delay)
             go ls' (n - 1)
 
-    initVal = Initializing
+-- | Create a synchronized clone that uses a different 'ResourceRegistry'
+cloneTestBlockchainTime
+    :: forall m. (IOLike m, HasCallStack)
+    => TestBlockchainTime m
+    -> ResourceRegistry m
+    -> m (TestBlockchainTime m)
+cloneTestBlockchainTime testBtime registry = do
+    s <- atomically get
+
+    let btime' :: BlockchainTime m
+        btime' = BlockchainTime {
+            getCurrentSlot = get
+          , onSlotChange_  = fmap cancelThread .
+              onEachChange registry Running (Just (Running s)) get
+          }
+
+    return $ TestBlockchainTime
+      { testBlockchainTime     = btime'
+      , testBlockchainTimeDone
+      }
+  where
+    TestBlockchainTime{testBlockchainTime, testBlockchainTimeDone} = testBtime
+    BlockchainTime{getCurrentSlot = get} = testBlockchainTime
 
 -- | Number of slot length changes if running for the specified number of slots
 countSlotLengthChanges :: NumSlots -> SlotLengths -> Word64

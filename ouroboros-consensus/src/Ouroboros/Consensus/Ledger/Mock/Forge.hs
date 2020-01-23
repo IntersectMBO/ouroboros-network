@@ -8,12 +8,16 @@ module Ouroboros.Consensus.Ledger.Mock.Forge (forgeSimple) where
 import           Codec.Serialise (Serialise (..), serialise)
 import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Typeable (Typeable)
 import           Data.Word
 
 import           Cardano.Crypto.Hash
 
-import           Ouroboros.Network.Block (BlockNo, ChainHash, SlotNo)
+import           Ouroboros.Network.Block (BlockNo, SlotNo)
 
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock.Block
 import           Ouroboros.Consensus.Ledger.Mock.Run
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -23,15 +27,17 @@ forgeSimple :: forall p c m ext.
                , MonadRandom m
                , SimpleCrypto c
                , RunMockBlock p c ext
+               , SupportedBlock (SimpleBlock c ext)
+               , Typeable ext
                )
             => NodeConfig p
-            -> SlotNo                         -- ^ Current slot
-            -> BlockNo                        -- ^ Current block number
-            -> ChainHash (SimpleBlock c ext)  -- ^ Previous hash
-            -> [GenTx (SimpleBlock c ext)]    -- ^ Txs to add in the block
-            -> IsLeader p                     -- ^ Proof we are slot leader
+            -> SlotNo                              -- ^ Current slot
+            -> BlockNo                             -- ^ Current block number
+            -> ExtLedgerState (SimpleBlock c ext)  -- ^ Previous hash
+            -> [GenTx (SimpleBlock c ext)]         -- ^ Txs to add in the block
+            -> IsLeader p                          -- ^ Proof we are slot leader
             -> m (SimpleBlock c ext)
-forgeSimple cfg curSlot curBlock prevHash txs proof = do
+forgeSimple cfg curSlot curBlock extLedger txs proof = do
     forgeExt cfg proof $ SimpleBlock {
         simpleHeader = mkSimpleHeader encode stdHeader ()
       , simpleBody   = body
@@ -42,7 +48,7 @@ forgeSimple cfg curSlot curBlock prevHash txs proof = do
 
     stdHeader :: SimpleStdHeader c ext
     stdHeader = SimpleStdHeader {
-          simplePrev      = prevHash
+          simplePrev      = ledgerTipHash (ledgerState extLedger)
         , simpleSlotNo    = curSlot
         , simpleBlockNo   = curBlock
         , simpleBodyHash  = hash body

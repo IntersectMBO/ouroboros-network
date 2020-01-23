@@ -13,15 +13,17 @@ module Ouroboros.Storage.ChainDB.Impl.Query
   , getTipHeader
   , getTipPoint
   , getTipBlockNo
-  , getBlock
+  , getBlockComponent
   , getIsFetched
   , getIsInvalidBlock
   , getMaxSlotNo
     -- * Low-level queries
   , getAnyKnownBlock
-  , getAnyKnownDeserialisableBlockOrHeader
+  , getAnyKnownBlockComponent
+  , getAnyBlockComponent
   ) where
 
+import           Control.Monad (join)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable
 
@@ -41,10 +43,9 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
-import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
+import           Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB,
                      ChainDbError (..), ChainDbFailure (..),
-                     Deserialisable (..), InvalidBlockReason)
-
+                     InvalidBlockReason)
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
@@ -100,6 +101,7 @@ getTipBlock cdb@CDB{..} = do
 getTipHeader
   :: forall m blk.
      ( IOLike m
+     , HasHeader blk
      , HasHeader (Header blk)
      )
   => ChainDbEnv m blk
@@ -119,12 +121,12 @@ getTipHeader CDB{..} = do
 
           -- Note that we can't use 'getBlockAtTip' because a block might have
           -- been appended to the ImmutableDB since we obtained 'anchorOrHdr'.
-        -> anchorMustBeThere <$>
-           ImmDB.getBlockOrHeaderWithPoint cdbImmDB Header (castPoint anchor)
+        -> fmap Just . anchorMustBeThere =<<
+           ImmDB.getBlockComponentWithPoint cdbImmDB GetHeader (castPoint anchor)
   where
-    anchorMustBeThere :: Maybe (Header blk) -> Maybe (Header blk)
-    anchorMustBeThere Nothing    = error "block at tip of ImmutableDB missing"
-    anchorMustBeThere (Just hdr) = Just hdr
+    anchorMustBeThere :: Maybe a -> a
+    anchorMustBeThere Nothing  = error "block at tip of ImmutableDB missing"
+    anchorMustBeThere (Just a) = a
 
 getTipPoint
   :: forall m blk. (IOLike m, HasHeader (Header blk))
@@ -141,11 +143,12 @@ getTipBlockNo CDB{..} = do
     -- invariant.
     maybe (readTVar cdbImmBlockNo) return mbTipBlockNo
 
-getBlock
-  :: forall m blk. (MonadCatch m , HasHeader blk)
+getBlockComponent
+  :: forall m blk b. (MonadCatch m , HasHeader blk)
   => ChainDbEnv m blk
-  -> Point blk -> m (Maybe blk)
-getBlock CDB{..} = getAnyBlock cdbImmDB cdbVolDB
+  -> BlockComponent (ChainDB m blk) b
+  -> Point blk -> m (Maybe b)
+getBlockComponent CDB{..} = getAnyBlockComponent cdbImmDB cdbVolDB
 
 getIsFetched
   :: forall m blk. IOLike m
@@ -191,63 +194,43 @@ getMaxSlotNo CDB{..} = do
   Chain DB to have been initialized.
 -------------------------------------------------------------------------------}
 
--- | Variant of 'getAnyKnownDeserialisableBlockOrHeader' that deserialies the
--- block.
+-- | Variant of 'getAnyBlockComponent' instantiated with 'GetBlock'.
 getAnyKnownBlock
   :: forall m blk. (MonadCatch m, HasHeader blk)
   => ImmDB m blk
   -> VolDB m blk
   -> Point blk
   -> m blk
-getAnyKnownBlock immDB volDB p = do
-    mBlock <- mustExist p <$> getAnyBlock immDB volDB p
+getAnyKnownBlock immDB volDB = join . getAnyKnownBlockComponent immDB volDB GetBlock
+
+-- | Wrapper around 'getAnyBlockComponent' for blocks we know should exist.
+--
+-- If the block does not exist, this indicates disk failure.
+getAnyKnownBlockComponent
+  :: forall m blk b. (MonadCatch m, HasHeader blk)
+  => ImmDB m blk
+  -> VolDB m blk
+  -> BlockComponent (ChainDB m blk) b
+  -> Point blk
+  -> m b
+getAnyKnownBlockComponent immDB volDB blockComponent p = do
+    mBlock <- mustExist p <$> getAnyBlockComponent immDB volDB blockComponent p
     case mBlock of
       Right b  -> return b
       Left err -> throwM err
 
--- | Wrapper around 'getAnyDeserialisableBlockOrHeader' for blocks/headers we
--- know should exist.
---
--- If the block does not exist, this indicates disk failure.
-getAnyKnownDeserialisableBlockOrHeader
-  :: forall m blk b. (MonadCatch m, HasHeader blk)
-  => ImmDB m blk
-  -> VolDB m blk
-  -> BlockOrHeader blk b
-  -> Point blk
-  -> m (Deserialisable m blk b)
-getAnyKnownDeserialisableBlockOrHeader immDB volDB blockOrHeader p = do
-    mB <- mustExist p <$>
-      getAnyDeserialisableBlockOrHeader immDB volDB blockOrHeader p
-    case mB of
-      Right b  -> return b
-      Left err -> throwM err
-
--- | Variant of 'getAnyDeserialisableBlockOrHeader' that deserialises the
--- block.
-getAnyBlock
-  :: forall m blk. (MonadCatch m, HasHeader blk)
-  => ImmDB m blk
-  -> VolDB m blk
-  -> Point blk
-  -> m (Maybe blk)
-getAnyBlock immDB volDB p =
-  traverse deserialise =<<
-  getAnyDeserialisableBlockOrHeader immDB volDB Block p
-
--- | Get a block or header from either the immutable DB or volatile DB, but
--- don't deserialise it yet.
+-- | Get a block component from either the immutable DB or volatile DB.
 --
 -- Returns 'Nothing' if the 'Point' is unknown.
 -- Throws 'NoGenesisBlockException' if the 'Point' refers to the genesis block.
-getAnyDeserialisableBlockOrHeader
+getAnyBlockComponent
   :: forall m blk b. (MonadCatch m, HasHeader blk)
   => ImmDB m blk
   -> VolDB m blk
-  -> BlockOrHeader blk b
+  -> BlockComponent (ChainDB m blk) b
   -> Point blk
-  -> m (Maybe (Deserialisable m blk b))
-getAnyDeserialisableBlockOrHeader immDB volDB blockOrHeader p =
+  -> m (Maybe b)
+getAnyBlockComponent immDB volDB blockComponent p =
     case pointHash p of
       GenesisHash    -> throwM NoGenesisBlock
       BlockHash hash -> do
@@ -265,7 +248,7 @@ getAnyDeserialisableBlockOrHeader immDB volDB blockOrHeader p =
         -- it, then we can get @immTipSlot@ and compare it to the slot of the
         -- requested point. If the slot <= @immTipSlot@ it /must/ be in the
         -- ImmutableDB (no race condition here).
-        mbVolB <- VolDB.getDeserialisableBlockOrHeader volDB blockOrHeader hash
+        mbVolB <- VolDB.getBlockComponent volDB blockComponent hash
         case mbVolB of
           Just b -> return $ Just b
           Nothing    -> do
@@ -275,7 +258,7 @@ getAnyDeserialisableBlockOrHeader immDB volDB blockOrHeader p =
               -- It's not supposed to be in the ImmutableDB and the VolatileDB
               -- didn't contain it, so return 'Nothing'.
               then return Nothing
-              else ImmDB.getDeserialisableBlockOrHeaderWithPoint immDB blockOrHeader p
+              else ImmDB.getBlockComponentWithPoint immDB blockComponent p
 
 mustExist :: (Typeable blk, StandardHash blk)
           => Point blk -> Maybe b -> Either ChainDbFailure b

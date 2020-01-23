@@ -20,8 +20,8 @@ import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (ChainHash, Point, SlotNo, pointHash,
-                     pointSlot)
+import           Ouroboros.Network.Block (ChainHash, HasHeader, Point, SlotNo,
+                     pointHash, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block
@@ -32,7 +32,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -------------------------------------------------------------------------------}
 
 -- | Interaction with the ledger layer
-class ( SupportedBlock blk
+class ( HasHeader blk
+      , HasHeader (Header blk)
       , Show (LedgerState blk)
       , Show (LedgerError blk)
       , Eq   (LedgerState blk)
@@ -45,10 +46,6 @@ class ( SupportedBlock blk
 
   -- | Static environment required for the ledger
   data family LedgerConfig blk :: *
-
-  -- | Extract the ledger environment from the node config
-  ledgerConfigView :: NodeConfig (BlockProtocol blk)
-                   -> LedgerConfig blk
 
   -- | Apply "slot based" state transformations
   --
@@ -118,7 +115,12 @@ newtype TickedLedgerState blk = TickedLedgerState {
     }
 
 -- | Link protocol to ledger
-class UpdateLedger blk => ProtocolLedgerView blk where
+class (SupportedBlock blk, UpdateLedger blk) => ProtocolLedgerView blk where
+  -- | Extract the ledger environment from the node config
+  ledgerConfigView :: NodeConfig (BlockProtocol blk)
+                   -> LedgerConfig blk
+
+  -- | Extract ledger view from the ledger state
   protocolLedgerView :: NodeConfig (BlockProtocol blk)
                      -> LedgerState blk
                      -> LedgerView (BlockProtocol blk)

@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE RankNTypes                #-}
@@ -13,14 +14,12 @@ module Ouroboros.Storage.ImmutableDB.Impl.State
   , InternalState (..)
   , dbIsOpen
   , OpenState (..)
-  , ClosedState (..)
     -- * State helpers
   , mkOpenState
   , getOpenState
   , modifyOpenState
   , withOpenState
-  , closedStateFromInternalState
-  , closeOpenStateHandles
+  , cleanUp
   ) where
 
 import           Control.Monad.State.Strict
@@ -35,7 +34,7 @@ import           Control.Monad.Class.MonadThrow hiding (onException)
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     allocate, unsafeReleaseAll)
+                     allocate)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -71,13 +70,13 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     }
 
 data InternalState m hash h =
-    DbClosed !ClosedState
+    DbClosed
   | DbOpen !(OpenState m hash h)
   deriving (Generic, NoUnexpectedThunks)
 
 dbIsOpen :: InternalState m hash h -> Bool
-dbIsOpen (DbClosed _) = False
-dbIsOpen (DbOpen _)   = True
+dbIsOpen DbClosed   = False
+dbIsOpen (DbOpen _) = True
 
 -- | Internal state when the database is open.
 data OpenState m hash h = OpenState
@@ -97,19 +96,8 @@ data OpenState m hash h = OpenState
       -- ^ The write handle for the current secondary index file.
     , _currentTip             :: !(ImmTipWithHash hash)
       -- ^ The current tip of the database.
-    , _nextIteratorID         :: !BaseIteratorID
-      -- ^ The ID of the next iterator that will be created.
     , _index                  :: !(Index m hash h)
       -- ^ An abstraction layer on top of the indices to allow for caching.
-    }
-  deriving (Generic, NoUnexpectedThunks)
-
--- | Internal state when the database is closed. This contains data that
--- should be restored when the database is reopened. Data not present here
--- will be recovered when reopening.
-data ClosedState = ClosedState
-    { _closedNextIteratorID :: !BaseIteratorID
-      -- ^ See '_nextIteratorID'.
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -125,11 +113,10 @@ mkOpenState
   -> ErrorHandling ImmutableDBError m
   -> Index m hash h
   -> EpochNo
-  -> BaseIteratorID
   -> ImmTipWithHash hash
   -> AllowExisting
   -> m (OpenState m hash h)
-mkOpenState registry HasFS{..} _err index epoch nextIteratorID tip existing = do
+mkOpenState registry HasFS{..} _err index epoch tip existing = do
     eHnd <- allocateHandle $ hOpen (renderFile "epoch" epoch)     appendMode
     pHnd <- allocateHandle $ Index.openPrimaryIndex index epoch existing
     sHnd <- allocateHandle $ hOpen (renderFile "secondary" epoch) appendMode
@@ -143,7 +130,6 @@ mkOpenState registry HasFS{..} _err index epoch nextIteratorID tip existing = do
       , _currentPrimaryHandle   = pHnd
       , _currentSecondaryHandle = sHnd
       , _currentTip             = tip
-      , _nextIteratorID         = nextIteratorID
       , _index                  = index
       }
   where
@@ -167,7 +153,7 @@ getOpenState :: (HasCallStack, IOLike m)
 getOpenState ImmutableDBEnv {..} = do
     internalState <- readMVar _dbInternalState
     case internalState of
-       DbClosed _       -> throwUserError _dbErr ClosedDBError
+       DbClosed         -> throwUserError _dbErr ClosedDBError
        DbOpen openState -> return (SomePair _dbHasFS openState)
 
 -- | Modify the internal state of an open database.
@@ -199,41 +185,36 @@ modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
     -- so that 'close' knows which error is thrown (@Either e (s, r)@ vs. @(s,
     -- r)@).
 
-    open :: m (InternalState m hash h)
-    open = takeMVar _dbInternalState
+    open :: m (OpenState m hash h)
+    -- TODO Is uninterruptibleMask_ absolutely necessary here?
+    open = uninterruptibleMask_ $ takeMVar _dbInternalState >>= \case
+      DbOpen ost -> return ost
+      DbClosed   -> do
+        putMVar _dbInternalState DbClosed
+        throwUserError _dbErr ClosedDBError
 
-    close :: InternalState m hash h
+    close :: OpenState m hash h
           -> ExitCase (Either ImmutableDBError (r, OpenState m hash h))
           -> m ()
-    close !st ec = do
-        -- It is crucial to replace the TMVar.
+    close !ost ec = do
+        -- It is crucial to replace the MVar.
         putMVar _dbInternalState st'
         followUp
       where
         (st', followUp) = case ec of
           -- If we were interrupted, restore the original state.
-          ExitCaseAbort                               -> (st, return ())
-          ExitCaseException _ex                       -> (st, return ())
+          ExitCaseAbort                               -> (DbOpen ost, return ())
+          ExitCaseException _ex                       -> (DbOpen ost, return ())
           -- In case of success, update to the newest state
-          ExitCaseSuccess (Right (_, ost))            ->
-              (DbOpen ost, return ())
+          ExitCaseSuccess (Right (_, ost'))           -> (DbOpen ost', return ())
           -- In case of an unexpected error (not an exception), close the DB
           -- for safety
-          ExitCaseSuccess (Left (UnexpectedError {})) ->
-              -- This function ('modifyOpenState') can be called from all
-              -- threads, not necessarily the one that opened the ImmutableDB
-              -- and the registry, so we must use 'unsafeReleaseAll' instead of
-              -- 'releaseAll'.
-              ( DbClosed (closedStateFromInternalState st)
-              , unsafeReleaseAll _dbRegistry )
+          ExitCaseSuccess (Left (UnexpectedError {})) -> (DbClosed, cleanUp hasFS ost)
           -- In case a user error, just restore the previous state
-          ExitCaseSuccess (Left (UserError {}))       -> (st, return ())
+          ExitCaseSuccess (Left (UserError {}))       -> (DbOpen ost, return ())
 
-    mutation :: HasCallStack
-             => InternalState m hash h
-             -> m (r, OpenState m hash h)
-    mutation (DbClosed _) = throwUserError _dbErr ClosedDBError
-    mutation (DbOpen ost) = runStateT (action hasFS) ost
+    mutation :: HasCallStack => OpenState m hash h -> m (r, OpenState m hash h)
+    mutation = runStateT (action hasFS)
 
 -- | Perform an action that accesses the internal state of an open database.
 --
@@ -255,12 +236,14 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
     HasFS{..}         = hasFS
     ErrorHandling{..} = _dbErr
 
-    open :: m (InternalState m hash h)
-    open = readMVar _dbInternalState
+    open :: m (OpenState m hash h)
+    open = readMVar _dbInternalState >>= \case
+      DbOpen ost -> return ost
+      DbClosed   -> throwUserError _dbErr ClosedDBError
 
     -- close doesn't take the state that @open@ returned, because the state
     -- may have been updated by someone else since we got it (remember we're
-    -- using 'readTMVar' here, 'takeTMVar'). So we need to get the most recent
+    -- using 'readMVar' here, 'takeMVar'). So we need to get the most recent
     -- state anyway.
     close :: ExitCase (Either ImmutableDBError r)
           -> m ()
@@ -273,33 +256,19 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
       ExitCaseSuccess (Left (UserError {}))       -> return ()
 
     shutDown :: m ()
-    shutDown = do
-      -- We need to get the most recent state because it might have changed
-      -- behind our back
-      updateMVar_ _dbInternalState $ DbClosed . closedStateFromInternalState
-      -- This function ('withOpenState') can be called from all threads, not
-      -- necessarily the one that opened the ImmutableDB and the registry, so
-      -- we must use 'unsafeReleaseAll' instead of 'releaseAll'.
-      unsafeReleaseAll _dbRegistry
+    shutDown = swapMVar _dbInternalState DbClosed >>= \case
+      DbOpen ost -> cleanUp hasFS ost
+      DbClosed   -> return ()
 
-    access :: HasCallStack
-           => InternalState m hash h
-           -> m r
-    access (DbClosed _) = throwUserError _dbErr ClosedDBError
-    access (DbOpen ost) = action hasFS ost
+    access :: HasCallStack => OpenState m hash h -> m r
+    access = action hasFS
 
-closeOpenStateHandles :: Monad m => HasFS m h -> OpenState m hash h -> m ()
-closeOpenStateHandles HasFS { hClose } OpenState {..}  = do
+cleanUp :: Monad m => HasFS m h -> OpenState m hash h -> m ()
+cleanUp HasFS { hClose } OpenState {..}  = do
+    Index.close _index
     -- If one of the 'hClose' calls fails, the error will bubble up to the
     -- bracketed call to 'withRegistry', which will close the
     -- 'ResourceRegistry' and thus all the remaining handles in it.
     hClose _currentEpochHandle
     hClose _currentPrimaryHandle
     hClose _currentSecondaryHandle
-
--- | Create a 'ClosedState' from an internal state, open or closed.
-closedStateFromInternalState :: InternalState m hash h -> ClosedState
-closedStateFromInternalState (DbClosed cst) = cst
-closedStateFromInternalState (DbOpen OpenState {..}) = ClosedState
-    { _closedNextIteratorID  = _nextIteratorID
-    }

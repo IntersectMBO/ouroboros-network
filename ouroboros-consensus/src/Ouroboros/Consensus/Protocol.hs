@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Protocol (
   , ProtocolLeaderSchedule
   , ProtocolMockPBFT
   , ProtocolRealPBFT
+  , ProtocolDualPBFT
     -- * Abstract over the various protocols
   , Protocol(..)
     -- * Evidence that we can run all the supported protocols
@@ -20,6 +21,8 @@ import qualified Cardano.Chain.Update as Update
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.ByronSpec
+import           Ouroboros.Consensus.Ledger.Dual.Byron
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract (NumCoreNodes)
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
@@ -43,6 +46,7 @@ type ProtocolMockPraos      = Praos AddrDist PraosMockCrypto
 type ProtocolLeaderSchedule = WithLeaderSchedule (Praos () PraosCryptoUnused)
 type ProtocolMockPBFT       = PBft (PBftLedgerView PBftMockCrypto) PBftMockCrypto
 type ProtocolRealPBFT       = PBft ByronConfig PBftCardanoCrypto
+type ProtocolDualPBFT       = PBft DualByronConfig PBftCardanoCrypto
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols
@@ -75,9 +79,8 @@ data Protocol blk where
 
   -- | Run PBFT against the mock ledger
   ProtocolMockPBFT
-    :: NumCoreNodes
+    :: PBftParams
     -> CoreNodeId
-    -> PBftParams
     -> Protocol (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
 
   -- | Run PBFT against the real ledger
@@ -89,6 +92,13 @@ data Protocol blk where
     -> Maybe PBftLeaderCredentials
     -> Protocol ByronBlock
 
+  -- | Run PBFT with the combination of the abstract and real ledgers
+  ProtocolDualPBFT
+    :: ByronSpecGenesis
+    -> PBftParams
+    -> Maybe CoreNodeId
+    -> Protocol DualByronBlock
+
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols
 -------------------------------------------------------------------------------}
@@ -99,3 +109,4 @@ runProtocol ProtocolMockPraos{}      = Dict
 runProtocol ProtocolLeaderSchedule{} = Dict
 runProtocol ProtocolMockPBFT{}       = Dict
 runProtocol ProtocolRealPBFT{}       = Dict
+runProtocol ProtocolDualPBFT{}       = Dict

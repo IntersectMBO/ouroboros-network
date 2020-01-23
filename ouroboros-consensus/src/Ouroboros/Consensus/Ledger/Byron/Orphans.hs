@@ -89,7 +89,7 @@ instance Condense (CC.ABlockOrBoundary ByteString) where
 
 instance Condense (CC.ABoundaryHeader ByteString) where
   condense hdr = mconcat [
-        "( ebb: true"
+        "( ebb: "          <> condense (CC.boundaryEpoch hdr)
       , ", hash: "         <> condensedHash
       , ", previousHash: " <> condensedPrevHash
       , ")"

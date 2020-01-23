@@ -89,7 +89,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbNodeConfig       :: NodeConfig (BlockProtocol blk)
     , cdbEpochInfo        :: EpochInfo m
     , cdbHashInfo         :: HashInfo (HeaderHash blk)
-    , cdbIsEBB            :: blk -> Maybe EpochNo
+    , cdbIsEBB            :: Header blk -> Maybe EpochNo
     , cdbCheckIntegrity   :: blk -> Bool
     , cdbGenesis          :: m (ExtLedgerState blk)
     , cdbBlockchainTime   :: BlockchainTime m
@@ -152,7 +152,8 @@ defaultArgs fp = toChainDbArgs (ImmDB.defaultArgs fp)
 
 -- | Internal: split 'ChainDbArgs' into 'ImmDbArgs', 'VolDbArgs, 'LgrDbArgs',
 -- and 'ChainDbSpecificArgs'.
-fromChainDbArgs :: ChainDbArgs m blk
+fromChainDbArgs :: GetHeader blk
+                => ChainDbArgs m blk
                 -> ( ImmDB.ImmDbArgs     m blk
                    , VolDB.VolDbArgs     m blk
                    , LgrDB.LgrDbArgs     m blk
@@ -186,7 +187,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , volDecodeBlock      = cdbDecodeBlock
         , volEncodeBlock      = cdbEncodeBlock
         , volAddHdrEnv        = cdbAddHdrEnv
-        , volIsEBB            = \blk -> case cdbIsEBB blk of
+        , volIsEBB            = \blk -> case cdbIsEBB (getHeader blk) of
                                           Nothing -> IsNotEBB
                                           Just _  -> IsEBB
         }

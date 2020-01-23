@@ -17,24 +17,23 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
-protocolInfoMockPBFT :: NumCoreNodes
+protocolInfoMockPBFT :: PBftParams
                      -> CoreNodeId
-                     -> PBftParams
                      -> ProtocolInfo (SimplePBftBlock SimpleMockCrypto
                                                       PBftMockCrypto)
-protocolInfoMockPBFT (NumCoreNodes numCoreNodes) (CoreNodeId nid) params =
+protocolInfoMockPBFT params nid =
     ProtocolInfo {
         pInfoConfig = PBftNodeConfig {
-            pbftParams   = params {pbftNumNodes = fromIntegral numCoreNodes}
+            pbftParams   = params
           , pbftIsLeader = PBftIsALeader PBftIsLeader {
-                pbftCoreNodeId = CoreNodeId nid
-              , pbftSignKey    = SignKeyMockDSIGN nid
+                pbftCoreNodeId = nid
+              , pbftSignKey    = signKey nid
                 -- For Mock PBFT, we use our key as the genesis key.
-              , pbftDlgCert    = (VerKeyMockDSIGN nid, VerKeyMockDSIGN nid)
+              , pbftDlgCert    = (verKey nid, verKey nid)
               }
           , pbftExtConfig = PBftLedgerView $
-              Bimap.fromList [ (VerKeyMockDSIGN n, VerKeyMockDSIGN n)
-                             | n <- [0 .. numCoreNodes - 1]
+              Bimap.fromList [ (verKey n, verKey n)
+                             | n <- enumCoreNodes (pbftNumNodes params)
                              ]
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
@@ -42,8 +41,14 @@ protocolInfoMockPBFT (NumCoreNodes numCoreNodes) (CoreNodeId nid) params =
       , pInfoInitState  = ()
       }
   where
+    signKey :: CoreNodeId -> SignKeyDSIGN MockDSIGN
+    signKey (CoreNodeId n) = SignKeyMockDSIGN (fromIntegral n)
+
+    verKey :: CoreNodeId -> VerKeyDSIGN MockDSIGN
+    verKey (CoreNodeId n) = VerKeyMockDSIGN (fromIntegral n)
+
     addrDist :: AddrDist
-    addrDist = mkAddrDist numCoreNodes
+    addrDist = mkAddrDist (pbftNumNodes params)
 
 instance Serialise (VerKeyDSIGN MockDSIGN) where
   encode = encodeVerKeyDSIGN

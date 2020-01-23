@@ -7,6 +7,7 @@ module Ouroboros.Consensus.Ledger.Mock.Address (
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
+import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 
 -- | Mock address
@@ -18,8 +19,9 @@ type Addr = String
 type AddrDist = Map Addr NodeId
 
 -- | Construct address to node ID mapping
-mkAddrDist :: Int -- ^ Number of nodes
-           -> AddrDist
+mkAddrDist :: NumCoreNodes -> AddrDist
 mkAddrDist numCoreNodes =
-    Map.fromList $ zip [[addr]   | addr <- ['a'..]]
-                       [CoreId n | n    <- [0  .. numCoreNodes - 1]]
+    Map.fromList $ zip [ [addr] | addr <- ['a'..] ]
+                       [ CoreId nid
+                       | nid <- enumCoreNodes numCoreNodes
+                       ]

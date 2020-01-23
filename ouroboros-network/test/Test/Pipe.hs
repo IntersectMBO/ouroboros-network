@@ -25,7 +25,6 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Control.Tracer
 
 import qualified Network.Mux.Bearer.Pipe as Mx
-import qualified Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux
 
 import           Ouroboros.Network.Block (encodeTip, decodeTip)
@@ -77,13 +76,10 @@ defaultMiniProtocolLimit = 3000000
 data DemoProtocols = ChainSync
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance Mx.ProtocolEnum DemoProtocols where
-  fromProtocolEnum ChainSync = 2
+instance ProtocolEnum DemoProtocols where
+  fromProtocolEnum ChainSync = MiniProtocolNum 2
 
-  toProtocolEnum 2 = Just ChainSync
-  toProtocolEnum _ = Nothing
-
-instance Mx.MiniProtocolLimits DemoProtocols where
+instance MiniProtocolLimits DemoProtocols where
   maximumMessageSize ChainSync  = defaultMiniProtocolLimit
   maximumIngressQueue ChainSync = defaultMiniProtocolLimit
 
@@ -128,8 +124,8 @@ demo chain0 updates = do
                                               (encodeTip encode) (decodeTip decode))
                     (ChainSync.chainSyncServerPeer server)
 
-    _ <- async $ Mx.runMuxWithPipes activeTracer "producer" (toApplication producerApp) hndRead1 hndWrite2
-    _ <- async $ Mx.runMuxWithPipes activeTracer "consumer" (toApplication consumerApp) hndRead2 hndWrite1
+    _ <- async $ Mx.runMuxWithPipes activeTracer (toApplication producerApp "producer") hndRead1 hndWrite2
+    _ <- async $ Mx.runMuxWithPipes activeTracer (toApplication consumerApp "consumer") hndRead2 hndWrite1
 
     void $ fork $ sequence_
         [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest

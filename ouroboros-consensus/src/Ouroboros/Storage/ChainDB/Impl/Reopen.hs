@@ -33,7 +33,7 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Storage.Common (EpochNo)
 import           Ouroboros.Storage.EpochInfo (epochInfoEpoch)
 
-import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..))
+import           Ouroboros.Storage.ChainDB.API (BlockComponent (..))
 import qualified Ouroboros.Storage.ChainDB.Impl.Background as Background
 import           Ouroboros.Storage.ChainDB.Impl.ChainSel
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -121,7 +121,7 @@ reopen (CDBHandle varState) launchBgTasks = do
         ImmDB.reopen cdbImmDB
         -- In order to figure out the 'BlockNo' and 'Point' at the tip of the
         -- ImmutableDB, we need to read the header at the tip of the ImmutableDB.
-        immDbTipHeader <- ImmDB.getBlockOrHeaderAtTip cdbImmDB Header
+        immDbTipHeader <- sequence =<< ImmDB.getBlockComponentAtTip cdbImmDB GetHeader
         -- Note that 'immDbTipBlockNo' might not end up being the \"immutable\"
         -- block(no), because the current chain computed from the VolatileDB could
         -- be longer than @k@.

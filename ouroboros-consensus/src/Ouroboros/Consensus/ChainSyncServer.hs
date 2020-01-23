@@ -1,4 +1,3 @@
-{-# LANGUAGE EmptyDataDeriving   #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -19,8 +18,9 @@ import           Ouroboros.Network.Block (ChainUpdate (..), HeaderHash,
                      Point (..), Serialised, Tip (..), castPoint)
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
-import           Ouroboros.Storage.ChainDB.API (ChainDB, Deserialisable (..),
-                     Reader, deserialisablePoint)
+import           Ouroboros.Storage.ChainDB.API (ChainDB, Reader,
+                     SerialisedWithPoint (..), getSerialisedBlockWithPoint,
+                     getSerialisedHeaderWithPoint)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 import           Ouroboros.Consensus.Block
@@ -40,7 +40,7 @@ chainSyncHeadersServer
     -> ChainSyncServer (Serialised (Header blk)) (Tip blk) m ()
 chainSyncHeadersServer tracer chainDB registry =
     ChainSyncServer $ do
-      rdr <- ChainDB.newHeaderReader chainDB registry
+      rdr <- ChainDB.newReader chainDB registry getSerialisedHeaderWithPoint
       let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr
       server
 
@@ -57,7 +57,7 @@ chainSyncBlocksServer
     -> ChainSyncServer (Serialised blk) (Tip blk) m ()
 chainSyncBlocksServer tracer chainDB registry =
     ChainSyncServer $ do
-      rdr <- ChainDB.newBlockReader chainDB registry
+      rdr <- ChainDB.newReader chainDB registry getSerialisedBlockWithPoint
       let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr
       server
 
@@ -78,7 +78,7 @@ chainSyncServerForReader
        )
     => Tracer m (TraceChainSyncServerEvent blk b)
     -> ChainDB m blk
-    -> Reader  m blk (Deserialisable m blk b)
+    -> Reader  m blk (SerialisedWithPoint blk b)
     -> ChainSyncServer (Serialised b) (Tip blk) m ()
 chainSyncServerForReader tracer chainDB rdr =
     idle'
@@ -99,7 +99,7 @@ chainSyncServerForReader tracer chainDB rdr =
       Just update -> do
         tip <- getTip
         traceWith tracer $
-          TraceChainSyncServerRead tip (deserialisablePoint <$> update)
+          TraceChainSyncServerRead tip (point <$> update)
         return $ Left $ sendNext tip (serialised <$> update)
       Nothing     -> return $ Right $ do
         -- Reader is at the head, we have to block and wait for the chain to
@@ -107,7 +107,7 @@ chainSyncServerForReader tracer chainDB rdr =
         update <- ChainDB.readerInstructionBlocking rdr
         tip    <- getTip
         traceWith tracer $
-          TraceChainSyncServerReadBlocked tip (deserialisablePoint <$> update)
+          TraceChainSyncServerReadBlocked tip (point <$> update)
         return $ sendNext tip (serialised <$> update)
 
     sendNext :: Tip blk

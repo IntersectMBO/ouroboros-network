@@ -72,18 +72,17 @@ validateAndReopen
   :: forall m hash h e. (IOLike m, Eq hash, NoUnexpectedThunks hash, HasCallStack)
   => ValidateEnv m hash h e
   -> ValidationPolicy
-  -> BaseIteratorID
   -> m (OpenState m hash h)
-validateAndReopen validateEnv valPol nextIteratorID = do
+validateAndReopen validateEnv valPol = do
     (epoch, tip) <- validate validateEnv valPol
     index        <- cachedIndex hasFS err hashInfo registry cacheTracer cacheConfig epoch
     case tip of
       TipGen -> assert (epoch == 0) $ do
         traceWith tracer NoValidLastLocation
-        mkOpenState registry hasFS err index epoch nextIteratorID TipGen MustBeNew
+        mkOpenState registry hasFS err index epoch TipGen MustBeNew
       _     -> do
         traceWith tracer $ ValidatedLastLocation epoch (forgetHash <$> tip)
-        mkOpenState registry hasFS err index epoch nextIteratorID tip    AllowExisting
+        mkOpenState registry hasFS err index epoch tip    AllowExisting
   where
     ValidateEnv { hasFS, err, hashInfo, tracer, registry, cacheConfig } = validateEnv
     cacheTracer = contramap TraceCacheEvent tracer

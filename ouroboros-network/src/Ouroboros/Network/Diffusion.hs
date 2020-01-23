@@ -21,7 +21,6 @@ module Ouroboros.Network.Diffusion
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
 import           Control.Tracer (Tracer, traceWith)
-import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Data.Functor (void)
 import           Data.Functor.Contravariant (contramap)
@@ -29,8 +28,7 @@ import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
 
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
-import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput (..))
-import           Network.Mux.Types (MuxTrace (..), WithMuxBearer (..))
+import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (AddrInfo)
 import qualified Network.Socket as Socket
 
@@ -71,19 +69,15 @@ data DiffusionTracers = DiffusionTracers {
       -- ^ DNS subscription tracer
     , dtDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
       -- ^ DNS resolver tracer
-    , dtMuxTracer             :: Tracer IO (WithMuxBearer ConnectionId (MuxTrace NodeToNodeProtocols))
+    , dtMuxTracer             :: Tracer IO (WithMuxBearer ConnectionId MuxTrace)
       -- ^ Mux tracer
-    , dtMuxLocalTracer        :: Tracer IO (WithMuxBearer ConnectionId (MuxTrace NodeToClientProtocols))
+    , dtMuxLocalTracer        :: Tracer IO (WithMuxBearer ConnectionId MuxTrace)
       -- ^ Mux tracer for local clients
-    , dtHandshakeTracer       :: Tracer IO (TraceSendRecv
-                                              (Handshake NodeToNodeVersion CBOR.Term)
-                                              ConnectionId
-                                              (DecoderFailureOrTooMuchInput CBOR.DeserialiseFailure))
+    , dtHandshakeTracer       :: Tracer IO (WithMuxBearer ConnectionId
+                                             (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term)))
       -- ^ Handshake protocol tracer
-    , dtHandshakeLocalTracer  :: Tracer IO (TraceSendRecv
-                                              (Handshake NodeToClientVersion CBOR.Term)
-                                              ConnectionId
-                                              (DecoderFailureOrTooMuchInput CBOR.DeserialiseFailure))
+    , dtHandshakeLocalTracer  :: Tracer IO (WithMuxBearer ConnectionId
+                                             (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term)))
       -- ^ Handshake protocol tracer for local clients
     , dtErrorPolicyTracer     :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     }

@@ -11,12 +11,14 @@
 module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
     protocolInfoByron
   , ByronConfig
+  , byronConfig
   , PBftSignatureThreshold(..)
   , defaultPBftSignatureThreshold
     -- * Secrets
   , PBftLeaderCredentials
   , PBftLeaderCredentialsError
   , mkPBftLeaderCredentials
+  , pbftLeaderOrNot
     -- * For testing
   , plcCoreNodeId
   ) where
@@ -28,7 +30,6 @@ import qualified Data.Set as Set
 
 import           Cardano.Prelude (Natural)
 
-import qualified Cardano.Chain.Block as Block
 import           Cardano.Chain.Common (BlockCount (..))
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
@@ -38,7 +39,6 @@ import qualified Cardano.Crypto as Crypto
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron
-import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as History
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
@@ -117,57 +117,62 @@ protocolInfoByron :: Genesis.Config
                   -> Update.SoftwareVersion
                   -> Maybe PBftLeaderCredentials
                   -> ProtocolInfo ByronBlock
-protocolInfoByron genesisConfig@Genesis.Config {
-                    Genesis.configGenesisHash = genesisHash
-                  , Genesis.configGenesisData =
-                      Genesis.GenesisData {
-                        Genesis.gdK                = BlockCount kParam
-                      , Genesis.gdGenesisKeyHashes = genesisKeyHashes
-                      }
-                  }
-                  mSigThresh pVer sVer mLeader =
+protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     ProtocolInfo {
         pInfoConfig = PBftNodeConfig {
-            pbftParams = PBftParams
-              { pbftSecurityParam      = SecurityParam (fromIntegral kParam)
-              , pbftNumNodes           = fromIntegral . Set.size
-                                       . Genesis.unGenesisKeyHashes
-                                       $ genesisKeyHashes
-              , pbftSignatureThreshold = unSignatureThreshold $
-                  fromMaybe defaultPBftSignatureThreshold mSigThresh
-              , pbftSlotLength         = slotLengthFromMillisec
-                                       . (fromIntegral :: Natural -> Integer)
-                                       . Update.ppSlotDuration
-                                       . Genesis.configProtocolParameters
-                                       $ genesisConfig
-              }
-          , pbftIsLeader =
-              case mLeader of
-                Nothing                                  -> PBftIsNotALeader
-                Just (PBftLeaderCredentials sk cert nid) ->
-                  PBftIsALeader PBftIsLeader {
-                    pbftCoreNodeId = nid
-                  , pbftSignKey    = SignKeyCardanoDSIGN sk
-                  , pbftDlgCert    = cert
-                  }
-          , pbftExtConfig = ByronConfig {
-                pbftProtocolMagic   = Genesis.configProtocolMagic genesisConfig
-              , pbftProtocolVersion = pVer
-              , pbftSoftwareVersion = sVer
-              , pbftGenesisConfig   = genesisConfig
-              , pbftGenesisHash     = genesisHash
-              , pbftEpochSlots      = Genesis.configEpochSlots genesisConfig
-              }
+            pbftParams    = byronPBftParams genesisConfig mSigThresh
+          , pbftIsLeader  = case mLeader of
+                              Nothing   -> PBftIsNotALeader
+                              Just cred -> PBftIsALeader $ pbftLeaderOrNot cred
+          , pbftExtConfig = byronConfig genesisConfig pVer sVer
           }
       , pInfoInitLedger = ExtLedgerState {
-            ledgerState = ByronLedgerState {
-                byronLedgerState       = initState
-              , byronDelegationHistory = History.empty
-              }
+            ledgerState         = initByronLedgerState genesisConfig
           , ouroborosChainState = CS.empty
           }
       , pInfoInitState  = ()
       }
+
+byronPBftParams :: Genesis.Config -> Maybe PBftSignatureThreshold -> PBftParams
+byronPBftParams cfg threshold = PBftParams {
+      pbftSecurityParam      = SecurityParam (fromIntegral kParam)
+    , pbftNumNodes           = NumCoreNodes . fromIntegral . Set.size
+                             . Genesis.unGenesisKeyHashes
+                             $ genesisKeyHashes
+    , pbftSignatureThreshold = unSignatureThreshold
+                             $ fromMaybe defaultPBftSignatureThreshold threshold
+    , pbftSlotLength         = slotLengthFromMillisec
+                             . (fromIntegral :: Natural -> Integer)
+                             . Update.ppSlotDuration
+                             . Genesis.configProtocolParameters
+                             $ cfg
+    }
   where
-    initState :: Block.ChainValidationState
-    Right initState = runExcept $ Block.initialChainValidationState genesisConfig
+    Genesis.Config {
+        Genesis.configGenesisData =
+          Genesis.GenesisData {
+            Genesis.gdK                = BlockCount kParam
+          , Genesis.gdGenesisKeyHashes = genesisKeyHashes
+          }
+      } = cfg
+
+pbftLeaderOrNot :: PBftLeaderCredentials -> PBftIsLeader PBftCardanoCrypto
+pbftLeaderOrNot (PBftLeaderCredentials sk cert nid) = PBftIsLeader {
+      pbftCoreNodeId = nid
+    , pbftSignKey    = SignKeyCardanoDSIGN sk
+    , pbftDlgCert    = cert
+    }
+
+byronConfig :: Genesis.Config
+            -> Update.ProtocolVersion
+            -> Update.SoftwareVersion
+            -> ByronConfig
+byronConfig genesisConfig pVer sVer = ByronConfig {
+      pbftGenesisConfig   = genesisConfig
+    , pbftProtocolVersion = pVer
+    , pbftSoftwareVersion = sVer
+      -- TODO: Remove these 3 fields
+    , pbftProtocolMagic   = Genesis.configProtocolMagic genesisConfig
+    , pbftGenesisHash     = Genesis.configGenesisHash genesisConfig
+    , pbftEpochSlots      = Genesis.configEpochSlots genesisConfig
+    }

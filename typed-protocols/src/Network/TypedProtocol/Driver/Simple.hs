@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeInType #-}
-{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE FlexibleContexts #-}
 -- @UndecidableInstances@ extensions is required for defining @Show@ instance
 -- of @'TraceSendRecv'@.
 {-# LANGUAGE UndecidableInstances #-}
@@ -44,7 +44,7 @@ import Network.TypedProtocol.Driver.General
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer (..), traceWith)
+import Control.Tracer (Tracer (..), traceWith, contramap)
 
 
 -- $intro
@@ -74,48 +74,22 @@ import Control.Tracer (Tracer (..), traceWith)
 
 -- | Structured 'Tracer' output for 'runPeer' and derivitives.
 --
-data TraceSendRecv ps peerid failure where
-     TraceSendMsg
-       :: peerid
-       -> AnyMessage ps
-       -> TraceSendRecv ps peerid failure
-     TraceRecvMsg
-       :: peerid
-       -> AnyMessage ps
-       -> TraceSendRecv ps peerid failure
-     TraceDecoderFailure
-       :: forall (pr :: PeerRole) (st :: ps) peerid failure.
-          peerid
-       -> PeerHasAgency pr st
-       -> failure
-       -> TraceSendRecv ps peerid failure
+data TraceSendRecv ps where
+     TraceSendMsg :: AnyMessage ps -> TraceSendRecv ps
+     TraceRecvMsg :: AnyMessage ps -> TraceSendRecv ps
 
--- requires @UndecidableInstances@ extension
-instance ( Show peerid
-         , Show (AnyMessage ps)
-         , forall (pr :: PeerRole) (st :: ps). Show (PeerHasAgency pr st)
-         , Show failure
-         ) => Show (TraceSendRecv ps peerid failure) where
-  show (TraceSendMsg peerid msg) = "Send " ++ show peerid ++ " " ++ show msg
-  show (TraceRecvMsg peerid msg) = "Recv " ++ show peerid ++ " " ++ show msg
-  show (TraceDecoderFailure peerid stok err) = mconcat
-    [ "DecoderFailure "
-    , show peerid
-    , " "
-    , show stok
-    , " "
-    , show err
-    ]
+instance Show (AnyMessage ps) => Show (TraceSendRecv ps) where
+  show (TraceSendMsg msg) = "Send " ++ show msg
+  show (TraceRecvMsg msg) = "Recv " ++ show msg
 
 
-driverSimple :: forall ps peerid failure bytes m.
+driverSimple :: forall ps failure bytes m.
                 (MonadThrow m, Exception failure)
-             => Tracer m (TraceSendRecv ps peerid failure)
-             -> peerid
+             => Tracer m (TraceSendRecv ps)
              -> Codec ps failure m bytes
              -> Channel m bytes
              -> Driver ps (Maybe bytes) m
-driverSimple tr peerid Codec{encode, decode} channel@Channel{send} =
+driverSimple tracer Codec{encode, decode} channel@Channel{send} =
     Driver { sendMessage, recvMessage, startDState = Nothing }
   where
     sendMessage :: forall (pr :: PeerRole) (st :: ps) (st' :: ps).
@@ -124,7 +98,7 @@ driverSimple tr peerid Codec{encode, decode} channel@Channel{send} =
                 -> m ()
     sendMessage stok msg = do
       send (encode stok msg)
-      traceWith tr (TraceSendMsg peerid (AnyMessage msg))
+      traceWith tracer (TraceSendMsg (AnyMessage msg))
 
     recvMessage :: forall (pr :: PeerRole) (st :: ps).
                    PeerHasAgency pr st
@@ -135,10 +109,9 @@ driverSimple tr peerid Codec{encode, decode} channel@Channel{send} =
       result  <- runDecoderWithChannel channel trailing decoder
       case result of
         Right x@(SomeMessage msg, _trailing') -> do
-          traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
+          traceWith tracer (TraceRecvMsg (AnyMessage msg))
           return x
-        Left failure -> do
-          traceWith tr (TraceDecoderFailure peerid stok failure)
+        Left failure ->
           throwM failure
 
 
@@ -147,18 +120,17 @@ driverSimple tr peerid Codec{encode, decode} channel@Channel{send} =
 -- This runs the peer to completion (if the protocol allows for termination).
 --
 runPeer
-  :: forall ps (st :: ps) pr peerid failure bytes m a .
+  :: forall ps (st :: ps) pr failure bytes m a .
      (MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps peerid failure)
+  => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
-  -> peerid
   -> Channel m bytes
   -> Peer ps pr st m a
   -> m a
-runPeer tr codec peerid channel peer =
+runPeer tracer codec channel peer =
     fst <$> runPeerWithDriver driver peer (startDState driver)
   where
-    driver = driverSimple tr peerid codec channel
+    driver = driverSimple tracer codec channel
 
 
 -- | Run a pipelined peer with the given channel via the given codec.
@@ -169,18 +141,17 @@ runPeer tr codec peerid channel peer =
 -- 'MonadSTM' constraint.
 --
 runPipelinedPeer
-  :: forall ps (st :: ps) pr peerid failure bytes m a.
+  :: forall ps (st :: ps) pr failure bytes m a.
      (MonadSTM m, MonadAsync m, MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps peerid failure)
+  => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
-  -> peerid
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
   -> m a
-runPipelinedPeer tr codec peerid channel peer =
+runPipelinedPeer tracer codec channel peer =
     fst <$> runPipelinedPeerWithDriver driver peer (startDState driver)
   where
-    driver = driverSimple tr peerid codec channel
+    driver = driverSimple tracer codec channel
 
 
 --
@@ -214,35 +185,36 @@ runDecoderWithChannel Channel{recv} = go
 runConnectedPeers :: (MonadSTM m, MonadAsync m, MonadCatch m,
                       Exception failure)
                   => m (Channel m bytes, Channel m bytes)
-                  -> Tracer m (TraceSendRecv ps peerid failure)
+                  -> Tracer m (PeerRole, TraceSendRecv ps)
                   -> Codec ps failure m bytes
-                  -> peerid
-                  -> peerid
                   -> Peer ps pr st m a
                   -> Peer ps (FlipAgency pr) st m b
                   -> m (a, b)
-runConnectedPeers createChannels tr codec clientPeerid serverPeerid client server =
+runConnectedPeers createChannels tracer codec client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    runPeer tr codec clientPeerid clientChannel client
+    runPeer tracerClient codec clientChannel client
       `concurrently`
-    runPeer tr codec serverPeerid serverChannel server
-
+    runPeer tracerServer codec serverChannel server
+  where
+    tracerClient = contramap ((,) AsClient) tracer
+    tracerServer = contramap ((,) AsServer) tracer
 
 runConnectedPeersPipelined :: (MonadSTM m, MonadAsync m, MonadCatch m,
                                Exception failure)
                            => m (Channel m bytes, Channel m bytes)
-                           -> Tracer m (TraceSendRecv ps peerid failure)
+                           -> Tracer m (PeerRole, TraceSendRecv ps)
                            -> Codec ps failure m bytes
-                           -> peerid
-                           -> peerid
                            -> PeerPipelined ps pr st m a
                            -> Peer          ps (FlipAgency pr) st m b
                            -> m (a, b)
-runConnectedPeersPipelined createChannels tr codec clientPeerid serverPeerid client server =
+runConnectedPeersPipelined createChannels tracer codec client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    runPipelinedPeer tr codec clientPeerid clientChannel client
+    runPipelinedPeer tracerClient codec clientChannel client
       `concurrently`
-    runPeer          tr codec serverPeerid serverChannel server
+    runPeer          tracerServer codec serverChannel server
+  where
+    tracerClient = contramap ((,) AsClient) tracer
+    tracerServer = contramap ((,) AsServer) tracer
 

@@ -2,6 +2,7 @@
 {-# LANGUAGE DerivingVia      #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes       #-}
+{-# LANGUAGE TypeFamilies     #-}
 module Ouroboros.Storage.VolatileDB.API
   ( VolatileDB(..)
   , withDB
@@ -10,7 +11,6 @@ module Ouroboros.Storage.VolatileDB.API
   ) where
 
 import           Data.ByteString.Builder (Builder)
-import           Data.ByteString.Lazy (ByteString)
 import           Data.Set (Set)
 import           GHC.Stack (HasCallStack)
 
@@ -20,9 +20,9 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Block (IsEBB)
 import           Ouroboros.Consensus.Util.IOLike
 
+import           Ouroboros.Storage.Common (BlockComponent (..), DB (..))
 import           Ouroboros.Storage.VolatileDB.Types
 
 -- | Open the database using the given function, perform the given action
@@ -37,13 +37,15 @@ withDB :: (HasCallStack, MonadThrow m)
 withDB openDB = bracket openDB closeDB
 
 data VolatileDB blockId m = VolatileDB {
-      closeDB        :: HasCallStack => m ()
-    , isOpenDB       :: HasCallStack => m Bool
-    , reOpenDB       :: HasCallStack => m ()
-    , getBlock       :: HasCallStack => blockId -> m (Maybe (SlotNo, IsEBB, ByteString))
-    , getHeader      :: HasCallStack => blockId -> m (Maybe (SlotNo, IsEBB, ByteString))
-    , putBlock       :: HasCallStack => BlockInfo blockId -> Builder -> m ()
-    , getBlockIds    :: HasCallStack => m [blockId]
+      closeDB           :: HasCallStack => m ()
+    , isOpenDB          :: HasCallStack => m Bool
+    , reOpenDB          :: HasCallStack => m ()
+    , getBlockComponent :: forall b. HasCallStack
+                        => BlockComponent (VolatileDB blockId m) b
+                        -> blockId
+                        -> m (Maybe b)
+    , putBlock          :: HasCallStack => BlockInfo blockId -> Builder -> m ()
+    , getBlockIds       :: HasCallStack => m [blockId]
       -- | Return a function that returns the successors of the block with the
       -- given @blockId@.
       --
@@ -54,13 +56,13 @@ data VolatileDB blockId m = VolatileDB {
       --
       -- Note that it is not required that the given block has been added to
       -- the VolatileDB.
-    , getSuccessors  :: HasCallStack => STM m (WithOrigin blockId -> Set blockId)
+    , getSuccessors     :: HasCallStack => STM m (WithOrigin blockId -> Set blockId)
       -- | Return a function that returns the predecessor of the block with
       -- the given @blockId@.
       --
       -- PRECONDITION: the block must be a member of the VolatileDB, you can
       -- use 'getIsMember' to check this.
-    , getPredecessor :: HasCallStack => STM m (blockId -> WithOrigin blockId)
+    , getPredecessor    :: HasCallStack => STM m (blockId -> WithOrigin blockId)
       -- | Try to remove all blocks with a slot number less than the given
       -- one.
       --
@@ -117,8 +119,16 @@ data VolatileDB blockId m = VolatileDB {
       -- will be removed anyway. The reason for @<@ opposed to @<=@ is to
       -- avoid issues with /EBBs/, which have the same slot number as the
       -- block after it.
-    , garbageCollect :: HasCallStack => SlotNo -> m ()
-    , getIsMember    :: HasCallStack => STM m (blockId -> Bool)
+    , garbageCollect    :: HasCallStack => SlotNo -> m ()
+    , getIsMember       :: HasCallStack => STM m (blockId -> Bool)
       -- | Return the highest slot number ever stored by the VolatileDB.
-    , getMaxSlotNo   :: HasCallStack => STM m MaxSlotNo
+    , getMaxSlotNo      :: HasCallStack => STM m MaxSlotNo
 } deriving NoUnexpectedThunks via OnlyCheckIsWHNF "VolatileDB" (VolatileDB blockId m)
+
+
+instance DB (VolatileDB blockId m) where
+  -- The VolatileDB doesn't have the ability to parse blocks and headers, it
+  -- only returns raw blocks and headers.
+  type DBBlock      (VolatileDB blockId m) = ()
+  type DBHeader     (VolatileDB blockId m) = ()
+  type DBHeaderHash (VolatileDB blockId m) = blockId

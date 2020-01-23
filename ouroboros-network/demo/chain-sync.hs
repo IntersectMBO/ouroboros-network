@@ -36,8 +36,6 @@ import System.Random.SplitMix
 import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as CBOR
 
-import           Network.Mux
-
 import qualified Network.Socket as Socket
 
 import Ouroboros.Network.Block
@@ -138,9 +136,7 @@ data DemoProtocol0 = PingPong0
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance ProtocolEnum DemoProtocol0 where
-  fromProtocolEnum PingPong0 = 2
-  toProtocolEnum 2 = Just PingPong0
-  toProtocolEnum _ = Nothing
+  fromProtocolEnum PingPong0 = MiniProtocolNum 2
 
 instance MiniProtocolLimits DemoProtocol0 where
   maximumMessageSize _ = maxBound
@@ -162,8 +158,7 @@ clientPingPong pipelined =
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
 
-    protocols :: DemoProtocol0 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols PingPong0 | pipelined =
       MuxPeerPipelined
@@ -203,8 +198,7 @@ serverPingPong = do
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
 
-    protocols :: DemoProtocol0 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols PingPong0 =
       MuxPeer
@@ -230,11 +224,8 @@ data DemoProtocol1 = PingPong1 | PingPong1'
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance ProtocolEnum DemoProtocol1 where
-  fromProtocolEnum PingPong1  = 2
-  fromProtocolEnum PingPong1' = 3
-  toProtocolEnum 2 = Just PingPong1
-  toProtocolEnum 3 = Just PingPong1'
-  toProtocolEnum _ = Nothing
+  fromProtocolEnum PingPong1  = MiniProtocolNum 2
+  fromProtocolEnum PingPong1' = MiniProtocolNum 3
 
 instance MiniProtocolLimits DemoProtocol1 where
   maximumMessageSize _ = maxBound
@@ -256,8 +247,7 @@ clientPingPong2 =
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
 
-    protocols :: DemoProtocol1 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols PingPong1 =
       MuxPeer
@@ -310,8 +300,7 @@ serverPingPong2 = do
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
 
-    protocols :: DemoProtocol1 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols PingPong1 =
       MuxPeer
@@ -334,10 +323,7 @@ data DemoProtocol2 = ChainSync2
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance ProtocolEnum DemoProtocol2 where
-  fromProtocolEnum ChainSync2  = 2
-
-  toProtocolEnum 2 = Just ChainSync2
-  toProtocolEnum _ = Nothing
+  fromProtocolEnum ChainSync2  = MiniProtocolNum 2
 
 instance MiniProtocolLimits DemoProtocol2 where
   maximumMessageSize _ = maxBound
@@ -360,8 +346,7 @@ clientChainSync sockAddrs =
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
 
-    protocols :: DemoProtocol2 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols ChainSync2 =
       MuxPeer
@@ -393,8 +378,7 @@ serverChainSync sockAddr = do
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
 
-    protocols :: DemoProtocol2 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols ChainSync2 =
       MuxPeer
@@ -425,12 +409,8 @@ data DemoProtocol3 = BlockFetch3 | ChainSync3
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance ProtocolEnum DemoProtocol3 where
-  fromProtocolEnum ChainSync3  = 2
-  fromProtocolEnum BlockFetch3 = 3
-
-  toProtocolEnum 2 = Just ChainSync3
-  toProtocolEnum 3 = Just BlockFetch3
-  toProtocolEnum _ = Nothing
+  fromProtocolEnum ChainSync3  = MiniProtocolNum 2
+  fromProtocolEnum BlockFetch3 = MiniProtocolNum 3
 
 instance MiniProtocolLimits DemoProtocol3 where
   maximumMessageSize _ = maxBound
@@ -460,7 +440,6 @@ clientBlockFetch sockAddrs = do
           runPeer
             nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
             codecChainSync
-            peerid
             channel
             (ChainSync.chainSyncClientPeer
               (chainSyncClient' syncTracer currentChainVar chainVar))
@@ -479,7 +458,6 @@ clientBlockFetch sockAddrs = do
             runPipelinedPeer
               nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
               codecBlockFetch
-              peerid
               channel
               (blockFetchClient clientCtx)
 
@@ -601,8 +579,7 @@ serverBlockFetch sockAddr = do
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
 
-    protocols :: DemoProtocol3 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol3 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols ChainSync3 =
       MuxPeer

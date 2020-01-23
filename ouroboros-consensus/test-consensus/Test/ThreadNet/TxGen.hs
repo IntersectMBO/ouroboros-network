@@ -54,11 +54,11 @@ class TxGen blk where
 -------------------------------------------------------------------------------}
 
 instance TxGen (SimpleBlock SimpleMockCrypto ext) where
-  testGenTx (NumCoreNodes n) _ ledgerState =
+  testGenTx numCoreNodes _ ledgerState =
       mkSimpleGenTx <$> genSimpleTx addrs utxo
     where
       addrs :: [Addr]
-      addrs = Map.keys $ mkAddrDist n
+      addrs = Map.keys $ mkAddrDist numCoreNodes
 
       utxo :: Utxo
       utxo = mockUtxo $ simpleLedgerState ledgerState

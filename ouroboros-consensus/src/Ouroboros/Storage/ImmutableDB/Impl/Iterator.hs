@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE OverloadedStrings         #-}
@@ -13,14 +14,12 @@
 module Ouroboros.Storage.ImmutableDB.Impl.Iterator
   ( streamImpl
   , getSlotInfo
-  , BlocksOrHeaders (..)
   , CurrentEpochInfo (..)
   ) where
 
 import           Control.Exception (assert)
 import           Control.Monad (when)
 import           Control.Monad.Except
-import           Control.Monad.State.Strict (state)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (find)
 import           Data.Functor ((<&>))
@@ -109,9 +108,6 @@ data IteratorState hash h = IteratorState
   }
   deriving (Generic, NoUnexpectedThunks)
 
--- | Used by 'streamImpl' to choose between streaming blocks or headers.
-data BlocksOrHeaders = Blocks | Headers
-
 -- | Auxiliary data type that combines the '_currentEpoch' and
 -- '_currentEpochOffset' fields from 'OpenState'. This is used to avoid
 -- passing the whole state around, and moreover, it avoids issues with
@@ -119,28 +115,25 @@ data BlocksOrHeaders = Blocks | Headers
 data CurrentEpochInfo = CurrentEpochInfo !EpochNo !BlockOffset
 
 streamImpl
-  :: forall m hash. (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash)
+  :: forall m hash b. (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash)
   => ImmutableDBEnv m hash
-  -> BlocksOrHeaders
+  -> BlockComponent (ImmutableDB hash m) b
   -> Maybe (SlotNo, hash)
      -- ^ When to start streaming (inclusive).
   -> Maybe (SlotNo, hash)
      -- ^ When to stop streaming (inclusive).
   -> m (Either (WrongBoundError hash)
-               (Iterator hash m ByteString))
-streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
+               (Iterator hash m b))
+streamImpl dbEnv blockComponent mbStart mbEnd =
     withOpenState dbEnv $ \hasFS OpenState{..} -> runExceptT $ do
       lift $ validateIteratorRange _dbErr _dbEpochInfo
         (forgetHash <$> _currentTip) mbStart mbEnd
-
-      -- TODO cache index files: we might open the same primary and secondary
-      -- indices to validate the end bound as for the start bound
 
       case _currentTip of
         TipGen ->
           -- If any of the two bounds were specified, 'validateIteratorRange'
           -- would have thrown a 'ReadFutureSlotError'.
-          assert (isNothing mbStart && isNothing mbEnd) $ lift mkEmptyIterator
+          assert (isNothing mbStart && isNothing mbEnd) $ return mkEmptyIterator
         Tip tip -> do
           WithHash endHash endEpochSlot <- fillInEndBound   _index tip mbEnd
           (secondaryOffset, start)      <- fillInStartBound _index     mbStart
@@ -172,7 +165,7 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
 
             varIteratorState <- newTVarM $ IteratorStateOpen iteratorState
 
-            mkIterator IteratorHandle
+            return $ mkIterator IteratorHandle
               { itHasFS   = hasFS
               , itIndex   = _index
               , itState   = varIteratorState
@@ -254,30 +247,20 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
                         | otherwise    = IsNotEBB
                   epochSlot = EpochSlot epoch relSlot
 
-    -- TODO we're calling 'modifyOpenState' from within 'withOpenState', ok?
-    withNewIteratorID
-      :: (IteratorID -> Iterator hash m ByteString)
-      -> m (Iterator hash m ByteString)
-    withNewIteratorID mkIter = modifyOpenState dbEnv $ \_hasFS ->
-      state $ \st@OpenState { _nextIteratorID = itID } ->
-        (mkIter (BaseIteratorID itID), st { _nextIteratorID = succ itID })
-
-    mkEmptyIterator :: m (Iterator hash m ByteString)
-    mkEmptyIterator = withNewIteratorID $ \itID -> Iterator
+    mkEmptyIterator :: Iterator hash m b
+    mkEmptyIterator = Iterator
       { iteratorNext    = return IteratorExhausted
       , iteratorPeek    = return IteratorExhausted
       , iteratorHasNext = return Nothing
       , iteratorClose   = return ()
-      , iteratorID      = itID
       }
 
-    mkIterator :: IteratorHandle hash m -> m (Iterator hash m ByteString)
-    mkIterator ith = withNewIteratorID $ \itID -> Iterator
-      { iteratorNext    = iteratorNextImpl dbEnv ith blocksOrHeaders True
-      , iteratorPeek    = iteratorNextImpl dbEnv ith blocksOrHeaders False
+    mkIterator :: IteratorHandle hash m -> Iterator hash m b
+    mkIterator ith = Iterator
+      { iteratorNext    = iteratorNextImpl dbEnv ith blockComponent True
+      , iteratorPeek    = iteratorNextImpl dbEnv ith blockComponent False
       , iteratorHasNext = iteratorHasNextImpl    ith
       , iteratorClose   = iteratorCloseImpl      ith
-      , iteratorID      = itID
       }
 
 -- | Get information about the block or EBB at the given slot with the given
@@ -353,16 +336,16 @@ getSlotInfo epochInfo index (slot, hash) = do
     return (epochSlot', (entry, blockSize), secondaryOffset)
 
 iteratorNextImpl
-  :: forall m hash. (IOLike m, Eq hash)
+  :: forall m hash b. (IOLike m, Eq hash)
   => ImmutableDBEnv m hash
   -> IteratorHandle hash m
-  -> BlocksOrHeaders
+  -> BlockComponent (ImmutableDB hash m) b
   -> Bool  -- ^ Step the iterator after reading iff True
-  -> m (IteratorResult hash ByteString)
+  -> m (IteratorResult b)
 iteratorNextImpl dbEnv it@IteratorHandle
                          { itHasFS = hasFS :: HasFS m h
                          , itIndex = index :: Index m hash h
-                         , .. } blocksOrHeaders step = do
+                         , .. } blockComponent step = do
     -- The idea is that if the state is not 'IteratorStateExhausted, then the
     -- head of 'itEpochEntries' is always ready to be read. After reading it
     -- with 'readNextBlock' or 'readNextHeader', 'stepIterator' will advance
@@ -372,21 +355,51 @@ iteratorNextImpl dbEnv it@IteratorHandle
       IteratorStateExhausted -> return IteratorExhausted
       IteratorStateOpen iteratorState@IteratorState{..} ->
         withOpenState dbEnv $ \_ st -> do
-          let entryWithBlockSize@(WithBlockSize _ entry) = NE.head itEpochEntries
-              hash = Secondary.headerHash entry
-              curEpochInfo = CurrentEpochInfo
+          let curEpochInfo = CurrentEpochInfo
                 (_currentEpoch       st)
                 (_currentEpochOffset st)
-          blob <- case blocksOrHeaders of
-            Blocks  -> readNextBlock  itEpochHandle entryWithBlockSize itEpoch
-            Headers -> readNextHeader itEpochHandle entry
+              entry = NE.head itEpochEntries
+          b <- getBlockComponent itEpochHandle itEpoch entry blockComponent
           when step $ stepIterator curEpochInfo iteratorState
-          return $ case Secondary.blockOrEBB entry of
-            Block slot  -> IteratorResult slot  hash blob
-            EBB   epoch -> IteratorEBB    epoch hash blob
+          return $ IteratorResult b
   where
     ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo } = dbEnv
     HasFS { hClose } = hasFS
+
+    getBlockComponent
+      :: Handle h
+      -> EpochNo
+      -> WithBlockSize (Secondary.Entry hash)
+      -> BlockComponent (ImmutableDB hash m) b'
+      -> m b'
+    getBlockComponent itEpochHandle itEpoch entryWithBlockSize = \case
+        GetHash         -> return headerHash
+        GetSlot         -> case blockOrEBB of
+          Block slot  -> return slot
+          EBB  epoch' -> assert (epoch' == itEpoch) $
+            epochInfoFirst _dbEpochInfo epoch'
+        GetIsEBB        -> return $ case blockOrEBB of
+          Block _ -> IsNotEBB
+          EBB   _ -> IsEBB
+        GetBlockSize    -> return blockSize
+        GetHeaderSize   ->
+          return $ fromIntegral $ Secondary.unHeaderSize headerSize
+        GetRawBlock     ->
+          readNextBlock  itEpochHandle entryWithBlockSize itEpoch
+        GetRawHeader    ->
+          readNextHeader itEpochHandle entry
+        GetBlock        ->
+          return ()
+        GetHeader       ->
+          return ()
+        GetPure a       ->
+          return a
+        GetApply f bc   ->
+          getBlockComponent itEpochHandle itEpoch entryWithBlockSize f <*>
+          getBlockComponent itEpochHandle itEpoch entryWithBlockSize bc
+      where
+        WithBlockSize blockSize entry = entryWithBlockSize
+        Secondary.Entry { headerHash, headerSize, blockOrEBB } = entry
 
     -- | We don't rely on the position of the handle, we always use
     -- 'hGetExactlyAtCRC', i.e. @pread@ for reading from a given offset.

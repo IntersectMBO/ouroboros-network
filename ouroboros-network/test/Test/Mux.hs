@@ -41,7 +41,6 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
 
 import qualified Network.Mux.Bearer.Queues as Mx
-import qualified Network.Mux.Types as Mx
 import qualified Ouroboros.Network.Mux as Mx
 
 
@@ -68,10 +67,7 @@ instance Mx.MiniProtocolLimits TestProtocols where
     maximumIngressQueue _ = 0xffff
 
 instance Mx.ProtocolEnum TestProtocols where
-  fromProtocolEnum ChainSyncPr = 2
-
-  toProtocolEnum 2 = Just ChainSyncPr
-  toProtocolEnum _ = Nothing
+  fromProtocolEnum ChainSyncPr = Mx.MiniProtocolNum 2
 
 
 demo :: forall m block.
@@ -130,8 +126,8 @@ demo chain0 updates delay = do
                         (encodeTip encode) (decodeTip decode))
                         producerPeer)
 
-    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "consumer" (Mx.toApplication consumerApp) client_w client_r sduLen Nothing
-    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "producer" (Mx.toApplication producerApp) server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues activeTracer (Mx.toApplication consumerApp "consumer") client_w client_r sduLen Nothing
+    serverAsync <- async $ Mx.runMuxWithQueues activeTracer (Mx.toApplication producerApp "producer") server_w server_r sduLen Nothing
 
     updateAid <- async $ sequence_
         [ do

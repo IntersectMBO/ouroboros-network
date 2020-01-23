@@ -5,26 +5,29 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Test.Async (tests) where
+module Test.Async.Handle (tests) where
 
 import           Control.Concurrent.Async
 import           Control.Concurrent.MVar
 import           Control.Concurrent
-import           Control.Exception (AsyncException (..), Exception, catch, bracket, finally, throwIO)
+import           Control.Exception
 import           Control.Monad (when)
 import           Data.Functor (void)
-import           Data.Foldable (foldl', traverse_)
-import           Data.Binary (Binary (..), encode, decode)
 import           Data.Bits
+import           Data.Binary (Binary (..), encode, decode)
 import           Data.Bool (bool)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Char8 as BSC
+import           Data.Foldable (foldl', traverse_)
 
 import           System.Win32
+
 import           System.Win32.NamedPipes
 import           System.Win32.Async
+import           Test.Generators hiding (tests)
+import           Test.Async.PingPong
 
 import           Test.Tasty
 import           Test.Tasty.HUnit
@@ -37,7 +40,7 @@ pipeName = "\\\\.\\pipe\\test-Win32-network-async"
 
 tests :: TestTree
 tests =
-  testGroup "Win32.Async"
+  testGroup "Async.Handle"
   [ testCase "interruptible connectNamedPipe"
       test_interruptible_connectNamedPipe
   , testCase "interruptible readHandle"
@@ -49,66 +52,10 @@ tests =
   , testProperty "async reads and writes"
       prop_async_read_and_writes
   , testProperty "PingPong test"
-      (prop_PingPong)
+      prop_PingPong
   , testProperty "PingPongPipelined test"
-      (prop_PingPongPipelined)
-  , testGroup "generators"
-    [ testProperty "NonEmptyBS" prop_NonEmptyBS
-    , testProperty "NonEmptyBS" prop_shrink_NonEmptyBS
-    ]
+      $ withMaxSuccess 50 prop_PingPongPipelined
   ]
-
---
--- Generators
---
-
--- | Small non-empty 'ByteString's.
---
-data NonEmptyBS = NonEmptyBS { getNonEmptyBS :: ByteString }
-  deriving (Eq, Show)
-
-instance Arbitrary NonEmptyBS where
-    arbitrary = do
-      bs <- arbitrary
-      if BS.null bs
-        then do
-          -- generate a non empty string
-          NonEmpty s <- arbitrary
-          pure (NonEmptyBS $ BSC.pack s)
-        else pure (NonEmptyBS bs)
-
-    shrink (NonEmptyBS bs) =
-      [ NonEmptyBS bs'
-      | bs' <- shrink bs
-      , not (BS.null bs')
-      ]
-
-prop_NonEmptyBS :: NonEmptyBS -> Bool
-prop_NonEmptyBS (NonEmptyBS bs) = not (BS.null bs)
-
-prop_shrink_NonEmptyBS :: NonEmptyBS -> Bool
-prop_shrink_NonEmptyBS = all (\(NonEmptyBS bs) -> not (BS.null bs)) . shrink
-
--- | Large non-empty 'ByteString's, up to 2.5MB.
---
-data LargeNonEmptyBS = LargeNonEmptyBS
-    { getLargeNonEmptyBS :: ByteString
-    , getSize            :: Word
-      -- ^ arbitrary size which is less than length of the bytestring; Useful
-      -- for setting buffer size of a named pipe
-    }
-  deriving (Show, Eq)
-
-instance Arbitrary LargeNonEmptyBS where
-    arbitrary = do
-        bs <- getNonEmptyBS <$> resize 2_500_000 arbitrary
-        bufSize <- fromIntegral <$> choose (64, BS.length bs)
-        pure $ LargeNonEmptyBS bs bufSize
-
-    shrink (LargeNonEmptyBS bs bufSize) =
-      [ (LargeNonEmptyBS bs' (min bufSize (fromIntegral $ BS.length bs')))
-      | NonEmptyBS bs' <- shrink (NonEmptyBS bs)
-      ]
 
 
 --
@@ -130,7 +77,7 @@ test_interruptible_connectNamedPipe = withIOManager $ \iocp ->
                              Nothing)
             closeHandle
             $ \hpipe -> do
-                _ <- associateWithIOCompletionPort hpipe iocp
+                _ <- associateWithIOCompletionPort (Left hpipe) iocp
                 tid <- forkIO (connectNamedPipe hpipe)
                 threadDelay 100
                 killThread tid
@@ -154,10 +101,10 @@ test_interruptible_readHandle = withIOManager $ \iocp ->
                                 oPEN_EXISTING
                                 fILE_FLAG_OVERLAPPED
                                 Nothing)
-            (foldMap closeHandle)
+            (\(x, y) -> closeHandle x >> closeHandle y)
             $ \(hpipe, hpipe') -> do
-                _ <- associateWithIOCompletionPort hpipe  iocp
-                _ <- associateWithIOCompletionPort hpipe' iocp
+                _ <- associateWithIOCompletionPort (Left hpipe)  iocp
+                _ <- associateWithIOCompletionPort (Left hpipe') iocp
                 tid <- forkIO (void $ readHandle hpipe' 1)
                 threadDelay 100
                 killThread tid
@@ -181,10 +128,10 @@ test_interruptible_readHandle_2 = withIOManager $ \iocp -> do
                                 oPEN_EXISTING
                                 fILE_FLAG_OVERLAPPED
                                 Nothing)
-            (foldMap closeHandle)
+            (\(x, y) -> closeHandle x >> closeHandle y)
             $ \(hpipe, hpipe') -> do
-              _ <- associateWithIOCompletionPort hpipe  iocp
-              _ <- associateWithIOCompletionPort hpipe' iocp
+              _ <- associateWithIOCompletionPort (Left hpipe)  iocp
+              _ <- associateWithIOCompletionPort (Left hpipe') iocp
               tid  <- forkIO (void $ readHandle hpipe' 1)
               tid' <- forkIO (void $ readHandle hpipe' 1)
               threadDelay 100
@@ -214,10 +161,10 @@ test_interruptible_writeHandle = withIOManager $ \iocp -> do
                           oPEN_EXISTING
                           fILE_FLAG_OVERLAPPED
                           Nothing)
-      (foldMap closeHandle)
+      (\(x, y) -> closeHandle x >> closeHandle y)
       $ \(r, w) -> do
-        _ <- associateWithIOCompletionPort r iocp
-        _ <- associateWithIOCompletionPort w iocp
+        _ <- associateWithIOCompletionPort (Left r) iocp
+        _ <- associateWithIOCompletionPort (Left w) iocp
 
         tid <- forkIOWithUnmask $ \unmask ->
           void $ do
@@ -256,7 +203,7 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
       -- fork a server
       _ <- forkIO $
         bracket
-            (createNamedPipe pipeName
+            (createNamedPipe pname
                              (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
                              (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
                              pIPE_UNLIMITED_INSTANCES
@@ -267,7 +214,7 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
             closeHandle
             $ \h -> do
               -- associate 'h' with  I/O completion 'port'
-              _ <- associateWithIOCompletionPort h iocp
+              _ <- associateWithIOCompletionPort (Left h) iocp
               putMVar syncVarStart ()
               connectNamedPipe h
               void $ forkIO $
@@ -281,7 +228,7 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
       _ <- forkIO $ do
         takeMVar syncVarStart
         bracket
-          (createFile pipeName
+          (createFile pname
                       (gENERIC_READ .|. gENERIC_WRITE)
                       fILE_SHARE_NONE
                       Nothing
@@ -291,7 +238,7 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
           closeHandle
           $ \h -> do
             -- associate 'h' with  I/O completion 'port'
-            _ <- associateWithIOCompletionPort h iocp
+            _ <- associateWithIOCompletionPort (Left h) iocp
             readerAsync <- async $
               readHandle h (BS.length bsOut)
                 >>= putMVar clientVar
@@ -304,23 +251,12 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
 
       pure $ bsIn == bsIn' && bsOut == bsOut'
 
+  where
+    pname = pipeName ++ "-reads-and-writes"
+
 --
 -- PingPong tests
 --
-
--- if 'Bool' param is 'False', then the channel (or the other end) will block
--- on read.  This spoofs the size of data by one.
---
-data BinaryChannel a = BinaryChannel {
-    readChannel  :: Bool -> IO (Maybe a),
-    writeChannel :: Bool -> a -> IO (),
-    closeChannel :: IO ()
-  }
-
-data ChannelError = ReceivedNullBytes
-  deriving Show
-
-instance Exception ChannelError
 
 -- | Send & receive from a pipe using a simple framing (header is the size of
 -- the payload).  Note that the pipe does buffering of ingress and egress
@@ -357,172 +293,17 @@ handleToBinaryChannel h = BinaryChannel { readChannel, writeChannel, closeChanne
           $ throwIO ReceivedNullBytes
         readLen (bs : bufs) (s - fromIntegral (BS.length bs))
         
+      -- we close the handle explicitely
       closeChannel = closeHandle h
 
---
--- PingPong Client API
---
+      {-
+      acceptChannel = connectNamedPipe h $> BinaryChannel { readChannel
+                                                          , writeChannel
+                                                          , closeChannel
+                                                          , acceptChannel = error "cannot accept this channel"
+                                                          }
+      -}
 
-data PingPongClient a
-    = SendPing !a (PingPongClient a)
-    | Done
-    -- ^ for the sake of simplicity we never send a terminating message
-
--- Send n request and the reply the last message to the server
-listPingPongClient :: [a] -> PingPongClient a
-listPingPongClient = go
-  where
-    go []       = Done
-    go (a : as) = SendPing a (go as)
-
-constPingPongClient :: Int -> a -> PingPongClient a
-constPingPongClient n a = listPingPongClient (replicate n a)
-
-data Blocking = BlockOnRead | BlockOnWrite | NonBlocking
-  deriving Show
-
-instance Arbitrary Blocking where
-    arbitrary = frequency [ (3, pure BlockOnRead)
-                          , (2, pure BlockOnWrite)
-                          , (1, pure NonBlocking)
-                          ]
-
-runPingPongClient :: BinaryChannel a
-                  -> Blocking
-                  -> ThreadId  -- producer thread
-                  -> PingPongClient a
-                  -> IO [a]
-runPingPongClient channel blocking tid = go []
-    where
-      go !res (SendPing a Done) = do
-        -- send the message, but report more bytes to the server; this makes
-        -- sure that it will blocked on reading when we kill it
-        case blocking of
-          BlockOnRead -> do
-            writeChannel channel False a
-            -- run the server thread now, so it blocks on reading
-            yield
-            killThread tid
-            pure $ reverse res
-          BlockOnWrite -> do
-            writeChannel channel True a
-            mr <- readChannel channel False
-            -- run the server thread now, so it block on writing
-            yield
-            killThread tid
-            case mr of
-              Nothing -> pure (reverse res)
-              Just r  -> pure (reverse (r : res))
-          NonBlocking -> do
-            writeChannel channel True a
-            mr <- readChannel channel True
-            killThread tid
-            case mr of
-              Just r  -> pure $ reverse (r : res)
-              Nothing -> pure $ reverse res
-      go !res (SendPing a next) = do
-        writeChannel channel True a
-        mr <- readChannel channel True
-        case mr of
-          Just r  -> go (r : res) next
-          Nothing -> do
-            killThread tid
-            pure $ reverse res
-      go !res Done = do
-        killThread tid
-        pure $ reverse res
-
-
--- Do pipelining, the the client will never read, instead it will kill the
--- server.
-runPingPongClientPipelined :: BinaryChannel a
-                           -> Blocking
-                           -> ThreadId
-                           -> [a]
-                           -> IO (Maybe [a])
-runPingPongClientPipelined channel blocking tid as0 = goSend as0
-    where
-      goSend []  = error "runPingPongClientPipelined: expected non empty list"
-      goSend [a] = do
-        -- send the message, but report more bytes to the server; this makes
-        -- sure that it will blocked on reading when we kill it
-        case blocking of
-          BlockOnRead -> do
-            writeChannel channel False a
-            -- run the server thread now, so it blocks on reading
-            yield
-            killThread tid
-            pure Nothing
-          BlockOnWrite -> do
-            writeChannel channel True a
-            _ <- readChannel channel False
-            -- run the server thread now, so it block on writing
-            yield
-            killThread tid
-            pure Nothing
-          NonBlocking -> do
-            writeChannel channel True a
-            goRecv [] as0
-      goSend (a : as) = do
-        writeChannel channel True a
-        goSend as
-
-      goRecv res [] = do
-        killThread tid
-        pure (Just $ reverse res)
-      goRecv res (_ : as) = do
-        Just r <- readChannel channel True
-        goRecv (r : res) as
-
-
---
--- PingPong Server API
---
-
-
-data PingPongServer a = PingPongServer {
-    recvPing :: a -> IO (a, PingPongServer a)
-  }
-
-constPingPongServer :: PingPongServer a
-constPingPongServer = PingPongServer {
-    recvPing = \a -> pure (a, constPingPongServer)
-  }
-
-runPingPongServer :: BinaryChannel a
-                  -> PingPongServer a
-                  -> IO ()
-runPingPongServer channel PingPongServer { recvPing } = do
-    Just a <- readChannel channel True
-    (a', server') <- recvPing a
-    writeChannel channel True a'
-    runPingPongServer channel server'
-
-forkPingPongServer :: forall a.
-                      Binary a
-                   => HANDLE
-                   -> BinaryChannel a
-                   -> PingPongServer a
-                   -> IO (ThreadId, MVar ())
-forkPingPongServer h channel server = do
-      var <- newEmptyMVar
-      tid <- forkIOWithUnmask $ \unmask ->
-          unmask
-            (do
-              -- the connectNamedPipe call is blocking, but we call it with
-              -- async exceptions masked
-              --
-              -- TODO: once in a while this errors with `resource vanished`,
-              -- in this case the test passess.
-              connectNamedPipe h
-              runPingPongServer channel server)
-          `finally` putMVar var ()
-      pure (tid, var)
-
-
--- 
--- PingPong tests
---
 
 -- | Stress test for named pipe ffi calls.
 --
@@ -550,11 +331,15 @@ prop_PingPong n blocking (LargeNonEmptyBS bs bufSize) =
                            (fromIntegral bufSize)
                            0
                            Nothing
-      associateWithIOCompletionPort h iocp
+      associateWithIOCompletionPort (Left h) iocp
       let channel = handleToBinaryChannel h
-      (tid, lock) <- forkPingPongServer
-                        h channel
-                        (constPingPongServer @ByteString)
+      lock <- newEmptyMVar
+      tid <- mask_ $ forkIOWithUnmask $ \unmask ->
+        do
+          connectNamedPipe h
+          unmask (runPingPongServer channel (constPingPongServer @ByteString))
+        -- TODO: this finally is really needed against the whole block, sometimes the async exception must hit `connectNamedPipe`.
+        `finally` putMVar lock ()
 
       -- run the PingPong client
       h' <- createFile pname
@@ -564,7 +349,7 @@ prop_PingPong n blocking (LargeNonEmptyBS bs bufSize) =
                        oPEN_EXISTING
                        fILE_FLAG_OVERLAPPED
                        Nothing
-      associateWithIOCompletionPort h' iocp
+      associateWithIOCompletionPort (Left h') iocp
       let channel' = handleToBinaryChannel h'
       res <- runPingPongClient channel' blocking tid (constPingPongClient n bs)
 
@@ -603,11 +388,14 @@ prop_PingPongPipelined blocking (Positive bufSize) (NonEmpty bss0) =
                            maxBound
                            0
                            Nothing
-      associateWithIOCompletionPort h iocp
+      associateWithIOCompletionPort (Left h) iocp
       let channel = handleToBinaryChannel h
-      (tid, lock) <-
-          forkPingPongServer h channel
-            (constPingPongServer @ByteString)
+      lock <- newEmptyMVar
+      tid <- mask_ $ forkIOWithUnmask $ \unmask ->
+        do
+          connectNamedPipe h
+          unmask (runPingPongServer channel (constPingPongServer @ByteString))
+        `finally` putMVar lock ()
 
       -- run the PingPong client
       h' <- createFile pname
@@ -617,7 +405,7 @@ prop_PingPongPipelined blocking (Positive bufSize) (NonEmpty bss0) =
                        oPEN_EXISTING
                        fILE_FLAG_OVERLAPPED
                        Nothing
-      associateWithIOCompletionPort h' iocp
+      associateWithIOCompletionPort (Left h') iocp
       let channel' = handleToBinaryChannel h'
       res <- runPingPongClientPipelined channel' blocking tid bss
 

@@ -29,7 +29,7 @@ import           Ouroboros.Consensus.ChainSyncServer (TraceChainSyncServerEvent)
 import           Ouroboros.Consensus.Ledger.Abstract (AnachronyFailure,
                      ProtocolLedgerView)
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTx, GenTxId,
-                     TraceEventMempool)
+                     MempoolSize, TraceEventMempool)
 import           Ouroboros.Consensus.TxSubmission
                      (TraceLocalTxSubmissionServerEvent (..))
 
@@ -101,21 +101,100 @@ showTracers tr = Tracers
 -------------------------------------------------------------------------------}
 
 -- | Trace the forging of a block as a slot leader.
+--
+-- The flow of trace events here can be visualized as follows:
+--
+-- > TraceStartLeadershipCheck
+-- >          |
+-- >          +--- TraceNodeNotLeader
+-- >          |
+-- >          +--- TraceBlockFromFuture (leadership check failed)
+-- >          |
+-- >          +--- TraceNoLedgerState (leadership check failed)
+-- >          |
+-- >          +--- TraceNoLedgerView (leadership check failed)-- >
+-- >          |
+-- >   TraceNodeIsLeader
+-- >          |
+-- >    TraceForgedBlock
+-- >          |
+-- >          +--- TraceDidntAdoptBlock
+-- >          |
+-- >          +--- TraceForgedInvalidBlock
+-- >          |
+-- >  TraceAdoptedBlock
 data TraceForgeEvent blk tx
-  -- | The node will soon forge; it is about to read its transactions and
-  -- current DB.
-  = TraceForgeAboutToLead SlotNo
+  -- | Start of the leadership check
+  --
+  -- We record the current slot number.
+  --
+  -- This event terminates with one of the following concluding trace messages:
+  --
+  -- * TraceNodeNotLeader if we are not the leader
+  -- * TraceNodeIsLeader if we are the leader
+  -- * TraceBlockFromFuture (rarely)
+  -- * TraceNoLedgerState (rarely)
+  -- * TraceNoLedgerView (rarely)
+  = TraceStartLeadershipCheck SlotNo
 
-  -- | The forged block and at which slot it was forged.
-  | TraceForgeEvent SlotNo blk
+  -- | We did the leadership check and concluded we are not the leader
+  --
+  -- We record the current slot number
+  | TraceNodeNotLeader SlotNo
 
-  -- | We should have produced a block, but didn't, due to too many missing
-  -- blocks between the tip of our chain and the current slot
+  -- | Leadership check failed: we were unable to get the ledger state
+  -- for the point of the block we want to connect to
+  --
+  -- This can happen if after choosing which block to connect to the node
+  -- switched to a different fork. We expect this to happen only rather rarely,
+  -- so this certainly merits a warning; if it happens a lot, that merits an
+  -- investigation.
+  --
+  -- We record both the current slot number as well as the point of the block
+  -- we attempt to connect the new block to (that we requested the ledger state
+  -- for).
+  | TraceNoLedgerState SlotNo (Point blk)
+
+  -- | Leadership check failed: we were unable to get the ledger view for the
+  -- current slot number
+  --
+  -- This will only happen if there are many missing blocks between the tip of
+  -- our chain and the current slot.
   --
   -- As a sanity check, we record also the failure returned by
   -- 'anachronisticProtocolLedgerView', although we expect this to be
   -- 'TooFarAhead', never 'TooFarBehind'.
-  | TraceCouldNotForge SlotNo AnachronyFailure
+  | TraceNoLedgerView SlotNo AnachronyFailure
+
+  -- | Leadership check failed: the current chain contains a block from a slot
+  -- /after/ the current slot
+  --
+  -- This can only happen if the system is under heavy load.
+  --
+  -- We record both the current slot number as well as the slot number of the
+  -- block at the tip of the chain.
+  --
+  -- See also <https://github.com/input-output-hk/ouroboros-network/issues/1462>
+  | TraceBlockFromFuture SlotNo SlotNo
+
+  -- | We did the leadership check and concluded we /are/ the leader
+  --
+  -- The node will soon forge; it is about to read its transactions and
+  -- current DB. This will be followed by TraceForgedBlock.
+  | TraceNodeIsLeader SlotNo
+
+  -- | We forged a block
+  --
+  -- We record the current slot number, the block itself, and the total size
+  -- of the mempool snapshot at the time we produced the block (which may be
+  -- significantly larger than the block, due to maximum block size)
+  --
+  -- This will be followed by one of three messages:
+  --
+  -- * TraceAdoptedBlock (normally)
+  -- * TraceDidntAdoptBlock (rarely)
+  -- * TraceForgedInvalidBlock (hopefully never -- this would indicate a bug)
+  | TraceForgedBlock SlotNo blk MempoolSize
 
   -- | We adopted the block we produced, we also trace the transactions
   -- that were adopted.

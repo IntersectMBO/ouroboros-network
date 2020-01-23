@@ -3,7 +3,10 @@
 {-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-module Ouroboros.Consensus.Node.Run.Byron () where
+module Ouroboros.Consensus.Node.Run.Byron (
+    -- * Exported for the benefit of ByronDual
+    extractEpochSlots
+  ) where
 
 import           Data.Coerce (coerce)
 

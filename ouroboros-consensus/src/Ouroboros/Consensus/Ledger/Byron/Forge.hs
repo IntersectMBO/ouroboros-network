@@ -15,6 +15,7 @@ import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
 import           Data.Word (Word32)
+import           GHC.Stack
 
 import           Cardano.Binary (Annotated (..), reAnnotate)
 import qualified Cardano.Chain.Block as CC.Block
@@ -31,12 +32,14 @@ import           Cardano.Crypto.DSIGN
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import           Ouroboros.Consensus.Ledger.Byron.Block
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
 import           Ouroboros.Consensus.Ledger.Byron.Mempool
 import           Ouroboros.Consensus.Ledger.Byron.PBFT
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 
@@ -44,11 +47,12 @@ forgeByronBlock
   :: forall m.
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
      , MonadRandom m
+     , HasCallStack
      )
   => NodeConfig ByronConsensusProtocol
   -> SlotNo                          -- ^ Current slot
   -> BlockNo                         -- ^ Current block number
-  -> ChainHash ByronBlock            -- ^ Previous hash
+  -> ExtLedgerState ByronBlock       -- ^ Ledger
   -> [GenTx ByronBlock]              -- ^ Txs to add in the block
   -> PBftIsLeader PBftCardanoCrypto  -- ^ Leader proof ('IsLeader')
   -> m ByronBlock
@@ -126,15 +130,16 @@ forgeRegularBlock
   :: forall m.
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
      , MonadRandom m
+     , HasCallStack
      )
   => NodeConfig ByronConsensusProtocol
   -> SlotNo                            -- ^ Current slot
   -> BlockNo                           -- ^ Current block number
-  -> ChainHash ByronBlock              -- ^ Previous hash
+  -> ExtLedgerState ByronBlock         -- ^ Ledger
   -> [GenTx ByronBlock]                -- ^ Txs to add in the block
   -> PBftIsLeader PBftCardanoCrypto    -- ^ Leader proof ('IsLeader')
   -> m ByronBlock
-forgeRegularBlock cfg curSlot curNo prevHash txs isLeader = do
+forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
     ouroborosPayload <-
       forgePBftFields cfg isLeader (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload
@@ -189,7 +194,7 @@ forgeRegularBlock cfg curSlot curNo prevHash txs isLeader = do
     proof = CC.Block.mkProof body
 
     prevHeaderHash :: CC.Block.HeaderHash
-    prevHeaderHash = case prevHash of
+    prevHeaderHash = case ledgerTipHash (ledgerState extLedger) of
       GenesisHash             -> error
         "the first block on the Byron chain must be an EBB"
       BlockHash (ByronHash h) -> h

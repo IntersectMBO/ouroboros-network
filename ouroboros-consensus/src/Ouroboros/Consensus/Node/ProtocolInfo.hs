@@ -7,6 +7,7 @@ module Ouroboros.Consensus.Node.ProtocolInfo (
   , protocolInfo
   ) where
 
+import           Ouroboros.Consensus.Ledger.Dual.Byron (protocolInfoDualByron)
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract as X
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron as X
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.BFT as X
@@ -30,8 +31,11 @@ protocolInfo (ProtocolMockPraos nodes nid params) =
 protocolInfo (ProtocolLeaderSchedule nodes nid params schedule) =
     protocolInfoPraosRule nodes nid params schedule
 
-protocolInfo (ProtocolMockPBFT nodes nid params) =
-    protocolInfoMockPBFT nodes nid params
+protocolInfo (ProtocolMockPBFT params nid) =
+    protocolInfoMockPBFT params nid
 
 protocolInfo (ProtocolRealPBFT gc mthr prv swv mplc) =
     protocolInfoByron gc mthr prv swv mplc
+
+protocolInfo (ProtocolDualPBFT abstractEnv params mLeader) =
+    protocolInfoDualByron abstractEnv params mLeader

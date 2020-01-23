@@ -6,8 +6,8 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos (
     protocolInfoPraos
   ) where
 
-import           Data.IntMap (IntMap)
-import qualified Data.IntMap as IntMap
+import           Data.Map (Map)
+import qualified Data.Map as Map
 
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
@@ -23,12 +23,12 @@ protocolInfoPraos :: NumCoreNodes
                   -> PraosParams
                   -> ProtocolInfo (SimplePraosBlock SimpleMockCrypto
                                                     PraosMockCrypto)
-protocolInfoPraos (NumCoreNodes numCoreNodes) (CoreNodeId nid) params =
+protocolInfoPraos numCoreNodes nid params =
     ProtocolInfo {
         pInfoConfig = PraosNodeConfig {
             praosParams       = params
           , praosNodeId       = CoreId nid
-          , praosSignKeyVRF   = SignKeyMockVRF nid
+          , praosSignKeyVRF   = signKeyVRF nid
           , praosInitialEta   = 0
           , praosInitialStake = genesisStakeDist addrDist
           , praosVerKeys      = verKeys
@@ -39,15 +39,24 @@ protocolInfoPraos (NumCoreNodes numCoreNodes) (CoreNodeId nid) params =
           , ouroborosChainState = []
           }
       , pInfoInitState = PraosNodeState $ SignKeyMockKES
-           (fst $ verKeys IntMap.! nid)   -- key ID
-           0                              -- KES initial slot
-           (praosLifetimeKES params)      -- KES lifetime
+           (fst $ verKeys Map.! nid)   -- key ID
+           0                           -- KES initial slot
+           (praosLifetimeKES params)   -- KES lifetime
       }
   where
+    signKeyVRF :: CoreNodeId -> SignKeyVRF MockVRF
+    signKeyVRF (CoreNodeId n) = SignKeyMockVRF (fromIntegral n)
+
+    verKeyVRF :: CoreNodeId -> VerKeyVRF MockVRF
+    verKeyVRF (CoreNodeId n) = VerKeyMockVRF (fromIntegral n)
+
+    verKeyKES :: CoreNodeId -> VerKeyKES MockKES
+    verKeyKES (CoreNodeId n) = VerKeyMockKES (fromIntegral n)
+
     addrDist :: AddrDist
     addrDist = mkAddrDist numCoreNodes
 
-    verKeys :: IntMap (VerKeyKES MockKES, VerKeyVRF MockVRF)
-    verKeys = IntMap.fromList [ (nd, (VerKeyMockKES nd, VerKeyMockVRF nd))
-                              | nd <- [0 .. numCoreNodes - 1]
-                              ]
+    verKeys :: Map CoreNodeId (VerKeyKES MockKES, VerKeyVRF MockVRF)
+    verKeys = Map.fromList [ (nid', (verKeyKES nid', verKeyVRF nid'))
+                           | nid' <- enumCoreNodes numCoreNodes
+                           ]

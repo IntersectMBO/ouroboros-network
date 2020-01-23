@@ -57,11 +57,13 @@
             (hsPkgs.base)
             (hsPkgs.containers)
             (hsPkgs.hedgehog)
+            (hsPkgs.mtl)
             (hsPkgs.tasty)
             (hsPkgs.tasty-hedgehog)
             (hsPkgs.tasty-expected-failure)
             (hsPkgs.QuickCheck)
             (hsPkgs.tasty-quickcheck)
+            (hsPkgs.tasty-hunit)
             (hsPkgs.Unique)
             (hsPkgs.cardano-crypto-class)
             (hsPkgs.cardano-binary)
@@ -73,8 +75,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-ledger-specs";
-      rev = "203ec5b7ac22f8d44fc2d6a44ea1233962c2c0e6";
-      sha256 = "06pgaabh8d330sra8060hplrhnkvlkm5iliz2sh76f3zvkbi918s";
+      rev = "5e05950c54b64e9fd10804065aaca9f552fd638d";
+      sha256 = "0rwv1r8wlv9myhjz19vhwg5xijfhd1a3fpyzr117xy5kbndhv5dp";
       });
     postUnpack = "sourceRoot+=/byron/semantics/executable-spec; echo source root reset to \$sourceRoot";
     }

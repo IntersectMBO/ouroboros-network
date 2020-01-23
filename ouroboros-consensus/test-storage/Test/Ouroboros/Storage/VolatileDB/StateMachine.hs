@@ -11,7 +11,6 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -59,6 +58,7 @@ import           Ouroboros.Consensus.Util (SomePair (..))
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 
+import           Ouroboros.Storage.Common (BlockComponent (..))
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -79,37 +79,65 @@ newtype At t (r :: Type -> Type) = At {unAt :: t}
 -- | Alias for 'At'
 type (:@) t r = At t r
 
+-- | Product of all 'BlockComponent's. As this is a GADT, generating random
+-- values of it (and combinations!) is not so simple. Therefore, we just
+-- always request all block components.
+allComponents :: BlockComponent (VolatileDB BlockId m) AllComponents
+allComponents = (,,,,,,,,)
+    <$> GetBlock
+    <*> GetRawBlock
+    <*> GetHeader
+    <*> GetRawHeader
+    <*> GetHash
+    <*> GetSlot
+    <*> GetIsEBB
+    <*> GetBlockSize
+    <*> GetHeaderSize
+
+-- | A list of all the 'BlockComponent' indices (@b@) we are interested in.
+type AllComponents =
+  ( ()
+  , ByteString
+  , ()
+  , ByteString
+  , BlockId
+  , SlotNo
+  , IsEBB
+  , Word32
+  , Word16
+  )
+
 data Success
-  = Unit     ()
-  | Blob     (Maybe (SlotNo, IsEBB, ByteString))
-  | Blocks   [BlockId]
-  | Bl       Bool
-  | IsMember [Bool] -- We compare two functions based on their results on a list of inputs.
-  | SimulatedError (Either VolatileDBError Success)
-  | Successors [Set BlockId]
-  | Predecessor [Predecessor]
-  | MaxSlot  MaxSlotNo
+  = Unit            ()
+  | MbAllComponents (Maybe AllComponents)
+  | Blocks          [BlockId]
+  | Bl              Bool
+  | IsMember        [Bool] -- We compare two functions based on their results on a list of inputs.
+  | SimulatedError  (Either VolatileDBError Success)
+  | Successors      [Set BlockId]
+  | Predecessor     [Predecessor]
+  | MaxSlot         MaxSlotNo
   deriving Show
 
 instance Eq Success where
-    Unit ()          == Unit ()          = True
-    Unit _           == _                = False
-    Blob mbs         == Blob mbs'        = mbs == mbs'
-    Blob _           == _                = False
-    Blocks ls        == Blocks ls'       = S.fromList ls == S.fromList ls'
-    Blocks _         == _                = False
-    Bl bl            == Bl bl'           = bl == bl'
-    Bl _             == _                = False
-    IsMember ls      == IsMember ls'     = ls == ls'
-    IsMember _       == _                = False
-    SimulatedError _ == SimulatedError _ = True
-    SimulatedError _ == _                = False
-    Successors st1   == Successors st2   = st1 == st2
-    Successors _     == _                = False
-    Predecessor p1   == Predecessor p2   = p1 == p2
-    Predecessor _    == _                = False
-    MaxSlot ms1      == MaxSlot ms2      = ms1 == ms2
-    MaxSlot _        == _                = False
+    Unit ()             == Unit ()              = True
+    Unit _              == _                    = False
+    MbAllComponents mbc == MbAllComponents mbc' = mbc == mbc'
+    MbAllComponents _   == _                    = False
+    Blocks ls           == Blocks ls'           = S.fromList ls == S.fromList ls'
+    Blocks _            == _                    = False
+    Bl bl               == Bl bl'               = bl == bl'
+    Bl _                == _                    = False
+    IsMember ls         == IsMember ls'         = ls == ls'
+    IsMember _          == _                    = False
+    SimulatedError _    == SimulatedError _     = True
+    SimulatedError _    == _                    = False
+    Successors st1      == Successors st2       = st1 == st2
+    Successors _        == _                    = False
+    Predecessor p1      == Predecessor p2       = p1 == p2
+    Predecessor _       == _                    = False
+    MaxSlot ms1         == MaxSlot ms2          = ms1 == ms2
+    MaxSlot _           == _                    = False
 
 
 newtype Resp = Resp {getResp :: Either VolatileDBError Success}
@@ -119,8 +147,7 @@ data Cmd
     = IsOpen
     | Close
     | ReOpen
-    | GetBlock BlockId
-    | GetHeader BlockId
+    | GetBlockComponent BlockId
     | GetBlockIds
     | PutBlock BlockId Predecessor IsEBB ByteString -- ^ @ByteString@ is the header.
     | GarbageCollect BlockId
@@ -169,8 +196,7 @@ instance ToExpr ParserError where
 
 instance CommandNames (At Cmd) where
     cmdName (At cmd) = case cmd of
-        GetBlock {}          -> "GetBlock"
-        GetHeader {}         -> "GetHeader"
+        GetBlockComponent {} -> "GetBlockComponent"
         GetBlockIds          -> "GetBlockIds"
         PutBlock {}          -> "PutBlock"
         GarbageCollect {}    -> "GarbageCollect"
@@ -251,13 +277,11 @@ runPure dbm (CmdErr cmd err) =
         tnc :: EH.ThrowCantCatch VolatileDBError PureM = EH.throwCantCatch EH.exceptT
         go :: PureM Success
         go = case cmd of
-            GetBlock bid       -> do
-                Blob <$> getBlockModel tnc bid
-            GetHeader bid ->
-                Blob <$> getHeaderModel tnc bid
-            GetBlockIds        ->
+            GetBlockComponent bid ->
+                MbAllComponents <$> getBlockComponentModel tnc allComponents bid
+            GetBlockIds ->
                 Blocks <$> getBlockIdsModel tnc
-            PutBlock b pb isEBB h    -> do
+            PutBlock b pb isEBB h -> do
                 let blockInfo = BlockInfo {
                         bbid          = b
                       , bslot         = guessSlot b
@@ -309,30 +333,29 @@ runDB :: (HasCallStack, IOLike m)
       -> Cmd
       -> m Success
 runDB restCmd db cmd = case cmd of
-    GetBlock bid       -> Blob <$> getBlock db bid
-    GetHeader bid      -> Blob <$> getHeader db bid
-    GetBlockIds        -> Blocks <$> getBlockIds db
-    PutBlock b pb e h  -> Unit <$> putBlock db
+    GetBlockComponent bid -> MbAllComponents <$> getBlockComponent db allComponents bid
+    GetBlockIds           -> Blocks <$> getBlockIds db
+    PutBlock b pb e h     -> Unit <$> putBlock db
       (BlockInfo b (guessSlot b) pb e headerOffset headerSize)
       (BL.lazyByteString $ toBinary (b, pb, h))
-    GetSuccessors bids -> do
+    GetSuccessors bids    -> do
         successors <- atomically $ getSuccessors db
         return $ Successors $ successors <$> bids
-    GetPredecessor bids -> do
+    GetPredecessor bids   -> do
         predecessor <- atomically $ getPredecessor db
         return $ Predecessor $ predecessor <$> bids
-    GarbageCollect bid -> Unit <$> garbageCollect db (guessSlot bid)
-    IsOpen             -> Bl <$> isOpenDB db
-    Close              -> Unit <$> closeDB db
-    ReOpen             -> Unit <$> reOpenDB db
-    Corrupt {}         -> restCmd db cmd
-    CreateFile         -> restCmd db cmd
-    CreateInvalidFile  -> restCmd db cmd
-    DuplicateBlock {}  -> restCmd db cmd
-    AskIfMember bids   -> do
+    GarbageCollect bid    -> Unit <$> garbageCollect db (guessSlot bid)
+    IsOpen                -> Bl <$> isOpenDB db
+    Close                 -> Unit <$> closeDB db
+    ReOpen                -> Unit <$> reOpenDB db
+    Corrupt {}            -> restCmd db cmd
+    CreateFile            -> restCmd db cmd
+    CreateInvalidFile     -> restCmd db cmd
+    DuplicateBlock {}     -> restCmd db cmd
+    AskIfMember bids      -> do
         isMember <- atomically $ getIsMember db
         return $ IsMember $ isMember <$> bids
-    GetMaxSlotNo       -> atomically $ MaxSlot <$> getMaxSlotNo db
+    GetMaxSlotNo          -> atomically $ MaxSlot <$> getMaxSlotNo db
 
 sm :: IOLike m
    => Bool
@@ -416,8 +439,7 @@ generatorCmdImpl terminatingCmd m@Model {..} =
     let isEBB = IsNotEBB  -- TODO we need a proper TestBlock
     let duplicate = (\(f, b, pb) -> DuplicateBlock f b pb) <$> bid
     cmd <- frequency
-        [ (150, return $ GetBlock sl)
-        , (150, return $ GetHeader sl)
+        [ (150, return $ GetBlockComponent sl)
         , (100, return $ GetBlockIds)
         , (150, return $ PutBlock sl (WithOrigin.At psl) isEBB (BL.singleton header))
         , (100, return $ GetSuccessors $ WithOrigin.At sl : (WithOrigin.At <$> possiblePredecessors))
@@ -453,8 +475,7 @@ generatorImpl mkErr terminatingCmd m@Model {..} = do
                 , (if mkErr then 1 else 0, Just <$> genErrors False False)]
         return $ At $ CmdErr cmd err
     where
-        noErrorFor GetBlock {}          = False
-        noErrorFor GetHeader {}         = False
+        noErrorFor GetBlockComponent {} = False
         noErrorFor GetBlockIds          = False
         noErrorFor ReOpen {}            = False
         noErrorFor IsOpen {}            = False
@@ -553,22 +574,21 @@ mockImpl model cmdErr = At <$> return mockResp
 
 knownLimitation :: Model Symbolic -> Cmd :@ Symbolic -> Logic
 knownLimitation model (At cmd) = case cmd of
-    GetBlock bid         -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
-    GetHeader bid        -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
-    GetBlockIds          -> Bot
-    GetSuccessors {}     -> Bot
-    GetPredecessor {}    -> Bot
-    GetMaxSlotNo {}      -> Bot
-    PutBlock bid _ _ _   -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
-    GarbageCollect _sl   -> Bot
-    IsOpen               -> Bot
-    Close                -> Bot
-    ReOpen               -> Bot
-    Corrupt _            -> Bot
-    CreateFile           -> Boolean $ not $ open $ dbModel model
-    AskIfMember bids     -> exists ((\b -> isLimitation (latestGarbaged $ dbModel model) (guessSlot b)) <$> bids) Boolean
-    CreateInvalidFile    -> Boolean $ not $ open $ dbModel model
-    DuplicateBlock {}    -> Boolean $ not $ open $ dbModel model
+    GetBlockComponent bid -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
+    GetBlockIds           -> Bot
+    GetSuccessors {}      -> Bot
+    GetPredecessor {}     -> Bot
+    GetMaxSlotNo {}       -> Bot
+    PutBlock bid _ _ _    -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
+    GarbageCollect _sl    -> Bot
+    IsOpen                -> Bot
+    Close                 -> Bot
+    ReOpen                -> Bot
+    Corrupt _             -> Bot
+    CreateFile            -> Boolean $ not $ open $ dbModel model
+    AskIfMember bids      -> exists ((\b -> isLimitation (latestGarbaged $ dbModel model) (guessSlot b)) <$> bids) Boolean
+    CreateInvalidFile     -> Boolean $ not $ open $ dbModel model
+    DuplicateBlock {}     -> Boolean $ not $ open $ dbModel model
     where
         isLimitation :: (Ord slot) => Maybe slot -> slot -> Bool
         isLimitation Nothing _sl       = False
@@ -635,7 +655,7 @@ successful f = C.predicate $ \ev -> case (eventMockResp ev, eventCmd ev) of
 tag :: [Event Symbolic] -> [Tag]
 tag [] = [TagEmpty]
 tag ls = C.classify
-    [ tagGetBinaryBlobNothing
+    [ tagGetBlockComponentNothing
     , tagGetJust $ Left TagGetJust
     , tagGetReOpenGet
     , tagReOpenJust
@@ -648,11 +668,11 @@ tag ls = C.classify
     ] ls
   where
 
-    tagGetBinaryBlobNothing :: EventPred
-    tagGetBinaryBlobNothing = successful $ \ev r -> case r of
-        Blob Nothing | GetBlock {} <- getCmd ev ->
+    tagGetBlockComponentNothing :: EventPred
+    tagGetBlockComponentNothing = successful $ \ev r -> case r of
+        MbAllComponents Nothing | GetBlockComponent {} <- getCmd ev ->
             Left TagGetNothing
-        _ -> Right tagGetBinaryBlobNothing
+        _ -> Right tagGetBlockComponentNothing
 
     tagReOpenJust :: EventPred
     tagReOpenJust = tagReOpen False $ Right $ tagGetJust $ Left TagReOpenGet
@@ -670,15 +690,15 @@ tag ls = C.classify
                 -> Right $ tagGarbageCollect True (S.insert bid bids) Nothing
             (Nothing, _, GarbageCollect bid)
                 -> Right $ tagGarbageCollect True bids (Just bid)
-            (Just _gced, Blob Nothing, GetBlock bid) | (S.member bid bids)
+            (Just _gced, MbAllComponents Nothing, GetBlockComponent bid) | (S.member bid bids)
                 -> Left TagGarbageCollect
             (_, _, Corrupt _) -> Right $ tagGarbageCollect False bids mgced
             _ -> Right $ tagGarbageCollect True bids mgced
 
     tagGetJust :: Either Tag EventPred -> EventPred
     tagGetJust next = successful $ \_ev suc -> case suc of
-        Blob (Just _) -> next
-        _             -> Right $ tagGetJust next
+        MbAllComponents (Just _) -> next
+        _                        -> Right $ tagGetJust next
 
     tagReOpen :: Bool -> Either Tag EventPred -> EventPred
     tagReOpen hasClosed next = successful $ \ev _ -> case (hasClosed, getCmd ev) of
@@ -745,34 +765,34 @@ isMemberTrue' events = sum $ f <$> events
 data Tag =
     -- | Request a block successfully
     --
-    -- > GetBlock (returns Just)
+    -- > GetBlockComponent (returns Just)
       TagGetJust
 
     -- | Try to get a non-existant block
     --
-    -- > GetBlock (returns Nothing)
+    -- > GetBlockComponent (returns Nothing)
     | TagGetNothing
 
     -- | Make a request, close, re-open and do another request.
     --
-    -- > GetBlock (returns Just)
+    -- > GetBlockComponent (returns Just)
     -- > CloseDB or Corrupt
     -- > ReOpen
-    -- > GetBlock (returns Just)
+    -- > GetBlockComponent (returns Just)
     | TagGetReOpenGet
 
     -- | Close, re-open and do a request.
     --
     -- > CloseDB or Corrupt
     -- > ReOpen
-    -- > GetBlock (returns Just)
+    -- > GetBlockComponent (returns Just)
     | TagReOpenGet
 
     -- | Test Garbage Collect.
     --
     -- > PutBlock
     -- > GarbageColect
-    -- > GetBlock (returns Nothing)
+    -- > GetBlockComponent (returns Nothing)
     -- TODO(kde): This is actually a limitation, since we never
     -- actually request gced blocks.
     | TagGarbageCollect
