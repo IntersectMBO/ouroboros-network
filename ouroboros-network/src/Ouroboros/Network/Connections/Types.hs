@@ -85,6 +85,8 @@ data Resource provenance m r where
 -- thread may of course have died, but that's always a possibility even if
 -- you `include`. 
 --
+-- TODO may be useful to bring `request` to the end and make this a
+-- contravariant functor.
 data Connections id socket request reject accept m = Connections
   { include :: forall provenance .
                id
