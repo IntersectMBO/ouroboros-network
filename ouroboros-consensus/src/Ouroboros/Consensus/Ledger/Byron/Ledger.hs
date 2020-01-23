@@ -13,6 +13,7 @@ module Ouroboros.Consensus.Ledger.Byron.Ledger (
     -- * Ledger integration
     LedgerConfig(..)
   , LedgerState(..)
+  , initByronLedgerState
     -- * Serialisation
   , encodeByronLedgerState
   , decodeByronLedgerState
@@ -70,9 +71,6 @@ instance UpdateLedger ByronBlock where
       unByronLedgerConfig :: Gen.Config
     }
 
-  ledgerConfigView PBftNodeConfig{..} = ByronLedgerConfig $
-      pbftGenesisConfig pbftExtConfig
-
   applyChainTick cfg slotNo ByronLedgerState{..} =
       TickedLedgerState ByronLedgerState {
           byronDelegationHistory = byronDelegationHistory
@@ -101,10 +99,22 @@ instance UpdateLedger ByronBlock where
           where
             slot = fromByronSlotNo (CC.cvsLastSlot state)
 
+initByronLedgerState :: Gen.Config -> LedgerState ByronBlock
+initByronLedgerState genesis = ByronLedgerState {
+      byronLedgerState       = initState
+    , byronDelegationHistory = History.empty
+    }
+  where
+    initState :: CC.ChainValidationState
+    Right initState = runExcept $ CC.initialChainValidationState genesis
+
 instance ConfigContainsGenesis (LedgerConfig ByronBlock) where
   getGenesisConfig = unByronLedgerConfig
 
 instance ProtocolLedgerView ByronBlock where
+  ledgerConfigView PBftNodeConfig{..} = ByronLedgerConfig $
+      pbftGenesisConfig pbftExtConfig
+
   protocolLedgerView _cfg =
         toPBftLedgerView
       . Aux.getDelegationMap

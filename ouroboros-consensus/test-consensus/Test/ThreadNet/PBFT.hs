@@ -46,13 +46,12 @@ prop_simple_pbft_convergence
     NumCoreNodes nn = numCoreNodes
 
     sigThd = (1.0 / fromIntegral nn) + 0.1
-    params = PBftParams k (fromIntegral nn) sigThd (slotLengthFromSec 20)
+    params = PBftParams k numCoreNodes sigThd (slotLengthFromSec 20)
 
     testOutput =
         runTestNetwork testConfig TestConfigBlock
             { forgeEBB = Nothing
-            , nodeInfo = \nid -> protocolInfo $
-                ProtocolMockPBFT numCoreNodes nid params
+            , nodeInfo = \nid -> protocolInfo $ ProtocolMockPBFT params nid
             , rekeying = Nothing
             }
 
@@ -63,7 +62,7 @@ expectedBlockRejection :: NumCoreNodes -> BlockRejection Blk -> Bool
 expectedBlockRejection (NumCoreNodes nn) BlockRejection
   { brBlockSlot = SlotNo s
   , brReason    = err
-  , brRejector  = CoreId i
+  , brRejector  = CoreId (CoreNodeId i)
   }
   | ownBlock               = case err of
     ExtValidationErrorOuroboros

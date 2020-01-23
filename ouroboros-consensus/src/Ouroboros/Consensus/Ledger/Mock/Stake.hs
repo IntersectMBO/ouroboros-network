@@ -14,8 +14,6 @@ module Ouroboros.Consensus.Ledger.Mock.Stake (
   ) where
 
 import           Codec.Serialise (Serialise)
-import           Data.IntMap.Strict (IntMap)
-import qualified Data.IntMap.Strict as IntMap
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
@@ -24,7 +22,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Ledger.Mock.Address
 import           Ouroboros.Consensus.Ledger.Mock.UTxO
-import           Ouroboros.Consensus.NodeId (NodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 
 {-------------------------------------------------------------------------------
   Stakeholders
@@ -32,7 +30,7 @@ import           Ouroboros.Consensus.NodeId (NodeId (..))
 
 data StakeHolder =
     -- | Stake of a core node
-    StakeCore Int
+    StakeCore CoreNodeId
 
     -- | Stake for everybody else (we don't need to distinguish)
   | StakeEverybodyElse
@@ -42,18 +40,19 @@ data StakeHolder =
   Stake distribution
 -------------------------------------------------------------------------------}
 
-newtype StakeDist = StakeDist { stakeDistToIntMap :: IntMap Rational }
+-- | In the mock setup, only core nodes have stake
+newtype StakeDist = StakeDist { stakeDistToMap :: Map CoreNodeId Rational }
   deriving (Show, Eq, Serialise, NoUnexpectedThunks)
 
-stakeWithDefault :: Rational -> Int -> StakeDist -> Rational
-stakeWithDefault d n = IntMap.findWithDefault d n . stakeDistToIntMap
+stakeWithDefault :: Rational -> CoreNodeId -> StakeDist -> Rational
+stakeWithDefault d n = Map.findWithDefault d n . stakeDistToMap
 
 relativeStakes :: Map StakeHolder Int -> StakeDist
 relativeStakes m = StakeDist $
    let totalStake    = fromIntegral $ sum $ Map.elems m
-   in  IntMap.fromList [ (nid, fromIntegral stake / totalStake)
-                       | (StakeCore nid, stake) <- Map.toList m
-                       ]
+   in  Map.fromList [ (nid, fromIntegral stake / totalStake)
+                    | (StakeCore nid, stake) <- Map.toList m
+                    ]
 
 -- | Compute stakes of all nodes
 --
@@ -70,11 +69,11 @@ totalStakes addrDist = foldl f Map.empty
 -- | Stake distribution where every address has equal state
 equalStakeDist :: AddrDist -> StakeDist
 equalStakeDist = StakeDist
-               . IntMap.fromList
+               . Map.fromList
                . mapMaybe (nodeStake . snd)
                . Map.toList
   where
-    nodeStake :: NodeId -> Maybe (Int, Rational)
+    nodeStake :: NodeId -> Maybe (CoreNodeId, Rational)
     nodeStake (RelayId _) = Nothing
     nodeStake (CoreId i)  = Just (i, 1)
 

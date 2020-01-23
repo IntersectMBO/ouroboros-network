@@ -11,6 +11,7 @@ module Ouroboros.Consensus.NodeId (
   ) where
 
 import           Codec.Serialise (Serialise)
+import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -23,8 +24,8 @@ import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
 -- TODO: It is not at all clear that this makes any sense anymore. The network
 -- layer does not use or provide node ids (it uses addresses).
-data NodeId = CoreId Int
-            | RelayId Int
+data NodeId = CoreId CoreNodeId
+            | RelayId Word64
   deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks)
 
 instance Condense NodeId where
@@ -32,9 +33,9 @@ instance Condense NodeId where
   condense (RelayId i) = "r" ++ show i
 
 -- | Core node ID
-newtype CoreNodeId = CoreNodeId Int
+newtype CoreNodeId = CoreNodeId Word64
   deriving stock   (Show, Eq, Ord)
   deriving newtype (Condense, Serialise, NoUnexpectedThunks)
 
 fromCoreNodeId :: CoreNodeId -> NodeId
-fromCoreNodeId (CoreNodeId n) = CoreId n
+fromCoreNodeId = CoreId

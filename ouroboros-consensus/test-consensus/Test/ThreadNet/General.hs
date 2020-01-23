@@ -45,7 +45,8 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol (LeaderSchedule (..))
-import           Ouroboros.Consensus.Protocol.Abstract (LedgerView, SecurityParam (..))
+import           Ouroboros.Consensus.Protocol.Abstract (LedgerView,
+                     SecurityParam (..))
 
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
@@ -354,7 +355,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
           -> Maybe [CoreNodeId]
         actuallyLead nid invalids s b = do
             cid <- case nid of
-                CoreId i  -> Just (CoreNodeId i)
+                CoreId i  -> Just i
                 RelayId _ -> Nothing
 
             let j = nodeIdJoinSlot nodeJoinPlan nid

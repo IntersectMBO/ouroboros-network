@@ -3,8 +3,8 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Mock.PraosRule (
     protocolInfoPraosRule
   ) where
 
-import           Data.IntMap (IntMap)
-import qualified Data.IntMap as IntMap
+import           Data.Map (Map)
+import qualified Data.Map as Map
 
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
@@ -21,8 +21,8 @@ protocolInfoPraosRule :: NumCoreNodes
                       -> PraosParams
                       -> LeaderSchedule
                       -> ProtocolInfo (SimplePraosRuleBlock SimpleMockCrypto)
-protocolInfoPraosRule (NumCoreNodes numCoreNodes)
-                      (CoreNodeId nid)
+protocolInfoPraosRule numCoreNodes
+                      nid
                       params
                       schedule =
     ProtocolInfo {
@@ -37,7 +37,7 @@ protocolInfoPraosRule (NumCoreNodes numCoreNodes)
             , praosVerKeys      = verKeys
             , praosExtConfig    = ()
             }
-        , lsNodeConfigNodeId   = CoreNodeId nid
+        , lsNodeConfigNodeId   = nid
         }
     , pInfoInitLedger = ExtLedgerState
         { ledgerState         = genesisSimpleLedgerState addrDist
@@ -48,7 +48,7 @@ protocolInfoPraosRule (NumCoreNodes numCoreNodes)
   where
     addrDist = mkAddrDist numCoreNodes
 
-    verKeys :: IntMap (VerKeyKES NeverKES, VerKeyVRF NeverVRF)
-    verKeys = IntMap.fromList [ (nd, (NeverUsedVerKeyKES, NeverUsedVerKeyVRF))
-                              | nd <- [0 .. numCoreNodes - 1]
-                              ]
+    verKeys :: Map CoreNodeId (VerKeyKES NeverKES, VerKeyVRF NeverVRF)
+    verKeys = Map.fromList [ (nid', (NeverUsedVerKeyKES, NeverUsedVerKeyVRF))
+                           | nid' <- enumCoreNodes numCoreNodes
+                           ]

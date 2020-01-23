@@ -149,6 +149,9 @@ instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => ProtocolLedgerView (SimplePraosBlock c c') where
+  ledgerConfigView _ =
+      SimpleLedgerConfig
+
   protocolLedgerView PraosNodeConfig{..} _ =
       equalStakeDist praosExtConfig
 

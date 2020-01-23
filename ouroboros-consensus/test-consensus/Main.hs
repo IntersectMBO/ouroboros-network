@@ -12,6 +12,7 @@ import qualified Test.Consensus.Node (tests)
 import qualified Test.Consensus.Protocol.PBFT (tests)
 import qualified Test.Consensus.ResourceRegistry (tests)
 import qualified Test.ThreadNet.BFT (tests)
+import qualified Test.ThreadNet.DualPBFT (tests)
 import qualified Test.ThreadNet.LeaderSchedule (tests)
 import qualified Test.ThreadNet.PBFT (tests)
 import qualified Test.ThreadNet.Praos (tests)
@@ -41,5 +42,6 @@ tests =
   , Test.ThreadNet.PBFT.tests
   , Test.ThreadNet.Praos.tests
   , Test.ThreadNet.RealPBFT.tests
+  , Test.ThreadNet.DualPBFT.tests
   , Test.Util.Split.tests
   ]

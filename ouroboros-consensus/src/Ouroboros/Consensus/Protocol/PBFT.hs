@@ -23,7 +23,9 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftIsLeaderOrNot(..)
   , forgePBftFields
   , genesisKeyCoreNodeId
+  , nodeIdToGenesisKey
   , pbftWindowSize
+  , mapPBftExtConfig
     -- * Classes
   , PBftCrypto(..)
   , PBftMockCrypto
@@ -43,6 +45,7 @@ import           Crypto.Random (MonadRandom)
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.Proxy (Proxy (..))
+import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
@@ -62,6 +65,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron.Config
+import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState (PBftChainState)
@@ -168,7 +172,7 @@ data PBftParams = PBftParams {
       pbftSecurityParam      :: !SecurityParam
 
       -- | Number of core nodes
-    , pbftNumNodes           :: !Word64
+    , pbftNumNodes           :: !NumCoreNodes
 
       -- | Signature threshold
       --
@@ -213,6 +217,15 @@ data instance NodeConfig (PBft cfg c) = PBftNodeConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
+mapPBftExtConfig :: (cfg -> cfg')
+                 -> NodeConfig (PBft cfg  c)
+                 -> NodeConfig (PBft cfg' c)
+mapPBftExtConfig f PBftNodeConfig{..} = PBftNodeConfig{
+      pbftParams    =   pbftParams
+    , pbftIsLeader  =   pbftIsLeader
+    , pbftExtConfig = f pbftExtConfig
+    }
+
 instance ( PBftCrypto c
          , Typeable c
          , NoUnexpectedThunks cfg
@@ -244,11 +257,11 @@ instance ( PBftCrypto c
         -- slot number. Our node index depends which genesis key has delegated
         -- to us, see 'genesisKeyCoreNodeId'.
         PBftIsALeader credentials
-          | n `mod` pbftNumNodes == fromIntegral i -> return (Just credentials)
+          | n `mod` numCoreNodes == fromIntegral i -> return (Just credentials)
           | otherwise                              -> return Nothing
           where
             PBftIsLeader{pbftCoreNodeId = CoreNodeId i} = credentials
-            PBftParams{pbftNumNodes}                    = pbftParams
+            PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams
 
   applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) (b :: hdr) chainState =
       case headerPBftFields pbftExtConfig b of
@@ -333,7 +346,6 @@ pbftWindowSize (SecurityParam k) = CS.WindowSize k
 -- | Does the number of blocks signed by this key exceed the threshold?
 --
 -- Returns @Just@ the number of blocks signed if exceeded.
--- Returns 'Nothing' if not 'shouldCheckThreshold'
 exceedsThreshold :: PBftCrypto c
                  => PBftWindowParams
                  -> PBftChainState c -> PBftVerKeyHash c -> Maybe Word64
@@ -411,12 +423,20 @@ genesisKeyCoreNodeId :: CC.Genesis.Config
                         -- ^ The genesis verification key
                      -> Maybe CoreNodeId
 genesisKeyCoreNodeId gc vkey =
-  CoreNodeId <$> Set.lookupIndex (hashVerKey vkey) genesisKeyHashes
-  where
-    genesisKeyHashes :: Set.Set CC.Common.KeyHash
-    genesisKeyHashes = CC.Genesis.unGenesisKeyHashes
-                     . CC.Genesis.configGenesisKeyHashes
-                     $ gc
+    CoreNodeId . fromIntegral <$>
+      Set.lookupIndex (hashVerKey vkey) (genesisKeyHashes gc)
+
+-- | Inverse of 'genesisKeyCoreNodeId'
+nodeIdToGenesisKey :: CC.Genesis.Config
+                   -> CoreNodeId
+                   -> Maybe CC.Common.KeyHash
+nodeIdToGenesisKey gc (CoreNodeId nid) = do
+    guard $ nid < fromIntegral (Set.size (genesisKeyHashes gc))
+    return $ Set.elemAt (fromIntegral nid) (genesisKeyHashes gc)
+
+genesisKeyHashes :: CC.Genesis.Config -> Set CC.Common.KeyHash
+genesisKeyHashes = CC.Genesis.unGenesisKeyHashes
+                 . CC.Genesis.configGenesisKeyHashes
 
 {-------------------------------------------------------------------------------
   PBFT specific types

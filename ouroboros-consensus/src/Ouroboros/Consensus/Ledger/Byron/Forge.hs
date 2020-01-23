@@ -15,6 +15,7 @@ import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
 import           Data.Word (Word32)
+import           GHC.Stack
 
 import           Cardano.Binary (Annotated (..), reAnnotate)
 import qualified Cardano.Chain.Block as CC.Block
@@ -46,6 +47,7 @@ forgeByronBlock
   :: forall m.
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
      , MonadRandom m
+     , HasCallStack
      )
   => NodeConfig ByronConsensusProtocol
   -> SlotNo                          -- ^ Current slot
@@ -128,6 +130,7 @@ forgeRegularBlock
   :: forall m.
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
      , MonadRandom m
+     , HasCallStack
      )
   => NodeConfig ByronConsensusProtocol
   -> SlotNo                            -- ^ Current slot

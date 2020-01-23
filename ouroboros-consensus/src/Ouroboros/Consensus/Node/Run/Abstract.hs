@@ -35,7 +35,10 @@ import           Ouroboros.Storage.ChainDB (ChainDB)
 import           Ouroboros.Storage.Common (EpochNo, EpochSize)
 import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo)
 
-class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
+class ( ProtocolLedgerView blk
+      , ApplyTx blk
+      , HasTxId (GenTx blk)
+      ) => RunNode blk where
 
   nodeForgeBlock          :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
                           => NodeConfig (BlockProtocol blk)

@@ -804,7 +804,7 @@ data ChainAndLedger blk = ChainAndLedger
     -- ^ Ledger corresponding to '_chain'
   }
 
-mkChainAndLedger :: (HasHeader blk , UpdateLedger blk)
+mkChainAndLedger :: (HasHeader blk, UpdateLedger blk)
                  => AnchoredFragment (Header blk) -> LgrDB.LedgerDB blk
                  -> ChainAndLedger blk
 mkChainAndLedger c l =

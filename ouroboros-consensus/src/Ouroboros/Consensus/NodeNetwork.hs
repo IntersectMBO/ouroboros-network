@@ -133,6 +133,7 @@ protocolHandlers
     :: forall m blk peer.
        ( IOLike m
        , ApplyTx blk
+       , HasTxId (GenTx blk)
        , ProtocolLedgerView blk
        )
     => NodeArgs   m peer blk  --TODO eliminate, merge relevant into NodeKernel
