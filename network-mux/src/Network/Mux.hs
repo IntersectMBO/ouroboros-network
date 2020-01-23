@@ -42,8 +42,6 @@ import           Control.Tracer
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int (Int64)
-import           Data.List (lookup)
-import           Data.Maybe (fromMaybe)
 import           GHC.Stack
 import           Text.Printf
 
@@ -52,6 +50,7 @@ import           Network.Mux.Egress  as Egress
 import           Network.Mux.Ingress as Ingress
 import           Network.Mux.Types
 import           Network.Mux.Trace
+import qualified Network.Mux.JobPool as JobPool
 
 
 -- | muxStart starts a mux bearer for the specified protocols corresponding to
@@ -125,21 +124,27 @@ muxStart tracer (MuxApplication ptcls) bearer = do
                                initQ respQ (miniProtocolRun ptcl)
                ]
 
-    mask $ \unmask -> do
-      aidsAndNames <- traverse (\(io, name) -> (,name) <$> async (unmask io)) jobs
+    result <- JobPool.withJobPool $ \jobpool -> do
+      sequence_ [ JobPool.forkJob jobpool (JobPool.Job job' handler)
+                | (job, jobname) <- jobs
+                , let job'      = job >> return (MiniProtocolShutdown jobname)
+                      handler e = MiniProtocolException jobname e
+                ]
 
       traceWith tracer (MuxTraceState Mature)
-      unmask $ do
-        (fa, r_e) <- waitAnyCatchCancel $ map fst aidsAndNames
-        let faName = fromMaybe "Unknown Protocol" (lookup fa aidsAndNames)
-        case r_e of
-             Left (e::SomeException) -> do
-                 traceWith tracer $ MuxTraceExceptionExit e faName
-                 throwM e
-             Right _                 -> traceWith tracer $ MuxTraceCleanExit faName
 
-      traceWith tracer (MuxTraceState Dead)
+      -- Wait for the first job to terminate, successfully or otherwise
+      atomically (JobPool.collect jobpool)
 
+    -- Upon completion of withJobPool all the other jobs have been shut down.
+    traceWith tracer (MuxTraceState Dead)
+
+    case result of
+      MiniProtocolException jobname e -> do
+        traceWith tracer (MuxTraceExceptionExit e jobname)
+        throwM e
+      MiniProtocolShutdown jobname ->
+        traceWith tracer (MuxTraceCleanExit jobname)
   where
     mkMiniProtocolInfo :: MiniProtocolNum
                        -> MiniProtocolLimits
@@ -232,6 +237,10 @@ muxStart tracer (MuxApplication ptcls) bearer = do
         atomically $ do
             c <- readTVar cnt
             unless (c == 0) retry
+
+data MiniProtocolResult =
+       MiniProtocolException String SomeException
+     | MiniProtocolShutdown  String
 
 muxControl :: (HasCallStack, MonadSTM m, MonadThrow m)
            => StrictTVar m BL.ByteString
