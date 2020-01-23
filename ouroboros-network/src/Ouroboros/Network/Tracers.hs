@@ -8,7 +8,6 @@ module Ouroboros.Network.Tracers
 import           Control.Tracer (Tracer, nullTracer)
 import qualified Codec.CBOR.Term as CBOR
 
-import           Network.Socket (SockAddr)
 import           Network.Mux.Trace
 
 import           Network.TypedProtocol.Driver (TraceSendRecv)
@@ -48,19 +47,19 @@ nullNetworkIPSubscriptionTracers = NetworkIPSubscriptionTracers {
 
 -- | DNS subscription tracers.
 --
-data NetworkDNSSubscriptionTracers ptcl vNumber peerid = NetworkDNSSubscriptionTracers {
-      ndstMuxTracer          :: Tracer IO (WithMuxBearer peerid MuxTrace),
+data NetworkDNSSubscriptionTracers ptcl vNumber addr = NetworkDNSSubscriptionTracers {
+      ndstMuxTracer          :: Tracer IO (WithMuxBearer (ConnectionId addr) MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      ndstHandshakeTracer    :: Tracer IO (WithMuxBearer peerid
+      ndstHandshakeTracer    :: Tracer IO (WithMuxBearer (ConnectionId addr)
                                             (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
-      ndstErrorPolicyTracer  :: Tracer IO (WithAddr SockAddr ErrorPolicyTrace),
+      ndstErrorPolicyTracer  :: Tracer IO (WithAddr addr ErrorPolicyTrace),
       -- ^ error policy tracer; must not be 'nullTracer', otherwise all the
       -- exceptions which are not matched by any error policy will be caught
       -- and not logged or rethrown.
-      ndstSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace SockAddr)),
+      ndstSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace addr)),
       -- ^ subscription tracer; it is infrequent it should not be 'nullTracer'
       -- by default.
       ndstDnsTracer          :: Tracer IO (WithDomainName DnsTrace)

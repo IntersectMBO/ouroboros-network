@@ -357,7 +357,7 @@ dnsSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => SocketSnocket
-    -> NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion (ConnectionId Socket.SockAddr)
+    -> NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion Socket.SockAddr
     -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> Versions
@@ -401,7 +401,7 @@ dnsSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => SocketSnocket
-    -> NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion (ConnectionId Socket.SockAddr)
+    -> NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion Socket.SockAddr
     -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> NodeToNodeVersionData
