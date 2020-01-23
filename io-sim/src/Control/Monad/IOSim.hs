@@ -28,6 +28,7 @@ module Control.Monad.IOSim (
   -- * Simulation trace
   Trace(..),
   TraceEvent(..),
+  ThreadLabel,
   traceEvents,
   traceResult,
   selectTraceEvents,
