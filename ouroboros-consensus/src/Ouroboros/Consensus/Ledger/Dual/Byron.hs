@@ -222,6 +222,9 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
                        protocolVersion
                        softwareVersion
       where
+        -- TODO: Take (spec) protocol version and (spec) software version
+        -- as arguments instead, and then translate /those/ to Impl types.
+        -- <https://github.com/input-output-hk/ouroboros-network/issues/1495>
         protocolVersion :: Impl.ProtocolVersion
         protocolVersion =
             Impl.adoptedProtocolVersion $
@@ -251,6 +254,11 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
         -- the hashes of the verification keys in the genesis config. Here
         -- we go the other way, looking up this hash, and then using our
         -- translation map to find the corresponding abstract key.
+        --
+        -- TODO: We should be able to use keys that are /not/ in genesis
+        -- (so that we can start the node with new delegated keys that aren't
+        -- present in the genesis config).
+        -- <https://github.com/input-output-hk/ouroboros-network/issues/1495>
         keyHash :: PBftVerKeyHash PBftCardanoCrypto
         keyHash = fromMaybe
                     (error $ "mkCredentials: invalid " ++ show nid)

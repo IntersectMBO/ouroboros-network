@@ -70,7 +70,6 @@ setupSecurityParam = pbftSecurityParam . setupParams
 setupNumSlots :: SetupDualPBft -> NumSlots
 setupNumSlots = numSlots . setupConfig
 
--- TODO: Might we want to run /without/ a schedule? Perhaps sometimes?
 setupSchedule :: SetupDualPBft -> Maybe LeaderSchedule
 setupSchedule setup@SetupDualPBft{..} = Just $
     roundRobinLeaderSchedule

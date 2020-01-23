@@ -4,8 +4,6 @@ module Ouroboros.Consensus.Ledger.ByronSpec.Forge (
     forgeByronSpecBlock
   ) where
 
-import           Data.Maybe (listToMaybe)
-
 import qualified Cardano.Spec.Chain.STS.Block as Spec
 import qualified Ledger.Core as Spec
 import qualified Ledger.Update as Spec
@@ -40,6 +38,8 @@ forgeByronSpecBlock curSlotNo curBlockNo ByronSpecLedgerState{..} txs vkey =
   where
     (ds, ts, us, vs) = GenTx.partition (map unByronSpecGenTx txs)
 
+    -- TODO: Don't take protocol version from ledger state
+    -- <https://github.com/input-output-hk/ouroboros-network/issues/1495>
     block :: Spec.Block
     block = Spec.mkBlock
               (ChainState.getHash byronSpecLedgerState)
@@ -48,6 +48,9 @@ forgeByronSpecBlock curSlotNo curBlockNo ByronSpecLedgerState{..} txs vkey =
               (Spec.protocolVersion $
                  ChainState.getUPIState byronSpecLedgerState)
               ds
-              (listToMaybe us)
+              (case us of
+                 []  -> Nothing
+                 [u] -> Just u
+                 _   -> error "forgeByronSpecBlock: multiple update proposals")
               vs
               ts
