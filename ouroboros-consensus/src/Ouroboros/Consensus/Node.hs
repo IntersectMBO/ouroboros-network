@@ -268,6 +268,7 @@ mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     , initState
     , btime
     , chainDB
+    , initChainDB         = nodeInitChainDB
     , blockProduction
     , blockFetchSize      = nodeBlockFetchSize
     , blockMatchesHeader  = nodeBlockMatchesHeader

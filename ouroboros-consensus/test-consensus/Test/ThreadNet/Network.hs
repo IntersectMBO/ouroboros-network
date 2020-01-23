@@ -619,6 +619,7 @@ runThreadNetwork ThreadNetworkArgs
             , initState           = pInfoInitState
             , btime
             , chainDB
+            , initChainDB         = nodeInitChainDB
             , blockProduction     = Just blockProduction
             , blockFetchSize      = nodeBlockFetchSize
             , blockMatchesHeader  = nodeBlockMatchesHeader

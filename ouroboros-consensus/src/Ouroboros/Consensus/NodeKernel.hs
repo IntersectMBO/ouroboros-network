@@ -157,6 +157,7 @@ data NodeArgs m peer blk = NodeArgs {
     , initState           :: NodeState (BlockProtocol blk)
     , btime               :: BlockchainTime m
     , chainDB             :: ChainDB m blk
+    , initChainDB         :: NodeConfig (BlockProtocol blk) -> ChainDB m blk -> m ()
     , blockFetchSize      :: Header blk -> SizeInBytes
     , blockProduction     :: Maybe (BlockProduction m blk)
     , blockMatchesHeader  :: Header blk -> blk -> Bool
@@ -176,9 +177,9 @@ initNodeKernel
     => NodeArgs m peer blk
     -> m (NodeKernel m peer blk)
 initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
-                             , blockProduction, chainDB } = do
+                             , blockProduction, chainDB, initChainDB } = do
 
-    nodeInitChainDB cfg chainDB
+    initChainDB cfg chainDB
 
     st <- initInternalState args
 
