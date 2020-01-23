@@ -288,7 +288,7 @@ closeDBImpl ImmutableDBEnv {..} = do
         -- Close the database before doing the file-system operations so that
         -- in case these fail, we don't leave the database open.
         putMVar _dbInternalState DbClosed
-        cleanUpOpenState _dbHasFS openState
+        cleanUp _dbHasFS openState
         traceWith _dbTracer DBClosed
   where
     HasFS{..} = _dbHasFS
@@ -306,7 +306,7 @@ reopenImpl ImmutableDBEnv {..} valPol = bracketOnError
   (takeMVar _dbInternalState)
   -- Important: put back the state when an error is thrown, otherwise we have
   -- an empty TMVar.
-  (putMVar _dbInternalState) $ \internalState -> case internalState of
+  (putMVar _dbInternalState) $ \case
       -- When still open,
       DbOpen _ -> throwUserError _dbErr OpenDBError
 
@@ -345,7 +345,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
         traceWith _dbTracer $ DeletingAfter newTip
         -- Release the open handles, as we might have to remove files that are
         -- currently opened.
-        cleanUpOpenState hasFS st
+        cleanUp hasFS st
         newTipWithHash <- truncateTo hasFS st newTipEpochSlot
         let (newEpoch, allowExisting) = case newTipEpochSlot of
               TipGen                  -> (0, MustBeNew)
@@ -810,7 +810,7 @@ startNewEpoch registry hasFS@HasFS{..} err index epochInfo = do
 
     lift $
       Index.appendOffsets index _currentPrimaryHandle backfillOffsets
-      `finally` cleanUpOpenState hasFS st
+      `finally` cleanUp hasFS st
 
     st' <- lift $ mkOpenState registry hasFS err index (succ _currentEpoch)
       _currentTip MustBeNew
