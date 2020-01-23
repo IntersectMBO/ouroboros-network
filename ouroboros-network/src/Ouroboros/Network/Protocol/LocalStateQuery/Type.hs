@@ -21,83 +21,83 @@ import Ouroboros.Network.Block (Point, StandardHash)
 -- | The kind of the local state query protocol, and the types of
 -- the states in the protocol state machine.
 --
--- It is parametrised over the type of header (for points), the type of queries
+-- It is parametrised over the type of block (for points), the type of queries
 -- and query results.
 --
-data LocalStateQuery header query result where
+data LocalStateQuery block query result where
 
   -- | The client has agency. It can ask to acquire a state or terminate.
   --
   -- There is no timeout in this state.
   --
-  StIdle :: LocalStateQuery header query result
+  StIdle :: LocalStateQuery block query result
 
   -- | The server has agency. it must acquire the state at the requested point
   -- or report a failure.
   --
   -- There is a timeout in this state.
   --
-  StAcquiring :: LocalStateQuery header query result
+  StAcquiring :: LocalStateQuery block query result
 
   -- | The client has agency. It can request queries against the current state,
   -- or it can release the state.
   --
-  StAcquired :: LocalStateQuery header query result
+  StAcquired :: LocalStateQuery block query result
 
   -- | The server has agency. It must respond with the query result.
   --
-  StQuerying :: LocalStateQuery header query result
+  StQuerying :: LocalStateQuery block query result
 
   -- | Nobody has agency. The terminal state.
   --
-  StDone   :: LocalStateQuery header query result
+  StDone   :: LocalStateQuery block query result
 
 
-instance Protocol (LocalStateQuery header query result) where
+instance Protocol (LocalStateQuery block query result) where
 
   -- | The messages in the state query protocol.
   --
   -- The pattern of use is to 
   --
-  data Message (LocalStateQuery header query result) from to where
+  data Message (LocalStateQuery block query result) from to where
 
     -- | The client requests that the state as of a particular recent point on
     -- the server's chain (within K of the tip) be made available to query,
     -- and waits for confirmation or failure.
     --
     MsgAcquire
-      :: Point header
-      -> Message (LocalStateQuery header query result) StIdle StAcquiring
+      :: Point block
+      -> Message (LocalStateQuery block query result) StIdle StAcquiring
 
     -- | The server can confirm that it has the state at the requested point.
     --
     MsgAcquired
-      :: Message (LocalStateQuery header query result) StAcquiring StAcquired
+      :: Message (LocalStateQuery block query result) StAcquiring StAcquired
 
     -- | The server can report that it cannot obtain the state for the
     -- requested point.
     --
     MsgFailure
       :: AcquireFailure
-      -> Message (LocalStateQuery header query result) StAcquiring StIdle
+      -> Message (LocalStateQuery block query result) StAcquiring StIdle
 
     -- | The client can perform queries on the current acquired state.
     --
     MsgQuery
       :: query
-      -> Message (LocalStateQuery header query result) StAcquired StQuerying
+      -> Message (LocalStateQuery block query result) StAcquired StQuerying
 
     -- | The server must reply with the query results.
     --
     MsgResult
       :: result
-      -> Message (LocalStateQuery header query result) StQuerying StAcquired
+      -> Message (LocalStateQuery block query result) StQuerying StAcquired
 
     -- | The client can instruct the server to release the state. This lets
     -- the server free resources.
     --
     MsgRelease
-      :: Message (LocalStateQuery header query result) StAcquired StIdle
+      :: Message (LocalStateQuery block query result) StAcquired StIdle
 
     -- | This is like 'MsgAcquire' but for when the client already has a
     -- state. By moveing to another state directly without a 'MsgRelease' it
@@ -108,13 +108,13 @@ instance Protocol (LocalStateQuery header query result) where
     -- rather than keeping the exiting acquired state.
     --
     MsgReAcquire
-      :: Point header
-      -> Message (LocalStateQuery header query result) StAcquired StAcquiring
+      :: Point block
+      -> Message (LocalStateQuery block query result) StAcquired StAcquiring
 
     -- | The client can terminate the protocol.
     --
     MsgDone
-      :: Message (LocalStateQuery header query result) StIdle StDone
+      :: Message (LocalStateQuery block query result) StIdle StDone
 
 
   data ClientHasAgency st where
@@ -140,13 +140,13 @@ data AcquireFailure = AcquireFailurePointTooOld
                     | AcquireFailurePointNotOnChain
   deriving (Eq, Enum, Show)
 
-deriving instance (StandardHash header, Show query, Show result) =>
-                   Show (Message (LocalStateQuery header query result) from to)
+deriving instance (StandardHash block, Show query, Show result) =>
+                   Show (Message (LocalStateQuery block query result) from to)
 
-instance Show (ClientHasAgency (st :: LocalStateQuery header query result)) where
+instance Show (ClientHasAgency (st :: LocalStateQuery block query result)) where
   show TokIdle     = "TokIdle"
   show TokAcquired = "TokAcquired"
 
-instance Show (ServerHasAgency (st :: LocalStateQuery header query result)) where
+instance Show (ServerHasAgency (st :: LocalStateQuery block query result)) where
   show TokAcquiring = "TokAcquiring"
   show TokQuerying  = "TokQuerying"
