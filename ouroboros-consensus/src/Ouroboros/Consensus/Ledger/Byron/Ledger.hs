@@ -39,6 +39,7 @@ import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Delegation.Validation.Scheduling as D.Sched
 import qualified Cardano.Chain.Genesis as Gen
 import qualified Cardano.Chain.ValidationMode as CC
+import qualified Cardano.Chain.UTxO as CC
 
 import           Ouroboros.Network.Block (Point (..), SlotNo (..), blockSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
@@ -99,14 +100,21 @@ instance UpdateLedger ByronBlock where
           where
             slot = fromByronSlotNo (CC.cvsLastSlot state)
 
-initByronLedgerState :: Gen.Config -> LedgerState ByronBlock
-initByronLedgerState genesis = ByronLedgerState {
-      byronLedgerState       = initState
+initByronLedgerState :: Gen.Config
+                     -> Maybe CC.UTxO -- ^ Optionally override UTxO
+                     -> LedgerState ByronBlock
+initByronLedgerState genesis mUtxo = ByronLedgerState {
+      byronLedgerState       = override mUtxo initState
     , byronDelegationHistory = History.empty
     }
   where
     initState :: CC.ChainValidationState
     Right initState = runExcept $ CC.initialChainValidationState genesis
+
+    override :: Maybe CC.UTxO
+             -> CC.ChainValidationState -> CC.ChainValidationState
+    override Nothing     st = st
+    override (Just utxo) st = st { CC.cvsUtxo = utxo }
 
 instance ConfigContainsGenesis (LedgerConfig ByronBlock) where
   getGenesisConfig = unByronLedgerConfig

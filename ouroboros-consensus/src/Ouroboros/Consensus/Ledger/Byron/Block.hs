@@ -23,6 +23,8 @@ module Ouroboros.Consensus.Ledger.Byron.Block (
     -- * Header
   , Header(..)
   , mkByronHeader
+    -- * Auxiliary functions
+  , countByronGenTxs
     -- * Serialisation
   , encodeByronBlockWithInfo
   , encodeByronBlock
@@ -42,9 +44,10 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
+import           Data.Maybe (maybeToList)
 import           Data.Proxy
 import           Data.Typeable
-import           Data.Word (Word32)
+import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -58,7 +61,10 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 import qualified Crypto.Hash as Crypto
 
 import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Delegation as CC.Delegation
 import qualified Cardano.Chain.Slotting as CC
+import qualified Cardano.Chain.Update as CC.Update
+import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Crypto.Hashing as CC
 
 import           Ouroboros.Network.Block
@@ -205,6 +211,32 @@ instance Measured BlockMeasure ByronBlock where
 
 fromByronPrevHash' :: Maybe CC.HeaderHash -> ChainHash (Header ByronBlock)
 fromByronPrevHash' = fromByronPrevHash ByronHash
+
+{-------------------------------------------------------------------------------
+  Auxiliary functions
+-------------------------------------------------------------------------------}
+
+-- | Count all (generalized) transactions in the block
+countByronGenTxs :: ByronBlock -> Word64
+countByronGenTxs ByronBlock{..} = go byronBlockRaw
+  where
+    go :: CC.ABlockOrBoundary a -> Word64
+    go (CC.ABOBBlock block) = goBody (CC.blockBody block)
+    go (CC.ABOBBoundary _)  = 0
+
+    goBody :: CC.ABody a -> Word64
+    goBody body = sum [
+          count $ CC.aUnTxPayload          $ CC.bodyTxPayload     body
+        , count $ CC.Delegation.getPayload $ CC.bodyDlgPayload    body
+        , count $ CC.Update.payloadVotes   $ CC.bodyUpdatePayload body
+        , count $ payloadProposals         $ CC.bodyUpdatePayload body
+        ]
+
+    count :: [a] -> Word64
+    count = fromIntegral . length
+
+    payloadProposals :: CC.Update.APayload a -> [CC.Update.AProposal a]
+    payloadProposals = maybeToList . CC.Update.payloadProposal
 
 {-------------------------------------------------------------------------------
   Serialisation

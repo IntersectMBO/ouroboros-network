@@ -28,6 +28,7 @@ module Ouroboros.Consensus.Ledger.Mock.Block (
     -- * Working with 'SimpleBlock'
   , mkSimpleHeader
   , matchesSimpleHeader
+  , countSimpleGenTxs
     -- * 'UpdateLedger'
   , LedgerState(..)
   , LedgerConfig(..)
@@ -168,6 +169,9 @@ matchesSimpleHeader SimpleHeader{..} SimpleBlock {..} =
     simpleBodyHash == hash simpleBody
   where
     SimpleStdHeader{..} = simpleHeaderStd
+
+countSimpleGenTxs :: SimpleBlock' c ext ext'' -> Word64
+countSimpleGenTxs = fromIntegral . length . simpleTxs . simpleBody
 
 {-------------------------------------------------------------------------------
   HasHeader instance for SimpleHeader

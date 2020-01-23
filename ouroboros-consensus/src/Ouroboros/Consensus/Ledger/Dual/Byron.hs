@@ -9,16 +9,25 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Ouroboros.Consensus.Ledger.Dual.Byron (
+    -- * Shorthand
     DualByronBlock
-  , DualByronConsensusProtocol
+  , DualByronProtocol
   , DualByronConfig
   , DualByronBridge
+    -- * Bridge
+  , ByronSpecBridge(..)
+  , SpecToImplIds(..)
+  , specToImplTxWit
+  , bridgeTransactionIds
+    -- * Block forging
   , forgeDualByronBlock
+    -- * Setup
   , protocolInfoDualByron
   ) where
 
 import           Codec.Serialise
 import           Crypto.Random (MonadRandom)
+import           Data.ByteString (ByteString)
 import           Data.Either (fromRight)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -32,16 +41,19 @@ import           Cardano.Crypto.DSIGN.Class
 import qualified Ledger.Core as Spec
 import qualified Ledger.Delegation as Spec
 import qualified Ledger.Update as Spec
+import qualified Ledger.UTxO as Spec
 
 import qualified Test.Cardano.Chain.Elaboration.Block as Spec.Test
 import qualified Test.Cardano.Chain.Elaboration.Delegation as Spec.Test
 import qualified Test.Cardano.Chain.Elaboration.Keys as Spec.Test
 import qualified Test.Cardano.Chain.Elaboration.Update as Spec.Test
+import qualified Test.Cardano.Chain.UTxO.Model as Spec.Test
 
 import qualified Cardano.Chain.Block as Impl
 import qualified Cardano.Chain.Genesis as Impl
 import qualified Cardano.Chain.Update as Impl
 import qualified Cardano.Chain.Update.Validation.Interface as Impl
+import qualified Cardano.Chain.UTxO as Impl
 
 import           Ouroboros.Network.Block
 
@@ -62,15 +74,62 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
   Shorthand
 -------------------------------------------------------------------------------}
 
-type DualByronBlock             = DualBlock         ByronBlock ByronSpecBlock
-type DualByronConsensusProtocol = DualBlockProtocol ByronBlock ByronSpecBlock
-type DualByronConfig            = DualConfig        ByronBlock ByronSpecBlock
-type DualByronBridge            = BridgeState       ByronBlock ByronSpecBlock
+type DualByronBlock    = DualBlock         ByronBlock ByronSpecBlock
+type DualByronProtocol = DualBlockProtocol ByronBlock ByronSpecBlock
+type DualByronConfig   = DualConfig        ByronBlock ByronSpecBlock
+type DualByronBridge   = BridgeLedger      ByronBlock ByronSpecBlock
+
+{-------------------------------------------------------------------------------
+  Map transaction Ids (part of the bridge)
+-------------------------------------------------------------------------------}
+
+newtype SpecToImplIds = SpecToImplIds {
+      getSpecToImplIds :: Spec.Test.AbstractToConcreteIdMaps
+    }
+  deriving (Show, Eq, Generic, Serialise)
+
+instance Semigroup SpecToImplIds where
+  SpecToImplIds a <> SpecToImplIds b =
+      SpecToImplIds $ Spec.Test.AbstractToConcreteIdMaps {
+          transactionIds = combine Spec.Test.transactionIds
+        , proposalIds    = combine Spec.Test.proposalIds
+        }
+    where
+      combine :: Semigroup x => (Spec.Test.AbstractToConcreteIdMaps -> x) -> x
+      combine f = f a <> f b
+
+instance Monoid SpecToImplIds where
+  mempty = SpecToImplIds Spec.Test.AbstractToConcreteIdMaps {
+        transactionIds = mempty
+      , proposalIds    = mempty
+      }
+
+-- | Construct singleton 'SpecToImplIds' for a transaction
+specToImplTxWit :: Spec.TxWits -> Impl.ATxAux ByteString -> SpecToImplIds
+specToImplTxWit spec impl = SpecToImplIds $ Spec.Test.AbstractToConcreteIdMaps {
+      transactionIds = Map.singleton (specTxId spec) (byronIdTx impl)
+    , proposalIds    = Map.empty
+    }
+  where
+    specTxId :: Spec.TxWits -> Spec.TxId
+    specTxId = Spec.txid . Spec.body
 
 {-------------------------------------------------------------------------------
   Bridge
 -------------------------------------------------------------------------------}
 
+-- | Bridge the gap between the Byron implementation and specification
+--
+-- The relation between the Byron implementation and specification for the
+-- /linear/ case is tested in the Byron implementation itself, specifically
+-- in 'ts_prop_generatedChainsAreValidated'. The main goal of the consensus
+-- DualPBFT tests is to lift these tests to the general consensus setting,
+-- where time is not linear but branching.
+--
+-- In the linear case, the tests maintain some state linking the spec and
+-- the implementation. In the consensus case, this state cannot be maintained
+-- like this, and so it has to become part of transactions, blocks, and the
+-- ledger state itself.
 data ByronSpecBridge = ByronSpecBridge {
       -- | Map between keys
       --
@@ -89,24 +148,47 @@ data ByronSpecBridge = ByronSpecBridge {
       --   easily definable inverse. For this reason, we maintain an opposite
       --   mapping as part of the ledger state.
       toSpecKeys :: Map (PBftVerKeyHash PBftCardanoCrypto) Spec.VKey
+
+      -- | Mapping between abstract and concrete Ids
+      --
+      -- We need to maintain this mapping so that we can use the abstract state
+      -- generators and then elaborate to concrete values.
+    , toImplIds  :: SpecToImplIds
     }
   deriving (Show, Eq, Generic, Serialise)
 
 instance Bridge ByronBlock ByronSpecBlock where
   type ExtraNodeConfig ByronBlock = ByronConfig
-  type BridgeState ByronBlock ByronSpecBlock = ByronSpecBridge
+  type BridgeLedger ByronBlock ByronSpecBlock = ByronSpecBridge
+  type BridgeBlock  ByronBlock ByronSpecBlock = SpecToImplIds
+  type BridgeTx     ByronBlock ByronSpecBlock = SpecToImplIds
 
-  updateBridgeWithBlock _ = id -- TODO
-  updateBridgeWithTx    _ = id -- TODO
+  -- TODO: Once we generate delegation certificates,
+  -- we should update 'toSpecKeys' also,
+
+  updateBridgeWithBlock block bridge = bridge {
+        toImplIds = toImplIds bridge <> dualBlockBridge block
+      }
+
+  updateBridgeWithTx genTx bridge = bridge {
+        toImplIds = toImplIds bridge <> dualGenTxBridge genTx
+      }
 
 {-------------------------------------------------------------------------------
   Bridge initialization
 -------------------------------------------------------------------------------}
 
-initByronSpecBridge :: ByronSpecGenesis -> ByronSpecBridge
-initByronSpecBridge ByronSpecGenesis{..} = ByronSpecBridge {
+initByronSpecBridge :: ByronSpecGenesis
+                    -> Map Spec.TxId Impl.TxId
+                    -- ^ Mapping for the transaction in the initial UTxO
+                    -> ByronSpecBridge
+initByronSpecBridge ByronSpecGenesis{..} txIdMap = ByronSpecBridge {
       toSpecKeys = Map.fromList $ map mapKey $
                      Set.toList byronSpecGenesisDelegators
+    , toImplIds  = SpecToImplIds Spec.Test.AbstractToConcreteIdMaps {
+                       transactionIds = txIdMap
+                     , proposalIds    = Map.empty
+                     }
     }
   where
     -- The abstract spec maps the allowed delegators to themselves initially
@@ -125,11 +207,17 @@ initByronSpecBridge ByronSpecGenesis{..} = ByronSpecBridge {
 -- We get a proof from PBFT that we are the leader, including a signing key (of
 -- type 'SigningKey'). In order to produce the corresponding abstract block, we
 -- need a 'VKey'.
-toSpecKey :: DualByronBridge -> PBftVerKeyHash PBftCardanoCrypto -> Spec.VKey
-toSpecKey ByronSpecBridge{..} keyHash =
+bridgeToSpecKey :: DualByronBridge
+                -> PBftVerKeyHash PBftCardanoCrypto -> Spec.VKey
+bridgeToSpecKey ByronSpecBridge{..} keyHash =
     case Map.lookup keyHash toSpecKeys of
       Just vkey -> vkey
       Nothing   -> error $ "toSpecKey: unknown key " ++ show keyHash
+
+bridgeTransactionIds :: DualByronBridge -> Map Spec.TxId Impl.TxId
+bridgeTransactionIds = Spec.Test.transactionIds
+                     . getSpecToImplIds
+                     . toImplIds
 
 {-------------------------------------------------------------------------------
   Block forging
@@ -141,7 +229,7 @@ forgeDualByronBlock
      , MonadRandom m
      , HasCallStack
      )
-  => NodeConfig DualByronConsensusProtocol
+  => NodeConfig DualByronProtocol
   -> SlotNo                          -- ^ Current slot
   -> BlockNo                         -- ^ Current block number
   -> ExtLedgerState DualByronBlock   -- ^ Ledger
@@ -163,17 +251,20 @@ forgeDualByronBlock cfg curSlotNo curBlockNo extLedger txs isLeader = do
                 curBlockNo
                 (dualLedgerStateAux $ ledgerState extLedger)
                 (map dualGenTxAux txs)
-                (toSpecKey
+                (bridgeToSpecKey
                    (dualLedgerStateBridge $ ledgerState extLedger)
                    (hashVerKey . deriveVerKeyDSIGN . pbftSignKey $ isLeader))
 
     return DualBlock {
-        dualBlockMain = main
-      , dualBlockAux  = Just aux
+        dualBlockMain   = main
+      , dualBlockAux    = Just aux
+      , dualBlockBridge = mconcat $ map dualGenTxBridge txs
       }
 
 {-------------------------------------------------------------------------------
   Setup
+
+  Partly modelled after 'applyTrace' in "Test.Cardano.Chain.Block.Model".
 -------------------------------------------------------------------------------}
 
 protocolInfoDualByron :: ByronSpecGenesis
@@ -204,6 +295,12 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
            }
       }
   where
+    initUtxo :: Impl.UTxO
+    txIdMap  :: Map Spec.TxId Impl.TxId
+    (initUtxo, txIdMap) = Spec.Test.elaborateInitialUTxO byronSpecGenesisInitUtxo
+
+    -- 'Spec.Test.abEnvToCfg' ignores the UTxO, because the Byron genesis
+    -- data doesn't contain a UTxO, but only a 'UTxOConfiguration'.
     concreteGenesis :: Impl.Config
     concreteGenesis = Spec.Test.abEnvToCfg $ Genesis.toChainEnv abstractGenesis
 
@@ -211,7 +308,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     initConcreteState :: LedgerState ByronBlock
 
     initAbstractState = initByronSpecLedgerState abstractGenesis
-    initConcreteState = initByronLedgerState     concreteGenesis
+    initConcreteState = initByronLedgerState     concreteGenesis (Just initUtxo)
 
     abstractConfig :: LedgerConfig ByronSpecBlock
     concreteConfig :: ExtraNodeConfig ByronBlock
@@ -238,7 +335,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
               Spec.SwVer (Spec.ApName "") (Spec.ApVer 0)
 
     initBridge :: DualByronBridge
-    initBridge = initByronSpecBridge abstractGenesis
+    initBridge = initByronSpecBridge abstractGenesis txIdMap
 
     pbftIsLeader :: CoreNodeId -> PBftIsLeader PBftCardanoCrypto
     pbftIsLeader nid = pbftLeaderOrNot $
@@ -265,7 +362,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
                     (nodeIdToGenesisKey concreteGenesis nid)
 
         vkey :: Spec.VKey
-        vkey = toSpecKey initBridge keyHash
+        vkey = bridgeToSpecKey initBridge keyHash
 
         abstractDCert :: Spec.DCert
         abstractDCert = Spec.Test.rcDCert

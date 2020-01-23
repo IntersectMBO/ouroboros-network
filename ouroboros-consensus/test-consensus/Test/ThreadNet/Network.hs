@@ -446,11 +446,11 @@ runThreadNetwork ThreadNetworkArgs
                    -> Mempool m blk TicketNo
                    -> m ()
     forkTxProducer btime cfg produceDRG getExtLedger mempool =
-      void $ onSlotChange btime $ \_curSlotNo -> do
+      void $ onSlotChange btime $ \curSlotNo -> do
         varDRG <- uncheckedNewTVarM =<< produceDRG
         txs <- atomically $ do
           ledger <- ledgerState <$> getExtLedger
-          simChaChaT varDRG id $ testGenTxs numCoreNodes cfg ledger
+          simChaChaT varDRG id $ testGenTxs numCoreNodes curSlotNo cfg ledger
         void $ addTxs mempool txs
 
     forkEbbProducer :: HasCallStack

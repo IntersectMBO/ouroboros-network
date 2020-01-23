@@ -8,12 +8,17 @@
 -- > import qualified Ouroboros.Consensus.Ledger.ByronSpec.Genesis as Genesis
 module Ouroboros.Consensus.Ledger.ByronSpec.Genesis (
     ByronSpecGenesis(..)
-  , setPBftThreshold
+  , modPBftThreshold
+  , modFeeParams
+  , modUtxo
+  , modUtxoValues
+  , modPParams
     -- * Conversions
   , toChainEnv
   , fromChainEnv
   ) where
 
+import           Data.Coerce (coerce)
 import           Data.Set (Set)
 
 import qualified Cardano.Spec.Chain.STS.Rule.Chain as Spec
@@ -37,12 +42,51 @@ data ByronSpecGenesis = ByronSpecGenesis {
     }
   deriving (Show)
 
-setPBftThreshold :: Double -> ByronSpecGenesis -> ByronSpecGenesis
-setPBftThreshold threshold genesis = genesis {
-      byronSpecGenesisInitPParams = (byronSpecGenesisInitPParams genesis) {
-          Spec._bkSgnCntT = Spec.BkSgnCntT threshold
-        }
+modPBftThreshold :: (Double -> Double)
+                 -> ByronSpecGenesis -> ByronSpecGenesis
+modPBftThreshold = modPParams . modPParamsPBftThreshold
+
+-- | Modify the @a@ and @b@ fee parameters
+modFeeParams :: ((Int, Int) -> (Int, Int))
+             -> ByronSpecGenesis -> ByronSpecGenesis
+modFeeParams = modPParams . modPParamsFeeParams
+
+-- | Adjust all values in the initial UTxO equally
+modUtxoValues :: (Integer -> Integer) -> ByronSpecGenesis -> ByronSpecGenesis
+modUtxoValues = modUtxo . Spec.mapUTxOValues . coerce
+
+modUtxo :: (Spec.UTxO -> Spec.UTxO) -> ByronSpecGenesis -> ByronSpecGenesis
+modUtxo f genesis = genesis {
+      byronSpecGenesisInitUtxo = f (byronSpecGenesisInitUtxo genesis)
     }
+
+modPParams :: (Spec.PParams -> Spec.PParams)
+           -> ByronSpecGenesis -> ByronSpecGenesis
+modPParams f genesis = genesis {
+      byronSpecGenesisInitPParams = f (byronSpecGenesisInitPParams genesis)
+    }
+
+{-------------------------------------------------------------------------------
+  Internal: accessors for the protocol parameters
+-------------------------------------------------------------------------------}
+
+modPParamsPBftThreshold :: (Double -> Double)
+                        -> Spec.PParams -> Spec.PParams
+modPParamsPBftThreshold f pparams = pparams {
+      Spec._bkSgnCntT = Spec.BkSgnCntT (f threshold)
+    }
+  where
+    Spec.BkSgnCntT threshold = Spec._bkSgnCntT pparams
+
+modPParamsFeeParams :: ((Int, Int) -> (Int, Int))
+                    -> Spec.PParams -> Spec.PParams
+modPParamsFeeParams f pparams = pparams {
+      Spec._factorA = Spec.FactorA $ fst (f (a, b))
+    , Spec._factorB = Spec.FactorB $ snd (f (a, b))
+    }
+  where
+    Spec.FactorA a = Spec._factorA pparams
+    Spec.FactorB b = Spec._factorB pparams
 
 {-------------------------------------------------------------------------------
   Conversions

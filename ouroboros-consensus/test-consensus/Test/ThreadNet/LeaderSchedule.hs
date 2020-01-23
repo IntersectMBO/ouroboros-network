@@ -17,6 +17,7 @@ import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
+import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol
@@ -80,6 +81,7 @@ prop_simple_leader_schedule_convergence
   testConfig@TestConfig{numCoreNodes} schedule =
     counterexample (tracesToDot testOutputNodes) $
     prop_general
+      countSimpleGenTxs
       praosSecurityParam
       testConfig
       (Just schedule)

@@ -11,6 +11,8 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)
 
+import           Cardano.Slotting.Slot (SlotNo)
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron
@@ -28,6 +30,7 @@ class TxGen blk where
   -- node's Mempool.
   testGenTx :: MonadRandom m
             => NumCoreNodes
+            -> SlotNo
             -> NodeConfig (BlockProtocol blk)
             -> LedgerState blk
             -> m (GenTx blk)
@@ -39,13 +42,14 @@ class TxGen blk where
   -- in consensus tests.
   testGenTxs :: MonadRandom m
              => NumCoreNodes
+             -> SlotNo
              -> NodeConfig (BlockProtocol blk)
              -> LedgerState blk
              -> m [GenTx blk]
-  testGenTxs  numCoreNodes cfg ledger = do
+  testGenTxs  numCoreNodes curSlotNo cfg ledger = do
     -- Currently 0 to 1 txs
     n <- generateBetween 0 20
-    replicateM (fromIntegral n) $ testGenTx numCoreNodes cfg ledger
+    replicateM (fromIntegral n) $ testGenTx numCoreNodes curSlotNo cfg ledger
 
   {-# MINIMAL testGenTx #-}
 
@@ -54,7 +58,7 @@ class TxGen blk where
 -------------------------------------------------------------------------------}
 
 instance TxGen (SimpleBlock SimpleMockCrypto ext) where
-  testGenTx numCoreNodes _ ledgerState =
+  testGenTx numCoreNodes _curSlotNo _cfg ledgerState =
       mkSimpleGenTx <$> genSimpleTx addrs utxo
     where
       addrs :: [Addr]
@@ -92,4 +96,4 @@ genSimpleTx addrs u = do
 instance TxGen ByronBlock where
   testGenTx = error "TODO #855 testGenTx"
   -- 'testGenTxs' is used by the tests, not 'testGenTx'.
-  testGenTxs _ _ _ = return []
+  testGenTxs _ _ _ _ = return []
