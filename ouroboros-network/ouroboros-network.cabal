@@ -84,9 +84,9 @@ library
                        Ouroboros.Network.Protocol.ChainSync.Codec
                        Ouroboros.Network.Protocol.ChainSync.Server
                        Ouroboros.Network.Protocol.ChainSync.Type
-                       Ouroboros.Network.Protocol.ChainSync.Examples
-                       Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
                        Ouroboros.Network.Protocol.ChainSync.PipelineDecision
+                       -- ChainSync.Examples module is needed by test-consensus
+                       Ouroboros.Network.Protocol.ChainSync.Examples
                        Ouroboros.Network.Protocol.BlockFetch.Type
                        Ouroboros.Network.Protocol.BlockFetch.Client
                        Ouroboros.Network.Protocol.BlockFetch.Server
@@ -170,94 +170,58 @@ library
   build-depends:       hashable          >=1.2 && <1.3,
                        text              >=1.2 && <1.3
 
-test-suite test-network
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test src
-  main-is:             Main.hs
-  other-modules:       Codec.SerialiseTerm
-                       Ouroboros.Network.AnchoredFragment
-                       Ouroboros.Network.Testing.ConcreteBlock
-                       Ouroboros.Network.Block
-                       Ouroboros.Network.BlockFetch
-                       Ouroboros.Network.BlockFetch.Client
-                       Ouroboros.Network.BlockFetch.ClientRegistry
-                       Ouroboros.Network.BlockFetch.ClientState
-                       Ouroboros.Network.BlockFetch.Decision
-                       Ouroboros.Network.BlockFetch.DeltaQ
-                       Ouroboros.Network.BlockFetch.Examples
-                       Ouroboros.Network.BlockFetch.State
-                       Ouroboros.Network.ChainFragment
-                       Ouroboros.Network.MockChain.Chain
-                       Ouroboros.Network.MockChain.ProducerState
-                       Ouroboros.Network.Channel
-                       Ouroboros.Network.DeltaQ
-                       Ouroboros.Network.Magic
-                       Ouroboros.Network.ErrorPolicy
-                       Ouroboros.Network.Mux
-                       Ouroboros.Network.Tracers
-                       Ouroboros.Network.MockNode
-                       Ouroboros.Network.NodeToNode
-                       Ouroboros.Network.Point
-                       Ouroboros.Network.PeerSelection.Types
-                       Ouroboros.Network.PeerSelection.KnownPeers
-                       Ouroboros.Network.PeerSelection.RootPeersDNS
-                       Ouroboros.Network.PeerSelection.JobPool
-                       Ouroboros.Network.PeerSelection.Governor
-                       Ouroboros.Network.PeerSelection.Test
-                       Ouroboros.Network.Protocol.BlockFetch.Client
-                       Ouroboros.Network.Protocol.BlockFetch.Codec
-                       Ouroboros.Network.Protocol.BlockFetch.Direct
+library ouroboros-protocol-tests
+  hs-source-dirs:      protocol-tests
+  default-language:    Haskell2010
+  exposed-modules:     Ouroboros.Network.Protocol.BlockFetch.Direct
                        Ouroboros.Network.Protocol.BlockFetch.Examples
-                       Ouroboros.Network.Protocol.BlockFetch.Server
-                       Ouroboros.Network.Protocol.BlockFetch.Type
                        Ouroboros.Network.Protocol.BlockFetch.Test
-                       Ouroboros.Network.Protocol.ChainSync.Client
-                       Ouroboros.Network.Protocol.ChainSync.ClientPipelined
-                       Ouroboros.Network.Protocol.ChainSync.Codec
                        Ouroboros.Network.Protocol.ChainSync.Direct
                        Ouroboros.Network.Protocol.ChainSync.DirectPipelined
-                       Ouroboros.Network.Protocol.ChainSync.Examples
                        Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
-                       Ouroboros.Network.Protocol.ChainSync.PipelineDecision
-                       Ouroboros.Network.Protocol.ChainSync.Server
-                       Ouroboros.Network.Protocol.ChainSync.Type
                        Ouroboros.Network.Protocol.ChainSync.Test
-                       Ouroboros.Network.Protocol.Handshake.Type
-                       Ouroboros.Network.Protocol.Handshake.Codec
                        Ouroboros.Network.Protocol.Handshake.Test
-                       Ouroboros.Network.Protocol.Handshake.Version
-                       Ouroboros.Network.Protocol.TxSubmission.Client
-                       Ouroboros.Network.Protocol.TxSubmission.Codec
-                       Ouroboros.Network.Protocol.TxSubmission.Direct
-                       Ouroboros.Network.Protocol.TxSubmission.Examples
-                       Ouroboros.Network.Protocol.TxSubmission.Server
-                       Ouroboros.Network.Protocol.TxSubmission.Type
-                       Ouroboros.Network.Protocol.TxSubmission.Test
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Client
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Codec
                        Ouroboros.Network.Protocol.LocalTxSubmission.Direct
                        Ouroboros.Network.Protocol.LocalTxSubmission.Examples
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Server
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Type
                        Ouroboros.Network.Protocol.LocalTxSubmission.Test
-                       Ouroboros.Network.Socket
-                       Ouroboros.Network.Server.ConnectionTable
-                       Ouroboros.Network.Server.Socket
-                       Ouroboros.Network.Subscription
-                       Ouroboros.Network.Subscription.Ip
-                       Ouroboros.Network.Subscription.Dns
-                       Ouroboros.Network.Subscription.PeerState
-                       Ouroboros.Network.Subscription.Subscriber
-                       Ouroboros.Network.Subscription.Worker
-                       Ouroboros.Network.TxSubmission.Inbound
-                       Ouroboros.Network.TxSubmission.Outbound
+                       Ouroboros.Network.Protocol.TxSubmission.Direct
+                       Ouroboros.Network.Protocol.TxSubmission.Examples
+                       Ouroboros.Network.Protocol.TxSubmission.Test
+
+                       Test.ChainGenerators
+                       Test.ChainProducerState
+                       Test.Ouroboros.Network.Testing.Utils
+  build-depends:       base,
+                       bytestring,
+                       cborg,
+                       containers,
+                       pipes,
+                       QuickCheck,
+                       serialise,
+                       tasty,
+                       tasty-quickcheck,
+                       text,
+
+                       cardano-prelude,
+
+                       contra-tracer,
+                       io-sim,
+                       io-sim-classes,
+                       typed-protocols,
+                       typed-protocols-cbor,
+                       ouroboros-network
+
+test-suite test-network
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Main.hs
+  other-modules:       Ouroboros.Network.BlockFetch.Examples
+                       Ouroboros.Network.MockNode
+                       Ouroboros.Network.PeerSelection.Test
 
                        Test.AnchoredFragment
                        Test.Chain
-                       Test.ChainGenerators
                        Test.ChainFragment
-                       Test.ChainProducerState
-                       Test.Ouroboros.Network.Testing.Utils
                        Test.Ouroboros.Network.BlockFetch
                        Test.Ouroboros.Network.MockNode
                        Test.Mux
@@ -301,7 +265,9 @@ test-suite test-network
                        text,
                        time,
                        typed-protocols-cbor,
-                       typed-protocols
+                       typed-protocols,
+                       ouroboros-network,
+                       ouroboros-protocol-tests
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -349,17 +315,11 @@ test-suite cddl
                        Ouroboros.Network.Protocol.Handshake.Version
                        Ouroboros.Network.Protocol.TxSubmission.Client
                        Ouroboros.Network.Protocol.TxSubmission.Codec
-                       Ouroboros.Network.Protocol.TxSubmission.Direct
-                       Ouroboros.Network.Protocol.TxSubmission.Examples
                        Ouroboros.Network.Protocol.TxSubmission.Server
-                       Ouroboros.Network.Protocol.TxSubmission.Test
                        Ouroboros.Network.Protocol.TxSubmission.Type
                        Ouroboros.Network.Protocol.LocalTxSubmission.Codec
                        Ouroboros.Network.Protocol.LocalTxSubmission.Type
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Test
                        Ouroboros.Network.Protocol.LocalTxSubmission.Client
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Direct
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Examples
                        Ouroboros.Network.Protocol.LocalTxSubmission.Server
 
                        Ouroboros.Network.Testing.ConcreteBlock
