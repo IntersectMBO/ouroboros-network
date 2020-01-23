@@ -29,8 +29,10 @@ module Ouroboros.Network.Socket (
     -- * Traces
     , NetworkConnectTracers (..)
     , nullNetworkConnectTracers
+    , debuggingNetworkConnectTracers
     , NetworkServerTracers (..)
     , nullNetworkServerTracers
+    , debuggingNetworkServerTracers
 
     -- * Helper function for creating servers
     , fromSnocket
@@ -118,6 +120,13 @@ nullNetworkConnectTracers = NetworkConnectTracers {
       nctHandshakeTracer = nullTracer
     }
 
+
+debuggingNetworkConnectTracers :: (Show addr, Show ptcl, Show vNumber)
+                               => NetworkConnectTracers addr ptcl vNumber
+debuggingNetworkConnectTracers = NetworkConnectTracers {
+      nctMuxTracer       = showTracing stdoutTracer, 
+      nctHandshakeTracer = showTracing stdoutTracer
+    }
 
 sockAddrFamily
     :: Socket.SockAddr
@@ -416,6 +425,14 @@ nullNetworkServerTracers = NetworkServerTracers {
       nstMuxTracer         = nullTracer,
       nstHandshakeTracer   = nullTracer,
       nstErrorPolicyTracer = nullTracer
+    }
+
+debuggingNetworkServerTracers :: (Show addr, Show ptcl, Show vNumber)
+                              =>  NetworkServerTracers addr ptcl vNumber
+debuggingNetworkServerTracers = NetworkServerTracers {
+      nstMuxTracer         = showTracing stdoutTracer,
+      nstHandshakeTracer   = showTracing stdoutTracer,
+      nstErrorPolicyTracer = showTracing stdoutTracer
     }
 
 
