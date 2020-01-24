@@ -22,6 +22,8 @@ module Test.Util.TestBlock (
   , TestBlock(..)
   , TestBlockError(..)
   , Header(..)
+  , Query(..)
+  , Result(..)
   , firstBlock
   , successorBlock
   , modifyFork
@@ -63,7 +65,7 @@ import qualified Data.Tree as Tree
 import           Data.Word
 import           GHC.Generics (Generic)
 import qualified System.Random as R
-import           Test.QuickCheck
+import           Test.QuickCheck hiding (Result)
 
 import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -301,6 +303,15 @@ instance ProtocolLedgerView TestBlock where
   ledgerConfigView _ = LedgerConfig
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right ()
+
+instance QueryLedger TestBlock where
+  data Query  TestBlock = QueryLedgerTip
+    deriving (Eq, Show, Generic, Serialise)
+  data Result TestBlock = ResultLedgerTip (Point TestBlock)
+    deriving (Eq, Show, Generic, Serialise)
+
+  answerQuery QueryLedgerTip (TestLedger { lastAppliedPoint }) =
+    ResultLedgerTip lastAppliedPoint
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger Block.genesisPoint

@@ -13,6 +13,8 @@ module Ouroboros.Consensus.Ledger.Byron.Ledger (
     -- * Ledger integration
     LedgerConfig(..)
   , LedgerState(..)
+  , Query(..)
+  , Result(..)
   , initByronLedgerState
     -- * Serialisation
   , encodeByronLedgerState
@@ -38,8 +40,9 @@ import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Delegation.Validation.Scheduling as D.Sched
 import qualified Cardano.Chain.Genesis as Gen
-import qualified Cardano.Chain.ValidationMode as CC
+import qualified Cardano.Chain.Update.Validation.Interface as UPI
 import qualified Cardano.Chain.UTxO as CC
+import qualified Cardano.Chain.ValidationMode as CC
 
 import           Ouroboros.Network.Block (Point (..), SlotNo (..), blockSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
@@ -115,6 +118,18 @@ initByronLedgerState genesis mUtxo = ByronLedgerState {
              -> CC.ChainValidationState -> CC.ChainValidationState
     override Nothing     st = st
     override (Just utxo) st = st { CC.cvsUtxo = utxo }
+
+instance QueryLedger ByronBlock where
+  data Query ByronBlock
+    = GetUpdateInterfaceState
+    deriving (Eq, Show)
+
+  data Result ByronBlock
+    = UpdateInterfaceState UPI.State
+    deriving (Eq, Show)
+
+  answerQuery GetUpdateInterfaceState ledgerState =
+    UpdateInterfaceState (CC.cvsUpdateState (byronLedgerState ledgerState))
 
 instance ConfigContainsGenesis (LedgerConfig ByronBlock) where
   getGenesisConfig = unByronLedgerConfig

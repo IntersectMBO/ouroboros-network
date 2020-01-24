@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -37,6 +38,9 @@ module Ouroboros.Consensus.Ledger.Mock.Block (
     -- * 'ApplyTx' (mempool support)
   , GenTx(..)
   , mkSimpleGenTx
+    -- * 'QueryLedger'
+  , Query(..)
+  , Result(..)
     -- * Crypto
   , SimpleCrypto
   , SimpleStandardCrypto
@@ -323,6 +327,20 @@ mkSimpleGenTx tx = SimpleGenTx
     { simpleGenTx   = tx
     , simpleGenTxId = hash tx
     }
+
+{-------------------------------------------------------------------------------
+  Support for QueryLedger
+-------------------------------------------------------------------------------}
+
+instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
+      => QueryLedger (SimpleBlock c ext) where
+  data Query  (SimpleBlock c ext) = QueryLedgerTip
+    deriving (Show, Generic, Serialise)
+  data Result (SimpleBlock c ext) = ResultLedgerTip (Point (SimpleBlock c ext))
+    deriving (Show, Generic, Serialise)
+
+  answerQuery QueryLedgerTip (SimpleLedgerState MockState { mockTip }) =
+    ResultLedgerTip mockTip
 
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks

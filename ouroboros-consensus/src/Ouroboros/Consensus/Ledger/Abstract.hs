@@ -13,6 +13,7 @@ module Ouroboros.Consensus.Ledger.Abstract (
   , BlockProtocol
   , ProtocolLedgerView(..)
   , AnachronyFailure(..)
+  , QueryLedger(..)
   ) where
 
 import           Control.Monad.Except
@@ -168,3 +169,20 @@ data AnachronyFailure
   = TooFarAhead
   | TooFarBehind
   deriving (Eq,Show)
+
+-- | Query the ledger state.
+--
+-- Used by the LocalStateQuery protocol to allow clients to query the ledger
+-- state.
+class UpdateLedger blk => QueryLedger blk where
+
+  -- | Different queries supported by the ledger
+  data family Query  blk :: *
+
+  -- | The result types for the queries
+  data family Result blk :: *
+  -- TODO index Result by Query so that we always get the expected result
+  -- type?
+
+  -- | Answer the given query about the ledger state.
+  answerQuery :: Query blk -> LedgerState blk -> Result blk
