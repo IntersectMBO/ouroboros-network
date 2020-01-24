@@ -6,6 +6,9 @@
         "gray-code" = (((hackage.gray-code)."0.3.1").revisions).default;
         "bimap" = (((hackage.bimap)."0.4.0").revisions).default;
         "binary" = (((hackage.binary)."0.8.7.0").revisions).default;
+        "bytestring" = (((hackage.bytestring)."0.10.8.2").revisions).default;
+        "directory" = (((hackage.directory)."1.3.3.0").revisions).default;
+        "filepath" = (((hackage.filepath)."1.4.2.1").revisions).default;
         "generic-monoid" = (((hackage.generic-monoid)."0.1.0.0").revisions).default;
         "graphviz" = (((hackage.graphviz)."2999.20.0.3").revisions).default;
         "hedgehog-quickcheck" = (((hackage.hedgehog-quickcheck)."0.1.1").revisions).default;
@@ -23,7 +26,6 @@
         "streaming-binary" = (((hackage.streaming-binary)."0.3.0.1").revisions).default;
         "cborg" = (((hackage.cborg)."0.2.2.0").revisions).default;
         "canonical-json" = (((hackage.canonical-json)."0.6.0.0").revisions).default;
-        } // {
         typed-protocols = ./typed-protocols.nix;
         typed-protocols-cbor = ./typed-protocols-cbor.nix;
         network-mux = ./network-mux.nix;
@@ -55,5 +57,23 @@
       compiler.nix-name = "ghc865";
       };
   resolver = "lts-13.26";
+  modules = [
+    ({ lib, ... }:
+      {
+        packages = {
+          "ouroboros-network" = {
+            flags = { "asserts" = lib.mkOverride 900 true; };
+            };
+          "network-mux" = { flags = { "asserts" = lib.mkOverride 900 true; }; };
+          "ouroboros-consensus" = {
+            flags = { "asserts" = lib.mkOverride 900 true; };
+            };
+          "io-sim-classes" = {
+            flags = { "asserts" = lib.mkOverride 900 true; };
+            };
+          };
+        })
+    { packages = {}; }
+    ];
   compiler = "ghc-8.6.5";
   }
