@@ -44,6 +44,7 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Int (Int64)
 import           Data.List (lookup)
 import           Data.Maybe (fromMaybe)
+import           GHC.Conc (numCapabilities)
 import           GHC.Stack
 import           Text.Printf
 
@@ -288,6 +289,10 @@ muxChannel tracer tq mc md msgMax q cnt = do
         traceWith tracer $ MuxTraceChannelSendStart mc encoding
 
         atomically $ do
+            c <- readTVar cnt
+            when (numCapabilities == 1 && c > 0)
+                retry
+
             buf <- readTVar w
             if BL.length buf < perMiniProtocolBufferSize
                then do
