@@ -82,6 +82,8 @@ in commonLib.nix-tools.release-nix {
     "nix-tools.tests.ouroboros-consensus.test-storage.x86_64-darwin"
     # Win32-network tests do not run using win64
     "nix-tools.tests.x86_64-pc-mingw32-Win32-network.test-Win32-network.x84_64-linux"
+    # test-network-mux deadlocks on wine
+    "nix-tools.tests.x86_64-pc-mingw32-network-mux.test-network-mux.x86_64-linux"
   ];
   # The required jobs that must pass for ci not to fail:
   required-name = "ouroboros-network-required-checks";
