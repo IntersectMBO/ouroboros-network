@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -55,6 +56,8 @@ module Ouroboros.Network.Socket (
     -- * Auxiliary functions
     , sockAddrFamily
     ) where
+
+import           Cardano.Prelude (UseIsNormalForm (..))
 
 import           Control.Concurrent.Async
 import           Control.Exception (IOException, SomeException (..))
@@ -146,9 +149,7 @@ data ConnectionId addr = ConnectionId {
     remoteAddress :: !addr
   }
   deriving (Eq, Ord, Show, Generic)
-
-instance NoUnexpectedThunks addr => NoUnexpectedThunks (ConnectionId addr)
-
+  deriving NoUnexpectedThunks via (UseIsNormalForm (ConnectionId addr))
 
 -- |
 -- We assume that a TCP segment size of 1440 bytes with initial window of size

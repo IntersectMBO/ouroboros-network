@@ -50,6 +50,7 @@ module Ouroboros.Network.NodeToNode (
 
   -- * Re-exports
   , ConnectionId (..)
+  , RemoteConnectionId
   , DecoderFailureOrTooMuchInput
   , Handshake
   , LocalAddresses (..)
@@ -564,3 +565,5 @@ localNetworkErrorPolicy = ErrorPolicies {
   where
     ourBug :: SuspendDecision DiffTime
     ourBug = Throw
+
+type RemoteConnectionId = ConnectionId Socket.SockAddr
