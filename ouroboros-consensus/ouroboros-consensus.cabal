@@ -147,6 +147,7 @@ library
                        Ouroboros.Storage.ChainDB.Impl.ChainSel
                        Ouroboros.Storage.ChainDB.Impl.ImmDB
                        Ouroboros.Storage.ChainDB.Impl.Iterator
+                       Ouroboros.Storage.ChainDB.Impl.LedgerCursor
                        Ouroboros.Storage.ChainDB.Impl.LgrDB
                        Ouroboros.Storage.ChainDB.Impl.Query
                        Ouroboros.Storage.ChainDB.Impl.Reader

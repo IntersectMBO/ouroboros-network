@@ -57,6 +57,7 @@ import qualified Ouroboros.Storage.ChainDB.Impl.Background as Background
 import qualified Ouroboros.Storage.ChainDB.Impl.ChainSel as ChainSel
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Storage.ChainDB.Impl.Iterator as Iterator
+import qualified Ouroboros.Storage.ChainDB.Impl.LedgerCursor as LedgerCursor
 import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
 import qualified Ouroboros.Storage.ChainDB.Impl.Query as Query
 import qualified Ouroboros.Storage.ChainDB.Impl.Reader as Reader
@@ -170,7 +171,6 @@ openDBInternal args launchBgTasks = do
           { addBlock           = getEnv1    h ChainSel.addBlock
           , getCurrentChain    = getEnvSTM  h Query.getCurrentChain
           , getCurrentLedger   = getEnvSTM  h Query.getCurrentLedger
-          , getPastLedger      = getEnv1    h Query.getPastLedger
           , getTipBlock        = getEnv     h Query.getTipBlock
           , getTipHeader       = getEnv     h Query.getTipHeader
           , getTipPoint        = getEnvSTM  h Query.getTipPoint
@@ -180,6 +180,10 @@ openDBInternal args launchBgTasks = do
           , getMaxSlotNo       = getEnvSTM  h Query.getMaxSlotNo
           , stream             = Iterator.stream  h
           , newReader          = Reader.newReader h (Args.cdbEncodeHeader args)
+          , newLedgerCursor    = getEnv     h $ \env' ->
+              LedgerCursor.newLedgerCursor
+                (cdbLgrDB env')
+                (castPoint . AF.anchorPoint <$> Query.getCurrentChain env')
           , getIsInvalidBlock  = getEnvSTM  h Query.getIsInvalidBlock
           , closeDB            = Reopen.closeDB h
           , isOpen             = Reopen.isOpen  h
