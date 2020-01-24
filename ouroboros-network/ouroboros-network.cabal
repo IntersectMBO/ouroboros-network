@@ -94,6 +94,11 @@ library
                        Ouroboros.Network.Protocol.Handshake.Type
                        Ouroboros.Network.Protocol.Handshake.Codec
                        Ouroboros.Network.Protocol.Handshake.Version
+                       Ouroboros.Network.Protocol.LocalStateQuery.Client
+                       Ouroboros.Network.Protocol.LocalStateQuery.Codec
+                       -- LocalStateQuery.Examples module is needed by test-consensus
+                       Ouroboros.Network.Protocol.LocalStateQuery.Examples
+                       Ouroboros.Network.Protocol.LocalStateQuery.Server
                        Ouroboros.Network.Protocol.LocalStateQuery.Type
                        Ouroboros.Network.Protocol.LocalTxMonitor.Type
                        Ouroboros.Network.Protocol.TxSubmission.Type
@@ -181,6 +186,8 @@ library ouroboros-protocol-tests
                        Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
                        Ouroboros.Network.Protocol.ChainSync.Test
                        Ouroboros.Network.Protocol.Handshake.Test
+                       Ouroboros.Network.Protocol.LocalStateQuery.Direct
+                       Ouroboros.Network.Protocol.LocalStateQuery.Test
                        Ouroboros.Network.Protocol.LocalTxSubmission.Direct
                        Ouroboros.Network.Protocol.LocalTxSubmission.Examples
                        Ouroboros.Network.Protocol.LocalTxSubmission.Test
