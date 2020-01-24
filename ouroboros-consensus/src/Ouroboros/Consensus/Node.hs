@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Node
   , IPSubscriptionTarget (..)
   , DnsSubscriptionTarget (..)
   , ConnectionId (..)
+  , RemoteConnectionId
     -- * Internal helpers
   , openChainDB
   , mkChainDbArgs
@@ -46,10 +47,9 @@ import           Ouroboros.Network.NodeToClient (DictVersion (..),
                      NodeToClientVersion (..), NodeToClientVersionData (..),
                      nodeToClientCodecCBORTerm)
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
-                     NodeToNodeVersionData (..), nodeToNodeCodecCBORTerm)
+                     NodeToNodeVersionData (..), RemoteConnectionId, nodeToNodeCodecCBORTerm)
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
-import           Ouroboros.Network.Socket (ConnectionId)
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
@@ -90,7 +90,7 @@ data IsProducer
 run
   :: forall blk.
      RunNode blk
-  => Tracers IO ConnectionId blk          -- ^ Consensus tracers
+  => Tracers IO RemoteConnectionId  blk   -- ^ Consensus tracers
   -> Tracer  IO (ChainDB.TraceEvent blk)  -- ^ ChainDB tracer
   -> DiffusionTracers                     -- ^ Diffusion tracers
   -> DiffusionArguments                   -- ^ Diffusion arguments
@@ -100,9 +100,9 @@ run
   -> IsProducer
   -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
       -- ^ Customise the 'ChainDbArgs'
-  -> (NodeArgs IO ConnectionId blk -> NodeArgs IO ConnectionId blk)
+  -> (NodeArgs IO RemoteConnectionId blk -> NodeArgs IO RemoteConnectionId blk)
       -- ^ Customise the 'NodeArgs'
-  -> (ResourceRegistry IO -> NodeKernel IO ConnectionId blk -> IO ())
+  -> (ResourceRegistry IO -> NodeKernel IO RemoteConnectionId blk -> IO ())
      -- ^ Called on the 'NodeKernel' after creating it, but before the network
      -- layer is initialised.
   -> IO ()
@@ -141,7 +141,7 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
       nodeKernel <- initNodeKernel nodeArgs
       onNodeKernel registry nodeKernel
       let networkApps :: NetworkApplication
-                           IO ConnectionId
+                           IO RemoteConnectionId
                            ByteString ByteString ByteString ByteString ByteString ByteString
                            ()
           networkApps = consensusNetworkApps
@@ -255,11 +255,11 @@ mkNodeArgs
   => ResourceRegistry IO
   -> NodeConfig (BlockProtocol blk)
   -> NodeState  (BlockProtocol blk)
-  -> Tracers IO ConnectionId blk
+  -> Tracers IO RemoteConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
   -> IsProducer
-  -> NodeArgs IO ConnectionId blk
+  -> NodeArgs IO RemoteConnectionId blk
 mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     { tracers
     , registry
