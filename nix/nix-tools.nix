@@ -12,7 +12,6 @@ in pkgs // {
       io-sim-classes
       ouroboros-consensus
       ouroboros-network
-      typed-transitions
     ];
     buildInputs = with pkgs.nix-tools._raw; [
       cabal-install.components.exes.cabal
