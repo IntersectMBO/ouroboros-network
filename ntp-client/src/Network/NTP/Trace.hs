@@ -1,35 +1,42 @@
 module Network.NTP.Trace
 where
 import           Control.Exception (IOException)
-import           Data.Time.Units (Microsecond)
+import           Network.NTP.Packet (Microsecond)
+
+data IPVersion = IPv4 | IPv6
+    deriving (Show)
 
 data NtpTrace
-    = NtpTraceStartNtpClient
+    = NtpTraceIOError IOError
+    | NtpTraceStartNtpClient
     | NtpTraceClientActNow
-    | NtpTraceClientForceCheck
-    | NtpTraceClientAbort
-    | NtpTraceUpdateStatusNoResponses
+    | NtpTraceRestartDelay Int
+    | NtpTraceRestartingClient
+    | NtpTraceClientStartQuery
+    | NtpTraceRunProtocolSuccess !IPVersion
+    | NtpTraceRunProtocolNoResult !IPVersion
+    | NtpTraceRunProtocolError !IPVersion IOError
+    | NtpTraceIPv4IPv6BothFailed
+    | NtpTraceUpdateStatusQueryFailed
     | NtpTraceUpdateStatusClockOffset Microsecond
-    | NtpTraceSendLoopCollectedAllResponses
-    | NtpTraceSpawnNtpClientStarting
-    | NtpTraceSpawnNtpClientStarted
-    | NtpTraceSpawnNtpClientSocketsClosed
-    | NtpTraceSpawnNtpClientResolveDNS
-    | NtpTraceSpawnNtpClientResolvePending
-    | NtpTraceReceiveLoopDecodeError String
-    | NtpTraceReceiveLoopHandleIOException IOException
-    | NtpTraceReceiveLoopException
-    | NtpTraceReceiveLoopLatePacket
+    | NtpTraceSocketOpen
+    | NtpTraceSocketClosed
+    | NtpTracePacketSent
+    | NtpTracePacketSentError IOException
+    | NtpTraceClientWaitingForRepliesTimeout
     | NtpTraceReceiveLoopPacketReceived
-    | NtpTraceReceiveLoopPacketDeltaTime Microsecond
-    | NtpTraceMkSocketsNoSockets
-    | NtpTraceMkSocketsIOExecption IOException
-    | NtpTraceResolvHostIOException IOException
-    | NtpTraceResolveHostNotResolved String
-    | NtpTraceResolveHostResolved String -- todo also log addr
+    | NtpTraceClientSleeping
+
+    
+
+
+
+
+    | NtpTraceSocketReaderDecodeError String
+    | NtpTraceSocketReaderIOException IOException
+    | NtpTraceQueryLoopIOException IOException
+    | NtpTraceOneshotClientIOError IOException
+
     | NtpTraceSocketCreated String String
-    | NtpTraceSendPacketNoMatchingSocket String String
-    | NtpTraceSentToIOException String IOException
-    | NtpTraceSentTryResend String
-    | NtpTraceSentNotRetrying
+
     deriving (Show)

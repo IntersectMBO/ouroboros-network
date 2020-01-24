@@ -1,65 +1,69 @@
-{-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-
--- | This module implements functionality of NTP client.
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NumericUnderscores  #-}
 
 module Network.NTP.Client
-    ( NtpClientSettings (..)
-    , NtpClient (..)
-    , withNtpClient
-    ) where
+where
 
 import           Control.Concurrent (threadDelay)
-import           Control.Concurrent.Async (async, concurrently_, race, race_)
-import           Control.Concurrent.STM
-import           Control.Exception (Exception, IOException, bracket, catch, handle)
-import           Control.Monad (forever, when)
+import           Control.Concurrent.Async
+import           Control.Concurrent.STM (STM, atomically, check)
+import           Control.Concurrent.STM.TVar
+import           Control.Exception (bracket)
+import           System.IO.Error (catchIOError, tryIOError, userError, ioError)
+import           Control.Monad (forever, forM, forM_, when)
 import           Control.Tracer
-import           Data.Binary (decodeOrFail)
+import           Data.Binary (decodeOrFail, encode)
 import qualified Data.ByteString.Lazy as LBS
-import           Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (catMaybes)
-import           Data.Semigroup (Last (..))
-import           Data.These (These (..))
-import           Data.Time.Units (Microsecond)
-import           Data.Typeable (Typeable)
+import           Data.List (find)
+import           Data.Maybe
+import           Network.Socket ( AddrInfo ()
+                                , AddrInfoFlag (AI_ADDRCONFIG, AI_PASSIVE)
+                                , Family (AF_INET, AF_INET6)
+                                , PortNumber
+                                , Socket
+                                , SockAddr (..)
+                                , SocketOption (ReuseAddr)
+                                , SocketType (Datagram)
+                                , addrAddress
+                                , addrFamily
+                                , addrFlags
+                                , addrSocketType)
 import qualified Network.Socket as Socket
-import           Network.Socket.ByteString (recvFrom)
+import qualified Network.Socket.ByteString as Socket.ByteString (recvFrom, sendManyTo)
+import           Network.NTP.Packet ( NtpPacket
+                                    , mkNtpPacket
+                                    , ntpPacketSize
+                                    , Microsecond
+                                    , NtpOffset (..)
+                                    , getCurrentTime
+                                    , clockOffsetPure)
+import           Network.NTP.Trace (NtpTrace (..), IPVersion (..))
 
-import           Network.NTP.Packet (NtpOffset (..) , NtpPacket (..), clockOffset,
-                     mkNtpPacket, ntpPacketSize)
-import           Network.NTP.Trace (NtpTrace (..))
-import           Network.NTP.Util (AddrFamily (..), Addresses, Sockets,
-                     WithAddrFamily (..), createAndBindSock,
-                     resolveNtpHost,
-                     runWithAddrFamily, sendPacket, udpLocalAddresses)
+main :: IO ()
+main = testClient
 
 data NtpClientSettings = NtpClientSettings
     { ntpServers         :: [String]
-      -- ^ list of servers addresses
+      -- ^ List of servers addresses.
     , ntpResponseTimeout :: Microsecond
-      -- ^ delay between making requests and response collection
+      -- ^ Timeout between sending NTP requests and response collection.
     , ntpPollDelay       :: Microsecond
-      -- ^ how long to wait between to send requests to the servers
-    , ntpSelection       :: NonEmpty NtpOffset -> NtpOffset
-      -- ^ way to sumarize results received from different servers.
-      -- this may accept list of lesser size than @length ntpServers@ in case
-      -- some servers failed to respond in time, but never an empty list
+      -- ^ How long to wait between two rounds of requests.
+    , ntpReportPolicy    :: [ReceivedPacket] -> Maybe NtpOffset
     }
 
 data NtpClient = NtpClient
     { -- | Query the current NTP status.
       ntpGetStatus        :: STM NtpStatus
-
       -- | Bypass all internal threadDelays and trigger a new NTP query.
     , ntpTriggerUpdate    :: IO ()
+    , ntpThread           :: Async ()
     }
 
 data NtpStatus =
@@ -71,248 +75,220 @@ data NtpStatus =
       -- `ntpResponseTimeout` or NTP was not configured.
     | NtpSyncUnavailable deriving (Eq, Show)
 
--- | Setup a NtpClient and run a computation that uses that client.
--- Todo : proper bracket-style tear-down of the NTP client.
+data ReceivedPacket = ReceivedPacket
+    { receivedPacket    :: !NtpPacket
+    , receivedLocalTime :: !Microsecond
+    , receivedOffset    :: !NtpOffset
+    } deriving (Eq, Show)
+
+-- | Wait for at least three replies and report the minimum of the reported offsets.
+minimumOfThree :: [ReceivedPacket] -> Maybe NtpOffset
+minimumOfThree l
+    = if length l >= 3 then Just $ minimum $ map receivedOffset l
+         else Nothing
+
+-- | Setup a NtpClient and run a application that uses that client.
+-- The NtpClient is terminated when the application returns.
+-- And also the application is terminated when the NtpClient crashes.
 withNtpClient :: Tracer IO NtpTrace -> NtpClientSettings -> (NtpClient -> IO a) -> IO a
-withNtpClient tracer ntpSettings action
-   = forkNtpClient tracer ntpSettings >>= action
-
--- This function should be called once, it will run an NTP client in a new
--- thread until the program terminates.
-forkNtpClient :: Tracer IO NtpTrace -> NtpClientSettings -> IO NtpClient
-forkNtpClient tracer ntpSettings = do
+withNtpClient tracer ntpSettings action = do
     traceWith tracer NtpTraceStartNtpClient
-    ncStatus <- newTVarIO NtpSyncPending
-    -- using async so the NTP thread will be left running even if the parent
-    -- thread finished.
-    _ <- async (spawnNtpClient tracer ntpSettings ncStatus)
-    return $ NtpClient
-        { ntpGetStatus = readTVar ncStatus
-        , ntpTriggerUpdate = do
-            traceWith tracer NtpTraceClientActNow
-            atomically $ writeTVar ncStatus NtpSyncPending
-        }
+    ntpStatus <- newTVarIO NtpSyncPending
+    withAsync (ntpClientThread tracer (ntpSettings, ntpStatus)) $ \tid -> do
+        let client = NtpClient
+              { ntpGetStatus = readTVar ntpStatus
+              , ntpTriggerUpdate = do
+                   traceWith tracer NtpTraceClientActNow
+                   atomically $ writeTVar ntpStatus NtpSyncPending
+              , ntpThread = tid
+              }
+        link tid         -- an error in the ntp-client kills the appliction !
+        action client
 
-data NtpState = NtpState
-    { ncSockets  :: TVar Sockets
-      -- ^ Ntp client sockets: ipv4 / ipv6 / both.
-    , ncState    :: TVar [NtpOffset]
-      -- ^ List of ntp offsets and origin times (i.e. time when a request was
-      -- send) received from ntp servers since last polling interval.
-    , ncStatus   :: TVar NtpStatus
-      -- ^ Ntp status: holds `NtpOffset` or a status of ntp client:
-      -- `NtpSyncPending`, `NtpSyncUnavailable`.  It is computed from `ncState`
-      -- once all responses arrived.
-    , ncSettings :: NtpClientSettings
-      -- ^ Ntp client configuration.
-    }
+udpLocalAddresses :: IO [AddrInfo]
+udpLocalAddresses = do
+    let hints = Socket.defaultHints
+            { addrFlags = [AI_PASSIVE]
+            , addrSocketType = Datagram }
+        port = Socket.defaultPort
+    --                 Hints        Host    Service
+    Socket.getAddrInfo (Just hints) Nothing (Just $ show port)
 
-mkNtpClient :: NtpClientSettings -> TVar NtpStatus -> Sockets -> IO NtpState
-mkNtpClient ncSettings ncStatus sock = do
-    ncSockets <- newTVarIO sock
-    ncState   <- newTVarIO []
-    return NtpState{..}
-
-data NoHostResolved = NoHostResolved
-    deriving (Show, Typeable)
-
-instance Exception NoHostResolved
-
-updateStatus :: Tracer IO NtpTrace -> NtpState -> IO ()
-updateStatus tracer cli = do
-    offsets <- readTVarIO (ncState cli)
-    status <- case offsets of
-        [] -> do
-           traceWith tracer NtpTraceUpdateStatusNoResponses
-           return NtpSyncUnavailable
-        l -> do
-           let o = ntpSelection (ncSettings cli) $ NE.fromList l
-           traceWith tracer $ NtpTraceUpdateStatusClockOffset $ getNtpOffset o
-           return $ NtpDrift o
-    atomically $ writeTVar (ncStatus cli) status
-
--- Every `ntpPollDelay` we send a request to the list of `ntpServers`.  Before
--- sending a request, we put `NtpSyncPending` to `ncState`.  After sending
--- all requests we wait until either all servers responded or
--- `ntpResponseTimeout` passesed.  If at least one server responded
--- `handleCollectedResponses` will update `ncStatus` in `NtpClient` with a new
--- drift.
-sendLoop :: Tracer IO NtpTrace -> NtpState -> [Addresses] -> IO ()
-sendLoop tracer cli addrs = forever $ do
-    let respTimeout = ntpResponseTimeout (ncSettings cli)
-    let poll        = ntpPollDelay (ncSettings cli)
-
-    -- send packets and wait until end of poll delay
-    sock <- readTVarIO $ ncSockets cli
-    pack <- mkNtpPacket
-    sendPacket tracer sock pack addrs
-
-    _ <- timeout respTimeout waitForResponses
-    updateStatus tracer cli
-    -- after @'updateStatus'@ @'ntpStatus'@ is guaranteed to be
-    -- different from @'NtpSyncPending'@, now we can wait until it was
-    -- changed back to @'NtpSyncPending'@ to force a request.
-    _ <- timeout poll waitForRequest
-
-    -- reset state & status before next loop
-    atomically $ writeTVar (ncState cli) []
-    atomically $ writeTVar (ncStatus cli) NtpSyncPending
-
-    where
-        waitForResponses = do
-            atomically $ do
-                resps <- readTVar $ ncState cli
-                let svs = length $ ntpServers $ ncSettings cli
-                when (length resps < svs)
-                    retry
-            traceWith tracer NtpTraceSendLoopCollectedAllResponses
-
-        -- Wait for a request to force an ntp check.
-        waitForRequest =
-            atomically $ do
-                status <- readTVar $ ncStatus cli
-                check (status == NtpSyncPending)
-                return ()
-
-        timeout :: Microsecond -> IO a -> IO (Either () a)
-        timeout t io = race (threadDelay (fromIntegral t)) io
-
--- |
--- Listen for responses on the socket @'ncSockets'@
-receiveLoop :: Tracer IO NtpTrace -> NtpState -> IO ()
-receiveLoop tracer cli =
-    readTVarIO (ncSockets cli) >>= \case
-        These (Last (WithIPv6 sock_ipv6)) (Last (WithIPv4 sock_ipv4)) ->
-            loop IPv6 sock_ipv6
-            `concurrently_`
-            loop IPv4 sock_ipv4
-        This (Last (WithIPv6 sock_ipv6)) ->
-            loop IPv6 sock_ipv6
-        That (Last (WithIPv4 sock_ipv4)) ->
-            loop IPv4 sock_ipv4
-    where
-    -- Receive responses from the network and update NTP client state.
-    loop :: AddrFamily -> Socket.Socket -> IO ()
-    loop addressFamily sock
-        = handle (handleIOException addressFamily) $ forever $ do
-            (bs, _) <- recvFrom sock ntpPacketSize
-            case decodeOrFail $ LBS.fromStrict bs of
-                Left  (_, _, err)    ->
-                    traceWith tracer $ NtpTraceReceiveLoopDecodeError err
-                Right (_, _, packet) ->
-                    handleNtpPacket packet
-
-    -- Restart the @loop@ in case of errors; wait 5s before recreating the
-    -- socket.
-    handleIOException
-        :: AddrFamily
-        -> IOException
-        -> IO ()
-    handleIOException addressFamily e = do
-        traceWith tracer $ NtpTraceReceiveLoopHandleIOException e
-        threadDelay 5000000
-        udpLocalAddresses >>= createAndBindSock tracer addressFamily >>= \case
-            Nothing   -> do
-                traceWith tracer NtpTraceReceiveLoopException
---                logWarning "recreating of sockets failed (retrying)"
-                handleIOException addressFamily e
-            Just sock -> do
-                atomically $ modifyTVar' (ncSockets cli) (\s -> s <> sock)
-                case sock of
-                    This (Last sock_)
-                        -> loop addressFamily $ runWithAddrFamily sock_
-                    That (Last sock_)
-                        -> loop addressFamily $ runWithAddrFamily sock_
-                    These _ _
-                        -> error "NtpClient: startReceive: impossible"
-
-    -- Compute the clock offset based on current time and record it in the NTP
-    -- client state.   A packet will be disgarded if it came after
-    -- @'ntpResponseTimeout'@.
-    handleNtpPacket
-        :: NtpPacket
-        -> IO ()
-    handleNtpPacket packet = do
-        traceWith tracer NtpTraceReceiveLoopPacketReceived -- packet
-        clockOffset (ntpResponseTimeout $ ncSettings cli) packet >>= \case
-            Nothing -> traceWith tracer NtpTraceReceiveLoopLatePacket
-            Just offset -> do
-                traceWith tracer $ NtpTraceReceiveLoopPacketDeltaTime $ getNtpOffset offset
-                atomically $ modifyTVar' (ncState cli) ( offset : )
-
--- |
--- Spawn NTP client which will send request to NTP servers every @'ntpPollDelay'@
--- and will listen for responses.  The @'ncStatus'@ will be updated every
--- @'ntpPollDelay'@ with the most recent value.  It should be run in a separate
--- thread, since it will block infinitely.
-spawnNtpClient :: Tracer IO NtpTrace -> NtpClientSettings -> TVar NtpStatus -> IO ()
-spawnNtpClient tracer settings ncStatus = do
-    traceWith tracer NtpTraceSpawnNtpClientStarting
-    bracket (mkSockets tracer settings) closeSockets $ \sock -> do
-        cli <- mkNtpClient settings ncStatus sock
-
-        addrs <- resolve
-        -- TODO
-        -- we should start listening for requests when we send something, since
-        -- we're not expecting anything to come unless we send something.  This
-        -- way we could simplify the client and remove `ncState` mutable cell.
-        receiveLoop tracer cli
-            `concurrently_` sendLoop tracer cli addrs
-            `concurrently_` traceWith tracer NtpTraceSpawnNtpClientStarted
-
-    where
-    closeSockets :: Sockets -> IO ()
-    closeSockets sockets = do
-        case sockets of
-            This a -> fn a
-            That a -> fn a
-            These a b -> fn a >> fn b
-        traceWith tracer NtpTraceSpawnNtpClientSocketsClosed
-
-    fn :: Last (WithAddrFamily t Socket.Socket) -> IO ()
-    fn (Last sock) = Socket.close $ runWithAddrFamily sock
-
-    -- Try to resolve addresses, on failure wait 30s and start again.
-    resolve = do
-        traceWith tracer NtpTraceSpawnNtpClientResolveDNS
-        addrs <- catMaybes <$> traverse (resolveNtpHost tracer) (ntpServers settings)
-        if null addrs
-          then do
-            atomically $ writeTVar ncStatus NtpSyncUnavailable
-            -- either wait 30s or wait for `NtpSyncPending` which might be set
-            -- by a client (e.g. wallet), in which case try to resolve the dns.
-            race_
-              (threadDelay 30000000)
-              (do
-                atomically $ do
-                  s <- readTVar ncStatus
-                  case s of
-                    NtpSyncPending -> return ()
-                    _              -> retry
-                traceWith tracer NtpTraceSpawnNtpClientResolvePending
-              )
-            resolve
-          else return addrs
-
--- Try to create IPv4 and IPv6 socket.
-mkSockets :: Tracer IO NtpTrace -> NtpClientSettings -> IO Sockets
-mkSockets tracer settings =
-    doMkSockets `catch` handleIOException >>= \case
-        Just socks -> pure socks
-        Nothing     -> do
-            traceWith tracer NtpTraceMkSocketsNoSockets
---            logWarning "Couldn't create either IPv4 or IPv6 socket, retrying in 5 sec..."
-            threadDelay 5000000
-            mkSockets tracer settings
+resolveHost :: String -> IO [AddrInfo]
+resolveHost host = Socket.getAddrInfo (Just hints) (Just host) Nothing
   where
-    doMkSockets :: IO (Maybe Sockets)
-    doMkSockets = do
-        addrs <- udpLocalAddresses
-        (<>) <$> (createAndBindSock tracer IPv4 addrs)
-             <*> (createAndBindSock tracer IPv6 addrs)
+    hints = Socket.defaultHints
+            { addrSocketType = Datagram
+            , addrFlags = [AI_ADDRCONFIG]  -- since we use @AF_INET@ family
+            }
 
-    handleIOException :: IOException -> IO (Maybe Sockets)
-    handleIOException e = do
-        traceWith tracer $ NtpTraceMkSocketsIOExecption e
-        threadDelay 5000000
-        doMkSockets
+firstAddr :: String -> [AddrInfo] -> IO (Maybe AddrInfo, Maybe AddrInfo)
+firstAddr name l = case (find isV4Addr l, find isV6Addr l) of
+    (Nothing, Nothing) -> ioError $ userError $ "lookup host failed :" ++ name
+    p -> return p
+    where
+        isV4Addr :: AddrInfo -> Bool
+        isV4Addr addr = addrFamily addr == AF_INET
+
+        isV6Addr :: AddrInfo -> Bool
+        isV6Addr addr = addrFamily addr == AF_INET6
+
+
+setNtpPort :: SockAddr ->  SockAddr
+setNtpPort addr = case addr of
+    (SockAddrInet  _ host)            -> SockAddrInet  ntpPort host
+    (SockAddrInet6 _ flow host scope) -> SockAddrInet6 ntpPort flow host scope
+    sockAddr                   -> sockAddr
+  where
+    ntpPort :: PortNumber
+    ntpPort = 123
+
+threadDelayInterruptible :: TVar NtpStatus -> Int -> IO ()
+threadDelayInterruptible tvar t
+    = race_
+       ( threadDelay t )
+       ( atomically $ do
+           s <- readTVar tvar
+           check $ s == NtpSyncPending
+       )
+
+-- TODO: maybe reset the delaytime if the oneshotClient did one sucessful query
+ntpClientThread ::
+       Tracer IO NtpTrace
+    -> (NtpClientSettings, TVar NtpStatus)
+    -> IO ()
+ntpClientThread tracer args@(_, ntpStatus) = forM_ restartDelay $ \t -> do
+    traceWith tracer $ NtpTraceRestartDelay t
+    threadDelayInterruptible ntpStatus $ t * 1_000_000
+    traceWith tracer NtpTraceRestartingClient
+    (forever $ oneshotClient tracer args) `catchIOError`
+        \err -> traceWith tracer $ NtpTraceIOError err
+    atomically $ writeTVar ntpStatus NtpSyncUnavailable
+    where
+        restartDelay :: [Int]
+        restartDelay = [0, 5, 10, 20, 60, 180, 600] ++ repeat 600
+
+-- | Setup and run the NTP client.
+-- In case of an IOError (for example when network interface goes down) cleanup and return.
+
+oneshotClient ::
+       Tracer IO NtpTrace
+    -> (NtpClientSettings, TVar NtpStatus)
+    -> IO ()
+oneshotClient tracer (ntpSettings, ntpStatus) = do
+    traceWith tracer NtpTraceClientStartQuery
+    (v4Servers,   v6Servers)   <- lookupServers $ ntpServers ntpSettings
+    (v4LocalAddr, v6LocalAddr) <- udpLocalAddresses >>= firstAddr "localhost"
+    (v4Replies, v6Replies) <- concurrently (runProtocol IPv4 v4LocalAddr v4Servers)
+                                           (runProtocol IPv6 v6LocalAddr v6Servers)
+    when (null v4Replies && null v6Replies) $ do
+        traceWith tracer NtpTraceIPv4IPv6BothFailed
+        atomically $ writeTVar ntpStatus NtpSyncUnavailable        
+        ioError $ userError "IPv4 and IPv6 failed"
+    case (ntpReportPolicy ntpSettings) (v4Replies ++ v6Replies) of
+        Nothing -> do
+            traceWith tracer NtpTraceUpdateStatusQueryFailed
+            atomically $ writeTVar ntpStatus NtpSyncUnavailable
+        Just offset -> do
+            traceWith tracer $ NtpTraceUpdateStatusClockOffset $ getNtpOffset offset
+            atomically $ writeTVar ntpStatus $ NtpDrift offset
+    traceWith tracer NtpTraceClientSleeping
+    threadDelayInterruptible ntpStatus $ fromIntegral $ ntpPollDelay ntpSettings
+    where
+        runProtocol :: IPVersion -> Maybe AddrInfo -> [AddrInfo] -> IO [ReceivedPacket]
+        runProtocol _version _localAddr [] = return []
+        runProtocol _version Nothing    _  = return []
+        runProtocol version (Just addr) servers = do
+            queryServers tracer ntpSettings addr servers >>= \case
+                Left err -> do
+                    traceWith tracer $ NtpTraceRunProtocolError version err
+                    return []
+                Right [] -> do
+                    traceWith tracer $ NtpTraceRunProtocolNoResult version
+                    return []
+                Right r@(_:_) -> do
+                    traceWith tracer $ NtpTraceRunProtocolSuccess version
+                    return r
+
+queryServers ::
+       Tracer IO NtpTrace
+    -> NtpClientSettings
+    -> AddrInfo
+    -> [AddrInfo]
+    -> IO (Either IOError [ReceivedPacket])
+queryServers tracer netSettings localAddr destAddrs
+    = tryIOError $ bracket acquire release action
+  where
+    acquire :: IO Socket
+    acquire = do
+        s <- Socket.socket (addrFamily localAddr) Datagram Socket.defaultProtocol
+        traceWith tracer NtpTraceSocketOpen
+        return s
+
+    release :: Socket -> IO ()
+    release s = do
+        Socket.close s
+        traceWith tracer NtpTraceSocketClosed
+
+    action :: Socket -> IO [ReceivedPacket]
+    action socket = do
+        Socket.setSocketOption socket ReuseAddr 1
+        inQueue <- atomically $ newTVar []
+        _err <- withAsync (send socket  >> loopForever)  $ \sender ->
+                withAsync timeout                        $ \delay ->
+                withAsync (reader socket inQueue )       $ \revc ->
+                    waitAnyCancel [sender, delay, revc]        
+        atomically $ readTVar inQueue
+
+    send :: Socket -> IO ()
+    send sock = forM_ destAddrs $ \addr -> do
+        p <- mkNtpPacket
+        err <- tryIOError $ Socket.ByteString.sendManyTo sock
+                          (LBS.toChunks $ encode p) (setNtpPort $ Socket.addrAddress addr)
+        case err of
+            Right _ -> traceWith tracer NtpTracePacketSent
+            Left e  -> do
+                traceWith tracer $ NtpTracePacketSentError e
+                ioError e
+        threadDelay 100_000
+
+    loopForever = forever $ threadDelay maxBound
+
+    timeout = do
+        threadDelay $ fromIntegral $ ntpResponseTimeout netSettings
+        traceWith tracer NtpTraceClientWaitingForRepliesTimeout
+
+    reader :: Socket -> TVar [ReceivedPacket] -> IO ()
+    reader socket inQueue = forever $ do
+        (bs, _) <- Socket.ByteString.recvFrom socket ntpPacketSize
+        t <- getCurrentTime
+        case decodeOrFail $ LBS.fromStrict bs of
+            Left  (_, _, err) -> traceWith tracer $ NtpTraceSocketReaderDecodeError err
+            Right (_, _, packet) -> do
+            -- todo : filter bad packets, i.e. late packets and spoofed packets
+                traceWith tracer NtpTraceReceiveLoopPacketReceived
+                let received = ReceivedPacket packet t (clockOffsetPure packet t)
+                atomically $ modifyTVar' inQueue ((:) received)
+
+lookupServers :: [String] -> IO ([AddrInfo], [AddrInfo])
+lookupServers names = do
+   dests <- forM names $ \server -> resolveHost server >>= firstAddr server
+   return (mapMaybe fst dests, mapMaybe snd dests)
+
+testClient :: IO ()
+testClient = withNtpClient (contramapM (return . show) stdoutTracer) settings runApplication
+  where
+    runApplication ntpClient = race_ getLine $ forever $ do
+        status <- atomically $ ntpGetStatus ntpClient
+        traceWith stdoutTracer $ show ("main"::String, status)
+        threadDelay 10_000_000
+        ntpTriggerUpdate ntpClient
+
+    settings :: NtpClientSettings
+    settings = NtpClientSettings
+        { ntpServers = ["0.de.pool.ntp.org", "0.europe.pool.ntp.org", "0.pool.ntp.org"
+                       , "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
+        , ntpResponseTimeout = fromInteger 1_000_000
+        , ntpPollDelay       = fromInteger 300_000_000
+        , ntpReportPolicy    = minimumOfThree
+        }

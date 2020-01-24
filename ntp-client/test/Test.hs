@@ -6,15 +6,27 @@ module Main
     ) where
 
 import           Data.Binary (decodeOrFail, encode)
-import           Data.Time.Units (Microsecond, fromMicroseconds, toMicroseconds)
 import           Data.Word (Word32)
 
 import           Test.Tasty (TestTree, defaultMain, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-import           Test.QuickCheck (Arbitrary (..), Gen, Property, NonNegative(..) , arbitrary, choose, counterexample, sized, (.&&.), (===))
+import           Test.QuickCheck ( Arbitrary (..)
+                                 , Gen
+                                 , Property
+                                 , NonNegative(..)
+                                 , arbitrary
+                                 , choose
+                                 , counterexample
+                                 , sized
+                                 , (.&&.)
+                                 , (===))
 
-import           Network.NTP.Packet (NtpOffset (..), NtpPacket (..), clockOffsetPure,
-                     ntpToRealMcs, realMcsToNtp)
+import           Network.NTP.Packet ( Microsecond (..)
+                                    , NtpOffset (..)
+                                    , NtpPacket (..)
+                                    , clockOffsetPure
+                                    , ntpToRealMcs
+                                    , realMcsToNtp)
 
 main :: IO ()
 main = defaultMain tests
@@ -27,12 +39,12 @@ data NtpPacketWithOffset = NtpPacketWithOffset
     deriving (Show)
 
 genMicro :: Gen Microsecond
-genMicro = fromMicroseconds <$> arbitrary
+genMicro = Microsecond <$> arbitrary
 
 genMicroNotBefore :: Microsecond -> Gen Microsecond
-genMicroNotBefore t = do
+genMicroNotBefore (Microsecond t) = do
     (NonNegative offset) <- arbitrary
-    return $ fromMicroseconds $ toMicroseconds t + offset
+    return $ Microsecond $ t + offset
 
 
 newtype ArbitraryNtpPacket = ArbitraryNtpPacket NtpPacket
@@ -54,7 +66,7 @@ instance Arbitrary ArbitraryNtpPacket where
 instance Arbitrary NtpPacketWithOffset where
     arbitrary = sized $ \offset -> do
         let drift :: Microsecond
-            drift = fromMicroseconds $ fromIntegral offset
+            drift = Microsecond $ fromIntegral offset
         ntpParams <- arbitrary
         ntpPoll <- arbitrary
         ntpOriginTime <- genMicro
@@ -86,7 +98,7 @@ newtype NtpMicrosecond = NtpMicrosecond Microsecond
 -- Generate NtpMicrosecond which must be smaller than
 -- @'maxBound' \@Word32 - 2200898800@ (we substract 70 years in seconds).
 instance Arbitrary NtpMicrosecond where
-    arbitrary = (NtpMicrosecond . fromMicroseconds) <$> choose (0, endTime)
+    arbitrary = (NtpMicrosecond . Microsecond) <$> choose (0, endTime)
        where endTime = (fromIntegral $ maxBound @Word32) - 2208988800
 
 tests:: TestTree
