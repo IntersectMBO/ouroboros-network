@@ -28,7 +28,7 @@ import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (SockAddr, AddrInfo)
 import qualified Network.Socket as Socket
 
-import           Ouroboros.Network.Snocket (SocketSnocket)
+import           Ouroboros.Network.Snocket (SocketSnocket, LocalSnocket)
 import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
@@ -82,7 +82,7 @@ data DiffusionTracers = DiffusionTracers {
 data DiffusionArguments = DiffusionArguments {
       daAddresses    :: [AddrInfo]
       -- ^ diffusion addresses
-    , daLocalAddress :: AddrInfo
+    , daLocalAddress :: FilePath
       -- ^ address for local clients
     , daIpProducers  :: IPSubscriptionTarget
       -- ^ ip subscription addresses
@@ -150,8 +150,15 @@ runDataDiffusion tracers
                  applications@DiffusionApplications { daErrorPolicies } =
     withIOManager $ \iocp -> do
 
-    let snocket :: SocketSnocket
+    let -- snocket for remote communication.
+        snocket :: SocketSnocket
         snocket = Snocket.socketSnocket iocp
+
+        -- snocket for local clients connected using Unix socket or named pipe.
+        -- we currently don't support remotely connected local clients.  If we
+        -- need to we can add another adress for local clients.
+        localSnocket :: LocalSnocket
+        localSnocket = Snocket.localSnocket iocp daLocalAddress
 
     -- networking mutable state
     networkState <- newNetworkMutableState
@@ -165,7 +172,7 @@ runDataDiffusion tracers
         Async.withAsync (cleanNetworkMutableState networkLocalState) $ \cleanLocalNetworkStateThread ->
 
           -- fork server for local clients
-          Async.withAsync (runLocalServer snocket networkLocalState) $ \_ ->
+          Async.withAsync (runLocalServer localSnocket networkLocalState) $ \_ ->
 
             -- fork servers for remote peers
             withAsyncs (runServer snocket networkState . Socket.addrAddress <$> daAddresses) $ \_ ->
@@ -181,8 +188,6 @@ runDataDiffusion tracers
                   Async.waitEither_ cleanNetworkStateThread cleanLocalNetworkStateThread
 
   where
-    -- TODO: this is POSIX only, Windows support will be built later
-
     DiffusionTracers { dtIpSubscriptionTracer
                      , dtDnsSubscriptionTracer
                      , dtDnsResolverTracer
@@ -226,7 +231,7 @@ runDataDiffusion tracers
           dtHandshakeLocalTracer
           dtErrorPolicyTracer)
         networkLocalState
-        (Socket.addrAddress daLocalAddress)
+        (Snocket.localAddressFromPath daLocalAddress)
         (daLocalResponderApplication applications)
         localErrorPolicy
 
