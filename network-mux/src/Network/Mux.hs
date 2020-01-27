@@ -101,21 +101,15 @@ muxStart
     -> MuxBearer m
     -> m ()
 muxStart tracer (MuxApplication ptcls) bearer = do
-    ctlPtclInfo <- mkMiniProtocolInfo (MiniProtocolNum 0)
-                                      (MiniProtocolLimits 0xffff 0xffff)
     appPtclInfo <- sequence [ mkMiniProtocolInfo (miniProtocolNum ptcl)
                                                  (miniProtocolLimits ptcl)
                             | ptcl <- ptcls ]
-    let tbl = setupTbl (ctlPtclInfo : appPtclInfo)
+    let tbl = setupTbl appPtclInfo
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
 
     let jobs = [ (demux DemuxState { dispatchTable = tbl, Ingress.bearer }, "Demuxer")
                , (mux cnt MuxState { egressQueue   = tq,  Egress.bearer }, "Muxer")
-               ]
-            ++ [ (muxControl q, name)
-               | let (_,_, initQ, respQ) = ctlPtclInfo
-               , (q, name) <- [(initQ, "Initiator"), (respQ, "Responder")]
                ]
             ++ [ job
                | ((mpcode, mplimits, initQ, respQ), ptcl) <- zip appPtclInfo ptcls
@@ -242,15 +236,6 @@ data MiniProtocolResult =
        MiniProtocolException String SomeException
      | MiniProtocolShutdown  String
 
-muxControl :: (HasCallStack, MonadSTM m, MonadThrow m)
-           => StrictTVar m BL.ByteString
-           -> m ()
-muxControl q = do
-    _ <- atomically $ do
-        buf <- readTVar q
-        when (buf == BL.empty)
-            retry
-    throwM $ MuxError MuxControlProtocolError "MuxControl message on mature MuxBearer" callStack
 
 -- | muxChannel creates a duplex channel for a specific 'MiniProtocolId' and
 -- 'MiniProtocolMode'.
