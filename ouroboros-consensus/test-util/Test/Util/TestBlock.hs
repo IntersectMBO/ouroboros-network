@@ -272,13 +272,13 @@ data TestBlockError
 instance SupportedBlock TestBlock
 
 instance UpdateLedger TestBlock where
-  data LedgerState TestBlock =
+  newtype LedgerState TestBlock =
       TestLedger {
           -- The ledger state simply consists of the last applied block
-          lastAppliedPoint :: !(Point TestBlock)
-        , lastAppliedHash  :: !(ChainHash TestBlock)
+          lastAppliedPoint :: Point TestBlock
         }
-    deriving (Show, Eq, Generic, Serialise, NoUnexpectedThunks)
+    deriving stock   (Show, Eq, Generic)
+    deriving newtype (Serialise, NoUnexpectedThunks)
 
   data LedgerConfig TestBlock = LedgerConfig
   type LedgerError  TestBlock = TestBlockError
@@ -286,15 +286,14 @@ instance UpdateLedger TestBlock where
   applyChainTick _ _ = TickedLedgerState
 
   applyLedgerBlock _ tb@TestBlock{..} TestLedger{..}
-    | Block.blockPrevHash tb /= lastAppliedHash
-    = throwError $ InvalidHash lastAppliedHash (Block.blockPrevHash tb)
+    | Block.blockPrevHash tb /= Block.pointHash lastAppliedPoint
+    = throwError $ InvalidHash (Block.pointHash lastAppliedPoint) (Block.blockPrevHash tb)
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise
-    = return     $ TestLedger (Chain.blockPoint tb) (BlockHash (Block.blockHash tb))
+    = return     $ TestLedger (Chain.blockPoint tb)
 
-  reapplyLedgerBlock _ tb _ =
-    TestLedger (Chain.blockPoint tb) (BlockHash (Block.blockHash tb))
+  reapplyLedgerBlock _ tb _ = TestLedger (Chain.blockPoint tb)
 
   ledgerTipPoint = lastAppliedPoint
 
@@ -304,7 +303,7 @@ instance ProtocolLedgerView TestBlock where
   anachronisticProtocolLedgerView _ _ _ = Right ()
 
 testInitLedger :: LedgerState TestBlock
-testInitLedger = TestLedger Block.genesisPoint GenesisHash
+testInitLedger = TestLedger Block.genesisPoint
 
 testInitExtLedger :: ExtLedgerState TestBlock
 testInitExtLedger = ExtLedgerState {
