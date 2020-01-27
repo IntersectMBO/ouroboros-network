@@ -255,7 +255,7 @@ queryServers tracer netSettings localAddr destAddrs
     loopForever = forever $ threadDelay maxBound
 
     timeout = do
-        threadDelay $ fromIntegral $ ntpResponseTimeout netSettings
+        threadDelay $ (fromIntegral $ ntpResponseTimeout netSettings) + 100_000 * length destAddrs
         traceWith tracer NtpTraceClientWaitingForRepliesTimeout
 
     reader :: Socket -> TVar [ReceivedPacket] -> IO ()
