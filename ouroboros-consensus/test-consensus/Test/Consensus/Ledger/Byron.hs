@@ -24,8 +24,10 @@ import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
 import           Cardano.Chain.Common (KeyHash)
-import           Cardano.Chain.Slotting (EpochSlots (..))
+import           Cardano.Chain.Slotting (EpochNumber, EpochSlots (..),
+                     SlotNumber)
 import qualified Cardano.Chain.Update as CC.Update
+import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import           Cardano.Crypto (ProtocolMagicId (..))
 
 import           Ouroboros.Network.Block (HeaderHash, SlotNo)
@@ -45,7 +47,7 @@ import           Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
 
 import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..))
 
-import           Test.QuickCheck
+import           Test.QuickCheck hiding (Result)
 import           Test.QuickCheck.Hedgehog (hedgehog)
 import           Test.Tasty
 import           Test.Tasty.Golden
@@ -58,6 +60,7 @@ import qualified Test.Cardano.Chain.Common.Gen as CC
 import qualified Test.Cardano.Chain.Delegation.Gen as CC
 import qualified Test.Cardano.Chain.Genesis.Dummy as CC
 import qualified Test.Cardano.Chain.MempoolPayload.Gen as CC
+import qualified Test.Cardano.Chain.Slotting.Gen as CC
 import qualified Test.Cardano.Chain.Update.Gen as CC
 import qualified Test.Cardano.Chain.UTxO.Example as CC
 import qualified Test.Cardano.Chain.UTxO.Gen as CC
@@ -76,6 +79,8 @@ tests = testGroup "Byron"
       , testProperty "roundtrip GenTx"       prop_roundtrip_GenTx
       , testProperty "roundtrip GenTxId"     prop_roundtrip_GenTxId
       , testProperty "roundtrip ApplyTxErr"  prop_roundtrip_ApplyTxErr
+      , testProperty "roundtrip Query"       prop_roundtrip_Query
+      , testProperty "roundtrip Result"      prop_roundtrip_Result
       ]
       -- TODO LedgerState
 
@@ -94,6 +99,7 @@ tests = testGroup "Byron"
       , test_golden_ChainState_backwardsCompat_version2
       , test_golden_LedgerState
       , test_golden_GenTxId
+      , test_golden_UPIState
       ]
 
   , testGroup "Integrity"
@@ -171,6 +177,14 @@ prop_roundtrip_GenTxId =
 prop_roundtrip_ApplyTxErr :: ApplyTxErr ByronBlock -> Property
 prop_roundtrip_ApplyTxErr =
     roundtrip encodeByronApplyTxError decodeByronApplyTxError
+
+prop_roundtrip_Query :: Query ByronBlock -> Property
+prop_roundtrip_Query =
+    roundtrip encodeByronQuery decodeByronQuery
+
+prop_roundtrip_Result :: Result ByronBlock -> Property
+prop_roundtrip_Result =
+    roundtrip encodeByronResult decodeByronResult
 
 {-------------------------------------------------------------------------------
   BinaryInfo
@@ -309,6 +323,16 @@ test_golden_GenTxId = goldenTestCBOR
     "test-consensus/golden/cbor/byron/GenTxId"
   where
     exampleGenTxId = ByronTxId CC.exampleTxId
+
+test_golden_UPIState :: TestTree
+test_golden_UPIState = goldenTestCBOR
+    "CC.UPI.State"
+    toCBOR
+    exampleUPIState
+    "test-consensus/golden/cbor/byron/UPIState"
+  where
+    exampleUPIState = CC.UPI.initialState CC.dummyConfig
+
 
 goldenTestCBOR :: String -> (a -> Encoding) -> a -> FilePath -> TestTree
 goldenTestCBOR name enc a path =
@@ -493,3 +517,50 @@ instance Arbitrary ApplyMempoolPayloadErr where
     -- , MempoolUpdateProposalErr <$> arbitrary
     -- , MempoolUpdateVoteErr     <$> arbitrary
     ]
+
+instance Arbitrary (Query ByronBlock) where
+  arbitrary = return GetUpdateInterfaceState
+
+instance Arbitrary EpochNumber where
+  arbitrary = hedgehog CC.genEpochNumber
+
+instance Arbitrary SlotNumber where
+  arbitrary = hedgehog CC.genSlotNumber
+
+instance Arbitrary CC.Update.UpId where
+  arbitrary = hedgehog (CC.genUpId protocolMagicId)
+
+instance Arbitrary CC.Update.ApplicationName where
+  arbitrary = hedgehog CC.genApplicationName
+
+instance Arbitrary CC.Update.SystemTag where
+  arbitrary = hedgehog CC.genSystemTag
+
+instance Arbitrary CC.Update.InstallerHash where
+  arbitrary = hedgehog CC.genInstallerHash
+
+instance Arbitrary CC.Update.ProtocolVersion where
+  arbitrary = hedgehog CC.genProtocolVersion
+
+instance Arbitrary CC.Update.ProtocolParameters where
+  arbitrary = hedgehog CC.genProtocolParameters
+
+instance Arbitrary CC.Update.SoftwareVersion where
+  arbitrary = hedgehog CC.genSoftwareVersion
+
+instance Arbitrary (Result ByronBlock) where
+  arbitrary = UpdateInterfaceState <$> genUPIState
+    where
+      genUPIState :: Gen CC.UPI.State
+      genUPIState = CC.UPI.State
+        <$> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> pure mempty -- TODO CandidateProtocolUpdate's constructor is not exported
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> pure mempty -- TODO Endorsement is not exported
+        <*> arbitrary
