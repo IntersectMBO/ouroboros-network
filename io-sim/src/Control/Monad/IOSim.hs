@@ -375,6 +375,8 @@ instance MonadAsync (SimM s) where
   cancel a@(Async tid _) = throwTo tid AsyncCancelled <* waitCatch a
   cancelWith a@(Async tid _) e = throwTo tid e <* waitCatch a
 
+  asyncWithUnmask k = async (k unblock)
+
 instance MonadST (SimM s) where
   withLiftST f = f liftST
 
