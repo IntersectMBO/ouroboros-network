@@ -101,10 +101,8 @@ muxStart
     -> MuxBearer m
     -> m ()
 muxStart tracer (MuxApplication ptcls) bearer = do
-    appPtclInfo <- sequence [ mkMiniProtocolInfo (miniProtocolNum ptcl)
-                                                 (miniProtocolLimits ptcl)
-                            | ptcl <- ptcls ]
-    let tbl = setupTbl appPtclInfo
+    ptcls' <- mapM addProtocolQueues ptcls
+    let tbl = setupTbl ptcls'
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
 
@@ -112,9 +110,9 @@ muxStart tracer (MuxApplication ptcls) bearer = do
                , (mux cnt MuxState { egressQueue   = tq,  Egress.bearer }, "Muxer")
                ]
             ++ [ job
-               | ((mpcode, mplimits, initQ, respQ), ptcl) <- zip appPtclInfo ptcls
-               , job <- mpsJob cnt tq mpcode
-                               (maximumMessageSize mplimits)
+               | (ptcl, initQ, respQ) <- ptcls'
+               , job <- mpsJob cnt tq (miniProtocolNum ptcl)
+                               (maximumMessageSize (miniProtocolLimits ptcl))
                                initQ respQ (miniProtocolRun ptcl)
                ]
 
@@ -140,48 +138,41 @@ muxStart tracer (MuxApplication ptcls) bearer = do
       MiniProtocolShutdown jobname ->
         traceWith tracer (MuxTraceCleanExit jobname)
   where
-    mkMiniProtocolInfo :: MiniProtocolNum
-                       -> MiniProtocolLimits
-                       -> m ( MiniProtocolNum
-                            , MiniProtocolLimits
-                            , StrictTVar m BL.ByteString
-                            , StrictTVar m BL.ByteString
-                            )
-    mkMiniProtocolInfo mpcode mplimits = do
+    addProtocolQueues :: MuxMiniProtocol appType m a b
+                      -> m ( MuxMiniProtocol appType m a b
+                           , StrictTVar m BL.ByteString
+                           , StrictTVar m BL.ByteString
+                           )
+    addProtocolQueues ptcl = do
         initiatorQ <- newTVarM BL.empty
         responderQ <- newTVarM BL.empty
-        return ( mpcode
-               , mplimits
-               , initiatorQ
-               , responderQ
-               )
+        return (ptcl, initiatorQ, responderQ)
 
     -- Construct the array of TBQueues, one for each protocol id, and each mode
-    setupTbl :: [( MiniProtocolNum
-                 , MiniProtocolLimits
+    setupTbl :: [( MuxMiniProtocol appType m a b
                  , StrictTVar m BL.ByteString
                  , StrictTVar m BL.ByteString
                  )]
              -> MiniProtocolDispatch m
-    setupTbl ptclsInfo =
+    setupTbl ptcls' =
         MiniProtocolDispatch
           (array (mincode, maxcode) $
                  [ (code, Nothing)    | code <- [mincode..maxcode] ]
               ++ [ (code, Just pix)
-                 | (pix, (code, _, _, _)) <- zip [0..] ptclsInfo ])
+                 | (pix, (ptcl, _, _)) <- zip [0..] ptcls'
+                 , let code = miniProtocolNum ptcl ])
           (array ((minpix, ModeInitiator), (maxpix, ModeResponder))
-                 [ ((pix, mode), dispatchInfo)
-                 | (pix, (_mpcode, mplimits, initQ, respQ)) <- zip [0..] ptclsInfo
+                 [ ((pix, mode), MiniProtocolDispatchInfo q qMax)
+                 | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls'
+                 , let qMax = maximumIngressQueue (miniProtocolLimits ptcl)
                  , (mode, q) <- [ (ModeInitiator, initQ)
                                 , (ModeResponder, respQ) ]
-                 , let dispatchInfo = MiniProtocolDispatchInfo q
-                                        (maximumIngressQueue mplimits)
                  ])
       where
         minpix = 0
-        maxpix = length ptclsInfo - 1
+        maxpix = length ptcls' - 1
 
-        codes   = [ mc | (mc, _, _, _) <- ptclsInfo ]
+        codes   = [ miniProtocolNum ptcl | (ptcl, _, _) <- ptcls' ]
         mincode = minimum codes
         maxcode = maximum codes
 
