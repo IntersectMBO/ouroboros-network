@@ -367,6 +367,8 @@ instance MonadAsync (SimM s) where
   waitCatchSTM (Async _ w) = w
   pollSTM      (Async _ w) = (Just <$> w) `orElse` return Nothing
 
+  asyncWithUnmask k = async (k unblock)
+
 instance MonadST (SimM s) where
   withLiftST f = f liftST
 

@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE RankNTypes                #-}
 
 module Control.Monad.Class.MonadAsync
   ( MonadAsync (..)
@@ -33,7 +34,8 @@ class ( MonadSTM m
       , Functor (Async m)
       ) => MonadAsync m where
 
-  {-# MINIMAL async, asyncThreadId, cancel, cancelWith, waitCatchSTM, pollSTM #-}
+  {-# MINIMAL async, asyncThreadId, cancel, cancelWith, waitCatchSTM, pollSTM,
+              asyncWithUnmask #-}
 
   -- | An asynchronous action
   type Async m :: * -> *
@@ -82,6 +84,8 @@ class ( MonadSTM m
   race                  :: m a -> m b -> m (Either a b)
   race_                 :: m a -> m b -> m ()
   concurrently          :: m a -> m b -> m (a,b)
+
+  asyncWithUnmask       :: ((forall b . m b -> m b) ->  m a) -> m (Async m a)
 
   -- default implementations
   default withAsync     :: MonadMask m => m a -> (Async m a -> m b) -> m b
@@ -220,6 +224,8 @@ instance MonadAsync IO where
   race                  = Async.race
   race_                 = Async.race_
   concurrently          = Async.concurrently
+
+  asyncWithUnmask       = Async.asyncWithUnmask
 
 --
 -- Linking
