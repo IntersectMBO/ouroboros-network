@@ -32,9 +32,11 @@ import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (AddrInfo)
 import qualified Network.Socket as Socket
 
-import           Ouroboros.Network.Connections.Types (Provenance (..))
+import           Ouroboros.Network.Connections.Types (Connections,
+                   Provenance (..), LocalOnlyRequest (..), contramapRequest)
 import           Ouroboros.Network.Connections.Socket.Types (SockAddr (..),
                    withSockType)
+import qualified Ouroboros.Network.Connections.Socket.Types as Connections
 import           Ouroboros.Network.Connections.Socket.Server (acceptLoopOn)
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -60,7 +62,6 @@ import           Ouroboros.Network.Socket ( ConnectionId (..)
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
-import           Ouroboros.Network.Tracers
 
 data DiffusionTracers = DiffusionTracers {
       dtIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
@@ -255,10 +256,10 @@ runDataDiffusion tracers
                 withAsyncs (runServer n2nConnections <$> daAddresses) $ \_ ->
 
                   -- fork ip subscription
-                  Async.withAsync (runIpSubscriptionWorker networkState) $ \_ ->
+                  Async.withAsync (runIpSubscriptionWorker networkState n2nConnections) $ \_ ->
 
                     -- fork dns subscriptions
-                    withAsyncs (runDnsSubscriptionWorker networkState <$> daDnsProducers) $ \_ ->
+                    withAsyncs (runDnsSubscriptionWorker networkState n2nConnections <$> daDnsProducers) $ \_ ->
 
                       -- If any other threads throws 'cleanNetowrkStateThread' and
                       -- 'cleanLocalNetworkStateThread' threads will will finish.
@@ -276,7 +277,7 @@ runDataDiffusion tracers
                      , dtErrorPolicyTracer
                      } = tracers
 
-    initiatorLocalAddresses :: LocalAddresses Socket.SockAddr
+    initiatorLocalAddresses :: LocalAddresses
     initiatorLocalAddresses = LocalAddresses
       { laIpv4 =
           -- IPv4 address
@@ -286,12 +287,12 @@ runDataDiffusion tracers
           -- applications instead of a 'MuxInitiatorAndResponderApplication'.
           -- This means we don't utilise full duplex connection.
           if any (\ai -> Socket.addrFamily ai == Socket.AF_INET) daAddresses
-            then Just (Socket.SockAddrInet 0 0)
+            then Just (SockAddrIPv4 0 0)
             else Nothing
       , laIpv6 =
           -- IPv6 address
           if any (\ai -> Socket.addrFamily ai == Socket.AF_INET6) daAddresses
-            then Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0)
+            then Just (SockAddrIPv6 0 0 (0, 0, 0, 0) 0)
             else Nothing
       , laUnix = Nothing
       }
@@ -300,42 +301,51 @@ runDataDiffusion tracers
     errorPolicy = NodeToNode.remoteNetworkErrorPolicy <> daErrorPolicies
     localErrorPolicy  = NodeToNode.localNetworkErrorPolicy <> daErrorPolicies
 
-    -- TODO make DNS and IP subscription workers use a Connections term to
-    -- simply initiate connections (which may already be up).
-
-    runIpSubscriptionWorker :: NetworkMutableState -> IO Void
-    runIpSubscriptionWorker networkState = NodeToNode.ipSubscriptionWorker
-      (NetworkIPSubscriptionTracers
-        dtMuxTracer
-        dtHandshakeTracer
-        dtErrorPolicyTracer
-        dtIpSubscriptionTracer)
+    runIpSubscriptionWorker
+      :: NetworkMutableState
+      -> Connections Connections.ConnectionId Socket.Socket Request reject accept IO
+      -> IO Void
+    runIpSubscriptionWorker networkState connections = ipSubscriptionWorker
+      dtIpSubscriptionTracer
+      dtErrorPolicyTracer
       networkState
-      SubscriptionParams
+      (SubscriptionParams
         { spLocalAddresses         = initiatorLocalAddresses
         , spConnectionAttemptDelay = const Nothing
         , spErrorPolicies          = errorPolicy
         , spSubscriptionTarget     = daIpProducers
-        }
-      (daInitiatorApplication applications)
+        })
+      (contramapRequest mkIpSubscriptionConnection connections)
 
-    runDnsSubscriptionWorker :: NetworkMutableState -> DnsSubscriptionTarget -> IO Void
-    runDnsSubscriptionWorker networkState dnsProducer = NodeToNode.dnsSubscriptionWorker
-      (NetworkDNSSubscriptionTracers
-        dtMuxTracer
-        dtHandshakeTracer
-        dtErrorPolicyTracer
-        dtDnsSubscriptionTracer
-        dtDnsResolverTracer)
+    runDnsSubscriptionWorker
+      :: NetworkMutableState
+      -> Connections Connections.ConnectionId Socket.Socket Request reject accept IO
+      -> DnsSubscriptionTarget
+      -> IO Void
+    runDnsSubscriptionWorker networkState connections dnsProducer = dnsSubscriptionWorker
+      dtDnsSubscriptionTracer
+      dtDnsResolverTracer
+      dtErrorPolicyTracer
       networkState
-      SubscriptionParams
+      (SubscriptionParams
         { spLocalAddresses         = initiatorLocalAddresses
         , spConnectionAttemptDelay = const Nothing
         , spErrorPolicies          = errorPolicy
         , spSubscriptionTarget     = dnsProducer
-        }
-      (daInitiatorApplication applications)
+        })
+      (contramapRequest mkDnsSubscriptionConnection connections)
 
+    mkIpSubscriptionConnection
+      :: forall provenance .
+         LocalOnlyRequest provenance
+      -> Request provenance
+    mkIpSubscriptionConnection LocalOnlyRequest = IpSubscriptionConnection
+
+    mkDnsSubscriptionConnection
+      :: forall provenance .
+         LocalOnlyRequest provenance
+      -> Request provenance
+    mkDnsSubscriptionConnection LocalOnlyRequest = DnsSubscriptionConnection
 
 --
 -- Auxilary functions

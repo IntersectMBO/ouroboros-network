@@ -30,8 +30,6 @@ module Ouroboros.Network.NodeToClient (
   , NetworkIPSubscriptionTracers (..)
   , IPSubscriptionParams
   , SubscriptionParams (..)
-  , ncSubscriptionWorker
-  , ncSubscriptionWorker_V1
 
   -- * Re-exported clients
   , chainSyncClientNull
@@ -56,12 +54,10 @@ module Ouroboros.Network.NodeToClient (
   ) where
 
 import           Control.Exception (IOException)
-import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Time.Clock
 import           Data.Typeable (Typeable)
-import           Data.Void (Void)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
@@ -88,7 +84,6 @@ import           Ouroboros.Network.Socket hiding (withConnections)
 import qualified Ouroboros.Network.Socket as Socket (withConnections)
 
 import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams, SubscriptionParams (..))
-import qualified Ouroboros.Network.Subscription.Ip as Subscription
 import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
                                                    , WithIPList (..)
                                                    , SubscriptionTrace (..)
@@ -180,78 +175,6 @@ withConnections mutableState errorPolicies mkApp =
       mutableState
       cborTermVersionDataCodec
       versions
-
--- TODO use the Connections term to implement subscription workers.
-
--- | 'ncSubscriptionWorker' which starts given application versions on each
--- established connection.
---
-ncSubscriptionWorker
-    :: forall appType x y.
-       ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToClientProtocols NodeToClientVersion
-    -> NetworkMutableState
-    -> IPSubscriptionParams ()
-    -> Versions
-        NodeToClientVersion
-        DictVersion
-        (OuroborosApplication
-          appType
-          ConnectionId
-          NodeToClientProtocols
-          IO BL.ByteString x y)
-    -> IO Void
-ncSubscriptionWorker
-  NetworkIPSubscriptionTracers
-    { nistSubscriptionTracer
-    , nistMuxTracer
-    , nistHandshakeTracer
-    , nistErrorPolicyTracer
-    }
-  networkState
-  subscriptionParams
-  versions
-    = Subscription.ipSubscriptionWorker
-        nistSubscriptionTracer
-        nistErrorPolicyTracer
-        networkState
-        subscriptionParams
-        (connectToNode'
-          cborTermVersionDataCodec
-          (NetworkConnectTracers nistMuxTracer nistHandshakeTracer)
-          versions)
-
-
--- | Like 'ncSubscriptionWorker' but specific to 'NodeToClientV_1'.
---
-ncSubscriptionWorker_V1
-    :: forall appType x y.
-       ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToClientProtocols NodeToClientVersion
-    -> NetworkMutableState
-    -> IPSubscriptionParams ()
-    -> NodeToClientVersionData
-    -> (OuroborosApplication
-          appType
-          ConnectionId
-          NodeToClientProtocols
-          IO BL.ByteString x y)
-    -> IO Void
-ncSubscriptionWorker_V1
-  tracers
-  networkState
-  subscriptionParams
-  versionData
-  application
-    = ncSubscriptionWorker
-        tracers
-        networkState
-        subscriptionParams
-        (simpleSingletonVersions
-          NodeToClientV_1
-          versionData
-          (DictVersion nodeToClientCodecCBORTerm)
-          application)
 
 -- | 'ErrorPolicies' for client application.  Additional rules can be added by
 -- means of a 'Semigroup' instance of 'ErrorPolicies'.

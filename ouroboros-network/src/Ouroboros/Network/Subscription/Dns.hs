@@ -42,11 +42,13 @@ import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 import           Text.Printf
 
+import           Ouroboros.Network.Connections.Types
+import           Ouroboros.Network.Connections.Socket.Types (ConnectionId)
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker
-import           Ouroboros.Network.Socket
+import           Ouroboros.Network.Socket hiding (ConnectionId)
 
 
 -- | Time to wait for an AAAA response after receiving an A response.
@@ -227,7 +229,7 @@ dnsSubscriptionWorker'
     -> Resolver IO
     -> DnsSubscriptionParams a
     -> Main IO (PeerStates IO Socket.SockAddr) x
-    -> (Socket.Socket -> IO a)
+    -> Connections ConnectionId Socket.Socket LocalOnlyRequest reject accept IO
     -> IO x
 dnsSubscriptionWorker' subTracer dnsTracer errorPolicyTracer
                        networkState@NetworkMutableState { nmsPeerStates }
@@ -237,7 +239,7 @@ dnsSubscriptionWorker' subTracer dnsTracer errorPolicyTracer
                                           , spSubscriptionTarget = dst
                                           , spErrorPolicies
                                           }
-                       main k =
+                       main connections =
     subscriptionWorker (WithDomainName (dstDomain dst) `contramap` subTracer)
                        errorPolicyTracer
                        networkState
@@ -251,7 +253,7 @@ dnsSubscriptionWorker' subTracer dnsTracer errorPolicyTracer
                                     }
                        spErrorPolicies
                        main
-                       k
+                       connections
 
 
 type DnsSubscriptionParams a = SubscriptionParams a DnsSubscriptionTarget
@@ -262,10 +264,10 @@ dnsSubscriptionWorker
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> NetworkMutableState
     -> DnsSubscriptionParams a
-    -> (Socket.Socket -> IO a)
+    -> Connections ConnectionId Socket.Socket LocalOnlyRequest reject accept IO
     -> IO Void
 dnsSubscriptionWorker subTracer dnsTracer errTrace networkState
-                      params@SubscriptionParams { spSubscriptionTarget } k =
+                      params@SubscriptionParams { spSubscriptionTarget } connections =
     do rs <- DNS.makeResolvSeed DNS.defaultResolvConf
        DNS.withResolver rs $ \dnsResolver ->
          dnsSubscriptionWorker'
@@ -276,7 +278,7 @@ dnsSubscriptionWorker subTracer dnsTracer errTrace networkState
              (ipv6ToSockAddr (dstPort spSubscriptionTarget) dnsResolver))
            params
            mainTx
-           k
+           connections
   where
     ipv4ToSockAddr port dnsResolver d = do
         r <- DNS.lookupA dnsResolver d

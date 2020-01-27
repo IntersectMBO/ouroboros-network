@@ -5,6 +5,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GADTs               #-}
 
 -- | IP subscription worker implentation.
 module Ouroboros.Network.Subscription.Ip
@@ -43,7 +44,10 @@ import           Data.Void (Void)
 import qualified Network.Socket as Socket
 import           Text.Printf
 
-import           Ouroboros.Network.Socket
+import           Ouroboros.Network.Connections.Types
+import           Ouroboros.Network.Connections.Socket.Types
+import qualified Ouroboros.Network.Connections.Socket.Client as Connections.Socket (client)
+import           Ouroboros.Network.Socket hiding (ConnectionId)
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Subscriber
@@ -61,7 +65,7 @@ data IPSubscriptionTarget = IPSubscriptionTarget {
 -- | 'ipSubscriptionWorker' and 'dnsSubscriptionWorker' parameters
 --
 data SubscriptionParams a target = SubscriptionParams
-  { spLocalAddresses         :: LocalAddresses Socket.SockAddr
+  { spLocalAddresses         :: LocalAddresses
   , spConnectionAttemptDelay :: Socket.SockAddr -> Maybe DiffTime
     -- ^ should return expected delay for the given address
   , spErrorPolicies          :: ErrorPolicies Socket.SockAddr a
@@ -75,12 +79,12 @@ type IPSubscriptionParams a = SubscriptionParams a IPSubscriptionTarget
 -- given in IPSubscriptionTarget.
 --
 ipSubscriptionWorker
-    :: forall a.
+    :: forall accept reject a.
        Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> NetworkMutableState
-    -> IPSubscriptionParams a
-    -> (Socket.Socket -> IO a)
+    -> IPSubscriptionParams a -- TBD what's this `a` type for??
+    -> Connections ConnectionId Socket.Socket LocalOnlyRequest reject accept IO
     -> IO Void
 ipSubscriptionWorker subscriptionTracer errorPolicyTracer
                      networkState@NetworkMutableState { nmsPeerStates }
@@ -89,14 +93,14 @@ ipSubscriptionWorker subscriptionTracer errorPolicyTracer
                                         , spSubscriptionTarget
                                         , spErrorPolicies
                                         }
-                     k =
+                     connections =
     subscriptionWorker subscriptionTracer'
                        errorPolicyTracer
                        networkState
                        workerParams
                        spErrorPolicies
                        mainTx
-                       k
+                       connections
   where
     workerParams = WorkerParams {
         wpLocalAddresses         = spLocalAddresses,
@@ -180,20 +184,19 @@ subscriptionWorker
     -> ErrorPolicies Socket.SockAddr a
     -> Main IO (PeerStates IO Socket.SockAddr) x
     -- ^ main callback
-    -> (Socket.Socket -> IO a)
-    -- ^ application to run on each connection
+    -> Connections ConnectionId Socket.Socket LocalOnlyRequest reject accept IO
     -> IO x
 subscriptionWorker tracer
                    errorPolicyTracer
                    NetworkMutableState { nmsConnectionTable, nmsPeerStates }
                    workerParams
                    errorPolicies
-                   main k =
+                   main
+                   connections =
     worker tracer
            errorPolicyTracer
            nmsConnectionTable
            nmsPeerStates
-           ioSocket
            WorkerCallbacks
              { wcSocketStateChangeTx   = socketStateChangeTx
              , wcCompleteApplicationTx = completeApplicationTx errorPolicies
@@ -201,19 +204,31 @@ subscriptionWorker tracer
              }
            workerParams
            selectAddress
-           k
+           mkConnection
+           connections
 
   where
     selectAddress :: Socket.SockAddr
-                  -> LocalAddresses Socket.SockAddr
-                  -> Maybe Socket.SockAddr
-    selectAddress Socket.SockAddrInet{}  (LocalAddresses (Just localAddr) _ _ ) = Just localAddr
-    selectAddress Socket.SockAddrInet6{} (LocalAddresses _ (Just localAddr) _ ) = Just localAddr
-    selectAddress Socket.SockAddrUnix{}  (LocalAddresses _ _ (Just localAddr) ) = Just localAddr
-    selectAddress _ _ = Nothing
+                  -> LocalAddresses
+                  -> Maybe ConnectionId
+    selectAddress remoteAddr (LocalAddresses l4 l6 lu) =
+      withSockType remoteAddr $ \remoteAddr' -> case remoteAddr' of
+        SockAddrIPv4 _ _ -> case l4 of
+          Just localAddr -> Just (ConnectionIdIPv4 localAddr remoteAddr')
+          _ -> Nothing
+        SockAddrIPv6 _ _ _ _ -> case l6 of
+          Just localAddr -> Just (ConnectionIdIPv6 localAddr remoteAddr')
+          _ -> Nothing
+        SockAddrUnix _ -> case lu of
+          Just localAddr -> Just (ConnectionIdUnix localAddr remoteAddr')
+          _ -> Nothing
+
+    mkConnection :: ConnectionId
+                 -> Client ConnectionId Socket.Socket IO LocalOnlyRequest
+    mkConnection connid = Connections.Socket.client connid LocalOnlyRequest
 
 data WithIPList a = WithIPList {
-      wilSrc   :: !(LocalAddresses Socket.SockAddr)
+      wilSrc   :: !LocalAddresses
     , wilDsts  :: ![Socket.SockAddr]
     , wilEvent :: !a
     }

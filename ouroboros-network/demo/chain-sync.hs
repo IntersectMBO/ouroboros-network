@@ -144,12 +144,12 @@ instance MiniProtocolLimits DemoProtocol0 where
 
 
 clientPingPong :: Bool -> IO ()
-clientPingPong pipelined =
+clientPingPong pipelined = do
     connectToNode
       cborTermVersionDataCodec
       nullNetworkConnectTracers
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-      Nothing
+      (mkLocalSocketAddrInfo "")
       defaultLocalSocketAddrInfo
   where
     app :: OuroborosApplication InitiatorApp
@@ -233,12 +233,12 @@ instance MiniProtocolLimits DemoProtocol1 where
 
 
 clientPingPong2 :: IO ()
-clientPingPong2 =
+clientPingPong2 = do
     connectToNode
       cborTermVersionDataCodec
       nullNetworkConnectTracers
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-      Nothing
+      (mkLocalSocketAddrInfo "")
       defaultLocalSocketAddrInfo
   where
     app :: OuroborosApplication InitiatorApp
@@ -337,7 +337,7 @@ clientChainSync sockAddrs =
         cborTermVersionDataCodec
         nullNetworkConnectTracers
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-        Nothing
+        (mkLocalSocketAddrInfo "")
         (mkLocalSocketAddrInfo sockAddr)
   where
     app :: OuroborosApplication InitiatorApp
@@ -526,7 +526,7 @@ clientBlockFetch sockAddrs = do
                           cborTermVersionDataCodec
                           nullNetworkConnectTracers
                           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-                          Nothing
+                          (mkLocalSocketAddrInfo "")
                           (mkLocalSocketAddrInfo sockAddr)
                     | sockAddr <- sockAddrs ]
 

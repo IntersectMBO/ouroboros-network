@@ -18,9 +18,10 @@ module Ouroboros.Network.Socket (
     , newNetworkMutableStateSTM
     , cleanNetworkMutableState
     , ConnectionId (..)
+
+    -- * Toy functions for quick demo'ing.
     , withServerNode
     , connectToNode
-    , connectToNode'
 
     -- * What to do with a connection to a peer
     -- Slightly complicated by the fact that we have initiator and responder
@@ -34,6 +35,7 @@ module Ouroboros.Network.Socket (
     , connection
     , incomingConnection
     , outgoingConnection
+    , runInitiator
 
     -- * Traces
     , NetworkConnectTracers (..)
@@ -93,9 +95,7 @@ import           Ouroboros.Network.Connections.Socket.Server (acceptLoopOn)
 import qualified Ouroboros.Network.Connections.Socket.Types as Connections
 import           Ouroboros.Network.Connections.Types hiding (Decision(..))
 
--- | Tracer used by 'connectToNode' (and derivatives, like
--- 'Ouroboros.Network.NodeToNode.connectTo' or
--- 'Ouroboros.Network.NodeToClient.connectTo).
+-- | Tracer for locally-initiated connections.
 --
 data NetworkConnectTracers ptcl vNumber = NetworkConnectTracers {
       nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId Mx.MuxTrace),
@@ -147,8 +147,12 @@ maxTransmissionUnit = 4 * 1440
 -- remote peer.  It must fit into @'maxTransmissionUnit'@ (~5k bytes).
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
+--
+-- This does not use a `Connections` term. It manually sets up a socket and
+-- makes a connection and runs a given initiator-side protocol suite. For
+-- production deployments of peer-to-peer nodes, use `withConnections`.
 connectToNode
-  :: forall appType ptcl vNumber vDataT a b.
+  :: forall appType ptcl vNumber extra a b.
      ( ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -162,11 +166,11 @@ connectToNode
      , MiniProtocolLimits ptcl
      , Mx.HasInitiator appType ~ True
      )
-  => VersionDataCodec vDataT CBOR.Term
+  => VersionDataCodec extra CBOR.Term
   -> NetworkConnectTracers ptcl vNumber
-  -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+  -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
-  -> Maybe Socket.AddrInfo
+  -> Socket.AddrInfo
   -- ^ local address; the created socket will bind to it
   -> Socket.AddrInfo
   -- ^ remote address
@@ -182,68 +186,20 @@ connectToNode versionDataCodec tracers versions localAddr remoteAddr =
 #if !defined(mingw32_HOST_OS)
               Socket.setSocketOption sd Socket.ReusePort 1
 #endif
-          case localAddr of
-            Just addr -> do
-              when (Socket.addrFamily remoteAddr == Socket.AF_INET6) $
-                Socket.setSocketOption sd Socket.IPv6Only 1
-              Socket.bind sd (Socket.addrAddress addr)
-            Nothing   -> return ()
+          when (Socket.addrFamily remoteAddr == Socket.AF_INET6) $
+            Socket.setSocketOption sd Socket.IPv6Only 1
+          Socket.bind sd (Socket.addrAddress localAddr)
           Socket.connect sd (Socket.addrAddress remoteAddr)
-          connectToNode' versionDataCodec tracers versions sd
+          Connections.withSockType (Socket.addrAddress localAddr) $ \bindAddr ->
+            case Connections.matchSockType bindAddr (Socket.addrAddress remoteAddr) of
+              Nothing -> error "connectToNode used incompatible addresses"
+              Just remoteAddr' -> runInitiator
+                versionDataCodec
+                tracers
+                versions
+                (Connections.makeConnectionId bindAddr remoteAddr')
+                sd
       )
-
--- |
--- Connect to a remote node using an existing socket. It is up to to caller to
--- ensure that the socket is closed in case of an exception.
---
--- The connection will start with handshake protocol sending @Versions@ to the
--- remote peer.  It must fit into @'maxTransmissionUnit'@ (~5k bytes).
---
--- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
-connectToNode'
-  :: forall appType ptcl vNumber vDataT a b.
-     ( ProtocolEnum ptcl
-     , Ord ptcl
-     , Enum ptcl
-     , Bounded ptcl
-     , Ord vNumber
-     , Enum vNumber
-     , Serialise vNumber
-     , Typeable vNumber
-     , Show vNumber
-     , Show ptcl
-     , MiniProtocolLimits ptcl
-     , Mx.HasInitiator appType ~ True
-     )
-  => VersionDataCodec vDataT CBOR.Term
-  -> NetworkConnectTracers ptcl vNumber
-  -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
-  -- ^ application to run over the connection
-  -> Socket.Socket
-  -> IO ()
-connectToNode' versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } versions sd = do
-    connectionId <- ConnectionId <$> Socket.getSocketName sd <*> Socket.getPeerName sd
-    muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
-    let bearer = Mx.socketAsMuxBearer muxTracer sd
-    Mx.traceMuxBearerState muxTracer Mx.Connected
-    traceWith muxTracer $ Mx.MuxTraceHandshakeStart
-    ts_start <- getMonotonicTime
-    !mapp <- runPeerWithByteLimit
-              maxTransmissionUnit
-              BL.length
-              (contramap (Mx.WithMuxBearer connectionId) nctHandshakeTracer)
-              codecHandshake
-              (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator))
-              (handshakeClientPeer versionDataCodec versions)
-    ts_end <- getMonotonicTime
-    case mapp of
-         Left err -> do
-             traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
-             throwIO err
-         Right app -> do
-             traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             Mx.muxStart muxTracer (toApplication app connectionId) bearer
-
 
 -- |
 -- Accept or reject an incoming connection.  Each record contains the new state
@@ -465,38 +421,64 @@ outgoingConnection
   -> Connections.ConnectionId
   -> Socket.Socket       -- ^ Socket to peer; could have been established by us or them.
   -> IO (Connection.Decision IO Local RejectConnection ()) -- ^ TODO better reject and accept types?
-outgoingConnection versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } versions connId sd =
+outgoingConnection versionDataCodec tracers versions connId sd =
     -- Always accept and run initiator mode mux on the socket.
     pure $ Connection.Accept $ \_connThread -> do
         let connectionHandle = ()
-            action = do
-                let (localAddr, remoteAddr) = Connections.connectionIdPair connId
-                    -- Mux uses a different connection ID type (the one from Connections
-                    -- guarantees consistent protocols).
-                    connectionId = ConnectionId localAddr remoteAddr
-                muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
-                let bearer = Mx.socketAsMuxBearer muxTracer sd
-                Mx.traceMuxBearerState muxTracer Mx.Connected
-                traceWith muxTracer $ Mx.MuxTraceHandshakeStart
-                ts_start <- getMonotonicTime
-                !mapp <- runPeerWithByteLimit
-                          maxTransmissionUnit
-                          BL.length
-                          (contramap (Mx.WithMuxBearer connectionId) nctHandshakeTracer)
-                          codecHandshake
-                          (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator))
-                          (handshakeClientPeer versionDataCodec versions)
-                ts_end <- getMonotonicTime
-                case mapp of
-                     Left err -> do
-                         traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
-                         -- FIXME is it right to throw an exception here? Or would it be
-                         -- better to return Connection.Reject
-                         throwIO err
-                     Right app -> do
-                         traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-                         Mx.muxStart muxTracer (toApplication app connectionId) bearer
+            action = runInitiator versionDataCodec tracers versions connId sd
         pure $ Handler { handle = connectionHandle, action = action }
+
+-- | Outgoing (locally-initiated) connection action. Runs the initiator-side
+-- of some protocol suite.
+runInitiator
+  :: forall ptcl vNumber vDataT appType a b.
+     ( Mx.HasInitiator appType ~ True
+     , ProtocolEnum ptcl
+     , Ord ptcl
+     , Enum ptcl
+     , Bounded ptcl
+     , Ord vNumber
+     , Enum vNumber
+     , Serialise vNumber
+     , Typeable vNumber
+     , Show vNumber
+     , Show ptcl
+     , MiniProtocolLimits ptcl
+     )
+  => VersionDataCodec vDataT CBOR.Term
+  -> NetworkConnectTracers ptcl vNumber
+  -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+  -- ^ application to run over the connection
+  -> Connections.ConnectionId
+  -> Socket.Socket       -- ^ Socket to peer; could have been established by us or them.
+  -> IO ()
+runInitiator versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } versions connId sd = do
+  let (localAddr, remoteAddr) = Connections.connectionIdPair connId
+      -- Mux uses a different connection ID type (the one from Connections
+      -- guarantees consistent protocols).
+      connectionId = ConnectionId localAddr remoteAddr
+  muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
+  let bearer = Mx.socketAsMuxBearer muxTracer sd
+  Mx.traceMuxBearerState muxTracer Mx.Connected
+  traceWith muxTracer $ Mx.MuxTraceHandshakeStart
+  ts_start <- getMonotonicTime
+  !mapp <- runPeerWithByteLimit
+            maxTransmissionUnit
+            BL.length
+            (contramap (Mx.WithMuxBearer connectionId) nctHandshakeTracer)
+            codecHandshake
+            (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator))
+            (handshakeClientPeer versionDataCodec versions)
+  ts_end <- getMonotonicTime
+  case mapp of
+       Left err -> do
+           traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
+           -- FIXME is it right to throw an exception here? Or would it be
+           -- better to return Connection.Reject
+           throwIO err
+       Right app -> do
+           traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
+           Mx.muxStart muxTracer (toApplication app connectionId) bearer
 
 -- | What to do on an incoming connection: run the given versions, which is
 -- known to have a responder side.
@@ -555,6 +537,9 @@ incomingConnection NetworkServerTracers { nstMuxTracer
         -- To accept, we get a reference to the thread running the handler's
         -- action, so that we can `registerProducer`, which needs it for
         -- some reason.
+        -- 
+        -- TODO factor this out into `runResponder`, similarly to how
+        -- `handleOutoing` uses `runInitiator`.
         Just peerid -> pure $ Connection.Accept $ \connThread ->
           let -- TODO better type for a handle.
               -- This is supposed to give a handle on the `action` defined

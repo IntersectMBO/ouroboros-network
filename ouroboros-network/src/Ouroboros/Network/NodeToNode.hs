@@ -36,16 +36,12 @@ module Ouroboros.Network.NodeToNode (
   , nullNetworkIPSubscriptionTracers
   , SubscriptionParams (..)
   , IPSubscriptionParams
-  , ipSubscriptionWorker
-  , ipSubscriptionWorker_V1
 
   -- ** DNS subscription worker
   , DnsSubscriptionTarget (..)
   , DnsSubscriptionParams
   , NetworkDNSSubscriptionTracers (..)
   , nullNetworkDNSSubscriptionTracers
-  , dnsSubscriptionWorker
-  , dnsSubscriptionWorker_V1
 
   -- * Re-exports
   , ConnectionId (..)
@@ -72,12 +68,10 @@ module Ouroboros.Network.NodeToNode (
   ) where
 
 import           Control.Exception (IOException)
-import qualified Data.ByteString.Lazy as BL
 import           Data.Time.Clock (DiffTime)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
-import           Data.Void (Void)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
@@ -104,13 +98,11 @@ import           Ouroboros.Network.Socket hiding (withConnections)
 import qualified Ouroboros.Network.Socket as Socket (withConnections)
 import           Ouroboros.Network.Tracers
 import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams, SubscriptionParams (..))
-import qualified Ouroboros.Network.Subscription.Ip as Subscription
 import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
                                                    , WithIPList (..)
                                                    , SubscriptionTrace (..)
                                                    )
 import           Ouroboros.Network.Subscription.Dns (DnsSubscriptionParams)
-import qualified Ouroboros.Network.Subscription.Dns as Subscription
 import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , DnsTrace (..)
                                                     , WithDomainName (..)
@@ -215,149 +207,6 @@ withConnections mutableState errorPolicies mkApp =
       mutableState
       cborTermVersionDataCodec
       versions
-
--- | 'ipSubscriptionWorker' which starts given application versions on each
--- established connection.
---
-ipSubscriptionWorker
-    :: forall appType x y.
-       ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion
-    -> NetworkMutableState
-    -> IPSubscriptionParams ()
-    -> Versions
-        NodeToNodeVersion
-        DictVersion
-        (OuroborosApplication
-          appType
-          ConnectionId
-          NodeToNodeProtocols
-          IO BL.ByteString x y)
-    -> IO Void
-ipSubscriptionWorker
-  NetworkIPSubscriptionTracers
-    { nistSubscriptionTracer
-    , nistMuxTracer
-    , nistHandshakeTracer
-    , nistErrorPolicyTracer
-    }
-  networkState
-  subscriptionParams
-  versions
-    = Subscription.ipSubscriptionWorker
-        nistSubscriptionTracer
-        nistErrorPolicyTracer
-        networkState
-        subscriptionParams
-        (connectToNode'
-          cborTermVersionDataCodec
-          (NetworkConnectTracers nistMuxTracer nistHandshakeTracer)
-          versions)
-
-
--- | Like 'ipSubscriptionWorker' but specific to 'NodeToNodeV_1'.
---
-ipSubscriptionWorker_V1
-    :: forall appType x y.
-       ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion
-    -> NetworkMutableState
-    -> IPSubscriptionParams ()
-    -> NodeToNodeVersionData
-    -> (OuroborosApplication
-          appType
-          ConnectionId
-          NodeToNodeProtocols
-          IO BL.ByteString x y)
-    -> IO Void
-ipSubscriptionWorker_V1
-  tracers
-  networkState
-  subscriptionParams
-  versionData
-  application
-    = ipSubscriptionWorker
-        tracers
-        networkState
-        subscriptionParams
-        (simpleSingletonVersions
-          NodeToNodeV_1
-          versionData
-          (DictVersion nodeToNodeCodecCBORTerm)
-          application)
-
-
--- | 'dnsSubscriptionWorker' which starts given application versions on each
--- established connection.
---
-dnsSubscriptionWorker
-    :: forall appType x y.
-       ( HasInitiator appType ~ True )
-    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion ConnectionId
-    -> NetworkMutableState
-    -> DnsSubscriptionParams ()
-    -> Versions
-        NodeToNodeVersion
-        DictVersion
-        (OuroborosApplication
-          appType
-          ConnectionId
-          NodeToNodeProtocols
-          IO BL.ByteString x y)
-    -> IO Void
-dnsSubscriptionWorker
-  NetworkDNSSubscriptionTracers
-    { ndstSubscriptionTracer
-    , ndstDnsTracer
-    , ndstMuxTracer
-    , ndstHandshakeTracer
-    , ndstErrorPolicyTracer
-    }
-  networkState
-  subscriptionParams
-  versions =
-    Subscription.dnsSubscriptionWorker
-      ndstSubscriptionTracer
-      ndstDnsTracer
-      ndstErrorPolicyTracer
-      networkState
-      subscriptionParams
-      (connectToNode'
-        cborTermVersionDataCodec
-        (NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer)
-        versions)
-
-
--- | Like 'dnsSubscriptionWorker' but specific to 'NodeToNodeV_1'.
---
-dnsSubscriptionWorker_V1
-    :: forall appType x y.
-       ( HasInitiator appType ~ True )
-    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion ConnectionId
-    -> NetworkMutableState
-    -> DnsSubscriptionParams ()
-    -> NodeToNodeVersionData
-    -> (OuroborosApplication
-          appType
-          ConnectionId
-          NodeToNodeProtocols
-          IO BL.ByteString x y)
-    -> IO Void
-dnsSubscriptionWorker_V1
-  tracers
-  networkState
-  subscriptionParams
-  versionData
-  application =
-     dnsSubscriptionWorker
-      tracers
-      networkState
-      subscriptionParams
-      (simpleSingletonVersions
-          NodeToNodeV_1
-          versionData
-          (DictVersion nodeToNodeCodecCBORTerm)
-          application)
 
 -- | A minimal error policy for remote peers, which only handles exceptions
 -- raised by `ouroboros-network`.
