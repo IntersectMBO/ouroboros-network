@@ -38,6 +38,7 @@ import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo)
 class ( ProtocolLedgerView blk
       , ApplyTx blk
       , HasTxId (GenTx blk)
+      , QueryLedger blk
       ) => RunNode blk where
 
   nodeForgeBlock          :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
@@ -127,6 +128,8 @@ class ( ProtocolLedgerView blk
   nodeEncodeLedgerState   :: NodeConfig (BlockProtocol blk) -> LedgerState blk -> Encoding
   nodeEncodeChainState    :: Proxy blk -> NodeConfig (BlockProtocol blk) -> ChainState (BlockProtocol blk) -> Encoding
   nodeEncodeApplyTxError  :: Proxy blk -> ApplyTxErr blk -> Encoding
+  nodeEncodeQuery         :: Query blk -> Encoding
+  nodeEncodeResult        :: Result blk -> Encoding
 
   -- Decoders
   nodeDecodeHeader        :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Lazy.ByteString -> Header blk)
@@ -137,3 +140,5 @@ class ( ProtocolLedgerView blk
   nodeDecodeLedgerState   :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (LedgerState blk)
   nodeDecodeChainState    :: forall s. Proxy blk -> NodeConfig (BlockProtocol blk) -> Decoder s (ChainState (BlockProtocol blk))
   nodeDecodeApplyTxError  :: forall s. Proxy blk -> Decoder s (ApplyTxErr blk)
+  nodeDecodeQuery         :: forall s. Decoder s (Query blk)
+  nodeDecodeResult        :: forall s. Decoder s (Result blk)

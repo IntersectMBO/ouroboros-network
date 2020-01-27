@@ -94,6 +94,8 @@ instance RunNode ByronBlock where
   nodeEncodeLedgerState     = const encodeByronLedgerState
   nodeEncodeChainState      = \_proxy _cfg -> encodeByronChainState
   nodeEncodeApplyTxError    = const encodeByronApplyTxError
+  nodeEncodeQuery           = encodeByronQuery
+  nodeEncodeResult          = encodeByronResult
 
   nodeDecodeBlock           = decodeByronBlock  . extractEpochSlots
   nodeDecodeHeader          = decodeByronHeader . extractEpochSlots
@@ -105,6 +107,9 @@ instance RunNode ByronBlock where
                                  let k = pbftSecurityParam $ pbftParams cfg
                                  in decodeByronChainState k
   nodeDecodeApplyTxError    = const decodeByronApplyTxError
+  nodeDecodeQuery           = decodeByronQuery
+  nodeDecodeResult          = decodeByronResult
+
 
 extractGenesisData :: NodeConfig ByronConsensusProtocol -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData . getGenesisConfig

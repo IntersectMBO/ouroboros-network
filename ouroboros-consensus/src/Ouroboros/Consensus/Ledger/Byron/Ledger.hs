@@ -19,6 +19,10 @@ module Ouroboros.Consensus.Ledger.Byron.Ledger (
     -- * Serialisation
   , encodeByronLedgerState
   , decodeByronLedgerState
+  , encodeByronQuery
+  , decodeByronQuery
+  , encodeByronResult
+  , decodeByronResult
     -- * Auxiliary
   , validationErrorImpossible
   ) where
@@ -36,6 +40,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
+import           Cardano.Binary (fromCBOR, toCBOR)
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Delegation.Validation.Scheduling as D.Sched
@@ -325,3 +330,20 @@ decodeByronLedgerState = do
     ByronLedgerState
       <$> decode
       <*> History.decodeDelegationHistory
+
+encodeByronQuery :: Query ByronBlock -> Encoding
+encodeByronQuery query = case query of
+    GetUpdateInterfaceState -> CBOR.encodeWord8 0
+
+decodeByronQuery :: Decoder s (Query ByronBlock)
+decodeByronQuery = do
+    tag <- CBOR.decodeWord8
+    case tag of
+      0 -> return GetUpdateInterfaceState
+      _ -> fail $ "decodeByronQuery: invalid tag " <> show tag
+
+encodeByronResult :: Result ByronBlock -> Encoding
+encodeByronResult (UpdateInterfaceState state) = toCBOR state
+
+decodeByronResult :: Decoder s (Result ByronBlock)
+decodeByronResult = UpdateInterfaceState <$> fromCBOR
