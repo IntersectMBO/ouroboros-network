@@ -12,6 +12,9 @@ module Ouroboros.Network.Connections.Types
   , Resource (..)
 
   , CannotReject
+  , UnitRequest (..)
+
+  , contramapRequest
 
   , Client
   , Server
@@ -43,6 +46,11 @@ data Decision (provenance :: Provenance) reject accept where
 -- | Useful type with kind `Provenance -> Type` to express that rejection is
 -- not possible.
 data CannotReject (provenance :: Provenance)
+
+-- | Useful for concurrent connections manager which have only one request
+-- type that carries no information.
+data UnitRequest (p :: Provenance) where
+  UnitRequest :: UnitRequest p
 
 -- | Description of a resource: something that can be acquired in the bracket
 -- pattern, or something that already exists but can be closed.
@@ -84,9 +92,6 @@ data Resource provenance m r where
 -- When you get the handle back, the underlying connection and its handler
 -- thread may of course have died, but that's always a possibility even if
 -- you `include`. 
---
--- TODO may be useful to bring `request` to the end and make this a
--- contravariant functor.
 newtype Connections id resource request reject accept m = Connections
   { include :: forall provenance .
                id
@@ -94,6 +99,17 @@ newtype Connections id resource request reject accept m = Connections
             -> request provenance
             -> m (Decision provenance reject accept)
   }
+
+-- | Connections is a contravariant functor in request, but sadly it's not the
+-- final type parameter so we can't give a Contravariant instance. Also, the
+-- request type is not of kind `Type` so it wouldn't work anyway.
+contramapRequest
+  :: (forall provenance . req1 provenance -> req2 provenance)
+  -> Connections id resource req2 reject accept m
+  -> Connections id resource req1 reject accept m
+contramapRequest f connections = connections
+  { include = \ident res req -> include connections ident res (f req) }
+
 
 -- Client and Server types take any suitable Connections include callback,
 -- specialized to Outgoing or Incoming, and use it to get a decision, for any
