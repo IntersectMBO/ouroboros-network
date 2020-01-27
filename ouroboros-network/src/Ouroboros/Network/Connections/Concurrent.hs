@@ -14,10 +14,11 @@ module Ouroboros.Network.Connections.Concurrent
   , concurrent
   ) where
 
-import Control.Concurrent.Async
-import Control.Concurrent.MVar
-import Control.Exception (finally, mask, onException)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow hiding (handle)
 import Control.Monad (forM_)
+import Control.Monad.Fix (MonadFix)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Word (Word32)
@@ -50,35 +51,35 @@ data Accept handle (p :: Provenance) where
 -- this determines whether a connection is accepted or rejected.
 -- If it's accepted, a `Handler` must be constructed, with the `Async` of
 -- its own action in scope (use it only lazily).
-data Decision (provenance :: Provenance) reject handle where
-  Reject :: reject provenance -> Decision provenance reject handle
-  Accept :: (Async () -> IO (Handler handle)) -> Decision provenance reject handle
+data Decision m (provenance :: Provenance) reject handle where
+  Reject :: reject provenance -> Decision m provenance reject handle
+  Accept :: (Async m () -> m (Handler m handle)) -> Decision m provenance reject handle
 
 -- | An action to run for each connection, and a handle giving an interface
 -- to that action, probably using STM for synchronization.
 -- The connection for which this handler is spawned will be closed whenever
 -- the action returns, exceptionally or not.
-data Handler handle = Handler
+data Handler m handle = Handler
   { handle :: !handle
-  , action :: !(IO ())
+  , action :: !(m ())
   }
 
-data Connection handle = Connection
-  { connectionThread :: !(Async ())
+data Connection m handle = Connection
+  { connectionThread :: !(Async m ())
   , connectionHandle :: !handle
   }
 
 -- | Each connection gets a unique number.
 type ConnectionNumber = Word32
 
-data NumberedConnection handle = NumberedConnection
+data NumberedConnection m handle = NumberedConnection
   { number     :: !ConnectionNumber
-  , connection :: !(Connection handle)
+  , connection :: !(Connection m handle)
   }
 
 -- | State of the connections manager. Will be held in an MVar.
-data State identifier handle = State
-  { connectionMap    :: !(Map identifier (NumberedConnection handle))
+data State m identifier handle = State
+  { connectionMap    :: !(Map identifier (NumberedConnection m handle))
   -- | The next available connection number.
   -- Will be incremented for each new connection.
   -- If it overflows, then there could be duplicate connection numbers, but
@@ -92,9 +93,9 @@ data State identifier handle = State
 insertConnection
   :: ( Ord identifier )
   => identifier
-  -> Connection handle
-  -> State identifier handle
-  -> State identifier handle
+  -> Connection m handle
+  -> State m identifier handle
+  -> State m identifier handle
 insertConnection identifier conn state = state
   { connectionMap    = Map.insert identifier numConn (connectionMap state)
   , connectionNumber = connectionNumber state + 1
@@ -108,8 +109,8 @@ insertConnection identifier conn state = state
 removeConnection
   :: ( Ord identifier )
   => identifier
-  -> State identifier handle
-  -> State identifier handle
+  -> State m identifier handle
+  -> State m identifier handle
 removeConnection identifier state =
   let alteration mentry = case mentry of
         -- removeConnection is called by the thread that was spawned by the
@@ -135,14 +136,19 @@ removeConnection identifier state =
 -- manager with Unix domain sockets would be required to come up with unique
 -- identifiers for unnamed ones (probably by taking the file descriptor number).
 concurrent
-  :: forall connectionId resource request reject handle t .
-     ( Ord connectionId )
+  :: forall connectionId resource request reject handle m t .
+     ( MonadMask m
+     , MonadAsync m
+     , MonadSTM m
+     , MonadFix m
+     , Ord connectionId
+     )
   => (forall provenance .
          Initiated provenance
       -> connectionId
       -> resource
       -> request provenance
-      -> IO (Decision provenance reject handle)
+      -> m (Decision m provenance reject handle)
      )
   -- ^ A callback to run for each connection. The `handle` gives an interface
   -- to that connection, allowing for inspection and control etc. of whatever
@@ -151,10 +157,10 @@ concurrent
   -- `include` will get them.
   -- Non-exceptional domain-specific reasons to reject a connection are given
   -- in the rejection variant.
-  -> (Connections connectionId resource request (Reject reject) (Accept handle) IO -> IO t)
-  -> IO t
+  -> (Connections connectionId resource request (Reject reject) (Accept handle) m -> m t)
+  -> m t
 concurrent withResource k = do
-  stateVar :: MVar (State connectionId handle) <- newMVar $ State
+  stateVar :: MVar m (State m connectionId handle) <- newMVar $ State
     { connectionMap    = Map.empty
     , connectionNumber = 0
     }
@@ -169,12 +175,12 @@ concurrent withResource k = do
   -- FIXME this one definition is too complex. Try to factor it into simpler
   -- pieces.
   includeOne
-    :: MVar (State connectionId handle)
+    :: MVar m (State m connectionId handle)
     -> connectionId
-    -> Resource provenance IO resource
+    -> Resource provenance m resource
     -> request provenance
-    -> IO (Types.Decision provenance (Reject reject) (Accept handle))
-  includeOne stateVar connId resource request = mask $ \restore -> modifyMVar stateVar $ \state ->
+    -> m (Types.Decision provenance (Reject reject) (Accept handle))
+  includeOne stateVar connId resource request = mask $ \restore -> modifyMVar' stateVar $ \state ->
     case Map.lookup connId (connectionMap state) of
       Nothing   -> case resource of
         -- The caller gave an existing resource, and we don't have anything
@@ -260,8 +266,31 @@ concurrent withResource k = do
   -- swap in here to make it more user friendly: give an informative error
   -- when a user tries to include a connection after the manager has gone
   -- down.
-  killThreads :: MVar (State connectionId handle) -> IO ()
+  killThreads :: MVar m (State m connectionId handle) -> m ()
   killThreads stateVar = do
     state <- readMVar stateVar
     forM_ (Map.toList (connectionMap state)) $ \(_, conn) ->
       cancel (connectionThread (connection conn))
+
+-- IO sim stuff does not have MVars, so we use STM to approximate them
+-- Hopefully this is not too much slower.
+type MVar m = TMVar m
+
+newMVar :: (MonadSTM m) => a -> m (MVar m a)
+newMVar = atomically . newTMVar
+
+modifyMVar' :: (MonadSTM m, MonadMask m) => MVar m a -> (a -> m (a, b)) -> m b
+modifyMVar' tmvar k = mask $ \restore -> do
+  st <- atomically (takeTMVar tmvar)
+  (!st', b) <- restore (k st) `onException` atomically (putTMVar tmvar st)
+  atomically (putTMVar tmvar st')
+  pure b
+
+modifyMVar_ :: (MonadSTM m, MonadMask m) => MVar m a -> (a -> m a) -> m ()
+modifyMVar_ tmvar k = mask $ \restore -> do
+  st <- atomically (takeTMVar tmvar)
+  !st' <- restore (k st) `onException` atomically (putTMVar tmvar st)
+  atomically (putTMVar tmvar st')
+
+readMVar :: (MonadSTM m) => MVar m a -> m a
+readMVar tmvar = atomically (readTMVar tmvar)
