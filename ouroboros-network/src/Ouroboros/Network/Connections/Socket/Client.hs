@@ -12,8 +12,8 @@ import Control.Monad (when)
 import Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
-import Ouroboros.Network.Connections.Socket.Types (ConnectionId, SockAddr (..),
-         makeConnectionId, forgetSockType)
+import Ouroboros.Network.Connections.Socket.Types (ConnectionId (..),
+         forgetSockType)
 import Ouroboros.Network.Connections.Types
 
 -- | Given an address to bind to, this client will attempt to connect to the
@@ -22,14 +22,25 @@ import Ouroboros.Network.Connections.Types
 -- A special SockAddr GADT is used to ensure you can't try to connect
 -- incompatible addresses.
 client
-  :: SockAddr sockType -- Our address (bind to this).
-  -> SockAddr sockType -- Remote address (connect to this).
+  :: ConnectionId -- ^ First component is the bind address, second the remote.
   -> request Local
   -> Client ConnectionId Socket IO request
-client bindaddr sockaddr request = \k ->
-  k (makeConnectionId bindaddr sockaddr) openSocket closeSocket request
+client connid request = \k ->
+  k connid openSocket closeSocket request
 
   where
+
+  bindaddr :: Socket.SockAddr
+  sockaddr :: Socket.SockAddr
+  isInet, isInet6 :: Bool
+  family :: Socket.Family
+  (bindaddr, sockaddr, isInet, isInet6, family) = case connid of
+    ConnectionIdIPv6 bind conn ->
+      (forgetSockType bind, forgetSockType conn, True, True, Socket.AF_INET6)
+    ConnectionIdIPv4 bind conn ->
+      (forgetSockType bind, forgetSockType conn, True, False, Socket.AF_INET)
+    ConnectionIdUnix bind conn ->
+      (forgetSockType bind, forgetSockType conn, False, False, Socket.AF_UNIX)
 
   -- The Connections term is expected to take care of exception handling to
   -- ensure closeSocket is always called. But we need to do bracketing even
@@ -42,8 +53,8 @@ client bindaddr sockaddr request = \k ->
       Socket.setSocketOption sock Socket.ReusePort 1
 #endif
     when isInet6 $ Socket.setSocketOption sock Socket.IPv6Only 1
-    Socket.bind sock (forgetSockType bindaddr)
-    Socket.connect sock (forgetSockType sockaddr)
+    Socket.bind sock bindaddr
+    Socket.connect sock sockaddr
     return sock
 
   createSocket :: IO Socket
@@ -51,10 +62,3 @@ client bindaddr sockaddr request = \k ->
 
   closeSocket :: Socket -> IO ()
   closeSocket = Socket.close
-
-  isInet, isInet6 :: Bool
-  family :: Socket.Family
-  (isInet, isInet6, family) = case bindaddr of
-    SockAddrIPv4 _ _     -> (True,  False, Socket.AF_INET)
-    SockAddrIPv6 _ _ _ _ -> (True,  True,  Socket.AF_INET6)
-    SockAddrUnix _       -> (False, False, Socket.AF_UNIX)

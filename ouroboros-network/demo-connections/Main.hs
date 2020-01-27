@@ -62,7 +62,7 @@ node (Some (bindAddr :: SockAddr sockType)) k =
     -- Type sig is required; GHC struggles with the higher-rank type (Client
     -- has foralls).
     let client :: SockAddr sockType -> Client ConnectionId Socket IO Request
-        client = \remoteAddr -> Client.client bindAddr remoteAddr Request
+        client = \remoteAddr -> Client.client (makeConnectionId bindAddr remoteAddr) Request
     k (Node bindAddr server client)
 
 -- | What a node does when a new connection comes up. It'll just print a
@@ -73,7 +73,7 @@ withConnection
   -> ConnectionId
   -> Socket
   -> Request provenance
-  -> IO (Connection.Decision provenance CannotReject ())
+  -> IO (Connection.Decision IO provenance CannotReject ())
 withConnection initiated connId _socket Request = do
   Debug.traceM $ mconcat [show initiated, " : ", show connId]
   pure $ Connection.Accept $ \_ -> pure (Handler () (threadDelay 1000000000))
