@@ -415,7 +415,7 @@ connection
   -> Connections.ConnectionId
   -> Socket.Socket
   -> request provenance
-  -> IO (Connection.Decision provenance RejectConnection ())
+  -> IO (Connection.Decision IO provenance RejectConnection ())
 connection mk _ connid socket request = case mk request of
 
     ConnectionDataLocal tracers state vCodec versions ->
@@ -464,7 +464,7 @@ outgoingConnection
   -- ^ application to run over the connection
   -> Connections.ConnectionId
   -> Socket.Socket       -- ^ Socket to peer; could have been established by us or them.
-  -> IO (Connection.Decision Local RejectConnection ()) -- ^ TODO better reject and accept types?
+  -> IO (Connection.Decision IO Local RejectConnection ()) -- ^ TODO better reject and accept types?
 outgoingConnection versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } versions connId sd =
     -- Always accept and run initiator mode mux on the socket.
     pure $ Connection.Accept $ \_connThread -> do
@@ -523,7 +523,7 @@ incomingConnection
     -> ErrorPolicies Socket.SockAddr ()
     -> Connections.ConnectionId -- ^ Includes our address and remote address.
     -> Socket.Socket            -- ^ Established by the remote peer.
-    -> IO (Connection.Decision Remote RejectConnection ()) -- ^ TODO give better types for reject and handle
+    -> IO (Connection.Decision IO Remote RejectConnection ()) -- ^ TODO give better types for reject and handle
 incomingConnection NetworkServerTracers { nstMuxTracer
                                         , nstHandshakeTracer
                                         , nstErrorPolicyTracer }
@@ -709,7 +709,7 @@ withServerNode tracers networkState addr versionDataCodec acceptVersion versions
         -> Connections.ConnectionId
         -> Socket.Socket
         -> WithServerNodeRequest provenance
-        -> IO (Decision provenance RejectConnection ())
+        -> IO (Decision IO provenance RejectConnection ())
     handleConnection _ connid socket WithServerNodeRequest = incomingConnection
         tracers
         networkState
