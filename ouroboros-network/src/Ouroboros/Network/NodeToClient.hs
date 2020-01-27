@@ -50,7 +50,6 @@ module Ouroboros.Network.NodeToClient (
   , LocalAddresses (..)
   , IPSubscriptionTarget (..)
   , SubscriptionTrace (..)
-  , WithIPList (..)
   ) where
 
 import           Control.Exception (IOException)
@@ -85,10 +84,9 @@ import qualified Ouroboros.Network.Socket as Socket (withConnections)
 
 import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams, SubscriptionParams (..))
 import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
-                                                   , WithIPList (..)
+                                                   , LocalAddresses (..)
                                                    , SubscriptionTrace (..)
                                                    )
-import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
 -- make up the overall node-to-client protocol.
@@ -152,7 +150,7 @@ withConnections
      NetworkMutableState
   -> ErrorPolicies Socket.SockAddr ()
   -> (forall provenance . request provenance -> SomeVersionedApplication NodeToClientProtocols NodeToClientVersion DictVersion provenance)
-  -> (Connections Connections.ConnectionId Socket.Socket request (Connection.Reject RejectConnection) (Connection.Accept ()) IO -> IO t)
+  -> (Connections Connections.ConnectionId Socket.Socket request (Connection.Reject RejectConnection) (Connection.Accept (ConnectionHandle IO)) IO -> IO t)
   -> IO t
 withConnections mutableState errorPolicies mkApp =
   Socket.withConnections mkConnectionData

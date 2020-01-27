@@ -34,10 +34,12 @@ import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.Connections.Types (Connections,
                    Provenance (..), LocalOnlyRequest (..), contramapRequest)
+import           Ouroboros.Network.Connections.Concurrent as Concurrent
 import           Ouroboros.Network.Connections.Socket.Types (SockAddr (..),
                    withSockType)
 import qualified Ouroboros.Network.Connections.Socket.Types as Connections
-import           Ouroboros.Network.Connections.Socket.Server (acceptLoopOn)
+import           Ouroboros.Network.Connections.Socket.Client as Socket (client)
+import           Ouroboros.Network.Connections.Socket.Server as Server (acceptLoopOn)
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import           Ouroboros.Network.Protocol.Handshake.Version
 
@@ -52,6 +54,7 @@ import           Ouroboros.Network.NodeToNode ( NodeToNodeProtocols (..)
                                               )
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
 import           Ouroboros.Network.Socket ( ConnectionId (..)
+                                          , ConnectionHandle
                                           , NetworkMutableState
                                           , newNetworkMutableState
                                           , cleanNetworkMutableState
@@ -59,12 +62,12 @@ import           Ouroboros.Network.Socket ( ConnectionId (..)
                                           , NetworkConnectTracers (..)
                                           , SomeVersionedApplication (..)
                                           )
+import qualified Ouroboros.Network.Subscription as Subscription (worker)
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
-import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 
 data DiffusionTracers = DiffusionTracers {
-      dtIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+      dtIpSubscriptionTracer  :: Tracer IO (SubscriptionTrace Socket.SockAddr)
        -- ^ IP subscription tracer
     , dtDnsSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
       -- ^ DNS subscription tracer
@@ -224,7 +227,7 @@ runDataDiffusion tracers
         -- accept loop on it against the node-to-client connetions (yet to
         -- be constructed).
         runLocalServer n2cConnections = withSockType addr $ \addr' ->
-          acceptLoopOn addr' localClassifyRequest (acceptException addr)
+          Server.acceptLoopOn addr' localClassifyRequest (acceptException addr)
             n2cConnections
           where
           addr = Socket.addrAddress daLocalAddress
@@ -233,7 +236,7 @@ runDataDiffusion tracers
         -- manager (yet to be constructed) but on potentially many different
         -- bind addresses. This function will be mapped over the `daAddresses`.
         runServer n2nConnections addrInfo = withSockType addr $ \addr' ->
-          acceptLoopOn addr' classifyRequest (acceptException addr)
+          Server.acceptLoopOn addr' classifyRequest (acceptException addr)
             n2nConnections
           where
           addr = Socket.addrAddress addrInfo
@@ -241,7 +244,7 @@ runDataDiffusion tracers
     -- Get 2 connection managers: one for node-to-client (n2c) and one for
     -- node-to-node (n2n).
     NodeToClient.withConnections networkLocalState localErrorPolicy localConnectionRequest $ \n2cConnections ->
-      NodeToNode.withConnections networkState      errorPolicy      connectionRequest $ \n2nConnections -> 
+      NodeToNode.withConnections networkState      errorPolicy      connectionRequest      $ \n2nConnections ->
         void $
           -- clean state thread
           Async.withAsync (cleanNetworkMutableState networkState) $ \cleanNetworkStateThread ->
@@ -256,10 +259,10 @@ runDataDiffusion tracers
                 withAsyncs (runServer n2nConnections <$> daAddresses) $ \_ ->
 
                   -- fork ip subscription
-                  Async.withAsync (runIpSubscriptionWorker networkState n2nConnections) $ \_ ->
+                  Async.withAsync (runIpSubscriptionWorker n2nConnections) $ \_ ->
 
                     -- fork dns subscriptions
-                    withAsyncs (runDnsSubscriptionWorker networkState n2nConnections <$> daDnsProducers) $ \_ ->
+                    withAsyncs (runDnsSubscriptionWorker n2nConnections <$> daDnsProducers) $ \_ ->
 
                       -- If any other threads throws 'cleanNetowrkStateThread' and
                       -- 'cleanLocalNetworkStateThread' threads will will finish.
@@ -302,50 +305,44 @@ runDataDiffusion tracers
     localErrorPolicy  = NodeToNode.localNetworkErrorPolicy <> daErrorPolicies
 
     runIpSubscriptionWorker
-      :: NetworkMutableState
-      -> Connections Connections.ConnectionId Socket.Socket Request reject accept IO
-      -> IO Void
-    runIpSubscriptionWorker networkState connections = ipSubscriptionWorker
-      dtIpSubscriptionTracer
-      dtErrorPolicyTracer
-      networkState
-      (SubscriptionParams
-        { spLocalAddresses         = initiatorLocalAddresses
-        , spConnectionAttemptDelay = const Nothing
-        , spErrorPolicies          = errorPolicy
-        , spSubscriptionTarget     = daIpProducers
-        })
-      (contramapRequest mkIpSubscriptionConnection connections)
+      :: Connections Connections.ConnectionId Socket.Socket Request (Concurrent.Reject reject) (Concurrent.Accept (ConnectionHandle IO))  IO
+      -> IO ()
+    runIpSubscriptionWorker connections =
+      case ipSubscriptionTargets (ispIps daIpProducers) initiatorLocalAddresses of
+        -- There were no addresses in the config (ispIps) which have an
+        -- address in initiatorLocalAddresses of the same family.
+        Nothing -> pure ()
+        Just connIds -> Subscription.worker
+          (contramap (WithIPList initiatorLocalAddresses (ispIps daIpProducers)) dtIpSubscriptionTracer)
+          dtErrorPolicyTracer
+          connIds
+          (ispValency daIpProducers)
+          ipRetryDelay
+          (\connId -> Socket.client connId IpSubscriptionConnection)
+          connections
 
+    -- FIXME probably not ideal that we make a resolver `mkResolverIO` for
+    -- each DNS target. Should make one (not have it take a port) and use it
+    -- for all of the tagets.
     runDnsSubscriptionWorker
-      :: NetworkMutableState
-      -> Connections Connections.ConnectionId Socket.Socket Request reject accept IO
+      :: Connections Connections.ConnectionId Socket.Socket Request (Concurrent.Reject reject) (Concurrent.Accept (ConnectionHandle IO))  IO
       -> DnsSubscriptionTarget
-      -> IO Void
-    runDnsSubscriptionWorker networkState connections dnsProducer = dnsSubscriptionWorker
-      dtDnsSubscriptionTracer
-      dtDnsResolverTracer
-      dtErrorPolicyTracer
-      networkState
-      (SubscriptionParams
-        { spLocalAddresses         = initiatorLocalAddresses
-        , spConnectionAttemptDelay = const Nothing
-        , spErrorPolicies          = errorPolicy
-        , spSubscriptionTarget     = dnsProducer
-        })
-      (contramapRequest mkDnsSubscriptionConnection connections)
-
-    mkIpSubscriptionConnection
-      :: forall provenance .
-         LocalOnlyRequest provenance
-      -> Request provenance
-    mkIpSubscriptionConnection LocalOnlyRequest = IpSubscriptionConnection
-
-    mkDnsSubscriptionConnection
-      :: forall provenance .
-         LocalOnlyRequest provenance
-      -> Request provenance
-    mkDnsSubscriptionConnection LocalOnlyRequest = DnsSubscriptionConnection
+      -> IO ()
+    runDnsSubscriptionWorker connections target = mkResolverIO (dstPort target) $ \resolver -> do
+      addrs <- dnsResolve
+        (contramap (WithDomainName (dstDomain target)) dtDnsResolverTracer)
+        resolver
+        (dstDomain target)
+      case ipSubscriptionTargets addrs initiatorLocalAddresses of
+        Nothing -> pure ()
+        Just connIds -> Subscription.worker
+          (contramap (WithDomainName (dstDomain target)) dtDnsSubscriptionTracer)
+          dtErrorPolicyTracer
+          connIds
+          (dstValency target)
+          ipRetryDelay
+          (\connId -> Socket.client connId DnsSubscriptionConnection)
+          connections
 
 --
 -- Auxilary functions

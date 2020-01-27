@@ -1,14 +1,14 @@
 -- | Public interface of 'Ouroboros.Network.Subscription' workers.
 --
 module Ouroboros.Network.Subscription
-    ( -- * IP Subscription Worker
-      ipSubscriptionWorker
+    ( worker
+
+      -- * IP Subscription Worker
     , IPSubscriptionTarget (..)
       -- * DNS Subscription Worker
-    , dnsSubscriptionWorker
     , DnsSubscriptionTarget (..)
     , ConnectResult (..)
-
+    , LocalAddresses (..)
 
       -- * Constants
     , defaultConnectionAttemptDelay

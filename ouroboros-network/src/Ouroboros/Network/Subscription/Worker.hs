@@ -7,62 +7,49 @@
 {-# LANGUAGE RecursiveDo         #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 module Ouroboros.Network.Subscription.Worker
-  ( SocketStateChange
-  , SocketState (..)
-  , CompleteApplication
-  , ConnectResult (..)
-  , Result (..)
-  , Main
-  , StateVar
-  , LocalAddresses (..)
-
-    -- * Subscription worker
-  , WorkerCallbacks (..)
-  , WorkerParams (..)
-  , worker
-    -- * Socket API
-  , Socket (..)
-  , ioSocket
-  , safeConnect
+  ( -- * Subscription worker
+    worker
+  , workerOneTarget
     -- * Constants
   , defaultConnectionAttemptDelay
   , minConnectionAttemptDelay
   , maxConnectionAttemptDelay
-  , ipRetryDelay
     -- * Errors
   , SubscriberError (..)
     -- * Tracing
   , SubscriptionTrace (..)
-    -- * Auxiliary functions
-  , sockAddrFamily
+  , ConnectResult (..)
   ) where
 
-import           Control.Exception (SomeException (..))
-import qualified Control.Concurrent.STM as STM
-import           Control.Monad (forever, join, when, unless)
-import           Control.Monad.Fix (MonadFix)
-import           Data.Foldable (traverse_)
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Void (Void)
+-- TODO io-sim-classes ought to give this one if we expect it to be used over
+-- the original async library.
+import           Control.Concurrent.Async (concurrently, forConcurrently_)
+import           Control.Concurrent.STM
+import           Control.Monad (forM_, when)
+import           Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
+import           Data.Void (absurd)
 import           GHC.Stack
 import           Text.Printf
 
-import qualified Network.Socket as Socket
-
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
-import           Ouroboros.Network.ErrorPolicy (CompleteApplication, Result (..), CompleteApplicationResult (..), WithAddr, ErrorPolicyTrace)
-import           Ouroboros.Network.Server.ConnectionTable
-import           Ouroboros.Network.Subscription.Subscriber
+import qualified Network.Socket as Socket (SockAddr)
+
+import           Ouroboros.Network.Connections.Types
+import qualified Ouroboros.Network.Connections.Concurrent as Concurrent
+import           Ouroboros.Network.Connections.Socket.Types
+import           Ouroboros.Network.ErrorPolicy (WithAddr, ErrorPolicyTrace)
+import           Ouroboros.Network.Socket (ConnectionHandle, waitForConnection)
 
 -- | Time to wait between connection attempts when we don't have any DeltaQ
 -- info.
@@ -80,544 +67,91 @@ minConnectionAttemptDelay = 0.010 -- 10ms delay
 maxConnectionAttemptDelay :: DiffTime
 maxConnectionAttemptDelay = 2 -- 2s delay
 
--- | Minimum time to wait between ip reconnects
+-- | Do subscription loops for a given list of targets.
 --
-ipRetryDelay :: DiffTime
-ipRetryDelay = 10 -- 10s delay
-
-data ResOrAct m addr tr r =
-     Res !(Result addr r)
-   | Act (Set (Async m ())) -- ^ threads to kill
-         (Maybe tr)         -- ^ trace point
-
--- | Result queue.  The spawned threads will keep writing to it, while the main
--- server will read from it.
---
-type ResultQ m addr tr r = TQueue m (ResOrAct m addr tr r)
-
-newResultQ :: forall m addr tr r. MonadSTM m => m (ResultQ m addr tr r)
-newResultQ = atomically $ newTQueue
-
--- | Mutable state kept by the worker.  All the workers in this module are
--- polymorphic over the state type.  The state is updated with two callbacks:
---
--- * 'CompleteConnect'     - STM transaction which runs when the connect call
---                           returned, if it thrown an exception it will be
---                           passed to the callback.
--- * 'CompleteApplication' - STM transaction which runs when application
---                           returned.  It will receive the result of the
---                           application or an exception raised by it.
---
-type StateVar m s = StrictTVar m s
-
--- | The set of all spawned threads. Used for waiting or cancelling them when
--- the server shuts down.
---
-type ThreadsVar m = StrictTVar m (Set (Async m ()))
-
-
-data SocketState m addr
-   = CreatedSocket !addr !(Async m ())
-   | ClosedSocket  !addr !(Async m ())
-
--- | Callback which fires: when we create or close a socket.
---
-type SocketStateChange m s addr = SocketState m addr -> s -> STM m s
-
--- | Given current state 'retry' too keep the subscription worker going.
--- When this transaction returns, all the threads spawned by the worker will be
--- killed.
---
-type Main m s t = s -> STM m t
-
--- | Abstract socket interface
---
-data Socket m addr sock = Socket {
-    allocate      :: addr -> m sock
-  , connect       :: addr -> addr -> sock -> m ()
-  , close         :: sock -> m ()
-  , getSocketName :: sock -> m addr
-  , getPeerName   :: sock -> m addr
-  }
-
-data LocalAddresses addr = LocalAddresses {
-    -- | Local IPv4 address to use, Nothing indicates don't use IPv4
-    laIpv4 :: Maybe addr
-    -- | Local IPv6 address to use, Nothing indicates don't use IPv6
-  , laIpv6 :: Maybe addr
-    -- | Local Unix address to use, Nothing indicates don't use Unix sockets
-  , laUnix :: Maybe addr
-  } deriving (Eq, Show)
-
-sockAddrFamily
-    :: Socket.SockAddr
-    -> Socket.Family
-sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
-sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
-sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
-
--- | 'Socket' term instanciated with 'Network.Socket'.
---
-ioSocket :: Socket IO Socket.SockAddr Socket.Socket
-ioSocket = Socket {
-
-    allocate = \remoteAddr -> do
-      sock <- Socket.socket (sockAddrFamily remoteAddr) Socket.Stream Socket.defaultProtocol
-      return sock
-
-  , connect = \remoteAddr localAddr sock -> do
-      let af = sockAddrFamily remoteAddr
-      when (af == Socket.AF_INET || af == Socket.AF_INET6) $ do
-        Socket.setSocketOption sock Socket.ReuseAddr 1
-#if !defined(mingw32_HOST_OS)
-        Socket.setSocketOption sock Socket.ReusePort 1
-#endif
-        Socket.bind sock localAddr
-      Socket.connect sock remoteAddr
-
-  , close         = Socket.close
-  , getSocketName = Socket.getSocketName
-  , getPeerName   = Socket.getPeerName
-  }
-
--- | Allocate a socket and connect to a peer, execute the continuation with
--- async exceptions masked.  The continuation receives the 'unmask' callback.
---
-safeConnect :: ( MonadThrow m
-               , MonadMask m
-               )
-            => Socket m addr sock
-            -> addr
-            -- ^ remote addr
-            -> addr
-            -- ^ local addr
-            -> m ()
-            -- ^ allocate extra action; executed with async exceptions masked in
-            -- the allocation action of 'bracket'
-            -> m ()
-            -- ^ release extra action; executed with async exceptions masked in
-            -- the closing action of 'bracket'
-            -> ((forall x. m x -> m x) -> sock -> Either SomeException () -> m t)
-            -- ^ continuation executed with async exceptions
-            -- masked; it receives: unmask function, allocated socket and
-            -- connection error.
-            -> m t
-safeConnect Socket {allocate, connect, close} remoteAddr localAddr malloc mclean k =
-    bracket
-      (do sock <- allocate remoteAddr
-          malloc
-          pure sock
-      )
-      (\sock -> close sock >> mclean)
-      (\sock -> mask $ \unmask -> do
-          res :: Either SomeException ()
-              <- try (unmask $ connect remoteAddr localAddr sock)
-          k unmask sock res)
-
-
---
--- Internal API
---
-
-
--- | GADT which classifies connection result.
---
-data ConnectResult =
-      ConnectSuccess
-    -- ^ Successful connection.
-    | ConnectSuccessLast
-    -- ^ Successfully connection, reached the valency target.  Other ongoing
-    -- connection attempts will be killed.
-    | ConnectValencyExceeded
-    -- ^ Someone else manged to create the final connection to a target before
-    -- us.
-    deriving (Eq, Ord, Show)
-
--- | Traverse 'SubscriptionTarget's in an infinite loop.
---
-subscriptionLoop
-    :: forall m s sock addr a x.
-       ( MonadAsync m
-       , MonadFork  m
-       , MonadMask  m
-       , MonadSTM   m
-       , MonadTime  m
-       , MonadTimer m
-       , MonadFix   m
-       , Ord (Async m ())
-       , Ord addr
-       , Show addr
-       )
-    => Tracer              m (SubscriptionTrace addr)
-
-    -- various state variables of the subscription loop
-    -> ConnectionTable     m   addr
-    -> ResultQ             m   addr (WithAddr addr ErrorPolicyTrace) a
-    -> StateVar            m s
-    -> ThreadsVar          m
-
-    -> Socket              m   addr sock
-
-    -> WorkerCallbacks m s addr a x
-    -> WorkerParams m addr
-    -> (addr -> LocalAddresses addr -> Maybe addr)
-    -- ^ given a remote address, pick the local one
-    -> (sock -> m a)
-    -- ^ application
-    -> m Void
-subscriptionLoop
-      tr tbl resQ sVar threadsVar socket
-      WorkerCallbacks { wcSocketStateChangeTx   = socketStateChangeTx
-                      , wcCompleteApplicationTx = completeApplicationTx
-                      }
-      WorkerParams { wpLocalAddresses         = localAddresses
-                   , wpConnectionAttemptDelay = connectionAttemptDelay
-                   , wpSubscriptionTarget     = subscriptionTargets
-                   , wpValency                = valency
-                   }
-      selectAddress
-      k = do
-    valencyVar <- atomically $ newValencyCounter tbl valency
-
-    -- outer loop: set new 'conThread' variable, get targets and traverse
-    -- through them trying to connect to each addr.
-    forever $ do
-      start <- getMonotonicTime
-      conThreads <- atomically $ newTVar Set.empty
-      sTarget <- subscriptionTargets
-      traceWith tr (SubscriptionTraceStart valency)
-      innerLoop conThreads valencyVar sTarget
-      atomically $ waitValencyCounter valencyVar
-
-      -- We always wait at least 'ipRetryDelay' seconds between calls to
-      -- 'getTargets', and before trying to restart the subscriptions we also
-      -- wait 1 second so that if multiple subscription targets fail around the
-      -- same time we will try to restart with a valency
-      -- higher than 1.
-      threadDelay 1
-      end <- getMonotonicTime
-      let duration = diffTime end start
-      currentValency <- atomically $ readValencyCounter valencyVar
-      traceWith tr $ SubscriptionTraceRestart duration valency
-          (valency - currentValency)
-
-      when (duration < ipRetryDelay) $
-          threadDelay $ ipRetryDelay - duration
-
-  where
-    -- if socket allocation errors, we log the exception and rethrow it
-    -- which will kill the connection thread, but not the application itself.
-    socket' = socket { allocate = \remoteAddr -> allocate socket remoteAddr `catch`
-                                    (\(SomeException e) -> do
-                                      traceWith tr (SubscriptionTraceSocketAllocationException remoteAddr e)
-                                      throwM e
-                                    )
-                     }
-    -- a single run through @sTarget :: SubcriptionTarget m addr@.
-    innerLoop :: StrictTVar m (Set (Async m ()))
-              -> ValencyCounter m
-              -> SubscriptionTarget m addr
-              -> m ()
-    innerLoop conThreads valencyVar sTarget = do
-      mt <- getSubscriptionTarget sTarget
-      case mt of
-        Nothing -> do
-          len <- fmap length $ atomically $ readTVar conThreads
-          when (len > 0) $
-              traceWith tr $ SubscriptionTraceSubscriptionWaiting len
-
-          -- We wait on the list of active connection threads instead of using
-          -- an async wait function since some of the connections may succeed
-          -- and then should be left running.
-          --
-          -- Note: active connections are removed from 'conThreads' when the
-          -- 'connect' call finishes.
-          atomically $ do
-              activeCons <- readTVar conThreads
-              unless (null activeCons) retry
-
-          valencyLeft <- atomically $ readValencyCounter valencyVar
-          if valencyLeft <= 0
-             then traceWith tr SubscriptionTraceSubscriptionRunning
-             else traceWith tr SubscriptionTraceSubscriptionFailed
-
-        Just (remoteAddr, sTargetNext) ->
-          innerStep conThreads valencyVar remoteAddr sTargetNext
-
-    innerStep :: StrictTVar m (Set (Async m ()))
-              -- ^ outstanding connection threads; threads are removed as soon
-              -- as the connection succeeds.  They are all cancelled when
-              -- valency drops to 0.  The asynchronous exception which cancels
-              -- the connection thread can only occur while connecting and not
-              -- when an application is running.  This is guaranteed since
-              -- threads are removed from this set as soon connecting is
-              -- finished (successfully or not) and before application is
-              -- started.
-              -> ValencyCounter m
-              -> addr
-              -> SubscriptionTarget m addr
-              -> m ()
-    innerStep conThreads valencyVar !remoteAddr sTargetNext = do
-      r <- refConnection tbl remoteAddr valencyVar
-      case r of
-        ConnectionTableCreate ->
-          case selectAddress remoteAddr localAddresses of
-            Nothing ->
-              traceWith tr (SubscriptionTraceUnsupportedRemoteAddr remoteAddr)
-
-            -- This part is very similar to
-            -- 'Ouroboros.Network.Server.Socket.spawnOne', it should not
-            -- deadlock by the same reasons.  The difference is that we are
-            -- using 'mask' and 'async' as 'asyncWithUnmask' is not available.
-            Just localAddr ->
-             do rec
-                  thread <- async $ do
-                    traceWith tr $ SubscriptionTraceConnectStart remoteAddr
-                    -- Try to connect; 'safeConnect' is using 'bracket' to
-                    -- create / close a socket and update the states.  The
-                    -- continuation, e.g.  'connAction' runs with async
-                    -- exceptions masked, and receives the unmask function from
-                    -- this bracket.
-                    safeConnect
-                      socket'
-                      remoteAddr
-                      localAddr
-                      (do
-                        traceWith tr $ SubscriptionTraceAllocateSocket remoteAddr
-                        atomically $ do
-                          modifyTVar conThreads (Set.insert thread)
-                          modifyTVar threadsVar (Set.insert thread)
-                          readTVar sVar
-                            >>= socketStateChangeTx (CreatedSocket remoteAddr thread)
-                            >>= (writeTVar sVar $!))
-                      (do
-                        atomically $ do
-                          -- The thread is removed from 'conThreads'
-                          -- inside 'connAction'.
-                          modifyTVar threadsVar (Set.delete thread)
-                          readTVar sVar
-                            >>= socketStateChangeTx (ClosedSocket remoteAddr thread)
-                            >>= (writeTVar sVar $!)
-                        traceWith tr $ SubscriptionTraceCloseSocket remoteAddr)
-                      (connAction
-                        thread conThreads valencyVar
-                        remoteAddr)
-
-                let delay = case connectionAttemptDelay remoteAddr of
-                                Just d  -> d `max` minConnectionAttemptDelay
-                                             `min` maxConnectionAttemptDelay
-                                Nothing -> defaultConnectionAttemptDelay
-                traceWith tr
-                          (SubscriptionTraceSubscriptionWaitingNewConnection delay)
-                threadDelay delay
-
-        ConnectionTableExist ->
-          traceWith tr $ SubscriptionTraceConnectionExist remoteAddr
-        ConnectionTableDuplicate -> pure ()
-      innerLoop conThreads valencyVar sTargetNext
-
-    -- Start connection thread: connect to the remote peer, run application.
-    -- This function runs with asynchronous exceptions masked.
-    --
-    connAction :: Async m ()
-               -> StrictTVar m (Set (Async m ()))
-               -> ValencyCounter m
-               -> addr
-               -> (forall y. m y -> m y) -- unmask exceptions
-               -> sock
-               -> Either SomeException ()
-               -> m ()
-    connAction thread conThreads valencyVar remoteAddr unmask sock connectionRes = do
-      localAddr <- getSocketName socket sock
-      t <- getMonotonicTime
-      case connectionRes of
-        -- connection error
-        Left (SomeException e) -> do
-          traceWith tr $ SubscriptionTraceConnectException remoteAddr e
-          atomically $ do
-            -- remove thread from active connections threads
-            modifyTVar conThreads (Set.delete thread)
-
-            CompleteApplicationResult
-              { carState
-              , carThreads
-              , carTrace
-              } <- readTVar sVar >>= completeApplicationTx (ConnectionError t remoteAddr e)
-            writeTVar sVar carState
-            writeTQueue resQ (Act carThreads carTrace)
-
-        -- connection succeeded
-        Right _ -> do
-          connRes <- atomically $ do
-            -- we successfully connected, remove the thread from
-            -- outstanding connection threads.
-            modifyTVar conThreads (Set.delete thread)
-
-            v <- readValencyCounter valencyVar
-            if v > 0
-              then do
-                addConnection tbl remoteAddr localAddr (Just valencyVar)
-                CompleteApplicationResult
-                  { carState
-                  , carThreads
-                  , carTrace
-                  } <- readTVar sVar >>= completeApplicationTx (Connected t remoteAddr)
-                writeTVar sVar carState
-                writeTQueue resQ (Act carThreads carTrace)
-                return $ if v == 1
-                          then ConnectSuccessLast
-                          else ConnectSuccess
-              else
-                return ConnectValencyExceeded
-
-          -- handle connection result
-          traceWith tr $ SubscriptionTraceConnectEnd remoteAddr connRes
-          case connRes of
-            ConnectValencyExceeded -> pure ()
-            -- otherwise it was a success
-            _           -> do
-              when (connRes == ConnectSuccessLast) $ do
-                -- outstanding connection threads
-                threads <- atomically $ readTVar conThreads
-                mapM_ (\tid ->
-                        cancelWith tid
-                        (SubscriberError
-                          SubscriberParrallelConnectionCancelled
-                          "Parrallel connection cancelled"
-                          callStack)
-                      )threads
-
-
-              -- run application
-              appRes :: Either SomeException a
-                <- try $ unmask (k sock)
-
-              case appRes of
-                Right _ -> pure ()
-                Left e -> traceWith tr $ SubscriptionTraceApplicationException remoteAddr e
-
-              t' <- getMonotonicTime
-              atomically $ do
-                case appRes of
-                  Right a ->
-                    writeTQueue resQ (Res (ApplicationResult t' remoteAddr a))
-                  Left (SomeException e) ->
-                    writeTQueue resQ (Res (ApplicationError t' remoteAddr e))
-                removeConnectionSTM tbl remoteAddr localAddr
-
--- | Almost the same as 'Ouroboros.Network.Server.Socket.mainLoop'.
--- 'mainLoop' reads from the result queue and runs the 'CompleteApplication'
--- callback.
---
-mainLoop
-  :: forall s r addr t.
-     Tracer IO (WithAddr addr ErrorPolicyTrace)
-  -> ResultQ IO addr (WithAddr addr ErrorPolicyTrace) r
-  -> ThreadsVar IO
-  -> StateVar IO s
-  -> CompleteApplication IO s addr r
-  -> Main IO s t
-  -> IO t
-mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main = do
-    join (atomically $ mainTx `STM.orElse` connectionTx)
-  where
-    -- Sample the state, and run the main action. If it does not retry, then
-    -- the `mainLoop` finishes with `pure t` where `t` is the main action result.
-    mainTx :: STM IO (IO t)
-    mainTx = do
-      t <- readTVar statusVar >>= main
-      pure $ pure t
-
-    -- Wait for some connection to finish, update the state with its result,
-    -- then recurse onto `mainLoop`.
-    connectionTx :: STM IO (IO t)
-    connectionTx = do
-      result <- STM.readTQueue resQ
-      case result of
-        Act threads tr -> pure $ do
-          traverse_ cancel threads
-          traverse_ (traceWith errorPolicyTracer) tr 
-          mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main
-        Res r -> do
-          s <- readTVar statusVar
-          CompleteApplicationResult
-            { carState
-            , carThreads
-            , carTrace
-            } <- completeApplicationTx r s
-          writeTVar statusVar carState
-          pure $ do
-            traverse_ cancel carThreads
-            traverse_ (traceWith errorPolicyTracer) carTrace
-            mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main
-
-
---
--- Worker
---
-
--- | Worker STM callbacks
---
-data WorkerCallbacks m s addr a t = WorkerCallbacks {
-    wcSocketStateChangeTx   :: SocketStateChange m s addr,
-    wcCompleteApplicationTx :: CompleteApplication m s addr a,
-    wcMainTx                :: Main m s t
-  }
-
--- | Worker parameters
---
-data WorkerParams m addr = WorkerParams {
-    wpLocalAddresses         :: LocalAddresses addr,
-    wpConnectionAttemptDelay :: addr -> Maybe DiffTime,
-    -- ^ delay after a connection attempt to 'addr'
-    wpSubscriptionTarget     :: m (SubscriptionTarget m addr),
-    wpValency                :: Int
-  }
-
--- |  This is the most abstract worker, which puts all the pieces together.  It
--- will execute until @main :: Main m s t@ returns.  It runs
--- 'subscriptionLoop' in a new threads and will exit when it dies.  Spawn
--- threads are cancelled in a 'finally' callback by throwing 'SubscriberError'.
---
--- Note: This function runs in 'IO' only because 'MonadSTM' does not yet support
--- 'orElse', PR #432.
---
+-- This will never stop trying to connect. As soon as all of the connections
+-- have been tried, it will start again: targets for connections which end are
+-- put into the end of a queue, and the next target to try is the head of the
+-- queue.
 worker
-    :: forall s sock addr a x.
-       ( Ord addr
-       , Show addr
-       )
-    => Tracer              IO (SubscriptionTrace addr)
-    -> Tracer              IO (WithAddr addr ErrorPolicyTrace)
-    -> ConnectionTable     IO   addr
-    -> StateVar            IO s
+  :: Tracer IO (SubscriptionTrace Socket.SockAddr)
+  -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+  -> NonEmpty ConnectionId
+  -- ^ Targets for subscription. Each one indicates a local address and a remote
+  -- address, so one worker can do both IPv4 and IPv6.
+  -> Word
+  -- ^ Valency: how many concurrent connections to try to keep up. Will be
+  -- clamped to at least 1 and at most the length of the list of targets.
+  -> DiffTime
+  -- ^ Minimum delay between subscriptions. If a subscription attempt lasts
+  -- less than this duration, it will wait for the difference.
+  -> (ConnectionId -> Client ConnectionId socket IO request)
+  -- ^ "How" to carry out a request for a given connection identifier (pair of
+  -- addresses in the same family).
+  -> Connections ConnectionId socket request (Concurrent.Reject reject) (Concurrent.Accept (ConnectionHandle IO)) IO
+  -- ^ "Where" to carry out a request.
+  -- The ConenctionHandle type allows for us to wait for the connection to end,
+  -- before attempting a connection to the next target.
+  -> IO x
+worker tr errTrace targets valency delay mkClient connections = do
+  q <- newTQueueIO
+  atomically $ forM_ (NE.toList targets) (writeTQueue q)
+  let numThreads = max 1 (min (fromIntegral valency) (NE.length targets))
+  -- Write it out like this so that we can convince GHC that this program
+  -- really does not ever return (hence `IO x`).
+  (impossible, _) <- concurrently
+    (workerOneTarget tr errTrace delay q mkClient connections)
+    (forConcurrently_ [1..(numThreads-1)] $ \_ ->
+       workerOneTarget tr errTrace delay q mkClient connections)
+  absurd impossible
 
-    -> Socket              IO   addr sock
-
-    -> WorkerCallbacks     IO s addr a x
-    -> WorkerParams        IO   addr
-    -> (addr -> LocalAddresses addr -> Maybe addr)
-
-    -> (sock -> IO a)
-    -- ^ application
-    -> IO x
-worker tr errTrace tbl sVar socket workerCallbacks@WorkerCallbacks {wcCompleteApplicationTx, wcMainTx} workerParams selectAddress k = do
-    resQ <- newResultQ
-    threadsVar <- atomically $ newTVar Set.empty
-    withAsync
-      (subscriptionLoop tr tbl resQ sVar threadsVar socket
-         workerCallbacks workerParams selectAddress k) $ \_ ->
-           mainLoop errTrace resQ threadsVar sVar wcCompleteApplicationTx wcMainTx
-           `finally` killThreads threadsVar
-  where
-    killThreads threadsVar = do
-      let e = SubscriberError
-                SubscriberWorkerCancelled
-                "SubscriptionWorker exiting"
-                callStack
-      children <- atomically $ readTVar threadsVar
-      mapM_ (\a -> cancelWith a e) children
-
+-- | Worker for one subscription target sequence.
+-- `worker` runs 0 or more of these concurrently.
+--
+-- Includes a built-in delay of `ipRetryDelay` between connections but
+-- FIXME this should not be built-in.
+--
+workerOneTarget
+  :: Tracer IO (SubscriptionTrace Socket.SockAddr)
+  -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+  -> DiffTime
+  -> TQueue ConnectionId
+  -> (ConnectionId -> Client ConnectionId socket IO request)
+  -> Connections ConnectionId socket request (Concurrent.Reject reject) (Concurrent.Accept (ConnectionHandle IO)) IO
+  -> IO x
+workerOneTarget tr errTrace delay q mkClient connections = do
+  connectionId <- atomically $ readTQueue q
+  let (_localAddr, remoteAddr) = connectionIdPair connectionId
+  traceWith tr $ SubscriptionTraceConnectStart remoteAddr
+  start <- getMonotonicTime
+  decision <- runClientWith connections (mkClient connectionId)
+  case decision of
+    -- TODO trace the rejection reason.
+    Rejected (Concurrent.DomainSpecific _reason) -> pure ()
+    -- TODO trace that it was accepted? Sure.
+    Accepted (Concurrent.Accepted connhandle)    -> do
+      -- Wait for the connection to finish.
+      -- No need to trace the outcome, the connections manager can be
+      -- assumed to do that as needed. But TODO should trace that
+      -- the connection is over and this thread is going to try another.
+      outcome <- waitForConnection connhandle
+      -- TBD should we change behaviour depending on whether it crashed
+      -- or not?
+      --
+      -- Also NB: we don't deal with any exception handling / masking here.
+      -- If the subscription thread is killed, that does NOT mean any or all
+      -- connections it created should have their handlers torn down.
+      case outcome of
+        Nothing -> pure ()
+        Just _exception -> pure ()
+  end <- getMonotonicTime
+  let duration = diffTime end start
+  when (duration < delay) (threadDelay (delay - duration))
+  -- No exception handling is done to ensure this gets returned to the queue.
+  -- Why? Because if this thread dies with an exception, so do all of the
+  -- other threads spawned by `worker`, so who cares?
+  atomically $ writeTQueue q connectionId
+  workerOneTarget tr errTrace delay q mkClient connections
 
 --
 -- Auxiliary types: errors, traces
@@ -642,7 +176,24 @@ instance Exception SubscriberError where
          (show seMessage)
          (prettyCallStack seStack)
 
+-- | ADT which classifies connection result.
+--
+-- FIXME bad name. It's not about a connection, it's about the subscription
+-- worker overall (judging by the constructor comments).
+data ConnectResult =
+      ConnectSuccess
+    -- ^ Successful connection.
+    | ConnectSuccessLast
+    -- ^ Successfully connection, reached the valency target.  Other ongoing
+    -- connection attempts will be killed.
+    | ConnectValencyExceeded
+    -- ^ Someone else manged to create the final connection to a target before
+    -- us.
+    deriving (Eq, Ord, Show)
 
+-- FIXME this is way too much.
+-- Should pare it down to only those things which are relevant to choosing which
+-- address to try to connect to.
 data SubscriptionTrace addr =
       SubscriptionTraceConnectStart addr
     | SubscriptionTraceConnectEnd addr ConnectResult

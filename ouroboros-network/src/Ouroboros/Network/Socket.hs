@@ -37,6 +37,10 @@ module Ouroboros.Network.Socket (
     , outgoingConnection
     , runInitiator
 
+    , ConnectionHandle (..)
+    , ConnectionStatus (..)
+    , waitForConnection
+
     -- * Traces
     , NetworkConnectTracers (..)
     , nullNetworkConnectTracers
@@ -321,6 +325,18 @@ data ConnectionData ptcl vNumber provenance where
     -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
     -> ConnectionData ptcl vNumber Remote
 
+-- | Handle giving an interface to a connection.
+data ConnectionHandle m = ConnectionHandle
+  { status :: STM m ConnectionStatus }
+
+data ConnectionStatus = Running | Finished (Maybe SomeException)
+
+waitForConnection :: MonadSTM m => ConnectionHandle m -> m (Maybe SomeException)
+waitForConnection ch = atomically $ do
+  stat <- status ch
+  case stat of
+    Finished result -> pure result
+    Running         -> retry
 
 -- | Get a concurrent connections manager, running `connection` for each
 -- connection (`Socket`) between two peers (`ConnectionId`).
@@ -341,7 +357,7 @@ withConnections
      , Show ptcl
      )
   => (forall provenance. request provenance -> ConnectionData ptcl vNumber provenance)
-  -> (Connections Connections.ConnectionId Socket.Socket request (Connection.Reject RejectConnection) (Connection.Accept ()) IO -> IO t)
+  -> (Connections Connections.ConnectionId Socket.Socket request (Connection.Reject RejectConnection) (Connection.Accept (ConnectionHandle IO)) IO -> IO t)
   -> IO t
 withConnections mk = Connection.concurrent (connection mk)
 
@@ -371,7 +387,7 @@ connection
   -> Connections.ConnectionId
   -> Socket.Socket
   -> request provenance
-  -> IO (Connection.Decision IO provenance RejectConnection ())
+  -> IO (Connection.Decision IO provenance RejectConnection (ConnectionHandle IO))
 connection mk _ connid socket request = case mk request of
 
     ConnectionDataLocal tracers state vCodec versions ->
@@ -420,12 +436,17 @@ outgoingConnection
   -- ^ application to run over the connection
   -> Connections.ConnectionId
   -> Socket.Socket       -- ^ Socket to peer; could have been established by us or them.
-  -> IO (Connection.Decision IO Local RejectConnection ()) -- ^ TODO better reject and accept types?
+  -> IO (Connection.Decision IO Local RejectConnection (ConnectionHandle IO)) -- ^ TODO better reject and accept types?
 outgoingConnection versionDataCodec tracers versions connId sd =
     -- Always accept and run initiator mode mux on the socket.
     pure $ Connection.Accept $ \_connThread -> do
-        let connectionHandle = ()
-            action = runInitiator versionDataCodec tracers versions connId sd
+        statusVar <- atomically (newTVar Running)
+        let connectionHandle = ConnectionHandle
+              { status = readTVar statusVar }
+            action = mask $ \restore -> do
+              restore (runInitiator versionDataCodec tracers versions connId sd) `catch`
+                (\e -> atomically (writeTVar statusVar (Finished (Just e))))
+              atomically (writeTVar statusVar (Finished Nothing))
         pure $ Handler { handle = connectionHandle, action = action }
 
 -- | Outgoing (locally-initiated) connection action. Runs the initiator-side
@@ -505,7 +526,7 @@ incomingConnection
     -> ErrorPolicies Socket.SockAddr ()
     -> Connections.ConnectionId -- ^ Includes our address and remote address.
     -> Socket.Socket            -- ^ Established by the remote peer.
-    -> IO (Connection.Decision IO Remote RejectConnection ()) -- ^ TODO give better types for reject and handle
+    -> IO (Connection.Decision IO Remote RejectConnection (ConnectionHandle IO)) -- ^ TODO give better types for reject and handle
 incomingConnection NetworkServerTracers { nstMuxTracer
                                         , nstHandshakeTracer
                                         , nstErrorPolicyTracer }
@@ -540,12 +561,15 @@ incomingConnection NetworkServerTracers { nstMuxTracer
         -- 
         -- TODO factor this out into `runResponder`, similarly to how
         -- `handleOutoing` uses `runInitiator`.
-        Just peerid -> pure $ Connection.Accept $ \connThread ->
-          let -- TODO better type for a handle.
-              -- This is supposed to give a handle on the `action` defined
-              -- blow, allowing its holder to observe and to some extent control
-              -- what's going on in that action.
-              connectionHandle = ()
+        Just peerid -> pure $ Connection.Accept $ \connThread -> do
+          statusVar <- atomically (newTVar Running)
+          let connectionHandle = ConnectionHandle
+                { status = readTVar statusVar }
+              action = mask $ \restore -> do
+                restore runResponder `catch`
+                  (\e -> atomically (writeTVar statusVar (Finished (Just e))))
+                atomically (writeTVar statusVar (Finished Nothing))
+
               -- When a connection comes up, we must register a producer.
               -- When it goes down, we must call some error policies thing
               -- `completeApplicationTx` and update state to unregister the
@@ -585,7 +609,7 @@ incomingConnection NetworkServerTracers { nstMuxTracer
               --
               -- `fmap fst` because generalBracket gives the result of the
               -- releaser callback as well.
-              action = fmap fst $ generalBracket register unregister $ \_ -> do
+              runResponder = fmap fst $ generalBracket register unregister $ \_ -> do
                   muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` nstMuxTracer
                   let bearer = Mx.socketAsMuxBearer muxTracer' sd
                   Mx.traceMuxBearerState muxTracer' Mx.Connected
@@ -604,7 +628,7 @@ incomingConnection NetworkServerTracers { nstMuxTracer
                     Right app -> do
                       traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
                       Mx.muxStart muxTracer' (toApplication app peerid) bearer
-          in  pure $ Handler { handle = connectionHandle, action = action }
+          pure $ Handler { handle = connectionHandle, action = action }
   where
 
     -- Determines whether we should accept a connection, by using the
@@ -694,7 +718,7 @@ withServerNode tracers networkState addr versionDataCodec acceptVersion versions
         -> Connections.ConnectionId
         -> Socket.Socket
         -> WithServerNodeRequest provenance
-        -> IO (Decision IO provenance RejectConnection ())
+        -> IO (Decision IO provenance RejectConnection (ConnectionHandle IO))
     handleConnection _ connid socket WithServerNodeRequest = incomingConnection
         tracers
         networkState

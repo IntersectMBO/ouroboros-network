@@ -7,27 +7,20 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GADTs               #-}
 
--- | IP subscription worker implentation.
+-- | IP subscription targets.
 module Ouroboros.Network.Subscription.Ip
     ( SubscriptionParams (..)
     , IPSubscriptionParams
-    , ipSubscriptionWorker
-    , subscriptionWorker
     , IPSubscriptionTarget (..)
-    , ipSubscriptionTarget
+    , LocalAddresses (..)
+    , ipSubscriptionTargets
+    , matchWithLocalAddress
+    , ipRetryDelay
 
     --  * Traces
     , SubscriptionTrace (..)
     , ErrorPolicyTrace (..)
     , WithIPList (..)
-
-    -- * 'PeerState' STM transactions
-    , BeforeConnect
-    , runBeforeConnect
-    , beforeConnectTx
-    , completeApplicationTx
-    , socketStateChangeTx
-    , mainTx
     ) where
 
 
@@ -35,197 +28,69 @@ module Ouroboros.Network.Subscription.Ip
  - RFC8305, https://tools.ietf.org/html/rfc8305 .
  -}
 
-import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer
+import           Data.Maybe (mapMaybe)
+import           Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
 import           Data.Time.Clock (DiffTime)
-import           Data.Void (Void)
 import qualified Network.Socket as Socket
 import           Text.Printf
 
-import           Ouroboros.Network.Connections.Types
 import           Ouroboros.Network.Connections.Socket.Types
-import qualified Ouroboros.Network.Connections.Socket.Client as Connections.Socket (client)
-import           Ouroboros.Network.Socket hiding (ConnectionId)
 import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Subscription.PeerState
-import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker
 
+-- | Minimum time to wait between ip reconnects
+--
+ipRetryDelay :: DiffTime
+ipRetryDelay = 10 -- 10s delay
 
 data IPSubscriptionTarget = IPSubscriptionTarget {
     -- | List of destinations to possibly connect to
       ispIps     :: ![Socket.SockAddr]
     -- | Number of parallel connections to keep actice.
-    , ispValency :: !Int
+    , ispValency :: !Word
     } deriving (Eq, Show)
 
+-- | Pair socket addresses with corresponding local addresses to get a list of
+-- connection identifiers.
+--
+-- Useful alongside the `ispIps` field of an `IPSubscriptionTarget`.
+ipSubscriptionTargets
+  :: [Socket.SockAddr]
+  -> LocalAddresses
+  -> Maybe (NonEmpty ConnectionId)
+ipSubscriptionTargets addrs localAddrs = NE.nonEmpty connIds
+  where
+  connIds :: [ConnectionId]
+  connIds = mapMaybe (matchWithLocalAddress localAddrs) addrs
+
+data LocalAddresses = LocalAddresses {
+    -- | Local IPv4 address to use, Nothing indicates don't use IPv4
+    laIpv4 :: Maybe (SockAddr IPv4)
+    -- | Local IPv6 address to use, Nothing indicates don't use IPv6
+  , laIpv6 :: Maybe (SockAddr IPv6)
+    -- | Local Unix address to use, Nothing indicates don't use Unix sockets
+  , laUnix :: Maybe (SockAddr Unix)
+  } deriving (Eq, Show)
+
+-- | If there is a local address matching the socket family, give a ConnectionId
+-- where the local address is the first component (bind address).
+matchWithLocalAddress :: LocalAddresses -> Socket.SockAddr -> Maybe ConnectionId
+matchWithLocalAddress laddrs sockAddr = withSockType sockAddr $ \it -> case it of
+  SockAddrIPv4 _ _     -> fmap (`makeConnectionId` it) (laIpv4 laddrs)
+  SockAddrIPv6 _ _ _ _ -> fmap (`makeConnectionId` it) (laIpv6 laddrs)
+  SockAddrUnix _       -> fmap (`makeConnectionId` it) (laUnix laddrs)
 
 -- | 'ipSubscriptionWorker' and 'dnsSubscriptionWorker' parameters
 --
 data SubscriptionParams a target = SubscriptionParams
   { spLocalAddresses         :: LocalAddresses
-  , spConnectionAttemptDelay :: Socket.SockAddr -> Maybe DiffTime
-    -- ^ should return expected delay for the given address
-  , spErrorPolicies          :: ErrorPolicies Socket.SockAddr a
+    -- ^ FIXME weird that we would fix this to SockAddr bur leave the `target`
+    -- type open.
   , spSubscriptionTarget     :: target
   }
 
 type IPSubscriptionParams a = SubscriptionParams a IPSubscriptionTarget
-
--- | Spawns a subscription worker which will attempt to keep the specified
--- number of connections (Valency) active towards the list of IP addresses
--- given in IPSubscriptionTarget.
---
-ipSubscriptionWorker
-    :: forall accept reject a.
-       Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
-    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> NetworkMutableState
-    -> IPSubscriptionParams a -- TBD what's this `a` type for??
-    -> Connections ConnectionId Socket.Socket LocalOnlyRequest reject accept IO
-    -> IO Void
-ipSubscriptionWorker subscriptionTracer errorPolicyTracer
-                     networkState@NetworkMutableState { nmsPeerStates }
-                     SubscriptionParams { spLocalAddresses
-                                        , spConnectionAttemptDelay
-                                        , spSubscriptionTarget
-                                        , spErrorPolicies
-                                        }
-                     connections =
-    subscriptionWorker subscriptionTracer'
-                       errorPolicyTracer
-                       networkState
-                       workerParams
-                       spErrorPolicies
-                       mainTx
-                       connections
-  where
-    workerParams = WorkerParams {
-        wpLocalAddresses         = spLocalAddresses,
-        wpConnectionAttemptDelay = spConnectionAttemptDelay,
-        wpSubscriptionTarget     =
-          pure $ ipSubscriptionTarget subscriptionTracer' nmsPeerStates
-                                      (ispIps spSubscriptionTarget),
-        wpValency                = ispValency spSubscriptionTarget
-      }
-
-    subscriptionTracer' = (WithIPList spLocalAddresses (ispIps spSubscriptionTarget)
-              `contramap` subscriptionTracer)
-
-
-ipSubscriptionTarget :: forall m addr.
-                        ( MonadSTM  m
-                        , MonadTime m
-                        , Ord addr
-                        )
-                     => Tracer m (SubscriptionTrace addr)
-                     -> StrictTVar m (PeerStates m addr)
-                     -> [addr]
-                     -> SubscriptionTarget m addr
-ipSubscriptionTarget tr peerStatesVar ips = go ips
-  where
-    go :: [addr]
-       -> SubscriptionTarget m addr
-    go [] = SubscriptionTarget $ pure Nothing
-    go (a : as) = SubscriptionTarget $ do
-      b <- runBeforeConnect peerStatesVar beforeConnectTx a
-      if b
-        then do
-          traceWith tr $ SubscriptionTraceTryConnectToPeer a
-          pure $ Just (a, go as)
-        else do
-          traceWith tr $ SubscriptionTraceSkippingPeer a
-          getSubscriptionTarget $ go as
-
-
--- when creating a new socket: register consumer thread
--- when tearing down a socket: unregister consumer thread
-socketStateChangeTx
-    :: ( Ord addr
-       , Show addr
-       )
-    => SocketStateChange IO
-        (PeerStates IO addr)
-        addr
-
-socketStateChangeTx (CreatedSocket addr thread) ps =
-  pure (registerConsumer addr thread ps)
-
-socketStateChangeTx ClosedSocket{} ps@ThrowException{} =
-  pure ps
-
-socketStateChangeTx (ClosedSocket addr thread) ps =
-  pure $ unregisterConsumer addr thread ps
-
-
--- | Main callback.  It throws an exception when the state becomes
--- 'ThrowException'.  This exception is thrown from the main thread.
---
-mainTx :: ( MonadThrow m
-          , MonadThrow (STM m)
-          , MonadSTM m
-          )
-       => Main m (PeerStates m addr) Void
-mainTx (ThrowException e) = throwM e
-mainTx PeerStates{}       = retry
-
-
--- | Like 'worker' but in 'IO'; It provides address selection function,
--- 'SocketStateChange' and 'CompleteApplication' callbacks.  The 'Main'
--- callback is left as it's useful for testing purposes.
---
-subscriptionWorker
-    :: Tracer IO (SubscriptionTrace Socket.SockAddr)
-    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> NetworkMutableState
-    -> WorkerParams IO Socket.SockAddr
-    -> ErrorPolicies Socket.SockAddr a
-    -> Main IO (PeerStates IO Socket.SockAddr) x
-    -- ^ main callback
-    -> Connections ConnectionId Socket.Socket LocalOnlyRequest reject accept IO
-    -> IO x
-subscriptionWorker tracer
-                   errorPolicyTracer
-                   NetworkMutableState { nmsConnectionTable, nmsPeerStates }
-                   workerParams
-                   errorPolicies
-                   main
-                   connections =
-    worker tracer
-           errorPolicyTracer
-           nmsConnectionTable
-           nmsPeerStates
-           WorkerCallbacks
-             { wcSocketStateChangeTx   = socketStateChangeTx
-             , wcCompleteApplicationTx = completeApplicationTx errorPolicies
-             , wcMainTx                = main
-             }
-           workerParams
-           selectAddress
-           mkConnection
-           connections
-
-  where
-    selectAddress :: Socket.SockAddr
-                  -> LocalAddresses
-                  -> Maybe ConnectionId
-    selectAddress remoteAddr (LocalAddresses l4 l6 lu) =
-      withSockType remoteAddr $ \remoteAddr' -> case remoteAddr' of
-        SockAddrIPv4 _ _ -> case l4 of
-          Just localAddr -> Just (ConnectionIdIPv4 localAddr remoteAddr')
-          _ -> Nothing
-        SockAddrIPv6 _ _ _ _ -> case l6 of
-          Just localAddr -> Just (ConnectionIdIPv6 localAddr remoteAddr')
-          _ -> Nothing
-        SockAddrUnix _ -> case lu of
-          Just localAddr -> Just (ConnectionIdUnix localAddr remoteAddr')
-          _ -> Nothing
-
-    mkConnection :: ConnectionId
-                 -> Client ConnectionId Socket.Socket IO LocalOnlyRequest
-    mkConnection connid = Connections.Socket.client connid LocalOnlyRequest
 
 data WithIPList a = WithIPList {
       wilSrc   :: !LocalAddresses
@@ -245,4 +110,3 @@ instance (Show a) => Show (WithIPList a) where
                                    (show wilDsts) (show wilEvent)
     show WithIPList {wilSrc, wilDsts, wilEvent} =
         printf "IPs: %s %s %s" (show wilSrc) (show wilDsts) (show wilEvent)
-

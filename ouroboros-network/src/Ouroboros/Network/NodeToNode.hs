@@ -62,7 +62,6 @@ module Ouroboros.Network.NodeToNode (
   , SubscriptionTrace (..)
   , DnsTrace (..)
   , ErrorPolicyTrace (..)
-  , WithIPList (..)
   , WithDomainName (..)
   , WithAddr (..)
   ) where
@@ -99,7 +98,7 @@ import qualified Ouroboros.Network.Socket as Socket (withConnections)
 import           Ouroboros.Network.Tracers
 import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams, SubscriptionParams (..))
 import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
-                                                   , WithIPList (..)
+                                                   , LocalAddresses (..)
                                                    , SubscriptionTrace (..)
                                                    )
 import           Ouroboros.Network.Subscription.Dns (DnsSubscriptionParams)
@@ -107,7 +106,6 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , DnsTrace (..)
                                                     , WithDomainName (..)
                                                     )
-import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
@@ -184,7 +182,7 @@ withConnections
      NetworkMutableState
   -> ErrorPolicies Socket.SockAddr ()
   -> (forall provenance . request provenance -> SomeVersionedApplication NodeToNodeProtocols NodeToNodeVersion DictVersion provenance)
-  -> (Connections Connections.ConnectionId Socket.Socket request (Connection.Reject RejectConnection) (Connection.Accept ()) IO -> IO t)
+  -> (Connections Connections.ConnectionId Socket.Socket request (Connection.Reject RejectConnection) (Connection.Accept (ConnectionHandle IO)) IO -> IO t)
   -> IO t
 withConnections mutableState errorPolicies mkApp =
   Socket.withConnections mkConnectionData
