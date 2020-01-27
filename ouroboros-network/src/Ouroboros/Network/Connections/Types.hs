@@ -13,6 +13,8 @@ module Ouroboros.Network.Connections.Types
 
   , CannotReject
   , UnitRequest (..)
+  , LocalOnlyRequest (..)
+  , RemoteOnlyRequest (..)
 
   , contramapRequest
 
@@ -51,6 +53,12 @@ data CannotReject (provenance :: Provenance)
 -- type that carries no information.
 data UnitRequest (p :: Provenance) where
   UnitRequest :: UnitRequest p
+
+data LocalOnlyRequest (p :: Provenance) where
+  LocalOnlyRequest :: LocalOnlyRequest Local
+
+data RemoteOnlyRequest (p :: Provenance) where
+  RemoteOnlyRequest :: RemoteOnlyRequest Remote
 
 -- | Description of a resource: something that can be acquired in the bracket
 -- pattern, or something that already exists but can be closed.
