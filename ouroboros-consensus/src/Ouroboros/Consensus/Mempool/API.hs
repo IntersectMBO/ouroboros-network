@@ -8,6 +8,7 @@
 module Ouroboros.Consensus.Mempool.API (
     Mempool(..)
   , BlockSlot(..)
+  , MempoolCapacityBytes (..)
   , MempoolSnapshot(..)
   , ApplyTx(..)
   , HasTxId(..)
@@ -187,10 +188,10 @@ data Mempool m blk idx = Mempool {
       -- transactions. This process would continue until it is able to at
       -- least attempt validating and adding each of the provided transactions
       -- to the mempool.
-      addTxs        :: [GenTx blk] -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
+      addTxs         :: [GenTx blk] -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
 
       -- | Manually remove the given transactions from the mempool.
-    , removeTxs     :: [GenTxId blk] -> m ()
+    , removeTxs      :: [GenTxId blk] -> m ()
 
       -- | Sync the transactions in the mempool with the current ledger state
       --  of the 'ChainDB'.
@@ -213,7 +214,7 @@ data Mempool m blk idx = Mempool {
       -- further pure queries on the snapshot.
       --
       -- This doesn't look at the ledger state at all.
-    , getSnapshot   :: STM m (MempoolSnapshot blk idx)
+    , getSnapshot    :: STM m (MempoolSnapshot blk idx)
 
       -- | Get a snapshot of the mempool state that is valid with respect to
       -- the given ledger state
@@ -223,9 +224,12 @@ data Mempool m blk idx = Mempool {
                      -> LedgerState blk
                      -> STM m (MempoolSnapshot blk idx)
 
+      -- | Get the mempool's capacity in bytes.
+    , getCapacity    :: STM m MempoolCapacityBytes
+
       -- | Represents the initial value at which the transaction ticket number
       -- counter will start (i.e. the zeroth ticket number).
-    , zeroIdx       :: idx
+    , zeroIdx        :: idx
     }
 
 -- | The slot of the block in which the transactions in the mempool will end up
@@ -251,6 +255,11 @@ data BlockSlot =
     -- for 'applyChainTick' to prepare the ledger state; we will assume that
     -- they will end up in the slot after the slot at the tip of the ledger.
   | TxsForUnknownBlock
+
+-- | Represents the maximum number of bytes worth of transactions that a
+-- 'Mempool' can contain.
+newtype MempoolCapacityBytes = MempoolCapacityBytes Word32
+  deriving (Eq, Show)
 
 -- | A pure snapshot of the contents of the mempool. It allows fetching
 -- information about transactions in the mempool, and fetching individual
