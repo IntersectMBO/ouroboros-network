@@ -58,9 +58,9 @@ data Resource provenance m r where
   -- Corresponds to locally-initiated, outgoing connections.
   New      :: m r -> (r -> m ()) -> Resource Local m r
 
--- | Connections identified by `id`, carried by `socket`, supported by `m`.
--- "socket" is intended to be suggestive but obviously does not have to be a
--- socket.
+-- | Connections identified by `id`, carried by `resource`, supported by `m`.
+-- `resource` might be a file handle / socket, STM queue, etc. anything that
+-- can transport data in `m`.
 --
 -- For `Existing` resources, if the decision is `Rejected`, or if the call
 -- throws an exception (`m` is IO-capable), then the caller is responsible for
@@ -87,10 +87,10 @@ data Resource provenance m r where
 --
 -- TODO may be useful to bring `request` to the end and make this a
 -- contravariant functor.
-data Connections id socket request reject accept m = Connections
+newtype Connections id resource request reject accept m = Connections
   { include :: forall provenance .
                id
-            -> Resource provenance m socket
+            -> Resource provenance m resource
             -> request provenance
             -> m (Decision provenance reject accept)
   }
