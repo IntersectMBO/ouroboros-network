@@ -1,7 +1,6 @@
 resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/00487726c4bc21b4744e59d913334ebfeac7d68e/snapshot.yaml
 
 packages:
-  - ./typed-transitions
   - ./typed-protocols
   - ./typed-protocols-cbor
   - ./network-mux
