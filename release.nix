@@ -73,7 +73,7 @@ in commonLib.nix-tools.release-nix {
   # FIXME: some jobs currently don't build:
   disabled-jobs = [
     # "Please use win32/Makefile.gcc instead.":
-    "nix-tools.tests.x86_64-pc-mingw32-ouroboros-network.cddl.x86_64-linux"
+    "nix-tools.tests.x86_64-pc-mingw32-ouroboros-network.test-cddl.x86_64-linux"
     # hangs at Socket tests:
     "nix-tools.tests.x86_64-pc-mingw32-ouroboros-network.test-network.x86_64-linux"
     # 'Network.Socket.bind: permission denied (Operation not permitted)' at Socket tests:

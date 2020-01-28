@@ -132,7 +132,7 @@
             (hsPkgs.ouroboros-protocol-tests)
             ];
           };
-        "cddl" = {
+        "test-cddl" = {
           depends = [
             (hsPkgs.base)
             (hsPkgs.bytestring)
@@ -156,6 +156,8 @@
             (hsPkgs.text)
             (hsPkgs.typed-protocols-cbor)
             (hsPkgs.typed-protocols)
+            (hsPkgs.ouroboros-network)
+            (hsPkgs.ouroboros-protocol-tests)
             ];
           };
         };
