@@ -18,6 +18,7 @@ module Ouroboros.Network.Snocket
   , LocalSnocket
   , localSnocket
   , LocalAddress
+  , LocalFD
   , localAddressFromPath
   ) where
 
@@ -381,11 +382,13 @@ namedPipeSnocket iocp name = Snocket {
 -- | System dependent LocalSnocket type
 #if defined(mingw32_HOST_OS)
 type LocalSnocket = HANDLESnocket
+type LocalFD      = Win32.HANDLE
 
 localSnocket :: AssociateWithIOCP -> FilePath -> LocalSnocket
 localSnocket = namedPipeSnocket
 #else
 type LocalSnocket = SocketSnocket
+type LocalFD      = Socket
 
 localSnocket :: AssociateWithIOCP -> FilePath -> LocalSnocket
 localSnocket iocp _  = rawSocketSnocket iocp

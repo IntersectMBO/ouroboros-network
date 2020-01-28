@@ -29,9 +29,10 @@ module Ouroboros.Network.NodeToClient (
   , withServer_V1
   , withServer
 
-  , NetworkIPSubscriptionTracers (..)
-  , IPSubscriptionParams
-  , SubscriptionParams (..)
+
+  , NetworkClientSubcriptionTracers
+  , NetworkSubscriptionTracers (..)
+  , ClientSubscriptionParams (..)
   , ncSubscriptionWorker
   , ncSubscriptionWorker_V1
 
@@ -60,14 +61,14 @@ module Ouroboros.Network.NodeToClient (
   , DecoderFailureOrTooMuchInput
   , Handshake
   , LocalAddresses (..)
-  , IPSubscriptionTarget (..)
   , SubscriptionTrace (..)
-  , WithIPList (..)
   ) where
 
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
+import           Data.Functor.Identity (Identity (..))
+import           Data.Functor.Contravariant (contramap)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Time.Clock
@@ -78,8 +79,6 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
-
-import qualified Network.Socket as Socket
 
 import           Network.Mux hiding (MiniProtocolLimits(..))
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
@@ -95,12 +94,9 @@ import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams, SubscriptionParams (..))
-import qualified Ouroboros.Network.Subscription.Ip as Subscription
-import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
-                                                   , WithIPList (..)
-                                                   , SubscriptionTrace (..)
-                                                   )
+import           Ouroboros.Network.Subscription.Client ( ClientSubscriptionParams (..) )
+import qualified Ouroboros.Network.Subscription.Client as Subscription
+import           Ouroboros.Network.Subscription.Ip (SubscriptionTrace (..))
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.IOManager
 
@@ -269,6 +265,10 @@ withServer_V1 sn tracers networkState addr versionData application =
         (DictVersion nodeToClientCodecCBORTerm)
         application)
 
+type NetworkClientSubcriptionTracers
+    = NetworkSubscriptionTracers Identity LocalAddress NodeToClientProtocols NodeToClientVersion
+
+
 -- | 'ncSubscriptionWorker' which starts given application versions on each
 -- established connection.
 --
@@ -277,9 +277,9 @@ ncSubscriptionWorker
        ( HasInitiator appType ~ True
        )
     => LocalSnocket
-    -> NetworkIPSubscriptionTracers LocalAddress NodeToClientProtocols NodeToClientVersion
+    -> NetworkClientSubcriptionTracers
     -> NetworkMutableState LocalAddress
-    -> IPSubscriptionParams ()
+    -> ClientSubscriptionParams ()
     -> Versions
         NodeToClientVersion
         DictVersion
@@ -291,44 +291,41 @@ ncSubscriptionWorker
     -> IO Void
 ncSubscriptionWorker
   sn
-  NetworkIPSubscriptionTracers
-    { nistSubscriptionTracer
-    , nistMuxTracer
-    , nistHandshakeTracer
-    , nistErrorPolicyTracer
+  NetworkSubscriptionTracers
+    { nsSubscriptionTracer
+    , nsMuxTracer
+    , nsHandshakeTracer
+    , nsErrorPolicyTracer
     }
   networkState
   subscriptionParams
   versions
-    = Subscription.ipSubscriptionWorker
+    = Subscription.clientSubscriptionWorker
         sn
-        nistSubscriptionTracer
-        nistErrorPolicyTracer
+        (Identity `contramap` nsSubscriptionTracer)
+        nsErrorPolicyTracer
         networkState
         subscriptionParams
         (connectToNode'
           sn
           cborTermVersionDataCodec
-          (NetworkConnectTracers nistMuxTracer nistHandshakeTracer)
+          (NetworkConnectTracers nsMuxTracer nsHandshakeTracer)
           versions)
 
 
 -- | Like 'ncSubscriptionWorker' but specific to 'NodeToClientV_1'.
 --
 ncSubscriptionWorker_V1
-    :: forall appType fd addr x y.
-       ( HasInitiator appType ~ True
-       , fd   ~ Socket.Socket
-       , addr ~ Socket.SockAddr
-       )
-    => Snocket IO fd addr
-    -> NetworkIPSubscriptionTracers addr NodeToClientProtocols NodeToClientVersion
-    -> NetworkMutableState addr
-    -> IPSubscriptionParams ()
+    :: forall appType x y.
+       ( HasInitiator appType ~ True )
+    => LocalSnocket
+    -> NetworkSubscriptionTracers Identity LocalAddress NodeToClientProtocols NodeToClientVersion
+    -> NetworkMutableState LocalAddress
+    -> ClientSubscriptionParams ()
     -> NodeToClientVersionData
     -> (OuroborosApplication
           appType
-          (ConnectionId addr)
+          (ConnectionId LocalAddress)
           NodeToClientProtocols
           IO BL.ByteString x y)
     -> IO Void

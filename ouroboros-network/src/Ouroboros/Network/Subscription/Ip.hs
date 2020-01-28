@@ -27,6 +27,9 @@ module Ouroboros.Network.Subscription.Ip
     , completeApplicationTx
     , socketStateChangeTx
     , mainTx
+
+    -- * Utilitity functions
+    , selectSockAddr
     ) where
 
 
@@ -107,11 +110,20 @@ ipSubscriptionWorker snocket subscriptionTracer errorPolicyTracer
         wpSubscriptionTarget     =
           pure $ ipSubscriptionTarget subscriptionTracer' nmsPeerStates
                                       (ispIps spSubscriptionTarget),
-        wpValency                = ispValency spSubscriptionTarget
+        wpValency                = ispValency spSubscriptionTarget,
+        wpSelectAddress          = selectSockAddr
       }
 
     subscriptionTracer' = (WithIPList spLocalAddresses (ispIps spSubscriptionTarget)
               `contramap` subscriptionTracer)
+
+selectSockAddr :: Socket.SockAddr
+               -> LocalAddresses Socket.SockAddr
+               -> Maybe Socket.SockAddr
+selectSockAddr Socket.SockAddrInet{}  (LocalAddresses (Just localAddr) _ _ ) = Just localAddr
+selectSockAddr Socket.SockAddrInet6{} (LocalAddresses _ (Just localAddr) _ ) = Just localAddr
+selectSockAddr Socket.SockAddrUnix{}  (LocalAddresses _ _ (Just localAddr) ) = Just localAddr
+selectSockAddr _ _ = Nothing
 
 
 ipSubscriptionTarget :: forall m addr.
@@ -180,7 +192,7 @@ subscriptionWorker
     -> Tracer IO (SubscriptionTrace Socket.SockAddr)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> NetworkMutableState Socket.SockAddr
-    -> WorkerParams IO Socket.SockAddr
+    -> WorkerParams IO LocalAddresses Socket.SockAddr
     -> ErrorPolicies
     -> Main IO (PeerStates IO Socket.SockAddr) x
     -- ^ main callback
@@ -205,17 +217,7 @@ subscriptionWorker snocket
              , wcMainTx                = main
              }
            workerParams
-           selectAddress
            k
-
-  where
-    selectAddress :: Socket.SockAddr
-                  -> LocalAddresses Socket.SockAddr
-                  -> Maybe Socket.SockAddr
-    selectAddress Socket.SockAddrInet{}  (LocalAddresses (Just localAddr) _ _ ) = Just localAddr
-    selectAddress Socket.SockAddrInet6{} (LocalAddresses _ (Just localAddr) _ ) = Just localAddr
-    selectAddress Socket.SockAddrUnix{}  (LocalAddresses _ _ (Just localAddr) ) = Just localAddr
-    selectAddress _ _ = Nothing
 
 data WithIPList a = WithIPList {
       wilSrc   :: !(LocalAddresses Socket.SockAddr)

@@ -377,12 +377,12 @@ prop_subscriptionWorker
                      laIpv6 = Just localAddr,
                      laUnix = Nothing
                    },
+                 wpSelectAddress = \_ LocalAddresses {laIpv4, laIpv6} -> getFirst (First laIpv4 <> First laIpv6),
                  wpConnectionAttemptDelay = const Nothing,
                  wpSubscriptionTarget = 
                    pure $ ipSubscriptionTarget nullTracer peerStatesVar [remoteAddr],
                  wpValency = 1
                }
-             (\_ LocalAddresses {laIpv4, laIpv6} -> getFirst (First laIpv4 <> First laIpv6))
              (\sock -> app sock
                 `finally`
                 (void $ atomically $ tryPutTMVar doneVar ()))

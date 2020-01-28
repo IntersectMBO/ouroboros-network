@@ -33,8 +33,9 @@ module Ouroboros.Network.NodeToNode (
   -- * Subscription Workers
   -- ** IP subscriptin worker
   , IPSubscriptionTarget (..)
-  , NetworkIPSubscriptionTracers (..)
-  , nullNetworkIPSubscriptionTracers
+  , NetworkIPSubscriptionTracers
+  , NetworkSubscriptionTracers (..)
+  , nullNetworkSubscriptionTracers
   , SubscriptionParams (..)
   , IPSubscriptionParams
   , ipSubscriptionWorker
@@ -294,25 +295,25 @@ ipSubscriptionWorker
     -> IO Void
 ipSubscriptionWorker
   sn
-  NetworkIPSubscriptionTracers
-    { nistSubscriptionTracer
-    , nistMuxTracer
-    , nistHandshakeTracer
-    , nistErrorPolicyTracer
+  NetworkSubscriptionTracers
+    { nsSubscriptionTracer
+    , nsMuxTracer
+    , nsHandshakeTracer
+    , nsErrorPolicyTracer
     }
   networkState
   subscriptionParams
   versions
     = Subscription.ipSubscriptionWorker
         sn
-        nistSubscriptionTracer
-        nistErrorPolicyTracer
+        nsSubscriptionTracer
+        nsErrorPolicyTracer
         networkState
         subscriptionParams
         (connectToNode'
           sn
           cborTermVersionDataCodec
-          (NetworkConnectTracers nistMuxTracer nistHandshakeTracer)
+          (NetworkConnectTracers nsMuxTracer nsHandshakeTracer)
           versions)
 
 

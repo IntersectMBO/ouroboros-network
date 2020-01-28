@@ -193,7 +193,7 @@ data ConnectResult =
 -- | Traverse 'SubscriptionTarget's in an infinite loop.
 --
 subscriptionLoop
-    :: forall m s sock addr a x.
+    :: forall m s sock localAddrs addr a x.
        ( MonadAsync m
        , MonadFork  m
        , MonadMask  m
@@ -216,8 +216,7 @@ subscriptionLoop
     -> Snocket             m sock addr
 
     -> WorkerCallbacks m s addr a x
-    -> WorkerParams m addr
-    -> (addr -> LocalAddresses addr -> Maybe addr)
+    -> WorkerParams m localAddrs addr
     -- ^ given a remote address, pick the local one
     -> (sock -> m a)
     -- ^ application
@@ -231,8 +230,8 @@ subscriptionLoop
                    , wpConnectionAttemptDelay = connectionAttemptDelay
                    , wpSubscriptionTarget     = subscriptionTargets
                    , wpValency                = valency
+                   , wpSelectAddress
                    }
-      selectAddress
       k = do
     valencyVar <- atomically $ newValencyCounter tbl valency
 
@@ -310,7 +309,7 @@ subscriptionLoop
       r <- refConnection tbl remoteAddr valencyVar
       case r of
         ConnectionTableCreate ->
-          case selectAddress remoteAddr localAddresses of
+          case wpSelectAddress remoteAddr localAddresses of
             Nothing ->
               traceWith tr (SubscriptionTraceUnsupportedRemoteAddr remoteAddr)
 
@@ -515,8 +514,11 @@ data WorkerCallbacks m s addr a t = WorkerCallbacks {
 
 -- | Worker parameters
 --
-data WorkerParams m addr = WorkerParams {
-    wpLocalAddresses         :: LocalAddresses addr,
+data WorkerParams m localAddrs addr = WorkerParams {
+    wpLocalAddresses         :: localAddrs addr,
+    -- ^ local addresses of the server
+    wpSelectAddress          :: addr -> localAddrs addr -> Maybe addr,
+    -- ^ given remote addr pick the local address 
     wpConnectionAttemptDelay :: addr -> Maybe DiffTime,
     -- ^ delay after a connection attempt to 'addr'
     wpSubscriptionTarget     :: m (SubscriptionTarget m addr),
@@ -532,7 +534,7 @@ data WorkerParams m addr = WorkerParams {
 -- 'orElse', PR #432.
 --
 worker
-    :: forall s sock addr a x.
+    :: forall s sock localAddrs addr a x.
        ( Ord addr
        , Show addr
        )
@@ -544,18 +546,17 @@ worker
     -> Snocket             IO sock addr
 
     -> WorkerCallbacks     IO s addr a x
-    -> WorkerParams        IO   addr
-    -> (addr -> LocalAddresses addr -> Maybe addr)
+    -> WorkerParams        IO   localAddrs addr
 
     -> (sock -> IO a)
     -- ^ application
     -> IO x
-worker tr errTrace tbl sVar snocket workerCallbacks@WorkerCallbacks {wcCompleteApplicationTx, wcMainTx} workerParams selectAddress k = do
+worker tr errTrace tbl sVar snocket workerCallbacks@WorkerCallbacks {wcCompleteApplicationTx, wcMainTx } workerParams k = do
     resQ <- newResultQ
     threadsVar <- atomically $ newTVar Set.empty
     withAsync
       (subscriptionLoop tr tbl resQ sVar threadsVar snocket
-         workerCallbacks workerParams selectAddress k) $ \_ ->
+         workerCallbacks workerParams k) $ \_ ->
            mainLoop errTrace resQ threadsVar sVar wcCompleteApplicationTx wcMainTx
            `finally` killThreads threadsVar
   where

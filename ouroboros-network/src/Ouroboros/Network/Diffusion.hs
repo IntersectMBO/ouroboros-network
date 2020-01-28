@@ -28,7 +28,7 @@ import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (SockAddr, AddrInfo)
 import qualified Network.Socket as Socket
 
-import           Ouroboros.Network.Snocket (SocketSnocket, LocalSnocket)
+import           Ouroboros.Network.Snocket (LocalAddress, SocketSnocket, LocalSnocket)
 import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
@@ -57,23 +57,24 @@ import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.Tracers
 
 data DiffusionTracers = DiffusionTracers {
-      dtIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace SockAddr))
+      dtIpSubscriptionTracer   :: Tracer IO (WithIPList (SubscriptionTrace SockAddr))
        -- ^ IP subscription tracer
-    , dtDnsSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace SockAddr))
+    , dtDnsSubscriptionTracer  :: Tracer IO (WithDomainName (SubscriptionTrace SockAddr))
       -- ^ DNS subscription tracer
-    , dtDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
+    , dtDnsResolverTracer      :: Tracer IO (WithDomainName DnsTrace)
       -- ^ DNS resolver tracer
-    , dtMuxTracer             :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
+    , dtMuxTracer              :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
       -- ^ Mux tracer
-    , dtMuxLocalTracer        :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
+    , dtMuxLocalTracer         :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace)
       -- ^ Mux tracer for local clients
-    , dtHandshakeTracer       :: Tracer IO (WithMuxBearer (ConnectionId SockAddr)
+    , dtHandshakeTracer        :: Tracer IO (WithMuxBearer (ConnectionId SockAddr)
                                              (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term)))
       -- ^ Handshake protocol tracer
-    , dtHandshakeLocalTracer  :: Tracer IO (WithMuxBearer (ConnectionId SockAddr)
+    , dtHandshakeLocalTracer   :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress)
                                              (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term)))
       -- ^ Handshake protocol tracer for local clients
-    , dtErrorPolicyTracer     :: Tracer IO (WithAddr SockAddr ErrorPolicyTrace)
+    , dtErrorPolicyTracer      :: Tracer IO (WithAddr SockAddr     ErrorPolicyTrace)
+    , dtLocalErrorPolicyTracer :: Tracer IO (WithAddr LocalAddress ErrorPolicyTrace)
     }
 
 
@@ -122,7 +123,7 @@ data DiffusionApplications = DiffusionApplications {
                                        DictVersion
                                        (OuroborosApplication
                                           'ResponderApp
-                                          (ConnectionId SockAddr)
+                                          (ConnectionId LocalAddress)
                                           NodeToClientProtocols
                                           IO
                                           ByteString
@@ -194,6 +195,7 @@ runDataDiffusion tracers
                      , dtHandshakeTracer
                      , dtHandshakeLocalTracer
                      , dtErrorPolicyTracer
+                     , dtLocalErrorPolicyTracer
                      } = tracers
 
     initiatorLocalAddresses :: LocalAddresses SockAddr
@@ -220,14 +222,14 @@ runDataDiffusion tracers
     remoteErrorPolicy = NodeToNode.remoteNetworkErrorPolicy <> daErrorPolicies
     localErrorPolicy  = NodeToNode.localNetworkErrorPolicy <> daErrorPolicies
 
-    runLocalServer :: SocketSnocket -> NetworkMutableState SockAddr -> IO Void
+    runLocalServer :: LocalSnocket -> NetworkMutableState LocalAddress -> IO Void
     runLocalServer sn networkLocalState =
       NodeToClient.withServer
         sn
         (NetworkServerTracers
           dtMuxLocalTracer
           dtHandshakeLocalTracer
-          dtErrorPolicyTracer)
+          dtLocalErrorPolicyTracer)
         networkLocalState
         (Snocket.localAddressFromPath daLocalAddress)
         (daLocalResponderApplication applications)
@@ -251,7 +253,7 @@ runDataDiffusion tracers
                             -> IO Void
     runIpSubscriptionWorker sn networkState = NodeToNode.ipSubscriptionWorker
       sn
-      (NetworkIPSubscriptionTracers
+      (NetworkSubscriptionTracers
         dtMuxTracer
         dtHandshakeTracer
         dtErrorPolicyTracer
