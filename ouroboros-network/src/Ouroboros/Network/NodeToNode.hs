@@ -236,7 +236,7 @@ withServer
   -> NetworkMutableState Socket.SockAddr
   -> Socket.SockAddr
   -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
-  -> ErrorPolicies Socket.SockAddr ()
+  -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState addr versions errPolicies =
   withServerNode
@@ -261,7 +261,7 @@ withServer_V1
   -> Socket.SockAddr
   -> NodeToNodeVersionData
   -> (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString x y)
-  -> ErrorPolicies Socket.SockAddr ()
+  -> ErrorPolicies
   -> IO Void
 withServer_V1 sn tracers networkState addr versionData application =
     withServer
@@ -433,7 +433,7 @@ dnsSubscriptionWorker_V1
 -- | A minimal error policy for remote peers, which only handles exceptions
 -- raised by `ouroboros-network`.
 --
-remoteNetworkErrorPolicy :: ErrorPolicies Socket.SockAddr a
+remoteNetworkErrorPolicy :: ErrorPolicies
 remoteNetworkErrorPolicy = ErrorPolicies {
       epAppErrorPolicies = [
           -- Handshake client protocol error: we either did not recognise received
@@ -500,9 +500,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
       epConErrorPolicies = [
           ErrorPolicy $ \(_ :: IOException) -> Just $
             SuspendConsumer shortDelay
-        ],
-
-      epReturnCallback = \_ _ _ -> ourBug
+        ]
     }
   where
     theyBuggyOrEvil :: SuspendDecision DiffTime
@@ -510,9 +508,6 @@ remoteNetworkErrorPolicy = ErrorPolicies {
 
     misconfiguredPeer :: SuspendDecision DiffTime
     misconfiguredPeer = SuspendConsumer defaultDelay
-
-    ourBug :: SuspendDecision DiffTime
-    ourBug = Throw
 
     defaultDelay :: DiffTime
     defaultDelay = 200 -- seconds
@@ -528,7 +523,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
 -- killed and not penalised by this policy.  This allows to restart the local
 -- client without a delay.
 --
-localNetworkErrorPolicy :: ErrorPolicies Socket.SockAddr a
+localNetworkErrorPolicy :: ErrorPolicies
 localNetworkErrorPolicy = ErrorPolicies {
       epAppErrorPolicies = [
           -- exception thrown by `runDecoderWithByteLimit`
@@ -547,12 +542,7 @@ localNetworkErrorPolicy = ErrorPolicies {
         ],
 
       -- The node never connects to a local client
-      epConErrorPolicies = [],
-
-      epReturnCallback = \_ _ _ -> ourBug
+      epConErrorPolicies = []
     }
-  where
-    ourBug :: SuspendDecision DiffTime
-    ourBug = Throw
 
 type RemoteConnectionId = ConnectionId Socket.SockAddr

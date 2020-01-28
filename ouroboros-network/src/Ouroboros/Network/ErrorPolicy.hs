@@ -31,7 +31,7 @@ module Ouroboros.Network.ErrorPolicy
 import           Control.Exception (Exception, IOException, SomeException (..))
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe, mapMaybe)
+import           Data.Maybe (mapMaybe)
 import           Data.Semigroup (sconcat)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -46,8 +46,6 @@ import           Text.Printf
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
-
-import           Data.Semigroup.Action
 
 import           Ouroboros.Network.Subscription.PeerState
 
@@ -99,20 +97,19 @@ evalErrorPolicies e =
 -- | List of error policies for exception handling and a policy for handing
 -- application return values.
 --
-data ErrorPolicies addr a = ErrorPolicies {
+data ErrorPolicies = ErrorPolicies {
     -- | Application Error Policies
     epAppErrorPolicies  :: [ErrorPolicy]
     -- | `connect` Error Policies
   , epConErrorPolicies  :: [ErrorPolicy]
-  , epReturnCallback :: Time -> addr -> a -> SuspendDecision DiffTime
   }
 
-nullErrorPolicies :: ErrorPolicies addr a
-nullErrorPolicies = ErrorPolicies [] [] (\_ _ _ -> Throw)
+nullErrorPolicies :: ErrorPolicies
+nullErrorPolicies = ErrorPolicies [] []
 
-instance Semigroup (ErrorPolicies addr a) where
-    ErrorPolicies aep cep fn <> ErrorPolicies aep' cep' fn'
-      = ErrorPolicies (aep <> aep') (cep <> cep') (fn <> fn')
+instance Semigroup ErrorPolicies where
+    ErrorPolicies aep cep <> ErrorPolicies aep' cep' 
+      = ErrorPolicies (aep <> aep') (cep <> cep')
 
 -- | Sum type which distinguishes between connection and application
 -- exception traces.
@@ -181,7 +178,7 @@ completeApplicationTx
      , Ord addr
      , Ord (Async m ())
      )
-  => ErrorPolicies addr a
+  => ErrorPolicies
   -> CompleteApplication m
        (PeerStates m addr)
        addr
@@ -196,22 +193,12 @@ completeApplicationTx _ _ ps@ThrowException{} = pure $
       }
 
 -- application returned; classify the return value and update the state.
-completeApplicationTx ErrorPolicies {epReturnCallback} (ApplicationResult t addr r) (PeerStates ps) =
-  let cmd = epReturnCallback t addr r
-      fn :: Maybe (PeerState m)
-         -> ( Set (Async m ())
-            , Maybe (PeerState m)
-            )
-      fn mbps = ( maybe Set.empty (`threadsToCancel` cmd) mbps
-                , mbps <| (flip addTime t <$> cmd)
-                )
-  in case alterAndLookup fn addr ps of
-    (ps', mbthreads) -> pure $
-      CompleteApplicationResult {
-          carState   = PeerStates ps',
-          carThreads = fromMaybe Set.empty mbthreads,
-          carTrace   = WithAddr addr <$> traceErrorPolicy (Right r) cmd
-        }
+completeApplicationTx _ ApplicationResult{} ps =
+    pure $ CompleteApplicationResult {
+        carState   = ps,
+        carThreads = Set.empty,
+        carTrace   = Nothing
+      }
 
 -- application errored
 completeApplicationTx ErrorPolicies {epAppErrorPolicies} (ApplicationError t addr e) ps =

@@ -130,10 +130,8 @@ data DiffusionApplications = DiffusionApplications {
                                           ())
       -- ^ NodeToClient responder applicaton (server role)
 
-    , daErrorPolicies :: ErrorPolicies SockAddr ()
+    , daErrorPolicies :: ErrorPolicies
       -- ^ error policies
-      --
-      -- TODO: one cannot use `forall a. ErrorPolicies SockAddr a`
     }
 
 runDataDiffusion
@@ -218,7 +216,7 @@ runDataDiffusion tracers
       , laUnix = Nothing
       }
 
-    remoteErrorPolicy, localErrorPolicy :: ErrorPolicies SockAddr ()
+    remoteErrorPolicy, localErrorPolicy :: ErrorPolicies
     remoteErrorPolicy = NodeToNode.remoteNetworkErrorPolicy <> daErrorPolicies
     localErrorPolicy  = NodeToNode.localNetworkErrorPolicy <> daErrorPolicies
 

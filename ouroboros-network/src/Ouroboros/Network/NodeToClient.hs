@@ -225,7 +225,7 @@ withServer
   -> LocalAddress
   -> Versions NodeToClientVersion DictVersion
               (OuroborosApplication appType (ConnectionId LocalAddress) NodeToClientProtocols IO BL.ByteString a b)
-  -> ErrorPolicies LocalAddress ()
+  -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState addr versions errPolicies =
   withServerNode
@@ -258,7 +258,7 @@ withServer_V1
   -- ^ applications which has the reponder side, i.e.
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
-  -> ErrorPolicies LocalAddress ()
+  -> ErrorPolicies
   -> IO Void
 withServer_V1 sn tracers networkState addr versionData application =
     withServer
@@ -363,7 +363,7 @@ ncSubscriptionWorker_V1
 --
 -- If a trusted node sends us a wrong data or 
 --
-networkErrorPolicies :: ErrorPolicies addr a
+networkErrorPolicies :: ErrorPolicies
 networkErrorPolicies = ErrorPolicies
     { epAppErrorPolicies = [
         -- Handshake client protocol error: we either did not recognise received
@@ -408,7 +408,6 @@ networkErrorPolicies = ErrorPolicies
         ErrorPolicy $ \(_ :: IOException) -> Just $
           SuspendPeer shortDelay shortDelay
       ]
-    , epReturnCallback = \_ _ _ -> ourBug
     }
   where
     ourBug :: SuspendDecision DiffTime
