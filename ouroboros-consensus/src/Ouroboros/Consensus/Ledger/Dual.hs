@@ -434,12 +434,14 @@ instance Bridge m a => ProtocolLedgerView (DualBlock m a) where
 
 -- | Not used in the tests: no constructors
 instance Bridge m a => QueryLedger (DualBlock m a) where
-  data Query (DualBlock m a)
-    deriving (Show)
-  data Result (DualBlock m a)
+  data Query (DualBlock m a) result
     deriving (Show)
 
-  answerQuery q _ledgerState = case q of {}
+  answerQuery = \case {}
+  eqQuery     = \case {}
+
+instance ShowQuery (Query (DualBlock m a)) where
+  showResult = \case {}
 
 {-------------------------------------------------------------------------------
   Mempool support

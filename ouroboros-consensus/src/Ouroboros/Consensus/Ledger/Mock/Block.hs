@@ -2,9 +2,11 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE EmptyCase                  #-}
+{-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -38,9 +40,6 @@ module Ouroboros.Consensus.Ledger.Mock.Block (
     -- * 'ApplyTx' (mempool support)
   , GenTx(..)
   , mkSimpleGenTx
-    -- * 'QueryLedger'
-  , Query(..)
-  , Result(..)
     -- * Crypto
   , SimpleCrypto
   , SimpleStandardCrypto
@@ -334,13 +333,14 @@ mkSimpleGenTx tx = SimpleGenTx
 
 instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
       => QueryLedger (SimpleBlock c ext) where
-  data Query  (SimpleBlock c ext) = QueryLedgerTip
-    deriving (Show, Generic, Serialise)
-  data Result (SimpleBlock c ext) = ResultLedgerTip (Point (SimpleBlock c ext))
-    deriving (Show, Generic, Serialise)
+  data Query (SimpleBlock c ext) result
+    deriving (Show)
 
-  answerQuery QueryLedgerTip (SimpleLedgerState MockState { mockTip }) =
-    ResultLedgerTip mockTip
+  answerQuery = \case {}
+  eqQuery     = \case {}
+
+instance ShowQuery (Query (SimpleBlock c ext)) where
+  showResult = \case {}
 
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks

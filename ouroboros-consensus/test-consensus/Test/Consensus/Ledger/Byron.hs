@@ -1,11 +1,14 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Ledger.Byron (tests) where
 
@@ -32,6 +35,7 @@ import           Cardano.Crypto (ProtocolMagicId (..))
 
 import           Ouroboros.Network.Block (HeaderHash, SlotNo)
 import           Ouroboros.Network.Point (WithOrigin (At))
+import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Byron
@@ -178,13 +182,17 @@ prop_roundtrip_ApplyTxErr :: ApplyTxErr ByronBlock -> Property
 prop_roundtrip_ApplyTxErr =
     roundtrip encodeByronApplyTxError decodeByronApplyTxError
 
-prop_roundtrip_Query :: Query ByronBlock -> Property
+prop_roundtrip_Query :: Some (Query ByronBlock) -> Property
 prop_roundtrip_Query =
-    roundtrip encodeByronQuery decodeByronQuery
+    roundtrip
+      (\case { Some query -> encodeByronQuery query })
+      decodeByronQuery
 
-prop_roundtrip_Result :: Result ByronBlock -> Property
+prop_roundtrip_Result :: CC.UPI.State -> Property
 prop_roundtrip_Result =
-    roundtrip encodeByronResult decodeByronResult
+    roundtrip
+      (encodeByronResult GetUpdateInterfaceState)
+      (decodeByronResult GetUpdateInterfaceState)
 
 {-------------------------------------------------------------------------------
   BinaryInfo
@@ -518,8 +526,8 @@ instance Arbitrary ApplyMempoolPayloadErr where
     -- , MempoolUpdateVoteErr     <$> arbitrary
     ]
 
-instance Arbitrary (Query ByronBlock) where
-  arbitrary = return GetUpdateInterfaceState
+instance Arbitrary (Some (Query ByronBlock)) where
+  arbitrary = pure $ Some GetUpdateInterfaceState
 
 instance Arbitrary EpochNumber where
   arbitrary = hedgehog CC.genEpochNumber
@@ -548,19 +556,25 @@ instance Arbitrary CC.Update.ProtocolParameters where
 instance Arbitrary CC.Update.SoftwareVersion where
   arbitrary = hedgehog CC.genSoftwareVersion
 
-instance Arbitrary (Result ByronBlock) where
-  arbitrary = UpdateInterfaceState <$> genUPIState
-    where
-      genUPIState :: Gen CC.UPI.State
-      genUPIState = CC.UPI.State
-        <$> arbitrary
-        <*> arbitrary
-        <*> arbitrary
-        <*> pure mempty -- TODO CandidateProtocolUpdate's constructor is not exported
-        <*> arbitrary
-        <*> arbitrary
-        <*> arbitrary
-        <*> arbitrary
-        <*> arbitrary
-        <*> pure mempty -- TODO Endorsement is not exported
-        <*> arbitrary
+instance Arbitrary CC.UPI.State where
+  arbitrary = CC.UPI.State
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> pure mempty -- TODO CandidateProtocolUpdate's constructor is not exported
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> pure mempty -- TODO Endorsement is not exported
+    <*> arbitrary
+
+{-------------------------------------------------------------------------------
+  Orphans
+-------------------------------------------------------------------------------}
+
+instance Eq (Some (Query ByronBlock)) where
+  Some GetUpdateInterfaceState == Some GetUpdateInterfaceState = True
+
+deriving instance Show (Some (Query ByronBlock))

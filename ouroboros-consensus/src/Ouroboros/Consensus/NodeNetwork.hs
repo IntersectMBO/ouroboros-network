@@ -3,6 +3,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -133,7 +134,7 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
         :: LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
 
     , phLocalStateQueryServer
-        :: LocalStateQueryServer blk (Query blk) (Result blk) m ()
+        :: LocalStateQueryServer blk (Query blk) m ()
     }
 
 protocolHandlers
@@ -215,7 +216,7 @@ data ProtocolCodecs blk failure m
                                          failure m bytesLCS
   , pcLocalTxSubmissionCodec    :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))
                                          failure m bytesLTX
-  , pcLocalStateQueryCodec      :: Codec (LocalStateQuery blk (Query blk) (Result blk))
+  , pcLocalStateQueryCodec      :: Codec (LocalStateQuery blk (Query blk))
                                          failure m bytesLSQ
   }
 
@@ -288,7 +289,7 @@ protocolCodecs cfg = ProtocolCodecs {
 
 -- | Id codecs used in tests.
 --
-protocolCodecsId :: Monad m
+protocolCodecsId :: (Monad m, QueryLedger blk)
                  => ProtocolCodecs blk CodecFailure m
                       (AnyMessage (ChainSync (Header blk) (Tip blk)))
                       (AnyMessage (ChainSync (Serialised (Header blk)) (Tip blk)))
@@ -297,7 +298,7 @@ protocolCodecsId :: Monad m
                       (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
                       (AnyMessage (ChainSync (Serialised blk) (Tip blk)))
                       (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
-                      (AnyMessage (LocalStateQuery blk (Query blk) (Result blk)))
+                      (AnyMessage (LocalStateQuery blk (Query blk)))
 protocolCodecsId = ProtocolCodecs {
       pcChainSyncCodec            = codecChainSyncId
     , pcChainSyncCodecSerialised  = codecChainSyncId
@@ -306,7 +307,7 @@ protocolCodecsId = ProtocolCodecs {
     , pcTxSubmissionCodec         = codecTxSubmissionId
     , pcLocalChainSyncCodec       = codecChainSyncId
     , pcLocalTxSubmissionCodec    = codecLocalTxSubmissionId
-    , pcLocalStateQueryCodec      = codecLocalStateQueryId
+    , pcLocalStateQueryCodec      = codecLocalStateQueryId eqQuery
     }
 
 -- | A record of 'Tracer's for the different protocols.
@@ -320,7 +321,7 @@ data ProtocolTracers' peer blk failure f = ProtocolTracers {
   , ptTxSubmissionTracer         :: f (TraceLabelPeer peer (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))))
   , ptLocalChainSyncTracer       :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Serialised blk) (Tip blk))))
   , ptLocalTxSubmissionTracer    :: f (TraceLabelPeer peer (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))))
-  , ptLocalStateQueryTracer      :: f (TraceLabelPeer peer (TraceSendRecv (LocalStateQuery blk (Query blk) (Result blk))))
+  , ptLocalStateQueryTracer      :: f (TraceLabelPeer peer (TraceSendRecv (LocalStateQuery blk (Query blk))))
   }
 
 -- | Use a 'nullTracer' for each protocol.
@@ -342,8 +343,7 @@ showProtocolTracers :: ( Show blk
                        , Show (GenTx blk)
                        , Show (GenTxId blk)
                        , Show (ApplyTxErr blk)
-                       , Show (Query blk)
-                       , Show (Result blk)
+                       , ShowQuery (Query blk)
                        , HasHeader blk
                        )
                     => Tracer m String -> ProtocolTracers m peer blk failure

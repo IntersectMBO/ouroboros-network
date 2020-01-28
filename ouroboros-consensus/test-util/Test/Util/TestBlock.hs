@@ -4,12 +4,14 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 -- | Minimal instantiation of the consensus layer to be able to run the ChainDB
@@ -23,7 +25,6 @@ module Test.Util.TestBlock (
   , TestBlockError(..)
   , Header(..)
   , Query(..)
-  , Result(..)
   , firstBlock
   , successorBlock
   , modifyFork
@@ -62,6 +63,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
+import           Data.Type.Equality ((:~:) (Refl))
 import           Data.Word
 import           GHC.Generics (Generic)
 import qualified System.Random as R
@@ -305,13 +307,18 @@ instance ProtocolLedgerView TestBlock where
   anachronisticProtocolLedgerView _ _ _ = Right ()
 
 instance QueryLedger TestBlock where
-  data Query  TestBlock = QueryLedgerTip
-    deriving (Eq, Show, Generic, Serialise)
-  data Result TestBlock = ResultLedgerTip (Point TestBlock)
-    deriving (Eq, Show, Generic, Serialise)
+  data Query TestBlock result where
+    QueryLedgerTip :: Query TestBlock (Point TestBlock)
 
   answerQuery QueryLedgerTip (TestLedger { lastAppliedPoint }) =
-    ResultLedgerTip lastAppliedPoint
+    lastAppliedPoint
+  eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
+
+deriving instance Eq (Query TestBlock result)
+deriving instance Show (Query TestBlock result)
+
+instance ShowQuery (Query TestBlock) where
+  showResult QueryLedgerTip = show
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger Block.genesisPoint

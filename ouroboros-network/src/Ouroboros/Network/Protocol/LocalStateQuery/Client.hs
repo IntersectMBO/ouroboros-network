@@ -22,8 +22,8 @@ import           Ouroboros.Network.Block (Point)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 
-newtype LocalStateQueryClient block query result m a = LocalStateQueryClient {
-      runLocalStateQueryClient :: ClientStIdle block query result m a
+newtype LocalStateQueryClient block query m a = LocalStateQueryClient {
+      runLocalStateQueryClient :: ClientStIdle block query m a
     }
 
 -- | In the 'StIdle' protocol state, the client has agency and must send:
@@ -31,13 +31,13 @@ newtype LocalStateQueryClient block query result m a = LocalStateQueryClient {
 --  * a request to acquire a state
 --  * a termination messge
 --
-data ClientStIdle block query result (m :: * -> *) a where
+data ClientStIdle block query (m :: * -> *) a where
   SendMsgAcquire :: Point block
-                 -> ClientStAcquiring block query result m a
-                 -> ClientStIdle      block query result m a
+                 -> ClientStAcquiring block query m a
+                 -> ClientStIdle      block query m a
 
   SendMsgDone    :: a
-                 -> ClientStIdle      block query result m a
+                 -> ClientStIdle      block query m a
 
 -- | In the 'StAcquiring' protocol state, the client does not have agency.
 -- Instead it is waiting for:
@@ -47,11 +47,11 @@ data ClientStIdle block query result (m :: * -> *) a where
 --
 -- It must be prepared to handle either.
 --
-data ClientStAcquiring block query result m a = ClientStAcquiring {
-      recvMsgAcquired :: ClientStAcquired block query result m a,
+data ClientStAcquiring block query m a = ClientStAcquiring {
+      recvMsgAcquired :: ClientStAcquired block query m a,
 
       recvMsgFailure  :: AcquireFailure
-                      -> m (ClientStIdle  block query result m a)
+                      -> m (ClientStIdle  block query m a)
     }
 
 -- | In the 'StAcquired' protocol state, the client has agency and must send:
@@ -60,41 +60,41 @@ data ClientStAcquiring block query result m a = ClientStAcquiring {
 --  * a request to (re)acquire another state
 --  * a release of the current state
 --
-data ClientStAcquired block query result m a where
-  SendMsgQuery     :: query
-                   -> ClientStQuerying block query result m a
-                   -> ClientStAcquired block query result m a
+data ClientStAcquired block query m a where
+  SendMsgQuery     :: query result
+                   -> ClientStQuerying block query m a result
+                   -> ClientStAcquired block query m a
 
   SendMsgReAcquire :: Point block
-                   -> ClientStAcquiring block query result m a
-                   -> ClientStAcquired  block query result m a
+                   -> ClientStAcquiring block query m a
+                   -> ClientStAcquired  block query m a
 
-  SendMsgRelease   :: ClientStIdle      block query result m a
-                   -> ClientStAcquired  block query result m a
+  SendMsgRelease   :: ClientStIdle      block query m a
+                   -> ClientStAcquired  block query m a
 
 -- | In the 'StQuerying' protocol state, the client does not have agency.
 -- Instead it is waiting for:
 --
 --  * a result
 --
-data ClientStQuerying block query result m a = ClientStQuerying {
-      recvMsgResult :: result -> m (ClientStAcquired block query result m a)
+data ClientStQuerying block query m a result = ClientStQuerying {
+      recvMsgResult :: result -> m (ClientStAcquired block query m a)
     }
 
 -- | Interpret a 'LocalStateQueryClient' action sequence as a 'Peer' on the
 -- client side of the 'LocalStateQuery' protocol.
 --
 localStateQueryClientPeer
-  :: forall block query result m a.
+  :: forall block query m a.
      Monad m
-  => LocalStateQueryClient block query result m a
-  -> Peer (LocalStateQuery block query result) AsClient StIdle m a
+  => LocalStateQueryClient block query m a
+  -> Peer (LocalStateQuery block query) AsClient StIdle m a
 localStateQueryClientPeer (LocalStateQueryClient handler) =
     handleStIdle handler
   where
     handleStIdle
-      :: ClientStIdle block query result m a
-      -> Peer (LocalStateQuery block query result) AsClient StIdle m a
+      :: ClientStIdle block query m a
+      -> Peer (LocalStateQuery block query) AsClient StIdle m a
     handleStIdle req = case req of
       SendMsgAcquire pt stAcquiring ->
         Yield (ClientAgency TokIdle)
@@ -106,21 +106,21 @@ localStateQueryClientPeer (LocalStateQueryClient handler) =
               (Done TokDone a)
 
     handleStAcquiring
-      :: ClientStAcquiring block query result m a
-      -> Peer (LocalStateQuery block query result) AsClient StAcquiring m a
+      :: ClientStAcquiring block query m a
+      -> Peer (LocalStateQuery block query) AsClient StAcquiring m a
     handleStAcquiring ClientStAcquiring{recvMsgAcquired, recvMsgFailure} =
       Await (ServerAgency TokAcquiring) $ \req -> case req of
         MsgAcquired        -> handleStAcquired recvMsgAcquired
         MsgFailure failure -> Effect $ handleStIdle <$> recvMsgFailure failure
 
     handleStAcquired
-      :: ClientStAcquired block query result m a
-      -> Peer (LocalStateQuery block query result) AsClient StAcquired m a
+      :: ClientStAcquired block query m a
+      -> Peer (LocalStateQuery block query) AsClient StAcquired m a
     handleStAcquired req = case req of
       SendMsgQuery query stQuerying ->
         Yield (ClientAgency TokAcquired)
               (MsgQuery query)
-              (handleStQuerying stQuerying)
+              (handleStQuerying query stQuerying)
       SendMsgReAcquire pt stAcquiring ->
         Yield (ClientAgency TokAcquired)
               (MsgReAcquire pt)
@@ -131,8 +131,9 @@ localStateQueryClientPeer (LocalStateQueryClient handler) =
               (handleStIdle stIdle)
 
     handleStQuerying
-      :: ClientStQuerying block query result m a
-      -> Peer (LocalStateQuery block query result) AsClient StQuerying m a
-    handleStQuerying ClientStQuerying{recvMsgResult} =
-      Await (ServerAgency TokQuerying) $ \req -> case req of
-        MsgResult result -> Effect (handleStAcquired <$> recvMsgResult result)
+      :: query result
+      -> ClientStQuerying block query m a result
+      -> Peer (LocalStateQuery block query) AsClient (StQuerying result) m a
+    handleStQuerying query ClientStQuerying{recvMsgResult} =
+      Await (ServerAgency (TokQuerying query)) $ \req -> case req of
+        MsgResult _ result -> Effect (handleStAcquired <$> recvMsgResult result)

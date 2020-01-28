@@ -1,9 +1,11 @@
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -14,7 +16,6 @@ module Ouroboros.Consensus.Ledger.Byron.Ledger (
     LedgerConfig(..)
   , LedgerState(..)
   , Query(..)
-  , Result(..)
   , initByronLedgerState
     -- * Serialisation
   , encodeByronLedgerState
@@ -36,6 +37,7 @@ import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq.Lazy
+import           Data.Type.Equality ((:~:) (Refl))
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -52,6 +54,7 @@ import qualified Cardano.Chain.ValidationMode as CC
 import           Ouroboros.Network.Block (Point (..), SlotNo (..), blockSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point
+import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Byron.Auxiliary as Aux
@@ -125,16 +128,19 @@ initByronLedgerState genesis mUtxo = ByronLedgerState {
     override (Just utxo) st = st { CC.cvsUtxo = utxo }
 
 instance QueryLedger ByronBlock where
-  data Query ByronBlock
-    = GetUpdateInterfaceState
-    deriving (Eq, Show)
-
-  data Result ByronBlock
-    = UpdateInterfaceState UPI.State
-    deriving (Eq, Show)
+  data Query ByronBlock :: * -> * where
+    GetUpdateInterfaceState :: Query ByronBlock UPI.State
 
   answerQuery GetUpdateInterfaceState ledgerState =
-    UpdateInterfaceState (CC.cvsUpdateState (byronLedgerState ledgerState))
+    CC.cvsUpdateState (byronLedgerState ledgerState)
+
+  eqQuery GetUpdateInterfaceState GetUpdateInterfaceState = Just Refl
+
+deriving instance Eq (Query ByronBlock result)
+deriving instance Show (Query ByronBlock result)
+
+instance ShowQuery (Query ByronBlock) where
+  showResult GetUpdateInterfaceState = show
 
 instance ConfigContainsGenesis (LedgerConfig ByronBlock) where
   getGenesisConfig = unByronLedgerConfig
@@ -331,19 +337,22 @@ decodeByronLedgerState = do
       <$> decode
       <*> History.decodeDelegationHistory
 
-encodeByronQuery :: Query ByronBlock -> Encoding
+encodeByronQuery :: Query ByronBlock result -> Encoding
 encodeByronQuery query = case query of
     GetUpdateInterfaceState -> CBOR.encodeWord8 0
 
-decodeByronQuery :: Decoder s (Query ByronBlock)
+decodeByronQuery :: Decoder s (Some (Query ByronBlock))
 decodeByronQuery = do
     tag <- CBOR.decodeWord8
     case tag of
-      0 -> return GetUpdateInterfaceState
+      0 -> return $ Some GetUpdateInterfaceState
       _ -> fail $ "decodeByronQuery: invalid tag " <> show tag
 
-encodeByronResult :: Result ByronBlock -> Encoding
-encodeByronResult (UpdateInterfaceState state) = toCBOR state
+encodeByronResult :: Query ByronBlock result -> result -> Encoding
+encodeByronResult query = case query of
+    GetUpdateInterfaceState -> toCBOR
 
-decodeByronResult :: Decoder s (Result ByronBlock)
-decodeByronResult = UpdateInterfaceState <$> fromCBOR
+decodeByronResult :: Query ByronBlock result
+                  -> forall s. Decoder s result
+decodeByronResult query = case query of
+    GetUpdateInterfaceState -> fromCBOR

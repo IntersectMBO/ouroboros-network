@@ -117,7 +117,7 @@ prop_localStateQueryServer k bt p = checkOutcome k chain actualOutcome
 checkOutcome
   :: SecurityParam
   -> Chain TestBlock
-  -> [(Point TestBlock, Either AcquireFailure [Result TestBlock])]
+  -> [(Point TestBlock, Either AcquireFailure (Point TestBlock))]
   -> Property
 checkOutcome k chain = conjoin . map (uncurry checkResult)
   where
@@ -127,11 +127,11 @@ checkOutcome k chain = conjoin . map (uncurry checkResult)
 
     checkResult
       :: Point TestBlock
-      -> Either AcquireFailure [Result TestBlock]
+      -> Either AcquireFailure (Point TestBlock)
       -> Property
     checkResult pt = \case
-      Right results
-        -> tabulate "Acquired" ["Success"] $ results === [ResultLedgerTip pt]
+      Right result
+        -> tabulate "Acquired" ["Success"] $ result === pt
       Left AcquireFailurePointNotOnChain
         | Chain.pointOnChain pt chain
         -> counterexample
@@ -155,16 +155,15 @@ mkClient
   -> LocalStateQueryClient
        TestBlock
        (Query TestBlock)
-       (Result TestBlock)
        m
-       [(Point TestBlock, Either AcquireFailure [Result TestBlock])]
-mkClient points = localStateQueryClient [(pt, [QueryLedgerTip]) | pt <- points]
+       [(Point TestBlock, Either AcquireFailure (Point TestBlock))]
+mkClient points = localStateQueryClient [(pt, QueryLedgerTip) | pt <- points]
 
 mkServer
   :: IOLike m
   => SecurityParam
   -> Chain TestBlock
-  -> m (LocalStateQueryServer TestBlock (Query TestBlock) (Result TestBlock) m ())
+  -> m (LocalStateQueryServer TestBlock (Query TestBlock) m ())
 mkServer k chain = do
     lgrDB <- initLgrDB k chain
     return $ localStateQueryServer $ LedgerCursor.newLedgerCursor lgrDB getImmutablePoint

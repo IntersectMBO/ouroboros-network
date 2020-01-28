@@ -4,9 +4,12 @@
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
+
 module Ouroboros.Network.Protocol.LocalStateQuery.Codec (
     codecLocalStateQuery
   , codecLocalStateQueryId
+  , Some (..)
   ) where
 
 import           Control.Monad.Class.MonadST
@@ -15,6 +18,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Type.Equality ((:~:) (..))
 
 import           Network.TypedProtocol.Codec.Cbor
 
@@ -22,16 +26,19 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 import           Ouroboros.Network.Block (Point)
 
+data Some (f :: k -> *) where
+    Some :: f a -> Some f
+
 codecLocalStateQuery
-  :: forall block query result m.
+  :: forall block query m.
      MonadST m
   => (Point block -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s (Point block))
-  -> (query -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s query)
-  -> (result -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s result)
-  -> Codec (LocalStateQuery block query result) CBOR.DeserialiseFailure m ByteString
+  -> (forall result . query result -> CBOR.Encoding)
+  -> (forall s . CBOR.Decoder s (Some query))
+  -> (forall result . query result -> result -> CBOR.Encoding)
+  -> (forall result . query result -> forall s . CBOR.Decoder s result)
+  -> Codec (LocalStateQuery block query) CBOR.DeserialiseFailure m ByteString
 codecLocalStateQuery encodePoint  decodePoint
                      encodeQuery  decodeQuery
                      encodeResult decodeResult =
@@ -49,9 +56,11 @@ codecLocalStateQuery encodePoint  decodePoint
         1 -> return AcquireFailurePointNotOnChain
         _ -> fail $ "decodeFailure: invalid tag " <> show tag
 
-    encode :: forall (pr :: PeerRole) st st'.
+    encode :: forall (pr  :: PeerRole)
+                     (st  :: LocalStateQuery block query)
+                     (st' :: LocalStateQuery block query).
               PeerHasAgency pr st
-           -> Message (LocalStateQuery block query result) st st'
+           -> Message (LocalStateQuery block query) st st'
            -> CBOR.Encoding
     encode (ClientAgency TokIdle) (MsgAcquire pt) =
         CBOR.encodeListLen 2
@@ -72,10 +81,10 @@ codecLocalStateQuery encodePoint  decodePoint
      <> CBOR.encodeWord 3
      <> encodeQuery query
 
-    encode (ServerAgency TokQuerying) (MsgResult result) =
+    encode (ServerAgency (TokQuerying _query)) (MsgResult query result) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 4
-     <> encodeResult result
+     <> encodeResult query result
 
     encode (ClientAgency TokAcquired) MsgRelease =
         CBOR.encodeListLen 1
@@ -90,7 +99,7 @@ codecLocalStateQuery encodePoint  decodePoint
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 7
 
-    decode :: forall (pr :: PeerRole) s (st :: LocalStateQuery block query result).
+    decode :: forall (pr :: PeerRole) s (st :: LocalStateQuery block query).
               PeerHasAgency pr st
            -> CBOR.Decoder s (SomeMessage st)
     decode stok = do
@@ -109,12 +118,12 @@ codecLocalStateQuery encodePoint  decodePoint
           return (SomeMessage (MsgFailure failure))
 
         (ClientAgency TokAcquired, 2, 3) -> do
-          query <- decodeQuery
+          Some query <- decodeQuery
           return (SomeMessage (MsgQuery query))
 
-        (ServerAgency TokQuerying, 2, 4) -> do
-          result <- decodeResult
-          return (SomeMessage (MsgResult result))
+        (ServerAgency (TokQuerying query), 2, 4) -> do
+          result <- decodeResult query
+          return (SomeMessage (MsgResult query result))
 
         (ClientAgency TokAcquired, 1, 5) ->
           return (SomeMessage MsgRelease)
@@ -132,7 +141,7 @@ codecLocalStateQuery encodePoint  decodePoint
           fail "codecLocalStateQuery.Acquired: unexpected key"
         (ServerAgency TokAcquiring, _, _) ->
           fail "codecLocalStateQuery.Acquiring: unexpected key"
-        (ServerAgency TokQuerying, _, _) ->
+        (ServerAgency (TokQuerying _), _, _) ->
           fail "codecLocalStateQuery.Querying: unexpected key"
 
 
@@ -140,36 +149,44 @@ codecLocalStateQuery encodePoint  decodePoint
 -- any serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
 --
 codecLocalStateQueryId
-  :: forall block query result m.
+  :: forall block (query :: * -> *) m.
      Monad m
-  => Codec (LocalStateQuery block query result)
+  => (forall result1 result2.
+          query result1
+       -> query result2
+       -> Maybe (result1 :~: result2)
+     )
+  -> Codec (LocalStateQuery block query)
            CodecFailure m
-           (AnyMessage (LocalStateQuery block query result))
-codecLocalStateQueryId =
+           (AnyMessage (LocalStateQuery block query))
+codecLocalStateQueryId eqQuery =
   Codec encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st
-         -> Message (LocalStateQuery block query result) st st'
-         -> AnyMessage (LocalStateQuery block query result)
+         -> Message (LocalStateQuery block query) st st'
+         -> AnyMessage (LocalStateQuery block query)
   encode _ = AnyMessage
 
-  decode :: forall (pr :: PeerRole) st.
+  decode :: forall (pr :: PeerRole) (st :: LocalStateQuery block query).
             PeerHasAgency pr st
-         -> m (DecodeStep (AnyMessage (LocalStateQuery block query result))
+         -> m (DecodeStep (AnyMessage (LocalStateQuery block query))
                           CodecFailure m (SomeMessage st))
   decode stok = return $ DecodePartial $ \bytes -> case (stok, bytes) of
-    (ClientAgency TokIdle,      Just (AnyMessage msg@(MsgAcquire{})))   -> res msg
-    (ClientAgency TokIdle,      Just (AnyMessage msg@(MsgDone{})))      -> res msg
-    (ClientAgency TokAcquired,  Just (AnyMessage msg@(MsgQuery{})))     -> res msg
-    (ClientAgency TokAcquired,  Just (AnyMessage msg@(MsgReAcquire{}))) -> res msg
-    (ClientAgency TokAcquired,  Just (AnyMessage msg@(MsgRelease{})))   -> res msg
-    (ServerAgency TokAcquiring, Just (AnyMessage msg@(MsgAcquired{})))  -> res msg
-    (ServerAgency TokAcquiring, Just (AnyMessage msg@(MsgFailure{})))   -> res msg
-    (ServerAgency TokQuerying,  Just (AnyMessage msg@(MsgResult{})))    -> res msg
+    (ClientAgency TokIdle,         Just (AnyMessage msg@(MsgAcquire{})))   -> res msg
+    (ClientAgency TokIdle,         Just (AnyMessage msg@(MsgDone{})))      -> res msg
+    (ClientAgency TokAcquired,     Just (AnyMessage msg@(MsgQuery{})))     -> res msg
+    (ClientAgency TokAcquired,     Just (AnyMessage msg@(MsgReAcquire{}))) -> res msg
+    (ClientAgency TokAcquired,     Just (AnyMessage msg@(MsgRelease{})))   -> res msg
+    (ServerAgency TokAcquiring,    Just (AnyMessage msg@(MsgAcquired{})))  -> res msg
+    (ServerAgency TokAcquiring,    Just (AnyMessage msg@(MsgFailure{})))   -> res msg
+    (ServerAgency (TokQuerying q), Just (AnyMessage msg@(MsgResult query _)))
+       | Just Refl <- eqQuery q query
+       -> res msg
     (_, Nothing) -> return (DecodeFail CodecFailureOutOfInput)
     (_, _)       -> return (DecodeFail (CodecFailure failmsg))
 
-  res :: Message (LocalStateQuery block query result) st st' -> m (DecodeStep bytes failure m (SomeMessage st))
+  res :: Message (LocalStateQuery block query) st st'
+      -> m (DecodeStep bytes failure m (SomeMessage st))
   res msg = return (DecodeDone (SomeMessage msg) Nothing)
   failmsg = "codecLocalStateQueryId: no matching message"

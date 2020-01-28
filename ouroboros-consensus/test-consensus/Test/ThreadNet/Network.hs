@@ -668,7 +668,7 @@ runThreadNetwork ThreadNetworkArgs
            (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
            (AnyMessage (ChainSync (Serialised blk) (Tip blk)))
            (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
-           (AnyMessage (LocalStateQuery blk (Query blk) (Result blk)))
+           (AnyMessage (LocalStateQuery blk (Query blk)))
     customProtocolCodecs cfg = ProtocolCodecs
         { pcChainSyncCodec =
             mapFailureCodec CodecBytesFailure $
@@ -1061,8 +1061,7 @@ type TracingConstraints blk =
   , Show (Header blk)
   , Show (GenTx blk)
   , Show (GenTxId blk)
-  , Show (Query blk)
-  , Show (Result blk)
+  , ShowQuery (Query blk)
   )
 
 {-------------------------------------------------------------------------------

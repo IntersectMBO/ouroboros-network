@@ -1,17 +1,18 @@
-{-# LANGUAGE DeriveAnyClass    #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Network.Protocol.LocalStateQuery.Test (tests) where
 
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-
-import           GHC.Generics (Generic)
 
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
@@ -20,7 +21,6 @@ import           Control.Monad.IOSim
 import           Control.Monad.ST (runST)
 import           Control.Tracer (nullTracer)
 
-import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as Serialise (decode, encode)
 
 import           Network.TypedProtocol.Channel
@@ -30,10 +30,7 @@ import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
 
-import           Ouroboros.Network.Block (ChainHash (..), SlotNo, StandardHash,
-                     pointHash, pointSlot)
 import           Ouroboros.Network.MockChain.Chain (Point)
-import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Client
@@ -77,30 +74,25 @@ tests =
 -- Common types & clients and servers used in the tests in this module.
 --
 
-data Query
-  = QuerySlot
-  | QueryHash
-  deriving (Eq, Show, Generic, Serialise)
+data Query result where
+  QueryPoint :: Query (Point Block)
 
-data Result
-  = ResultSlot (WithOrigin SlotNo)
-  | ResultHash (ChainHash Block)
-  deriving (Eq, Show, Generic, Serialise)
+deriving instance Show (Query result)
 
 -- | Information to test an example server and client.
 data Setup = Setup
-  { clientInput   :: [(Point Block, [Query])]
+  { clientInput   :: [(Point Block, Query (Point Block))]
     -- ^ Input for 'localStateQueryClient'
   , serverAcquire :: Point Block -> Either AcquireFailure (Point Block)
     -- ^ First input parameter for 'localStateQueryServer'
-  , serverAnswer  :: Point Block -> Query -> Result
+  , serverAnswer  :: forall result. Point Block -> Query result -> result
     -- ^ Second input parameter for 'localStateQueryServer'
-  , expected      :: [(Point Block, Either AcquireFailure [Result])]
+  , expected      :: [(Point Block, Either AcquireFailure (Point Block))]
     -- ^ Expected result for the 'localStateQueryClient'.
   }
 
 mkSetup
-  :: Map (Point Block) (Maybe AcquireFailure, [Query])
+  :: Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
      -- ^ For each point, the given state queries will be executed. In case of
      -- the second field is an 'AcquireFailure', the server will fail with
      -- that failure.
@@ -108,7 +100,7 @@ mkSetup
      -- This is the randomly generated input for the 'Setup'.
   -> Setup
 mkSetup input = Setup {
-      clientInput   = [(pt, qs) | (pt, (_, qs)) <- Map.toList input]
+      clientInput   = [(pt, q) | (pt, (_, q)) <- Map.toList input]
     , serverAcquire = \pt -> case Map.lookup pt input of
         Just (Just failure, _qs) -> Left failure
         Just (Nothing,      _qs) -> Right pt
@@ -117,16 +109,16 @@ mkSetup input = Setup {
     , serverAnswer  = answer
     , expected      =
         [ (pt, res)
-        | (pt, (mbFailure, qs)) <- Map.toList input
+        | (pt, (mbFailure, q)) <- Map.toList input
         , let res = case mbFailure of
-                Nothing      -> Right $ map (answer pt) qs
+                Nothing      -> Right $ answer pt q
                 Just failure -> Left failure
         ]
     }
   where
+    answer :: Point Block -> Query result -> result
     answer pt q = case q of
-      QuerySlot -> ResultSlot $ pointSlot pt
-      QueryHash -> ResultHash $ pointHash pt
+      QueryPoint -> pt
 
 
 --
@@ -136,7 +128,8 @@ mkSetup input = Setup {
 -- | Run a simple local state query client and server, directly on the wrappers,
 -- without going via the 'Peer'.
 --
-prop_direct :: Map (Point Block) (Maybe AcquireFailure, [Query]) -> Property
+prop_direct :: Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
+            -> Property
 prop_direct input =
     runSimOrThrow
       (direct
@@ -155,7 +148,8 @@ prop_direct input =
 -- | Run a simple local state query client and server, going via the 'Peer'
 -- representation, but without going via a channel.
 --
-prop_connect :: Map (Point Block) (Maybe AcquireFailure, [Query]) -> Property
+prop_connect :: Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
+             -> Property
 prop_connect input =
     case runSimOrThrow
            (connect
@@ -177,7 +171,7 @@ prop_connect input =
 --
 prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
              => m (Channel m ByteString, Channel m ByteString)
-             -> Map (Point Block) (Maybe AcquireFailure, [Query])
+             -> Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
              -> m Property
 prop_channel createChannels input =
 
@@ -196,20 +190,23 @@ prop_channel createChannels input =
 
 -- | Run 'prop_channel' in the simulation monad.
 --
-prop_channel_ST :: Map (Point Block) (Maybe AcquireFailure, [Query]) -> Property
+prop_channel_ST :: Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
+                -> Property
 prop_channel_ST input =
     runSimOrThrow
       (prop_channel createConnectedChannels input)
 
 -- | Run 'prop_channel' in the IO monad.
 --
-prop_channel_IO :: Map (Point Block) (Maybe AcquireFailure, [Query]) -> Property
+prop_channel_IO :: Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
+                -> Property
 prop_channel_IO input =
     ioProperty (prop_channel createConnectedChannels input)
 
 -- | Run 'prop_channel' in the IO monad using local pipes.
 --
-prop_pipe_IO :: Map (Point Block) (Maybe AcquireFailure, [Query]) -> Property
+prop_pipe_IO :: Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
+             -> Property
 prop_pipe_IO input =
     ioProperty (prop_channel createPipeConnectedChannels input)
 
@@ -224,22 +221,10 @@ instance Arbitrary AcquireFailure where
     , AcquireFailurePointNotOnChain
     ]
 
-instance Arbitrary Query where
-  arbitrary = elements [QuerySlot, QueryHash]
+instance Arbitrary (Query (Point Block)) where
+  arbitrary = pure QueryPoint
 
-instance Arbitrary Result where
-  arbitrary = oneof
-    [ ResultSlot <$> frequency
-        [ (1, pure Origin)
-        , (9, At <$> arbitrary)
-        ]
-    , ResultHash <$> frequency
-        [ (1, pure GenesisHash)
-        , (9, BlockHash <$> arbitrary)
-        ]
-    ]
-
-instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block Query Result)) where
+instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block Query)) where
   arbitrary = oneof
     [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
         (MsgAcquire <$> arbitrary)
@@ -251,10 +236,10 @@ instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block Query Result)) wh
         (MsgFailure <$> arbitrary)
 
     , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
-        (MsgQuery <$> arbitrary)
+        (MsgQuery <$> (arbitrary :: Gen (Query (Point Block))))
 
-    , AnyMessageAndAgency (ServerAgency TokQuerying) <$>
-        (MsgResult <$> arbitrary)
+    , AnyMessageAndAgency (ServerAgency (TokQuerying QueryPoint)) <$>
+        (MsgResult QueryPoint <$> arbitrary)
 
     , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
         pure MsgRelease
@@ -266,12 +251,13 @@ instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block Query Result)) wh
         pure MsgDone
     ]
 
-instance (StandardHash block, Show query, Show result) =>
-          Show (AnyMessageAndAgency (LocalStateQuery block query result)) where
+instance ShowQuery Query where
+  showResult QueryPoint = show
+
+instance Show (AnyMessageAndAgency (LocalStateQuery Block Query)) where
   show (AnyMessageAndAgency _ msg) = show msg
 
-instance (StandardHash block, Eq query, Eq result) =>
-          Eq (AnyMessage (LocalStateQuery block query result)) where
+instance  Eq (AnyMessage (LocalStateQuery Block Query)) where
 
   (==) (AnyMessage (MsgAcquire pt))
        (AnyMessage (MsgAcquire pt')) = pt == pt'
@@ -283,10 +269,14 @@ instance (StandardHash block, Eq query, Eq result) =>
        (AnyMessage (MsgFailure failure')) = failure == failure'
 
   (==) (AnyMessage (MsgQuery query))
-       (AnyMessage (MsgQuery query')) = query == query'
+       (AnyMessage (MsgQuery query')) =
+         case (query, query') of
+           (QueryPoint, QueryPoint) -> True
 
-  (==) (AnyMessage (MsgResult result))
-       (AnyMessage (MsgResult result')) = result == result'
+  (==) (AnyMessage (MsgResult query  result))
+       (AnyMessage (MsgResult query' result')) =
+         case (query, query') of
+           (QueryPoint, QueryPoint) -> result == result'
 
   (==) (AnyMessage MsgRelease)
        (AnyMessage MsgRelease) = True
@@ -301,34 +291,48 @@ instance (StandardHash block, Eq query, Eq result) =>
 
 
 codec :: MonadST m
-      => Codec (LocalStateQuery Block Query Result)
+      => Codec (LocalStateQuery Block Query)
                 DeserialiseFailure
                 m ByteString
 codec = codecLocalStateQuery
           Serialise.encode Serialise.decode
-          Serialise.encode Serialise.decode
-          Serialise.encode Serialise.decode
+          encodeQuery      decodeQuery
+          encodeResult     decodeResult
+  where
+    encodeQuery :: Query result -> CBOR.Encoding
+    encodeQuery QueryPoint = Serialise.encode ()
+
+    decodeQuery :: forall s . CBOR.Decoder s (Some Query)
+    decodeQuery = do
+      () <- Serialise.decode
+      return $ Some QueryPoint
+
+    encodeResult :: Query result -> result -> CBOR.Encoding
+    encodeResult QueryPoint = Serialise.encode
+
+    decodeResult :: Query result -> forall s. CBOR.Decoder s result
+    decodeResult QueryPoint = Serialise.decode
 
 -- | Check the codec round trip property.
 --
-prop_codec :: AnyMessageAndAgency (LocalStateQuery Block Query Result) -> Bool
+prop_codec :: AnyMessageAndAgency (LocalStateQuery Block Query) -> Bool
 prop_codec msg =
   runST (prop_codecM codec msg)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
-prop_codec_splits2 :: AnyMessageAndAgency (LocalStateQuery Block Query Result) -> Bool
+prop_codec_splits2 :: AnyMessageAndAgency (LocalStateQuery Block Query) -> Bool
 prop_codec_splits2 msg =
   runST (prop_codec_splitsM splits2 codec msg)
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
-prop_codec_splits3 :: AnyMessageAndAgency (LocalStateQuery Block Query Result) -> Bool
+prop_codec_splits3 :: AnyMessageAndAgency (LocalStateQuery Block Query) -> Bool
 prop_codec_splits3 msg =
   runST (prop_codec_splitsM splits3 codec msg)
 
 prop_codec_cbor
-  :: AnyMessageAndAgency (LocalStateQuery Block Query Result)
+  :: AnyMessageAndAgency (LocalStateQuery Block Query)
   -> Bool
 prop_codec_cbor msg =
   runST (prop_codec_cborM codec msg)

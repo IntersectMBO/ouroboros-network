@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds               #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE TypeFamilies            #-}
+{-# LANGUAGE TypeOperators           #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 
 -- | Interface to the ledger layer
@@ -14,9 +15,11 @@ module Ouroboros.Consensus.Ledger.Abstract (
   , ProtocolLedgerView(..)
   , AnachronyFailure(..)
   , QueryLedger(..)
+  , ShowQuery(..)
   ) where
 
 import           Control.Monad.Except
+import           Data.Type.Equality ((:~:))
 import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -24,6 +27,8 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (ChainHash, HasHeader, Point, SlotNo,
                      pointHash, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin)
+import           Ouroboros.Network.Protocol.LocalStateQuery.Type
+                     (ShowQuery (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -174,15 +179,14 @@ data AnachronyFailure
 --
 -- Used by the LocalStateQuery protocol to allow clients to query the ledger
 -- state.
-class UpdateLedger blk => QueryLedger blk where
+class (UpdateLedger blk, ShowQuery (Query blk)) => QueryLedger blk where
 
-  -- | Different queries supported by the ledger
-  data family Query  blk :: *
-
-  -- | The result types for the queries
-  data family Result blk :: *
-  -- TODO index Result by Query so that we always get the expected result
-  -- type?
+  -- | Different queries supported by the ledger, indexed by the result type.
+  data family Query  blk :: * -> *
 
   -- | Answer the given query about the ledger state.
-  answerQuery :: Query blk -> LedgerState blk -> Result blk
+  answerQuery :: Query blk result -> LedgerState blk -> result
+
+  -- | Generalisation of value-level equality of two queries.
+  eqQuery :: Query blk result1 -> Query blk result2
+          -> Maybe (result1 :~: result2)

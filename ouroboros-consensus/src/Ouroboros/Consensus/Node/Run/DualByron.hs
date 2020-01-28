@@ -105,7 +105,7 @@ instance RunNode DualByronBlock where
                                let k = pbftSecurityParam $ pbftParams cfg
                                in decodeByronChainState k
   nodeDecodeQuery         = error "DualByron.nodeDecodeQuery"
-  nodeDecodeResult        = error "DualByron.nodeDecodeResult"
+  nodeDecodeResult        = \case {}
 
 extractEpochSlots :: NodeConfig DualByronProtocol -> EpochSlots
 extractEpochSlots = Byron.extractEpochSlots . dualNodeConfigMain
