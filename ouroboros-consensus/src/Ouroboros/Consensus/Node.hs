@@ -279,7 +279,7 @@ mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     , blockMatchesHeader  = nodeBlockMatchesHeader
     , maxUnackTxs         = 100 -- TODO
     , maxBlockSize        = NoOverride
-    , mempoolCap          = MempoolCapacityBytes 1000000 -- TODO
+    , mempoolCap          = MempoolCapacityBytes 4000000 -- Currently it's 'maxBlockSize * 2'
     , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO
     }
   where
