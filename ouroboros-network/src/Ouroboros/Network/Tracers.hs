@@ -1,6 +1,7 @@
 module Ouroboros.Network.Tracers
-  ( NetworkIPSubscriptionTracers (..)
-  , nullNetworkIPSubscriptionTracers
+  ( NetworkSubscriptionTracers (..)
+  , NetworkIPSubscriptionTracers
+  , nullNetworkSubscriptionTracers
   , NetworkDNSSubscriptionTracers (..)
   , nullNetworkDNSSubscriptionTracers
   ) where
@@ -20,29 +21,31 @@ import           Ouroboros.Network.Subscription.Dns
 
 -- | IP subscription tracers.
 --
-data NetworkIPSubscriptionTracers addr ptcl vNumber = NetworkIPSubscriptionTracers {
-      nistMuxTracer          :: Tracer IO (WithMuxBearer (ConnectionId addr) MuxTrace),
+data NetworkSubscriptionTracers withIPList addr ptcl vNumber = NetworkSubscriptionTracers {
+      nsMuxTracer          :: Tracer IO (WithMuxBearer (ConnectionId addr) MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nistHandshakeTracer    :: Tracer IO (WithMuxBearer (ConnectionId addr)
+      nsHandshakeTracer    :: Tracer IO (WithMuxBearer (ConnectionId addr)
                                             (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
-      nistErrorPolicyTracer  :: Tracer IO (WithAddr addr ErrorPolicyTrace),
+      nsErrorPolicyTracer  :: Tracer IO (WithAddr addr ErrorPolicyTrace),
       -- ^ error policy tracer; must not be 'nullTracer', otherwise all the
       -- exceptions which are not matched by any error policy will be caught
       -- and not logged or rethrown.
-      nistSubscriptionTracer :: Tracer IO (WithIPList (SubscriptionTrace addr))
+      nsSubscriptionTracer :: Tracer IO (withIPList (SubscriptionTrace addr))
       -- ^ subscription tracers; it is infrequent it should not be 'nullTracer'
       -- by default.
     }
 
-nullNetworkIPSubscriptionTracers :: NetworkIPSubscriptionTracers addr ptcl vNumber
-nullNetworkIPSubscriptionTracers = NetworkIPSubscriptionTracers {
-      nistMuxTracer          = nullTracer,
-      nistHandshakeTracer    = nullTracer,
-      nistErrorPolicyTracer  = nullTracer,
-      nistSubscriptionTracer = nullTracer
+type NetworkIPSubscriptionTracers addr ptcl vNumber = NetworkSubscriptionTracers WithIPList addr ptcl vNumber
+
+nullNetworkSubscriptionTracers :: NetworkSubscriptionTracers withIPList addr ptcl vNumber
+nullNetworkSubscriptionTracers = NetworkSubscriptionTracers {
+      nsMuxTracer          = nullTracer,
+      nsHandshakeTracer    = nullTracer,
+      nsErrorPolicyTracer  = nullTracer,
+      nsSubscriptionTracer = nullTracer
     }
 
 -- | DNS subscription tracers.

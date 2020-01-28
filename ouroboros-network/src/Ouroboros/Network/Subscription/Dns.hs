@@ -251,6 +251,7 @@ dnsSubscriptionWorker' snocket subTracer dnsTracer errorPolicyTracer
                                           (WithDomainName (dstDomain dst) `contramap` dnsTracer)
                                           resolver nmsPeerStates beforeConnectTx dst
                                     , wpValency = dstValency dst
+                                    , wpSelectAddress = selectSockAddr 
                                     }
                        spErrorPolicies
                        main

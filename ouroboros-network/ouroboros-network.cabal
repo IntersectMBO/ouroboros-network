@@ -78,6 +78,7 @@ library
                        Ouroboros.Network.Subscription
                        Ouroboros.Network.Subscription.Ip
                        Ouroboros.Network.Subscription.Dns
+                       Ouroboros.Network.Subscription.Client
                        Ouroboros.Network.Subscription.Subscriber
                        Ouroboros.Network.Subscription.PeerState
                        Ouroboros.Network.Subscription.Worker

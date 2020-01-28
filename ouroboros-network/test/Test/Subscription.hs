@@ -726,6 +726,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
               (NetworkMutableState tbl peerStatesVar)
               WorkerParams {
                   wpLocalAddresses = LocalAddresses (Just localAddr) Nothing Nothing,
+                  wpSelectAddress  = selectSockAddr,
                   wpConnectionAttemptDelay = \_ -> Just minConnectionAttemptDelay,
                   wpSubscriptionTarget = pure $ listSubscriptionTarget [remoteAddr],
                   wpValency = 1
