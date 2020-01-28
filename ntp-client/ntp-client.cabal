@@ -12,6 +12,8 @@ cabal-version:       >=1.20
 Library
   exposed-modules:      Network.NTP.Client
                         Network.NTP.Packet
+                        Network.NTP.Query
+                        Network.NTP.Test
                         Network.NTP.Trace
   build-depends:        async           >=2.2 && <2.3
                       , base            >=4.9 && <4.13
