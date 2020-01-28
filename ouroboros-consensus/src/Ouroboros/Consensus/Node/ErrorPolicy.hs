@@ -24,19 +24,12 @@ import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
 import           Ouroboros.Consensus.Util.ResourceRegistry
                      (RegistryClosedException, ResourceRegistryThreadException)
 
-consensusErrorPolicy :: ErrorPolicies addr ()
+consensusErrorPolicy :: ErrorPolicies
 consensusErrorPolicy = ErrorPolicies {
       -- Exception raised during connect
       --
       -- This is entirely a network-side concern.
       epConErrorPolicies = []
-
-      -- What to do when the protocol exits cleanly
-      --
-      -- This never happens (we always throw an exception), so this function
-      -- should never be called; if for some reason it /does/, we make it
-      -- throw an exception.
-    , epReturnCallback = \_time _addr () -> ourBug
 
       -- Exception raised during interaction with the peer
       --

@@ -344,13 +344,12 @@ prop_subscriptionWorker
     -> Int -- local address
     -> Int -- remote address
     -> ArbValidPeerState IO
-    -> (Fun (ArbTime, Int, ()) (ArbSuspendDecision ArbDiffTime))
     -> ArbErrorPolicies
     -> (Blind (ArbApp Int))
     -> Property
 prop_subscriptionWorker
     sockType localAddr remoteAddr (ArbValidPeerState ps)
-    returnCallback (ArbErrorPolicies appErrPolicies conErrPolicies)
+    (ArbErrorPolicies appErrPolicies conErrPolicies)
     (Blind (ArbApp merr app))
   =
     tabulate "peer states & app errors" [printf "%-20s %s" (peerStateType ps) (exceptionType merr)] $
@@ -391,10 +390,7 @@ prop_subscriptionWorker
     completeTx = completeApplicationTx
        (ErrorPolicies
           appErrPolicies
-          conErrPolicies
-          (\t addr r -> fmap getArbDiffTime . getArbSuspendDecision $ case returnCallback of
-              Fn3 f -> f (ArbTime t) addr r
-              _     -> error "impossible happend"))
+          conErrPolicies)
 
     main :: StrictTMVar IO () -> Main IO (PeerStates IO Int) Bool
     main doneVar s = do

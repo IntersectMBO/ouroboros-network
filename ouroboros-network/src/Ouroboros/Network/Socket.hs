@@ -489,7 +489,7 @@ runServerThread
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -> Versions vNumber extra (OuroborosApplication appType (ConnectionId addr) ptcl IO BL.ByteString a b)
-    -> ErrorPolicies addr ()
+    -> ErrorPolicies
     -> IO Void
 runServerThread NetworkServerTracers { nstMuxTracer
                                      , nstHandshakeTracer
@@ -589,7 +589,7 @@ withServerNode
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
-    -> ErrorPolicies addr ()
+    -> ErrorPolicies
     -> (addr -> Async Void -> IO t)
     -- ^ callback which takes the @Async@ of the thread that is running the server.
     -- Note: the server thread will terminate when the callback returns or

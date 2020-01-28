@@ -65,7 +65,7 @@ data SubscriptionParams a target = SubscriptionParams
   { spLocalAddresses         :: LocalAddresses Socket.SockAddr
   , spConnectionAttemptDelay :: Socket.SockAddr -> Maybe DiffTime
     -- ^ should return expected delay for the given address
-  , spErrorPolicies          :: ErrorPolicies Socket.SockAddr a
+  , spErrorPolicies          :: ErrorPolicies
   , spSubscriptionTarget     :: target
   }
 
@@ -181,7 +181,7 @@ subscriptionWorker
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> NetworkMutableState Socket.SockAddr
     -> WorkerParams IO Socket.SockAddr
-    -> ErrorPolicies Socket.SockAddr a
+    -> ErrorPolicies
     -> Main IO (PeerStates IO Socket.SockAddr) x
     -- ^ main callback
     -> (Socket.Socket -> IO a)
