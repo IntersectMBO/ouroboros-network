@@ -237,6 +237,13 @@ forgeDualByronBlock
   -> PBftIsLeader PBftCardanoCrypto  -- ^ Leader proof ('IsLeader')
   -> m DualByronBlock
 forgeDualByronBlock cfg curSlotNo curBlockNo extLedger txs isLeader = do
+    -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but
+    -- instead we /forge/ it. This is important, because we want to test that
+    -- codepath. This does mean that we do not get any kind of "bridge" between
+    -- the two blocks (which we would have gotten if we would have elaborated
+    -- the block instead). Fortunately, this is okay, since the bridge for the
+    -- block can be computed from the bridge information of all of the txs.
+
     main <- forgeByronBlock
               (dualNodeConfigMain cfg)
               curSlotNo
