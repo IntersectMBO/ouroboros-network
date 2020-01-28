@@ -119,7 +119,7 @@ liftUPIVOTE = liftRule . ctxtUPIVOTE
 --
 -- This is used in 'applyChainTick' only.
 liftEPOCH :: ByronSpecGenesis -> LiftedRule Spec.EPOCH
-liftEPOCH = liftRule .ctxtEPOCH
+liftEPOCH = liftRule . ctxtEPOCH
 
 -- | Apply top-level delegation rule
 --

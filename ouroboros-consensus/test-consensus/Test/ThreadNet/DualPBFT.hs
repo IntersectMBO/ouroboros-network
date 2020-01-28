@@ -334,7 +334,7 @@ sigGen Rules.RuleContext{..} st =
 -- if this fails too often, return 'Nothing'.
 hedgehogAdapter :: forall m a. MonadRandom m => Hedgehog.Gen a -> m (Maybe a)
 hedgehogAdapter gen =
-    go 1
+    go 2 -- We only try twice right now, as the tests are already very slow
   where
     go :: Int -> m (Maybe a)
     go 0 = return Nothing
