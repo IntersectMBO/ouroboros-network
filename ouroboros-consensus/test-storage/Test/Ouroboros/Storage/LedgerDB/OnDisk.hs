@@ -652,15 +652,16 @@ runDB standalone@DB{..} cmd =
         (_, db) <- atomically $ readTVar dbState
         Snapped <$> takeSnapshot nullTracer hasFS S.encode S.encode db
     go hasFS Restore = do
-        (initLog, db) <- initLedgerDB
-                           nullTracer
-                           nullTracer
-                           hasFS
-                           S.decode
-                           S.decode
-                           (dbLgrParams dbEnv)
-                           conf
-                           streamAPI
+        (initLog, db, _replayed) <-
+          initLedgerDB
+            nullTracer
+            nullTracer
+            hasFS
+            S.decode
+            S.decode
+            (dbLgrParams dbEnv)
+            conf
+            streamAPI
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
         return $ Restored (fromInitLog initLog, ledgerDbCurrent db)
     go hasFS (Corrupt c ss) =

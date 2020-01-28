@@ -149,7 +149,8 @@ data ChainDbEnv m blk = CDB
     -- ^ Contains the current chain fragment.
     --
     -- INVARIANT: the anchor point of this fragment is the tip of the
-    -- ImmutableDB.
+    -- ImmutableDB. This implies that this fragment never contains any blocks
+    -- that are stored in the immutable DB.
     --
     -- Note that this fragment might be shorter than @k@ headers when the
     -- whole chain is shorter than @k@ or in case of corruption of the

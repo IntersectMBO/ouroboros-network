@@ -16,7 +16,8 @@ module Ouroboros.Storage.ChainDB.Impl.Background
     launchBgTasks
     -- * Copying blocks from the VolatileDB to the ImmutableDB
   , copyToImmDB
-  , copyToImmDBRunner
+  , copyAndSnapshotRunner
+  , updateLedgerSnapshots
      -- * Executing garbage collection
   , garbageCollect
     -- * Scheduling garbage collections
@@ -25,8 +26,6 @@ module Ouroboros.Storage.ChainDB.Impl.Background
   , scheduleGC
   , gcScheduleRunner
     -- * Taking and trimming ledger snapshots
-  , updateLedgerSnapshots
-  , updateLedgerSnapshotsRunner
     -- * Executing scheduled chain selections
   , scheduledChainSelection
   , scheduledChainSelectionRunner
@@ -38,9 +37,11 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Void (Void)
+import           Data.Word
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
 import           Control.Tracer
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -71,18 +72,17 @@ import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 launchBgTasks
   :: forall m blk. (IOLike m, ProtocolLedgerView blk)
   => ChainDbEnv m blk
+  -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m ()
-launchBgTasks cdb@CDB{..} = do
+launchBgTasks cdb@CDB{..} replayed = do
     gcSchedule <- newGcSchedule
-    !gcThread   <- launch $
+    !gcThread <- launch $
       gcScheduleRunner gcSchedule $ garbageCollect cdb
-    !copyThread <- launch $
-      copyToImmDBRunner cdb gcSchedule
-    !lgrSnapshotThread <- launch $
-      updateLedgerSnapshotsRunner cdb
+    !copyAndSnapshotThread <- launch $
+      copyAndSnapshotRunner cdb gcSchedule replayed
     !chainSyncThread <- scheduledChainSelectionRunner cdb
     atomically $ writeTVar cdbKillBgThreads $
-      sequence_ [gcThread, copyThread, lgrSnapshotThread, chainSyncThread]
+      sequence_ [gcThread, copyAndSnapshotThread, chainSyncThread]
   where
     launch :: m Void -> m (m ())
     launch = fmap cancelThread . forkLinkedThread cdbRegistry
@@ -186,12 +186,29 @@ copyToImmDB CDB{..} = withCopyLock $ do
     mustBeUnlocked = fromMaybe
                    $ error "copyToImmDB running concurrently with itself"
 
--- | Watches the current chain for changes. Whenever the chain is longer than
--- @k@, then the headers older than @k@ are copied from the VolatileDB to the
--- ImmutableDB (with 'copyToImmDB'). Afterwards, a garbage collection of the
--- VolatileDB is scheduled using ('scheduleGC') for the 'SlotNo' of the most
--- recent block that was copied.
-copyToImmDBRunner
+-- | Copy blocks from the VolDB to ImmDB and take snapshots of the LgrDB
+--
+-- We watch the chain for changes. Whenever the chain is longer than @k@, then
+-- the headers older than @k@ are copied from the VolDB to the ImmDB (using
+-- 'copyToImmDB'). Once that is complete,
+--
+-- * We periodically take a snapshot of the LgrDB (depending on its config).
+--   NOTE: This implies we do not take a snapshot of the LgrDB if the chain
+--   hasn't changed, irrespective of the LgrDB policy.
+-- * Schedule GC of the VolDB ('scheduleGC') for the 'SlotNo' of the most
+--   recent block that was copied.
+--
+-- It is important that we only take LgrDB snapshots when are are /sure/ they
+-- have been copied to the ImmDB, since the LgrDB assumes that all snapshots
+-- correspond to immutable blocks. (Of course, data corruption can occur and we
+-- can handle it by reverting to an older LgrDB snapshot, but we should need
+-- this only in exceptional circumstances.)
+--
+-- We do not store any state of the VolDB GC. If the node shuts down before GC
+-- can happen, when we restart the node and schedule the /next/ GC, it will
+-- /imply/ any previously scheduled GC, since GC is driven by slot number
+-- ("garbage collect anything older than @x@").
+copyAndSnapshotRunner
   :: forall m blk.
      ( IOLike m
      , OuroborosTag (BlockProtocol blk)
@@ -201,18 +218,54 @@ copyToImmDBRunner
      )
   => ChainDbEnv m blk
   -> GcSchedule m
+  -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m Void
-copyToImmDBRunner cdb@CDB{..} gcSchedule = forever $ do
-    atomically $ do
-      curChain <- readTVar cdbChain
-      check $ fromIntegral (AF.length curChain) > k
-
-    mSlotNo <- copyToImmDB cdb
-    case mSlotNo of
-      Origin    -> pure ()
-      At slotNo -> scheduleGC (contramap TraceGCEvent cdbTracer) slotNo cdbGcDelay gcSchedule
+copyAndSnapshotRunner cdb@CDB{..} gcSchedule =
+    loop Nothing
   where
-    SecurityParam k = protocolSecurityParam cdbNodeConfig
+    SecurityParam k      = protocolSecurityParam cdbNodeConfig
+    LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy   cdbLgrDB
+
+    loop :: Maybe Time -> Word64 -> m Void
+    loop mPrevSnapshot distance = do
+      -- Wait for the chain to grow larger than @k@
+      numToWrite <- atomically $ do
+        curChain <- readTVar cdbChain
+        check $ fromIntegral (AF.length curChain) > k
+        return $ fromIntegral (AF.length curChain) - k
+
+      -- Copy blocks to imm DB
+      --
+      -- This is a synchronous operation: when it returns, the blocks have been
+      -- copied to disk (though not flushed, necessarily).
+      copyToImmDB cdb >>= scheduleGC'
+
+      now <- getMonotonicTime
+      let distance' = distance + numToWrite
+          elapsed   = (\prev -> now `diffTime` prev) <$> mPrevSnapshot
+
+      if onDiskShouldTakeSnapshot elapsed distance' then do
+        updateLedgerSnapshots cdb
+        loop (Just now) 0
+      else
+        loop mPrevSnapshot distance'
+
+    scheduleGC' :: WithOrigin SlotNo -> m ()
+    scheduleGC' Origin      = return ()
+    scheduleGC' (At slotNo) =
+        scheduleGC
+          (contramap TraceGCEvent cdbTracer)
+          slotNo
+          cdbGcDelay
+          gcSchedule
+
+-- | Write a snapshot of the LedgerDB to disk and remove old snapshots
+-- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
+updateLedgerSnapshots :: IOLike m => ChainDbEnv m blk -> m ()
+updateLedgerSnapshots CDB{..} = do
+    -- TODO avoid taking multiple snapshots corresponding to the same tip.
+    void $ LgrDB.takeSnapshot  cdbLgrDB
+    void $ LgrDB.trimSnapshots cdbLgrDB
 
 {-------------------------------------------------------------------------------
   Executing garbage collection
@@ -312,30 +365,6 @@ gcScheduleRunner (GcSchedule queue) runGc = forever $ do
     threadDelay toWait
     -- Garbage collection is called synchronously
     runGc slotNo
-
-{-------------------------------------------------------------------------------
-  Taking and trimming ledger snapshots
--------------------------------------------------------------------------------}
-
--- | Write a snapshot of the LedgerDB to disk and remove old snapshots
--- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
-updateLedgerSnapshots :: IOLike m => ChainDbEnv m blk -> m ()
-updateLedgerSnapshots CDB{..} = do
-    -- TODO avoid taking multiple snapshots corresponding to the same tip.
-    void $ LgrDB.takeSnapshot  cdbLgrDB
-    void $ LgrDB.trimSnapshots cdbLgrDB
-
--- | Execute 'updateLedgerSnapshots', wait 'onDiskWriteInterval', and repeat.
-updateLedgerSnapshotsRunner :: IOLike m => ChainDbEnv m blk -> m Void
-updateLedgerSnapshotsRunner cdb@CDB{..} = loop
-  where
-    LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy cdbLgrDB
-
-    loop = updateLedgerSnapshots cdb >> waitInterval >> loop
-
-    waitInterval = do
-      interval <- atomically onDiskWriteInterval
-      threadDelay interval
 
 {-------------------------------------------------------------------------------
   Executing scheduled chain selections

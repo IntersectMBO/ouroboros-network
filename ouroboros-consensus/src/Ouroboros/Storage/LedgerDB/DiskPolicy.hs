@@ -1,19 +1,24 @@
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE RecordWildCards    #-}
+
 module Ouroboros.Storage.LedgerDB.DiskPolicy (
     DiskPolicy(..)
   , defaultDiskPolicy
   ) where
 
-import           Data.Time.Clock (DiffTime)
+import           Data.Word
+
+import           Control.Monad.Class.MonadTime
 
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
-import           Ouroboros.Consensus.Util.IOLike
 
 -- | On-disk policy
 --
 -- We only write ledger states that are older than @k@ blocks to disk (that is,
 -- snapshots that are guaranteed valid). The on-disk policy determines how often
 -- we write to disk and how many checkpoints we keep.
-data DiskPolicy m = DiskPolicy {
+data DiskPolicy = DiskPolicy {
       -- | How many snapshots do we want to keep on disk?
       --
       -- A higher number of on-disk snapshots is primarily a safe-guard against
@@ -32,39 +37,57 @@ data DiskPolicy m = DiskPolicy {
       --        the next snapshot, we delete the oldest one, leaving the middle
       --        one available in case of truncation of the write. This is
       --        probably a sane value in most circumstances.
-      onDiskNumSnapshots  :: Word
+      onDiskNumSnapshots       :: Word
 
-      -- | How frequently do we want to write to disk?
+      -- | Should we write a snapshot of the ledger state to disk?
       --
-      -- Specified as an STM transaction that gives the delay (in microsec)
-      -- between writes, allowing the delay to be varied on the fly if needed.
+      -- This function is passed two bits of information:
       --
-      -- Writing snapshots more often means we have less work to do when
-      -- opening the database, but at the cost of doing more IO while the node
-      -- is running.
+      -- * The time since the last snapshot, or 'Nothing' if none was taken yet.
+      --   Note that 'Nothing' merely means no snapshot had been taking yet
+      --   since the node was started; it does not necessarily mean that none
+      --   exist on disk.
       --
-      -- A sensible value might be the time interval corresponding to @k@
-      -- blocks (12 hours), resulting in a gap between the most recent on disk
-      -- snapshot and the oldest in-memory snapshot between @k@ and @2k@ blocks.
+      -- * The distance in terms of blocks applied to the /oldest/ ledger
+      --   snapshot in memory. During normal operation, this is the number of
+      --   blocks written to the imm DB since the last snapshot. On startup, it
+      --   is computed by counting how many immutable blocks we had to reapply
+      --   to get to the chain tip. This is useful, as it allows the policy to
+      --   decide to take a snapshot /on node startup/ if a lot of blocks had to
+      --   be replayed.
       --
-      -- NOTE: Specifying this as a time interval rather than in terms of number
-      -- of blocks means that during chain synchronization (where a node is
-      -- catching up with its neighbours) the frequency of writes /in terms of
-      -- blocks/ automatically goes down.
-    , onDiskWriteInterval :: STM m DiffTime
+      -- See also 'defaultDiskPolicy'
+    , onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Bool
     }
 
 -- | Default on-disk policy
 --
--- Right now we set this to 12 hrs, which for both Byron and for Shelley amounts
--- to k blocks (albeit for different reasons).
+-- The goal of the default policy is to take a snapshot roughly every @k@
+-- blocks during normal operation, and every 500k blocks during syncing
+-- (in early 2020, the chain consists of roughly 3.6M blocks, so we'd take
+-- roughly 9 snapshots during a full sync).
 --
--- TODO: We might want to revise this
--- <https://github.com/input-output-hk/ouroboros-network/issues/1264> .
-defaultDiskPolicy :: IOLike m
-                  => SecurityParam     -- ^ Maximum rollback
-                  -> DiskPolicy m
-defaultDiskPolicy _k = DiskPolicy {
-      onDiskNumSnapshots  = 2
-    , onDiskWriteInterval = return (12 * 60 * 60)
-    }
+-- @k@ blocks during normal operation means one snapshot every 12 hours.
+-- We therefore take a snapshot every 12 ours, or every 500k blocks, whichever
+-- comes first.
+--
+-- If users never leave their wallet running for long, however, this would mean
+-- that we /never/ take snapshots after syncing (until we get to 500k blocks).
+-- So, on startup, we take a snapshot as soon as there are @k@ blocks replayed.
+-- This means that even if users frequently shut down their wallet, we still
+-- take a snapshot roughly every @k@ blocks. It does mean the possibility of
+-- an extra unnecessary snapshot during syncing (if the node is restarted), but
+-- that is not a big deal.
+defaultDiskPolicy :: SecurityParam     -- ^ Maximum rollback
+                  -> DiskPolicy
+defaultDiskPolicy (SecurityParam k) = DiskPolicy {..}
+  where
+    onDiskNumSnapshots :: Word
+    onDiskNumSnapshots = 2
+
+    onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Bool
+    onDiskShouldTakeSnapshot (Just timeSinceLast) blocksSinceLast =
+           timeSinceLast   >= fromIntegral (k * 20)
+        || blocksSinceLast >= 500_000
+    onDiskShouldTakeSnapshot Nothing blocksSinceLast =
+           blocksSinceLast >= k
