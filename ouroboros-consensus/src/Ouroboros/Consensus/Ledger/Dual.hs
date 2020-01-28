@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Ledger.Dual (
   , DualGenTxErr(..)
     -- * Lifted functions
   , dualNodeConfigMain
+  , dualNodeConfigAux
   , dualExtLedgerStateMain
   , dualExtValidationErrorMain
     -- * Type class family instances
@@ -84,22 +85,23 @@ import           Ouroboros.Consensus.Util.Condense
 -- which is therefore designed as the /main/ block, while the other block is
 -- designated as the /auxiliary/ block.
 --
+-- The auxiliary block is optional; this can be used if some " main " blocks
+-- should have no effect on the auxiliary ledger state at all. The motivating
+-- example is EBBs: if the main blocks are real Byron blocks, and the auxiliary
+-- blocks are Byron spec blocks, then regular Byron blocks correspond to Byron
+-- spec blocks, but EBBs don't correspond to a spec block at all and should
+-- leave the Byron spec ledger state unchanged.
+--
 -- NOTE: The dual ledger is used for testing purposes only; we do not do any
 -- meaningful 'NoUnexpectedThunks' checks here.
 data DualBlock m a = DualBlock {
-      dualBlockMain :: m
-
-      -- | Optional auxiliary block
-      --
-      -- 'Nothing' here can be used if some " main " blocks should have no
-      -- effect on the auxiliary ledger state at all. The motivating example
-      -- is EBBs: if the main blocks are real Byron blocks, and the auxiliary
-      -- blocks are Byron spec blocks, then regular Byron blocks correspond to
-      -- Byron spec blocks, but EBBs don't correspond to a spec block at all
-      -- and should leave the Byron spec ledger state unchanged.
-    , dualBlockAux  :: Maybe a
+      dualBlockMain   :: m
+    , dualBlockAux    :: Maybe a
+    , dualBlockBridge :: BridgeBlock m a
     }
-  deriving (Show, Eq)
+
+deriving instance (Show m, Show a, Show (BridgeBlock m a)) => Show (DualBlock m a)
+deriving instance (Eq   m, Eq   a, Eq   (BridgeBlock m a)) => Eq   (DualBlock m a)
 
 instance Condense m => Condense (DualBlock m a) where
   condense = condense . dualBlockMain
@@ -126,23 +128,34 @@ deriving instance Show (Header m) => Show (DualHeader m a)
 -------------------------------------------------------------------------------}
 
 -- | Bridge the two ledgers
-class ( BlockProtocol m ~ PBft (ExtraNodeConfig m) PBftCardanoCrypto
-      , HasHeader m
-      , GetHeader m
-      , HasHeader (Header m)
-      , Typeable a
-      , HeaderSupportsPBft    (ExtraNodeConfig m) PBftCardanoCrypto (Header m)
-      , ConstructContextDSIGN (ExtraNodeConfig m) PBftCardanoCrypto
-      , Show      (BridgeState m a)
-      , Eq        (BridgeState m a)
-      , Serialise (BridgeState m a)
+class (
+        -- Requirements on the main block
+        HasHeader          m
+      , GetHeader          m
+      , HasHeader (Header  m)
       , ProtocolLedgerView m
-      , UpdateLedger a -- No 'ProtocolLedgerView' for @a@!
-      , ApplyTx m
-      , ApplyTx a
-      , Show (ApplyTxErr m)
+      , ApplyTx            m
+      , HasTxId (GenTx     m)
+      , Show (ApplyTxErr   m)
+
+        -- PBFT support
+      , BlockProtocol m ~ PBft (ExtraNodeConfig m) PBftCardanoCrypto
+      , HeaderSupportsPBft     (ExtraNodeConfig m) PBftCardanoCrypto (Header m)
+      , ConstructContextDSIGN  (ExtraNodeConfig m) PBftCardanoCrypto
+
+        -- Requirements on the auxiliary block
+        -- No 'ProtocolLedgerView' for @a@!
+      , Typeable         a
+      , UpdateLedger     a
+      , ApplyTx          a
       , Show (ApplyTxErr a)
-      , HasTxId (GenTx m)
+
+        -- Requirements on the various bridges
+      , Show      (BridgeLedger m a)
+      , Eq        (BridgeLedger m a)
+      , Serialise (BridgeLedger m a)
+      , Serialise (BridgeBlock  m a)
+      , Serialise (BridgeTx     m a)
       ) => Bridge m a where
 
   -- | Additional node config
@@ -161,13 +174,19 @@ class ( BlockProtocol m ~ PBft (ExtraNodeConfig m) PBftCardanoCrypto
   type ExtraNodeConfig m :: *
 
   -- | Additional information relating both ledgers
-  type BridgeState m a :: *
+  type BridgeLedger m a :: *
+
+  -- | Information required to update the bridge when applying a block
+  type BridgeBlock m a :: *
+
+  -- | Information required to update the bridge when applying a transaction
+  type BridgeTx m a :: *
 
   updateBridgeWithBlock :: DualBlock m a
-                        -> BridgeState m a -> BridgeState m a
+                        -> BridgeLedger m a -> BridgeLedger m a
 
   updateBridgeWithTx :: GenTx (DualBlock m a)
-                     -> BridgeState m a -> BridgeState m a
+                     -> BridgeLedger m a -> BridgeLedger m a
 
 {-------------------------------------------------------------------------------
   HasHeader instance
@@ -222,6 +241,10 @@ dualNodeConfigMain :: Bridge m a
                    => NodeConfig (DualBlockProtocol m a)
                    -> NodeConfig (BlockProtocol m)
 dualNodeConfigMain = mapPBftExtConfig dualConfigMain
+
+dualNodeConfigAux :: NodeConfig (DualBlockProtocol m a)
+                  -> LedgerConfig a
+dualNodeConfigAux = dualConfigAux . pbftExtConfig
 
 {-------------------------------------------------------------------------------
   PBFT support
@@ -281,7 +304,7 @@ instance Bridge m a => UpdateLedger (DualBlock m a) where
   data LedgerState (DualBlock m a) = DualLedgerState {
         dualLedgerStateMain   :: LedgerState m
       , dualLedgerStateAux    :: LedgerState a
-      , dualLedgerStateBridge :: BridgeState m a
+      , dualLedgerStateBridge :: BridgeLedger m a
       }
     deriving NoUnexpectedThunks via AllowThunk (LedgerState (DualBlock m a))
 
@@ -389,7 +412,7 @@ dualExtValidationErrorMain = \case
 instance Bridge m a => ProtocolLedgerView (DualBlock m a) where
   ledgerConfigView cfg = DualLedgerConfig {
         dualLedgerConfigMain = ledgerConfigView $ dualNodeConfigMain cfg
-      , dualLedgerConfigAux  = dualConfigAux $ pbftExtConfig cfg
+      , dualLedgerConfigAux  = dualNodeConfigAux cfg
       }
 
   protocolLedgerView cfg state =
@@ -413,8 +436,9 @@ data DualGenTxErr m a = DualGenTxErr {
 
 instance Bridge m a => ApplyTx (DualBlock m a) where
   data GenTx (DualBlock m a) = DualGenTx {
-        dualGenTxMain :: GenTx m
-      , dualGenTxAux  :: GenTx a
+        dualGenTxMain   :: GenTx m
+      , dualGenTxAux    :: GenTx a
+      , dualGenTxBridge :: BridgeTx m a
       }
     deriving NoUnexpectedThunks via AllowThunk (GenTx (DualBlock m a))
 
@@ -495,6 +519,7 @@ instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
 
 deriving instance ( Show (GenTx m)
                   , Show (GenTx a)
+                  , Show (BridgeTx m a)
                   ) => Show (GenTx (DualBlock m a))
 deriving instance ( Show (ApplyTxErr m)
                   , Show (ApplyTxErr a)
@@ -558,7 +583,7 @@ agreeOnError f (ma, mb) =
 -- | The binary info just refers to the main block
 --
 -- This is sufficient, because we never need just the header of the auxiliary.
-encodeDualBlockWithInfo :: Serialise a
+encodeDualBlockWithInfo :: (Bridge m a, Serialise a)
                         => (m -> BinaryInfo Encoding)
                         -> DualBlock m a -> BinaryInfo Encoding
 encodeDualBlockWithInfo encodeMainWithInfo DualBlock{..} =
@@ -566,28 +591,31 @@ encodeDualBlockWithInfo encodeMainWithInfo DualBlock{..} =
         headerSize   = headerSize   mainWithInfo
       , headerOffset = headerOffset mainWithInfo + 1
       , binaryBlob   = mconcat [
-                           encodeListLen 2
+                           encodeListLen 3
                          , binaryBlob mainWithInfo
                          , encode dualBlockAux
+                         , encode dualBlockBridge
                          ]
       }
   where
     mainWithInfo :: BinaryInfo Encoding
     mainWithInfo = encodeMainWithInfo dualBlockMain
 
-decodeDualBlock :: Serialise a
+decodeDualBlock :: (Bridge m a, Serialise a)
                 => Decoder s (Lazy.ByteString -> m)
                 -> Decoder s (Lazy.ByteString -> DualBlock m a)
 decodeDualBlock decodeMain = do
-    enforceSize "DualBlock" 2
+    enforceSize "DualBlock" 3
     dualByronBlock
       <$> decodeMain
+      <*> decode
       <*> decode
   where
     dualByronBlock :: (Lazy.ByteString -> m)
                    -> Maybe a
+                   -> BridgeBlock m a
                    -> (Lazy.ByteString -> DualBlock m a)
-    dualByronBlock conc abst bs = DualBlock (conc bs) abst
+    dualByronBlock conc abst bridge bs = DualBlock (conc bs) abst bridge
 
 encodeDualHeader :: (Header m -> Encoding)
                  -> Header (DualBlock m a) -> Encoding
@@ -602,22 +630,24 @@ decodeDualHeader decodeMain =
                     -> (Lazy.ByteString -> Header (DualBlock m a))
     dualByronHeader conc bs = DualHeader (conc bs)
 
-encodeDualGenTx :: Serialise (GenTx a)
+encodeDualGenTx :: (Bridge m a, Serialise (GenTx a))
                 => (GenTx m -> Encoding)
                 -> GenTx (DualBlock m a) -> Encoding
 encodeDualGenTx encodeMain DualGenTx{..} = mconcat [
-      encodeListLen 2
+      encodeListLen 3
     , encodeMain dualGenTxMain
     , encode     dualGenTxAux
+    , encode     dualGenTxBridge
     ]
 
-decodeDualGenTx :: Serialise (GenTx a)
+decodeDualGenTx :: (Bridge m a, Serialise (GenTx a))
                 => Decoder s (GenTx m)
                 -> Decoder s (GenTx (DualBlock m a))
 decodeDualGenTx decodeMain = do
-    enforceSize "DualGenTx" 2
+    enforceSize "DualGenTx" 3
     DualGenTx
       <$> decodeMain
+      <*> decode
       <*> decode
 
 encodeDualGenTxId :: (GenTxId m -> Encoding)

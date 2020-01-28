@@ -16,11 +16,10 @@ module Ouroboros.Consensus.Ledger.ByronSpec.GenTx (
   ) where
 
 import           Codec.Serialise
-import           Data.Bifunctor
+import           Control.Monad.Trans.Except
 import           GHC.Generics (Generic)
 
 import qualified Cardano.Ledger.Spec.STS.UTXO as Spec
-import qualified Cardano.Ledger.Spec.STS.UTXOW as Spec
 import qualified Cardano.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Control.State.Transition as Spec
 import qualified Ledger.Delegation as Spec
@@ -47,11 +46,12 @@ data ByronSpecGenTx =
   | ByronSpecGenTxVote  Spec.Vote
   deriving (Show, Generic, Serialise)
 
-data ByronSpecGenTxErr =
-    ByronSpecGenTxErrDCert  [[Spec.PredicateFailure Spec.SDELEG]]
-  | ByronSpecGenTxErrTx     [[Spec.PredicateFailure Spec.UTXOW]]
-  | ByronSpecGenTxErrUProp  [[Spec.PredicateFailure Spec.UPIREG]]
-  | ByronSpecGenTxErrVote   [[Spec.PredicateFailure Spec.UPIVOTE]]
+-- | Transaction errors
+--
+-- We don't distinguish these from any other kind of CHAIN failure.
+newtype ByronSpecGenTxErr = ByronSpecGenTxErr {
+      unByronSpecGenTxErr :: [[Spec.PredicateFailure Spec.CHAIN]]
+    }
   deriving (Show, Generic, Serialise)
 
 {-------------------------------------------------------------------------------
@@ -61,12 +61,13 @@ data ByronSpecGenTxErr =
 apply :: ByronSpecGenesis
       -> ByronSpecGenTx
       -> Spec.State Spec.CHAIN
-      -> Either ByronSpecGenTxErr (Spec.State Spec.CHAIN)
-apply cfg = \case
-    ByronSpecGenTxDCert dcert -> first ByronSpecGenTxErrDCert . Rules.liftSDELEG  cfg dcert
-    ByronSpecGenTxTx    tx    -> first ByronSpecGenTxErrTx    . Rules.liftUTXOW   cfg tx
-    ByronSpecGenTxUProp prop  -> first ByronSpecGenTxErrUProp . Rules.liftUPIREG  cfg prop
-    ByronSpecGenTxVote  vote  -> first ByronSpecGenTxErrVote  . Rules.liftUPIVOTE cfg vote
+      -> Except ByronSpecGenTxErr (Spec.State Spec.CHAIN)
+apply cfg = \genTx -> withExcept ByronSpecGenTxErr . go genTx
+  where
+    go (ByronSpecGenTxDCert dcert) = Rules.liftSDELEG  cfg dcert
+    go (ByronSpecGenTxTx    tx   ) = Rules.liftUTXOW   cfg tx
+    go (ByronSpecGenTxUProp prop ) = Rules.liftUPIREG  cfg prop
+    go (ByronSpecGenTxVote  vote ) = Rules.liftUPIVOTE cfg vote
 
 partition :: [ByronSpecGenTx]
           -> ( [Spec.DCert]

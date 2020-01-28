@@ -37,7 +37,9 @@ prop_simple_pbft_convergence :: SecurityParam
                              -> Property
 prop_simple_pbft_convergence
   k testConfig@TestConfig{numCoreNodes, numSlots} =
-    prop_general k
+    prop_general
+        countSimpleGenTxs
+        k
         testConfig
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
         (expectedBlockRejection numCoreNodes)

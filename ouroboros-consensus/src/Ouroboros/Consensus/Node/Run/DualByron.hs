@@ -37,8 +37,9 @@ instance RunNode DualByronBlock where
           where
             genesisEBB :: DualByronBlock
             genesisEBB = DualBlock {
-                  dualBlockMain = byronEBB
-                , dualBlockAux  = Nothing
+                  dualBlockMain   = byronEBB
+                , dualBlockAux    = Nothing
+                , dualBlockBridge = mempty
                 }
 
             byronEBB :: ByronBlock
@@ -100,5 +101,5 @@ instance RunNode DualByronBlock where
                                let k = pbftSecurityParam $ pbftParams cfg
                                in decodeByronChainState k
 
-extractEpochSlots :: NodeConfig DualByronConsensusProtocol -> EpochSlots
+extractEpochSlots :: NodeConfig DualByronProtocol -> EpochSlots
 extractEpochSlots = Byron.extractEpochSlots . dualNodeConfigMain

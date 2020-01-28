@@ -127,7 +127,7 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
           , pbftExtConfig = byronConfig genesisConfig pVer sVer
           }
       , pInfoInitLedger = ExtLedgerState {
-            ledgerState         = initByronLedgerState genesisConfig
+            ledgerState         = initByronLedgerState genesisConfig Nothing
           , ouroborosChainState = CS.empty
           }
       , pInfoInitState  = ()

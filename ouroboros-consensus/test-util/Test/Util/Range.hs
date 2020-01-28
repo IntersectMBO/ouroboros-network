@@ -97,5 +97,5 @@ range n
         Just rng -> R_Btwn rng
   where
     vals  = [0, 1, 2, 3, 4]
-    rngs  = [(5, 10), (11, 20)]
+    rngs  = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 10), (10, 20)]
     limit = 20

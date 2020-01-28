@@ -12,6 +12,7 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
+import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
@@ -86,6 +87,7 @@ prop_simple_praos_convergence
   testConfig@TestConfig{numCoreNodes} =
     counterexample (tracesToDot testOutputNodes) $
     prop_general
+      countSimpleGenTxs
       praosSecurityParam
       testConfig
       Nothing

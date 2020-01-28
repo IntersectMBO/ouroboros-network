@@ -57,8 +57,8 @@ library
                        Ouroboros.Consensus.Ledger.Byron.Orphans
                        Ouroboros.Consensus.Ledger.Byron.PBFT
                        Ouroboros.Consensus.Ledger.ByronSpec
+                       Ouroboros.Consensus.Ledger.ByronSpec.Accessors
                        Ouroboros.Consensus.Ledger.ByronSpec.Block
-                       Ouroboros.Consensus.Ledger.ByronSpec.ChainState
                        Ouroboros.Consensus.Ledger.ByronSpec.Conversions
                        Ouroboros.Consensus.Ledger.ByronSpec.Forge
                        Ouroboros.Consensus.Ledger.ByronSpec.Genesis
@@ -340,11 +340,12 @@ test-suite test-consensus
                     bytestring,
                     cardano-binary,
                     cardano-crypto-class,
-                    cardano-crypto-wrapper,
                     cardano-crypto-test,
+                    cardano-crypto-wrapper,
                     cardano-ledger,
                     cardano-ledger-test,
                     cardano-prelude,
+                    cardano-slotting,
                     typed-protocols,
                     network-mux,
                     ouroboros-network,
@@ -356,6 +357,7 @@ test-suite test-consensus
                     cs-blockchain,
                     cs-ledger,
                     small-steps,
+                    hedgehog,
                     hedgehog-quickcheck,
 
                     binary-search,
@@ -383,6 +385,7 @@ test-suite test-consensus
                     temporary,
                     text,
                     time,
+                    transformers,
                     tree-diff
 
   ghc-options:      -Wall

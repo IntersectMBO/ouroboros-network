@@ -42,8 +42,8 @@ instance ApplyTx ByronSpecBlock where
   -- spec does not impose a maximum block size.
   txSize _ = 0
 
-  applyTx cfg tx (TickedLedgerState st) = except $
-      fmap (TickedLedgerState . updateByronSpecLedgerStateKeepTip st) $
+  applyTx cfg tx (TickedLedgerState st) =
+      (TickedLedgerState . updateByronSpecLedgerStateKeepTip st) <$>
         GenTx.apply
           (unByronSpecLedgerConfig cfg)
           (unByronSpecGenTx        tx)

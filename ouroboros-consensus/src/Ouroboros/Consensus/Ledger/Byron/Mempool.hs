@@ -18,6 +18,11 @@ module Ouroboros.Consensus.Ledger.Byron.Mempool (
     -- * Mempool integration
     GenTx(..)
   , TxId(..)
+    -- * Transaction IDs
+  , byronIdTx
+  , byronIdDlg
+  , byronIdProp
+  , byronIdVote
     -- * Serialisation
   , encodeByronGenTx
   , decodeByronGenTx
@@ -143,15 +148,27 @@ fromMempoolPayload = go
   where
     -- Bundle the payload @p@ with its ID
     go :: CC.AMempoolPayload ByteString -> GenTx ByronBlock
-    go (CC.MempoolTx             p) = ByronTx             (idTx   p) p
-    go (CC.MempoolDlg            p) = ByronDlg            (idDlg  p) p
-    go (CC.MempoolUpdateProposal p) = ByronUpdateProposal (idProp p) p
-    go (CC.MempoolUpdateVote     p) = ByronUpdateVote     (idVote p) p
+    go (CC.MempoolTx             p) = ByronTx             (byronIdTx   p) p
+    go (CC.MempoolDlg            p) = ByronDlg            (byronIdDlg  p) p
+    go (CC.MempoolUpdateProposal p) = ByronUpdateProposal (byronIdProp p) p
+    go (CC.MempoolUpdateVote     p) = ByronUpdateVote     (byronIdVote p) p
 
-    idTx   = hashDecoded . Utxo.aTaTx -- TODO (cardano-ledger#581)
-    idDlg  = Delegation.recoverCertificateId
-    idProp = Update.recoverUpId
-    idVote = Update.recoverVoteId
+{-------------------------------------------------------------------------------
+  Auxiliary: transaction IDs
+-------------------------------------------------------------------------------}
+
+-- TODO: move to cardano-ledger (cardano-ledger#581)
+byronIdTx :: Utxo.ATxAux ByteString -> Utxo.TxId
+byronIdTx = hashDecoded . Utxo.aTaTx
+
+byronIdDlg :: Delegation.ACertificate ByteString -> Delegation.CertificateId
+byronIdDlg = Delegation.recoverCertificateId
+
+byronIdProp :: Update.AProposal ByteString -> Update.UpId
+byronIdProp = Update.recoverUpId
+
+byronIdVote :: Update.AVote ByteString -> Update.VoteId
+byronIdVote = Update.recoverVoteId
 
 {-------------------------------------------------------------------------------
   Pretty-printing

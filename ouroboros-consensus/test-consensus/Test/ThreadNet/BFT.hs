@@ -9,6 +9,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.BlockchainTime.Mock
+import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
 
@@ -32,7 +33,9 @@ prop_simple_bft_convergence :: SecurityParam
 prop_simple_bft_convergence k
   testConfig@TestConfig{numCoreNodes, numSlots, slotLengths} =
     tabulate "slot length changes" [show $ countSlotLengthChanges numSlots slotLengths] $
-    prop_general k
+    prop_general
+        countSimpleGenTxs
+        k
         testConfig
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
         (const False)

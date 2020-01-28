@@ -301,7 +301,9 @@ prop_simple_real_pbft_convergence :: ProduceEBBs
 prop_simple_real_pbft_convergence produceEBBs k
   testConfig@TestConfig{numCoreNodes, numSlots, nodeRestarts, initSeed} =
     tabulate "produce EBBs" [show produceEBBs] $
-    prop_general k
+    prop_general
+        Byron.countByronGenTxs
+        k
         testConfig
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
         (expectedBlockRejection k numCoreNodes nodeRestarts)

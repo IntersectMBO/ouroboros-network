@@ -18,8 +18,6 @@ module Ouroboros.Consensus.Ledger.ByronSpec.Ledger (
 
 import           Codec.Serialise
 import           Control.Monad.Except
-import           Control.Monad.Trans.Except
-import           Data.Bifunctor
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
@@ -31,8 +29,8 @@ import qualified Control.State.Transition as Spec
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.ByronSpec.Accessors
 import           Ouroboros.Consensus.Ledger.ByronSpec.Block
-import qualified Ouroboros.Consensus.Ledger.ByronSpec.ChainState as ChainState
 import           Ouroboros.Consensus.Ledger.ByronSpec.Conversions
 import           Ouroboros.Consensus.Ledger.ByronSpec.Genesis (ByronSpecGenesis)
 import           Ouroboros.Consensus.Ledger.ByronSpec.Orphans ()
@@ -71,9 +69,8 @@ instance UpdateLedger ByronSpecBlock where
           (toByronSpecSlotNo       slot)
           (byronSpecLedgerState    state)
 
-  applyLedgerBlock cfg block state = except $
-      bimap ByronSpecLedgerError
-            (updateByronSpecLedgerStateNewTip (blockSlot block)) $
+  applyLedgerBlock cfg block state = withExcept ByronSpecLedgerError $
+      updateByronSpecLedgerStateNewTip (blockSlot block) <$>
         Rules.liftCHAIN
           (unByronSpecLedgerConfig cfg)
           (byronSpecBlock          block)
@@ -93,7 +90,7 @@ instance UpdateLedger ByronSpecBlock where
         Nothing   -> GenesisPoint
         Just slot -> BlockPoint
                        slot
-                       (ChainState.getHash (byronSpecLedgerState state))
+                       (getChainStateHash (byronSpecLedgerState state))
 
 {-------------------------------------------------------------------------------
   Working with the ledger state
