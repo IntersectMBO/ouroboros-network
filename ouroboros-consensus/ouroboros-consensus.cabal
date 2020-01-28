@@ -296,6 +296,7 @@ test-suite test-consensus
                     Test.Consensus.ChainSyncClient
                     Test.Consensus.Ledger.Byron
                     Test.Consensus.Ledger.Mock
+                    Test.Consensus.LocalStateQueryServer
                     Test.Consensus.Mempool
                     Test.Consensus.Mempool.TestBlock
                     Test.Consensus.Mempool.TestTx
