@@ -34,16 +34,17 @@ module Network.Mux (
     , WithMuxBearer (..)
     ) where
 
+import           Data.Int (Int64)
+import qualified Data.ByteString.Lazy as BL
+import           Data.Array
+import           Text.Printf
+
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
-import           Data.Array
-import qualified Data.ByteString.Lazy as BL
-import           Data.Int (Int64)
 import           GHC.Stack
-import           Text.Printf
 
 import           Network.Mux.Channel
 import           Network.Mux.Egress  as Egress
