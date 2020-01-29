@@ -59,6 +59,7 @@ instance UpdateLedger ByronSpecBlock where
   newtype LedgerConfig ByronSpecBlock = ByronSpecLedgerConfig {
         unByronSpecLedgerConfig :: ByronSpecGenesis
       }
+    deriving NoUnexpectedThunks via AllowThunk (LedgerConfig ByronSpecBlock)
 
   type LedgerError ByronSpecBlock = ByronSpecLedgerError
 

@@ -6,6 +6,8 @@
 
 module Ouroboros.Consensus.Protocol.ExtConfig (
     ExtConfig
+    -- * Type families
+  , NodeConfig(..)
   ) where
 
 import           Data.Typeable

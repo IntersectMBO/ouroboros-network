@@ -21,6 +21,7 @@ import           Ouroboros.Consensus.Ledger.Dual.Byron
 import           Ouroboros.Consensus.Node.Run.Abstract
 import qualified Ouroboros.Consensus.Node.Run.Byron as Byron
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -46,16 +47,16 @@ instance RunNode DualByronBlock where
 
             byronEBB :: ByronBlock
             byronEBB = forgeEBB
-                         (dualNodeConfigMain cfg)
+                         (extNodeConfigP cfg)
                          (SlotNo 0)
                          (BlockNo 0)
                          GenesisHash
 
   -- Node config is a consensus concern, determined by the main block only
-  nodeEpochSize       = \_p -> nodeEpochSize       pb . dualNodeConfigMain
-  nodeStartTime       = \_p -> nodeStartTime       pb . dualNodeConfigMain
-  nodeNetworkMagic    = \_p -> nodeNetworkMagic    pb . dualNodeConfigMain
-  nodeProtocolMagicId = \_p -> nodeProtocolMagicId pb . dualNodeConfigMain
+  nodeEpochSize       = \_p -> nodeEpochSize       pb . extNodeConfigP
+  nodeStartTime       = \_p -> nodeStartTime       pb . extNodeConfigP
+  nodeNetworkMagic    = \_p -> nodeNetworkMagic    pb . extNodeConfigP
+  nodeProtocolMagicId = \_p -> nodeProtocolMagicId pb . extNodeConfigP
 
   -- The max block size we set to the max block size of the /concrete/ block
   -- (Correspondingly, 'txSize' for the Byron spec returns 0)
@@ -76,7 +77,7 @@ instance RunNode DualByronBlock where
   -- the dual ledger tests, so integrity and match checks can just use the
   -- concrete implementation
   nodeBlockMatchesHeader hdr = nodeBlockMatchesHeader (dualHeaderMain hdr) . dualBlockMain
-  nodeCheckIntegrity     cfg = nodeCheckIntegrity (dualNodeConfigMain cfg) . dualBlockMain
+  nodeCheckIntegrity     cfg = nodeCheckIntegrity     (extNodeConfigP cfg) . dualBlockMain
 
   -- The header is just the concrete header, so we can just reuse the Byron def
   nodeAddHeaderEnvelope = \_ -> nodeAddHeaderEnvelope pb
@@ -102,10 +103,11 @@ instance RunNode DualByronBlock where
   nodeDecodeLedgerState   = const $ decodeDualLedgerState decodeByronLedgerState
   nodeDecodeApplyTxError  = const $ decodeDualGenTxErr    decodeByronApplyTxError
   nodeDecodeChainState    = \_proxy cfg ->
-                               let k = pbftSecurityParam $ pbftParams cfg
+                               let k = pbftSecurityParam $
+                                         pbftParams (extNodeConfigP cfg)
                                in decodeByronChainState k
   nodeDecodeQuery         = error "DualByron.nodeDecodeQuery"
   nodeDecodeResult        = \case {}
 
 extractEpochSlots :: NodeConfig DualByronProtocol -> EpochSlots
-extractEpochSlots = Byron.extractEpochSlots . dualNodeConfigMain
+extractEpochSlots = Byron.extractEpochSlots . extNodeConfigP

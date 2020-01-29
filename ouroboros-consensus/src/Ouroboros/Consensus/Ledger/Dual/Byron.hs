@@ -12,7 +12,6 @@ module Ouroboros.Consensus.Ledger.Dual.Byron (
     -- * Shorthand
     DualByronBlock
   , DualByronProtocol
-  , DualByronConfig
   , DualByronBridge
     -- * Bridge
   , ByronSpecBridge(..)
@@ -67,6 +66,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
@@ -76,7 +76,6 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
 type DualByronBlock    = DualBlock         ByronBlock ByronSpecBlock
 type DualByronProtocol = DualBlockProtocol ByronBlock ByronSpecBlock
-type DualByronConfig   = DualConfig        ByronBlock ByronSpecBlock
 type DualByronBridge   = BridgeLedger      ByronBlock ByronSpecBlock
 
 {-------------------------------------------------------------------------------
@@ -158,7 +157,6 @@ data ByronSpecBridge = ByronSpecBridge {
   deriving (Show, Eq, Generic, Serialise)
 
 instance Bridge ByronBlock ByronSpecBlock where
-  type ExtraNodeConfig ByronBlock = ByronConfig
   type BridgeLedger ByronBlock ByronSpecBlock = ByronSpecBridge
   type BridgeBlock  ByronBlock ByronSpecBlock = SpecToImplIds
   type BridgeTx     ByronBlock ByronSpecBlock = SpecToImplIds
@@ -245,7 +243,7 @@ forgeDualByronBlock cfg curSlotNo curBlockNo extLedger txs isLeader = do
     -- block can be computed from the bridge information of all of the txs.
 
     main <- forgeByronBlock
-              (dualNodeConfigMain cfg)
+              (extNodeConfigP cfg)
               curSlotNo
               curBlockNo
               (dualExtLedgerStateMain extLedger)
@@ -280,15 +278,15 @@ protocolInfoDualByron :: ByronSpecGenesis
                       -> ProtocolInfo DualByronBlock
 protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     ProtocolInfo {
-        pInfoConfig = PBftNodeConfig {
-            pbftParams    = params
-          , pbftIsLeader  = case mLeader of
-                              Nothing  -> PBftIsNotALeader
-                              Just nid -> PBftIsALeader $ pbftIsLeader nid
-          , pbftExtConfig = DualConfig {
-                                dualConfigMain = concreteConfig
-                              , dualConfigAux  = abstractConfig
-                              }
+        pInfoConfig = ExtNodeConfig {
+            extNodeConfig  = abstractConfig
+          , extNodeConfigP = PBftNodeConfig {
+                pbftParams    = params
+              , pbftIsLeader  = case mLeader of
+                                  Nothing  -> PBftIsNotALeader
+                                  Just nid -> PBftIsALeader $ pbftIsLeader nid
+              , pbftExtConfig = concreteConfig
+              }
           }
       , pInfoInitState =
           ()
@@ -318,7 +316,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     initConcreteState = initByronLedgerState     concreteGenesis (Just initUtxo)
 
     abstractConfig :: LedgerConfig ByronSpecBlock
-    concreteConfig :: ExtraNodeConfig ByronBlock
+    concreteConfig :: ByronConfig
 
     abstractConfig = ByronSpecLedgerConfig abstractGenesis
     concreteConfig = byronConfig

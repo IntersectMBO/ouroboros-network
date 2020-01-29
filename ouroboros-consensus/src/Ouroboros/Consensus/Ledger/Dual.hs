@@ -11,6 +11,7 @@
 {-# LANGUAGE RecordWildCards         #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE StandaloneDeriving      #-}
+{-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
@@ -20,13 +21,10 @@ module Ouroboros.Consensus.Ledger.Dual (
     -- * Pair types
   , DualBlock(..)
   , DualHeader
-  , DualConfig(..)
   , DualBlockProtocol
   , DualLedgerError(..)
   , DualGenTxErr(..)
     -- * Lifted functions
-  , dualNodeConfigMain
-  , dualNodeConfigAux
   , dualExtLedgerStateMain
   , dualExtValidationErrorMain
     -- * Type class family instances
@@ -56,7 +54,6 @@ import           Codec.Serialise
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
-import           Data.Proxy
 import           Data.Typeable
 import           GHC.Stack
 
@@ -71,8 +68,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -140,17 +136,13 @@ class (
       , HasTxId (GenTx     m)
       , Show (ApplyTxErr   m)
 
-        -- PBFT support
-        -- TODO: Remove
-      , BlockProtocol m ~ PBft (ExtraNodeConfig m) PBftCardanoCrypto
-      , ConstructContextDSIGN  (ExtraNodeConfig m) PBftCardanoCrypto
-
         -- Requirements on the auxiliary block
         -- No 'ProtocolLedgerView' for @a@!
       , Typeable         a
       , UpdateLedger     a
       , ApplyTx          a
       , Show (ApplyTxErr a)
+      , NoUnexpectedThunks (LedgerConfig a)
 
         -- Requirements on the various bridges
       , Show      (BridgeLedger m a)
@@ -159,21 +151,6 @@ class (
       , Serialise (BridgeBlock  m a)
       , Serialise (BridgeTx     m a)
       ) => Bridge m a where
-
-  -- | Additional node config
-  --
-  -- The 'OuroborosTag' class introduces a 'NodeConfig' concept, but it doesn't
-  -- explicitly identify the " additional " node config required by specific
-  -- blocks, even though many protocols support this (the @cfg@ parameter in
-  -- 'PBft', for instance). For now we work specifically with PBft only.
-  -- The primary example of 'ExtraNodeConfig' is
-  --
-  -- > type ExtraNodeConfig C.ByronBlock = C.ByronConfig
-  --
-  -- TODO: In order to be able to specify this, we currently hardcode the @c@
-  -- parameter to be 'PBftCardanoCrypto'. None of the definitions in this
-  -- module really depend on that, however.
-  type ExtraNodeConfig m :: *
 
   -- | Additional information relating both ledgers
   type BridgeLedger m a :: *
@@ -214,56 +191,15 @@ instance Bridge m a => HasHeader (DualHeader m a) where
   blockInvariant = const True
 
 {-------------------------------------------------------------------------------
-  Config
--------------------------------------------------------------------------------}
-
-data DualConfig m a = DualConfig {
-      -- | Config for the main block
-      --
-      -- The main block is involved in the consensus protocol, and so we need
-      -- its 'ExtraNodeConfig' (see 'Bridge').
-      dualConfigMain :: ExtraNodeConfig m
-
-      -- | Config for the auxiliary block
-      --
-      -- The auxiliary block however is only involved in updating the ledger
-      -- state, and so we just need its 'LedgerConfig'.
-    , dualConfigAux  :: LedgerConfig a
-    }
-  deriving NoUnexpectedThunks via AllowThunk (DualConfig m a)
-
-{-------------------------------------------------------------------------------
   Protocol
 -------------------------------------------------------------------------------}
 
-type DualBlockProtocol m a = PBft (DualConfig m a) PBftCardanoCrypto
+type DualBlockProtocol m a = ExtConfig (BlockProtocol m) (LedgerConfig a)
 type instance BlockProtocol (DualBlock m a) = DualBlockProtocol m a
 
-dualNodeConfigMain :: Bridge m a
-                   => NodeConfig (DualBlockProtocol m a)
-                   -> NodeConfig (BlockProtocol m)
-dualNodeConfigMain = mapPBftExtConfig dualConfigMain
-
-dualNodeConfigAux :: NodeConfig (DualBlockProtocol m a)
-                  -> LedgerConfig a
-dualNodeConfigAux = dualConfigAux . pbftExtConfig
-
-{-------------------------------------------------------------------------------
-  PBFT support
-
-  This is supported entirely by the main block, the auxiliary block has no role.
--------------------------------------------------------------------------------}
-
-instance Bridge m a
-      => ConstructContextDSIGN (DualConfig m a) PBftCardanoCrypto where
-  constructContextDSIGN _p = constructContextDSIGN p . dualConfigMain
-    where
-      p :: Proxy (PBft (ExtraNodeConfig m) PBftCardanoCrypto)
-      p = Proxy
-
 instance Bridge m a => SupportedBlock (DualBlock m a) where
-  validateView cfg = validateView (dualNodeConfigMain cfg) . dualHeaderMain
-  selectView   cfg = selectView   (dualNodeConfigMain cfg) . dualHeaderMain
+  validateView cfg = validateView (extNodeConfigP cfg) . dualHeaderMain
+  selectView   cfg = selectView   (extNodeConfigP cfg) . dualHeaderMain
 
 {-------------------------------------------------------------------------------
   Ledger errors
@@ -407,18 +343,18 @@ dualExtValidationErrorMain = \case
 
 instance Bridge m a => ProtocolLedgerView (DualBlock m a) where
   ledgerConfigView cfg = DualLedgerConfig {
-        dualLedgerConfigMain = ledgerConfigView $ dualNodeConfigMain cfg
-      , dualLedgerConfigAux  = dualNodeConfigAux cfg
+        dualLedgerConfigMain = ledgerConfigView $ extNodeConfigP cfg
+      , dualLedgerConfigAux  = extNodeConfig cfg
       }
 
   protocolLedgerView cfg state =
       protocolLedgerView
-        (dualNodeConfigMain  cfg)
+        (extNodeConfigP      cfg)
         (dualLedgerStateMain state)
 
   anachronisticProtocolLedgerView cfg state =
       anachronisticProtocolLedgerView
-        (dualNodeConfigMain  cfg)
+        (extNodeConfigP      cfg)
         (dualLedgerStateMain state)
 
 

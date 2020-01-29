@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.Ledger.Dual.Byron
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.PBFT
 
@@ -305,7 +306,7 @@ genTx cfg st = HH.choice [
     cfg' :: ByronSpecGenesis
     st'  :: Spec.State Spec.CHAIN
 
-    cfg' = unByronSpecLedgerConfig $ dualNodeConfigAux  cfg
+    cfg' = unByronSpecLedgerConfig $ extNodeConfig cfg
     st'  = byronSpecLedgerState    $ dualLedgerStateAux st
 
     bridge :: ByronSpecBridge
