@@ -114,12 +114,12 @@ praosValidateView :: ( HasHeader    hdr
 praosValidateView getFields hdr =
     PraosValidateView (blockSlot hdr) (getFields hdr) (headerSigned hdr)
 
-forgePraosFields :: ( HasNodeState (Praos cfg c) m
+forgePraosFields :: ( HasNodeState (Praos c) m
                     , MonadRandom m
                     , PraosCrypto c
                     , Cardano.Crypto.KES.Class.Signable (PraosKES c) toSign
                     )
-                 => NodeConfig (Praos cfg c)
+                 => NodeConfig (Praos c)
                  -> PraosProof c
                  -> (PraosExtraFields c -> toSign)
                  -> m (PraosFields c toSign)
@@ -201,7 +201,7 @@ deriving instance PraosCrypto c => NoUnexpectedThunks (BlockInfo c)
   Protocol proper
 -------------------------------------------------------------------------------}
 
-data Praos cfg c
+data Praos c
 
 -- | Praos parameters that are node independent
 data PraosParams = PraosParams {
@@ -222,30 +222,26 @@ newtype PraosNodeState c = PraosNodeState {
 instance PraosCrypto c => NoUnexpectedThunks (PraosNodeState c) where
   showTypeOf _ = show $ typeRep (Proxy @(PraosNodeState c))
 
-data instance NodeConfig (Praos cfg c) = PraosNodeConfig
+data instance NodeConfig (Praos c) = PraosNodeConfig
   { praosParams       :: !PraosParams
   , praosInitialEta   :: !Natural
   , praosInitialStake :: !StakeDist
   , praosNodeId       :: !NodeId
   , praosSignKeyVRF   :: !(SignKeyVRF (PraosVRF c))
   , praosVerKeys      :: !(Map CoreNodeId (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c)))
-  , praosExtConfig    :: !cfg
   }
   deriving (Generic)
 
-instance ( PraosCrypto c
-         , NoUnexpectedThunks cfg
-         , Typeable cfg
-         ) => OuroborosTag (Praos cfg c) where
+instance PraosCrypto c => OuroborosTag (Praos c) where
   protocolSecurityParam =                        praosSecurityParam . praosParams
   protocolSlotLengths   = singletonSlotLengths . praosSlotLength    . praosParams
 
-  type NodeState     (Praos cfg c) = PraosNodeState c
-  type LedgerView    (Praos cfg c) = StakeDist
-  type IsLeader      (Praos cfg c) = PraosProof c
-  type ValidationErr (Praos cfg c) = PraosValidationError c
-  type ValidateView  (Praos cfg c) = PraosValidateView    c
-  type ChainState    (Praos cfg c) = [BlockInfo c]
+  type NodeState     (Praos c) = PraosNodeState c
+  type LedgerView    (Praos c) = StakeDist
+  type IsLeader      (Praos c) = PraosProof c
+  type ValidationErr (Praos c) = PraosValidationError c
+  type ValidateView  (Praos c) = PraosValidateView    c
+  type ChainState    (Praos c) = [BlockInfo c]
 
   checkIsLeader cfg@PraosNodeConfig{..} slot _u cs =
     case praosNodeId of
@@ -343,21 +339,20 @@ instance ( PraosCrypto c
   -- (Standard) Praos uses the standard chain selection rule, so no need to
   -- override (though see note regarding clock skew).
 
-instance (PraosCrypto c, NoUnexpectedThunks cfg)
-      => NoUnexpectedThunks (NodeConfig (Praos cfg c))
+instance PraosCrypto c => NoUnexpectedThunks (NodeConfig (Praos c))
   -- use generic instance
 
-slotEpoch :: NodeConfig (Praos cfg c) -> SlotNo -> EpochNo
+slotEpoch :: NodeConfig (Praos c) -> SlotNo -> EpochNo
 slotEpoch PraosNodeConfig{..} s =
     runIdentity $ epochInfoEpoch epochInfo s
   where
     epochInfo = fixedSizeEpochInfo (EpochSize praosSlotsPerEpoch)
     PraosParams{..} = praosParams
 
-blockInfoEpoch :: NodeConfig (Praos cfg c) -> BlockInfo c -> EpochNo
+blockInfoEpoch :: NodeConfig (Praos c) -> BlockInfo c -> EpochNo
 blockInfoEpoch l = slotEpoch l . biSlot
 
-epochFirst :: NodeConfig (Praos cfg c) -> EpochNo -> SlotNo
+epochFirst :: NodeConfig (Praos c) -> EpochNo -> SlotNo
 epochFirst PraosNodeConfig{..} e =
     runIdentity $ epochInfoFirst epochInfo e
   where
@@ -368,8 +363,8 @@ infosSlice :: SlotNo -> SlotNo -> [BlockInfo c] -> [BlockInfo c]
 infosSlice from to xs = takeWhile (\b -> biSlot b >= from)
                       $ dropWhile (\b -> biSlot b > to) xs
 
-infosEta :: forall cfg c. (PraosCrypto c)
-         => NodeConfig (Praos cfg c)
+infosEta :: forall c. (PraosCrypto c)
+         => NodeConfig (Praos c)
          -> [BlockInfo c]
          -> EpochNo
          -> Natural
@@ -385,7 +380,7 @@ infosEta l xs e =
   where
     PraosParams{..} = praosParams l
 
-infosStake :: NodeConfig (Praos cfg c) -> [BlockInfo c] -> EpochNo -> StakeDist
+infosStake :: NodeConfig (Praos c) -> [BlockInfo c] -> EpochNo -> StakeDist
 infosStake s@PraosNodeConfig{..} xs e = case ys of
     []                  -> praosInitialStake
     (BlockInfo{..} : _) -> biStake
@@ -395,13 +390,13 @@ infosStake s@PraosNodeConfig{..} xs e = case ys of
     e' = if e >= 2 then EpochNo (unEpochNo e - 2) else 0
     ys = dropWhile (\b -> blockInfoEpoch s b > e') xs
 
-phi :: NodeConfig (Praos cfg c) -> Rational -> Double
+phi :: NodeConfig (Praos c) -> Rational -> Double
 phi PraosNodeConfig{..} r = 1 - (1 - praosLeaderF) ** fromRational r
   where
     PraosParams{..} = praosParams
 
-leaderThreshold :: forall cfg c. PraosCrypto c
-                => NodeConfig (Praos cfg c)
+leaderThreshold :: forall c. PraosCrypto c
+                => NodeConfig (Praos c)
                 -> [BlockInfo c]
                 -> SlotNo
                 -> CoreNodeId
@@ -411,7 +406,7 @@ leaderThreshold st xs s n =
     in  2 ^ (byteCount (Proxy :: Proxy (PraosHash c)) * 8) * phi st a
 
 rhoYT :: PraosCrypto c
-      => NodeConfig (Praos cfg c)
+      => NodeConfig (Praos c)
       -> [BlockInfo c]
       -> SlotNo
       -> CoreNodeId

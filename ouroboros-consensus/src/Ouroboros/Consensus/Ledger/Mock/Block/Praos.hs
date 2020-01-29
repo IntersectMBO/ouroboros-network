@@ -33,6 +33,7 @@ import           Ouroboros.Consensus.Ledger.Mock.Address
 import           Ouroboros.Consensus.Ledger.Mock.Block
 import           Ouroboros.Consensus.Ledger.Mock.Run
 import           Ouroboros.Consensus.Ledger.Mock.Stake
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -68,7 +69,7 @@ data SignedSimplePraos c c' = SignedSimplePraos {
     }
 
 -- | See 'ProtocolLedgerView' instance for why we need the 'AddrDist'
-type instance BlockProtocol (SimplePraosBlock  c c') = Praos AddrDist c'
+type instance BlockProtocol (SimplePraosBlock  c c') = ExtConfig (Praos c') AddrDist
 type instance BlockProtocol (SimplePraosHeader c c') = BlockProtocol (SimplePraosBlock c c')
 
 -- | Sanity check that block and header type synonyms agree
@@ -87,7 +88,7 @@ instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
       , signedPraosFields = praosExtraFields (simplePraosExt simpleHeaderExt)
       }
 
-instance PraosCrypto c' => RunMockProtocol (Praos ext c') where
+instance PraosCrypto c' => RunMockProtocol (ExtConfig (Praos c') ext) where
   mockProtocolMagicId  = const constructMockProtocolMagicId
   mockEncodeChainState = const encode
   mockDecodeChainState = const decode
@@ -109,10 +110,10 @@ instance PraosCrypto c' => Serialise (BlockInfo c') where
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => RunMockBlock (Praos ext c') c (SimplePraosExt c c') where
+         ) => RunMockBlock (ExtConfig (Praos c') ext) c (SimplePraosExt c c') where
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
-        forgePraosFields cfg
+        forgePraosFields (extNodeConfigP cfg)
                          isLeader
                          $ \praosExtraFields ->
           SignedSimplePraos {
@@ -147,11 +148,11 @@ instance ( SimpleCrypto c
   ledgerConfigView _ =
       SimpleLedgerConfig
 
-  protocolLedgerView PraosNodeConfig{..} _ =
-      equalStakeDist praosExtConfig
+  protocolLedgerView ExtNodeConfig{..} _ =
+      equalStakeDist extNodeConfig
 
-  anachronisticProtocolLedgerView PraosNodeConfig{..} _ _ =
-      Right $ equalStakeDist praosExtConfig
+  anachronisticProtocolLedgerView ExtNodeConfig{..} _ _ =
+      Right $ equalStakeDist extNodeConfig
 
 {-------------------------------------------------------------------------------
   Serialisation
