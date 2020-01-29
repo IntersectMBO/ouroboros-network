@@ -33,7 +33,6 @@ import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 openDB :: forall m blk. (
             IOLike m
           , ProtocolLedgerView blk
-          , CanSelect (BlockProtocol blk) blk
           , ModelSupportsBlock blk
           )
        => NodeConfig (BlockProtocol blk)

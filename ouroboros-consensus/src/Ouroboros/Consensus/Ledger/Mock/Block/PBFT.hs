@@ -24,6 +24,8 @@ import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
 
+import           Ouroboros.Network.Block (HasHeader (..))
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Block
@@ -76,23 +78,10 @@ _simplePBftHeader = simpleHeader
   Evidence that SimpleBlock can support PBFT
 -------------------------------------------------------------------------------}
 
+type instance Signed (SimplePBftHeader c c') = SignedSimplePBft c c'
+
 instance SignedHeader (SimplePBftHeader c c') where
-  type Signed (SimplePBftHeader c c') = SignedSimplePBft c c'
-
   headerSigned = SignedSimplePBft . simpleHeaderStd
-
-instance ( SimpleCrypto c
-         , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
-         ) => HeaderSupportsPBft
-                (PBftLedgerView PBftMockCrypto)
-                PBftMockCrypto
-                (SimplePBftHeader c PBftMockCrypto) where
-  type OptSigned (SimplePBftHeader c PBftMockCrypto) =
-          Signed (SimplePBftHeader c PBftMockCrypto)
-  headerPBftFields _ hdr = Just (
-        simplePBftExt (simpleHeaderExt hdr)
-      , headerSigned hdr
-      )
 
 instance (PBftCrypto c', Serialise (PBftVerKeyHash c'))
       => RunMockProtocol (PBft ext c') where
@@ -122,7 +111,9 @@ instance ( SimpleCrypto c
 
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
-         ) => SupportedBlock (SimplePBftBlock c PBftMockCrypto)
+         ) => SupportedBlock (SimplePBftBlock c PBftMockCrypto) where
+  validateView _     = pbftValidateRegular (simplePBftExt . simpleHeaderExt)
+  selectView   _ hdr = (blockNo hdr, IsNotEBB)
 
 -- | The ledger view is constant for the mock instantiation of PBFT
 -- (mock blocks cannot change delegation)

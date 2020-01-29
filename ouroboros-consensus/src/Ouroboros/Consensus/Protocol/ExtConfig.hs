@@ -38,8 +38,8 @@ instance ( OuroborosTag p
   type IsLeader      (ExtConfig p ext) = IsLeader      p
   type LedgerView    (ExtConfig p ext) = LedgerView    p
   type ValidationErr (ExtConfig p ext) = ValidationErr p
-  type CanValidate   (ExtConfig p ext) = CanValidate   p
-  type CanSelect     (ExtConfig p ext) = CanSelect     p
+  type ValidateView  (ExtConfig p ext) = ValidateView  p
+  type SelectView    (ExtConfig p ext) = SelectView    p
 
   preferCandidate       ExtNodeConfig{..} = preferCandidate       extNodeConfigP
   compareCandidates     ExtNodeConfig{..} = compareCandidates     extNodeConfigP

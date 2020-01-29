@@ -141,8 +141,8 @@ class (
       , Show (ApplyTxErr   m)
 
         -- PBFT support
+        -- TODO: Remove
       , BlockProtocol m ~ PBft (ExtraNodeConfig m) PBftCardanoCrypto
-      , HeaderSupportsPBft     (ExtraNodeConfig m) PBftCardanoCrypto (Header m)
       , ConstructContextDSIGN  (ExtraNodeConfig m) PBftCardanoCrypto
 
         -- Requirements on the auxiliary block
@@ -254,22 +254,16 @@ dualNodeConfigAux = dualConfigAux . pbftExtConfig
   This is supported entirely by the main block, the auxiliary block has no role.
 -------------------------------------------------------------------------------}
 
-instance (Bridge m a, c ~ PBftCardanoCrypto)
-      => HeaderSupportsPBft (DualConfig m a) c (DualHeader m a) where
-  type OptSigned (DualHeader m a) = OptSigned (Header m)
-
-  headerPBftFields DualConfig{..} =
-        headerPBftFields dualConfigMain
-      . dualHeaderMain
-
-instance (Bridge m a, c ~ PBftCardanoCrypto)
-      => ConstructContextDSIGN (DualConfig m a) c where
+instance Bridge m a
+      => ConstructContextDSIGN (DualConfig m a) PBftCardanoCrypto where
   constructContextDSIGN _p = constructContextDSIGN p . dualConfigMain
     where
-      p :: Proxy (PBft (ExtraNodeConfig m) c)
+      p :: Proxy (PBft (ExtraNodeConfig m) PBftCardanoCrypto)
       p = Proxy
 
-instance Bridge m a => SupportedBlock (DualBlock m a)
+instance Bridge m a => SupportedBlock (DualBlock m a) where
+  validateView cfg = validateView (dualNodeConfigMain cfg) . dualHeaderMain
+  selectView   cfg = selectView   (dualNodeConfigMain cfg) . dualHeaderMain
 
 {-------------------------------------------------------------------------------
   Ledger errors

@@ -23,7 +23,6 @@ import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), fromCoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util (Empty)
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
 newtype LeaderSchedule = LeaderSchedule {getLeaderSchedule :: Map SlotNo [CoreNodeId]}
@@ -53,13 +52,13 @@ data instance NodeConfig (WithLeaderSchedule p) = WLSNodeConfig
   deriving (Generic)
 
 instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
-  type ChainState      (WithLeaderSchedule p) = ()
-  type NodeState       (WithLeaderSchedule p) = ()
-  type LedgerView      (WithLeaderSchedule p) = ()
-  type ValidationErr   (WithLeaderSchedule p) = ()
-  type IsLeader        (WithLeaderSchedule p) = ()
-  type CanValidate     (WithLeaderSchedule p) = Empty
-  type CanSelect       (WithLeaderSchedule p) = CanSelect p
+  type ChainState    (WithLeaderSchedule p) = ()
+  type NodeState     (WithLeaderSchedule p) = ()
+  type LedgerView    (WithLeaderSchedule p) = ()
+  type ValidationErr (WithLeaderSchedule p) = ()
+  type IsLeader      (WithLeaderSchedule p) = ()
+  type ValidateView  (WithLeaderSchedule p) = ()
+  type SelectView    (WithLeaderSchedule p) = SelectView p
 
   preferCandidate       WLSNodeConfig{..} = preferCandidate       lsNodeConfigP
   compareCandidates     WLSNodeConfig{..} = compareCandidates     lsNodeConfigP

@@ -79,19 +79,13 @@ _simplePraosHeader = simpleHeader
   Evidence that SimpleBlock can support BFT
 -------------------------------------------------------------------------------}
 
-instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
-  type Signed (SimplePraosHeader c c') = SignedSimplePraos c c'
+type instance Signed (SimplePraosHeader c c') = SignedSimplePraos c c'
 
+instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
   headerSigned SimpleHeader{..} = SignedSimplePraos {
         signedSimplePraos = simpleHeaderStd
       , signedPraosFields = praosExtraFields (simplePraosExt simpleHeaderExt)
       }
-
-instance ( SimpleCrypto c
-         , PraosCrypto c'
-         , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => HeaderSupportsPraos AddrDist c' (SimplePraosHeader c c') where
-  headerPraosFields _ = simplePraosExt . simpleHeaderExt
 
 instance PraosCrypto c' => RunMockProtocol (Praos ext c') where
   mockProtocolMagicId  = const constructMockProtocolMagicId
@@ -135,7 +129,8 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => SupportedBlock (SimpleBlock c (SimplePraosExt c c'))
+         ) => SupportedBlock (SimpleBlock c (SimplePraosExt c c')) where
+  validateView _ = praosValidateView (simplePraosExt . simpleHeaderExt)
 
 -- | Praos needs a ledger that can give it the "active stake distribution"
 --

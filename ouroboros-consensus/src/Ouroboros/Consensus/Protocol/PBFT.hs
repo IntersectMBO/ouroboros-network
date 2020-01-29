@@ -1,18 +1,19 @@
-{-# LANGUAGE DeriveAnyClass          #-}
-{-# LANGUAGE DeriveGeneric           #-}
-{-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE FlexibleInstances       #-}
-{-# LANGUAGE LambdaCase              #-}
-{-# LANGUAGE MultiParamTypeClasses   #-}
-{-# LANGUAGE NamedFieldPuns          #-}
-{-# LANGUAGE PatternSynonyms         #-}
-{-# LANGUAGE RecordWildCards         #-}
-{-# LANGUAGE ScopedTypeVariables     #-}
-{-# LANGUAGE StandaloneDeriving      #-}
-{-# LANGUAGE TypeFamilyDependencies  #-}
-{-# LANGUAGE TypeOperators           #-}
-{-# LANGUAGE UndecidableInstances    #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PatternSynonyms           #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeFamilyDependencies    #-}
+{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 module Ouroboros.Consensus.Protocol.PBFT (
     PBft
@@ -30,7 +31,9 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftCrypto(..)
   , PBftMockCrypto
   , PBftCardanoCrypto
-  , HeaderSupportsPBft(..)
+  , PBftValidateView(..)
+  , pbftValidateRegular
+  , pbftValidateBoundary
   , ConstructContextDSIGN(..)
     -- * Type instances
   , NodeConfig(..)
@@ -56,7 +59,7 @@ import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (pattern BlockPoint,
+import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
                      SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
@@ -71,8 +74,9 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState (PBftChainState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
-                     (headerHashBytes)
+                     (HeaderHashBytes, headerHashBytes)
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
+import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -95,22 +99,48 @@ deriving instance PBftCrypto c => Eq   (PBftFields c toSign)
 instance (PBftCrypto c, Typeable toSign) => NoUnexpectedThunks (PBftFields c toSign)
   -- use generic instance
 
--- | Headers that can support PBFT
+-- | Part of the header that we validate
+data PBftValidateView c =
+     -- | Regular block
+     --
+     -- Regular blocks are signed, and so we need to validate them.
+     -- We also need to know the slot number of the block
+     forall signed. Signable (PBftDSIGN c) signed
+                 => PBftValidateRegular SlotNo (PBftFields c signed) signed
+
+     -- | Boundary block (EBB)
+     --
+     -- EBBs are not signed but do affect the chainstate.
+   | PBftValidateBoundary SlotNo HeaderHashBytes
+
+-- | Convenience constructor for 'PBftValidateView' for regular blocks
+pbftValidateRegular :: ( HasHeader    hdr
+                       , SignedHeader hdr
+                       , Signable (PBftDSIGN c) (Signed hdr)
+                       )
+                    => (hdr -> PBftFields c (Signed hdr))
+                    -> (hdr -> PBftValidateView c)
+pbftValidateRegular getFields hdr =
+    PBftValidateRegular (blockSlot hdr) (getFields hdr) (headerSigned hdr)
+
+-- | Convenience constructor for 'PBftValidateView' for boundary blocks
+pbftValidateBoundary :: forall hdr c. (
+                          HasHeader hdr
+                        , Serialise (HeaderHash hdr)
+                        )
+                     => hdr -> PBftValidateView c
+pbftValidateBoundary hdr =
+    PBftValidateBoundary
+      (blockSlot hdr)
+      (headerHashBytes (Proxy @hdr) (blockHash hdr))
+
+-- | Part of the header required for chain selection
 --
--- PBFT is the only protocol does can't use the standard 'Signed' class, because
--- it is the only protocol in which signatures are optional: not all blocks in
--- PBFT have a signature! This is necessary in order to support (what else)
--- epoch boundary blocks (EBBs), which are unsigned. Of course the intention
--- here is that 'headerPBftFields' will return 'Just' for regular blocks.
-class ( HasHeader hdr
-      , Serialise (HeaderHash hdr)
-      , Signable (PBftDSIGN c) (OptSigned hdr)
-      , BlockProtocol hdr ~ PBft cfg c
-      ) => HeaderSupportsPBft cfg c hdr where
-  type family OptSigned hdr :: *
-  headerPBftFields :: cfg
-                   -> hdr
-                   -> Maybe (PBftFields c (OptSigned hdr), OptSigned hdr)
+-- EBBs share a block number with regular blocks, and so for chain selection
+-- we need to know if a block is an EBB or not (because a chain ending on an
+-- EBB with a particular block number is longer than a chain on a regular
+-- block with that same block number).
+type PBftSelectView = (BlockNo, IsEBB)
 
 forgePBftFields :: ( MonadRandom m
                    , PBftCrypto c
@@ -234,8 +264,8 @@ instance ( PBftCrypto c
          )
       => OuroborosTag (PBft cfg c) where
   type ValidationErr (PBft cfg c) = PBftValidationErr c
-  type CanValidate   (PBft cfg c) = HeaderSupportsPBft cfg c
-  type CanSelect     (PBft cfg c) = HeaderSupportsPBft cfg c
+  type ValidateView  (PBft cfg c) = PBftValidateView  c
+  type SelectView    (PBft cfg c) = PBftSelectView
   type NodeState     (PBft cfg c) = ()
 
   -- | We require two things from the ledger state:
@@ -263,11 +293,11 @@ instance ( PBftCrypto c
             PBftIsLeader{pbftCoreNodeId = CoreNodeId i} = credentials
             PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams
 
-  applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) (b :: hdr) chainState =
-      case headerPBftFields pbftExtConfig b of
-        Nothing -> do
-          return $! appendEBB cfg params b chainState
-        Just (PBftFields{..}, signed) -> do
+  applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) toValidate chainState =
+      case toValidate of
+        PBftValidateBoundary slot hash ->
+          return $! appendEBB cfg params (slot, hash) chainState
+        PBftValidateRegular slot PBftFields{..} signed -> do
           -- Check that the issuer signature verifies, and that it's a delegate of a
           -- genesis key, and that genesis key hasn't voted too many times.
           case verifySignedDSIGN
@@ -281,13 +311,13 @@ instance ( PBftCrypto c
           -- FIXME confirm that non-strict inequality is ok in general.
           -- It's here because EBBs have the same slot as the first block of their
           -- epoch.
-          unless (At (blockSlot b) >= CS.lastSignedSlot chainState)
+          unless (At slot >= CS.lastSignedSlot chainState)
             $ throwError PBftInvalidSlot
 
           case Bimap.lookupR (hashVerKey pbftIssuer) dms of
             Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey pbftIssuer) lv
             Just gk -> do
-              let chainState' = append cfg params (blockSlot b, gk) chainState
+              let chainState' = append cfg params (slot, gk) chainState
               case exceedsThreshold params chainState' gk of
                 Nothing -> return $! chainState'
                 Just n  -> throwError $ PBftExceededSignThreshold gk n
@@ -298,9 +328,9 @@ instance ( PBftCrypto c
     where
       params = pbftWindowParams cfg
 
-  compareCandidates PBftNodeConfig{..} lHdr rHdr =
+  compareCandidates PBftNodeConfig{..} (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
       -- Prefer the highest block number, as it is a proxy for chain length
-      case blockNo lHdr `compare` blockNo rHdr of
+      case lBlockNo `compare` rBlockNo of
         LT -> LT
         GT -> GT
         -- If the block numbers are the same, check if one of them is an EBB.
@@ -308,11 +338,11 @@ instance ( PBftCrypto c
         -- chain ending with an EBB is actually longer than the one ending
         -- with a regular block. Note that 'headerPBftFields' returns
         -- 'Nothing' for an EBB.
-        EQ ->
-          let score hdr = case headerPBftFields pbftExtConfig hdr of
-                Nothing -> 1 :: Int   -- favor EBBs
-                Just{}  -> 0
-          in score lHdr `compare` score rHdr
+        EQ -> score lIsEBB `compare` score rIsEBB
+     where
+       score :: IsEBB -> Int
+       score IsEBB    = 1
+       score IsNotEBB = 0
 
 {-------------------------------------------------------------------------------
   Internal: thin wrapper on top of 'PBftChainState'
@@ -366,20 +396,17 @@ append PBftNodeConfig{..} PBftWindowParams{..} =
   where
     PBftParams{..} = pbftParams
 
-appendEBB :: forall cfg c hdr.
-             (PBftCrypto c, HeaderSupportsPBft cfg c hdr)
+appendEBB :: forall cfg c. PBftCrypto c
           => NodeConfig (PBft cfg c)
           -> PBftWindowParams
-          -> hdr
+          -> (SlotNo, HeaderHashBytes)
           -> PBftChainState c -> PBftChainState c
-appendEBB PBftNodeConfig{..} PBftWindowParams{..} b =
-    CS.appendEBB pbftSecurityParam windowSize
-      (blockSlot b) (headerHashBytes (Proxy :: Proxy hdr) (blockHash b))
+appendEBB PBftNodeConfig{..} PBftWindowParams{..} =
+    uncurry $ CS.appendEBB pbftSecurityParam windowSize
   where
     PBftParams{..} = pbftParams
 
-rewind :: forall cfg c hdr.
-          (PBftCrypto c, HeaderSupportsPBft cfg c hdr)
+rewind :: forall cfg c hdr. (PBftCrypto c, Serialise (HeaderHash hdr))
        => NodeConfig (PBft cfg c)
        -> PBftWindowParams
        -> Point hdr

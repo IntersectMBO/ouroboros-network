@@ -1,18 +1,19 @@
-{-# LANGUAGE BangPatterns            #-}
-{-# LANGUAGE DataKinds               #-}
-{-# LANGUAGE DeriveAnyClass          #-}
-{-# LANGUAGE DeriveGeneric           #-}
-{-# LANGUAGE DerivingVia             #-}
-{-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE FlexibleInstances       #-}
-{-# LANGUAGE MultiParamTypeClasses   #-}
-{-# LANGUAGE RecordWildCards         #-}
-{-# LANGUAGE ScopedTypeVariables     #-}
-{-# LANGUAGE StandaloneDeriving      #-}
-{-# LANGUAGE TypeApplications        #-}
-{-# LANGUAGE TypeFamilies            #-}
-{-# LANGUAGE UndecidableInstances    #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE DerivingVia               #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE UndecidableInstances      #-}
+{-# LANGUAGE UndecidableSuperClasses   #-}
 
 -- | Proof of concept implementation of Praos
 module Ouroboros.Consensus.Protocol.Praos (
@@ -26,7 +27,8 @@ module Ouroboros.Consensus.Protocol.Praos (
   , PraosCrypto(..)
   , PraosStandardCrypto
   , PraosMockCrypto
-  , HeaderSupportsPraos(..)
+  , PraosValidateView(..)
+  , praosValidateView
     -- * Type instances
   , NodeConfig(..)
   , BlockInfo(..)
@@ -62,14 +64,12 @@ import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (At))
 
-import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Ledger.Mock.Stake
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
-
-import           Ouroboros.Consensus.Ledger.Mock.Stake
 
 import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
 import           Ouroboros.Storage.EpochInfo (EpochInfo (..),
@@ -100,12 +100,19 @@ data PraosExtraFields c = PraosExtraFields {
 instance PraosCrypto c => NoUnexpectedThunks (PraosExtraFields c)
   -- use generic instance
 
-class ( HasHeader hdr
-      , SignedHeader hdr
-      , Cardano.Crypto.KES.Class.Signable (PraosKES c) (Signed hdr)
-      , BlockProtocol hdr ~ Praos cfg c
-      ) => HeaderSupportsPraos cfg c hdr where
-  headerPraosFields :: NodeConfig (Praos cfg c) -> hdr -> PraosFields c (Signed hdr)
+data PraosValidateView c =
+    forall signed. Cardano.Crypto.KES.Class.Signable (PraosKES c) signed
+                => PraosValidateView SlotNo (PraosFields c signed) signed
+
+-- | Convenience constructor for 'PraosValidateView'
+praosValidateView :: ( HasHeader    hdr
+                     , SignedHeader hdr
+                     , Cardano.Crypto.KES.Class.Signable (PraosKES c) (Signed hdr)
+                     )
+                  => (hdr -> PraosFields c (Signed hdr))
+                  -> (hdr -> PraosValidateView c)
+praosValidateView getFields hdr =
+    PraosValidateView (blockSlot hdr) (getFields hdr) (headerSigned hdr)
 
 forgePraosFields :: ( HasNodeState (Praos cfg c) m
                     , MonadRandom m
@@ -237,8 +244,7 @@ instance ( PraosCrypto c
   type LedgerView    (Praos cfg c) = StakeDist
   type IsLeader      (Praos cfg c) = PraosProof c
   type ValidationErr (Praos cfg c) = PraosValidationError c
-  type CanValidate   (Praos cfg c) = HeaderSupportsPraos cfg c
-  type CanSelect     (Praos cfg c) = HasHeader
+  type ValidateView  (Praos cfg c) = PraosValidateView    c
   type ChainState    (Praos cfg c) = [BlockInfo c]
 
   checkIsLeader cfg@PraosNodeConfig{..} slot _u cs =
@@ -257,11 +263,11 @@ instance ( PraosCrypto c
                      }
               else Nothing
 
-  applyChainState cfg@PraosNodeConfig{..} sd b cs = do
-    let PraosFields{..}      = headerPraosFields cfg b
-        PraosExtraFields{..} = praosExtraFields
-        toSign               = headerSigned b
-        slot                 = blockSlot b
+  applyChainState cfg@PraosNodeConfig{..}
+                  sd
+                  (PraosValidateView slot PraosFields{..} toSign)
+                  cs = do
+    let PraosExtraFields{..} = praosExtraFields
         nid                  = praosCreator
 
     -- check that the new block advances time
@@ -312,7 +318,7 @@ instance ( PraosCrypto c
         throwError $ PraosInsufficientStake t $ certifiedNatural praosY
 
     let !bi = BlockInfo
-            { biSlot  = blockSlot b
+            { biSlot  = slot
             , biRho   = praosRho
             , biStake = sd
             }

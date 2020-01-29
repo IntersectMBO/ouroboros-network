@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Node.Run.Abstract
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import           Codec.Serialise (Serialise)
 import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy)
@@ -40,6 +41,8 @@ class ( ProtocolLedgerView blk
       , ApplyTx blk
       , HasTxId (GenTx blk)
       , QueryLedger blk
+        -- TODO: Remove after reconsidering rewindChainState:
+      , Serialise (HeaderHash blk)
       ) => RunNode blk where
 
   nodeForgeBlock          :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)

@@ -23,6 +23,8 @@ import           Cardano.Crypto.DSIGN
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Delegation as Delegation
 
+import           Ouroboros.Network.Block (HasHeader (..))
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
@@ -35,34 +37,38 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 type ByronConsensusProtocol = PBft ByronConfig PBftCardanoCrypto
 type instance BlockProtocol ByronBlock = ByronConsensusProtocol
 
-instance HeaderSupportsPBft ByronConfig PBftCardanoCrypto (Header ByronBlock) where
-  type OptSigned (Header ByronBlock) = Annotated CC.ToSign ByteString
-
-  headerPBftFields cfg ByronHeader{..} =
+instance SupportedBlock ByronBlock where
+  validateView cfg hdr@ByronHeader{..} =
       case byronHeaderRaw of
-        ABOBBoundaryHdr _   -> Nothing
-        ABOBBlockHdr    hdr -> Just (
-            PBftFields {
-              pbftIssuer    = VerKeyCardanoDSIGN
-                            . Delegation.delegateVK
-                            . CC.delegationCertificate
-                            . CC.headerSignature
-                            $ hdr
-            , pbftGenKey    = VerKeyCardanoDSIGN
-                            . CC.headerGenesisKey
-                            $ hdr
-            , pbftSignature = SignedDSIGN
-                            . SigCardanoDSIGN
-                            . CC.signature
-                            . CC.headerSignature
-                            $ hdr
-            }
-          , CC.recoverSignedBytes epochSlots hdr
-          )
-    where
-      epochSlots = pbftEpochSlots cfg
+        ABOBBoundaryHdr _    -> pbftValidateBoundary hdr
+        ABOBBlockHdr regular ->
+          let pbftFields :: PBftFields PBftCardanoCrypto
+                                       (Annotated CC.ToSign ByteString)
+              pbftFields = PBftFields {
+                  pbftIssuer    = VerKeyCardanoDSIGN
+                                . Delegation.delegateVK
+                                . CC.delegationCertificate
+                                . CC.headerSignature
+                                $ regular
+                , pbftGenKey    = VerKeyCardanoDSIGN
+                                . CC.headerGenesisKey
+                                $ regular
+                , pbftSignature = SignedDSIGN
+                                . SigCardanoDSIGN
+                                . CC.signature
+                                . CC.headerSignature
+                                $ regular
+                }
 
-instance SupportedBlock ByronBlock
+          in PBftValidateRegular
+               (blockSlot hdr)
+               pbftFields
+               (CC.recoverSignedBytes epochSlots regular)
+    where
+      epochSlots = pbftEpochSlots (pbftExtConfig cfg)
+
+
+  selectView _ hdr = (blockNo hdr, byronHeaderIsEBB hdr)
 
 toPBftLedgerView :: Delegation.Map -> PBftLedgerView PBftCardanoCrypto
 toPBftLedgerView = PBftLedgerView . Delegation.unMap

@@ -96,8 +96,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (GetHeader (getHeader), Header,
-                     IsEBB (..))
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -309,10 +308,7 @@ empty initLedger = Model {
 -- Besides updating the 'currentSlot', future blocks are also added to the
 -- model.
 advanceCurSlot
-  :: forall blk.
-     ( ProtocolLedgerView blk
-     , CanSelect (BlockProtocol blk) blk
-     )
+  :: forall blk. ProtocolLedgerView blk
   => NodeConfig (BlockProtocol blk)
   -> SlotNo  -- ^ The new current slot
   -> Model blk -> Model blk
@@ -337,7 +333,7 @@ advanceCurSlot cfg curSlot m =
 addBlock :: forall blk. (
               ProtocolLedgerView blk
               -- Chain selection is normally done on /headers/ only
-            , CanSelect (BlockProtocol blk) blk
+--            , CanSelect (BlockProtocol blk) blk
             )
          => NodeConfig (BlockProtocol blk)
          -> blk
@@ -402,13 +398,13 @@ addBlock cfg blk m
     newLedger :: ExtLedgerState blk
     (newChain, newLedger) =
       fromMaybe (currentChain m, currentLedger m) $
-      selectChain cfg (currentChain m) $
+      selectChain (selectView cfg . getHeader) cfg (currentChain m) $
       filter
         (Fragment.forksAtMostKBlocks (maxRollbacks secParam) currentChainFrag .
          Chain.toAnchoredFragment . fst)
         candidates
 
-addBlocks :: (ProtocolLedgerView blk, CanSelect (BlockProtocol blk) blk)
+addBlocks :: ProtocolLedgerView blk
           => NodeConfig (BlockProtocol blk)
           -> [blk]
           -> Model blk -> Model blk
@@ -652,10 +648,7 @@ chains bs = go Chain.Genesis
     fwd :: Map (ChainHash blk) (Map (HeaderHash blk) blk)
     fwd = successors (Map.elems bs)
 
-validChains :: forall blk. (
-                 ProtocolLedgerView blk
-               , CanSelect (BlockProtocol blk) blk
-               )
+validChains :: forall blk. ProtocolLedgerView blk
             => NodeConfig (BlockProtocol blk)
             -> ExtLedgerState blk
             -> Map (HeaderHash blk) blk
@@ -685,7 +678,7 @@ validChains cfg initLedger bs =
   where
     sortChains :: [Chain blk] -> [Chain blk]
     sortChains = sortBy (flip (Fragment.compareAnchoredCandidates cfg `on`
-                                 Chain.toAnchoredFragment))
+                                 (Chain.toAnchoredFragment . fmap getHeader)))
 
     classify :: ValidationResult blk
              -> ( Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)

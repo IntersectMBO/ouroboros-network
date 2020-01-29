@@ -68,16 +68,10 @@ _simpleBFtHeader = simpleHeader
   Evidence that SimpleBlock can support BFT
 -------------------------------------------------------------------------------}
 
+type instance Signed (SimpleBftHeader c c') = SignedSimpleBft c c'
+
 instance SignedHeader (SimpleBftHeader c c') where
-  type Signed (SimpleBftHeader c c') = SignedSimpleBft c c'
-
   headerSigned = SignedSimpleBft . simpleHeaderStd
-
-instance ( SimpleCrypto c
-         , BftCrypto c'
-         , Signable (BftDSIGN c') (SignedSimpleBft c c')
-         ) => HeaderSupportsBft c' (SimpleBftHeader c c') where
-  headerBftFields _ = simpleBftExt . simpleHeaderExt
 
 instance RunMockProtocol (Bft c') where
   mockProtocolMagicId  = const constructMockProtocolMagicId
@@ -105,7 +99,8 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
-         ) => SupportedBlock (SimpleBftBlock c c')
+         ) => SupportedBlock (SimpleBftBlock c c') where
+  validateView _ = bftValidateView (simpleBftExt . simpleHeaderExt)
 
 instance ( SimpleCrypto c
          , BftCrypto c'

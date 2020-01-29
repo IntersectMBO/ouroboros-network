@@ -12,7 +12,7 @@ import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Crypto.DSIGN.Class as CC.Crypto
 
-import           Ouroboros.Consensus.Block (getHeader)
+import           Ouroboros.Consensus.Block
 
 import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import           Ouroboros.Consensus.Ledger.Byron.Block
@@ -36,15 +36,17 @@ verifyBlockMatchesHeader hdr blk =
 verifyHeaderSignature
   :: NodeConfig ByronConsensusProtocol -> Header ByronBlock -> Bool
 verifyHeaderSignature cfg@PBftNodeConfig { pbftExtConfig } hdr =
-    case headerPBftFields pbftExtConfig hdr of
-      -- EBB, no signature to check
-      Nothing -> True
-      Just (PBftFields { pbftIssuer, pbftGenKey, pbftSignature }, signed) ->
-        isRight $ CC.Crypto.verifySignedDSIGN
-          (constructContextDSIGN cfg pbftExtConfig pbftGenKey)
-          pbftIssuer
-          signed
-          pbftSignature
+    case validateView cfg hdr of
+      PBftValidateBoundary{} ->
+        -- EBB, no signature to check
+        True
+      PBftValidateRegular _slot fields signed ->
+        let PBftFields { pbftIssuer, pbftGenKey, pbftSignature } = fields
+        in isRight $ CC.Crypto.verifySignedDSIGN
+             (constructContextDSIGN cfg pbftExtConfig pbftGenKey)
+             pbftIssuer
+             signed
+             pbftSignature
 
 -- | Verify whether a header is not corrupted.
 --

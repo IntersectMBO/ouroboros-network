@@ -71,8 +71,7 @@ import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import qualified Ouroboros.Network.Point as Point
 
-import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..),
-                     fromIsEBB)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -266,7 +265,6 @@ runAllComponentsM (mblk, mhdr, a, b, c, d, e, f, g) = do
 type TestConstraints blk =
   ( OuroborosTag   (BlockProtocol blk)
   , ProtocolLedgerView            blk
-  , CanSelect (BlockProtocol blk) blk
   , Eq (ChainState (BlockProtocol blk))
   , Eq (LedgerState               blk)
   , Eq                            blk
@@ -920,20 +918,16 @@ precondition Model {..} (At cmd) =
           Map.notMember (blockHash blk) $
           forgetFingerprint (Model.invalid dbModel)
 
-equallyPreferable :: forall blk.
-                     ( OuroborosTag (BlockProtocol blk)
-                     , HasHeader blk
-                     , CanSelect (BlockProtocol blk) blk
-                     )
+equallyPreferable :: forall blk. SupportedBlock blk
                   => NodeConfig (BlockProtocol blk)
                   -> Chain blk -> Chain blk -> Bool
 equallyPreferable cfg chain1 chain2 =
     not (preferAnchoredCandidate cfg chain1' chain2') &&
     not (preferAnchoredCandidate cfg chain2' chain1')
   where
-    chain1', chain2' :: AnchoredFragment blk
-    chain1' = Chain.toAnchoredFragment chain1
-    chain2' = Chain.toAnchoredFragment chain2
+    chain1', chain2' :: AnchoredFragment (Header blk)
+    chain1' = Chain.toAnchoredFragment (getHeader <$> chain1)
+    chain2' = Chain.toAnchoredFragment (getHeader <$> chain2)
 
 
 transition :: (TestConstraints blk, Show1 r, Eq1 r)

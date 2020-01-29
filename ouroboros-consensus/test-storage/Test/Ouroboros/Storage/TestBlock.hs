@@ -288,27 +288,25 @@ mkNextEBB prev slotNo testBody = mkBlock
 
 type instance BlockProtocol TestBlock = Bft BftMockCrypto
 
+type instance Signed (Header TestBlock) = ()
 instance SignedHeader (Header TestBlock) where
-  type Signed (Header TestBlock) = ()
   headerSigned _ = ()
 
-instance HeaderSupportsBft BftMockCrypto (Header TestBlock) where
-  headerBftFields cfg hdr = BftFields {
-        bftSignature = SignedDSIGN $
-                         mockSign
-                           ()
-                           (signKey cfg (blockSlot hdr))
-      }
+instance SupportedBlock TestBlock where
+  validateView BftNodeConfig{ bftParams = BftParams{..} } =
+      bftValidateView bftFields
     where
+      NumCoreNodes numCore = bftNumNodes
+
+      bftFields :: Header TestBlock -> BftFields BftMockCrypto ()
+      bftFields hdr = BftFields {
+            bftSignature = SignedDSIGN $ mockSign () (signKey (blockSlot hdr))
+          }
+
       -- We don't want /our/ signing key, but rather the signing key of the
       -- node that produced the block
-      signKey :: NodeConfig (Bft BftMockCrypto)
-              -> SlotNo
-              -> SignKeyDSIGN MockDSIGN
-      signKey BftNodeConfig{ bftParams = BftParams{..} } (SlotNo n) =
-          SignKeyMockDSIGN $ fromIntegral (n `mod` numCoreNodes)
-        where
-          NumCoreNodes numCoreNodes = bftNumNodes
+      signKey :: SlotNo -> SignKeyDSIGN MockDSIGN
+      signKey (SlotNo n) = SignKeyMockDSIGN $ fromIntegral (n `mod` numCore)
 
 data TestBlockError
   = InvalidHash
@@ -319,8 +317,6 @@ data TestBlockError
   | InvalidBlock
     -- ^ The block itself is invalid
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
-
-instance SupportedBlock TestBlock
 
 instance UpdateLedger TestBlock where
   data LedgerState TestBlock =
