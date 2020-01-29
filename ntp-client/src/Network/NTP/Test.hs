@@ -14,11 +14,13 @@ import           Network.NTP.Query
 testClient :: IO ()
 testClient = withNtpClient (contramapM (return . show) stdoutTracer) testSettings runApplication
   where
-    runApplication ntpClient = race_ getLine $ forever $ do
-        status <- atomically $ ntpGetStatus ntpClient
-        traceWith stdoutTracer $ show ("main"::String, status)
-        threadDelay 10_000_000
-        ntpTriggerUpdate ntpClient
+    runApplication ntpClient = do
+        link $ ntpThread ntpClient  -- propergate any errors in the NTP thread.
+        race_ getLine $ forever $ do
+            status <- atomically $ ntpGetStatus ntpClient
+            traceWith stdoutTracer $ show ("main"::String, status)
+            threadDelay 10_000_000
+            ntpTriggerUpdate ntpClient
 
 testNtpQuery :: IO ()
 testNtpQuery = forever $ do

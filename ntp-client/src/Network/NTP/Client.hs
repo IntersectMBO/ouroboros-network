@@ -20,13 +20,13 @@ data NtpClient = NtpClient
       -- | Bypass all internal threadDelays and trigger a new NTP query (non-blocking).
     , ntpTriggerUpdate    :: IO ()
       -- | Perform a query, update and return the NtpStatus (blocking).
-    , ntpQueryBlocking   :: IO NtpStatus
+    , ntpQueryBlocking    :: IO NtpStatus
     , ntpThread           :: Async ()
     }
 
 -- | Setup a NtpClient and run a application that uses that client.
 -- The NtpClient is terminated when the application returns.
--- And also the application is terminated when the NtpClient crashes.
+-- The application should use waitCatch on ntpThread.
 withNtpClient :: Tracer IO NtpTrace -> NtpSettings -> (NtpClient -> IO a) -> IO a
 withNtpClient tracer ntpSettings action = do
     traceWith tracer NtpTraceStartNtpClient
@@ -47,7 +47,6 @@ withNtpClient tracer ntpSettings action = do
                       return NtpSyncUnavailable
               , ntpThread = tid
               }
-        link tid         -- an error in the ntp-client kills the appliction !
         action client
 
 threadDelayInterruptible :: TVar NtpStatus -> Int -> IO ()
