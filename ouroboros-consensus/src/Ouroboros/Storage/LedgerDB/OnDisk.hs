@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE KindSignatures      #-}
@@ -7,6 +8,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TupleSections       #-}
 
 module Ouroboros.Storage.LedgerDB.OnDisk (
     -- * Opening the database
@@ -37,6 +39,7 @@ import qualified Data.List as List
 import           Data.Maybe (mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack
 import           Text.Read (readMaybe)
@@ -164,14 +167,14 @@ initLedgerDB :: forall m h l r b e. (IOLike m, HasCallStack)
              -> LedgerDbParams
              -> LedgerDbConf m l r b e
              -> StreamAPI m r b
-             -> m (InitLog r, LedgerDB l r)
+             -> m (InitLog r, LedgerDB l r, Word64)
 initLedgerDB replayTracer tracer hasFS decLedger decRef params conf streamAPI = do
     snapshots <- listSnapshots hasFS
     tryNewestFirst id snapshots
   where
     tryNewestFirst :: (InitLog r -> InitLog r)
                    -> [DiskSnapshot]
-                   -> m (InitLog r, LedgerDB l r)
+                   -> m (InitLog r, LedgerDB l r, Word64)
     tryNewestFirst acc [] = do
         -- We're out of snapshots. Start at genesis
         traceWith replayTracer $ ReplayFromGenesis ()
@@ -179,7 +182,7 @@ initLedgerDB replayTracer tracer hasFS decLedger decRef params conf streamAPI = 
         ml     <- runExceptT $ initStartingWith replayTracer conf streamAPI initDb
         case ml of
           Left _  -> error "invariant violation: invalid current chain"
-          Right l -> return (acc InitFromGenesis, l)
+          Right (l, replayed) -> return (acc InitFromGenesis, l, replayed)
     tryNewestFirst acc (s:ss) = do
         -- If we fail to use this snapshot, delete it and try an older one
         ml <- runExceptT $ initFromSnapshot
@@ -196,8 +199,8 @@ initLedgerDB replayTracer tracer hasFS decLedger decRef params conf streamAPI = 
             deleteSnapshot hasFS s
             traceWith tracer $ InvalidSnapshot s err
             tryNewestFirst (acc . InitFailure s err) ss
-          Right (r, l) ->
-            return (acc (InitFromSnapshot s r), l)
+          Right (r, l, replayed) ->
+            return (acc (InitFromSnapshot s r), l, replayed)
 
 {-------------------------------------------------------------------------------
   Internal: initialize using the given snapshot
@@ -227,13 +230,13 @@ initFromSnapshot :: forall m h l r b e. (IOLike m, HasCallStack)
                  -> LedgerDbConf m l r b e
                  -> StreamAPI m r b
                  -> DiskSnapshot
-                 -> ExceptT (InitFailure r) m (Tip r, LedgerDB l r)
+                 -> ExceptT (InitFailure r) m (Tip r, LedgerDB l r, Word64)
 initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
     initSS <- withExceptT InitFailureRead $
                 readSnapshot hasFS decLedger decRef ss
     lift $ traceWith tracer $ ReplayFromSnapshot ss (csTip initSS) ()
-    initDB <- initStartingWith tracer conf streamAPI (ledgerDbWithAnchor params initSS)
-    return (csTip initSS, initDB)
+    (initDB, replayed) <- initStartingWith tracer conf streamAPI (ledgerDbWithAnchor params initSS)
+    return (csTip initSS, initDB, replayed)
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
 initStartingWith :: forall m l r b e. (Monad m, HasCallStack)
@@ -241,16 +244,17 @@ initStartingWith :: forall m l r b e. (Monad m, HasCallStack)
                  -> LedgerDbConf m l r b e
                  -> StreamAPI m r b
                  -> LedgerDB l r
-                 -> ExceptT (InitFailure r) m (LedgerDB l r)
+                 -> ExceptT (InitFailure r) m (LedgerDB l r, Word64)
 initStartingWith tracer conf@LedgerDbConf{..} streamAPI initDb = do
     streamAll streamAPI (ledgerDbTip initDb)
       InitFailureTooRecent
-      initDb
+      (initDb, 0)
       push
   where
-    push :: (r, b) -> LedgerDB l r -> m (LedgerDB l r)
-    push (r, b) db =
-      ledgerDbReapply conf (Val r b) db <* traceWith tracer (ReplayedBlock r r ())
+    push :: (r, b) -> (LedgerDB l r, Word64) -> m (LedgerDB l r, Word64)
+    push (r, b) !(!db, !replayed) = do
+        traceWith tracer (ReplayedBlock r r ())
+        (, replayed + 1) <$> ledgerDbReapply conf (Val r b) db
 
 {-------------------------------------------------------------------------------
   Write to disk
@@ -290,7 +294,7 @@ takeSnapshot tracer hasFS encLedger encRef db = do
 trimSnapshots :: Monad m
               => Tracer m (TraceEvent r)
               -> HasFS m h
-              -> DiskPolicy m
+              -> DiskPolicy
               -> m [DiskSnapshot]
 trimSnapshots tracer hasFS DiskPolicy{..} = do
     snapshots <- listSnapshots hasFS

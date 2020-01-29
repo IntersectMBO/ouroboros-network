@@ -83,7 +83,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbValidation       :: ImmDB.ValidationPolicy
     , cdbBlocksPerFile    :: Int
     , cdbParamsLgrDB      :: LgrDB.LedgerDbParams
-    , cdbDiskPolicy       :: LgrDB.DiskPolicy m
+    , cdbDiskPolicy       :: LgrDB.DiskPolicy
 
       -- Integration
     , cdbNodeConfig       :: NodeConfig (BlockProtocol blk)

@@ -151,7 +151,7 @@ data LgrDbArgs m blk = forall h. LgrDbArgs {
     , lgrEncodeChainState :: ChainState (BlockProtocol blk) -> Encoding
     , lgrEncodeHash       :: HeaderHash blk                 -> Encoding
     , lgrParams           :: LedgerDbParams
-    , lgrDiskPolicy       :: DiskPolicy m
+    , lgrDiskPolicy       :: DiskPolicy
     , lgrGenesis          :: m (ExtLedgerState blk)
     , lgrTracer           :: Tracer m (TraceEvent (Point blk))
     , lgrTraceLedger      :: Tracer m (LedgerDB blk)
@@ -190,6 +190,9 @@ defaultArgs fp = LgrDbArgs {
     }
 
 -- | Open the ledger DB
+--
+-- In addition to the ledger DB also returns the number of immutable blocks
+-- that were replayed.
 openDB :: forall m blk. (IOLike m, ProtocolLedgerView blk)
        => LgrDbArgs m blk
        -- ^ Stateless initializaton arguments
@@ -208,18 +211,21 @@ openDB :: forall m blk. (IOLike m, ProtocolLedgerView blk)
        --
        -- The block may be in the immutable DB or in the volatile DB; the ledger
        -- DB does not know where the boundary is at any given point.
-       -> m (LgrDB m blk)
+       -> m (LgrDB m blk, Word64)
 openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
     createDirectoryIfMissing lgrHasFS True (mkFsPath [])
-    db <- initFromDisk args replayTracer lgrDbConf immDB
+    (db, replayed) <- initFromDisk args replayTracer lgrDbConf immDB
     (varDB, varPrevApplied) <-
       (,) <$> newTVarM db <*> newTVarM Set.empty
-    return LgrDB {
-        conf           = lgrDbConf
-      , varDB          = varDB
-      , varPrevApplied = varPrevApplied
-      , args           = args
-      }
+    return (
+        LgrDB {
+            conf           = lgrDbConf
+          , varDB          = varDB
+          , varPrevApplied = varPrevApplied
+          , args           = args
+          }
+      , replayed
+      )
   where
     apply :: blk
           -> ExtLedgerState blk
@@ -240,23 +246,27 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
       , ldbConfResolve = getBlock
       }
 
+-- | Reopen the ledger DB
+--
+-- Returns the number of immutable blocks replayed.
 reopen :: (IOLike m, ProtocolLedgerView blk, HasCallStack)
        => LgrDB  m blk
        -> ImmDB  m blk
        -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
-       -> m ()
+       -> m Word64
 reopen LgrDB{..} immDB replayTracer = do
-    db <- initFromDisk args replayTracer conf immDB
+    (db, replayed) <- initFromDisk args replayTracer conf immDB
     atomically $ writeTVar varDB db
+    return replayed
 
 initFromDisk :: (IOLike m, HasHeader blk, HasCallStack)
              => LgrDbArgs m blk
              -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
              -> Conf      m blk
              -> ImmDB     m blk
-             -> m (LedgerDB blk)
+             -> m (LedgerDB blk, Word64)
 initFromDisk args@LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure args $ do
-    (_initLog, db) <-
+    (_initLog, db, replayed) <-
       LedgerDB.initLedgerDB
         replayTracer
         lgrTracer
@@ -266,7 +276,7 @@ initFromDisk args@LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure args 
         lgrParams
         lgrDbConf
         (streamAPI immDB)
-    return db
+    return (db, replayed)
 
 {-------------------------------------------------------------------------------
   TraceReplayEvent decorator
@@ -347,7 +357,7 @@ trimSnapshots :: MonadThrow m => LgrDB m blk -> m [DiskSnapshot]
 trimSnapshots LgrDB{ args = args@LgrDbArgs{..} } = wrapFailure args $
     LedgerDB.trimSnapshots lgrTracer lgrHasFS lgrDiskPolicy
 
-getDiskPolicy :: LgrDB m blk -> DiskPolicy m
+getDiskPolicy :: LgrDB m blk -> DiskPolicy
 getDiskPolicy LgrDB{ args = LgrDbArgs{..} } = lgrDiskPolicy
 
 {-------------------------------------------------------------------------------

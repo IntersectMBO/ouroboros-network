@@ -108,7 +108,7 @@ openDBInternal args launchBgTasks = do
       (Args.cdbEpochInfo args)
       immDbTipPoint
       (contramap TraceLedgerReplayEvent tracer)
-    lgrDB   <- LgrDB.openDB argsLgrDb
+    (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
                             lgrReplayTracer
                             immDB
                             (Query.getAnyKnownBlock immDB volDB)
@@ -198,7 +198,7 @@ openDBInternal args launchBgTasks = do
       , _chainTip = castPoint $ AF.headPoint   chain
       }
 
-    when launchBgTasks $ Background.launchBgTasks env
+    when launchBgTasks $ Background.launchBgTasks env replayed
 
     return (chainDB, testing)
   where
