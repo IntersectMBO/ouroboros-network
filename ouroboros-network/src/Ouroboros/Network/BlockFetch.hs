@@ -246,7 +246,7 @@ blockFetchLogic decisionTracer clientStateTracer
         maxInFlightReqsPerPeer   = 10,
 
         -- TODO: These should be determined by external local node config.
-        maxConcurrencyBulkSync   = 2,
+        maxConcurrencyBulkSync   = 1,
         maxConcurrencyDeadline   = 1,
 
         plausibleCandidateChain,
