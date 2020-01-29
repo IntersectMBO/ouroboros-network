@@ -28,8 +28,7 @@ import           Network.Socket ( AddrInfo
                                 , addrSocketType)
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString as Socket.ByteString (recvFrom, sendManyTo)
-import           Network.NTP.Packet ( NtpPacket
-                                    , mkNtpPacket
+import           Network.NTP.Packet ( mkNtpPacket
                                     , ntpPacketSize
                                     , Microsecond
                                     , NtpOffset (..)
@@ -44,7 +43,7 @@ data NtpClientSettings = NtpClientSettings
       -- ^ Timeout between sending NTP requests and response collection.
     , ntpPollDelay       :: Microsecond
       -- ^ How long to wait between two rounds of requests.
-    , ntpReportPolicy    :: [ReceivedPacket] -> Maybe NtpOffset
+    , ntpReportPolicy    :: [NtpOffset] -> Maybe NtpOffset
     }
 
 data NtpStatus =
@@ -56,17 +55,12 @@ data NtpStatus =
       -- `ntpResponseTimeout` or NTP was not configured.
     | NtpSyncUnavailable deriving (Eq, Show)
 
-data ReceivedPacket = ReceivedPacket
-    { receivedPacket    :: !NtpPacket
-    , receivedLocalTime :: !Microsecond
-    , receivedOffset    :: !NtpOffset
-    } deriving (Eq, Show)
-
 -- | Wait for at least three replies and report the minimum of the reported offsets.
-minimumOfThree :: [ReceivedPacket] -> Maybe NtpOffset
+minimumOfThree :: [NtpOffset] -> Maybe NtpOffset
 minimumOfThree l
-    = if length l >= 3 then Just $ minimum $ map receivedOffset l
+    = if length l >= 3 then Just $ minimum l
          else Nothing
+
 udpLocalAddresses :: IO [AddrInfo]
 udpLocalAddresses = do
     let hints = Socket.defaultHints
@@ -94,7 +88,6 @@ firstAddr name l = case (find isV4Addr l, find isV6Addr l) of
 
         isV6Addr :: AddrInfo -> Bool
         isV6Addr addr = addrFamily addr == AF_INET6
-
 
 setNtpPort :: SockAddr ->  SockAddr
 setNtpPort addr = case addr of
@@ -133,7 +126,7 @@ oneshotClient tracer ntpSettings = do
             return $ NtpDrift offset
     return status
     where
-        runProtocol :: IPVersion -> Maybe AddrInfo -> [AddrInfo] -> IO [ReceivedPacket]
+        runProtocol :: IPVersion -> Maybe AddrInfo -> [AddrInfo] -> IO [NtpOffset]
         runProtocol _version _localAddr [] = return []
         runProtocol _version Nothing    _  = return []
         runProtocol version (Just addr) servers = do
@@ -153,7 +146,7 @@ runNtpQueries ::
     -> NtpClientSettings
     -> AddrInfo
     -> [AddrInfo]
-    -> IO (Either IOError [ReceivedPacket])
+    -> IO (Either IOError [NtpOffset])
 runNtpQueries tracer netSettings localAddr destAddrs
     = tryIOError $ bracket acquire release action
   where
@@ -168,7 +161,7 @@ runNtpQueries tracer netSettings localAddr destAddrs
         Socket.close s
         traceWith tracer NtpTraceSocketClosed
 
-    action :: Socket -> IO [ReceivedPacket]
+    action :: Socket -> IO [NtpOffset]
     action socket = do
         Socket.setSocketOption socket ReuseAddr 1
         inQueue <- atomically $ newTVar []
@@ -196,7 +189,7 @@ runNtpQueries tracer netSettings localAddr destAddrs
         threadDelay $ (fromIntegral $ ntpResponseTimeout netSettings) + 100_000 * length destAddrs
         traceWith tracer NtpTraceClientWaitingForRepliesTimeout
 
-    reader :: Socket -> TVar [ReceivedPacket] -> IO ()
+    reader :: Socket -> TVar [NtpOffset] -> IO ()
     reader socket inQueue = forever $ do
         (bs, _) <- Socket.ByteString.recvFrom socket ntpPacketSize
         t <- getCurrentTime
@@ -205,8 +198,8 @@ runNtpQueries tracer netSettings localAddr destAddrs
             Right (_, _, packet) -> do
             -- todo : filter bad packets, i.e. late packets and spoofed packets
                 traceWith tracer NtpTraceReceiveLoopPacketReceived
-                let received = ReceivedPacket packet t (clockOffsetPure packet t)
-                atomically $ modifyTVar' inQueue ((:) received)
+                let offset = (clockOffsetPure packet t)
+                atomically $ modifyTVar' inQueue ((:) offset)
 
 lookupServers :: [String] -> IO ([AddrInfo], [AddrInfo])
 lookupServers names = do
