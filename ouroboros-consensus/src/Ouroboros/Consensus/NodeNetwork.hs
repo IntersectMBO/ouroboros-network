@@ -505,7 +505,9 @@ localResponderNetworkApplication NetworkApplication {..} peer =
           localChainSyncProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (naLocalChainSyncServer peer))),
           localTxSubmissionProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (naLocalTxSubmissionServer peer)))
+            (ResponderProtocolOnly (MuxPeerRaw (naLocalTxSubmissionServer peer))),
+          localQueryProtocol =
+            (ResponderProtocolOnly (MuxPeerRaw (naLocalStateQueryServer peer)))
         }
 
 

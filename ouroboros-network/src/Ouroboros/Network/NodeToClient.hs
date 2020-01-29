@@ -116,7 +116,11 @@ data NodeToClientProtocols appType bytes m a b = NodeToClientProtocols {
 
     -- | local tx-submission mini-protocol
     --
-    localTxSubmissionProtocol :: RunMiniProtocol appType bytes m a b
+    localTxSubmissionProtocol :: RunMiniProtocol appType bytes m a b,
+
+    -- | local query mini-protocol
+    --
+    localQueryProtocol        :: RunMiniProtocol appType bytes m a b
   }
 
 
@@ -135,7 +139,8 @@ nodeToClientProtocols
   -> OuroborosApplication appType bytes m a b
 nodeToClientProtocols NodeToClientProtocols {
                           localChainSyncProtocol,
-                          localTxSubmissionProtocol
+                          localTxSubmissionProtocol,
+                          localQueryProtocol
                         } =
     OuroborosApplication [
       MiniProtocol {
@@ -147,6 +152,11 @@ nodeToClientProtocols NodeToClientProtocols {
         miniProtocolNum    = MiniProtocolNum 6,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = localTxSubmissionProtocol
+      }
+    , MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 7,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = localQueryProtocol
       }
     ]
 
