@@ -22,11 +22,13 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftParams(..)
   , PBftIsLeader(..)
   , PBftIsLeaderOrNot(..)
-  , forgePBftFields
   , genesisKeyCoreNodeId
   , nodeIdToGenesisKey
   , pbftWindowSize
   , mapPBftExtConfig
+    -- * Forging
+  , ConstructContextDSIGN(..)
+  , forgePBftFields
     -- * Classes
   , PBftCrypto(..)
   , PBftMockCrypto
@@ -34,7 +36,6 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftValidateView(..)
   , pbftValidateRegular
   , pbftValidateBoundary
-  , ConstructContextDSIGN(..)
     -- * Type instances
   , NodeConfig(..)
     -- * Exported for testing
@@ -106,7 +107,11 @@ data PBftValidateView c =
      -- Regular blocks are signed, and so we need to validate them.
      -- We also need to know the slot number of the block
      forall signed. Signable (PBftDSIGN c) signed
-                 => PBftValidateRegular SlotNo (PBftFields c signed) signed
+                 => PBftValidateRegular
+                      SlotNo
+                      (PBftFields c signed)
+                      signed
+                      (ContextDSIGN (PBftDSIGN c))
 
      -- | Boundary block (EBB)
      --
@@ -118,10 +123,15 @@ pbftValidateRegular :: ( HasHeader    hdr
                        , SignedHeader hdr
                        , Signable (PBftDSIGN c) (Signed hdr)
                        )
-                    => (hdr -> PBftFields c (Signed hdr))
+                    => ContextDSIGN (PBftDSIGN c)
+                    -> (hdr -> PBftFields c (Signed hdr))
                     -> (hdr -> PBftValidateView c)
-pbftValidateRegular getFields hdr =
-    PBftValidateRegular (blockSlot hdr) (getFields hdr) (headerSigned hdr)
+pbftValidateRegular contextDSIGN getFields hdr =
+    PBftValidateRegular
+      (blockSlot hdr)
+      (getFields hdr)
+      (headerSigned hdr)
+      contextDSIGN
 
 -- | Convenience constructor for 'PBftValidateView' for boundary blocks
 pbftValidateBoundary :: forall hdr c. (
@@ -142,11 +152,28 @@ pbftValidateBoundary hdr =
 -- block with that same block number).
 type PBftSelectView = (BlockNo, IsEBB)
 
-forgePBftFields :: ( MonadRandom m
-                   , PBftCrypto c
-                   , Signable (PBftDSIGN c) toSign
-                   , ConstructContextDSIGN cfg c
-                   )
+{-------------------------------------------------------------------------------
+  Block forging
+-------------------------------------------------------------------------------}
+
+class ConstructContextDSIGN cfg c where
+  constructContextDSIGN :: proxy c
+                        -> cfg
+                        -> VerKeyDSIGN (PBftDSIGN c)
+                        -> ContextDSIGN (PBftDSIGN c)
+
+instance ConstructContextDSIGN ext PBftMockCrypto where
+  constructContextDSIGN _p _cfg _genKey = ()
+
+instance ConstructContextDSIGN ByronConfig PBftCardanoCrypto where
+  constructContextDSIGN _p cfg genKey = (cfg, genKey)
+
+forgePBftFields :: forall m c cfg toSign. (
+                       MonadRandom m
+                     , PBftCrypto c
+                     , Signable (PBftDSIGN c) toSign
+                     , ConstructContextDSIGN cfg c
+                     )
                 => NodeConfig (PBft cfg c)
                 -> IsLeader (PBft cfg c)
                 -> toSign
@@ -161,7 +188,7 @@ forgePBftFields cfg PBftIsLeader{..} toSign = do
   where
     issuer = dlgCertDlgVerKey pbftDlgCert
     genKey = dlgCertGenVerKey pbftDlgCert
-    ctxtDSIGN = constructContextDSIGN cfg (pbftExtConfig cfg) genKey
+    ctxtDSIGN = constructContextDSIGN (Proxy @c) (pbftExtConfig cfg) genKey
 
 {-------------------------------------------------------------------------------
   Information PBFT requires from the ledger
@@ -260,7 +287,6 @@ instance ( PBftCrypto c
          , Typeable c
          , NoUnexpectedThunks cfg
          , Typeable cfg
-         , ConstructContextDSIGN cfg c
          )
       => OuroborosTag (PBft cfg c) where
   type ValidationErr (PBft cfg c) = PBftValidationErr c
@@ -297,11 +323,11 @@ instance ( PBftCrypto c
       case toValidate of
         PBftValidateBoundary slot hash ->
           return $! appendEBB cfg params (slot, hash) chainState
-        PBftValidateRegular slot PBftFields{..} signed -> do
+        PBftValidateRegular slot PBftFields{..} signed contextDSIGN -> do
           -- Check that the issuer signature verifies, and that it's a delegate of a
           -- genesis key, and that genesis key hasn't voted too many times.
           case verifySignedDSIGN
-                 (constructContextDSIGN cfg pbftExtConfig pbftGenKey)
+                 contextDSIGN
                  pbftIssuer
                  signed
                  pbftSignature of
@@ -419,22 +445,6 @@ rewind PBftNodeConfig{..} PBftWindowParams{..} p =
     p' = case p of
       GenesisPoint    -> Origin
       BlockPoint s hh -> At (s, headerHashBytes (Proxy :: Proxy hdr) hh)
-
-{-------------------------------------------------------------------------------
-  Extract necessary context
--------------------------------------------------------------------------------}
-
-class ConstructContextDSIGN cfg c where
-  constructContextDSIGN :: proxy (PBft cfg c)
-                        -> cfg
-                        -> VerKeyDSIGN (PBftDSIGN c)
-                        -> ContextDSIGN (PBftDSIGN c)
-
-instance ConstructContextDSIGN ext PBftMockCrypto where
-  constructContextDSIGN _p _cfg _genKey = ()
-
-instance ConstructContextDSIGN ByronConfig PBftCardanoCrypto where
-  constructContextDSIGN _p cfg genKey = (cfg, genKey)
 
 {-------------------------------------------------------------------------------
   PBFT node order

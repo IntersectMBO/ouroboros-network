@@ -35,15 +35,15 @@ verifyBlockMatchesHeader hdr blk =
 -- This function will always return 'True' for an EBB.
 verifyHeaderSignature
   :: NodeConfig ByronConsensusProtocol -> Header ByronBlock -> Bool
-verifyHeaderSignature cfg@PBftNodeConfig { pbftExtConfig } hdr =
+verifyHeaderSignature cfg hdr =
     case validateView cfg hdr of
       PBftValidateBoundary{} ->
         -- EBB, no signature to check
         True
-      PBftValidateRegular _slot fields signed ->
-        let PBftFields { pbftIssuer, pbftGenKey, pbftSignature } = fields
+      PBftValidateRegular _slot fields signed contextDSIGN ->
+        let PBftFields { pbftIssuer, pbftSignature } = fields
         in isRight $ CC.Crypto.verifySignedDSIGN
-             (constructContextDSIGN cfg pbftExtConfig pbftGenKey)
+             contextDSIGN
              pbftIssuer
              signed
              pbftSignature

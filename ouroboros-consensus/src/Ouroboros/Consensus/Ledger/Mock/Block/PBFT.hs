@@ -112,7 +112,7 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => SupportedBlock (SimplePBftBlock c PBftMockCrypto) where
-  validateView _     = pbftValidateRegular (simplePBftExt . simpleHeaderExt)
+  validateView _     = pbftValidateRegular () (simplePBftExt . simpleHeaderExt)
   selectView   _ hdr = (blockNo hdr, IsNotEBB)
 
 -- | The ledger view is constant for the mock instantiation of PBFT

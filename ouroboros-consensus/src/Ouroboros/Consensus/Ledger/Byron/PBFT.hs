@@ -64,6 +64,7 @@ instance SupportedBlock ByronBlock where
                (blockSlot hdr)
                pbftFields
                (CC.recoverSignedBytes epochSlots regular)
+               (pbftExtConfig cfg, pbftGenKey pbftFields)
     where
       epochSlots = pbftEpochSlots (pbftExtConfig cfg)
 
