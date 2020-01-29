@@ -1,11 +1,20 @@
-module System.Win32.Async.Internal where
+module System.Win32.Async.Internal
+  ( SOCKET
+  , CInt (..)
+  , waitForCompletion
+  , wsaWaitForCompletion
+  ) where
 
 import Control.Concurrent
 
+import Foreign.C (CInt (..))
 import Foreign.StablePtr (StablePtr, newStablePtr)
 import System.Win32.Types (ErrCode)
 import qualified System.Win32.Types as Win32
 import System.Win32.Async.ErrCode
+
+
+type SOCKET = CInt
 
 waitForCompletion :: String
                   -> (StablePtr (MVar (Either ErrCode Int)) -> IO ())

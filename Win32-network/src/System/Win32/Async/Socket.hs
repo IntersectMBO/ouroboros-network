@@ -28,9 +28,6 @@ import           System.Win32.Async.Internal
 import           System.Win32.Async.WSABuf
 
 
-type SOCKET = CInt
-
-
 sendBuf :: Socket
         -> Ptr Word8
         -> Int
