@@ -26,10 +26,8 @@ Library
 
   hs-source-dirs:       src
   default-language:     Haskell2010
-  ghc-options:          -Wall
-  default-extensions:   DeriveDataTypeable
-                        DeriveGeneric
-                        GeneralizedNewtypeDeriving
+  ghc-options:          -Wall -Werror
+  default-extensions:   GeneralizedNewtypeDeriving
                         
 test-suite ntp-client-test
   hs-source-dirs:     test, src

@@ -1,6 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ViewPatterns               #-}
 
 module Network.NTP.Packet
     ( NtpPacket (..)

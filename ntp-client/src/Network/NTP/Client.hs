@@ -49,8 +49,8 @@ withNtpClient tracer ntpSettings action = do
               }
         action client
 
-threadDelayInterruptible :: TVar NtpStatus -> Int -> IO ()
-threadDelayInterruptible tvar t
+awaitPendingWithTimeout :: TVar NtpStatus -> Int -> IO ()
+awaitPendingWithTimeout tvar t
     = race_
        ( threadDelay t )
        ( atomically $ do
@@ -66,14 +66,14 @@ ntpClientThread ::
     -> IO ()
 ntpClientThread tracer ntpSettings ntpStatus = forM_ restartDelay $ \t -> do
     traceWith tracer $ NtpTraceRestartDelay t
-    threadDelayInterruptible ntpStatus $ t * 1_000_000
+    awaitPendingWithTimeout ntpStatus $ t * 1_000_000
     traceWith tracer NtpTraceRestartingClient
     catchIOError
         (forever $ do
             status <- ntpQuery tracer ntpSettings
             atomically $ writeTVar ntpStatus status
             traceWith tracer NtpTraceClientSleeping
-            threadDelayInterruptible ntpStatus $ fromIntegral $ ntpPollDelay ntpSettings
+            awaitPendingWithTimeout ntpStatus $ fromIntegral $ ntpPollDelay ntpSettings
         )
         (\err -> traceWith tracer $ NtpTraceIOError err)
     atomically $ writeTVar ntpStatus NtpSyncUnavailable

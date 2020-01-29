@@ -62,13 +62,14 @@ minimumOfThree l
          else Nothing
 
 udpLocalAddresses :: IO [AddrInfo]
-udpLocalAddresses = do
-    let hints = Socket.defaultHints
-            { addrFlags = [AI_PASSIVE]
-            , addrSocketType = Datagram }
-        port = Socket.defaultPort
-    --                 Hints        Host    Service
-    Socket.getAddrInfo (Just hints) Nothing (Just $ show port)
+--                                      Hints        Host    Service
+udpLocalAddresses = Socket.getAddrInfo (Just hints) Nothing (Just $ show port)
+  where
+    hints = Socket.defaultHints
+          { addrFlags = [AI_PASSIVE]
+          , addrSocketType = Datagram
+          }
+    port = Socket.defaultPort
 
 resolveHost :: String -> IO [AddrInfo]
 resolveHost host = Socket.getAddrInfo (Just hints) (Just host) Nothing
@@ -81,18 +82,16 @@ resolveHost host = Socket.getAddrInfo (Just hints) (Just host) Nothing
 firstAddr :: Family -> [AddrInfo] -> Maybe AddrInfo
 firstAddr family l = find ((==) family . addrFamily ) l
 
-
 setNtpPort :: SockAddr ->  SockAddr
 setNtpPort addr = case addr of
     (SockAddrInet  _ host)            -> SockAddrInet  ntpPort host
     (SockAddrInet6 _ flow host scope) -> SockAddrInet6 ntpPort flow host scope
-    sockAddr                   -> sockAddr
-  where
-    ntpPort :: PortNumber
-    ntpPort = 123
+    sockAddr                          -> sockAddr
+    where
+        ntpPort :: PortNumber
+        ntpPort = 123
 
--- | Run a single NTP query
-
+-- | Perform a single NTP query and return the result.
 ntpQuery ::
        Tracer IO NtpTrace
     -> NtpSettings
@@ -192,8 +191,8 @@ runNtpQueries tracer netSettings localAddr destAddrs
         t <- getCurrentTime
         case decodeOrFail $ LBS.fromStrict bs of
             Left  (_, _, err) -> traceWith tracer $ NtpTraceSocketReaderDecodeError err
+            -- TODO : filter bad packets, i.e. late packets and spoofed packets
             Right (_, _, packet) -> do
-            -- todo : filter bad packets, i.e. late packets and spoofed packets
                 traceWith tracer NtpTraceReceiveLoopPacketReceived
                 let offset = (clockOffsetPure packet t)
                 atomically $ modifyTVar' inQueue ((:) offset)
