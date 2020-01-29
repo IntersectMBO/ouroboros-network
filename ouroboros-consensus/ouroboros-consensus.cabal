@@ -82,6 +82,7 @@ library
                        Ouroboros.Consensus.Ledger.Mock.Stake
                        Ouroboros.Consensus.Ledger.Mock.State
                        Ouroboros.Consensus.Ledger.Mock.UTxO
+                       Ouroboros.Consensus.LocalStateQueryServer
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
                        Ouroboros.Consensus.Mempool.Impl
@@ -147,6 +148,7 @@ library
                        Ouroboros.Storage.ChainDB.Impl.ChainSel
                        Ouroboros.Storage.ChainDB.Impl.ImmDB
                        Ouroboros.Storage.ChainDB.Impl.Iterator
+                       Ouroboros.Storage.ChainDB.Impl.LedgerCursor
                        Ouroboros.Storage.ChainDB.Impl.LgrDB
                        Ouroboros.Storage.ChainDB.Impl.Query
                        Ouroboros.Storage.ChainDB.Impl.Reader
@@ -294,6 +296,7 @@ test-suite test-consensus
                     Test.Consensus.ChainSyncClient
                     Test.Consensus.Ledger.Byron
                     Test.Consensus.Ledger.Mock
+                    Test.Consensus.LocalStateQueryServer
                     Test.Consensus.Mempool
                     Test.Consensus.Mempool.TestBlock
                     Test.Consensus.Mempool.TestTx

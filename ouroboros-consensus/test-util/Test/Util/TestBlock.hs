@@ -4,12 +4,14 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 -- | Minimal instantiation of the consensus layer to be able to run the ChainDB
@@ -22,6 +24,7 @@ module Test.Util.TestBlock (
   , TestBlock(..)
   , TestBlockError(..)
   , Header(..)
+  , Query(..)
   , firstBlock
   , successorBlock
   , modifyFork
@@ -60,10 +63,11 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
+import           Data.Type.Equality ((:~:) (Refl))
 import           Data.Word
 import           GHC.Generics (Generic)
 import qualified System.Random as R
-import           Test.QuickCheck
+import           Test.QuickCheck hiding (Result)
 
 import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -272,13 +276,13 @@ data TestBlockError
 instance SupportedBlock TestBlock
 
 instance UpdateLedger TestBlock where
-  data LedgerState TestBlock =
+  newtype LedgerState TestBlock =
       TestLedger {
           -- The ledger state simply consists of the last applied block
-          lastAppliedPoint :: !(Point TestBlock)
-        , lastAppliedHash  :: !(ChainHash TestBlock)
+          lastAppliedPoint :: Point TestBlock
         }
-    deriving (Show, Eq, Generic, Serialise, NoUnexpectedThunks)
+    deriving stock   (Show, Eq, Generic)
+    deriving newtype (Serialise, NoUnexpectedThunks)
 
   data LedgerConfig TestBlock = LedgerConfig
   type LedgerError  TestBlock = TestBlockError
@@ -286,15 +290,14 @@ instance UpdateLedger TestBlock where
   applyChainTick _ _ = TickedLedgerState
 
   applyLedgerBlock _ tb@TestBlock{..} TestLedger{..}
-    | Block.blockPrevHash tb /= lastAppliedHash
-    = throwError $ InvalidHash lastAppliedHash (Block.blockPrevHash tb)
+    | Block.blockPrevHash tb /= Block.pointHash lastAppliedPoint
+    = throwError $ InvalidHash (Block.pointHash lastAppliedPoint) (Block.blockPrevHash tb)
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise
-    = return     $ TestLedger (Chain.blockPoint tb) (BlockHash (Block.blockHash tb))
+    = return     $ TestLedger (Chain.blockPoint tb)
 
-  reapplyLedgerBlock _ tb _ =
-    TestLedger (Chain.blockPoint tb) (BlockHash (Block.blockHash tb))
+  reapplyLedgerBlock _ tb _ = TestLedger (Chain.blockPoint tb)
 
   ledgerTipPoint = lastAppliedPoint
 
@@ -303,8 +306,22 @@ instance ProtocolLedgerView TestBlock where
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right ()
 
+instance QueryLedger TestBlock where
+  data Query TestBlock result where
+    QueryLedgerTip :: Query TestBlock (Point TestBlock)
+
+  answerQuery QueryLedgerTip (TestLedger { lastAppliedPoint }) =
+    lastAppliedPoint
+  eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
+
+deriving instance Eq (Query TestBlock result)
+deriving instance Show (Query TestBlock result)
+
+instance ShowQuery (Query TestBlock) where
+  showResult QueryLedgerTip = show
+
 testInitLedger :: LedgerState TestBlock
-testInitLedger = TestLedger Block.genesisPoint GenesisHash
+testInitLedger = TestLedger Block.genesisPoint
 
 testInitExtLedger :: ExtLedgerState TestBlock
 testInitExtLedger = ExtLedgerState {

@@ -1,9 +1,12 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE EmptyCase                  #-}
+{-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -323,6 +326,21 @@ mkSimpleGenTx tx = SimpleGenTx
     { simpleGenTx   = tx
     , simpleGenTxId = hash tx
     }
+
+{-------------------------------------------------------------------------------
+  Support for QueryLedger
+-------------------------------------------------------------------------------}
+
+instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
+      => QueryLedger (SimpleBlock c ext) where
+  data Query (SimpleBlock c ext) result
+    deriving (Show)
+
+  answerQuery = \case {}
+  eqQuery     = \case {}
+
+instance ShowQuery (Query (SimpleBlock c ext)) where
+  showResult = \case {}
 
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks

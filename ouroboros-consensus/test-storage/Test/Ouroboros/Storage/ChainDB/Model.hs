@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
@@ -17,6 +18,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
     Model -- opaque
   , IteratorId
   , CPS.ReaderId
+  , LedgerCursorId
     -- * Construction
   , empty
   , addBlock
@@ -48,6 +50,10 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , readerInstruction
   , readerForward
   , readerClose
+    -- * Ledger Cursors
+  , getLedgerCursor
+  , ledgerCursorState
+  , ledgerCursorMove
     -- * ModelSupportsBlock
   , ModelSupportsBlock (..)
     -- * Exported for testing purposes
@@ -83,7 +89,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      ChainHash (..), pattern GenesisPoint, HasHeader,
-                     HeaderHash, MaxSlotNo (..), Point, SlotNo)
+                     HeaderHash, MaxSlotNo (..), Point, SlotNo, pointSlot)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -103,10 +109,13 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 
 import           Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB,
                      ChainDbError (..), InvalidBlockReason (..),
-                     IteratorResult (..), StreamFrom (..), StreamTo (..),
-                     UnknownRange (..), validBounds)
+                     IteratorResult (..), LedgerCursorFailure (..),
+                     StreamFrom (..), StreamTo (..), UnknownRange (..),
+                     validBounds)
 
 type IteratorId = Int
+
+type LedgerCursorId = Int
 
 -- | Model of the chain DB
 data Model blk = Model {
@@ -115,6 +124,7 @@ data Model blk = Model {
     , currentLedger :: ExtLedgerState blk
     , initLedger    :: ExtLedgerState blk
     , iterators     :: Map IteratorId [blk]
+    , ledgerCursors :: Map LedgerCursorId (ExtLedgerState blk)
     , invalid       :: WithFingerprint (Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo))
     , currentSlot   :: SlotNo
     , futureBlocks  :: Map SlotNo [blk]
@@ -285,6 +295,7 @@ empty initLedger = Model {
     , currentLedger = initLedger
     , initLedger    = initLedger
     , iterators     = Map.empty
+    , ledgerCursors = Map.empty
     , invalid       = WithFingerprint Map.empty (Fingerprint 0)
     , currentSlot   = 0
     , futureBlocks  = Map.empty
@@ -355,6 +366,7 @@ addBlock cfg blk m
     , currentLedger = newLedger
     , initLedger    = initLedger m
     , iterators     = iterators  m
+    , ledgerCursors = ledgerCursors m
     , invalid       = WithFingerprint invalidBlocks' fingerprint'
     , currentSlot   = currentSlot  m
     , futureBlocks  = futureBlocks m
@@ -525,6 +537,42 @@ readerClose rdrId m
     = m { cps = CPS.deleteReader rdrId (cps m) }
     | otherwise
     = m
+
+
+{-------------------------------------------------------------------------------
+  Ledger Cursors
+-------------------------------------------------------------------------------}
+
+getLedgerCursor
+  :: forall blk. ProtocolLedgerView blk
+  => Model blk -> (LedgerCursorId, Model blk)
+getLedgerCursor m@Model { ledgerCursors = lcs, currentLedger } =
+    (lcId, m { ledgerCursors = Map.insert lcId currentLedger lcs })
+  where
+    lcId :: LedgerCursorId
+    lcId = Map.size lcs -- we never delete ledger cursors
+
+ledgerCursorState :: LedgerCursorId -> Model blk -> ExtLedgerState blk
+ledgerCursorState lcId m
+    | Just ledgerState <- Map.lookup lcId (ledgerCursors m)
+    = ledgerState
+    | otherwise
+    = error $ "unknown ledgerCursor: " <> show lcId
+
+ledgerCursorMove
+  :: forall blk. ProtocolLedgerView blk
+  => NodeConfig (BlockProtocol blk)
+  -> LedgerCursorId
+  -> Point blk
+  -> Model blk
+  -> (Either LedgerCursorFailure (ExtLedgerState blk), Model blk)
+ledgerCursorMove cfg lcId pt m@Model { ledgerCursors = lcs }
+    | Just ledgerState <- getPastLedger cfg pt m
+    = (Right ledgerState, m { ledgerCursors = Map.insert lcId ledgerState lcs })
+    | pointSlot pt < immutableSlotNo (protocolSecurityParam cfg) m
+    = (Left PointTooOld, m)
+    | otherwise
+    = (Left PointNotOnChain, m)
 
 {-------------------------------------------------------------------------------
   ModelSupportsBlock

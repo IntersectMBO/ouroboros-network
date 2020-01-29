@@ -48,6 +48,8 @@ module Ouroboros.Storage.ChainDB.Impl.LgrDB (
   , LedgerDB.SwitchResult (..)
   , TraceEvent (..)
   , TraceReplayEvent (..)
+    -- * Exported for testing purposes
+  , mkLgrDB
   ) where
 
 import           Codec.Serialise.Decoding (Decoder)
@@ -277,6 +279,14 @@ initFromDisk args@LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure args 
         lgrDbConf
         (streamAPI immDB)
     return (db, replayed)
+
+-- | For testing purposes
+mkLgrDB :: Conf m blk
+        -> StrictTVar m (LedgerDB blk)
+        -> StrictTVar m (Set (Point blk))
+        -> LgrDbArgs m blk
+        -> LgrDB m blk
+mkLgrDB conf varDB varPrevApplied args = LgrDB {..}
 
 {-------------------------------------------------------------------------------
   TraceReplayEvent decorator

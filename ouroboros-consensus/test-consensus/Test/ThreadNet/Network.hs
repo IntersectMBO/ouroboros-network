@@ -62,6 +62,7 @@ import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 import           Ouroboros.Network.Protocol.TxSubmission.Type
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
@@ -667,6 +668,7 @@ runThreadNetwork ThreadNetworkArgs
            (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
            (AnyMessage (ChainSync (Serialised blk) (Tip blk)))
            (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
+           (AnyMessage (LocalStateQuery blk (Query blk)))
     customProtocolCodecs cfg = ProtocolCodecs
         { pcChainSyncCodec =
             mapFailureCodec CodecBytesFailure $
@@ -689,6 +691,9 @@ runThreadNetwork ThreadNetworkArgs
         , pcLocalTxSubmissionCodec =
             mapFailureCodec CodecIdFailure $
             pcLocalTxSubmissionCodec protocolCodecsId
+        , pcLocalStateQueryCodec =
+            mapFailureCodec CodecIdFailure $
+            pcLocalStateQueryCodec protocolCodecsId
         }
       where
         binaryProtocolCodecs = protocolCodecs cfg
@@ -824,14 +829,14 @@ directedEdgeInner edgeStatusVar
     atomically $ writeTVar edgeStatusVar EUp
 
     let miniProtocol ::
-             (forall unused1 unused2.
-                LimitedApp' m NodeId blk unused1 unused2
+             (forall unused1 unused2 unused3.
+                LimitedApp' m NodeId blk unused1 unused2 unused3
              -> NodeId
              -> Channel m msg
              -> m ())
             -- ^ client action to run on node1
-          -> (forall unused1 unused2.
-                LimitedApp' m NodeId blk unused1 unused2
+          -> (forall unused1 unused2 unused3.
+                LimitedApp' m NodeId blk unused1 unused2 unused3
              -> NodeId
              -> Channel m msg
              -> m ())
@@ -1056,6 +1061,7 @@ type TracingConstraints blk =
   , Show (Header blk)
   , Show (GenTx blk)
   , Show (GenTxId blk)
+  , ShowQuery (Query blk)
   )
 
 {-------------------------------------------------------------------------------
@@ -1083,13 +1089,13 @@ withAsyncsWaitAny = go [] . NE.toList
 --
 -- Used internal to this module, essentially as an abbreviation.
 data LimitedApp m peer blk =
-   forall unused1 unused2.
-   LimitedApp (LimitedApp' m peer blk unused1 unused2)
+   forall unused1 unused2 unused3.
+   LimitedApp (LimitedApp' m peer blk unused1 unused2 unused3)
 
 -- | Argument of 'LimitedApp' data constructor
 --
 -- Used internal to this module, essentially as an abbreviation.
-type LimitedApp' m peer blk unused1 unused2 =
+type LimitedApp' m peer blk unused1 unused2 unused3 =
     NetworkApplication m peer
         -- The 'ChainSync' and 'BlockFetch' protocols use @'Serialised' x@ for
         -- the servers and @x@ for the clients. Since both have to match to be
@@ -1101,6 +1107,7 @@ type LimitedApp' m peer blk unused1 unused2 =
         (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
         unused1 -- the local node-to-client channel types
         unused2
+        unused3
         ()
 
 {-------------------------------------------------------------------------------

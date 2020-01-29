@@ -1,6 +1,8 @@
 {-# LANGUAGE ConstraintKinds         #-}
 {-# LANGUAGE DerivingStrategies      #-}
 {-# LANGUAGE DerivingVia             #-}
+{-# LANGUAGE EmptyCase               #-}
+{-# LANGUAGE EmptyDataDeriving       #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE LambdaCase              #-}
@@ -424,6 +426,22 @@ instance Bridge m a => ProtocolLedgerView (DualBlock m a) where
       anachronisticProtocolLedgerView
         (dualNodeConfigMain  cfg)
         (dualLedgerStateMain state)
+
+
+{-------------------------------------------------------------------------------
+  Querying the ledger
+-------------------------------------------------------------------------------}
+
+-- | Not used in the tests: no constructors
+instance Bridge m a => QueryLedger (DualBlock m a) where
+  data Query (DualBlock m a) result
+    deriving (Show)
+
+  answerQuery = \case {}
+  eqQuery     = \case {}
+
+instance ShowQuery (Query (DualBlock m a)) where
+  showResult = \case {}
 
 {-------------------------------------------------------------------------------
   Mempool support

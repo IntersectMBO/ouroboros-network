@@ -298,12 +298,12 @@ run :: forall m blk. (IOLike m, HasHeader blk)
     -> StrictTVar m Id
     ->    Cmd     blk (TestIterator m blk) (TestReader m blk)
     -> m (Success blk (TestIterator m blk) (TestReader m blk))
-run ChainDB{..} internal registry varCurSlot varNextId = \case
+run chainDB@ChainDB{..} internal registry varCurSlot varNextId = \case
     AddBlock blk             -> Unit                <$> (advanceAndAdd (blockSlot blk) blk)
     AddFutureBlock blk s     -> Unit                <$> (advanceAndAdd s               blk)
     GetCurrentChain          -> Chain               <$> atomically getCurrentChain
     GetCurrentLedger         -> Ledger              <$> atomically getCurrentLedger
-    GetPastLedger pt         -> MbLedger            <$> getPastLedger pt
+    GetPastLedger pt         -> MbLedger            <$> getPastLedger chainDB pt
     GetTipBlock              -> MbBlock             <$> getTipBlock
     GetTipHeader             -> MbHeader            <$> getTipHeader
     GetTipPoint              -> Point               <$> atomically getTipPoint

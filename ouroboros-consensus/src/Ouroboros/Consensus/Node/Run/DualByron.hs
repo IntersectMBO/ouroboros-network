@@ -1,4 +1,6 @@
+{-# LANGUAGE EmptyCase         #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE PatternSynonyms   #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -88,6 +90,8 @@ instance RunNode DualByronBlock where
   nodeEncodeGenTx         = encodeDualGenTx   encodeByronGenTx
   nodeEncodeGenTxId       = encodeDualGenTxId encodeByronGenTxId
   nodeEncodeChainState    = \_proxy _cfg -> encodeByronChainState
+  nodeEncodeQuery         = \case {}
+  nodeEncodeResult        = \case {}
 
   -- Decoders
   nodeDecodeBlock         = decodeDualBlock  . decodeByronBlock  . extractEpochSlots
@@ -100,6 +104,8 @@ instance RunNode DualByronBlock where
   nodeDecodeChainState    = \_proxy cfg ->
                                let k = pbftSecurityParam $ pbftParams cfg
                                in decodeByronChainState k
+  nodeDecodeQuery         = error "DualByron.nodeDecodeQuery"
+  nodeDecodeResult        = \case {}
 
 extractEpochSlots :: NodeConfig DualByronProtocol -> EpochSlots
 extractEpochSlots = Byron.extractEpochSlots . dualNodeConfigMain
