@@ -7,7 +7,7 @@ import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM (STM, atomically, check)
 import           Control.Concurrent.STM.TVar
-import           System.IO.Error (catchIOError, tryIOError)
+import           System.IO.Error (catchIOError)
 import           Control.Monad
 import           Control.Tracer
 
@@ -35,16 +35,15 @@ withNtpClient tracer ntpSettings action = do
         let client = NtpClient
               { ntpGetStatus = readTVar ntpStatus
               , ntpTriggerUpdate = do
-                   traceWith tracer NtpTraceClientActNow
-                   atomically $ writeTVar ntpStatus NtpSyncPending
-              , ntpQueryBlocking = tryIOError (ntpQuery tracer ntpSettings) >>= \case
-                  Right status -> do
-                      atomically $ writeTVar ntpStatus status
-                      return status
-                  Left err -> do
-                      traceWith tracer $ NtpTraceIOError err
-                      atomically $ writeTVar ntpStatus NtpSyncUnavailable
-                      return NtpSyncUnavailable
+                  traceWith tracer NtpTraceClientActNow
+                  atomically $ writeTVar ntpStatus NtpSyncPending
+              , ntpQueryBlocking = do
+                  atomically $ writeTVar ntpStatus NtpSyncPending
+                  status <- atomically $ do
+                      s <- readTVar ntpStatus
+                      check $ s /= NtpSyncPending
+                      return s
+                  return status
               , ntpThread = tid
               }
         action client
