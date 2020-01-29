@@ -16,6 +16,7 @@ module Network.Mux.Types (
     , MuxMiniProtocol (..)
     , RunMiniProtocol (..)
 
+    , MiniProtocolIx
     , MuxBearer (..)
     , muxBearerAsControlChannel
     , MuxSDU (..)
@@ -150,6 +151,10 @@ data RunMiniProtocol (appType :: AppType) m a b where
 --
 -- Mux internal types
 --
+
+-- | The index of a protocol in a MuxApplication, used for array indicies
+newtype MiniProtocolIx = MiniProtocolIx Int
+  deriving (Eq, Ord, Num, Enum, Ix, Show)
 
 data MiniProtocolMode = ModeInitiator | ModeResponder
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)

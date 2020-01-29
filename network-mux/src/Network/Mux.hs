@@ -171,7 +171,7 @@ muxStart tracer (MuxApplication ptcls) bearer = do
                  ])
       where
         minpix = 0
-        maxpix = length ptcls' - 1
+        maxpix = fromIntegral (length ptcls' - 1)
 
         codes   = [ miniProtocolNum ptcl | (ptcl, _, _) <- ptcls' ]
         mincode = minimum codes

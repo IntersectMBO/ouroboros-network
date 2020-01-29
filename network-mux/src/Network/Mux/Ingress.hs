@@ -93,8 +93,6 @@ data MiniProtocolDispatch m =
        !(Array (MiniProtocolIx, MiniProtocolMode)
                (MiniProtocolDispatchInfo m))
 
-type MiniProtocolIx = Int
-
 data MiniProtocolDispatchInfo m =
      MiniProtocolDispatchInfo
        !(StrictTVar m BL.ByteString)
