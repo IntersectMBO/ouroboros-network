@@ -1,4 +1,5 @@
 {-# LANGUAGE InterruptibleFFI    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module System.Win32.Async.Socket
@@ -16,12 +17,15 @@ import           Data.Word
 import           Foreign.C (CInt (..))
 import           Foreign.Ptr (Ptr)
 import           Foreign.StablePtr (StablePtr)
+import           Foreign.Marshal.Alloc (alloca)
+import           Foreign.Storable (Storable (poke))
 
 import           Network.Socket (Socket, SockAddr)
 import qualified Network.Socket as Socket
 
 import           System.Win32.Types
 import           System.Win32.Async.Internal
+import           System.Win32.Async.WSABuf
 
 
 type SOCKET = CInt
@@ -34,12 +38,14 @@ sendBuf :: Socket
 sendBuf sock buf size = Socket.withFdSocket sock $ \fd ->
     -- on Windows sockets are Word32, GHC represents file descriptors with CInt
     -- which is Int32.
-    wsaWaitForCompletion "sendBuf" (c_sendBuf fd buf (fromIntegral size))
+    alloca $ \bufs_ptr -> do
+      poke bufs_ptr WSABuf {buf, len = fromIntegral size}
+      wsaWaitForCompletion "sendBuf" (c_sendBuf fd bufs_ptr 1)
 
 foreign import ccall safe "HsSendBuf"
     c_sendBuf :: SOCKET
-              -> Ptr Word8
-              -> Word32
+              -> Ptr WSABuf  -- ^ lpBuffers
+              -> DWORD       -- ^ dwBufferCount
               -> StablePtr b
               -> IO ()
 

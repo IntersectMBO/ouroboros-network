@@ -28,6 +28,7 @@ library
                        System.Win32.Async.ErrCode
                        System.Win32.Async.IOManager
                        System.Win32.Async.Internal
+                       System.Win32.Async.WSABuf
                        System.Win32.Async.Socket
                        System.Win32.Async.Socket.ByteString
     c-sources:         cbits/Win32Async.c
