@@ -36,7 +36,7 @@ import           Network.NTP.Packet ( mkNtpPacket
                                     , clockOffsetPure)
 import           Network.NTP.Trace (NtpTrace (..), IPVersion (..))
 
-data NtpClientSettings = NtpClientSettings
+data NtpSettings = NtpSettings
     { ntpServers         :: [String]
       -- ^ List of servers addresses.
     , ntpResponseTimeout :: Microsecond
@@ -81,18 +81,6 @@ resolveHost host = Socket.getAddrInfo (Just hints) (Just host) Nothing
 firstAddr :: Family -> [AddrInfo] -> Maybe AddrInfo
 firstAddr family l = find ((==) family . addrFamily ) l
 
-{-
-firstAddr :: String -> [AddrInfo] -> IO (Maybe AddrInfo, Maybe AddrInfo)
-firstAddr name l = case (find isV4Addr l, find isV6Addr l) of
-    (Nothing, Nothing) -> ioError $ userError $ "lookup host failed :" ++ name
-    p -> return p
-    where
-        isV4Addr :: AddrInfo -> Bool
-        isV4Addr addr = addrFamily addr == AF_INET
-
-        isV6Addr :: AddrInfo -> Bool
-        isV6Addr addr = addrFamily addr == AF_INET6
--}
 
 setNtpPort :: SockAddr ->  SockAddr
 setNtpPort addr = case addr of
@@ -103,14 +91,13 @@ setNtpPort addr = case addr of
     ntpPort :: PortNumber
     ntpPort = 123
 
--- | Setup and run the NTP client.
--- In case of an IOError (for example when network interface goes down) cleanup and return.
+-- | Run a single NTP query
 
-oneshotClient  ::
+ntpQuery ::
        Tracer IO NtpTrace
-    -> NtpClientSettings
+    -> NtpSettings
     -> IO NtpStatus
-oneshotClient tracer ntpSettings = do
+ntpQuery tracer ntpSettings = do
     traceWith tracer NtpTraceClientStartQuery
     (v4Servers,   v6Servers)   <- lookupServers tracer $ ntpServers ntpSettings
     localAddrs <- udpLocalAddresses
@@ -153,7 +140,7 @@ oneshotClient tracer ntpSettings = do
 
 runNtpQueries ::
        Tracer IO NtpTrace
-    -> NtpClientSettings
+    -> NtpSettings
     -> AddrInfo
     -> [AddrInfo]
     -> IO (Either IOError [NtpOffset])

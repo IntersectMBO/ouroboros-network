@@ -20,16 +20,16 @@ testClient = withNtpClient (contramapM (return . show) stdoutTracer) testSetting
         threadDelay 10_000_000
         ntpTriggerUpdate ntpClient
 
-testOneshotClient :: IO ()
-testOneshotClient = forever $ do
-    status <- oneshotClient tracer testSettings
+testNtpQuery :: IO ()
+testNtpQuery = forever $ do
+    status <- ntpQuery tracer testSettings
     traceWith stdoutTracer $ show ("main"::String, status)
     threadDelay 10_000_000
     where
         tracer = contramapM (return . show) stdoutTracer
 
-testSettings :: NtpClientSettings
-testSettings = NtpClientSettings
+testSettings :: NtpSettings
+testSettings = NtpSettings
     { ntpServers = ["0.de.pool.ntp.org", "0.europe.pool.ntp.org", "0.pool.ntp.org"
                    , "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
     , ntpResponseTimeout = fromInteger 1_000_000

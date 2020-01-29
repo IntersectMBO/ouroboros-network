@@ -24,7 +24,7 @@ data NtpClient = NtpClient
 -- | Setup a NtpClient and run a application that uses that client.
 -- The NtpClient is terminated when the application returns.
 -- And also the application is terminated when the NtpClient crashes.
-withNtpClient :: Tracer IO NtpTrace -> NtpClientSettings -> (NtpClient -> IO a) -> IO a
+withNtpClient :: Tracer IO NtpTrace -> NtpSettings -> (NtpClient -> IO a) -> IO a
 withNtpClient tracer ntpSettings action = do
     traceWith tracer NtpTraceStartNtpClient
     ntpStatus <- newTVarIO NtpSyncPending
@@ -51,7 +51,7 @@ threadDelayInterruptible tvar t
 -- TODO: maybe reset the delaytime if the oneshotClient did one sucessful query
 ntpClientThread ::
        Tracer IO NtpTrace
-    -> NtpClientSettings
+    -> NtpSettings
     -> TVar NtpStatus
     -> IO ()
 ntpClientThread tracer ntpSettings ntpStatus = forM_ restartDelay $ \t -> do
@@ -60,7 +60,7 @@ ntpClientThread tracer ntpSettings ntpStatus = forM_ restartDelay $ \t -> do
     traceWith tracer NtpTraceRestartingClient
     catchIOError
         (forever $ do
-            status <- oneshotClient tracer ntpSettings
+            status <- ntpQuery tracer ntpSettings
             atomically $ writeTVar ntpStatus status
             traceWith tracer NtpTraceClientSleeping
             threadDelayInterruptible ntpStatus $ fromIntegral $ ntpPollDelay ntpSettings
