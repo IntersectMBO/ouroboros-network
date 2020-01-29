@@ -138,8 +138,8 @@ data RunMiniProtocol (appType :: AppType) m a b where
   ResponderProtocolOnly
     -- Responder application; similarly to the @'MuxInitiatorApplication'@ but it
     -- will be run using @'ModeResponder'@.
-    :: (Channel m -> m a)
-    -> RunMiniProtocol ResponderApp m Void a
+    :: (Channel m -> m b)
+    -> RunMiniProtocol ResponderApp m Void b
 
   InitiatorAndResponderProtocol
     -- Initiator and server applications.
