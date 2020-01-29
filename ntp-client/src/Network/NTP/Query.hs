@@ -78,6 +78,10 @@ resolveHost host = Socket.getAddrInfo (Just hints) (Just host) Nothing
             , addrFlags = [AI_ADDRCONFIG]  -- since we use @AF_INET@ family
             }
 
+firstAddr :: Family -> [AddrInfo] -> Maybe AddrInfo
+firstAddr family l = find ((==) family . addrFamily ) l
+
+{-
 firstAddr :: String -> [AddrInfo] -> IO (Maybe AddrInfo, Maybe AddrInfo)
 firstAddr name l = case (find isV4Addr l, find isV6Addr l) of
     (Nothing, Nothing) -> ioError $ userError $ "lookup host failed :" ++ name
@@ -88,6 +92,7 @@ firstAddr name l = case (find isV4Addr l, find isV6Addr l) of
 
         isV6Addr :: AddrInfo -> Bool
         isV6Addr addr = addrFamily addr == AF_INET6
+-}
 
 setNtpPort :: SockAddr ->  SockAddr
 setNtpPort addr = case addr of
@@ -107,9 +112,14 @@ oneshotClient  ::
     -> IO NtpStatus
 oneshotClient tracer ntpSettings = do
     traceWith tracer NtpTraceClientStartQuery
-    (v4Servers,   v6Servers)   <- lookupServers $ ntpServers ntpSettings
-    (v4LocalAddr, v6LocalAddr) <- udpLocalAddresses >>= firstAddr "localhost"
--- TODO: bug here !!
+    (v4Servers,   v6Servers)   <- lookupServers tracer $ ntpServers ntpSettings
+    localAddrs <- udpLocalAddresses
+    (v4LocalAddr, v6LocalAddr) <- case (firstAddr AF_INET localAddrs, firstAddr AF_INET6 localAddrs) of
+        (Nothing, Nothing) -> do
+            traceWith tracer NtpTraceNoLocalAddr
+            ioError $ userError "no local address IPv4 and IPv6"
+        l -> return l
+                                       -- TODO: bug here !!
 -- this is a race-condition runProtocol can throw IO erorr !!
 -- NtpTracePacketSentError Network.Socket.ByteString.sendManyTo: does not exist (Network is unreachable)
     (v4Replies, v6Replies) <- concurrently (runProtocol IPv4 v4LocalAddr v4Servers)
@@ -201,7 +211,13 @@ runNtpQueries tracer netSettings localAddr destAddrs
                 let offset = (clockOffsetPure packet t)
                 atomically $ modifyTVar' inQueue ((:) offset)
 
-lookupServers :: [String] -> IO ([AddrInfo], [AddrInfo])
-lookupServers names = do
-   dests <- forM names $ \server -> resolveHost server >>= firstAddr server
-   return (mapMaybe fst dests, mapMaybe snd dests)
+lookupServers :: Tracer IO NtpTrace -> [String] -> IO ([AddrInfo], [AddrInfo])
+lookupServers tracer names = do
+    dests <- forM names $ \server -> do
+        addr <- resolveHost server
+        case (firstAddr AF_INET addr, firstAddr AF_INET6 addr) of
+            (Nothing, Nothing) -> do
+                traceWith tracer $ NtpTraceLookupServerFailed server
+                ioError $ userError $ "lookup NTP server failed " ++ server
+            l -> return l
+    return (mapMaybe fst dests, mapMaybe snd dests)

@@ -17,6 +17,8 @@ data NtpTrace
     | NtpTraceRunProtocolNoResult !IPVersion
     | NtpTraceRunProtocolError !IPVersion IOError
     | NtpTraceIPv4IPv6BothFailed
+    | NtpTraceNoLocalAddr
+    | NtpTraceLookupServerFailed String
     | NtpTraceUpdateStatusQueryFailed
     | NtpTraceUpdateStatusClockOffset Microsecond
     | NtpTraceSocketOpen
