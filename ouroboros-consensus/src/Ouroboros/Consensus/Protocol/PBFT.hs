@@ -25,7 +25,6 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , genesisKeyCoreNodeId
   , nodeIdToGenesisKey
   , pbftWindowSize
-  , mapPBftExtConfig
     -- * Forging
   , ConstructContextDSIGN(..)
   , forgePBftFields
@@ -168,7 +167,7 @@ instance ConstructContextDSIGN ext PBftMockCrypto where
 instance ConstructContextDSIGN ByronConfig PBftCardanoCrypto where
   constructContextDSIGN _p cfg genKey = (cfg, genKey)
 
-forgePBftFields :: forall m c cfg toSign. (
+forgePBftFields :: forall m c toSign. (
                        MonadRandom m
                      , PBftCrypto c
                      , Signable (PBftDSIGN c) toSign
@@ -176,7 +175,7 @@ forgePBftFields :: forall m c cfg toSign. (
                 => (VerKeyDSIGN (PBftDSIGN c) -> ContextDSIGN (PBftDSIGN c))
                 -- ^ Construct DSIGN context
                 -- See 'constructContextDSIGN' for a suitable argument.
-                -> IsLeader (PBft cfg c)
+                -> IsLeader (PBft c)
                 -> toSign
                 -> m (PBftFields c toSign)
 forgePBftFields contextDSIGN PBftIsLeader{..} toSign = do
@@ -219,7 +218,7 @@ instance (Serialise (PBftVerKeyHash c), Ord (PBftVerKeyHash c))
 -- | Permissive BFT
 --
 -- As defined in https://hydra.iohk.io/job/Cardano/cardano-ledger-specs/byronChainSpec/latest/download-by-type/doc-pdf/blockchain-spec
-data PBft cfg c
+data PBft c
 
 -- | Protocol parameters
 data PBftParams = PBftParams {
@@ -265,43 +264,25 @@ data PBftIsLeaderOrNot c
   deriving (Generic, NoUnexpectedThunks)
 
 -- | (Static) node configuration
---
--- We explicitly allow for additional context here, so that we can provide
--- this context to the crypto functions.
-data instance NodeConfig (PBft cfg c) = PBftNodeConfig {
-      pbftParams    :: !PBftParams
-    , pbftIsLeader  :: !(PBftIsLeaderOrNot c)
-    , pbftExtConfig :: !cfg
+data instance NodeConfig (PBft c) = PBftNodeConfig {
+      pbftParams   :: !PBftParams
+    , pbftIsLeader :: !(PBftIsLeaderOrNot c)
     }
   deriving (Generic, NoUnexpectedThunks)
 
-mapPBftExtConfig :: (cfg -> cfg')
-                 -> NodeConfig (PBft cfg  c)
-                 -> NodeConfig (PBft cfg' c)
-mapPBftExtConfig f PBftNodeConfig{..} = PBftNodeConfig{
-      pbftParams    =   pbftParams
-    , pbftIsLeader  =   pbftIsLeader
-    , pbftExtConfig = f pbftExtConfig
-    }
-
-instance ( PBftCrypto c
-         , Typeable c
-         , NoUnexpectedThunks cfg
-         , Typeable cfg
-         )
-      => OuroborosTag (PBft cfg c) where
-  type ValidationErr (PBft cfg c) = PBftValidationErr c
-  type ValidateView  (PBft cfg c) = PBftValidateView  c
-  type SelectView    (PBft cfg c) = PBftSelectView
-  type NodeState     (PBft cfg c) = ()
+instance PBftCrypto c => OuroborosTag (PBft c) where
+  type ValidationErr (PBft c) = PBftValidationErr c
+  type ValidateView  (PBft c) = PBftValidateView  c
+  type SelectView    (PBft c) = PBftSelectView
+  type NodeState     (PBft c) = ()
 
   -- | We require two things from the ledger state:
   --
   --   - Protocol parameters, for the signature window and threshold.
   --   - The delegation map.
-  type LedgerView     (PBft cfg c) = PBftLedgerView c
-  type IsLeader       (PBft cfg c) = PBftIsLeader   c
-  type ChainState     (PBft cfg c) = PBftChainState c
+  type LedgerView     (PBft c) = PBftLedgerView c
+  type IsLeader       (PBft c) = PBftIsLeader   c
+  type ChainState     (PBft c) = PBftChainState c
 
   protocolSecurityParam =                        pbftSecurityParam . pbftParams
   protocolSlotLengths   = singletonSlotLengths . pbftSlotLength    . pbftParams
@@ -385,7 +366,7 @@ data PBftWindowParams = PBftWindowParams {
     }
 
 -- | Compute window check parameters from the node config
-pbftWindowParams :: NodeConfig (PBft cfg c) -> PBftWindowParams
+pbftWindowParams :: NodeConfig (PBft c) -> PBftWindowParams
 pbftWindowParams PBftNodeConfig{..} = PBftWindowParams {
       windowSize = winSize
     , threshold  = floor $ pbftSignatureThreshold * fromIntegral winSize
@@ -414,7 +395,7 @@ exceedsThreshold PBftWindowParams{..} st gk =
     numSigned = CS.countSignedBy st gk
 
 append :: PBftCrypto c
-       => NodeConfig (PBft cfg c)
+       => NodeConfig (PBft c)
        -> PBftWindowParams
        -> (SlotNo, PBftVerKeyHash c)
        -> PBftChainState c -> PBftChainState c
@@ -423,8 +404,8 @@ append PBftNodeConfig{..} PBftWindowParams{..} =
   where
     PBftParams{..} = pbftParams
 
-appendEBB :: forall cfg c. PBftCrypto c
-          => NodeConfig (PBft cfg c)
+appendEBB :: forall c. PBftCrypto c
+          => NodeConfig (PBft c)
           -> PBftWindowParams
           -> (SlotNo, HeaderHashBytes)
           -> PBftChainState c -> PBftChainState c
@@ -433,8 +414,8 @@ appendEBB PBftNodeConfig{..} PBftWindowParams{..} =
   where
     PBftParams{..} = pbftParams
 
-rewind :: forall cfg c hdr. (PBftCrypto c, Serialise (HeaderHash hdr))
-       => NodeConfig (PBft cfg c)
+rewind :: forall c hdr. (PBftCrypto c, Serialise (HeaderHash hdr))
+       => NodeConfig (PBft c)
        -> PBftWindowParams
        -> Point hdr
        -> PBftChainState c

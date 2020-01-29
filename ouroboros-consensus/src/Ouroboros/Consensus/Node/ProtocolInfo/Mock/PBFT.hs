@@ -14,6 +14,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
@@ -23,7 +24,7 @@ protocolInfoMockPBFT :: PBftParams
                                                       PBftMockCrypto)
 protocolInfoMockPBFT params nid =
     ProtocolInfo {
-        pInfoConfig = PBftNodeConfig {
+        pInfoConfig = ExtNodeConfig ledgerView PBftNodeConfig {
             pbftParams   = params
           , pbftIsLeader = PBftIsALeader PBftIsLeader {
                 pbftCoreNodeId = nid
@@ -31,16 +32,18 @@ protocolInfoMockPBFT params nid =
                 -- For Mock PBFT, we use our key as the genesis key.
               , pbftDlgCert    = (verKey nid, verKey nid)
               }
-          , pbftExtConfig = PBftLedgerView $
-              Bimap.fromList [ (verKey n, verKey n)
-                             | n <- enumCoreNodes (pbftNumNodes params)
-                             ]
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          CS.empty
       , pInfoInitState  = ()
       }
   where
+    ledgerView :: PBftLedgerView PBftMockCrypto
+    ledgerView = PBftLedgerView $
+        Bimap.fromList [ (verKey n, verKey n)
+                       | n <- enumCoreNodes (pbftNumNodes params)
+                       ]
+
     signKey :: CoreNodeId -> SignKeyDSIGN MockDSIGN
     signKey (CoreNodeId n) = SignKeyMockDSIGN (fromIntegral n)
 

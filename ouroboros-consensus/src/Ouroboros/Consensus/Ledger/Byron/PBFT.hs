@@ -31,10 +31,11 @@ import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import           Ouroboros.Consensus.Ledger.Byron.Block
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
-type ByronConsensusProtocol = PBft ByronConfig PBftCardanoCrypto
+type ByronConsensusProtocol = ExtConfig (PBft PBftCardanoCrypto) ByronConfig
 type instance BlockProtocol ByronBlock = ByronConsensusProtocol
 
 instance SupportedBlock ByronBlock where
@@ -64,10 +65,9 @@ instance SupportedBlock ByronBlock where
                (blockSlot hdr)
                pbftFields
                (CC.recoverSignedBytes epochSlots regular)
-               (pbftExtConfig cfg, pbftGenKey pbftFields)
+               (extNodeConfig cfg, pbftGenKey pbftFields)
     where
-      epochSlots = pbftEpochSlots (pbftExtConfig cfg)
-
+      epochSlots = pbftEpochSlots (extNodeConfig cfg)
 
   selectView _ hdr = (blockNo hdr, byronHeaderIsEBB hdr)
 

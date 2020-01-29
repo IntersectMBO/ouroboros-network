@@ -103,8 +103,8 @@ instance RunNode DualByronBlock where
   nodeDecodeLedgerState   = const $ decodeDualLedgerState decodeByronLedgerState
   nodeDecodeApplyTxError  = const $ decodeDualGenTxErr    decodeByronApplyTxError
   nodeDecodeChainState    = \_proxy cfg ->
-                               let k = pbftSecurityParam $
-                                         pbftParams (extNodeConfigP cfg)
+                               let k = pbftSecurityParam . pbftParams $
+                                          extNodeConfigP (extNodeConfigP cfg)
                                in decodeByronChainState k
   nodeDecodeQuery         = error "DualByron.nodeDecodeQuery"
   nodeDecodeResult        = \case {}

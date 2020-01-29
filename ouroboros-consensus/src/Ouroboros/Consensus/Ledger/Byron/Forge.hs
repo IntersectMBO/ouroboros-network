@@ -43,6 +43,7 @@ import           Ouroboros.Consensus.Ledger.Byron.Mempool
 import           Ouroboros.Consensus.Ledger.Byron.PBFT
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 
 forgeByronBlock
@@ -75,7 +76,7 @@ forgeEBB cfg curSlot curNo prevHash =
     protocolMagicId = CC.Genesis.configProtocolMagicId (getGenesisConfig cfg)
     ByronConfig { pbftGenesisHash
                 , pbftEpochSlots
-                } = pbftExtConfig cfg
+                } = extNodeConfig cfg
 
     prevHeaderHash :: Either CC.Genesis.GenesisHash CC.Block.HeaderHash
     prevHeaderHash = case prevHash of
@@ -144,7 +145,7 @@ forgeRegularBlock
 forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
     ouroborosPayload <-
       forgePBftFields
-        (constructContextDSIGN (Proxy @PBftCardanoCrypto) (pbftExtConfig cfg))
+        (constructContextDSIGN (Proxy @PBftCardanoCrypto) (extNodeConfig cfg))
         isLeader
         (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload
@@ -155,7 +156,7 @@ forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
       , pbftProtocolVersion
       , pbftSoftwareVersion
       , pbftProtocolMagic
-      } = pbftExtConfig cfg
+      } = extNodeConfig cfg
 
     blockPayloads :: BlockPayloads
     blockPayloads = foldr extendBlockPayloads initBlockPayloads txs

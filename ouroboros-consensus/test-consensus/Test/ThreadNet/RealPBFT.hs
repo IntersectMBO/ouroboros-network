@@ -691,21 +691,22 @@ genNodeRekeys params (NodeJoinPlan njp) numSlots@(NumSlots t)
 -- transaction for its new delegation certificate
 --
 mkRekeyUpd
-  :: (BlockProtocol b ~ PBft ByronConfig PBftCardanoCrypto)
+  :: (BlockProtocol b ~ ExtConfig (PBft PBftCardanoCrypto) ByronConfig)
   => Genesis.Config
   -> Genesis.GeneratedSecrets
   -> ProtocolInfo b
   -> EpochNo
   -> Crypto.SignKeyDSIGN Crypto.CardanoDSIGN
   -> Maybe (ProtocolInfo b, Byron.GenTx ByronBlock)
-mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK = case pbftIsLeader of
+mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
+  case pbftIsLeader extNodeConfigP of
     PBftIsNotALeader       -> Nothing
     PBftIsALeader isLeader ->
       let PBftIsLeader{pbftCoreNodeId} = isLeader
           genSK = genesisSecretFor genesisConfig genesisSecrets pbftCoreNodeId
-          isLeader' = updSignKey genSK pbftExtConfig isLeader (coerce eno) newSK
+          isLeader' = updSignKey genSK extNodeConfig isLeader (coerce eno) newSK
           pInfo' = pInfo
-            { pInfoConfig = pInfoConfig
+            { pInfoConfig = ExtNodeConfig extNodeConfig extNodeConfigP
               { pbftIsLeader = PBftIsALeader isLeader'
               }
             }
@@ -713,8 +714,8 @@ mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK = case pbftIsLeader of
           PBftIsLeader{pbftDlgCert} = isLeader'
       in Just (pInfo', dlgTx pbftDlgCert)
   where
-    ProtocolInfo{pInfoConfig}                   = pInfo
-    PBftNodeConfig{pbftExtConfig, pbftIsLeader} = pInfoConfig
+    ProtocolInfo{pInfoConfig} = pInfo
+    ExtNodeConfig{extNodeConfig, extNodeConfigP} = pInfoConfig
 
 -- | The secret key for a node index
 --

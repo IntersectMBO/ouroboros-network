@@ -280,12 +280,11 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     ProtocolInfo {
         pInfoConfig = ExtNodeConfig {
             extNodeConfig  = abstractConfig
-          , extNodeConfigP = PBftNodeConfig {
+          , extNodeConfigP = ExtNodeConfig concreteConfig PBftNodeConfig {
                 pbftParams    = params
               , pbftIsLeader  = case mLeader of
                                   Nothing  -> PBftIsNotALeader
                                   Just nid -> PBftIsALeader $ pbftIsLeader nid
-              , pbftExtConfig = concreteConfig
               }
           }
       , pInfoInitState =
@@ -319,7 +318,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     concreteConfig :: ByronConfig
 
     abstractConfig = ByronSpecLedgerConfig abstractGenesis
-    concreteConfig = byronConfig
+    concreteConfig = mkByronConfig
                        concreteGenesis
                        protocolVersion
                        softwareVersion

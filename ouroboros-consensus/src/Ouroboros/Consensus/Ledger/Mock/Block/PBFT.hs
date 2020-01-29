@@ -32,6 +32,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Block
 import           Ouroboros.Consensus.Ledger.Mock.Run
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.Signed
@@ -69,7 +70,7 @@ data SignedSimplePBft c c' = SignedSimplePBft {
   deriving (Generic)
 
 -- | PBFT requires the ledger view; for the mock ledger, this is constant
-type instance BlockProtocol (SimplePBftBlock  c c') = PBft (PBftLedgerView c') c'
+type instance BlockProtocol (SimplePBftBlock  c c') = ExtConfig (PBft c') (PBftLedgerView c')
 type instance BlockProtocol (SimplePBftHeader c c') = BlockProtocol (SimplePBftBlock c c')
 
 -- | Sanity check that block and header type synonyms agree
@@ -86,10 +87,11 @@ instance SignedHeader (SimplePBftHeader c c') where
   headerSigned = SignedSimplePBft . simpleHeaderStd
 
 instance (PBftCrypto c', Serialise (PBftVerKeyHash c'))
-      => RunMockProtocol (PBft ext c') where
+      => RunMockProtocol (ExtConfig (PBft c') ext) where
   mockProtocolMagicId  = const constructMockProtocolMagicId
   mockEncodeChainState = const CS.encodePBftChainState
-  mockDecodeChainState = \cfg -> let k = pbftSecurityParam $ pbftParams cfg
+  mockDecodeChainState = \cfg -> let k = pbftSecurityParam $
+                                           pbftParams (extNodeConfigP cfg)
                                  in CS.decodePBftChainState k (pbftWindowSize k)
 
 instance ( SimpleCrypto c
@@ -97,11 +99,11 @@ instance ( SimpleCrypto c
          , Signable (PBftDSIGN c') (SignedSimplePBft c c')
          , ConstructContextDSIGN ext c'
          , Serialise (PBftVerKeyHash c')
-         ) => RunMockBlock (PBft ext c') c (SimplePBftExt c c') where
+         ) => RunMockBlock (ExtConfig (PBft c') ext) c (SimplePBftExt c c') where
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
         forgePBftFields
-          (constructContextDSIGN (Proxy @c') (pbftExtConfig cfg))
+          (constructContextDSIGN (Proxy @c') (extNodeConfig cfg))
           isLeader
           SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
       return SimpleBlock {
@@ -124,10 +126,10 @@ instance ( SimpleCrypto c
          ) => ProtocolLedgerView (SimplePBftBlock c PBftMockCrypto) where
   ledgerConfigView _ =
       SimpleLedgerConfig
-  protocolLedgerView PBftNodeConfig{..} _ls =
-      pbftExtConfig
-  anachronisticProtocolLedgerView PBftNodeConfig{..} _ _ =
-      Right $ pbftExtConfig
+  protocolLedgerView ExtNodeConfig{..} _ls =
+      extNodeConfig
+  anachronisticProtocolLedgerView ExtNodeConfig{..} _ _ =
+      Right $ extNodeConfig
 
 {-------------------------------------------------------------------------------
   Serialisation
