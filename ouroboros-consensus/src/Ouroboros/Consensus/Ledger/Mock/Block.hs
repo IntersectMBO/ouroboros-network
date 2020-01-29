@@ -279,12 +279,10 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
   data GenTx (SimpleBlock c ext) = SimpleGenTx
     { simpleGenTx   :: !Mock.Tx
     , simpleGenTxId :: !Mock.TxId
-      -- ^ This field is lazy on purpose so that the TxId is computed on
-      -- demand.
     } deriving stock    (Generic)
       deriving anyclass (Serialise)
 
-  txSize _ = 2000  -- TODO #745
+  txSize = fromIntegral . Lazy.length . serialise
 
   type ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
