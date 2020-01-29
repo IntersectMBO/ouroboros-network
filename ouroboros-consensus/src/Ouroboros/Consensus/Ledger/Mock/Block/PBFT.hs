@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -17,6 +18,7 @@ module Ouroboros.Consensus.Ledger.Mock.Block.PBFT (
   ) where
 
 import           Codec.Serialise (Serialise (..))
+import           Data.Proxy
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
@@ -98,10 +100,10 @@ instance ( SimpleCrypto c
          ) => RunMockBlock (PBft ext c') c (SimplePBftExt c c') where
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
-        forgePBftFields cfg isLeader $
-          SignedSimplePBft {
-              signedSimplePBft = simpleHeaderStd
-            }
+        forgePBftFields
+          (constructContextDSIGN (Proxy @c') (pbftExtConfig cfg))
+          isLeader
+          SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
       return SimpleBlock {
           simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
         , simpleBody   = simpleBody

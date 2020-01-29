@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Consensus.Ledger.Byron.Forge (
     forgeByronBlock
@@ -14,6 +15,7 @@ import           Control.Monad (void)
 import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
+import           Data.Proxy
 import           Data.Word (Word32)
 import           GHC.Stack
 
@@ -141,7 +143,10 @@ forgeRegularBlock
   -> m ByronBlock
 forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
     ouroborosPayload <-
-      forgePBftFields cfg isLeader (reAnnotate $ Annotated toSign ())
+      forgePBftFields
+        (constructContextDSIGN (Proxy @PBftCardanoCrypto) (pbftExtConfig cfg))
+        isLeader
+        (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload
   where
     -- TODO: Might be sufficient to add 'ConfigContainsGenesis' constraint.

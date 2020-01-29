@@ -172,13 +172,14 @@ forgePBftFields :: forall m c cfg toSign. (
                        MonadRandom m
                      , PBftCrypto c
                      , Signable (PBftDSIGN c) toSign
-                     , ConstructContextDSIGN cfg c
                      )
-                => NodeConfig (PBft cfg c)
+                => (VerKeyDSIGN (PBftDSIGN c) -> ContextDSIGN (PBftDSIGN c))
+                -- ^ Construct DSIGN context
+                -- See 'constructContextDSIGN' for a suitable argument.
                 -> IsLeader (PBft cfg c)
                 -> toSign
                 -> m (PBftFields c toSign)
-forgePBftFields cfg PBftIsLeader{..} toSign = do
+forgePBftFields contextDSIGN PBftIsLeader{..} toSign = do
     signature <- signedDSIGN ctxtDSIGN toSign pbftSignKey
     return $ Exn.assert (issuer == deriveVerKeyDSIGN pbftSignKey) $ PBftFields {
         pbftIssuer    = issuer
@@ -186,9 +187,9 @@ forgePBftFields cfg PBftIsLeader{..} toSign = do
       , pbftSignature = signature
       }
   where
-    issuer = dlgCertDlgVerKey pbftDlgCert
-    genKey = dlgCertGenVerKey pbftDlgCert
-    ctxtDSIGN = constructContextDSIGN (Proxy @c) (pbftExtConfig cfg) genKey
+    issuer    = dlgCertDlgVerKey pbftDlgCert
+    genKey    = dlgCertGenVerKey pbftDlgCert
+    ctxtDSIGN = contextDSIGN genKey
 
 {-------------------------------------------------------------------------------
   Information PBFT requires from the ledger
