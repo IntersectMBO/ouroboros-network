@@ -30,6 +30,8 @@ import           Data.Typeable
 import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic, Generic1)
 
+import           Control.Monad.Class.MonadTimer
+
 import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck as QC
 import qualified Test.QuickCheck.Monadic as QC

@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Util.IOLike (
   , MonadFork(..) -- TODO: Should we hide this in favour of MonadAsync?
   , MonadThread(..)
     -- *** MonadAsync
+  , MonadAsyncSTM(..)
   , MonadAsync(..)
   , ExceptionInLinkedThread(..)
   , linkTo
@@ -30,7 +31,6 @@ module Ouroboros.Consensus.Util.IOLike (
   , addTime
   , diffTime
     -- *** MonadDelay
-  , MonadTimer(..)
   , MonadDelay(..)
     -- *** Cardano prelude
   , NoUnexpectedThunks(..)
@@ -56,7 +56,7 @@ class ( MonadAsync  m
       , MonadFork   m
       , MonadST     m
       , MonadTime   m
-      , MonadTimer  m
+      , MonadDelay  m
       , MonadThread m
       , MonadThrow  m
       , MonadCatch  m
