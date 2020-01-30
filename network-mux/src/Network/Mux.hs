@@ -35,6 +35,7 @@ module Network.Mux (
     ) where
 
 import           Data.Int (Int64)
+import           Data.Maybe (catMaybes)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Array
 import           Text.Printf
@@ -107,37 +108,20 @@ muxStart tracer (MuxApplication ptcls) bearer = do
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
 
-    let jobs = [ (demux DemuxState { dispatchTable = tbl, Ingress.bearer }, "Demuxer")
-               , (mux cnt MuxState { egressQueue   = tq,  Egress.bearer }, "Muxer")
-               ]
-            ++ [ job
-               | (ptcl, initQ, respQ) <- ptcls'
-               , job <- mpsJob cnt tq (miniProtocolNum ptcl)
-                               (maximumMessageSize (miniProtocolLimits ptcl))
-                               initQ respQ (miniProtocolRun ptcl)
-               ]
+    let jobs = muxerJob tq cnt
+             : demuxerJob tbl
+             : catMaybes [ miniProtocolInitiatorJob cnt tq ptcl pix initQ respQ
+                         | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
+            ++ catMaybes [ miniProtocolResponderJob cnt tq ptcl pix initQ respQ
+                         | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
 
-    result <- JobPool.withJobPool $ \jobpool -> do
-      sequence_ [ JobPool.forkJob jobpool (JobPool.Job job' handler)
-                | (job, jobname) <- jobs
-                , let job'      = job >> return (MiniProtocolShutdown jobname)
-                      handler e = MiniProtocolException jobname e
-                ]
-
+    JobPool.withJobPool $ \jobpool -> do
+      mapM_ (JobPool.forkJob jobpool) jobs
       traceWith tracer (MuxTraceState Mature)
 
-      -- Wait for the first job to terminate, successfully or otherwise
-      atomically (JobPool.collect jobpool)
-
-    -- Upon completion of withJobPool all the other jobs have been shut down.
-    traceWith tracer (MuxTraceState Dead)
-
-    case result of
-      MiniProtocolException jobname e -> do
-        traceWith tracer (MuxTraceExceptionExit e jobname)
-        throwM e
-      MiniProtocolShutdown jobname ->
-        traceWith tracer (MuxTraceCleanExit jobname)
+      -- Wait for the first job to terminate, successfully or otherwise.
+      -- All the other jobs are shut down Upon completion of withJobPool.
+      monitor tracer jobpool
   where
     addProtocolQueues :: MuxMiniProtocol appType m a b
                       -> m ( MuxMiniProtocol appType m a b
@@ -177,41 +161,61 @@ muxStart tracer (MuxApplication ptcls) bearer = do
         mincode = minimum codes
         maxcode = maximum codes
 
+    muxerJob tq cnt =
+      JobPool.Job (mux cnt MuxState { egressQueue   = tq,  Egress.bearer })
+                  MuxerException
 
-    mpsJob
-      :: StrictTVar m Int
+    demuxerJob tbl =
+      JobPool.Job (demux DemuxState { dispatchTable = tbl, Ingress.bearer })
+                  DemuxerException
+
+    miniProtocolInitiatorJob = miniProtocolJob selectInitiator ModeInitiator
+    miniProtocolResponderJob = miniProtocolJob selectResponder ModeResponder
+
+    selectInitiator :: RunMiniProtocol appType m a b -> Maybe (Channel m -> m a)
+    selectInitiator (ResponderProtocolOnly                   _) = Nothing
+    selectInitiator (InitiatorProtocolOnly         initiator)   = Just initiator
+    selectInitiator (InitiatorAndResponderProtocol initiator _) = Just initiator
+    
+    selectResponder :: RunMiniProtocol appType m a b -> Maybe (Channel m -> m b)
+    selectResponder (ResponderProtocolOnly           responder) = Just responder
+    selectResponder (InitiatorProtocolOnly         _)           = Nothing
+    selectResponder (InitiatorAndResponderProtocol _ responder) = Just responder
+
+    miniProtocolJob
+      :: (RunMiniProtocol appType m a b -> Maybe (Channel m -> m c))
+      -> MiniProtocolMode
+      -> StrictTVar m Int
       -> EgressQueue m
-      -> MiniProtocolNum
-      -> Int64
+      -> MuxMiniProtocol appType m a b
+      -> MiniProtocolIx
       -> StrictTVar m BL.ByteString
       -> StrictTVar m BL.ByteString
-      -> RunMiniProtocol appType m a b
-      -> [(m (), String)]
-    mpsJob cnt tq mc msgMax initQ respQ run =
-        case run of
-          InitiatorProtocolOnly initiator ->
-            [ ( do chan <- mkChannel ModeInitiator
-                   _    <- initiator chan
-                   mpsJobExit cnt
-              , show mc ++ " Initiator" )]
-          ResponderProtocolOnly responder ->
-            [ ( do chan <- mkChannel ModeResponder
-                   _    <- responder chan
-                   mpsJobExit cnt
-              , show mc ++ " Responder" )]
-          InitiatorAndResponderProtocol initiator responder ->
-            [ ( do chan <- mkChannel ModeInitiator
-                   _    <- initiator chan
-                   mpsJobExit cnt
-              , show mc ++ " Initiator" )
-            , ( do chan <- mkChannel ModeResponder
-                   _    <- responder chan
-                   mpsJobExit cnt
-              , show mc ++ " Responder" )
-            ]
+      -> Maybe (JobPool.Job m MuxJobResult)
+    miniProtocolJob selectRunner pmode cnt tq
+                    MuxMiniProtocol {
+                      miniProtocolNum    = pnum,
+                      miniProtocolLimits = plimits,
+                      miniProtocolRun    = prunner
+                    }
+                    pix initQ respQ =
+        job <$> selectRunner prunner
       where
-        mkChannel ModeInitiator = muxChannel tracer tq mc ModeInitiator msgMax initQ cnt
-        mkChannel ModeResponder = muxChannel tracer tq mc ModeResponder msgMax respQ cnt
+        job run = JobPool.Job (jobAction run)
+                              (MiniProtocolException pnum pix pmode)
+
+        jobAction run = do
+          chan    <- mkChannel
+          _result <- run chan
+          mpsJobExit cnt
+          return (MiniProtocolShutdown pnum pix pmode)
+
+        mkChannel = muxChannel tracer tq pnum pmode
+                               (maximumMessageSize plimits)
+                               (selectQueue pmode) cnt
+
+        selectQueue ModeInitiator = initQ
+        selectQueue ModeResponder = respQ
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job
     -- threads will be prevented from exiting until all SDUs have been
@@ -224,9 +228,49 @@ muxStart tracer (MuxApplication ptcls) bearer = do
             c <- readTVar cnt
             unless (c == 0) retry
 
-data MiniProtocolResult =
-       MiniProtocolException String SomeException
-     | MiniProtocolShutdown  String
+monitor :: (MonadSTM m, MonadThrow m)
+        => Tracer m MuxTrace
+        -> JobPool.JobPool m MuxJobResult
+        -> m ()
+monitor tracer jobpool = do
+    result <- atomically (JobPool.collect jobpool)
+    traceWith tracer (MuxTraceState Dead)
+    case result of
+      MiniProtocolShutdown pnum _pix pmode ->
+        traceWith tracer (MuxTraceCleanExit pnum pmode)
+
+      MiniProtocolException pnum _pix pmode e -> do
+        traceWith tracer (MuxTraceExceptionExit pnum pmode e)
+        throwM e
+
+      -- These would always be internal errors, so propagate.
+      MuxerException   e -> throwM e
+      DemuxerException e -> throwM e
+    --TODO: decide if we should have exception wrappers here to identify
+    -- the source of the failure, e.g. specific mini-protocol. If we're
+    -- propagating exceptions, we don't need to log them.
+
+
+-- | The mux forks off a number of threads and its main thread waits and
+-- monitors them all. This type covers the different thread and their possible
+-- termination behaviour.
+--
+data MuxJobResult =
+
+       -- | A mini-protocol thread terminated with a result.
+       --
+       MiniProtocolShutdown MiniProtocolNum MiniProtocolIx MiniProtocolMode
+
+       -- | A mini-protocol thread terminated with an exception. We always
+       -- respond by terminating the whole mux.
+     | MiniProtocolException MiniProtocolNum MiniProtocolIx MiniProtocolMode
+                             SomeException
+
+       -- | Exception in the 'mux' thread. Always unexpected and fatal.
+     | MuxerException   SomeException
+
+       -- | Exception in the 'demux' thread. Always unexpected and fatal.
+     | DemuxerException SomeException
 
 
 -- | muxChannel creates a duplex channel for a specific 'MiniProtocolId' and
