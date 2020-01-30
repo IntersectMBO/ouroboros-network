@@ -304,7 +304,7 @@ instance PBftCrypto c => OuroborosTag (PBft c) where
   applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) toValidate chainState =
       case toValidate of
         PBftValidateBoundary slot hash ->
-          return $! appendEBB cfg params (slot, hash) chainState
+          return $! appendEBB cfg params slot hash chainState
         PBftValidateRegular slot PBftFields{..} signed contextDSIGN -> do
           -- Check that the issuer signature verifies, and that it's a delegate of a
           -- genesis key, and that genesis key hasn't voted too many times.
@@ -344,8 +344,7 @@ instance PBftCrypto c => OuroborosTag (PBft c) where
         -- If the block numbers are the same, check if one of them is an EBB.
         -- An EBB has the same block number as the block before it, so the
         -- chain ending with an EBB is actually longer than the one ending
-        -- with a regular block. Note that 'headerPBftFields' returns
-        -- 'Nothing' for an EBB.
+        -- with a regular block.
         EQ -> score lIsEBB `compare` score rIsEBB
      where
        score :: IsEBB -> Int
@@ -407,10 +406,11 @@ append PBftNodeConfig{..} PBftWindowParams{..} =
 appendEBB :: forall c. PBftCrypto c
           => NodeConfig (PBft c)
           -> PBftWindowParams
-          -> (SlotNo, HeaderHashBytes)
+          -> SlotNo
+          -> HeaderHashBytes
           -> PBftChainState c -> PBftChainState c
 appendEBB PBftNodeConfig{..} PBftWindowParams{..} =
-    uncurry $ CS.appendEBB pbftSecurityParam windowSize
+    CS.appendEBB pbftSecurityParam windowSize
   where
     PBftParams{..} = pbftParams
 
