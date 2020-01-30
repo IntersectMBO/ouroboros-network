@@ -873,11 +873,13 @@ precondition Model {..} (At cmd) =
      -- with iterators that the model allows. So we only test a subset of the
      -- functionality, which does not include error paths.
      Stream from to           -> isValidIterator from to
-     -- Make sure we don't close (and reopen) when there are multiple equally
-     -- preferable forks in the ChainDB, because we might pick another one
-     -- than the current one when reopening, which would bring us out of sync
-     -- with the model.
-     Close                    -> Not equallyPreferableFork
+     -- Make sure we don't close (and reopen) when there are other chain
+     -- equally preferable or even more preferable (which we can't switch to
+     -- because they fork back more than @k@) than the current chain in the
+     -- ChainDB. We might pick another one than the current one when
+     -- reopening, which would bring us out of sync with the model, for which
+     -- reopening is a no-op (no chain selection). See #1533.
+     Close                    -> Not equallyOrMorePreferableFork
      -- To be in the future, @blockSlot blk@ must be greater than @slot@.
      AddFutureBlock blk s     -> s .>= Model.currentSlot dbModel .&&
                                  blockSlot blk .> s
@@ -898,9 +900,9 @@ precondition Model {..} (At cmd) =
     (_, forks) = map fst <$>
       Model.validChains cfg (Model.initLedger dbModel) (Model.blocks dbModel)
 
-    equallyPreferableFork :: Logic
-    equallyPreferableFork = exists forks $ \fork ->
-      Boolean (equallyPreferable cfg curChain fork) .&&
+    equallyOrMorePreferableFork :: Logic
+    equallyOrMorePreferableFork = exists forks $ \fork ->
+      Boolean (equallyOrMorePreferable cfg curChain fork) .&&
       Chain.head curChain ./= Chain.head fork
 
     cfg :: NodeConfig (BlockProtocol blk)
@@ -917,6 +919,16 @@ precondition Model {..} (At cmd) =
         Right blks -> forall blks $ \blk -> Boolean $
           Map.notMember (blockHash blk) $
           forgetFingerprint (Model.invalid dbModel)
+
+equallyOrMorePreferable :: forall blk. SupportedBlock blk
+                        => NodeConfig (BlockProtocol blk)
+                        -> Chain blk -> Chain blk -> Bool
+equallyOrMorePreferable cfg chain1 chain2 =
+    not (preferAnchoredCandidate cfg chain1' chain2')
+  where
+    chain1', chain2' :: AnchoredFragment (Header blk)
+    chain1' = Chain.toAnchoredFragment (getHeader <$> chain1)
+    chain2' = Chain.toAnchoredFragment (getHeader <$> chain2)
 
 equallyPreferable :: forall blk. SupportedBlock blk
                   => NodeConfig (BlockProtocol blk)
