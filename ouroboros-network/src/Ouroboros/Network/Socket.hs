@@ -95,7 +95,7 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Connections.Concurrent hiding (Accept, Reject)
 import qualified Ouroboros.Network.Connections.Concurrent as Connection
                    (Accept, Reject, Decision(Accept, Reject), concurrent)
-import           Ouroboros.Network.Connections.Socket.Server (acceptLoopOn)
+import           Ouroboros.Network.Connections.Socket.Server (acceptLoop, server)
 import qualified Ouroboros.Network.Connections.Socket.Types as Connections
 import           Ouroboros.Network.Connections.Types hiding (Decision(..))
 
@@ -705,13 +705,13 @@ withServerNode
     -> IO t
 withServerNode tracers networkState addr versionDataCodec acceptVersion versions errorPolicies k =
     Connections.withSockType (Socket.addrAddress addr) $ \sockAddr ->
-        withAsync (makeServer sockAddr) (k (Socket.addrAddress addr))
+      Connection.concurrent handleConnection $ \connections ->
+        server sockAddr (const WithServerNodeRequest) $ \serv ->
+          -- At this point the socket is bound and listening.
+          withAsync (acceptLoop acceptException connections serv)
+                    (k (Socket.addrAddress addr))
 
   where
-
-    makeServer :: Connections.SockAddr addrType -> IO Void
-    makeServer sockAddr = Connection.concurrent handleConnection $ \connections ->
-      acceptLoopOn sockAddr (const WithServerNodeRequest) acceptException connections
 
     handleConnection :: forall provenance .
            Initiated provenance
