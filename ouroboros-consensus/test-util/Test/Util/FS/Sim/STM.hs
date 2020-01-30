@@ -62,6 +62,7 @@ simHasFS err var = HasFS {
     , doesFileExist            = sim  .  Mock.doesFileExist            err'
     , removeFile               = sim  .  Mock.removeFile               err'
     , hasFsErr                 = err
+    , mkFsErrorPath            = fsToFsErrorPathUnmounted
     }
   where
     sim :: StateT MockFS (Except FsError) a -> m a

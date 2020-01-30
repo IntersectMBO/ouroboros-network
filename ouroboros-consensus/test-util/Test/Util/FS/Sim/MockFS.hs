@@ -194,7 +194,7 @@ seekFilePtr err@ErrorHandling{..} MockFS{..} (Handle h _) seekMode o = do
       HandleClosed ClosedHandle{..} ->
         throwError FsError {
             fsErrorType   = FsIllegalOperation
-          , fsErrorPath   = closedFilePath
+          , fsErrorPath   = fsToFsErrorPathUnmounted closedFilePath
           , fsErrorString = "handle closed"
           , fsErrorNo     = Nothing
           , fsErrorStack  = callStack
@@ -230,7 +230,7 @@ seekFilePtr err@ErrorHandling{..} MockFS{..} (Handle h _) seekMode o = do
   where
     errPastEnd fp  = FsError {
                          fsErrorType   = FsInvalidArgument
-                       , fsErrorPath   = fp
+                       , fsErrorPath   = fsToFsErrorPathUnmounted fp
                        , fsErrorString = "seek past EOF not supported"
                        , fsErrorNo     = Nothing
                        , fsErrorStack  = callStack
@@ -238,7 +238,7 @@ seekFilePtr err@ErrorHandling{..} MockFS{..} (Handle h _) seekMode o = do
                        }
     errAppend  fp  = FsError {
                          fsErrorType   = FsInvalidArgument
-                       , fsErrorPath   = fp
+                       , fsErrorPath   = fsToFsErrorPathUnmounted fp
                        , fsErrorString = "seek in append mode not supported"
                        , fsErrorNo     = Nothing
                        , fsErrorStack  = callStack
@@ -246,7 +246,7 @@ seekFilePtr err@ErrorHandling{..} MockFS{..} (Handle h _) seekMode o = do
                        }
     errNegative fp = FsError {
                          fsErrorType   = FsInvalidArgument
-                       , fsErrorPath   = fp
+                       , fsErrorPath   = fsToFsErrorPathUnmounted fp
                        , fsErrorString = "seek past beginning of file"
                        , fsErrorNo     = Nothing
                        , fsErrorStack  = callStack
@@ -323,7 +323,7 @@ withOpenHandleModify err@ErrorHandling{..} h f =
       HandleClosed ClosedHandle{..} ->
         throwError FsError {
             fsErrorType   = FsIllegalOperation
-          , fsErrorPath   = closedFilePath
+          , fsErrorPath   = fsToFsErrorPathUnmounted closedFilePath
           , fsErrorString = "handle closed"
           , fsErrorNo     = Nothing
           , fsErrorStack  = callStack
@@ -346,7 +346,7 @@ withOpenHandleRead err@ErrorHandling{..} h f =
       HandleClosed ClosedHandle{..} ->
         throwError FsError {
             fsErrorType   = FsIllegalOperation
-          , fsErrorPath   = closedFilePath
+          , fsErrorPath   = fsToFsErrorPathUnmounted closedFilePath
           , fsErrorString = "handle closed"
           , fsErrorNo     = Nothing
           , fsErrorStack  = callStack
@@ -372,7 +372,7 @@ checkFsTree' ErrorHandling{..} = go
     go (Left (FsExpectedDir fp _)) =
         throwError FsError {
             fsErrorType   = FsResourceInappropriateType
-          , fsErrorPath   = fp
+          , fsErrorPath   = fsToFsErrorPathUnmounted fp
           , fsErrorString = "expected directory"
           , fsErrorNo     = Nothing
           , fsErrorStack  = callStack
@@ -381,7 +381,7 @@ checkFsTree' ErrorHandling{..} = go
     go (Left (FsExpectedFile fp)) =
         throwError FsError {
             fsErrorType   = FsResourceInappropriateType
-          , fsErrorPath   = fp
+          , fsErrorPath   = fsToFsErrorPathUnmounted fp
           , fsErrorString = "expected file"
           , fsErrorNo     = Nothing
           , fsErrorStack  = callStack
@@ -392,7 +392,7 @@ checkFsTree' ErrorHandling{..} = go
     go (Left (FsExists fp)) =
         throwError FsError {
             fsErrorType   = FsResourceAlreadyExist
-          , fsErrorPath   = fp
+          , fsErrorPath   = fsToFsErrorPathUnmounted fp
           , fsErrorString = "file exists"
           , fsErrorNo     = Nothing
           , fsErrorStack  = callStack
@@ -409,7 +409,7 @@ checkFsTree err@ErrorHandling{..} ma = do
     case ma' of
       Left fp -> throwError FsError {
                      fsErrorType   = FsResourceDoesNotExist
-                   , fsErrorPath   = fp
+                   , fsErrorPath   = fsToFsErrorPathUnmounted fp
                    , fsErrorString = "does not exist"
                    , fsErrorNo     = Nothing
                    , fsErrorStack  = callStack
@@ -424,7 +424,7 @@ checkDoesNotExist err@ErrorHandling{..} fs fp = do
     if exists
       then throwError FsError {
                fsErrorType   = FsResourceAlreadyExist
-             , fsErrorPath   = fp
+             , fsErrorPath   = fsToFsErrorPathUnmounted fp
              , fsErrorString = "already exists"
              , fsErrorNo     = Nothing
              , fsErrorStack  = callStack
@@ -463,7 +463,7 @@ hOpen err@ErrorHandling{..} fp openMode = do
     dirExists <- doesDirectoryExist err fp
     when dirExists $ throwError FsError {
         fsErrorType   = FsResourceInappropriateType
-      , fsErrorPath   = fp
+      , fsErrorPath   = fsToFsErrorPathUnmounted fp
       , fsErrorString = "hOpen: directories not supported"
       , fsErrorNo     = Nothing
       , fsErrorStack  = callStack
@@ -476,7 +476,7 @@ hOpen err@ErrorHandling{..} fp openMode = do
       when (openMode /= ReadMode && alreadyHasWriter) $
         throwError FsError {
             fsErrorType   = FsInvalidArgument
-          , fsErrorPath   = fp
+          , fsErrorPath   = fsToFsErrorPathUnmounted fp
           , fsErrorString = "more than one concurrent writer not supported"
           , fsErrorNo     = Nothing
           , fsErrorStack  = callStack
@@ -536,7 +536,7 @@ hGetSome err@ErrorHandling{..} h n =
   where
     errNoReadAccess fp mode = FsError {
         fsErrorType   = FsInvalidArgument
-      , fsErrorPath   = fp
+      , fsErrorPath   = fsToFsErrorPathUnmounted fp
       , fsErrorString = "cannot hGetSome in " <> mode <> " mode"
       , fsErrorNo     = Nothing
       , fsErrorStack  = callStack
@@ -568,7 +568,7 @@ hGetSomeAt err@ErrorHandling{..} h n o =
   where
     errNoReadAccess fp mode = FsError {
         fsErrorType   = FsInvalidArgument
-      , fsErrorPath   = fp
+      , fsErrorPath   = fsToFsErrorPathUnmounted fp
       , fsErrorString = "cannot hGetSomeAt in " <> mode <> " mode"
       , fsErrorNo     = Nothing
       , fsErrorStack  = callStack
@@ -577,7 +577,7 @@ hGetSomeAt err@ErrorHandling{..} h n o =
 
     errPastEnd fp = FsError {
         fsErrorType   = FsInvalidArgument
-      , fsErrorPath   = fp
+      , fsErrorPath   = fsToFsErrorPathUnmounted fp
       , fsErrorString = "hGetSomeAt offset past EOF not supported"
       , fsErrorNo     = Nothing
       , fsErrorStack  = callStack
@@ -604,7 +604,7 @@ hPutSome err@ErrorHandling{..} h toWrite =
 
     errReadOnly fp = FsError {
                          fsErrorType   = FsInvalidArgument
-                       , fsErrorPath   = fp
+                       , fsErrorPath   = fsToFsErrorPathUnmounted fp
                        , fsErrorString = "handle is read-only"
                        , fsErrorNo     = Nothing
                        , fsErrorStack  = callStack
@@ -660,7 +660,7 @@ hTruncate err@ErrorHandling{..} h sz =
                 (True, _) ->
                   throwError FsError {
                       fsErrorType   = FsInvalidArgument
-                    , fsErrorPath   = openFilePath
+                    , fsErrorPath   = fsToFsErrorPathUnmounted openFilePath
                     , fsErrorString = "truncate cannot make the file larger"
                     , fsErrorNo     = Nothing
                     , fsErrorStack  = callStack
@@ -669,7 +669,7 @@ hTruncate err@ErrorHandling{..} h sz =
                 (False, RW{}) ->
                   throwError FsError {
                       fsErrorType   = FsInvalidArgument
-                    , fsErrorPath   = openFilePath
+                    , fsErrorPath   = fsToFsErrorPathUnmounted openFilePath
                     , fsErrorString = "truncate only supported in append mode"
                     , fsErrorNo     = Nothing
                     , fsErrorStack  = callStack
@@ -712,7 +712,7 @@ createDirectoryIfMissing err@ErrorHandling{..} createParents dir = do
     if fileExists then
       throwError FsError {
           fsErrorType   = FsResourceAlreadyExist
-        , fsErrorPath   = dir
+        , fsErrorPath   = fsToFsErrorPathUnmounted dir
         , fsErrorString = "a file with that name already exists"
         , fsErrorNo     = Nothing
         , fsErrorStack  = callStack
@@ -774,7 +774,7 @@ removeFile err@ErrorHandling{..} fp =
       []
         -> throwError FsError {
                fsErrorType   = FsIllegalOperation
-             , fsErrorPath   = fp
+             , fsErrorPath   = fsToFsErrorPathUnmounted fp
              , fsErrorString = "cannot remove the root directory"
              , fsErrorNo     = Nothing
              , fsErrorStack  = callStack
@@ -783,7 +783,7 @@ removeFile err@ErrorHandling{..} fp =
       _ | fp `S.member` openFilePaths fs
         -> throwError FsError {
                fsErrorType   = FsIllegalOperation
-             , fsErrorPath   = fp
+             , fsErrorPath   = fsToFsErrorPathUnmounted fp
              , fsErrorString = "cannot remove an open file"
              , fsErrorNo     = Nothing
              , fsErrorStack  = callStack

@@ -133,6 +133,9 @@ data HasFS m h = HasFS {
 
     -- | Error handling
   , hasFsErr                 :: ErrorHandling FsError m
+
+    -- | Useful for better error reporting
+  , mkFsErrorPath            :: FsPath -> FsErrorPath
   }
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "HasFS" (HasFS m h)
 
@@ -157,7 +160,7 @@ hGetExactly hasFS h n = go n []
         if BS.null bs then
           throwError (hasFsErr hasFS) FsError {
               fsErrorType   = FsReachedEOF
-            , fsErrorPath   = handlePath h
+            , fsErrorPath   = mkFsErrorPath hasFS $ handlePath h
             , fsErrorString = "hGetExactly found eof before reading " ++ show n ++ " bytes"
             , fsErrorNo     = Nothing
             , fsErrorStack  = callStack
@@ -185,7 +188,7 @@ hGetExactlyAt hasFS h n offset = go n offset []
         if BS.null bs then
           throwError (hasFsErr hasFS) FsError {
               fsErrorType   = FsReachedEOF
-            , fsErrorPath   = handlePath h
+            , fsErrorPath   = mkFsErrorPath hasFS $ handlePath h
             , fsErrorString = "hGetExactlyAt found eof before reading " ++ show n ++ " bytes"
             , fsErrorNo     = Nothing
             , fsErrorStack  = callStack

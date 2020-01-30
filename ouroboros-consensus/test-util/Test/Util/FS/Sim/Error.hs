@@ -475,6 +475,7 @@ mkSimErrorHasFS err fsVar errorsVar =
             withErr err errorsVar p (removeFile p) "removeFile"
             _removeFile (\e es -> es { _removeFile = e })
         , hasFsErr = err
+        , mkFsErrorPath = fsToFsErrorPathUnmounted
         }
 
 -- | Runs a computation provided an 'Errors' and an initial
@@ -541,7 +542,7 @@ withErr ErrorHandling {..} errorsVar path action msg getter setter = do
       Nothing      -> action
       Just errType -> throwError FsError
         { fsErrorType   = errType
-        , fsErrorPath   = path
+        , fsErrorPath   = fsToFsErrorPathUnmounted path
         , fsErrorString = "simulated error: " <> msg
         , fsErrorNo     = Nothing
         , fsErrorStack  = callStack
@@ -576,7 +577,7 @@ hGetSome' ErrorHandling{..} errorsVar hGetSomeWrapped handle n =
       Nothing             -> hGetSomeWrapped handle n
       Just (Left errType) -> throwError FsError
         { fsErrorType   = errType
-        , fsErrorPath   = handlePath handle
+        , fsErrorPath   = fsToFsErrorPathUnmounted $ handlePath handle
         , fsErrorString = "simulated error: hGetSome"
         , fsErrorNo     = Nothing
         , fsErrorStack  = callStack
@@ -596,7 +597,7 @@ hGetSomeAt' ErrorHandling{..} errorsVar hGetSomeAtWrapped handle n offset =
       Nothing             -> hGetSomeAtWrapped handle n offset
       Just (Left errType) -> throwError FsError
         { fsErrorType   = errType
-        , fsErrorPath   = handlePath handle
+        , fsErrorPath   = fsToFsErrorPathUnmounted $ handlePath handle
         , fsErrorString = "simulated error: hGetSomeAt"
         , fsErrorNo     = Nothing
         , fsErrorStack  = callStack
@@ -621,7 +622,7 @@ hPutSome' ErrorHandling{..} errorsVar hPutSomeWrapped handle bs =
           void $ hPutSomeWrapped handle (corrupt bs corr)
         throwError FsError
           { fsErrorType   = errType
-          , fsErrorPath   = handlePath handle
+          , fsErrorPath   = fsToFsErrorPathUnmounted $ handlePath handle
           , fsErrorString = "simulated error: hPutSome" <> case mbCorr of
               Nothing   -> ""
               Just corr -> " with corruption: " <> show corr
