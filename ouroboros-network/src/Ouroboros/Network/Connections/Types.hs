@@ -17,6 +17,8 @@ module Ouroboros.Network.Connections.Types
   , RemoteOnlyRequest (..)
 
   , contramapRequest
+  , mapResult
+  , mapDecision
 
   , Client
   , Server
@@ -44,6 +46,15 @@ data Decision (provenance :: Provenance) reject accept where
   Rejected :: reject provenance -> Decision provenance reject accept
   Accepted :: accept provenance -> Decision provenance reject accept
   deriving (Show)
+
+mapDecision
+  :: (forall provenance' . reject1 provenance' -> reject2 provenance')
+  -> (forall provenance' . accept1 provenance' -> accept2 provenance')
+  -> Decision provenance reject1 accept1
+  -> Decision provenance reject2 accept2
+mapDecision frej facc decision = case decision of
+  Rejected rej -> Rejected (frej rej)
+  Accepted acc -> Accepted (facc acc)
 
 -- | Useful type with kind `Provenance -> Type` to express that rejection is
 -- not possible.
@@ -118,6 +129,14 @@ contramapRequest
 contramapRequest f connections = connections
   { include = \ident res req -> include connections ident res (f req) }
 
+mapResult
+  :: ( Functor m )
+  => (forall provenance . reject1 provenance -> reject2 provenance)
+  -> (forall provenance . accept1 provenance -> accept2 provenance)
+  -> Connections id resource req reject1 accept1 m
+  -> Connections id resource req reject2 accept2 m
+mapResult frej facc connections = connections
+  { include = \ident res req -> fmap (mapDecision frej facc) (include connections ident res req) }
 
 -- Client and Server types take any suitable Connections include callback,
 -- specialized to Outgoing or Incoming, and use it to get a decision, for any
