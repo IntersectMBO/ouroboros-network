@@ -86,12 +86,8 @@ instance ApplyTx ByronBlock where
     deriving (Eq, Generic)
     deriving NoUnexpectedThunks via UseIsNormalForm (GenTx ByronBlock)
 
-  txSize tx =
-        1 {- encodeListLen -}
-      + 1 {- tag -}
-      + (fromIntegral . Strict.length $ mempoolPayloadRecoverBytes tx')
-    where
-      tx' = toMempoolPayload tx
+  txSize =
+      fromIntegral . Strict.length . mempoolPayloadRecoverBytes . toMempoolPayload
 
   -- Check that the annotation is the canonical encoding. This is currently
   -- enforced by 'decodeByronGenTx', see its docstring for more context.
