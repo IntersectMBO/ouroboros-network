@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -17,6 +18,7 @@ module Ouroboros.Consensus.Ledger.Mock.Block.PBFT (
   ) where
 
 import           Codec.Serialise (Serialise (..))
+import           Data.Proxy
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
@@ -24,10 +26,13 @@ import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
 
+import           Ouroboros.Network.Block (HasHeader (..))
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Block
 import           Ouroboros.Consensus.Ledger.Mock.Run
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.Signed
@@ -65,7 +70,7 @@ data SignedSimplePBft c c' = SignedSimplePBft {
   deriving (Generic)
 
 -- | PBFT requires the ledger view; for the mock ledger, this is constant
-type instance BlockProtocol (SimplePBftBlock  c c') = PBft (PBftLedgerView c') c'
+type instance BlockProtocol (SimplePBftBlock  c c') = ExtConfig (PBft c') (PBftLedgerView c')
 type instance BlockProtocol (SimplePBftHeader c c') = BlockProtocol (SimplePBftBlock c c')
 
 -- | Sanity check that block and header type synonyms agree
@@ -76,29 +81,17 @@ _simplePBftHeader = simpleHeader
   Evidence that SimpleBlock can support PBFT
 -------------------------------------------------------------------------------}
 
-instance SignedHeader (SimplePBftHeader c c') where
-  type Signed (SimplePBftHeader c c') = SignedSimplePBft c c'
+type instance Signed (SimplePBftHeader c c') = SignedSimplePBft c c'
 
+instance SignedHeader (SimplePBftHeader c c') where
   headerSigned = SignedSimplePBft . simpleHeaderStd
 
-instance ( SimpleCrypto c
-         , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
-         ) => HeaderSupportsPBft
-                (PBftLedgerView PBftMockCrypto)
-                PBftMockCrypto
-                (SimplePBftHeader c PBftMockCrypto) where
-  type OptSigned (SimplePBftHeader c PBftMockCrypto) =
-          Signed (SimplePBftHeader c PBftMockCrypto)
-  headerPBftFields _ hdr = Just (
-        simplePBftExt (simpleHeaderExt hdr)
-      , headerSigned hdr
-      )
-
 instance (PBftCrypto c', Serialise (PBftVerKeyHash c'))
-      => RunMockProtocol (PBft ext c') where
+      => RunMockProtocol (ExtConfig (PBft c') ext) where
   mockProtocolMagicId  = const constructMockProtocolMagicId
   mockEncodeChainState = const CS.encodePBftChainState
-  mockDecodeChainState = \cfg -> let k = pbftSecurityParam $ pbftParams cfg
+  mockDecodeChainState = \cfg -> let k = pbftSecurityParam $
+                                           pbftParams (extNodeConfigP cfg)
                                  in CS.decodePBftChainState k (pbftWindowSize k)
 
 instance ( SimpleCrypto c
@@ -106,13 +99,13 @@ instance ( SimpleCrypto c
          , Signable (PBftDSIGN c') (SignedSimplePBft c c')
          , ConstructContextDSIGN ext c'
          , Serialise (PBftVerKeyHash c')
-         ) => RunMockBlock (PBft ext c') c (SimplePBftExt c c') where
+         ) => RunMockBlock (ExtConfig (PBft c') ext) c (SimplePBftExt c c') where
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
-        forgePBftFields cfg isLeader $
-          SignedSimplePBft {
-              signedSimplePBft = simpleHeaderStd
-            }
+        forgePBftFields
+          (constructContextDSIGN (Proxy @c') (extNodeConfig cfg))
+          isLeader
+          SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
       return SimpleBlock {
           simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
         , simpleBody   = simpleBody
@@ -122,7 +115,9 @@ instance ( SimpleCrypto c
 
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
-         ) => SupportedBlock (SimplePBftBlock c PBftMockCrypto)
+         ) => SupportedBlock (SimplePBftBlock c PBftMockCrypto) where
+  validateView _     = pbftValidateRegular () (simplePBftExt . simpleHeaderExt)
+  selectView   _ hdr = (blockNo hdr, IsNotEBB)
 
 -- | The ledger view is constant for the mock instantiation of PBFT
 -- (mock blocks cannot change delegation)
@@ -131,10 +126,10 @@ instance ( SimpleCrypto c
          ) => ProtocolLedgerView (SimplePBftBlock c PBftMockCrypto) where
   ledgerConfigView _ =
       SimpleLedgerConfig
-  protocolLedgerView PBftNodeConfig{..} _ls =
-      pbftExtConfig
-  anachronisticProtocolLedgerView PBftNodeConfig{..} _ _ =
-      Right $ pbftExtConfig
+  protocolLedgerView ExtNodeConfig{..} _ls =
+      extNodeConfig
+  anachronisticProtocolLedgerView ExtNodeConfig{..} _ _ =
+      Right $ extNodeConfig
 
 {-------------------------------------------------------------------------------
   Serialisation

@@ -25,6 +25,8 @@ module Ouroboros.Consensus.Ledger.Byron.Block (
   , mkByronHeader
     -- * Auxiliary functions
   , countByronGenTxs
+  , byronHeaderIsEBB
+  , byronBlockIsEBB
     -- * Serialisation
   , encodeByronBlockWithInfo
   , encodeByronBlock
@@ -237,6 +239,16 @@ countByronGenTxs ByronBlock{..} = go byronBlockRaw
 
     payloadProposals :: CC.Update.APayload a -> [CC.Update.AProposal a]
     payloadProposals = maybeToList . CC.Update.payloadProposal
+
+byronHeaderIsEBB :: Header ByronBlock -> IsEBB
+byronHeaderIsEBB = go . byronHeaderRaw
+  where
+    go :: ABlockOrBoundaryHdr a -> IsEBB
+    go (ABOBBlockHdr    _) = IsNotEBB
+    go (ABOBBoundaryHdr _) = IsEBB
+
+byronBlockIsEBB :: ByronBlock -> IsEBB
+byronBlockIsEBB = byronHeaderIsEBB . getHeader
 
 {-------------------------------------------------------------------------------
   Serialisation

@@ -30,12 +30,13 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -- somehow fail if the selected chain turns out to be invalid.)
 --
 -- Returns 'Nothing' if we stick with our current chain.
-selectChain :: forall p hdr l. (OuroborosTag p, HasHeader hdr, CanSelect p hdr)
-            => NodeConfig p
+selectChain :: forall p hdr l. (OuroborosTag p, HasHeader hdr)
+            => (hdr -> SelectView p)
+            -> NodeConfig p
             -> Chain hdr           -- ^ Our chain
             -> [(Chain hdr, l)]    -- ^ Upstream chains
             -> Maybe (Chain hdr, l)
-selectChain cfg ours candidates =
+selectChain view cfg ours candidates =
     listToMaybe $
       sortBy (flip (compareCandidates' `on` fst)) preferredCandidates
   where
@@ -52,7 +53,7 @@ selectChain cfg ours candidates =
         go Nothing  Nothing  = False
         go Nothing  (Just _) = True
         go (Just _) Nothing  = False
-        go (Just a) (Just b) = preferCandidate cfg a b
+        go (Just a) (Just b) = preferCandidate cfg (view a) (view b)
 
     compareCandidates' :: Chain hdr -> Chain hdr -> Ordering
     compareCandidates' = go `on` Chain.head
@@ -61,16 +62,16 @@ selectChain cfg ours candidates =
         go Nothing  Nothing  = EQ
         go Nothing  (Just _) = LT
         go (Just _) Nothing  = GT
-        go (Just a) (Just b) = compareCandidates cfg a b
+        go (Just a) (Just b) = compareCandidates cfg (view a) (view b)
 
 -- | Chain selection on unvalidated chains
-selectUnvalidatedChain :: forall p hdr. (
-                            OuroborosTag p
-                          , HasHeader hdr
-                          , CanSelect p hdr
-                          )
-                       => NodeConfig p
+selectUnvalidatedChain :: forall p hdr. (OuroborosTag p, HasHeader hdr)
+                       => (hdr -> SelectView p)
+                       -> NodeConfig p
                        -> Chain hdr
                        -> [Chain hdr]
                        -> Maybe (Chain hdr)
-selectUnvalidatedChain cfg ours = fmap fst . selectChain cfg ours . map (, ())
+selectUnvalidatedChain view cfg ours =
+      fmap fst
+    . selectChain view cfg ours
+    . map (, ())

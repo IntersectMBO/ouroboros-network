@@ -72,7 +72,8 @@ import           Test.QuickCheck hiding (Result)
 import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (ChainHash (..), HeaderHash)
+import           Ouroboros.Network.Block (ChainHash (..), HeaderHash,
+                     SlotNo (..))
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..), Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -241,27 +242,9 @@ instance Condense (ChainHash TestBlock) where
 
 type instance BlockProtocol TestBlock = Bft BftMockCrypto
 
+type instance Signed (Header TestBlock) = ()
 instance SignedHeader (Header TestBlock) where
-  type Signed (Header TestBlock) = ()
   headerSigned _ = ()
-
-instance HeaderSupportsBft BftMockCrypto (Header TestBlock) where
-  headerBftFields cfg (TestHeader tb) = BftFields {
-        bftSignature = SignedDSIGN $
-                         mockSign
-                           ()
-                           (signKey cfg (tbSlot tb))
-      }
-    where
-      -- We don't want /our/ signing key, but rather the signing key of the
-      -- node that produced the block
-      signKey :: NodeConfig (Bft BftMockCrypto)
-              -> Block.SlotNo
-              -> SignKeyDSIGN MockDSIGN
-      signKey BftNodeConfig{bftParams = BftParams{..}} (Block.SlotNo n) =
-          SignKeyMockDSIGN $ fromIntegral (n `mod` numCoreNodes)
-        where
-          NumCoreNodes numCoreNodes = bftNumNodes
 
 data TestBlockError
   = InvalidHash
@@ -273,7 +256,21 @@ data TestBlockError
     -- ^ The block itself is invalid
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
-instance SupportedBlock TestBlock
+instance SupportedBlock TestBlock where
+  validateView BftNodeConfig{bftParams = BftParams{..}} =
+      bftValidateView bftFields
+    where
+      NumCoreNodes numCore = bftNumNodes
+
+      bftFields :: Header TestBlock -> BftFields BftMockCrypto ()
+      bftFields (TestHeader tb) = BftFields {
+            bftSignature = SignedDSIGN $ mockSign () (signKey (tbSlot tb))
+          }
+
+      -- We don't want /our/ signing key, but rather the signing key of the
+      -- node that produced the block
+      signKey :: Block.SlotNo -> SignKeyDSIGN MockDSIGN
+      signKey (SlotNo n) = SignKeyMockDSIGN $ fromIntegral (n `mod` numCore)
 
 instance UpdateLedger TestBlock where
   newtype LedgerState TestBlock =
@@ -425,7 +422,7 @@ treeToChains = map Chain.fromOldestFirst . allPaths . blockTree
 treePreferredChain :: NodeConfig (Bft BftMockCrypto)
                    -> BlockTree -> Chain TestBlock
 treePreferredChain cfg = fromMaybe Genesis
-                       . selectUnvalidatedChain cfg Genesis
+                       . selectUnvalidatedChain Block.blockNo cfg Genesis
                        . treeToChains
 
 instance Show BlockTree where

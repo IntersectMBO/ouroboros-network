@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Consensus.Ledger.Byron.Forge (
     forgeByronBlock
@@ -14,6 +15,7 @@ import           Control.Monad (void)
 import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
+import           Data.Proxy
 import           Data.Word (Word32)
 import           GHC.Stack
 
@@ -41,6 +43,7 @@ import           Ouroboros.Consensus.Ledger.Byron.Mempool
 import           Ouroboros.Consensus.Ledger.Byron.PBFT
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 
 forgeByronBlock
@@ -73,7 +76,7 @@ forgeEBB cfg curSlot curNo prevHash =
     protocolMagicId = CC.Genesis.configProtocolMagicId (getGenesisConfig cfg)
     ByronConfig { pbftGenesisHash
                 , pbftEpochSlots
-                } = pbftExtConfig cfg
+                } = extNodeConfig cfg
 
     prevHeaderHash :: Either CC.Genesis.GenesisHash CC.Block.HeaderHash
     prevHeaderHash = case prevHash of
@@ -141,7 +144,10 @@ forgeRegularBlock
   -> m ByronBlock
 forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
     ouroborosPayload <-
-      forgePBftFields cfg isLeader (reAnnotate $ Annotated toSign ())
+      forgePBftFields
+        (constructContextDSIGN (Proxy @PBftCardanoCrypto) (extNodeConfig cfg))
+        isLeader
+        (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload
   where
     -- TODO: Might be sufficient to add 'ConfigContainsGenesis' constraint.
@@ -150,7 +156,7 @@ forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
       , pbftProtocolVersion
       , pbftSoftwareVersion
       , pbftProtocolMagic
-      } = pbftExtConfig cfg
+      } = extNodeConfig cfg
 
     blockPayloads :: BlockPayloads
     blockPayloads = foldr extendBlockPayloads initBlockPayloads txs

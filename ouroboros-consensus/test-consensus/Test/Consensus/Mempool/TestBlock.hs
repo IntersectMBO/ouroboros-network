@@ -94,14 +94,12 @@ instance Measured Block.BlockMeasure TestBlock where
 
 type instance BlockProtocol TestBlock = Bft BftMockCrypto
 
+type instance Signed (Header TestBlock) = ()
 instance SignedHeader (Header TestBlock) where
-  type Signed (Header TestBlock) = ()
   headerSigned _ = notNeeded
 
-instance HeaderSupportsBft BftMockCrypto (Header TestBlock) where
-  headerBftFields = notNeeded
-
-instance SupportedBlock TestBlock
+instance SupportedBlock TestBlock where
+  validateView = notNeeded
 
 instance UpdateLedger TestBlock where
   data LedgerState TestBlock =

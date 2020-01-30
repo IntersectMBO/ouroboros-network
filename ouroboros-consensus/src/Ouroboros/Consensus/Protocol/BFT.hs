@@ -1,15 +1,14 @@
-{-# LANGUAGE DeriveAnyClass          #-}
-{-# LANGUAGE DeriveGeneric           #-}
-{-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE FlexibleInstances       #-}
-{-# LANGUAGE MultiParamTypeClasses   #-}
-{-# LANGUAGE RecordWildCards         #-}
-{-# LANGUAGE ScopedTypeVariables     #-}
-{-# LANGUAGE StandaloneDeriving      #-}
-{-# LANGUAGE TypeApplications        #-}
-{-# LANGUAGE TypeFamilies            #-}
-{-# LANGUAGE UndecidableInstances    #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeFamilies              #-}
 
 module Ouroboros.Consensus.Protocol.BFT (
     Bft
@@ -21,7 +20,8 @@ module Ouroboros.Consensus.Protocol.BFT (
   , BftCrypto(..)
   , BftStandardCrypto
   , BftMockCrypto
-  , HeaderSupportsBft(..)
+  , BftValidateView(..)
+  , bftValidateView
     -- * Type instances
   , NodeConfig(..)
   ) where
@@ -40,7 +40,6 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
 
-import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
@@ -64,12 +63,19 @@ deriving instance BftCrypto c => Eq   (BftFields c toSign)
 instance (BftCrypto c, Typeable toSign) => NoUnexpectedThunks (BftFields c toSign) where
   showTypeOf _ = show $ typeRep (Proxy @(BftFields c))
 
-class ( HasHeader hdr
-      , SignedHeader hdr
-      , Signable (BftDSIGN c) (Signed hdr)
-      , BlockProtocol hdr ~ Bft c
-      ) => HeaderSupportsBft c hdr where
-  headerBftFields :: NodeConfig (Bft c) -> hdr -> BftFields c (Signed hdr)
+data BftValidateView c =
+    forall signed. Signable (BftDSIGN c) signed
+                => BftValidateView SlotNo (BftFields c signed) signed
+
+-- | Convenience constructor for 'BftValidateView'
+bftValidateView :: ( HasHeader    hdr
+                   , SignedHeader hdr
+                   , Signable (BftDSIGN c) (Signed hdr)
+                   )
+                => (hdr -> BftFields c (Signed hdr))
+                -> (hdr -> BftValidateView c)
+bftValidateView getFields hdr =
+    BftValidateView (blockSlot hdr) (getFields hdr) (headerSigned hdr)
 
 forgeBftFields :: ( MonadRandom m
                   , BftCrypto c
@@ -129,8 +135,7 @@ data instance NodeConfig (Bft c) = BftNodeConfig {
 
 instance BftCrypto c => OuroborosTag (Bft c) where
   type ValidationErr (Bft c) = BftValidationErr
-  type CanValidate   (Bft c) = HeaderSupportsBft c
-  type CanSelect     (Bft c) = HasHeader
+  type ValidateView  (Bft c) = BftValidateView c
   type NodeState     (Bft c) = ()
   type LedgerView    (Bft c) = ()
   type IsLeader      (Bft c) = ()
@@ -152,19 +157,20 @@ instance BftCrypto c => OuroborosTag (Bft c) where
       BftParams{..}  = bftParams
       NumCoreNodes numCoreNodes = bftNumNodes
 
-  applyChainState cfg@BftNodeConfig{..} _l b _cs = do
+  applyChainState BftNodeConfig{..}
+                  _l
+                  (BftValidateView (SlotNo n) BftFields{..} signed)
+                  _cs =
       -- TODO: Should deal with unknown node IDs
       case verifySignedDSIGN
-           ()
-           (bftVerKeys Map.! expectedLeader)
-           (headerSigned b)
-           bftSignature of
+             ()
+             (bftVerKeys Map.! expectedLeader)
+             signed
+             bftSignature of
         Right () -> return ()
         Left err -> throwError $ BftInvalidSignature err
     where
       BftParams{..}  = bftParams
-      BftFields{..}  = headerBftFields cfg b
-      SlotNo n       = blockSlot b
       expectedLeader = CoreId . CoreNodeId $ fromIntegral (n `mod` numCoreNodes)
       NumCoreNodes numCoreNodes = bftNumNodes
 

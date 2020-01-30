@@ -67,6 +67,7 @@ import           Ouroboros.Consensus.Ledger.Byron.DelegationHistory
 import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as History
 import           Ouroboros.Consensus.Ledger.Byron.PBFT
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 
 instance UpdateLedger ByronBlock where
@@ -146,8 +147,8 @@ instance ConfigContainsGenesis (LedgerConfig ByronBlock) where
   getGenesisConfig = unByronLedgerConfig
 
 instance ProtocolLedgerView ByronBlock where
-  ledgerConfigView PBftNodeConfig{..} = ByronLedgerConfig $
-      pbftGenesisConfig pbftExtConfig
+  ledgerConfigView ExtNodeConfig{..} = ByronLedgerConfig $
+      pbftGenesisConfig extNodeConfig
 
   protocolLedgerView _cfg =
         toPBftLedgerView
@@ -222,7 +223,7 @@ instance ProtocolLedgerView ByronBlock where
 
               in Aux.applyScheduledDelegations toApply dsNow
     where
-      SecurityParam k = pbftSecurityParam . pbftParams $ cfg
+      SecurityParam k = pbftSecurityParam . pbftParams $ extNodeConfigP cfg
 
       dsNow :: Delegation.Map
       dsNow = Aux.getDelegationMap ls

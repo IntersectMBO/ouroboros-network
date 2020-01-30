@@ -32,6 +32,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract as X
 import           Ouroboros.Consensus.Protocol.BFT as X
+import           Ouroboros.Consensus.Protocol.ExtConfig as X
 import           Ouroboros.Consensus.Protocol.LeaderSchedule as X
 import           Ouroboros.Consensus.Protocol.PBFT as X
 import           Ouroboros.Consensus.Protocol.Praos as X
@@ -42,11 +43,11 @@ import           Ouroboros.Consensus.Util
 -------------------------------------------------------------------------------}
 
 type ProtocolMockBFT        = Bft BftMockCrypto
-type ProtocolMockPraos      = Praos AddrDist PraosMockCrypto
-type ProtocolLeaderSchedule = WithLeaderSchedule (Praos () PraosCryptoUnused)
-type ProtocolMockPBFT       = PBft (PBftLedgerView PBftMockCrypto) PBftMockCrypto
-type ProtocolRealPBFT       = PBft ByronConfig PBftCardanoCrypto
-type ProtocolDualPBFT       = PBft DualByronConfig PBftCardanoCrypto
+type ProtocolMockPraos      = ExtConfig PraosMockCrypto AddrDist
+type ProtocolLeaderSchedule = WithLeaderSchedule (Praos PraosCryptoUnused)
+type ProtocolMockPBFT       = ExtConfig (PBft PBftMockCrypto) (PBftLedgerView PBftMockCrypto)
+type ProtocolRealPBFT       = ExtConfig (PBft PBftCardanoCrypto) ByronConfig
+type ProtocolDualPBFT       = ExtConfig ProtocolRealPBFT (LedgerConfig ByronSpecBlock)
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols

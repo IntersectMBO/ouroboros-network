@@ -29,6 +29,7 @@ module Ouroboros.Consensus.NodeNetwork (
   , localResponderNetworkApplication
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad (void)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
@@ -144,6 +145,7 @@ protocolHandlers
        , HasTxId (GenTx blk)
        , ProtocolLedgerView blk
        , QueryLedger blk
+       , Serialise (HeaderHash blk)
        )
     => NodeArgs   m peer blk  --TODO eliminate, merge relevant into NodeKernel
     -> NodeKernel m peer blk

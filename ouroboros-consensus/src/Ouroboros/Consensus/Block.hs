@@ -1,3 +1,4 @@
+{-# LANGUAGE DefaultSignatures       #-}
 {-# LANGUAGE DeriveAnyClass          #-}
 {-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
@@ -17,7 +18,7 @@ module Ouroboros.Consensus.Block (
   , headerPrevHash
   , headerPoint
     -- * Supported blocks
-  , SupportedBlock
+  , SupportedBlock(..)
     -- * EBBs
   , IsEBB (..)
   , toIsEBB
@@ -90,10 +91,19 @@ class ( GetHeader blk
       , HasHeader blk
       , HasHeader (Header blk)
       , OuroborosTag (BlockProtocol blk)
-      , CanValidate  (BlockProtocol blk) (Header blk)
-      , CanSelect    (BlockProtocol blk) (Header blk)
       , NoUnexpectedThunks (Header blk)
-      ) => SupportedBlock blk
+      ) => SupportedBlock blk where
+  validateView :: NodeConfig (BlockProtocol blk)
+               -> Header blk -> ValidateView (BlockProtocol blk)
+
+  selectView   :: NodeConfig (BlockProtocol blk)
+               -> Header blk -> SelectView   (BlockProtocol blk)
+
+  -- Default chain selection just looks at longest chains
+  default selectView :: SelectView (BlockProtocol blk) ~ BlockNo
+                     => NodeConfig (BlockProtocol blk)
+                     -> Header blk -> SelectView (BlockProtocol blk)
+  selectView _ = blockNo
 
 {-------------------------------------------------------------------------------
   EBBs

@@ -2,8 +2,12 @@
 
 -- | Support for protocols that include a signature
 module Ouroboros.Consensus.Protocol.Signed (
-    SignedHeader(..)
+    Signed
+  , SignedHeader(..)
   ) where
+
+-- | The part of the header that is signed
+type family Signed hdr :: *
 
 -- | Header that contain a signed part
 --
@@ -13,8 +17,5 @@ module Ouroboros.Consensus.Protocol.Signed (
 -- download separately). Typically of course the header will contain a hash
 -- of the body, so the signature can include the body implicitly.
 class SignedHeader hdr where
-  -- | The part of the header that is signed
-  type family Signed hdr :: *
-
   -- | Extract the part of the header that the signature should be computed over
   headerSigned :: hdr -> Signed hdr

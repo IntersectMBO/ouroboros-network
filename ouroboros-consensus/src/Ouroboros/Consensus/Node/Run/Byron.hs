@@ -25,6 +25,7 @@ import           Ouroboros.Consensus.Ledger.Byron
 import qualified Ouroboros.Consensus.Ledger.Byron.Auxiliary as Aux
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -104,7 +105,8 @@ instance RunNode ByronBlock where
   nodeDecodeHeaderHash      = const decodeByronHeaderHash
   nodeDecodeLedgerState     = const decodeByronLedgerState
   nodeDecodeChainState      = \_proxy cfg ->
-                                 let k = pbftSecurityParam $ pbftParams cfg
+                                 let k = pbftSecurityParam $
+                                           pbftParams (extNodeConfigP cfg)
                                  in decodeByronChainState k
   nodeDecodeApplyTxError    = const decodeByronApplyTxError
   nodeDecodeQuery           = decodeByronQuery

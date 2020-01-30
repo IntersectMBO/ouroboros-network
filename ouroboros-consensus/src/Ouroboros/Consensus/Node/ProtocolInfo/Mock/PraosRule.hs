@@ -35,7 +35,6 @@ protocolInfoPraosRule numCoreNodes
             , praosInitialEta   = 0
             , praosInitialStake = genesisStakeDist addrDist
             , praosVerKeys      = verKeys
-            , praosExtConfig    = ()
             }
         , lsNodeConfigNodeId   = nid
         }

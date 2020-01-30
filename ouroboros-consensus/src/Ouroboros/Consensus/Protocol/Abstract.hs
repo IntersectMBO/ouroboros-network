@@ -29,12 +29,11 @@ module Ouroboros.Consensus.Protocol.Abstract (
   , evalNodeState
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Crypto.Random (MonadRandom (..))
-import           Data.Function (on)
 import           Data.Functor.Identity
-import           Data.Kind (Constraint)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
@@ -42,7 +41,8 @@ import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (HasHeader (..), Point, SlotNo (..))
+import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point,
+                     SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime.SlotLengths
 import           Ouroboros.Consensus.Util.Random
@@ -125,11 +125,11 @@ class ( Show (ChainState    p)
   -- | Validation errors
   type family ValidationErr p :: *
 
-  -- | Constraint required in order to validate a header
-  type family CanValidate p :: * -> Constraint
+  -- | View on a header required to validate it
+  type family ValidateView p :: *
 
-  -- | Constraint required in order to able to select between two chains
-  type family CanSelect p :: * -> Constraint
+  -- | View on a header required for chain selection
+  type family SelectView p :: *
 
   -- | Do we prefer the candidate chain over ours?
   --
@@ -150,16 +150,15 @@ class ( Show (ChainState    p)
   -- see the chain database spec in @ChainDB.md@). This means that any chain
   -- is always preferred over the empty chain, and 'preferCandidate' does not
   -- need (indeed, cannot) be called if our current chain is empty.
-  preferCandidate :: CanSelect p hdr
-                  => NodeConfig p
-                  -> hdr      -- ^ Tip of our chain
-                  -> hdr      -- ^ Tip of the candidate
+  preferCandidate :: NodeConfig p
+                  -> SelectView p      -- ^ Tip of our chain
+                  -> SelectView p      -- ^ Tip of the candidate
                   -> Bool
 
   -- | Compare two candidates, both of which we prefer to our own chain
   --
   -- PRECONDITION: both candidates must be preferred to our own chain
-  compareCandidates :: CanSelect p hdr => NodeConfig p -> hdr -> hdr -> Ordering
+  compareCandidates :: NodeConfig p -> SelectView p -> SelectView p -> Ordering
 
   -- | Check if a node is the leader
   checkIsLeader :: (HasNodeState p m, MonadRandom m)
@@ -170,11 +169,11 @@ class ( Show (ChainState    p)
                 -> m (Maybe (IsLeader p))
 
   -- | Apply a header
-  applyChainState :: (CanValidate p hdr, HasCallStack)
-                  => NodeConfig p
-                  -> LedgerView p -- /Updated/ ledger state
-                  -> hdr
-                  -> ChainState p -- /Previous/ Ouroboros state
+  applyChainState :: HasCallStack
+                  => NodeConfig   p
+                  -> LedgerView   p -- /Updated/ ledger state
+                  -> ValidateView p
+                  -> ChainState   p -- /Previous/ Ouroboros state
                   -> Except (ValidationErr p) (ChainState p)
 
   -- | We require that protocols support a @k@ security parameter
@@ -205,7 +204,10 @@ class ( Show (ChainState    p)
   -- state). For example, rewinding a chain state by @i@ blocks and then
   -- rewinding that chain state again by @j@ where @i + j > k@ is not possible
   -- and will yield 'Nothing'.
-  rewindChainState :: CanValidate p hdr
+  --
+  -- TODO: The Serialise instance is only required for a hack in PBFT.
+  -- Reconsider later.
+  rewindChainState :: Serialise (HeaderHash hdr)
                    => NodeConfig p
                    -> ChainState p
                    -> Point hdr    -- ^ Point to rewind to
@@ -218,13 +220,15 @@ class ( Show (ChainState    p)
   -- simply uses the block number.
   --
 
+  type SelectView p = BlockNo
+
   preferCandidate cfg ours cand =
     compareCandidates cfg ours cand == LT
 
-  default compareCandidates :: HasHeader hdr
+  default compareCandidates :: Ord (SelectView p)
                             => NodeConfig p
-                            -> hdr -> hdr -> Ordering
-  compareCandidates _ = compare `on` blockNo
+                            -> SelectView p -> SelectView p -> Ordering
+  compareCandidates _ = compare
 
 -- | Protocol security parameter
 --
