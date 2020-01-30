@@ -3,12 +3,15 @@
 module System.Win32.Async.Socket.ByteString.Lazy
   ( send
   , sendAll
+  , recv
   ) where
 
 
 import           Control.Monad (when)
+import qualified Data.ByteString as BS
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Internal as BL (ByteString (..))
 import           Data.ByteString.Unsafe (unsafeUseAsCStringLen)
 import           Data.Int (Int64)
 import           Foreign.C (CInt (..))
@@ -24,6 +27,7 @@ import           System.Win32.Types (DWORD)
 
 import           System.Win32.Async.WSABuf
 import           System.Win32.Async.Internal
+import qualified System.Win32.Async.Socket.ByteString as Socket.ByteString
 
 
 -- | Sending each chunk using vectored I/O.  In one system call one can
@@ -65,7 +69,6 @@ foreign import ccall safe "HsSendBuf"
               -> StablePtr b
               -> IO ()
 
-
 sendAll :: Socket
         -> ByteString
         -> IO ()
@@ -76,3 +79,11 @@ sendAll sock  bs = do
     -- all the chunks is already perfomed by 'send'.
     let bs' = BL.drop sent bs
     when (sent >= 0 && not (BL.null bs')) $ sendAll sock bs'
+
+recv :: Socket
+     -> Int
+     -> IO ByteString
+recv sock size = toChunk <$> Socket.ByteString.recv sock size
+  where
+    toChunk bs | BS.null bs = BL.Empty
+               | otherwise  = BL.Chunk bs BL.Empty
