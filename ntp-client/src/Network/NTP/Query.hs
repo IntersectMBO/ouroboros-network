@@ -1,6 +1,5 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NumericUnderscores  #-}
-
 module Network.NTP.Query (
     NtpSettings(..)
   , NtpStatus(..)
@@ -13,7 +12,7 @@ import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import           Control.Exception (bracket)
 import           System.IO.Error (tryIOError, userError, ioError)
-import           Control.Monad (forever, forM, forM_, replicateM_, when)
+import           Control.Monad (forever, forM, forM_, replicateM_)
 import           Control.Tracer
 import           Data.Binary (decodeOrFail, encode)
 import qualified Data.ByteString.Lazy as LBS

@@ -19,7 +19,7 @@ import           Network.NTP.Trace
 data NtpClient = NtpClient
     { -- | Query the current NTP status.
       ntpGetStatus        :: STM NtpStatus
-      -- | Bypass all internal threadDelays and trigger a new NTP query (non-blocking).
+      -- | Bypass all internal thread Delays and trigger a new NTP query (non-blocking).
     , ntpTriggerUpdate    :: IO ()
       -- | Perform a query, update and return the NtpStatus (blocking).
     , ntpQueryBlocking    :: IO NtpStatus
@@ -60,7 +60,7 @@ awaitPendingWithTimeout tvar t
            check $ s == NtpSyncPending
        )
 
--- TODO: maybe reset the delaytime if ntpQuery did one sucessful query
+-- TODO: Reset the delay time if ntpQuery did one successful query.
 ntpClientThread ::
        Tracer IO NtpTrace
     -> NtpSettings
