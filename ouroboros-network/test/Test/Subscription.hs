@@ -1,12 +1,12 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 
 {-# OPTIONS_GHC -Wno-orphans     #-}
@@ -54,16 +54,15 @@ import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVe
 
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToNode hiding ( ipSubscriptionWorker
-                                                     , dnsSubscriptionWorker
-                                                     )
+import           Ouroboros.Network.NodeToNode hiding (dnsSubscriptionWorker,
+                     ipSubscriptionWorker)
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription
-import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
-import           Ouroboros.Network.Subscription.Worker (WorkerParams (..))
+import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Subscriber
+import           Ouroboros.Network.Subscription.Worker (WorkerParams (..))
 
 defaultMiniProtocolLimit :: Int64
 defaultMiniProtocolLimit = 3000000
@@ -595,10 +594,10 @@ prop_send_recv f xs first = ioProperty $ do
 
 
 data ReqRspCfg = ReqRspCfg {
-      rrcTag         :: !String
-    , rrcServerVar   :: !(StrictTMVar IO Int)
-    , rrcClientVar   :: !(StrictTMVar IO [Int])
-    , rrcSiblingVar  :: !(StrictTVar IO Int)
+      rrcTag        :: !String
+    , rrcServerVar  :: !(StrictTMVar IO Int)
+    , rrcClientVar  :: !(StrictTMVar IO [Int])
+    , rrcSiblingVar :: !(StrictTVar IO Int)
 }
 
 newReqRspCfg :: String -> StrictTVar IO Int -> IO ReqRspCfg
@@ -846,5 +845,3 @@ instance (Show a) => Show (WithTag a) where
 
 tagTrace :: String -> Tracer IO (WithTag a) -> Tracer IO a
 tagTrace tag tr = Tracer $ \s -> traceWith tr $ WithTag tag s
-
-

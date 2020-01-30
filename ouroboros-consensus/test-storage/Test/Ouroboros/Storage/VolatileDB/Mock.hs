@@ -7,7 +7,7 @@ import           Control.Monad.State (StateT)
 
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.STM (simStateT)
+import           Ouroboros.Consensus.Util.STM
 
 import           Ouroboros.Storage.Common (castBlockComponent)
 import           Ouroboros.Storage.Util.ErrorHandling (ThrowCantCatch)
@@ -52,4 +52,4 @@ openDBMock err maxNumPerFile = do
 
     wrapModel :: StrictTVar m (DBModel blockId)
               -> StateT (DBModel blockId) (STM m) a -> STM m a
-    wrapModel dbVar = simStateT dbVar $ id
+    wrapModel dbVar = runSim (simStateT dbVar $ simId)

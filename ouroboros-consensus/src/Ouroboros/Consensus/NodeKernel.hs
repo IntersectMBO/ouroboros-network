@@ -494,9 +494,12 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
         noOverride       = nodeMaxBlockSize ledger - blockEncOverhead
 
     runProtocol :: StrictTVar m PRNG -> ProtocolM blk m a -> STM m a
-    runProtocol varDRG = simOuroborosStateT varState
-                       $ simChaChaT varDRG
-                       $ id
+    runProtocol varDRG = runSim sim
+      where
+        sim :: Sim (NodeStateT (BlockProtocol blk) (ChaChaT (STM m))) m
+        sim = simOuroborosStateT varState
+            $ simChaChaT         varDRG
+            $ simId
 
 -- | State of the pseudo-random number generator
 newtype PRNG = PRNG ChaChaDRG

@@ -8,10 +8,10 @@ module Control.Monad.Class.MonadTime (
   , UTCTime
   ) where
 
-import           Data.Word (Word64)
+import           Control.Monad.Reader
 import           Data.Time.Clock (DiffTime, UTCTime)
 import qualified Data.Time.Clock as Time
-
+import           Data.Word (Word64)
 
 -- | A point in time in a monotonic clock.
 --
@@ -59,3 +59,10 @@ instance MonadTime IO where
 foreign import ccall unsafe "getMonotonicNSec"
     getMonotonicNSec :: IO Word64
 
+--
+-- Instance for ReaderT
+--
+
+instance MonadTime m => MonadTime (ReaderT r m) where
+  getMonotonicTime = lift getMonotonicTime
+  getCurrentTime   = lift getCurrentTime

@@ -1,52 +1,53 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
-{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Network.PeerSelection.Test (tests) where
 
-import           Data.Void (Void)
-import           Data.Function (on)
-import           Data.Typeable (Typeable)
-import           Data.Dynamic (fromDynamic)
-import           Data.Maybe (listToMaybe)
 import qualified Data.ByteString.Char8 as BS
-import           Data.List (nub, groupBy)
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.List.NonEmpty (NonEmpty(..))
-import qualified Data.Map.Strict as Map
-import           Data.Map.Strict (Map)
-import qualified Data.Set as Set
-import           Data.Set (Set)
-import qualified Data.Graph as Graph
+import           Data.Dynamic (fromDynamic)
+import           Data.Function (on)
 import           Data.Graph (Graph)
+import qualified Data.Graph as Graph
+import           Data.List (groupBy, nub)
+import           Data.List.NonEmpty (NonEmpty (..))
+import qualified Data.List.NonEmpty as NonEmpty
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Maybe (listToMaybe)
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Data.Tree as Tree
+import           Data.Typeable (Typeable)
+import           Data.Void (Void)
 
+import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
-import           Control.Tracer (Tracer(..), contramap, traceWith)
-import           Control.Exception (throw)
+import           Control.Tracer (Tracer (..), contramap, traceWith)
 
-import           Control.Monad.IOSim
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.IOSim
 
-import           Ouroboros.Network.PeerSelection.Types
-import           Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState(..))
+import qualified Network.DNS as DNS (defaultResolvConf)
+import           Ouroboros.Network.PeerSelection.Governor hiding
+                     (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
-import qualified Network.DNS as DNS (defaultResolvConf)
+import           Ouroboros.Network.PeerSelection.Types
 
 import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup, localOption)
-import           Test.Tasty.QuickCheck (testProperty, QuickCheckMaxSize(..))
+import           Test.Tasty (TestTree, localOption, testGroup)
+import           Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
 
 
 tests :: TestTree
@@ -344,11 +345,11 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
       policyGossipOverallTimeout    = 10    -- seconds
     }
 
-interpretPickScript :: (MonadSTM m, Ord peeraddr)
-                    => TVar m PickScript
+interpretPickScript :: (MonadSTMTx stm, Ord peeraddr)
+                    => TVar_ stm PickScript
                     -> Map peeraddr a
                     -> Int
-                    -> STM m (Set peeraddr)
+                    -> stm (Set peeraddr)
 interpretPickScript scriptVar available pickNum
   | Map.null available
   = error "interpretPickScript: given empty map to pick from"
@@ -637,7 +638,7 @@ _notionallyReachablePeers :: PeerGraph -> Set PeerAddr -> Set PeerAddr
 _notionallyReachablePeers pg roots =
     Set.fromList
   . map vertexToAddr
-  . concatMap Tree.flatten 
+  . concatMap Tree.flatten
   . Graph.dfs graph
   . map addrToVertex
   $ Set.toList roots
@@ -648,7 +649,7 @@ firstGossipReachablePeers :: PeerGraph -> Set PeerAddr -> Set PeerAddr
 firstGossipReachablePeers pg roots =
     Set.fromList
   . map vertexToAddr
-  . concatMap Tree.flatten 
+  . concatMap Tree.flatten
   . Graph.dfs graph
   . map addrToVertex
   $ Set.toList roots
@@ -913,7 +914,7 @@ initScript = newTVarM
 stepScript :: MonadSTM m => TVar m (Script a) -> m a
 stepScript scriptVar = atomically (stepScriptSTM scriptVar)
 
-stepScriptSTM :: MonadSTM m => TVar m (Script a) -> STM m a
+stepScriptSTM :: MonadSTMTx stm => TVar_ stm (Script a) -> stm a
 stepScriptSTM scriptVar = do
     Script (x :| xs) <- readTVar scriptVar
     case xs of
@@ -1080,4 +1081,3 @@ _governorFindingPublicRoots targetNumberOfRootPeers domains =
               }
     pickTrivially :: Applicative m => Map IPv4 a -> Int -> m (Set IPv4)
     pickTrivially m n = pure . Set.take n . Map.keysSet $ m
-

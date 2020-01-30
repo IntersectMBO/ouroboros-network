@@ -31,6 +31,7 @@ module Ouroboros.Consensus.Util.IOLike (
   , diffTime
     -- *** MonadDelay
   , MonadTimer(..)
+  , MonadDelay(..)
     -- *** Cardano prelude
   , NoUnexpectedThunks(..)
   ) where

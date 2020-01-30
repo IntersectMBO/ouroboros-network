@@ -17,7 +17,7 @@ module Ouroboros.Consensus.Util.STM (
   , Fingerprint (..)
   , WithFingerprint (..)
     -- * Simulate various monad stacks in STM
-  , Sim
+  , Sim(..)
   , simId
   , simStateT
   , simOuroborosStateT
@@ -41,8 +41,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 -------------------------------------------------------------------------------}
 
 -- | Wait until the TVar changed
-blockUntilChanged :: forall m a b. (IOLike m, Eq b)
-                  => (a -> b) -> b -> STM m a -> STM m (a, b)
+blockUntilChanged :: forall stm a b. (MonadSTMTx stm, Eq b)
+                  => (a -> b) -> b -> stm a -> stm (a, b)
 blockUntilChanged f b getA = do
     a <- getA
     let b' = f a
@@ -97,14 +97,14 @@ runWhenJust registry getMaybeA action =
     void $ forkLinkedThread registry $
       action =<< atomically (blockUntilJust getMaybeA)
 
-blockUntilJust :: IOLike m => STM m (Maybe a) -> STM m a
+blockUntilJust :: MonadSTMTx stm => stm (Maybe a) -> stm a
 blockUntilJust getMaybeA = do
     ma <- getMaybeA
     case ma of
       Nothing -> retry
       Just a  -> return a
 
-blockUntilAllJust :: IOLike m => [STM m (Maybe a)] -> STM m [a]
+blockUntilAllJust :: MonadSTMTx stm => [stm (Maybe a)] -> stm [a]
 blockUntilAllJust = mapM blockUntilJust
 
 -- | Simple type that can be used to indicate something in a @TVar@ is
@@ -124,13 +124,13 @@ data WithFingerprint a = WithFingerprint
   Simulate monad stacks
 -------------------------------------------------------------------------------}
 
-type Sim n m = forall a. n a -> STM m a
+newtype Sim n m = Sim { runSim :: forall a. n a -> STM m a }
 
 simId :: Sim (STM m) m
-simId = id
+simId = Sim id
 
 simStateT :: IOLike m => StrictTVar m st -> Sim n m -> Sim (StateT st n) m
-simStateT stVar k (StateT f) = do
+simStateT stVar (Sim k) = Sim $ \(StateT f) -> do
     st       <- readTVar stVar
     (a, st') <- k (f st)
     writeTVar stVar st'
@@ -140,7 +140,7 @@ simOuroborosStateT :: IOLike m
                    => StrictTVar m s
                    -> Sim n m
                    -> Sim (NodeStateT_ s n) m
-simOuroborosStateT stVar k n = do
+simOuroborosStateT stVar (Sim k) = Sim $ \n -> do
     st       <- readTVar stVar
     (a, st') <- k (runNodeStateT n st)
     writeTVar stVar st'
@@ -150,7 +150,7 @@ simChaChaT :: (IOLike m, Coercible a ChaChaDRG)
            => StrictTVar m a
            -> Sim n m
            -> Sim (ChaChaT n) m
-simChaChaT stVar k n = do
+simChaChaT stVar (Sim k) = Sim $ \n -> do
     st       <- readTVar stVar
     (a, st') <- k (runChaChaT n (coerce st))
     writeTVar stVar (coerce st')

@@ -311,7 +311,7 @@ mkTestFetchedBlockHeap :: (MonadSTM m, Ord (Point block))
                        => [Point block]
                        -> m (TestFetchedBlockHeap m block)
 mkTestFetchedBlockHeap points = do
-    v <- atomically (newTVar (Set.fromList points))
+    v <- newTVarM (Set.fromList points)
     return TestFetchedBlockHeap {
       getTestFetchedBlocks = readTVar v,
       addTestFetchedBlock  = \p _b -> atomically (modifyTVar v (Set.insert p))
