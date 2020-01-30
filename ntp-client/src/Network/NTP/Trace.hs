@@ -1,44 +1,31 @@
 module Network.NTP.Trace
 where
-import           Control.Exception (IOException)
 import           Network.NTP.Packet (Microsecond)
 
 data IPVersion = IPv4 | IPv6
     deriving (Show)
 
 data NtpTrace
-    = NtpTraceIOError IOError
-    | NtpTraceStartNtpClient
-    | NtpTraceClientActNow
+    = NtpTraceStartNtpClient
+    | NtpTraceTriggerUpdate
     | NtpTraceRestartDelay Int
     | NtpTraceRestartingClient
-    | NtpTraceClientStartQuery
-    | NtpTraceRunProtocolSuccess !IPVersion
-    | NtpTraceRunProtocolNoResult !IPVersion
-    | NtpTraceRunProtocolError !IPVersion IOError
-    | NtpTraceIPv4IPv6BothFailed
-    | NtpTraceNoLocalAddr
-    | NtpTraceLookupServerFailed String
-    | NtpTraceUpdateStatusQueryFailed
-    | NtpTraceUpdateStatusClockOffset Microsecond
-    | NtpTraceSocketOpen
-    | NtpTraceSocketClosed
-    | NtpTracePacketSent
-    | NtpTracePacketSentError IOException
-    | NtpTraceClientWaitingForRepliesTimeout
-    | NtpTraceReceiveLoopPacketReceived
     | NtpTraceClientSleeping
-
-    
-
-
-
-
-    | NtpTraceSocketReaderDecodeError String
-    | NtpTraceSocketReaderIOException IOException
-    | NtpTraceQueryLoopIOException IOException
-    | NtpTraceOneshotClientIOError IOException
-
-    | NtpTraceSocketCreated String String
-
+    | NtpTraceIOError !IOError
+    | NtpTraceLookupServerFailed !String
+    | NtpTraceClientStartQuery
+    | NtpTraceNoLocalAddr
+    | NtpTraceIPv4IPv6BothFailed
+    | NtpTraceReportPolicyQueryFailed
+    | NtpTraceQueryResult !Microsecond
+    | NtpTraceRunProtocolError !IPVersion !IOError
+    | NtpTraceRunProtocolNoResult !IPVersion
+    | NtpTraceRunProtocolSuccess !IPVersion
+    | NtpTraceSocketOpen !IPVersion
+    | NtpTraceSocketClosed !IPVersion
+    | NtpTracePacketSent !IPVersion
+    | NtpTracePacketSentError !IPVersion !IOError
+    | NtpTracePacketDecodeError !IPVersion !String
+    | NtpTracePacketReceived !IPVersion
+    | NtpTraceWaitingForRepliesTimeout !IPVersion
     deriving (Show)

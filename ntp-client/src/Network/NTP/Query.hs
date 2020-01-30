@@ -1,15 +1,19 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NumericUnderscores  #-}
 
-module Network.NTP.Query
-where
+module Network.NTP.Query (
+    NtpSettings(..)
+  , NtpStatus(..)
+  , minimumOfThree
+  , ntpQuery
+  ) where
 
 import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import           Control.Exception (bracket)
 import           System.IO.Error (tryIOError, userError, ioError)
-import           Control.Monad (forever, forM, forM_, when)
+import           Control.Monad (forever, forM, forM_, replicateM_, when)
 import           Control.Tracer
 import           Data.Binary (decodeOrFail, encode)
 import qualified Data.ByteString.Lazy as LBS
@@ -91,7 +95,19 @@ setNtpPort addr = case addr of
         ntpPort :: PortNumber
         ntpPort = 123
 
+lookupServers :: Tracer IO NtpTrace -> [String] -> IO ([AddrInfo], [AddrInfo])
+lookupServers tracer names = do
+    dests <- forM names $ \server -> do
+        addr <- resolveHost server
+        case (firstAddr AF_INET addr, firstAddr AF_INET6 addr) of
+            (Nothing, Nothing) -> do
+                traceWith tracer $ NtpTraceLookupServerFailed server
+                ioError $ userError $ "lookup NTP server failed " ++ server
+            l -> return l
+    return (mapMaybe fst dests, mapMaybe snd dests)
+
 -- | Perform a single NTP query and return the result.
+--   This function my throw an IO exception.
 ntpQuery ::
        Tracer IO NtpTrace
     -> NtpSettings
@@ -115,47 +131,48 @@ ntpQuery tracer ntpSettings = do
         ioError $ userError "IPv4 and IPv6 failed"
     status <- case (ntpReportPolicy ntpSettings) (v4Replies ++ v6Replies) of
         Nothing -> do
-            traceWith tracer NtpTraceUpdateStatusQueryFailed
+            traceWith tracer NtpTraceReportPolicyQueryFailed
             return NtpSyncUnavailable
         Just offset -> do
-            traceWith tracer $ NtpTraceUpdateStatusClockOffset $ getNtpOffset offset
+            traceWith tracer $ NtpTraceQueryResult $ getNtpOffset offset
             return $ NtpDrift offset
     return status
     where
         runProtocol :: IPVersion -> Maybe AddrInfo -> [AddrInfo] -> IO [NtpOffset]
-        runProtocol _version _localAddr [] = return []
-        runProtocol _version Nothing    _  = return []
-        runProtocol version (Just addr) servers = do
-             runNtpQueries tracer ntpSettings addr servers >>= \case
+        runProtocol _proto _localAddr [] = return []
+        runProtocol _proto Nothing    _  = return []
+        runProtocol protocol (Just addr) servers = do
+             runNtpQueries tracer protocol ntpSettings addr servers >>= \case
                 Left err -> do
-                    traceWith tracer $ NtpTraceRunProtocolError version err
+                    traceWith tracer $ NtpTraceRunProtocolError protocol err
                     return []
                 Right [] -> do
-                    traceWith tracer $ NtpTraceRunProtocolNoResult version
+                    traceWith tracer $ NtpTraceRunProtocolNoResult protocol
                     return []
                 Right r@(_:_) -> do
-                    traceWith tracer $ NtpTraceRunProtocolSuccess version
+                    traceWith tracer $ NtpTraceRunProtocolSuccess protocol
                     return r
 
 runNtpQueries ::
        Tracer IO NtpTrace
+    -> IPVersion
     -> NtpSettings
     -> AddrInfo
     -> [AddrInfo]
     -> IO (Either IOError [NtpOffset])
-runNtpQueries tracer netSettings localAddr destAddrs
+runNtpQueries tracer protocol netSettings localAddr destAddrs
     = tryIOError $ bracket acquire release action
   where
     acquire :: IO Socket
     acquire = do
         s <- Socket.socket (addrFamily localAddr) Datagram Socket.defaultProtocol
-        traceWith tracer NtpTraceSocketOpen
+        traceWith tracer $ NtpTraceSocketOpen protocol
         return s
 
     release :: Socket -> IO ()
     release s = do
         Socket.close s
-        traceWith tracer NtpTraceSocketClosed
+        traceWith tracer $ NtpTraceSocketClosed protocol
 
     action :: Socket -> IO [NtpOffset]
     action socket = do
@@ -173,9 +190,9 @@ runNtpQueries tracer netSettings localAddr destAddrs
         err <- tryIOError $ Socket.ByteString.sendManyTo sock
                           (LBS.toChunks $ encode p) (setNtpPort $ Socket.addrAddress addr)
         case err of
-            Right _ -> traceWith tracer NtpTracePacketSent
+            Right _ -> traceWith tracer $ NtpTracePacketSent protocol
             Left e  -> do
-                traceWith tracer $ NtpTracePacketSentError e
+                traceWith tracer $ NtpTracePacketSentError protocol e
                 ioError e
         threadDelay 100_000
 
@@ -183,27 +200,16 @@ runNtpQueries tracer netSettings localAddr destAddrs
 
     timeout = do
         threadDelay $ (fromIntegral $ ntpResponseTimeout netSettings) + 100_000 * length destAddrs
-        traceWith tracer NtpTraceClientWaitingForRepliesTimeout
+        traceWith tracer $ NtpTraceWaitingForRepliesTimeout protocol
 
     reader :: Socket -> TVar [NtpOffset] -> IO ()
-    reader socket inQueue = forever $ do
+    reader socket inQueue = replicateM_ (length destAddrs) $ do
         (bs, _) <- Socket.ByteString.recvFrom socket ntpPacketSize
         t <- getCurrentTime
         case decodeOrFail $ LBS.fromStrict bs of
-            Left  (_, _, err) -> traceWith tracer $ NtpTraceSocketReaderDecodeError err
+            Left  (_, _, err) -> traceWith tracer $ NtpTracePacketDecodeError protocol err
             -- TODO : filter bad packets, i.e. late packets and spoofed packets
             Right (_, _, packet) -> do
-                traceWith tracer NtpTraceReceiveLoopPacketReceived
+                traceWith tracer $ NtpTracePacketReceived protocol
                 let offset = (clockOffsetPure packet t)
                 atomically $ modifyTVar' inQueue ((:) offset)
-
-lookupServers :: Tracer IO NtpTrace -> [String] -> IO ([AddrInfo], [AddrInfo])
-lookupServers tracer names = do
-    dests <- forM names $ \server -> do
-        addr <- resolveHost server
-        case (firstAddr AF_INET addr, firstAddr AF_INET6 addr) of
-            (Nothing, Nothing) -> do
-                traceWith tracer $ NtpTraceLookupServerFailed server
-                ioError $ userError $ "lookup NTP server failed " ++ server
-            l -> return l
-    return (mapMaybe fst dests, mapMaybe snd dests)

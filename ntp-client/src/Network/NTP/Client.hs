@@ -1,7 +1,9 @@
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE LambdaCase          #-}
-module Network.NTP.Client
-where
+module Network.NTP.Client (
+    NtpClient(..)
+  , withNtpClient
+  ) where
 
 import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
@@ -35,9 +37,10 @@ withNtpClient tracer ntpSettings action = do
         let client = NtpClient
               { ntpGetStatus = readTVar ntpStatus
               , ntpTriggerUpdate = do
-                  traceWith tracer NtpTraceClientActNow
+                  traceWith tracer NtpTraceTriggerUpdate
                   atomically $ writeTVar ntpStatus NtpSyncPending
               , ntpQueryBlocking = do
+                  traceWith tracer NtpTraceTriggerUpdate
                   atomically $ writeTVar ntpStatus NtpSyncPending
                   status <- atomically $ do
                       s <- readTVar ntpStatus
@@ -57,7 +60,7 @@ awaitPendingWithTimeout tvar t
            check $ s == NtpSyncPending
        )
 
--- TODO: maybe reset the delaytime if the oneshotClient did one sucessful query
+-- TODO: maybe reset the delaytime if ntpQuery did one sucessful query
 ntpClientThread ::
        Tracer IO NtpTrace
     -> NtpSettings
