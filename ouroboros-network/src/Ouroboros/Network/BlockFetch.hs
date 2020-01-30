@@ -80,6 +80,7 @@ These have to be provided when instantiating the block fetch logic.
 -}
 module Ouroboros.Network.BlockFetch (
     blockFetchLogic,
+    BlockFetchConfiguration(..),
     BlockFetchConsensusInterface(..),
     -- ** Tracer types
     FetchDecision,
@@ -202,6 +203,16 @@ data BlockFetchConsensusInterface peer header block m =
        blockMatchesHeader      :: header -> block -> Bool
      }
 
+-- | Configuration for FetchDecisionPolicy.
+-- Should be determined by external local node config.
+data BlockFetchConfiguration =
+     BlockFetchConfiguration {
+         -- | Maximum concurrent downloads during bulk syncing.
+         bfcMaxConcurrencyBulkSync :: !Word,
+
+         -- | Maximum concurrent downloads during deadline syncing.
+         bfcMaxConcurrencyDeadline :: !Word
+     }
 
 -- | Execute the block fetch logic. It monitors the current chain and candidate
 -- chains. It decided which block bodies to fetch and manages the process of
@@ -218,10 +229,12 @@ blockFetchLogic :: forall peer header block m.
                 -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
                 -> BlockFetchConsensusInterface peer header block m
                 -> FetchClientRegistry peer header block m
+                -> BlockFetchConfiguration
                 -> m Void
 blockFetchLogic decisionTracer clientStateTracer
                 BlockFetchConsensusInterface{..}
-                registry = do
+                registry
+                BlockFetchConfiguration{..} = do
 
     setFetchClientContext registry clientStateTracer fetchClientPolicy
 
@@ -245,9 +258,8 @@ blockFetchLogic decisionTracer clientStateTracer
         -- It should be passed in.
         maxInFlightReqsPerPeer   = 10,
 
-        -- TODO: These should be determined by external local node config.
-        maxConcurrencyBulkSync   = 1,
-        maxConcurrencyDeadline   = 1,
+        maxConcurrencyBulkSync   = bfcMaxConcurrencyBulkSync,
+        maxConcurrencyDeadline   = bfcMaxConcurrencyDeadline,
 
         plausibleCandidateChain,
         compareCandidateChains,
