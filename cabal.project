@@ -52,7 +52,7 @@ source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
   subdir:   contra-tracer
-  tag: 156391afaafca6b00d027fb9c03e1bd7a1f03003
+  tag: dd30455144e11efb435619383ba84ce02aee720d
 
 source-repository-package
   type: git
@@ -69,25 +69,25 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 80deee31f8d9422b8e090e55b17e1a714153180b
+  tag: 965b8b143632faea16680a195e6de57091382700
   subdir: binary
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 80deee31f8d9422b8e090e55b17e1a714153180b
+  tag: 965b8b143632faea16680a195e6de57091382700
   subdir: binary/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 80deee31f8d9422b8e090e55b17e1a714153180b
+  tag: 965b8b143632faea16680a195e6de57091382700
   subdir: cardano-crypto-class
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 80deee31f8d9422b8e090e55b17e1a714153180b
+  tag: 965b8b143632faea16680a195e6de57091382700
   subdir: slotting
 
 source-repository-package
@@ -116,25 +116,25 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: ae3ba75be91b3dde0c46e71cc029de55e0a63735
+  tag: c62e2eeba5756898cbf59732fccd6a83a4065c18
   subdir: cardano-ledger
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: ae3ba75be91b3dde0c46e71cc029de55e0a63735
+  tag: c62e2eeba5756898cbf59732fccd6a83a4065c18
   subdir: crypto
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: ae3ba75be91b3dde0c46e71cc029de55e0a63735
+  tag: c62e2eeba5756898cbf59732fccd6a83a4065c18
   subdir: cardano-ledger/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: ae3ba75be91b3dde0c46e71cc029de55e0a63735
+  tag: c62e2eeba5756898cbf59732fccd6a83a4065c18
   subdir: crypto/test
 
 -- version number matching the one specified in the stack resolver file
