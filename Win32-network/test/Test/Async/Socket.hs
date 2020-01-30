@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
@@ -17,9 +18,10 @@ import           Data.Functor (void)
 import           Data.Foldable (foldl', traverse_)
 import           GHC.IO.Exception (IOException (..))
 
-import qualified System.Win32.Async.IOManager as Async
-import qualified System.Win32.Async.Socket as Async
-import qualified System.Win32.Async.Socket.ByteString as Async
+import qualified System.Win32.Async.IOManager              as Async
+import qualified System.Win32.Async.Socket                 as Async
+import qualified System.Win32.Async.Socket.ByteString      as Async
+import qualified System.Win32.Async.Socket.ByteString.Lazy as Async.Lazy
 
 import           Network.Socket (Socket, SockAddr (..))
 import qualified Network.Socket as Socket
@@ -45,9 +47,15 @@ tests =
   , testProperty "send and recv"
       (ioProperty . prop_send_recv)
   , testProperty "PingPong test"
-      $ withMaxSuccess 50 prop_PingPong
+      $ withMaxSuccess 100 prop_PingPong
   , testProperty "PingPongPipelined test"
-      $ withMaxSuccess 50 prop_PingPongPipelined
+      $ withMaxSuccess 100 prop_PingPongPipelined
+  , testGroup "vectored io"
+    [ testProperty "PingPong test"
+        $ withMaxSuccess 100 prop_PingPongLazy
+    , testProperty "PingPongPipelined test"
+        $ withMaxSuccess 100 prop_PingPongPipelinedLazy
+    ]
   ]
 
 -- The stock 'connect' is not interruptible.  This tests is not reliable on
@@ -190,6 +198,16 @@ prop_send_recv (LargeNonEmptyBS bs _size) =
           pure $ bs == bs'
 
 
+--
+-- BinaryChannels using 'System.Win32.Socket.Bytestring' or
+-- 'System.Win32.Socket.ByteString.Lazy' (vectored io).
+--
+
+
+-- | 'BinaryChannel' defined in terms of
+-- 'System.Win32.Socket.Bytestring.sendAll' and
+-- 'System.Win32.Socket.Bytestring.recv'
+--
 socketToBinaryChannel :: Binary a
                       => Socket
                       -> BinaryChannel a
@@ -214,12 +232,58 @@ socketToBinaryChannel sock = BinaryChannel { readChannel, writeChannel, closeCha
     closeChannel = Socket.close sock
 
 
-prop_PingPong :: Positive Int
+-- | Like 'socketToBinaryChannel' but using
+-- 'System.Win32.Async.Socket.ByteString.Lazy' (vectored io).
+--
+socketToLazyBinaryChannel :: Binary a
+                          => Socket
+                          -> BinaryChannel a
+socketToLazyBinaryChannel sock = BinaryChannel { readChannel, writeChannel, closeChannel }
+  where
+    recvLazyLen :: Int -> IO BL.ByteString
+    recvLazyLen = go []
+      where
+        go bufs !l | l <= 0    = return $ BL.concat (reverse bufs)
+                   | otherwise = do
+                      buf <- Async.Lazy.recv sock l
+                      go (buf : bufs) (l - fromIntegral (BL.length buf))
+
+    readChannel b = do
+      -- putStrLn "readChannel: header"
+      s <- decode <$> Async.Lazy.recv sock 8
+      -- putStrLn $ "readChannel: header: " ++ show s
+      if b
+        then do
+          -- putStrLn $ "recvLazyLen: " ++ show s
+          bs' <- recvLazyLen s
+          -- putStrLn $ "recvLazyLen: done"
+          pure $ Just $ decode bs'
+        else pure Nothing
+
+    writeChannel b a =
+      do
+        let bs :: BL.ByteString
+            bs = encode a
+            size :: Int
+            size = bool (+1) id b (fromIntegral $ BL.length bs)
+        Async.Lazy.sendAll sock (encode size)
+        Async.Lazy.sendAll sock bs
+      `catch` (\(e :: IOException) -> putStrLn (show e) >> throwIO e)
+
+    closeChannel = Socket.close sock
+
+
+--
+-- Ping Pong Tests
+--
+
+test_PingPong :: (forall a. Binary a => Socket -> BinaryChannel a)
+              -> Int
               -> Blocking
-              -> LargeNonEmptyBS
-              -> Property
-prop_PingPong (Positive n) blocking (LargeNonEmptyBS bs _bufSize) =
-    ioProperty $ Async.withIOManager $ \iocp ->
+              -> ByteString
+              -> IO Bool
+test_PingPong createBinaryChannel n blocking bs =
+    Async.withIOManager $ \iocp ->
       bracket
         ((,) <$> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
              <*> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
@@ -236,7 +300,7 @@ prop_PingPong (Positive n) blocking (LargeNonEmptyBS bs _bufSize) =
             do
               (socket, _) <- Socket.accept sockIn
               Async.associateWithIOCompletionPort (Right socket) iocp
-              let channel = socketToBinaryChannel socket
+              let channel = createBinaryChannel socket
               unmask (runPingPongServer channel (constPingPongServer @ByteString))
             `finally` putMVar lock ()
 
@@ -244,7 +308,7 @@ prop_PingPong (Positive n) blocking (LargeNonEmptyBS bs _bufSize) =
           -- listening state accepting connections.
           Socket.connect sockOut addr'
           Async.associateWithIOCompletionPort (Right sockOut) iocp
-          let channelOut = socketToBinaryChannel sockOut
+          let channelOut = createBinaryChannel sockOut
           res <- runPingPongClient channelOut blocking tid (constPingPongClient n bs)
 
           -- this lock asserts that the server was terminated
@@ -255,18 +319,36 @@ prop_PingPong (Positive n) blocking (LargeNonEmptyBS bs _bufSize) =
             _           -> res == replicate (pred n) bs
 
 
+prop_PingPong :: Positive Int
+              -> Blocking
+              -> LargeNonEmptyBS
+              -> Property
+prop_PingPong (Positive n) blocking (LargeNonEmptyBS bs _bufSize) =
+    ioProperty $ test_PingPong socketToBinaryChannel n blocking bs
 
-prop_PingPongPipelined :: Blocking
-                       -> NonEmptyList LargeNonEmptyBS
-                       -> Property
-prop_PingPongPipelined blocking (NonEmpty bss0) =
-    ioProperty $ Async.withIOManager $ \iocp ->
+prop_PingPongLazy :: Positive Int
+                  -> Blocking
+                  -> LargeNonEmptyBS
+                  -> Property
+prop_PingPongLazy (Positive n) blocking (LargeNonEmptyBS bs _bufSize) =
+    ioProperty $ test_PingPong socketToLazyBinaryChannel n blocking bs
+
+
+--
+-- Pipelined Ping Pong Tests
+--
+
+test_PingPongPipelined :: (forall a. Binary a => Socket -> BinaryChannel a)
+                       -> Blocking
+                       -> [ByteString]
+                       -> IO Bool
+test_PingPongPipelined createBinaryChannel blocking bss =
+    Async.withIOManager $ \iocp ->
       bracket
         ((,) <$> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
              <*> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
         (\(x, y) -> Socket.close x >> Socket.close y)
         $ \(sockIn, sockOut) -> do
-          let bss = map getLargeNonEmptyBS bss0
           lock <- newEmptyMVar
 
           -- fork a PingPong server
@@ -278,7 +360,7 @@ prop_PingPongPipelined blocking (NonEmpty bss0) =
             do
               (socket, _) <- Socket.accept sockIn
               Async.associateWithIOCompletionPort (Right socket) iocp
-              let channel = socketToBinaryChannel socket
+              let channel = createBinaryChannel socket
               unmask (runPingPongServer channel (constPingPongServer @ByteString))
             `finally` putMVar lock ()
 
@@ -286,7 +368,7 @@ prop_PingPongPipelined blocking (NonEmpty bss0) =
           -- listening state accepting connections.
           Socket.connect sockOut addr'
           Async.associateWithIOCompletionPort (Right sockOut) iocp
-          let channelOut = socketToBinaryChannel sockOut
+          let channelOut = createBinaryChannel sockOut
           res <- runPingPongClientPipelined channelOut blocking tid bss
 
           -- this lock asserts that the server was terminated
@@ -299,3 +381,17 @@ prop_PingPongPipelined blocking (NonEmpty bss0) =
             _           -> True -- if we evalute this case branch, it means that
                                      -- killing blocked thread did not deadlock.
 
+
+prop_PingPongPipelined :: Blocking
+                       -> NonEmptyList LargeNonEmptyBS
+                       -> Property
+prop_PingPongPipelined blocking (NonEmpty bss) =
+    ioProperty $
+      test_PingPongPipelined socketToBinaryChannel blocking (map getLargeNonEmptyBS bss)
+
+prop_PingPongPipelinedLazy :: Blocking
+                       -> NonEmptyList LargeNonEmptyBS
+                       -> Property
+prop_PingPongPipelinedLazy blocking (NonEmpty bss) =
+    ioProperty $
+      test_PingPongPipelined socketToLazyBinaryChannel blocking (map getLargeNonEmptyBS bss)
