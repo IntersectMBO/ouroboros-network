@@ -15,7 +15,7 @@ data NtpTrace
     | NtpTraceLookupServerFailed !String
     | NtpTraceClientStartQuery
     | NtpTraceNoLocalAddr
-    | NtpTraceIPv4IPv6BothFailed
+    | NtpTraceIPv4IPv6NoReplies
     | NtpTraceReportPolicyQueryFailed
     | NtpTraceQueryResult !Microsecond
     | NtpTraceRunProtocolError !IPVersion !IOError

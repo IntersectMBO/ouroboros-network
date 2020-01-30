@@ -121,22 +121,19 @@ ntpQuery tracer ntpSettings = do
             traceWith tracer NtpTraceNoLocalAddr
             ioError $ userError "no local address IPv4 and IPv6"
         l -> return l
-                                       -- TODO: bug here !!
--- this is a race-condition runProtocol can throw IO erorr !!
--- NtpTracePacketSentError Network.Socket.ByteString.sendManyTo: does not exist (Network is unreachable)
     (v4Replies, v6Replies) <- concurrently (runProtocol IPv4 v4LocalAddr v4Servers)
                                            (runProtocol IPv6 v6LocalAddr v6Servers)
-    when (null v4Replies && null v6Replies) $ do
-        traceWith tracer NtpTraceIPv4IPv6BothFailed
-        ioError $ userError "IPv4 and IPv6 failed"
-    status <- case (ntpReportPolicy ntpSettings) (v4Replies ++ v6Replies) of
-        Nothing -> do
-            traceWith tracer NtpTraceReportPolicyQueryFailed
+    case v4Replies ++ v6Replies of
+        [] -> do
+            traceWith tracer NtpTraceIPv4IPv6NoReplies
             return NtpSyncUnavailable
-        Just offset -> do
-            traceWith tracer $ NtpTraceQueryResult $ getNtpOffset offset
-            return $ NtpDrift offset
-    return status
+        l -> case ntpReportPolicy ntpSettings $ l of
+            Nothing -> do
+                traceWith tracer NtpTraceReportPolicyQueryFailed
+                return NtpSyncUnavailable
+            Just offset -> do
+                traceWith tracer $ NtpTraceQueryResult $ getNtpOffset offset
+                return $ NtpDrift offset
     where
         runProtocol :: IPVersion -> Maybe AddrInfo -> [AddrInfo] -> IO [NtpOffset]
         runProtocol _proto _localAddr [] = return []

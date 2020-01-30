@@ -70,15 +70,16 @@ ntpClientThread tracer ntpSettings ntpStatus = forM_ restartDelay $ \t -> do
     traceWith tracer $ NtpTraceRestartDelay t
     awaitPendingWithTimeout ntpStatus $ t * 1_000_000
     traceWith tracer NtpTraceRestartingClient
-    catchIOError
-        (forever $ do
-            status <- ntpQuery tracer ntpSettings
-            atomically $ writeTVar ntpStatus status
-            traceWith tracer NtpTraceClientSleeping
-            awaitPendingWithTimeout ntpStatus $ fromIntegral $ ntpPollDelay ntpSettings
-        )
-        (\err -> traceWith tracer $ NtpTraceIOError err)
+    catchIOError queryLoop (\err -> traceWith tracer $ NtpTraceIOError err)
     atomically $ writeTVar ntpStatus NtpSyncUnavailable
     where
         restartDelay :: [Int]
         restartDelay = [0, 5, 10, 20, 60, 180, 600] ++ repeat 600
+
+        queryLoop = ntpQuery tracer ntpSettings >>= \case
+            status@(NtpDrift _ ) -> do
+                atomically $ writeTVar ntpStatus status
+                traceWith tracer NtpTraceClientSleeping
+                awaitPendingWithTimeout ntpStatus $ fromIntegral $ ntpPollDelay ntpSettings
+                queryLoop
+            _ -> return ()
