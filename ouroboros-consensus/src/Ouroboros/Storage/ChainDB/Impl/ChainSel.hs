@@ -62,6 +62,8 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
 
 import           Ouroboros.Storage.ChainDB.API (InvalidBlockReason (..))
+import           Ouroboros.Storage.ChainDB.Impl.BlockCache (BlockCache)
+import qualified Ouroboros.Storage.ChainDB.Impl.BlockCache as BlockCache
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.ChainDB.Impl.LgrDB (LgrDB)
@@ -152,6 +154,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
         (contramap (TraceInitChainSelEvent . InitChainSelValidation) tracer)
         cfg
         varInvalid
+        BlockCache.empty
         curChainAndLedger
         (fmap (mkCandidateSuffix 0) candidates)
 
@@ -205,7 +208,7 @@ addBlock cdb@CDB{..} b = do
       | otherwise -> do
         VolDB.putBlock cdbVolDB b
         trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (cdbIsEBB hdr)
-        chainSelectionForBlock cdb hdr
+        chainSelectionForBlock cdb (BlockCache.singleton b) hdr
   where
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
@@ -266,9 +269,10 @@ chainSelectionForBlock
      , HasCallStack
      )
   => ChainDbEnv m blk
+  -> BlockCache blk
   -> Header blk
   -> m ()
-chainSelectionForBlock cdb@CDB{..} hdr = do
+chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     curSlot <- atomically $ getCurrentSlot cdbBlockchainTime
 
     (invalid, isMember, succsOf, predecessor, curChain, tipPoint, ledgerDB, immBlockNo)
@@ -446,6 +450,7 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
       (contramap (TraceAddBlockEvent . AddBlockValidation) cdbTracer)
       cdbNodeConfig
       cdbInvalid
+      blockCache
 
     -- | Try to swap the current (chain) fragment with the given candidate
     -- fragment. The 'LgrDB.LedgerDB' is updated in the same transaction.
@@ -606,13 +611,14 @@ chainSelection
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
   -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
+  -> BlockCache blk
   -> ChainAndLedger blk              -- ^ The current chain and ledger
   -> NonEmpty (CandidateSuffix blk)  -- ^ Candidates
   -> m (Maybe (ChainAndLedger blk))
      -- ^ The (valid) chain and corresponding LedgerDB that was selected, or
      -- 'Nothing' if there is no valid chain preferred over the current
      -- chain.
-chainSelection lgrDB tracer cfg varInvalid
+chainSelection lgrDB tracer cfg varInvalid blockCache
                curChainAndLedger@(ChainAndLedger curChain _) candidates =
   assert (all (preferAnchoredCandidate cfg curChain . _suffix) candidates) $
   assert (all (isJust . fitCandidateSuffixOn curChain) candidates) $
@@ -625,7 +631,7 @@ chainSelection lgrDB tracer cfg varInvalid
     validate :: ChainAndLedger  blk  -- ^ Current chain and ledger
              -> CandidateSuffix blk  -- ^ Candidate fragment
              -> m (Maybe (ChainAndLedger blk))
-    validate = validateCandidate lgrDB tracer cfg varInvalid
+    validate = validateCandidate lgrDB tracer cfg varInvalid blockCache
 
     -- 1. Take the first candidate from the list of sorted candidates
     -- 2. Validate it
@@ -717,12 +723,13 @@ validateCandidate
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
   -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
+  -> BlockCache blk
   -> ChainAndLedger  blk                   -- ^ Current chain and ledger
   -> CandidateSuffix blk                   -- ^ Candidate fragment
   -> m (Maybe (ChainAndLedger blk))
-validateCandidate lgrDB tracer cfg varInvalid
+validateCandidate lgrDB tracer cfg varInvalid blockCache
                   (ChainAndLedger curChain curLedger) candSuffix =
-    LgrDB.validate lgrDB curLedger rollback newBlocks >>= \case
+    LgrDB.validate lgrDB curLedger blockCache rollback newBlocks >>= \case
       LgrDB.MaximumRollbackExceeded supported _ -> do
         trace $ CandidateExceedsRollback {
             _supportedRollback = supported
