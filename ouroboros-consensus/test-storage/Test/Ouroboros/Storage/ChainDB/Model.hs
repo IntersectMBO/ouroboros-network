@@ -330,11 +330,7 @@ advanceCurSlot cfg curSlot m =
     advance :: SlotNo -> Model blk -> Model blk
     advance slot m' = m' { currentSlot = slot `max` currentSlot m' }
 
-addBlock :: forall blk. (
-              ProtocolLedgerView blk
-              -- Chain selection is normally done on /headers/ only
---            , CanSelect (BlockProtocol blk) blk
-            )
+addBlock :: forall blk. ProtocolLedgerView blk
          => NodeConfig (BlockProtocol blk)
          -> blk
          -> Model blk -> Model blk
