@@ -35,13 +35,14 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceKey,
+                     ResourceRegistry, allocate, release, unsafeRelease)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.CRC
-import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 
 import           Ouroboros.Storage.ImmutableDB.API
 import           Ouroboros.Storage.ImmutableDB.Impl.Index (Index)
@@ -65,7 +66,7 @@ data IteratorHandle hash m = forall h. IteratorHandle
     -- ^ Bundled HasFS instance allows to hide type parameters
   , itIndex   :: !(Index m hash h)
     -- ^ Bundled Index instance allows to hide type parameters
-  , itState   :: !(StrictTVar m (IteratorStateOrExhausted hash h))
+  , itState   :: !(StrictTVar m (IteratorStateOrExhausted hash m h))
     -- ^ The state of the iterator. If it is 'Nothing', the iterator is
     -- exhausted and/or closed.
   , itEnd     :: !EpochSlot
@@ -74,8 +75,8 @@ data IteratorHandle hash m = forall h. IteratorHandle
     -- ^ The @hash@ of the last block the iterator should return.
   }
 
-data IteratorStateOrExhausted hash h =
-    IteratorStateOpen !(IteratorState hash h)
+data IteratorStateOrExhausted hash m h =
+    IteratorStateOpen !(IteratorState hash m h)
   | IteratorStateExhausted
   deriving (Generic, NoUnexpectedThunks)
 
@@ -93,11 +94,17 @@ instance ( forall a. NoUnexpectedThunks (StrictTVar m a)
         , noUnexpectedThunks ctxt itEndHash
         ]
 
-data IteratorState hash h = IteratorState
+data IteratorState hash m h = IteratorState
   { itEpoch        :: !EpochNo
     -- ^ The current epoch the iterator is streaming from.
   , itEpochHandle  :: !(Handle h)
     -- ^ A handle to the epoch file corresponding with 'itEpoch'.
+  , itEpochKey     :: !(ResourceKey m)
+    -- ^ The 'ResourceKey' corresponding to the 'itEpochHandle'. We use it to
+    -- release the handle from the 'ResourceRegistry'.
+    --
+    -- NOTE: if we only close the handle but don't release the resource, the
+    -- registry will still hold on to the (closed) handle/resource.
   , itEpochEntries :: !(NonEmpty (WithBlockSize (Secondary.Entry hash)))
     -- ^ The entries from the secondary index corresponding to the current
     -- epoch. The first entry in the list is the next one to stream.
@@ -117,6 +124,7 @@ data CurrentEpochInfo = CurrentEpochInfo !EpochNo !BlockOffset
 streamImpl
   :: forall m hash b. (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash)
   => ImmutableDBEnv m hash
+  -> ResourceRegistry m
   -> BlockComponent (ImmutableDB hash m) b
   -> Maybe (SlotNo, hash)
      -- ^ When to start streaming (inclusive).
@@ -124,7 +132,7 @@ streamImpl
      -- ^ When to stop streaming (inclusive).
   -> m (Either (WrongBoundError hash)
                (Iterator hash m b))
-streamImpl dbEnv blockComponent mbStart mbEnd =
+streamImpl dbEnv registry blockComponent mbStart mbEnd =
     withOpenState dbEnv $ \hasFS OpenState{..} -> runExceptT $ do
       lift $ validateIteratorRange _dbErr _dbEpochInfo
         (forgetHash <$> _currentTip) mbStart mbEnd
@@ -160,7 +168,7 @@ streamImpl dbEnv blockComponent mbStart mbEnd =
             -- TODO avoid rereading the indices of the start epoch. We read
             -- from both the primary and secondary index in 'fillInStartBound'
 
-            iteratorState <- iteratorStateForEpoch hasFS _dbErr _index
+            iteratorState <- iteratorStateForEpoch hasFS _index registry
               curEpochInfo endHash startEpoch secondaryOffset startIsEBB
 
             varIteratorState <- newTVarM $ IteratorStateOpen iteratorState
@@ -257,8 +265,8 @@ streamImpl dbEnv blockComponent mbStart mbEnd =
 
     mkIterator :: IteratorHandle hash m -> Iterator hash m b
     mkIterator ith = Iterator
-      { iteratorNext    = iteratorNextImpl dbEnv ith blockComponent True
-      , iteratorPeek    = iteratorNextImpl dbEnv ith blockComponent False
+      { iteratorNext    = iteratorNextImpl dbEnv ith registry blockComponent True
+      , iteratorPeek    = iteratorNextImpl dbEnv ith registry blockComponent False
       , iteratorHasNext = iteratorHasNextImpl    ith
       , iteratorClose   = iteratorCloseImpl      ith
       }
@@ -339,13 +347,15 @@ iteratorNextImpl
   :: forall m hash b. (IOLike m, Eq hash)
   => ImmutableDBEnv m hash
   -> IteratorHandle hash m
+  -> ResourceRegistry m
   -> BlockComponent (ImmutableDB hash m) b
   -> Bool  -- ^ Step the iterator after reading iff True
   -> m (IteratorResult b)
 iteratorNextImpl dbEnv it@IteratorHandle
                          { itHasFS = hasFS :: HasFS m h
                          , itIndex = index :: Index m hash h
-                         , .. } blockComponent step = do
+                         , ..
+                         } registry blockComponent step = do
     -- The idea is that if the state is not 'IteratorStateExhausted, then the
     -- head of 'itEpochEntries' is always ready to be read. After reading it
     -- with 'readNextBlock' or 'readNextHeader', 'stepIterator' will advance
@@ -364,7 +374,6 @@ iteratorNextImpl dbEnv it@IteratorHandle
           return $ IteratorResult b
   where
     ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo } = dbEnv
-    HasFS { hClose } = hasFS
 
     getBlockComponent
       :: Handle h
@@ -436,7 +445,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
     -- | Move the iterator to the next position that can be read from,
     -- advancing epochs if necessary. If no next position can be found, the
     -- iterator is closed.
-    stepIterator :: CurrentEpochInfo -> IteratorState hash h -> m ()
+    stepIterator :: CurrentEpochInfo -> IteratorState hash m h -> m ()
     stepIterator curEpochInfo iteratorState@IteratorState {..} =
       case NE.nonEmpty (NE.tail itEpochEntries) of
         -- There are entries left in this epoch, so continue. See the
@@ -446,7 +455,8 @@ iteratorNextImpl dbEnv it@IteratorHandle
 
         -- No more entries in this epoch, so open the next.
         Nothing -> do
-          hClose itEpochHandle
+          -- Release the resource, i.e., close the handle.
+          release itEpochKey
           -- If this was the final epoch, close the iterator
           if itEpoch >= _epoch itEnd then
             iteratorCloseImpl it
@@ -459,7 +469,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
       :: CurrentEpochInfo
       -> EpochSlot  -- ^ The end bound
       -> EpochNo    -- ^ The epoch to open
-      -> m (IteratorState hash h)
+      -> m (IteratorState hash m h)
     openNextEpoch curEpochInfo end epoch =
       Index.readFirstFilledSlot index epoch >>= \case
         -- This epoch is empty, look in the next one.
@@ -481,7 +491,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
                          | otherwise    = IsNotEBB
               secondaryOffset = 0
 
-          iteratorStateForEpoch hasFS _dbErr index curEpochInfo itEndHash
+          iteratorStateForEpoch hasFS index registry curEpochInfo itEndHash
             epoch secondaryOffset firstIsEBB
 
 iteratorHasNextImpl
@@ -503,24 +513,35 @@ iteratorCloseImpl
   :: (HasCallStack, IOLike m)
   => IteratorHandle hash m
   -> m ()
-iteratorCloseImpl IteratorHandle {..} = do
+iteratorCloseImpl IteratorHandle { itState } = do
     atomically (readTVar itState) >>= \case
       -- Already closed
       IteratorStateExhausted -> return ()
-      IteratorStateOpen IteratorState {..} -> do
+      IteratorStateOpen IteratorState { itEpochKey } -> do
         -- First set it to Nothing to indicate it is closed, as the call to
-        -- 'hClose' might fail, which would leave the iterator open in an
+        -- 'release' might fail, which would leave the iterator open in an
         -- invalid state.
         atomically $ writeTVar itState IteratorStateExhausted
-        hClose itEpochHandle
-  where
-    HasFS { hClose } = itHasFS
+        -- TODO: we must use 'unsafeRelease' instead of 'release' because we
+        -- might close the iterator from an /untracked thread/, i.e., a thread
+        -- that was not spawned by the resource registry (or the thread that
+        -- opened the resource registry) in which the handle was allocated.
+        --
+        -- This happens in the consensus tests (but not in the actual node),
+        -- where the protocol threads that open iterators (BlockFetchServer
+        -- and ChainSyncServer) are spawned using a different resource
+        -- registry (A) than the one the ImmutableDB (and ChainDB) use (B).
+        -- When the ChainDB is closed (by the thread that opened B), we're
+        -- closing all open iterators, i.e., the iterators opened by the
+        -- protocol threads. So we're releasing handles allocated in resource
+        -- registry A from a thread tracked by resource registry B. See #1390.
+        unsafeRelease itEpochKey
 
 iteratorStateForEpoch
   :: (HasCallStack, IOLike m, Eq hash)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> Index m hash h
+  -> ResourceRegistry m
   -> CurrentEpochInfo
   -> hash
      -- ^ Hash of the end bound
@@ -529,62 +550,61 @@ iteratorStateForEpoch
      -- ^ Where to start in the secondary index
   -> IsEBB
      -- ^ Whether the first expected block will be an EBB or not.
-  -> m (IteratorState hash h)
-iteratorStateForEpoch hasFS err index
+  -> m (IteratorState hash m h)
+iteratorStateForEpoch hasFS index registry
                       (CurrentEpochInfo curEpoch curEpochOffset) endHash
                       epoch secondaryOffset firstIsEBB = do
-    -- Open the epoch file
-    eHnd <- hOpen (renderFile "epoch" epoch) ReadMode
+    -- Open the epoch file. Allocate the handle in the registry so that it
+    -- will be closed in case of an exception.
+    (key, eHnd) <- allocate
+      registry
+      (\_key -> hOpen (renderFile "epoch" epoch) ReadMode)
+      hClose
 
-    -- If we don't close the handle when an exception is thrown, we leak a
-    -- file handle, since this handle is not stored in a state that can be
-    -- closed yet.
-    onException hasFsErr err (hClose eHnd) $ do
+    -- If the last entry in @entries@ corresponds to the last block in the
+    -- epoch, we cannot calculate the block size based on the next block.
+    -- Instead, we calculate it based on the size of the epoch file.
+    --
+    -- IMPORTANT: for older epochs, this is fine, as the secondary index
+    -- (entries) and the epoch file (size) are immutable. However, when doing
+    -- this for the current epoch, there is a potential race condition between
+    -- reading of the entries from the secondary index and obtaining the epoch
+    -- file size: what if a new block was appended after reading the entries
+    -- but before obtaining the epoch file size? Then the epoch file size will
+    -- not correspond to the last entry we read, but to the block after it.
+    -- Similarly if we switch the order of the two operations.
+    --
+    -- To avoid this race condition, we use the value of '_currentEpochOffset'
+    -- from the state as the file size of the current epoch (stored in
+    -- 'CurrentEpochInfo'). This value corresponds to the epoch file size at
+    -- the time we /read the state/. We also know that the end bound of our
+    -- iterator is always <= the tip from that same state, so all @entries@
+    -- must be <= the tip from that state because we'll never stream beyond
+    -- the tip. Remember that we only actually use the current epoch file size
+    -- if the last entry we have read from the secondary index is the last
+    -- entry in the file, in which case it would correspond to the tip from
+    -- the state. In this case, the epoch file size (@curEpochOffset@) we are
+    -- passed is consistent with the tip, as it was obtained from the same
+    -- consistent state.
+    epochFileSize <- if epoch == curEpoch
+      then return (unBlockOffset curEpochOffset)
+      else hGetSize eHnd
 
-      -- If the last entry in @entries@ corresponds to the last block in the
-      -- epoch, we cannot calculate the block size based on the next block.
-      -- Instead, we calculate it based on the size of the epoch file.
-      --
-      -- IMPORTANT: for older epochs, this is fine, as the secondary index
-      -- (entries) and the epoch file (size) are immutable. However, when
-      -- doing this for the current epoch, there is a potential race condition
-      -- between reading of the entries from the secondary index and obtaining
-      -- the epoch file size: what if a new block was appended after reading
-      -- the entries but before obtaining the epoch file size? Then the epoch
-      -- file size will not correspond to the last entry we read, but to the
-      -- block after it. Similarly if we switch the order of the two
-      -- operations.
-      --
-      -- To avoid this race condition, we use the value of
-      -- '_currentEpochOffset' from the state as the file size of the current
-      -- epoch (stored in 'CurrentEpochInfo'). This value corresponds to the
-      -- epoch file size at the time we /read the state/. We also know that
-      -- the end bound of our iterator is always <= the tip from that same
-      -- state, so all @entries@ must be <= the tip from that state because
-      -- we'll never stream beyond the tip. Remember that we only actually use
-      -- the current epoch file size if the last entry we have read from the
-      -- secondary index is the last entry in the file, in which case it would
-      -- correspond to the tip from the state. In this case, the epoch file
-      -- size (@curEpochOffset@) we are passed is consistent with the tip, as
-      -- it was obtained from the same consistent state.
-      epochFileSize <- if epoch == curEpoch
-        then return (unBlockOffset curEpochOffset)
-        else hGetSize eHnd
+    entries <- Index.readAllEntries index secondaryOffset epoch
+      ((== endHash) . Secondary.headerHash) epochFileSize firstIsEBB
 
-      entries <- Index.readAllEntries index secondaryOffset epoch
-        ((== endHash) . Secondary.headerHash) epochFileSize firstIsEBB
+    case NE.nonEmpty entries of
+      -- We still haven't encountered the end bound, so it cannot be
+      -- that this non-empty epoch contains no entries <= the end bound.
+      Nothing             -> error
+        "impossible: there must be entries according to the primary index"
 
-      case NE.nonEmpty entries of
-        -- We still haven't encountered the end bound, so it cannot be
-        -- that this non-empty epoch contains no entries <= the end bound.
-        Nothing             -> error
-          "impossible: there must be entries according to the primary index"
-
-        Just itEpochEntries -> return IteratorState
-          { itEpoch        = epoch
-          , itEpochHandle  = eHnd
-            -- Force so we don't store any thunks in the state
-          , itEpochEntries = forceElemsToWHNF itEpochEntries
-          }
+      Just itEpochEntries -> return IteratorState
+        { itEpoch        = epoch
+        , itEpochHandle  = eHnd
+        , itEpochKey     = key
+          -- Force so we don't store any thunks in the state
+        , itEpochEntries = forceElemsToWHNF itEpochEntries
+        }
   where
-    HasFS { hOpen, hClose, hGetSize, hasFsErr } = hasFS
+    HasFS { hOpen, hClose, hGetSize } = hasFS

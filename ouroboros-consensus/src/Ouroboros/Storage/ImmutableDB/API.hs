@@ -22,6 +22,8 @@ import           Data.ByteString.Builder (Builder)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.ImmutableDB.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
@@ -197,7 +199,8 @@ data ImmutableDB hash m = ImmutableDB
     -- prematurely closed with 'iteratorClose'.
   , stream
       :: forall b. HasCallStack
-      => BlockComponent (ImmutableDB hash m) b
+      => ResourceRegistry m
+      -> BlockComponent (ImmutableDB hash m) b
       -> Maybe (SlotNo, hash)
       -> Maybe (SlotNo, hash)
       -> m (Either (WrongBoundError hash)
