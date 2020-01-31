@@ -102,5 +102,8 @@ instance DSIGNAlgorithm CardanoDSIGN where
           then Right ()
           else Left "Verification failed"
 
+    abstractSizeVKey _ = error "Ouroboros.Consensus.Crypto.DSIGN.Cardano: DSIGNAlgorithm CardanoDSIGN"
+    abstractSizeSig _ = error "Ouroboros.Consensus.Crypto.DSIGN.Cardano: DSIGNAlgorithm CardanoDSIGN"
+
 instance Condense (SigDSIGN CardanoDSIGN) where
     condense (SigCardanoDSIGN s) = show s

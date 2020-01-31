@@ -58,7 +58,7 @@ import           Cardano.Crypto.KES.Simple
 import           Cardano.Crypto.VRF.Class
 import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           Cardano.Prelude (NoUnexpectedThunks (..), fromMaybe)
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      pointSlot)
@@ -136,8 +136,11 @@ forgePraosFields PraosNodeConfig{..} PraosProof{..} mkToSign = do
            (mkToSign signedFields)
            keyKES
     case m of
-      Nothing                  -> error "mkOutoborosPayload: signedKES failed"
-      Just (signature, newKey) -> do
+      Nothing -> error "mkOutoborosPayload: signedKES failed"
+      Just signature -> do
+        -- TODO : We should not update the key on each signing, but X slots
+        -- (for configurable param X)
+        newKey <- fromMaybe (error "mkOutoborosPayload: updateKES failed") <$> updateKES () keyKES
         putNodeState (PraosNodeState newKey)
         return $ PraosFields {
             praosSignature    = signature
