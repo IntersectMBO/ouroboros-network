@@ -843,7 +843,7 @@ ensureKnownThread :: forall m. IOLike m
 ensureKnownThread rr context = do
     isKnown <- checkIsKnown
     unless isKnown $
-      throwM $ ResourceRegistryUsedFromUnknownThread {
+      throwM $ ResourceRegistryUsedFromUntrackedThread {
                    resourceRegistryCreatedIn = registryContext rr
                  , resourceRegistryUsedIn    = context
                  }
@@ -856,13 +856,14 @@ ensureKnownThread rr context = do
           KnownThreads ts <- registryThreads <$> readTVar (registryState rr)
           return $ contextThreadId context `Set.member` ts
 
--- | Registry used from unknown threads
+-- | Registry used from untracked threads
 --
 -- If this exception is raised, it indicates a bug in the caller.
 data ResourceRegistryThreadException =
-    -- | If the registry is used from an unknown thread, we cannot do proper
-    -- reference counting
-    forall m. IOLike m => ResourceRegistryUsedFromUnknownThread {
+    -- | If the registry is used from an untracked thread, we cannot do proper
+    -- reference counting. The following threads are /tracked/: the thread
+    -- that spawned the registry and all threads spawned by the registry.
+    forall m. IOLike m => ResourceRegistryUsedFromUntrackedThread {
           -- | Information about the context in which the registry was created
           resourceRegistryCreatedIn :: !(Context m)
 
