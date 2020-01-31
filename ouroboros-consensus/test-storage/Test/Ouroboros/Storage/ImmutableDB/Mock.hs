@@ -9,7 +9,7 @@ import           Data.Tuple (swap)
 
 import           Control.Monad.Class.MonadThrow
 
-import           Ouroboros.Consensus.Util ((..:), (.:))
+import           Ouroboros.Consensus.Util ((...:), (..:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common (BlockComponent, EpochSize)
@@ -41,7 +41,7 @@ openDBMock err epochSize = do
         , getBlockOrEBBComponent = queryE   ..: getBlockOrEBBComponentModel
         , appendBlock            = updateE_ ..: appendBlockModel
         , appendEBB              = updateE_ ..: appendEBBModel
-        , stream                 = updateEE ..: \bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
+        , stream                 = updateEE ...: \_rr bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
         , immutableDBErr         = err
         }
       where
