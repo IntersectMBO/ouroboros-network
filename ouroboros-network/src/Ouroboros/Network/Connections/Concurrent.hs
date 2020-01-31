@@ -5,17 +5,21 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Ouroboros.Network.Connections.Concurrent
   ( Accept (..)
   , Reject (..)
   , Decision (..)
   , Handler (..)
+  , ExceptionInHandler (..)
   , concurrent
   ) where
 
+import Control.Exception (Exception)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork (MonadFork, ThreadId, myThreadId, throwTo)
 import Control.Monad.Class.MonadThrow hiding (handle)
 import Control.Monad (forM_)
 import Control.Monad.Fix (MonadFix)
@@ -120,6 +124,19 @@ removeConnection identifier state =
         Just _  -> Nothing
   in  state { connectionMap = Map.alter alteration identifier (connectionMap state) }
 
+-- | Exception type for exceptions thrown by threads spawned by the `concurrent`
+-- connections manager. An exception of this type will be `throwTo`ed to the
+-- thread which calls `concurrent` whenever a spawned thread throws any
+-- exception. You can catch all or some of these in the usual way, by
+-- specializing the `e` parameter.
+--
+-- TODO include some identifying information? The connection number?
+data ExceptionInHandler e where
+  ExceptionInHandler :: !e -> ExceptionInHandler e
+
+deriving instance Show e => Show (ExceptionInHandler e)
+instance Exception e => Exception (ExceptionInHandler e)
+
 -- | Generic concurrent connection manager in which at most one connection for
 -- a given identifier is allowed. New connections will re-use existing
 -- connections, and existing connections will be rejected if there is already
@@ -139,6 +156,7 @@ concurrent
   :: forall connectionId resource request reject handle m t .
      ( MonadMask m
      , MonadAsync m
+     , MonadFork m -- Not implied by MonadAsync
      , MonadSTM m
      , MonadFix m
      , Ord connectionId
@@ -160,14 +178,20 @@ concurrent
   -> (Connections connectionId resource request (Reject reject) (Accept handle) m -> m t)
   -> m t
 concurrent withResource k = do
+  tid <- myThreadId
   stateVar :: MVar m (State m connectionId handle) <- newMVar $ State
     { connectionMap    = Map.empty
     , connectionNumber = 0
     }
-  let connections = Connections { include = includeOne stateVar }
+  let connections = Connections { include = includeOne tid stateVar }
   k connections `finally` killThreads stateVar
 
   where
+
+  -- Throws an exception to the master thread (caller of `concurrent`) wrapped
+  -- in a special type. This is always called with async exceptions masked.
+  rethrow :: ThreadId m -> SomeException -> m x
+  rethrow tid e = throwTo tid (ExceptionInHandler e) >> throwM e
 
   -- Exception handling in here should ensure that if the handler is succesfully
   -- created, then it ends up in the shared state.
@@ -175,12 +199,13 @@ concurrent withResource k = do
   -- FIXME this one definition is too complex. Try to factor it into simpler
   -- pieces.
   includeOne
-    :: MVar m (State m connectionId handle)
+    :: ThreadId m
+    -> MVar m (State m connectionId handle)
     -> connectionId
     -> Resource provenance m resource
     -> request provenance
     -> m (Types.Decision provenance (Reject reject) (Accept handle))
-  includeOne stateVar connId resource request = mask $ \restore -> modifyMVar' stateVar $ \state ->
+  includeOne tid stateVar connId resource request = mask $ \restore -> modifyMVar' stateVar $ \state ->
     case Map.lookup connId (connectionMap state) of
       Nothing   -> case resource of
         -- The caller gave an existing resource, and we don't have anything
@@ -209,7 +234,7 @@ concurrent withResource k = do
                           in  pure state''
                   handler <- mkhandler thread
                   thread <- asyncWithUnmask $ \unmask ->
-                    unmask (action handler) `finally` cleanup
+                    (unmask (action handler) `finally` cleanup) `catch` rethrow tid
               let conn = Connection
                     { connectionThread = thread
                     , connectionHandle = handle handler
@@ -241,7 +266,7 @@ concurrent withResource k = do
                           in  pure state''
                   handler <- mkhandler thread
                   thread <- asyncWithUnmask $ \unmask ->
-                    unmask (action handler) `finally` cleanup
+                    (unmask (action handler) `finally` cleanup) `catch` rethrow tid
               let conn = Connection
                     { connectionThread = thread
                     , connectionHandle = handle handler

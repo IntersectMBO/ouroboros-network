@@ -237,6 +237,13 @@ runDataDiffusion tracers
 
     -- Get 2 connection managers: one for node-to-client (n2c) and one for
     -- node-to-node (n2n).
+    --
+    -- These connections managers will throwTo any exceptions thrown by their
+    -- connection handlers (whether incoming or outgoing) to this thread,
+    -- wrapped in a special type `ExceptionInHandler`. Since we don't catch
+    -- these, an exception in a handler will therefore bring down the whole
+    -- node. This is apparently what we want, and `ErrorPolicies` is used to
+    -- determine precisely when that should happen.
     NodeToClient.withConnections localErrorPolicy localConnectionRequest $ \n2cConnections ->
       NodeToNode.withConnections errorPolicy      connectionRequest      $ \n2nConnections -> do
         -- Run every thread concurrently such that an exception from any of
