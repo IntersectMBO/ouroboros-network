@@ -33,7 +33,7 @@ import           Network.Socket (AddrInfo)
 import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.Connections.Types (Connections,
-                   Provenance (..), LocalOnlyRequest (..), contramapRequest)
+                   Provenance (..))
 import           Ouroboros.Network.Connections.Concurrent as Concurrent
 import           Ouroboros.Network.Connections.Socket.Types (SockAddr (..),
                    withSockType)
@@ -55,9 +55,6 @@ import           Ouroboros.Network.NodeToNode ( NodeToNodeProtocols (..)
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
 import           Ouroboros.Network.Socket ( ConnectionId (..)
                                           , ConnectionHandle
-                                          , NetworkMutableState
-                                          , newNetworkMutableState
-                                          , cleanNetworkMutableState
                                           , NetworkServerTracers (..)
                                           , NetworkConnectTracers (..)
                                           , SomeVersionedApplication (..)
@@ -67,7 +64,7 @@ import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
 
 data DiffusionTracers = DiffusionTracers {
-      dtIpSubscriptionTracer  :: Tracer IO (SubscriptionTrace Socket.SockAddr)
+      dtIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
        -- ^ IP subscription tracer
     , dtDnsSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
       -- ^ DNS subscription tracer
@@ -171,9 +168,6 @@ runDataDiffusion tracers
                                     , daDnsProducers
                                     }
                  applications@DiffusionApplications { daErrorPolicies } = do
-    -- networking mutable state
-    networkState <- newNetworkMutableState
-    networkLocalState <- newNetworkMutableState
 
     -- Define how to fulfill node-to-client and node-to-node connection
     -- requests. The GADTs `LocalRequest` and `Request` describe all of the
@@ -243,30 +237,21 @@ runDataDiffusion tracers
 
     -- Get 2 connection managers: one for node-to-client (n2c) and one for
     -- node-to-node (n2n).
-    NodeToClient.withConnections networkLocalState localErrorPolicy localConnectionRequest $ \n2cConnections ->
-      NodeToNode.withConnections networkState      errorPolicy      connectionRequest      $ \n2nConnections ->
-        void $
-          -- clean state thread
-          Async.withAsync (cleanNetworkMutableState networkState) $ \cleanNetworkStateThread ->
-
-            -- clean local state thread
-            Async.withAsync (cleanNetworkMutableState networkLocalState) $ \cleanLocalNetworkStateThread ->
-
-              -- fork server for local clients
-              Async.withAsync (runLocalServer n2cConnections) $ \_ ->
-
-                -- fork servers for remote peers
-                withAsyncs (runServer n2nConnections <$> daAddresses) $ \_ ->
-
-                  -- fork ip subscription
-                  Async.withAsync (runIpSubscriptionWorker n2nConnections) $ \_ ->
-
-                    -- fork dns subscriptions
-                    withAsyncs (runDnsSubscriptionWorker n2nConnections <$> daDnsProducers) $ \_ ->
-
-                      -- If any other threads throws 'cleanNetowrkStateThread' and
-                      -- 'cleanLocalNetworkStateThread' threads will will finish.
-                      Async.waitEither_ cleanNetworkStateThread cleanLocalNetworkStateThread
+    NodeToClient.withConnections localErrorPolicy localConnectionRequest $ \n2cConnections ->
+      NodeToNode.withConnections errorPolicy      connectionRequest      $ \n2nConnections -> do
+        -- Run every thread concurrently such that an exception from any of
+        -- them will kill the others and be re-thrown here.
+        -- The application terminates when they are all done.
+        let threads :: [Async.Concurrently ()]
+            threads = fmap Async.Concurrently $ mconcat
+              [ [ void (runLocalServer n2cConnections) ]
+              , ( void . runServer n2nConnections) <$> daAddresses
+              , [ void (runIpSubscriptionWorker n2nConnections) ]
+              , ( void . runDnsSubscriptionWorker n2nConnections) <$> daDnsProducers
+              ]
+        -- mconcat'ing the `Concurrently ()`s runs them concurrently.
+        _ <- Async.runConcurrently (mconcat threads)
+        pure ()
 
   where
 
@@ -343,15 +328,3 @@ runDataDiffusion tracers
           ipRetryDelay
           (\connId -> Socket.client connId DnsSubscriptionConnection)
           connections
-
---
--- Auxilary functions
---
-
--- | Structural fold using 'Async.withAsync'.
---
-withAsyncs :: [IO a] -> ([Async.Async a] -> IO b) -> IO b
-withAsyncs as0 k = go [] as0
-  where
-    go threads []       = k threads
-    go threads (a : as) = Async.withAsync a $ \thread -> go (thread : threads) as

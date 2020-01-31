@@ -203,7 +203,6 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
 
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
-    networkState <- newNetworkMutableState
 
     {- The siblingVar is used by the initiator and responder to wait on each other before exiting.
      - Without this wait there is a risk that one side will finish first causing the Muxbearer to
@@ -236,7 +235,6 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     res <-
       withServerNode
         networkTracers
-        networkState
         responderAddr
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptEq)
@@ -367,7 +365,6 @@ demo chain0 updates = do
     producerVar <- newTVarM (CPS.initChainProducerState chain0)
     consumerVar <- newTVarM chain0
     done <- atomically newEmptyTMVar
-    networkState <- newNetworkMutableState
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
@@ -397,7 +394,6 @@ demo chain0 updates = do
 
     withServerNode
       nullNetworkServerTracers
-      networkState
       producerAddress
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)

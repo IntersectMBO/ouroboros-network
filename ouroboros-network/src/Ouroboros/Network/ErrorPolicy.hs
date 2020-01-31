@@ -4,8 +4,7 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 
--- | Error policies, and integration with 'SuspendDecision'-semigroup action on
--- 'PeerState'.
+-- | Error policies
 --
 module Ouroboros.Network.ErrorPolicy
   ( ErrorPolicies (..)
@@ -16,25 +15,22 @@ module Ouroboros.Network.ErrorPolicy
   , CompleteApplication
   , CompleteApplicationResult (..)
   , Result (..)
-  , completeApplicationTx
 
   -- * Traces
   , ErrorPolicyTrace (..)
   , traceErrorPolicy
   , WithAddr (..)
 
-  -- * Re-exports of PeerState
-  , PeerStates
   , SuspendDecision (..)
+  , consumerSuspendedUntil
+  , producerSuspendedUntil
   ) where
 
 import           Control.Exception (Exception, IOException, SomeException (..))
 import           Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe, mapMaybe)
+import           Data.Maybe (mapMaybe)
 import           Data.Semigroup (sconcat)
 import           Data.Set (Set)
-import qualified Data.Set as Set
 import           Data.Typeable ( Proxy (..)
                                , cast
                                , tyConName
@@ -47,9 +43,51 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 
-import           Data.Semigroup.Action
+-- | Semigroup of commands which acts on 'PeerState'.  The @t@ variable might
+-- be initiated to 'DiffTime' or @Time m@.
+--
+-- This semigroup allows to either suspend both consumer and producer or just
+-- the consumer part.
+--
+data SuspendDecision t
+    = SuspendPeer !t !t
+    -- ^ peer is suspend; The first @t@ is the time until which a local
+    -- producer is suspended, the second one is the time until which a local
+    -- consumer is suspended.
+    | SuspendConsumer !t
+    -- ^ suspend local consumer \/ initiator side until @t@ (this mean we are
+    -- not allowing to communicate with the producer \/ responder of a remote
+    -- peer).
+    | Throw
+    -- ^ throw an error from the main thread.
+    deriving (Eq, Ord, Show, Functor)
 
-import           Ouroboros.Network.Subscription.PeerState
+
+consumerSuspendedUntil :: SuspendDecision t -> Maybe t
+consumerSuspendedUntil (SuspendPeer _ consT)   = Just consT
+consumerSuspendedUntil (SuspendConsumer consT) = Just consT
+consumerSuspendedUntil Throw                   = Nothing
+
+producerSuspendedUntil :: SuspendDecision t -> Maybe t
+producerSuspendedUntil (SuspendPeer prodT _) = Just prodT
+producerSuspendedUntil (SuspendConsumer _) = Nothing
+producerSuspendedUntil Throw               = Nothing
+
+-- | The semigroup instance.  Note that composing 'SuspendPeer' with
+-- 'SuspendConsumer' gives 'SuspendPeer'.  'SuspendPeer' and 'SuspendConsumer'
+-- form a sub-semigroup.
+--
+instance Ord t => Semigroup (SuspendDecision t) where
+    Throw <> _ = Throw
+    _ <> Throw = Throw
+    SuspendPeer prodT consT <> SuspendPeer prodT' consT'
+      = SuspendPeer (prodT `max` prodT') (consT `max` consT')
+    SuspendConsumer consT <> SuspendPeer prodT consT'
+      = SuspendPeer prodT (consT `max` consT')
+    SuspendPeer prodT consT <> SuspendConsumer consT'
+      = SuspendPeer prodT (consT `max` consT')
+    SuspendConsumer consT <> SuspendConsumer consT'
+      = SuspendConsumer (consT `max` consT')
 
 data ErrorPolicy where
      ErrorPolicy :: forall e.
@@ -171,120 +209,6 @@ data CompleteApplicationResult m addr s =
         -- ^ trace points
       }
   deriving Functor
-
-
--- | 'CompleteApplication' callback
---
-completeApplicationTx
-  :: forall m addr a.
-     ( MonadAsync  m
-     , Ord addr
-     , Ord (Async m ())
-     )
-  => ErrorPolicies addr a
-  -> CompleteApplication m
-       (PeerStates m addr)
-       addr
-       a
-
--- the 'ResultQ' did not throw the exception yet; it should not happen.
-completeApplicationTx _ _ ps@ThrowException{} = pure $
-    CompleteApplicationResult {
-        carState   = ps,
-        carThreads = Set.empty,
-        carTrace   = Nothing
-      }
-
--- application returned; classify the return value and update the state.
-completeApplicationTx ErrorPolicies {epReturnCallback} (ApplicationResult t addr r) (PeerStates ps) =
-  let cmd = epReturnCallback t addr r
-      fn :: Maybe (PeerState m)
-         -> ( Set (Async m ())
-            , Maybe (PeerState m)
-            )
-      fn mbps = ( maybe Set.empty (`threadsToCancel` cmd) mbps
-                , mbps <| (flip addTime t <$> cmd)
-                )
-  in case alterAndLookup fn addr ps of
-    (ps', mbthreads) -> pure $
-      CompleteApplicationResult {
-          carState   = PeerStates ps',
-          carThreads = fromMaybe Set.empty mbthreads,
-          carTrace   = WithAddr addr <$> traceErrorPolicy (Right r) cmd
-        }
-
--- application errored
-completeApplicationTx ErrorPolicies {epAppErrorPolicies} (ApplicationError t addr e) ps =
-  case evalErrorPolicies e epAppErrorPolicies of
-    -- the error is not handled by any policy; we're not rethrowing the
-    -- error from the main thread, we only trace it.  This will only kill
-    -- the local consumer application.
-    Nothing  -> pure $
-      CompleteApplicationResult {
-          carState   = ps,
-          carThreads = Set.empty,
-          carTrace   = Just
-                        (WithAddr addr
-                          (ErrorPolicyUnhandledApplicationException
-                            (SomeException e)))
-        }
-    -- the error was classified; act with the 'SuspendDecision' on the state
-    -- and find threads to cancel.
-    Just cmd -> case runSuspendDecision t addr e cmd ps of
-      (ps', threads) ->
-        pure $
-          CompleteApplicationResult {
-              carState   = ps',
-              carThreads = threads,
-              carTrace   = WithAddr addr <$>
-                            traceErrorPolicy
-                              (Left $ ApplicationExceptionTrace (SomeException e))
-                              cmd
-            }
-
--- we connected to a peer; this does not require to update the 'PeerState'.
-completeApplicationTx _ (Connected _t  _addr) ps =
-    pure $
-      CompleteApplicationResult {
-          carState   = ps,
-          carThreads = Set.empty,
-          carTrace   = Nothing
-        }
-
--- error raised by the 'connect' call
-completeApplicationTx ErrorPolicies {epConErrorPolicies} (ConnectionError t addr e) ps =
-  case evalErrorPolicies e epConErrorPolicies of
-    Nothing  ->
-      let fn p@(HotPeer producers consumers)
-             | Set.null producers && Set.null consumers
-             = Just ColdPeer
-             | otherwise
-             = Just p
-          fn p = Just p
-
-      in pure $
-          CompleteApplicationResult {
-              carState =
-                case ps of
-                  PeerStates peerStates -> PeerStates $ Map.update fn addr peerStates
-                  ThrowException{}      -> ps,
-              carThreads = Set.empty,
-              carTrace   = Just $
-                            WithAddr addr
-                             (ErrorPolicyUnhandledConnectionException
-                               (SomeException e))
-            }
-    Just cmd -> case runSuspendDecision t addr e cmd ps of
-      (ps', threads) ->
-        pure $
-          CompleteApplicationResult {
-              carState   = ps',
-              carThreads = threads,
-              carTrace   = WithAddr addr <$>
-                           (traceErrorPolicy
-                             (Left $ ConnectionExceptionTrace (SomeException e))
-                             cmd)
-            }
 
 --
 -- Traces

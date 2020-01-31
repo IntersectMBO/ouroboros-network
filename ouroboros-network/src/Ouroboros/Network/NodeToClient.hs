@@ -20,10 +20,6 @@ module Ouroboros.Network.NodeToClient (
 
   , NetworkServerTracers (..)
   , nullNetworkServerTracers
-  , NetworkMutableState (..)
-  , newNetworkMutableState
-  , newNetworkMutableStateSTM
-  , cleanNetworkMutableState
 
   , withConnections
 
@@ -147,12 +143,11 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- specialized.
 withConnections
   :: forall request t.
-     NetworkMutableState
-  -> ErrorPolicies Socket.SockAddr ()
+     ErrorPolicies Socket.SockAddr ()
   -> (forall provenance . request provenance -> SomeVersionedApplication NodeToClientProtocols NodeToClientVersion DictVersion provenance)
   -> (Connections Connections.ConnectionId Socket.Socket request (Connection.Reject RejectConnection) (Connection.Accept (ConnectionHandle IO)) IO -> IO t)
   -> IO t
-withConnections mutableState errorPolicies mkApp =
+withConnections errorPolicies mkApp =
   Socket.withConnections mkConnectionData
   where
   -- Must give a type signature. Trying to do this in-line will confuse the
@@ -163,14 +158,12 @@ withConnections mutableState errorPolicies mkApp =
   mkConnectionData request = case mkApp request of
     SomeVersionedResponderApp serverTracers versions -> ConnectionDataRemote
       serverTracers
-      mutableState
       errorPolicies
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       versions
     SomeVersionedInitiatorApp connectTracers versions -> ConnectionDataLocal
       connectTracers
-      mutableState
       cborTermVersionDataCodec
       versions
 

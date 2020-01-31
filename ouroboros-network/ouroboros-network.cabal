@@ -74,7 +74,6 @@ library
                        Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.JobPool
                        Ouroboros.Network.PeerSelection.Governor
-                       Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Version.CBOR
                        Ouroboros.Network.Server.Version.Protocol
                        Ouroboros.Network.Socket
@@ -249,7 +248,6 @@ test-suite test-network
                        Ouroboros.Network.Protocol.LocalTxSubmission.Type
                        Ouroboros.Network.Protocol.LocalTxSubmission.Test
                        Ouroboros.Network.Socket
-                       Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Subscription
                        Ouroboros.Network.Subscription.Ip
                        Ouroboros.Network.Subscription.Dns
