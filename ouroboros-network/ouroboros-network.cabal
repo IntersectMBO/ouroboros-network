@@ -81,7 +81,6 @@ library
                        Ouroboros.Network.Subscription
                        Ouroboros.Network.Subscription.Ip
                        Ouroboros.Network.Subscription.Dns
-                       Ouroboros.Network.Subscription.PeerState
                        Ouroboros.Network.Subscription.Worker
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.ClientPipelined
@@ -254,7 +253,6 @@ test-suite test-network
                        Ouroboros.Network.Subscription
                        Ouroboros.Network.Subscription.Ip
                        Ouroboros.Network.Subscription.Dns
-                       Ouroboros.Network.Subscription.PeerState
                        Ouroboros.Network.Subscription.Worker
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Outbound
@@ -271,7 +269,6 @@ test-suite test-network
                        Test.Pipe
                        Test.Socket
                        Test.Subscription
-                       Test.PeerState
   default-language:    Haskell2010
   build-depends:       base,
                        array,
