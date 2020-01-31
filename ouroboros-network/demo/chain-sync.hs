@@ -58,6 +58,8 @@ import Network.TypedProtocol.PingPong.Client as PingPong
 import Network.TypedProtocol.PingPong.Codec.Cbor
 import Network.TypedProtocol.PingPong.Server as PingPong
 
+import Ouroboros.Network.Connections.Socket.Types hiding (ConnectionId)
+
 import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Handshake.Version
 
@@ -116,6 +118,12 @@ mkLocalSocketAddrInfo socketPath =
       (Socket.SockAddrUnix socketPath)
       Nothing
 
+mkLocalSocketAddr :: FilePath -> SockAddr Unix
+mkLocalSocketAddr = SockAddrUnix
+
+defaultLocalSocketAddr :: SockAddr Unix
+defaultLocalSocketAddr = SockAddrUnix defaultLocalSocketAddrPath
+
 defaultLocalSocketAddrPath :: FilePath
 defaultLocalSocketAddrPath =  "./demo-chain-sync.sock"
 
@@ -149,8 +157,8 @@ clientPingPong pipelined = do
       cborTermVersionDataCodec
       nullNetworkConnectTracers
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-      (mkLocalSocketAddrInfo "")
-      defaultLocalSocketAddrInfo
+      (mkLocalSocketAddr "")
+      defaultLocalSocketAddr
   where
     app :: OuroborosApplication InitiatorApp
                                 ConnectionId
@@ -179,12 +187,9 @@ pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
 
 serverPingPong :: IO Void
 serverPingPong = do
-    networkState <- newNetworkMutableState
-    _ <- async $ cleanNetworkMutableState networkState
     withServerNode
       nullNetworkServerTracers
-      networkState
-      defaultLocalSocketAddrInfo
+      (someSockType (Socket.addrAddress defaultLocalSocketAddrInfo))
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
@@ -238,8 +243,8 @@ clientPingPong2 = do
       cborTermVersionDataCodec
       nullNetworkConnectTracers
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-      (mkLocalSocketAddrInfo "")
-      defaultLocalSocketAddrInfo
+      (mkLocalSocketAddr "")
+      defaultLocalSocketAddr
   where
     app :: OuroborosApplication InitiatorApp
                                 ConnectionId
@@ -281,12 +286,9 @@ pingPongClientPipelinedMax c =
 
 serverPingPong2 :: IO Void
 serverPingPong2 = do
-    networkState <- newNetworkMutableState
-    _ <- async $ cleanNetworkMutableState networkState
     withServerNode
       nullNetworkServerTracers
-      networkState
-      defaultLocalSocketAddrInfo
+      (someSockType (Socket.addrAddress defaultLocalSocketAddrInfo))
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
@@ -337,8 +339,8 @@ clientChainSync sockAddrs =
         cborTermVersionDataCodec
         nullNetworkConnectTracers
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-        (mkLocalSocketAddrInfo "")
-        (mkLocalSocketAddrInfo sockAddr)
+        (mkLocalSocketAddr "")
+        (mkLocalSocketAddr sockAddr)
   where
     app :: OuroborosApplication InitiatorApp
                                 ConnectionId
@@ -357,12 +359,9 @@ clientChainSync sockAddrs =
 
 serverChainSync :: FilePath -> IO Void
 serverChainSync sockAddr = do
-    networkState <- newNetworkMutableState
-    _ <- async $ cleanNetworkMutableState networkState
     withServerNode
       nullNetworkServerTracers
-      networkState
-      (mkLocalSocketAddrInfo sockAddr)
+      (someSockType (Socket.addrAddress (mkLocalSocketAddrInfo sockAddr)))
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
@@ -526,8 +525,8 @@ clientBlockFetch sockAddrs = do
                           cborTermVersionDataCodec
                           nullNetworkConnectTracers
                           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-                          (mkLocalSocketAddrInfo "")
-                          (mkLocalSocketAddrInfo sockAddr)
+                          (mkLocalSocketAddr "")
+                          (mkLocalSocketAddr sockAddr)
                     | sockAddr <- sockAddrs ]
 
     fetchAsync <- async $
@@ -558,12 +557,9 @@ clientBlockFetch sockAddrs = do
 
 serverBlockFetch :: FilePath -> IO Void
 serverBlockFetch sockAddr = do
-    networkState <- newNetworkMutableState
-    _ <- async $ cleanNetworkMutableState networkState
     withServerNode
       nullNetworkServerTracers
-      networkState
-      (mkLocalSocketAddrInfo sockAddr)
+      (someSockType (Socket.addrAddress (mkLocalSocketAddrInfo sockAddr)))
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
