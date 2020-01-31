@@ -16,7 +16,7 @@ module Ouroboros.Network.Connections.Concurrent
   , concurrent
   ) where
 
-import Control.Exception (Exception)
+import Control.Exception (Exception, fromException)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (MonadFork, ThreadId, myThreadId, throwTo)
@@ -130,6 +130,10 @@ removeConnection identifier state =
 -- exception. You can catch all or some of these in the usual way, by
 -- specializing the `e` parameter.
 --
+-- NB: AsyncCancelled will _not_ be re-thrown, since this is used by the
+-- connections manager to kill running threads when it's time to shut down.
+-- This is dodgy but hopefully it will work well enough.
+--
 -- TODO include some identifying information? The connection number?
 data ExceptionInHandler e where
   ExceptionInHandler :: !e -> ExceptionInHandler e
@@ -190,8 +194,17 @@ concurrent withResource k = do
 
   -- Throws an exception to the master thread (caller of `concurrent`) wrapped
   -- in a special type. This is always called with async exceptions masked.
+  -- AsyncCancelled is never re-thrown, since this system uses `cancel` to
+  -- shut down threads when the continuation finishes.
+  --
+  -- TODO come up with a better way to do this.
+  --
+  -- TODO make it possible for users of `concurrent` to wait for threads to
+  -- finish rather than kill them?
   rethrow :: ThreadId m -> SomeException -> m x
-  rethrow tid e = throwTo tid (ExceptionInHandler e) >> throwM e
+  rethrow tid e = case fromException e of
+    Just AsyncCancelled -> throwM e
+    Nothing             -> throwTo tid (ExceptionInHandler e) >> throwM e
 
   -- Exception handling in here should ensure that if the handler is succesfully
   -- created, then it ends up in the shared state.
