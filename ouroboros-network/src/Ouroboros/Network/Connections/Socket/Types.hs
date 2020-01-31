@@ -66,25 +66,10 @@ data ConnectionId where
 deriving instance Show ConnectionId
 
 instance Eq ConnectionId where
-  ConnectionIdIPv6 a b == ConnectionIdIPv6 c d =
-    (forgetSockType a, forgetSockType b) == (forgetSockType c, forgetSockType d)
-  ConnectionIdIPv4 a b == ConnectionIdIPv4 c d =
-    (forgetSockType a, forgetSockType b) == (forgetSockType c, forgetSockType d)
-  ConnectionIdUnix a b == ConnectionIdUnix c d =
-    (forgetSockType a, forgetSockType b) == (forgetSockType c, forgetSockType d)
-  _ == _ = False
+  left == right = connectionIdPair left == connectionIdPair right
 
 instance Ord ConnectionId where
-  ConnectionIdIPv6 a b `compare` ConnectionIdIPv6 c d =
-    (forgetSockType a, forgetSockType b) `compare` (forgetSockType c, forgetSockType d)
-  ConnectionIdIPv4 a b `compare` ConnectionIdIPv4 c d =
-    (forgetSockType a, forgetSockType b) `compare` (forgetSockType c, forgetSockType d)
-  ConnectionIdUnix a b `compare` ConnectionIdUnix c d =
-    (forgetSockType a, forgetSockType b) `compare` (forgetSockType c, forgetSockType d)
-  -- Put IPv6 above IPv4 and Unix; IPv4 above Unix, Unix at the bottom.
-  ConnectionIdIPv6 _ _ `compare` _ = GT
-  ConnectionIdIPv4 _ _ `compare` _ = GT
-  ConnectionIdUnix _ _ `compare` _ = LT
+  left `compare` right = connectionIdPair left `compare` connectionIdPair right
 
 makeConnectionId :: SockAddr sockType -> SockAddr sockType -> ConnectionId
 makeConnectionId a@(SockAddrIPv6 _ _ _ _) b@(SockAddrIPv6 _ _ _ _) =
@@ -136,7 +121,6 @@ matchSockAddr (SockAddrIPv4 _ _) (Some (SockAddrIPv4 pn ha)) =
 matchSockAddr (SockAddrUnix _) (Some (SockAddrUnix st)) =
   Just (SockAddrUnix st)
 matchSockAddr _ _ = Nothing
-
 
 forgetSockType :: SockAddr sockType -> Socket.SockAddr
 forgetSockType sockAddr = case sockAddr of
