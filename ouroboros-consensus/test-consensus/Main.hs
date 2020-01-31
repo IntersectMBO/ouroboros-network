@@ -16,7 +16,7 @@ import qualified Test.ThreadNet.BFT (tests)
 import qualified Test.ThreadNet.DualPBFT (tests)
 import qualified Test.ThreadNet.LeaderSchedule (tests)
 import qualified Test.ThreadNet.PBFT (tests)
-import qualified Test.ThreadNet.Praos (tests)
+-- import qualified Test.ThreadNet.Praos (tests)
 import qualified Test.ThreadNet.RealPBFT (tests)
 import qualified Test.ThreadNet.Util.Tests (tests)
 
@@ -42,7 +42,7 @@ tests =
   , Test.ThreadNet.BFT.tests
   , Test.ThreadNet.LeaderSchedule.tests
   , Test.ThreadNet.PBFT.tests
-  , Test.ThreadNet.Praos.tests
+--  , Test.ThreadNet.Praos.tests
   , Test.ThreadNet.RealPBFT.tests
   , Test.ThreadNet.DualPBFT.tests
   , Test.Util.Split.tests
