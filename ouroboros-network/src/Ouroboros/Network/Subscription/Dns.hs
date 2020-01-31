@@ -17,7 +17,6 @@ module Ouroboros.Network.Subscription.Dns
     , Resolver (..)
     , mkResolverIO
     , dnsResolve
-    , resolutionDelay
 
       -- * Traces
     , SubscriptionTrace (..)
@@ -31,7 +30,6 @@ import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
 import           Control.Tracer
 import qualified Data.IP as IP
 import qualified Network.DNS as DNS
@@ -41,10 +39,6 @@ import           Text.Printf
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.Ip
 
-
--- | Time to wait for an AAAA response after receiving an A response.
-resolutionDelay :: DiffTime
-resolutionDelay = 0.05 -- 50ms delay
 
 -- | Description of one DNS subscription target: a name to resolve and the
 -- number of addresses in that name to subscribe to.

@@ -8,6 +8,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# LANGUAGE GADTs               #-}
 
 {-# OPTIONS_GHC -Wno-orphans     #-}
 
@@ -28,6 +29,7 @@ import           Data.Functor (void)
 import           Data.Int
 import qualified Data.IP as IP
 import           Data.List as L
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
 import           Data.Void (Void)
 import           Data.Word
@@ -51,18 +53,20 @@ import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq, cborTermVe
 import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
 
 
+import           Ouroboros.Network.Connections.Types (Initiated, LocalOnlyRequest (..))
+import qualified Ouroboros.Network.Connections.Concurrent as Connections (concurrent)
+import qualified Ouroboros.Network.Connections.Concurrent as Concurrent
+import           Ouroboros.Network.Connections.Socket.Types hiding (ConnectionId)
+import qualified Ouroboros.Network.Connections.Socket.Types as Connections
+import qualified Ouroboros.Network.Connections.Socket.Client as Socket (client)
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToNode hiding ( ipSubscriptionWorker
-                                                     , dnsSubscriptionWorker
-                                                     )
-import           Ouroboros.Network.Socket
+import           Ouroboros.Network.NodeToNode
+import           Ouroboros.Network.Socket as Socket
 import           Ouroboros.Network.Subscription
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
-import           Ouroboros.Network.Subscription.Worker (WorkerParams (..))
-import           Ouroboros.Network.Subscription.PeerState
-import           Ouroboros.Network.Subscription.Subscriber
+import           Ouroboros.Network.Subscription.Worker as Subscription
 
 defaultMiniProtocolLimit :: Int64
 defaultMiniProtocolLimit = 3000000
@@ -102,9 +106,8 @@ activeTracer = nullTracer
 tests :: TestTree
 tests =
     testGroup "Subscription"
-        [
-          testProperty "Resolve (Sim)"      prop_resolv_sim
-        --, testProperty "Resolve (IO)"      _prop_resolv_io
+        [ testProperty "Resolve (Sim)"      prop_resolv_sim
+        , testProperty "Resolve (IO)"      _prop_resolv_io
         -- ^ takes about 10 minutes to run due to delays in realtime.
         , testProperty "Resolve Subscribe (IO)" prop_sub_io
         , testProperty "Send Recive with Dns worker (IO)" prop_send_recv
@@ -273,6 +276,7 @@ permCheck a b = L.sort a == L.sort b
 
 prop_resolv :: forall m.
      ( MonadAsync m
+     , MonadCatch m
      , MonadSay   m
      , MonadSTM   m
      , MonadTime  m
@@ -284,72 +288,64 @@ prop_resolv :: forall m.
 prop_resolv lr =  do
     --say $ printf "%s" $ show lr
     let resolver = mockResolver lr
-    peerStatesVar <- newTVarM ()
-    x <- dnsResolve nullTracer resolver peerStatesVar (\_ _ s -> pure (AllowConnection s)) $ DnsSubscriptionTarget "shelley-1.iohk.example" 1 2
+        domain = "shelley-1.iohk.example"
+    x <- dnsResolve nullTracer resolver domain
     !res <- checkResult <$> extractResult x []
 
-    {-
-     - We wait 100ms here so that the resolveAAAA and resolveA thread have time to
-     - exit, otherwise runSimStrictShutdown will complain about thread leaks.
-     -
-     - Change dnsResolv to return the two Asyncs so we can wait on them?
-     -}
-    threadDelay 0.1
     return $ tabulate "Resolution Result" [resolvLabel] res
 
   where
     checkResult :: [Socket.SockAddr] -> Property
     checkResult addrs =
         case (lrIpv4Result lr, lrIpv6Result lr) of
-            (Left _, Left _)   -> property $ null addrs
+            (Left _, Left _)   ->
+              counterexample ("got addresses from errors " ++ show addrs) $
+                property $ null addrs
 
-            (Right [], Right [])   -> property $ null addrs
+            (Right [], Right [])   ->
+              counterexample ("got addresses from no results " ++ show addrs) $
+                property $ null addrs
 
             (Right ea, Left _) ->
+              counterexample ("A lookup not a permutation " ++ show addrs) $
                 -- Expect a permutation of the result of the A lookup.
                 property $ permCheck addrs ea
 
             (Left _, Right ea) ->
+              counterexample ("AAAA lookup not a permutation " ++ show addrs) $
                 -- Expect a permutation of the result of the AAAA lookup.
                 property $ permCheck addrs ea
 
             (Right sa4s, Right sa6s) ->
-                let (cntA, cntB, headFamily) =
-                        if sa4s /= [] && (lrIpv4Delay lr + resolutionDelay < lrIpv6Delay lr
-                                        || null sa6s)
-                            then (length sa4s, length sa6s, Socket.AF_INET)
-                            else (length sa6s, length sa4s, Socket.AF_INET6) in
-                property $ permCheck addrs (sa4s ++ sa6s) &&
-                        sockAddrFamily (head addrs) == headFamily &&
-                        alternateFamily addrs (sockAddrFamily (head addrs)) True
-                            cntA cntB
+                counterexample ("Addresses do not alternate or are not a permutation " ++ show addrs) $
+                  property $ permCheck addrs (sa4s ++ sa6s) && alternateFamily addrs
 
     -- Once both the A and the AAAA lookup has returned the result should
     -- alternate between the address families until one family is out of addresses.
     -- This means that:
     -- AAAABABABABABABBB is a valid sequense.
     -- AAAABABAAABABABBB is not a valid sequense.
-    alternateFamily :: [Socket.SockAddr] -> Socket.Family -> Bool -> Int -> Int -> Bool
-    alternateFamily []       _  _    _    _    = True
-    alternateFamily _       _  _     (-1)  _   = False
-    alternateFamily _       _  _     _    (-1) = False
-    alternateFamily (sa:sas) fa True cntA cntB =
-        if sockAddrFamily sa == fa
-            then alternateFamily sas fa True (cntA - 1) cntB
-            else alternateFamily sas (sockAddrFamily sa) False (cntB - 1) cntA
-    alternateFamily (sa:sas) fa False cntA cntB =
-        if sockAddrFamily sa == fa
-            then (cntB == 0) && alternateFamily sas fa False (cntA - 1) cntB
-            else alternateFamily sas (sockAddrFamily sa) False (cntB - 1) cntA
 
-    extractResult :: SubscriptionTarget m Socket.SockAddr -> [Socket.SockAddr] -> m [Socket.SockAddr]
-    extractResult targets addrs = do
-        target_m <- getSubscriptionTarget targets
-        case target_m of
-             Just (addr, nextTargets) -> do
-                 threadDelay (connectionRtt lr)
-                 extractResult nextTargets (addr:addrs)
-             Nothing -> return $ reverse addrs
+    alternateFamily :: [Socket.SockAddr] -> Bool
+    alternateFamily (x:y:zs) =
+      if sockAddrFamily x == sockAddrFamily y
+      -- Once we see the same family adjacent, the rest of the list must be
+      -- that family (same as that of y)
+      then sameFamily (y:zs)
+      else alternateFamily zs
+    -- List of length 1 or 0 is alternating.
+    alternateFamily _ = True
+
+    sameFamily :: [Socket.SockAddr] -> Bool
+    sameFamily (x:y:zs) = sockAddrFamily x == sockAddrFamily y && sameFamily zs
+    sameFamily _        = True
+
+    extractResult :: [Socket.SockAddr] -> [Socket.SockAddr] -> m [Socket.SockAddr]
+    extractResult targets addrs = case targets of
+        [] -> return $ reverse addrs
+        (t:ts) -> do
+          threadDelay (connectionRtt lr)
+          extractResult ts (t:addrs)
 
     resolvLabel :: String
     resolvLabel =
@@ -363,6 +359,17 @@ prop_resolv lr =  do
                                 | lrIpv4Delay lr + resolutionDelay > lrIpv6Delay lr ->
                                     "AAAA before A (Resolution Delay)"
                                 | otherwise -> "A before AAAA"
+
+-- | Time to wait for an AAAA response after receiving an A response.
+resolutionDelay :: DiffTime
+resolutionDelay = 0.05 -- 50ms delay
+
+sockAddrFamily
+    :: Socket.SockAddr
+    -> Socket.Family
+sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
+sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
+sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
 
 prop_resolv_sim :: LookupResult -> Property
 prop_resolv_sim lr =
@@ -413,29 +420,43 @@ prop_sub_io lr = ioProperty $ do
         when (c > 0) retry
 
     serverPortMap <- atomically $ readTVar serverPortMapVar
-    networkState <- newNetworkMutableState
-    dnsSubscriptionWorker'
-      activeTracer
-      activeTracer
-      activeTracer
-      networkState
-      (mockResolverIO firstDoneVar serverPortMap lr)
-      SubscriptionParams {
-          spLocalAddresses =
-            LocalAddresses
-             (Just $ Socket.addrAddress ipv4Client)
-             (Just $ Socket.addrAddress ipv6Client)
-             Nothing,
-          spConnectionAttemptDelay = const $ Just minConnectionAttemptDelay,
-          spErrorPolicies = nullErrorPolicies,
-          spSubscriptionTarget = DnsSubscriptionTarget "shelley-0.iohk.example" 6062 (lrioValency lr)
-        }
-      (\_ -> do
-        c <- readTVar clientCountVar
-        when (c > 0) retry
-        writeTVar serverWaitVar True)
-      (initiatorCallback clientCountVar)
 
+    let localAddresses = case someSockType (Socket.addrAddress ipv4Client) of
+          Some addr4@(SockAddrIPv4 _ _) -> case someSockType (Socket.addrAddress ipv6Client) of
+            Some addr6@(SockAddrIPv6 _ _ _ _) -> LocalAddresses
+              (Just addr4)
+              (Just addr6)
+              Nothing
+            _ -> error "unexpected address family"
+          _ -> error "unexpected address family"
+
+    Connections.concurrent (initiatorCallback clientCountVar) $ \connections -> do
+      let resolver = mockResolverIO firstDoneVar serverPortMap lr
+      addrs <- dnsResolve activeTracer resolver "shelley-0.iohk.example"
+      case ipSubscriptionTargets addrs localAddresses of
+        -- In thie Nothing case, it means we couldn't resolve any addresses
+        -- to match one in localAddresses. This could be due to a DNS resolution
+        -- failure, and that's OK: the test is set up so that, in case no
+        -- addresses could be resolved, it will pass.
+        Nothing -> pure ()
+        Just connIds -> do
+          let subWorker = Subscription.worker
+                activeTracer
+                activeTracer
+                connIds
+                -- Valency 1 guarantees ordering.
+                -- Higher valency does _not_ guarantee the subscriptions go
+                -- in order. Is that a problem?
+                -- FIXME
+                (lrioValency lr `seq` 1)
+                minConnectionAttemptDelay
+                (\connId -> Socket.client connId LocalOnlyRequest)
+                connections
+          withAsync subWorker $ \_workerThread ->
+            atomically $ do
+              c <- readTVar clientCountVar
+              when (c > 0) retry
+              writeTVar serverWaitVar True
 
     mapM_ wait serverAids
 
@@ -463,14 +484,23 @@ prop_sub_io lr = ioProperty $ do
 
     initiatorCallback
         :: StrictTVar IO Int
+        -> Initiated provenance
+        -> Connections.ConnectionId
         -> Socket.Socket
-        -> IO ()
-    initiatorCallback clientCountVar _ =
-        atomically $ do
-            clientsLeft <- readTVar clientCountVar
-            case clientsLeft of
-                 0 -> retry
-                 _ -> modifyTVar clientCountVar (\a -> a - 1)
+        -> LocalOnlyRequest provenance
+        -> IO (Concurrent.Decision IO provenance reject (ConnectionHandle IO))
+    initiatorCallback clientCountVar _ _ _ _ = do
+        tvar <- atomically $ newTVar Running
+        pure $ Concurrent.Accept $ \_ ->
+          let action = atomically $ do
+                clientsLeft <- readTVar clientCountVar
+                case clientsLeft of
+                     0 -> writeTVar tvar (Finished Nothing)
+                     _ -> modifyTVar clientCountVar (\a -> a - 1)
+              -- Really should put Finished into the TVar on exception but
+              -- shouldn't matter for this test env.
+              handle' = ConnectionHandle { status = readTVar tvar }
+          in  pure (Concurrent.Handler handle' action)
 
 
     spawnServer serverCountVar serverPortMapVar traceVar stopVar (sid, addr) =
@@ -515,13 +545,20 @@ prop_send_recv f xs first = ioProperty $ do
     initiatorAddr4:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     initiatorAddr6:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
 
+    let localAddresses = case someSockType (Socket.addrAddress initiatorAddr4) of
+          Some addr4@(SockAddrIPv4 _ _) -> case someSockType (Socket.addrAddress initiatorAddr6) of
+            Some addr6@(SockAddrIPv6 _ _ _ _) -> LocalAddresses
+              (Just addr4)
+              (Just addr6)
+              Nothing
+            _ -> error "unexpected address family"
+          _ -> error "unexpected address family"
+
     firstDoneVar <- newEmptyTMVarM
 
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
     siblingVar <- newTVarM 2
-    tbl <- newConnectionTable
-    clientTbl <- newConnectionTable
 
     let -- Server Node; only req-resp server
         responderApp :: OuroborosApplication ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void ()
@@ -545,37 +582,41 @@ prop_send_recv f xs first = ioProperty $ do
             atomically $ putTMVar cv r
             waitSiblingSub siblingVar
 
-    peerStatesVar <- newPeerStatesVar
+
+        connectionRequest
+          :: forall provenance .
+             LocalOnlyRequest provenance
+          -> ConnectionData TestProtocols2 NodeToNodeVersion provenance
+        connectionRequest LocalOnlyRequest = ConnectionDataLocal
+          nullNetworkConnectTracers
+          cborTermVersionDataCodec
+          (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
+          (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
+
     withDummyServer faultyAddress $
       withServerNode
         nullNetworkServerTracers
-        (NetworkMutableState tbl peerStatesVar)
-        responderAddr
+        (someSockType (Socket.addrAddress responderAddr))
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-        nullErrorPolicies
-        $ \_ _ -> do
-          dnsSubscriptionWorker'
-            activeTracer activeTracer activeTracer
-            (NetworkMutableState clientTbl peerStatesVar)
-            (mockResolverIO firstDoneVar serverPortMap lr)
-            SubscriptionParams {
-                spLocalAddresses =
-                  LocalAddresses
-                    (Just $ Socket.addrAddress initiatorAddr4)
-                    (Just $ Socket.addrAddress initiatorAddr6)
-                    Nothing,
-                spConnectionAttemptDelay = \_ -> Just minConnectionAttemptDelay,
-                spErrorPolicies = nullErrorPolicies,
-                spSubscriptionTarget = DnsSubscriptionTarget "shelley-0.iohk.example" 6062 1
-              }
-            (\_ -> waitSiblingSTM siblingVar)
-            (connectToNode'
-                cborTermVersionDataCodec
-                nullNetworkConnectTracers
-                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
-                (DictVersion nodeToNodeCodecCBORTerm) initiatorApp))
+        nullErrorPolicies $ \_ _ ->
+          Socket.withConnections connectionRequest $ \connections -> do
+            let resolver = mockResolverIO firstDoneVar serverPortMap lr
+            addrs <- dnsResolve activeTracer resolver "shelley-0.iohk.example"
+            case ipSubscriptionTargets addrs localAddresses of
+              Nothing -> error "unexpected"
+              Just connIds -> do
+                let subWorker = Subscription.worker
+                      activeTracer
+                      activeTracer
+                      connIds
+                      1 -- valency
+                      0 -- delay
+                      (\connId -> Socket.client connId LocalOnlyRequest)
+                      connections
+                withAsync subWorker $ \_workerThread ->
+                  atomically (waitSiblingSTM siblingVar)
 
     res <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
     return (res == mapAccumL f 0 xs)
@@ -623,24 +664,15 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
      - and responder running on the client.
      -}
 
-    tblA <- newConnectionTable
-    tblB <- newConnectionTable
-
     rrcfgA <- newReqRspCfg "A" siblingVar
     rrcfgB <- newReqRspCfg "B" siblingVar
 
-    stVar <- newPeerStatesVar
-
     a_aid <- async $ startPassiveServer
-      tblA
-      stVar
       responderAddr4A
       addrAVar
       rrcfgA
 
     b_aid <- async $ startActiveServer
-      tblB
-      stVar
       responderAddr4B
       addrBVar
       addrAVar
@@ -675,10 +707,9 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
              waitSiblingSub rrcSiblingVar
             )
 
-    startPassiveServer tbl stVar responderAddr localAddrVar rrcfg = withServerNode
+    startPassiveServer responderAddr localAddrVar rrcfg = withServerNode
         nullNetworkServerTracers
-        (NetworkMutableState tbl stVar)
-        responderAddr
+        (someSockType (Socket.addrAddress responderAddr))
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
@@ -690,38 +721,48 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
           waitSibling (rrcSiblingVar rrcfg)
           return r
 
-    startActiveServer tbl stVar responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
+    startActiveServer responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
         nullNetworkServerTracers
-        (NetworkMutableState tbl stVar)
-        responderAddr
+        (someSockType (Socket.addrAddress responderAddr))
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptEq)
         ((simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
         nullErrorPolicies
         $ \localAddr _ -> do
-          peerStatesVar <- newPeerStatesVar
           atomically $ putTMVar localAddrVar localAddr
           remoteAddr <- atomically $ takeTMVar remoteAddrVar
-          _ <- subscriptionWorker
-            activeTracer
-            activeTracer
-            (NetworkMutableState tbl peerStatesVar)
-            WorkerParams {
-                wpLocalAddresses = LocalAddresses (Just localAddr) Nothing Nothing,
-                wpConnectionAttemptDelay = \_ -> Just minConnectionAttemptDelay,
-                wpSubscriptionTarget = pure $ listSubscriptionTarget [remoteAddr],
-                wpValency = 1
-              }
-            nullErrorPolicies
-            (\_ -> waitSiblingSTM (rrcSiblingVar rrcfg))
-            (connectToNode'
-                cborTermVersionDataCodec
-                nullNetworkConnectTracers
-                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
-                (DictVersion nodeToNodeCodecCBORTerm) $ appX rrcfg))
+          let connectionId :: Connections.ConnectionId
+              connectionId = case someSockType localAddr of
+                Some laddr -> case matchSockType laddr remoteAddr of
+                  Just raddr -> makeConnectionId laddr raddr
+                  Nothing -> error "unexpected address family"
 
-          atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
-                           <*> takeTMVar (rrcClientVar rrcfg)
+              connectionRequest
+                :: forall provenance .
+                   LocalOnlyRequest provenance
+                -> ConnectionData TestProtocols2 NodeToNodeVersion provenance
+              connectionRequest LocalOnlyRequest = ConnectionDataLocal
+                nullNetworkConnectTracers
+                cborTermVersionDataCodec
+                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
+                  (DictVersion nodeToNodeCodecCBORTerm) $ appX rrcfg)
+
+          Socket.withConnections connectionRequest $ \connections -> do
+            let subWorker = Subscription.worker
+                  activeTracer
+                  activeTracer
+                  (connectionId NE.:| [])
+                  1 -- valency
+                  minConnectionAttemptDelay
+                  (\connId -> Socket.client connId LocalOnlyRequest)
+                  connections
+            withAsync subWorker $ \_workerThread ->
+              atomically (waitSiblingSTM (rrcSiblingVar rrcfg))
+            -- TODO
+            --   waitSiblingSTM (rrcSiblingVar rrcfg)
+            -- should kill the subscription worker when it returns?
+            atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
+                             <*> takeTMVar (rrcClientVar rrcfg)
 
 waitSiblingSub :: StrictTVar IO Int -> IO ()
 waitSiblingSub cntVar = do
@@ -759,50 +800,61 @@ _demo = ioProperty $ do
     client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     client6:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
 
-    tbl <- newConnectionTable
-    clientTbl <- newConnectionTable
-    peerStatesVar <- newPeerStatesVar
-    stVar <- newPeerStatesVar
 
-    spawnServer tbl stVar server 10000
-    spawnServer tbl stVar server' 10000
-    spawnServer tbl stVar server6 100
-    spawnServer tbl stVar server6' 45
+    spawnServer server 10000
+    spawnServer server' 10000
+    spawnServer server6 100
+    spawnServer server6' 45
 
-    _ <- dnsSubscriptionWorker
-            activeTracer activeTracer activeTracer
-            (NetworkMutableState clientTbl peerStatesVar)
-            SubscriptionParams {
-                spLocalAddresses =
-                  LocalAddresses
-                    (Just $ Socket.addrAddress client)
-                    (Just $ Socket.addrAddress client6)
-                    Nothing,
-                spConnectionAttemptDelay = \_ -> Just minConnectionAttemptDelay,
-                spSubscriptionTarget = DnsSubscriptionTarget "shelley-0.iohk.example" 6064 1,
-                spErrorPolicies = nullErrorPolicies
+    let localAddresses :: LocalAddresses
+        localAddresses = case someSockType (Socket.addrAddress client) of
+          Some client'@(SockAddrIPv4 _ _) -> case someSockType (Socket.addrAddress client6) of
+            Some client6'@(SockAddrIPv6 _ _ _ _) -> LocalAddresses
+              (Just client')
+              (Just client6')
+              Nothing
+            _ -> error "unexpected address family"
+          _ -> error "unexpected address family"
 
-              }
-            (connectToNode'
-                cborTermVersionDataCodec
-                nullNetworkConnectTracers
-                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
-                (DictVersion nodeToNodeCodecCBORTerm) appReq))
+        connectionRequest
+          :: forall provenance .
+             LocalOnlyRequest provenance
+          -> ConnectionData TestProtocols1 NodeToNodeVersion provenance
+        connectionRequest LocalOnlyRequest = ConnectionDataLocal
+          nullNetworkConnectTracers
+          cborTermVersionDataCodec
+          (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
+          (DictVersion nodeToNodeCodecCBORTerm) appReq)
 
-    threadDelay 130
-    -- bring the servers back again
-    spawnServer tbl stVar server6 10000
-    spawnServer tbl stVar server6' 10000
-    threadDelay 1000
-    return ()
+
+    Socket.withConnections connectionRequest $ \connections -> do
+      mkResolverIO 6064 $ \resolver -> do
+        addrs <- dnsResolve activeTracer resolver "shelley-0.iohk.example"
+        case ipSubscriptionTargets addrs localAddresses of
+          Nothing -> error "no matching addresses resolved"
+          Just connIds -> do
+            let subWorker = Subscription.worker
+                  activeTracer
+                  activeTracer
+                  connIds
+                  1 -- valency
+                  minConnectionAttemptDelay
+                  (\connId -> Socket.client connId LocalOnlyRequest)
+                  connections
+            withAsync subWorker $ \_subThread -> do
+              threadDelay 130
+              -- bring the servers back again
+              spawnServer server6 10000
+              spawnServer server6' 10000
+              threadDelay 1000
+              return ()
 
   where
 
-    spawnServer tbl stVar addr delay =
+    spawnServer addr delay =
         void $ async $ withServerNode
             nullNetworkServerTracers
-            (NetworkMutableState tbl stVar)
-            addr
+            (someSockType (Socket.addrAddress addr))
             cborTermVersionDataCodec
             (\(DictVersion _) -> acceptEq)
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
@@ -845,5 +897,3 @@ instance (Show a) => Show (WithTag a) where
 
 tagTrace :: String -> Tracer IO (WithTag a) -> Tracer IO a
 tagTrace tag tr = Tracer $ \s -> traceWith tr $ WithTag tag s
-
-

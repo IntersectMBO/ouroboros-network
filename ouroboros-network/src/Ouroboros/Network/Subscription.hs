@@ -15,7 +15,6 @@ module Ouroboros.Network.Subscription
     , minConnectionAttemptDelay
     , maxConnectionAttemptDelay
     , ipRetryDelay
-    , resolutionDelay
 
       -- * Errors
     , SubscriberError (..)
