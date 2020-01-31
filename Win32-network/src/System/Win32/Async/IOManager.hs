@@ -56,6 +56,9 @@ createIOCompletionPort concurrentThreads
 foreign import ccall unsafe "windows.h CreateIoCompletionPort"
     c_CreateIoCompletionPort :: HANDLE -> HANDLE -> Ptr () -> DWORD -> IO HANDLE
 
+-- | Associate with I/O completion port.  This can be used multiple times on
+-- a file descriptor.
+--
 associateWithIOCompletionPort :: Either HANDLE Socket
                               -> IOCompletionPort
                               -> IO ()
