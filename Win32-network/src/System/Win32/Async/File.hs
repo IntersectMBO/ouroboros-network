@@ -29,7 +29,10 @@ import qualified System.Win32.Types as Win32
 import System.Win32.Async.ErrCode
 import System.Win32.Async.Internal
 
--- | Read a given number of bytes from a 'HANDLE'.
+-- | Read a given number of bytes from a 'HANDLE'.  The 'HANDLE' must be
+-- opened with 'System.Win32.fILE_FLAG_OVERLAPPED' and associated with an IO
+-- completion port via
+-- 'System.Win32.Async.IOManager.associateWithIOCompletionProt'.
 --
 readHandle :: HANDLE
            -> Int
@@ -47,7 +50,9 @@ foreign import ccall safe "HsAsyncRead"
                 -> IO ()
 
 
--- | Write a 'ByteString' to a HANDLE.
+-- | Write a 'ByteString' to a 'HANDLE'.  The 'HANDLE' must be opened with
+-- 'System.Win32.fILE_FLAG_OVERLAPPED' and associated with an IO completion port
+-- via 'System.Win32.Async.IOManager.associateWithIOCompletionPort'.
 --
 writeHandle :: HANDLE
             -> ByteString
@@ -64,16 +69,23 @@ foreign import ccall safe "HsAsyncWrite"
                  -> IO ()
 
 
+-- | Connect named pipe aka accept a connection.  The 'HANDLE' must be opened
+-- with 'System.Win32.FILE_FLAG_OVERLLAPPED' and associated with IO completion
+-- port via 'System.Win32.Async.IOManager.associateWithIOCompletionPort'.
+--
+-- [msdn documentation](https://docs.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-connectnamedpipe)
+--
 connectNamedPipe :: HANDLE -> IO ()
 connectNamedPipe h = void $ waitForCompletion "connectNamedPipe" $ \ptr -> do
     c_ConnectNamedPipe h ptr
     errCode <- Win32.getLastError
     -- connectNamedPipe can error with:
-    -- * 'ERROR_PIPE_LISTENING' - the pipe is listening, we need to wait more
-    -- * 'ERROR_PIPE_CONNECTED' - the pipe is already connected
-    -- * 'ERROR_NO_DATA'        - previous client has not disconnected, we
-    --                            should error
-    -- * 'ERROR_IO_PENDING'     - IO is pending, 'waitForCompletion' should
+    --
+    -- 'ERROR_PIPE_LISTENING' - the pipe is listening, we need to wait more
+    -- 'ERROR_PIPE_CONNECTED' - the pipe is already connected
+    -- 'ERROR_NO_DATA'        - previous client has not disconnected, we
+    --                          should error
+    -- 'ERROR_IO_PENDING'     - IO is pending, 'waitForCompletion' should
     --                            resolve this
     unless (   errCode == eRROR_PIPE_LISTENING
             || errCode == eRROR_PIPE_CONNECTED

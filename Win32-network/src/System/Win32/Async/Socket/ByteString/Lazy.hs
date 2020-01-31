@@ -34,6 +34,10 @@ import qualified System.Win32.Async.Socket.ByteString as Socket.ByteString
 -- transmit at most 1024 chunks, it is safe to transmit less than 4194304
 -- bytes.
 --
+-- The socket must be in a connected state, and must be associated with an IO
+-- completion port via
+-- 'System.Win32.Async.IOManager.associateWithIOCompletionProt'.
+--
 send :: Socket
      -> ByteString
      -> IO Int64
@@ -80,6 +84,11 @@ sendAll sock  bs = do
     let bs' = BL.drop sent bs
     when (sent >= 0 && not (BL.null bs')) $ sendAll sock bs'
 
+-- | Receive bytes from a socket, which must be in a connected state, and must
+-- be associated with an IO completion port via
+-- 'System.Win32.Async.IOManager.associateWithIOCompletionProt'.
+-- It can return less bytes than requested.
+--
 recv :: Socket
      -> Int
      -> IO ByteString
