@@ -4,12 +4,17 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Snocket
-  ( Accept (..)
+  ( -- * Snocket Interface
+    Accept (..)
   , AddressFamily (..)
   , Snocket (..)
+    -- ** Socket based Snocktes
   , SocketSnocket
   , socketSnocket
   , rawSocketSnocket
+    -- ** Local Snockets
+    -- Using unix sockets (posix) or named pipes (windows)
+    --
   , LocalSnocket
   , localSnocket
   , LocalAddress
@@ -66,7 +71,7 @@ import           Ouroboros.Network.IOManager
 -- >       loop s
 --
 -- To make common API for both we use a recursive type 'Accept', see
--- 'berkeleyAccept' below.  Creation of the socket / named pipe is part of
+-- 'berkeleyAccept' below.  Creation of a socket / named pipe is part of
 -- 'Snocket', but this means we need to have different recursion step for named
 -- pipe & sockets.  For sockets its recursion step will always return 'accept'
 -- syscall; for named pipes the first callback will reuse the file descriptor
@@ -77,14 +82,9 @@ newtype Accept addr fd = Accept
   { runAccept :: IO (fd, addr, Accept addr fd)
   }
 
-data AddressFamily addr where
 
-    SocketFamily  :: !Socket.Family
-                  -> AddressFamily Socket.SockAddr
-
-    NamedPipeFamily :: AddressFamily FilePath
-
-
+-- | BSD accept loop.
+--
 berkeleyAccept :: AssociateWithIOCP
                -> Socket
                -> Accept SockAddr Socket
@@ -105,6 +105,24 @@ berkeleyAccept iocp sock = go
             Socket.close sock'
             throwIO e
         return (sock', addr', go)
+
+
+-- | We support either sockets or named pipes.
+--
+data AddressFamily addr where
+
+    SocketFamily    :: !Socket.Family
+                    -> AddressFamily Socket.SockAddr
+
+    NamedPipeFamily :: AddressFamily FilePath
+
+instance Eq (AddressFamily addr) where
+    SocketFamily fam0 == SocketFamily fam1 = fam0 == fam1
+    NamedPipeFamily   == NamedPipeFamily   = True
+
+instance Show (AddressFamily addr) where
+    show (SocketFamily fam) = show fam
+    show NamedPipeFamily  = "NamedPipeFamily"
 
 
 -- | Abstract communication interface that can be used by more than
@@ -145,6 +163,11 @@ data Snocket m fd addr = Snocket {
   }
 
 
+--
+-- Socket based Snockets
+--
+
+
 socketAddrFamily
     :: Socket.SockAddr
     -> AddressFamily Socket.SockAddr
@@ -152,7 +175,9 @@ socketAddrFamily (Socket.SockAddrInet  _ _    ) = SocketFamily Socket.AF_INET
 socketAddrFamily (Socket.SockAddrInet6 _ _ _ _) = SocketFamily Socket.AF_INET6
 socketAddrFamily (Socket.SockAddrUnix _       ) = SocketFamily Socket.AF_UNIX
 
+
 type SocketSnocket = Snocket IO Socket SockAddr
+
 
 -- | Create a 'Snocket' for the given 'Socket.Family'. In the 'bind' method set
 -- 'Socket.ReuseAddr` and 'Socket.ReusePort'.
@@ -258,6 +283,11 @@ rawSocketSnocket iocp = Snocket {
       return sd
       
 
+--
+-- NamedPipes based Snocket
+--
+
+
 #if defined(mingw32_HOST_OS)
 type HANDLESnocket = Snocket IO Win32.HANDLE FilePath
 
@@ -341,6 +371,12 @@ namedPipeSnocket iocp name = Snocket {
       Win32.Async.connectNamedPipe hpipe
       return (hpipe, name, acceptNext)
 #endif
+
+
+--
+-- Windows/POSIX type aliases
+--
+
 
 -- | System dependent LocalSnocket type
 #if defined(mingw32_HOST_OS)
