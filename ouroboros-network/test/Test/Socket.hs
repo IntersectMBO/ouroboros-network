@@ -247,7 +247,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
             cborTermVersionDataCodec
             (NetworkConnectTracers activeMuxTracer nullTracer)
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
-            (Just initiatorAddr)
+            (initiatorAddr)
             responderAddr
           atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
@@ -349,7 +349,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
         cborTermVersionDataCodec
         nullNetworkConnectTracers
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-        (Just clientAddr)
+        (clientAddr)
         serverAddr
 
     -- XXX Disregarding the exact exception type
@@ -409,7 +409,7 @@ demo chain0 updates = do
           cborTermVersionDataCodec
           nullNetworkConnectTracers
           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
-          (Just consumerAddress)
+          (consumerAddress)
           producerAddress)
         $ \ _connAsync -> do
           void $ fork $ sequence_
