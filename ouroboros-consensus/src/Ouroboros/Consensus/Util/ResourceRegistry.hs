@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Util.ResourceRegistry (
   , withRegistry
   , registryThread
     -- * Allocating and releasing regular resources
+  , ResourceKey
   , allocate
   , allocateEither
   , release
@@ -342,6 +343,7 @@ data RegistryStatus =
 --
 -- Resource keys are tied to a particular registry.
 data ResourceKey m = ResourceKey !(ResourceRegistry m) !ResourceId
+  deriving (Generic, NoUnexpectedThunks)
 
 -- | Resource ID
 --
