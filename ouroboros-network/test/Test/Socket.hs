@@ -50,6 +50,7 @@ import           Ouroboros.Network.Mux as Mx
 import           Ouroboros.Network.Socket
 
 import           Ouroboros.Network.Block (Tip, encodeTip, decodeTip)
+import           Ouroboros.Network.Connections.Socket.Types hiding (ConnectionId)
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -232,24 +233,28 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
             atomically $ putTMVar cv r
             waitSibling siblingVar
 
-    res <-
-      withServerNode
-        networkTracers
-        responderAddr
-        cborTermVersionDataCodec
-        (\(DictVersion _) -> acceptEq)
-        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-        nullErrorPolicies
-        $ \_ _ -> do
-          connectToNode
-            cborTermVersionDataCodec
-            (NetworkConnectTracers activeMuxTracer nullTracer)
-            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
-            (initiatorAddr)
-            responderAddr
-          atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
+    withSockType (Socket.addrAddress initiatorAddr) $ \iaddr -> do
+      let raddr = case matchSockType iaddr (Socket.addrAddress responderAddr) of
+            Nothing -> error "network address families did not match"
+            Just raddr' -> raddr'
+      res <-
+        withServerNode
+          networkTracers
+          (Some raddr)
+          cborTermVersionDataCodec
+          (\(DictVersion _) -> acceptEq)
+          (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
+          nullErrorPolicies
+          $ \_ _ -> do
+            connectToNode
+              cborTermVersionDataCodec
+              (NetworkConnectTracers activeMuxTracer nullTracer)
+              (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
+              iaddr
+              raddr
+            atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
-    return (res == mapAccumL f 0 xs)
+      return (res == mapAccumL f 0 xs)
 
   where
     networkTracers = NetworkServerTracers {
@@ -341,17 +346,21 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
                                   :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO [Int])
                   atomically $ putTMVar cv ()
 
+    withSockType (Socket.addrAddress serverAddr) $ \saddr -> do
+      let caddr = case matchSockType saddr (Socket.addrAddress clientAddr) of
+            Nothing -> error "network address families did not match"
+            Just caddr' -> caddr'
 
-    (res :: Either IOException Bool)
-      <- try $ False <$ connectToNode
-        cborTermVersionDataCodec
-        nullNetworkConnectTracers
-        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-        (clientAddr)
-        serverAddr
+      (res :: Either IOException Bool)
+        <- try $ False <$ connectToNode
+          cborTermVersionDataCodec
+          nullNetworkConnectTracers
+          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+          caddr
+          saddr
 
-    -- XXX Disregarding the exact exception type
-    pure $ either (const True) id res
+      -- XXX Disregarding the exact exception type
+      pure $ either (const True) id res
 
 
 demo :: forall block .
@@ -392,33 +401,37 @@ demo chain0 updates = do
                                                   encode             decode
                                                   (encodeTip encode) (decodeTip decode)
 
-    withServerNode
-      nullNetworkServerTracers
-      producerAddress
-      cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-      nullErrorPolicies
-      $ \_ _ -> do
-      withAsync
-        (connectToNode
-          cborTermVersionDataCodec
-          nullNetworkConnectTracers
-          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
-          (consumerAddress)
-          producerAddress)
-        $ \ _connAsync -> do
-          void $ fork $ sequence_
-              [ do
-                  threadDelay 10e-4 -- just to provide interest
-                  atomically $ do
-                    p <- readTVar producerVar
-                    let Just p' = CPS.applyChainUpdate update p
-                    writeTVar producerVar p'
-              | update <- updates
-              ]
+    withSockType (Socket.addrAddress producerAddress) $ \paddr -> do
+      let caddr = case matchSockType paddr (Socket.addrAddress consumerAddress) of
+            Nothing -> error "network address families did not match"
+            Just caddr' -> caddr'
+      withServerNode
+        nullNetworkServerTracers
+        (Some paddr)
+        cborTermVersionDataCodec
+        (\(DictVersion _) -> acceptEq)
+        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
+        nullErrorPolicies
+        $ \_ _ -> do
+        withAsync
+          (connectToNode
+            cborTermVersionDataCodec
+            nullNetworkConnectTracers
+            (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
+            caddr
+            paddr)
+          $ \ _connAsync -> do
+            void $ fork $ sequence_
+                [ do
+                    threadDelay 10e-4 -- just to provide interest
+                    atomically $ do
+                      p <- readTVar producerVar
+                      let Just p' = CPS.applyChainUpdate update p
+                      writeTVar producerVar p'
+                | update <- updates
+                ]
 
-          atomically $ takeTMVar done
+            atomically $ takeTMVar done
 
   where
     checkTip target consumerVar = atomically $ do

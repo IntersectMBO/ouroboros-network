@@ -38,7 +38,7 @@ module Ouroboros.Network.Socket (
     , NetworkServerTracers (..)
     , nullNetworkServerTracers
 
-    -- * Quick setup functions for demo'ing.
+    -- * Quick setup functions for demo'ing (and, at the moment, testing)
     , withServerNode
     , connectToNode
 
@@ -86,6 +86,7 @@ import qualified Ouroboros.Network.Connections.Concurrent as Connection
                    (Accept, Reject, Decision(Accept), concurrent)
 import           Ouroboros.Network.Connections.Socket.Server (acceptLoop, server)
 import qualified Ouroboros.Network.Connections.Socket.Types as Connections
+import           Ouroboros.Network.Connections.Socket.Types (Some (..))
 import           Ouroboros.Network.Connections.Types hiding (Decision(..))
 
 -- | Tracer for locally-initiated connections.
@@ -139,13 +140,13 @@ maxTransmissionUnit = 4 * 1440
 -- The connection will start with handshake protocol sending @Versions@ to the
 -- remote peer.  It must fit into @'maxTransmissionUnit'@ (~5k bytes).
 --
--- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
+-- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectToNode'@.
 --
 -- This does not use a `Connections` term. It manually sets up a socket and
 -- makes a connection and runs a given initiator-side protocol suite. For
 -- production deployments of peer-to-peer nodes, use `withConnections`.
 connectToNode
-  :: forall appType ptcl vNumber extra a b.
+  :: forall appType ptcl vNumber extra sockType a b.
      ( ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -163,36 +164,39 @@ connectToNode
   -> NetworkConnectTracers ptcl vNumber
   -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
-  -> Socket.AddrInfo
+  -> Connections.SockAddr sockType
   -- ^ local address; the created socket will bind to it
-  -> Socket.AddrInfo
+  -> Connections.SockAddr sockType
   -- ^ remote address
   -> IO ()
 connectToNode versionDataCodec tracers versions localAddr remoteAddr =
     bracket
-      (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
+      (Socket.socket family Socket.Stream Socket.defaultProtocol)
       Socket.close
       (\sd -> do
-          when (Socket.addrFamily remoteAddr == Socket.AF_INET ||
-                Socket.addrFamily remoteAddr == Socket.AF_INET6) $ do
+          when isInet $ do
               Socket.setSocketOption sd Socket.ReuseAddr 1
 #if !defined(mingw32_HOST_OS)
               Socket.setSocketOption sd Socket.ReusePort 1
 #endif
-          when (Socket.addrFamily remoteAddr == Socket.AF_INET6) $
-            Socket.setSocketOption sd Socket.IPv6Only 1
-          Socket.bind sd (Socket.addrAddress localAddr)
-          Socket.connect sd (Socket.addrAddress remoteAddr)
-          Connections.withSockType (Socket.addrAddress localAddr) $ \bindAddr ->
-            case Connections.matchSockType bindAddr (Socket.addrAddress remoteAddr) of
-              Nothing -> error "connectToNode used incompatible addresses"
-              Just remoteAddr' -> runInitiator
-                versionDataCodec
-                tracers
-                versions
-                (Connections.makeConnectionId bindAddr remoteAddr')
-                sd
+          when isInet6 $ Socket.setSocketOption sd Socket.IPv6Only 1
+          Socket.bind sd (Connections.forgetSockType localAddr)
+          Socket.connect sd (Connections.forgetSockType remoteAddr)
+          runInitiator
+            versionDataCodec
+            tracers
+            versions
+            (Connections.makeConnectionId localAddr remoteAddr)
+            sd
       )
+
+  where
+  family :: Socket.Family
+  isInet, isInet6 :: Bool
+  (family, isInet, isInet6) = case remoteAddr of
+    Connections.SockAddrIPv4 _ _     -> (Socket.AF_INET,  True,  False)
+    Connections.SockAddrIPv6 _ _ _ _ -> (Socket.AF_INET6, True,  True)
+    Connections.SockAddrUnix _       -> (Socket.AF_UNIX,  False, False)
 
 -- | Tracers required by a server which handles inbound connections.
 --
@@ -534,7 +538,7 @@ withServerNode
        , Show vNumber
        )
     => NetworkServerTracers ptcl vNumber
-    -> Socket.AddrInfo
+    -> Some Connections.SockAddr
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
@@ -547,13 +551,12 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode tracers addr versionDataCodec acceptVersion versions errorPolicies k =
-    Connections.withSockType (Socket.addrAddress addr) $ \sockAddr ->
-      Connection.concurrent handleConnection $ \connections ->
-        server sockAddr (const WithServerNodeRequest) $ \serv ->
-          -- At this point the socket is bound and listening.
-          withAsync (acceptLoop acceptException connections serv)
-                    (k (Socket.addrAddress addr))
+withServerNode tracers (Some sockAddr) versionDataCodec acceptVersion versions errorPolicies k =
+    Connection.concurrent handleConnection $ \connections ->
+      server sockAddr (const WithServerNodeRequest) $ \serv ->
+        -- At this point the socket is bound and listening.
+        withAsync (acceptLoop acceptException connections serv)
+                  (k (Connections.forgetSockType sockAddr))
 
   where
 
@@ -574,5 +577,5 @@ withServerNode tracers addr versionDataCodec acceptVersion versions errorPolicie
 
     acceptException :: IOException -> IO ()
     acceptException e = traceWith
-        (WithAddr (Socket.addrAddress addr) `contramap` nstErrorPolicyTracer tracers)
+        (WithAddr (Connections.forgetSockType sockAddr) `contramap` nstErrorPolicyTracer tracers)
         (ErrorPolicyAcceptException e)
