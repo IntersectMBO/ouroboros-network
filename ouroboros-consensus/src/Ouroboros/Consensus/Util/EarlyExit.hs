@@ -201,8 +201,19 @@ instance ( MonadMask  m
   waitCatchSTM  a  = wrapSTM (commute      <$> waitCatchSTM (withEarlyExit a))
   pollSTM       a  = wrapSTM (fmap commute <$> pollSTM      (withEarlyExit a))
 
-  -- TBD is it even possible?
-  asyncWithUnmask _ = error "WithEarlyExit does not implement asyncWithUnmask"
+  -- Is this a good definition?
+  -- Is doing concurrency in `WithEarlyExit` a good idea?
+  -- What does it mean to "exit early" when there are a bunch of threads
+  -- spawning all over the place?
+  -- Seems these concurrency-related instances are given because IOLike is
+  -- needed by `forkBlockProudction` in `NodeKernel`. But really, the "early
+  -- exit" part does not fork any threads, it is only used to define the
+  -- thing that runs in the spawned thread, so morally these instances should
+  -- not be needed and indeed should not be defined.
+  asyncWithUnmask f = earlyExit $ fmap (Just . earlyExit) $
+    asyncWithUnmask $ \unmask ->
+      withEarlyExit (f (earlyExit . unmask . withEarlyExit))
+
 
 commute :: Either SomeException (Maybe a) -> Maybe (Either SomeException a)
 commute (Left e)         = Just (Left e)
