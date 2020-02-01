@@ -25,6 +25,7 @@ import           Control.Tracer
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
+import           Ouroboros.Consensus.Block (getHeader)
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -138,7 +139,9 @@ prop_addBlock_multiple_threads bpt =
 
     equallyPreferable :: Chain TestBlock -> Chain TestBlock -> Bool
     equallyPreferable chain1 chain2 =
-      compareAnchoredCandidates cfg (Chain.toAnchoredFragment chain1) (Chain.toAnchoredFragment chain2) == EQ
+      compareAnchoredCandidates cfg
+        (Chain.toAnchoredFragment (getHeader <$> chain1))
+        (Chain.toAnchoredFragment (getHeader <$> chain2)) == EQ
 
     cfg :: NodeConfig (BlockProtocol TestBlock)
     cfg = singleNodeTestConfig

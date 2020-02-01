@@ -67,20 +67,24 @@ ioHasFS mount = HasFS {
     , removeFile = \fp -> rethrowFsError fp $
         Dir.removeFile (root fp)
     , hasFsErr = EH.exceptions
+    , mkFsErrorPath = fsToFsErrorPath mount
     }
   where
     root :: FsPath -> FilePath
     root = fsToFilePath mount
 
--- | Catch IO exceptions and rethrow them as 'FsError'
---
--- See comments for 'ioToFsError'
-rethrowFsError :: HasCallStack => FsPath -> IO a -> IO a
-rethrowFsError fp action = do
-    res <- E.try action
-    case res of
-      Left err -> handleError err
-      Right a  -> return a
-  where
-    handleError :: HasCallStack => IOError -> IO a
-    handleError ioErr = E.throwIO $ ioToFsError fp ioErr
+    -- | Catch IO exceptions and rethrow them as 'FsError'
+    --
+    -- See comments for 'ioToFsError'
+    rethrowFsError :: HasCallStack => FsPath -> IO a -> IO a
+    rethrowFsError fp action = do
+        res <- E.try action
+        case res of
+          Left err -> handleError err
+          Right a  -> return a
+      where
+        handleError :: HasCallStack => IOError -> IO a
+        handleError ioErr = E.throwIO $ ioToFsError errorPath ioErr
+
+        errorPath :: FsErrorPath
+        errorPath = fsToFsErrorPath mount fp

@@ -31,9 +31,13 @@ module Ouroboros.Storage.FS.API.Types (
     -- * Errors
   , FsError(..)
   , FsErrorType(..)
+  , FsErrorPath(..)
   , sameFsError
   , isFsErrorType
   , prettyFsError
+  , fsToFsErrorPath
+  , fsToFsErrorPathUnmounted
+  , hasMountPoint
     -- * From 'IOError' to 'FsError'
   , ioToFsError
   , ioToFsErrorType
@@ -43,6 +47,7 @@ import           Control.DeepSeq (force)
 import           Control.Exception
 import           Data.Function (on)
 import           Data.List (intercalate, stripPrefix)
+import           Data.Maybe (isJust)
 import qualified Data.Text as Strict
 import           Data.Word
 import           Foreign.C.Error (Errno (..))
@@ -140,6 +145,30 @@ fsFromFilePath :: MountPoint -> FilePath -> Maybe FsPath
 fsFromFilePath (MountPoint mp) path = mkFsPath <$>
     stripPrefix (splitDirectories mp) (splitDirectories path)
 
+-- | For better error reporting to the end user, we want to include the
+-- mount point of the file. But the mountpoint may not always be available,
+-- like when we mock the fs or we simulate fs errors.
+data FsErrorPath = FsErrorPath (Maybe MountPoint) FsPath
+
+fsToFsErrorPath :: MountPoint -> FsPath -> FsErrorPath
+fsToFsErrorPath mp = FsErrorPath (Just mp)
+
+-- | Like 'fsToFsErrorPath', but when we don't have a 'MountPoint'
+fsToFsErrorPathUnmounted :: FsPath -> FsErrorPath
+fsToFsErrorPathUnmounted = FsErrorPath Nothing
+
+instance Show FsErrorPath where
+  show (FsErrorPath (Just mp) fp) = fsToFilePath mp fp
+  show (FsErrorPath Nothing   fp) = show fp
+
+instance Condense FsErrorPath where
+  condense = show
+
+-- | We only care to compare the 'FsPath', because the 'MountPoint' may not
+-- exist.
+instance Eq FsErrorPath where
+  (FsErrorPath _ fp1) == (FsErrorPath _ fp2) = fp1 == fp2
+
 {-------------------------------------------------------------------------------
   Handles
 -------------------------------------------------------------------------------}
@@ -179,7 +208,7 @@ data FsError = FsError {
       fsErrorType   :: FsErrorType
 
       -- | Path to the file
-    , fsErrorPath   :: FsPath
+    , fsErrorPath   :: FsErrorPath
 
       -- | Human-readable string giving additional information about the error
     , fsErrorString :: String
@@ -242,6 +271,9 @@ prettyFsError FsError{..} = concat [
     , prettyCallStack fsErrorStack
     ]
 
+hasMountPoint :: FsError -> Bool
+hasMountPoint FsError{fsErrorPath = FsErrorPath mp _} = isJust mp
+
 {-------------------------------------------------------------------------------
   From 'IOError' to 'FsError'
 -------------------------------------------------------------------------------}
@@ -252,10 +284,10 @@ prettyFsError FsError{..} = concat [
 -- 'FilePath' to an 'FsPath' (given a 'MountPoint'), but we know the 'FsPath'
 -- at all times anyway and not all IO exceptions actually include a filepath.
 ioToFsError :: HasCallStack
-            => FsPath -> IOError -> FsError
-ioToFsError fp ioErr = FsError
+            => FsErrorPath -> IOError -> FsError
+ioToFsError fep ioErr = FsError
     { fsErrorType   = ioToFsErrorType ioErr
-    , fsErrorPath   = fp
+    , fsErrorPath   = fep
     , fsErrorString = IO.ioeGetErrorString ioErr
     , fsErrorNo     = Errno <$> GHC.ioe_errno ioErr
     , fsErrorStack  = callStack

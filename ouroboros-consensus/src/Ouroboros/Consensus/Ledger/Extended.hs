@@ -93,10 +93,7 @@ data BlockPreviouslyApplied =
 -- way around. This means that in the spec delegation updates scheduled for
 -- slot @n@ are really only in effect at slot @n+1@.
 -- See <https://github.com/input-output-hk/cardano-ledger-specs/issues/1007>
-applyExtLedgerState :: ( UpdateLedger blk
-                       , ProtocolLedgerView blk
-                       , HasCallStack
-                       )
+applyExtLedgerState :: (ProtocolLedgerView blk, HasCallStack)
                     => BlockPreviouslyApplied
                     -> NodeConfig (BlockProtocol blk)
                     -> blk
@@ -119,7 +116,7 @@ applyExtLedgerState prevApplied cfg blk ExtLedgerState{..} = do
                               applyChainState
                                 cfg
                                 (protocolLedgerView cfg ledgerState')
-                                (getHeader blk)
+                                (validateView cfg (getHeader blk))
                                 ouroborosChainState
     return $ ExtLedgerState ledgerState' ouroborosChainState'
 

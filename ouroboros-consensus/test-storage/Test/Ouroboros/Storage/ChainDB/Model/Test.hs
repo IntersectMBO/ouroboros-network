@@ -16,6 +16,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader (..), genesisPoint)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 
@@ -70,7 +71,7 @@ prop_alwaysPickPreferredChain bt p =
     model   = addBlocks blocks
     current = M.currentChain model
 
-    curFragment = Chain.toAnchoredFragment current
+    curFragment = Chain.toAnchoredFragment (getHeader <$> current)
 
     SecurityParam k = protocolSecurityParam singleNodeTestConfig
 
@@ -78,7 +79,7 @@ prop_alwaysPickPreferredChain bt p =
         AF.preferAnchoredCandidate singleNodeTestConfig curFragment candFragment &&
         AF.forksAtMostKBlocks k curFragment candFragment
       where
-        candFragment = Chain.toAnchoredFragment candidate
+        candFragment = Chain.toAnchoredFragment (getHeader <$> candidate)
 
 -- TODO add properties about forks too
 prop_between_currentChain :: BlockTree -> Property

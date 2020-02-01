@@ -44,6 +44,29 @@
           (hsPkgs.text)
           ];
         };
+      sublibs = {
+        "ouroboros-protocol-tests" = {
+          depends = [
+            (hsPkgs.base)
+            (hsPkgs.bytestring)
+            (hsPkgs.cborg)
+            (hsPkgs.containers)
+            (hsPkgs.pipes)
+            (hsPkgs.QuickCheck)
+            (hsPkgs.serialise)
+            (hsPkgs.tasty)
+            (hsPkgs.tasty-quickcheck)
+            (hsPkgs.text)
+            (hsPkgs.cardano-prelude)
+            (hsPkgs.contra-tracer)
+            (hsPkgs.io-sim)
+            (hsPkgs.io-sim-classes)
+            (hsPkgs.typed-protocols)
+            (hsPkgs.typed-protocols-cbor)
+            (hsPkgs.ouroboros-network)
+            ];
+          };
+        };
       exes = {
         "demo-chain-sync" = {
           depends = [
@@ -113,9 +136,11 @@
             (hsPkgs.time)
             (hsPkgs.typed-protocols-cbor)
             (hsPkgs.typed-protocols)
+            (hsPkgs.ouroboros-network)
+            (hsPkgs.ouroboros-protocol-tests)
             ];
           };
-        "cddl" = {
+        "test-cddl" = {
           depends = [
             (hsPkgs.base)
             (hsPkgs.bytestring)
@@ -139,6 +164,8 @@
             (hsPkgs.text)
             (hsPkgs.typed-protocols-cbor)
             (hsPkgs.typed-protocols)
+            (hsPkgs.ouroboros-network)
+            (hsPkgs.ouroboros-protocol-tests)
             ];
           };
         };

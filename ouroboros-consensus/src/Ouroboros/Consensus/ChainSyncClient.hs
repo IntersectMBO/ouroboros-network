@@ -30,6 +30,7 @@ module Ouroboros.Consensus.ChainSyncClient (
   , InvalidBlockReason
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Tracer
@@ -237,6 +238,7 @@ chainSyncClient
     :: forall m blk.
        ( IOLike m
        , ProtocolLedgerView blk
+       , Serialise (HeaderHash blk)
        )
     => MkPipelineDecision
     -> Tracer m (TraceChainSyncClientEvent blk)
@@ -566,7 +568,11 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
           }
 
       theirChainState' <-
-        case runExcept $ applyChainState cfg ledgerView hdr theirChainState of
+        case runExcept $ applyChainState
+                           cfg
+                           ledgerView
+                           (validateView cfg hdr)
+                           theirChainState of
           Right theirChainState' -> return theirChainState'
           Left vErr              -> disconnect ChainError
             { _newPoint           = hdrPoint

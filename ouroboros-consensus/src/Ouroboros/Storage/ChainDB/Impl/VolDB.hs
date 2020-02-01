@@ -45,6 +45,7 @@ module Ouroboros.Storage.ChainDB.Impl.VolDB (
   , VolatileDBError
     -- * Exported for testing purposes
   , mkVolDB
+  , blockFileParser'
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -483,18 +484,32 @@ blockFileParser :: forall m blk. (IOLike m, HasHeader blk)
                      Util.CBOR.ReadIncrementalErr
                      m
                      (HeaderHash blk)
-blockFileParser VolDbArgs{..} = VolDB.Parser $
+blockFileParser VolDbArgs{..} =
+    blockFileParser' volHasFS volIsEBB volEncodeBlock volDecodeBlock
+
+-- | A version which is easier to use for tests, since it does not require
+-- the whole @VolDbArgs@.
+blockFileParser' :: forall m blk h. (IOLike m, HasHeader blk)
+                 => HasFS m h
+                 -> (blk -> IsEBB)
+                 -> (blk -> BinaryInfo Encoding)
+                 -> (forall s. Decoder s (Lazy.ByteString -> blk))
+                 -> VolDB.Parser
+                     Util.CBOR.ReadIncrementalErr
+                     m
+                     (HeaderHash blk)
+blockFileParser' hasFS isEBB encodeBlock decodeBlock = VolDB.Parser $
        fmap (fmap (fmap fst)) -- Drop the offset of the error
-     . Util.CBOR.readIncrementalOffsets volHasFS decoder'
+     . Util.CBOR.readIncrementalOffsets hasFS decoder'
   where
-    -- TODO: It looks weird that we use an encoding function 'volEncodeBlock'
+    -- TODO: It looks weird that we use an encoding function 'encodeBlock'
     -- during parsing, but this is quite cheap, since the encoding is already
     -- cached. We should consider improving this, so that it does not create
     -- confusion.
     decoder' :: forall s. Decoder s (Lazy.ByteString
              -> VolDB.BlockInfo (HeaderHash blk))
-    decoder' = ((\blk -> extractInfo volIsEBB (volEncodeBlock blk) blk) .)
-      <$> volDecodeBlock
+    decoder' = ((\blk -> extractInfo isEBB (encodeBlock blk) blk) .)
+      <$> decodeBlock
 
 {-------------------------------------------------------------------------------
   Error handling

@@ -71,8 +71,7 @@ import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import qualified Ouroboros.Network.Point as Point
 
-import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..),
-                     fromIsEBB)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -266,7 +265,6 @@ runAllComponentsM (mblk, mhdr, a, b, c, d, e, f, g) = do
 type TestConstraints blk =
   ( OuroborosTag   (BlockProtocol blk)
   , ProtocolLedgerView            blk
-  , CanSelect (BlockProtocol blk) blk
   , Eq (ChainState (BlockProtocol blk))
   , Eq (LedgerState               blk)
   , Eq                            blk
@@ -298,12 +296,12 @@ run :: forall m blk. (IOLike m, HasHeader blk)
     -> StrictTVar m Id
     ->    Cmd     blk (TestIterator m blk) (TestReader m blk)
     -> m (Success blk (TestIterator m blk) (TestReader m blk))
-run ChainDB{..} internal registry varCurSlot varNextId = \case
+run chainDB@ChainDB{..} internal registry varCurSlot varNextId = \case
     AddBlock blk             -> Unit                <$> (advanceAndAdd (blockSlot blk) blk)
     AddFutureBlock blk s     -> Unit                <$> (advanceAndAdd s               blk)
     GetCurrentChain          -> Chain               <$> atomically getCurrentChain
     GetCurrentLedger         -> Ledger              <$> atomically getCurrentLedger
-    GetPastLedger pt         -> MbLedger            <$> getPastLedger pt
+    GetPastLedger pt         -> MbLedger            <$> getPastLedger chainDB pt
     GetTipBlock              -> MbBlock             <$> getTipBlock
     GetTipHeader             -> MbHeader            <$> getTipHeader
     GetTipPoint              -> Point               <$> atomically getTipPoint
@@ -875,11 +873,13 @@ precondition Model {..} (At cmd) =
      -- with iterators that the model allows. So we only test a subset of the
      -- functionality, which does not include error paths.
      Stream from to           -> isValidIterator from to
-     -- Make sure we don't close (and reopen) when there are multiple equally
-     -- preferable forks in the ChainDB, because we might pick another one
-     -- than the current one when reopening, which would bring us out of sync
-     -- with the model.
-     Close                    -> Not equallyPreferableFork
+     -- Make sure we don't close (and reopen) when there are other chain
+     -- equally preferable or even more preferable (which we can't switch to
+     -- because they fork back more than @k@) than the current chain in the
+     -- ChainDB. We might pick another one than the current one when
+     -- reopening, which would bring us out of sync with the model, for which
+     -- reopening is a no-op (no chain selection). See #1533.
+     Close                    -> Not equallyOrMorePreferableFork
      -- To be in the future, @blockSlot blk@ must be greater than @slot@.
      AddFutureBlock blk s     -> s .>= Model.currentSlot dbModel .&&
                                  blockSlot blk .> s
@@ -900,9 +900,9 @@ precondition Model {..} (At cmd) =
     (_, forks) = map fst <$>
       Model.validChains cfg (Model.initLedger dbModel) (Model.blocks dbModel)
 
-    equallyPreferableFork :: Logic
-    equallyPreferableFork = exists forks $ \fork ->
-      Boolean (equallyPreferable cfg curChain fork) .&&
+    equallyOrMorePreferableFork :: Logic
+    equallyOrMorePreferableFork = exists forks $ \fork ->
+      Boolean (equallyOrMorePreferable cfg curChain fork) .&&
       Chain.head curChain ./= Chain.head fork
 
     cfg :: NodeConfig (BlockProtocol blk)
@@ -920,20 +920,26 @@ precondition Model {..} (At cmd) =
           Map.notMember (blockHash blk) $
           forgetFingerprint (Model.invalid dbModel)
 
-equallyPreferable :: forall blk.
-                     ( OuroborosTag (BlockProtocol blk)
-                     , HasHeader blk
-                     , CanSelect (BlockProtocol blk) blk
-                     )
+equallyOrMorePreferable :: forall blk. SupportedBlock blk
+                        => NodeConfig (BlockProtocol blk)
+                        -> Chain blk -> Chain blk -> Bool
+equallyOrMorePreferable cfg chain1 chain2 =
+    not (preferAnchoredCandidate cfg chain1' chain2')
+  where
+    chain1', chain2' :: AnchoredFragment (Header blk)
+    chain1' = Chain.toAnchoredFragment (getHeader <$> chain1)
+    chain2' = Chain.toAnchoredFragment (getHeader <$> chain2)
+
+equallyPreferable :: forall blk. SupportedBlock blk
                   => NodeConfig (BlockProtocol blk)
                   -> Chain blk -> Chain blk -> Bool
 equallyPreferable cfg chain1 chain2 =
     not (preferAnchoredCandidate cfg chain1' chain2') &&
     not (preferAnchoredCandidate cfg chain2' chain1')
   where
-    chain1', chain2' :: AnchoredFragment blk
-    chain1' = Chain.toAnchoredFragment chain1
-    chain2' = Chain.toAnchoredFragment chain2
+    chain1', chain2' :: AnchoredFragment (Header blk)
+    chain1' = Chain.toAnchoredFragment (getHeader <$> chain1)
+    chain2' = Chain.toAnchoredFragment (getHeader <$> chain2)
 
 
 transition :: (TestConstraints blk, Show1 r, Eq1 r)

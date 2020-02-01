@@ -11,8 +11,8 @@ import qualified Ledger.Update as Spec
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.ByronSpec.Accessors
 import           Ouroboros.Consensus.Ledger.ByronSpec.Block
-import qualified Ouroboros.Consensus.Ledger.ByronSpec.ChainState as ChainState
 import           Ouroboros.Consensus.Ledger.ByronSpec.Conversions
 import qualified Ouroboros.Consensus.Ledger.ByronSpec.GenTx as GenTx
 import           Ouroboros.Consensus.Ledger.ByronSpec.Ledger
@@ -42,11 +42,11 @@ forgeByronSpecBlock curSlotNo curBlockNo ByronSpecLedgerState{..} txs vkey =
     -- <https://github.com/input-output-hk/ouroboros-network/issues/1495>
     block :: Spec.Block
     block = Spec.mkBlock
-              (ChainState.getHash byronSpecLedgerState)
+              (getChainStateHash byronSpecLedgerState)
               (toByronSpecSlotNo curSlotNo)
               vkey
               (Spec.protocolVersion $
-                 ChainState.getUPIState byronSpecLedgerState)
+                getChainStateUPIState byronSpecLedgerState)
               ds
               (case us of
                  []  -> Nothing

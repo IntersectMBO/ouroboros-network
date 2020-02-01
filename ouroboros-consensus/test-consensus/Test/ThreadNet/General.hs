@@ -35,6 +35,7 @@ import           Control.Monad.IOSim (runSimOrThrow)
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, HeaderHash, Point,
                      SlotNo (..), blockPoint)
+import qualified Ouroboros.Network.MockChain.Chain as MockChain
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
@@ -265,13 +266,14 @@ prop_general ::
      , RunNode blk
      , Show (LedgerView (BlockProtocol blk))
      )
-  => SecurityParam
+  => (blk -> Word64) -- ^ Count transactions
+  -> SecurityParam
   -> TestConfig
   -> Maybe LeaderSchedule
   -> (BlockRejection blk -> Bool)
   -> TestOutput blk
   -> Property
-prop_general k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
+prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
   mbSchedule expectedBlockRejection
   TestOutput{testOutputNodes, testOutputTipBlockNos} =
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
@@ -288,6 +290,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
     tabulate "floor(4 * lastJoinSlot / numSlots)" [show lastJoinSlot] $
     tabulate "minimumDegreeNodeTopology" [show (minimumDegreeNodeTopology nodeTopology)] $
     tabulate "involves >=1 re-delegation" [show hasNodeRekey] $
+    tabulate "average #txs/block" [show (range averageNumTxs)] $
     prop_no_unexpected_BlockRejections .&&.
     prop_all_common_prefix
         maxForkLength
@@ -579,3 +582,15 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
         NodeRekey `Set.member` (foldMap . foldMap) Set.singleton m
       where
         NodeRestarts m = nodeRestarts
+
+    -- Average number of txs/block
+    averageNumTxs :: Double
+    averageNumTxs =
+          average
+        . map (fromIntegral . countTxs)
+        . concatMap MockChain.toOldestFirst
+        $ Map.elems nodeChains
+      where
+        average :: [Double] -> Double
+        average [] = 0
+        average xs = sum xs / fromIntegral (length xs)

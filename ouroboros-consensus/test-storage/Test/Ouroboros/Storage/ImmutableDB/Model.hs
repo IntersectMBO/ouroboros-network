@@ -428,11 +428,6 @@ deleteAfterModel tip =
   where
     rollBackToLastValidTip dbm = rollBackToTip (NE.last (tips dbm)) dbm
 
-extractHeader :: BinaryInfo ByteString -> ByteString
-extractHeader BinaryInfo { binaryBlob, headerOffset, headerSize } =
-    Lazy.take (fromIntegral headerSize) $
-    Lazy.drop (fromIntegral headerOffset) binaryBlob
-
 extractBlockComponent
   :: hash
   -> SlotNo

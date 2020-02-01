@@ -213,16 +213,17 @@ run :: forall m. (HasCallStack, IOLike m)
     -> [TestIterator m]
     -> ImmutableDB    Hash m
     -> ImmDB.Internal Hash m
+    -> ResourceRegistry m
     -> StrictTVar m Id
     -> Cmd (TestIterator m)
     -> m (Success (TestIterator m))
-run runCorruption its db internal varNextId cmd = case cmd of
+run runCorruption its db internal registry varNextId cmd = case cmd of
     GetBlockComponent      s   -> MbAllComponents <$> getBlockComponent      db allComponents s
     GetEBBComponent        e   -> MbAllComponents <$> getEBBComponent        db allComponents e
     GetBlockOrEBBComponent s h -> MbAllComponents <$> getBlockOrEBBComponent db allComponents s h
     AppendBlock         s h b  -> Unit            <$> appendBlock            db s h (toBuilder <$> testBlockToBinaryInfo b)
     AppendEBB           e h b  -> Unit            <$> appendEBB              db e h (toBuilder <$> testBlockToBinaryInfo b)
-    Stream              s e    -> iter            =<< stream                 db allComponents s e
+    Stream              s e    -> iter            =<< stream                 db registry allComponents s e
     IteratorNext        it     -> IterResult      <$> iteratorNext           (unWithEq it)
     IteratorPeek        it     -> IterResult      <$> iteratorPeek           (unWithEq it)
     IteratorHasNext     it     -> IterHasNext     <$> iteratorHasNext        (unWithEq it)
@@ -755,12 +756,12 @@ semantics varErrors varNextId registry hasFS db internal (At cmdErr) =
     At . fmap (reference . Opaque) . Resp <$> case opaque <$> cmdErr of
 
       CmdErr Nothing       cmd its -> try $
-        run (semanticsCorruption hasFS) its db internal varNextId cmd
+        run (semanticsCorruption hasFS) its db internal registry varNextId cmd
 
       CmdErr (Just errors) cmd its -> do
         tipBefore <- fmap forgetHash <$> getTip db
         res       <- withErrors varErrors errors $ try $
-          run (semanticsCorruption hasFS) its db internal varNextId cmd
+          run (semanticsCorruption hasFS) its db internal registry varNextId cmd
         case res of
           -- If the command resulted in a 'UserError', we didn't even get the
           -- chance to run into a simulated error. Note that we still
@@ -846,7 +847,7 @@ sm varErrors varNextId registry hasFS db internal dbm = StateMachine
   Validation
 -------------------------------------------------------------------------------}
 
-validate :: forall m. Monad m
+validate :: forall m. IOLike m
          => Model m Concrete -> ImmutableDB Hash m
          -> QC.PropertyM m Property
 validate Model {..} realDB = do
@@ -858,10 +859,11 @@ validate Model {..} realDB = do
   where
     modelContents = dbmBlockList dbModel
 
-    getDBContents db = stream db GetRawBlock Nothing Nothing >>= \case
-      -- This should never happen
-      Left e   -> error (show e)
-      Right it -> iteratorToList it
+    getDBContents db = withRegistry $ \registry ->
+      stream db registry GetRawBlock Nothing Nothing >>= \case
+        -- This should never happen
+        Left e   -> error (show e)
+        Right it -> iteratorToList it
 
 {-------------------------------------------------------------------------------
   Labelling

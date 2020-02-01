@@ -1,6 +1,9 @@
-{-# LANGUAGE DataKinds        #-}
-{-# LANGUAGE RecordWildCards  #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | Thin wrapper around the Byron spec rules
 --
@@ -18,12 +21,27 @@ module Ouroboros.Consensus.Ledger.ByronSpec.Rules (
   , liftUPIVOTE
     -- * STS initial rules
   , initStateCHAIN
+    -- * Rule context (exported for the benefit of the tests
+  , RuleContext(..)
+  , ctxtCHAIN
+  , ctxtEPOCH
+  , ctxtDELEG
+  , ctxtSDELEG
+  , ctxtUTXOW
+  , ctxtUPIREG
+  , ctxtUPIVOTE
   ) where
 
+import           Control.Monad
+import           Control.Monad.Trans.Except
+import           Data.Functor.Identity
 import qualified Data.Set as Set
 
 import qualified Cardano.Ledger.Spec.STS.UTXO as Spec
 import qualified Cardano.Ledger.Spec.STS.UTXOW as Spec
+import qualified Cardano.Ledger.Spec.STS.UTXOWS as Spec
+import qualified Cardano.Spec.Chain.STS.Rule.BBody as Spec
+import qualified Cardano.Spec.Chain.STS.Rule.Bupi as Spec
 import qualified Cardano.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Cardano.Spec.Chain.STS.Rule.Epoch as Spec
 import qualified Control.State.Transition as Spec
@@ -31,7 +49,7 @@ import qualified Ledger.Core as Spec
 import qualified Ledger.Delegation as Spec
 import qualified Ledger.Update as Spec
 
-import qualified Ouroboros.Consensus.Ledger.ByronSpec.ChainState as ChainState
+import           Ouroboros.Consensus.Ledger.ByronSpec.Accessors
 import           Ouroboros.Consensus.Ledger.ByronSpec.Genesis
                      (ByronSpecGenesis (..))
 import qualified Ouroboros.Consensus.Ledger.ByronSpec.Genesis as Genesis
@@ -56,69 +74,184 @@ applyChainTick :: ByronSpecGenesis
                -> Spec.State Spec.CHAIN
                -> Spec.State Spec.CHAIN
 applyChainTick cfg slot st =
-    case (Spec.applySTS epoch, Spec.applySTS deleg) of
-      (Left _, _) ->
-        error "applyChainTick: unexpected EPOCH failure"
-      (_, Left _) ->
-        error "applyChainTick: unexpected DELEG failure"
-      (Right updateState', Right delegState') ->
-          ChainState.setSlot     slot
-        . ChainState.setUPIState updateState'
-        . ChainState.setDIState  delegState'
-        $ st
+    case runExcept (go st) of
+      Left  _   -> error "applyChainTick: unexpected failure"
+      Right st' -> st'
   where
-    epoch :: Spec.RuleContext Spec.Transition Spec.EPOCH
-    epoch = Spec.TRC (envEPOCH cfg st, ChainState.getUPIState st, slot)
+    go :: Spec.State Spec.CHAIN
+       -> Except [[Spec.PredicateFailure Spec.CHAIN]] (Spec.State Spec.CHAIN)
+    go =  -- Apply EPOCH rule (deals with update proposals)
+          liftEPOCH cfg slot
 
-    -- Empty list of certificates; we apply the rule only to apply previously
-    -- scheduled delegations (rather than to introduce new ones)
-    deleg :: Spec.RuleContext Spec.Transition Spec.DELEG
-    deleg = Spec.TRC (envDELEG cfg st, ChainState.getDIState st, [])
+          -- Apply scheduled delegations (empty list of new delegation certs)
+      >=> liftDELEG cfg []
+
+          -- Set most recent slot
+      >=> modChainStateSlot (\_oldSlot -> pure slot)
 
 {-------------------------------------------------------------------------------
   Lift STS transition rules to the chain level
 -------------------------------------------------------------------------------}
 
-type LiftRule sts = ByronSpecGenesis
-                 -> Spec.Signal sts
-                 -> Spec.State Spec.CHAIN
-                 -> Either [[Spec.PredicateFailure sts]] (Spec.State Spec.CHAIN)
-
 -- | Apply a block
 --
 -- This is a "trivial" (identity) lift.
-liftCHAIN :: LiftRule Spec.CHAIN
-liftCHAIN cfg block st =
-    Spec.applySTS @Spec.CHAIN $
-      Spec.TRC (Genesis.toChainEnv cfg, st, block)
+liftCHAIN :: ByronSpecGenesis -> LiftedRule Spec.CHAIN
+liftCHAIN = liftRule . ctxtCHAIN
 
 -- | Apply delegation certificate
-liftSDELEG :: LiftRule Spec.SDELEG
-liftSDELEG cfg dcert st =
-    fmap (flip ChainState.setDSState st) $
-      Spec.applySTS @Spec.SDELEG $
-        Spec.TRC (envSDELEG cfg st, ChainState.getDSState st, dcert)
+liftSDELEG :: ByronSpecGenesis -> LiftedRule Spec.SDELEG
+liftSDELEG = liftRule . ctxtSDELEG
 
 -- | Apply transaction
-liftUTXOW :: LiftRule Spec.UTXOW
-liftUTXOW cfg tx st =
-    fmap (flip ChainState.setUtxoState st) $
-      Spec.applySTS @Spec.UTXOW $
-        Spec.TRC (envUTXOW cfg st, ChainState.getUtxoState st, tx)
+liftUTXOW :: ByronSpecGenesis -> LiftedRule Spec.UTXOW
+liftUTXOW = liftRule . ctxtUTXOW
 
 -- | Apply update proposal
-liftUPIREG :: LiftRule Spec.UPIREG
-liftUPIREG cfg prop st =
-    fmap (flip ChainState.setUPIState st) $
-      Spec.applySTS @Spec.UPIREG $
-        Spec.TRC (envUPIREG cfg st, ChainState.getUPIState st, prop)
+liftUPIREG :: ByronSpecGenesis -> LiftedRule Spec.UPIREG
+liftUPIREG = liftRule . ctxtUPIREG
 
 -- | Apply update vote
-liftUPIVOTE :: LiftRule Spec.UPIVOTE
-liftUPIVOTE cfg vote st =
-    fmap (flip ChainState.setUPIState st) $
-      Spec.applySTS @Spec.UPIVOTE $
-        Spec.TRC (envUPIVOTE cfg st, ChainState.getUPIState st, vote)
+liftUPIVOTE :: ByronSpecGenesis -> LiftedRule Spec.UPIVOTE
+liftUPIVOTE = liftRule . ctxtUPIVOTE
+
+-- | Apply the epoch transition rule
+--
+-- This is used in 'applyChainTick' only.
+liftEPOCH :: ByronSpecGenesis -> LiftedRule Spec.EPOCH
+liftEPOCH = liftRule . ctxtEPOCH
+
+-- | Apply top-level delegation rule
+--
+-- This is used in 'applyChainTick' only
+liftDELEG :: ByronSpecGenesis -> LiftedRule Spec.DELEG
+liftDELEG = liftRule . ctxtDELEG
+
+{-------------------------------------------------------------------------------
+  Infrastructure for working with the STS transitions
+-------------------------------------------------------------------------------}
+
+-- | Context required to apply a rule to the top-level CHAIN state
+--
+-- The environment  for these rules pull in some information from the (abstract)
+-- genesis config and some information from the state; the reason is that
+-- although some values come from the state, as far as these rules are
+-- concerned, they are constants.
+data RuleContext sts = RuleContext {
+      getRuleState :: GetChainState (Spec.State sts)
+    , modRuleState :: ModChainState (Spec.State sts)
+    , liftFailure  :: Spec.PredicateFailure sts -> Spec.PredicateFailure Spec.CHAIN
+    , getRuleEnv   :: Spec.State Spec.CHAIN -> Spec.Environment sts
+    }
+
+applySTS :: forall sts. (Spec.STS sts, Spec.BaseM sts ~ Identity)
+         => Spec.Environment sts
+         -> Spec.Signal sts
+         -> Spec.State sts
+         -> Except [[Spec.PredicateFailure sts]] (Spec.State sts)
+applySTS env signal state = except $
+    Spec.applySTS @sts $ Spec.TRC (env, state, signal)
+
+type LiftedRule sts = Spec.Signal sts
+                   -> Spec.State Spec.CHAIN
+                   -> Except [[Spec.PredicateFailure Spec.CHAIN]]
+                             (Spec.State Spec.CHAIN)
+
+-- | Lift sub-STS rule to top-level CHAIN
+liftRule :: forall sts. (Spec.STS sts, Spec.BaseM sts ~ Identity)
+         => RuleContext sts -> LiftedRule sts
+liftRule RuleContext{..} signal st =
+    withExcept (map (map liftFailure)) $
+      modRuleState (applySTS @sts (getRuleEnv st) signal) st
+
+{-------------------------------------------------------------------------------
+  Instances of 'RuleContext'
+-------------------------------------------------------------------------------}
+
+ctxtCHAIN :: ByronSpecGenesis -> RuleContext Spec.CHAIN
+ctxtCHAIN cfg = RuleContext {
+      getRuleState = id
+    , modRuleState = id
+    , liftFailure  = id
+    , getRuleEnv   = \_st -> Genesis.toChainEnv cfg
+    }
+
+ctxtEPOCH :: ByronSpecGenesis -> RuleContext Spec.EPOCH
+ctxtEPOCH ByronSpecGenesis{..} = RuleContext {
+      getRuleState = getChainStateUPIState
+    , modRuleState = modChainStateUPIState
+    , liftFailure  = Spec.EpochFailure
+    , getRuleEnv   = \st -> (
+          -- The _current_ epoch
+          -- This is needed to detect if the new slot introduces the next epoch
+          Spec.sEpoch (getChainStateSlot st) byronSpecGenesisSecurityParam
+        , byronSpecGenesisSecurityParam
+        )
+    }
+
+ctxtDELEG :: ByronSpecGenesis -> RuleContext Spec.DELEG
+ctxtDELEG ByronSpecGenesis{..} = RuleContext {
+      getRuleState = getChainStateDIState
+    , modRuleState = modChainStateDIState
+    , liftFailure  = Spec.LedgerDelegationFailure
+    , getRuleEnv   = \st -> Spec.DSEnv {
+          _dSEnvAllowedDelegators = byronSpecGenesisDelegators
+        , _dSEnvEpoch             = Spec.sEpoch
+                                      (getChainStateSlot st)
+                                      byronSpecGenesisSecurityParam
+        , _dSEnvSlot              = getChainStateSlot st
+        , _dSEnvK                 = byronSpecGenesisSecurityParam
+        }
+    }
+
+ctxtSDELEG :: ByronSpecGenesis -> RuleContext Spec.SDELEG
+ctxtSDELEG cfg = RuleContext {
+      getRuleState = getDIStateDSState . getRuleState (ctxtDELEG cfg)
+    , modRuleState = modRuleState (ctxtDELEG cfg) . modDIStateDSState
+    , liftFailure  = liftFailure (ctxtDELEG cfg)
+                   . Spec.SDelegSFailure
+                   . Spec.SDelegFailure
+    , getRuleEnv   = getRuleEnv (ctxtDELEG cfg)
+    }
+
+ctxtUTXOW :: ByronSpecGenesis -> RuleContext Spec.UTXOW
+ctxtUTXOW ByronSpecGenesis{..} = RuleContext {
+       getRuleState = getChainStateUtxoState
+     , modRuleState = modChainStateUtxoState
+     , liftFailure  = Spec.LedgerUTxOFailure
+                    . Spec.UtxowFailure
+     , getRuleEnv   = \st -> Spec.UTxOEnv {
+          utxo0 = byronSpecGenesisInitUtxo
+        , pps   = Spec.protocolParameters (getChainStateUPIState st)
+        }
+     }
+
+ctxtUPIREG :: ByronSpecGenesis -> RuleContext Spec.UPIREG
+ctxtUPIREG ByronSpecGenesis{..} = RuleContext {
+      getRuleState = getChainStateUPIState
+    , modRuleState = modChainStateUPIState
+    , liftFailure  = Spec.BBodyFailure
+                   . Spec.BUPIFailure
+                   . Spec.UPIREGFailure
+    , getRuleEnv   = \st -> (
+          getChainStateSlot st
+        , Spec._dIStateDelegationMap (getChainStateDIState st)
+        , byronSpecGenesisSecurityParam
+        , fromIntegral $ Set.size byronSpecGenesisDelegators
+        )
+    }
+
+ctxtUPIVOTE :: ByronSpecGenesis -> RuleContext Spec.UPIVOTE
+ctxtUPIVOTE cfg = RuleContext {
+      getRuleState = getRuleState (ctxtUPIREG cfg)
+    , modRuleState = modRuleState (ctxtUPIREG cfg)
+    , getRuleEnv   = getRuleEnv   (ctxtUPIREG cfg)
+    , liftFailure  = Spec.BBodyFailure
+                   . Spec.BUPIFailure
+                   . Spec.UPIVOTESFailure
+                   . Spec.ApplyVotesFailure
+                   . Spec.UpivoteFailure
+    }
 
 {-------------------------------------------------------------------------------
   STS initial rules
@@ -133,54 +266,3 @@ initStateCHAIN cfg =
     dontExpectError :: Either a b -> b
     dontExpectError (Left _)  = error "initStateCHAIN: unexpected error"
     dontExpectError (Right b) = b
-
-{-------------------------------------------------------------------------------
-  Auxiliary: environments to apply SOS rules
-
-  NOTE: These environments pull in some information from the (abstract) genesis
-  config and some information from the state; the reason is that although some
-  values come from the state, as far as these rules are concerned, they are
-  constants.
--------------------------------------------------------------------------------}
-
-type ConstructEnv sts = ByronSpecGenesis
-                     -> Spec.State Spec.CHAIN
-                     -> Spec.Environment sts
-
-envEPOCH :: ConstructEnv Spec.EPOCH
-envEPOCH ByronSpecGenesis{..} st = (
-      -- The _current_ epoch
-      -- This is needed to detect if the new slot introduces the next epoch
-      Spec.sEpoch (ChainState.getSlot st) byronSpecGenesisSecurityParam
-    , byronSpecGenesisSecurityParam
-    )
-
-envDELEG :: ConstructEnv Spec.DELEG
-envDELEG ByronSpecGenesis{..} st = Spec.DSEnv {
-      _dSEnvAllowedDelegators = byronSpecGenesisDelegators
-    , _dSEnvEpoch             = Spec.sEpoch
-                                  (ChainState.getSlot st)
-                                  byronSpecGenesisSecurityParam
-    , _dSEnvSlot              = ChainState.getSlot st
-    , _dSEnvK                 = byronSpecGenesisSecurityParam
-    }
-
-envUTXOW :: ConstructEnv Spec.UTXOW
-envUTXOW ByronSpecGenesis{..} st = Spec.UTxOEnv {
-      utxo0 = byronSpecGenesisInitUtxo
-    , pps   = Spec.protocolParameters (ChainState.getUPIState st)
-    }
-
-envSDELEG :: ConstructEnv Spec.SDELEG
-envSDELEG = envDELEG
-
-envUPIREG :: ConstructEnv Spec.UPIREG
-envUPIREG ByronSpecGenesis{..} st = (
-      ChainState.getSlot st
-    , Spec._dIStateDelegationMap (ChainState.getDIState st)
-    , byronSpecGenesisSecurityParam
-    , fromIntegral $ Set.size byronSpecGenesisDelegators
-    )
-
-envUPIVOTE :: ConstructEnv Spec.UPIVOTE
-envUPIVOTE = envUPIREG

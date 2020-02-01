@@ -75,9 +75,6 @@ closeDB (CDBHandle varState) = do
       killBgThreads <- atomically $ readTVar cdbKillBgThreads
       killBgThreads
 
-      -- Write a 'LedgerDB' snapshot so that we don't have to replay too many
-      -- blocks when restarting
-      Background.updateLedgerSnapshots cdb
       ImmDB.closeDB cdbImmDB
       VolDB.closeDB cdbVolDB
 
@@ -144,7 +141,7 @@ reopen (CDBHandle varState) launchBgTasks = do
           cdbEpochInfo
           immDbTipPoint
           (contramap TraceLedgerReplayEvent cdbTracer)
-        LgrDB.reopen cdbLgrDB cdbImmDB lgrReplayTracer
+        replayed <- LgrDB.reopen cdbLgrDB cdbImmDB lgrReplayTracer
         traceWith cdbTracer $ TraceOpenEvent OpenedLgrDB
 
         curSlot        <- atomically $ getCurrentSlot cdbBlockchainTime
@@ -173,4 +170,4 @@ reopen (CDBHandle varState) launchBgTasks = do
           , _chainTip = castPoint $ AF.headPoint   chain
           }
 
-        when launchBgTasks $ Background.launchBgTasks env
+        when launchBgTasks $ Background.launchBgTasks env replayed

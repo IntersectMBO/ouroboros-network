@@ -535,6 +535,7 @@ clientBlockFetch sockAddrs = do
                       (contramap show stdoutTracer) -- state tracer
                       blockFetchPolicy
                       registry
+                      (BlockFetchConfiguration 1 1)
                  >> return ()
 
     chainAsync <- async (chainSelection Map.empty)

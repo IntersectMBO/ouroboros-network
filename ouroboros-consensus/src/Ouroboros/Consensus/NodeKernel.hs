@@ -195,6 +195,7 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
         (blockFetchClientTracer   tracers)
         blockFetchInterface
         fetchClientRegistry
+        blockFetchConfiguration
 
     return NodeKernel
       { getChainDB             = chainDB
@@ -203,6 +204,13 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
       , getFetchClientRegistry = fetchClientRegistry
       , getNodeCandidates      = varCandidates
       , getTracers             = tracers
+      }
+
+  where
+    blockFetchConfiguration :: BlockFetchConfiguration
+    blockFetchConfiguration = BlockFetchConfiguration
+      { bfcMaxConcurrencyBulkSync = 1 -- Set to 1 for now, see #1526
+      , bfcMaxConcurrencyDeadline = 1
       }
 
 {-------------------------------------------------------------------------------

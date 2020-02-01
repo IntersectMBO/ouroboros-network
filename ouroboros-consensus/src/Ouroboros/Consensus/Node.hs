@@ -142,7 +142,7 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
       onNodeKernel registry nodeKernel
       let networkApps :: NetworkApplication
                            IO ConnectionId
-                           ByteString ByteString ByteString ByteString ByteString
+                           ByteString ByteString ByteString ByteString ByteString ByteString
                            ()
           networkApps = consensusNetworkApps
             nodeKernel

@@ -1,9 +1,12 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE EmptyCase                  #-}
+{-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -28,6 +31,7 @@ module Ouroboros.Consensus.Ledger.Mock.Block (
     -- * Working with 'SimpleBlock'
   , mkSimpleHeader
   , matchesSimpleHeader
+  , countSimpleGenTxs
     -- * 'UpdateLedger'
   , LedgerState(..)
   , LedgerConfig(..)
@@ -169,6 +173,9 @@ matchesSimpleHeader SimpleHeader{..} SimpleBlock {..} =
   where
     SimpleStdHeader{..} = simpleHeaderStd
 
+countSimpleGenTxs :: SimpleBlock' c ext ext'' -> Word64
+countSimpleGenTxs = fromIntegral . length . simpleTxs . simpleBody
+
 {-------------------------------------------------------------------------------
   HasHeader instance for SimpleHeader
 -------------------------------------------------------------------------------}
@@ -272,12 +279,10 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
   data GenTx (SimpleBlock c ext) = SimpleGenTx
     { simpleGenTx   :: !Mock.Tx
     , simpleGenTxId :: !Mock.TxId
-      -- ^ This field is lazy on purpose so that the TxId is computed on
-      -- demand.
     } deriving stock    (Generic)
       deriving anyclass (Serialise)
 
-  txSize _ = 2000  -- TODO #745
+  txSize = fromIntegral . Lazy.length . serialise
 
   type ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
@@ -319,6 +324,21 @@ mkSimpleGenTx tx = SimpleGenTx
     { simpleGenTx   = tx
     , simpleGenTxId = hash tx
     }
+
+{-------------------------------------------------------------------------------
+  Support for QueryLedger
+-------------------------------------------------------------------------------}
+
+instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
+      => QueryLedger (SimpleBlock c ext) where
+  data Query (SimpleBlock c ext) result
+    deriving (Show)
+
+  answerQuery = \case {}
+  eqQuery     = \case {}
+
+instance ShowQuery (Query (SimpleBlock c ext)) where
+  showResult = \case {}
 
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks

@@ -48,6 +48,8 @@ module Ouroboros.Storage.ChainDB.Impl.LgrDB (
   , LedgerDB.SwitchResult (..)
   , TraceEvent (..)
   , TraceReplayEvent (..)
+    -- * Exported for testing purposes
+  , mkLgrDB
   ) where
 
 import           Codec.Serialise.Decoding (Decoder)
@@ -70,7 +72,7 @@ import           Control.Tracer
 
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo, blockPoint, castPoint)
+                     SlotNo, blockPoint)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (At))
 
@@ -102,6 +104,8 @@ import           Ouroboros.Storage.LedgerDB.OnDisk (DiskSnapshot,
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbFailure (..))
+import           Ouroboros.Storage.ChainDB.Impl.BlockCache (BlockCache)
+import qualified Ouroboros.Storage.ChainDB.Impl.BlockCache as BlockCache
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 
@@ -151,7 +155,7 @@ data LgrDbArgs m blk = forall h. LgrDbArgs {
     , lgrEncodeChainState :: ChainState (BlockProtocol blk) -> Encoding
     , lgrEncodeHash       :: HeaderHash blk                 -> Encoding
     , lgrParams           :: LedgerDbParams
-    , lgrDiskPolicy       :: DiskPolicy m
+    , lgrDiskPolicy       :: DiskPolicy
     , lgrGenesis          :: m (ExtLedgerState blk)
     , lgrTracer           :: Tracer m (TraceEvent (Point blk))
     , lgrTraceLedger      :: Tracer m (LedgerDB blk)
@@ -190,6 +194,9 @@ defaultArgs fp = LgrDbArgs {
     }
 
 -- | Open the ledger DB
+--
+-- In addition to the ledger DB also returns the number of immutable blocks
+-- that were replayed.
 openDB :: forall m blk. (IOLike m, ProtocolLedgerView blk)
        => LgrDbArgs m blk
        -- ^ Stateless initializaton arguments
@@ -208,18 +215,21 @@ openDB :: forall m blk. (IOLike m, ProtocolLedgerView blk)
        --
        -- The block may be in the immutable DB or in the volatile DB; the ledger
        -- DB does not know where the boundary is at any given point.
-       -> m (LgrDB m blk)
+       -> m (LgrDB m blk, Word64)
 openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
     createDirectoryIfMissing lgrHasFS True (mkFsPath [])
-    db <- initFromDisk args replayTracer lgrDbConf immDB
+    (db, replayed) <- initFromDisk args replayTracer lgrDbConf immDB
     (varDB, varPrevApplied) <-
       (,) <$> newTVarM db <*> newTVarM Set.empty
-    return LgrDB {
-        conf           = lgrDbConf
-      , varDB          = varDB
-      , varPrevApplied = varPrevApplied
-      , args           = args
-      }
+    return (
+        LgrDB {
+            conf           = lgrDbConf
+          , varDB          = varDB
+          , varPrevApplied = varPrevApplied
+          , args           = args
+          }
+      , replayed
+      )
   where
     apply :: blk
           -> ExtLedgerState blk
@@ -240,23 +250,27 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
       , ldbConfResolve = getBlock
       }
 
+-- | Reopen the ledger DB
+--
+-- Returns the number of immutable blocks replayed.
 reopen :: (IOLike m, ProtocolLedgerView blk, HasCallStack)
        => LgrDB  m blk
        -> ImmDB  m blk
        -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
-       -> m ()
+       -> m Word64
 reopen LgrDB{..} immDB replayTracer = do
-    db <- initFromDisk args replayTracer conf immDB
+    (db, replayed) <- initFromDisk args replayTracer conf immDB
     atomically $ writeTVar varDB db
+    return replayed
 
 initFromDisk :: (IOLike m, HasHeader blk, HasCallStack)
              => LgrDbArgs m blk
              -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
              -> Conf      m blk
              -> ImmDB     m blk
-             -> m (LedgerDB blk)
+             -> m (LedgerDB blk, Word64)
 initFromDisk args@LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure args $ do
-    (_initLog, db) <-
+    (_initLog, db, replayed) <-
       LedgerDB.initLedgerDB
         replayTracer
         lgrTracer
@@ -266,7 +280,15 @@ initFromDisk args@LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure args 
         lgrParams
         lgrDbConf
         (streamAPI immDB)
-    return db
+    return (db, replayed)
+
+-- | For testing purposes
+mkLgrDB :: Conf m blk
+        -> StrictTVar m (LedgerDB blk)
+        -> StrictTVar m (Set (Point blk))
+        -> LgrDbArgs m blk
+        -> LgrDB m blk
+mkLgrDB conf varDB varPrevApplied args = LgrDB {..}
 
 {-------------------------------------------------------------------------------
   TraceReplayEvent decorator
@@ -347,7 +369,7 @@ trimSnapshots :: MonadThrow m => LgrDB m blk -> m [DiskSnapshot]
 trimSnapshots LgrDB{ args = args@LgrDbArgs{..} } = wrapFailure args $
     LedgerDB.trimSnapshots lgrTracer lgrHasFS lgrDiskPolicy
 
-getDiskPolicy :: LgrDB m blk -> DiskPolicy m
+getDiskPolicy :: LgrDB m blk -> DiskPolicy
 getDiskPolicy LgrDB{ args = LgrDbArgs{..} } = lgrDiskPolicy
 
 {-------------------------------------------------------------------------------
@@ -362,10 +384,11 @@ validate :: forall m blk. (IOLike m, ProtocolLedgerView blk, HasCallStack)
          -> LedgerDB blk
             -- ^ This is used as the starting point for validation, not the one
             -- in the 'LgrDB'.
+         -> BlockCache blk
          -> Word64  -- ^ How many blocks to roll back
          -> [Header blk]
          -> m (ValidateResult blk)
-validate LgrDB{..} ledgerDB numRollbacks = \hdrs -> do
+validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
     blocks <- toBlocks hdrs <$> atomically (readTVar varPrevApplied)
     res <- LedgerDB.ledgerDbSwitch conf numRollbacks blocks ledgerDB
     atomically $ modifyTVar varPrevApplied $
@@ -377,7 +400,7 @@ validate LgrDB{..} ledgerDB numRollbacks = \hdrs -> do
     toBlocks hdrs prevApplied =
       [ ( if Set.member (headerPoint hdr) prevApplied
           then Reapply else Apply
-        , toRefOrVal (Left hdr) )
+        , toRefOrVal $ BlockCache.toHeaderOrBlock hdr blockCache)
       | hdr <- hdrs ]
 
     -- | Based on the 'ValidateResult', return the hashes corresponding to
@@ -452,5 +475,5 @@ wrapFailure LgrDbArgs{ lgrHasFS = hasFS } k =
 
 toRefOrVal :: (HasHeader blk, HasHeader (Header blk))
            => Either (Header blk) blk -> RefOrVal (Point blk) blk
-toRefOrVal (Left  hdr) = Ref (castPoint (blockPoint hdr))
-toRefOrVal (Right blk) = Val (blockPoint blk) blk
+toRefOrVal (Left  hdr) = Ref (headerPoint hdr)
+toRefOrVal (Right blk) = Val (blockPoint  blk) blk

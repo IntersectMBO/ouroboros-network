@@ -1,9 +1,11 @@
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -13,10 +15,15 @@ module Ouroboros.Consensus.Ledger.Byron.Ledger (
     -- * Ledger integration
     LedgerConfig(..)
   , LedgerState(..)
+  , Query(..)
   , initByronLedgerState
     -- * Serialisation
   , encodeByronLedgerState
   , decodeByronLedgerState
+  , encodeByronQuery
+  , decodeByronQuery
+  , encodeByronResult
+  , decodeByronResult
     -- * Auxiliary
   , validationErrorImpossible
   ) where
@@ -30,19 +37,24 @@ import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq.Lazy
+import           Data.Type.Equality ((:~:) (Refl))
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
+import           Cardano.Binary (fromCBOR, toCBOR)
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Delegation.Validation.Scheduling as D.Sched
 import qualified Cardano.Chain.Genesis as Gen
+import qualified Cardano.Chain.Update.Validation.Interface as UPI
+import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Chain.ValidationMode as CC
 
 import           Ouroboros.Network.Block (Point (..), SlotNo (..), blockSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point
+import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Byron.Auxiliary as Aux
@@ -55,6 +67,7 @@ import           Ouroboros.Consensus.Ledger.Byron.DelegationHistory
 import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as History
 import           Ouroboros.Consensus.Ledger.Byron.PBFT
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 
 instance UpdateLedger ByronBlock where
@@ -99,21 +112,43 @@ instance UpdateLedger ByronBlock where
           where
             slot = fromByronSlotNo (CC.cvsLastSlot state)
 
-initByronLedgerState :: Gen.Config -> LedgerState ByronBlock
-initByronLedgerState genesis = ByronLedgerState {
-      byronLedgerState       = initState
+initByronLedgerState :: Gen.Config
+                     -> Maybe CC.UTxO -- ^ Optionally override UTxO
+                     -> LedgerState ByronBlock
+initByronLedgerState genesis mUtxo = ByronLedgerState {
+      byronLedgerState       = override mUtxo initState
     , byronDelegationHistory = History.empty
     }
   where
     initState :: CC.ChainValidationState
     Right initState = runExcept $ CC.initialChainValidationState genesis
 
+    override :: Maybe CC.UTxO
+             -> CC.ChainValidationState -> CC.ChainValidationState
+    override Nothing     st = st
+    override (Just utxo) st = st { CC.cvsUtxo = utxo }
+
+instance QueryLedger ByronBlock where
+  data Query ByronBlock :: * -> * where
+    GetUpdateInterfaceState :: Query ByronBlock UPI.State
+
+  answerQuery GetUpdateInterfaceState ledgerState =
+    CC.cvsUpdateState (byronLedgerState ledgerState)
+
+  eqQuery GetUpdateInterfaceState GetUpdateInterfaceState = Just Refl
+
+deriving instance Eq (Query ByronBlock result)
+deriving instance Show (Query ByronBlock result)
+
+instance ShowQuery (Query ByronBlock) where
+  showResult GetUpdateInterfaceState = show
+
 instance ConfigContainsGenesis (LedgerConfig ByronBlock) where
   getGenesisConfig = unByronLedgerConfig
 
 instance ProtocolLedgerView ByronBlock where
-  ledgerConfigView PBftNodeConfig{..} = ByronLedgerConfig $
-      pbftGenesisConfig pbftExtConfig
+  ledgerConfigView ExtNodeConfig{..} = ByronLedgerConfig $
+      pbftGenesisConfig extNodeConfig
 
   protocolLedgerView _cfg =
         toPBftLedgerView
@@ -188,7 +223,7 @@ instance ProtocolLedgerView ByronBlock where
 
               in Aux.applyScheduledDelegations toApply dsNow
     where
-      SecurityParam k = pbftSecurityParam . pbftParams $ cfg
+      SecurityParam k = pbftSecurityParam . pbftParams $ extNodeConfigP cfg
 
       dsNow :: Delegation.Map
       dsNow = Aux.getDelegationMap ls
@@ -302,3 +337,23 @@ decodeByronLedgerState = do
     ByronLedgerState
       <$> decode
       <*> History.decodeDelegationHistory
+
+encodeByronQuery :: Query ByronBlock result -> Encoding
+encodeByronQuery query = case query of
+    GetUpdateInterfaceState -> CBOR.encodeWord8 0
+
+decodeByronQuery :: Decoder s (Some (Query ByronBlock))
+decodeByronQuery = do
+    tag <- CBOR.decodeWord8
+    case tag of
+      0 -> return $ Some GetUpdateInterfaceState
+      _ -> fail $ "decodeByronQuery: invalid tag " <> show tag
+
+encodeByronResult :: Query ByronBlock result -> result -> Encoding
+encodeByronResult query = case query of
+    GetUpdateInterfaceState -> toCBOR
+
+decodeByronResult :: Query ByronBlock result
+                  -> forall s. Decoder s result
+decodeByronResult query = case query of
+    GetUpdateInterfaceState -> fromCBOR

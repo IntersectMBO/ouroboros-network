@@ -169,6 +169,35 @@ tests = testGroup "RealPBFT" $
             , slotLengths  = defaultSlotLengths
             , initSeed     = Seed (11044330969750026700,14522662956180538128,9026549867550077426,3049168255170604478,643621447671665184)
             }
+    , testProperty "ImmutableDB is leaking file handles, #1543" $
+          -- The failure was: c0 leaks one ImmDB file handle (for path
+          -- @00000.epoch@, read only, offset at 0).
+          --
+          -- The test case seems somewhat fragile, since the 'slotLengths'
+          -- value seems to matter!
+          once $
+          let ncn5 = NumCoreNodes 5 in
+          prop_simple_real_pbft_convergence NoEBBs (SecurityParam 2) TestConfig
+            { numCoreNodes = ncn5
+            -- Still fails if I increase numSlots.
+            , numSlots     = NumSlots 54
+            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+              [ (CoreNodeId 0, SlotNo {unSlotNo = 0})
+              , (CoreNodeId 1, SlotNo {unSlotNo = 0})
+              , (CoreNodeId 2, SlotNo {unSlotNo = 0})
+              , (CoreNodeId 3, SlotNo {unSlotNo = 53})
+              , (CoreNodeId 4, SlotNo {unSlotNo = 53})
+              ]
+              -- Passes if I drop either of these restarts.
+            , nodeRestarts = NodeRestarts $ Map.fromList
+              [ (SlotNo {unSlotNo = 50},Map.fromList [(CoreNodeId 0,NodeRestart)])
+              , (SlotNo {unSlotNo = 53},Map.fromList [(CoreNodeId 3,NodeRestart)])
+              ]
+            , nodeTopology = meshNodeTopology ncn5
+              -- Slot length of 19s passes, and 21s also fails; I haven't seen this matter before.
+            , slotLengths  = singletonSlotLengths (slotLengthFromSec 20)
+            , initSeed     = Seed {getSeed = (15062108706768000853,6202101653126031470,15211681930891010376,1718914402782239589,12639712845887620121)}
+            }
     , -- RealPBFT runs are slow, so do 10x less of this narrow test
       adjustOption (\(QuickCheckTests i) -> QuickCheckTests $ max 1 $ i `div` 10) $
       testProperty "re-delegation via NodeRekey" $ \seed w ->
@@ -301,7 +330,9 @@ prop_simple_real_pbft_convergence :: ProduceEBBs
 prop_simple_real_pbft_convergence produceEBBs k
   testConfig@TestConfig{numCoreNodes, numSlots, nodeRestarts, initSeed} =
     tabulate "produce EBBs" [show produceEBBs] $
-    prop_general k
+    prop_general
+        Byron.countByronGenTxs
+        k
         testConfig
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
         (expectedBlockRejection k numCoreNodes nodeRestarts)
@@ -689,21 +720,22 @@ genNodeRekeys params (NodeJoinPlan njp) numSlots@(NumSlots t)
 -- transaction for its new delegation certificate
 --
 mkRekeyUpd
-  :: (BlockProtocol b ~ PBft ByronConfig PBftCardanoCrypto)
+  :: (BlockProtocol b ~ ExtConfig (PBft PBftCardanoCrypto) ByronConfig)
   => Genesis.Config
   -> Genesis.GeneratedSecrets
   -> ProtocolInfo b
   -> EpochNo
   -> Crypto.SignKeyDSIGN Crypto.CardanoDSIGN
   -> Maybe (ProtocolInfo b, Byron.GenTx ByronBlock)
-mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK = case pbftIsLeader of
+mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
+  case pbftIsLeader extNodeConfigP of
     PBftIsNotALeader       -> Nothing
     PBftIsALeader isLeader ->
       let PBftIsLeader{pbftCoreNodeId} = isLeader
           genSK = genesisSecretFor genesisConfig genesisSecrets pbftCoreNodeId
-          isLeader' = updSignKey genSK pbftExtConfig isLeader (coerce eno) newSK
+          isLeader' = updSignKey genSK extNodeConfig isLeader (coerce eno) newSK
           pInfo' = pInfo
-            { pInfoConfig = pInfoConfig
+            { pInfoConfig = ExtNodeConfig extNodeConfig extNodeConfigP
               { pbftIsLeader = PBftIsALeader isLeader'
               }
             }
@@ -711,8 +743,8 @@ mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK = case pbftIsLeader of
           PBftIsLeader{pbftDlgCert} = isLeader'
       in Just (pInfo', dlgTx pbftDlgCert)
   where
-    ProtocolInfo{pInfoConfig}                   = pInfo
-    PBftNodeConfig{pbftExtConfig, pbftIsLeader} = pInfoConfig
+    ProtocolInfo{pInfoConfig} = pInfo
+    ExtNodeConfig{extNodeConfig, extNodeConfigP} = pInfoConfig
 
 -- | The secret key for a node index
 --

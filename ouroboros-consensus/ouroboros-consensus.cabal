@@ -57,8 +57,8 @@ library
                        Ouroboros.Consensus.Ledger.Byron.Orphans
                        Ouroboros.Consensus.Ledger.Byron.PBFT
                        Ouroboros.Consensus.Ledger.ByronSpec
+                       Ouroboros.Consensus.Ledger.ByronSpec.Accessors
                        Ouroboros.Consensus.Ledger.ByronSpec.Block
-                       Ouroboros.Consensus.Ledger.ByronSpec.ChainState
                        Ouroboros.Consensus.Ledger.ByronSpec.Conversions
                        Ouroboros.Consensus.Ledger.ByronSpec.Forge
                        Ouroboros.Consensus.Ledger.ByronSpec.Genesis
@@ -82,6 +82,7 @@ library
                        Ouroboros.Consensus.Ledger.Mock.Stake
                        Ouroboros.Consensus.Ledger.Mock.State
                        Ouroboros.Consensus.Ledger.Mock.UTxO
+                       Ouroboros.Consensus.LocalStateQueryServer
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
                        Ouroboros.Consensus.Mempool.Impl
@@ -89,6 +90,7 @@ library
                        Ouroboros.Consensus.Node
                        Ouroboros.Consensus.Node.DbMarker
                        Ouroboros.Consensus.Node.ErrorPolicy
+                       Ouroboros.Consensus.Node.ExitFailure
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.ProtocolInfo.Abstract
                        Ouroboros.Consensus.Node.ProtocolInfo.Byron
@@ -108,6 +110,7 @@ library
                        Ouroboros.Consensus.Protocol
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
+                       Ouroboros.Consensus.Protocol.ExtConfig
                        Ouroboros.Consensus.Protocol.LeaderSchedule
                        Ouroboros.Consensus.Protocol.MockChainSel
                        Ouroboros.Consensus.Protocol.ModChainSel
@@ -143,10 +146,12 @@ library
                        Ouroboros.Storage.ChainDB.Impl
                        Ouroboros.Storage.ChainDB.Impl.Args
                        Ouroboros.Storage.ChainDB.Impl.Background
+                       Ouroboros.Storage.ChainDB.Impl.BlockCache
                        Ouroboros.Storage.ChainDB.Impl.BlockComponent
                        Ouroboros.Storage.ChainDB.Impl.ChainSel
                        Ouroboros.Storage.ChainDB.Impl.ImmDB
                        Ouroboros.Storage.ChainDB.Impl.Iterator
+                       Ouroboros.Storage.ChainDB.Impl.LedgerCursor
                        Ouroboros.Storage.ChainDB.Impl.LgrDB
                        Ouroboros.Storage.ChainDB.Impl.Query
                        Ouroboros.Storage.ChainDB.Impl.Reader
@@ -294,6 +299,7 @@ test-suite test-consensus
                     Test.Consensus.ChainSyncClient
                     Test.Consensus.Ledger.Byron
                     Test.Consensus.Ledger.Mock
+                    Test.Consensus.LocalStateQueryServer
                     Test.Consensus.Mempool
                     Test.Consensus.Mempool.TestBlock
                     Test.Consensus.Mempool.TestTx
@@ -340,11 +346,12 @@ test-suite test-consensus
                     bytestring,
                     cardano-binary,
                     cardano-crypto-class,
-                    cardano-crypto-wrapper,
                     cardano-crypto-test,
+                    cardano-crypto-wrapper,
                     cardano-ledger,
                     cardano-ledger-test,
                     cardano-prelude,
+                    cardano-slotting,
                     typed-protocols,
                     network-mux,
                     ouroboros-network,
@@ -356,6 +363,7 @@ test-suite test-consensus
                     cs-blockchain,
                     cs-ledger,
                     small-steps,
+                    hedgehog,
                     hedgehog-quickcheck,
 
                     binary-search,
@@ -383,6 +391,7 @@ test-suite test-consensus
                     temporary,
                     text,
                     time,
+                    transformers,
                     tree-diff
 
   ghc-options:      -Wall

@@ -1,5 +1,7 @@
+{-# LANGUAGE EmptyCase            #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -64,6 +66,8 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeEncodeLedgerState     = const encode
   nodeEncodeChainState      = const mockEncodeChainState
   nodeEncodeApplyTxError    = const encode
+  nodeEncodeQuery           = \case {}
+  nodeEncodeResult          = \case {}
 
   nodeDecodeBlock           = const (const <$> decode)
   nodeDecodeHeader          = const (const <$> decode)
@@ -73,3 +77,5 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeDecodeLedgerState     = const decode
   nodeDecodeChainState      = const mockDecodeChainState
   nodeDecodeApplyTxError    = const decode
+  nodeDecodeQuery           = error "Mock.nodeDecodeQuery"
+  nodeDecodeResult          = \case {}

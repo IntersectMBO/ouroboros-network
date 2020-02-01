@@ -362,7 +362,7 @@ openHandles Model{..} =
 -- | Instantiate functor @f@ to @f (PathRef r) (HRef r)@
 --
 -- > Cmd :@ Concrete ~ Cmd (PathRef Concrete) (HandleRef Concrete)
-newtype At t r = At (t (PathRef r) (HandleRef r))
+newtype At t r = At {unAt :: (t (PathRef r) (HandleRef r))}
   deriving (Generic)
 
 -- | Alias for 'At'
@@ -675,8 +675,13 @@ postcondition :: Model   Concrete
               -> QSM.Logic
 postcondition model cmd resp =
     toMock (eventAfter ev) resp QSM..== eventMockResp ev
+    QSM..&& errorHasMountPoint (getResp $ unAt resp)
   where
     ev = lockstep model cmd resp
+
+    errorHasMountPoint :: Either FsError a -> QSM.Logic
+    errorHasMountPoint (Right _)      = QSM.Top
+    errorHasMountPoint (Left fsError) = QSM.Boolean $ hasMountPoint fsError
 
 semantics :: MountPoint -> Cmd :@ Concrete -> IO (Resp :@ Concrete)
 semantics mount (At cmd) =

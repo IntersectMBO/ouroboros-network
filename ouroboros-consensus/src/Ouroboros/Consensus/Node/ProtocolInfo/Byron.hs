@@ -11,7 +11,7 @@
 module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
     protocolInfoByron
   , ByronConfig
-  , byronConfig
+  , mkByronConfig
   , PBftSignatureThreshold(..)
   , defaultPBftSignatureThreshold
     -- * Secrets
@@ -43,6 +43,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
@@ -119,19 +120,20 @@ protocolInfoByron :: Genesis.Config
                   -> ProtocolInfo ByronBlock
 protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     ProtocolInfo {
-        pInfoConfig = PBftNodeConfig {
+        pInfoConfig = ExtNodeConfig byronConfig PBftNodeConfig {
             pbftParams    = byronPBftParams genesisConfig mSigThresh
           , pbftIsLeader  = case mLeader of
                               Nothing   -> PBftIsNotALeader
                               Just cred -> PBftIsALeader $ pbftLeaderOrNot cred
-          , pbftExtConfig = byronConfig genesisConfig pVer sVer
           }
       , pInfoInitLedger = ExtLedgerState {
-            ledgerState         = initByronLedgerState genesisConfig
+            ledgerState         = initByronLedgerState genesisConfig Nothing
           , ouroborosChainState = CS.empty
           }
       , pInfoInitState  = ()
       }
+  where
+    byronConfig = mkByronConfig genesisConfig pVer sVer
 
 byronPBftParams :: Genesis.Config -> Maybe PBftSignatureThreshold -> PBftParams
 byronPBftParams cfg threshold = PBftParams {
@@ -163,11 +165,11 @@ pbftLeaderOrNot (PBftLeaderCredentials sk cert nid) = PBftIsLeader {
     , pbftDlgCert    = cert
     }
 
-byronConfig :: Genesis.Config
-            -> Update.ProtocolVersion
-            -> Update.SoftwareVersion
-            -> ByronConfig
-byronConfig genesisConfig pVer sVer = ByronConfig {
+mkByronConfig :: Genesis.Config
+              -> Update.ProtocolVersion
+              -> Update.SoftwareVersion
+              -> ByronConfig
+mkByronConfig genesisConfig pVer sVer = ByronConfig {
       pbftGenesisConfig   = genesisConfig
     , pbftProtocolVersion = pVer
     , pbftSoftwareVersion = sVer

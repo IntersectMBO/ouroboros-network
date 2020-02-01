@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Node.Run.Abstract
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import           Codec.Serialise (Serialise)
 import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy)
@@ -21,6 +22,7 @@ import           Cardano.Crypto (ProtocolMagicId)
 import           Ouroboros.Network.Block (BlockNo, HeaderHash, SlotNo)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
 import           Ouroboros.Network.Magic (NetworkMagic)
+import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart)
@@ -38,6 +40,9 @@ import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo)
 class ( ProtocolLedgerView blk
       , ApplyTx blk
       , HasTxId (GenTx blk)
+      , QueryLedger blk
+        -- TODO: Remove after reconsidering rewindChainState:
+      , Serialise (HeaderHash blk)
       ) => RunNode blk where
 
   nodeForgeBlock          :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
@@ -127,6 +132,8 @@ class ( ProtocolLedgerView blk
   nodeEncodeLedgerState   :: NodeConfig (BlockProtocol blk) -> LedgerState blk -> Encoding
   nodeEncodeChainState    :: Proxy blk -> NodeConfig (BlockProtocol blk) -> ChainState (BlockProtocol blk) -> Encoding
   nodeEncodeApplyTxError  :: Proxy blk -> ApplyTxErr blk -> Encoding
+  nodeEncodeQuery         :: Query blk result -> Encoding
+  nodeEncodeResult        :: Query blk result -> result -> Encoding
 
   -- Decoders
   nodeDecodeHeader        :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Lazy.ByteString -> Header blk)
@@ -137,3 +144,5 @@ class ( ProtocolLedgerView blk
   nodeDecodeLedgerState   :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (LedgerState blk)
   nodeDecodeChainState    :: forall s. Proxy blk -> NodeConfig (BlockProtocol blk) -> Decoder s (ChainState (BlockProtocol blk))
   nodeDecodeApplyTxError  :: forall s. Proxy blk -> Decoder s (ApplyTxErr blk)
+  nodeDecodeQuery         :: forall s. Decoder s (Some (Query blk))
+  nodeDecodeResult        :: Query blk result -> forall s. Decoder s result

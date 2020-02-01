@@ -26,14 +26,13 @@ import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
 import           Ouroboros.Storage.ChainDB.API
 
-import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId, Model,
-                     ModelSupportsBlock, ReaderId)
+import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
+                     LedgerCursorId, Model, ModelSupportsBlock, ReaderId)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 
 openDB :: forall m blk. (
             IOLike m
           , ProtocolLedgerView blk
-          , CanSelect (BlockProtocol blk) blk
           , ModelSupportsBlock blk
           )
        => NodeConfig (BlockProtocol blk)
@@ -113,13 +112,18 @@ openDB cfg initLedger btime = do
                         (Maybe (ChainUpdate blk b), Model blk)
             readerInstruction' = Model.readerInstruction rdrId blockComponent
 
+        ledgerCursor :: LedgerCursorId -> LedgerCursor m blk
+        ledgerCursor lcId = LedgerCursor
+          { ledgerCursorState = query  $ Model.ledgerCursorState lcId
+          , ledgerCursorMove  = update . Model.ledgerCursorMove cfg lcId
+          }
+
     void $ onSlotChange btime $ update_ . Model.advanceCurSlot cfg
 
     return ChainDB {
         addBlock            = update_  . Model.addBlock cfg
       , getCurrentChain     = querySTM $ Model.lastK k getHeader
       , getCurrentLedger    = querySTM $ Model.currentLedger
-      , getPastLedger       = query    . Model.getPastLedger cfg
       , getBlockComponent   = queryE  .: Model.getBlockComponentByPoint
       , getTipBlock         = query    $ Model.tipBlock
       , getTipHeader        = query    $ (fmap getHeader . Model.tipBlock)
@@ -130,6 +134,7 @@ openDB cfg initLedger btime = do
       , getMaxSlotNo        = querySTM $ Model.maxSlotNo
       , stream              = updateE ...: const (\bc from to -> fmap (first (fmap (iterator bc))) . Model.stream k from to)
       , newReader           = update   .:  const (\bc -> (first (reader bc) . Model.newReader))
+      , newLedgerCursor     = update   $ first ledgerCursor . Model.getLedgerCursor
       , closeDB             = atomically $ modifyTVar db Model.closeDB
       , isOpen              = Model.isOpen <$> readTVar db
       }

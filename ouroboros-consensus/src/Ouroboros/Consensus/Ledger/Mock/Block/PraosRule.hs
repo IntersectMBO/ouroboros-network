@@ -59,7 +59,7 @@ newtype SimplePraosRuleExt = SimplePraosRuleExt {
   deriving (Generic, Condense, Show, Eq, NoUnexpectedThunks)
 
 type instance BlockProtocol (SimplePraosRuleBlock c) =
-   WithLeaderSchedule (Praos () PraosCryptoUnused)
+   WithLeaderSchedule (Praos PraosCryptoUnused)
 
 -- | Sanity check that block and header type synonyms agree
 _simplePraosRuleHeader :: SimplePraosRuleBlock c -> SimplePraosRuleHeader c
@@ -86,7 +86,8 @@ instance SimpleCrypto c
       SimpleHeader{..} = simpleHeader
 
 instance SimpleCrypto c
-      => SupportedBlock (SimpleBlock c SimplePraosRuleExt)
+      => SupportedBlock (SimpleBlock c SimplePraosRuleExt) where
+  validateView _ _ = ()
 
 instance SimpleCrypto c
       => ProtocolLedgerView (SimplePraosRuleBlock c) where

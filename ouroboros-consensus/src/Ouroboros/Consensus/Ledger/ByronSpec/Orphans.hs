@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE DerivingVia        #-}
 {-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -8,21 +10,33 @@
 -- | Missing instances for standard type classes in the Byron spec
 module Ouroboros.Consensus.Ledger.ByronSpec.Orphans () where
 
+import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.Serialise
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           GHC.Generics (Generic)
 
+import           Cardano.Binary (enforceSize)
+import qualified Cardano.Binary
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
 import qualified Cardano.Ledger.Spec.STS.UTXO as Spec
 import qualified Cardano.Ledger.Spec.STS.UTXOW as Spec
+import qualified Cardano.Ledger.Spec.STS.UTXOWS as Spec
 import qualified Cardano.Spec.Chain.STS.Block as Spec
+import qualified Cardano.Spec.Chain.STS.Rule.BBody as Spec
+import qualified Cardano.Spec.Chain.STS.Rule.Bupi as Spec
+import qualified Cardano.Spec.Chain.STS.Rule.Chain as Spec
+import qualified Cardano.Spec.Chain.STS.Rule.Epoch as Spec
+import qualified Cardano.Spec.Chain.STS.Rule.Pbft as Spec
+import qualified Cardano.Spec.Chain.STS.Rule.SigCnt as Spec
 import qualified Control.State.Transition as Spec
 import qualified Ledger.Core as Spec
 import qualified Ledger.Delegation as Spec
 import qualified Ledger.Update as Spec
 import qualified Ledger.UTxO as Spec
+
+import           Test.Cardano.Chain.Elaboration.Block as Spec.Test
 
 {-------------------------------------------------------------------------------
   Serialise
@@ -69,9 +83,25 @@ instance Serialise Spec.Vote
 instance Serialise Spec.Wit
 
 instance Serialise (Spec.PredicateFailure Spec.ADDVOTE)
+instance Serialise (Spec.PredicateFailure Spec.ADELEG)
+instance Serialise (Spec.PredicateFailure Spec.ADELEGS)
+instance Serialise (Spec.PredicateFailure Spec.APPLYVOTES)
+instance Serialise (Spec.PredicateFailure Spec.BBODY)
+instance Serialise (Spec.PredicateFailure Spec.BUPI)
+instance Serialise (Spec.PredicateFailure Spec.CHAIN)
+instance Serialise (Spec.PredicateFailure Spec.DELEG)
+instance Serialise (Spec.PredicateFailure Spec.EPOCH)
+instance Serialise (Spec.PredicateFailure Spec.PBFT)
+instance Serialise (Spec.PredicateFailure Spec.PVBUMP)
 instance Serialise (Spec.PredicateFailure Spec.SDELEG)
+instance Serialise (Spec.PredicateFailure Spec.SDELEGS)
+instance Serialise (Spec.PredicateFailure Spec.SIGCNT)
+instance Serialise (Spec.PredicateFailure Spec.UPEND)
+instance Serialise (Spec.PredicateFailure Spec.UPIEC)
+instance Serialise (Spec.PredicateFailure Spec.UPIEND)
 instance Serialise (Spec.PredicateFailure Spec.UPIREG)
 instance Serialise (Spec.PredicateFailure Spec.UPIVOTE)
+instance Serialise (Spec.PredicateFailure Spec.UPIVOTES)
 instance Serialise (Spec.PredicateFailure Spec.UPPVV)
 instance Serialise (Spec.PredicateFailure Spec.UPREG)
 instance Serialise (Spec.PredicateFailure Spec.UPSVV)
@@ -79,9 +109,27 @@ instance Serialise (Spec.PredicateFailure Spec.UPV)
 instance Serialise (Spec.PredicateFailure Spec.UPVOTE)
 instance Serialise (Spec.PredicateFailure Spec.UTXO)
 instance Serialise (Spec.PredicateFailure Spec.UTXOW)
+instance Serialise (Spec.PredicateFailure Spec.UTXOWS)
 
 instance Serialise a => Serialise (Spec.Sig       a)
 instance Serialise a => Serialise (Spec.Threshold a)
+
+{-------------------------------------------------------------------------------
+  Test infrastructure
+-------------------------------------------------------------------------------}
+
+instance Serialise Spec.Test.AbstractToConcreteIdMaps where
+  encode AbstractToConcreteIdMaps{..} = mconcat [
+        encodeListLen 2
+      , encode (ToFromCBOR <$> transactionIds)
+      , encode (ToFromCBOR <$> proposalIds)
+      ]
+
+  decode = do
+    enforceSize "AbstractToConcreteIdMaps" 2
+    transactionIds <- fmap unToFromCBOR <$> decode
+    proposalIds    <- fmap unToFromCBOR <$> decode
+    return $ AbstractToConcreteIdMaps{..}
 
 {-------------------------------------------------------------------------------
   Missing Eq instances
@@ -105,9 +153,25 @@ deriving instance Generic Spec.UTxOState
 deriving instance Generic (Spec.Threshold a)
 
 deriving instance Generic (Spec.PredicateFailure Spec.ADDVOTE)
+deriving instance Generic (Spec.PredicateFailure Spec.ADELEG)
+deriving instance Generic (Spec.PredicateFailure Spec.ADELEGS)
+deriving instance Generic (Spec.PredicateFailure Spec.APPLYVOTES)
+deriving instance Generic (Spec.PredicateFailure Spec.BBODY)
+deriving instance Generic (Spec.PredicateFailure Spec.BUPI)
+deriving instance Generic (Spec.PredicateFailure Spec.CHAIN)
+deriving instance Generic (Spec.PredicateFailure Spec.DELEG)
+deriving instance Generic (Spec.PredicateFailure Spec.EPOCH)
+deriving instance Generic (Spec.PredicateFailure Spec.PBFT)
+deriving instance Generic (Spec.PredicateFailure Spec.PVBUMP)
 deriving instance Generic (Spec.PredicateFailure Spec.SDELEG)
+deriving instance Generic (Spec.PredicateFailure Spec.SDELEGS)
+deriving instance Generic (Spec.PredicateFailure Spec.SIGCNT)
+deriving instance Generic (Spec.PredicateFailure Spec.UPEND)
+deriving instance Generic (Spec.PredicateFailure Spec.UPIEC)
+deriving instance Generic (Spec.PredicateFailure Spec.UPIEND)
 deriving instance Generic (Spec.PredicateFailure Spec.UPIREG)
 deriving instance Generic (Spec.PredicateFailure Spec.UPIVOTE)
+deriving instance Generic (Spec.PredicateFailure Spec.UPIVOTES)
 deriving instance Generic (Spec.PredicateFailure Spec.UPPVV)
 deriving instance Generic (Spec.PredicateFailure Spec.UPREG)
 deriving instance Generic (Spec.PredicateFailure Spec.UPSVV)
@@ -115,6 +179,7 @@ deriving instance Generic (Spec.PredicateFailure Spec.UPV)
 deriving instance Generic (Spec.PredicateFailure Spec.UPVOTE)
 deriving instance Generic (Spec.PredicateFailure Spec.UTXO)
 deriving instance Generic (Spec.PredicateFailure Spec.UTXOW)
+deriving instance Generic (Spec.PredicateFailure Spec.UTXOWS)
 
 {-------------------------------------------------------------------------------
   NoUnexpectedThunks
@@ -134,3 +199,15 @@ instance ( Ord k, Ord v
          ) => Serialise (Bimap k v) where
   encode = encode . Bimap.toList
   decode = Bimap.fromList <$> decode
+
+{-------------------------------------------------------------------------------
+  Auxiliary: Cardano.Binary.ToCBOR/FromCBOR to Serialise bridge
+-------------------------------------------------------------------------------}
+
+newtype ToFromCBOR a = ToFromCBOR { unToFromCBOR :: a }
+
+instance ( Cardano.Binary.ToCBOR   a
+         , Cardano.Binary.FromCBOR a
+         ) => Serialise (ToFromCBOR a) where
+  encode = Cardano.Binary.toCBOR . unToFromCBOR
+  decode = ToFromCBOR <$> Cardano.Binary.fromCBOR

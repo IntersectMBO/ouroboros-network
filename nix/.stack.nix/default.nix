@@ -24,7 +24,6 @@
         "cborg" = (((hackage.cborg)."0.2.2.0").revisions).default;
         "canonical-json" = (((hackage.canonical-json)."0.6.0.0").revisions).default;
         } // {
-        typed-transitions = ./typed-transitions.nix;
         typed-protocols = ./typed-protocols.nix;
         typed-protocols-cbor = ./typed-protocols-cbor.nix;
         network-mux = ./network-mux.nix;

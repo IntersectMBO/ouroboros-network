@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TypeFamilies      #-}
 
@@ -21,6 +22,7 @@ module Ouroboros.Storage.Common (
   , decodeTip
     -- * BinaryInfo
   , BinaryInfo (..)
+  , extractHeader
     -- * BlockComponent
   , DB (..)
   , BlockComponent (..)
@@ -33,6 +35,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise (..))
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as BL
 import           Data.Word
 import           GHC.Generics
 
@@ -123,6 +126,11 @@ data BinaryInfo blob = BinaryInfo
     -- witnesses begin so we can only extract the transaction body.
   } deriving (Eq, Show, Generic, Functor)
 
+-- | Utility for BinaryInfo of ByteString which are quite common.
+extractHeader :: BinaryInfo ByteString -> ByteString
+extractHeader BinaryInfo { binaryBlob, headerOffset, headerSize } =
+    BL.take (fromIntegral headerSize) $
+    BL.drop (fromIntegral headerOffset) binaryBlob
 
 {-------------------------------------------------------------------------------
   BlockComponent

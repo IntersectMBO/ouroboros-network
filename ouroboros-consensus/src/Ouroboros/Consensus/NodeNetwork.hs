@@ -3,6 +3,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -28,6 +29,7 @@ module Ouroboros.Consensus.NodeNetwork (
   , localResponderNetworkApplication
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad (void)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
@@ -57,6 +59,9 @@ import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.LocalStateQuery.Codec
+import           Ouroboros.Network.Protocol.LocalStateQuery.Server
+import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Codec
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
@@ -72,6 +77,7 @@ import           Ouroboros.Consensus.BlockFetchServer
 import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.ChainSyncServer
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.LocalStateQueryServer
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
@@ -127,6 +133,9 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
 
     , phLocalTxSubmissionServer
         :: LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
+
+    , phLocalStateQueryServer
+        :: LocalStateQueryServer blk (Query blk) m ()
     }
 
 protocolHandlers
@@ -135,6 +144,8 @@ protocolHandlers
        , ApplyTx blk
        , HasTxId (GenTx blk)
        , ProtocolLedgerView blk
+       , QueryLedger blk
+       , Serialise (HeaderHash blk)
        )
     => NodeArgs   m peer blk  --TODO eliminate, merge relevant into NodeKernel
     -> NodeKernel m peer blk
@@ -182,6 +193,9 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncP
         localTxSubmissionServer
           (localTxSubmissionServerTracer tracers)
           getMempool
+    , phLocalStateQueryServer =
+        localStateQueryServer
+          (ChainDB.newLedgerCursor getChainDB)
     }
 
 
@@ -189,7 +203,7 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncP
 --
 data ProtocolCodecs blk failure m
                     bytesCS bytesSCS bytesBF bytesSBF bytesTX
-                    bytesLCS bytesLTX = ProtocolCodecs {
+                    bytesLCS bytesLTX bytesLSQ = ProtocolCodecs {
     pcChainSyncCodec            :: Codec (ChainSync (Header blk) (Tip blk))
                                          failure m bytesCS
   , pcChainSyncCodecSerialised  :: Codec (ChainSync (Serialised (Header blk)) (Tip blk))
@@ -204,6 +218,8 @@ data ProtocolCodecs blk failure m
                                          failure m bytesLCS
   , pcLocalTxSubmissionCodec    :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))
                                          failure m bytesLTX
+  , pcLocalStateQueryCodec      :: Codec (LocalStateQuery blk (Query blk))
+                                         failure m bytesLSQ
   }
 
 -- | The real codecs
@@ -212,7 +228,7 @@ protocolCodecs :: forall m blk. (IOLike m, RunNode blk)
                => NodeConfig (BlockProtocol blk)
                -> ProtocolCodecs blk DeserialiseFailure m
                     ByteString ByteString ByteString ByteString ByteString
-                    ByteString ByteString
+                    ByteString ByteString ByteString
 protocolCodecs cfg = ProtocolCodecs {
       pcChainSyncCodec =
         codecChainSync
@@ -262,11 +278,20 @@ protocolCodecs cfg = ProtocolCodecs {
           nodeDecodeGenTx
           (nodeEncodeApplyTxError (Proxy @blk))
           (nodeDecodeApplyTxError (Proxy @blk))
+
+    , pcLocalStateQueryCodec =
+        codecLocalStateQuery
+          (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
+          (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
+          nodeEncodeQuery
+          nodeDecodeQuery
+          nodeEncodeResult
+          nodeDecodeResult
     }
 
 -- | Id codecs used in tests.
 --
-protocolCodecsId :: Monad m
+protocolCodecsId :: (Monad m, QueryLedger blk)
                  => ProtocolCodecs blk CodecFailure m
                       (AnyMessage (ChainSync (Header blk) (Tip blk)))
                       (AnyMessage (ChainSync (Serialised (Header blk)) (Tip blk)))
@@ -275,6 +300,7 @@ protocolCodecsId :: Monad m
                       (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
                       (AnyMessage (ChainSync (Serialised blk) (Tip blk)))
                       (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
+                      (AnyMessage (LocalStateQuery blk (Query blk)))
 protocolCodecsId = ProtocolCodecs {
       pcChainSyncCodec            = codecChainSyncId
     , pcChainSyncCodecSerialised  = codecChainSyncId
@@ -283,6 +309,7 @@ protocolCodecsId = ProtocolCodecs {
     , pcTxSubmissionCodec         = codecTxSubmissionId
     , pcLocalChainSyncCodec       = codecChainSyncId
     , pcLocalTxSubmissionCodec    = codecLocalTxSubmissionId
+    , pcLocalStateQueryCodec      = codecLocalStateQueryId eqQuery
     }
 
 -- | A record of 'Tracer's for the different protocols.
@@ -296,6 +323,7 @@ data ProtocolTracers' peer blk failure f = ProtocolTracers {
   , ptTxSubmissionTracer         :: f (TraceLabelPeer peer (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))))
   , ptLocalChainSyncTracer       :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Serialised blk) (Tip blk))))
   , ptLocalTxSubmissionTracer    :: f (TraceLabelPeer peer (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))))
+  , ptLocalStateQueryTracer      :: f (TraceLabelPeer peer (TraceSendRecv (LocalStateQuery blk (Query blk))))
   }
 
 -- | Use a 'nullTracer' for each protocol.
@@ -308,6 +336,7 @@ nullProtocolTracers = ProtocolTracers {
   , ptTxSubmissionTracer         = nullTracer
   , ptLocalChainSyncTracer       = nullTracer
   , ptLocalTxSubmissionTracer    = nullTracer
+  , ptLocalStateQueryTracer      = nullTracer
   }
 
 showProtocolTracers :: ( Show blk
@@ -316,6 +345,7 @@ showProtocolTracers :: ( Show blk
                        , Show (GenTx blk)
                        , Show (GenTxId blk)
                        , Show (ApplyTxErr blk)
+                       , ShowQuery (Query blk)
                        , HasHeader blk
                        )
                     => Tracer m String -> ProtocolTracers m peer blk failure
@@ -327,6 +357,7 @@ showProtocolTracers tr = ProtocolTracers {
   , ptTxSubmissionTracer         = showTracing tr
   , ptLocalChainSyncTracer       = showTracing tr
   , ptLocalTxSubmissionTracer    = showTracing tr
+  , ptLocalStateQueryTracer      = showTracing tr
   }
 
 -- | Consensus provides a chains sync, block fetch applications.  This data
@@ -337,7 +368,7 @@ showProtocolTracers tr = ProtocolTracers {
 --
 data NetworkApplication m peer
                         bytesCS bytesBF bytesTX
-                        bytesLCS bytesLTX a = NetworkApplication {
+                        bytesLCS bytesLTX bytesLSQ a = NetworkApplication {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
       naChainSyncClient         :: peer -> Channel m bytesCS -> m a
@@ -364,6 +395,9 @@ data NetworkApplication m peer
 
       -- | Start a local transaction submission server.
     , naLocalTxSubmissionServer :: peer -> Channel m bytesLTX -> m a
+
+      -- | Start a local state query server.
+    , naLocalStateQueryServer   :: peer -> Channel m bytesLSQ -> m a
     }
 
 
@@ -371,7 +405,7 @@ data NetworkApplication m peer
 -- for the 'NodeToNodeProtocols'.
 --
 initiatorNetworkApplication
-  :: NetworkApplication m peer bytes bytes bytes bytes bytes a
+  :: NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
   -> OuroborosApplication 'InitiatorApp peer NodeToNodeProtocols m bytes a Void
 initiatorNetworkApplication NetworkApplication {..} =
     OuroborosInitiatorApplication $ \them ptcl -> case ptcl of
@@ -383,7 +417,7 @@ initiatorNetworkApplication NetworkApplication {..} =
 -- for the 'NodeToNodeProtocols'.
 --
 responderNetworkApplication
-  :: NetworkApplication m peer bytes bytes bytes bytes bytes a
+  :: NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
   -> OuroborosApplication 'ResponderApp peer NodeToNodeProtocols m bytes Void a
 responderNetworkApplication NetworkApplication {..} =
     OuroborosResponderApplication $ \them ptcl -> case ptcl of
@@ -395,7 +429,7 @@ responderNetworkApplication NetworkApplication {..} =
 -- for the 'NodeToClientProtocols'.
 --
 localResponderNetworkApplication
-  :: NetworkApplication m peer bytes bytes bytes bytes bytes a
+  :: NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
   -> OuroborosApplication 'ResponderApp peer NodeToClientProtocols m bytes Void a
 localResponderNetworkApplication NetworkApplication {..} =
     OuroborosResponderApplication $ \peer  ptcl -> case ptcl of
@@ -408,7 +442,7 @@ localResponderNetworkApplication NetworkApplication {..} =
 -- 'NodeToNodeVersions'.
 --
 consensusNetworkApps
-    :: forall m peer blk failure bytesCS bytesBF bytesTX bytesLCS bytesLTX.
+    :: forall m peer blk failure bytesCS bytesBF bytesTX bytesLCS bytesLTX bytesLSQ.
        ( IOLike m
        , Ord peer
        , Exception failure
@@ -416,9 +450,9 @@ consensusNetworkApps
        )
     => NodeKernel m peer blk
     -> ProtocolTracers m peer blk failure
-    -> ProtocolCodecs blk failure m bytesCS bytesCS bytesBF bytesBF bytesTX bytesLCS bytesLTX
+    -> ProtocolCodecs blk failure m bytesCS bytesCS bytesBF bytesBF bytesTX bytesLCS bytesLTX bytesLSQ
     -> ProtocolHandlers m peer blk
-    -> NetworkApplication m peer bytesCS bytesBF bytesTX bytesLCS bytesLTX ()
+    -> NetworkApplication m peer bytesCS bytesBF bytesTX bytesLCS bytesLTX bytesLSQ ()
 consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHandlers {..} =
     NetworkApplication {
       naChainSyncClient,
@@ -428,7 +462,8 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       naTxSubmissionClient,
       naTxSubmissionServer,
       naLocalChainSyncServer,
-      naLocalTxSubmissionServer
+      naLocalTxSubmissionServer,
+      naLocalStateQueryServer
     }
   where
     naChainSyncClient
@@ -536,6 +571,17 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
         pcLocalTxSubmissionCodec
         channel
         (localTxSubmissionServerPeer (pure phLocalTxSubmissionServer))
+
+    naLocalStateQueryServer
+      :: peer
+      -> Channel m bytesLSQ
+      -> m ()
+    naLocalStateQueryServer them channel =
+      runPeer
+        (contramap (TraceLabelPeer them) ptLocalStateQueryTracer)
+        pcLocalStateQueryCodec
+        channel
+        (localStateQueryServerPeer phLocalStateQueryServer)
 
 chainDbView :: IOLike m => ChainDB m blk -> ChainDbView m blk
 chainDbView chainDB = ChainDbView

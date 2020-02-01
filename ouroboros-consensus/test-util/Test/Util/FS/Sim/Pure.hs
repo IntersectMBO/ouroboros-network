@@ -54,6 +54,7 @@ pureHasFS err = HasFS {
     , doesFileExist            = Mock.doesFileExist            err'
     , removeFile               = Mock.removeFile               err'
     , hasFsErr                 = err'
+    , mkFsErrorPath            = fsToFsErrorPathUnmounted
     }
   where
     err' :: ErrorHandling FsError (PureSimFS m)

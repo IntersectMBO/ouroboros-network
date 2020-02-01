@@ -16,6 +16,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.Praos
 
 protocolInfoPraos :: NumCoreNodes
@@ -25,14 +26,13 @@ protocolInfoPraos :: NumCoreNodes
                                                     PraosMockCrypto)
 protocolInfoPraos numCoreNodes nid params =
     ProtocolInfo {
-        pInfoConfig = PraosNodeConfig {
+        pInfoConfig = ExtNodeConfig addrDist PraosNodeConfig {
             praosParams       = params
           , praosNodeId       = CoreId nid
           , praosSignKeyVRF   = signKeyVRF nid
           , praosInitialEta   = 0
           , praosInitialStake = genesisStakeDist addrDist
           , praosVerKeys      = verKeys
-          , praosExtConfig    = addrDist
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState         = genesisSimpleLedgerState addrDist

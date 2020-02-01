@@ -1,6 +1,7 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TypeApplications  #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -8,26 +9,45 @@ module Test.ThreadNet.DualPBFT (
     tests
   ) where
 
+import           Control.Monad.Trans.Except
+import           Crypto.Number.Generate as Cryptonite
+import           Crypto.Random (MonadRandom)
+import           Data.ByteString (ByteString)
+import qualified Data.Map as Map
 import qualified Data.Set as Set
+import           Data.Word
+import qualified Hedgehog
+import qualified Hedgehog.Internal.Gen as HH
+import qualified Hedgehog.Internal.Tree as HH
+import qualified Hedgehog.Range as HH
 import           Test.QuickCheck
 import           Test.QuickCheck.Hedgehog (hedgehog)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import qualified Cardano.Spec.Chain.STS.Rule.Chain as Abstract
-import qualified Control.State.Transition.Generator as Abstract.QC
-import qualified Ledger.Core as Abstract
+import qualified Cardano.Chain.UTxO as Impl
+
+import qualified Cardano.Spec.Chain.STS.Rule.Chain as Spec
+import qualified Control.State.Transition.Extended as Spec
+import qualified Control.State.Transition.Generator as Spec.QC
+import qualified Ledger.Core as Spec
+import qualified Ledger.UTxO as Spec
+
+import qualified Test.Cardano.Chain.Elaboration.UTxO as Spec.Test
 
 import           Ouroboros.Consensus.BlockchainTime.Mock (NumSlots (..))
 import           Ouroboros.Consensus.BlockchainTime.SlotLengths
-import           Ouroboros.Consensus.Ledger.Byron.Block (ByronBlock)
-import           Ouroboros.Consensus.Ledger.ByronSpec.Genesis
-                     (ByronSpecGenesis (..))
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.ByronSpec
 import qualified Ouroboros.Consensus.Ledger.ByronSpec.Genesis as Genesis
+import qualified Ouroboros.Consensus.Ledger.ByronSpec.Rules as Rules
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.Dual.Byron
+import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.PBFT
 
@@ -43,9 +63,13 @@ tests = testGroup "DualPBFT" [
       testProperty "convergence" $ prop_convergence
     ]
 
+-- These tests are very expensive, due to the Byron generators
+-- (100 tests take about 20 minutes)
+-- We limit it to 10 tests for now.
 prop_convergence :: SetupDualPBft -> Property
-prop_convergence setup =
+prop_convergence setup = withMaxSuccess 10 $
     prop_general
+      (countByronGenTxs . dualBlockMain)
       (setupSecurityParam      setup)
       (setupConfig             setup)
       (setupSchedule           setup)
@@ -126,7 +150,7 @@ setupExpectedRejections setup@SetupDualPBft{..} rejection =
 instance Arbitrary SetupDualPBft where
   arbitrary = do
       numSlots <- arbitrary
-      genesis  <- genChainEnv numSlots
+      genesis  <- genSpecGenesis numSlots
       let params = realPBftParams genesis
       config <- genDualPBFTTestConfig numSlots params
       return SetupDualPBft {
@@ -144,7 +168,7 @@ instance Arbitrary SetupDualPBft where
       adjustGenesis :: PBftParams
                     -> ByronSpecGenesis
                     -> ByronSpecGenesis
-      adjustGenesis = Genesis.setPBftThreshold . pbftSignatureThreshold
+      adjustGenesis = Genesis.modPBftThreshold . const . pbftSignatureThreshold
 
   shrink setup@SetupDualPBft{..} = concat [
         -- Shrink number of slots
@@ -177,11 +201,20 @@ instance Arbitrary SetupDualPBft where
 -- trace (independent of its length) contains multiple epochs, which is why
 -- this wants to know the chain length; we don't know that a-priority, but we
 -- do know the number of slots, and will use that as a stand-in.
-genChainEnv :: NumSlots -> Gen ByronSpecGenesis
-genChainEnv (NumSlots numSlots) = fmap Genesis.fromChainEnv . hedgehog $
+genSpecGenesis :: NumSlots -> Gen ByronSpecGenesis
+genSpecGenesis (NumSlots numSlots) = fmap fromEnv . hedgehog $
     -- Convert Hedgehog generator to QuickCheck one
     -- Unfortunately, this does mean we lose any shrinking.
-    Abstract.QC.envGen @Abstract.CHAIN numSlots
+    Spec.QC.envGen @Spec.CHAIN numSlots
+  where
+    -- Start with a larger initial UTxO. This is important, because the Byron
+    -- spec TX generator is wasteful, and with every transaction the UTxO
+    -- shrinks. By starting with a larger initial UTxO we avoid the depleting
+    -- the UTxO too early (at which point we'd not be able to generate further
+    -- transactions, and produce empty blocks only).
+    fromEnv :: Spec.Environment Spec.CHAIN -> ByronSpecGenesis
+    fromEnv = Genesis.modUtxoValues (* 10000)
+            . Genesis.fromChainEnv
 
 -- | Generate test config
 --
@@ -209,7 +242,7 @@ realPBftParams :: ByronSpecGenesis -> PBftParams
 realPBftParams ByronSpecGenesis{..} =
     RealPBFT.realPBftParams (SecurityParam k) numCoreNodes
   where
-    Abstract.BlockCount k = byronSpecGenesisSecurityParam
+    Spec.BlockCount k = byronSpecGenesisSecurityParam
 
     numCoreNodes :: NumCoreNodes
     numCoreNodes = NumCoreNodes $
@@ -219,7 +252,105 @@ realPBftParams ByronSpecGenesis{..} =
   Generate transactions
 -------------------------------------------------------------------------------}
 
--- TODO: Implement the transaction generator
+-- | Redefine 'testGenTxs' rather than 'testGenTx' as the generator can fail
 instance TxGen DualByronBlock where
-  testGenTx  _ _ _ = undefined -- not used when we redefine testGenTxs
-  testGenTxs _ _ _ = return []
+  testGenTx = error "testGenTx not defined; use testGenTxs instead"
+
+  testGenTxs _numCoreNodes curSlotNo cfg = \st -> do
+      n <- generateBetween 0 20
+      go [] n $ applyChainTick (ledgerConfigView cfg) curSlotNo st
+    where
+      -- Attempt to produce @n@ transactions
+      -- Stops when the transaction generator cannot produce more txs
+      go :: MonadRandom m
+         => [GenTx DualByronBlock]     -- Accumulator
+         -> Integer                    -- Number of txs to still produce
+         -> TickedLedgerState DualByronBlock
+         -> m [GenTx DualByronBlock]
+      go acc 0 _  = return (reverse acc)
+      go acc n st = do
+          mTx <- hedgehogAdapter $ genTx cfg (getTickedLedgerState st)
+          case mTx of
+            Nothing -> return (reverse acc)
+            Just tx ->
+              case runExcept $ applyTx
+                                 (ledgerConfigView cfg)
+                                 tx
+                                 st of
+                Right st' -> go (tx:acc) (n - 1) st'
+                Left _    -> error "testGenTxs: unexpected invalid tx"
+
+-- | Generate transaction
+--
+-- For now we only generate regular transactions. Generating delegation
+-- certificates and update proposals/votes is out of the scope of this test,
+-- for now. Extending the scope will require integration with the restart/rekey
+-- infrastructure of the RealPBFT tests.
+genTx :: NodeConfig DualByronProtocol
+      -> LedgerState DualByronBlock
+      -> Hedgehog.Gen (GenTx DualByronBlock)
+genTx cfg st = HH.choice [
+      do aux <- sigGen (Rules.ctxtUTXOW cfg') st'
+         let main :: Impl.ATxAux ByteString
+             main = Spec.Test.elaborateTxWitsBS
+                      elaborateTxId
+                      aux
+
+         return $ DualGenTx {
+             dualGenTxMain   = ByronTx (byronIdTx main) main
+           , dualGenTxAux    = ByronSpecGenTx $ ByronSpecGenTxTx aux
+           , dualGenTxBridge = specToImplTxWit aux main
+           }
+    ]
+  where
+    cfg' :: ByronSpecGenesis
+    st'  :: Spec.State Spec.CHAIN
+
+    cfg' = unByronSpecLedgerConfig $ extNodeConfig cfg
+    st'  = byronSpecLedgerState    $ dualLedgerStateAux st
+
+    bridge :: ByronSpecBridge
+    bridge = dualLedgerStateBridge st
+
+    elaborateTxId :: Spec.TxId -> Impl.TxId
+    elaborateTxId tid =
+        case Map.lookup tid (bridgeTransactionIds bridge) of
+          Nothing   -> error $ "elaborateTxId: unknown tx ID " ++ show tid
+          Just tid' -> tid'
+
+sigGen :: forall sts. (Spec.QC.HasTrace sts)
+       => Rules.RuleContext sts
+       -> Spec.State Spec.CHAIN
+       -> Hedgehog.Gen (Spec.Signal sts)
+sigGen Rules.RuleContext{..} st =
+    Spec.QC.sigGen @sts (getRuleEnv st) (getRuleState st)
+
+{-------------------------------------------------------------------------------
+  Hedgehog to MonadRandom adapter
+-------------------------------------------------------------------------------}
+
+-- | Run the generator by producing a random seed
+--
+-- If the generator fails to produce a value, try again with a different seed;
+-- if this fails too often, return 'Nothing'.
+hedgehogAdapter :: forall m a. MonadRandom m => Hedgehog.Gen a -> m (Maybe a)
+hedgehogAdapter gen =
+    go 2 -- We only try twice right now, as the tests are already very slow
+  where
+    go :: Int -> m (Maybe a)
+    go 0 = return Nothing
+    go n = do
+      seed <- genSeed
+      case HH.evalGen (HH.Size 30) seed gen of
+        Nothing -> go (n - 1)
+        Just ta -> return $ Just (HH.treeValue ta)
+
+    genSeed :: m Hedgehog.Seed
+    genSeed = do
+      a <- fromInteger <$> Cryptonite.generateBetween mn mx
+      b <- fromInteger <$> Cryptonite.generateBetween mn mx
+      return $ Hedgehog.Seed a (if even b then succ b else b)
+
+    mn, mx :: Integer
+    mn = toInteger (minBound :: Word64)
+    mx = toInteger (maxBound :: Word64)
