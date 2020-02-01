@@ -201,6 +201,9 @@ instance ( MonadMask  m
   waitCatchSTM  a  = wrapSTM (commute      <$> waitCatchSTM (withEarlyExit a))
   pollSTM       a  = wrapSTM (fmap commute <$> pollSTM      (withEarlyExit a))
 
+  -- TBD is it even possible?
+  asyncWithUnmask _ = error "WithEarlyExit does not implement asyncWithUnmask"
+
 commute :: Either SomeException (Maybe a) -> Maybe (Either SomeException a)
 commute (Left e)         = Just (Left e)
 commute (Right Nothing)  = Nothing
