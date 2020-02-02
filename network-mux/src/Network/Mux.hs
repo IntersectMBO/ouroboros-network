@@ -38,8 +38,11 @@ import           Data.Int (Int64)
 import           Data.Maybe (catMaybes)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Array
+import qualified Data.Set as Set
+import           Data.Set (Set)
 import           Text.Printf
 
+import           Control.Applicative
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
@@ -104,15 +107,17 @@ muxStart
     -> m ()
 muxStart tracer (MuxApplication ptcls) bearer = do
     ptcls' <- mapM addProtocolQueues ptcls
-    let tbl = setupTbl ptcls'
+    let dispatchtbl = setupDispatchTable  ptcls'
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
 
     let jobs = muxerJob tq cnt
-             : demuxerJob tbl
+             : demuxerJob dispatchtbl
              : catMaybes [ miniProtocolInitiatorJob cnt tq ptcl pix initQ respQ
                          | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
-            ++ catMaybes [ miniProtocolResponderJob cnt tq ptcl pix initQ respQ
+
+        respondertbl = setupResponderTable
+                         [ miniProtocolResponderJob cnt tq ptcl pix initQ respQ
                          | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
 
     JobPool.withJobPool $ \jobpool -> do
@@ -121,7 +126,7 @@ muxStart tracer (MuxApplication ptcls) bearer = do
 
       -- Wait for the first job to terminate, successfully or otherwise.
       -- All the other jobs are shut down Upon completion of withJobPool.
-      monitor tracer jobpool
+      monitor tracer jobpool dispatchtbl respondertbl
   where
     addProtocolQueues :: MuxMiniProtocol appType m a b
                       -> m ( MuxMiniProtocol appType m a b
@@ -134,12 +139,12 @@ muxStart tracer (MuxApplication ptcls) bearer = do
         return (ptcl, initiatorQ, responderQ)
 
     -- Construct the array of TBQueues, one for each protocol id, and each mode
-    setupTbl :: [( MuxMiniProtocol appType m a b
-                 , StrictTVar m BL.ByteString
-                 , StrictTVar m BL.ByteString
-                 )]
-             -> MiniProtocolDispatch m
-    setupTbl ptcls' =
+    setupDispatchTable :: [( MuxMiniProtocol appType m a b
+                           , StrictTVar m BL.ByteString
+                           , StrictTVar m BL.ByteString
+                           )]
+                       -> MiniProtocolDispatch m
+    setupDispatchTable ptcls' =
         MiniProtocolDispatch
           (array (mincode, maxcode) $
                  [ (code, Nothing)    | code <- [mincode..maxcode] ]
@@ -160,6 +165,14 @@ muxStart tracer (MuxApplication ptcls) bearer = do
         codes   = [ miniProtocolNum ptcl | (ptcl, _, _) <- ptcls' ]
         mincode = minimum codes
         maxcode = maximum codes
+
+    setupResponderTable :: [Maybe (JobPool.Job m MuxJobResult)]
+                        -> MiniProtocolResponders m
+    setupResponderTable jobs =
+        MiniProtocolResponders $ array (minpix, maxpix) (zip [0..] jobs)
+      where
+        minpix = 0
+        maxpix = fromIntegral (length jobs - 1)
 
     muxerJob tq cnt =
       JobPool.Job (mux cnt MuxState { egressQueue   = tq,  Egress.bearer })
@@ -228,27 +241,82 @@ muxStart tracer (MuxApplication ptcls) bearer = do
             c <- readTVar cnt
             unless (c == 0) retry
 
-monitor :: (MonadSTM m, MonadThrow m)
+newtype MiniProtocolResponders m =
+        MiniProtocolResponders
+          (Array MiniProtocolIx (Maybe (JobPool.Job m MuxJobResult)))
+
+-- | The monitoring loop does two jobs:
+--
+--  1. it waits for mini-protocol threads to terminate
+--  2. it starts responder protocol threads on demand when the first
+--     incoming message arrives.
+--
+monitor :: forall m. (MonadSTM m, MonadAsync m, MonadMask m)
         => Tracer m MuxTrace
         -> JobPool.JobPool m MuxJobResult
+        -> MiniProtocolDispatch m
+        -> MiniProtocolResponders m
         -> m ()
-monitor tracer jobpool = do
-    result <- atomically (JobPool.collect jobpool)
-    traceWith tracer (MuxTraceState Dead)
-    case result of
-      MiniProtocolShutdown pnum _pix pmode ->
-        traceWith tracer (MuxTraceCleanExit pnum pmode)
+monitor tracer jobpool
+        (MiniProtocolDispatch _ dispatchtbl)
+        (MiniProtocolResponders respondertbl) =
+    go (Set.fromList . range . bounds $ respondertbl)
+  where
+    -- To do this second job it needs to keep track of which responder protocol
+    -- threads are running.
+    go :: Set MiniProtocolIx
+       -> m ()
+    go !idleResponders = do
+      result <- atomically $
+            -- wait for a mini-protocol thread to terminate
+            (Left  <$> JobPool.collect jobpool)
+            -- or wait for data to arrive on the channels that do not yet have
+            -- responder threads running
+        <|> (Right <$> foldr (<|>) retry
+                         [ checkNonEmptyBuf dispatchInfo >> return ix
+                         | ix <- Set.elems idleResponders
+                         , let dispatchInfo = dispatchtbl ! (ix, ModeResponder)
+                         ])
 
-      MiniProtocolException pnum _pix pmode e -> do
-        traceWith tracer (MuxTraceExceptionExit pnum pmode e)
-        throwM e
+      case result of
+        -- For now we do not restart protocols, when any stop we terminate
+        -- and the whole bundle will get cleaned up.
+        Left (MiniProtocolShutdown pnum _pix pmode) -> do
+          traceWith tracer (MuxTraceState Dead)
+          traceWith tracer (MuxTraceCleanExit pnum pmode)
 
-      -- These would always be internal errors, so propagate.
-      MuxerException   e -> throwM e
-      DemuxerException e -> throwM e
-    --TODO: decide if we should have exception wrappers here to identify
-    -- the source of the failure, e.g. specific mini-protocol. If we're
-    -- propagating exceptions, we don't need to log them.
+        Left (MiniProtocolException pnum _pix pmode e) -> do
+          traceWith tracer (MuxTraceState Dead)
+          traceWith tracer (MuxTraceExceptionExit pnum pmode e)
+          throwM e
+
+        -- These would always be internal errors, so propagate.
+        --TODO: decide if we should have exception wrappers here to identify
+        -- the source of the failure, e.g. specific mini-protocol. If we're
+        -- propagating exceptions, we don't need to log them.
+        Left (MuxerException   e) -> do
+          traceWith tracer (MuxTraceState Dead)
+          throwM e
+        Left (DemuxerException e) -> do
+          traceWith tracer (MuxTraceState Dead)
+          throwM e
+
+        -- Data has arrived on a channel for a mini-protocol that do not yet
+        -- have a responder thread running. So we start it now.
+        Right ix | Just job <- respondertbl ! ix -> do
+         JobPool.forkJob jobpool job
+         go (Set.delete ix idleResponders)
+
+        Right _ix ->
+          --TODO: it would be cleaner to do this check in the demuxer.
+          throwM $ MuxError MuxInitiatorOnly
+                      ("Received data on a responder channel but this mux "
+                       ++ "instance is initiator only")
+                   callStack
+
+    checkNonEmptyBuf (MiniProtocolDispatchInfo q _) = do
+      buf <- readTVar q
+      check (not (BL.null buf))
 
 
 -- | The mux forks off a number of threads and its main thread waits and

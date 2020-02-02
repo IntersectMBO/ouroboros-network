@@ -49,9 +49,9 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   | MuxIngressQueueOverRun
                   -- ^ thrown by 'demux' when violating 'maximumIngressQueue'
                   -- byte limit.
-                  | MuxControlProtocolError
-                  -- ^ thrown by 'muxControl' (mux control thread), when
-                  -- received a 'Muxcontrol' message on a mature 'MuxBearer'.
+                  | MuxInitiatorOnly
+                  -- ^ thrown when data arrives on a responder channel when the
+                  -- mux was set up as an 'InitiatorApp'.
                   |  MuxTooLargeMessage
                   -- ^ thrown by 'muxChannel' when violationg
                   -- 'maximumMessageSize' byte limit.
