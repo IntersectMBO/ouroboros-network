@@ -444,11 +444,11 @@ prop_sub_io lr = ioProperty $ do
                 activeTracer
                 activeTracer
                 connIds
-                -- Valency 1 guarantees ordering.
+                -- Valency 1 guarantees ordering. Using lrioValency lr does not.
                 -- Higher valency does _not_ guarantee the subscriptions go
                 -- in order. Is that a problem?
                 -- FIXME
-                (lrioValency lr `seq` 1)
+                1
                 minConnectionAttemptDelay
                 (\connId -> Socket.client connId LocalOnlyRequest)
                 connections
