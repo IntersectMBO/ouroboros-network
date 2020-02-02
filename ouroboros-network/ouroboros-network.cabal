@@ -273,6 +273,7 @@ test-suite test-network
                        time,
                        typed-protocols-cbor,
                        typed-protocols,
+                       typed-protocols-examples,
                        ouroboros-network,
                        ouroboros-protocol-tests
 
@@ -312,6 +313,7 @@ test-suite test-cddl
                        text,
                        typed-protocols-cbor,
                        typed-protocols,
+                       typed-protocols-examples,
                        ouroboros-network,
                        ouroboros-protocol-tests
   ghc-options:         -Wall
@@ -336,6 +338,7 @@ executable demo-chain-sync
                        splitmix,
                        stm,
                        typed-protocols-cbor,
-                       typed-protocols
+                       typed-protocols,
+                       typed-protocols-examples
   default-language:    Haskell2010
   ghc-options:         -Wall

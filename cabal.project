@@ -26,6 +26,8 @@ package network-mux
   flags: +asserts
 
 package typed-protocols
+
+package typed-protocols-examples
   tests: True
 
 package typed-protocols-cbor
