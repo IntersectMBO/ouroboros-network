@@ -193,13 +193,9 @@ library ouroboros-protocol-tests
                        Ouroboros.Network.Protocol.LocalTxSubmission.Direct
                        Ouroboros.Network.Protocol.LocalTxSubmission.Examples
                        Ouroboros.Network.Protocol.LocalTxSubmission.Test
-                       Ouroboros.Network.Socket
-                       Ouroboros.Network.Subscription
-                       Ouroboros.Network.Subscription.Ip
-                       Ouroboros.Network.Subscription.Dns
-                       Ouroboros.Network.Subscription.Worker
-                       Ouroboros.Network.TxSubmission.Inbound
-                       Ouroboros.Network.TxSubmission.Outbound
+                       Ouroboros.Network.Protocol.TxSubmission.Direct
+                       Ouroboros.Network.Protocol.TxSubmission.Examples
+                       Ouroboros.Network.Protocol.TxSubmission.Test
 
                        Test.ChainGenerators
                        Test.ChainProducerState
