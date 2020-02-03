@@ -301,6 +301,13 @@ maxSlotNoToMaybe (MaxSlotNo s) = Just s
 maxSlotNoFromWithOrigin :: WithOrigin SlotNo -> MaxSlotNo
 maxSlotNoFromWithOrigin = maxSlotNoFromMaybe . withOriginToMaybe
 
+instance Semigroup MaxSlotNo where
+  (<>) = max
+
+instance Monoid MaxSlotNo where
+  mempty  = NoMaxSlotNo
+  mappend = (<>)
+
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}

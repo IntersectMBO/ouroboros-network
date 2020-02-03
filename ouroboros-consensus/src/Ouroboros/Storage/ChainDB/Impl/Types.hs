@@ -84,6 +84,7 @@ import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.ChainDB.Impl.LgrDB (LgrDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB)
+import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 
 -- | A handle to the internal ChainDB state
 newtype ChainDbHandle m blk = CDBHandle (StrictTVar m (ChainDbState m blk))
@@ -394,6 +395,7 @@ data TraceEvent blk
   | TraceLedgerEvent       (LgrDB.TraceEvent (Point blk))
   | TraceLedgerReplayEvent (LgrDB.TraceLedgerReplayEvent blk)
   | TraceImmDBEvent        (ImmDB.TraceEvent       blk)
+  | TraceVolDBEvent        (VolDB.TraceEvent       blk)
   deriving (Generic)
 
 deriving instance

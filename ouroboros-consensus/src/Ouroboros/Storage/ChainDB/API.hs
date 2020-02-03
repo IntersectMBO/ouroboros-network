@@ -762,7 +762,6 @@ instance Exception ChainDbFailure where
       VolDbMissingBlock {}                -> corruption
       VolDbFailure e -> case e of
         VolDB.FileSystemError fse -> fsError fse
-        VolDB.ParserError {}      -> corruption
       LgrDbFailure fse                    -> fsError fse
       ChainDbMissingBlock {}              -> corruption
     where

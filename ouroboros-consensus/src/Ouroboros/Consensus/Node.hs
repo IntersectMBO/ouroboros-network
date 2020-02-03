@@ -74,6 +74,7 @@ import           Ouroboros.Storage.EpochInfo (EpochInfo, newEpochInfo)
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.ImmutableDB (ValidationPolicy (..))
+import           Ouroboros.Storage.VolatileDB (BlockValidationPolicy (..))
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
 import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
 
@@ -281,7 +282,7 @@ mkChainDbArgs
   -> ChainDbArgs IO blk
 mkChainDbArgs tracer registry btime dbPath cfg initLedger
               epochInfo = (ChainDB.defaultArgs dbPath)
-    { ChainDB.cdbBlocksPerFile    = 1000
+    { ChainDB.cdbBlocksPerFile    = mkBlocksPerFile 1000
     , ChainDB.cdbDecodeBlock      = nodeDecodeBlock         cfg
     , ChainDB.cdbDecodeHeader     = nodeDecodeHeader        cfg SerialisedToDisk
     , ChainDB.cdbDecodeChainState = nodeDecodeChainState    (Proxy @blk) cfg
@@ -306,6 +307,7 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger
     , ChainDB.cdbRegistry         = registry
     , ChainDB.cdbTracer           = tracer
     , ChainDB.cdbValidation       = ValidateMostRecentEpoch
+    , ChainDB.cdbBlockValidation  = NoValidation
     , ChainDB.cdbGcDelay          = secondsToDiffTime 10
     , ChainDB.cdbBlockchainTime   = btime
     }

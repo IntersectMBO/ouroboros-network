@@ -1,9 +1,6 @@
-{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-
 module Ouroboros.Storage.VolatileDB.Util
     ( -- * FileId utilities
       parseFd
@@ -20,16 +17,13 @@ module Ouroboros.Storage.VolatileDB.Util
       -- * Map of Set utilities
     , insertMapSet
     , deleteMapSet
-
-      -- * Comparing utilities
-    , maxSlotList
-    , cmpMaybe
-    , updateSlot
-    , updateSlotNoBlockId
     ) where
 
 import           Control.Monad
+import           Data.Bifunctor (first)
+import           Data.List (sortOn)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
@@ -38,8 +32,7 @@ import           Text.Read (readMaybe)
 
 import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Util (lastMaybe, safeMaximum,
-                     safeMaximumOn)
+import           Ouroboros.Consensus.Util (lastMaybe)
 
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
@@ -50,12 +43,10 @@ import           Ouroboros.Storage.VolatileDB.Types
   FileId utilities
 ------------------------------------------------------------------------------}
 
-parseFd :: FsPath -> Either VolatileDBError FileId
-parseFd file = maybe err Right $
+parseFd :: FsPath -> Maybe FileId
+parseFd file =
     parseFilename <=< lastMaybe $ fsPathToList file
   where
-    err = Left $ UnexpectedError $ ParserError $ InvalidFilename file
-
     parseFilename :: Text -> Maybe FileId
     parseFilename = readMaybe
                   . T.unpack
@@ -64,22 +55,27 @@ parseFd file = maybe err Right $
                   . fst
                   . T.breakOn "."
 
--- | Parses the 'FileId' of each 'FsPath' and zips them together.
--- When parsing fails, we abort with the corresponding parse error.
-parseAllFds :: [FsPath] -> Either VolatileDBError [(FileId, FsPath)]
-parseAllFds = mapM $ \f -> (,f) <$> parseFd f
+-- | Parses the 'FileId' of each 'FsPath' and zips them together. Returns
+-- the results sorted on the 'FileId'.
+--
+-- Return separately any 'FsPath' which failed to parse.
+parseAllFds :: [FsPath] -> ([(FileId, FsPath)], [FsPath])
+parseAllFds = first (sortOn fst) . foldr judge ([], [])
+  where
+    judge fsPath (parsed, notParsed) = case parseFd fsPath of
+      Nothing     -> (parsed, fsPath : notParsed)
+      Just fileId -> ((fileId, fsPath) : parsed, notParsed)
 
--- | When parsing fails, we abort with the corresponding parse error.
-findLastFd :: [FsPath] -> Either VolatileDBError (Maybe FileId)
-findLastFd = fmap safeMaximum . mapM parseFd
+-- | This also returns any 'FsPath' which failed to parse.
+findLastFd :: [FsPath] -> (Maybe FileId, [FsPath])
+findLastFd = first (fmap fst . lastMaybe) . parseAllFds
 
 filePath :: FileId -> FsPath
 filePath fd = mkFsPath ["blocks-" ++ show fd ++ ".dat"]
 
 unsafeParseFd :: FsPath -> FileId
-unsafeParseFd file = either
-    (\_ -> error $ "Could not parse filename " <> show file)
-    id
+unsafeParseFd file = fromMaybe
+    (error $ "Could not parse filename " <> show file)
     (parseFd file)
 
 {------------------------------------------------------------------------------
@@ -158,26 +154,3 @@ deleteMapSet :: Ord blockId
              -> (blockId, WithOrigin blockId)
              -> SuccessorsIndex blockId
 deleteMapSet mapSet (bid, pbid) = Map.alter (alterfDelete bid) pbid mapSet
-
-{------------------------------------------------------------------------------
-  Comparing utilities
-------------------------------------------------------------------------------}
-
-maxSlotList :: [(blockId, SlotNo)] -> Maybe (blockId, SlotNo)
-maxSlotList = updateSlot Nothing
-
-cmpMaybe :: Ord a => Maybe a -> a -> Bool
-cmpMaybe Nothing _   = False
-cmpMaybe (Just a) a' = a >= a'
-
-updateSlot :: forall blockId. Maybe (blockId, SlotNo)
-           -> [(blockId, SlotNo)]
-           -> Maybe (blockId, SlotNo)
-updateSlot msl ls = safeMaximumOn snd $ case msl of
-    Nothing -> ls
-    Just sl -> sl : ls
-
-updateSlotNoBlockId :: MaxSlotNo -> [SlotNo] -> MaxSlotNo
-updateSlotNoBlockId msl ls = maxSlotNoFromMaybe $ safeMaximum $ case msl of
-    NoMaxSlotNo  -> ls
-    MaxSlotNo sl -> sl : ls

@@ -102,6 +102,7 @@ import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
 import           Ouroboros.Storage.LedgerDB.InMemory (LedgerDbParams (..))
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import qualified Ouroboros.Storage.VolatileDB as VolDB
 
 import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
                      ModelSupportsBlock, ReaderId)
@@ -1119,6 +1120,8 @@ deriving instance SOP.Generic         (LedgerDB.TraceReplayEvent r replayTo bloc
 deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceReplayEvent r replayTo blockInfo)
 deriving instance SOP.Generic         (ImmDB.TraceEvent e hash)
 deriving instance SOP.HasDatatypeInfo (ImmDB.TraceEvent e hash)
+deriving instance SOP.Generic         (VolDB.TraceEvent e hash)
+deriving instance SOP.HasDatatypeInfo (VolDB.TraceEvent e hash)
 
 -- TODO labelling
 
@@ -1409,6 +1412,7 @@ traceEventName = \case
     TraceLedgerEvent         ev    -> "Ledger."       <> constrName ev
     TraceLedgerReplayEvent   ev    -> "LedgerReplay." <> constrName ev
     TraceImmDBEvent          ev    -> "ImmDB."        <> constrName ev
+    TraceVolDBEvent          ev    -> "VolDB."        <> constrName ev
 
 fixedEpochSize :: EpochSize
 fixedEpochSize = 10
@@ -1452,7 +1456,8 @@ mkArgs cfg initLedger tracer registry varCurSlot
 
       -- Policy
     , cdbValidation       = ValidateAllEpochs
-    , cdbBlocksPerFile    = 4
+    , cdbBlockValidation  = VolDB.ValidateAll
+    , cdbBlocksPerFile    = VolDB.mkBlocksPerFile 4
     , cdbParamsLgrDB      = LedgerDbParams {
                                 -- Pick a small value for 'ledgerDbSnapEvery',
                                 -- so that maximum supported rollback is limited
