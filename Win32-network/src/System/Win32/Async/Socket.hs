@@ -54,7 +54,7 @@ connect :: Socket -> SockAddr -> IO ()
 connect sock addr = do
     v <- newEmptyMVar
     _ <- mask_ $ forkIOWithUnmask $ \unmask -> 
-        unmask (Socket.connect sock addr >> putMVar v Nothing)
+        (unmask (Socket.connect sock addr) >> putMVar v Nothing)
         `catch` (\(e :: IOException) -> putMVar v (Just e))
     r <- takeMVar v
     case r of
@@ -76,7 +76,7 @@ accept :: Socket -> IO (Socket, SockAddr)
 accept sock = do
     v <- newEmptyMVar
     _ <- mask_ $ forkIOWithUnmask $ \unmask -> 
-          unmask (Socket.accept sock >>= putMVar v . Right)
+          (unmask (Socket.accept sock) >>= putMVar v . Right)
           `catch` (\(e :: IOException) -> putMVar v (Left e))
     r <- takeMVar v
     case r of
