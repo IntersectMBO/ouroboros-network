@@ -49,9 +49,9 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   | MuxIngressQueueOverRun
                   -- ^ thrown by 'demux' when violating 'maximumIngressQueue'
                   -- byte limit.
-                  | MuxControlProtocolError
-                  -- ^ thrown by 'muxControl' (mux control thread), when
-                  -- received a 'Muxcontrol' message on a mature 'MuxBearer'.
+                  | MuxInitiatorOnly
+                  -- ^ thrown when data arrives on a responder channel when the
+                  -- mux was set up as an 'InitiatorApp'.
                   |  MuxTooLargeMessage
                   -- ^ thrown by 'muxChannel' when violationg
                   -- 'maximumMessageSize' byte limit.
@@ -131,8 +131,8 @@ data MuxTrace =
     | MuxTraceSendStart MuxSDU
     | MuxTraceSendEnd
     | MuxTraceState MuxBearerState
-    | MuxTraceCleanExit String
-    | MuxTraceExceptionExit SomeException String
+    | MuxTraceCleanExit MiniProtocolNum MiniProtocolMode
+    | MuxTraceExceptionExit MiniProtocolNum MiniProtocolMode SomeException
     | MuxTraceChannelRecvStart MiniProtocolNum
     | MuxTraceChannelRecvEnd MiniProtocolNum BL.ByteString
     | MuxTraceChannelSendStart MiniProtocolNum BL.ByteString
@@ -167,8 +167,8 @@ instance Show MuxTrace where
         (BL.length $ msBlob sdu)
     show MuxTraceSendEnd = printf "Bearer Send End"
     show (MuxTraceState new) = printf "State: %s" (show new)
-    show (MuxTraceCleanExit mp) = printf "Miniprotocol %s triggered clean exit" mp
-    show (MuxTraceExceptionExit e mp) = printf "Miniprotocol %s triggered exit with %s" mp (show e)
+    show (MuxTraceCleanExit mid dir) = printf "Miniprotocol %s %s terminated cleanly" (show mid) (show dir)
+    show (MuxTraceExceptionExit mid dir e) = printf "Miniprotocol %s %s terminated with exception %s" (show mid) (show dir) (show e)
     show (MuxTraceChannelRecvStart mid) = printf "Channel Receive Start on %s" (show mid)
     show (MuxTraceChannelRecvEnd mid blob) = printf "Channel Receive End on %s %d" (show mid)
         (BL.length blob)

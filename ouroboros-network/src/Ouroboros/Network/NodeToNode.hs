@@ -442,7 +442,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
                         MuxUnknownMiniProtocol  -> Just theyBuggyOrEvil
                         MuxDecodeError          -> Just theyBuggyOrEvil
                         MuxIngressQueueOverRun  -> Just theyBuggyOrEvil
-                        MuxControlProtocolError -> Just theyBuggyOrEvil
+                        MuxInitiatorOnly        -> Just theyBuggyOrEvil
                         MuxTooLargeMessage      -> Just theyBuggyOrEvil
 
                         -- in case of bearer closed / or IOException we suspend

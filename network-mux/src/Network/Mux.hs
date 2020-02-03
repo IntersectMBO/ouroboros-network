@@ -34,24 +34,28 @@ module Network.Mux (
     , WithMuxBearer (..)
     ) where
 
+import           Data.Int (Int64)
+import           Data.Maybe (catMaybes)
+import qualified Data.ByteString.Lazy as BL
+import           Data.Array
+import qualified Data.Set as Set
+import           Data.Set (Set)
+import           Text.Printf
+
+import           Control.Applicative
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
-import           Data.Array
-import qualified Data.ByteString.Lazy as BL
-import           Data.Int (Int64)
-import           Data.List (lookup)
-import           Data.Maybe (fromMaybe)
 import           GHC.Stack
-import           Text.Printf
 
 import           Network.Mux.Channel
 import           Network.Mux.Egress  as Egress
 import           Network.Mux.Ingress as Ingress
 import           Network.Mux.Types
 import           Network.Mux.Trace
+import qualified Network.Mux.JobPool as JobPool
 
 
 -- | muxStart starts a mux bearer for the specified protocols corresponding to
@@ -102,125 +106,129 @@ muxStart
     -> MuxBearer m
     -> m ()
 muxStart tracer (MuxApplication ptcls) bearer = do
-    ctlPtclInfo <- mkMiniProtocolInfo (MiniProtocolNum 0)
-                                      (MiniProtocolLimits 0xffff 0xffff)
-    appPtclInfo <- sequence [ mkMiniProtocolInfo (miniProtocolNum ptcl)
-                                                 (miniProtocolLimits ptcl)
-                            | ptcl <- ptcls ]
-    let tbl = setupTbl (ctlPtclInfo : appPtclInfo)
+    ptcls' <- mapM addProtocolQueues ptcls
+    let dispatchtbl = setupDispatchTable  ptcls'
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
 
-    let jobs = [ (demux DemuxState { dispatchTable = tbl, Ingress.bearer }, "Demuxer")
-               , (mux cnt MuxState { egressQueue   = tq,  Egress.bearer }, "Muxer")
-               ]
-            ++ [ (muxControl q, name)
-               | let (_,_, initQ, respQ) = ctlPtclInfo
-               , (q, name) <- [(initQ, "Initiator"), (respQ, "Responder")]
-               ]
-            ++ [ job
-               | ((mpcode, mplimits, initQ, respQ), ptcl) <- zip appPtclInfo ptcls
-               , job <- mpsJob cnt tq mpcode
-                               (maximumMessageSize mplimits)
-                               initQ respQ (miniProtocolRun ptcl)
-               ]
+    let jobs = muxerJob tq cnt
+             : demuxerJob dispatchtbl
+             : catMaybes [ miniProtocolInitiatorJob cnt tq ptcl pix initQ respQ
+                         | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
 
-    mask $ \unmask -> do
-      aidsAndNames <- traverse (\(io, name) -> (,name) <$> async (unmask io)) jobs
+        respondertbl = setupResponderTable
+                         [ miniProtocolResponderJob cnt tq ptcl pix initQ respQ
+                         | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
 
+    JobPool.withJobPool $ \jobpool -> do
+      mapM_ (JobPool.forkJob jobpool) jobs
       traceWith tracer (MuxTraceState Mature)
-      unmask $ do
-        (fa, r_e) <- waitAnyCatchCancel $ map fst aidsAndNames
-        let faName = fromMaybe "Unknown Protocol" (lookup fa aidsAndNames)
-        case r_e of
-             Left (e::SomeException) -> do
-                 traceWith tracer $ MuxTraceExceptionExit e faName
-                 throwM e
-             Right _                 -> traceWith tracer $ MuxTraceCleanExit faName
 
-      traceWith tracer (MuxTraceState Dead)
-
+      -- Wait for the first job to terminate, successfully or otherwise.
+      -- All the other jobs are shut down Upon completion of withJobPool.
+      monitor tracer jobpool dispatchtbl respondertbl
   where
-    mkMiniProtocolInfo :: MiniProtocolNum
-                       -> MiniProtocolLimits
-                       -> m ( MiniProtocolNum
-                            , MiniProtocolLimits
-                            , StrictTVar m BL.ByteString
-                            , StrictTVar m BL.ByteString
-                            )
-    mkMiniProtocolInfo mpcode mplimits = do
+    addProtocolQueues :: MuxMiniProtocol appType m a b
+                      -> m ( MuxMiniProtocol appType m a b
+                           , StrictTVar m BL.ByteString
+                           , StrictTVar m BL.ByteString
+                           )
+    addProtocolQueues ptcl = do
         initiatorQ <- newTVarM BL.empty
         responderQ <- newTVarM BL.empty
-        return ( mpcode
-               , mplimits
-               , initiatorQ
-               , responderQ
-               )
+        return (ptcl, initiatorQ, responderQ)
 
     -- Construct the array of TBQueues, one for each protocol id, and each mode
-    setupTbl :: [( MiniProtocolNum
-                 , MiniProtocolLimits
-                 , StrictTVar m BL.ByteString
-                 , StrictTVar m BL.ByteString
-                 )]
-             -> MiniProtocolDispatch m
-    setupTbl ptclsInfo =
+    setupDispatchTable :: [( MuxMiniProtocol appType m a b
+                           , StrictTVar m BL.ByteString
+                           , StrictTVar m BL.ByteString
+                           )]
+                       -> MiniProtocolDispatch m
+    setupDispatchTable ptcls' =
         MiniProtocolDispatch
           (array (mincode, maxcode) $
                  [ (code, Nothing)    | code <- [mincode..maxcode] ]
               ++ [ (code, Just pix)
-                 | (pix, (code, _, _, _)) <- zip [0..] ptclsInfo ])
+                 | (pix, (ptcl, _, _)) <- zip [0..] ptcls'
+                 , let code = miniProtocolNum ptcl ])
           (array ((minpix, ModeInitiator), (maxpix, ModeResponder))
-                 [ ((pix, mode), dispatchInfo)
-                 | (pix, (_mpcode, mplimits, initQ, respQ)) <- zip [0..] ptclsInfo
+                 [ ((pix, mode), MiniProtocolDispatchInfo q qMax)
+                 | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls'
+                 , let qMax = maximumIngressQueue (miniProtocolLimits ptcl)
                  , (mode, q) <- [ (ModeInitiator, initQ)
                                 , (ModeResponder, respQ) ]
-                 , let dispatchInfo = MiniProtocolDispatchInfo q
-                                        (maximumIngressQueue mplimits)
                  ])
       where
         minpix = 0
-        maxpix = length ptclsInfo - 1
+        maxpix = fromIntegral (length ptcls' - 1)
 
-        codes   = [ mc | (mc, _, _, _) <- ptclsInfo ]
+        codes   = [ miniProtocolNum ptcl | (ptcl, _, _) <- ptcls' ]
         mincode = minimum codes
         maxcode = maximum codes
 
-
-    mpsJob
-      :: StrictTVar m Int
-      -> EgressQueue m
-      -> MiniProtocolNum
-      -> Int64
-      -> StrictTVar m BL.ByteString
-      -> StrictTVar m BL.ByteString
-      -> RunMiniProtocol appType m a b
-      -> [(m (), String)]
-    mpsJob cnt tq mc msgMax initQ respQ run =
-        case run of
-          InitiatorProtocolOnly initiator ->
-            [ ( do chan <- mkChannel ModeInitiator
-                   _    <- initiator chan
-                   mpsJobExit cnt
-              , show mc ++ " Initiator" )]
-          ResponderProtocolOnly responder ->
-            [ ( do chan <- mkChannel ModeResponder
-                   _    <- responder chan
-                   mpsJobExit cnt
-              , show mc ++ " Responder" )]
-          InitiatorAndResponderProtocol initiator responder ->
-            [ ( do chan <- mkChannel ModeInitiator
-                   _    <- initiator chan
-                   mpsJobExit cnt
-              , show mc ++ " Initiator" )
-            , ( do chan <- mkChannel ModeResponder
-                   _    <- responder chan
-                   mpsJobExit cnt
-              , show mc ++ " Responder" )
-            ]
+    setupResponderTable :: [Maybe (JobPool.Job m MuxJobResult)]
+                        -> MiniProtocolResponders m
+    setupResponderTable jobs =
+        MiniProtocolResponders $ array (minpix, maxpix) (zip [0..] jobs)
       where
-        mkChannel ModeInitiator = muxChannel tracer tq mc ModeInitiator msgMax initQ cnt
-        mkChannel ModeResponder = muxChannel tracer tq mc ModeResponder msgMax respQ cnt
+        minpix = 0
+        maxpix = fromIntegral (length jobs - 1)
+
+    muxerJob tq cnt =
+      JobPool.Job (mux cnt MuxState { egressQueue   = tq,  Egress.bearer })
+                  MuxerException
+
+    demuxerJob tbl =
+      JobPool.Job (demux DemuxState { dispatchTable = tbl, Ingress.bearer })
+                  DemuxerException
+
+    miniProtocolInitiatorJob = miniProtocolJob selectInitiator ModeInitiator
+    miniProtocolResponderJob = miniProtocolJob selectResponder ModeResponder
+
+    selectInitiator :: RunMiniProtocol appType m a b -> Maybe (Channel m -> m a)
+    selectInitiator (ResponderProtocolOnly                   _) = Nothing
+    selectInitiator (InitiatorProtocolOnly         initiator)   = Just initiator
+    selectInitiator (InitiatorAndResponderProtocol initiator _) = Just initiator
+    
+    selectResponder :: RunMiniProtocol appType m a b -> Maybe (Channel m -> m b)
+    selectResponder (ResponderProtocolOnly           responder) = Just responder
+    selectResponder (InitiatorProtocolOnly         _)           = Nothing
+    selectResponder (InitiatorAndResponderProtocol _ responder) = Just responder
+
+    miniProtocolJob
+      :: (RunMiniProtocol appType m a b -> Maybe (Channel m -> m c))
+      -> MiniProtocolMode
+      -> StrictTVar m Int
+      -> EgressQueue m
+      -> MuxMiniProtocol appType m a b
+      -> MiniProtocolIx
+      -> StrictTVar m BL.ByteString
+      -> StrictTVar m BL.ByteString
+      -> Maybe (JobPool.Job m MuxJobResult)
+    miniProtocolJob selectRunner pmode cnt tq
+                    MuxMiniProtocol {
+                      miniProtocolNum    = pnum,
+                      miniProtocolLimits = plimits,
+                      miniProtocolRun    = prunner
+                    }
+                    pix initQ respQ =
+        job <$> selectRunner prunner
+      where
+        job run = JobPool.Job (jobAction run)
+                              (MiniProtocolException pnum pix pmode)
+
+        jobAction run = do
+          chan    <- mkChannel
+          _result <- run chan
+          mpsJobExit cnt
+          return (MiniProtocolShutdown pnum pix pmode)
+
+        mkChannel = muxChannel tracer tq pnum pmode
+                               (maximumMessageSize plimits)
+                               (selectQueue pmode) cnt
+
+        selectQueue ModeInitiator = initQ
+        selectQueue ModeResponder = respQ
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job
     -- threads will be prevented from exiting until all SDUs have been
@@ -233,15 +241,106 @@ muxStart tracer (MuxApplication ptcls) bearer = do
             c <- readTVar cnt
             unless (c == 0) retry
 
-muxControl :: (HasCallStack, MonadSTM m, MonadThrow m)
-           => StrictTVar m BL.ByteString
-           -> m ()
-muxControl q = do
-    _ <- atomically $ do
-        buf <- readTVar q
-        when (buf == BL.empty)
-            retry
-    throwM $ MuxError MuxControlProtocolError "MuxControl message on mature MuxBearer" callStack
+newtype MiniProtocolResponders m =
+        MiniProtocolResponders
+          (Array MiniProtocolIx (Maybe (JobPool.Job m MuxJobResult)))
+
+-- | The monitoring loop does two jobs:
+--
+--  1. it waits for mini-protocol threads to terminate
+--  2. it starts responder protocol threads on demand when the first
+--     incoming message arrives.
+--
+monitor :: forall m. (MonadSTM m, MonadAsync m, MonadMask m)
+        => Tracer m MuxTrace
+        -> JobPool.JobPool m MuxJobResult
+        -> MiniProtocolDispatch m
+        -> MiniProtocolResponders m
+        -> m ()
+monitor tracer jobpool
+        (MiniProtocolDispatch _ dispatchtbl)
+        (MiniProtocolResponders respondertbl) =
+    go (Set.fromList . range . bounds $ respondertbl)
+  where
+    -- To do this second job it needs to keep track of which responder protocol
+    -- threads are running.
+    go :: Set MiniProtocolIx
+       -> m ()
+    go !idleResponders = do
+      result <- atomically $
+            -- wait for a mini-protocol thread to terminate
+            (Left  <$> JobPool.collect jobpool)
+            -- or wait for data to arrive on the channels that do not yet have
+            -- responder threads running
+        <|> (Right <$> foldr (<|>) retry
+                         [ checkNonEmptyBuf dispatchInfo >> return ix
+                         | ix <- Set.elems idleResponders
+                         , let dispatchInfo = dispatchtbl ! (ix, ModeResponder)
+                         ])
+
+      case result of
+        -- For now we do not restart protocols, when any stop we terminate
+        -- and the whole bundle will get cleaned up.
+        Left (MiniProtocolShutdown pnum _pix pmode) -> do
+          traceWith tracer (MuxTraceState Dead)
+          traceWith tracer (MuxTraceCleanExit pnum pmode)
+
+        Left (MiniProtocolException pnum _pix pmode e) -> do
+          traceWith tracer (MuxTraceState Dead)
+          traceWith tracer (MuxTraceExceptionExit pnum pmode e)
+          throwM e
+
+        -- These would always be internal errors, so propagate.
+        --TODO: decide if we should have exception wrappers here to identify
+        -- the source of the failure, e.g. specific mini-protocol. If we're
+        -- propagating exceptions, we don't need to log them.
+        Left (MuxerException   e) -> do
+          traceWith tracer (MuxTraceState Dead)
+          throwM e
+        Left (DemuxerException e) -> do
+          traceWith tracer (MuxTraceState Dead)
+          throwM e
+
+        -- Data has arrived on a channel for a mini-protocol that do not yet
+        -- have a responder thread running. So we start it now.
+        Right ix | Just job <- respondertbl ! ix -> do
+         JobPool.forkJob jobpool job
+         go (Set.delete ix idleResponders)
+
+        Right _ix ->
+          --TODO: it would be cleaner to do this check in the demuxer.
+          throwM $ MuxError MuxInitiatorOnly
+                      ("Received data on a responder channel but this mux "
+                       ++ "instance is initiator only")
+                   callStack
+
+    checkNonEmptyBuf :: MiniProtocolDispatchInfo m -> STM m ()
+    checkNonEmptyBuf (MiniProtocolDispatchInfo q _) = do
+      buf <- readTVar q
+      check (not (BL.null buf))
+
+
+-- | The mux forks off a number of threads and its main thread waits and
+-- monitors them all. This type covers the different thread and their possible
+-- termination behaviour.
+--
+data MuxJobResult =
+
+       -- | A mini-protocol thread terminated with a result.
+       --
+       MiniProtocolShutdown MiniProtocolNum MiniProtocolIx MiniProtocolMode
+
+       -- | A mini-protocol thread terminated with an exception. We always
+       -- respond by terminating the whole mux.
+     | MiniProtocolException MiniProtocolNum MiniProtocolIx MiniProtocolMode
+                             SomeException
+
+       -- | Exception in the 'mux' thread. Always unexpected and fatal.
+     | MuxerException   SomeException
+
+       -- | Exception in the 'demux' thread. Always unexpected and fatal.
+     | DemuxerException SomeException
+
 
 -- | muxChannel creates a duplex channel for a specific 'MiniProtocolId' and
 -- 'MiniProtocolMode'.

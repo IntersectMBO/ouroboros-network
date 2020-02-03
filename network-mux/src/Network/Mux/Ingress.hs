@@ -93,8 +93,6 @@ data MiniProtocolDispatch m =
        !(Array (MiniProtocolIx, MiniProtocolMode)
                (MiniProtocolDispatchInfo m))
 
-type MiniProtocolIx = Int
-
 data MiniProtocolDispatchInfo m =
      MiniProtocolDispatchInfo
        !(StrictTVar m BL.ByteString)
@@ -104,8 +102,9 @@ data MiniProtocolDispatchInfo m =
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from
 -- the underlying Mux Bearer and forwards it to the matching ingress queue.
 demux :: (MonadSTM m, MonadThrow m, MonadThrow (STM m), HasCallStack)
-      => DemuxState m -> m ()
-demux DemuxState{dispatchTable, bearer} = forever $ do
+      => DemuxState m -> m void
+demux DemuxState{dispatchTable, bearer} =
+  forever $ do
     (sdu, _) <- Network.Mux.Types.read bearer
     -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msMode sdu)
     --             (BL.length $ msBlob sdu)

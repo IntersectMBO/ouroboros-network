@@ -141,7 +141,7 @@ newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
 mux :: MonadSTM m
     => StrictTVar m Int
     -> MuxState m
-    -> m ()
+    -> m void
 mux cnt muxstate@MuxState{egressQueue} =
     forever $ do
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
