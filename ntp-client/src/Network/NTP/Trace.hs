@@ -8,7 +8,7 @@ data IPVersion = IPv4 | IPv6
 data NtpTrace
     = NtpTraceStartNtpClient
     | NtpTraceTriggerUpdate
-    | NtpTraceRestartDelay Int
+    | NtpTraceRestartDelay !Int
     | NtpTraceRestartingClient
     | NtpTraceClientSleeping
     | NtpTraceIOError !IOError

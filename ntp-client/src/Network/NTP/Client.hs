@@ -20,8 +20,6 @@ data NtpClient = NtpClient
     { -- | Query the current NTP status.
       ntpGetStatus        :: STM NtpStatus
       -- | Bypass all internal thread Delays and trigger a new NTP query (non-blocking).
-    , ntpTriggerUpdate    :: IO ()
-      -- | Perform a query, update and return the NtpStatus (blocking).
     , ntpQueryBlocking    :: IO NtpStatus
     , ntpThread           :: Async ()
     }
@@ -36,9 +34,6 @@ withNtpClient tracer ntpSettings action = do
     withAsync (ntpClientThread tracer ntpSettings ntpStatus) $ \tid -> do
         let client = NtpClient
               { ntpGetStatus = readTVar ntpStatus
-              , ntpTriggerUpdate = do
-                  traceWith tracer NtpTraceTriggerUpdate
-                  atomically $ writeTVar ntpStatus NtpSyncPending
               , ntpQueryBlocking = do
                   traceWith tracer NtpTraceTriggerUpdate
                   atomically $ writeTVar ntpStatus NtpSyncPending

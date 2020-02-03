@@ -3,7 +3,6 @@ module Network.NTP.Test
 where
 
 import           Control.Concurrent (threadDelay)
-import           Control.Concurrent.STM (atomically)
 import           Control.Concurrent.Async
 import           Control.Monad (forever)
 import           Control.Tracer
@@ -17,10 +16,9 @@ testClient = withNtpClient (contramapM (return . show) stdoutTracer) testSetting
     runApplication ntpClient = do
         link $ ntpThread ntpClient  -- propergate any errors in the NTP thread.
         race_ getLine $ forever $ do
-            status <- atomically $ ntpGetStatus ntpClient
+            status <- ntpQueryBlocking ntpClient
             traceWith stdoutTracer $ show ("main"::String, status)
             threadDelay 10_000_000
-            ntpTriggerUpdate ntpClient
 
 testNtpQuery :: IO ()
 testNtpQuery = forever $ do
@@ -36,5 +34,4 @@ testSettings = NtpSettings
                    , "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
     , ntpResponseTimeout = fromInteger 1_000_000
     , ntpPollDelay       = fromInteger 300_000_000
-    , ntpReportPolicy    = minimumOfThree
     }

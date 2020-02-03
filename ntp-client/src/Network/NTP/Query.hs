@@ -41,17 +41,16 @@ import           Network.NTP.Trace (NtpTrace (..), IPVersion (..))
 
 data NtpSettings = NtpSettings
     { ntpServers         :: [String]
-      -- ^ List of servers addresses.
+      -- ^ List of server addresses. At least three servers are needed.
     , ntpResponseTimeout :: Microsecond
       -- ^ Timeout between sending NTP requests and response collection.
     , ntpPollDelay       :: Microsecond
       -- ^ How long to wait between two rounds of requests.
-    , ntpReportPolicy    :: [NtpOffset] -> Maybe NtpOffset
     }
 
 data NtpStatus =
       -- | The difference between NTP time and local system time
-      NtpDrift NtpOffset
+      NtpDrift !NtpOffset
       -- | NTP client has send requests to the servers
     | NtpSyncPending
       -- | NTP is not available: the client has not received any respond within
@@ -126,7 +125,7 @@ ntpQuery tracer ntpSettings = do
         [] -> do
             traceWith tracer NtpTraceIPv4IPv6NoReplies
             return NtpSyncUnavailable
-        l -> case ntpReportPolicy ntpSettings $ l of
+        l -> case minimumOfThree l of
             Nothing -> do
                 traceWith tracer NtpTraceReportPolicyQueryFailed
                 return NtpSyncUnavailable
@@ -160,10 +159,7 @@ runNtpQueries tracer protocol netSettings localAddr destAddrs
     = tryIOError $ bracket acquire release action
   where
     acquire :: IO Socket
-    acquire = do
-        s <- Socket.socket (addrFamily localAddr) Datagram Socket.defaultProtocol
-        traceWith tracer $ NtpTraceSocketOpen protocol
-        return s
+    acquire = Socket.socket (addrFamily localAddr) Datagram Socket.defaultProtocol
 
     release :: Socket -> IO ()
     release s = do
@@ -172,11 +168,12 @@ runNtpQueries tracer protocol netSettings localAddr destAddrs
 
     action :: Socket -> IO [NtpOffset]
     action socket = do
+        traceWith tracer $ NtpTraceSocketOpen protocol
         Socket.setSocketOption socket ReuseAddr 1
         inQueue <- atomically $ newTVar []
         _err <- withAsync (send socket  >> loopForever)  $ \sender ->
                 withAsync timeout                        $ \delay ->
-                withAsync (reader socket inQueue )       $ \revc ->
+                withAsync (receiver socket inQueue )     $ \revc ->
                     waitAnyCancel [sender, delay, revc]        
         atomically $ readTVar inQueue
 
@@ -198,8 +195,8 @@ runNtpQueries tracer protocol netSettings localAddr destAddrs
         threadDelay $ (fromIntegral $ ntpResponseTimeout netSettings) + 100_000 * length destAddrs
         traceWith tracer $ NtpTraceWaitingForRepliesTimeout protocol
 
-    reader :: Socket -> TVar [NtpOffset] -> IO ()
-    reader socket inQueue = replicateM_ (length destAddrs) $ do
+    receiver :: Socket -> TVar [NtpOffset] -> IO ()
+    receiver socket inQueue = replicateM_ (length destAddrs) $ do
         (bs, _) <- Socket.ByteString.recvFrom socket ntpPacketSize
         t <- getCurrentTime
         case decodeOrFail $ LBS.fromStrict bs of
