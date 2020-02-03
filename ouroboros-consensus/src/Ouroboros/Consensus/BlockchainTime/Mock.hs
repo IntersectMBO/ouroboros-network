@@ -7,6 +7,8 @@
 module Ouroboros.Consensus.BlockchainTime.Mock (
     -- * Fixed time
     fixedBlockchainTime
+    -- * Settable time
+  , settableBlockchainTime
     -- * Testing time
   , NumSlots(..)
   , TestClock(..)
@@ -41,6 +43,19 @@ fixedBlockchainTime :: MonadSTM m => SlotNo -> BlockchainTime m
 fixedBlockchainTime slot = BlockchainTime {
       getCurrentSlot = return slot
     , onSlotChange_  = const (return (return ()))
+    }
+
+{-------------------------------------------------------------------------------
+  Settable time
+-------------------------------------------------------------------------------}
+
+-- | The current slot can be changed by modifying the given 'StrictTVar'.
+--
+-- 'onSlotChange_' is not implemented and will return an 'error'.
+settableBlockchainTime :: MonadSTM m => StrictTVar m SlotNo -> BlockchainTime m
+settableBlockchainTime varCurSlot = BlockchainTime {
+      getCurrentSlot = readTVar varCurSlot
+    , onSlotChange_  = error "unimplemented onSlotChange_"
     }
 
 {-------------------------------------------------------------------------------
