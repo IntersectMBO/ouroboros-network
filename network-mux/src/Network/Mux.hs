@@ -314,6 +314,7 @@ monitor tracer jobpool
                        ++ "instance is initiator only")
                    callStack
 
+    checkNonEmptyBuf :: MiniProtocolDispatchInfo m -> STM m ()
     checkNonEmptyBuf (MiniProtocolDispatchInfo q _) = do
       buf <- readTVar q
       check (not (BL.null buf))
