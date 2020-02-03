@@ -17,6 +17,7 @@ import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Consensus.Block (getHeader)
+import           Ouroboros.Consensus.BlockchainTime.Mock (fixedBlockchainTime)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -77,6 +78,7 @@ openTestDB registry hasFS err = fst <$> openDBInternal
     parser
     nullTracer
     (Index.CacheConfig 2 60)
+    (fixedBlockchainTime maxBound)
   where
     parser = epochFileParser hasFS (const <$> S.decode) isEBB getBinaryInfo
       testBlockIsValid

@@ -31,6 +31,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Control.Monad.Class.MonadThrow hiding (onException)
 
+import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
@@ -67,6 +68,7 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     , _dbTracer          :: !(Tracer m (TraceEvent e hash))
     , _dbRegistry        :: !(ResourceRegistry m)
     , _dbCacheConfig     :: !Index.CacheConfig
+    , _dbBlockchainTime  :: !(BlockchainTime m)
     }
 
 data InternalState m hash h =

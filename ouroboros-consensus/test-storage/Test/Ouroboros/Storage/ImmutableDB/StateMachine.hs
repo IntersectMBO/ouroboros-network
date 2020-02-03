@@ -65,6 +65,8 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Pretty (ppShow)
 
 import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB, getHeader)
+import           Ouroboros.Consensus.BlockchainTime.Mock
+                     (settableBlockchainTime)
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -126,6 +128,8 @@ data Cmd it
   | IteratorHasNext        it
   | IteratorClose          it
   | Reopen                 ValidationPolicy
+  | ReopenInThePast        ValidationPolicy SlotNo
+    -- ^ New current slot, will be in the past
   | DeleteAfter            ImmTip
   | Corruption             Corruption
   deriving (Generic, Show, Functor, Foldable, Traversable)
@@ -214,7 +218,7 @@ run :: HasCallStack
     -> [TestIterator IO]
     -> Cmd (TestIterator IO)
     -> IO (Success (TestIterator IO))
-run ImmutableDBEnv { db, internal, registry, varNextId } runCorruption its cmd = case cmd of
+run ImmutableDBEnv { db, internal, registry, varNextId, varCurSlot } runCorruption its cmd = case cmd of
     GetBlockComponent      s   -> MbAllComponents <$> getBlockComponent      db allComponents s
     GetEBBComponent        e   -> MbAllComponents <$> getEBBComponent        db allComponents e
     GetBlockOrEBBComponent s h -> MbAllComponents <$> getBlockOrEBBComponent db allComponents s h
@@ -232,6 +236,18 @@ run ImmutableDBEnv { db, internal, registry, varNextId } runCorruption its cmd =
       mapM_ iteratorClose (unWithEq <$> its)
       closeDB db
       reopen db valPol
+      Tip <$> getTip db
+    ReopenInThePast valPol curSlot -> do
+      -- The @curSlot@ will be in the past, so there /will/ be truncation
+      mapM_ iteratorClose (unWithEq <$> its)
+      closeDB db
+      -- We only change the current slot here, we leave it set to 'maxBound'
+      -- in all other places so that we don't accidentally truncate blocks
+      -- from the \"future\" when reopening.
+      bracket_
+        (atomically $ writeTVar varCurSlot curSlot)
+        (atomically $ writeTVar varCurSlot maxBound)
+        (reopen db valPol)
       Tip <$> getTip db
     Corruption corr            -> do
       mapM_ iteratorClose (unWithEq <$> its)
@@ -276,6 +292,7 @@ runPure = \case
     DeleteAfter tip            -> ok Unit            $ update_  (deleteAfterModel tip)
     Corruption corr            -> ok Tip             $ update   (simulateCorruptions (getCorruptions corr))
     Reopen _                   -> ok Tip             $ update    reopenModel
+    ReopenInThePast _ s        -> ok Tip             $ update   (reopenInThePastModel s)
   where
     query  f m = (Right (f m), m)
     queryE f m = (f m, m)
@@ -313,13 +330,15 @@ runPureErr dbm (CmdErr mbErrors cmd _its) =
       -- of the database will erase any changes.
       (Just _, (_resp, dbm')) ->
         -- We ignore the updated @dbm'@, because we have to roll back to the
-        -- state before executing cmd. The only exception is the DeleteAfter
-        -- cmd, in which case we have to roll back to the requested tip.
+        -- state before executing cmd. Exception: DeleteAfter and
+        -- ReopenInThePast cmd, in which case we have may have to truncate the
+        -- tip.
         --
         -- As the implementation closes all iterators, we do the same.
         let dbm'' = closeAllIterators $ case cmd of
-              DeleteAfter _ -> dbm'
-              _             -> dbm
+              DeleteAfter {}     -> dbm'
+              ReopenInThePast {} -> dbm'
+              _                  -> dbm
         in (Resp $ Right $ Tip $ dbmTip dbm'', dbm'')
 
 {-------------------------------------------------------------------------------
@@ -457,8 +476,9 @@ generator m@Model {..} = do
   where
     -- Don't simulate an error during corruption, because we don't want an
     -- error to happen while we corrupt a file.
-    errorFor Corruption {} = False
-    errorFor _             = True
+    errorFor Corruption {}      = False
+    errorFor ReopenInThePast {} = False  -- TODO #1567
+    errorFor _                  = True
 
 -- | Generate a 'Cmd'.
 generateCmd :: Model m Symbolic -> Gen (At Cmd m Symbolic)
@@ -530,6 +550,8 @@ generateCmd Model {..} = At <$> frequency
                    , (4, return $ IteratorHasNext iter)
                    , (1, return $ IteratorClose   iter) ])
     , (1, Reopen <$> genValPol)
+
+    , (1, ReopenInThePast <$> genValPol <*> chooseSlot (0, lastSlot))
 
     , (4, DeleteAfter <$> genTip)
 
@@ -661,6 +683,7 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
     DeleteAfter tip                    ->
       [DeleteAfter tip' | tip' <- shrinkTip tip]
     Reopen {}                          -> []
+    ReopenInThePast {}                 -> []
     Corruption corr                    ->
       [Corruption corr' | corr' <- shrinkCorruption corr]
   where
@@ -719,6 +742,8 @@ precondition Model {..} (At (CmdErr { _cmd = cmd })) =
       DeleteAfter tip      -> tip `elem` NE.toList (tips dbModel)
       Corruption corr ->
         forall (corruptionFiles corr) (`elem` getDBFiles dbModel)
+      ReopenInThePast _ curSlot ->
+        0 .<= curSlot .&& curSlot .<= lastSlot
       _ -> Top
   where
     corruptionFiles (MkCorruption corrs) = map snd $ NE.toList corrs
@@ -727,6 +752,9 @@ precondition Model {..} (At (CmdErr { _cmd = cmd })) =
     fitsOnTip b = case dbmTipBlock dbModel of
       Nothing    -> blockPrevHash b .== Block.GenesisHash
       Just bPrev -> blockPrevHash b .== Block.BlockHash (blockHash bPrev)
+
+    lastSlot :: SlotNo
+    lastSlot = fromIntegral $ length $ dbmChain dbModel
 
 transition :: (Show1 r, Eq1 r)
            => Model m r -> At CmdErr m r -> At Resp m r -> Model m r
@@ -743,12 +771,15 @@ postcondition model cmdErr resp =
 
 -- | Environment to run commands against the real ImmutableDB implementation.
 data ImmutableDBEnv h = ImmutableDBEnv
-  { varErrors :: StrictTVar IO Errors
-  , varNextId :: StrictTVar IO Id
-  , registry  :: ResourceRegistry IO
-  , hasFS     :: HasFS IO h
-  , db        :: ImmutableDB    Hash IO
-  , internal  :: ImmDB.Internal Hash IO
+  { varErrors  :: StrictTVar IO Errors
+  , varNextId  :: StrictTVar IO Id
+  , varCurSlot :: StrictTVar IO SlotNo
+    -- ^ Always 'maxBound'. Only when executing 'ReopenInThePast', it will
+    -- temporarily be reset to a slot in the past.
+  , registry   :: ResourceRegistry IO
+  , hasFS      :: HasFS IO h
+  , db         :: ImmutableDB    Hash IO
+  , internal   :: ImmDB.Internal Hash IO
   }
 
 semantics :: ImmutableDBEnv h
@@ -891,6 +922,8 @@ data Tag
 
   | TagCorruption
 
+  | TagReopenInThePast
+
   | TagErrorDuringAppendBlock
 
   | TagErrorDuringAppendEBB
@@ -973,6 +1006,7 @@ tag = C.classify
     , tagIteratorStreamedN Map.empty
     , tagIteratorWithoutBounds
     , tagCorruption
+    , tagReopenInThePast
     , tagErrorDuring TagErrorDuringAppendBlock $ \case
       { At (AppendBlock {}) -> True; _ -> False }
     , tagErrorDuring TagErrorDuringAppendEBB $ \case
@@ -1069,6 +1103,14 @@ tag = C.classify
       { C.predApply = \ev -> case eventCmd ev of
           At (Corruption {}) -> Left  TagCorruption
           _                  -> Right tagCorruption
+      , C.predFinish = Nothing
+      }
+
+    tagReopenInThePast :: EventPred m
+    tagReopenInThePast = C.Predicate
+      { C.predApply = \ev -> case eventCmd ev of
+          At (ReopenInThePast {}) -> Left  TagReopenInThePast
+          _                       -> Right tagReopenInThePast
       , C.predFinish = Nothing
       }
 
@@ -1204,19 +1246,21 @@ test cacheConfig cmds = do
     fsVar              <- QC.run $ uncheckedNewTVarM Mock.empty
     varErrors          <- QC.run $ uncheckedNewTVarM mempty
     varNextId          <- QC.run $ uncheckedNewTVarM 0
+    varCurSlot         <- QC.run $ uncheckedNewTVarM maxBound
     (tracer, getTrace) <- QC.run $ recordingTracerIORef
     registry           <- QC.run $ unsafeNewRegistry
 
     let hasFS  = mkSimErrorHasFS EH.monadCatch fsVar varErrors
         parser = epochFileParser hasFS (const <$> decode) isEBB
           getBinaryInfo testBlockIsValid
+        btime  = settableBlockchainTime varCurSlot
 
     (db, internal) <- QC.run $ openDBInternal registry hasFS
       EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
-      ValidateMostRecentEpoch parser tracer cacheConfig
+      ValidateMostRecentEpoch parser tracer cacheConfig btime
 
     let env = ImmutableDBEnv
-          { varErrors, varNextId, registry, hasFS, db, internal }
+          { varErrors, varNextId, varCurSlot, registry, hasFS, db, internal }
         sm' = sm env dbm
 
     (hist, model, res) <- runCommands sm' cmds

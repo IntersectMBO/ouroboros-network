@@ -26,6 +26,7 @@ import qualified Cardano.Crypto as Crypto
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      genesisPoint)
 
+import           Ouroboros.Consensus.BlockchainTime.Mock (fixedBlockchainTime)
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock,
                      ByronConsensusProtocol, ByronHash)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
@@ -266,4 +267,6 @@ withImmDB fp cfg epochInfo registry = ImmDB.withImmDB args
         , immCheckIntegrity = nodeCheckIntegrity      cfg
         , immAddHdrEnv      = nodeAddHeaderEnvelope   (Proxy @ByronBlock)
         , immRegistry       = registry
+          -- We don't want to truncate blocks from the future
+        , immBlockchainTime = fixedBlockchainTime maxBound
         }

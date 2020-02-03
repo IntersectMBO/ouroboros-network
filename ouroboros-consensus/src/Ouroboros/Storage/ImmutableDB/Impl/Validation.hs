@@ -64,6 +64,7 @@ data ValidateEnv m hash h e = ValidateEnv
   , tracer      :: !(Tracer m (TraceEvent e hash))
   , registry    :: !(ResourceRegistry m)
   , cacheConfig :: !Index.CacheConfig
+  , currentSlot :: !SlotNo
   }
 
 -- | Perform validation as per the 'ValidationPolicy' using 'validate' and
@@ -296,7 +297,7 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
     -- expensive integrity check of a block.
     let expectedChecksums = map Secondary.checksum entriesFromSecondaryIndex
     (entriesWithPrevHashes, mbErr) <- lift $
-        runEpochFileParser parser epochFile expectedChecksums $ \stream ->
+        runEpochFileParser parser epochFile currentSlot expectedChecksums $ \stream ->
           (\(es :> mbErr) -> (es, mbErr)) <$> S.toList stream
 
     -- Check whether the first block of this epoch fits onto the last block of
