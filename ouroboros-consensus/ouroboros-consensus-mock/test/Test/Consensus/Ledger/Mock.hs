@@ -139,7 +139,7 @@ instance Arbitrary SimpleBody where
   arbitrary = SimpleBody <$> listOf arbitrary
 
 instance Arbitrary Tx where
-  arbitrary = Tx
+  arbitrary = Tx DoNotExpire
          <$> pure mempty  -- For simplicity
          <*> arbitrary
 
