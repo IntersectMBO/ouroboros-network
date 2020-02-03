@@ -1,8 +1,10 @@
 packages: ./typed-protocols
-          ./typed-protocols-cbor
+          ./typed-protocols
           ./ouroboros-network-testing
           ./network-mux
+          ./ouroboros-network-framework
           ./ouroboros-network
+          ./ouroboros-network-testing
           ./ouroboros-consensus
           ./io-sim
           ./io-sim-classes
@@ -30,7 +32,7 @@ package typed-protocols
 package typed-protocols-examples
   tests: True
 
-package typed-protocols-cbor
+package ouroboros-network-framework
   tests: True
 
 package ouroboros-network-testing

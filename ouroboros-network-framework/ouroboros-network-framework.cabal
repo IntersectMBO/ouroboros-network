@@ -3,7 +3,7 @@ cabal-version:       >=1.10
 --  'cabal init'.  For further documentation, see
 -- http://haskell.org/cabal/users-guide/
 
-name:                typed-protocols-cbor
+name:                ouroboros-network-framework
 version:             0.1.0.0
 -- synopsis:
 -- description:
@@ -36,7 +36,7 @@ library
   hs-source-dirs:      src
   default-language:    Haskell2010
 
-test-suite test-typed-protocols-cbor
+test-suite ouroboros-network-framework-tests
   type:                exitcode-stdio-1.0
   main-is:             Main.hs
   hs-source-dirs:      test src

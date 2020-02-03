@@ -2,8 +2,9 @@ resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/0048
 
 packages:
   - ./typed-protocols
-  - ./typed-protocols-cbor
+  - ./typed-protocols-examples
   - ./network-mux
+  - ./ouroboros-network-framework
   - ./ouroboros-network
   - ./ouroboros-network-testing
   - ./ouroboros-consensus

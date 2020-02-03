@@ -1,4 +1,4 @@
-# Revision history for typed-protocols-cbor
+# Revision history for ouroboros-network-framework
 
 ## 0.1.0.0 -- YYYY-mm-dd
 
