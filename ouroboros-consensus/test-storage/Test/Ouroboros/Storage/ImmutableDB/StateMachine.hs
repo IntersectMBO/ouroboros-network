@@ -208,16 +208,13 @@ type RunCorruption m =
   -> m (Success (TestIterator m))
 
 -- | Run the command against the given database.
-run :: forall m. (HasCallStack, IOLike m)
-    => RunCorruption m
-    -> [TestIterator m]
-    -> ImmutableDB    Hash m
-    -> ImmDB.Internal Hash m
-    -> ResourceRegistry m
-    -> StrictTVar m Id
-    -> Cmd (TestIterator m)
-    -> m (Success (TestIterator m))
-run runCorruption its db internal registry varNextId cmd = case cmd of
+run :: HasCallStack
+    => ImmutableDBEnv h
+    -> RunCorruption IO
+    -> [TestIterator IO]
+    -> Cmd (TestIterator IO)
+    -> IO (Success (TestIterator IO))
+run ImmutableDBEnv { db, internal, registry, varNextId } runCorruption its cmd = case cmd of
     GetBlockComponent      s   -> MbAllComponents <$> getBlockComponent      db allComponents s
     GetEBBComponent        e   -> MbAllComponents <$> getEBBComponent        db allComponents e
     GetBlockOrEBBComponent s h -> MbAllComponents <$> getBlockOrEBBComponent db allComponents s h
@@ -242,7 +239,7 @@ run runCorruption its db internal registry varNextId cmd = case cmd of
   where
     iter = fmap Iter . traverse giveWithEq
 
-    giveWithEq :: a -> m (WithEq a)
+    giveWithEq :: a -> IO (WithEq a)
     giveWithEq a =
       fmap (`WithEq` a) $ atomically $ updateTVar varNextId $ \i -> (succ i, i)
 
@@ -744,24 +741,29 @@ postcondition model cmdErr resp =
   where
     ev = lockstep model cmdErr resp
 
-semantics :: StrictTVar IO Errors
-          -> StrictTVar IO Id
-          -> ResourceRegistry IO
-          -> HasFS IO h
-          -> ImmutableDB   Hash IO
-          -> ImmDB.Internal Hash IO
+-- | Environment to run commands against the real ImmutableDB implementation.
+data ImmutableDBEnv h = ImmutableDBEnv
+  { varErrors :: StrictTVar IO Errors
+  , varNextId :: StrictTVar IO Id
+  , registry  :: ResourceRegistry IO
+  , hasFS     :: HasFS IO h
+  , db        :: ImmutableDB    Hash IO
+  , internal  :: ImmDB.Internal Hash IO
+  }
+
+semantics :: ImmutableDBEnv h
           -> At CmdErr IO Concrete
           -> IO (At Resp IO Concrete)
-semantics varErrors varNextId registry hasFS db internal (At cmdErr) =
+semantics env@ImmutableDBEnv {..} (At cmdErr) =
     At . fmap (reference . Opaque) . Resp <$> case opaque <$> cmdErr of
 
       CmdErr Nothing       cmd its -> try $
-        run (semanticsCorruption hasFS) its db internal registry varNextId cmd
+        run env (semanticsCorruption hasFS) its cmd
 
       CmdErr (Just errors) cmd its -> do
         tipBefore <- fmap forgetHash <$> getTip db
         res       <- withErrors varErrors errors $ try $
-          run (semanticsCorruption hasFS) its db internal registry varNextId cmd
+          run env (semanticsCorruption hasFS) its cmd
         case res of
           -- If the command resulted in a 'UserError', we didn't even get the
           -- chance to run into a simulated error. Note that we still
@@ -822,22 +824,17 @@ semanticsCorruption hasFS db _internal (MkCorruption corrs) = do
     Tip <$> getTip db
 
 -- | The state machine proper
-sm :: StrictTVar IO Errors
-   -> StrictTVar IO Id
-   -> ResourceRegistry IO
-   -> HasFS IO h
-   -> ImmutableDB    Hash IO
-   -> ImmDB.Internal Hash IO
+sm :: ImmutableDBEnv h
    -> DBModel Hash
    -> StateMachine (Model IO) (At CmdErr IO) IO (At Resp IO)
-sm varErrors varNextId registry hasFS db internal dbm = StateMachine
+sm env dbm = StateMachine
   { initModel     = initModel dbm
   , transition    = transition
   , precondition  = precondition
   , postcondition = postcondition
   , generator     = Just . generator
   , shrinker      = shrinker
-  , semantics     = semantics varErrors varNextId registry hasFS db internal
+  , semantics     = semantics env
   , mock          = mock
   , invariant     = Nothing
   , distribution  = Nothing
@@ -1188,8 +1185,7 @@ showLabelledExamples' mbReplay numTests focus stateMachine = do
 
 showLabelledExamples :: IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True) $
-    sm (error "varErrors unused") (error "varNextId unused")
-       (error "registry unused") hasFsUnused dbUnused internalUnused
+    sm unusedEnv
 
 prop_sequential :: Index.CacheConfig -> Property
 prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
@@ -1209,7 +1205,9 @@ prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.mona
           (db, internal) <- QC.run $ openDBInternal registry hasFS
             EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
             ValidateMostRecentEpoch parser tracer cacheConfig
-          let sm' = sm varErrors varNextId registry hasFS db internal dbm
+          let env = ImmutableDBEnv
+                { varErrors, varNextId, registry, hasFS, db, internal }
+              sm' = sm env dbm
           (hist, model, res) <- runCommands sm' cmds
           trace <- QC.run getTrace
           QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
@@ -1259,8 +1257,7 @@ prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.mona
       $ prop
   where
     dbm = mkDBModel
-    smUnused = sm (error "varErrors unused") (error "varNextId unused")
-      (error "registry unused") hasFsUnused dbUnused internalUnused dbm
+    smUnused = sm unusedEnv dbm
     isEBB = testHeaderEpochNoIfEBB fixedEpochSize . getHeader
     getBinaryInfo = void . testBlockToBinaryInfo
 
@@ -1275,14 +1272,8 @@ fixedEpochSize = 10
 mkDBModel :: DBModel Hash
 mkDBModel = initDBModel fixedEpochSize
 
-dbUnused :: ImmutableDB Hash m
-dbUnused = error "semantics and DB used during command generation"
-
-internalUnused :: ImmDB.Internal Hash m
-internalUnused = error "semantics and internal DB API used during command generation"
-
-hasFsUnused :: HasFS m h
-hasFsUnused = error "HasFS only used during execution"
+unusedEnv :: ImmutableDBEnv h
+unusedEnv = error "ImmutableDBEnv used during command generation"
 
 instance Arbitrary Index.CacheConfig where
   arbitrary = do
