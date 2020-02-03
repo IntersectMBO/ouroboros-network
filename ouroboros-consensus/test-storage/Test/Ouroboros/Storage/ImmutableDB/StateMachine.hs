@@ -1189,77 +1189,83 @@ showLabelledExamples = showLabelledExamples' Nothing 1000 (const True) $
 
 prop_sequential :: Index.CacheConfig -> Property
 prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
-    let test :: StrictTVar IO Mock.MockFS
-             -> StrictTVar IO Errors
-             -> StrictTVar IO Id
-             -> HasFS IO h
-             -> QC.PropertyM IO (
-                    QSM.History (At CmdErr IO) (At Resp IO)
-                  , Property
-                  )
-        test fsVar varErrors varNextId hasFS = do
-          let parser = epochFileParser hasFS (const <$> decode) isEBB
-                getBinaryInfo testBlockIsValid
-          (tracer, getTrace) <- QC.run recordingTracerIORef
-          registry <- QC.run unsafeNewRegistry
-          (db, internal) <- QC.run $ openDBInternal registry hasFS
-            EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
-            ValidateMostRecentEpoch parser tracer cacheConfig
-          let env = ImmutableDBEnv
-                { varErrors, varNextId, registry, hasFS, db, internal }
-              sm' = sm env dbm
-          (hist, model, res) <- runCommands sm' cmds
-          trace <- QC.run getTrace
-          QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
-          fs <- QC.run $ atomically $ readTVar fsVar
-          let fsDump = Mock.pretty fs
-              openHandles = Mock.numOpenHandles fs
-              -- We're appending to the epoch, so a handle for each of the
-              -- three files, plus a handle for the epoch file (to read the
-              -- blocks) per open iterator.
-              maxExpectedOpenHandles = 1 {- epoch file -}
-                                     + 1 {- primary index file -}
-                                     + 1 {- secondary index file -}
-                                     + nbOpenIterators model
-              openHandlesProp
-                | openHandles <= maxExpectedOpenHandles
-                = property True
-                | otherwise
-                = counterexample
-                  ("open handles: " <> show openHandles <>
-                   " > max expected open handles: " <>
-                   show maxExpectedOpenHandles) False
-              prop = res === Ok .&&. openHandlesProp
-          QC.monitor $ counterexample ("FS: " <> fsDump)
-          case res of
-            Ok -> do
-              QC.run $ closeDB db >> reopen db ValidateAllEpochs
-              validation <- validate model db
-              dbTip <- QC.run $ getTip db <* closeDB db <* closeRegistry registry
-
-              let modelTip = dbmTip $ dbModel model
-              QC.monitor $ counterexample ("dbTip:    " <> show dbTip)
-              QC.monitor $ counterexample ("modelTip: " <> show modelTip)
-
-              return (hist, prop .&&. dbTip === modelTip .&&. validation)
-            -- If something went wrong, don't try to reopen the database
-            _ -> do
-              QC.run $ closeRegistry registry
-              return (hist, prop)
-
-    fsVar     <- QC.run $ uncheckedNewTVarM Mock.empty
-    varErrors <- QC.run $ uncheckedNewTVarM mempty
-    varNextId <- QC.run $ uncheckedNewTVarM 0
-    (hist, prop) <-
-      test fsVar varErrors varNextId (mkSimErrorHasFS EH.monadCatch fsVar varErrors)
+    (hist, prop) <- test cacheConfig cmds
     prettyCommands smUnused hist
       $ tabulate "Tags" (map show $ tag (execCmds (QSM.initModel smUnused) cmds))
       $ prop
   where
     dbm = mkDBModel
     smUnused = sm unusedEnv dbm
+
+test :: Index.CacheConfig
+     -> QSM.Commands (At CmdErr IO) (At Resp IO)
+     -> QC.PropertyM IO (QSM.History (At CmdErr IO) (At Resp IO), Property)
+test cacheConfig cmds = do
+    fsVar              <- QC.run $ uncheckedNewTVarM Mock.empty
+    varErrors          <- QC.run $ uncheckedNewTVarM mempty
+    varNextId          <- QC.run $ uncheckedNewTVarM 0
+    (tracer, getTrace) <- QC.run $ recordingTracerIORef
+    registry           <- QC.run $ unsafeNewRegistry
+
+    let hasFS  = mkSimErrorHasFS EH.monadCatch fsVar varErrors
+        parser = epochFileParser hasFS (const <$> decode) isEBB
+          getBinaryInfo testBlockIsValid
+
+    (db, internal) <- QC.run $ openDBInternal registry hasFS
+      EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
+      ValidateMostRecentEpoch parser tracer cacheConfig
+
+    let env = ImmutableDBEnv
+          { varErrors, varNextId, registry, hasFS, db, internal }
+        sm' = sm env dbm
+
+    (hist, model, res) <- runCommands sm' cmds
+
+    trace <- QC.run $ getTrace
+    fs    <- QC.run $ atomically $ readTVar fsVar
+
+    QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
+    QC.monitor $ counterexample ("FS: " <> Mock.pretty fs)
+
+    let prop = res === Ok .&&. openHandlesProp fs model
+
+    case res of
+      Ok -> do
+        QC.run $ closeDB db >> reopen db ValidateAllEpochs
+        validation <- validate model db
+        dbTip <- QC.run $ getTip db <* closeDB db <* closeRegistry registry
+
+        let modelTip = dbmTip $ dbModel model
+        QC.monitor $ counterexample ("dbTip:    " <> show dbTip)
+        QC.monitor $ counterexample ("modelTip: " <> show modelTip)
+
+        return (hist, prop .&&. dbTip === modelTip .&&. validation)
+      -- If something went wrong, don't try to reopen the database
+      _ -> do
+        QC.run $ closeRegistry registry
+        return (hist, prop)
+  where
+    dbm = mkDBModel
     isEBB = testHeaderEpochNoIfEBB fixedEpochSize . getHeader
     getBinaryInfo = void . testBlockToBinaryInfo
+
+    openHandlesProp fs model
+        | openHandles <= maxExpectedOpenHandles
+        = property True
+        | otherwise
+        = counterexample
+          ("open handles: " <> show openHandles <>
+           " > max expected open handles: " <>
+           show maxExpectedOpenHandles) False
+      where
+        openHandles = Mock.numOpenHandles fs
+        -- We're appending to the epoch, so a handle for each of the
+        -- three files, plus a handle for the epoch file (to read the
+        -- blocks) per open iterator.
+        maxExpectedOpenHandles = 1 {- epoch file -}
+                               + 1 {- primary index file -}
+                               + 1 {- secondary index file -}
+                               + nbOpenIterators model
 
 tests :: TestTree
 tests = testGroup "ImmutableDB q-s-m"
