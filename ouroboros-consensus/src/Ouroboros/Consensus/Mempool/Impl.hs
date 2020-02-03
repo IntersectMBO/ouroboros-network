@@ -9,7 +9,6 @@
 module Ouroboros.Consensus.Mempool.Impl (
     openMempool
   , LedgerInterface (..)
-  , MempoolCapacityBytes (..)
   , chainDBLedgerInterface
   , txsToMempoolSize
   , TicketNo
@@ -86,6 +85,7 @@ mkMempool env = Mempool
     , syncWithLedger = implSyncWithLedger env
     , getSnapshot    = implGetSnapshot    env
     , getSnapshotFor = implGetSnapshotFor env
+    , getCapacity    = implGetCapacity    env
     , zeroIdx        = zeroTicketNo
     }
 
@@ -93,11 +93,6 @@ mkMempool env = Mempool
 data LedgerInterface m blk = LedgerInterface
   { getCurrentLedgerState :: STM m (LedgerState blk)
   }
-
--- | Represents the maximum number of bytes worth of transactions that a
--- 'Mempool' can contain.
-newtype MempoolCapacityBytes = MempoolCapacityBytes Word32
-  deriving (Show)
 
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
 chainDBLedgerInterface :: IOLike m => ChainDB m blk -> LedgerInterface m blk
@@ -441,6 +436,14 @@ implGetSnapshotFor MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg}
           implSnapshotFromIS
         . internalStateFromVR
         . validateStateFor mpEnvLedgerCfg blockSlot ledger
+
+-- | Return the current capacity of the mempool in bytes.
+--
+-- TODO #1498: As of right now, this could be a pure operation but, in
+-- preparation for #1498 (after which the mempool capacity will be dynamic),
+-- this lives in STM.
+implGetCapacity :: IOLike m => MempoolEnv m blk -> STM m MempoolCapacityBytes
+implGetCapacity = pure . mpEnvCapacity
 
 -- | Return the number of transactions in the Mempool paired with their total
 -- size in bytes.

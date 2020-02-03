@@ -58,6 +58,7 @@ tests = testGroup "Mempool"
   , testProperty "addTxs txs == mapM (addTxs . pure) txs"  prop_Mempool_addTxs_one_vs_multiple
   , testProperty "result of addTxs"                        prop_Mempool_addTxs_result
   , testProperty "Invalid transactions are never added"    prop_Mempool_InvalidTxsNeverAdded
+  , testProperty "result of getCapacity"                   prop_Mempool_getCapacity
   , testProperty "Mempool capacity implementation"         prop_Mempool_Capacity
   , testProperty "Added valid transactions are traced"     prop_Mempool_TraceValidTxs
   , testProperty "Rejected invalid txs are traced"         prop_Mempool_TraceRejectedTxs
@@ -145,6 +146,23 @@ prop_Mempool_removeTxs (TestSetupWithTxInMempool testSetup tx) =
         (txToRemove `notElem` txsInMempoolAfter)
   where
     txToRemove = TestGenTx tx
+
+-- | Test that 'getCapacity' returns the 'MempoolCapacityBytes' value that the
+-- mempool was initialized with.
+--
+-- Ignore the "100% empty Mempool" label in the test output, that is there
+-- because we reuse 'withTestMempool' and always start with an empty Mempool
+-- and 'LedgerState'.
+prop_Mempool_getCapacity :: MempoolCapTestSetup -> Property
+prop_Mempool_getCapacity mcts =
+    withTestMempool mctsTestSetup $ \TestMempool{mempool} -> do
+      mpCap <- atomically $ getCapacity mempool
+      pure (mpCap === mctsCapacity)
+  where
+    MempoolCapTestSetup
+      { mctsTestSetup
+      , mctsCapacity
+      } = mcts
 
 -- | When the mempool is at capacity, test that 'addTxs' blocks when
 -- attempting to add more transactions and that it unblocks when there is
