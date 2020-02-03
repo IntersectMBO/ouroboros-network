@@ -4,15 +4,16 @@
 {-# LANGUAGE FlexibleInstances   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Network.TypedProtocol.PingPong.Codec.Test (tests) where
+module Network.TypedProtocol.PingPong.Codec.Tests (tests) where
 
 import           Control.Monad.ST (runST)
 
-import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.PingPong.Type
-import           Network.TypedProtocol.PingPong.Codec.Cbor
+import           Network.TypedProtocol.PingPong.Codec.CBOR
 -- TODO: remove this import
-import           Network.TypedProtocol.ReqResp.Codec.Test (splits2, splits3)
+import           Network.TypedProtocol.ReqResp.Codec.Tests (splits2, splits3)
+
+import           Ouroboros.Network.Codec
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty (TestTree, testGroup)

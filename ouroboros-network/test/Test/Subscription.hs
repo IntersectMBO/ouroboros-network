@@ -45,8 +45,9 @@ import           Network.Mux.Time (microsecondsToDiffTime)
 import           Network.TypedProtocol.Driver
 import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Codec.Cbor as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Examples   as ReqResp
+
 import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq, cborTermVersionDataCodec)
 import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
 

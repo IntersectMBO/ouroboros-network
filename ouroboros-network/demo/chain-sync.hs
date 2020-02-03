@@ -54,9 +54,9 @@ import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
 
-import           Network.TypedProtocol.PingPong.Client as PingPong
-import           Network.TypedProtocol.PingPong.Codec.Cbor
-import           Network.TypedProtocol.PingPong.Server as PingPong
+import Network.TypedProtocol.PingPong.Client as PingPong
+import Network.TypedProtocol.PingPong.Server as PingPong
+import Network.TypedProtocol.PingPong.Codec.CBOR
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version

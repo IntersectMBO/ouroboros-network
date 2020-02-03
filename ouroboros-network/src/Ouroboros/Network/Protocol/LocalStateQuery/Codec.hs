@@ -20,10 +20,8 @@ import qualified Codec.CBOR.Read as CBOR
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Type.Equality ((:~:) (..))
 
-import           Network.TypedProtocol.Codec.Cbor
-
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
-
+import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Block (Point)
 
 data Some (f :: k -> *) where

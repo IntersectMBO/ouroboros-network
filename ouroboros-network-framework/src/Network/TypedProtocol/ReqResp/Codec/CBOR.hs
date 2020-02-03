@@ -4,7 +4,7 @@
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Network.TypedProtocol.ReqResp.Codec.Cbor where
+module Network.TypedProtocol.ReqResp.Codec.CBOR where
 
 import           Control.Monad.Class.MonadST
 
@@ -17,10 +17,9 @@ import           Codec.Serialise.Class (Serialise)
 import qualified Codec.Serialise.Class as CBOR
 
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.ReqResp.Type
 
-import           Network.TypedProtocol.Codec.Cbor
+import           Ouroboros.Network.Codec
 
 codecReqResp
   :: forall req resp m.

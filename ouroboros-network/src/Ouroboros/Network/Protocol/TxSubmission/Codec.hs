@@ -19,9 +19,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Read     as CBOR
 
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Codec.Cbor
-
+import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Protocol.TxSubmission.Type
 
 

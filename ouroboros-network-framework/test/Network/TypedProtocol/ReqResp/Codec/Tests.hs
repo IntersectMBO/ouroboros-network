@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Network.TypedProtocol.ReqResp.Codec.Test
+module Network.TypedProtocol.ReqResp.Codec.Tests
   ( tests
   -- TODO: only temporary
   , splits2
@@ -14,9 +14,10 @@ module Network.TypedProtocol.ReqResp.Codec.Test
 import           Control.Monad.ST (runST)
 import qualified Data.ByteString.Lazy as LBS
 
-import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.ReqResp.Type
-import           Network.TypedProtocol.ReqResp.Codec.Cbor
+import           Network.TypedProtocol.ReqResp.Codec.CBOR
+
+import           Ouroboros.Network.Codec
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty (TestTree, testGroup)
