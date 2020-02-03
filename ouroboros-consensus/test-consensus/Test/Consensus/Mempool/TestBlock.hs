@@ -113,7 +113,7 @@ instance UpdateLedger TestBlock where
   data LedgerConfig TestBlock = LedgerConfig
   type LedgerError  TestBlock = ()
 
-  applyChainTick _ _ = TickedLedgerState
+  applyChainTick _ = TickedLedgerState
 
   applyLedgerBlock   = notNeeded
   reapplyLedgerBlock = notNeeded
@@ -141,9 +141,9 @@ instance ApplyTx TestBlock where
 
   type ApplyTxErr TestBlock = TestTxError
 
-  applyTx _ (TestGenTx tx) (TickedLedgerState ledger@TestLedger { tlTxIds }) = do
+  applyTx _ (TestGenTx tx) (TickedLedgerState slot ledger@TestLedger { tlTxIds }) = do
     testTxValidate tx tlTxIds
-    return $ TickedLedgerState ledger { tlTxIds = testTxId tx : tlTxIds }
+    return $ TickedLedgerState slot ledger { tlTxIds = testTxId tx : tlTxIds }
 
   reapplyTx = applyTx
 

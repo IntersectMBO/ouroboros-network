@@ -115,7 +115,14 @@ data InternalState blk = IS {
       isTxs          :: !(TxSeq (GenTx blk))
 
       -- | The tip of the chain that 'isTxs' was validated against
+      --
+      -- This comes from the underlying ledger state ('tickedLedgerState')
     , isTip          :: !(ChainHash blk)
+
+      -- | The most recent 'SlotNo' that 'isTxs' was validated against
+      --
+      -- This comes from 'applyChainTick' ('tickerLedgerSlot').
+    , isSlotNo       :: !(WithOrigin SlotNo)
 
       -- | The mempool 'TicketNo' counter.
       --
@@ -138,7 +145,7 @@ data MempoolEnv m blk = MempoolEnv {
     }
 
 initInternalState :: InternalState blk
-initInternalState = IS TxSeq.Empty Block.GenesisHash zeroTicketNo
+initInternalState = IS TxSeq.Empty Block.GenesisHash Origin zeroTicketNo
 
 initMempoolEnv :: (IOLike m, ApplyTx blk)
                => LedgerInterface m blk
@@ -241,7 +248,9 @@ implAddTxs :: forall m blk. (IOLike m, ApplyTx blk)
 implAddTxs _     _     []  = pure []
 implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
     (vr, removed, rejected, unvalidated, mempoolSize) <- atomically $ do
-      IS{isTip = initialISTip} <- readTVar mpEnvStateVar
+      IS{ isTip    = initialISTip
+        , isSlotNo = initialISSlotNo
+        } <- readTVar mpEnvStateVar
 
       -- First sync the state, which might remove some transactions
       syncRes <- validateIS mpEnv TxsForUnknownBlock
@@ -258,7 +267,8 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       -- about losing any changes in the event that we have to 'retry' this
       -- STM transaction. So we should continue by validating the provided new
       -- transactions.
-      if initialISTip /= vrBefore syncRes
+      if initialISTip    /=     vrBeforeTip    syncRes ||
+         initialISSlotNo /= At (vrBeforeSlotNo syncRes)
         then do
           -- The tip changed.
           -- Because 'validateNew' can 'retry', we'll commit this STM
@@ -340,10 +350,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
               (vr, []) -> do
                 -- Continue validating the remaining transactions.
                 (vr', unvalidatedTxs) <- validateNewUntilMempoolFull remainingTxs vr
-                writeTVar mpEnvStateVar IS { isTxs          = vrValid        vr'
-                                           , isTip          = vrBefore       vr'
-                                           , isLastTicketNo = vrLastTicketNo vr'
-                                           }
+                writeTVar mpEnvStateVar $ internalStateFromVR vr'
                 pure (vr', unvalidatedTxs)
 
               -- The mempool capacity has been reached.
@@ -504,7 +511,10 @@ implSnapshotGetMempoolSize = txsToMempoolSize . isTxs
 
 data ValidationResult blk = ValidationResult {
     -- | The tip of the chain before applying these transactions
-    vrBefore       :: ChainHash blk
+    vrBeforeTip    :: ChainHash blk
+
+    -- | The (ticked) slot number before applying these transactions
+  , vrBeforeSlotNo :: SlotNo
 
     -- | The transactions that were found to be valid (oldest to newest)
   , vrValid        :: TxSeq (GenTx blk)
@@ -541,13 +551,15 @@ data ValidationResult blk = ValidationResult {
 --
 -- Discards information about invalid and newly valid transactions
 internalStateFromVR :: ValidationResult blk -> InternalState blk
-internalStateFromVR ValidationResult { vrBefore
+internalStateFromVR ValidationResult { vrBeforeTip
+                                     , vrBeforeSlotNo
                                      , vrValid
                                      , vrLastTicketNo
                                      } = IS {
-      isTxs          = vrValid
-    , isTip          = vrBefore
-    , isLastTicketNo = vrLastTicketNo
+      isTxs          =      vrValid
+    , isTip          =      vrBeforeTip
+    , isSlotNo       = At $ vrBeforeSlotNo
+    , isLastTicketNo =      vrLastTicketNo
     }
 
 -- | Initialize 'ValidationResult' from a ledger state and a list of
@@ -559,7 +571,8 @@ initVR :: forall blk. ApplyTx blk
        -> TicketNo
        -> ValidationResult blk
 initVR cfg = \knownValid st lastTicketNo -> ValidationResult {
-      vrBefore       = ledgerTipHash (getTickedLedgerState st)
+      vrBeforeTip    = ledgerTipHash (tickedLedgerState st)
+    , vrBeforeSlotNo = tickedSlotNo st
     , vrValid        = knownValid
     , vrNewValid     = []
     , vrAfter        = afterKnownValid
@@ -637,8 +650,9 @@ validateStateFor :: forall blk. ApplyTx blk
                  -> LedgerState      blk
                  -> InternalState    blk
                  -> ValidationResult blk
-validateStateFor cfg blockSlot st IS{isTxs, isTip, isLastTicketNo}
-  | ledgerTipHash (getTickedLedgerState st') == isTip
+validateStateFor cfg blockSlot st IS{isTxs, isTip, isSlotNo, isLastTicketNo}
+  | isTip    == ledgerTipHash (tickedLedgerState st') &&
+    isSlotNo == At (tickedSlotNo st')
   = initVR cfg isTxs st' isLastTicketNo
   | otherwise
   = repeatedly (extendVRPrevApplied cfg) (fromTxSeq isTxs)

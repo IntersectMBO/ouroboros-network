@@ -284,7 +284,7 @@ instance UpdateLedger TestBlock where
   data LedgerConfig TestBlock = LedgerConfig
   type LedgerError  TestBlock = TestBlockError
 
-  applyChainTick _ _ = TickedLedgerState
+  applyChainTick _ = TickedLedgerState
 
   applyLedgerBlock _ tb@TestBlock{..} TestLedger{..}
     | Block.blockPrevHash tb /= Block.pointHash lastAppliedPoint

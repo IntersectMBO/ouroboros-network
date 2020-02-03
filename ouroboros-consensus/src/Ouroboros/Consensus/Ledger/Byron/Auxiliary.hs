@@ -259,8 +259,7 @@ applyChainTick :: Gen.Config
                -> CC.ChainValidationState
                -> CC.ChainValidationState
 applyChainTick cfg slotNo state = state {
-      CC.cvsLastSlot        = slotNo
-    , CC.cvsUpdateState     = CC.epochTransition
+      CC.cvsUpdateState     = CC.epochTransition
                                 (mkEpochEnvironment cfg state)
                                 (CC.cvsUpdateState state)
                                 slotNo

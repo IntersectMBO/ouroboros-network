@@ -85,7 +85,7 @@ instance UpdateLedger ByronBlock where
     }
 
   applyChainTick cfg slotNo ByronLedgerState{..} =
-      TickedLedgerState ByronLedgerState {
+      TickedLedgerState slotNo ByronLedgerState {
           byronDelegationHistory = byronDelegationHistory
         , byronLedgerState       = Aux.applyChainTick
                                       (unByronLedgerConfig cfg)
@@ -283,7 +283,7 @@ applyByronBlock validationMode
                 fcfg@(ByronLedgerConfig cfg)
                 fblk@(ByronBlock blk _ (ByronHash blkHash))
                 ls = do
-    let TickedLedgerState ls' = applyChainTick fcfg (blockSlot fblk) ls
+    let TickedLedgerState _slot ls' = applyChainTick fcfg (blockSlot fblk) ls
     case blk of
       CC.ABOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash ls'
       CC.ABOBBoundary blk' -> applyABoundaryBlock        cfg blk'         ls'
