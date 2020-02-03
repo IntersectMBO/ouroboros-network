@@ -22,11 +22,10 @@ import           Test.Util.Orphans.Arbitrary ()
 
 tests :: TestTree
 tests = testGroup "BFT" [
-      testProperty "simple convergence" $
-        prop_simple_bft_convergence k
+      testProperty "simple convergence" $ \tc ->
+        forAll (SecurityParam <$> elements [2 .. 10]) $ \k ->
+        prop_simple_bft_convergence k tc
     ]
-  where
-    k = SecurityParam 5
 
 prop_simple_bft_convergence :: SecurityParam
                             -> TestConfig
