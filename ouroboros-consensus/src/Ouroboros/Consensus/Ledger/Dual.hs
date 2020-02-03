@@ -51,6 +51,7 @@ module Ouroboros.Consensus.Ledger.Dual (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import           Codec.Serialise
+import           Control.Exception (assert)
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
@@ -250,20 +251,24 @@ instance Bridge m a => UpdateLedger (DualBlock m a) where
   applyChainTick DualLedgerConfig{..}
                  slot
                  DualLedgerState{..} =
-      TickedLedgerState DualLedgerState {
-          dualLedgerStateMain = getTickedLedgerState $
-            applyChainTick
-              dualLedgerConfigMain
-              slot
-              dualLedgerStateMain
-        , dualLedgerStateAux = getTickedLedgerState $
-            applyChainTick
-              dualLedgerConfigAux
-              slot
-              dualLedgerStateAux
-        , dualLedgerStateBridge =
-            dualLedgerStateBridge
+      assert (tickedSlotNo tickedM == tickedSlotNo tickedA) $
+      TickedLedgerState (tickedSlotNo tickedM) DualLedgerState {
+          dualLedgerStateMain   = tickedLedgerState tickedM
+        , dualLedgerStateAux    = tickedLedgerState tickedA
+        , dualLedgerStateBridge = dualLedgerStateBridge
         }
+    where
+      tickedM :: TickedLedgerState m
+      tickedM = applyChainTick
+                  dualLedgerConfigMain
+                  slot
+                  dualLedgerStateMain
+
+      tickedA :: TickedLedgerState a
+      tickedA = applyChainTick
+                  dualLedgerConfigAux
+                  slot
+                  dualLedgerStateAux
 
   applyLedgerBlock DualLedgerConfig{..}
                    block@DualBlock{..}
@@ -396,19 +401,19 @@ instance Bridge m a => ApplyTx (DualBlock m a) where
 
   applyTx DualLedgerConfig{..}
           tx@DualGenTx{..}
-          (TickedLedgerState DualLedgerState{..}) = do
-      (TickedLedgerState main', TickedLedgerState aux') <-
+          (TickedLedgerState slot DualLedgerState{..}) = do
+      (TickedLedgerState _ main', TickedLedgerState _ aux') <-
         agreeOnError DualGenTxErr (
             applyTx
               dualLedgerConfigMain
               dualGenTxMain
-              (TickedLedgerState dualLedgerStateMain)
+              (TickedLedgerState slot dualLedgerStateMain)
           , applyTx
               dualLedgerConfigAux
               dualGenTxAux
-              (TickedLedgerState dualLedgerStateAux)
+              (TickedLedgerState slot dualLedgerStateAux)
           )
-      return $ TickedLedgerState DualLedgerState {
+      return $ TickedLedgerState slot DualLedgerState {
           dualLedgerStateMain   = main'
         , dualLedgerStateAux    = aux'
         , dualLedgerStateBridge = updateBridgeWithTx
@@ -418,19 +423,19 @@ instance Bridge m a => ApplyTx (DualBlock m a) where
 
   reapplyTx DualLedgerConfig{..}
             tx@DualGenTx{..}
-            (TickedLedgerState DualLedgerState{..}) = do
-      (TickedLedgerState main', TickedLedgerState aux') <-
+            (TickedLedgerState slot DualLedgerState{..}) = do
+      (TickedLedgerState _ main', TickedLedgerState _ aux') <-
         agreeOnError DualGenTxErr (
             reapplyTx
               dualLedgerConfigMain
               dualGenTxMain
-              (TickedLedgerState dualLedgerStateMain)
+              (TickedLedgerState slot dualLedgerStateMain)
           , reapplyTx
               dualLedgerConfigAux
               dualGenTxAux
-              (TickedLedgerState dualLedgerStateAux)
+              (TickedLedgerState slot dualLedgerStateAux)
           )
-      return $ TickedLedgerState DualLedgerState {
+      return $ TickedLedgerState slot DualLedgerState {
           dualLedgerStateMain   = main'
         , dualLedgerStateAux    = aux'
         , dualLedgerStateBridge = updateBridgeWithTx
@@ -440,18 +445,18 @@ instance Bridge m a => ApplyTx (DualBlock m a) where
 
   reapplyTxSameState DualLedgerConfig{..}
                      tx@DualGenTx{..}
-                     (TickedLedgerState DualLedgerState{..}) =
-    TickedLedgerState DualLedgerState {
-        dualLedgerStateMain   = getTickedLedgerState $
+                     (TickedLedgerState slot DualLedgerState{..}) =
+    TickedLedgerState slot DualLedgerState {
+        dualLedgerStateMain   = tickedLedgerState $
                                   reapplyTxSameState
                                     dualLedgerConfigMain
                                     dualGenTxMain
-                                    (TickedLedgerState dualLedgerStateMain)
-      , dualLedgerStateAux    = getTickedLedgerState $
+                                    (TickedLedgerState slot dualLedgerStateMain)
+      , dualLedgerStateAux    = tickedLedgerState $
                                   reapplyTxSameState
                                     dualLedgerConfigAux
                                     dualGenTxAux
-                                    (TickedLedgerState dualLedgerStateAux)
+                                    (TickedLedgerState slot dualLedgerStateAux)
       , dualLedgerStateBridge = updateBridgeWithTx
                                   tx
                                   dualLedgerStateBridge

@@ -63,8 +63,8 @@ instance UpdateLedger ByronSpecBlock where
 
   type LedgerError ByronSpecBlock = ByronSpecLedgerError
 
-  applyChainTick cfg slot state = TickedLedgerState $
-      updateByronSpecLedgerStateNewTip slot $
+  applyChainTick cfg slot state = TickedLedgerState slot $
+      updateByronSpecLedgerStateKeepTip state $
         Rules.applyChainTick
           (unByronSpecLedgerConfig cfg)
           (toByronSpecSlotNo       slot)

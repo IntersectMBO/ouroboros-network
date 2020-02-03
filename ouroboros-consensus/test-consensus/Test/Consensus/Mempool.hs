@@ -18,7 +18,7 @@ import qualified Data.Map as Map
 import           Data.Maybe (isJust, isNothing)
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Word (Word32)
+import           Data.Word
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -547,27 +547,39 @@ genInvalidTx invalidTxIds TestLedger { tlTxIds } = frequency
 -- TODO property to check that is never possible for a valid transaction that
 -- is in the chain to become invalid afterwards?
 
+-- | Apply a transaction to the ledger
+--
+-- We don't have blocks in this test, but transactions only. In this function
+-- we pretend the transaction /is/ a block, apply it (by faking a
+-- 'TickedLedgerState'), and then updating the tip of the ledger state,
+-- incrementing the slot number and faking a hash.
 applyTxToLedger :: LedgerState TestBlock
                 -> TestTx
                 -> Except TestTxError (LedgerState TestBlock)
 applyTxToLedger = \ledgerState tx ->
-    -- We need to change the 'ledgerTipPoint' because that is used to check
-    -- whether the ledger state has changed.
-    -- TODO: We pretend that the ledger state is "ticked" here; this does not
-    -- matter for our test ledger. We should at some point test with a test
-    -- ledger in which we chain tick /does/ make a difference; it would be
-    -- great if we had tests for instance with test blocks with a TTL.
-    -- If we do change that here, however, then the 'updateLedgerTipPoint'
-    -- function below is also not acceptable.
-    updateLedgerTipPoint <$>
-      applyTx LedgerConfig (TestGenTx tx) (TickedLedgerState ledgerState)
+    (updateLedgerTipPoint . tickedLedgerState) <$>
+      applyTx LedgerConfig (TestGenTx tx) (notReallyTicked ledgerState)
   where
-    updateLedgerTipPoint (TickedLedgerState ledgerState) = ledgerState
-        { tlLastApplied = BlockPoint { withHash = unSlotNo slot', atSlot = slot' } }
+    -- Wrap in 'TickedLedgerState' so that we can call 'applyTx'
+    notReallyTicked :: LedgerState TestBlock -> TickedLedgerState TestBlock
+    notReallyTicked = TickedLedgerState (error "SlotNo unused")
+
+    -- Update the tip of the ledger state
+    -- (so that the mempool notices the ledger state has changed)
+    updateLedgerTipPoint ledgerState = ledgerState {
+          tlLastApplied = BlockPoint {
+              withHash = fakeHash slot'
+            , atSlot   = slot'
+            }
+        }
       where
+        fakeHash :: SlotNo -> Word64
+        fakeHash = unSlotNo
+
+        slot' :: SlotNo
         slot' = case ledgerTipSlot ledgerState of
-          Origin  -> SlotNo 0
-          At slot -> succ slot
+                  Origin  -> SlotNo 0
+                  At slot -> succ slot
 
 {-------------------------------------------------------------------------------
   TestSetupWithTxs

@@ -194,8 +194,8 @@ applyByronGenTx :: CC.ValidationMode
                 -> GenTx ByronBlock
                 -> TickedLedgerState ByronBlock
                 -> Except (ApplyTxErr ByronBlock) (TickedLedgerState ByronBlock)
-applyByronGenTx validationMode cfg genTx (TickedLedgerState st) =
-    (\state -> TickedLedgerState $ st {byronLedgerState = state}) <$>
+applyByronGenTx validationMode cfg genTx (TickedLedgerState slot st) =
+    (\state -> TickedLedgerState slot $ st {byronLedgerState = state}) <$>
       applyMempoolPayload
         validationMode
         (unByronLedgerConfig cfg)

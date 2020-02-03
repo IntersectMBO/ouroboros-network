@@ -114,10 +114,21 @@ ledgerTipSlot = pointSlot . ledgerTipPoint
 
 -- | Ledger state with the chain tick function already applied
 --
--- This is merely a marker, so that we can keep track at the type level whether
--- or not the chain tick function has been applied.
-newtype TickedLedgerState blk = TickedLedgerState {
-      getTickedLedgerState :: LedgerState blk
+-- 'applyChainTick' is intended to mark the passage of time, without changing
+-- the tip of the underlying ledger (i.e., no blocks have been applied).
+data TickedLedgerState blk = TickedLedgerState {
+      -- | The slot number supplied to 'applyChainTick'
+      tickedSlotNo      :: SlotNo
+
+      -- | The underlying ledger state
+      --
+      -- NOTE: 'applyChainTick' should /not/ change the tip of the underlying
+      -- ledger state, which should still refer to the most recent applied
+      -- /block/. In other words, we should have
+      --
+      -- >    ledgerTipPoint (tickedLedgerState (applyChainTick cfg slot st)
+      -- > == ledgerTipPoint st
+    , tickedLedgerState :: LedgerState blk
     }
 
 -- | Link protocol to ledger
