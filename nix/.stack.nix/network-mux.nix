@@ -35,8 +35,6 @@
         "test-network-mux" = {
           depends = [
             (hsPkgs.base)
-            (hsPkgs.typed-protocols)
-            (hsPkgs.typed-protocols-cbor)
             (hsPkgs.io-sim-classes)
             (hsPkgs.io-sim)
             (hsPkgs.contra-tracer)

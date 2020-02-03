@@ -24,20 +24,5 @@
           (hsPkgs.time)
           ];
         };
-      tests = {
-        "test-protocols" = {
-          depends = [
-            (hsPkgs.base)
-            (hsPkgs.bytestring)
-            (hsPkgs.contra-tracer)
-            (hsPkgs.io-sim-classes)
-            (hsPkgs.io-sim)
-            (hsPkgs.QuickCheck)
-            (hsPkgs.tasty)
-            (hsPkgs.tasty-quickcheck)
-            (hsPkgs.time)
-            ];
-          };
-        };
       };
     } // rec { src = (pkgs.lib).mkDefault ../../././typed-protocols; }

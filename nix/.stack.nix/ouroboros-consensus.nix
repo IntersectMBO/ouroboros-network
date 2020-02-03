@@ -18,10 +18,10 @@
       "library" = {
         depends = [
           (hsPkgs.base)
-          (hsPkgs.ouroboros-network)
           (hsPkgs.network-mux)
           (hsPkgs.typed-protocols)
-          (hsPkgs.typed-protocols-cbor)
+          (hsPkgs.ouroboros-network-framework)
+          (hsPkgs.ouroboros-network)
           (hsPkgs.io-sim-classes)
           (hsPkgs.contra-tracer)
           (hsPkgs.bifunctors)
