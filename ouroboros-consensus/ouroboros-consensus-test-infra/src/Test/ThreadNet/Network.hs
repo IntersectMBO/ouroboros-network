@@ -382,10 +382,8 @@ runThreadNetwork ThreadNetworkArgs
         loop s pInfo nr rs = do
           -- a registry solely for the resources of this specific node instance
           (again, finalChain) <- withRegistry $ \nodeRegistry -> do
-            nodeTestBtime <- cloneTestBlockchainTime
-              sharedTestBtime
-              nodeRegistry
-            let nodeBtime = testBlockchainTime nodeTestBtime
+            let nodeTestBtime = testBlockchainTimeClone sharedTestBtime nodeRegistry
+                nodeBtime     = testBlockchainTime nodeTestBtime
 
             -- change the node's key and prepare a delegation transaction if
             -- the node is restarting because it just rekeyed
