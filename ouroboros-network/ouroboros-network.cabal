@@ -342,8 +342,8 @@ executable demo-chain-sync
   ghc-options:         -Wall
 
 executable demo-connections
-    hs-source-dirs: demo-connections
-    main-is:        Main.hs
+    hs-source-dirs: demo
+    main-is:        connections.hs
     build-depends:  base,
                     async,
                     network,
