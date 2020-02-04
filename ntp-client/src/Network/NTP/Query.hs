@@ -3,7 +3,6 @@
 module Network.NTP.Query (
     NtpSettings(..)
   , NtpStatus(..)
-  , minimumOfThree
   , ntpQuery
   ) where
 
