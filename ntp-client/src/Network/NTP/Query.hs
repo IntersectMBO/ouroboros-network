@@ -9,9 +9,9 @@ module Network.NTP.Query (
 import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
-import           Control.Exception (bracket)
+import           Control.Exception (bracket, onException)
 import           System.IO.Error (tryIOError, userError, ioError)
-import           Control.Monad (forever, forM, forM_, replicateM_)
+import           Control.Monad (forM, forM_, replicateM_)
 import           Control.Tracer
 import           Data.Binary (decodeOrFail, encode)
 import qualified Data.ByteString.Lazy as LBS
@@ -174,10 +174,12 @@ runNtpQueries tracer protocol netSettings localAddr destAddrs
         traceWith tracer $ NtpTraceSocketOpen protocol
         Socket.setSocketOption socket ReuseAddr 1
         inQueue <- atomically $ newTVar []
-        _err <- withAsync (send socket  >> loopForever)  $ \sender ->
-                withAsync timeout                        $ \delay ->
-                withAsync (receiver socket inQueue )     $ \revc ->
-                    waitAnyCancel [sender, delay, revc]        
+        _err <-
+          withAsync timeout $ \timeoutT ->
+            withAsync (receiver socket inQueue ) $ \receiverT -> do
+              senderT <- async (send socket)
+              waitAnyCancel [timeoutT, receiverT]
+                `onException` cancel senderT
         atomically $ readTVar inQueue
 
     send :: Socket -> IO ()
@@ -191,8 +193,6 @@ runNtpQueries tracer protocol netSettings localAddr destAddrs
                 traceWith tracer $ NtpTracePacketSentError protocol e
                 ioError e
         threadDelay 100_000
-
-    loopForever = forever $ threadDelay maxBound
 
     timeout = do
         threadDelay $ (fromIntegral $ ntpResponseTimeout netSettings) + 100_000 * length destAddrs
