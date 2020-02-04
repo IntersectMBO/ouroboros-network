@@ -9,6 +9,7 @@ import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM (STM, atomically, check)
 import           Control.Concurrent.STM.TVar
+import           Control.Monad (when)
 import           System.IO.Error (catchIOError)
 import           Control.Tracer
 import           Data.Void (Void)
@@ -22,10 +23,12 @@ import           Network.NTP.Trace
 --
 data NtpClient = NtpClient
     { -- | Query the current NTP status.
-      ntpGetStatus        :: STM NtpStatus
-      -- | Bypass all internal thread Delays and trigger a new NTP query (non-blocking).
-    , ntpQueryBlocking    :: IO NtpStatus
-    , ntpThread           :: Async Void
+      ntpGetStatus     :: STM NtpStatus
+      -- | Force to update the ntp state, unless an ntp query is already
+      -- running.  This is a blocking operation.
+    , ntpQueryBlocking :: IO NtpStatus
+      -- | Ntp client thread
+    , ntpThread        :: Async Void
     }
 
 
@@ -42,12 +45,17 @@ withNtpClient tracer ntpSettings action = do
               { ntpGetStatus = readTVar ntpStatus
               , ntpQueryBlocking = do
                   traceWith tracer NtpTraceTriggerUpdate
-                  atomically $ writeTVar ntpStatus NtpSyncPending
-                  status <- atomically $ do
-                      s <- readTVar ntpStatus
-                      check $ s /= NtpSyncPending
-                      return s
-                  return status
+                  -- trigger an update, unless an ntp query is not already
+                  -- running
+                  atomically $ do
+                    status <- readTVar ntpStatus
+                    when (status /= NtpSyncPending)
+                      $ writeTVar ntpStatus NtpSyncPending
+                  -- block until the state changes
+                  atomically $ do
+                      status <- readTVar ntpStatus
+                      check $ status /= NtpSyncPending
+                      return status
               , ntpThread = tid
               }
         action client
