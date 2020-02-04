@@ -56,22 +56,32 @@ data NtpStatus =
       -- `ntpResponseTimeout` or NTP was not configured.
     | NtpSyncUnavailable deriving (Eq, Show)
 
--- | Wait for at least three replies and report the minimum of the reported offsets.
+
+-- | Wait for at least three replies and report the minimum of the reported
+-- offsets.
+--
 minimumOfThree :: [NtpOffset] -> Maybe NtpOffset
 minimumOfThree l
-    = if length l >= 3 then Just $ minimum l
-         else Nothing
+    = if length l >= 3
+        then Just $ minimum l
+        else Nothing
 
+
+-- | Get a list local udp addresses.
+--
 udpLocalAddresses :: IO [AddrInfo]
---                                      Hints        Host    Service
-udpLocalAddresses = Socket.getAddrInfo (Just hints) Nothing (Just $ show port)
+udpLocalAddresses = Socket.getAddrInfo (Just hints) Nothing Nothing
   where
     hints = Socket.defaultHints
           { addrFlags = [AI_PASSIVE]
           , addrSocketType = Datagram
           }
-    port = Socket.defaultPort
 
+
+-- | Resolve hostname into 'AddrInfo'.  We use 'AI_ADDRCONFIG' so we get IPv4/6
+-- address only if the local.  We don't need 'AI_V4MAPPED' which would be set
+-- by default.
+--
 resolveHost :: String -> IO [AddrInfo]
 resolveHost host = Socket.getAddrInfo (Just hints) (Just host) Nothing
   where
@@ -92,10 +102,13 @@ setNtpPort addr = case addr of
     (SockAddrInet  _ host)            -> SockAddrInet  ntpPort host
     (SockAddrInet6 _ flow host scope) -> SockAddrInet6 ntpPort flow host scope
     sockAddr                          -> sockAddr
-    where
-        ntpPort :: PortNumber
-        ntpPort = 123
+  where
+    ntpPort :: PortNumber
+    ntpPort = 123
 
+
+-- | Resolve dns names
+--
 lookupServers :: Tracer IO NtpTrace -> [String] -> IO ([AddrInfo], [AddrInfo])
 lookupServers tracer names = do
     dests <- forM names $ \server -> do
@@ -107,8 +120,18 @@ lookupServers tracer names = do
             l -> return l
     return (mapMaybe fst dests, mapMaybe snd dests)
 
--- | Perform a single NTP query and return the result.
---   This function my throw an IO exception.
+
+-- | Perform a series of NTP queries: one for each dns name.  Resolve each dns
+-- name, get local addresses: both IPv4 and IPv6 and engage in ntp protocol
+-- towards one ip address per address family per dns name, but only for address
+-- families for which we have a local address.  This is to avoid trying to send
+-- IPv4/6 requests if IPv4/6 gateway is not configured.
+--
+-- It may throw an `IOException`:
+--
+-- * if neither IPv4 nor IPv6 address is configured
+-- * if network I/O errors 
+--
 ntpQuery ::
        Tracer IO NtpTrace
     -> NtpSettings
