@@ -107,13 +107,15 @@ newtype EpochFileParser e m entry hash = EpochFileParser
   { runEpochFileParser
       :: forall r.
          FsPath
-      ->  [CRC]
-          -- The expected checksums are given as input. This list can be empty
-          -- when the secondary index file is missing. If the expected
-          -- checksum matches the actual checksum, we can avoid the expensive
-          -- integrity check of the block.
+      -> SlotNo
+         -- Current slot (wall clock)
+      -> [CRC]
+         -- The expected checksums are given as input. This list can be empty
+         -- when the secondary index file is missing. If the expected checksum
+         -- matches the actual checksum, we can avoid the expensive integrity
+         -- check of the block.
       -> (Stream (Of (entry, WithOrigin hash)) m (Maybe (e, Word64)) -> m r)
-          -- Continuation to ensure the file is closed
+         -- Continuation to ensure the file is closed
       -> m r
   }
 

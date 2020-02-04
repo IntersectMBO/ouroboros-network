@@ -78,6 +78,7 @@ import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..))
+import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
@@ -157,6 +158,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immTracer         :: Tracer m (TraceEvent blk)
     , immCacheConfig    :: Index.CacheConfig
     , immRegistry       :: ResourceRegistry m
+    , immBlockchainTime :: BlockchainTime m
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -175,6 +177,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immCheckIntegrity'
 -- * 'immAddHdrEnv'
 -- * 'immRegistry'
+-- * 'immBlockchainTime'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
       immErr          = EH.exceptions
@@ -194,6 +197,7 @@ defaultArgs fp = ImmDbArgs{
     , immCheckIntegrity = error "no default for immCheckIntegrity"
     , immAddHdrEnv      = error "no default for immAddHdrEnv"
     , immRegistry       = error "no default for immRegistry"
+    , immBlockchainTime = error "no default for immBlockchainTime"
     }
   where
     -- Cache 250 past epochs by default. This will take roughly 250 MB of RAM.
@@ -228,6 +232,7 @@ openDB ImmDbArgs{..} = do
       parser
       immTracer
       immCacheConfig
+      immBlockchainTime
     return ImmDB
       { immDB     = immDB
       , decHeader = immDecodeHeader

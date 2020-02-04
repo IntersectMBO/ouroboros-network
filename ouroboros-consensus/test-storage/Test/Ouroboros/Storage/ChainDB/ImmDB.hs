@@ -20,6 +20,7 @@ import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
                      SlotNo (..), blockPoint)
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
+import           Ouroboros.Consensus.BlockchainTime.Mock (fixedBlockchainTime)
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import           Ouroboros.Consensus.Ledger.Byron.Forge (forgeEBB)
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -85,6 +86,8 @@ withImmDB k = withRegistry $ \registry -> do
       , immTracer         = nullTracer
       , immCacheConfig    = ImmDB.CacheConfig 2 60
       , immRegistry       = registry
+        -- All blocks will be in the past, so no truncation will happen
+      , immBlockchainTime = fixedBlockchainTime maxBound
       }
 
 testCfg :: NodeConfig (BlockProtocol ByronBlock)

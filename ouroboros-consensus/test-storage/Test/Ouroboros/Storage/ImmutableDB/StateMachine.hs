@@ -65,6 +65,8 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Pretty (ppShow)
 
 import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB, getHeader)
+import           Ouroboros.Consensus.BlockchainTime.Mock
+                     (settableBlockchainTime)
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -126,6 +128,8 @@ data Cmd it
   | IteratorHasNext        it
   | IteratorClose          it
   | Reopen                 ValidationPolicy
+  | ReopenInThePast        ValidationPolicy SlotNo
+    -- ^ New current slot, will be in the past
   | DeleteAfter            ImmTip
   | Corruption             Corruption
   deriving (Generic, Show, Functor, Foldable, Traversable)
@@ -208,16 +212,13 @@ type RunCorruption m =
   -> m (Success (TestIterator m))
 
 -- | Run the command against the given database.
-run :: forall m. (HasCallStack, IOLike m)
-    => RunCorruption m
-    -> [TestIterator m]
-    -> ImmutableDB    Hash m
-    -> ImmDB.Internal Hash m
-    -> ResourceRegistry m
-    -> StrictTVar m Id
-    -> Cmd (TestIterator m)
-    -> m (Success (TestIterator m))
-run runCorruption its db internal registry varNextId cmd = case cmd of
+run :: HasCallStack
+    => ImmutableDBEnv h
+    -> RunCorruption IO
+    -> [TestIterator IO]
+    -> Cmd (TestIterator IO)
+    -> IO (Success (TestIterator IO))
+run ImmutableDBEnv { db, internal, registry, varNextId, varCurSlot } runCorruption its cmd = case cmd of
     GetBlockComponent      s   -> MbAllComponents <$> getBlockComponent      db allComponents s
     GetEBBComponent        e   -> MbAllComponents <$> getEBBComponent        db allComponents e
     GetBlockOrEBBComponent s h -> MbAllComponents <$> getBlockOrEBBComponent db allComponents s h
@@ -236,13 +237,25 @@ run runCorruption its db internal registry varNextId cmd = case cmd of
       closeDB db
       reopen db valPol
       Tip <$> getTip db
+    ReopenInThePast valPol curSlot -> do
+      -- The @curSlot@ will be in the past, so there /will/ be truncation
+      mapM_ iteratorClose (unWithEq <$> its)
+      closeDB db
+      -- We only change the current slot here, we leave it set to 'maxBound'
+      -- in all other places so that we don't accidentally truncate blocks
+      -- from the \"future\" when reopening.
+      bracket_
+        (atomically $ writeTVar varCurSlot curSlot)
+        (atomically $ writeTVar varCurSlot maxBound)
+        (reopen db valPol)
+      Tip <$> getTip db
     Corruption corr            -> do
       mapM_ iteratorClose (unWithEq <$> its)
       runCorruption db internal corr
   where
     iter = fmap Iter . traverse giveWithEq
 
-    giveWithEq :: a -> m (WithEq a)
+    giveWithEq :: a -> IO (WithEq a)
     giveWithEq a =
       fmap (`WithEq` a) $ atomically $ updateTVar varNextId $ \i -> (succ i, i)
 
@@ -279,6 +292,7 @@ runPure = \case
     DeleteAfter tip            -> ok Unit            $ update_  (deleteAfterModel tip)
     Corruption corr            -> ok Tip             $ update   (simulateCorruptions (getCorruptions corr))
     Reopen _                   -> ok Tip             $ update    reopenModel
+    ReopenInThePast _ s        -> ok Tip             $ update   (reopenInThePastModel s)
   where
     query  f m = (Right (f m), m)
     queryE f m = (f m, m)
@@ -316,13 +330,15 @@ runPureErr dbm (CmdErr mbErrors cmd _its) =
       -- of the database will erase any changes.
       (Just _, (_resp, dbm')) ->
         -- We ignore the updated @dbm'@, because we have to roll back to the
-        -- state before executing cmd. The only exception is the DeleteAfter
-        -- cmd, in which case we have to roll back to the requested tip.
+        -- state before executing cmd. Exception: DeleteAfter and
+        -- ReopenInThePast cmd, in which case we have may have to truncate the
+        -- tip.
         --
         -- As the implementation closes all iterators, we do the same.
         let dbm'' = closeAllIterators $ case cmd of
-              DeleteAfter _ -> dbm'
-              _             -> dbm
+              DeleteAfter {}     -> dbm'
+              ReopenInThePast {} -> dbm'
+              _                  -> dbm
         in (Resp $ Right $ Tip $ dbmTip dbm'', dbm'')
 
 {-------------------------------------------------------------------------------
@@ -460,8 +476,9 @@ generator m@Model {..} = do
   where
     -- Don't simulate an error during corruption, because we don't want an
     -- error to happen while we corrupt a file.
-    errorFor Corruption {} = False
-    errorFor _             = True
+    errorFor Corruption {}      = False
+    errorFor ReopenInThePast {} = False  -- TODO #1567
+    errorFor _                  = True
 
 -- | Generate a 'Cmd'.
 generateCmd :: Model m Symbolic -> Gen (At Cmd m Symbolic)
@@ -533,6 +550,8 @@ generateCmd Model {..} = At <$> frequency
                    , (4, return $ IteratorHasNext iter)
                    , (1, return $ IteratorClose   iter) ])
     , (1, Reopen <$> genValPol)
+
+    , (1, ReopenInThePast <$> genValPol <*> chooseSlot (0, lastSlot))
 
     , (4, DeleteAfter <$> genTip)
 
@@ -664,6 +683,7 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
     DeleteAfter tip                    ->
       [DeleteAfter tip' | tip' <- shrinkTip tip]
     Reopen {}                          -> []
+    ReopenInThePast {}                 -> []
     Corruption corr                    ->
       [Corruption corr' | corr' <- shrinkCorruption corr]
   where
@@ -722,6 +742,8 @@ precondition Model {..} (At (CmdErr { _cmd = cmd })) =
       DeleteAfter tip      -> tip `elem` NE.toList (tips dbModel)
       Corruption corr ->
         forall (corruptionFiles corr) (`elem` getDBFiles dbModel)
+      ReopenInThePast _ curSlot ->
+        0 .<= curSlot .&& curSlot .<= lastSlot
       _ -> Top
   where
     corruptionFiles (MkCorruption corrs) = map snd $ NE.toList corrs
@@ -730,6 +752,9 @@ precondition Model {..} (At (CmdErr { _cmd = cmd })) =
     fitsOnTip b = case dbmTipBlock dbModel of
       Nothing    -> blockPrevHash b .== Block.GenesisHash
       Just bPrev -> blockPrevHash b .== Block.BlockHash (blockHash bPrev)
+
+    lastSlot :: SlotNo
+    lastSlot = fromIntegral $ length $ dbmChain dbModel
 
 transition :: (Show1 r, Eq1 r)
            => Model m r -> At CmdErr m r -> At Resp m r -> Model m r
@@ -744,24 +769,32 @@ postcondition model cmdErr resp =
   where
     ev = lockstep model cmdErr resp
 
-semantics :: StrictTVar IO Errors
-          -> StrictTVar IO Id
-          -> ResourceRegistry IO
-          -> HasFS IO h
-          -> ImmutableDB   Hash IO
-          -> ImmDB.Internal Hash IO
+-- | Environment to run commands against the real ImmutableDB implementation.
+data ImmutableDBEnv h = ImmutableDBEnv
+  { varErrors  :: StrictTVar IO Errors
+  , varNextId  :: StrictTVar IO Id
+  , varCurSlot :: StrictTVar IO SlotNo
+    -- ^ Always 'maxBound'. Only when executing 'ReopenInThePast', it will
+    -- temporarily be reset to a slot in the past.
+  , registry   :: ResourceRegistry IO
+  , hasFS      :: HasFS IO h
+  , db         :: ImmutableDB    Hash IO
+  , internal   :: ImmDB.Internal Hash IO
+  }
+
+semantics :: ImmutableDBEnv h
           -> At CmdErr IO Concrete
           -> IO (At Resp IO Concrete)
-semantics varErrors varNextId registry hasFS db internal (At cmdErr) =
+semantics env@ImmutableDBEnv {..} (At cmdErr) =
     At . fmap (reference . Opaque) . Resp <$> case opaque <$> cmdErr of
 
       CmdErr Nothing       cmd its -> try $
-        run (semanticsCorruption hasFS) its db internal registry varNextId cmd
+        run env (semanticsCorruption hasFS) its cmd
 
       CmdErr (Just errors) cmd its -> do
         tipBefore <- fmap forgetHash <$> getTip db
         res       <- withErrors varErrors errors $ try $
-          run (semanticsCorruption hasFS) its db internal registry varNextId cmd
+          run env (semanticsCorruption hasFS) its cmd
         case res of
           -- If the command resulted in a 'UserError', we didn't even get the
           -- chance to run into a simulated error. Note that we still
@@ -822,22 +855,17 @@ semanticsCorruption hasFS db _internal (MkCorruption corrs) = do
     Tip <$> getTip db
 
 -- | The state machine proper
-sm :: StrictTVar IO Errors
-   -> StrictTVar IO Id
-   -> ResourceRegistry IO
-   -> HasFS IO h
-   -> ImmutableDB    Hash IO
-   -> ImmDB.Internal Hash IO
+sm :: ImmutableDBEnv h
    -> DBModel Hash
    -> StateMachine (Model IO) (At CmdErr IO) IO (At Resp IO)
-sm varErrors varNextId registry hasFS db internal dbm = StateMachine
+sm env dbm = StateMachine
   { initModel     = initModel dbm
   , transition    = transition
   , precondition  = precondition
   , postcondition = postcondition
   , generator     = Just . generator
   , shrinker      = shrinker
-  , semantics     = semantics varErrors varNextId registry hasFS db internal
+  , semantics     = semantics env
   , mock          = mock
   , invariant     = Nothing
   , distribution  = Nothing
@@ -893,6 +921,8 @@ data Tag
   | TagIteratorWithoutBounds
 
   | TagCorruption
+
+  | TagReopenInThePast
 
   | TagErrorDuringAppendBlock
 
@@ -976,6 +1006,7 @@ tag = C.classify
     , tagIteratorStreamedN Map.empty
     , tagIteratorWithoutBounds
     , tagCorruption
+    , tagReopenInThePast
     , tagErrorDuring TagErrorDuringAppendBlock $ \case
       { At (AppendBlock {}) -> True; _ -> False }
     , tagErrorDuring TagErrorDuringAppendEBB $ \case
@@ -1072,6 +1103,14 @@ tag = C.classify
       { C.predApply = \ev -> case eventCmd ev of
           At (Corruption {}) -> Left  TagCorruption
           _                  -> Right tagCorruption
+      , C.predFinish = Nothing
+      }
+
+    tagReopenInThePast :: EventPred m
+    tagReopenInThePast = C.Predicate
+      { C.predApply = \ev -> case eventCmd ev of
+          At (ReopenInThePast {}) -> Left  TagReopenInThePast
+          _                       -> Right tagReopenInThePast
       , C.predFinish = Nothing
       }
 
@@ -1188,81 +1227,89 @@ showLabelledExamples' mbReplay numTests focus stateMachine = do
 
 showLabelledExamples :: IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True) $
-    sm (error "varErrors unused") (error "varNextId unused")
-       (error "registry unused") hasFsUnused dbUnused internalUnused
+    sm unusedEnv
 
 prop_sequential :: Index.CacheConfig -> Property
 prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
-    let test :: StrictTVar IO Mock.MockFS
-             -> StrictTVar IO Errors
-             -> StrictTVar IO Id
-             -> HasFS IO h
-             -> QC.PropertyM IO (
-                    QSM.History (At CmdErr IO) (At Resp IO)
-                  , Property
-                  )
-        test fsVar varErrors varNextId hasFS = do
-          let parser = epochFileParser hasFS (const <$> decode) isEBB
-                getBinaryInfo testBlockIsValid
-          (tracer, getTrace) <- QC.run recordingTracerIORef
-          registry <- QC.run unsafeNewRegistry
-          (db, internal) <- QC.run $ openDBInternal registry hasFS
-            EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
-            ValidateMostRecentEpoch parser tracer cacheConfig
-          let sm' = sm varErrors varNextId registry hasFS db internal dbm
-          (hist, model, res) <- runCommands sm' cmds
-          trace <- QC.run getTrace
-          QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
-          fs <- QC.run $ atomically $ readTVar fsVar
-          let fsDump = Mock.pretty fs
-              openHandles = Mock.numOpenHandles fs
-              -- We're appending to the epoch, so a handle for each of the
-              -- three files, plus a handle for the epoch file (to read the
-              -- blocks) per open iterator.
-              maxExpectedOpenHandles = 1 {- epoch file -}
-                                     + 1 {- primary index file -}
-                                     + 1 {- secondary index file -}
-                                     + nbOpenIterators model
-              openHandlesProp
-                | openHandles <= maxExpectedOpenHandles
-                = property True
-                | otherwise
-                = counterexample
-                  ("open handles: " <> show openHandles <>
-                   " > max expected open handles: " <>
-                   show maxExpectedOpenHandles) False
-              prop = res === Ok .&&. openHandlesProp
-          QC.monitor $ counterexample ("FS: " <> fsDump)
-          case res of
-            Ok -> do
-              QC.run $ closeDB db >> reopen db ValidateAllEpochs
-              validation <- validate model db
-              dbTip <- QC.run $ getTip db <* closeDB db <* closeRegistry registry
-
-              let modelTip = dbmTip $ dbModel model
-              QC.monitor $ counterexample ("dbTip:    " <> show dbTip)
-              QC.monitor $ counterexample ("modelTip: " <> show modelTip)
-
-              return (hist, prop .&&. dbTip === modelTip .&&. validation)
-            -- If something went wrong, don't try to reopen the database
-            _ -> do
-              QC.run $ closeRegistry registry
-              return (hist, prop)
-
-    fsVar     <- QC.run $ uncheckedNewTVarM Mock.empty
-    varErrors <- QC.run $ uncheckedNewTVarM mempty
-    varNextId <- QC.run $ uncheckedNewTVarM 0
-    (hist, prop) <-
-      test fsVar varErrors varNextId (mkSimErrorHasFS EH.monadCatch fsVar varErrors)
+    (hist, prop) <- test cacheConfig cmds
     prettyCommands smUnused hist
       $ tabulate "Tags" (map show $ tag (execCmds (QSM.initModel smUnused) cmds))
       $ prop
   where
     dbm = mkDBModel
-    smUnused = sm (error "varErrors unused") (error "varNextId unused")
-      (error "registry unused") hasFsUnused dbUnused internalUnused dbm
+    smUnused = sm unusedEnv dbm
+
+test :: Index.CacheConfig
+     -> QSM.Commands (At CmdErr IO) (At Resp IO)
+     -> QC.PropertyM IO (QSM.History (At CmdErr IO) (At Resp IO), Property)
+test cacheConfig cmds = do
+    fsVar              <- QC.run $ uncheckedNewTVarM Mock.empty
+    varErrors          <- QC.run $ uncheckedNewTVarM mempty
+    varNextId          <- QC.run $ uncheckedNewTVarM 0
+    varCurSlot         <- QC.run $ uncheckedNewTVarM maxBound
+    (tracer, getTrace) <- QC.run $ recordingTracerIORef
+    registry           <- QC.run $ unsafeNewRegistry
+
+    let hasFS  = mkSimErrorHasFS EH.monadCatch fsVar varErrors
+        parser = epochFileParser hasFS (const <$> decode) isEBB
+          getBinaryInfo testBlockIsValid
+        btime  = settableBlockchainTime varCurSlot
+
+    (db, internal) <- QC.run $ openDBInternal registry hasFS
+      EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
+      ValidateMostRecentEpoch parser tracer cacheConfig btime
+
+    let env = ImmutableDBEnv
+          { varErrors, varNextId, varCurSlot, registry, hasFS, db, internal }
+        sm' = sm env dbm
+
+    (hist, model, res) <- runCommands sm' cmds
+
+    trace <- QC.run $ getTrace
+    fs    <- QC.run $ atomically $ readTVar fsVar
+
+    QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
+    QC.monitor $ counterexample ("FS: " <> Mock.pretty fs)
+
+    let prop = res === Ok .&&. openHandlesProp fs model
+
+    case res of
+      Ok -> do
+        QC.run $ closeDB db >> reopen db ValidateAllEpochs
+        validation <- validate model db
+        dbTip <- QC.run $ getTip db <* closeDB db <* closeRegistry registry
+
+        let modelTip = dbmTip $ dbModel model
+        QC.monitor $ counterexample ("dbTip:    " <> show dbTip)
+        QC.monitor $ counterexample ("modelTip: " <> show modelTip)
+
+        return (hist, prop .&&. dbTip === modelTip .&&. validation)
+      -- If something went wrong, don't try to reopen the database
+      _ -> do
+        QC.run $ closeRegistry registry
+        return (hist, prop)
+  where
+    dbm = mkDBModel
     isEBB = testHeaderEpochNoIfEBB fixedEpochSize . getHeader
     getBinaryInfo = void . testBlockToBinaryInfo
+
+    openHandlesProp fs model
+        | openHandles <= maxExpectedOpenHandles
+        = property True
+        | otherwise
+        = counterexample
+          ("open handles: " <> show openHandles <>
+           " > max expected open handles: " <>
+           show maxExpectedOpenHandles) False
+      where
+        openHandles = Mock.numOpenHandles fs
+        -- We're appending to the epoch, so a handle for each of the
+        -- three files, plus a handle for the epoch file (to read the
+        -- blocks) per open iterator.
+        maxExpectedOpenHandles = 1 {- epoch file -}
+                               + 1 {- primary index file -}
+                               + 1 {- secondary index file -}
+                               + nbOpenIterators model
 
 tests :: TestTree
 tests = testGroup "ImmutableDB q-s-m"
@@ -1275,14 +1322,8 @@ fixedEpochSize = 10
 mkDBModel :: DBModel Hash
 mkDBModel = initDBModel fixedEpochSize
 
-dbUnused :: ImmutableDB Hash m
-dbUnused = error "semantics and DB used during command generation"
-
-internalUnused :: ImmDB.Internal Hash m
-internalUnused = error "semantics and internal DB API used during command generation"
-
-hasFsUnused :: HasFS m h
-hasFsUnused = error "HasFS only used during execution"
+unusedEnv :: ImmutableDBEnv h
+unusedEnv = error "ImmutableDBEnv used during command generation"
 
 instance Arbitrary Index.CacheConfig where
   arbitrary = do

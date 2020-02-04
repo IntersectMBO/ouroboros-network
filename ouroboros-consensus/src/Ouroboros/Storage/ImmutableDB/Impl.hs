@@ -110,6 +110,8 @@ import           Control.Monad.Class.MonadThrow (bracket, bracketOnError,
                      finally)
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
+import           Ouroboros.Consensus.BlockchainTime (BlockchainTime,
+                     getCurrentSlot)
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
@@ -175,14 +177,15 @@ withDB
   -> EpochFileParser e m (Secondary.Entry hash) hash
   -> Tracer m (TraceEvent e hash)
   -> Index.CacheConfig
+  -> BlockchainTime m
   -> (ImmutableDB hash m -> m a)
   -> m a
-withDB registry hasFS err epochInfo hashInfo valPol parser tracer cacheConfig =
+withDB registry hasFS err epochInfo hashInfo valPol parser tracer cacheConfig btime =
     bracket open closeDB
   where
     open = fst <$>
       openDBInternal registry hasFS err epochInfo hashInfo valPol parser tracer
-        cacheConfig
+        cacheConfig btime
 
 {------------------------------------------------------------------------------
   Exposed internals and/or extra functionality for testing purposes
@@ -239,9 +242,11 @@ openDBInternal
   -> EpochFileParser e m (Secondary.Entry hash) hash
   -> Tracer m (TraceEvent e hash)
   -> Index.CacheConfig
+  -> BlockchainTime m
   -> m (ImmutableDB hash m, Internal hash m)
 openDBInternal registry hasFS@HasFS{..} err epochInfo hashInfo valPol parser
-               tracer cacheConfig = do
+               tracer cacheConfig btime = do
+    currentSlot <- atomically $ getCurrentSlot btime
     let validateEnv = ValidateEnv
           { hasFS
           , err
@@ -251,6 +256,7 @@ openDBInternal registry hasFS@HasFS{..} err epochInfo hashInfo valPol parser
           , tracer
           , registry
           , cacheConfig
+          , currentSlot
           }
     !ost  <- validateAndReopen validateEnv valPol
 
@@ -266,6 +272,7 @@ openDBInternal registry hasFS@HasFS{..} err epochInfo hashInfo valPol parser
           , _dbTracer          = tracer
           , _dbRegistry        = registry
           , _dbCacheConfig     = cacheConfig
+          , _dbBlockchainTime  = btime
           }
         db = mkDBRecord dbEnv
         internal = Internal
@@ -312,6 +319,7 @@ reopenImpl ImmutableDBEnv {..} valPol = bracketOnError
 
       -- Closed, so we can try to reopen
       DbClosed -> do
+        currentSlot <- atomically $ getCurrentSlot _dbBlockchainTime
         let validateEnv = ValidateEnv
               { hasFS       = _dbHasFS
               , err         = _dbErr
@@ -321,6 +329,7 @@ reopenImpl ImmutableDBEnv {..} valPol = bracketOnError
               , tracer      = _dbTracer
               , registry    = _dbRegistry
               , cacheConfig = _dbCacheConfig
+              , currentSlot = currentSlot
               }
         ost <- validateAndReopen validateEnv valPol
         putMVar _dbInternalState (DbOpen ost)

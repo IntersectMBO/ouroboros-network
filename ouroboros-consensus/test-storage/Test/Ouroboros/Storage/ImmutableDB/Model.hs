@@ -28,6 +28,7 @@ module Test.Ouroboros.Storage.ImmutableDB.Model
    -- * ImmutableDB implementation
   , getTipModel
   , reopenModel
+  , reopenInThePastModel
   , deleteAfterModel
   , getBlockComponentModel
   , getEBBComponentModel
@@ -255,24 +256,25 @@ filledEpochSlots dbm epoch = (lt, eq, gt)
 -- | List all 'Tip's that point to a filled slot or an existing EBB in the
 -- model, including 'TipGenesis'. The tips will be sorted from old to recent.
 tips :: DBModel hash -> NonEmpty ImmTip
-tips dbm = TipGen NE.:| tipsAfter dbm TipGen
+tips dbm = TipGen NE.:| map toTip (filledSlotsAfter dbm TipGen)
+  where
+    toTip :: (EpochSlot, SlotNo) -> ImmTip
+    toTip (EpochSlot epoch 0, _)    = Tip (EBB epoch)
+    toTip (_                , slot) = Tip (Block slot)
 
--- | List all 'Tip's that point to a filled slot or an existing EBB in the
--- model that are after the given 'Tip'. The tips will be sorted from old to
--- recent.
-tipsAfter :: DBModel hash -> ImmTip -> [ImmTip]
-tipsAfter dbm tip = map toTip $ dropWhile isBeforeTip blobLocations
+-- | List all filled slots (regular block or EBB) in the model that are after
+-- the given 'Tip'. The slots will be sorted from old to recent.
+filledSlotsAfter :: DBModel hash -> ImmTip -> [(EpochSlot, SlotNo)]
+filledSlotsAfter dbm tip = dropWhile isBeforeTip blobLocations
   where
     blobLocations :: [(EpochSlot, SlotNo)]
     blobLocations = Map.keys $ dbmBlobs dbm
+
     isBeforeTip :: (EpochSlot, SlotNo) -> Bool
     isBeforeTip (epochSlot, slot) = case tip of
       TipGen            -> False
       Tip (EBB epoch)   -> epochSlot < EpochSlot epoch 0
       Tip (Block slot') -> slot      < slot'
-    toTip :: (EpochSlot, SlotNo) -> ImmTip
-    toTip (EpochSlot epoch 0, _)    = Tip (EBB epoch)
-    toTip (_                , slot) = Tip (Block slot)
 
 -- | Return the blobs in the given 'EpochNo', in order.
 blobsInEpoch :: DBModel hash -> EpochNo -> [ByteString]
@@ -419,6 +421,26 @@ getTipModel = dbmTip
 -- | Close all open iterators and return the current tip
 reopenModel :: DBModel hash -> (ImmTipWithHash hash, DBModel hash)
 reopenModel dbm = (dbmTip dbm, closeAllIterators dbm)
+
+-- | Close all open iterators, truncate all blocks > the given slot, and
+-- return the current tip.
+reopenInThePastModel :: SlotNo  -- ^ Current slot
+                     -> DBModel hash
+                     -> (ImmTipWithHash hash, DBModel hash)
+reopenInThePastModel curSlot dbm = (dbmTip dbm', dbm')
+  where
+    tipsInThePast :: [EpochSlot]
+    tipsInThePast =
+      [ epochSlot
+      | (epochSlot, slot) <- filledSlotsAfter dbm TipGen
+      , slot <= curSlot
+      ]
+
+    rollBackPoint = case lastMaybe tipsInThePast of
+      Nothing        -> RollBackToGenesis
+      Just epochSlot -> RollBackToEpochSlot epochSlot
+
+    dbm' = rollBack rollBackPoint $ closeAllIterators dbm
 
 deleteAfterModel :: ImmTip -> DBModel hash -> DBModel hash
 deleteAfterModel tip =

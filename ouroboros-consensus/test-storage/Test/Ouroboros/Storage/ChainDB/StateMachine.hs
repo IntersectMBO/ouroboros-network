@@ -73,6 +73,8 @@ import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.Mock
+                     (settableBlockchainTime)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
@@ -1259,15 +1261,6 @@ smUnused :: StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
 smUnused =
     sm dbUnused internalUnused registryUnunused varCurSlotUnused varNextIdUnused
       genBlk testCfg testInitExtLedger
-
--- | The current slot can be changed by modifying the given 'StrictTVar'.
--- 'onSlotChange_' is not implemented as it is currently not used by the
--- ChainDB.
-settableBlockchainTime :: IOLike m => StrictTVar m SlotNo -> BlockchainTime m
-settableBlockchainTime varCurSlot = BlockchainTime {
-      getCurrentSlot = readTVar varCurSlot
-    , onSlotChange_  = error "unimplemented onSlotChange_"
-    }
 
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do

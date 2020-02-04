@@ -177,6 +177,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immAddHdrEnv        = cdbAddHdrEnv
         , immCacheConfig      = cdbImmDbCacheConfig
         , immRegistry         = cdbRegistry
+        , immBlockchainTime   = cdbBlockchainTime
         }
     , VolDB.VolDbArgs {
           volHasFS            = cdbHasFSVolDb
