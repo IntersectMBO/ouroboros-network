@@ -16,7 +16,18 @@
 {-# LANGUAGE ViewPatterns          #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Ledger.Shelley.Ledger where
+module Ouroboros.Consensus.Ledger.Shelley.Ledger
+  ( ShelleyLedgerError(..)
+  , LedgerConfig(..)
+  , LedgerState(..)
+  , UpdateLedger(..)
+  , ProtocolLedgerView(..)
+  , QueryLedger(..)
+    -- * Serialisation
+  , decodeShelleyLedgerState
+  , encodeShelleyLedgerState
+  )
+where
 
 import qualified BaseTypes as SL
 import           BlockChain (BHBody (..), bhHash, bhbody, bheader)
@@ -49,22 +60,22 @@ import           Ouroboros.Network.Block
   Ledger
 -------------------------------------------------------------------------------}
 
-data CombinedLedgerError
+data ShelleyLedgerError
   = TickError (TickTransitionError TPraosStandardCrypto)
   | BBodyError (BlockTransitionError TPraosStandardCrypto)
   deriving (Eq, Generic, Show)
 
-instance NoUnexpectedThunks CombinedLedgerError
+instance NoUnexpectedThunks ShelleyLedgerError
 
 instance UpdateLedger ShelleyBlock where
   data LedgerState ShelleyBlock
     = ShelleyLedgerState
-        { ledgerTip :: Point ShelleyBlock,
-          history :: History.LedgerViewHistory,
-          shelleyLedgerState :: SL.NewEpochState TPraosStandardCrypto
+        { ledgerTip :: !(Point ShelleyBlock),
+          history :: !History.LedgerViewHistory,
+          shelleyLedgerState :: !(SL.NewEpochState TPraosStandardCrypto)
         }
     deriving (Eq, Show, Generic)
-  type LedgerError ShelleyBlock = CombinedLedgerError
+  type LedgerError ShelleyBlock = ShelleyLedgerError
 
   newtype LedgerConfig ShelleyBlock = ShelleyLedgerConfig SL.Globals
     deriving (Generic)

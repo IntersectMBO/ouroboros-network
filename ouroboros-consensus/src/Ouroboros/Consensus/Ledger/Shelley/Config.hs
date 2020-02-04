@@ -3,7 +3,10 @@
 {-# LANGUAGE DerivingVia    #-}
 {-# LANGUAGE StrictData     #-}
 
-module Ouroboros.Consensus.Ledger.Shelley.Config where
+module Ouroboros.Consensus.Ledger.Shelley.Config
+  ( ShelleyNodeConfig(..)
+  )
+where
 
 import           BlockChain (ProtVer)
 import           Cardano.Prelude (NoUnexpectedThunks (..))

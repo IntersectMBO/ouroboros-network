@@ -15,7 +15,15 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Ouroboros.Consensus.Ledger.Shelley.Block where
+module Ouroboros.Consensus.Ledger.Shelley.Block
+  ( ShelleyHash(..)
+  , shelleyHashInfo
+  , ShelleyBlock(..)
+  , GetHeader(..)
+  , Header(..)
+  , encodeShelleyBlockWithInfo
+  )
+where
 
 import           BlockChain (BHBody (..), BHeader (..), Block (..), HashHeader,
                      HashHeader (..), bhHash, bhbody, bheader)
@@ -33,7 +41,6 @@ import qualified Data.ByteString.Lazy as BSL
 import           Data.Coerce (coerce)
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Proxy (Proxy (..))
-import           Data.Typeable (typeRep)
 import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 import           Ouroboros.Consensus.Block
@@ -95,20 +102,15 @@ instance GetHeader ShelleyBlock where
   data Header ShelleyBlock = ShelleyHeader
     { shelleyHeader :: !(BHeader TPraosStandardCrypto)
       -- Cached hash
-    , shelleyHeaderHash :: ShelleyHash
-    } deriving (Eq, Show)
+    , shelleyHeaderHash :: !ShelleyHash
+    } deriving (Eq, Generic, Show)
 
   getHeader (ShelleyBlock b) = ShelleyHeader
     { shelleyHeader     = bheader b
     , shelleyHeaderHash = ShelleyHash . bhHash . bheader $ b
     }
 
-instance NoUnexpectedThunks (Header ShelleyBlock) where
-  showTypeOf _ = show $ typeRep (Proxy @(Header ShelleyBlock ))
-
--- We explicitly allow the hash to be a thunk
-  whnfNoUnexpectedThunks ctxt (ShelleyHeader hdr _hash) =
-    noUnexpectedThunks ctxt hdr
+instance NoUnexpectedThunks (Header ShelleyBlock)
 
 type instance HeaderHash ShelleyBlock = ShelleyHash
 

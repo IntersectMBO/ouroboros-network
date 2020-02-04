@@ -70,7 +70,9 @@ data ShelleyGenesis
         sgSecurityParam :: SecurityParam,
         sgEpochLength :: EpochSize,
         sgKESPeriod :: Word64,
+        sgMaxKESEvolutions :: Word64,
         sgSlotLength :: SlotLength,
+        sgUpdateQuorum :: Word64,
         sgReserves :: Coin,
         sgGenDelegs ::
           Map.Map
@@ -158,7 +160,9 @@ protocolInfoShelley sg pv micn =
           slotsPerKESPeriod = sgKESPeriod sg,
           securityParameter = k,
           startRewards = 3 * k,
-          slotsPrior = 3 * k
+          slotsPrior = 3 * k,
+          maxKESEvo = sgMaxKESEvolutions sg,
+          quorum = sgUpdateQuorum sg
         }
     utxo :: UTxO TPraosStandardCrypto
     utxo =

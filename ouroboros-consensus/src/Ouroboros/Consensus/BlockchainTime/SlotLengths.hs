@@ -39,7 +39,8 @@ import           Data.Fixed
 import           Data.Time
 import           Data.Word
 
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..),
+                     UseIsNormalForm (..))
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
@@ -89,7 +90,7 @@ data SlotLengths = SlotLengths {
     , nextSlotLengths   :: Maybe (SegmentLength, SlotLengths)
     }
   deriving (Show, Eq)
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "SlotLengths" SlotLengths
+  deriving NoUnexpectedThunks via UseIsNormalForm SlotLengths
 
 -- | Length of a segment of the blockchain (in terms of number of slots)
 --
