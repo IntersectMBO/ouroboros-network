@@ -65,7 +65,7 @@ import qualified Test.Cardano.Chain.Delegation.Gen as CC
 import qualified Test.Cardano.Chain.Genesis.Dummy as CC
 import qualified Test.Cardano.Chain.MempoolPayload.Gen as CC
 import qualified Test.Cardano.Chain.Slotting.Gen as CC
-import qualified Test.Cardano.Chain.Update.Gen as CC
+import qualified Test.Cardano.Chain.Update.Gen as CC hiding (genError)
 import qualified Test.Cardano.Chain.UTxO.Example as CC
 import qualified Test.Cardano.Chain.UTxO.Gen as CC
 import qualified Test.Cardano.Crypto.Gen as CC

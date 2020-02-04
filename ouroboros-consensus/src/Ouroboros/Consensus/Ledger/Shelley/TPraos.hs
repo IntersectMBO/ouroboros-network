@@ -21,7 +21,8 @@ import           Ouroboros.Consensus.Ledger.Shelley.Config
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Protocol.TPraos
 
-instance SupportedBlock ShelleyBlock
+instance SupportedBlock ShelleyBlock where
+  validateView _cfg (ShelleyHeader hdr _) = hdr
 
 {-------------------------------------------------------------------------------
   Support for Praos consensus algorithm
@@ -30,9 +31,7 @@ instance SupportedBlock ShelleyBlock
 type instance BlockProtocol ShelleyBlock
   = TPraos ShelleyNodeConfig TPraosStandardCrypto
 
-instance SignedHeader (Header ShelleyBlock) where
-  type Signed (Header ShelleyBlock) = BHBody TPraosStandardCrypto
-  headerSigned = bhbody . shelleyHeader
+type instance Signed (Header ShelleyBlock) = BHBody TPraosStandardCrypto
 
-instance HeaderSupportsTPraos TPraosStandardCrypto (Header ShelleyBlock) where
-  headerToBHeader _ (ShelleyHeader hdr _hash) = hdr
+instance SignedHeader (Header ShelleyBlock) where
+  headerSigned = bhbody . shelleyHeader

@@ -145,7 +145,7 @@ prop_simple_praos_convergence
   sg@ShelleyGenesis {sgSecurityParam}
   coreNodes
   testConfig =
-    prop_general sgSecurityParam testConfig Nothing (const False) testOutput
+    prop_general (const 0) sgSecurityParam testConfig Nothing (const False) testOutput
     where
       protocolVersion = ProtVer 0 0 0
       coreNodeCreds nid =

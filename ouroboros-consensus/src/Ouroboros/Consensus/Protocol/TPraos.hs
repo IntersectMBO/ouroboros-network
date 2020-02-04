@@ -31,13 +31,12 @@ module Ouroboros.Consensus.Protocol.TPraos (
   , TPraosCrypto
   , TPraosStandardCrypto
   , TPraosMockCrypto
-  , HeaderSupportsTPraos(..)
     -- * Type instances
   , NodeConfig(..)
   ) where
 
 import           BaseTypes (Globals (..), Nonce, UnitInterval)
-import           BlockChain (BHeader, HashHeader, mkSeed, seedEta, seedL)
+import           BlockChain (BHeader, HashHeader, mkSeed, seedEta, seedL, bheaderSlotNo, bhbody)
 import           Cardano.Crypto.DSIGN.Class (VerKeyDSIGN)
 import           Cardano.Crypto.Hash.Class (HashAlgorithm (..))
 import           Cardano.Crypto.KES.Class
@@ -62,12 +61,11 @@ import           OCert (OCert (..))
 import           Ouroboros.Consensus.BlockchainTime (SlotLength,
                      singletonSlotLengths)
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.Signed
 import qualified Ouroboros.Consensus.Protocol.TPraos.ChainState as ChainState
 import           Ouroboros.Consensus.Protocol.TPraos.Crypto
 import           Ouroboros.Consensus.Protocol.TPraos.Util
 import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
+import           Ouroboros.Network.Block (SlotNo (..),
                      pointSlot)
 import qualified STS.Prtcl as STS
 
@@ -113,18 +111,10 @@ data TPraosToSign c = TPraosToSign
 instance TPraosCrypto c => NoUnexpectedThunks (TPraosToSign c)
 deriving instance TPraosCrypto c => Show (TPraosToSign c)
 
-class ( HasHeader hdr
-      , SignedHeader hdr
-      , Cardano.Crypto.KES.Class.Signable (KES c) (Signed hdr)
-      ) => HeaderSupportsTPraos c hdr where
-
-  -- Because we are using the executable spec, rather than implementing the
-  -- protocol directly here, we have a fixed header type rather than an
-  -- abstraction. So we must introduce this method.
-  headerToBHeader
-    :: proxy (TPraos c)
-    -> hdr
-    -> BHeader c
+-- Because we are using the executable spec, rather than implementing the
+-- protocol directly here, we have a fixed header type rather than an
+-- abstraction. So our validate view is fixed to this.
+type TPraosValidateView c = BHeader c
 
 forgeTPraosFields :: ( HasNodeState (TPraos cfg c) m
                     , MonadRandom m
@@ -152,8 +142,7 @@ forgeTPraosFields TPraosNodeConfig{..}  TPraosProof{..} mkToSign = do
           tpraosIsCoreNodeSKSHot
     case m of
       Nothing                  -> error "mkOutoborosPayload: signedKES failed"
-      Just (signature, newKey) -> do
-        putNodeState . Just $ icn { tpraosIsCoreNodeSKSHot = newKey }
+      Just signature ->
         return $ TPraosFields {
             tpraosSignature    = signature
           , tpraosToSign       = (mkToSign signedFields)
@@ -216,15 +205,14 @@ instance
   => OuroborosTag (TPraos cfg c) where
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
-  protocolSlotLengths   = singletonSlotLengths  .tpraosSlotLength . tpraosParams
+  protocolSlotLengths   = singletonSlotLengths . tpraosSlotLength . tpraosParams
 
   type NodeState       (TPraos cfg c) = Maybe (TPraosIsCoreNode c)
   type LedgerView      (TPraos cfg c) = Shelley.LedgerView c
   type IsLeader        (TPraos cfg c) = TPraosProof c
-  type CanSelect       (TPraos cfg c) = HasHeader
-  type CanValidate     (TPraos cfg c) = HeaderSupportsTPraos c
   type ValidationErr   (TPraos cfg c) = [[STS.PredicateFailure (STS.PRTCL c)]]
   type ChainState      (TPraos cfg c) = ChainState.TPraosChainState c
+  type ValidateView    (TPraos cfg c) = TPraosValidateView c
 
   checkIsLeader cfg@TPraosNodeConfig{..} slot lv cs =
     getNodeState >>= \case
@@ -278,7 +266,7 @@ instance
                   _ -> Nothing
 
   applyChainState TPraosNodeConfig{..} lv b cs = do
-    let slot = blockSlot b
+    let slot = bheaderSlotNo $ bhbody b
         ei = tpraosEpochInfo tpraosParams
         SecurityParam k = tpraosSecurityParam tpraosParams
         shelleyGlobs = Globals
@@ -295,7 +283,7 @@ instance
                 slot
                 (isNewEpoch ei slot (ChainState.lastSlot cs))
             , ChainState.toPRTCLState cs
-            , headerToBHeader (Proxy :: Proxy (TPraos c)) b
+            , b
             )
 
     return . ChainState.prune (fromIntegral k) $ ChainState.appendState newCS cs

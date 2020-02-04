@@ -4,12 +4,13 @@
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTSyntax            #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 {-# LANGUAGE ViewPatterns          #-}
@@ -32,6 +33,8 @@ import           Control.Arrow (left)
 import           Control.Monad.Except (ExceptT (..), runExcept, withExcept)
 import           Control.Monad.Identity (Identity (..))
 import           Data.Either (fromRight)
+import           Data.Kind (Type)
+import           Data.Type.Equality ((:~:) (Refl))
 import           GHC.Generics (Generic)
 import qualified LedgerState as SL
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -70,7 +73,7 @@ instance UpdateLedger ShelleyBlock where
     (ShelleyLedgerConfig globals)
     slotNo
     (ShelleyLedgerState pt history bhState) =
-      TickedLedgerState
+      TickedLedgerState slotNo
         . ShelleyLedgerState pt history
         $ applyTickTransition globals bhState slotNo
 
@@ -151,6 +154,24 @@ instance ProtocolLedgerView ShelleyBlock where
               then 0
               else unSlotNo now - (2 * k)
         maxHi = SlotNo $ unSlotNo now + (2 * k)
+
+{-------------------------------------------------------------------------------
+  Serialisation
+-------------------------------------------------------------------------------}
+
+instance QueryLedger ShelleyBlock where
+  data Query ShelleyBlock :: Type -> Type where
+    GetLedgerTip :: Query ShelleyBlock (Point ShelleyBlock)
+
+  answerQuery GetLedgerTip ls = ledgerTip ls
+
+  eqQuery GetLedgerTip GetLedgerTip = Just Refl
+
+deriving instance Eq (Query ShelleyBlock result)
+deriving instance Show (Query ShelleyBlock result)
+
+instance ShowQuery (Query ShelleyBlock) where
+  showResult GetLedgerTip = show
 
 {-------------------------------------------------------------------------------
   Serialisation

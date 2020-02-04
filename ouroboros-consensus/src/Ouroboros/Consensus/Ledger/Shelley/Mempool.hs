@@ -10,7 +10,7 @@
 module Ouroboros.Consensus.Ledger.Shelley.Mempool
   ( ApplyTx (..),
     GenTx (..),
-    GenTxId (..)
+    GenTxId
   )
 where
 
@@ -49,8 +49,9 @@ instance ApplyTx ShelleyBlock where
 
   txInvariant = const True
 
-  applyTx (ShelleyLedgerConfig globals) (ShelleyTx _ tx) (TickedLedgerState ledgerState) =
-    (\ss' -> TickedLedgerState $ ledgerState {shelleyLedgerState = ss'})
+  applyTx (ShelleyLedgerConfig globals) (ShelleyTx _ tx)
+          (TickedLedgerState slotNo ledgerState) =
+    (\ss' -> TickedLedgerState slotNo $ ledgerState {shelleyLedgerState = ss'})
       <$> overShelleyState
         ( applyTxs
             globals
