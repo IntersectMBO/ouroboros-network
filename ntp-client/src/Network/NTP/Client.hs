@@ -16,6 +16,10 @@ import           Data.Void (Void)
 import           Network.NTP.Query
 import           Network.NTP.Trace
 
+
+-- | 'NtpClient' which recieves updates of the wall clcok drift every
+-- 'ntpPollDelay'.  It also allows to force engaging in ntp protocol.
+--
 data NtpClient = NtpClient
     { -- | Query the current NTP status.
       ntpGetStatus        :: STM NtpStatus
@@ -24,9 +28,11 @@ data NtpClient = NtpClient
     , ntpThread           :: Async Void
     }
 
--- | Setup a NtpClient and run a application that uses that client.
--- The NtpClient is terminated when the application returns.
--- The application should use waitCatch on ntpThread.
+
+-- | Setup a NtpClient and run an application that uses provided 'NtpClient'.
+-- The 'NtpClient' is terminated when the callback returns.  The application
+-- can 'waitCatch' on 'ntpThread'.
+--
 withNtpClient :: Tracer IO NtpTrace -> NtpSettings -> (NtpClient -> IO a) -> IO a
 withNtpClient tracer ntpSettings action = do
     traceWith tracer NtpTraceStartNtpClient
