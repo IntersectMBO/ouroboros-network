@@ -28,7 +28,7 @@
           ];
         };
       tests = {
-        "ntp-client-test" = {
+        "test-ntp-client" = {
           depends = [
             (hsPkgs.base)
             (hsPkgs.binary)
