@@ -29,7 +29,7 @@ Library
   ghc-options:          -Wall
   default-extensions:   GeneralizedNewtypeDeriving
                         
-test-suite ntp-client-test
+test-suite test-ntp-client
   hs-source-dirs:     test, src
   main-is:            Test.hs
   type:               exitcode-stdio-1.0
