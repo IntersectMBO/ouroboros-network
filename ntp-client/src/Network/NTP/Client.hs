@@ -10,8 +10,8 @@ import           Control.Concurrent.Async
 import           Control.Concurrent.STM (STM, atomically, check)
 import           Control.Concurrent.STM.TVar
 import           System.IO.Error (catchIOError)
-import           Control.Monad
 import           Control.Tracer
+import           Data.Void (Void)
 
 import           Network.NTP.Query
 import           Network.NTP.Trace
@@ -21,7 +21,7 @@ data NtpClient = NtpClient
       ntpGetStatus        :: STM NtpStatus
       -- | Bypass all internal thread Delays and trigger a new NTP query (non-blocking).
     , ntpQueryBlocking    :: IO NtpStatus
-    , ntpThread           :: Async ()
+    , ntpThread           :: Async Void
     }
 
 -- | Setup a NtpClient and run a application that uses that client.
@@ -55,26 +55,46 @@ awaitPendingWithTimeout tvar t
            check $ s == NtpSyncPending
        )
 
+-- | ntp client thread which wakes up every 'ntpPollDelay' to make ntp queries.
+-- It can be woken up earlier by setting 'NptStatus' to 'NtpSyncPending'.
+--
 -- TODO: Reset the delay time if ntpQuery did one successful query.
 ntpClientThread ::
        Tracer IO NtpTrace
     -> NtpSettings
     -> TVar NtpStatus
-    -> IO ()
-ntpClientThread tracer ntpSettings ntpStatus = forM_ restartDelay $ \t -> do
-    traceWith tracer $ NtpTraceRestartDelay t
-    awaitPendingWithTimeout ntpStatus $ t * 1_000_000
-    traceWith tracer NtpTraceRestartingClient
-    catchIOError queryLoop (\err -> traceWith tracer $ NtpTraceIOError err)
-    atomically $ writeTVar ntpStatus NtpSyncUnavailable
-    where
-        restartDelay :: [Int]
-        restartDelay = [0, 5, 10, 20, 60, 180, 600] ++ repeat 600
+    -> IO Void
+ntpClientThread tracer ntpSettings ntpStatus = go 0
+  where
+    -- outer loop of the ntp client.  If inner loop errors we restart after the
+    -- 'delay' seconds
+    go :: Int -> IO Void
+    go delay | delay <= 0 = do
+      queryLoop
+        `catchIOError` (traceWith tracer . NtpTraceIOError)
+      atomically $ writeTVar ntpStatus NtpSyncUnavailable
+      go 5
+    go delay = do
+      traceWith tracer $ NtpTraceRestartDelay delay
+      awaitPendingWithTimeout ntpStatus $ delay * 1_000_000
+      traceWith tracer NtpTraceRestartingClient
+      queryLoop
+        `catchIOError` (traceWith tracer . NtpTraceIOError)
+      atomically $ writeTVar ntpStatus NtpSyncUnavailable
+      go (2 * delay `max` 600) 
 
-        queryLoop = ntpQuery tracer ntpSettings >>= \case
-            status@(NtpDrift _ ) -> do
-                atomically $ writeTVar ntpStatus status
-                traceWith tracer NtpTraceClientSleeping
-                awaitPendingWithTimeout ntpStatus $ fromIntegral $ ntpPollDelay ntpSettings
-                queryLoop
-            _ -> return ()
+    -- inner loop of the ntp client.  Note that 'nptQuery' will return either
+    -- 'NptDrift' or 'NptSyncUnavailable'.
+    queryLoop :: IO ()
+    queryLoop = ntpQuery tracer ntpSettings >>= \case
+      status@NtpDrift{} -> do
+        atomically $ writeTVar ntpStatus status
+        traceWith tracer NtpTraceClientSleeping
+        awaitPendingWithTimeout ntpStatus $ fromIntegral $ ntpPollDelay ntpSettings
+        queryLoop
+      status@NtpSyncUnavailable ->
+        -- we need to update the status even if the result is
+        -- 'NptSyncUnavailable', so that the thread blocked on it will be
+        -- waken up.
+        atomically $ writeTVar ntpStatus status
+      NtpSyncPending -> error "ntpClientThread: impossible happend"
