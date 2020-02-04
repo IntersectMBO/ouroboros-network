@@ -25,17 +25,18 @@ module Ouroboros.Consensus.NodeKernel (
   , ProtocolM
   ) where
 
+import           Control.Exception (assert)
 import           Control.Monad
 import           Crypto.Random (ChaChaDRG)
 import           Data.Map.Strict (Map)
-import           Data.Maybe (isNothing)
+import           Data.Maybe (isJust, isNothing)
 import           Data.Word (Word16, Word32)
 
 import           Cardano.Prelude (UseIsNormalForm (..))
 import           Control.Tracer
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..),
-                     headSlot)
+                     headPoint, headSlot)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
@@ -358,27 +359,29 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
         --
         -- Normally this will be the current block at the tip, but it may
         -- be the /previous/ block, if there were multiple slot leaders
-        (prevPoint, prevNo) <- do
-          mPrev <- lift $ atomically $ prevPointAndBlockNo currentSlot <$>
-                     ChainDB.getCurrentChain chainDB
-          case mPrev of
-            Right prev       -> return prev
-            Left  futureSlot -> do
-              trace $ TraceBlockFromFuture currentSlot futureSlot
+        BlockContext{bcBlockNo, bcPrevPoint} <- do
+          eBlkCtx <- lift $ atomically $
+            mkCurrentBlockContext currentSlot
+                <$> ChainDB.getCurrentChain chainDB
+                <*> ChainDB.getTipBlockNo chainDB
+          case eBlkCtx of
+            Right blkCtx -> return blkCtx
+            Left failure -> do
+              trace failure
               exitEarly
 
-        -- Get ledger state corresponding to prevPoint
+        -- Get ledger state corresponding to bcPrevPoint
         --
-        -- This might fail if, in between choosing 'prevPoint' and this call to
-        -- 'getPastLedger', we switched to a fork where 'prevPoint' is no longer
+        -- This might fail if, in between choosing 'bcPrevPoint' and this call to
+        -- 'getPastLedger', we switched to a fork where 'bcPrevPoint' is no longer
         -- on our chain. When that happens, we simply give up on the chance to
         -- produce a block.
         extLedger <- do
-          mExtLedger <- lift $ ChainDB.getPastLedger chainDB prevPoint
+          mExtLedger <- lift $ ChainDB.getPastLedger chainDB bcPrevPoint
           case mExtLedger of
             Just l  -> return l
             Nothing -> do
-              trace $ TraceNoLedgerState currentSlot prevPoint
+              trace $ TraceNoLedgerState currentSlot bcPrevPoint
               exitEarly
         let ledger = ledgerState extLedger
 
@@ -429,7 +432,7 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
         newBlock <- lift $ atomically $ runProtocol varDRG $
           produceBlock
             currentSlot
-            (succ prevNo)
+            bcBlockNo
             extLedger
             txs
             proof
@@ -492,58 +495,6 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
         blockEncOverhead = nodeBlockEncodingOverhead ledger
         noOverride       = nodeMaxBlockSize ledger - blockEncOverhead
 
-    -- Return the point and block number of the most recent block in the
-    -- current chain with a slot < the given slot. These will either
-    -- correspond to the header at the tip of the current chain or, in case
-    -- another node was also elected leader and managed to produce a block
-    -- before us, the header right before the one at the tip of the chain.
-    prevPointAndBlockNo :: SlotNo
-                        -> AnchoredFragment (Header blk)
-                        -> Either SlotNo (Point blk, BlockNo)
-    prevPointAndBlockNo slot c = case c of
-        Empty _   -> Right (genesisPoint, genesisBlockNo)
-        c' :> hdr -> case blockSlot hdr `compare` slot of
-
-          -- The block at the tip of our chain has a slot number /before/ the
-          -- current slot number. This is the common case, and we just want to
-          -- connect our new block to the block at the tip.
-          LT -> Right (headerPoint hdr, blockNo hdr)
-
-          -- The block at the tip of our chain has a slot that lies in the
-          -- future. Although the chain DB does not adopt future blocks, if the
-          -- system is under heavy load, it is possible (though unlikely) that
-          -- one or more slots have passed after @currentSlot@ that we got from
-          -- @onSlotChange@ and and before we queried the chain DB for the block
-          -- at its tip. At the moment, we simply don't produce a block if this
-          -- happens.
-
-          -- TODO: We may wish to produce a block here anyway, treating this
-          -- as similar to the @EQ@ case below, but we should be careful:
-          --
-          -- 1. We should think about what slot number to use.
-          -- 2. We should be careful to distinguish between the case where we
-          --    need to drop a block from the chain and where we don't.
-          -- 3. We should be careful about slot numbers and EBBs.
-          -- 4. We should probably not produce a block if the system is under
-          --    very heavy load (e.g., if a lot of blocks have been produced
-          --    after @currentTime@).
-          --
-          -- See <https://github.com/input-output-hk/ouroboros-network/issues/1462>
-          GT -> Left $ blockSlot hdr
-
-          -- The block at the tip has the same slot as the block we're going
-          -- to produce (@slot@), so look at the block before it.
-          EQ
-             | Just{} <- nodeIsEBB hdr
-               -- We allow forging a block that is the successor of an EBB in
-               -- the same slot.
-             -> Right (headerPoint hdr, blockNo hdr)
-             | _ :> hdr' <- c'
-             -> Right (headerPoint hdr', blockNo hdr')
-             | otherwise
-               -- If there is no block before it, so use genesis.
-             -> Right (genesisPoint, genesisBlockNo)
-
     runProtocol :: StrictTVar m PRNG -> ProtocolM blk m a -> STM m a
     runProtocol varDRG = simOuroborosStateT varState
                        $ simChaChaT varDRG
@@ -552,6 +503,95 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
 -- | State of the pseudo-random number generator
 newtype PRNG = PRNG ChaChaDRG
   deriving NoUnexpectedThunks via UseIsNormalForm PRNG
+
+-- | Data about a block's position in the chain
+data BlockContext blk = BlockContext
+  { bcBlockNo   :: !BlockNo
+    -- ^ the block number of the block
+  , bcPrevPoint :: !(Point blk)
+    -- ^ the point of /the predecessor of/ the block
+    --
+    -- Note that a block/header stores the hash of its predecessor but not the
+    -- slot.
+  }
+
+-- | Create the 'BlockContext' from the header of the previous block
+blockContextFromPrevHeader ::
+     HasHeader (Header blk)
+  => Header blk -> BlockContext blk
+blockContextFromPrevHeader hdr =
+    -- Recall that an EBB has the same block number as its predecessor, so this
+    -- @succ@ is even correct when @hdr@ is an EBB.
+    BlockContext (succ (blockNo hdr)) (headerPoint hdr)
+
+-- | Determine the 'BlockContext' for a block about to be forged from the
+-- current slot, ChainDB chain fragment, and ChainDB tip block number
+--
+-- The 'bcPrevPoint' will either refer to the header at the tip of the current
+-- chain or, in case there is already a block in this slot (e.g. another node
+-- was also elected leader and managed to produce a block before us), the tip's
+-- predecessor. If the chain is empty, then it will refer to the chain's anchor
+-- point, which may be genesis.
+mkCurrentBlockContext
+  :: RunNode blk
+  => SlotNo
+     -- ^ the current slot, i.e. the slot of the block about to be forged
+  -> AnchoredFragment (Header blk)
+     -- ^ the current chain fragment
+     --
+     -- Recall that the anchor point is the tip of the ImmDB.
+  -> BlockNo
+     -- ^ the block number of the tip of the ChainDB
+     --
+     -- If the fragment is 'Empty', then this is the block number of the
+     -- tip of the ImmDB.
+  -> Either (TraceForgeEvent blk (GenTx blk)) (BlockContext blk)
+     -- ^ the event is records the cause of the failure
+mkCurrentBlockContext currentSlot c bno = case c of
+    Empty p   -- thus: bno and p both refer to the tip of the ImmDB
+      | pointSlot p < At currentSlot
+      -> Right $ BlockContext (succ bno) (castPoint p)
+      | otherwise
+      -> Left $ TraceSlotIsImmutable currentSlot (castPoint p) bno
+    c' :> hdr -> assert (bno == blockNo hdr) $
+                 case blockSlot hdr `compare` currentSlot of
+
+      -- The block at the tip of our chain has a slot number /before/ the
+      -- current slot number. This is the common case, and we just want to
+      -- connect our new block to the block at the tip.
+      LT -> Right $ blockContextFromPrevHeader hdr
+
+      -- The block at the tip of our chain has a slot that lies in the
+      -- future. Although the chain DB does not adopt future blocks, if the
+      -- system is under heavy load, it is possible (though unlikely) that
+      -- one or more slots have passed after @currentSlot@ that we got from
+      -- @onSlotChange@ and and before we queried the chain DB for the block
+      -- at its tip. At the moment, we simply don't produce a block if this
+      -- happens.
+
+      -- TODO: We may wish to produce a block here anyway, treating this
+      -- as similar to the @EQ@ case below, but we should be careful:
+      --
+      -- 1. We should think about what slot number to use.
+      -- 2. We should be careful to distinguish between the case where we
+      --    need to drop a block from the chain and where we don't.
+      -- 3. We should be careful about slot numbers and EBBs.
+      -- 4. We should probably not produce a block if the system is under
+      --    very heavy load (e.g., if a lot of blocks have been produced
+      --    after @currentTime@).
+      --
+      -- See <https://github.com/input-output-hk/ouroboros-network/issues/1462>
+      GT -> Left $ TraceBlockFromFuture currentSlot (blockSlot hdr)
+
+      -- The block at the tip has the same slot as the block we're going to
+      -- produce (@currentSlot@).
+      EQ -> Right $ if isJust (nodeIsEBB hdr)
+        -- We allow forging a block that is the successor of an EBB in the
+        -- same slot.
+        then blockContextFromPrevHeader hdr
+        -- If @hdr@ is not an EBB, then forge an alternative to @hdr@: same
+        -- block no and same predecessor.
+        else BlockContext (blockNo hdr) $ castPoint $ headPoint c'
 
 {-------------------------------------------------------------------------------
   TxSubmission integration

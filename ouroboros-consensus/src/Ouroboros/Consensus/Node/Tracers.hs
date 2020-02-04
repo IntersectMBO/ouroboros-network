@@ -11,7 +11,7 @@ module Ouroboros.Consensus.Node.Tracers
 
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 
-import           Ouroboros.Network.Block (Point, SlotNo)
+import           Ouroboros.Network.Block (BlockNo, Point, SlotNo)
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
 import           Ouroboros.Network.TxSubmission.Inbound
@@ -110,6 +110,8 @@ showTracers tr = Tracers
 -- >          |
 -- >          +--- TraceBlockFromFuture (leadership check failed)
 -- >          |
+-- >          +--- TraceSlotIsImmutable (leadership check failed)
+-- >          |
 -- >          +--- TraceNoLedgerState (leadership check failed)
 -- >          |
 -- >          +--- TraceNoLedgerView (leadership check failed)-- >
@@ -176,6 +178,24 @@ data TraceForgeEvent blk tx
   --
   -- See also <https://github.com/input-output-hk/ouroboros-network/issues/1462>
   | TraceBlockFromFuture SlotNo SlotNo
+
+  -- | Leadership check failed: the tip of the ImmDB inhabits a slot /after/
+  -- the current slot
+  --
+  -- This might happen in two cases.
+  --
+  --  1. the clock moved backwards, on restart we ignored everything from the
+  --     VolatileDB since it's all in the future, and now the tip of the
+  --     ImmutableDB points to a block produced in the same slot we're trying
+  --     to produce a block in
+  --
+  --  2. k = 0 and we already adopted a block from another leader of the same
+  --     slot.
+  --
+  -- We record both the current slot number as well as the tip of the ImmDB.
+  --
+  -- See also <https://github.com/input-output-hk/ouroboros-network/issues/1462>
+  | TraceSlotIsImmutable SlotNo (Point blk) BlockNo
 
   -- | We did the leadership check and concluded we /are/ the leader
   --
