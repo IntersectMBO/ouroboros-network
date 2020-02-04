@@ -60,7 +60,7 @@ ntpClientThread ::
        Tracer IO NtpTrace
     -> NtpSettings
     -> TVar NtpStatus
-    -> IO ()
+    -> IO Void
 ntpClientThread tracer ntpSettings ntpStatus = forM_ restartDelay $ \t -> do
     traceWith tracer $ NtpTraceRestartDelay t
     awaitPendingWithTimeout ntpStatus $ t * 1_000_000

@@ -76,9 +76,13 @@ udpLocalAddresses = Socket.getAddrInfo (Just hints) Nothing (Just $ show port)
 resolveHost :: String -> IO [AddrInfo]
 resolveHost host = Socket.getAddrInfo (Just hints) (Just host) Nothing
   where
+  -- The library uses AI_ADDRCONFIG as simple test if IPv4 or IPv6 are configured.
+  -- According to the documentation, AI_ADDRCONFIG is not available on all platforms,
+  -- but it is expected to work on win32, Mac OS X and Linux.
+  -- TODO: use addrInfoFlagImplemented :: AddrInfoFlag -> Bool to test if the flag is available.
     hints = Socket.defaultHints
             { addrSocketType = Datagram
-            , addrFlags = [AI_ADDRCONFIG]  -- since we use @AF_INET@ family
+            , addrFlags = [AI_ADDRCONFIG]
             }
 
 firstAddr :: Family -> [AddrInfo] -> Maybe AddrInfo
@@ -134,8 +138,8 @@ ntpQuery tracer ntpSettings = do
                 return $ NtpDrift offset
     where
         runProtocol :: IPVersion -> Maybe AddrInfo -> [AddrInfo] -> IO [NtpOffset]
-        runProtocol _proto _localAddr [] = return []
-        runProtocol _proto Nothing    _  = return []
+        runProtocol _proto _localAddr [] = return [] -- No servers found for that protocol.
+        runProtocol _proto Nothing    _  = return [] -- No local interface for that protocol.
         runProtocol protocol (Just addr) servers = do
              runNtpQueries tracer protocol ntpSettings addr servers >>= \case
                 Left err -> do
