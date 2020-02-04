@@ -137,26 +137,34 @@ ntpQuery tracer ntpSettings = do
                 return $ NtpDrift offset
     where
         runProtocol :: IPVersion -> Maybe AddrInfo -> [AddrInfo] -> IO [NtpOffset]
-        runProtocol _proto _localAddr [] = return [] -- No servers found for that protocol.
-        runProtocol _proto Nothing    _  = return [] -- No local interface for that protocol.
-        runProtocol protocol (Just addr) servers = do
-             runNtpQueries tracer protocol ntpSettings addr servers >>= \case
-                Left err -> do
-                    traceWith tracer $ NtpTraceRunProtocolError protocol err
-                    return []
-                Right [] -> do
-                    traceWith tracer $ NtpTraceRunProtocolNoResult protocol
-                    return []
-                Right r@(_:_) -> do
-                    traceWith tracer $ NtpTraceRunProtocolSuccess protocol
-                    return r
+        -- no addresses to sent to
+        runProtocol _protocol _localAddr  []      = return []
+        -- local address is not configured, e.g. no IPv6   or IPv6 gateway.       
+        runProtocol _protocol Nothing     _       = return []
+        -- local address is configured, remote address list is non empty
+        runProtocol protocol  (Just addr) servers = do
+           runNtpQueries tracer protocol ntpSettings addr servers >>= \case
+              Left err -> do
+                  traceWith tracer $ NtpTraceRunProtocolError protocol err
+                  return []
+              Right [] -> do
+                  traceWith tracer $ NtpTraceRunProtocolNoResult protocol
+                  return []
+              Right r -> do
+                  traceWith tracer $ NtpTraceRunProtocolSuccess protocol
+                  return r
 
-runNtpQueries ::
-       Tracer IO NtpTrace
-    -> IPVersion
+
+-- | Run an ntp query towards each address
+--
+runNtpQueries
+    :: Tracer IO NtpTrace
+    -> IPVersion   -- ^ address family, it must afree with local and remote
+                   -- addresses
     -> NtpSettings
-    -> AddrInfo
-    -> [AddrInfo]
+    -> AddrInfo    -- ^ local address
+    -> [AddrInfo]  -- ^ remote addresses, they are assumed to have the same
+                   -- family as the local address
     -> IO (Either IOError [NtpOffset])
 runNtpQueries tracer protocol netSettings localAddr destAddrs
     = tryIOError $ bracket acquire release action
@@ -182,22 +190,38 @@ runNtpQueries tracer protocol netSettings localAddr destAddrs
                 `onException` cancel senderT
         atomically $ readTVar inQueue
 
+    --
+    -- sending thread; send a series of requests: one towards each address
+    --
     send :: Socket -> IO ()
     send sock = forM_ destAddrs $ \addr -> do
         p <- mkNtpPacket
-        err <- tryIOError $ Socket.ByteString.sendManyTo sock
-                          (LBS.toChunks $ encode p) (setNtpPort $ Socket.addrAddress addr)
+        err <- tryIOError
+                $ Socket.ByteString.sendManyTo sock
+                  (LBS.toChunks $ encode p)
+                  (setNtpPort $ Socket.addrAddress addr)
         case err of
             Right _ -> traceWith tracer $ NtpTracePacketSent protocol
             Left e  -> do
                 traceWith tracer $ NtpTracePacketSentError protocol e
                 ioError e
+        -- delay 100ms between sending requests, this avoids dealing with ntp
+        -- results at the same time from various ntp servers, and thus we
+        -- should get better results.
         threadDelay 100_000
 
+    --
+    -- timeout thread
+    --
     timeout = do
-        threadDelay $ (fromIntegral $ ntpResponseTimeout netSettings) + 100_000 * length destAddrs
+        threadDelay
+          $ (fromIntegral $ ntpResponseTimeout netSettings)
+            + 100_000 * length destAddrs
         traceWith tracer $ NtpTraceWaitingForRepliesTimeout protocol
 
+    --
+    -- receiving thread
+    --
     receiver :: Socket -> TVar [NtpOffset] -> IO ()
     receiver socket inQueue = replicateM_ (length destAddrs) $ do
         (bs, _) <- Socket.ByteString.recvFrom socket ntpPacketSize
