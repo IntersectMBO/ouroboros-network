@@ -19,6 +19,7 @@ module Ouroboros.Consensus.Mempool.API (
   ) where
 
 import           Control.Monad.Except
+import           Control.Monad.Class.MonadTime
 import           Data.Word (Word32)
 import           GHC.Stack (HasCallStack)
 
@@ -306,7 +307,8 @@ instance Monoid MempoolSize where
 
 -- | Events traced by the Mempool.
 data TraceEventMempool blk
-  = TraceMempoolAddTxs
+  = TraceMempoolValidateTxs !Time !Time !Int
+  | TraceMempoolAddTxs
       ![GenTx blk]
       -- ^ New, valid transaction were added to the Mempool.
       !MempoolSize

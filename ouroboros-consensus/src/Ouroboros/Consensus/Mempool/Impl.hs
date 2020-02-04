@@ -19,6 +19,7 @@ module Ouroboros.Consensus.Mempool.Impl (
 
 import           Control.Exception (assert)
 import           Control.Monad (void)
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
 import qualified Data.Set as Set
@@ -240,6 +241,7 @@ implAddTxs :: forall m blk. (IOLike m, ApplyTx blk)
            -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
 implAddTxs _     _     []  = pure []
 implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
+    t0 <- getMonotonicTime
     (vr, removed, rejected, unvalidated, mempoolSize) <- atomically $ do
       IS{isTip = initialISTip} <- readTVar mpEnvStateVar
 
@@ -276,7 +278,11 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
           mempoolSize       <- getMempoolSize mpEnv
           pure (vr, removed, vrInvalid vr, unvalidated, mempoolSize)
 
+    t1 <- getMonotonicTime
+
     let accepted = vrNewValid vr
+
+    traceWith mpEnvTracer (TraceMempoolValidateTxs t0 t1 ((length removed) + (length accepted) + (length rejected)))
 
     traceBatch TraceMempoolRemoveTxs   mempoolSize (map fst removed)
     traceBatch TraceMempoolAddTxs      mempoolSize accepted
