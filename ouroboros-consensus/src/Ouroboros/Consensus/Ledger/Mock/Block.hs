@@ -249,21 +249,19 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
       mustSucceed (Right st)  = st
   ledgerTipPoint (SimpleLedgerState st) = mockTip st
 
-updateSimpleLedgerState :: (Monad m, SimpleCrypto c, Typeable ext)
+updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
                         => SimpleBlock c ext
                         -> LedgerState (SimpleBlock c ext)
-                        -> ExceptT (MockError (SimpleBlock c ext))
-                                   m
-                                   (LedgerState (SimpleBlock c ext))
+                        -> Except (MockError (SimpleBlock c ext))
+                                  (LedgerState (SimpleBlock c ext))
 updateSimpleLedgerState b (SimpleLedgerState st) =
     SimpleLedgerState <$> updateMockState b st
 
-updateSimpleUTxO :: (Monad m, Mock.HasUtxo a)
+updateSimpleUTxO :: Mock.HasUtxo a
                  => a
                  -> TickedLedgerState (SimpleBlock c ext)
-                 -> ExceptT (MockError (SimpleBlock c ext))
-                            m
-                            (TickedLedgerState (SimpleBlock c ext))
+                 -> Except (MockError (SimpleBlock c ext))
+                           (TickedLedgerState (SimpleBlock c ext))
 updateSimpleUTxO b (TickedLedgerState slot (SimpleLedgerState st)) =
     TickedLedgerState slot . SimpleLedgerState <$> updateMockUTxO b st
 
@@ -279,7 +277,7 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
   data GenTx (SimpleBlock c ext) = SimpleGenTx
     { simpleGenTx   :: !Mock.Tx
     , simpleGenTxId :: !Mock.TxId
-    } deriving stock    (Generic)
+    } deriving stock    (Generic, Eq, Ord)
       deriving anyclass (Serialise)
 
   txSize = fromIntegral . Lazy.length . serialise

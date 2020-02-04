@@ -47,7 +47,7 @@ newtype StakeDist = StakeDist { stakeDistToMap :: Map CoreNodeId Rational }
 stakeWithDefault :: Rational -> CoreNodeId -> StakeDist -> Rational
 stakeWithDefault d n = Map.findWithDefault d n . stakeDistToMap
 
-relativeStakes :: Map StakeHolder Int -> StakeDist
+relativeStakes :: Map StakeHolder Amount -> StakeDist
 relativeStakes m = StakeDist $
    let totalStake    = fromIntegral $ sum $ Map.elems m
    in  Map.fromList [ (nid, fromIntegral stake / totalStake)
@@ -58,10 +58,10 @@ relativeStakes m = StakeDist $
 --
 -- The 'Nothing' value holds the total stake of all addresses that don't
 -- get mapped to a NodeId.
-totalStakes :: Map Addr NodeId -> Utxo -> Map StakeHolder Int
+totalStakes :: Map Addr NodeId -> Utxo -> Map StakeHolder Amount
 totalStakes addrDist = foldl f Map.empty
  where
-   f :: Map StakeHolder Int -> TxOut -> Map StakeHolder Int
+   f :: Map StakeHolder Amount -> TxOut -> Map StakeHolder Amount
    f m (a, stake) = case Map.lookup a addrDist of
        Just (CoreId nid) -> Map.insertWith (+) (StakeCore nid)    stake m
        _                 -> Map.insertWith (+) StakeEverybodyElse stake m

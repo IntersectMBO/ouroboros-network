@@ -300,8 +300,6 @@ test-suite test-consensus
                     Test.Consensus.Ledger.Mock
                     Test.Consensus.LocalStateQueryServer
                     Test.Consensus.Mempool
-                    Test.Consensus.Mempool.TestBlock
-                    Test.Consensus.Mempool.TestTx
                     Test.Consensus.Node
                     Test.Consensus.Protocol.PBFT
                     Test.Consensus.ResourceRegistry

@@ -419,7 +419,7 @@ implSyncWithLedger mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} = do
       mempoolSize <- getMempoolSize mpEnv
       snapshot    <- implGetSnapshot mpEnv
       return (map fst (vrInvalid vr), mempoolSize, snapshot)
-    unless (null removed) $ do
+    unless (null removed) $
       traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
     return snapshot
 

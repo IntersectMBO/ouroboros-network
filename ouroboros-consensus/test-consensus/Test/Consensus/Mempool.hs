@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -9,41 +10,47 @@
 module Test.Consensus.Mempool (tests) where
 
 import           Control.Exception (assert)
-import           Control.Monad (foldM, forM, forM_, unless, void)
+import           Control.Monad (foldM, forM, forM_, void)
 import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (State, evalState, get, modify)
-import           Data.List (find, foldl', isSuffixOf, nub, sort)
+import           Data.Bifunctor (first)
+import           Data.Either (isRight)
+import           Data.List (find, foldl', isSuffixOf, nub, partition, sort)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (isJust, isNothing)
-import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
+import           GHC.Stack (HasCallStack)
 
-import           Test.QuickCheck
+import           Test.QuickCheck hiding (elements)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
+
+import           Cardano.Binary (Encoding, toCBOR)
+import           Cardano.Crypto.Hash
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Control.Tracer (Tracer (..))
 
-import           Ouroboros.Network.Block (pattern BlockPoint, SlotNo (..),
-                     atSlot, withHash)
+import           Ouroboros.Network.Block (pattern BlockPoint, HeaderHash,
+                     pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Mock hiding (TxId)
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
-import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
+import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM,
+                     safeMaximumOn, whenJust)
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     Thread, forkThread, withRegistry)
 
 import           Test.Util.Orphans.IOLike ()
-
-import           Test.Consensus.Mempool.TestBlock
+import           Test.Util.QuickCheck (elements)
 
 tests :: TestTree
 tests = testGroup "Mempool"
@@ -58,8 +65,6 @@ tests = testGroup "Mempool"
   , testProperty "addTxs txs == mapM (addTxs . pure) txs"  prop_Mempool_addTxs_one_vs_multiple
   , testProperty "result of addTxs"                        prop_Mempool_addTxs_result
   , testProperty "Invalid transactions are never added"    prop_Mempool_InvalidTxsNeverAdded
-  , testProperty "result of getCapacity"                   prop_Mempool_getCapacity
-  , testProperty "Mempool capacity implementation"         prop_Mempool_Capacity
   , testProperty "Added valid transactions are traced"     prop_Mempool_TraceValidTxs
   , testProperty "Rejected invalid txs are traced"         prop_Mempool_TraceRejectedTxs
   , testProperty "Removed invalid txs are traced"          prop_Mempool_TraceRemovedTxs
@@ -110,8 +115,8 @@ prop_Mempool_addTxs_result setup =
       let Mempool { addTxs } = mempool
       result <- addTxs (allTxs setup)
       return $ counterexample (ppTxs (txs setup)) $
-        sort [(tx, isNothing mbErr)     | (tx, mbErr) <- result] ===
-        sort [(TestGenTx testTx, valid) | (testTx, valid) <- txs setup]
+        sort [(tx, isNothing mbErr) | (tx, mbErr) <- result] ===
+        sort [(testTx, valid)       | (testTx, valid) <- txs setup]
 
 -- | Test that invalid transactions are never added to the 'Mempool'.
 prop_Mempool_InvalidTxsNeverAdded :: TestSetupWithTxs -> Property
@@ -135,7 +140,7 @@ prop_Mempool_InvalidTxsNeverAdded setup =
 
 -- | After removing a transaction from the Mempool, it's actually gone.
 prop_Mempool_removeTxs :: TestSetupWithTxInMempool -> Property
-prop_Mempool_removeTxs (TestSetupWithTxInMempool testSetup tx) =
+prop_Mempool_removeTxs (TestSetupWithTxInMempool testSetup txToRemove) =
     withTestMempool testSetup $ \TestMempool { mempool } -> do
       let Mempool { removeTxs, getSnapshot } = mempool
       removeTxs [txId txToRemove]
@@ -144,198 +149,6 @@ prop_Mempool_removeTxs (TestSetupWithTxInMempool testSetup tx) =
         ("Transactions in the mempool after removing (" <>
          show txToRemove <> "): " <> show txsInMempoolAfter)
         (txToRemove `notElem` txsInMempoolAfter)
-  where
-    txToRemove = TestGenTx tx
-
--- | Test that 'getCapacity' returns the 'MempoolCapacityBytes' value that the
--- mempool was initialized with.
---
--- Ignore the "100% empty Mempool" label in the test output, that is there
--- because we reuse 'withTestMempool' and always start with an empty Mempool
--- and 'LedgerState'.
-prop_Mempool_getCapacity :: MempoolCapTestSetup -> Property
-prop_Mempool_getCapacity mcts =
-    withTestMempool mctsTestSetup $ \TestMempool{mempool} -> do
-      mpCap <- atomically $ getCapacity mempool
-      pure (mpCap === mctsCapacity)
-  where
-    MempoolCapTestSetup
-      { mctsTestSetup
-      , mctsCapacity
-      } = mcts
-
--- | When the mempool is at capacity, test that 'addTxs' blocks when
--- attempting to add more transactions and that it unblocks when there is
--- adequate space. Adequate space is made by adding all of the existing
--- transactions to the ledger and removing them from the mempool.
---
--- Ignore the "100% empty Mempool" label in the test output, that is there
--- because we reuse 'withTestMempool' and always start with an empty Mempool
--- and 'LedgerState'.
-prop_Mempool_Capacity :: MempoolCapTestSetup -> Property
-prop_Mempool_Capacity mcts = withTestMempool mctsTestSetup $
-    runCapacityTest (map TestGenTx mctsValidTxs)
-  where
-    MempoolCapTestSetup
-      { mctsTestSetup
-      , mctsValidTxs
-      , mctsCapacity
-      } = mcts
-
-    runCapacityTest :: forall m. IOLike m
-                    => [GenTx TestBlock]
-                    -> TestMempool m
-                    -> m Property
-    runCapacityTest txs testMempool@TestMempool{getTraceEvents} =
-      withRegistry $ \registry -> do
-        env@MempoolCapTestEnv
-          { mctEnvAddedTxs
-          , mctEnvRemovedTxs
-          } <- initMempoolCapTestEnv
-        void $ forkAddValidTxs  env registry testMempool txs
-        void $ forkUpdateLedger env registry testMempool txs
-
-        -- Before we check the order of events, we must block until we've:
-        -- * Added all of the transactions to the mempool
-        -- * Removed all of the transactions from the mempool
-        atomically $ do
-          envAdded   <- readTVar mctEnvAddedTxs
-          envRemoved <- readTVar mctEnvRemovedTxs
-          check $  envAdded   == length txs
-                && envRemoved == length txs
-
-        -- Check the order of events
-        events <- getTraceEvents
-        pure $ checkTraceEvents events
-
-    -- | Spawn a new thread which continuously attempts to fill the mempool to
-    -- capacity until no more transactions remain. This should block whenever
-    -- attempting to add more transactions while the mempool is full.
-    forkAddValidTxs :: forall m. IOLike m
-                    => MempoolCapTestEnv m
-                    -> ResourceRegistry m
-                    -> TestMempool m
-                    -> [GenTx TestBlock]
-                    -> m (Thread m ())
-    forkAddValidTxs env registry testMempool txs =
-      forkThread registry $ addValidTxs env testMempool txs
-
-    -- | Recursively attempt to fill the mempool to capacity until no further
-    -- transactions remain. This should block whenever attempting to add more
-    -- transactions while the mempool is full.
-    addValidTxs :: IOLike m
-                => MempoolCapTestEnv m
-                -> TestMempool m
-                -> [GenTx TestBlock]
-                -> m ()
-    addValidTxs env testMempool txs = case txs of
-      [] -> pure ()
-      ts -> do
-        let TestMempool{mempool} = testMempool
-            Mempool{addTxs}      = mempool
-
-        let (txsToAdd, txsRemaining) = splitTxsUntilCap ts mctsCapacity
-        -- Indicate how many bytes need to be added to the mempool before we
-        -- can consider it to be at full capacity. This is necessary because
-        -- the ledger updating thread should only start removing transactions
-        -- from the mempool at this point.
-        atomically $
-          writeTVar (mctEnvBytesToBeAddedForCap env) (txSizesInBytes txsToAdd)
-        -- Attempt to fill the mempool to capacity
-        _ <- addTxs txsToAdd
-        atomically $
-          modifyTVar (mctEnvAddedTxs env) (+ length txsToAdd)
-
-        -- Continue by attempting to add the remaining transactions.
-        -- Since the mempool should have been filled to capacity this time
-        -- around, the recursive call to 'addValidTxs' should end up blocking
-        -- unless there are no remaining transactions.
-        addValidTxs env testMempool txsRemaining
-
-    -- | Spawn a new thread which continuously removes all of the transactions
-    -- from the mempool (once it has reached its capacity) and adds the valid
-    -- ones to the ledger. This continues until the process has been repeated
-    -- for all of the transactions involved in the test.
-    forkUpdateLedger :: forall m. IOLike m
-                     => MempoolCapTestEnv m
-                     -> ResourceRegistry m
-                     -> TestMempool m
-                     -> [GenTx TestBlock]
-                     -> m (Thread m ())
-    forkUpdateLedger env registry testMempool txs =
-      forkThread registry $ do
-        -- First, wait until we've filled the mempool.
-        -- After this point, the 'forkAddValidTxs' thread should be blocking on
-        -- adding more transactions since the mempool is at capacity.
-        atomically $ do
-          let TestMempool{ mempool } = testMempool
-              Mempool{ getSnapshot } = mempool
-          MempoolSnapshot { snapshotTxs } <- getSnapshot
-          let bytesInSnapshot = txSizesInBytes (map fst snapshotTxs)
-          envToBeAddedForCap <- readTVar (mctEnvBytesToBeAddedForCap env)
-          check (bytesInSnapshot == envToBeAddedForCap)
-          -- Reset the 'mctEnvBytesToBeAddedForCap'
-          writeTVar (mctEnvBytesToBeAddedForCap env) 0
-
-        updateLedger env testMempool txs
-
-    -- | Recursively remove transactions from the mempool and add them to the
-    -- ledger. This continues until the process has been repeated for all of
-    -- the transactions involved in the test.
-    updateLedger :: IOLike m
-                 => MempoolCapTestEnv m
-                 -> TestMempool m
-                 -> [GenTx TestBlock]
-                 -> m ()
-    updateLedger env testMempool txs = do
-      let TestMempool{ mempool, addTxsToLedger } = testMempool
-          MempoolCapTestEnv{ mctEnvRemovedTxs }  = env
-          Mempool{ getSnapshot, syncWithLedger } = mempool
-
-      envRemoved <- atomically (readTVar mctEnvRemovedTxs)
-      assert (envRemoved <= length txs) $
-        unless (envRemoved == length txs) $ do
-          -- We add all of the transactions in the mempool to the ledger.
-          -- We do this atomically so that the blocking/retrying 'addTxs'
-          -- transaction won't begin syncing and start removing transactions
-          -- from the mempool. By ensuring this doesn't happen, we'll get a
-          -- simpler and more predictable event trace (which we'll check in
-          -- 'checkTraceEvents').
-          (snapshotTxs, _errs) <- atomically $ do
-            MempoolSnapshot { snapshotTxs } <- getSnapshot
-            errs <- addTxsToLedger (map (unTestGenTx . fst) snapshotTxs)
-            pure (snapshotTxs, errs)
-
-          -- Sync the mempool with the ledger.
-          -- Now all of the transactions in the mempool should have been
-          -- removed.
-          void $ syncWithLedger
-
-          -- Indicate that we've removed the transactions from the mempool.
-          atomically $ do
-            let txsInMempool = map fst snapshotTxs
-            modifyTVar
-              mctEnvRemovedTxs
-              (+ length txsInMempool)
-
-          -- Continue syncing the mempool with the ledger state until we've
-          -- removed all of the transactions involved in this test.
-          updateLedger env testMempool txs
-
-    checkTraceEvents :: [TraceEventMempool TestBlock]
-                     -> Property
-    checkTraceEvents events =
-          map sortTxsInTrace (mempoolCapTestExpectedTrace mcts)
-      === map sortTxsInTrace events
-
-    sortTxsInTrace :: TraceEventMempool TestBlock
-                   -> TraceEventMempool TestBlock
-    sortTxsInTrace ev = case ev of
-      TraceMempoolAddTxs      txs mpSz -> TraceMempoolAddTxs      (sort txs) mpSz
-      TraceMempoolRemoveTxs   txs mpSz -> TraceMempoolRemoveTxs   (sort txs) mpSz
-      TraceMempoolRejectedTxs txs mpSz -> TraceMempoolRejectedTxs (sort txs) mpSz
-      TraceMempoolManuallyRemovedTxs txIds txs mpSz ->
-        TraceMempoolManuallyRemovedTxs (sort txIds) (sort txs) mpSz
 
 -- | Test that all valid transactions added to a 'Mempool' via 'addTxs' are
 -- appropriately represented in the trace of events.
@@ -383,33 +196,61 @@ prop_Mempool_TraceRejectedTxs setup =
 prop_Mempool_TraceRemovedTxs :: TestSetup -> Property
 prop_Mempool_TraceRemovedTxs setup =
     withTestMempool setup $ \testMempool -> do
-      let TestMempool { mempool, getTraceEvents, addTxsToLedger } = testMempool
+      let TestMempool { mempool, getTraceEvents, addTxsToLedger, getCurrentLedger } = testMempool
           Mempool { getSnapshot, syncWithLedger } = mempool
       MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
-      -- We add all the transactions in the mempool to the ledger.
+      -- We add all the transactions in the mempool to the ledger. Some of
+      -- them will become invalid because all inputs have been spent.
       let txsInMempool = map fst snapshotTxs
-      errs <- atomically $ addTxsToLedger (map unTestGenTx txsInMempool)
+      errs <- atomically $ addTxsToLedger txsInMempool
 
-      -- Sync the mempool with the ledger. Now all of the transactions in the
+      -- Sync the mempool with the ledger. Now some of the transactions in the
       -- mempool should have been removed.
-      void $ syncWithLedger
+      void syncWithLedger
 
-      evs  <- getTraceEvents
+      -- Predict which transactions should have been removed
+      curLedger <- atomically getCurrentLedger
+      let expected = expectedToBeRemoved curLedger txsInMempool
+
+      -- Look at the trace to see which transactions actually got removed
+      evs <- getTraceEvents
+      let removedTxs = maybe
+            []
+            (\(TraceMempoolRemoveTxs txs _) -> txs)
+            (find isRemoveTxsEvent evs)
+
       -- Also check that 'addTxsToLedger' never resulted in an error.
-      return $ map (const (Right ())) errs === errs .&&.
-        let removedTxs = maybe
-              []
-              (\(TraceMempoolRemoveTxs txs _) -> txs)
-              (find isRemoveTxsEvent evs)
-        in sort txsInMempool === sort removedTxs
+      return $
+        classify (not (null removedTxs)) "Removed some transactions" $
+        map (const (Right ())) errs === errs .&&.
+        sort expected === sort removedTxs
   where
     isRemoveTxsEvent :: TraceEventMempool blk -> Bool
     isRemoveTxsEvent (TraceMempoolRemoveTxs _ _) = True
     isRemoveTxsEvent _                           = False
 
+    expectedToBeRemoved :: LedgerState TestBlock -> [TestTx] -> [TestTx]
+    expectedToBeRemoved ledgerState txsInMempool =
+      [ tx
+      | (tx, valid) <- fst $ validateTxs ledgerState txsInMempool
+      , not valid
+      ]
+
 {-------------------------------------------------------------------------------
   TestSetup: how to set up a TestMempool
 -------------------------------------------------------------------------------}
+
+type TestBlock = SimpleBftBlock SimpleMockCrypto BftMockCrypto
+
+type TestTx = GenTx TestBlock
+
+type TestTxId = TxId TestTx
+
+type TestTxError = ApplyTxErr TestBlock
+
+-- There are 5 (core)nodes and each gets 1000.
+testInitLedger :: LedgerState TestBlock
+testInitLedger = genesisSimpleLedgerState $ mkAddrDist (NumCoreNodes 5)
 
 data TestSetup = TestSetup
   { testLedgerState :: LedgerState TestBlock
@@ -419,33 +260,30 @@ data TestSetup = TestSetup
   } deriving (Show)
 
 ppTestSetup :: TestSetup -> String
-ppTestSetup TestSetup { testLedgerState
-                      , testInitialTxs
+ppTestSetup TestSetup { testInitialTxs
                       , testMempoolCap = MempoolCapacityBytes mpCap
                       } = unlines $
-    ["Ledger/chain contains TxIds:"]         <>
-    (map condense (tlTxIds testLedgerState)) <>
-    ["Initial contents of the Mempool:"]     <>
-    (map condense testInitialTxs)            <>
-    ["Mempool capacity:"]                    <>
+    ["Initial contents of the Mempool:"] <>
+    (map condense testInitialTxs)        <>
+    ["Mempool capacity:"]                <>
     [condense mpCap]
 
 -- | Given some transactions, calculate the sum of their sizes in bytes.
-txSizesInBytes :: [GenTx TestBlock] -> TxSizeInBytes
+txSizesInBytes :: [TestTx] -> TxSizeInBytes
 txSizesInBytes = foldl' (\acc tx -> acc + txSize tx) 0
 
 -- | Generate a 'TestSetup' and return the ledger obtained by applying all of
 -- the initial transactions.
 --
--- n.b. the generated 'MempoolCapacityBytes' will be of the value
--- @nbInitialTxs + extraCapacity@
+-- The generated 'testMempoolCap' will be:
+-- > 'txSizesInBytes' 'testInitialTxs' + extraCapacity
 genTestSetupWithExtraCapacity :: Int -> Word32 -> Gen (TestSetup, LedgerState TestBlock)
 genTestSetupWithExtraCapacity maxInitialTxs extraCapacity = do
     ledgerSize   <- choose (0, maxInitialTxs)
     nbInitialTxs <- choose (0, maxInitialTxs)
     (_txs1,  ledger1) <- genValidTxs ledgerSize testInitLedger
     ( txs2,  ledger2) <- genValidTxs nbInitialTxs ledger1
-    let initTxsSizeInBytes = txSizesInBytes (map TestGenTx txs2)
+    let initTxsSizeInBytes = txSizesInBytes txs2
         mpCap = MempoolCapacityBytes (initTxsSizeInBytes + extraCapacity)
         testSetup = TestSetup
           { testLedgerState = ledger1
@@ -463,6 +301,7 @@ instance Arbitrary TestSetup where
   arbitrary = sized $ \n -> do
     extraCapacity <- fromIntegral <$> choose (0, n)
     fst <$> genTestSetupWithExtraCapacity n extraCapacity
+
   shrink TestSetup { testLedgerState
                    , testInitialTxs
                    , testMempoolCap = MempoolCapacityBytes mpCap
@@ -472,9 +311,10 @@ instance Arbitrary TestSetup where
                 , testInitialTxs = testInitialTxs'
                 , testMempoolCap = MempoolCapacityBytes mpCap'
                 }
-    | testInitialTxs' <- shrinkList (const []) testInitialTxs
-    , mpCap' <- shrinkIntegral mpCap
-    , mpCap' > 0
+    | let extraCap = mpCap - txSizesInBytes testInitialTxs
+    , testInitialTxs' <- shrinkList (const []) testInitialTxs
+    , isRight $ txsAreValid testLedgerState testInitialTxs'
+    , let mpCap' = txSizesInBytes testInitialTxs' + extraCap
     ]
 
 -- | Generate a number of valid and invalid transactions and apply the valid
@@ -484,27 +324,49 @@ instance Arbitrary TestSetup where
 genTxs :: Int  -- ^ The number of transactions to generate
        -> LedgerState TestBlock
        -> Gen ([(TestTx, Bool)], LedgerState TestBlock)
-genTxs = go [] Set.empty
+genTxs = go []
   where
-    go txs invalidTxIds n ledger
+    go txs n ledger
       | n <= 0 = return (reverse txs, ledger)
       | otherwise = do
           valid <- arbitrary
           if valid
             then do
-              validTx <- genValidTx invalidTxIds ledger
-              let ledger' = mustBeValid (applyTxToLedger ledger validTx)
-              go ((validTx, True):txs) invalidTxIds (n - 1) ledger'
+              (validTx, ledger') <- genValidTx ledger
+              go ((validTx, True):txs)    (n - 1) ledger'
             else do
-              invalidTx <- genInvalidTx invalidTxIds ledger
-              let invalidTxIds' = Set.insert (testTxId invalidTx) invalidTxIds
-              go ((invalidTx, False):txs) invalidTxIds' (n - 1) ledger
+              invalidTx <- genInvalidTx ledger
+              go ((invalidTx, False):txs) (n - 1) ledger
 
-mustBeValid :: Except TestTxError (LedgerState TestBlock)
+mustBeValid :: HasCallStack
+            => Except TestTxError (LedgerState TestBlock)
             -> LedgerState TestBlock
 mustBeValid ex = case runExcept ex of
   Left _       -> error "impossible"
   Right ledger -> ledger
+
+txIsValid :: LedgerState TestBlock -> TestTx -> Bool
+txIsValid ledgerState tx =
+    isRight $ runExcept $ applyTxToLedger ledgerState tx
+
+txsAreValid
+  :: LedgerState TestBlock
+  -> [TestTx]
+  -> Either TestTxError (LedgerState TestBlock)
+txsAreValid ledgerState txs =
+    runExcept $ repeatedlyM (flip applyTxToLedger) txs ledgerState
+
+validateTxs
+  :: LedgerState TestBlock
+  -> [TestTx]
+  -> ([(TestTx, Bool)], LedgerState TestBlock)
+validateTxs = go []
+  where
+    go revalidated ledgerState = \case
+      []      -> (reverse revalidated, ledgerState)
+      tx:txs' -> case runExcept (applyTxToLedger ledgerState tx) of
+        Left _             -> go ((tx, False):revalidated) ledgerState  txs'
+        Right ledgerState' -> go ((tx, True):revalidated)  ledgerState' txs'
 
 -- | Generate a number of valid transactions and apply these to the given
 -- 'LedgerState'. The transactions and the resulting 'LedgerState' are
@@ -517,69 +379,87 @@ genValidTxs = go []
     go txs n ledger
       | n <= 0 = return (reverse txs, ledger)
       | otherwise = do
-          tx <- genValidTx Set.empty ledger
-          go (tx:txs) (n - 1) (mustBeValid (applyTxToLedger ledger tx))
+          (tx, ledger') <- genValidTx ledger
+          go (tx:txs) (n - 1) ledger'
 
-genValidTx :: Set TestTxId
-              -- ^ Already used for past invalid transactions, these cannot be
-              -- reused. Note that the 'TestTxId's of the valid transactions
-              -- are recorded in the 'LedgerState'.
-           -> LedgerState TestBlock -> Gen TestTx
-genValidTx invalidTxIds TestLedger { tlTxIds } =
-   ValidTestTx <$> genNewTextTxId
+genValidTx :: LedgerState TestBlock -> Gen (TestTx, LedgerState TestBlock)
+genValidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
+    -- Never let someone go broke, otherwise we risk concentrating all the
+    -- wealth in one person. That would be problematic (for the society) but
+    -- also because we wouldn't be able to generate any valid transactions
+    -- anymore.
+
+    let sender
+          | Just (richest, _) <- safeMaximumOn snd $ Map.toList $
+            sum . map snd <$> peopleWithFunds
+          = richest
+          | otherwise
+          = error "no people with funds"
+
+    recipient <- elements $ filter (/= sender) $ Map.keys peopleWithFunds
+    let assets  = peopleWithFunds Map.! sender
+        fortune = sum (map snd assets)
+        ins     = Set.fromList $ map fst assets
+
+    -- At most spent half of someone's fortune
+    amount <- fromIntegral <$> choose (1, fortune `div` 2)
+    let outRecipient = (recipient, amount)
+        outs
+          | amount == fortune
+          = [outRecipient]
+          | otherwise
+          = [outRecipient, (sender, fortune - amount)]
+        tx = mkSimpleGenTx $ Tx ins outs
+    return (tx, mustBeValid (applyTxToLedger ledgerState tx))
   where
-    genNewTextTxId = arbitrary `suchThat` \txid ->
-      txid `notElem` tlTxIds && txid `notElem` invalidTxIds
+    peopleWithFunds :: Map Addr [(TxIn, Amount)]
+    peopleWithFunds = Map.unionsWith (<>)
+      [ Map.singleton addr [(txIn, amount)]
+      | (txIn, (addr, amount)) <- Map.toList utxo
+      ]
 
-genInvalidTx :: Set TestTxId
-                -- ^ Already used for past invalid transactions, these cannot
-                -- be reused. Note that the 'TestTxId's of the valid
-                -- transactions are recorded in the 'LedgerState'.
-             -> LedgerState TestBlock -> Gen TestTx
-genInvalidTx invalidTxIds TestLedger { tlTxIds } = frequency
-    [ (1, InvalidTestTx <$> genNewTextTxId)
-    , (if null tlTxIds then 0 else 1, ValidTestTx <$> elements tlTxIds)
-    ]
-  where
-    genNewTextTxId = arbitrary `suchThat` \txid ->
-      txid `notElem` tlTxIds && txid `notElem` invalidTxIds
-
--- TODO property to check that is never possible for a valid transaction that
--- is in the chain to become invalid afterwards?
+genInvalidTx :: LedgerState TestBlock -> Gen TestTx
+genInvalidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
+    let peopleWithFunds = nub $ map fst $ Map.elems utxo
+    sender    <- elements peopleWithFunds
+    recipient <- elements $ filter (/= sender) peopleWithFunds
+    let assets = filter (\(_, (addr, _)) -> addr == sender) $ Map.toList utxo
+        ins    = Set.fromList $ map fst assets
+    -- There is only 5 000 in 'testInitLedger', so any transaction spending
+    -- more than 5 000 is invalid.
+    amount <- choose (5_001, 10_000)
+    let outs = [(recipient, amount)]
+        tx   = mkSimpleGenTx $ Tx ins outs
+    return $ assert (not (txIsValid ledgerState tx)) tx
 
 -- | Apply a transaction to the ledger
 --
 -- We don't have blocks in this test, but transactions only. In this function
--- we pretend the transaction /is/ a block, apply it (by faking a
--- 'TickedLedgerState'), and then updating the tip of the ledger state,
--- incrementing the slot number and faking a hash.
+-- we pretend the transaction /is/ a block, apply it to the UTxO, and then
+-- update the tip of the ledger state, incrementing the slot number and faking
+-- a hash.
 applyTxToLedger :: LedgerState TestBlock
                 -> TestTx
                 -> Except TestTxError (LedgerState TestBlock)
-applyTxToLedger = \ledgerState tx ->
-    (updateLedgerTipPoint . tickedLedgerState) <$>
-      applyTx LedgerConfig (TestGenTx tx) (notReallyTicked ledgerState)
+applyTxToLedger (SimpleLedgerState mockState) tx =
+    mkNewLedgerState <$> updateMockUTxO tx mockState
   where
-    -- Wrap in 'TickedLedgerState' so that we can call 'applyTx'
-    notReallyTicked :: LedgerState TestBlock -> TickedLedgerState TestBlock
-    notReallyTicked = TickedLedgerState (error "SlotNo unused")
+    mkNewLedgerState mockState' =
+      SimpleLedgerState mockState' { mockTip = BlockPoint slot' hash' }
 
-    -- Update the tip of the ledger state
-    -- (so that the mempool notices the ledger state has changed)
-    updateLedgerTipPoint ledgerState = ledgerState {
-          tlLastApplied = BlockPoint {
-              withHash = fakeHash slot'
-            , atSlot   = slot'
-            }
-        }
-      where
-        fakeHash :: SlotNo -> Word64
-        fakeHash = unSlotNo
+    slot' = case pointSlot $ mockTip mockState of
+      Origin -> 0
+      At s   -> succ s
 
-        slot' :: SlotNo
-        slot' = case ledgerTipSlot ledgerState of
-                  Origin  -> SlotNo 0
-                  At slot -> succ slot
+    -- A little trick to instantiate the phantom parameter of 'Hash' (and
+    -- 'HeaderHash') with 'TestBlock' while actually hashing the slot number:
+    -- use a custom serialiser to instantiate the phantom type parameter with
+    -- @Header TestBlock@, but actually encode the slot number instead.
+    hash' :: HeaderHash TestBlock
+    hash' = hashWithSerialiser fakeEncodeHeader (error "fake header")
+
+    fakeEncodeHeader :: Header TestBlock -> Encoding
+    fakeEncodeHeader _ = toCBOR slot'
 
 {-------------------------------------------------------------------------------
   TestSetupWithTxs
@@ -598,13 +478,13 @@ ppTxs txs = unlines $
     | (tx, valid) <- txs]
 
 allTxs :: TestSetupWithTxs -> [GenTx TestBlock]
-allTxs = map (TestGenTx . fst) . txs
+allTxs = map fst . txs
 
 validTxs :: TestSetupWithTxs -> [GenTx TestBlock]
-validTxs = map (TestGenTx . fst) . filter snd . txs
+validTxs = map fst . filter snd . txs
 
 invalidTxs :: TestSetupWithTxs -> [GenTx TestBlock]
-invalidTxs = map (TestGenTx . fst) . filter (not . snd) . txs
+invalidTxs = map fst . filter (not . snd) . txs
 
 instance Arbitrary TestSetupWithTxs where
   arbitrary = sized $ \n -> do
@@ -614,9 +494,10 @@ instance Arbitrary TestSetupWithTxs where
     let MempoolCapacityBytes mpCap = testMempoolCap testSetup
         testSetup' = testSetup
           { testMempoolCap = MempoolCapacityBytes $
-              mpCap + txSizesInBytes (map (TestGenTx . fst) txs)
+              mpCap + txSizesInBytes (map fst txs)
           }
     return TestSetupWithTxs { testSetup = testSetup', txs }
+
   shrink TestSetupWithTxs { testSetup, txs } =
       [ TestSetupWithTxs { testSetup = testSetup', txs }
       | testSetup' <- shrink testSetup ] <>
@@ -627,17 +508,13 @@ instance Arbitrary TestSetupWithTxs where
 
 revalidate :: TestSetup -> [TestTx] -> [(TestTx, Bool)]
 revalidate TestSetup { testLedgerState, testInitialTxs } =
-    go initLedgerState []
+    fst . validateTxs initLedgerState
   where
     -- The LedgerState after adding the transactions initially in the mempool
-    initLedgerState = foldl' (\l tx -> mustBeValid (applyTxToLedger l tx))
-                         testLedgerState testInitialTxs
-
-    go ledgerState revalidated txs = case txs of
-      []      -> reverse revalidated
-      tx:txs' -> case runExcept (applyTxToLedger ledgerState tx) of
-        Left _             -> go ledgerState  ((tx, False):revalidated) txs'
-        Right ledgerState' -> go ledgerState' ((tx, True):revalidated)  txs'
+    initLedgerState = repeatedly
+      (\tx l -> mustBeValid (applyTxToLedger l tx))
+      testInitialTxs
+      testLedgerState
 
 {-------------------------------------------------------------------------------
   TestSetupWithTxInMempol: a mempool and a transaction that is in the mempool
@@ -655,6 +532,7 @@ instance Arbitrary TestSetupWithTxInMempool where
       arbitrary `suchThat` (not . null . testInitialTxs . testSetup)
     tx <- elements (testInitialTxs testSetup)
     return $ TestSetupWithTxInMempool testSetup tx
+
   shrink (TestSetupWithTxInMempool testSetup _tx) =
     [ TestSetupWithTxInMempool testSetup tx'
     | testSetup' <- shrink testSetup
@@ -687,8 +565,13 @@ data TestMempool m = TestMempool
     --
     -- Remember to synchronise the mempool afterwards.
   , addTxsToLedger   :: [TestTx] -> STM m [Either TestTxError ()]
+
+    -- | Return the current ledger.
+  , getCurrentLedger :: STM m (LedgerState TestBlock)
   }
 
+-- NOTE: at the end of the test, this function also checks whether the Mempool
+-- contents are valid w.r.t. the current ledger.
 withTestMempool
   :: forall prop. Testable prop
   => TestSetup
@@ -700,7 +583,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
     classify (not (null testInitialTxs)) "non-empty Mempool" $
     runSimOrThrow setUpAndRun
   where
-    cfg = LedgerConfig
+    cfg = SimpleLedgerConfig
 
     setUpAndRun :: forall m. IOLike m => m Property
     setUpAndRun = do
@@ -721,7 +604,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
                                               cfg
                                               testMempoolCap
                                               tracer
-      result  <- addTxs mempool (map TestGenTx testInitialTxs)
+      result  <- addTxs mempool testInitialTxs
       whenJust (find (isJust . snd) result) $ \(invalidTx, _) -> error $
         "Invalid initial transaction: " <> condense invalidTx
 
@@ -729,12 +612,18 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
       atomically $ writeTVar varEvents []
 
       -- Apply the property to the 'TestMempool' record
-      property <$> prop TestMempool
+      res <- property <$> prop TestMempool
         { mempool
         , getTraceEvents   = atomically $ reverse <$> readTVar varEvents
         , eraseTraceEvents = atomically $ writeTVar varEvents []
         , addTxsToLedger   = addTxsToLedger varCurrentLedgerState
+        , getCurrentLedger = readTVar varCurrentLedgerState
         }
+      validContents <- atomically $
+            checkMempoolValidity
+        <$> readTVar varCurrentLedgerState
+        <*> getSnapshot mempool
+      return $ res .&&. validContents
 
     addTxToLedger :: forall m. IOLike m
                   => StrictTVar m (LedgerState TestBlock)
@@ -755,133 +644,27 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
     addTxsToLedger varCurrentLedgerState txs =
       mapM (addTxToLedger varCurrentLedgerState) txs
 
-{-------------------------------------------------------------------------------
-  MempoolCapTestSetup
--------------------------------------------------------------------------------}
-
-data MempoolCapTestSetup = MempoolCapTestSetup
-  { mctsTestSetup :: TestSetup
-  , mctsValidTxs  :: [TestTx]
-  , mctsCapacity  :: MempoolCapacityBytes
-  } deriving (Show)
-
-instance Arbitrary MempoolCapTestSetup where
-  -- TODO: shrink
-  arbitrary = do
-    let nbInitialTxs = 0
-    nbNewTxs <- choose (2, 1000)
-
-    -- In this call to 'genTestSetup', the generated mempool capacity will be
-    -- just enough to hold the @nbInitialTxs@ initial transactions generated.
-    -- However, for the mempool capacity test, we don't want to prefill the
-    -- mempool with transactions but, rather, generate our own set of valid
-    -- transactions to manually add to the mempool. Because of this, we've set
-    -- @nbInitialTxs@ to 0 which will result in a generated mempool capacity
-    -- of 0 bytes.
-    --
-    -- Therefore, once we generate the valid transactions to use in the test,
-    -- we will adjust the mempool capacity before returning.
-    (testSetup, ledger) <- genTestSetup nbInitialTxs
-
-    -- Generate some valid transactions that will be added to the mempool as
-    -- part of a mempool capacity test.
-    (vtxs, _) <- genValidTxs nbNewTxs ledger
-
-    let vTestGenTxs = map TestGenTx vtxs
-        txSizes = map txSize vTestGenTxs
-        -- The mempool should /at least/ be able to hold the largest of our
-        -- transactions. If we don't guarantee this, it's possible that a call
-        -- to 'addTxs' could block forever when trying to add a transaction
-        -- that has a size larger than the capacity. If the mempool capacity
-        -- is at least that of our largest transaction, this is no longer a
-        -- possibility.
-        capacityMinBound = maximum txSizes
-        -- The maximum mempool capacity should be the sum of all of the
-        -- transaction sizes.
-        capacityMaxBound = sum txSizes
-    capacity <- choose
-      ( capacityMinBound
-      , capacityMaxBound
-      )
-
-    -- As mentioned above, we need to adjust the originally generated mempool
-    -- capacity with our newly generated one.
-    let testSetup' = testSetup
-          { testMempoolCap = MempoolCapacityBytes capacity }
-
-    pure MempoolCapTestSetup { mctsTestSetup = testSetup'
-                             , mctsValidTxs  = vtxs
-                             , mctsCapacity  = MempoolCapacityBytes capacity
-                             }
-
--- | Split the given transactions at the point at which those on the left-hand
--- side would be just enough to fill the mempool to capacity.
-splitTxsUntilCap :: [GenTx TestBlock]
-                 -> MempoolCapacityBytes
-                 -> ([GenTx TestBlock], [GenTx TestBlock])
-splitTxsUntilCap txs (MempoolCapacityBytes mpCap) = go 0 [] txs
-  where
-    go :: Word32
-       -> [GenTx TestBlock]
-       -> [GenTx TestBlock]
-       -> ([GenTx TestBlock], [GenTx TestBlock])
-    go _ accTxs [] = (reverse accTxs, [])
-    go accByteSize accTxs (t:ts)
-      | let accByteSize' = (txSize t + accByteSize)
-      , accByteSize' <= mpCap
-      = go accByteSize' (t:accTxs) ts
-      | otherwise = (reverse accTxs, t:ts)
-
--- | Given the 'MempoolCapTestSetup', compute the trace of events which we can
--- expect from a mempool capacity test.
-mempoolCapTestExpectedTrace :: MempoolCapTestSetup
-                            -> [TraceEventMempool TestBlock]
-mempoolCapTestExpectedTrace mcts =
-    concatMap chunkExpectedTrace (chunks $ map TestGenTx mctsValidTxs)
-  where
-    MempoolCapTestSetup
-      { mctsValidTxs
-      , mctsCapacity
-      } = mcts
-
-    chunks :: [GenTx TestBlock] -> [[GenTx TestBlock]]
-    chunks []  = []
-    chunks txs = chunk : chunks txs'
+    -- | Check whether the transactions in the 'MempoolSnapshot' are valid
+    -- w.r.t. the current ledger state.
+    checkMempoolValidity :: LedgerState TestBlock
+                         -> MempoolSnapshot TestBlock TicketNo
+                         -> Property
+    checkMempoolValidity ledgerState MempoolSnapshot { snapshotTxs } =
+        case runExcept $ repeatedlyM
+               (applyTx SimpleLedgerConfig)
+               txs
+               (notReallyTicked ledgerState) of
+          Right _ -> property True
+          Left  e -> counterexample (mkErrMsg e) $ property False
       where
-        (chunk, txs') = splitTxsUntilCap txs mctsCapacity
+        -- Wrap in 'TickedLedgerState' so that we can call 'applyTx'
+        notReallyTicked :: LedgerState TestBlock -> TickedLedgerState TestBlock
+        notReallyTicked = TickedLedgerState (error "SlotNo unused")
 
-    chunkExpectedTrace chunk =
-      [ TraceMempoolAddTxs    chunk (txsToMempoolSize chunk)
-      , TraceMempoolRemoveTxs chunk mempty
-      ]
-
-{-------------------------------------------------------------------------------
-  MempoolCapTestEnv: environment for tests related to mempool capacity
--------------------------------------------------------------------------------}
-
--- | A data type containing 'StrictTVar's by which the two threads spawned by
--- 'prop_Mempool_Capacity' can coordinate with each other.
-data MempoolCapTestEnv m = MempoolCapTestEnv
-  { mctEnvAddedTxs             :: StrictTVar m Int
-    -- ^ The total number of transactions which have been added to the
-    -- mempool.
-  , mctEnvRemovedTxs           :: StrictTVar m Int
-    -- ^ The number of transactions which have been removed from the mempool
-    -- and added to the ledger.
-  , mctEnvBytesToBeAddedForCap :: StrictTVar m Word32
-    -- ^ The number of bytes that need to be added to the mempool to reach
-    -- full capacity.
-  }
-
-initMempoolCapTestEnv :: IOLike m => m (MempoolCapTestEnv m)
-initMempoolCapTestEnv = do
-  added     <- uncheckedNewTVarM 0
-  removed   <- uncheckedNewTVarM 0
-  toBeAdded <- uncheckedNewTVarM 0
-  pure $ MempoolCapTestEnv { mctEnvAddedTxs             = added
-                           , mctEnvRemovedTxs           = removed
-                           , mctEnvBytesToBeAddedForCap = toBeAdded
-                           }
+        txs = map fst snapshotTxs
+        mkErrMsg e =
+          "At the end of the test, the Mempool contents were invalid: " <>
+          show e
 
 {-------------------------------------------------------------------------------
   TxSeq Properties
@@ -1005,16 +788,11 @@ txSizeSplitTestSetupToTxSeq TxSizeSplitTestSetup { tssTxSizes } =
   TicketNo Properties
 -------------------------------------------------------------------------------}
 
--- Testing plan:
+-- | Testing plan:
 --
 -- * Perform a number of actions: either add a new valid transaction to the
 --   Mempool (invalid transactions have no effect on the @idx@s) or remove an
 --   existing transaction from the Mempool.
---
--- * Adding a transaction is easy. Removing one is harder: we do this by
---   adding that transaction to the ledger and syncing the Mempool with the
---   ledger. As the transaction is now in the ledger, it is no longer valid
---   and must be removed from the Mempool.
 --
 -- * After executing each action, check whether the current ticket assignment
 --   is still consistent with the expected ticket assignment. The ticket
@@ -1031,7 +809,7 @@ prop_Mempool_idx_consistency :: Actions -> Property
 prop_Mempool_idx_consistency (Actions actions) =
     withTestMempool emptyTestSetup $ \testMempool@TestMempool { mempool } ->
       fmap conjoin $ forM actions $ \action -> do
-        txsInMempool      <- map (unTestGenTx . fst) . snapshotTxs <$>
+        txsInMempool      <- map fst . snapshotTxs <$>
                              atomically (getSnapshot mempool)
         actionProp        <- executeAction testMempool action
         currentAssignment <- currentTicketAssignment mempool
@@ -1065,8 +843,8 @@ prop_Mempool_idx_consistency (Actions actions) =
       }
 
     lastOfMempoolRemoved txsInMempool = \case
-      AddTx    _  -> False
-      RemoveTx tx -> last txsInMempool == tx
+      AddTxs    _   -> False
+      RemoveTxs txs -> last txsInMempool `elem` txs
 
     isConsistentWith curAsgn expAsgn
       | curAsgn `Map.isSubmapOf` expAsgn
@@ -1082,8 +860,11 @@ prop_Mempool_idx_consistency (Actions actions) =
 -------------------------------------------------------------------------------}
 
 data Action
-  = AddTx    TestTx
-  | RemoveTx TestTx
+  = AddTxs    [TestTx]
+    -- ^ When part of 'Actions', all these transactions are valid.
+  | RemoveTxs [TestTx]
+    -- ^ When part of 'Actions', removing these transactions will not
+    -- invalidate any other transactions.
   deriving (Show)
 
 newtype Actions = Actions [Action]
@@ -1101,41 +882,40 @@ expectedTicketAssignment actions =
     evalState (foldM addMapping mempty actions) (succ zeroTicketNo)
   where
     addMapping :: TicketAssignment -> Action -> State TicketNo TicketAssignment
-    addMapping mapping (RemoveTx _tx) = return mapping
-    addMapping mapping (AddTx     tx) = do
-      nextTicketNo <- get
-      modify succ
-      return $ Map.insert nextTicketNo (testTxId tx) mapping
+    addMapping mapping (RemoveTxs _txs) = return mapping
+    addMapping mapping (AddTxs     txs) = do
+      newMappings <- forM txs $ \tx -> do
+        nextTicketNo <- get
+        modify succ
+        return (nextTicketNo, txId tx)
+      return $ Map.union mapping (Map.fromList newMappings)
 
 -- | Executes the action and verifies that it is actually executed using the
 -- tracer, hence the 'Property' in the return type.
 executeAction :: forall m. IOLike m => TestMempool m -> Action -> m Property
 executeAction testMempool action = case action of
-    AddTx tx -> do
-      void $ addTxs [TestGenTx tx]
+    AddTxs txs -> do
+      void $ addTxs txs
       expectTraceEvent $ \case
-        TraceMempoolAddTxs [TestGenTx tx'] _
-          | tx == tx'
+        TraceMempoolAddTxs txs' _
+          | sort txs == sort txs'
           -> property True
-        _ -> counterexample ("Transaction not added: " <> condense tx) False
+        _ -> counterexample ("Transactions not added: " <> condense txs) False
 
-    RemoveTx tx -> do
-      void $ atomically $ addTxsToLedger [tx]
-      -- Synchronise the Mempool with the updated chain
-      void $ syncWithLedger
+    RemoveTxs txs -> do
+      removeTxs (map txId txs)
       expectTraceEvent $ \case
-        TraceMempoolRemoveTxs [TestGenTx tx'] _
-          | tx == tx'
+        TraceMempoolManuallyRemovedTxs txIds' [] _
+          | sort (map txId txs) == sort txIds'
           -> property True
-        _ -> counterexample ("Transaction not removed: " <> condense tx) False
+        _ -> counterexample ("Transactions not removed: " <> condense txs) False
   where
     TestMempool
       { mempool
       , eraseTraceEvents
       , getTraceEvents
-      , addTxsToLedger
       } = testMempool
-    Mempool { addTxs, syncWithLedger } = mempool
+    Mempool { addTxs, removeTxs } = mempool
 
     expectTraceEvent :: (TraceEventMempool TestBlock -> Property) -> m Property
     expectTraceEvent checker = do
@@ -1151,27 +931,40 @@ currentTicketAssignment :: IOLike m
 currentTicketAssignment Mempool { syncWithLedger } = do
     MempoolSnapshot { snapshotTxs } <- syncWithLedger
     return $ Map.fromList
-      [ (ticketNo, testTxId (unTestGenTx tx))
+      [ (ticketNo, txId tx)
       | (tx, ticketNo) <- snapshotTxs
       ]
 
 instance Arbitrary Actions where
-  arbitrary = sized $ \n -> do
-      -- Note the use of 'nub' to avoid duplicates, because that would lead to
-      -- collisions in the map.
-      txsToAdd <- shuffle . nub . fst =<< genValidTxs n testInitLedger
-      go n [] txsToAdd []
-    where
-      go :: Int       -- ^ Number of actions left to generate
-         -> [Action]  -- ^ Already generated actions
-         -> [TestTx]  -- ^ Transactions that can still be added
-         -> [TestTx]  -- ^ Transactions that can still be removed
-         -> Gen Actions
-      go n actions toAdd toRem = case (toAdd, toRem) of
-        _ | n <= 0                   -> return $ Actions (reverse actions)
-        ([],           [])           -> return $ Actions (reverse actions)
-        ([],           txRem:toRem') -> go (n - 1) (RemoveTx txRem:actions) [txRem] toRem'
-        (txAdd:toAdd', [])           -> go (n - 1) (AddTx    txAdd:actions) toAdd'  [txAdd]
-        (txAdd:toAdd', txRem:toRem') -> arbitrary >>= \case
-          True  -> go (n - 1) (AddTx    txAdd:actions) toAdd' toRem
-          False -> go (n - 1) (RemoveTx txRem:actions) toAdd  toRem'
+  arbitrary = sized $ genActions (choose (1, 3))
+
+genActions
+  :: Gen Int  -- ^ Generate the number of transactions to add
+  -> Int      -- ^ How many actions
+  -> Gen Actions
+genActions genNbToAdd = go testInitLedger mempty mempty
+  where
+    go :: LedgerState TestBlock
+          -- ^ Current ledger state with the contents of the Mempool applied
+       -> [TestTx]  -- ^ Transactions currently in the Mempool
+       -> [Action]  -- ^ Already generated actions
+       -> Int       -- ^ Number of actions left to generate
+       -> Gen Actions
+    go ledger txs actions n
+      | n <= 0    = return $ Actions (reverse actions)
+      | otherwise = arbitrary >>= \case
+        True
+          | not (null txs)
+            -- Remove a transaction (or multiple), but only if there are
+            -- transactions to remove
+          -> do
+          tx <- elements txs
+          let ((vTxs, iTxs), ledger') = first (partition snd) $
+                validateTxs testInitLedger (filter (/= tx) txs)
+              txs'       = map fst vTxs
+              removedTxs = tx : map fst iTxs
+          go ledger' txs' (RemoveTxs removedTxs:actions) (n - 1)
+        _ -> do
+          nbToAdd <- genNbToAdd
+          (txs', ledger') <- genValidTxs nbToAdd ledger
+          go ledger' (txs' <> txs) (AddTxs txs':actions) (n - 1)
