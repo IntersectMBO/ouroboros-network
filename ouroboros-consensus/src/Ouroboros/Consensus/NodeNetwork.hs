@@ -585,9 +585,9 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
 
 chainDbView :: IOLike m => ChainDB m blk -> ChainDbView m blk
 chainDbView chainDB = ChainDbView
-  { getCurrentChain   = ChainDB.getCurrentChain       chainDB
-  , getCurrentLedger  = ChainDB.getCurrentLedger      chainDB
-  , getOurTip         = Tip <$> ChainDB.getTipPoint   chainDB
-                            <*> ChainDB.getTipBlockNo chainDB
-  , getIsInvalidBlock = ChainDB.getIsInvalidBlock     chainDB
+  { getCurrentChain   = ChainDB.getCurrentChain             chainDB
+  , getCurrentLedger  = ChainDB.getCurrentLedger            chainDB
+  , getOurTip         = legacyTip <$> ChainDB.getTipPoint   chainDB
+                                  <*> ChainDB.getTipBlockNo chainDB
+  , getIsInvalidBlock = ChainDB.getIsInvalidBlock           chainDB
   }

@@ -31,8 +31,8 @@ import           Network.TypedProtocol.Proofs (connect, connectPipelined)
 
 import           Ouroboros.Network.Channel
 
-import           Ouroboros.Network.Block (StandardHash, Tip (..), decodeTip,
-                     encodeTip, Serialised (..), castPoint)
+import           Ouroboros.Network.Block (Serialised (..), StandardHash,
+                     Tip (..), castPoint, decodeTip, encodeTip, legacyTip)
 import           Ouroboros.Network.MockChain.Chain (Chain, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
@@ -365,14 +365,14 @@ genChainSync genPoint genHeader genTip = oneof
 instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))) where
   arbitrary = genChainSync arbitrary arbitrary genTip
     where
-      genTip = Tip <$> arbitrary <*> arbitrary
+      genTip = legacyTip <$> arbitrary <*> arbitrary
 
 instance Arbitrary (AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))) where
   arbitrary = genChainSync (castPoint <$> genPoint)
                            (serialiseBlock <$> arbitrary)
                            genTip
     where
-      genTip = Tip <$> arbitrary <*> arbitrary
+      genTip = legacyTip <$> arbitrary <*> arbitrary
 
       genPoint :: Gen (Point BlockHeader)
       genPoint = arbitrary
@@ -507,7 +507,7 @@ prop_codec_binary_compat_ChainSyncSerialised_ChainSync msg =
     stokEq (ClientAgency ca) = case ca of
       TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
     stokEq (ServerAgency sa) = case sa of
-      TokNext k     -> SamePeerHasAgency $ ServerAgency (TokNext k)
+      TokNext k    -> SamePeerHasAgency $ ServerAgency (TokNext k)
       TokIntersect -> SamePeerHasAgency $ ServerAgency TokIntersect
 
 chainSyncDemo
