@@ -1,4 +1,7 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+
 module Ouroboros.Consensus.Node.Tracers
   ( -- * All tracers of a node bundled together
     Tracers' (..)
@@ -51,6 +54,25 @@ data Tracers' peer blk f = Tracers
   , forgeTracer                   :: f (TraceForgeEvent blk (GenTx blk))
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
   }
+
+instance (forall a. Semigroup (f a)) => Semigroup (Tracers' peer blk f) where
+  l <> r = Tracers
+    { chainSyncClientTracer         = f chainSyncClientTracer
+    , chainSyncServerHeaderTracer   = f chainSyncServerHeaderTracer
+    , chainSyncServerBlockTracer    = f chainSyncServerBlockTracer
+    , blockFetchDecisionTracer      = f blockFetchDecisionTracer
+    , blockFetchClientTracer        = f blockFetchClientTracer
+    , blockFetchServerTracer        = f blockFetchServerTracer
+    , txInboundTracer               = f txInboundTracer
+    , txOutboundTracer              = f txOutboundTracer
+    , localTxSubmissionServerTracer = f localTxSubmissionServerTracer
+    , mempoolTracer                 = f mempoolTracer
+    , forgeTracer                   = f forgeTracer
+    , blockchainTimeTracer          = f blockchainTimeTracer
+    }
+    where
+      f :: forall a. Semigroup a => (Tracers' peer blk f -> a) -> a
+      f prj = prj l <> prj r
 
 -- | A record of 'Tracer's for the node.
 type Tracers m peer blk = Tracers' peer blk (Tracer m)

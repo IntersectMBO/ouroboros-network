@@ -266,6 +266,7 @@ runThreadNetwork ThreadNetworkArgs
         forkBothEdges
           sharedRegistry
           sharedBtime
+          -- traces when/why the mini protocol instances start and stop
           nullDebugTracer
           vertexStatusVars
           uedge
@@ -543,21 +544,24 @@ runThreadNetwork ThreadNetworkArgs
         , cdbAddHdrEnv        = nodeAddHeaderEnvelope (Proxy @blk)
         , cdbImmDbCacheConfig = Index.CacheConfig 2 60
         -- Misc
-        , cdbTracer           = Tracer $ \case
-              ChainDB.TraceAddBlockEvent
-                  (ChainDB.AddBlockValidation ChainDB.InvalidBlock
-                      { _invalidPoint  = p
-                      , _validationErr = e
-                      })
-                  -> traceWith invalidTracer (p, e)
-              ChainDB.TraceAddBlockEvent
-                  (ChainDB.AddedBlockToVolDB p bno IsNotEBB)
-                  -> traceWith addTracer (p, bno)
-              _   -> pure ()
-        , cdbTraceLedger      = nullTracer
+        , cdbTracer           = instrumentationTracer <> nullDebugTracer
+        , cdbTraceLedger      = nullDebugTracer
         , cdbRegistry         = registry
         , cdbGcDelay          = 0
         }
+      where
+        -- prop_general relies on this tracer
+        instrumentationTracer = Tracer $ \case
+          ChainDB.TraceAddBlockEvent
+              (ChainDB.AddBlockValidation ChainDB.InvalidBlock
+                  { _invalidPoint  = p
+                  , _validationErr = e
+                  })
+              -> traceWith invalidTracer (p, e)
+          ChainDB.TraceAddBlockEvent
+              (ChainDB.AddedBlockToVolDB p bno IsNotEBB)
+              -> traceWith addTracer (p, bno)
+          _   -> pure ()
 
     forkNode
       :: HasCallStack
@@ -586,13 +590,16 @@ runThreadNetwork ThreadNetworkArgs
             , nodeInfoDBs
             } = nodeInfo
 
+      -- prop_general relies on these tracers
+      let invalidTracer = (nodeEventsInvalids nodeInfoEvents)
+          addTracer = Tracer $ \(p, bno) -> do
+            s <- atomically $ getCurrentSlot btime
+            traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno)
       let chainDbArgs = mkArgs
             btime registry
             pInfoConfig pInfoInitLedger epochInfo
-            (nodeEventsInvalids nodeInfoEvents)
-            (Tracer $ \(p, bno) -> do
-                s <- atomically $ getCurrentSlot btime
-                traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno))
+            invalidTracer
+            addTracer
             nodeInfoDBs
       chainDB <- snd <$>
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
@@ -604,16 +611,21 @@ runThreadNetwork ThreadNetworkArgs
       -- variable in order to unblock the node's block production thread.
       nextEbbSlotVar <- uncheckedNewTVarM 0
 
+      -- prop_general relies on these tracers
+      let instrumentationTracers = nullTracers
+            { forgeTracer       = Tracer $ \case
+                TraceStartLeadershipCheck s -> do
+                  atomically $ do
+                    lim <- readTVar nextEbbSlotVar
+                    check $ s < lim
+                o                           -> do
+                  traceWith (nodeEventsForges nodeInfoEvents) o
+            }
       let nodeArgs = NodeArgs
-            { tracers             = nullDebugTracers
-                { forgeTracer       = Tracer $ \case
-                    TraceStartLeadershipCheck s -> do
-                      atomically $ do
-                        lim <- readTVar nextEbbSlotVar
-                        check $ s < lim
-                    o                       -> do
-                      traceWith (nodeEventsForges nodeInfoEvents) o
-                }
+            { tracers             =
+                -- traces the node's local events other than those from the
+                -- ChainDB
+                instrumentationTracers <> nullDebugTracers
             , registry
             , maxClockSkew        = ClockSkew 1
             , cfg                 = pInfoConfig
@@ -633,6 +645,8 @@ runThreadNetwork ThreadNetworkArgs
       nodeKernel <- initNodeKernel nodeArgs
       let app = consensusNetworkApps
                   nodeKernel
+                  -- these tracers report every message sent/received by this
+                  -- node
                   nullDebugProtocolTracers
                   (customProtocolCodecs pInfoConfig)
                   (protocolHandlers nodeArgs nodeKernel)
@@ -1029,9 +1043,11 @@ mkTestOutput vertexInfos = do
   Constraints needed for verbose tracing
 -------------------------------------------------------------------------------}
 
+-- | Occurs throughout in positions that might be useful for debugging.
 nullDebugTracer :: (Applicative m, Show a) => Tracer m a
 nullDebugTracer = nullTracer `asTypeOf` showTracing debugTracer
 
+-- | Occurs throughout in positions that might be useful for debugging.
 nullDebugTracers ::
      ( Monad m
      , Show peer
@@ -1042,6 +1058,7 @@ nullDebugTracers ::
   => Tracers m peer blk
 nullDebugTracers = nullTracers `asTypeOf` showTracers debugTracer
 
+-- | Occurs throughout in positions that might be useful for debugging.
 nullDebugProtocolTracers ::
      ( Monad m
      , HasHeader blk
