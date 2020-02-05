@@ -73,6 +73,7 @@ import qualified Ouroboros.Consensus.BlockFetchServer as BFServer
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import qualified Ouroboros.Consensus.ChainSyncClient as CSClient
 import           Ouroboros.Consensus.ChainSyncServer (Tip)
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
@@ -484,12 +485,8 @@ runThreadNetwork ThreadNetworkArgs
                   Origin -> True
                   At s   -> s >= (ebbSlotNo - min ebbSlotNo (2 * k))
                 bno <- ChainDB.getTipBlockNo chainDB
-                -- TODO: We should not make assumptions about the underlying
-                -- ledger. We will fix this in
-                -- <https://github.com/input-output-hk/ouroboros-network/issues/1571>
-                let firstBlockNo = BlockNo 0
                 -- The EBB shares its BlockNo with its predecessor (if there is one)
-                pure (mSlot, fromWithOrigin firstBlockNo bno, pointHash p)
+                pure (mSlot, fromWithOrigin (firstBlockNo (Proxy @blk)) bno, pointHash p)
               when (prevSlot < At ebbSlotNo) $ do
                 let ebb = forgeEBB cfg ebbSlotNo ebbBlockNo prevHash
                 ChainDB.addBlock chainDB ebb
@@ -518,12 +515,14 @@ runThreadNetwork ThreadNetworkArgs
         , cdbDecodeHeader     = nodeDecodeHeader      cfg
         , cdbDecodeLedger     = nodeDecodeLedgerState cfg
         , cdbDecodeChainState = nodeDecodeChainState (Proxy @blk) cfg
+        , cdbDecodeTipInfo    = nodeDecodeTipInfo    (Proxy @blk)
           -- Encoders
         , cdbEncodeHash       = nodeEncodeHeaderHash (Proxy @blk)
         , cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
         , cdbEncodeHeader     = nodeEncodeHeader        cfg
         , cdbEncodeLedger     = nodeEncodeLedgerState   cfg
         , cdbEncodeChainState = nodeEncodeChainState (Proxy @blk) cfg
+        , cdbEncodeTipInfo    = nodeEncodeTipInfo    (Proxy @blk)
           -- Error handling
         , cdbErrImmDb         = EH.monadCatch
         , cdbErrVolDb         = EH.monadCatch

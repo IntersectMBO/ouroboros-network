@@ -66,6 +66,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Storage.Common
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
@@ -328,16 +329,16 @@ dualExtLedgerStateMain :: Bridge m a
                        => ExtLedgerState (DualBlock m a)
                        -> ExtLedgerState m
 dualExtLedgerStateMain ExtLedgerState{..} = ExtLedgerState{
-      ledgerState         = dualLedgerStateMain ledgerState
-    , ouroborosChainState = ouroborosChainState
+      ledgerState = dualLedgerStateMain ledgerState
+    , headerState = castHeaderState     headerState
     }
 
 dualExtValidationErrorMain :: Bridge m a
                            => ExtValidationError (DualBlock m a)
                            -> ExtValidationError m
 dualExtValidationErrorMain = \case
-    ExtValidationErrorLedger    e -> ExtValidationErrorLedger (dualLedgerErrorMain e)
-    ExtValidationErrorOuroboros e -> ExtValidationErrorOuroboros e
+    ExtValidationErrorLedger e -> ExtValidationErrorLedger (dualLedgerErrorMain e)
+    ExtValidationErrorHeader e -> ExtValidationErrorHeader (castHeaderError     e)
 
 {-------------------------------------------------------------------------------
   ProtocolLedgerView
@@ -345,6 +346,19 @@ dualExtValidationErrorMain = \case
   These definitions are asymmetric because the auxiliary block is not involved
   in the consensus protocol, and has no 'ProtocolLedgerView' instance.
 -------------------------------------------------------------------------------}
+
+instance Bridge m a => HasAnnTip (DualBlock m a) where
+  type TipInfo (DualBlock m a) = TipInfo m
+  getTipInfo = getTipInfo . dualHeaderMain
+
+instance Bridge m a => ValidateEnvelope (DualBlock m a) where
+  validateEnvelope cfg t =
+        withExcept castHeaderEnvelopeError
+      . validateEnvelope (extNodeConfigP cfg) (castAnnTip <$> t)
+      . dualHeaderMain
+
+  firstBlockNo          _ = firstBlockNo          (Proxy @m)
+  minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @m)
 
 instance Bridge m a => ProtocolLedgerView (DualBlock m a) where
   ledgerConfigView cfg = DualLedgerConfig {

@@ -32,13 +32,15 @@ import           Data.Bifunctor
 import qualified Data.Bifunctor.TH as TH
 import           Data.Bitraversable
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Foldable (toList)
 import           Data.Functor.Classes (Eq1, Show1)
 import           Data.Functor.Identity (Identity (..))
 import           Data.List (sortOn)
 import qualified Data.Map as Map
 import           Data.Ord (Down (..))
 import           Data.Proxy
-import           Data.TreeDiff (ToExpr)
+import           Data.Sequence.Strict (StrictSeq)
+import           Data.TreeDiff (ToExpr (..))
 import           Data.Typeable
 import           Data.Word (Word16, Word32)
 import           GHC.Generics (Generic)
@@ -73,6 +75,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
                      (settableBlockchainTime)
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
@@ -1029,7 +1032,7 @@ deriving instance Generic (Chain blk)
 deriving instance Generic (ChainProducerState blk)
 deriving instance Generic (ReaderState blk)
 
-deriving instance ( ToExpr (ChainState (BlockProtocol blk))
+deriving instance ( ToExpr (HeaderState blk)
                   , ToExpr (LedgerState blk)
                   )
                  => ToExpr (ExtLedgerState blk)
@@ -1054,15 +1057,15 @@ deriving instance ( ToExpr (HeaderHash blk)
                   )
                  => ToExpr (InvalidBlockReason blk)
 deriving instance ( ToExpr blk
-                  , ToExpr (HeaderHash blk)
-                  , ToExpr (ChainState (BlockProtocol blk))
+                  , ToExpr (HeaderHash  blk)
+                  , ToExpr (HeaderState blk)
                   , ToExpr (LedgerState blk)
                   , ToExpr (ExtValidationError blk)
                   )
                  => ToExpr (DBModel blk)
 deriving instance ( ToExpr blk
-                  , ToExpr (HeaderHash blk)
-                  , ToExpr (ChainState (BlockProtocol blk))
+                  , ToExpr (HeaderHash  blk)
+                  , ToExpr (HeaderState blk)
                   , ToExpr (LedgerState blk)
                   , ToExpr (ExtValidationError blk)
                   )
@@ -1077,9 +1080,16 @@ deriving instance ToExpr TestBody
 deriving instance ToExpr TestBodyHash
 deriving instance ToExpr TestBlockError
 deriving instance ToExpr Blk
+deriving instance ToExpr (AnnTip Blk)
 deriving instance ToExpr (LedgerState Blk)
+deriving instance ToExpr (HeaderState Blk)
+deriving instance ToExpr (HeaderError Blk)
+deriving instance ToExpr (HeaderEnvelopeError Blk)
 deriving instance ToExpr BftValidationErr
 deriving instance ToExpr (ExtValidationError Blk)
+
+instance ToExpr a => ToExpr (StrictSeq a) where
+  toExpr = toExpr . toList
 
 {-------------------------------------------------------------------------------
   Labelling
@@ -1420,6 +1430,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbDecodeHeader     = const <$> decode
     , cdbDecodeLedger     = decode
     , cdbDecodeChainState = decode
+    , cdbDecodeTipInfo    = decode
 
       -- Encoders
     , cdbEncodeHash       = encode
@@ -1427,6 +1438,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbEncodeHeader     = encode
     , cdbEncodeLedger     = encode
     , cdbEncodeChainState = encode
+    , cdbEncodeTipInfo    = encode
 
       -- Error handling
     , cdbErrImmDb         = EH.monadCatch

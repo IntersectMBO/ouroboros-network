@@ -82,6 +82,7 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust)
+import           Data.Proxy
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -96,6 +97,7 @@ import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -365,11 +367,8 @@ addBlock cfg blk m
     secParam = protocolSecurityParam cfg
 
     -- If we switch to PBFT for these tests, this case is not required anymore
-    -- TODO: We should not make assumptions about the underlying
-    -- ledger. We will fix this in
-    -- <https://github.com/input-output-hk/ouroboros-network/issues/1571>
     addingGenesisEBBToEmptyDB = tipPoint m == GenesisPoint
-                             && Block.blockNo blk == Block.BlockNo 0
+                             && Block.blockNo blk == firstBlockNo (Proxy @blk)
 
     slot = Block.blockSlot blk
 

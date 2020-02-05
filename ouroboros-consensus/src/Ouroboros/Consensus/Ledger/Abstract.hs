@@ -36,6 +36,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (ShowQuery (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Protocol.Abstract
 
 {-------------------------------------------------------------------------------
@@ -141,7 +142,10 @@ deriving instance NoUnexpectedThunks       (LedgerState blk)
                => NoUnexpectedThunks (TickedLedgerState blk)
 
 -- | Link protocol to ledger
-class (SupportedBlock blk, UpdateLedger blk) => ProtocolLedgerView blk where
+class ( SupportedBlock   blk
+      , UpdateLedger     blk
+      , ValidateEnvelope blk
+      ) => ProtocolLedgerView blk where
   -- | Extract the ledger environment from the node config
   ledgerConfigView :: NodeConfig (BlockProtocol blk)
                    -> LedgerConfig blk

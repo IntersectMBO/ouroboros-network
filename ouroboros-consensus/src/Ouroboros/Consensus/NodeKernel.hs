@@ -7,6 +7,7 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints -Werror=missing-fields #-}
@@ -29,6 +30,7 @@ import           Control.Monad
 import           Crypto.Random (ChaChaDRG)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (isJust, isNothing)
+import           Data.Proxy
 import           Data.Word (Word16, Word32)
 
 import           Cardano.Prelude (UseIsNormalForm (..))
@@ -52,6 +54,7 @@ import qualified Ouroboros.Network.TxSubmission.Outbound as Outbound
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool
@@ -392,7 +395,7 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
                   cfg
                   currentSlot
                   ledgerView
-                  (ouroborosChainState extLedger)
+                  (headerStateChain (headerState extLedger))
               case mIsLeader of
                 Just p  -> return p
                 Nothing -> do
@@ -546,12 +549,7 @@ mkCurrentBlockContext
 mkCurrentBlockContext currentSlot c = case c of
     Empty AF.AnchorGenesis ->
       -- The chain is entirely empty.
-      --
-      -- TODO: We should not make assumptions about the underlying
-      -- ledger. We will fix this in
-      -- <https://github.com/input-output-hk/ouroboros-network/issues/1571>
-      let firstBlockNo = BlockNo 0 in
-      Right $ BlockContext firstBlockNo genesisPoint
+      Right $ BlockContext (firstBlockNo (Proxy @blk)) genesisPoint
 
     Empty (AF.Anchor anchorSlot anchorHash anchorBlockNo) ->
       let p :: Point blk = BlockPoint anchorSlot anchorHash

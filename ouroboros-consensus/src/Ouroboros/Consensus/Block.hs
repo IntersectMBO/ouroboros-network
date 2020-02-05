@@ -25,7 +25,7 @@ module Ouroboros.Consensus.Block (
   , fromIsEBB
   ) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -123,7 +123,11 @@ class ( GetHeader blk
 data IsEBB
   = IsEBB
   | IsNotEBB
-  deriving (Eq, Show, Generic, NoUnexpectedThunks, Serialise)
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
+instance Serialise IsEBB where
+  encode = encode . fromIsEBB
+  decode = toIsEBB <$> decode
 
 instance Condense IsEBB where
   condense = show

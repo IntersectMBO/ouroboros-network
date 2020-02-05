@@ -26,6 +26,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart)
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Extended
@@ -132,6 +133,7 @@ class ( ProtocolLedgerView blk
   nodeEncodeLedgerState   :: NodeConfig (BlockProtocol blk) -> LedgerState blk -> Encoding
   nodeEncodeChainState    :: Proxy blk -> NodeConfig (BlockProtocol blk) -> ChainState (BlockProtocol blk) -> Encoding
   nodeEncodeApplyTxError  :: Proxy blk -> ApplyTxErr blk -> Encoding
+  nodeEncodeTipInfo       :: Proxy blk -> TipInfo blk -> Encoding
   nodeEncodeQuery         :: Query blk result -> Encoding
   nodeEncodeResult        :: Query blk result -> result -> Encoding
 
@@ -144,5 +146,6 @@ class ( ProtocolLedgerView blk
   nodeDecodeLedgerState   :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (LedgerState blk)
   nodeDecodeChainState    :: forall s. Proxy blk -> NodeConfig (BlockProtocol blk) -> Decoder s (ChainState (BlockProtocol blk))
   nodeDecodeApplyTxError  :: forall s. Proxy blk -> Decoder s (ApplyTxErr blk)
+  nodeDecodeTipInfo       :: forall s. Proxy blk -> Decoder s (TipInfo blk)
   nodeDecodeQuery         :: forall s. Decoder s (Some (Query blk))
   nodeDecodeResult        :: Query blk result -> forall s. Decoder s result

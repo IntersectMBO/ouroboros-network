@@ -38,6 +38,7 @@ import           Ouroboros.Consensus.Block (BlockProtocol, getHeader)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import qualified Ouroboros.Consensus.Crypto.DSIGN.Cardano as Crypto
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError (..))
@@ -296,11 +297,13 @@ expectedBlockRejection
   , brRejector  = CoreId (CoreNodeId i)
   }
   | ownBlock                   = case err of
-    ExtValidationErrorOuroboros
-      PBftExceededSignThreshold{} -> True   -- TODO validate this against Ref
-                                            -- implementation?
-    ExtValidationErrorOuroboros
-      PBftNotGenesisDelegate{}    ->
+    ExtValidationErrorHeader
+      (HeaderProtocolError PBftExceededSignThreshold{}) ->
+        -- TODO validate this against Ref implementation?
+        True
+
+    ExtValidationErrorHeader
+      (HeaderProtocolError PBftNotGenesisDelegate{}) ->
         -- only if it rekeyed within before a restarts latest possible
         -- maturation
         not $ null $

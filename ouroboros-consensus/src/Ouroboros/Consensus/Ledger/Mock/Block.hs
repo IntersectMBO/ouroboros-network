@@ -73,6 +73,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Address
 import           Ouroboros.Consensus.Ledger.Mock.State
@@ -222,6 +223,16 @@ instance Mock.HasUtxo SimpleBody where
   txOuts     = Mock.txOuts     . simpleTxs
   confirmed  = Mock.confirmed  . simpleTxs
   updateUtxo = Mock.updateUtxo . simpleTxs
+
+{-------------------------------------------------------------------------------
+  Envelope validation
+-------------------------------------------------------------------------------}
+
+instance (SimpleCrypto c, Typeable ext) => HasAnnTip (SimpleBlock c ext)
+  -- Use defaults
+
+instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
+  -- Use defaults
 
 {-------------------------------------------------------------------------------
   Update the ledger

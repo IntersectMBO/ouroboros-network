@@ -7,6 +7,7 @@ import qualified Data.Map.Strict as Map
 import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
@@ -34,7 +35,8 @@ protocolInfoBft numCoreNodes nid securityParam slotLengths =
               | n <- enumCoreNodes numCoreNodes
               ]
           }
-      , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist) ()
+      , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
+                                         (genesisHeaderState ())
       , pInfoInitState  = ()
       }
   where

@@ -10,6 +10,7 @@ import qualified Data.Bimap as Bimap
 
 import           Cardano.Crypto.DSIGN
 
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
@@ -34,7 +35,7 @@ protocolInfoMockPBFT params nid =
               }
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
-                                         CS.empty
+                                         (genesisHeaderState CS.empty)
       , pInfoInitState  = ()
       }
   where
