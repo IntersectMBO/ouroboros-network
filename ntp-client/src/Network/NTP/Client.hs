@@ -95,7 +95,7 @@ ntpClientThread tracer ntpSettings ntpStatus = go 0
       queryLoop
         `catchIOError` (traceWith tracer . NtpTraceIOError)
       atomically $ writeTVar ntpStatus NtpSyncUnavailable
-      go (2 * delay `max` 600) 
+      go (2 * delay `min` 600) 
 
     -- inner loop of the ntp client.  Note that 'nptQuery' will return either
     -- 'NptDrift' or 'NptSyncUnavailable'.
