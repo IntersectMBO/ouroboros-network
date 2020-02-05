@@ -33,6 +33,11 @@ module Ouroboros.Network.Block (
   , atSlot
   , withHash
   , Tip(..)
+  , getTipPoint
+  , getTipBlockNo
+  , getLegacyTipBlockNo
+  , legacyTip
+  , toLegacyTip
   , encodeTip
   , decodeTip
   , ChainUpdate(..)
@@ -66,10 +71,10 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot (SlotNo(..), genesisSlotNo)
+import           Cardano.Slotting.Slot (SlotNo (..), genesisSlotNo)
 
-import           Ouroboros.Network.Point (WithOrigin (..), block, origin,
-                     withOriginToMaybe)
+import           Ouroboros.Network.Point (WithOrigin (..), block,
+                     fromWithOrigin, origin, withOriginToMaybe)
 import qualified Ouroboros.Network.Point as Point (Block (..))
 
 genesisPoint :: Point block
@@ -181,18 +186,55 @@ blockPoint b = Point (block (blockSlot b) (blockHash b))
 
 -- | Used in chain-sync protocol to advertise the tip of the server's chain.
 --
-data Tip b = Tip
-  { tipPoint   :: !(Point b)
-  , tipBlockNo :: !BlockNo
-  } deriving (Eq, Show, Generic, NoUnexpectedThunks)
+data Tip b =
+    -- | The tip is genesis
+    TipGenesis
+
+    -- | The tip is not genesis
+  | Tip !SlotNo !(HeaderHash b) !BlockNo
+  deriving (Generic)
+
+deriving instance StandardHash b => Eq                 (Tip b)
+deriving instance StandardHash b => Show               (Tip b)
+deriving instance StandardHash b => NoUnexpectedThunks (Tip b)
+
+getTipPoint :: Tip b -> Point b
+getTipPoint TipGenesis  = GenesisPoint
+getTipPoint (Tip s h _) = BlockPoint s h
+
+getTipBlockNo :: Tip b -> WithOrigin BlockNo
+getTipBlockNo TipGenesis  = Origin
+getTipBlockNo (Tip _ _ b) = At b
+
+-- | Get the block number associated with a 'Tip', or 'genesisBlockNo' otherwise
+--
+-- TODO: This is /wrong/. There /is/ no block number if we are at genesis
+-- ('genesisBlockNo' is the block number of the first block on the chain).
+-- Usage of this function should be phased out.
+getLegacyTipBlockNo :: Tip b -> BlockNo
+getLegacyTipBlockNo = fromWithOrigin genesisBlockNo . getTipBlockNo
+
+-- | Translate to the format it was before (to maintain binary compatibility)
+toLegacyTip :: Tip b -> (Point b, BlockNo)
+toLegacyTip tip = (getTipPoint tip, getLegacyTipBlockNo tip)
+
+-- | Inverse of 'toLegacyTip'
+--
+-- TODO: This should be phased out, since it makes no sense to have a
+-- 'BlockNo' for the genesis point.
+legacyTip :: Point b -> BlockNo -> Tip b
+legacyTip GenesisPoint     _ = TipGenesis -- Ignore block number
+legacyTip (BlockPoint s h) b = Tip s h b
 
 encodeTip :: (HeaderHash blk -> Encoding)
           -> (Tip        blk -> Encoding)
-encodeTip encodeHeaderHash Tip { tipPoint, tipBlockNo } = mconcat
+encodeTip encodeHeaderHash tip = mconcat
     [ Enc.encodeListLen 2
     , encodePoint encodeHeaderHash tipPoint
     , encode                       tipBlockNo
     ]
+  where
+    (tipPoint, tipBlockNo) = toLegacyTip tip
 
 decodeTip :: (forall s. Decoder s (HeaderHash blk))
           -> (forall s. Decoder s (Tip        blk))
@@ -200,7 +242,7 @@ decodeTip decodeHeaderHash = do
   Dec.decodeListLenOf 2
   tipPoint    <- decodePoint decodeHeaderHash
   tipBlockNo  <- decode
-  return Tip { tipPoint, tipBlockNo }
+  return $ legacyTip tipPoint tipBlockNo
 
 {-------------------------------------------------------------------------------
   ChainUpdate type

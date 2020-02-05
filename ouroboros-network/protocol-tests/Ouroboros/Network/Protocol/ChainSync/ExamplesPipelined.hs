@@ -16,7 +16,8 @@ import           Control.Monad.Class.MonadSTM.Strict
 
 import           Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Block (BlockNo, HasHeader (..), Tip(..))
+import           Ouroboros.Network.Block (BlockNo, HasHeader (..), Tip (..),
+                     getLegacyTipBlockNo)
 import           Ouroboros.Network.MockChain.Chain (Chain (..), Point (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
@@ -63,7 +64,8 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
        -> Client header (Tip header) m a
        -> ClientPipelinedStIdle n header (Tip header) m a
 
-    go mkPipelineDecision n cliTipBlockNo srvTip@(Tip _ srvTipBlockNo) client@Client {rollforward, rollbackward} =
+    go mkPipelineDecision n cliTipBlockNo srvTip client@Client {rollforward, rollbackward} =
+      let srvTipBlockNo = getLegacyTipBlockNo srvTip in
       case (n, runPipelineDecision mkPipelineDecision n cliTipBlockNo srvTipBlockNo) of
         (_Zero, (Request, mkPipelineDecision')) ->
           SendMsgRequestNext

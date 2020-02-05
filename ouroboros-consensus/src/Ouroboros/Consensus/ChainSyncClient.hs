@@ -498,7 +498,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
               Nothing
               (handleNext kis mkPipelineDecision' n')
       where
-        theirTipBlockNo = tipBlockNo (unTheir theirTip)
+        theirTipBlockNo = getLegacyTipBlockNo (unTheir theirTip)
         decision = runPipelineDecision
           mkPipelineDecision
           n

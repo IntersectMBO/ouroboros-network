@@ -21,7 +21,7 @@ module Ouroboros.Network.Protocol.ChainSync.Examples (
 import           Control.Monad.Class.MonadSTM.Strict
 
 import           Ouroboros.Network.Block (BlockNo, HasHeader (..), HeaderHash,
-                     castPoint, genesisPoint, Tip(..))
+                     Tip (..), castPoint, genesisPoint, legacyTip)
 import           Ouroboros.Network.MockChain.Chain (Chain (..),
                      ChainUpdate (..), Point (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -173,8 +173,8 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
     sendNext :: ReaderId
              -> (Point blk, BlockNo, ChainUpdate header header)
              -> ServerStNext header (Tip blk) m a
-    sendNext r (tip, blkNo, AddBlock b) = SendMsgRollForward  b             (Tip tip blkNo) (idle' r)
-    sendNext r (tip, blkNo, RollBack p) = SendMsgRollBackward (castPoint p) (Tip tip blkNo) (idle' r)
+    sendNext r (tip, blkNo, AddBlock b) = SendMsgRollForward  b             (legacyTip tip blkNo) (idle' r)
+    sendNext r (tip, blkNo, RollBack p) = SendMsgRollBackward (castPoint p) (legacyTip tip blkNo) (idle' r)
 
     handleFindIntersect :: ReaderId
                         -> [Point header]
@@ -184,8 +184,8 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
       -- Find the first point that is on our chain
       changed <- improveReadPoint r points
       case changed of
-        (Just pt, tip, blkNo) -> return $ SendMsgIntersectFound     pt (Tip tip blkNo) (idle' r)
-        (Nothing, tip, blkNo) -> return $ SendMsgIntersectNotFound     (Tip tip blkNo) (idle' r)
+        (Just pt, tip, blkNo) -> return $ SendMsgIntersectFound     pt (legacyTip tip blkNo) (idle' r)
+        (Nothing, tip, blkNo) -> return $ SendMsgIntersectNotFound     (legacyTip tip blkNo) (idle' r)
 
     newReader :: m ReaderId
     newReader = atomically $ do

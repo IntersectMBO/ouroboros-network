@@ -113,12 +113,10 @@ prop_chainSync ChainSyncClientSetup {..} =
         label "InvalidRollBack" $
         counterexample ("InvalidRollBack intersection: " <> ppPoint intersection) $
         not (withinFragmentBounds intersection synchedFragment)
-      Just (NoMoreIntersection { _ourTip   = Our   (Tip ourHead   _)
-                               , _theirTip = Their (Tip theirHead _)
-                               }) ->
+      Just (NoMoreIntersection {_ourTip = Our ourTip, _theirTip = Their theirTip}) ->
         label "NoMoreIntersection" $
-        counterexample ("NoMoreIntersection ourHead: " <> ppPoint ourHead <>
-                        ", theirHead: " <> ppPoint theirHead) $
+        counterexample ("NoMoreIntersection ourHead: " <> ppPoint (getTipPoint ourTip) <>
+                        ", theirHead: " <> ppPoint (getTipPoint theirTip)) $
         not (clientFragment `forksWithinK` synchedFragment)
       Just e ->
         counterexample ("Exception: " ++ displayException e) False
@@ -290,7 +288,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
           , getCurrentLedger  = snd <$> readTVar varClientState
           , getOurTip         = do
               chain <- fst <$> readTVar varClientState
-              return $ Tip (Chain.headPoint chain) (Chain.headBlockNo chain)
+              return $ legacyTip (Chain.headPoint chain) (Chain.headBlockNo chain)
           , getIsInvalidBlock = return $
               WithFingerprint (const Nothing) (Fingerprint 0)
           }

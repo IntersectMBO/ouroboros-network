@@ -15,7 +15,7 @@ module Ouroboros.Consensus.ChainSyncServer
 import           Control.Tracer
 
 import           Ouroboros.Network.Block (ChainUpdate (..), HeaderHash,
-                     Point (..), Serialised, Tip (..), castPoint)
+                     Point (..), Serialised, Tip (..), castPoint, legacyTip)
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
 import           Ouroboros.Storage.ChainDB.API (ChainDB, Reader,
@@ -131,7 +131,7 @@ chainSyncServerForReader tracer chainDB rdr =
     getTip = atomically $ do
       tipPoint   <- castPoint <$> ChainDB.getTipPoint   chainDB
       tipBlockNo <-               ChainDB.getTipBlockNo chainDB
-      return Tip { tipPoint, tipBlockNo }
+      return $ legacyTip tipPoint tipBlockNo
 
 {-------------------------------------------------------------------------------
   Trace events
