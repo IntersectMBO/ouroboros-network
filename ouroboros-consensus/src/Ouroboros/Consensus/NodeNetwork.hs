@@ -326,6 +326,23 @@ data ProtocolTracers' peer blk failure f = ProtocolTracers {
   , ptLocalStateQueryTracer      :: f (TraceLabelPeer peer (TraceSendRecv (LocalStateQuery blk (Query blk))))
   }
 
+instance (forall a. Semigroup (f a)) => Semigroup (ProtocolTracers' peer blk failure f) where
+  l <> r = ProtocolTracers {
+      ptChainSyncTracer            = f ptChainSyncTracer
+    , ptChainSyncSerialisedTracer  = f ptChainSyncSerialisedTracer
+    , ptBlockFetchTracer           = f ptBlockFetchTracer
+    , ptBlockFetchSerialisedTracer = f ptBlockFetchSerialisedTracer
+    , ptTxSubmissionTracer         = f ptTxSubmissionTracer
+    , ptLocalChainSyncTracer       = f ptLocalChainSyncTracer
+    , ptLocalTxSubmissionTracer    = f ptLocalTxSubmissionTracer
+    , ptLocalStateQueryTracer      = f ptLocalStateQueryTracer
+    }
+    where
+      f :: forall a. Semigroup a
+        => (ProtocolTracers' peer blk failure f -> a)
+        -> a
+      f prj = prj l <> prj r
+
 -- | Use a 'nullTracer' for each protocol.
 nullProtocolTracers :: Monad m => ProtocolTracers m peer blk failure
 nullProtocolTracers = ProtocolTracers {
