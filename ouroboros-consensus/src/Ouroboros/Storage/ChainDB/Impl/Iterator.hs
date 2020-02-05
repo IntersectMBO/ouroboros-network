@@ -33,6 +33,8 @@ import           GHC.Stack (HasCallStack)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
+import           Cardano.Slotting.Block (BlockNo)
+
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader, HeaderHash, Point,
                      SlotNo, StandardHash, atSlot, pointHash, withHash)
@@ -255,8 +257,8 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
     start :: HasCallStack
           => ExceptT (UnknownRange blk) m (Iterator m blk b)
     start = lift (ImmDB.getTipInfo itImmDB) >>= \case
-      Origin                          -> findPathInVolDB
-      At (tipSlot, tipHash, tipIsEBB) ->
+      Origin                                       -> findPathInVolDB
+      At (tipSlot, tipHash, tipIsEBB, _tipBlockNo) ->
         case atSlot endPoint `compare` tipSlot of
           -- The end point is < the tip of the ImmutableDB
           LT -> streamFromImmDB
@@ -406,9 +408,9 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
               from (StreamToInclusive immTip)
           lift $ createIterator $ InImmDB from immIt immEnd
 
-        toPoint :: WithOrigin (SlotNo, HeaderHash blk, IsEBB) -> Point blk
-        toPoint Origin                    = GenesisPoint
-        toPoint (At (slot, hash, _isEBB)) = BlockPoint slot hash
+        toPoint :: WithOrigin (SlotNo, HeaderHash blk, IsEBB, BlockNo) -> Point blk
+        toPoint Origin                            = GenesisPoint
+        toPoint (At (slot, hash, _isEBB, _block)) = BlockPoint slot hash
 
     makeIterator :: Bool  -- ^ Register the iterator in 'cdbIterators'?
                  -> IteratorState m blk b

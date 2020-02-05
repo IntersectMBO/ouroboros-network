@@ -1,48 +1,48 @@
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Ouroboros.Network.BlockFetch (tests) where
 
+import           Test.ChainGenerators (TestChainFork (..))
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
-import           Test.ChainGenerators (TestChainFork(..))
 
 import           Data.List
-import qualified Data.Set as Set
-import           Data.Set (Set)
-import qualified Data.Map as Map
 import           Data.Map (Map)
+import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 
+import           Control.Exception (AssertionFailed (..), SomeException)
 import           Control.Monad (unless)
-import           Control.Monad.IOSim
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
-import           Control.Tracer (Tracer(Tracer), contramap, nullTracer)
-import           Control.Exception (SomeException, AssertionFailed(..))
+import           Control.Monad.IOSim
+import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 
 --TODO: could re-export some of the trace types from more convenient places:
-import           Ouroboros.Network.Block
 import           Network.TypedProtocol.Driver (TraceSendRecv)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import qualified Ouroboros.Network.ChainFragment    as ChainFragment
-import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import           Ouroboros.Network.Testing.ConcreteBlock
-import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
+import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
+import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.BlockFetch.ClientState
 import           Ouroboros.Network.BlockFetch.ClientRegistry
+import           Ouroboros.Network.BlockFetch.ClientState
 import           Ouroboros.Network.BlockFetch.Examples
+import qualified Ouroboros.Network.ChainFragment as ChainFragment
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
+import           Ouroboros.Network.Testing.ConcreteBlock
 
 
 --
@@ -147,7 +147,7 @@ prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
                     (contramap TraceFetchDecision       dynamicTracer)
                     (contramap TraceFetchClientState    dynamicTracer)
                     (contramap TraceFetchClientSendRecv dynamicTracer)
-                    (AnchoredFragment.Empty genesisPoint) forks
+                    (AnchoredFragment.Empty AnchoredFragment.AnchorGenesis) forks
 
      in counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
 
@@ -173,7 +173,7 @@ prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
 
 chainToAnchoredFragment :: Chain.Chain Block -> AnchoredFragment Block
 chainToAnchoredFragment =
-    AnchoredFragment.fromNewestFirst genesisPoint
+    AnchoredFragment.fromNewestFirst AnchoredFragment.AnchorGenesis
   . Chain.chainToList
 
 -- TODO: move elsewhere and generalise
@@ -401,7 +401,7 @@ fetchRequestTrace = mapMaybe f
 --   requests in flight
 -- * when finishing receiving a batch, subtract one from the number of requests
 --   in flight.
--- 
+--
 -- This tests reconstructs the value of 'fetchClientRequestVar' and
 -- 'peerFetchReqsInFlight' from the trace and compares the expected value with
 -- the actual value logged in the trace.

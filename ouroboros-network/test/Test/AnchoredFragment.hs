@@ -17,12 +17,13 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Functions ()
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (Empty),
+                     anchorPoint)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.ChainFragment (ChainFragment)
 import qualified Ouroboros.Network.ChainFragment as CF
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Testing.ConcreteBlock
 import           Test.ChainFragment (TestBlockChainFragment (..),
                      TestChainFragmentAndPoint (..),
@@ -86,25 +87,25 @@ prop_length_Empty :: Bool
 prop_length_Empty =
     AF.length (Empty anchor :: AnchoredFragment Block) == 0
   where
-    anchor = genesisPoint
+    anchor = AF.AnchorGenesis
 
 prop_dropNewest_Empty :: TestBlockAnchoredFragment -> Bool
 prop_dropNewest_Empty (TestBlockAnchoredFragment chain) =
     AF.dropNewest (AF.length chain) chain == Empty anchor
   where
-    anchor = AF.anchorPoint chain
+    anchor = AF.anchor chain
 
 prop_fromNewestFirst_toNewestFirst :: TestBlockAnchoredFragment -> Bool
 prop_fromNewestFirst_toNewestFirst (TestBlockAnchoredFragment chain) =
     (AF.fromNewestFirst anchor . AF.toNewestFirst) chain == chain
   where
-    anchor = AF.anchorPoint chain
+    anchor = AF.anchor chain
 
 prop_fromOldestFirst_toOldestFirst :: TestBlockAnchoredFragment -> Bool
 prop_fromOldestFirst_toOldestFirst (TestBlockAnchoredFragment chain) =
     (AF.fromOldestFirst anchor . AF.toOldestFirst) chain == chain
   where
-    anchor = AF.anchorPoint chain
+    anchor = AF.anchor chain
 
 headOrAnchor :: a -> [b] -> Either a b
 headOrAnchor anchor = maybe (Left anchor) Right . listToMaybe
@@ -114,13 +115,13 @@ prop_toList_head :: TestBlockAnchoredFragment -> Bool
 prop_toList_head (TestBlockAnchoredFragment chain) =
     (headOrAnchor anchor . AF.toNewestFirst) chain == AF.head chain
   where
-    anchor = AF.anchorPoint chain
+    anchor = AF.anchor chain
 
 prop_toList_last :: TestBlockAnchoredFragment -> Bool
 prop_toList_last (TestBlockAnchoredFragment chain) =
     (headOrAnchor anchor . AF.toOldestFirst) chain == AF.last chain
   where
-    anchor = AF.anchorPoint chain
+    anchor = AF.anchor chain
 
 prop_dropNewest :: TestBlockAnchoredFragment -> Bool
 prop_dropNewest (TestBlockAnchoredFragment chain) =
@@ -128,7 +129,7 @@ prop_dropNewest (TestBlockAnchoredFragment chain) =
     and [ AF.dropNewest n chain == AF.fromNewestFirst anchor (L.drop n blocks)
         | n <- [0..Prelude.length blocks] ]
   where
-    anchor = AF.anchorPoint chain
+    anchor = AF.anchor chain
 
 prop_takeOldest :: TestBlockAnchoredFragment -> Bool
 prop_takeOldest (TestBlockAnchoredFragment chain) =
@@ -136,21 +137,21 @@ prop_takeOldest (TestBlockAnchoredFragment chain) =
     and [ AF.takeOldest n chain == AF.fromOldestFirst anchor (L.take n blocks)
         | n <- [0..Prelude.length blocks] ]
   where
-    anchor = AF.anchorPoint chain
+    anchor = AF.anchor chain
 
 prop_dropWhileNewest :: (Block -> Bool) -> TestBlockAnchoredFragment -> Bool
 prop_dropWhileNewest p (TestBlockAnchoredFragment chain) =
     AF.dropWhileNewest p chain ==
     (AF.fromNewestFirst anchor . L.dropWhile p . AF.toNewestFirst) chain
   where
-    anchor = AF.anchorPoint chain
+    anchor = AF.anchor chain
 
 prop_takeWhileOldest :: (Block -> Bool) -> TestBlockAnchoredFragment -> Bool
 prop_takeWhileOldest p (TestBlockAnchoredFragment chain) =
     AF.takeWhileOldest p chain ==
     (AF.fromOldestFirst anchor . L.takeWhile p . AF.toOldestFirst) chain
   where
-    anchor = AF.anchorPoint chain
+    anchor = AF.anchor chain
 
 prop_addBlock :: TestAddBlock -> Bool
 prop_addBlock (TestAddBlock c b) =
@@ -321,7 +322,7 @@ toTestBlockAnchoredFragment :: ChainFragment Block
 toTestBlockAnchoredFragment c = case c of
     CF.Empty   -> Nothing
     b CF.:< c' -> Just $
-        TestBlockAnchoredFragment_ b (AF.mkAnchoredFragment (blockPoint b) c')
+        TestBlockAnchoredFragment_ b (AF.mkAnchoredFragment (AF.anchorFromBlock b) c')
 
 toChainFragment :: TestBlockAnchoredFragment
                 -> ChainFragment Block

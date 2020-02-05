@@ -25,7 +25,6 @@ module Ouroboros.Consensus.NodeKernel (
   , ProtocolM
   ) where
 
-import           Control.Exception (assert)
 import           Control.Monad
 import           Crypto.Random (ChaChaDRG)
 import           Data.Map.Strict (Map)
@@ -35,8 +34,8 @@ import           Data.Word (Word16, Word32)
 import           Cardano.Prelude (UseIsNormalForm (..))
 import           Control.Tracer
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..),
-                     headPoint, headSlot)
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
@@ -303,7 +302,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
     readFetchMode :: STM m FetchMode
     readFetchMode = do
       curSlot      <- getCurrentSlot btime
-      curChainSlot <- headSlot <$> ChainDB.getCurrentChain chainDB
+      curChainSlot <- AF.headSlot <$> ChainDB.getCurrentChain chainDB
       let slotsBehind = case curChainSlot of
             -- There's nothing in the chain. If the current slot is 0, then
             -- we're 1 slot behind.
@@ -363,7 +362,6 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
           eBlkCtx <- lift $ atomically $
             mkCurrentBlockContext currentSlot
                 <$> ChainDB.getCurrentChain chainDB
-                <*> ChainDB.getTipBlockNo chainDB
           case eBlkCtx of
             Right blkCtx -> return blkCtx
             Left failure -> do
@@ -533,28 +531,34 @@ blockContextFromPrevHeader hdr =
 -- predecessor. If the chain is empty, then it will refer to the chain's anchor
 -- point, which may be genesis.
 mkCurrentBlockContext
-  :: RunNode blk
+  :: forall blk. RunNode blk
   => SlotNo
      -- ^ the current slot, i.e. the slot of the block about to be forged
   -> AnchoredFragment (Header blk)
      -- ^ the current chain fragment
      --
      -- Recall that the anchor point is the tip of the ImmDB.
-  -> BlockNo
-     -- ^ the block number of the tip of the ChainDB
-     --
-     -- If the fragment is 'Empty', then this is the block number of the
-     -- tip of the ImmDB.
   -> Either (TraceForgeEvent blk (GenTx blk)) (BlockContext blk)
      -- ^ the event records the cause of the failure
-mkCurrentBlockContext currentSlot c bno = case c of
-    Empty p   -- thus: bno and p both refer to the tip of the ImmDB
-      | pointSlot p < At currentSlot
-      -> Right $ BlockContext (succ bno) (castPoint p)
-      | otherwise
-      -> Left $ TraceSlotIsImmutable currentSlot (castPoint p) bno
-    c' :> hdr -> assert (bno == blockNo hdr) $
-                 case blockSlot hdr `compare` currentSlot of
+mkCurrentBlockContext currentSlot c = case c of
+    Empty AF.AnchorGenesis ->
+      -- The chain is entirely empty.
+      --
+      -- NOTE:
+      --
+      -- o 'genesisBlockNo' is the block number of the first block
+      -- o 'genesisPoint' is the point /before/ the first block
+      --
+      -- which is precisely what we need for 'BlockContext'
+      Right $ BlockContext genesisBlockNo genesisPoint
+
+    Empty (AF.Anchor anchorSlot anchorHash anchorBlockNo) ->
+      let p :: Point blk = BlockPoint anchorSlot anchorHash
+      in if anchorSlot < currentSlot
+           then Right $ BlockContext (succ anchorBlockNo) p
+           else Left  $ TraceSlotIsImmutable currentSlot p anchorBlockNo
+
+    c' :> hdr -> case blockSlot hdr `compare` currentSlot of
 
       -- The block at the tip of our chain has a slot number /before/ the
       -- current slot number. This is the common case, and we just want to
@@ -591,7 +595,7 @@ mkCurrentBlockContext currentSlot c bno = case c of
         then blockContextFromPrevHeader hdr
         -- If @hdr@ is not an EBB, then forge an alternative to @hdr@: same
         -- block no and same predecessor.
-        else BlockContext (blockNo hdr) $ castPoint $ headPoint c'
+        else BlockContext (blockNo hdr) $ castPoint $ AF.headPoint c'
 
 {-------------------------------------------------------------------------------
   TxSubmission integration

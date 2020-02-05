@@ -56,7 +56,7 @@ import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
-import           Ouroboros.Network.Point (WithOrigin (..))
+import           Ouroboros.Network.Point (WithOrigin (..), fromWithOrigin)
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -485,7 +485,8 @@ runThreadNetwork ThreadNetworkArgs
                   Origin -> True
                   At s   -> s >= (ebbSlotNo - min ebbSlotNo (2 * k))
                 bno <- ChainDB.getTipBlockNo chainDB
-                pure (mSlot, bno, pointHash p)
+                -- The EBB shares its BlockNo with its predecessor (if there is one)
+                pure (mSlot, fromWithOrigin genesisBlockNo bno, pointHash p)
               when (prevSlot < At ebbSlotNo) $ do
                 let ebb = forgeEBB cfg ebbSlotNo ebbBlockNo prevHash
                 ChainDB.addBlock chainDB ebb
@@ -928,7 +929,7 @@ data NodeEvents blk ev = NodeEvents
     -- ^ every 'TraceForgeEvent'
   , nodeEventsInvalids    :: ev (Point blk, ExtValidationError blk)
     -- ^ the point of every 'ChainDB.InvalidBlock' event
-  , nodeEventsTipBlockNos :: ev (SlotNo, BlockNo)
+  , nodeEventsTipBlockNos :: ev (SlotNo, WithOrigin BlockNo)
     -- ^ 'ChainDB.getTipBlockNo' for each node at the onset of each slot
   }
 
@@ -991,7 +992,7 @@ data NodeOutput blk = NodeOutput
 
 data TestOutput blk = TestOutput
     { testOutputNodes       :: Map NodeId (NodeOutput blk)
-    , testOutputTipBlockNos :: Map SlotNo (Map NodeId BlockNo)
+    , testOutputTipBlockNos :: Map SlotNo (Map NodeId (WithOrigin BlockNo))
     }
 
 -- | Gather the test output from the nodes

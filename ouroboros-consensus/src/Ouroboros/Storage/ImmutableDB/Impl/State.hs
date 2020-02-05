@@ -49,8 +49,8 @@ import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary
                      (SecondaryOffset)
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary
                      (BlockOffset (..))
-import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Storage.ImmutableDB.Impl.Util
+import           Ouroboros.Storage.ImmutableDB.Parser (BlockSummary)
 import           Ouroboros.Storage.ImmutableDB.Types
 
 {------------------------------------------------------------------------------
@@ -62,7 +62,7 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
     , _dbInternalState   :: !(StrictMVar m (InternalState m hash h))
-    , _dbEpochFileParser :: !(EpochFileParser e m (Secondary.Entry hash) hash)
+    , _dbEpochFileParser :: !(EpochFileParser e m (BlockSummary hash) hash)
     , _dbEpochInfo       :: !(EpochInfo m)
     , _dbHashInfo        :: !(HashInfo hash)
     , _dbTracer          :: !(Tracer m (TraceEvent e hash))
@@ -96,7 +96,7 @@ data OpenState m hash h = OpenState
       -- ^ The write handle for the current primary index file.
     , _currentSecondaryHandle :: !(Handle h)
       -- ^ The write handle for the current secondary index file.
-    , _currentTip             :: !(ImmTipWithHash hash)
+    , _currentTip             :: !(ImmTipWithInfo hash)
       -- ^ The current tip of the database.
     , _index                  :: !(Index m hash h)
       -- ^ An abstraction layer on top of the indices to allow for caching.
@@ -115,7 +115,7 @@ mkOpenState
   -> ErrorHandling ImmutableDBError m
   -> Index m hash h
   -> EpochNo
-  -> ImmTipWithHash hash
+  -> ImmTipWithInfo hash
   -> AllowExisting
   -> m (OpenState m hash h)
 mkOpenState registry HasFS{..} _err index epoch tip existing = do

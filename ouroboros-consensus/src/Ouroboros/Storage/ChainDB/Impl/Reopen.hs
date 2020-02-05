@@ -21,12 +21,11 @@ import           Control.Tracer
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader (..), castPoint,
-                     genesisBlockNo, genesisPoint)
+                     genesisPoint)
 
 import           Ouroboros.Consensus.Block (Header, headerPoint)
 import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -122,8 +121,7 @@ reopen (CDBHandle varState) launchBgTasks = do
         -- Note that 'immDbTipBlockNo' might not end up being the \"immutable\"
         -- block(no), because the current chain computed from the VolatileDB could
         -- be longer than @k@.
-        let immDbTipBlockNo = maybe genesisBlockNo blockNo     immDbTipHeader
-            immDbTipPoint   = maybe genesisPoint   headerPoint immDbTipHeader
+        let immDbTipPoint = maybe genesisPoint   headerPoint immDbTipHeader
         immDbTipEpoch      <- maybe (return 0)     blockEpoch  immDbTipHeader
         traceWith cdbTracer $ TraceOpenEvent $ OpenedImmDB
           { _immDbTip      = immDbTipPoint
@@ -156,13 +154,10 @@ reopen (CDBHandle varState) launchBgTasks = do
 
         let chain      = clChain  chainAndLedger
             ledger     = clLedger chainAndLedger
-            secParam   = protocolSecurityParam cdbNodeConfig
-            immBlockNo = getImmBlockNo secParam chain immDbTipBlockNo
 
         atomically $ do
           writeTVar cdbChain chain
           LgrDB.setCurrent cdbLgrDB ledger
-          writeTVar cdbImmBlockNo immBlockNo
           -- Change the state from 'ChainDbReopening' to 'ChainDbOpen'
           writeTVar varState $ ChainDbOpen env
         traceWith cdbTracer $ TraceOpenEvent $ ReopenedDB

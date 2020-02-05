@@ -11,6 +11,9 @@ module Ouroboros.Storage.ImmutableDB.Types
   , ImmTipWithHash
   , WithHash (..)
   , WithBlockSize (..)
+  , ImmTipWithInfo
+  , fromTipInfo
+  , TipInfo (..)
   , BlockOrEBB (..)
   , HashInfo (..)
   , BinaryInfo (..)
@@ -44,7 +47,7 @@ import           Streaming (Of, Stream)
 import           Cardano.Prelude (NoUnexpectedThunks (..),
                      UseIsNormalFormNamed (..))
 
-import           Ouroboros.Network.Block (SlotNo (..))
+import           Ouroboros.Network.Block (BlockNo, SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Storage.Common
@@ -66,6 +69,17 @@ data WithHash hash a = WithHash
   { theHash    :: !hash
   , forgetHash :: !a
   } deriving (Eq, Show, Generic, NoUnexpectedThunks, Functor, Foldable, Traversable)
+
+type ImmTipWithInfo hash = Tip (TipInfo hash BlockOrEBB)
+
+data TipInfo hash a = TipInfo
+  { tipInfoHash    :: !hash
+  , forgetTipInfo  :: !a
+  , tipInfoBlockNo :: !BlockNo
+  } deriving (Eq, Show, Generic, NoUnexpectedThunks, Functor, Foldable, Traversable)
+
+fromTipInfo :: TipInfo hash a -> WithHash hash a
+fromTipInfo (TipInfo hash a _blockNo) = WithHash hash a
 
 data WithBlockSize a = WithBlockSize
   { blockSize        :: !Word32
@@ -328,7 +342,7 @@ data TraceEvent e hash
     | RewritePrimaryIndex   EpochNo
     | RewriteSecondaryIndex EpochNo
       -- Delete after
-    | DeletingAfter ImmTip
+    | DeletingAfter (ImmTipWithInfo hash)
       -- Closing the DB
     | DBAlreadyClosed
     | DBClosed

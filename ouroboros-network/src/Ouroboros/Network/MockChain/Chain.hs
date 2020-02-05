@@ -349,7 +349,7 @@ unvalidatedToChainFragment = unvalidatedFromNewestFirst . toNewestFirst
 --
 -- The anchor of the fragment will be 'Chain.genesisPoint'.
 toAnchoredFragment :: HasHeader block => Chain block -> AF.AnchoredFragment block
-toAnchoredFragment = AF.mkAnchoredFragment genesisPoint . unvalidatedToChainFragment
+toAnchoredFragment = AF.mkAnchoredFragment AF.AnchorGenesis . unvalidatedToChainFragment
 
 -- | Convert an 'AnchoredFragment' to a 'Chain'.
 --

@@ -12,6 +12,7 @@
 module Ouroboros.Storage.ImmutableDB.Parser
   ( -- * EpochFileParser
     EpochFileError (..)
+  , BlockSummary(..)
   , epochFileParser
   , epochFileParser'
   ) where
@@ -24,6 +25,8 @@ import           Data.Word (Word64)
 import           Streaming (Of, Stream)
 import qualified Streaming as S
 import qualified Streaming.Prelude as S
+
+import           Cardano.Slotting.Block (BlockNo)
 
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
                      HeaderHash, SlotNo)
@@ -64,9 +67,16 @@ data EpochFileError hash =
       SlotNo  -- ^ Slot number of the block
   deriving (Eq, Show)
 
+-- | Information about a block returned by the parser
+data BlockSummary hash = BlockSummary {
+      summaryEntry   :: !(Secondary.Entry hash)
+    , summaryBlockNo :: !BlockNo
+    }
+
 epochFileParser'
   :: forall m blk hash h. (IOLike m, Eq hash)
   => (blk -> SlotNo)
+  -> (blk -> BlockNo)
   -> (blk -> hash)
   -> (blk -> WithOrigin hash)  -- ^ Previous hash
   -> HasFS m h
@@ -78,9 +88,9 @@ epochFileParser'
   -> EpochFileParser
        (EpochFileError hash)
        m
-       (Secondary.Entry hash)
+       (BlockSummary hash)
        hash
-epochFileParser' getSlotNo getHash getPrevHash hasFS decodeBlock isEBB
+epochFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEBB
                  getBinaryInfo isNotCorrupt =
     EpochFileParser $ \fsPath currentSlotNo expectedChecksums k ->
       Util.CBOR.withStreamIncrementalOffsets hasFS decoder fsPath
@@ -129,7 +139,7 @@ epochFileParser' getSlotNo getHash getPrevHash hasFS decodeBlock isEBB
                 m
                 (Maybe (EpochFileError hash, Word64))
          -- ^ Input stream of blocks (with additional info)
-      -> Stream (Of (Secondary.Entry hash, WithOrigin hash))
+      -> Stream (Of (BlockSummary hash, WithOrigin hash))
                 m
                 (Maybe (EpochFileError hash, Word64))
     checkEntries = \expected -> mapAccumS expected handle
@@ -138,7 +148,7 @@ epochFileParser' getSlotNo getHash getPrevHash hasFS decodeBlock isEBB
           :: [CRC]
           -> (Word64, (Word64, (blk, CRC)))
           -> Either (Maybe (EpochFileError hash, Word64))
-                    ( (Secondary.Entry hash, WithOrigin hash)
+                    ( (BlockSummary hash, WithOrigin hash)
                     , [CRC]
                     )
         handle expected blkAndInfo@(offset, (_, (blk, checksum))) =
@@ -154,14 +164,15 @@ epochFileParser' getSlotNo getHash getPrevHash hasFS decodeBlock isEBB
                   -- The block is corrupt, stop
                 -> Left $ Just (EpochErrCorrupt headerHash blockOrEBB, offset)
           where
-            entryAndPrevHash@(actualEntry, _) =
+            entryAndPrevHash@(BlockSummary actualEntry _, _) =
               entryForBlockAndInfo blkAndInfo
             Secondary.Entry { headerHash, blockOrEBB } = actualEntry
 
     entryForBlockAndInfo
       :: (Word64, (Word64, (blk, CRC)))
-      -> (Secondary.Entry hash, WithOrigin hash)
-    entryForBlockAndInfo (offset, (_size, (blk, checksum))) = (entry, prevHash)
+      -> (BlockSummary hash, WithOrigin hash)
+    entryForBlockAndInfo (offset, (_size, (blk, checksum))) =
+        (BlockSummary entry (getBlockNo blk), prevHash)
       where
         -- Don't accidentally hold on to the block!
         !prevHash = getPrevHash blk
@@ -178,18 +189,19 @@ epochFileParser' getSlotNo getHash getPrevHash hasFS decodeBlock isEBB
         BinaryInfo { headerOffset, headerSize } = getBinaryInfo blk
 
     checkIfHashesLineUp
-      :: Stream (Of (Secondary.Entry hash, WithOrigin hash))
+      :: Stream (Of (BlockSummary hash, WithOrigin hash))
                 m
                 (Maybe (EpochFileError hash, Word64))
-      -> Stream (Of (Secondary.Entry hash, WithOrigin hash))
+      -> Stream (Of (BlockSummary hash, WithOrigin hash))
                 m
                 (Maybe (EpochFileError hash, Word64))
     checkIfHashesLineUp = mapAccumS0 checkFirst checkNext
       where
         -- We pass the hash of the previous block around as the state (@s@).
-        checkFirst x@(entry, _) = Right (x, Secondary.headerHash entry)
+        checkFirst x@(BlockSummary entry _, _) =
+            Right (x, Secondary.headerHash entry)
 
-        checkNext hashOfPrevBlock x@(entry, prevHash)
+        checkNext hashOfPrevBlock x@(BlockSummary entry _blockNo, prevHash)
           | prevHash == At hashOfPrevBlock
           = Right (x, Secondary.headerHash entry)
           | otherwise
@@ -210,10 +222,10 @@ epochFileParser
   -> EpochFileParser
        (EpochFileError (HeaderHash blk))
        m
-       (Secondary.Entry (HeaderHash blk))
+       (BlockSummary (HeaderHash blk))
        (HeaderHash blk)
 epochFileParser =
-    epochFileParser' blockSlot blockHash (convertPrevHash . blockPrevHash)
+    epochFileParser' blockSlot blockNo blockHash (convertPrevHash . blockPrevHash)
   where
     convertPrevHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
     convertPrevHash GenesisHash   = Origin
