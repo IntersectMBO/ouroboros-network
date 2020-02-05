@@ -307,7 +307,7 @@ instance Monoid MempoolSize where
 
 -- | Events traced by the Mempool.
 data TraceEventMempool blk
-  = TraceMempoolValidateTxs !Time !Time !Int
+  = TraceMempoolValidateTxs !Time !Time !Int !Int !Int
   | TraceMempoolAddTxs
       ![GenTx blk]
       -- ^ New, valid transaction were added to the Mempool.

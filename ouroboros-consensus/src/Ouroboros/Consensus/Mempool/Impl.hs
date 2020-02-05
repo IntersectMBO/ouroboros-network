@@ -282,7 +282,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
 
     let accepted = vrNewValid vr
 
-    traceWith mpEnvTracer (TraceMempoolValidateTxs t0 t1 ((length removed) + (length accepted) + (length rejected)))
+    traceWith mpEnvTracer (TraceMempoolValidateTxs t0 t1 (length removed) (length accepted) (length rejected))
 
     traceBatch TraceMempoolRemoveTxs   mempoolSize (map fst removed)
     traceBatch TraceMempoolAddTxs      mempoolSize accepted
