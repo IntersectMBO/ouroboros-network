@@ -179,8 +179,7 @@ data TraceForgeEvent blk tx
   -- See also <https://github.com/input-output-hk/ouroboros-network/issues/1462>
   | TraceBlockFromFuture SlotNo SlotNo
 
-  -- | Leadership check failed: the tip of the ImmDB inhabits a slot /after/
-  -- the current slot
+  -- | Leadership check failed: the tip of the ImmDB inhabits the current slot
   --
   -- This might happen in two cases.
   --

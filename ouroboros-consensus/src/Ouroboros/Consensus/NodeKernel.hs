@@ -504,10 +504,10 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
 newtype PRNG = PRNG ChaChaDRG
   deriving NoUnexpectedThunks via UseIsNormalForm PRNG
 
--- | Data about a block's position in the chain
+-- | Context required to forge a block
 data BlockContext blk = BlockContext
   { bcBlockNo   :: !BlockNo
-    -- ^ the block number of the block
+    -- ^ the block number of the block to be forged
   , bcPrevPoint :: !(Point blk)
     -- ^ the point of /the predecessor of/ the block
     --
@@ -546,7 +546,7 @@ mkCurrentBlockContext
      -- If the fragment is 'Empty', then this is the block number of the
      -- tip of the ImmDB.
   -> Either (TraceForgeEvent blk (GenTx blk)) (BlockContext blk)
-     -- ^ the event is records the cause of the failure
+     -- ^ the event records the cause of the failure
 mkCurrentBlockContext currentSlot c bno = case c of
     Empty p   -- thus: bno and p both refer to the tip of the ImmDB
       | pointSlot p < At currentSlot
