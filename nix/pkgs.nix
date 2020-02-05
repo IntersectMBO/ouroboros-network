@@ -38,6 +38,7 @@ let
         packages.io-sim-classes.configureFlags = [ "--ghc-option=-Werror" ];
         packages.Win32-network.configureFlags = [ "--ghc-option=-Werror" ];
         packages.network-mux.configureFlags = [ "--ghc-option=-Werror" ];
+        packages.ntp-client.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-network.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-network.flags.cddl = true;
         packages.ouroboros-network.components.tests.test-cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];

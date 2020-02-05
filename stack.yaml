@@ -70,7 +70,6 @@ extra-deps:
   - hedgehog-quickcheck-0.1.1
   - quickcheck-state-machine-0.6.0
   - splitmix-0.0.2
-  - time-units-1.0.0
   - tasty-hedgehog-1.0.0.1
   - Unique-0.4.7.6
   - statistics-linreg-0.3

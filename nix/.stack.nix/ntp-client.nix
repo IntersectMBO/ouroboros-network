@@ -22,38 +22,17 @@
           (hsPkgs.binary)
           (hsPkgs.bytestring)
           (hsPkgs.contra-tracer)
-          (hsPkgs.formatting)
           (hsPkgs.network)
           (hsPkgs.stm)
-          (hsPkgs.these)
           (hsPkgs.time)
-          (hsPkgs.time-units)
           ];
         };
-      exes = {
-        "ntp-app" = {
-          depends = [
-            (hsPkgs.async)
-            (hsPkgs.base)
-            (hsPkgs.binary)
-            (hsPkgs.bytestring)
-            (hsPkgs.contra-tracer)
-            (hsPkgs.formatting)
-            (hsPkgs.network)
-            (hsPkgs.stm)
-            (hsPkgs.these)
-            (hsPkgs.time)
-            (hsPkgs.time-units)
-            ];
-          };
-        };
       tests = {
-        "ntp-client-test" = {
+        "test-ntp-client" = {
           depends = [
             (hsPkgs.base)
             (hsPkgs.binary)
             (hsPkgs.time)
-            (hsPkgs.time-units)
             (hsPkgs.QuickCheck)
             (hsPkgs.tasty)
             (hsPkgs.tasty-quickcheck)
