@@ -9,12 +9,13 @@ module Network.NTP.Query (
 import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
-import           Control.Exception (bracket, onException)
+import           Control.Exception (bracket, mask, throwIO)
 import           System.IO.Error (tryIOError, userError, ioError)
 import           Control.Monad (forM, forM_, replicateM_)
 import           Control.Tracer
 import           Data.Binary (decodeOrFail, encode)
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Functor (void)
 import           Data.List (find)
 import           Data.Maybe
 import           Network.Socket ( AddrInfo
@@ -205,12 +206,17 @@ runNtpQueries tracer protocol netSettings localAddr destAddrs
         traceWith tracer $ NtpTraceSocketOpen protocol
         Socket.setSocketOption socket ReuseAddr 1
         inQueue <- atomically $ newTVar []
-        _err <-
-          withAsync timeout $ \timeoutT ->
-            withAsync (receiver socket inQueue ) $ \receiverT -> do
-              senderT <- async (send socket)
-              waitAnyCancel [timeoutT, receiverT]
-                `onException` cancel senderT
+        withAsync timeout $ \timeoutT ->
+          withAsync (receiver socket inQueue ) $ \receiverT ->
+            -- mask async exceptions to guarantee that the other threads are
+            -- cancelled correctly.  'timeoutT' and 'receiverT' threads were
+            -- started using 'withAsync', so they will be terminated when the
+            -- callbak either returns or errors.
+            mask $ \unmask ->
+              async (unmask $ send socket) >>= \senderT -> unmask $
+                waitCatch senderT >>= \case
+                  Left e  -> throwIO e
+                  Right _ -> void $ waitAny [timeoutT, receiverT]
         atomically $ readTVar inQueue
 
     --
