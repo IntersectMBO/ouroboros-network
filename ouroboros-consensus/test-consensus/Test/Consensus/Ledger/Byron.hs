@@ -26,6 +26,7 @@ import qualified Data.Sequence.Strict as Seq
 import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
+import qualified Cardano.Chain.Byron.API as API
 import           Cardano.Chain.Common (KeyHash)
 import           Cardano.Chain.Slotting (EpochNumber, EpochSlots (..),
                      SlotNumber)
@@ -39,7 +40,6 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Byron
-import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as DH
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTxId)
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -65,7 +65,7 @@ import qualified Test.Cardano.Chain.Delegation.Gen as CC
 import qualified Test.Cardano.Chain.Genesis.Dummy as CC
 import qualified Test.Cardano.Chain.MempoolPayload.Gen as CC
 import qualified Test.Cardano.Chain.Slotting.Gen as CC
-import qualified Test.Cardano.Chain.Update.Gen as CC
+import qualified Test.Cardano.Chain.Update.Gen as UG
 import qualified Test.Cardano.Chain.UTxO.Example as CC
 import qualified Test.Cardano.Chain.UTxO.Gen as CC
 import qualified Test.Cardano.Crypto.Gen as CC
@@ -468,7 +468,7 @@ instance Arbitrary ByronBlock where
       genBlock = unRegularBlock <$> arbitrary
       genBoundaryBlock :: Gen ByronBlock
       genBoundaryBlock =
-        mkByronBlock epochSlots . ABOBBoundary . reAnnotateBoundary protocolMagicId <$>
+        mkByronBlock epochSlots . ABOBBoundary . API.reAnnotateBoundary protocolMagicId <$>
         hedgehog (CC.genBoundaryBlock)
 
 
@@ -480,15 +480,15 @@ instance Arbitrary (Header ByronBlock) where
     where
       genHeader :: Gen (Header ByronBlock)
       genHeader =
-        mkByronHeader epochSlots . ABOBBlockHdr .
-        reAnnotateUsing
+        mkByronHeader epochSlots . API.ABOBBlockHdr .
+        API.reAnnotateUsing
           (CC.Block.toCBORHeader epochSlots)
           (CC.Block.fromCBORAHeader epochSlots) <$>
         hedgehog (CC.genHeader protocolMagicId epochSlots)
       genBoundaryHeader :: Gen (Header ByronBlock)
       genBoundaryHeader =
-        mkByronHeader epochSlots . ABOBBoundaryHdr .
-        reAnnotateUsing
+        mkByronHeader epochSlots . API.ABOBBoundaryHdr .
+        API.reAnnotateUsing
           (CC.Block.toCBORABoundaryHeader protocolMagicId)
           CC.Block.fromCBORABoundaryHeader <$>
         hedgehog CC.genBoundaryHeader
@@ -501,24 +501,24 @@ instance Arbitrary KeyHash where
 
 instance Arbitrary (GenTx ByronBlock) where
   arbitrary =
-    fromMempoolPayload . reAnnotateUsing toCBOR fromCBOR <$>
+    fromMempoolPayload . API.reAnnotateUsing toCBOR fromCBOR <$>
     hedgehog (CC.genMempoolPayload protocolMagicId)
 
 instance Arbitrary (GenTxId ByronBlock) where
   arbitrary = oneof
       [ ByronTxId             <$> hedgehog CC.genTxId
       , ByronDlgId            <$> hedgehog genCertificateId
-      , ByronUpdateProposalId <$> hedgehog (CC.genUpId protocolMagicId)
+      , ByronUpdateProposalId <$> hedgehog (UG.genUpId protocolMagicId)
       , ByronUpdateVoteId     <$> hedgehog genUpdateVoteId
       ]
     where
       genCertificateId = CC.genAbstractHash (CC.genCertificate protocolMagicId)
-      genUpdateVoteId  = CC.genAbstractHash (CC.genVote protocolMagicId)
+      genUpdateVoteId  = CC.genAbstractHash (UG.genVote protocolMagicId)
 
-instance Arbitrary ApplyMempoolPayloadErr where
+instance Arbitrary API.ApplyMempoolPayloadErr where
   arbitrary = oneof
-    [ MempoolTxErr  <$> hedgehog CC.genUTxOValidationError
-    , MempoolDlgErr <$> hedgehog CC.genError
+    [ API.MempoolTxErr  <$> hedgehog CC.genUTxOValidationError
+    , API.MempoolDlgErr <$> hedgehog CC.genError
     -- TODO there is no generator for
     -- Cardano.Chain.Update.Validation.Interface.Error and we can't write one
     -- either because the different Error types it wraps are not exported.
@@ -536,25 +536,25 @@ instance Arbitrary SlotNumber where
   arbitrary = hedgehog CC.genSlotNumber
 
 instance Arbitrary CC.Update.UpId where
-  arbitrary = hedgehog (CC.genUpId protocolMagicId)
+  arbitrary = hedgehog (UG.genUpId protocolMagicId)
 
 instance Arbitrary CC.Update.ApplicationName where
-  arbitrary = hedgehog CC.genApplicationName
+  arbitrary = hedgehog UG.genApplicationName
 
 instance Arbitrary CC.Update.SystemTag where
-  arbitrary = hedgehog CC.genSystemTag
+  arbitrary = hedgehog UG.genSystemTag
 
 instance Arbitrary CC.Update.InstallerHash where
-  arbitrary = hedgehog CC.genInstallerHash
+  arbitrary = hedgehog UG.genInstallerHash
 
 instance Arbitrary CC.Update.ProtocolVersion where
-  arbitrary = hedgehog CC.genProtocolVersion
+  arbitrary = hedgehog UG.genProtocolVersion
 
 instance Arbitrary CC.Update.ProtocolParameters where
-  arbitrary = hedgehog CC.genProtocolParameters
+  arbitrary = hedgehog UG.genProtocolParameters
 
 instance Arbitrary CC.Update.SoftwareVersion where
-  arbitrary = hedgehog CC.genSoftwareVersion
+  arbitrary = hedgehog UG.genSoftwareVersion
 
 instance Arbitrary CC.UPI.State where
   arbitrary = CC.UPI.State

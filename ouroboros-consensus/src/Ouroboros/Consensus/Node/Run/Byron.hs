@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Node.Run.Byron (
 import           Data.Coerce (coerce)
 
 import qualified Cardano.Chain.Block as Cardano.Block
+import qualified Cardano.Chain.Byron.API as API
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochSlots (..))
@@ -22,7 +23,6 @@ import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Ledger.Byron
-import qualified Ouroboros.Consensus.Ledger.Byron.Auxiliary as Aux
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtConfig
@@ -41,8 +41,8 @@ instance RunNode ByronBlock where
   nodeBlockMatchesHeader    = verifyBlockMatchesHeader
   nodeBlockFetchSize        = const 2000 -- TODO #593
   nodeIsEBB                 = \hdr -> case byronHeaderRaw hdr of
-    Aux.ABOBBlockHdr _       -> Nothing
-    Aux.ABOBBoundaryHdr bhdr -> Just
+    API.ABOBBlockHdr _       -> Nothing
+    API.ABOBBoundaryHdr bhdr -> Just
                               . EpochNo
                               . Cardano.Block.boundaryEpoch
                               $ bhdr
@@ -56,7 +56,7 @@ instance RunNode ByronBlock where
                                 . extractGenesisData
                                 $ cfg
 
-  nodeMaxBlockSize          = Aux.getMaxBlockSize . byronLedgerState
+  nodeMaxBlockSize          = API.getMaxBlockSize . byronLedgerState
   nodeBlockEncodingOverhead = const byronBlockEncodingOverhead
 
   -- If the current chain is empty, produce a genesis EBB and add it to the
