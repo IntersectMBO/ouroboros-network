@@ -27,15 +27,25 @@
           (hsPkgs.time)
           ];
         };
+      exes = {
+        "demo-ntp-client" = {
+          depends = [
+            (hsPkgs.async)
+            (hsPkgs.base)
+            (hsPkgs.contra-tracer)
+            (hsPkgs.ntp-client)
+            ];
+          };
+        };
       tests = {
         "test-ntp-client" = {
           depends = [
             (hsPkgs.base)
             (hsPkgs.binary)
-            (hsPkgs.time)
             (hsPkgs.QuickCheck)
             (hsPkgs.tasty)
             (hsPkgs.tasty-quickcheck)
+            (hsPkgs.ntp-client)
             ];
           };
         };
