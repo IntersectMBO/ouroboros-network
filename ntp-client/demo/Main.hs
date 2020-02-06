@@ -1,5 +1,5 @@
 {-# LANGUAGE NumericUnderscores  #-}
-module Network.NTP.Test
+module Main
 where
 
 import           Control.Concurrent (threadDelay)
@@ -10,23 +10,17 @@ import           Control.Tracer
 import           Network.NTP.Client
 import           Network.NTP.Query
 
-testClient :: IO ()
-testClient = withNtpClient (contramapM (return . show) stdoutTracer) testSettings runApplication
+main :: IO ()
+main = withNtpClient (showTracing stdoutTracer) testSettings runApplication
   where
     runApplication ntpClient = do
         link $ ntpThread ntpClient  -- propergate any errors in the NTP thread.
         race_ getLine $ forever $ do
+            -- loose patience and perform an instant query.
             status <- ntpQueryBlocking ntpClient
-            traceWith stdoutTracer $ show ("main"::String, status)
+            traceWith (showTracing stdoutTracer) ("main", status)
+            -- sleep 10 seconds
             threadDelay 10_000_000
-
-testNtpQuery :: IO ()
-testNtpQuery = forever $ do
-    status <- ntpQuery tracer testSettings
-    traceWith stdoutTracer $ show ("main"::String, status)
-    threadDelay 10_000_000
-    where
-        tracer = contramapM (return . show) stdoutTracer
 
 testSettings :: NtpSettings
 testSettings = NtpSettings

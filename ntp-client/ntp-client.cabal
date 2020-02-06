@@ -13,7 +13,6 @@ Library
   exposed-modules:      Network.NTP.Client
                         Network.NTP.Packet
                         Network.NTP.Query
-                        Network.NTP.Test
                         Network.NTP.Trace
   build-depends:        async           >=2.2 && <2.3
                       , base            >=4.9 && <4.13
@@ -30,19 +29,24 @@ Library
   default-extensions:   GeneralizedNewtypeDeriving
                         
 test-suite test-ntp-client
-  hs-source-dirs:     test, src
+  hs-source-dirs:     test
   main-is:            Test.hs
   type:               exitcode-stdio-1.0
-  other-modules:      Network.NTP.Packet
   build-depends:        base            >=4.9 && <4.13
-                      , binary
-                      , time
+                      , binary          >=0.8 && <0.9
                       , QuickCheck
                       , tasty
                       , tasty-quickcheck
+                      , ntp-client
   default-language:   Haskell2010
   ghc-options:        -Wall
-  default-extensions:  OverloadedStrings
-                     , DeriveDataTypeable
-                     , GeneralizedNewtypeDeriving
-                     , MonadFailDesugaring
+
+executable demo-ntp-client
+  hs-source-dirs:     demo
+  main-is:            Main.hs
+  build-depends:        async           >=2.2 && <2.3
+                      , base            >=4.9 && <4.13
+                      , contra-tracer   >=0.1 && <0.2
+                      , ntp-client
+  default-language:   Haskell2010
+  ghc-options:        -Wall
