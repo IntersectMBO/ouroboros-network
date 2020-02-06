@@ -85,6 +85,7 @@ library
                      , io-sim
                      , typed-protocols
                      , ouroboros-network
+                     , ouroboros-network-framework
                      , ouroboros-consensus
 
   default-language:    Haskell2010

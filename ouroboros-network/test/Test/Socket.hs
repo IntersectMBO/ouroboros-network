@@ -12,14 +12,6 @@
 {-# OPTIONS_GHC -Wno-orphans     #-}
 module Test.Socket (tests) where
 
-import           Control.Concurrent (ThreadId)
-import           Control.Exception (IOException)
-import           Control.Monad
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork hiding (ThreadId)
-import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
 #if defined(mingw32_HOST_OS)
 import qualified Data.ByteString as BS
@@ -41,15 +33,24 @@ import           System.Directory (removeFile)
 import           System.IO.Error
 #endif
 
+import           Control.Monad
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork hiding (ThreadId)
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTimer
+import           Control.Concurrent (ThreadId)
+import           Control.Exception (IOException)
+import           Control.Tracer
+
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Driver
 import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 
-import           Control.Tracer
+import           Ouroboros.Network.Driver
 
 -- TODO: remove Mx prefixes
 import qualified Network.Mux as Mx hiding (MiniProtocolLimits (..))

@@ -23,12 +23,12 @@ import           Control.Tracer (nullTracer)
 
 import qualified Codec.Serialise as Serialise (decode, encode)
 
-import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Codec hiding (prop_codec)
 import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Driver
+import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 
 import           Ouroboros.Network.MockChain.Chain (Point)
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)

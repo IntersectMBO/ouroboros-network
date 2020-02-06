@@ -23,14 +23,14 @@ import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs
 
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
 
 import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Codec
+import           Ouroboros.Network.Driver
+import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Codec

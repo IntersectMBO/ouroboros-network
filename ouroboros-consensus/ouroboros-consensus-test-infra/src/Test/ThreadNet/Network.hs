@@ -48,10 +48,9 @@ import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           GHC.Stack
 
-import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
-
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import           Ouroboros.Network.Point (WithOrigin (..), fromWithOrigin)

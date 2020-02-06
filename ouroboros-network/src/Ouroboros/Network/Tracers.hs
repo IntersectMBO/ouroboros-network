@@ -11,8 +11,7 @@ import qualified Codec.CBOR.Term as CBOR
 
 import           Network.Mux.Trace
 
-import           Network.TypedProtocol.Driver (TraceSendRecv)
-
+import           Ouroboros.Network.Driver (TraceSendRecv)
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Socket (ConnectionId)

@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Network.TypedProtocol.ReqResp.Codec.Tests
+module Test.Network.TypedProtocol.ReqResp.Codec
   ( tests
   -- TODO: only temporary
   , splits2

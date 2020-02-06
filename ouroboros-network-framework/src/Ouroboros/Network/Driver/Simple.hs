@@ -13,7 +13,7 @@
 
 -- | Drivers for running 'Peer's with a 'Codec' and a 'Channel'.
 --
-module Network.TypedProtocol.Driver.Simple (
+module Ouroboros.Network.Driver.Simple (
 
   -- * Introduction
   -- $intro
@@ -26,20 +26,17 @@ module Network.TypedProtocol.Driver.Simple (
   runPipelinedPeer,
 
   -- * Connected peers
+  -- TODO: move these to a test lib
   runConnectedPeers,
   runConnectedPeersPipelined,
-
-  -- * Driver utilities
-  -- | This may be useful if you want to write your own driver.
-  driverSimple,
-  runDecoderWithChannel,
   ) where
 
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
-import Network.TypedProtocol.Channel
-import Network.TypedProtocol.Codec
-import Network.TypedProtocol.Driver.General
+import Network.TypedProtocol.Driver
+
+import Ouroboros.Network.Channel
+import Ouroboros.Network.Codec
 
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync

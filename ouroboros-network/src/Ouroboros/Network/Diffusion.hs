@@ -23,7 +23,6 @@ import           Data.Functor (void)
 import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
 
-import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (SockAddr, AddrInfo)
 import qualified Network.Socket as Socket
@@ -34,6 +33,7 @@ import qualified Ouroboros.Network.Snocket as Snocket
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import           Ouroboros.Network.Protocol.Handshake.Version
 
+import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux

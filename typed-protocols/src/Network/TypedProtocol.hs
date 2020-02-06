@@ -10,7 +10,6 @@ module Network.TypedProtocol (
   -- * Defining and implementing protocols
   -- $defining
   module Network.TypedProtocol.Core,
-  module Network.TypedProtocol.Codec,
 
   -- ** Protocol proofs and tests
   -- $tests
@@ -19,7 +18,6 @@ module Network.TypedProtocol (
   -- * Running protocols
   -- $running
   module Network.TypedProtocol.Driver,
-  module Network.TypedProtocol.Channel,
 
   -- * Pipelining protocols
   -- $pipelining
@@ -30,8 +28,6 @@ module Network.TypedProtocol (
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
 import Network.TypedProtocol.Proofs
-import Network.TypedProtocol.Codec
-import Network.TypedProtocol.Channel
 import Network.TypedProtocol.Driver
 
 

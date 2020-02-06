@@ -316,6 +316,7 @@ test-suite test-consensus
                      , io-sim
                      , typed-protocols
                      , ouroboros-network
+                     , ouroboros-network-framework
                      , ouroboros-consensus
 
                        -- ouroboros-consensus-test-infra

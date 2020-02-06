@@ -4,7 +4,7 @@
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Network.TypedProtocol.Driver.ByteLimit
+module Ouroboros.Network.Driver.ByteLimit
   ( runPeerWithByteLimit
   , DecoderFailureOrTooMuchInput (..)
   ) where
@@ -17,9 +17,11 @@ import           Control.Tracer (Tracer, traceWith)
 
 
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
+
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Codec
+import           Ouroboros.Network.Driver.Simple (TraceSendRecv(..))
 
 
 data DecoderFailureOrTooMuchInput failure

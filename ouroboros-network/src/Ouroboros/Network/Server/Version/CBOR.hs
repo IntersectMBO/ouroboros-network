@@ -12,8 +12,8 @@ import qualified Data.ByteString.Lazy as Lazy (ByteString)
 import Data.Word (Word32)
 
 import Control.Monad.Class.MonadST (MonadST)
-import Network.TypedProtocol.Codec (Codec)
 
+import Ouroboros.Network.Codec (Codec)
 import qualified Ouroboros.Network.Server.Version.Protocol as Version
 
 type Number = Word32
