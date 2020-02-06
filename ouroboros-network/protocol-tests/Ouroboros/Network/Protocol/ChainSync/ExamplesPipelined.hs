@@ -17,9 +17,10 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Network.TypedProtocol.Pipelined
 
 import           Ouroboros.Network.Block (BlockNo, HasHeader (..), Tip (..),
-                     getLegacyTipBlockNo)
+                     getTipBlockNo)
 import           Ouroboros.Network.MockChain.Chain (Chain (..), Point (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Examples (Client (..))
@@ -47,17 +48,17 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
       -- found an intersection or not. If not, we'll just sync from genesis.
       ClientPipelinedStIntersect {
         recvMsgIntersectFound    = \_ srvTip -> do
-          cliTipBlockNo <- Chain.headBlockNo <$> atomically (readTVar chainvar)
+          cliTipBlockNo <- At . Chain.headBlockNo <$> atomically (readTVar chainvar)
           pure $ go mkPipelineDecision0 Zero cliTipBlockNo srvTip client,
         recvMsgIntersectNotFound = \  srvTip -> do
-          cliTipBlockNo <- Chain.headBlockNo <$> atomically (readTVar chainvar)
+          cliTipBlockNo <- At . Chain.headBlockNo <$> atomically (readTVar chainvar)
           pure $ go mkPipelineDecision0 Zero cliTipBlockNo srvTip client
       }
 
     -- Drive pipelining by using @mkPipelineDecision@ callback.
     go :: MkPipelineDecision
        -> Nat n
-       -> BlockNo
+       -> WithOrigin BlockNo
        -- ^ our head
        -> Tip header
        -- ^ head of the server
@@ -65,7 +66,7 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
        -> ClientPipelinedStIdle n header (Tip header) m a
 
     go mkPipelineDecision n cliTipBlockNo srvTip client@Client {rollforward, rollbackward} =
-      let srvTipBlockNo = getLegacyTipBlockNo srvTip in
+      let srvTipBlockNo = getTipBlockNo srvTip in
       case (n, runPipelineDecision mkPipelineDecision n cliTipBlockNo srvTipBlockNo) of
         (_Zero, (Request, mkPipelineDecision')) ->
           SendMsgRequestNext
@@ -81,7 +82,7 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
                     choice <- rollforward srvHeader
                     pure $ case choice of
                       Left a        -> SendMsgDone a
-                      Right client' -> go mkPipelineDecision' n (blockNo srvHeader) srvTip' client',
+                      Right client' -> go mkPipelineDecision' n (At (blockNo srvHeader)) srvTip' client',
                   recvMsgRollBackward = \pRollback srvTip' -> do
                     cliTipBlockNo' <- rollback pRollback
                     choice <- rollbackward pRollback srvTip'
@@ -107,7 +108,7 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
                   choice <- rollforward srvHeader
                   pure $ case choice of
                     Left a        -> collectAndDone n' a
-                    Right client' -> go mkPipelineDecision' n' (blockNo srvHeader) srvTip' client',
+                    Right client' -> go mkPipelineDecision' n' (At (blockNo srvHeader)) srvTip' client',
                 recvMsgRollBackward = \pRollback srvTip' -> do
                   cliTipBlockNo' <- rollback pRollback
                   choice <- rollbackward pRollback srvTip'
@@ -125,7 +126,7 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
                   choice <- rollforward srvHeader
                   pure $ case choice of
                     Left a        -> collectAndDone n' a
-                    Right client' -> go mkPipelineDecision' n' (blockNo srvHeader) srvTip' client',
+                    Right client' -> go mkPipelineDecision' n' (At (blockNo srvHeader)) srvTip' client',
                 recvMsgRollBackward = \pRollback srvTip' -> do
                   cliTipBlockNo' <- rollback pRollback
                   choice <- rollbackward pRollback srvTip'
@@ -168,13 +169,14 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
         let !chain' = Chain.addBlock b chain
         writeTVar chainvar chain'
 
-    rollback :: Point header -> m BlockNo
+    rollback :: Point header -> m (WithOrigin BlockNo)
     rollback p = atomically $ do
         chain <- readTVar chainvar
         --TODO: handle rollback failure
         let (Just !chain') = Chain.rollback p chain
         writeTVar chainvar chain'
-        pure $ Chain.headBlockNo chain'
+        -- TODO update Chain.headBlockNo to return @WithOrigin BlockNo@
+        pure $ if Chain.null chain' then Origin else At (Chain.headBlockNo chain')
 
 -- | Offsets from the head of the chain to select points on the consumer's
 -- chain to send to the producer. The specific choice here is fibonacci up
