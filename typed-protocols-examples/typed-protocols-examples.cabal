@@ -18,7 +18,11 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:   Network.TypedProtocol.PingPong.Type
+  exposed-modules:   Network.TypedProtocol.Channel
+                   , Network.TypedProtocol.Codec
+                   , Network.TypedProtocol.Driver.Simple
+  
+                   , Network.TypedProtocol.PingPong.Type
                    , Network.TypedProtocol.PingPong.Client
                    , Network.TypedProtocol.PingPong.Server
                    , Network.TypedProtocol.PingPong.Codec

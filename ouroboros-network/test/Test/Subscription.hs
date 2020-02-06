@@ -40,9 +40,9 @@ import           Text.Show.Functions ()
 
 import           Test.Tasty.QuickCheck (shuffle, testProperty)
 
+--TODO: time utils should come from elsewhere
 import           Network.Mux.Time (microsecondsToDiffTime)
 
-import           Network.TypedProtocol.Driver
 import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
@@ -51,7 +51,7 @@ import qualified Network.TypedProtocol.ReqResp.Examples   as ReqResp
 import           Ouroboros.Network.Protocol.Handshake.Type (cborTermVersionDataCodec)
 import           Ouroboros.Network.Protocol.Handshake.Version (acceptableVersion, simpleSingletonVersions)
 
-
+import           Ouroboros.Network.Driver
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Mux

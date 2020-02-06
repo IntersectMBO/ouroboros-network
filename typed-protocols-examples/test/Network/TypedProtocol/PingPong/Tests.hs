@@ -15,7 +15,7 @@ module Network.TypedProtocol.PingPong.Tests
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Proofs
 import Network.TypedProtocol.Channel
-import Network.TypedProtocol.Driver
+import Network.TypedProtocol.Driver.Simple
 
 import Network.TypedProtocol.PingPong.Type
 import Network.TypedProtocol.PingPong.Client

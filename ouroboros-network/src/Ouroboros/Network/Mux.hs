@@ -27,15 +27,14 @@ import           Data.Int (Int64)
 import qualified Data.ByteString.Lazy as LBS
 
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
 
 import           Network.Mux.Types hiding (MiniProtocolLimits(..))
 import qualified Network.Mux.Types as Mux
 
 import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Codec
+import           Ouroboros.Network.Driver
 
 
 -- |  Like 'MuxApplication' but using a more polymorphic 'Channel' type.

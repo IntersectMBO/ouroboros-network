@@ -46,7 +46,7 @@ import           Control.Exception (Exception)
 import           Network.TypedProtocol.Core
                    ( Protocol(..), PeerRole(..)
                    , PeerHasAgency(..), WeHaveAgency, TheyHaveAgency )
-
+import           Network.TypedProtocol.Driver (SomeMessage(..))
 
 -- | A codec for a 'Protocol' handles the encoding and decoding of typed
 -- protocol messages. This is typically used when sending protocol messages
@@ -226,14 +226,6 @@ mapFailureDecodeStep f step = case step of
   DecodeDone a mb    -> DecodeDone a mb
   DecodeFail failure -> DecodeFail (f failure)
   DecodePartial k    -> DecodePartial (fmap (mapFailureDecodeStep f) . k)
-
--- | When decoding a 'Message' we only know the expected \"from\" state. We
--- cannot know the \"to\" state as this depends on the message we decode. To
--- resolve this we use the 'SomeMessage' wrapper which uses an existential
--- type to hide the \"to"\ state.
---
-data SomeMessage (st :: ps) where
-     SomeMessage :: Message ps st st' -> SomeMessage st
 
 
 -- | Each 'Codec' can use whatever @failure@ type is appropriate. This simple

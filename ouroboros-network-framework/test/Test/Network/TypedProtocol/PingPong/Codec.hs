@@ -4,14 +4,14 @@
 {-# LANGUAGE FlexibleInstances   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Network.TypedProtocol.PingPong.Codec.Tests (tests) where
+module Test.Network.TypedProtocol.PingPong.Codec (tests) where
 
 import           Control.Monad.ST (runST)
 
 import           Network.TypedProtocol.PingPong.Type
 import           Network.TypedProtocol.PingPong.Codec.CBOR
 -- TODO: remove this import
-import           Network.TypedProtocol.ReqResp.Codec.Tests (splits2, splits3)
+import           Test.Network.TypedProtocol.ReqResp.Codec (splits2, splits3)
 
 import           Ouroboros.Network.Codec
 

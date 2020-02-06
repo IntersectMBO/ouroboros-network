@@ -20,12 +20,12 @@ import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Codec
+import           Ouroboros.Network.Driver
+import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 
 import           Ouroboros.Network.Block (Serialised (..), StandardHash,
                      castPoint, genesisPoint, unwrapCBORinCBOR, wrapCBORinCBOR)
