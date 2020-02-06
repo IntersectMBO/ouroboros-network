@@ -95,6 +95,7 @@ prop_simple_leader_schedule_convergence
       (Just schedule)
       Nothing
       (const False)
+      0
       testOutput
   where
     testOutput@TestOutput{testOutputNodes} =

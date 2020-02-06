@@ -61,6 +61,7 @@ prop_simple_pbft_convergence
            Ref.Forked{} -> 1
            _            -> 0)
         (expectedBlockRejection numCoreNodes)
+        0
         testOutput
   where
     NumCoreNodes nn = numCoreNodes

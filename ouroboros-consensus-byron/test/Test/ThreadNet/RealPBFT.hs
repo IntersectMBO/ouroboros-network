@@ -389,6 +389,42 @@ tests = testGroup "RealPBFT" $
             , slotLengths  = defaultSlotLengths
             , initSeed = Seed {getSeed = (13428626417421372024,5113871799759534838,13943132470772613446,18226529569527889118,4309403968134095151)}
             }
+    , testProperty "mkDelegationEnvironment uses currentSlot not latestSlot" $
+      -- After rekeying, node 2 continues to emit its dlg cert tx. This an ugly
+      -- implementation detail of rekeying, but as a nice surprise it found a
+      -- bug!
+      --
+      -- In slot 40, node 1 forged a block that included the now-/expired/ dlg
+      -- cert tx (cf @WrongEpoch@). This happened because the Byron transaction
+      -- validation logic was using the slot of the latest block (i.e. 39) as
+      -- the current slot (i.e. actually 40), so the transaction wasn't
+      -- identified as expired until it was already inside a block.
+      once $
+      let ncn = NumCoreNodes 3 in
+      prop_simple_real_pbft_convergence
+       NoEBBs
+       SecurityParam {maxRollbacks = 2}
+       TestConfig
+         { numCoreNodes = ncn
+         , numSlots     = NumSlots 41
+         , nodeJoinPlan = trivialNodeJoinPlan ncn
+         , nodeRestarts = NodeRestarts $ Map.singleton (SlotNo 30) $ Map.singleton (CoreNodeId 2) NodeRekey
+         , nodeTopology = meshNodeTopology ncn
+         , slotLengths  = defaultSlotLengths
+         , initSeed     = Seed (368401128646137767,7989071211759985580,4921478144180472393,11759221144888418607,7602439127562955319)
+         }
+    , testProperty "delayed message corner case" $
+          once $
+          let ncn = NumCoreNodes 2 in
+          prop_simple_real_pbft_convergence NoEBBs (SecurityParam 7) TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 10
+            , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 1})])
+            , nodeRestarts = noRestarts
+            , nodeTopology = meshNodeTopology ncn
+            , slotLengths  = defaultSlotLengths
+            , initSeed     = Seed (11954171112552902178,1213614443200450055,13600682863893184545,15433529895532611662,2464843772450023204)
+            }
     , testProperty "simple convergence" $
           \produceEBBs ->
           -- TODO k > 1 as a workaround for Issue #1511.
@@ -536,6 +572,7 @@ prop_simple_real_pbft_convergence produceEBBs k
            Ref.Forked{} -> 1
            _            -> 0)
         (expectedBlockRejection k numCoreNodes nodeRestarts)
+        1
         testOutput .&&.
     not (all (Chain.null . snd) finalChains) .&&.
     conjoin (map (hasAllEBBs k numSlots produceEBBs) finalChains)

@@ -100,6 +100,7 @@ prop_simple_praos_convergence
       Nothing
       Nothing
       (const False)
+      0
       testOutput
   where
     testOutput@TestOutput{testOutputNodes} =

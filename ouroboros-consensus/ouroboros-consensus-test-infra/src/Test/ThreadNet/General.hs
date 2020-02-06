@@ -280,10 +280,12 @@ prop_general ::
   -> Maybe LeaderSchedule
   -> Maybe NumBlocks
   -> (BlockRejection blk -> Bool)
+  -> BlockNo
+     -- ^ block number of the first proper block after genesis
   -> TestOutput blk
   -> Property
 prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
-  mbSchedule mbMaxForkLength expectedBlockRejection
+  mbSchedule mbMaxForkLength expectedBlockRejection firstBlockNo
   TestOutput{testOutputNodes, testOutputTipBlockNos} =
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
@@ -581,7 +583,7 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
             --
             -- NOTE This predicate is more general than that specific scenario,
             -- but we don't anticipate it wholly masking any interesting cases.
-            delayOK1 = 1 == bno
+            delayOK1 = firstBlockNo == bno
 
             -- When a slot has multiple leaders, each node chooses one of the
             -- mutually-exclusive forged blocks and won't fetch any of the
