@@ -26,9 +26,9 @@ library
   hs-source-dirs:      src
 
   if os(windows)
-     hs-source-dirs:   src-win32/
+     hs-source-dirs:   src-win32
   else
-     hs-source-dirs:   src-unix/
+     hs-source-dirs:   src-unix
 
   exposed-modules:
                        Ouroboros.Consensus.Block

@@ -3,7 +3,7 @@
 # Ouroboros-Network
 
 * io-sim - `IOSim` simulator monad which supports asynchronous exceptions,
-  `STM` transactions and `async` interface, timers. 
+  `STM` transactions and `async` interface, timers.
 * io-sim-classes - type classes, all of them have instance for both `IOSim` and
   `IO`.
 * `typed-protocols` - session type framework with support of [protocol pipelining](https://en.wikipedia.org/wiki/Protocol_pipelining)
@@ -38,7 +38,7 @@ cabal new-run pkg:typed-protocols:tests
 ```
 or with `nix`
 ```
-nix-build -A nix-tools.tests.ouroboros-network
+nix-build -A haskellPackages.typed-protocols.checks
 ```
 ### IOSim test suite
 ```
@@ -46,7 +46,7 @@ cabal new-run pkg:io-sim:tests
 ```
 or with `nix`
 ```
-nix-build -A nix-tools.tests.io-sim
+nix-build -A haskellPackages.io-sim.checks
 ```
 ### Ouroboros-Network test suite
 ```
@@ -54,7 +54,7 @@ cabal new-run pkg:ouroboros-network:tests
 ```
 or with `nix`
 ```
-nix-build -A nix-tools.tests.ouroboros-network
+nix-build -A haskellPackages.ouroboros-network.checks
 ```
 ### Ouroboros-Consensus test suite
 ```
@@ -62,7 +62,7 @@ cabal new-run pkg:ouroboros-consensus:tests
 ```
 or with `nix`
 ```
-nix-build -A nix-tools.tests.ouroboros-consensus
+nix-build -A haskellPackages.ouroboros-consensus.checks
 ```
 
 # Ouroboros-Consensus
@@ -77,7 +77,7 @@ cabal new-run pkg:ouroboros-consensus:test-consensus
 ```
 or with `nix`
 ```
-nix-build -A nix-tools.tests.ouroboros-consensus.test-consensus
+nix-build -A haskellPackages.ouroboros-consensus.checks.test-consensus
 ```
 ### Storage test suite
 ```
@@ -85,5 +85,5 @@ cabal new-run pkg:ouroboros-consensus:test-storage
 ```
 or with `nix`
 ```
-nix-build -A nix-tools.tests.ouroboros-consensus.test-storage
+nix-build -A haskellPackages.ouroboros-consensus.checks.test-storage
 ```

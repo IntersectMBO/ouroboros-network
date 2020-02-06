@@ -1,3 +1,5 @@
+index-state: 2020-01-31T00:00:00Z
+
 packages: ./typed-protocols
           ./typed-protocols-examples
           ./ouroboros-network-testing
@@ -43,7 +45,7 @@ package mux
 
 package ouroboros-network
   tests: True
-  flags: +asserts
+  flags: +asserts -cddl
 
 package ouroboros-consensus
   tests: True
@@ -55,90 +57,104 @@ package contra-tracer
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
-  subdir:   contra-tracer
   tag: dd30455144e11efb435619383ba84ce02aee720d
+  --sha256: 1g08bg99fvss99kg27l7pmxm7lh60573xln8l8x2rzvwfvfgk2i5
+  subdir:   contra-tracer
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
   tag: 00487726c4bc21b4744e59d913334ebfeac7d68e
-  subdir: .
+  --sha256: 0v4fcq5kdd2r5dgwys8kv46ff33qp756n26ycxrca10wq14zkwm5
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
   tag: 00487726c4bc21b4744e59d913334ebfeac7d68e
+  --sha256: 0v4fcq5kdd2r5dgwys8kv46ff33qp756n26ycxrca10wq14zkwm5
   subdir: test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
   tag: 474622cfde663730e10e2e0d5de0ed06a867a844
+  --sha256: 1waqjyp6ycmn8lqrsnb8d14p43645mqknd5m0apb7814s3xd3f07
   subdir: binary
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
   tag: 474622cfde663730e10e2e0d5de0ed06a867a844
+  --sha256: 1waqjyp6ycmn8lqrsnb8d14p43645mqknd5m0apb7814s3xd3f07
   subdir: binary/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
   tag: 474622cfde663730e10e2e0d5de0ed06a867a844
+  --sha256: 1waqjyp6ycmn8lqrsnb8d14p43645mqknd5m0apb7814s3xd3f07
   subdir: cardano-crypto-class
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
   tag: 474622cfde663730e10e2e0d5de0ed06a867a844
+  --sha256: 1waqjyp6ycmn8lqrsnb8d14p43645mqknd5m0apb7814s3xd3f07
   subdir: slotting
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
   tag: 6d154d16de01edf2d3ff56303b7a34cb188ed217
+  --sha256: 010hgxnia3ryq74k9cf2yn39qnni1j27vg7xlzmdqr27p8ikkrw7
   subdir: byron/semantics/executable-spec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
   tag: 6d154d16de01edf2d3ff56303b7a34cb188ed217
+  --sha256: 010hgxnia3ryq74k9cf2yn39qnni1j27vg7xlzmdqr27p8ikkrw7
   subdir: byron/ledger/executable-spec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
   tag: 6d154d16de01edf2d3ff56303b7a34cb188ed217
+  --sha256: 010hgxnia3ryq74k9cf2yn39qnni1j27vg7xlzmdqr27p8ikkrw7
   subdir: byron/chain/executable-spec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/goblins
   tag: 26d35ad52fe9ade3391532dbfeb2f416f07650bc
+  --sha256: 17p5x0hj6c67jkdqx0cysqlwq2zs2l87azihn1alzajy9ak6ii0b
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
   tag: 6d533b72d4a91b756cd8ffe164928d5f5eebcfa0
+  --sha256: 08jbmlq5jj36jkn2iw9znl7jkgnjgq37i70asmp62igqyjhis8q6
   subdir: cardano-ledger
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
   tag: 6d533b72d4a91b756cd8ffe164928d5f5eebcfa0
+  --sha256: 08jbmlq5jj36jkn2iw9znl7jkgnjgq37i70asmp62igqyjhis8q6
   subdir: crypto
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
   tag: 6d533b72d4a91b756cd8ffe164928d5f5eebcfa0
+  --sha256: 08jbmlq5jj36jkn2iw9znl7jkgnjgq37i70asmp62igqyjhis8q6
   subdir: cardano-ledger/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
   tag: 6d533b72d4a91b756cd8ffe164928d5f5eebcfa0
+  --sha256: 08jbmlq5jj36jkn2iw9znl7jkgnjgq37i70asmp62igqyjhis8q6
   subdir: crypto/test
 
 -- version number matching the one specified in the stack resolver file
@@ -146,4 +162,4 @@ source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-crypto/
   tag: 3c707936ba0a665375acf5bd240dc4b6eaa6c0bc
-  subdir: .
+  --sha256: 0g8ln8k8wx4csdv92bz09pr7v9dp4lcyv1334b09c9rgwdwhqg1b
