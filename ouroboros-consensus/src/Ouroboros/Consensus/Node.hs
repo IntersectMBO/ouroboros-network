@@ -32,6 +32,7 @@ module Ouroboros.Consensus.Node
   , mkNodeArgs
   ) where
 
+import           Codec.Serialise (DeserialiseFailure)
 import           Control.Tracer (Tracer)
 import           Crypto.Random
 import           Data.ByteString.Lazy (ByteString)
@@ -90,7 +91,9 @@ run
   :: forall blk.
      RunNode blk
   => Tracers IO ConnectionId blk          -- ^ Consensus tracers
-  -> Tracer  IO (ChainDB.TraceEvent blk)  -- ^ ChainDB tracer
+  -> ProtocolTracers IO ConnectionId blk DeserialiseFailure
+     -- ^ Protocol tracers
+  -> Tracer IO (ChainDB.TraceEvent blk)   -- ^ ChainDB tracer
   -> DiffusionTracers                     -- ^ Diffusion tracers
   -> DiffusionArguments                   -- ^ Diffusion arguments
   -> NetworkMagic
@@ -105,9 +108,9 @@ run
      -- ^ Called on the 'NodeKernel' after creating it, but before the network
      -- layer is initialised.
   -> IO ()
-run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
-    dbPath pInfo isProducer customiseChainDbArgs customiseNodeArgs
-    onNodeKernel = do
+run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
+    networkMagic dbPath pInfo isProducer customiseChainDbArgs
+    customiseNodeArgs onNodeKernel = do
     let mountPoint = MountPoint dbPath
     either throwM return =<< checkDbMarker
       (ioHasFS mountPoint)
@@ -145,7 +148,7 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
                            ()
           networkApps = consensusNetworkApps
             nodeKernel
-            nullProtocolTracers
+            protocolTracers
             (protocolCodecs (getNodeConfig nodeKernel))
             (protocolHandlers nodeArgs nodeKernel)
 
