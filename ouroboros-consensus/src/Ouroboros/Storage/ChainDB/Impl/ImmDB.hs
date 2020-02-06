@@ -23,7 +23,6 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , getSlotNoAtTip
   , getKnownBlockComponent
   , getBlockComponent
-  , getBlockComponentAtTip
   , getBlockComponentWithPoint
     -- * Appending a block
   , appendBlock
@@ -374,18 +373,6 @@ getBlockComponent db blockComponent epochOrSlot = withDB db $ \imm ->
       Right slot -> ImmDB.getBlockComponent imm blockComponent' slot
   where
     blockComponent' = translateToRawDB (parse db) (addHdrEnv db) blockComponent
-
-getBlockComponentAtTip
-  :: (MonadCatch m, HasHeader blk, HasCallStack)
-  => ImmDB m blk -> BlockComponent (ChainDB m blk) b -> m (Maybe b)
-getBlockComponentAtTip db blockComponent = do
-    immTip <- withDB db $ \imm -> ImmDB.getTip imm
-    case forgetTipInfo <$> immTip of
-      TipGen -> return Nothing
-      Tip (ImmDB.EBB epoch) ->
-        Just <$> getKnownBlockComponent db blockComponent (Left epoch)
-      Tip (ImmDB.Block slot) ->
-        Just <$> getKnownBlockComponent db blockComponent (Right slot)
 
 -- | Return the block component of the block corresponding to the given point,
 -- if it is part of the ImmutableDB.

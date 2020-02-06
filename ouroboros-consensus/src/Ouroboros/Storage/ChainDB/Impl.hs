@@ -35,18 +35,14 @@ import           Control.Tracer
 import           Control.Monad.Class.MonadThrow (bracket)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader (..), castPoint,
-                     genesisPoint)
+import           Ouroboros.Network.Block (castPoint)
 
-import           Ouroboros.Consensus.Block (headerPoint, toIsEBB)
+import           Ouroboros.Consensus.Block (toIsEBB)
 import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
-
-import           Ouroboros.Storage.Common (EpochNo)
-import           Ouroboros.Storage.EpochInfo (epochInfoEpoch)
 
 import           Ouroboros.Storage.ChainDB.API
 
@@ -88,14 +84,8 @@ openDBInternal
   -> m (ChainDB m blk, Internal m blk)
 openDBInternal args launchBgTasks = do
     immDB <- ImmDB.openDB argsImmDb
-    -- In order to figure out the 'BlockNo' and 'Point' at the tip of the
-    -- ImmutableDB, we need to read the header at the tip of the ImmutableDB.
-    immDbTipHeader <- sequence =<< ImmDB.getBlockComponentAtTip immDB GetHeader
-    -- Note that 'immDbTipBlockNo' might not end up being the \"immutable\"
-    -- block(no), because the current chain computed from the VolatileDB could
-    -- be longer than @k@.
-    let immDbTipPoint = maybe genesisPoint headerPoint immDbTipHeader
-    immDbTipEpoch    <- maybe (return 0)   blockEpoch  immDbTipHeader
+    immDbTipPoint <- ImmDB.getPointAtTip immDB
+    immDbTipEpoch <- Reopen.pointToEpoch (Args.cdbEpochInfo args) immDbTipPoint
     traceWith tracer $ TraceOpenEvent $ OpenedImmDB
       { _immDbTip      = immDbTipPoint
       , _immDbTipEpoch = immDbTipEpoch
@@ -201,6 +191,3 @@ openDBInternal args launchBgTasks = do
   where
     tracer = Args.cdbTracer args
     (argsImmDb, argsVolDb, argsLgrDb, _) = Args.fromChainDbArgs args
-
-    blockEpoch :: forall b. HasHeader b => b -> m EpochNo
-    blockEpoch = epochInfoEpoch (Args.cdbEpochInfo args) . blockSlot
