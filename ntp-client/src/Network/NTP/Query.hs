@@ -71,13 +71,13 @@ minimumOfThree l
 -- | Get a list local udp addresses.
 --
 udpLocalAddresses :: IO [AddrInfo]
-udpLocalAddresses = Socket.getAddrInfo (Just hints) Nothing Nothing
+udpLocalAddresses = Socket.getAddrInfo (Just hints) Nothing (Just $ show port)
   where
     hints = Socket.defaultHints
           { addrFlags = [AI_PASSIVE]
           , addrSocketType = Datagram
           }
-
+    port = Socket.defaultPort
 
 -- | Resolve hostname into 'AddrInfo'.  We use 'AI_ADDRCONFIG' so we get IPv4/6
 -- address only if the local.  We don't need 'AI_V4MAPPED' which would be set
