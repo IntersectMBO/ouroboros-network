@@ -17,6 +17,8 @@
 module Ouroboros.Storage.ChainDB.API (
     -- * Main ChainDB API
     ChainDB(..)
+  , getCurrentTip
+  , getTipBlockNo
     -- * Useful utilities
   , getBlock
   , streamBlocks
@@ -67,10 +69,13 @@ import           GHC.Stack
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      ChainUpdate, pattern GenesisPoint, HasHeader (..),
                      HeaderHash, MaxSlotNo, Point, Serialised (..), SlotNo,
                      StandardHash, atSlot, genesisPoint)
+import qualified Ouroboros.Network.Block as Network
+import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..))
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
@@ -178,11 +183,6 @@ data ChainDB m blk = ChainDB {
       -- current chain fragment is empty due to data loss in the volatile DB,
       -- 'getTipPoint' will return the tip of the immutable DB.
     , getTipPoint        :: STM m (Point blk)
-
-      -- | Get block number of the tip of the chain
-      --
-      -- Will return 'genesisBlockNo' if the database is empty.
-    , getTipBlockNo      :: STM m BlockNo
 
       -- | Get the given component(s) of the block at the specified point. If
       -- there is no block at the given point, 'Nothing' is returned.
@@ -302,6 +302,19 @@ data ChainDB m blk = ChainDB {
       -- 'False' when the database is closed.
     , isOpen             :: STM m Bool
     }
+
+getCurrentTip :: (Monad (STM m), HasHeader (Header blk))
+              => ChainDB m blk -> STM m (Network.Tip blk)
+getCurrentTip chainDB =
+    mkTip . AF.headAnchor <$> getCurrentChain chainDB
+  where
+    mkTip :: AF.Anchor (Header blk) -> Network.Tip blk
+    mkTip AF.AnchorGenesis  = Network.TipGenesis
+    mkTip (AF.Anchor s h b) = Network.Tip s h b
+
+getTipBlockNo :: (Monad (STM m), HasHeader (Header blk))
+              => ChainDB m blk -> STM m (WithOrigin BlockNo)
+getTipBlockNo = fmap Network.getTipBlockNo . getCurrentTip
 
 instance DB (ChainDB m blk) where
   -- Returning a block or header requires parsing. In case of failure, a

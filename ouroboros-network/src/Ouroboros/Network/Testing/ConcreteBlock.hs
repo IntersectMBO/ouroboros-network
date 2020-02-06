@@ -45,7 +45,6 @@ module Ouroboros.Network.Testing.ConcreteBlock (
   , fixupChainFragmentFromGenesis
   , fixupChainFragmentFromSame
   , fixupAnchoredFragmentFrom
-  , fixupAnchoredFragmentFromSame
   ) where
 
 import           Data.FingerTree.Strict (Measured (measure))
@@ -350,20 +349,9 @@ fixupAnchoredFragmentFrom :: HasHeader b
                           -> [b] -> AnchoredFragment b
 fixupAnchoredFragmentFrom anchorpoint anchorblockno =
     fixupBlocks
-      (AF.:>) (AF.Empty anchorpoint)
+      (AF.:>) (AF.Empty (AF.anchorFromPoint anchorpoint anchorblockno))
       (Just (pointHash anchorpoint))
       (Just anchorblockno)
-
-fixupAnchoredFragmentFromSame :: HasHeader b
-                              => Point b
-                              -> (ChainHash b -> BlockNo -> b -> b)
-                              -> [b] -> AnchoredFragment b
-fixupAnchoredFragmentFromSame anchorpoint =
-    fixupBlocks
-      (AF.:>) (AF.Empty anchorpoint)
-      (Just (pointHash anchorpoint))  -- fixup the hash
-      Nothing                         -- but keep the first block number
-
 
 {-------------------------------------------------------------------------------
   Serialisation

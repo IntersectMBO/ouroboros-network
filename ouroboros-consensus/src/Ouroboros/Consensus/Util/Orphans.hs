@@ -56,7 +56,7 @@ instance Condense block => Condense (Chain block) where
 
 instance (Condense block, HasHeader block, Condense (HeaderHash block))
     => Condense (AnchoredFragment block) where
-    condense (AF.Empty pt) = "EmptyAnchor " <> condense pt
+    condense (AF.Empty pt) = "EmptyAnchor " <> condense (AF.anchorToPoint pt)
     condense (cs AF.:> b)  = condense cs <> " :> " <> condense b
 
 {-------------------------------------------------------------------------------

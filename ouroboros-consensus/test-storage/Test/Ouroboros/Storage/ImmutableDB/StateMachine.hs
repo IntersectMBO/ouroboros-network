@@ -130,7 +130,7 @@ data Cmd it
   | Reopen                 ValidationPolicy
   | ReopenInThePast        ValidationPolicy SlotNo
     -- ^ New current slot, will be in the past
-  | DeleteAfter            ImmTip
+  | DeleteAfter            (ImmTipWithInfo Hash)
   | Corruption             Corruption
   deriving (Generic, Show, Functor, Foldable, Traversable)
 
@@ -170,7 +170,7 @@ data Success it
   | Iter            (Either (WrongBoundError Hash) it)
   | IterResult      (IteratorResult AllComponents)
   | IterHasNext     (Maybe (Either EpochNo SlotNo, Hash))
-  | Tip             (ImmTipWithHash Hash)
+  | Tip             (ImmTipWithInfo Hash)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 -- | Product of all 'BlockComponent's. As this is a GADT, generating random
@@ -222,8 +222,8 @@ run ImmutableDBEnv { db, internal, registry, varNextId, varCurSlot } runCorrupti
     GetBlockComponent      s   -> MbAllComponents <$> getBlockComponent      db allComponents s
     GetEBBComponent        e   -> MbAllComponents <$> getEBBComponent        db allComponents e
     GetBlockOrEBBComponent s h -> MbAllComponents <$> getBlockOrEBBComponent db allComponents s h
-    AppendBlock         s h b  -> Unit            <$> appendBlock            db s h (toBuilder <$> testBlockToBinaryInfo b)
-    AppendEBB           e h b  -> Unit            <$> appendEBB              db e h (toBuilder <$> testBlockToBinaryInfo b)
+    AppendBlock         s h b  -> Unit            <$> appendBlock            db s (blockNo b) h (toBuilder <$> testBlockToBinaryInfo b)
+    AppendEBB           e h b  -> Unit            <$> appendEBB              db e (blockNo b) h (toBuilder <$> testBlockToBinaryInfo b)
     Stream              s e    -> iter            =<< stream                 db registry allComponents s e
     IteratorNext        it     -> IterResult      <$> iteratorNext           (unWithEq it)
     IteratorPeek        it     -> IterResult      <$> iteratorPeek           (unWithEq it)
@@ -282,8 +282,8 @@ runPure = \case
     GetBlockComponent      s   -> ok MbAllComponents $ queryE   (getBlockComponentModel allComponents s)
     GetEBBComponent        e   -> ok MbAllComponents $ queryE   (getEBBComponentModel allComponents e)
     GetBlockOrEBBComponent s h -> ok MbAllComponents $ queryE   (getBlockOrEBBComponentModel allComponents s h)
-    AppendBlock         s h b  -> ok Unit            $ updateE_ (appendBlockModel s h (toBuilder <$> testBlockToBinaryInfo b))
-    AppendEBB           e h b  -> ok Unit            $ updateE_ (appendEBBModel e h (toBuilder <$> testBlockToBinaryInfo b))
+    AppendBlock         s h b  -> ok Unit            $ updateE_ (appendBlockModel s (blockNo b) h (toBuilder <$> testBlockToBinaryInfo b))
+    AppendEBB           e h b  -> ok Unit            $ updateE_ (appendEBBModel   e (blockNo b) h (toBuilder <$> testBlockToBinaryInfo b))
     Stream              s e    -> ok Iter            $ updateEE (streamModel s e)
     IteratorNext        it     -> ok IterResult      $ update   (iteratorNextModel it allComponents)
     IteratorPeek        it     -> ok IterResult      $ query    (iteratorPeekModel it allComponents)
@@ -565,17 +565,17 @@ generateCmd Model {..} = At <$> frequency
     currentEpoch = dbmCurrentEpoch dbModel
 
     lastSlot :: SlotNo
-    lastSlot = fromIntegral $ length dbmChain
+    lastSlot = fromIntegral $ length (dbmRegular dbModel)
 
     -- Useful when adding to another 'SlotNo'
     epochSize' :: SlotNo
     epochSize' = SlotNo $ unEpochSize fixedEpochSize
 
-    empty = dbmTip == C.TipGen
+    empty = dbmTip dbModel == C.TipGen
 
-    noBlocks = all isNothing dbmChain
+    noBlocks = all isNothing (dbmRegular dbModel)
 
-    noEBBs = Map.null dbmEBBs
+    noEBBs = Map.null (dbmEBBs dbModel)
 
     genGetBlockSlot :: Gen SlotNo
     genGetBlockSlot = frequency
@@ -585,7 +585,7 @@ generateCmd Model {..} = At <$> frequency
 
     genGetEBB :: Gen EpochNo
     genGetEBB = frequency
-      [ (if noEBBs then 0 else 5, elements $ Map.keys dbmEBBs)
+      [ (if noEBBs then 0 else 5, elements $ Map.keys (dbmEBBs dbModel))
       , (1, chooseEpoch (0, 5))
       ]
 
@@ -620,11 +620,11 @@ generateCmd Model {..} = At <$> frequency
 
     genBlockInThePast :: Gen TestBlock
     genBlockInThePast =
-      elements $ map (testBlockFromBinaryInfo . snd) $ catMaybes dbmChain
+      elements $ map (testBlockFromBinaryInfo . snd) $ catMaybes (dbmRegular dbModel)
 
     genEBBInThePast :: Gen TestBlock
     genEBBInThePast =
-      elements $ map (testBlockFromBinaryInfo . snd) $ Map.elems dbmEBBs
+      elements $ map (testBlockFromBinaryInfo . snd) $ Map.elems (dbmEBBs dbModel)
 
     genBound = frequency
       [ (1,
@@ -641,7 +641,7 @@ generateCmd Model {..} = At <$> frequency
 
     genValPol = elements [ValidateMostRecentEpoch, ValidateAllEpochs]
 
-    genTip :: Gen ImmTip
+    genTip :: Gen (ImmTipWithInfo Hash)
     genTip = elements $ NE.toList $ tips dbModel
 
 -- | Return the files that the database with the given model would have
@@ -689,11 +689,6 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
   where
     DBModel {..} = dbModel
 
-    currentEpoch = dbmCurrentEpoch dbModel
-
-    lastSlot :: SlotNo
-    lastSlot = fromIntegral $ length dbmChain
-
     shrinkCorruption (MkCorruption corrs) =
       [ MkCorruption corrs'
       | corrs' <- shrinkCorruptions corrs]
@@ -706,15 +701,11 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
     -- For simplicity, we only shrink to TipEBBs if the tip is an TipEBB,
     -- similarly for TipBlock. Otherwise we have to check whether a TipEBB is
     -- before or after a TipBlock.
-    shrinkTip C.TipGen =
-      map (C.Tip . ImmDB.Block) [0..lastSlot] ++ map (C.Tip . ImmDB.EBB) [0..currentEpoch]
-    shrinkTip (C.Tip (ImmDB.Block slot))
-      | slot > lastSlot = map (C.Tip . ImmDB.Block) [lastSlot..slot - 1]
-      | otherwise       = map (C.Tip . ImmDB.Block) [slot + 1..lastSlot]
-    shrinkTip (C.Tip (ImmDB.EBB epoch))
-      | epoch > currentEpoch = map (C.Tip . ImmDB.EBB) [currentEpoch..epoch - 1]
-      | otherwise            = map (C.Tip . ImmDB.EBB) [epoch + 1..currentEpoch]
-
+    --
+    -- TODO: Re-enable shrinker
+    -- We could shrink the tip by asking for `tips` and selecting some.
+    shrinkTip :: ImmTipWithInfo Hash -> [ImmTipWithInfo Hash]
+    shrinkTip _ = []
 
 {-------------------------------------------------------------------------------
   The final state machine
@@ -754,7 +745,7 @@ precondition Model {..} (At (CmdErr { _cmd = cmd })) =
       Just bPrev -> blockPrevHash b .== Block.BlockHash (blockHash bPrev)
 
     lastSlot :: SlotNo
-    lastSlot = fromIntegral $ length $ dbmChain dbModel
+    lastSlot = fromIntegral $ length $ dbmRegular dbModel
 
 transition :: (Show1 r, Eq1 r)
            => Model m r -> At CmdErr m r -> At Resp m r -> Model m r
@@ -792,7 +783,7 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
         run env (semanticsCorruption hasFS) its cmd
 
       CmdErr (Just errors) cmd its -> do
-        tipBefore <- fmap forgetHash <$> getTip db
+        tipBefore <- getTip db
         res       <- withErrors varErrors errors $ try $
           run env (semanticsCorruption hasFS) its cmd
         case res of
@@ -1179,9 +1170,10 @@ instance ToExpr TestHeader
 instance ToExpr TestBody
 instance ToExpr TestBlock
 instance ToExpr ImmDB.BlockOrEBB
-instance (ToExpr a, ToExpr hash) => ToExpr (ImmDB.WithHash hash a)
+instance (ToExpr a, ToExpr hash) => ToExpr (ImmDB.TipInfo hash a)
 instance ToExpr r => ToExpr (C.Tip r)
 instance ToExpr b => ToExpr (BinaryInfo b)
+instance ToExpr hash => ToExpr (InSlot hash)
 instance ToExpr (DBModel Hash)
 
 instance ToExpr FsError where

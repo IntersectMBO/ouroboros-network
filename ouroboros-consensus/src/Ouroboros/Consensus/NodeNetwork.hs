@@ -600,11 +600,11 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
         channel
         (localStateQueryServerPeer phLocalStateQueryServer)
 
-chainDbView :: IOLike m => ChainDB m blk -> ChainDbView m blk
+chainDbView :: (IOLike m, HasHeader (Header blk))
+            => ChainDB m blk -> ChainDbView m blk
 chainDbView chainDB = ChainDbView
-  { getCurrentChain   = ChainDB.getCurrentChain             chainDB
-  , getCurrentLedger  = ChainDB.getCurrentLedger            chainDB
-  , getOurTip         = legacyTip <$> ChainDB.getTipPoint   chainDB
-                                  <*> ChainDB.getTipBlockNo chainDB
-  , getIsInvalidBlock = ChainDB.getIsInvalidBlock           chainDB
+  { getCurrentChain   = ChainDB.getCurrentChain   chainDB
+  , getCurrentLedger  = ChainDB.getCurrentLedger  chainDB
+  , getOurTip         = ChainDB.getCurrentTip     chainDB
+  , getIsInvalidBlock = ChainDB.getIsInvalidBlock chainDB
   }

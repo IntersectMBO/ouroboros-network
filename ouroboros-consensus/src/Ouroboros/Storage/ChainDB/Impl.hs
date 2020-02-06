@@ -36,12 +36,11 @@ import           Control.Monad.Class.MonadThrow (bracket)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader (..), castPoint,
-                     genesisBlockNo, genesisPoint)
+                     genesisPoint)
 
 import           Ouroboros.Consensus.Block (headerPoint, toIsEBB)
 import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
@@ -95,9 +94,8 @@ openDBInternal args launchBgTasks = do
     -- Note that 'immDbTipBlockNo' might not end up being the \"immutable\"
     -- block(no), because the current chain computed from the VolatileDB could
     -- be longer than @k@.
-    let immDbTipBlockNo = maybe genesisBlockNo blockNo     immDbTipHeader
-        immDbTipPoint   = maybe genesisPoint   headerPoint immDbTipHeader
-    immDbTipEpoch      <- maybe (return 0)     blockEpoch  immDbTipHeader
+    let immDbTipPoint = maybe genesisPoint headerPoint immDbTipHeader
+    immDbTipEpoch    <- maybe (return 0)   blockEpoch  immDbTipHeader
     traceWith tracer $ TraceOpenEvent $ OpenedImmDB
       { _immDbTip      = immDbTipPoint
       , _immDbTipEpoch = immDbTipEpoch
@@ -127,15 +125,12 @@ openDBInternal args launchBgTasks = do
       varInvalid
       curSlot
 
-    let chain      = ChainSel.clChain  chainAndLedger
-        ledger     = ChainSel.clLedger chainAndLedger
-        cfg        = Args.cdbNodeConfig args
-        secParam   = protocolSecurityParam cfg
-        immBlockNo = ChainSel.getImmBlockNo secParam chain immDbTipBlockNo
+    let chain  = ChainSel.clChain  chainAndLedger
+        ledger = ChainSel.clLedger chainAndLedger
+        cfg    = Args.cdbNodeConfig args
 
     atomically $ LgrDB.setCurrent lgrDB ledger
     varChain           <- newTVarM chain
-    varImmBlockNo      <- newTVarM immBlockNo
     varIterators       <- newTVarM Map.empty
     varReaders         <- newTVarM Map.empty
     varNextIteratorKey <- newTVarM (IteratorKey 0)
@@ -148,7 +143,6 @@ openDBInternal args launchBgTasks = do
                   , cdbVolDB           = volDB
                   , cdbLgrDB           = lgrDB
                   , cdbChain           = varChain
-                  , cdbImmBlockNo      = varImmBlockNo
                   , cdbIterators       = varIterators
                   , cdbReaders         = varReaders
                   , cdbNodeConfig      = cfg
@@ -174,7 +168,6 @@ openDBInternal args launchBgTasks = do
           , getTipBlock        = getEnv     h Query.getTipBlock
           , getTipHeader       = getEnv     h Query.getTipHeader
           , getTipPoint        = getEnvSTM  h Query.getTipPoint
-          , getTipBlockNo      = getEnvSTM  h Query.getTipBlockNo
           , getBlockComponent  = getEnv2    h Query.getBlockComponent
           , getIsFetched       = getEnvSTM  h Query.getIsFetched
           , getMaxSlotNo       = getEnvSTM  h Query.getMaxSlotNo

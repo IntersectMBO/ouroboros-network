@@ -125,7 +125,7 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
         body varCandidate
   where
     register = do
-      varCandidate <- newTVarM $ AF.Empty GenesisPoint
+      varCandidate <- newTVarM $ AF.Empty AF.AnchorGenesis
       atomically $ modifyTVar varCandidates $ Map.insert peer varCandidate
       return varCandidate
 
@@ -432,14 +432,14 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
           -- next block.
           atomically $ writeTVar varCandidate theirFrag
           let candTipBlockNo = case AF.headBlockNo theirFrag of
-                Just b  -> b
+                At b  -> b
                 -- If their fragment is somehow empty, base ourselves on our
                 -- fragment instead. We know they must have the same anchor
                 -- point. Look at the first block after the anchor point, use
                 -- its block number - 1, this should correspond to the synced
                 -- tip, i.e. their anchor point. If our fragment is empty too,
                 -- then we and they are at Genesis.
-                Nothing -> either
+                Origin -> either
                   (const genesisBlockNo)
                   (blockNoBefore . blockNo)
                   (AF.last ourFrag)

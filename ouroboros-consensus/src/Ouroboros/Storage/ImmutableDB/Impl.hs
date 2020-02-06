@@ -90,6 +90,7 @@ module Ouroboros.Storage.ImmutableDB.Impl
     -- * Internals for testing purposes
   , openDBInternal
   , Internal (..)
+  , deleteAfter
   ) where
 
 import           Prelude hiding (truncate)
@@ -108,6 +109,8 @@ import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadThrow (bracket, bracketOnError,
                      finally)
+
+import           Cardano.Slotting.Block (BlockNo)
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime,
@@ -136,6 +139,7 @@ import           Ouroboros.Storage.ImmutableDB.Impl.State
 import           Ouroboros.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Storage.ImmutableDB.Impl.Validation
 import           Ouroboros.Storage.ImmutableDB.Layout
+import           Ouroboros.Storage.ImmutableDB.Parser (BlockSummary (..))
 
 {------------------------------------------------------------------------------
   ImmutableDB API
@@ -174,7 +178,7 @@ withDB
   -> EpochInfo m
   -> HashInfo hash
   -> ValidationPolicy
-  -> EpochFileParser e m (Secondary.Entry hash) hash
+  -> EpochFileParser e m (BlockSummary hash) hash
   -> Tracer m (TraceEvent e hash)
   -> Index.CacheConfig
   -> BlockchainTime m
@@ -192,18 +196,24 @@ withDB registry hasFS err epochInfo hashInfo valPol parser tracer cacheConfig bt
 ------------------------------------------------------------------------------}
 
 data Internal hash m = Internal
-  { -- | Delete everything in the database after 'ImmTip'.
+  { -- | Delete everything in the database after the specified tip.
     --
-    -- PRECONDITION: 'ImmTip' must correspond to an existing block (unless it
+    -- PRECONDITION: The tip must correspond to an existing block (unless it
     -- is 'TipGen').
     --
     -- The correctness of open iterators is not guaranteed, they should be
     -- closed before calling this operation.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
-    deleteAfter
-      :: HasCallStack => ImmTip -> m ()
+    deleteAfter_
+      :: HasCallStack => ImmTipWithInfo hash -> m ()
   }
+
+-- | Wrapper around 'deleteAfter_' to ensure 'HasCallStack' constraint
+--
+-- See documentation of 'deleteAfter_'.
+deleteAfter :: HasCallStack => Internal hash m -> ImmTipWithInfo hash -> m ()
+deleteAfter = deleteAfter_
 
 {------------------------------------------------------------------------------
   ImmutableDB Implementation
@@ -239,7 +249,7 @@ openDBInternal
   -> EpochInfo m
   -> HashInfo hash
   -> ValidationPolicy
-  -> EpochFileParser e m (Secondary.Entry hash) hash
+  -> EpochFileParser e m (BlockSummary hash) hash
   -> Tracer m (TraceEvent e hash)
   -> Index.CacheConfig
   -> BlockchainTime m
@@ -276,7 +286,7 @@ openDBInternal registry hasFS@HasFS{..} err epochInfo hashInfo valPol parser
           }
         db = mkDBRecord dbEnv
         internal = Internal
-          { deleteAfter = deleteAfterImpl dbEnv
+          { deleteAfter_ = deleteAfterImpl dbEnv
           }
     return (db, internal)
 
@@ -339,15 +349,15 @@ reopenImpl ImmutableDBEnv {..} valPol = bracketOnError
 deleteAfterImpl
   :: forall m hash. (HasCallStack, IOLike m)
   => ImmutableDBEnv m hash
-  -> ImmTip
+  -> ImmTipWithInfo hash
   -> m ()
 deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
   -- We're not using 'Index' in this function but truncating the index files
   -- directly.
   modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
     st@OpenState {..} <- get
-    currentTipEpochSlot <- lift $ mapM blockOrEBBEpochSlot (forgetHash <$> _currentTip)
-    newTipEpochSlot     <- lift $ mapM blockOrEBBEpochSlot newTip
+    currentTipEpochSlot <- lift $ mapM blockOrEBBEpochSlot (forgetTipInfo <$> _currentTip)
+    newTipEpochSlot     <- lift $ mapM blockOrEBBEpochSlot (forgetTipInfo <$> newTip)
 
     when (newTipEpochSlot < currentTipEpochSlot) $ do
       !ost <- lift $ do
@@ -378,7 +388,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
       :: HasFS m h
       -> OpenState m hash h
       -> Tip EpochSlot
-      -> m (ImmTipWithHash hash)
+      -> m (ImmTipWithInfo hash)
     truncateTo hasFS OpenState {} = \case
       TipGen                        ->
         removeFilesStartingFrom hasFS 0 $> TipGen
@@ -412,12 +422,12 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
               offset    = unBlockOffset (Secondary.blockOffset entry)
                         + fromIntegral size
 
-        return $ WithHash (Secondary.headerHash entry) <$> newTip
+        return newTip
 
 getTipImpl
   :: forall m hash. (HasCallStack, IOLike m)
   => ImmutableDBEnv m hash
-  -> m (ImmTipWithHash hash)
+  -> m (ImmTipWithInfo hash)
 getTipImpl dbEnv = do
     SomePair _hasFS OpenState { _currentTip } <- getOpenState dbEnv
     return _currentTip
@@ -430,7 +440,7 @@ getBlockComponentImpl
   -> m (Maybe b)
 getBlockComponentImpl dbEnv blockComponent slot =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
-      inTheFuture <- case forgetHash <$> _currentTip of
+      inTheFuture <- case forgetTipInfo <$> _currentTip of
         TipGen                 -> return $ True
         Tip (Block lastSlot')  -> return $ slot > lastSlot'
         -- The slot (that's pointing to a regular block) corresponding to this
@@ -442,7 +452,7 @@ getBlockComponentImpl dbEnv blockComponent slot =
 
       when inTheFuture $
         throwUserError _dbErr $
-          ReadFutureSlotError slot (forgetHash <$> _currentTip)
+          ReadFutureSlotError slot (forgetTipInfo <$> _currentTip)
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
       epochSlot <- epochInfoBlockRelative _dbEpochInfo slot
@@ -459,7 +469,7 @@ getEBBComponentImpl
   -> m (Maybe b)
 getEBBComponentImpl dbEnv blockComponent epoch =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
-      let inTheFuture = case forgetHash <$> _currentTip of
+      let inTheFuture = case forgetTipInfo <$> _currentTip of
             TipGen        -> True
             Tip (Block _) -> epoch > _currentEpoch
             Tip (EBB _)   -> epoch > _currentEpoch
@@ -591,7 +601,7 @@ getBlockOrEBBComponentImpl
 getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
 
-      inTheFuture <- case forgetHash <$> _currentTip of
+      inTheFuture <- case forgetTipInfo <$> _currentTip of
         TipGen                 -> return True
         Tip (Block lastSlot)   -> return $ slot > lastSlot
         Tip (EBB lastEBBEpoch) -> do
@@ -599,7 +609,7 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
           return $ slot > ebbSlot
 
       when inTheFuture $
-        throwUserError _dbErr $ ReadFutureSlotError slot (forgetHash <$> _currentTip)
+        throwUserError _dbErr $ ReadFutureSlotError slot (forgetTipInfo <$> _currentTip)
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
 
@@ -650,10 +660,11 @@ appendBlockImpl
   :: forall m hash. (HasCallStack, IOLike m)
   => ImmutableDBEnv m hash
   -> SlotNo
+  -> BlockNo
   -> hash
   -> BinaryInfo Builder
   -> m ()
-appendBlockImpl dbEnv slot headerHash binaryInfo =
+appendBlockImpl dbEnv slot blockNumber headerHash binaryInfo =
     modifyOpenState dbEnv $ \_dbHasFS@HasFS{..} -> do
       OpenState { _currentEpoch, _currentTip, _index } <- get
 
@@ -661,17 +672,17 @@ appendBlockImpl dbEnv slot headerHash binaryInfo =
         epochInfoBlockRelative _dbEpochInfo slot
 
       -- Check that we're not appending to the past
-      let inThePast = case forgetHash <$> _currentTip of
+      let inThePast = case forgetTipInfo <$> _currentTip of
             Tip (Block lastSlot)   -> slot  <= lastSlot
             Tip (EBB lastEBBEpoch) -> epoch <  lastEBBEpoch
             TipGen                 -> False
 
       when inThePast $ lift $
         throwUserError _dbErr $
-          AppendToSlotInThePastError slot (forgetHash <$> _currentTip)
+          AppendToSlotInThePastError slot (forgetTipInfo <$> _currentTip)
 
       appendEpochSlot _dbRegistry _dbHasFS _dbErr _dbEpochInfo _index epochSlot
-        (Block slot) headerHash binaryInfo
+        blockNumber (Block slot) headerHash binaryInfo
   where
     ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbRegistry } = dbEnv
 
@@ -679,15 +690,16 @@ appendEBBImpl
   :: forall m hash. (HasCallStack, IOLike m)
   => ImmutableDBEnv m hash
   -> EpochNo
+  -> BlockNo
   -> hash
   -> BinaryInfo Builder
   -> m ()
-appendEBBImpl dbEnv epoch headerHash binaryInfo =
+appendEBBImpl dbEnv epoch blockNumber headerHash binaryInfo =
     modifyOpenState dbEnv $ \_dbHasFS@HasFS{..} -> do
       OpenState { _currentEpoch, _currentTip, _index } <- get
 
       -- Check that we're not appending to the past
-      let inThePast = case forgetHash <$> _currentTip of
+      let inThePast = case forgetTipInfo <$> _currentTip of
             -- There is already a block in this epoch, so the EBB can no
             -- longer be appended in this epoch
             Tip (Block _) -> epoch <= _currentEpoch
@@ -699,7 +711,7 @@ appendEBBImpl dbEnv epoch headerHash binaryInfo =
         AppendToEBBInThePastError epoch _currentEpoch
 
       appendEpochSlot _dbRegistry _dbHasFS _dbErr _dbEpochInfo _index
-        (EpochSlot epoch 0) (EBB epoch) headerHash binaryInfo
+        (EpochSlot epoch 0) blockNumber (EBB epoch) headerHash binaryInfo
   where
     ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbRegistry } = dbEnv
 
@@ -711,12 +723,13 @@ appendEpochSlot
   -> EpochInfo m
   -> Index m hash h
   -> EpochSlot  -- ^ The 'EpochSlot' of the new block or EBB
+  -> BlockNo    -- ^ The block number of the new block
   -> BlockOrEBB -- ^ Corresponds to the new block, will be installed as the
                 -- new tip
   -> hash
   -> BinaryInfo Builder
   -> StateT (OpenState m hash h) m ()
-appendEpochSlot registry hasFS err epochInfo index epochSlot blockOrEBB headerHash
+appendEpochSlot registry hasFS err epochInfo index epochSlot blockNumber blockOrEBB headerHash
                 BinaryInfo { binaryBlob, headerOffset, headerSize } = do
     OpenState { _currentEpoch = initialEpoch } <- get
 
@@ -740,7 +753,7 @@ appendEpochSlot registry hasFS err epochInfo index epochSlot blockOrEBB headerHa
           -- in this case the _currentTip will refer to something in an epoch
           -- before _currentEpoch.
           then return 0
-          else case forgetHash <$> _currentTip of
+          else case forgetTipInfo <$> _currentTip of
             TipGen               -> return 0
             Tip (EBB _ebb)       -> return 1
             Tip (Block lastSlot) -> succ . _relativeSlot <$>
@@ -775,7 +788,7 @@ appendEpochSlot registry hasFS err epochInfo index epochSlot blockOrEBB headerHa
     modify $ \st -> st
       { _currentEpochOffset     = _currentEpochOffset + fromIntegral blockSize
       , _currentSecondaryOffset = _currentSecondaryOffset + entrySize
-      , _currentTip             = Tip (WithHash headerHash blockOrEBB)
+      , _currentTip             = Tip (TipInfo headerHash blockOrEBB blockNumber)
       }
   where
     EpochSlot epoch relSlot = epochSlot
@@ -802,7 +815,7 @@ startNewEpoch registry hasFS@HasFS{..} err index epochInfo = do
     -- tip, since it will point to a relative slot in a past epoch. So when
     -- the current (empty) epoch is not the epoch containing the tip, we use
     -- relative slot 0 to calculate how much to pad.
-    nextFreeRelSlot <- lift $ case forgetHash <$> _currentTip of
+    nextFreeRelSlot <- lift $ case forgetTipInfo <$> _currentTip of
       TipGen                     -> return 0
       Tip (EBB epoch)
         | epoch == _currentEpoch -> return 1

@@ -16,6 +16,7 @@ module Ouroboros.Storage.ImmutableDB.API
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      ThunkInfo (..))
+import           Cardano.Slotting.Block (BlockNo)
 
 import           Data.ByteString.Builder (Builder)
 
@@ -89,7 +90,7 @@ data ImmutableDB hash m = ImmutableDB
     --
     -- Throws a 'ClosedDBError' if the database is closed.
   , getTip
-      :: HasCallStack => m (ImmTipWithHash hash)
+      :: HasCallStack => m (ImmTipWithInfo hash)
 
     -- | Get the block component of the block at the given 'SlotNo'.
     --
@@ -141,7 +142,7 @@ data ImmutableDB hash m = ImmutableDB
     --
     -- TODO the given binary blob may not be empty.
   , appendBlock
-      :: HasCallStack => SlotNo -> hash -> BinaryInfo Builder -> m ()
+      :: HasCallStack => SlotNo -> BlockNo -> hash -> BinaryInfo Builder -> m ()
 
     -- | Appends a block as the EBB of the given epoch.
     --
@@ -156,7 +157,7 @@ data ImmutableDB hash m = ImmutableDB
     --
     -- TODO the given binary blob may not be empty.
   , appendEBB
-      :: HasCallStack => EpochNo -> hash -> BinaryInfo Builder -> m ()
+      :: HasCallStack => EpochNo -> BlockNo -> hash -> BinaryInfo Builder -> m ()
 
     -- | Return an 'Iterator' to efficiently stream binary blocks out of the
     -- database.

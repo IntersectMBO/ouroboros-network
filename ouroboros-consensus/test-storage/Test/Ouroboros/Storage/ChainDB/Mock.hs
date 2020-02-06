@@ -128,7 +128,6 @@ openDB cfg initLedger btime = do
       , getTipBlock         = query    $ Model.tipBlock
       , getTipHeader        = query    $ (fmap getHeader . Model.tipBlock)
       , getTipPoint         = querySTM $ Model.tipPoint
-      , getTipBlockNo       = querySTM $ Model.tipBlockNo
       , getIsFetched        = querySTM $ flip Model.hasBlockByPoint
       , getIsInvalidBlock   = querySTM $ (fmap (fmap (fmap fst) . flip Map.lookup)) . Model.invalid
       , getMaxSlotNo        = querySTM $ Model.maxSlotNo

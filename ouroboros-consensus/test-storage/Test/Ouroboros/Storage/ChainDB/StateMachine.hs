@@ -131,7 +131,6 @@ data Cmd blk it rdr
   | GetTipBlock
   | GetTipHeader
   | GetTipPoint
-  | GetTipBlockNo
   | GetBlockComponent     (Point blk)
   | GetGCedBlockComponent (Point blk)
     -- ^ Only for blocks that may have been garbage collected.
@@ -307,7 +306,6 @@ run chainDB@ChainDB{..} internal registry varCurSlot varNextId = \case
     GetTipBlock              -> MbBlock             <$> getTipBlock
     GetTipHeader             -> MbHeader            <$> getTipHeader
     GetTipPoint              -> Point               <$> atomically getTipPoint
-    GetTipBlockNo            -> BlockNo             <$> atomically getTipBlockNo
     GetBlockComponent pt     -> mbAllComponents     =<< getBlockComponent allComponents pt
     GetGCedBlockComponent pt -> mbGCedAllComponents =<< getBlockComponent allComponents pt
     GetMaxSlotNo             -> MaxSlot             <$> atomically getMaxSlotNo
@@ -464,7 +462,6 @@ runPure cfg = \case
     GetTipBlock              -> ok  MbBlock             $ query    Model.tipBlock
     GetTipHeader             -> ok  MbHeader            $ query   (fmap getHeader . Model.tipBlock)
     GetTipPoint              -> ok  Point               $ query    Model.tipPoint
-    GetTipBlockNo            -> ok  BlockNo             $ query    Model.tipBlockNo
     GetBlockComponent pt     -> err MbAllComponents     $ query   (Model.getBlockComponentByPoint @Identity allComponents pt)
     GetGCedBlockComponent pt -> err mbGCedAllComponents $ query   (Model.getBlockComponentByPoint @Identity allComponents pt)
     GetMaxSlotNo             -> ok  MaxSlot             $ query    Model.maxSlotNo
@@ -688,7 +685,6 @@ generator genBlock m@Model {..} = At <$> frequency
     , (if empty then 1 else 10, return GetTipBlock)
       -- To check that we're on the right chain
     , (if empty then 1 else 10, return GetTipPoint)
-    , (if empty then 1 else 10, return GetTipBlockNo)
     , (10, genGetBlockComponent)
     , (if empty then 1 else 10, return GetMaxSlotNo)
     , (if empty then 1 else 10, genGetPastLedger)

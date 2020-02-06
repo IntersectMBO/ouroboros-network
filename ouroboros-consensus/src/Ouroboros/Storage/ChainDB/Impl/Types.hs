@@ -159,13 +159,10 @@ data ChainDbEnv m blk = CDB
     -- Note that this fragment might also be /longer/ than @k@ headers,
     -- because the oldest blocks from the fragment might not yet have been
     -- copied from the VolatileDB to the ImmutableDB.
-  , cdbImmBlockNo      :: !(StrictTVar m BlockNo)
-    -- ^ The block number corresponding to the block @k@ blocks back. This is
-    -- the most recent \"immutable\" block according to the protocol, i.e., a
-    -- block that cannot be rolled back.
     --
-    -- INVARIANT: the anchor point of 'getCurrentChain' refers to the same
-    -- block as this 'BlockNo'.
+    -- The anchor point of this chain should be the most recent \"immutable\"
+    -- block according to the protocol, i.e., a block that cannot be rolled
+    -- back.
     --
     -- Note that the \"immutable\" block isn't necessarily at the tip of the
     -- ImmutableDB, but could temporarily still be on the in-memory chain

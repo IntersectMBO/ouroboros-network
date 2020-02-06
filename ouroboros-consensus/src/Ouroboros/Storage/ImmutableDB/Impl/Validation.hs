@@ -49,6 +49,7 @@ import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Storage.ImmutableDB.Impl.State
 import           Ouroboros.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Storage.ImmutableDB.Layout
+import           Ouroboros.Storage.ImmutableDB.Parser (BlockSummary (..))
 
 -- | Bundle of arguments used most validation functions.
 --
@@ -60,7 +61,7 @@ data ValidateEnv m hash h e = ValidateEnv
   , err         :: !(ErrorHandling ImmutableDBError m)
   , epochInfo   :: !(EpochInfo m)
   , hashInfo    :: !(HashInfo hash)
-  , parser      :: !(EpochFileParser e m (Secondary.Entry hash) hash)
+  , parser      :: !(EpochFileParser e m (BlockSummary hash) hash)
   , tracer      :: !(Tracer m (TraceEvent e hash))
   , registry    :: !(ResourceRegistry m)
   , cacheConfig :: !Index.CacheConfig
@@ -82,7 +83,7 @@ validateAndReopen validateEnv valPol = do
         traceWith tracer NoValidLastLocation
         mkOpenState registry hasFS err index epoch TipGen MustBeNew
       _     -> do
-        traceWith tracer $ ValidatedLastLocation epoch (forgetHash <$> tip)
+        traceWith tracer $ ValidatedLastLocation epoch (forgetTipInfo <$> tip)
         mkOpenState registry hasFS err index epoch tip    AllowExisting
   where
     ValidateEnv { hasFS, err, hashInfo, tracer, registry, cacheConfig } = validateEnv
@@ -93,7 +94,7 @@ validate
   :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
   => ValidateEnv m hash h e
   -> ValidationPolicy
-  -> m (EpochNo, ImmTipWithHash hash)
+  -> m (EpochNo, ImmTipWithInfo hash)
 validate validateEnv@ValidateEnv{ hasFS } valPol = do
     filesInDBFolder <- listDirectory (mkFsPath [])
     let (epochFiles, _, _) = dbFilesOnDisk filesInDBFolder
@@ -121,16 +122,16 @@ validateAllEpochs
   => ValidateEnv m hash h e
   -> EpochNo
      -- ^ Most recent epoch on disk
-  -> m (EpochNo, ImmTipWithHash hash)
+  -> m (EpochNo, ImmTipWithInfo hash)
 validateAllEpochs validateEnv@ValidateEnv { hasFS, err, epochInfo } lastEpoch =
     go (0, TipGen) 0 Origin
   where
     go
-      :: (EpochNo, ImmTipWithHash hash)  -- ^ The last valid epoch and tip
+      :: (EpochNo, ImmTipWithInfo hash)  -- ^ The last valid epoch and tip
       -> EpochNo                         -- ^ The epoch to validate now
       -> WithOrigin hash                 -- ^ The hash of the last block of
                                          -- the previous epoch
-      -> m (EpochNo, ImmTipWithHash hash)
+      -> m (EpochNo, ImmTipWithInfo hash)
     go lastValid epoch prevHash = do
       shouldBeFinalised <- if epoch == lastEpoch
         then return ShouldNotBeFinalised
@@ -141,17 +142,17 @@ validateAllEpochs validateEnv@ValidateEnv { hasFS, err, epochInfo } lastEpoch =
           Right Nothing         -> continueOrStop lastValid             epoch prevHash
           Right (Just validBlk) -> continueOrStop (epoch, Tip validBlk) epoch prevHash'
             where
-              prevHash' = At (theHash validBlk)
+              prevHash' = At (tipInfoHash validBlk)
 
     -- | Validate the next epoch, unless the epoch just validated is the last
     -- epoch to validate. Cleanup files corresponding to epochs after the
     -- epoch in which we found the last valid block. Return that epoch and the
     -- tip corresponding to that block.
     continueOrStop
-      :: (EpochNo, ImmTipWithHash hash)
+      :: (EpochNo, ImmTipWithInfo hash)
       -> EpochNo         -- ^ The epoch just validated
       -> WithOrigin hash -- ^ The hash of the last block of the previous epoch
-      -> m (EpochNo, ImmTipWithHash hash)
+      -> m (EpochNo, ImmTipWithInfo hash)
     continueOrStop lastValid epoch prevHash
       | epoch < lastEpoch
       = go lastValid (epoch + 1) prevHash
@@ -164,7 +165,7 @@ validateAllEpochs validateEnv@ValidateEnv { hasFS, err, epochInfo } lastEpoch =
     -- | Remove left over files from epochs newer than the last epoch
     -- containing a valid file. Also unfinalise it if necessary.
     cleanup
-      :: (EpochNo, ImmTipWithHash hash)  -- ^ The last valid epoch and tip
+      :: (EpochNo, ImmTipWithInfo hash)  -- ^ The last valid epoch and tip
       -> EpochNo  -- ^ The last validated epoch, could have been invalid or
                   -- empty
       -> m ()
@@ -185,10 +186,10 @@ validateMostRecentEpoch
   => ValidateEnv m hash h e
   -> EpochNo
      -- ^ Most recent epoch on disk, the epoch to validate
-  -> m (EpochNo, ImmTipWithHash hash)
+  -> m (EpochNo, ImmTipWithInfo hash)
 validateMostRecentEpoch validateEnv@ValidateEnv { hasFS } = go
   where
-    go :: EpochNo -> m (EpochNo, ImmTipWithHash hash)
+    go :: EpochNo -> m (EpochNo, ImmTipWithInfo hash)
     go epoch = runExceptT
       (validateEpoch validateEnv ShouldNotBeFinalised epoch Nothing) >>= \case
         Right (Just validBlk) -> do
@@ -256,7 +257,7 @@ validateEpoch
   -> Maybe (WithOrigin hash)
      -- ^ The hash of the last block of the previous epoch. 'Nothing' if
      -- unknown. When this is the first epoch, it should be 'Just Origin'.
-  -> ExceptT () m (Maybe (WithHash hash BlockOrEBB))
+  -> ExceptT () m (Maybe (TipInfo hash BlockOrEBB))
      -- ^ When non-empty, return the 'BlockOrEBB' and @hash@ of the last valid
      -- block in the epoch.
      --
@@ -328,7 +329,8 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
       -- If the secondary index file is missing, parsing it failed, or it does
       -- not match the entries from the epoch file, overwrite it using those
       -- (truncate first).
-      let entries = map fst entriesWithPrevHashes
+      let summary = map fst entriesWithPrevHashes
+          entries = map summaryEntry summary
       when (entriesFromSecondaryIndex /= entries ||
             not secondaryIndexFileExists) $ do
         traceWith tracer $ RewriteSecondaryIndex epoch
@@ -356,7 +358,7 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
         traceWith tracer $ RewritePrimaryIndex epoch
         Primary.write hasFS epoch primaryIndex
 
-      return $ entryToWithHash <$> lastMaybe entries
+      return $ summaryToTipInfo <$> lastMaybe summary
   where
     epochFile          = renderFile "epoch"     epoch
     primaryIndexFile   = renderFile "primary"   epoch
@@ -366,9 +368,9 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
 
     trace = lift . traceWith tracer
 
-    entryToWithHash :: Secondary.Entry hash -> WithHash hash BlockOrEBB
-    entryToWithHash entry =
-      WithHash (Secondary.headerHash entry) (Secondary.blockOrEBB entry)
+    summaryToTipInfo :: BlockSummary hash -> TipInfo hash BlockOrEBB
+    summaryToTipInfo (BlockSummary entry blockNo) =
+      TipInfo (Secondary.headerHash entry) (Secondary.blockOrEBB entry) blockNo
 
     -- | Handle only 'InvalidFileError', which is the only error that can be
     -- thrown while load a primary or a secondary index file

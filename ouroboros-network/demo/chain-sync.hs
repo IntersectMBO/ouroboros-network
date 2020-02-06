@@ -1,77 +1,77 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 module Main where
 
-import           Data.List
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Functor (void)
+import           Data.List
 import qualified Data.Map as Map
-import qualified Data.Set as Set
 import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Void (Void)
 
-import Control.Concurrent (threadDelay)
-import Control.Concurrent.STM (STM, atomically, check)
-import Control.Concurrent.STM.TVar
-import Control.Concurrent.Async
-import Control.Monad (when)
-import Control.Exception
-import Control.Tracer
+import           Control.Concurrent (threadDelay)
+import           Control.Concurrent.Async
+import           Control.Concurrent.STM (STM, atomically, check)
+import           Control.Concurrent.STM.TVar
+import           Control.Exception
+import           Control.Monad (when)
+import           Control.Tracer
 
-import System.IO
-import System.Directory
-import System.Environment
-import System.Exit
-import System.Random
-import System.Random.SplitMix
+import           System.Directory
+import           System.Environment
+import           System.Exit
+import           System.IO
+import           System.Random
+import           System.Random.SplitMix
 
 import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as CBOR
 
 import qualified Network.Socket as Socket
 
-import Ouroboros.Network.Block
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import qualified Ouroboros.Network.ChainFragment as CF
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import Ouroboros.Network.Point (WithOrigin (..))
-import Ouroboros.Network.Testing.ConcreteBlock
-import Ouroboros.Network.Socket
-import Ouroboros.Network.Magic
-import Ouroboros.Network.Mux
-import Ouroboros.Network.NodeToNode
+import           Ouroboros.Network.Block
+import qualified Ouroboros.Network.ChainFragment as CF
+import           Ouroboros.Network.Magic
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Mux
+import           Ouroboros.Network.NodeToNode
+import           Ouroboros.Network.Point (WithOrigin (..))
+import           Ouroboros.Network.Socket
+import           Ouroboros.Network.Testing.ConcreteBlock
 
-import Network.TypedProtocol.Codec
-import Network.TypedProtocol.Channel
-import Network.TypedProtocol.Driver
-import Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Channel
+import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Driver
+import           Network.TypedProtocol.Pipelined
 
-import Network.TypedProtocol.PingPong.Client as PingPong
-import Network.TypedProtocol.PingPong.Codec.Cbor
-import Network.TypedProtocol.PingPong.Server as PingPong
+import           Network.TypedProtocol.PingPong.Client as PingPong
+import           Network.TypedProtocol.PingPong.Codec.Cbor
+import           Network.TypedProtocol.PingPong.Server as PingPong
 
-import Ouroboros.Network.Protocol.Handshake.Type
-import Ouroboros.Network.Protocol.Handshake.Version
+import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Version
 
-import qualified Ouroboros.Network.Protocol.ChainSync.Type   as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Codec  as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
 
-import qualified Ouroboros.Network.Protocol.BlockFetch.Type   as BlockFetch
-import qualified Ouroboros.Network.Protocol.BlockFetch.Codec  as BlockFetch
+import qualified Ouroboros.Network.Protocol.BlockFetch.Codec as BlockFetch
 import qualified Ouroboros.Network.Protocol.BlockFetch.Server as BlockFetch
+import qualified Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
 
-import Ouroboros.Network.BlockFetch
-import Ouroboros.Network.BlockFetch.Client
+import           Ouroboros.Network.BlockFetch
+import           Ouroboros.Network.BlockFetch.Client
 
 
 main :: IO ()
@@ -509,7 +509,7 @@ clientBlockFetch sockAddrs = do
                   | candidateChain <- Map.elems candidates
                   , let candidateChainFetched =
                           AF.mkAnchoredFragment
-                            (AF.anchorPoint candidateChain) $
+                            (AF.anchor candidateChain) $
                           CF.takeWhileOldest
                             (\b -> blockPoint b `Set.member` fetched)
                             (AF.unanchorFragment candidateChain)
@@ -870,7 +870,7 @@ mkTestFetchedBlockHeap points = do
 --
 
 genesisChainFragment :: AF.AnchoredFragment BlockHeader
-genesisChainFragment = AF.Empty (Point Origin)
+genesisChainFragment = AF.Empty AF.AnchorGenesis
 
 shiftAnchoredFragment :: HasHeader block
                       => Int
@@ -880,5 +880,5 @@ shiftAnchoredFragment :: HasHeader block
 shiftAnchoredFragment n b af =
   case AF.unanchorFragment af of
     cf@(b0 CF.:< cf') | CF.length cf >= n
-      -> AF.mkAnchoredFragment (blockPoint b0) (CF.addBlock b cf')
+      -> AF.mkAnchoredFragment (AF.anchorFromBlock b0) (CF.addBlock b cf')
     _ -> AF.addBlock b af

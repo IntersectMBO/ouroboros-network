@@ -62,12 +62,12 @@ tests :: TestTree
 tests = testGroup "Iterator"
     [ testProperty "#773 bug in example 1"  prop_773_bug
     , testProperty "#773 correct example 2" prop_773_working
-    , testProperty "#1445 case 1" prop_1435_case1
-    , testProperty "#1445 case 2" prop_1435_case2
-    , testProperty "#1445 case 3" prop_1435_case3
-    , testProperty "#1445 case 4" prop_1435_case4
-    , testProperty "#1445 case 5" prop_1435_case5
-    , testProperty "#1445 case 6" prop_1435_case6
+    , testProperty "#1435 case 1" prop_1435_case1
+    , testProperty "#1435 case 2" prop_1435_case2
+    , testProperty "#1435 case 3" prop_1435_case3
+    , testProperty "#1435 case 4" prop_1435_case4
+    , testProperty "#1435 case 5" prop_1435_case5
+    , testProperty "#1435 case 6" prop_1435_case6
     ]
 
 -- These tests focus on the implementation of the ChainDB iterators, which are
@@ -420,10 +420,10 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         (_immDBModel, immDB) <- ImmDB.openDBMock EH.monadCatch epochSize
         forM_ (Chain.toOldestFirst chain) $ \block -> case isEBB (getHeader block) of
           Nothing -> ImmDB.appendBlock immDB
-            (blockSlot block) (blockHash block)
+            (blockSlot block) (blockNo block) (blockHash block)
             (CBOR.toBuilder <$> encodeWithBinaryInfo block)
           Just epoch -> ImmDB.appendEBB immDB
-            epoch (blockHash block)
+            epoch (blockNo block) (blockHash block)
             (CBOR.toBuilder <$> encodeWithBinaryInfo block)
         return $ mkImmDB immDB (const <$> decode) (const <$> decode)
           encodeWithBinaryInfo epochInfo isEBB addHdrEnv EH.monadCatch

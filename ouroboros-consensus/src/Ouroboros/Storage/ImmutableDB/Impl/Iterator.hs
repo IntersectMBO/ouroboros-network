@@ -135,7 +135,7 @@ streamImpl
 streamImpl dbEnv registry blockComponent mbStart mbEnd =
     withOpenState dbEnv $ \hasFS OpenState{..} -> runExceptT $ do
       lift $ validateIteratorRange _dbErr _dbEpochInfo
-        (forgetHash <$> _currentTip) mbStart mbEnd
+        (forgetTipInfo <$> _currentTip) mbStart mbEnd
 
       case _currentTip of
         TipGen ->
@@ -193,9 +193,11 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
     fillInEndBound
       :: HasCallStack
       => Index m hash h
-      -> WithHash hash BlockOrEBB  -- ^ Current tip
+      -> TipInfo hash BlockOrEBB   -- ^ Current tip
       -> Maybe (SlotNo, hash)      -- ^ End bound
       -> ExceptT (WrongBoundError hash) m (WithHash hash EpochSlot)
+      -- ^ We can't return 'TipInfo' here because the secondary index does
+      -- not give us block numbers
     fillInEndBound index currentTip = \case
       -- End bound given, check whether it corresponds to a regular block or
       -- an EBB. Convert the 'SlotNo' to an 'EpochSlot' accordingly.
@@ -206,7 +208,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
 
       -- No end bound given, use the current tip, but convert the 'BlockOrEBB'
       -- to an 'EpochSlot'.
-      Nothing  -> lift $ forM currentTip $ \case
+      Nothing  -> lift $ forM (fromTipInfo currentTip) $ \case
         EBB epoch      -> return (EpochSlot epoch 0)
         Block lastSlot -> epochInfoBlockRelative _dbEpochInfo lastSlot
 
