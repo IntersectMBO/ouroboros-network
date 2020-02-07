@@ -231,10 +231,10 @@ library
                        ViewPatterns
 
   build-depends:       base              >=4.9 && <4.13,
-                       ouroboros-network,
                        network-mux,
                        typed-protocols,
-                       typed-protocols-cbor,
+                       ouroboros-network-framework,
+                       ouroboros-network,
                        io-sim-classes,
                        contra-tracer,
 

@@ -38,7 +38,6 @@ import           Control.Tracer
 
 import           Network.Mux
 import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Codec.Cbor hiding (decode, encode)
 import           Network.TypedProtocol.Driver
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -46,6 +45,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient,
                      blockFetchClient)
+import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToClient
 import           Ouroboros.Network.NodeToNode

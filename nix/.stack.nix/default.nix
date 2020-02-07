@@ -24,8 +24,9 @@
         "canonical-json" = (((hackage.canonical-json)."0.6.0.0").revisions).default;
         } // {
         typed-protocols = ./typed-protocols.nix;
-        typed-protocols-cbor = ./typed-protocols-cbor.nix;
+        typed-protocols-examples = ./typed-protocols-examples.nix;
         network-mux = ./network-mux.nix;
+        ouroboros-network-framework = ./ouroboros-network-framework.nix;
         ouroboros-network = ./ouroboros-network.nix;
         ouroboros-network-testing = ./ouroboros-network-testing.nix;
         ouroboros-consensus = ./ouroboros-consensus.nix;

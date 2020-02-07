@@ -20,7 +20,7 @@
           (hsPkgs.base)
           (hsPkgs.network-mux)
           (hsPkgs.typed-protocols)
-          (hsPkgs.typed-protocols-cbor)
+          (hsPkgs.ouroboros-network-framework)
           (hsPkgs.io-sim-classes)
           (hsPkgs.contra-tracer)
           (hsPkgs.async)
@@ -62,7 +62,7 @@
             (hsPkgs.io-sim)
             (hsPkgs.io-sim-classes)
             (hsPkgs.typed-protocols)
-            (hsPkgs.typed-protocols-cbor)
+            (hsPkgs.ouroboros-network-framework)
             (hsPkgs.ouroboros-network)
             ];
           };
@@ -78,14 +78,15 @@
             (hsPkgs.directory)
             (hsPkgs.network-mux)
             (hsPkgs.network)
+            (hsPkgs.ouroboros-network-framework)
             (hsPkgs.ouroboros-network)
             (hsPkgs.QuickCheck)
             (hsPkgs.random)
             (hsPkgs.serialise)
             (hsPkgs.splitmix)
             (hsPkgs.stm)
-            (hsPkgs.typed-protocols-cbor)
             (hsPkgs.typed-protocols)
+            (hsPkgs.typed-protocols-examples)
             ];
           };
         };
@@ -126,8 +127,9 @@
             (hsPkgs.tasty)
             (hsPkgs.text)
             (hsPkgs.time)
-            (hsPkgs.typed-protocols-cbor)
             (hsPkgs.typed-protocols)
+            (hsPkgs.typed-protocols-examples)
+            (hsPkgs.ouroboros-network-framework)
             (hsPkgs.ouroboros-network)
             (hsPkgs.ouroboros-protocol-tests)
             ];
@@ -154,8 +156,9 @@
             (hsPkgs.tasty)
             (hsPkgs.tasty-quickcheck)
             (hsPkgs.text)
-            (hsPkgs.typed-protocols-cbor)
             (hsPkgs.typed-protocols)
+            (hsPkgs.typed-protocols-examples)
+            (hsPkgs.ouroboros-network-framework)
             (hsPkgs.ouroboros-network)
             (hsPkgs.ouroboros-protocol-tests)
             ];

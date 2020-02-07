@@ -33,12 +33,13 @@ let
         # does not require any messing with cabal files.
         packages.katip.components.library.doExactConfig = true;
         packages.typed-protocols.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.typed-protocols-cbor.configureFlags = [ "--ghc-option=-Werror" ];
+        packages.typed-protocols-examples.configureFlags = [ "--ghc-option=-Werror" ];
         packages.io-sim.configureFlags = [ "--ghc-option=-Werror" ];
         packages.io-sim-classes.configureFlags = [ "--ghc-option=-Werror" ];
         packages.Win32-network.configureFlags = [ "--ghc-option=-Werror" ];
         packages.network-mux.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ntp-client.configureFlags = [ "--ghc-option=-Werror" ];
+        packages.ouroboros-network-framework.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-network.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-network.flags.cddl = true;
         packages.ouroboros-network.components.tests.test-cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];

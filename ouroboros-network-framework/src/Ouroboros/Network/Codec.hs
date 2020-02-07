@@ -3,7 +3,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Network.TypedProtocol.Codec.Cbor
+module Ouroboros.Network.Codec
   ( module Network.TypedProtocol.Codec
   , DeserialiseFailure
   , mkCodecCborLazyBS

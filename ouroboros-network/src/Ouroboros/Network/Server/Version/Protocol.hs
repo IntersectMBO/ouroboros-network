@@ -17,6 +17,7 @@ import qualified Data.Map as Map
 
 import Network.TypedProtocol.Core
 
+import Ouroboros.Network.Codec (Codec, SomeMessage (..), mkCodecCborLazyBS)
 import Ouroboros.Network.Protocol.Handshake.Version
 
 -- The following is for `cborCodec`, which should be defined in another module.
@@ -25,7 +26,6 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import qualified Data.ByteString.Lazy as Lazy (ByteString)
-import Network.TypedProtocol.Codec.Cbor (Codec, SomeMessage (..), mkCodecCborLazyBS)
 
 -- FIXME
 -- This is just an MVP draft alpha sort of thing. It does not deal properly

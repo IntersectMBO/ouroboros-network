@@ -23,9 +23,7 @@ import qualified Codec.CBOR.Term     as CBOR
 import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise     as CBOR
 
-import           Network.TypedProtocol.Codec hiding (encode, decode)
-import           Network.TypedProtocol.Codec.Cbor (mkCodecCborLazyBS)
-
+import           Ouroboros.Network.Codec hiding (encode, decode)
 import           Ouroboros.Network.Protocol.Handshake.Type
 
 -- |

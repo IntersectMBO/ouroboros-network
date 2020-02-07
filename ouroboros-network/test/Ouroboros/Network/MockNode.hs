@@ -33,12 +33,12 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Codec.Cbor
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver
 
 import           Network.Mux.Time
 
+import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Block
 
 -- TODO Should this be impored here

@@ -50,10 +50,10 @@ import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test as LocalTxSub
 
 
 import Network.TypedProtocol.Codec
-import Network.TypedProtocol.ReqResp.Codec.Cbor (codecReqResp)
+import Network.TypedProtocol.ReqResp.Codec.CBOR (codecReqResp)
 import Network.TypedProtocol.ReqResp.Type as ReqResp
 import Network.TypedProtocol.PingPong.Type as PingPong
-import Network.TypedProtocol.PingPong.Codec.Cbor (codecPingPong)
+import Network.TypedProtocol.PingPong.Codec.CBOR (codecPingPong)
 
 -- These files must be in place:
 specFile :: FilePath

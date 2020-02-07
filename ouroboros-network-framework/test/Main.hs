@@ -2,8 +2,8 @@ module Main (main) where
 
 import           Test.Tasty
 
-import qualified Network.TypedProtocol.PingPong.Codec.Test as PingPong
-import qualified Network.TypedProtocol.ReqResp.Codec.Test as ReqResp
+import qualified Network.TypedProtocol.PingPong.Codec.Tests as PingPong
+import qualified Network.TypedProtocol.ReqResp.Codec.Tests as ReqResp
 
 main :: IO ()
 main = defaultMain tests

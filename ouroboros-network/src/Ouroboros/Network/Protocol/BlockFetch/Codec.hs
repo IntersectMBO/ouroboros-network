@@ -23,9 +23,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Write    as CBOR
 
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Codec.Cbor
-
+import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Block (HeaderHash, Point, Serialised (..))
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Protocol.BlockFetch.Type
