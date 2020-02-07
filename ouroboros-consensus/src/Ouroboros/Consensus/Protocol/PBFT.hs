@@ -3,7 +3,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
-{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
@@ -50,6 +49,8 @@ import qualified Data.Bimap as Bimap
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Text (Text)
+import qualified Data.Text as Text
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
@@ -314,7 +315,7 @@ instance PBftCrypto c => OuroborosTag (PBft c) where
                  signed
                  pbftSignature of
             Right () -> return ()
-            Left err -> throwError $ PBftInvalidSignature err
+            Left err -> throwError $ PBftInvalidSignature (Text.pack err)
 
           -- FIXME confirm that non-strict inequality is ok in general.
           -- It's here because EBBs have the same slot as the first block of their
@@ -461,11 +462,13 @@ genesisKeyHashes = CC.Genesis.unGenesisKeyHashes
   PBFT specific types
 -------------------------------------------------------------------------------}
 
+-- | NOTE: this type is stored in the state, so it must be in normal form to
+-- avoid space leaks.
 data PBftValidationErr c
-  = PBftInvalidSignature String
-  | PBftNotGenesisDelegate (PBftVerKeyHash c) (PBftLedgerView c)
+  = PBftInvalidSignature !Text
+  | PBftNotGenesisDelegate !(PBftVerKeyHash c) !(PBftLedgerView c)
   -- | We record how many slots this key signed
-  | PBftExceededSignThreshold (PBftVerKeyHash c) Word64
+  | PBftExceededSignThreshold !(PBftVerKeyHash c) !Word64
   | PBftInvalidSlot
   deriving (Generic, NoUnexpectedThunks)
 
