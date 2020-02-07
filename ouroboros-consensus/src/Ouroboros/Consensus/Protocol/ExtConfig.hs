@@ -20,8 +20,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 data ExtConfig p ext
 
 data instance NodeConfig (ExtConfig p ext) = ExtNodeConfig {
-      extNodeConfig  :: ext
-    , extNodeConfigP :: NodeConfig p
+      extNodeConfig  :: !ext
+    , extNodeConfigP :: !(NodeConfig p)
     }
   deriving (Generic)
 
