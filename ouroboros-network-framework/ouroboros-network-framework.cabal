@@ -26,6 +26,7 @@ library
                        Ouroboros.Network.Driver.Simple
                        Ouroboros.Network.Driver.Limits
                        Ouroboros.Network.Driver.ByteLimit
+                       Ouroboros.Network.Mux
 
                        --TODO: move these into the test suite when we move
                        -- the ouroboros-network tests that use them into this
