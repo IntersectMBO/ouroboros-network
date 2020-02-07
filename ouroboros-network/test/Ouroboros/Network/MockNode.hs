@@ -407,4 +407,4 @@ coreNode nid slotDuration gchain chans = do
     fixupBlock c =
       Concrete.fixupBlock
         (Chain.headHash c)
-        (Chain.headBlockNo c)
+        (Chain.legacyHeadBlockNo c)

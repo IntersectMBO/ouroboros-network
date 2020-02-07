@@ -228,7 +228,7 @@ lastK (SecurityParam k) f =
 -- In the real implementation this will correspond to the block number of the
 -- block at the tip of the Immutable DB.
 immutableBlockNo :: HasHeader blk
-                 => SecurityParam -> Model blk -> Block.BlockNo
+                 => SecurityParam -> Model blk -> WithOrigin Block.BlockNo
 immutableBlockNo (SecurityParam k) =
         Chain.headBlockNo
       . Chain.drop (fromIntegral k)
@@ -333,7 +333,7 @@ addBlock :: forall blk. ProtocolLedgerView blk
 addBlock cfg blk m
     -- If the block is as old as the tip of the ImmutableDB, i.e. older than
     -- @k@, we ignore it, as we can never switch to it. TODO what about EBBs?
-  | Block.blockNo blk <= immutableBlockNo secParam m
+  | At (Block.blockNo blk) <= immutableBlockNo secParam m
     -- Unless we're adding the first block to the empty chain: the empty chain
     -- has the same block number as the genesis EBB, i.e. 0, so we don't want
     -- to ignore it in this case.

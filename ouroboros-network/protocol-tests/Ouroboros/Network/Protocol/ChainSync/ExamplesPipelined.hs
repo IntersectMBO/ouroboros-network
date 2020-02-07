@@ -48,10 +48,10 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
       -- found an intersection or not. If not, we'll just sync from genesis.
       ClientPipelinedStIntersect {
         recvMsgIntersectFound    = \_ srvTip -> do
-          cliTipBlockNo <- At . Chain.headBlockNo <$> atomically (readTVar chainvar)
+          cliTipBlockNo <- Chain.headBlockNo <$> atomically (readTVar chainvar)
           pure $ go mkPipelineDecision0 Zero cliTipBlockNo srvTip client,
         recvMsgIntersectNotFound = \  srvTip -> do
-          cliTipBlockNo <- At . Chain.headBlockNo <$> atomically (readTVar chainvar)
+          cliTipBlockNo <- Chain.headBlockNo <$> atomically (readTVar chainvar)
           pure $ go mkPipelineDecision0 Zero cliTipBlockNo srvTip client
       }
 
@@ -175,8 +175,7 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
         --TODO: handle rollback failure
         let (Just !chain') = Chain.rollback p chain
         writeTVar chainvar chain'
-        -- TODO update Chain.headBlockNo to return @WithOrigin BlockNo@
-        pure $ if Chain.null chain' then Origin else At (Chain.headBlockNo chain')
+        pure $ Chain.headBlockNo chain'
 
 -- | Offsets from the head of the chain to select points on the consumer's
 -- chain to send to the producer. The specific choice here is fibonacci up

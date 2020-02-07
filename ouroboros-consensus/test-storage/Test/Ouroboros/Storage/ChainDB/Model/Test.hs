@@ -15,6 +15,7 @@ import           Test.Tasty.QuickCheck
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader (..), genesisPoint)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -44,7 +45,7 @@ addBlocks blks = M.addBlocks cfg blks m
 prop_getBlock_addBlock :: BlockTree -> Permutation -> Property
 prop_getBlock_addBlock bt p =
         M.getBlock (blockHash newBlock) (M.addBlock singleNodeTestConfig newBlock model)
-    === if blockNo newBlock > M.immutableBlockNo secParam model
+    === if At (blockNo newBlock) > M.immutableBlockNo secParam model
         then Just newBlock
         else Nothing
   where
