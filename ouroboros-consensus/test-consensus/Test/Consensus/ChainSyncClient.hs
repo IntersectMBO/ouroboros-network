@@ -288,7 +288,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
           , getCurrentLedger  = snd <$> readTVar varClientState
           , getOurTip         = do
               chain <- fst <$> readTVar varClientState
-              return $ legacyTip (Chain.headPoint chain) (Chain.headBlockNo chain)
+              return $ Chain.headTip chain
           , getIsInvalidBlock = return $
               WithFingerprint (const Nothing) (Fingerprint 0)
           }

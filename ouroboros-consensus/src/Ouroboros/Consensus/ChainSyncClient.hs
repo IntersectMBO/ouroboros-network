@@ -426,26 +426,12 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
     nextStep mkPipelineDecision n theirTip = Stateful $ \kis -> do
       mKis' <- atomically $ intersectsWithCurrentChain kis
       case mKis' of
-        Just kis'@KnownIntersectionState { theirFrag, ourFrag } -> do
+        Just kis'@KnownIntersectionState { theirFrag } -> do
           -- Our chain (tip) didn't change or if it did, it still intersects
           -- with the candidate fragment, so we can continue requesting the
           -- next block.
           atomically $ writeTVar varCandidate theirFrag
-          let candTipBlockNo = case AF.headBlockNo theirFrag of
-                At b  -> b
-                -- If their fragment is somehow empty, base ourselves on our
-                -- fragment instead. We know they must have the same anchor
-                -- point. Look at the first block after the anchor point, use
-                -- its block number - 1, this should correspond to the synced
-                -- tip, i.e. their anchor point. If our fragment is empty too,
-                -- then we and they are at Genesis.
-                Origin -> either
-                  (const genesisBlockNo)
-                  (blockNoBefore . blockNo)
-                  (AF.last ourFrag)
-              blockNoBefore 0 = 0 -- the genesis EBB
-              blockNoBefore b = pred b
-
+          let candTipBlockNo = AF.headBlockNo theirFrag
           return $ requestNext kis' mkPipelineDecision n theirTip candTipBlockNo
         Nothing ->
           -- Our chain (tip) has changed and it no longer intersects with the
@@ -477,7 +463,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
                 -> MkPipelineDecision
                 -> Nat n
                 -> Their (Tip blk)
-                -> BlockNo
+                -> WithOrigin BlockNo
                 -> Consensus (ClientPipelinedStIdle n) blk m
     requestNext kis mkPipelineDecision n theirTip candTipBlockNo =
         case (n, decision) of
@@ -498,7 +484,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
               Nothing
               (handleNext kis mkPipelineDecision' n')
       where
-        theirTipBlockNo = getLegacyTipBlockNo (unTheir theirTip)
+        theirTipBlockNo = getTipBlockNo (unTheir theirTip)
         decision = runPipelineDecision
           mkPipelineDecision
           n

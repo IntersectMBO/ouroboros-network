@@ -33,6 +33,7 @@ module Ouroboros.Network.Block (
   , atSlot
   , withHash
   , Tip(..)
+  , castTip
   , getTipPoint
   , getTipBlockNo
   , getLegacyTipBlockNo
@@ -197,6 +198,11 @@ data Tip b =
 deriving instance StandardHash b => Eq                 (Tip b)
 deriving instance StandardHash b => Show               (Tip b)
 deriving instance StandardHash b => NoUnexpectedThunks (Tip b)
+
+-- | The equivalent of 'castPoint' for 'Tip'
+castTip :: (HeaderHash a ~ HeaderHash b) => Tip a -> Tip b
+castTip TipGenesis  = TipGenesis
+castTip (Tip s h b) = Tip s h b
 
 getTipPoint :: Tip b -> Point b
 getTipPoint TipGenesis  = GenesisPoint

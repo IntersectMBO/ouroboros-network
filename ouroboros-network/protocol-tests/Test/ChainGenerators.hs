@@ -287,7 +287,7 @@ instance Arbitrary TestAddBlock where
     [ TestAddBlock c' b'
     | TestBlockChain c' <- shrink (TestBlockChain c)
     , let b' = fixupBlock (Chain.headHash c')
-                          (Chain.headBlockNo c') b
+                          (Chain.legacyHeadBlockNo c') b
     ]
 
 genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
@@ -300,7 +300,7 @@ genAddBlock chain = do
           At slotNo -> addSlotGap slotGap slotNo
         pb = mkPartialBlock nextSlotNo body
         b  = fixupBlock (Chain.headHash chain)
-                        (Chain.headBlockNo chain) pb
+                        (Chain.legacyHeadBlockNo chain) pb
     return b
 
 prop_arbitrary_TestAddBlock :: TestAddBlock -> Bool
@@ -407,8 +407,8 @@ countChainUpdateNetProgress = go 0
     go n c  (u:us) = go n' c' us
       where
         Just c' = Chain.applyChainUpdate u c
-        n'      = n + fromEnum (Chain.headBlockNo c')
-                    - fromEnum (Chain.headBlockNo c)
+        n'      = n + fromEnum (Chain.legacyHeadBlockNo c')
+                    - fromEnum (Chain.legacyHeadBlockNo c)
 
 
 --

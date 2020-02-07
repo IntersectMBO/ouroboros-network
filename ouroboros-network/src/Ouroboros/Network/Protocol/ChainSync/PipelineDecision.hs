@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -19,6 +18,7 @@ import           Control.Exception (assert)
 import           Network.TypedProtocol.Pipelined
 
 import           Ouroboros.Network.Block (BlockNo)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 -- | Pipeline decision: we can do either one of these:
 --
@@ -59,24 +59,25 @@ data PipelineDecision n where
 data MkPipelineDecision where
      MkPipelineDecision
        :: (forall n. Nat n
-                  -> BlockNo
-                  -> BlockNo
+                  -> WithOrigin BlockNo
+                  -> WithOrigin BlockNo
                   -> (PipelineDecision n, MkPipelineDecision))
        -> MkPipelineDecision
 
 runPipelineDecision
     :: MkPipelineDecision
-    -> Nat n -> BlockNo -> BlockNo
+    -> Nat n -> WithOrigin BlockNo -> WithOrigin BlockNo
     -> (PipelineDecision n, MkPipelineDecision)
 runPipelineDecision (MkPipelineDecision f) n clientTipBlockNo serverTipBlockNo =
     f n clientTipBlockNo serverTipBlockNo
 
 
 constantPipelineDecision
-   :: (forall n. Nat n -> BlockNo -> BlockNo -> PipelineDecision n)
+   :: (forall n. Nat n -> WithOrigin BlockNo -> WithOrigin BlockNo -> PipelineDecision n)
    -> MkPipelineDecision
 constantPipelineDecision f = MkPipelineDecision
-  $ \n clientTipBlockNo serverTipBlockNo -> (f n clientTipBlockNo serverTipBlockNo, constantPipelineDecision f)
+  $ \n clientTipBlockNo serverTipBlockNo ->
+    (f n clientTipBlockNo serverTipBlockNo, constantPipelineDecision f)
 
 
 -- | Present maximal pipelining of at most @omax@ requests.  Collect responses
@@ -98,13 +99,14 @@ constantPipelineDecision f = MkPipelineDecision
 --    Collect
 -- @
 --
-pipelineDecisionMax :: Int -> Nat n -> BlockNo -> BlockNo -> PipelineDecision n
+pipelineDecisionMax :: Int -> Nat n -> WithOrigin BlockNo -> WithOrigin BlockNo
+                    -> PipelineDecision n
 pipelineDecisionMax omax n cliTipBlockNo srvTipBlockNo =
     case n of
       Zero   -- We are at most one block away from the server's tip. We use
              -- equality so that this does not get triggered when we are ahead
              -- of the producer, and it will send us 'MsgRollBackward'.
-             | cliTipBlockNo + 1 == srvTipBlockNo
+             | cliTipBlockNo `bnoPlus` 1 == srvTipBlockNo
              -> Request
 
              | otherwise
@@ -120,7 +122,7 @@ pipelineDecisionMax omax n cliTipBlockNo srvTipBlockNo =
              -- message. This assures that when we approach the end of the
              -- chain we will collect all outstanding requests without
              -- pipelining a request.
-             | cliTipBlockNo + n' >= srvTipBlockNo || n' >= omax'
+             | cliTipBlockNo `bnoPlus` n' >= srvTipBlockNo || n' >= omax'
              -> Collect
 
              | otherwise
@@ -136,13 +138,14 @@ pipelineDecisionMax omax n cliTipBlockNo srvTipBlockNo =
 -- | Present minimum pipelining of at most @omax@ requests, collect responses
 -- eagerly.
 --
-pipelineDecisionMin :: Int -> Nat n -> BlockNo -> BlockNo -> PipelineDecision n
+pipelineDecisionMin :: Int -> Nat n -> WithOrigin BlockNo -> WithOrigin BlockNo
+                    -> PipelineDecision n
 pipelineDecisionMin omax n cliTipBlockNo srvTipBlockNo =
     case n of
       Zero   -- We are at most one block away from the server's tip. We use
              -- equality so that this does not get triggered when we are ahead
              -- of the producer, and it will send us 'MsgRollBackward'.
-             | cliTipBlockNo + 1 == srvTipBlockNo
+             | cliTipBlockNo `bnoPlus` 1 == srvTipBlockNo
              -> Request
 
              | otherwise
@@ -151,7 +154,7 @@ pipelineDecisionMin omax n cliTipBlockNo srvTipBlockNo =
       Succ{} -- We pipelined some requests and we are now synchronised or we
              -- exceeded the pipelining limit, and thus we should wait for a
              -- response.
-             | cliTipBlockNo + n' >= srvTipBlockNo || n' >= omax'
+             | cliTipBlockNo `bnoPlus` n' >= srvTipBlockNo || n' >= omax'
              -> Collect
 
              | otherwise
@@ -172,9 +175,10 @@ pipelineDecisionLowHighMark :: Int -> Int -> MkPipelineDecision
 pipelineDecisionLowHighMark lowMark highMark =
     assert (lowMark <= highMark) goLow
   where
-    goZero :: Nat Z -> BlockNo -> BlockNo -> (PipelineDecision Z, MkPipelineDecision)
+    goZero :: Nat Z -> WithOrigin BlockNo -> WithOrigin BlockNo
+           -> (PipelineDecision Z, MkPipelineDecision)
     goZero Zero clientTipBlockNo serverTipBlockNo
-      | clientTipBlockNo + 1 == serverTipBlockNo
+      | clientTipBlockNo `bnoPlus` 1 == serverTipBlockNo
       = (Request, goLow)
 
       | otherwise
@@ -190,7 +194,7 @@ pipelineDecisionLowHighMark lowMark highMark =
         case n of
           Zero   -> goZero n clientTipBlockNo serverTipBlockNo
 
-          Succ{} | clientTipBlockNo + n' >= serverTipBlockNo
+          Succ{} | clientTipBlockNo `bnoPlus` n' >= serverTipBlockNo
                  -> (Collect, goLow)
 
                  | n' >= highMark'
@@ -220,3 +224,7 @@ pipelineDecisionLowHighMark lowMark highMark =
 
     highMark' :: BlockNo
     highMark' = fromIntegral highMark
+
+bnoPlus :: WithOrigin BlockNo -> BlockNo -> WithOrigin BlockNo
+bnoPlus (At x) y = At (x + y)
+bnoPlus Origin y = At (1 + y)

@@ -28,7 +28,9 @@ module Ouroboros.Network.MockChain.Chain (
   headPoint,
   headSlot,
   headHash,
+  headTip,
   headBlockNo,
+  legacyHeadBlockNo,
 
   -- ** Basic operations
   head,
@@ -126,7 +128,11 @@ validExtension c b = blockInvariant b
                   -- The block number must be non-strictly increasing. An EBB
                   -- has the same block number as its parent. It can increase
                   -- by at most one.
-                  && (headBlockNo c == blockNo b || succ (headBlockNo c) == blockNo b)
+                  && case headBlockNo c of
+                       -- TODO The rhs of (||) is only needed because
+                       -- 'legacyHeadBlockNo' is still being used.
+                       Origin    -> blockNo b == 0 || blockNo b == 1
+                       At prevNo -> blockNo b == succ prevNo || blockNo b == prevNo
 
 head :: Chain b -> Maybe b
 head Genesis  = Nothing
@@ -142,9 +148,20 @@ headSlot = pointSlot . headPoint
 headHash :: HasHeader block => Chain block -> ChainHash block
 headHash = pointHash . headPoint
 
-headBlockNo :: HasHeader block => Chain block -> BlockNo
-headBlockNo Genesis  = genesisBlockNo
-headBlockNo (_ :> b) = blockNo b
+headTip :: HasHeader block => Chain block -> Tip block
+headTip Genesis  = TipGenesis
+headTip (_ :> b) = Tip (blockSlot b) (blockHash b) (blockNo b)
+
+headBlockNo :: HasHeader block => Chain block -> WithOrigin BlockNo
+headBlockNo Genesis  = Origin
+headBlockNo (_ :> b) = At (blockNo b)
+
+-- | TODO: This is /wrong/. There /is/ no block number if we are at genesis
+-- ('genesisBlockNo' is the block number of the first block on the chain).
+-- Usage of this function should be phased out.
+legacyHeadBlockNo :: HasHeader block => Chain block -> BlockNo
+legacyHeadBlockNo Genesis  = genesisBlockNo
+legacyHeadBlockNo (_ :> b) = blockNo b
 
 -- | Produce the list of blocks, from most recent back to genesis
 --
