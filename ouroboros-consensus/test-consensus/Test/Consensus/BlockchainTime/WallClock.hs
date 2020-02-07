@@ -46,7 +46,7 @@ instance Arbitrary TestDelayIO where
 
 -- | Just as a sanity check, also run the tests in IO
 --
--- We override the maxinum number of tests since there are slow.
+-- We override the maximum number of tests since there are slow.
 --
 -- NOTE: If the system is under very heavy load, this test /could/ fail:
 -- the slot number after the delay could be later than the one we expect.
@@ -61,7 +61,7 @@ prop_delayNextSlot TestDelayIO{..} =
         tdioStart  <- pickSystemStart
         lsVar      <- mkLsVar
         atStart    <- fst <$> getWallClockSlot  tdioStart lsVar
-        nextSlot   <-         waitUntilNextSlot tdioStart lsVar
+        nextSlot   <-         waitUntilNextSlot tdioStart lsVar atStart
         afterDelay <- fst <$> getWallClockSlot  tdioStart lsVar
         assertEqual "atStart + 1" (atStart + 1) afterDelay
         assertEqual "nextSlot"    nextSlot      afterDelay
