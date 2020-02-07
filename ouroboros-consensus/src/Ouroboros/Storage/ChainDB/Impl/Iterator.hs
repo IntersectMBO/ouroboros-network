@@ -20,6 +20,7 @@ module Ouroboros.Storage.ChainDB.Impl.Iterator
 import           Control.Monad (unless, when)
 import           Control.Monad.Except (ExceptT (..), catchError, lift,
                      runExceptT, throwError)
+import           Control.Tracer
 import           Data.Functor (($>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -29,9 +30,6 @@ import           Data.Maybe (isJust)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer
 
 import           Cardano.Slotting.Block (BlockNo)
 

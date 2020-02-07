@@ -108,8 +108,6 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Util (safeMaximumOn)

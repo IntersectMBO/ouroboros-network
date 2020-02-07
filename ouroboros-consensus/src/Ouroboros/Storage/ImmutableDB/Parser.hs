@@ -142,16 +142,16 @@ epochFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEB
       -> Stream (Of (BlockSummary hash, WithOrigin hash))
                 m
                 (Maybe (EpochFileError hash, Word64))
-    checkEntries = \expected -> mapAccumS expected handle
+    checkEntries = \expected -> mapAccumS expected updateAcc
       where
-        handle
+        updateAcc
           :: [CRC]
           -> (Word64, (Word64, (blk, CRC)))
           -> Either (Maybe (EpochFileError hash, Word64))
                     ( (BlockSummary hash, WithOrigin hash)
                     , [CRC]
                     )
-        handle expected blkAndInfo@(offset, (_, (blk, checksum))) =
+        updateAcc expected blkAndInfo@(offset, (_, (blk, checksum))) =
             case expected of
               expectedChecksum:expected'
                 | expectedChecksum == checksum
@@ -243,11 +243,11 @@ mapAccumS
   -> (s -> a -> Either r (b, s))
   -> Stream (Of a) m r
   -> Stream (Of b) m r
-mapAccumS st0 handle = go st0
+mapAccumS st0 updateAcc = go st0
   where
     go st input = S.lift (S.next input) >>= \case
       Left  r           -> return r
-      Right (a, input') -> case handle st a of
+      Right (a, input') -> case updateAcc st a of
         Left r         -> return r
         Right (b, st') -> S.yield b *> go st' input'
 
@@ -261,10 +261,10 @@ mapAccumS0
   -> (s -> a -> Either r (b, s))
   -> Stream (Of a) m r
   -> Stream (Of b) m r
-mapAccumS0 handleFirst handleNext = mapAccumS Nothing handle
+mapAccumS0 initAcc updateAcc = mapAccumS Nothing updateAcc'
   where
-    handle :: Maybe s -> a -> Either r (b, Maybe s)
-    handle mbSt = fmap (fmap Just) . maybe handleFirst handleNext mbSt
+    updateAcc' :: Maybe s -> a -> Either r (b, Maybe s)
+    updateAcc' mbSt = fmap (fmap Just) . maybe initAcc updateAcc mbSt
 
 -- | Map over elements of a stream, allowing an early return by returning
 -- 'Left'.
@@ -273,4 +273,4 @@ mapS
   => (a -> Either r b)
   -> Stream (Of a) m r
   -> Stream (Of b) m r
-mapS handle = mapAccumS () (\() a -> (, ()) <$> handle a)
+mapS updateAcc = mapAccumS () (\() a -> (, ()) <$> updateAcc a)

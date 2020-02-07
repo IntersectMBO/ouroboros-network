@@ -1,22 +1,32 @@
-{-# LANGUAGE NumericUnderscores #-}
-{-# LANGUAGE RecordWildCards    #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NumericUnderscores         #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Test.Consensus.BlockchainTime.WallClock (tests) where
 
-import           Data.Time.Clock
-import           Test.QuickCheck
-import           Test.Tasty
+import qualified Data.Time.Clock as Time
+import           Test.QuickCheck hiding (Fixed)
+import           Test.Tasty hiding (after)
 import           Test.Tasty.HUnit
-import           Test.Tasty.QuickCheck
-
-import           Control.Monad.Class.MonadSTM.Strict
+import           Test.Tasty.QuickCheck hiding (Fixed)
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Util.IOLike
+
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Orphans.IOLike ()
 
 tests :: TestTree
 tests = testGroup "WallClock" [
-      testProperty "delayNextSlot" prop_delayNextSlot
+      testProperty "delayNextSlot"     prop_delayNextSlot
     ]
 
 {-------------------------------------------------------------------------------
@@ -29,7 +39,7 @@ data TestDelayIO = TestDelayIO {
       --
       -- Since we don't actually " start " the system in any way, we specify
       -- this as an offset _before_ the start of the test.
-      tdioStart'  :: NominalDiffTime
+      tdioStart'  :: Time.NominalDiffTime
 
       -- | SlotNo length
       --
@@ -73,4 +83,4 @@ prop_delayNextSlot TestDelayIO{..} =
     pickSystemStart = pick <$> getCurrentTime
       where
         pick :: UTCTime -> SystemStart
-        pick = SystemStart . addUTCTime (negate tdioStart')
+        pick = SystemStart . Time.addUTCTime (negate tdioStart')

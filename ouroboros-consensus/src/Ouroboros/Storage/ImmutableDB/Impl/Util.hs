@@ -16,7 +16,7 @@ module Ouroboros.Storage.ImmutableDB.Impl.Util
   , tryImmDB
   , parseDBFile
   , validateIteratorRange
-  , onException
+  , onImmDbException
   , epochSlotToTip
   , dbFilesOnDisk
   , removeFilesStartingFrom
@@ -160,13 +160,13 @@ validateIteratorRange err epochInfo tip mbStart mbEnd = do
 
 -- | Execute some error handler when an 'ImmutableDBError' or an 'FsError' is
 -- thrown while executing an action.
-onException :: Monad m
-            => ErrorHandling FsError m
-            -> ErrorHandling ImmutableDBError m
-            -> m b  -- ^ What to do when an error is thrown
-            -> m a  -- ^ The action to execute
-            -> m a
-onException fsErr err onErr m =
+onImmDbException :: Monad m
+                 => ErrorHandling FsError m
+                 -> ErrorHandling ImmutableDBError m
+                 -> m b  -- ^ What to do when an error is thrown
+                 -> m a  -- ^ The action to execute
+                 -> m a
+onImmDbException fsErr err onErr m =
     EH.onException fsErr (EH.onException err m onErr) onErr
 
 -- | Convert an 'EpochSlot' to a 'Tip'

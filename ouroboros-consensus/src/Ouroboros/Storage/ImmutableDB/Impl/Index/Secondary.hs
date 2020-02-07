@@ -35,11 +35,10 @@ import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common (EpochNo (..))
 import           Ouroboros.Storage.FS.API

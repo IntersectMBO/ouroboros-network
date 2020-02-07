@@ -34,8 +34,6 @@ import           Control.Monad (void)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
-
-import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
 import           Network.Mux

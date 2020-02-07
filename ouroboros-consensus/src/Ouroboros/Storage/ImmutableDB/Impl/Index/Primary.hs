@@ -59,16 +59,16 @@ import           Foreign.Storable (sizeOf)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadThrow hiding (onException)
-
 import           Cardano.Prelude (NoUnexpectedThunks (..))
+
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common (EpochNo, EpochSize)
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types (AbsOffset (..),
                      AllowExisting (..), OpenMode (..), SeekMode (..))
-import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..),
-                     onException)
+import           Ouroboros.Storage.Util.ErrorHandling
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Storage.ImmutableDB.Impl.Util (renderFile, runGet)
 import           Ouroboros.Storage.ImmutableDB.Layout
@@ -379,7 +379,7 @@ open hasFS@HasFS { hOpen, hClose, hasFsErr } epoch allowExisting = do
     -- TODO we rely on the fact that if the file exists, it already contains
     -- the version number and the first offset. What if that is not the case?
     pHnd <- hOpen primaryIndexFile (AppendMode allowExisting)
-    flip (onException hasFsErr) (hClose pHnd) $ do
+    flip (EH.onException hasFsErr) (hClose pHnd) $ do
       case allowExisting of
         AllowExisting -> return ()
         -- If the file is new, write the version number and the first offset,

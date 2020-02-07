@@ -101,14 +101,9 @@ import           Control.Monad.Except (runExceptT)
 import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
                      put)
 import           Control.Tracer (Tracer, traceWith)
-
 import           Data.ByteString.Builder (Builder)
 import           Data.Functor (($>), (<&>))
-
 import           GHC.Stack (HasCallStack)
-
-import           Control.Monad.Class.MonadThrow (bracket, bracketOnError,
-                     finally)
 
 import           Cardano.Slotting.Block (BlockNo)
 

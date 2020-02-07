@@ -7,8 +7,6 @@ import           Control.Monad (void)
 import           Data.Bifunctor (first)
 import           Data.Tuple (swap)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Consensus.Util ((...:), (..:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -18,7 +16,6 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
-
 
 openDBMock  :: forall m hash. (IOLike m, Eq hash, Show hash)
             => ErrorHandling ImmutableDBError m

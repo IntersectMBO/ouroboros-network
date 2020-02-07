@@ -17,14 +17,12 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Exception (assert)
 import           Control.Monad (sequence_)
+import           Control.Tracer (contramap, traceWith)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack, callStack)
-
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (contramap, traceWith)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF

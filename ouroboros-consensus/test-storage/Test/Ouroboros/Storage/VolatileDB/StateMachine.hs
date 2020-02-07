@@ -411,9 +411,9 @@ preconditionImpl Model{..} (At (CmdErr cmd err)) =
       (False, True) -> Bot
       _             -> Top
 
-postconditionImpl :: Model Concrete 
-                  -> At CmdErr Concrete  
-                  -> At Resp Concrete 
+postconditionImpl :: Model Concrete
+                  -> At CmdErr Concrete
+                  -> At Resp Concrete
                   -> Logic
 postconditionImpl model cmdErr resp =
     toMock (eventAfter ev) resp .== eventMockResp ev
@@ -468,9 +468,9 @@ generatorCmdImpl terminatingCmd m@Model {..} =
           let testHead' = testHeader{thHash = b}
           return $ Just $ DuplicateBlock f (tb {testHeader = testHead'})
 
-generatorImpl :: Bool 
-              -> Bool 
-              -> Model Symbolic 
+generatorImpl :: Bool
+              -> Bool
+              -> Model Symbolic
               -> Maybe (Gen (At CmdErr Symbolic))
 generatorImpl mkErr terminatingCmd m@Model {..} = do
     genCmd <- generatorCmdImpl terminatingCmd m
@@ -527,7 +527,7 @@ semanticsImpl errorsVar m env (At cmderr) = At . Resp <$> case cmderr of
     CmdErr cmd Nothing -> try (runDB m cmd env)
     CmdErr cmd (Just errors) -> do
       res <- withErrors errorsVar errors $
-        try (runDB m cmd env)
+        tryDB (runDB m cmd env)
       case res of
         Left (UserError ClosedDBError) -> return res
         _                              -> do
@@ -536,7 +536,7 @@ semanticsImpl errorsVar m env (At cmderr) = At . Resp <$> case cmderr of
           closeDB m
           return $ Right $ SimulatedError res
   where
-    try = tryVolDB EH.monadCatch EH.monadCatch
+    tryDB = tryVolDB EH.monadCatch EH.monadCatch
 
     restore (PutBlock tb) = putBlock m
       (mkBlockInfo tb)
@@ -550,7 +550,7 @@ runDB :: forall m. (HasCallStack, IOLike m)
       -> Internal.VolatileDBEnv m BlockId
       -> m Success
 runDB db cmd env@Internal.VolatileDBEnv{..} = case cmd of
-    GetBlockComponent bid -> 
+    GetBlockComponent bid ->
       MbAllComponents <$> getBlockComponent db allComponents bid
     GetBlockIds           -> Blocks <$> getBlockIds db
     PutBlock tb           -> Unit <$> putBlock db
@@ -634,9 +634,9 @@ prop_sequential =
             $ tabulate "Tags" (map show $ tag events)
             $ tabulate "Commands" (cmdName . eventCmd <$> events)
             $ tabulate "Error Tags" (tagSimulatedErrors events)
-            $ tabulate "IsMember: Total number of True's" 
+            $ tabulate "IsMember: Total number of True's"
                 [groupIsMember $ isMemberTrue events]
-            $ tabulate "IsMember: At least one True" 
+            $ tabulate "IsMember: At least one True"
                 [show $ isMemberTrue' events]
             $ tabulate "Successors" (tagGetSuccessors events)
             $ tabulate "Predecessor" (tagGetPredecessor events)
@@ -706,7 +706,7 @@ tag ls = C.classify
     tagGetReOpenGet = tagGetJust $ Right $ tagReOpen False $
                         Right $ tagGetJust $ Left TagGetReOpenGet
 
-    -- This rarely succeeds. I think this is because the last part 
+    -- This rarely succeeds. I think this is because the last part
     -- (get -> Nothing) rarelly succeeds. This happens because when a blockId is
     -- deleted is very unlikely to be requested.
     tagGarbageCollect :: Bool
@@ -723,9 +723,9 @@ tag ls = C.classify
                        Nothing
         (Nothing, _, GarbageCollect sl)
           -> Right $ tagGarbageCollect True bids (Just sl)
-        (Just _gced, MbAllComponents Nothing, GetBlockComponent bid) 
+        (Just _gced, MbAllComponents Nothing, GetBlockComponent bid)
           | (S.member bid bids) -> Left TagGarbageCollect
-        (_, _, Corrupt _) 
+        (_, _, Corrupt _)
           -> Right $ tagGarbageCollect False bids mgced
         _ -> Right $ tagGarbageCollect True bids mgced
 
@@ -735,7 +735,7 @@ tag ls = C.classify
       _                        -> Right $ tagGetJust next
 
     tagReOpen :: Bool -> Either Tag EventPred -> EventPred
-    tagReOpen hasClosed next = successful $ \ev _ -> 
+    tagReOpen hasClosed next = successful $ \ev _ ->
       case (hasClosed, getCmd ev) of
         (True, ReOpen)     -> next
         (False, Close)     -> Right $ tagReOpen True next
@@ -769,7 +769,7 @@ tag ls = C.classify
 
     tagGarbageCollectThenReOpen :: EventPred
     tagGarbageCollectThenReOpen = successful $ \ev _ -> case getCmd ev of
-      GarbageCollect _ -> Right $ tagReOpen False $ 
+      GarbageCollect _ -> Right $ tagReOpen False $
                             Left TagGarbageCollectThenReOpen
       _                -> Right $ tagGarbageCollectThenReOpen
 

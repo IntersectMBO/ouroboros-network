@@ -24,6 +24,7 @@ module Ouroboros.Storage.ChainDB.Impl.ChainSel
 import           Control.Exception (assert)
 import           Control.Monad.Except
 import           Control.Monad.Trans.State.Strict
+import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Foldable (foldl')
 import           Data.Function (on)
 import           Data.List (sortBy)
@@ -36,9 +37,6 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
-
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer, contramap, traceWith)
 
 import           Cardano.Prelude (forceElemsToWHNF)
 

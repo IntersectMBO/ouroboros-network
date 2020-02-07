@@ -24,10 +24,9 @@ import           Data.Word
 import           System.FileLock
 import           Text.Read (readMaybe)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Cardano.Crypto (ProtocolMagicId (..))
 
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.FS.API

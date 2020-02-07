@@ -11,8 +11,6 @@ import           Data.Bifunctor (first)
 import qualified Data.Map as Map
 import           GHC.Stack (callStack)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Network.Block (ChainUpdate)
 
 import           Ouroboros.Consensus.Block

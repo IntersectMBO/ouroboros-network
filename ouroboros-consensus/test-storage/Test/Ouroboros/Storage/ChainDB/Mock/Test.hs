@@ -9,7 +9,6 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim
 
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)

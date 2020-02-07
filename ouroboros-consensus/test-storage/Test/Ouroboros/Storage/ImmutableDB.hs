@@ -9,8 +9,6 @@ import           Data.Coerce (coerce)
 import           Data.Functor.Identity (Identity (..))
 import           Data.Maybe (fromJust)
 
-import           Control.Monad.Class.MonadThrow (bracket)
-
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit

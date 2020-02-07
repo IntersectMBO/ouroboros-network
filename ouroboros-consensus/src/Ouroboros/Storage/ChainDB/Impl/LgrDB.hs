@@ -55,6 +55,7 @@ module Ouroboros.Storage.ChainDB.Impl.LgrDB (
 import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except (runExcept)
+import           Control.Tracer
 import           Data.Bifunctor (second)
 import           Data.Bitraversable (bitraverse)
 import           Data.Foldable (foldl')
@@ -66,9 +67,6 @@ import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
 import           Cardano.Prelude (OnlyCheckIsWHNF (..))
-
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer
 
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,

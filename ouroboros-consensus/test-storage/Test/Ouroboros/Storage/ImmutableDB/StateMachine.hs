@@ -42,15 +42,11 @@ import           Data.TreeDiff (Expr (App))
 import           Data.TreeDiff.Class (ToExpr (..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word16, Word32, Word64)
-
-import           Control.Monad.Class.MonadThrow hiding (try)
-
 import qualified Generics.SOP as SOP
-
 import           GHC.Generics (Generic, Generic1)
 import           GHC.Stack (HasCallStack)
-
 import           System.Random (getStdRandom, randomR)
+import           Text.Show.Pretty (ppShow)
 
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QC
@@ -61,8 +57,6 @@ import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-
-import           Text.Show.Pretty (ppShow)
 
 import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB, getHeader)
 import           Ouroboros.Consensus.BlockchainTime.Mock
@@ -779,12 +773,12 @@ semantics :: ImmutableDBEnv h
 semantics env@ImmutableDBEnv {..} (At cmdErr) =
     At . fmap (reference . Opaque) . Resp <$> case opaque <$> cmdErr of
 
-      CmdErr Nothing       cmd its -> try $
+      CmdErr Nothing       cmd its -> tryDB $
         run env (semanticsCorruption hasFS) its cmd
 
       CmdErr (Just errors) cmd its -> do
         tipBefore <- getTip db
-        res       <- withErrors varErrors errors $ try $
+        res       <- withErrors varErrors errors $ tryDB $
           run env (semanticsCorruption hasFS) its cmd
         case res of
           -- If the command resulted in a 'UserError', we didn't even get the
@@ -812,9 +806,9 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
             -- Note that we might have created an iterator, make sure to close
             -- it as well
   where
-    try = tryImmDB EH.monadCatch EH.monadCatch
+    tryDB = tryImmDB EH.monadCatch EH.monadCatch
 
-    truncateAndReopen cmd its tipBefore = try $ do
+    truncateAndReopen cmd its tipBefore = tryDB $ do
       -- Close all open iterators as we will perform truncation
       mapM_ iteratorClose (unWithEq <$> its)
       -- Close the database in case no errors occurred and it wasn't
