@@ -53,9 +53,6 @@ import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
 
-import           Control.Monad.Class.MonadThrow (bracketOnError, mask_, throwM)
-import           Control.Monad.Class.MonadTime (Time (..))
-
 import           Cardano.Prelude (NoUnexpectedThunks (..), forceElemsToWHNF)
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
@@ -78,7 +75,7 @@ import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary
                      (BlockSize (..))
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
-import           Ouroboros.Storage.ImmutableDB.Impl.Util (onException,
+import           Ouroboros.Storage.ImmutableDB.Impl.Util (onImmDbException,
                      renderFile, throwUnexpectedError)
 import           Ouroboros.Storage.ImmutableDB.Layout (RelativeSlot (..))
 import           Ouroboros.Storage.ImmutableDB.Types (HashInfo (..),
@@ -688,7 +685,7 @@ openPrimaryIndex cacheEnv epoch allowExisting = do
     lastUsed <- LastUsed <$> getMonotonicTime
     pHnd <- Primary.open hasFS epoch allowExisting
     -- Don't leak the handle in case of an exception
-    onException hasFsErr err (hClose pHnd) $ do
+    onImmDbException hasFsErr err (hClose pHnd) $ do
       newCurrentEpochInfo <- case allowExisting of
         MustBeNew     -> return emptyCurrentEpochInfo
         AllowExisting -> loadCurrentEpochInfo hasFS err hashInfo epoch

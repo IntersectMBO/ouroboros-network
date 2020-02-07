@@ -43,8 +43,6 @@ import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Network.TypedProtocol.Pipelined
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF

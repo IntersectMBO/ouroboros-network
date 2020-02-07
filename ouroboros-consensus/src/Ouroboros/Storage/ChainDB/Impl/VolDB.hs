@@ -66,8 +66,6 @@ import           System.FilePath ((</>))
 
 import           Cardano.Prelude (allNoUnexpectedThunks)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader (..), HeaderHash,
                      MaxSlotNo, Point, SlotNo, StandardHash, pointHash,

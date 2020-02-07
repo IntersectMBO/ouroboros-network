@@ -29,8 +29,6 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Word (Word64)
 import           Test.QuickCheck
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Network.Point (WithOrigin, at, origin)
 
 import           Ouroboros.Consensus.Util.IOLike
@@ -41,7 +39,7 @@ import           Ouroboros.Storage.VolatileDB
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
 
 import           Test.Ouroboros.Storage.TestBlock as TestBlock hiding
-                     (Corruptions, FileCorruption(..), corruptFile,
+                     (Corruptions, FileCorruption (..), corruptFile,
                      generateCorruptions)
 
 type BlockId = TestHeaderHash

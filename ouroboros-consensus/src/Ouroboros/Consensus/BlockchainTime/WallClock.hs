@@ -19,8 +19,6 @@ import           Data.Void
 
 import           Control.Tracer (Tracer, traceWith)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Network.Block (SlotNo)
 
 import           Ouroboros.Consensus.BlockchainTime.API

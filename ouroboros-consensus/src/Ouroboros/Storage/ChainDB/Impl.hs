@@ -27,12 +27,9 @@ module Ouroboros.Storage.ChainDB.Impl (
   ) where
 
 import           Control.Monad (when)
+import           Control.Tracer
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
-
-import           Control.Tracer
-
-import           Control.Monad.Class.MonadThrow (bracket)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (castPoint)

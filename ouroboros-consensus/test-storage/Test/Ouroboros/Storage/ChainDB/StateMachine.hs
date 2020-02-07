@@ -26,6 +26,7 @@ import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad (forM_, replicateM, unless, when)
 import           Control.Monad.State (StateT, evalStateT, get, lift, modify,
                      put)
+import           Control.Tracer
 import           Data.Bifoldable
 import           Data.Bifunctor
 import qualified Data.Bifunctor.TH as TH
@@ -52,9 +53,6 @@ import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer
 
 import           Cardano.Crypto.DSIGN.Mock
 

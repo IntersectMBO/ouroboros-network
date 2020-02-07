@@ -7,9 +7,6 @@ import           Control.Exception (Exception)
 import           Control.Monad
 import           GHC.Stack
 
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Network.Block (SlotNo)
 
 import           Ouroboros.Consensus.BlockchainTime

@@ -16,11 +16,9 @@ module Ouroboros.Storage.ChainDB.Impl.Reopen
   ) where
 
 import           Control.Monad (when)
+import           Control.Tracer
 import           Data.Functor ((<&>))
 import           GHC.Stack (HasCallStack)
-
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (pattern BlockPoint,

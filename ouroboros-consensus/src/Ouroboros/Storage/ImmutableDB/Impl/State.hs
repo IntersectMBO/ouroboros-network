@@ -29,8 +29,6 @@ import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
-import           Control.Monad.Class.MonadThrow hiding (onException)
-
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike

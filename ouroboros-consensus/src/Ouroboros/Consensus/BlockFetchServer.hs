@@ -15,10 +15,8 @@ module Ouroboros.Consensus.BlockFetchServer
   , BlockFetchServerException
   ) where
 
-import           Data.Typeable (Typeable)
-
-import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer)
+import           Data.Typeable (Typeable)
 
 import           Ouroboros.Network.Block (HeaderHash, Serialised (..),
                      StandardHash, castPoint)

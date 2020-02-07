@@ -48,8 +48,6 @@ import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           GHC.Stack
 
-import           Control.Monad.Class.MonadThrow
-
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)

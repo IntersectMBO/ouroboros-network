@@ -25,8 +25,6 @@ import           Control.Monad (join)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,

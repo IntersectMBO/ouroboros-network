@@ -19,17 +19,12 @@ module Ouroboros.Consensus.Util.STM (
     -- * Simulate various monad stacks in STM
   , Sim
   , simId
-  , simReaderT
-  , simWriterT
   , simStateT
   , simOuroborosStateT
   , simChaChaT
   ) where
 
-import           Control.Monad.Reader
 import           Control.Monad.State
-import           Control.Monad.Writer
-
 import           Data.Coerce
 import           Data.Void
 import           Data.Word (Word64)
@@ -134,49 +129,29 @@ type Sim n m = forall a. n a -> STM m a
 simId :: Sim (STM m) m
 simId = id
 
-simReaderT :: IOLike m => StrictTVar m st -> Sim n m -> Sim (ReaderT st n) m
-simReaderT tvar k (ReaderT f) = do
-    st <- readTVar tvar
-    k (f st)
-
-simWriterT :: IOLike m => StrictTVar m st -> Sim n m -> Sim (WriterT st n) m
-simWriterT tvar k (WriterT f) = do
-    (a, st') <- k f
-    writeTVar tvar st'
-    return a
-
 simStateT :: IOLike m => StrictTVar m st -> Sim n m -> Sim (StateT st n) m
-simStateT tvar k (StateT f) = do
-    st       <- readTVar tvar
+simStateT stVar k (StateT f) = do
+    st       <- readTVar stVar
     (a, st') <- k (f st)
-    writeTVar tvar st'
+    writeTVar stVar st'
     return a
 
 simOuroborosStateT :: IOLike m
                    => StrictTVar m s
                    -> Sim n m
                    -> Sim (NodeStateT_ s n) m
-simOuroborosStateT tvar k n = do
-    st       <- readTVar tvar
+simOuroborosStateT stVar k n = do
+    st       <- readTVar stVar
     (a, st') <- k (runNodeStateT n st)
-    writeTVar tvar st'
+    writeTVar stVar st'
     return a
 
 simChaChaT :: (IOLike m, Coercible a ChaChaDRG)
            => StrictTVar m a
            -> Sim n m
            -> Sim (ChaChaT n) m
-simChaChaT tvar k n = do
-    st       <- readTVar tvar
+simChaChaT stVar k n = do
+    st       <- readTVar stVar
     (a, st') <- k (runChaChaT n (coerce st))
-    writeTVar tvar (coerce st')
+    writeTVar stVar (coerce st')
     return a
-
--- | Example of composition
-_exampleComposition :: IOLike m
-                    => StrictTVar m r
-                    -> StrictTVar m w
-                    -> StrictTVar m s
-                    -> Sim n m
-                    -> Sim (ReaderT r (WriterT w (StateT s n))) m
-_exampleComposition r w s k = simReaderT r $ simWriterT w $ simStateT s $ k

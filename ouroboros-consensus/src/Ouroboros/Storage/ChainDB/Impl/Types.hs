@@ -48,6 +48,7 @@ module Ouroboros.Storage.ChainDB.Impl.Types (
   , TraceIteratorEvent (..)
   ) where
 
+import           Control.Tracer
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Map.Strict (Map)
 import           Data.Time.Clock (DiffTime)
@@ -55,9 +56,6 @@ import           Data.Typeable
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
-
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 

@@ -5,68 +5,32 @@ module Ouroboros.Consensus.Util.IOLike (
     IOLike
     -- * Re-exports
     -- *** MonadThrow
-  , uninterruptibleCancel
+  , MonadThrow(..)
+  , MonadCatch(..)
+  , MonadMask(..)
+  , Exception(..)
+  , SomeException
+  , ExitCase(..)
     -- *** MonadSTM
-  , MonadSTM -- opaque
-  , STM
-  , atomically
-  , check
-  , retry
-    -- ** Queues (TODO: Should we have a strict queue?)
-  , TQueue
-  , newTQueue
-  , readTQueue
-  , writeTQueue
-    -- ** StrictTVar
-  , StrictTVar
-  , modifyTVar
-  , newTVarM
-  , readTVar
-  , uncheckedNewTVarM
-  , updateTVar
-  , writeTVar
-    -- ** StrictMVar
-  , StrictMVar
-  , newEmptyMVar
-  , newMVar
-  , putMVar
-  , readMVar
-  , readMVarSTM
-  , swapMVar
-  , takeMVar
-  , tryTakeMVar
-  , uncheckedNewEmptyMVar
-  , uncheckedNewMVar
-  , updateMVar
-  , updateMVar_
-  , modifyMVar
-  , modifyMVar_
+  , module Ouroboros.Consensus.Util.MonadSTM.NormalForm
     -- *** MonadFork
-  , ThreadId
-  , myThreadId
-  , fork -- TODO: Should we hide this?
+  , MonadFork(..) -- TODO: Should we hide this in favour of MonadAsync?
+  , MonadThread(..)
     -- *** MonadAsync
-  , Async
-  , async
-  , asyncThreadId
+  , MonadAsync(..)
+  , ExceptionInLinkedThread(..)
   , linkTo
-  , wait
-  , waitAny
-  , waitBoth
-  , withAsync
     -- *** MonadST
-  , withLiftST
+  , MonadST(..)
     -- *** MonadTime
-  , Time
+  , MonadTime(..)
   , DiffTime
+  , Time(..)
+  , UTCTime
   , addTime
   , diffTime
-  , getMonotonicTime
-  , UTCTime
-  , getCurrentTime
-    -- *** MonadTimer
-  , threadDelay
-  , timeout
+    -- *** MonadDelay
+  , MonadTimer(..)
     -- *** Cardano prelude
   , NoUnexpectedThunks(..)
   ) where
@@ -87,14 +51,15 @@ import           Ouroboros.Consensus.Util.Orphans ()
   IOLike
 -------------------------------------------------------------------------------}
 
-class ( MonadAsync m
-      , MonadFork  m
-      , MonadST    m
-      , MonadTime  m
-      , MonadTimer m
-      , MonadThrow m
-      , MonadCatch m
-      , MonadMask  m
+class ( MonadAsync  m
+      , MonadFork   m
+      , MonadST     m
+      , MonadTime   m
+      , MonadTimer  m
+      , MonadThread m
+      , MonadThrow  m
+      , MonadCatch  m
+      , MonadMask   m
       , MonadThrow (STM m)
       , forall a. NoUnexpectedThunks (m a)
       , forall a. NoUnexpectedThunks a => NoUnexpectedThunks (StrictTVar m a)

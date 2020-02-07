@@ -230,6 +230,7 @@ instance MonadTime m => MonadTime (WithEarlyExit m) where
 instance (MonadTimer m, MonadFork m) => MonadTimer (WithEarlyExit m) where
   newtype Timeout (WithEarlyExit m) = WrapTimeout { unwrapTimeout :: Timeout m }
 
+  threadDelay     = lift     . threadDelay
   newTimeout    d = lift     $ WrapTimeout <$> newTimeout d
   readTimeout   t = wrapSTM' $ readTimeout   (unwrapTimeout t)
   updateTimeout t = lift     . updateTimeout (unwrapTimeout t)
