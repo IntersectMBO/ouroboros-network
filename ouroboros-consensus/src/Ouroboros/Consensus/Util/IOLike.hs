@@ -40,6 +40,7 @@ module Ouroboros.Consensus.Util.IOLike (
   , updateMVar
   , updateMVar_
   , modifyMVar
+  , modifyMVar_
     -- *** MonadFork
   , ThreadId
   , myThreadId

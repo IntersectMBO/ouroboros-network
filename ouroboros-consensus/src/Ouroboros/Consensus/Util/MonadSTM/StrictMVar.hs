@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Util.MonadSTM.StrictMVar (
   , updateMVar
   , updateMVar_
   , modifyMVar
+  , modifyMVar_
   ) where
 
 import           Control.Concurrent.STM (readTVarIO)
@@ -178,6 +179,9 @@ modifyMVar var action =
       ExitCaseException _ex   -> putMVar var a
       ExitCaseAbort           -> putMVar var a
 
+modifyMVar_ :: (MonadSTM m, MonadCatch m, HasCallStack)
+            => StrictMVar m a -> (a -> m a) -> m ()
+modifyMVar_ var action = modifyMVar var (fmap (, ()) . action)
 
 {-------------------------------------------------------------------------------
   NoUnexpectedThunks
