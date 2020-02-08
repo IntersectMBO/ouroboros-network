@@ -68,8 +68,6 @@ library
                        Ouroboros.Network.PeerSelection.Governor
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket
-                       Ouroboros.Network.Server.Version.CBOR
-                       Ouroboros.Network.Server.Version.Protocol
                        Ouroboros.Network.Snocket
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Subscription
