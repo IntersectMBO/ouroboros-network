@@ -26,11 +26,26 @@ library
                        Ouroboros.Network.Driver.Simple
                        Ouroboros.Network.Driver.Limits
                        Ouroboros.Network.Driver.ByteLimit
+                       Ouroboros.Network.ErrorPolicy
+                       Ouroboros.Network.IOManager
                        Ouroboros.Network.Mux
 
                        Ouroboros.Network.Protocol.Handshake.Type
                        Ouroboros.Network.Protocol.Handshake.Codec
                        Ouroboros.Network.Protocol.Handshake.Version
+
+                       Ouroboros.Network.Server.ConnectionTable
+                       Ouroboros.Network.Server.Socket
+                       Ouroboros.Network.Snocket
+                       Ouroboros.Network.Socket
+
+                       Ouroboros.Network.Subscription
+                       Ouroboros.Network.Subscription.Client
+                       Ouroboros.Network.Subscription.Dns
+                       Ouroboros.Network.Subscription.Ip
+                       Ouroboros.Network.Subscription.PeerState
+                       Ouroboros.Network.Subscription.Subscriber
+                       Ouroboros.Network.Subscription.Worker
 
                        --TODO: move these into the test suite when we move
                        -- the ouroboros-network tests that use them into this
@@ -40,19 +55,32 @@ library
   -- other-modules:
   -- other-extensions:
   build-depends:       base            >=4.12 && <4.13
+                     , async
                      , bytestring      >=0.10 && <0.11
-                     , text
                      , containers
+                     , mtl
+                     , stm
+                     , text
+                     , time
+
                      , cborg           >=0.2.1 && <0.3
                      , io-sim-classes  >= 0.1 && < 0.2
                      , typed-protocols >= 0.1 && < 0.2
+                     , network         >= 3.1
                      , network-mux     >= 0.1 && < 0.2
                      , contra-tracer
-                     , time
+                     , dns
+                     , iproute
 
                        -- Remove once example codecs are moved into the tests
                      , serialise       >=0.2 && <0.3
                      , typed-protocols-examples
+                       -- Drop dep once use of Data.Semigroup.Action is removed
+                     , cardano-prelude
+
+  if os(windows)
+    build-depends:     Win32-network   <  0.2.0.0,
+                       Win32           >= 2.5.4.1 && <2.9
 
   hs-source-dirs:      src
   default-language:    Haskell2010
