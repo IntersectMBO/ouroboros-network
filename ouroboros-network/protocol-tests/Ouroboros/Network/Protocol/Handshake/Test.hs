@@ -40,7 +40,6 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise)
-import           Codec.SerialiseTerm
 import qualified Codec.Serialise     as CBOR
 
 import           Test.QuickCheck

@@ -28,6 +28,10 @@ library
                        Ouroboros.Network.Driver.ByteLimit
                        Ouroboros.Network.Mux
 
+                       Ouroboros.Network.Protocol.Handshake.Type
+                       Ouroboros.Network.Protocol.Handshake.Codec
+                       Ouroboros.Network.Protocol.Handshake.Version
+
                        --TODO: move these into the test suite when we move
                        -- the ouroboros-network tests that use them into this
                        -- package.
@@ -37,6 +41,8 @@ library
   -- other-extensions:
   build-depends:       base            >=4.12 && <4.13
                      , bytestring      >=0.10 && <0.11
+                     , text
+                     , containers
                      , cborg           >=0.2.1 && <0.3
                      , io-sim-classes  >= 0.1 && < 0.2
                      , typed-protocols >= 0.1 && < 0.2
