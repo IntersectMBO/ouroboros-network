@@ -86,7 +86,6 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
-import           Codec.SerialiseTerm
 import qualified Network.Socket as Socket
 
 import           Network.Mux hiding (MiniProtocolLimits(..))
