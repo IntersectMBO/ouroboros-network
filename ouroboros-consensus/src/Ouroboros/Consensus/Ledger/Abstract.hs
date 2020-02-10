@@ -1,7 +1,11 @@
 {-# LANGUAGE DataKinds               #-}
+{-# LANGUAGE DeriveAnyClass          #-}
+{-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE TypeOperators           #-}
+{-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 
 -- | Interface to the ledger layer
@@ -20,6 +24,7 @@ module Ouroboros.Consensus.Ledger.Abstract (
 
 import           Control.Monad.Except
 import           Data.Type.Equality ((:~:))
+import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -118,7 +123,7 @@ ledgerTipSlot = pointSlot . ledgerTipPoint
 -- the tip of the underlying ledger (i.e., no blocks have been applied).
 data TickedLedgerState blk = TickedLedgerState {
       -- | The slot number supplied to 'applyChainTick'
-      tickedSlotNo      :: SlotNo
+      tickedSlotNo      :: !SlotNo
 
       -- | The underlying ledger state
       --
@@ -128,8 +133,12 @@ data TickedLedgerState blk = TickedLedgerState {
       --
       -- >    ledgerTipPoint (tickedLedgerState (applyChainTick cfg slot st)
       -- > == ledgerTipPoint st
-    , tickedLedgerState :: LedgerState blk
+    , tickedLedgerState :: !(LedgerState blk)
     }
+  deriving (Generic)
+
+deriving instance NoUnexpectedThunks       (LedgerState blk)
+               => NoUnexpectedThunks (TickedLedgerState blk)
 
 -- | Link protocol to ledger
 class (SupportedBlock blk, UpdateLedger blk) => ProtocolLedgerView blk where

@@ -443,25 +443,6 @@ instance Bridge m a => ApplyTx (DualBlock m a) where
                                     dualLedgerStateBridge
         }
 
-  reapplyTxSameState DualLedgerConfig{..}
-                     tx@DualGenTx{..}
-                     (TickedLedgerState slot DualLedgerState{..}) =
-    TickedLedgerState slot DualLedgerState {
-        dualLedgerStateMain   = tickedLedgerState $
-                                  reapplyTxSameState
-                                    dualLedgerConfigMain
-                                    dualGenTxMain
-                                    (TickedLedgerState slot dualLedgerStateMain)
-      , dualLedgerStateAux    = tickedLedgerState $
-                                  reapplyTxSameState
-                                    dualLedgerConfigAux
-                                    dualGenTxAux
-                                    (TickedLedgerState slot dualLedgerStateAux)
-      , dualLedgerStateBridge = updateBridgeWithTx
-                                  tx
-                                  dualLedgerStateBridge
-      }
-
 instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
   -- We don't need a pair of IDs, as long as we can unique ID the transaction
   newtype TxId (GenTx (DualBlock m a)) = DualGenTxId {

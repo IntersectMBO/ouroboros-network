@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -15,22 +14,23 @@ import           Control.Tracer
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Util.IOLike
 
 
 -- | Local transaction submission server, for adding txs to the 'Mempool'
 --
 localTxSubmissionServer
-  :: Monad m
+  :: (MonadSTM m, ApplyTx blk)
   => Tracer m (TraceLocalTxSubmissionServerEvent blk)
   -> Mempool m blk idx
   -> LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
-localTxSubmissionServer tracer Mempool{addTxs} =
+localTxSubmissionServer tracer mempool =
     server
   where
     server = LocalTxSubmissionServer {
       recvMsgSubmitTx = \tx -> do
         traceWith tracer $ TraceReceivedTx tx
-        res <- addTxs [tx]
+        res <- addTxs mempool [tx]
         case res of
           [(_tx, mbErr)] -> return (mbErr, server)
           -- The output list of addTxs has the same length as the input list.

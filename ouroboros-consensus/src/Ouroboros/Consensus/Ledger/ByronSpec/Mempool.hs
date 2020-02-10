@@ -11,7 +11,6 @@ module Ouroboros.Consensus.Ledger.ByronSpec.Mempool (
   ) where
 
 import           Codec.Serialise
-import           Control.Monad.Trans.Except
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
@@ -50,11 +49,4 @@ instance ApplyTx ByronSpecBlock where
           (byronSpecLedgerState    st)
 
   -- Byron spec doesn't have multiple validation modes
-
-  reapplyTx          cfg tx =                   applyTx cfg tx
-  reapplyTxSameState cfg tx = dontExpectError . applyTx cfg tx
-    where
-      dontExpectError :: Except a b -> b
-      dontExpectError mb = case runExcept mb of
-        Left  _ -> error "reapplyTxSameState: unexpected error"
-        Right b -> b
+  reapplyTx = applyTx

@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE RankNTypes              #-}
+{-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
@@ -7,6 +8,7 @@
 
 module Ouroboros.Consensus.Mempool.API (
     Mempool(..)
+  , addTxs
   , BlockSlot(..)
   , MempoolCapacityBytes (..)
   , MempoolSnapshot(..)
@@ -67,17 +69,6 @@ class ( UpdateLedger blk
             -> TickedLedgerState blk
             -> Except (ApplyTxErr blk) (TickedLedgerState blk)
 
-  -- | Re-apply a transaction to the very same state it was applied in before
-  --
-  -- In this case no error can occur.
-  --
-  -- See also 'ldbConfReapply' for comments on implementing this function.
-  reapplyTxSameState :: HasCallStack
-                     => LedgerConfig blk
-                     -> GenTx blk
-                     -> TickedLedgerState blk
-                     -> TickedLedgerState blk
-
 -- | Transactions with an identifier
 --
 -- The mempool will use these to locate transactions, so two different
@@ -119,45 +110,45 @@ data Mempool m blk idx = Mempool {
       -- @STM m@; we keep it in @m@ instead to leave open the possibility of
       -- persistence.
       --
-      -- The following validation steps will be performed when adding
-      -- transactions to the mempool:
+      -- The new transactions provided will be validated, /in order/, against
+      -- the ledger state obtained by applying all the transactions already in
+      -- the Mempool to it. Transactions which are found to be invalid, with
+      -- respect to the ledger state, are dropped, whereas valid transactions
+      -- are added to the mempool.
       --
-      -- * Transactions which already exist in the mempool are revalidated,
-      --   /in order/, against the current ledger state. Existing transactions
-      --   which are found to be invalid, with respect to the current ledger
-      --   state, are dropped from the mempool, whereas valid transactions
-      --   remain in the mempool.
-      -- * The new transactions provided will be validated, /in order/,
-      --   against the current ledger state. Transactions which are found to
-      --   be invalid, with respect to the current ledger state, are dropped,
-      --   whereas valid transactions are added to the mempool.
+      -- Note that transactions that are invalid, with respect to the ledger
+      -- state, will /never/ be added to the mempool. However, it is possible
+      -- that, at a given point in time, transactions which were once valid
+      -- but are now invalid, with respect to the current ledger state, could
+      -- exist within the mempool until they are revalidated and dropped from
+      -- the mempool via a call to 'syncWithLedger' or by the background
+      -- thread that watches the ledger for changes.
       --
-      -- Note that transactions that are invalid, with respect to the current
-      -- ledger state, will /never/ be added to the mempool. However, it is
-      -- possible that, at a given point in time, transactions which were once
-      -- valid but are now invalid, with respect to the current ledger state,
-      -- could exist within the mempool until they are revalidated and dropped
-      -- from the mempool via a call to either 'addTxs' or 'syncState'.
+      -- This function will return two lists
       --
-      -- This function will return a list containing the following
-      -- transactions:
+      -- 1. A list containing the following transactions:
       --
-      -- * Those transactions provided which were found to be valid, along
-      --   with 'Nothing' for their accompanying @Maybe (ApplyTxErr blk)@
-      --   values.
-      -- * Those transactions provided which were found to be invalid, along
-      --   with their accompanying validation errors.
+      --    * Those transactions provided which were found to be valid, along
+      --      with 'Nothing' for their accompanying @Maybe (ApplyTxErr blk)@
+      --      values. These transactions are now in the Mempool.
+      --    * Those transactions provided which were found to be invalid,
+      --      along with their accompanying validation errors. These
+      --      transactions are not in the Mempool.
       --
-      -- The order of this returned list is undefined.
+      -- 2. A list containing the transactions that have not yet been added
+      --    yet, as the capacity of the Mempool has been reached. I.e., there
+      --    is no space in the Mempool to add the first transaction in this
+      --    list. Note that we won't try to add smaller transactions after
+      --    that first transaction because they might depend on the first
+      --    transaction.
+      --
+      -- POSTCONDITION:
+      -- > (processed, toProcess) <- tryAddTxs txs
+      -- > map fst processed ++ toProcess == txs
       --
       -- Note that previously valid transaction that are now invalid with
       -- respect to the current ledger state are dropped from the mempool, but
-      -- are not part of the returned list.
-      --
-      -- POSTCONDITION: given some ordering @txOrd@ on @'GenTx' blk@:
-      --
-      -- > addTxs inTxs >>= \outTxs ->
-      -- >   sortBy txOrd inTxs == sortBy txOrd (map fst outTxs)
+      -- are not part of the first returned list (nor the second).
       --
       -- In principle it is possible that validation errors are transient; for
       -- example, it is possible that a transaction is rejected because one of
@@ -172,23 +163,16 @@ data Mempool m blk idx = Mempool {
       -- (after all, by definition that must mean its inputs have been used).
       -- Rejected transactions are therefore not necessarily a sign of
       -- malicious behaviour. Indeed, we would expect /most/ transactions that
-      -- are reported as invalid by 'addTxs' to be invalid precisely because
-      -- they have already been included. Distinguishing between these two
-      -- cases can be done in theory, but it is expensive unless we have an
-      -- index of transaction hashes that have been included on the blockchain.
+      -- are reported as invalid by 'tryAddTxs' to be invalid precisely
+      -- because they have already been included. Distinguishing between these
+      -- two cases can be done in theory, but it is expensive unless we have
+      -- an index of transaction hashes that have been included on the
+      -- blockchain.
       --
-      -- It is also worth noting that, if the mempool capacity is reached,
-      -- this function will block until it's able to at least attempt
-      -- validating and adding each of the provided transactions to the
-      -- mempool. In the event that we block, we also commit any useful work
-      -- done up to that point. For example, if we tried to add 5 valid
-      -- transactions but there is only space for 3, we would validate and add
-      -- 3 to the mempool and then block until more space becomes available,
-      -- at which point we would then re-attempt with the remaining 2
-      -- transactions. This process would continue until it is able to at
-      -- least attempt validating and adding each of the provided transactions
-      -- to the mempool.
-      addTxs         :: [GenTx blk] -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
+      tryAddTxs      :: [GenTx blk]
+                     -> m ( [(GenTx blk, Maybe (ApplyTxErr blk))]
+                          , [GenTx blk]
+                          )
 
       -- | Manually remove the given transactions from the mempool.
     , removeTxs      :: [GenTxId blk] -> m ()
@@ -231,6 +215,47 @@ data Mempool m blk idx = Mempool {
       -- counter will start (i.e. the zeroth ticket number).
     , zeroIdx        :: idx
     }
+
+-- | Wrapper around 'implTryAddTxs' that blocks until all transaction have
+-- either been added to the Mempool or rejected.
+--
+-- This function does not sync the Mempool contents with the ledger state in
+-- case the latter changes, it relies on the background thread to do that.
+--
+-- POSTCONDITON:
+-- > processed <- addTxs mpEnv txs
+-- > map fst processed == txs
+addTxs
+  :: forall m blk idx. (MonadSTM m, ApplyTx blk)
+  => Mempool m blk idx
+  -> [GenTx blk]
+  -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
+addTxs mempool = \txs -> do
+    (processed, toAdd) <- tryAddTxs mempool txs
+    case toAdd of
+      [] -> return processed
+      _  -> go [processed] toAdd
+  where
+    go
+      :: [[(GenTx blk, Maybe (ApplyTxErr blk))]]
+         -- ^ The outer list is in reverse order, but all the inner lists will
+         -- be in the right order.
+      -> [GenTx blk]
+      -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
+    go acc []         = return (concat (reverse acc))
+    go acc txs@(tx:_) = do
+      let firstTxSize = txSize tx
+      -- Wait until there's at least room for the first transaction we're
+      -- trying to add, otherwise there's no point in trying to add it.
+      atomically $ do
+        curSize <- msNumBytes . snapshotMempoolSize <$> getSnapshot mempool
+        MempoolCapacityBytes capacity <- getCapacity mempool
+        check (curSize + firstTxSize <= capacity)
+      -- It is possible that between the check above and the call below, other
+      -- transactions are added, stealing our spot, but that's fine, we'll
+      -- just recurse again without progress.
+      (added, toAdd) <- tryAddTxs mempool txs
+      go (added:acc) toAdd
 
 -- | The slot of the block in which the transactions in the mempool will end up
 --
@@ -315,15 +340,19 @@ instance Monoid MempoolSize where
 
 -- | Events traced by the Mempool.
 data TraceEventMempool blk
-  = TraceMempoolAddTxs
-      ![GenTx blk]
-      -- ^ New, valid transaction were added to the Mempool.
+  = TraceMempoolAddedTx
+      !(GenTx blk)
+      -- ^ New, valid transaction that was added to the Mempool.
       !MempoolSize
-      -- ^ The current size of the Mempool.
-  | TraceMempoolRejectedTxs
-      ![(GenTx blk, ApplyTxErr blk)]
-      -- ^ New, invalid transaction were rejected and thus not added to the
-      -- Mempool.
+      -- ^ The size of the Mempool before adding the transaction.
+      !MempoolSize
+      -- ^ The size of the Mempool after adding the transaction.
+  | TraceMempoolRejectedTx
+      !(GenTx blk)
+      -- ^ New, invalid transaction thas was rejected and thus not added to
+      -- the Mempool.
+      !(ApplyTxErr blk)
+      -- ^ The reason for rejecting the transaction.
       !MempoolSize
       -- ^ The current size of the Mempool.
   | TraceMempoolRemoveTxs

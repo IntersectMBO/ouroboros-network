@@ -106,12 +106,6 @@ instance ApplyTx ByronBlock where
     where
       validationMode = CC.ValidationMode CC.NoBlockValidation Utxo.TxValidationNoCrypto
 
-  reapplyTxSameState cfg tx st =
-      validationErrorImpossible $
-        applyByronGenTx validationMode cfg tx st
-    where
-      validationMode = CC.ValidationMode CC.NoBlockValidation Utxo.NoTxValidation
-
 instance HasTxId (GenTx ByronBlock) where
   data TxId (GenTx ByronBlock)
     = ByronTxId             !Utxo.TxId

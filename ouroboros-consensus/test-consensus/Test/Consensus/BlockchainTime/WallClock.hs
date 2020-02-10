@@ -271,7 +271,7 @@ testOverrideDelay systemStart slotLength numSlots = do
                 nullTracer
                 systemStart
                 (focusSlotLengths $ singletonSlotLengths slotLength)
-      slotsVar <- newTVarM []
+      slotsVar <- uncheckedNewTVarM []
       cancelCollection <- onSlotChange time $ \slotNo ->
         atomically $ modifyTVar slotsVar (slotNo :)
       -- Wait to collect the required number of slots
