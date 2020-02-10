@@ -11,7 +11,8 @@ module Ouroboros.Network.Protocol.Handshake.Version
   , Application (..)
   , Version (..)
   , Sigma (..)
-
+  , Accept (..)
+  , Acceptable (..)
   , Dict (..)
   , DictVersion (..)
   , pickVersions
@@ -74,6 +75,18 @@ simpleSingletonVersions vNum vData extra r =
 data Sigma f where
   Sigma :: !t -> !(f t) -> Sigma f
 
+
+-- |
+-- A @'Maybe'@ like type which better explains its purpose.
+--
+data Accept
+  = Accept
+  | Refuse !Text
+  deriving (Eq, Show)
+
+class Acceptable v where
+  acceptableVersion :: v -> v -> Accept
+
 -- | Takes a pair of version data: local then remote.
 newtype Application r vData = Application
   { runApplication :: vData -> vData -> r
@@ -93,7 +106,7 @@ data Dict constraint thing where
 
 data DictVersion vData where
      DictVersion :: ( Typeable vData
-                    , Eq vData
+                    , Acceptable vData
                     , Show vData
                     )
                  => CodecCBORTerm Text vData

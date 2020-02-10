@@ -196,7 +196,7 @@ serverPingPong = withIOManager $ \iocp -> do
       networkState
       defaultLocalSocketAddr
       cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptEq)
+      (\(DictVersion _) -> acceptableVersion)
       (simpleSingletonVersions
         (0::Int)
         (NodeToNodeVersionData $ NetworkMagic 0)
@@ -304,7 +304,7 @@ serverPingPong2 = withIOManager $ \iocp -> do
       networkState
       defaultLocalSocketAddr
       cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptEq)
+      (\(DictVersion _) -> acceptableVersion)
       (simpleSingletonVersions
         (0::Int)
         (NodeToNodeVersionData $ NetworkMagic 0)
@@ -387,7 +387,7 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
       networkState
       (localAddressFromPath sockAddr)
       cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptEq)
+      (\(DictVersion _) -> acceptableVersion)
       (simpleSingletonVersions
         (0::Int)
         (NodeToNodeVersionData $ NetworkMagic 0)
@@ -595,7 +595,7 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
       networkState
       (localAddressFromPath sockAddr)
       cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptEq)
+      (\(DictVersion _) -> acceptableVersion)
       (simpleSingletonVersions
         (0::Int)
         (NodeToNodeVersionData $ NetworkMagic 0)

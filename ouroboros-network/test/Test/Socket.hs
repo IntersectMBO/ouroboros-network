@@ -70,10 +70,10 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
-import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq,
-                     cborTermVersionDataCodec)
+import           Ouroboros.Network.Protocol.Handshake.Type
+                     (cborTermVersionDataCodec)
 import           Ouroboros.Network.Protocol.Handshake.Version
-                     (simpleSingletonVersions)
+                     (acceptableVersion, simpleSingletonVersions)
 import           Ouroboros.Network.Testing.Serialise
 
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
@@ -254,7 +254,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = withIOManager $ \iocp -
         networkState
         responderAddr
         cborTermVersionDataCodec
-        (\(DictVersion _) -> acceptEq)
+        (\(DictVersion _) -> acceptableVersion)
         (simpleSingletonVersions
           NodeToNodeV_1
           (NodeToNodeVersionData $ NetworkMagic 0)
@@ -433,7 +433,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
       networkState
       producerAddress
       cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptEq)
+      (\(DictVersion _) -> acceptableVersion)
       (simpleSingletonVersions
         (0::Int)
         (NodeToNodeVersionData $ NetworkMagic 0)

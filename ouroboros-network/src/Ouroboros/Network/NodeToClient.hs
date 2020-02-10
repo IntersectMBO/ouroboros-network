@@ -91,7 +91,8 @@ import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
 import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
+import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
+import qualified Ouroboros.Network.Protocol.Handshake.Version as V
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription.Client ( ClientSubscriptionParams (..) )
@@ -142,6 +143,11 @@ instance Serialise NodeToClientVersion where
 newtype NodeToClientVersionData = NodeToClientVersionData
   { networkMagic :: NetworkMagic }
   deriving (Eq, Show, Typeable)
+
+instance Acceptable NodeToClientVersionData where
+    acceptableVersion local remote | local == remote = V.Accept
+                                   | otherwise =  Refuse $ T.pack $ "version data mismatch: " ++ show local
+                                                    ++ " /= " ++ show remote
 
 nodeToClientCodecCBORTerm :: CodecCBORTerm Text NodeToClientVersionData
 nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
@@ -230,7 +236,7 @@ withServer sn tracers networkState addr versions errPolicies =
     networkState
     addr
     cborTermVersionDataCodec
-    (\(DictVersion _) -> acceptEq)
+    (\(DictVersion _) -> acceptableVersion)
     (SomeResponderApplication <$> versions)
     errPolicies
     (\_ async -> Async.wait async)
