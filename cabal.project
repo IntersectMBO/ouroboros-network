@@ -1,5 +1,5 @@
 packages: ./typed-protocols
-          ./typed-protocols
+          ./typed-protocols-examples
           ./ouroboros-network-testing
           ./network-mux
           ./ouroboros-network-framework
