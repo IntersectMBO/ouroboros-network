@@ -10,17 +10,14 @@
 
 module Main where
 
-import           Data.List
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Text as Text
+import           Data.Text (Text)
 import           Data.Functor (void)
-import qualified Data.Map as Map
-import qualified Data.Set as Set
-import           Data.Set (Set)
 import           Data.Void (Void)
 
 import Control.Concurrent.Async
 import Control.Monad (when)
-import Control.Exception
 import Control.Tracer
 
 import System.IO
@@ -28,18 +25,21 @@ import System.Directory
 import System.Environment
 import System.Exit
 
-import qualified Network.Socket as Socket
-
 import Ouroboros.Network.Codec
 import Ouroboros.Network.Socket
+import Ouroboros.Network.Snocket
 import Ouroboros.Network.Mux
+import Ouroboros.Network.ErrorPolicy
+import Ouroboros.Network.IOManager
 
 import Ouroboros.Network.Protocol.Handshake.Type
-import Ouroboros.Network.Protocol.Handshake.Version
+import Ouroboros.Network.Protocol.Handshake.Version as Version
+import qualified Codec.CBOR.Term as CBOR
 
+import Network.TypedProtocol.Pipelined
 import Network.TypedProtocol.PingPong.Client as PingPong
 import Network.TypedProtocol.PingPong.Server as PingPong
-import Network.TypedProtocol.PingPong.Codec.CBOR as PingPong
+import Network.TypedProtocol.PingPong.Codec.CBOR  as PingPong
 
 
 main :: IO ()
@@ -64,27 +64,37 @@ usage = do
     hPutStrLn stderr "usage: demo-ping-pong [pingpong|pingpong2] {client|server} [addr]"
     exitFailure
 
-mkLocalSocketAddrInfo :: FilePath -> Socket.AddrInfo
-mkLocalSocketAddrInfo socketPath =
-    Socket.AddrInfo
-      []
-      Socket.AF_UNIX
-      Socket.Stream
-      Socket.defaultProtocol
-      (Socket.SockAddrUnix socketPath)
-      Nothing
-
 defaultLocalSocketAddrPath :: FilePath
 defaultLocalSocketAddrPath =  "./demo-ping-pong.sock"
 
-defaultLocalSocketAddrInfo :: Socket.AddrInfo
-defaultLocalSocketAddrInfo =
-    mkLocalSocketAddrInfo defaultLocalSocketAddrPath
+defaultLocalSocketAddr :: LocalAddress
+defaultLocalSocketAddr = localAddressFromPath defaultLocalSocketAddrPath
 
 rmIfExists :: FilePath -> IO ()
 rmIfExists path = do
   b <- doesFileExist path
   when b (removeFile path)
+
+--
+-- Version negotation
+--
+
+data NullVersionData = NullVersionData
+  deriving (Eq, Show)
+
+instance Acceptable NullVersionData where
+  acceptableVersion NullVersionData NullVersionData = Version.Accept
+
+nullVersionDataCodecCBORTerm :: CodecCBORTerm Text NullVersionData
+nullVersionDataCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
+    where
+      encodeTerm :: NullVersionData -> CBOR.Term
+      encodeTerm NullVersionData = CBOR.TNull
+
+      decodeTerm :: CBOR.Term -> Either Text NullVersionData
+      decodeTerm CBOR.TNull = Right NullVersionData
+      decodeTerm t          = Left $ Text.pack $ "unexpected term: " ++ show t
+
 
 --
 -- Ping pong demo
@@ -103,17 +113,20 @@ instance MiniProtocolLimits DemoProtocol0 where
 
 clientPingPong :: Bool -> IO ()
 clientPingPong pipelined =
+    withIOManager $ \iomgr ->
     connectToNode
+      (localSnocket iomgr defaultLocalSocketAddrPath)
       cborTermVersionDataCodec
       nullNetworkConnectTracers
       (simpleSingletonVersions (0::Int)
-                               (NodeToNodeVersionData $ NetworkMagic 0)
-                               (DictVersion nodeToNodeCodecCBORTerm) app)
+                               NullVersionData
+                               (DictVersion nullVersionDataCodecCBORTerm)
+                               app)
       Nothing
-      defaultLocalSocketAddrInfo
+      defaultLocalSocketAddr
   where
     app :: OuroborosApplication InitiatorApp
-                                ConnectionId
+                                (ConnectionId LocalAddress)
                                 DemoProtocol0
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
@@ -138,24 +151,27 @@ pingPongClientCount 0 = PingPong.SendMsgDone ()
 pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
 
 serverPingPong :: IO Void
-serverPingPong = do
+serverPingPong =
+    withIOManager $ \iomgr -> do
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
+      (localSnocket iomgr defaultLocalSocketAddrPath)
       nullNetworkServerTracers
       networkState
-      defaultLocalSocketAddrInfo
+      defaultLocalSocketAddr
       cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptEq)
+      (\(DictVersion _) -> acceptableVersion)
       (simpleSingletonVersions (0::Int)
-                               (NodeToNodeVersionData $ NetworkMagic 0)
-                               (DictVersion nodeToNodeCodecCBORTerm) app)
+                               NullVersionData
+                               (DictVersion nullVersionDataCodecCBORTerm)
+                               (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     app :: OuroborosApplication ResponderApp
-                                ConnectionId
+                                (ConnectionId LocalAddress)
                                 DemoProtocol0
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
@@ -196,17 +212,20 @@ instance MiniProtocolLimits DemoProtocol1 where
 
 clientPingPong2 :: IO ()
 clientPingPong2 =
+    withIOManager $ \iomgr ->
     connectToNode
+      (localSnocket iomgr defaultLocalSocketAddrPath)
       cborTermVersionDataCodec
       nullNetworkConnectTracers
       (simpleSingletonVersions (0::Int)
-                               (NodeToNodeVersionData $ NetworkMagic 0)
-                               (DictVersion nodeToNodeCodecCBORTerm) app)
+                               NullVersionData
+                               (DictVersion nullVersionDataCodecCBORTerm)
+                               app)
       Nothing
-      defaultLocalSocketAddrInfo
+      defaultLocalSocketAddr
   where
     app :: OuroborosApplication InitiatorApp
-                                ConnectionId
+                                (ConnectionId LocalAddress)
                                 DemoProtocol1
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
@@ -244,24 +263,27 @@ pingPongClientPipelinedMax c =
                           (\n' -> go (Right n' : acc) o n)
 
 serverPingPong2 :: IO Void
-serverPingPong2 = do
+serverPingPong2 =
+    withIOManager $ \iomgr -> do
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
+      (localSnocket iomgr defaultLocalSocketAddrPath)
       nullNetworkServerTracers
       networkState
-      defaultLocalSocketAddrInfo
+      defaultLocalSocketAddr
       cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptEq)
+      (\(DictVersion _) -> acceptableVersion)
       (simpleSingletonVersions (0::Int)
-                               (NodeToNodeVersionData $ NetworkMagic 0)
-                               (DictVersion nodeToNodeCodecCBORTerm) app)
+                               NullVersionData
+                               (DictVersion nullVersionDataCodecCBORTerm)
+                               (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     app :: OuroborosApplication ResponderApp
-                                ConnectionId
+                                (ConnectionId LocalAddress)
                                 DemoProtocol1
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
