@@ -43,6 +43,11 @@ eRROR_OPERATION_ABORTED = #const ERROR_OPERATION_ABORTED
 eRROR_IO_INCOMPLETE :: ErrCode
 eRROR_IO_INCOMPLETE = #const ERROR_IO_INCOMPLETE
 
+-- | For async operations, 'getLastError' reports 'ERROR_IO_PENDING'.  It is
+-- not an error per se, but used by the os to notify that the i/o will be
+-- completed asynchronously.  For the scope of this library it means that the
+-- 'IOManager' thread will be notified when the operation completes.
+--
 -- 997
 eRROR_IO_PENDING :: ErrCode
 eRROR_IO_PENDING = #const ERROR_IO_PENDING
