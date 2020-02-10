@@ -92,15 +92,29 @@ test-suite ouroboros-network-framework-tests
   other-modules:       Test.Network.TypedProtocol.PingPong.Codec
                      , Test.Network.TypedProtocol.ReqResp.Codec
                      , Test.Ouroboros.Network.Driver
+                     , Test.Ouroboros.Network.Socket
+                     , Test.Ouroboros.Network.Subscription
+                     , Test.Ouroboros.Network.Handshake
+
   build-depends:       base
                      , bytestring
+                     , containers
+                     , directory
+                     , text
+                     , time
+
                      , cborg
                      , serialise
                      , io-sim-classes
                      , typed-protocols
                      , typed-protocols-examples
+                     , network         >= 3.1
+                     , network-mux     >= 0.1 && < 0.2
                      , ouroboros-network-framework
+                     , ouroboros-network-testing
                      , contra-tracer
+                     , dns
+                     , iproute
 
                      , io-sim
                      , QuickCheck

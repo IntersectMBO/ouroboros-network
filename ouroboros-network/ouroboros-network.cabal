@@ -216,7 +216,6 @@ test-suite test-network
                        Test.Mux
                        Test.Pipe
                        Test.Socket
-                       Test.Subscription
                        Test.PeerState
   default-language:    Haskell2010
   build-depends:       base,
@@ -254,7 +253,6 @@ test-suite test-network
                        text,
                        time,
                        typed-protocols,
-                       typed-protocols-examples,
                        ouroboros-network-framework,
                        ouroboros-network,
                        ouroboros-protocol-tests
