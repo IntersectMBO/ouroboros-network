@@ -364,8 +364,12 @@ addBlock cfg blk m
   where
     secParam = protocolSecurityParam cfg
 
+    -- If we switch to PBFT for these tests, this case is not required anymore
+    -- TODO: We should not make assumptions about the underlying
+    -- ledger. We will fix this in
+    -- <https://github.com/input-output-hk/ouroboros-network/issues/1571>
     addingGenesisEBBToEmptyDB = tipPoint m == GenesisPoint
-                             && Block.blockNo blk == Block.genesisBlockNo
+                             && Block.blockNo blk == Block.BlockNo 0
 
     slot = Block.blockSlot blk
 

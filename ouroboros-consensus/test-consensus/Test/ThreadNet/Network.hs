@@ -484,8 +484,12 @@ runThreadNetwork ThreadNetworkArgs
                   Origin -> True
                   At s   -> s >= (ebbSlotNo - min ebbSlotNo (2 * k))
                 bno <- ChainDB.getTipBlockNo chainDB
+                -- TODO: We should not make assumptions about the underlying
+                -- ledger. We will fix this in
+                -- <https://github.com/input-output-hk/ouroboros-network/issues/1571>
+                let firstBlockNo = BlockNo 0
                 -- The EBB shares its BlockNo with its predecessor (if there is one)
-                pure (mSlot, fromWithOrigin genesisBlockNo bno, pointHash p)
+                pure (mSlot, fromWithOrigin firstBlockNo bno, pointHash p)
               when (prevSlot < At ebbSlotNo) $ do
                 let ebb = forgeEBB cfg ebbSlotNo ebbBlockNo prevHash
                 ChainDB.addBlock chainDB ebb

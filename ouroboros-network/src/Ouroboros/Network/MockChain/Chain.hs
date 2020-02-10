@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -160,8 +161,11 @@ headBlockNo (_ :> b) = At (blockNo b)
 -- ('genesisBlockNo' is the block number of the first block on the chain).
 -- Usage of this function should be phased out.
 legacyHeadBlockNo :: HasHeader block => Chain block -> BlockNo
-legacyHeadBlockNo Genesis  = genesisBlockNo
-legacyHeadBlockNo (_ :> b) = blockNo b
+legacyHeadBlockNo = \case
+    Genesis  -> genesisBlockNo
+    (_ :> b) -> blockNo b
+  where
+    genesisBlockNo = BlockNo 0
 
 -- | Produce the list of blocks, from most recent back to genesis
 --

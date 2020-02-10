@@ -547,13 +547,11 @@ mkCurrentBlockContext currentSlot c = case c of
     Empty AF.AnchorGenesis ->
       -- The chain is entirely empty.
       --
-      -- NOTE:
-      --
-      -- o 'genesisBlockNo' is the block number of the first block
-      -- o 'genesisPoint' is the point /before/ the first block
-      --
-      -- which is precisely what we need for 'BlockContext'
-      Right $ BlockContext genesisBlockNo genesisPoint
+      -- TODO: We should not make assumptions about the underlying
+      -- ledger. We will fix this in
+      -- <https://github.com/input-output-hk/ouroboros-network/issues/1571>
+      let firstBlockNo = BlockNo 0 in
+      Right $ BlockContext firstBlockNo genesisPoint
 
     Empty (AF.Anchor anchorSlot anchorHash anchorBlockNo) ->
       let p :: Point blk = BlockPoint anchorSlot anchorHash
