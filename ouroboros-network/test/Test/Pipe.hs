@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans     #-}
 
@@ -27,7 +28,7 @@ import           Control.Tracer
 import qualified Network.Mux.Bearer.Pipe as Mx
 import           Ouroboros.Network.Mux
 
-import           Ouroboros.Network.Block (encodeTip, decodeTip)
+import           Ouroboros.Network.Block (decodeTip, encodeTip)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS

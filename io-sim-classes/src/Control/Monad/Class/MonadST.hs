@@ -1,7 +1,8 @@
 {-# LANGUAGE RankNTypes #-}
 module Control.Monad.Class.MonadST where
 
-import Control.Monad.ST (ST, stToIO)
+import           Control.Monad.Reader
+import           Control.Monad.ST (ST, stToIO)
 
 
 -- | This class is for abstracting over 'stToIO' which allows running 'ST'
@@ -29,3 +30,5 @@ instance MonadST IO where
 instance MonadST (ST s) where
   withLiftST = \f -> f id
 
+instance MonadST m => MonadST (ReaderT r m) where
+  withLiftST f = withLiftST $ \g -> f (lift . g)

@@ -2,12 +2,14 @@
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE TypeFamilies          #-}
 module Control.Monad.Class.MonadSTM.Strict
   ( module X
   , LazyTVar
   , LazyTMVar
     -- * 'StrictTVar'
   , StrictTVar
+  , castStrictTVar
   , toLazyTVar
   , newTVar
   , newTVarM
@@ -18,6 +20,7 @@ module Control.Monad.Class.MonadSTM.Strict
   , updateTVar
     -- * 'StrictTMVar'
   , StrictTMVar
+  , castStrictTMVar
   , newTMVar
   , newTMVarM
   , newEmptyTMVar
@@ -34,12 +37,11 @@ module Control.Monad.Class.MonadSTM.Strict
   , checkInvariant
   ) where
 
-import           Control.Monad.Class.MonadSTM as X hiding
-                    (TVar, TMVar, LazyTVar, LazyTMVar,
-                     isEmptyTMVar, modifyTVar, newEmptyTMVar, newEmptyTMVarM,
-                     newTMVar, newTMVarM, newTVar, newTVarM, putTMVar,
-                     readTMVar, readTVar, swapTMVar, takeTMVar, tryPutTMVar,
-                     tryReadTMVar, tryTakeTMVar, writeTVar)
+import           Control.Monad.Class.MonadSTM as X hiding (LazyTMVar, LazyTVar,
+                     TMVar, TVar, isEmptyTMVar, modifyTVar, newEmptyTMVar,
+                     newEmptyTMVarM, newTMVar, newTMVarM, newTVar, newTVarM,
+                     putTMVar, readTMVar, readTVar, swapTMVar, takeTMVar,
+                     tryPutTMVar, tryReadTMVar, tryTakeTMVar, writeTVar)
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           GHC.Stack
 
@@ -59,6 +61,10 @@ data StrictTVar m a = StrictTVar
      -- ^ Invariant checked whenever updating the 'StrictTVar'.
    , tvar      :: !(LazyTVar m a)
    }
+
+castStrictTVar :: LazyTVar m ~ LazyTVar n
+               => StrictTVar m a -> StrictTVar n a
+castStrictTVar StrictTVar{invariant, tvar} = StrictTVar{invariant, tvar}
 
 -- | Get the underlying @TVar@
 --
@@ -109,6 +115,10 @@ updateTVar v f = do
 -- we would not be able to put a value into an empty TMVar, which would lead
 -- to very hard to debug bugs where code is blocked indefinitely.
 newtype StrictTMVar m a = StrictTMVar (LazyTMVar m a)
+
+castStrictTMVar :: LazyTMVar m ~ LazyTMVar n
+                => StrictTMVar m a -> StrictTMVar n a
+castStrictTMVar (StrictTMVar var) = StrictTMVar var
 
 newTMVar :: MonadSTM m => a -> STM m (StrictTMVar m a)
 newTMVar !a = StrictTMVar <$> Lazy.newTMVar a

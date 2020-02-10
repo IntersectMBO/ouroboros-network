@@ -1,15 +1,15 @@
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE KindSignatures             #-}
-{-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
@@ -22,16 +22,16 @@
 --
 module Test.STM where
 
-import           Prelude hiding (exp)
-import           Data.Type.Equality
-import           Data.Maybe (fromMaybe, maybeToList)
-import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
-import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe, maybeToList)
 import           Data.Set (Set)
+import qualified Data.Set as Set
+import           Data.Type.Equality
+import           Prelude hiding (exp)
 
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM as STM
+import           Control.Monad.Class.MonadThrow
 
 import           Test.QuickCheck
 
@@ -490,12 +490,12 @@ snapshotExecValue (ExecValInt x)   = return (ImmValInt x)
 snapshotExecValue (ExecValVar v _) = fmap ImmValVar
                                           (snapshotExecValue =<< readTVar v)
 
-execAtomically :: (MonadSTM m, MonadThrow (STM m), MonadCatch m)
+execAtomically :: forall m t. (MonadSTM m, MonadThrow (STM m), MonadCatch m)
                => Term t -> m TxResult
 execAtomically t =
     toTxResult <$> try (atomically action')
   where
-    action  = snapshotExecValue =<< execTerm mempty t
+    action  = snapshotExecValue =<< execTerm (mempty :: ExecEnv m) t
 
     action' = fmap Just action `orElse` return Nothing
     -- We want to observe if the transaction would block. If we trust the STM
@@ -534,7 +534,7 @@ data GenEnv = GenEnv {
        envNames    :: TyTrie NameId,
 
        -- | For managing the fresh name supply
-       envNextName :: NameId 
+       envNextName :: NameId
      }
 
 data TyTrie a =

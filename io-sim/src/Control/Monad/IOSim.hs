@@ -40,27 +40,25 @@ module Control.Monad.IOSim (
 
 import           Prelude hiding (read)
 
+import           Data.Dynamic (Dynamic, fromDynamic, toDyn)
+import           Data.Foldable (traverse_)
 import           Data.Functor (void)
+import qualified Data.List as List
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
-import qualified Data.List as List
-import           Data.Foldable (traverse_)
-import qualified Data.Map.Strict as Map
-import           Data.Map.Strict (Map)
-import qualified Data.Set as Set
 import           Data.Set (Set)
+import qualified Data.Set as Set
+import           Data.Time (DiffTime, NominalDiffTime, UTCTime (..), addUTCTime,
+                     diffUTCTime, fromGregorian)
 import           Data.Typeable (Typeable)
-import           Data.Dynamic (Dynamic, toDyn, fromDynamic)
-import           Data.Time
-                   ( DiffTime, NominalDiffTime, UTCTime(..)
-                   , diffUTCTime, addUTCTime, fromGregorian )
 
-import           Control.Applicative (Applicative(..), Alternative(..))
-import           Control.Monad (join, MonadPlus, mapM_)
-import           Control.Exception
-                   ( Exception(..), SomeException
-                   , ErrorCall(..), throw, assert
-                   , asyncExceptionToException, asyncExceptionFromException )
+import           Control.Applicative (Alternative (..), Applicative (..))
+import           Control.Exception (ErrorCall (..), Exception (..),
+                     SomeException, assert, asyncExceptionFromException,
+                     asyncExceptionToException, throw)
+import           Control.Monad (MonadPlus, join, mapM_)
 import qualified System.IO.Error as IO.Error (userError)
 
 import           Control.Monad (when)
@@ -68,18 +66,18 @@ import           Control.Monad.ST.Lazy
 import qualified Control.Monad.ST.Strict as StrictST
 import           Data.STRef.Lazy
 
-import           Control.Monad.Fail as MonadFail
 import qualified Control.Monad.Catch as Exceptions
+import           Control.Monad.Fail as MonadFail
 
+import           Control.Monad.Class.MonadAsync hiding (Async)
+import qualified Control.Monad.Class.MonadAsync as MonadAsync
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
 import qualified Control.Monad.Class.MonadFork as MonadFork
-import           Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM hiding (STM, TVar)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
-import           Control.Monad.Class.MonadAsync hiding (Async)
-import qualified Control.Monad.Class.MonadAsync as MonadAsync
+import           Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
@@ -298,14 +296,11 @@ instance MonadFork (SimM s) where
   forkWithUnmask f = fork (f unblock)
   throwTo tid e    = SimM $ \k -> ThrowTo (toException e) tid (k ())
 
-instance MonadSTM (SimM s) where
-  type STM       (SimM s) = STM s
-  type TVar      (SimM s) = TVar s
-  type TMVar     (SimM s) = TMVarDefault (SimM s)
-  type TQueue    (SimM s) = TQueueDefault (SimM s)
-  type TBQueue   (SimM s) = TBQueueDefault (SimM s)
-
-  atomically action = SimM $ \k -> Atomically action k
+instance MonadSTMTx (STM s) where
+  type TVar_      (STM s) = TVar s
+  type TMVar_     (STM s) = TMVarDefault (SimM s)
+  type TQueue_    (STM s) = TQueueDefault (SimM s)
+  type TBQueue_   (STM s) = TBQueueDefault (SimM s)
 
   newTVar         x = STM $ \k -> NewTVar x k
   readTVar   tvar   = STM $ \k -> ReadTVar tvar k
@@ -314,9 +309,7 @@ instance MonadSTM (SimM s) where
   orElse        a b = STM $ \k -> OrElse (runSTM a) (runSTM b) k
 
   newTMVar          = newTMVarDefault
-  newTMVarM         = newTMVarMDefault
   newEmptyTMVar     = newEmptyTMVarDefault
-  newEmptyTMVarM    = newEmptyTMVarMDefault
   takeTMVar         = takeTMVarDefault
   tryTakeTMVar      = tryTakeTMVarDefault
   putTMVar          = putTMVarDefault
@@ -339,6 +332,14 @@ instance MonadSTM (SimM s) where
   isEmptyTBQueue    = isEmptyTBQueueDefault
   isFullTBQueue     = isFullTBQueueDefault
 
+instance MonadSTM (SimM s) where
+  type STM       (SimM s) = STM s
+
+  atomically action = SimM $ \k -> Atomically action k
+
+  newTMVarM         = newTMVarMDefault
+  newEmptyTMVarM    = newEmptyTMVarMDefault
+
 data Async s a = Async !ThreadId (STM s (Either SomeException a))
 
 instance Eq (Async s a) where
@@ -349,6 +350,10 @@ instance Ord (Async s a) where
 
 instance Functor (Async s) where
   fmap f (Async tid a) = Async tid (fmap f <$> a)
+
+instance MonadAsyncSTM (Async s) (STM s) where
+  waitCatchSTM (Async _ w) = w
+  pollSTM      (Async _ w) = (Just <$> w) `orElse` return Nothing
 
 instance MonadAsync (SimM s) where
   type Async (SimM s) = Async s
@@ -363,9 +368,6 @@ instance MonadAsync (SimM s) where
 
   cancel a@(Async tid _) = throwTo tid AsyncCancelled <* waitCatch a
   cancelWith a@(Async tid _) e = throwTo tid e <* waitCatch a
-
-  waitCatchSTM (Async _ w) = w
-  pollSTM      (Async _ w) = (Just <$> w) `orElse` return Nothing
 
 instance MonadST (SimM s) where
   withLiftST f = f liftST
@@ -390,6 +392,9 @@ setCurrentTime t = SimM $ \k -> SetWallTime t (k ())
 --
 unshareClock :: SimM s ()
 unshareClock = SimM $ \k -> UnshareClock (k ())
+
+instance MonadDelay (SimM s) where
+  -- Use default in terms of MonadTimer
 
 instance MonadTimer (SimM s) where
   data Timeout (SimM s) = Timeout !(TVar s TimeoutState) !TimeoutId
@@ -1159,7 +1164,7 @@ data TVar s a = TVar {
 
        -- | The identifier of this var.
        --
-       tvarId :: !TVarId,
+       tvarId      :: !TVarId,
 
        -- | The var's current value
        --
@@ -1200,7 +1205,7 @@ data SomeTVar s where
 data StmStack s b a where
   -- | Executing in the context of a top level 'atomically'.
   AtomicallyFrame  :: StmStack s a a
-  
+
   -- | Executing in the context of the /left/ hand side of an 'orElse'
   OrElseLeftFrame  :: StmA s a                -- orElse right alternative
                    -> (a -> StmA s b)         -- subsequent continuation

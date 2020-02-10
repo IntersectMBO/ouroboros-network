@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -76,73 +77,48 @@ instance (forall a'. NoUnexpectedThunks (m a'))
    showTypeOf _p = "WithEarlyExit " ++ showTypeOf (Proxy @(m a))
 
 {-------------------------------------------------------------------------------
-  Special wrapper for STM
-
-  This is required because MonadSTM requires STM to be injective.
--------------------------------------------------------------------------------}
-
-newtype WrapSTM m a = Wrap { unwrap :: WithEarlyExit (STM m) a }
-
-unwrapSTM :: WrapSTM m a -> STM m (Maybe a)
-unwrapSTM = withEarlyExit . unwrap
-
-wrapSTM :: STM m (Maybe a) -> WrapSTM m a
-wrapSTM = Wrap . earlyExit
-
-wrapSTM' :: MonadSTM m => STM m a -> WrapSTM m a
-wrapSTM' = wrapSTM . fmap Just
-
-deriving instance MonadSTM m => Functor     (WrapSTM m)
-deriving instance MonadSTM m => Applicative (WrapSTM m)
-deriving instance MonadSTM m => Monad       (WrapSTM m)
-deriving instance MonadSTM m => Alternative (WrapSTM m)
-deriving instance MonadSTM m => MonadPlus   (WrapSTM m)
-
--- These two piggy-back on the instances for WithEarlyExit, below
-deriving instance (MonadSTM m, MonadCatch (STM m)) => MonadThrow (WrapSTM m)
-deriving instance (MonadSTM m, MonadCatch (STM m)) => MonadCatch (WrapSTM m)
-
-{-------------------------------------------------------------------------------
   Instances for io-classes
 -------------------------------------------------------------------------------}
 
+instance MonadSTMTx stm => MonadSTMTx (WithEarlyExit stm) where
+  type TVar_    (WithEarlyExit stm) = TVar_    stm
+  type TMVar_   (WithEarlyExit stm) = TMVar_   stm
+  type TQueue_  (WithEarlyExit stm) = TQueue_  stm
+  type TBQueue_ (WithEarlyExit stm) = TBQueue_ stm
+
+  newTVar         = lift .  newTVar
+  readTVar        = lift .  readTVar
+  writeTVar       = lift .: writeTVar
+  retry           = lift    retry
+  orElse          = (earlyExit .: orElse) `on` withEarlyExit
+  newTMVar        = lift .  newTMVar
+  newEmptyTMVar   = lift    newEmptyTMVar
+  takeTMVar       = lift .  takeTMVar
+  tryTakeTMVar    = lift .  tryTakeTMVar
+  putTMVar        = lift .: putTMVar
+  tryPutTMVar     = lift .: tryPutTMVar
+  readTMVar       = lift .  readTMVar
+  tryReadTMVar    = lift .  tryReadTMVar
+  swapTMVar       = lift .: swapTMVar
+  isEmptyTMVar    = lift .  isEmptyTMVar
+  newTQueue       = lift    newTQueue
+  readTQueue      = lift .  readTQueue
+  tryReadTQueue   = lift .  tryReadTQueue
+  writeTQueue     = lift .: writeTQueue
+  isEmptyTQueue   = lift .  isEmptyTQueue
+  newTBQueue      = lift .  newTBQueue
+  readTBQueue     = lift .  readTBQueue
+  tryReadTBQueue  = lift .  tryReadTBQueue
+  writeTBQueue    = lift .: writeTBQueue
+  isEmptyTBQueue  = lift .  isEmptyTBQueue
+  isFullTBQueue   = lift .  isFullTBQueue
+
 instance MonadSTM m => MonadSTM (WithEarlyExit m) where
-  type STM     (WithEarlyExit m) = WrapSTM m -- == WithEarlyExit (STM m)
-  type TVar    (WithEarlyExit m) = TVar    m
-  type TMVar   (WithEarlyExit m) = TMVar   m
-  type TQueue  (WithEarlyExit m) = TQueue  m
-  type TBQueue (WithEarlyExit m) = TBQueue m
+  type STM (WithEarlyExit m) = WithEarlyExit (STM m)
 
-  atomically      = earlyExit . atomically . unwrapSTM
-
-  newTVar         = wrapSTM' .  newTVar
-  readTVar        = wrapSTM' .  readTVar
-  writeTVar       = wrapSTM' .: writeTVar
-  retry           = wrapSTM'    retry
-  orElse          = (wrapSTM .: orElse) `on` unwrapSTM
-  newTMVar        = wrapSTM' .  newTMVar
-  newTMVarM       = lift     .  newTMVarM
-  newEmptyTMVar   = wrapSTM'    newEmptyTMVar
-  newEmptyTMVarM  = lift        newEmptyTMVarM
-  takeTMVar       = wrapSTM' .  takeTMVar
-  tryTakeTMVar    = wrapSTM' .  tryTakeTMVar
-  putTMVar        = wrapSTM' .: putTMVar
-  tryPutTMVar     = wrapSTM' .: tryPutTMVar
-  readTMVar       = wrapSTM' .  readTMVar
-  tryReadTMVar    = wrapSTM' .  tryReadTMVar
-  swapTMVar       = wrapSTM' .: swapTMVar
-  isEmptyTMVar    = wrapSTM' .  isEmptyTMVar
-  newTQueue       = wrapSTM'    newTQueue
-  readTQueue      = wrapSTM' .  readTQueue
-  tryReadTQueue   = wrapSTM' .  tryReadTQueue
-  writeTQueue     = wrapSTM' .: writeTQueue
-  isEmptyTQueue   = wrapSTM' .  isEmptyTQueue
-  newTBQueue      = wrapSTM' .  newTBQueue
-  readTBQueue     = wrapSTM' .  readTBQueue
-  tryReadTBQueue  = wrapSTM' .  tryReadTBQueue
-  writeTBQueue    = wrapSTM' .: writeTBQueue
-  isEmptyTBQueue  = wrapSTM' .  isEmptyTBQueue
-  isFullTBQueue   = wrapSTM' .  isFullTBQueue
+  atomically     = earlyExit . atomically . withEarlyExit
+  newTMVarM      = lift . newTMVarM
+  newEmptyTMVarM = lift   newEmptyTMVarM
 
 instance MonadCatch m => MonadThrow (WithEarlyExit m) where
   throwM = lift . throwM
@@ -188,18 +164,19 @@ instance MonadThread m => MonadThread (WithEarlyExit m) where
   myThreadId  = lift    myThreadId
   labelThread = lift .: labelThread
 
-instance ( MonadMask  m
-         , MonadAsync m
-         , MonadCatch (STM m)
-         ) => MonadAsync (WithEarlyExit m) where
+instance (MonadAsyncSTM async stm, MonadCatch stm)
+      => MonadAsyncSTM (WithEarlyExit async) (WithEarlyExit stm) where
+  waitCatchSTM a = earlyExit (commute      <$> waitCatchSTM (withEarlyExit a))
+  pollSTM      a = earlyExit (fmap commute <$> pollSTM      (withEarlyExit a))
+
+instance (MonadMask m, MonadAsync m, MonadCatch (STM m))
+      => MonadAsync (WithEarlyExit m) where
   type Async (WithEarlyExit m) = WithEarlyExit (Async m)
 
   async            = lift . (fmap earlyExit . async) . withEarlyExit
   asyncThreadId _p = asyncThreadId (Proxy @(WithEarlyExit m))
   cancel        a  = lift $ cancel     (withEarlyExit a)
   cancelWith    a  = lift . cancelWith (withEarlyExit a)
-  waitCatchSTM  a  = wrapSTM (commute      <$> waitCatchSTM (withEarlyExit a))
-  pollSTM       a  = wrapSTM (fmap commute <$> pollSTM      (withEarlyExit a))
 
 commute :: Either SomeException (Maybe a) -> Maybe (Either SomeException a)
 commute (Left e)         = Just (Left e)
@@ -227,14 +204,16 @@ instance MonadTime m => MonadTime (WithEarlyExit m) where
   getMonotonicTime = lift getMonotonicTime
   getCurrentTime   = lift getCurrentTime
 
+instance MonadDelay m => MonadDelay (WithEarlyExit m) where
+  threadDelay = lift . threadDelay
+
 instance (MonadTimer m, MonadFork m) => MonadTimer (WithEarlyExit m) where
   newtype Timeout (WithEarlyExit m) = WrapTimeout { unwrapTimeout :: Timeout m }
 
-  threadDelay     = lift     . threadDelay
-  newTimeout    d = lift     $ WrapTimeout <$> newTimeout d
-  readTimeout   t = wrapSTM' $ readTimeout   (unwrapTimeout t)
-  updateTimeout t = lift     . updateTimeout (unwrapTimeout t)
-  cancelTimeout t = lift     $ cancelTimeout (unwrapTimeout t)
+  newTimeout    d = lift $ WrapTimeout <$> newTimeout d
+  readTimeout   t = lift $ readTimeout   (unwrapTimeout t)
+  updateTimeout t = lift . updateTimeout (unwrapTimeout t)
+  cancelTimeout t = lift $ cancelTimeout (unwrapTimeout t)
   timeout       d = earlyExit . timeout d . withEarlyExit
 
 {-------------------------------------------------------------------------------

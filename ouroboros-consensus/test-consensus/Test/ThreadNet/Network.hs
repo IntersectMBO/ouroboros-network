@@ -450,7 +450,8 @@ runThreadNetwork ThreadNetworkArgs
         varDRG <- uncheckedNewTVarM =<< produceDRG
         txs <- atomically $ do
           ledger <- ledgerState <$> getExtLedger
-          simChaChaT varDRG id $ testGenTxs numCoreNodes curSlotNo cfg ledger
+          runSim (simChaChaT varDRG simId) $
+            testGenTxs numCoreNodes curSlotNo cfg ledger
         void $ addTxs mempool txs
 
     forkEbbProducer :: HasCallStack
@@ -581,7 +582,8 @@ runThreadNetwork ThreadNetworkArgs
       let blockProduction :: BlockProduction m blk
           blockProduction = BlockProduction {
               produceBlock = nodeForgeBlock pInfoConfig
-            , produceDRG   = atomically $ simChaChaT varRNG id $ drgNew
+            , produceDRG   = atomically $
+                               runSim (simChaChaT varRNG simId) drgNew
             }
 
       let NodeInfo

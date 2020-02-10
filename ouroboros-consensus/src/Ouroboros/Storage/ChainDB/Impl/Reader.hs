@@ -378,14 +378,14 @@ instructionHelper registry varReader blockComponent encodeHeader fromMaybeSTM CD
 
 -- | 'readerInstruction' for when the reader is in the 'ReaderInMem' state.
 instructionSTM
-  :: forall m blk. (IOLike m, HasHeader (Header blk))
+  :: forall stm blk. (MonadSTMTx stm, HasHeader (Header blk))
   => ReaderRollState blk
      -- ^ The current 'ReaderRollState' of the reader
   -> AnchoredFragment (Header blk)
      -- ^ The current chain fragment
-  -> (ReaderRollState blk -> STM m ())
+  -> (ReaderRollState blk -> stm ())
      -- ^ How to save the updated 'ReaderRollState'
-  -> STM m (Maybe (ChainUpdate blk (Header blk)))
+  -> stm (Maybe (ChainUpdate blk (Header blk)))
 instructionSTM rollState curChain saveRollState =
     assert (invariant curChain) $ case rollState of
       RollForwardFrom pt ->
