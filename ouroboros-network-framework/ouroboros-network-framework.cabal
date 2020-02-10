@@ -47,11 +47,6 @@ library
                        Ouroboros.Network.Subscription.Subscriber
                        Ouroboros.Network.Subscription.Worker
 
-                       --TODO: move these into the test suite when we move
-                       -- the ouroboros-network tests that use them into this
-                       -- package.
-                       Network.TypedProtocol.PingPong.Codec.CBOR
-                       Network.TypedProtocol.ReqResp.Codec.CBOR
   -- other-modules:
   -- other-extensions:
   build-depends:       base            >=4.12 && <4.13
@@ -72,8 +67,9 @@ library
                      , dns
                      , iproute
 
-                       -- Remove once example codecs are moved into the tests
+                       -- Used by the handshake protocol for now
                      , serialise       >=0.2 && <0.3
+                       -- Remove once codec is defined locally
                      , typed-protocols-examples
                        -- Drop dep once use of Data.Semigroup.Action is removed
                      , cardano-prelude
@@ -89,12 +85,14 @@ test-suite ouroboros-network-framework-tests
   type:                exitcode-stdio-1.0
   main-is:             Main.hs
   hs-source-dirs:      test
-  other-modules:       Test.Network.TypedProtocol.PingPong.Codec
-                     , Test.Network.TypedProtocol.ReqResp.Codec
-                     , Test.Ouroboros.Network.Driver
-                     , Test.Ouroboros.Network.Socket
-                     , Test.Ouroboros.Network.Subscription
-                     , Test.Ouroboros.Network.Handshake
+  other-modules:       Network.TypedProtocol.PingPong.Codec.CBOR
+                       Network.TypedProtocol.ReqResp.Codec.CBOR
+                       Test.Network.TypedProtocol.PingPong.Codec
+                       Test.Network.TypedProtocol.ReqResp.Codec
+                       Test.Ouroboros.Network.Driver
+                       Test.Ouroboros.Network.Socket
+                       Test.Ouroboros.Network.Subscription
+                       Test.Ouroboros.Network.Handshake
 
   build-depends:       base
                      , bytestring
@@ -128,6 +126,7 @@ test-suite ouroboros-network-framework-tests
 
 executable demo-ping-pong
   hs-source-dirs:      demo test
+  other-modules:       Network.TypedProtocol.PingPong.Codec.CBOR
   main-is:             ping-pong.hs
   build-depends:       base,
                        async,
