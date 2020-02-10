@@ -21,8 +21,9 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Char8 as BSC
 import           Data.Foldable (foldl', traverse_)
+import           GHC.IO.Exception (IOException (..))
 
-import           System.Win32
+import           System.Win32 hiding (try)
 
 import           System.Win32.NamedPipes
 import           System.Win32.Async
@@ -51,6 +52,11 @@ tests =
       test_interruptible_writeHandle
   , testCase "close iocp"
       test_closeIOCP
+  , testGroup "connectNamedPipe"
+    -- [ testCase "ERROR_PIPE_LISTENING" test_connectNamedPipe_ERROR_PIPE_LISTENING
+    [ testCase "ERROR_PIPE_CONNECTED" test_connectNamedPipe_ERROR_PIPE_CONNECTED
+    , testCase "ERROR_NO_DATA"        test_connectNamedPipe_ERROR_NO_DATA
+    ]
   , testCase "async cancel"
       test_async_cancel
   , testProperty "async reads and writes"
@@ -225,6 +231,134 @@ test_async_cancel = withIOManager $ \iocp -> do
 
 
 --
+-- connectNamedPipe tests
+--
+
+-- A failed attempt to trigger 'ERROR_PIPE_LISTENING', MSDN docs are not clear
+-- how this can happen:
+-- <https://docs.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-connectnamedpipe#remarks>
+--
+{-
+test_connectNamedPipe_ERROR_PIPE_LISTENING :: IO ()
+test_connectNamedPipe_ERROR_PIPE_LISTENING =
+    withIOManager $ \iocp -> do
+
+      hServer <-
+        createNamedPipe pname
+                        (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                        (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                        pIPE_UNLIMITED_INSTANCES
+                        maxBound
+                        maxBound
+                        0
+                        Nothing
+      associateWithIOCompletionPort (Left hServer) iocp
+      _ <-
+        forkOS $ void $
+          connectNamedPipe hServer
+          `race`
+          connectNamedPipe hServer
+      threadDelay 100_000
+      hClient <-
+        createFile pname
+                   (gENERIC_READ .|. gENERIC_WRITE)
+                   fILE_SHARE_NONE
+                   Nothing
+                   oPEN_EXISTING
+                   fILE_FLAG_OVERLAPPED
+                   Nothing
+      closeHandle hServer
+      return ()
+  where
+    pname = pipeName ++ "-connectNamedPipe-ERROR_PIPE_LISTENING"
+-}
+
+
+-- | This test triggers 'eRROR_PIPE_CONNECTED' when executing 'connectNamedPipe'.
+-- It checks that the IOManager thread is not deallocating the 'ioDataPtr'
+-- twice (if that would happen, the windows silently kills the test).
+--
+-- This test ensures that io completion packet is not enqueued in the
+-- completion port.
+--
+test_connectNamedPipe_ERROR_PIPE_CONNECTED :: IO ()
+test_connectNamedPipe_ERROR_PIPE_CONNECTED =
+    withIOManager $ \iocp -> do
+      hServer <-
+        createNamedPipe pname
+                        (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                        (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                        pIPE_UNLIMITED_INSTANCES
+                        maxBound
+                        maxBound
+                        0
+                        Nothing
+      associateWithIOCompletionPort (Left hServer) iocp
+      hClient <-
+        createFile pname
+                   (gENERIC_READ .|. gENERIC_WRITE)
+                   fILE_SHARE_NONE
+                   Nothing
+                   oPEN_EXISTING
+                   fILE_FLAG_OVERLAPPED
+                   Nothing
+      associateWithIOCompletionPort (Left hClient) iocp
+
+      connectNamedPipe hServer
+
+      closeHandle hServer
+      closeHandle hClient
+      return ()
+  where
+    pname = pipeName ++ "-connectNamedPipe-ERROR_PIPE_CONNECTED"
+
+
+-- | This test performs another scenario mentioned in 'connectNamedPipe' MSDN docs:
+--
+-- GetLastError returns ... ERROR_NO_DATA if a previous client has closed its
+-- pipe handle but the server has not disconnected.
+--
+test_connectNamedPipe_ERROR_NO_DATA :: IO ()
+test_connectNamedPipe_ERROR_NO_DATA =
+    withIOManager $ \iocp -> do
+
+      hServer <-
+        createNamedPipe pname
+                        (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                        (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                        pIPE_UNLIMITED_INSTANCES
+                        maxBound
+                        maxBound
+                        0
+                        Nothing
+      associateWithIOCompletionPort (Left hServer) iocp
+      hClient <-
+        createFile pname
+                   (gENERIC_READ .|. gENERIC_WRITE)
+                   fILE_SHARE_NONE
+                   Nothing
+                   oPEN_EXISTING
+                   fILE_FLAG_OVERLAPPED
+                   Nothing
+      associateWithIOCompletionPort (Left hClient) iocp
+
+      connectNamedPipe hServer
+      closeHandle hClient
+      -- 232 (ERROR_NO_DATA): resouce vanished (The pipe is being closed.)
+      (r :: Either IOError ())
+        <- try $ connectNamedPipe hServer
+      closeHandle hServer
+      case r of
+        Right{} -> error "impossible happend"
+        Left e | ioe_description e == "The pipe is being closed."
+               -> return ()
+               | otherwise
+               -> throwIO e
+  where
+    pname = pipeName ++ "-connectNamedPipe-ERROR_NO_DATA"
+
+
+--
 -- QuickCheck tests
 --
 
@@ -337,7 +471,7 @@ handleToBinaryChannel h = BinaryChannel { readChannel, writeChannel, closeChanne
         when (BS.null bs)
           $ throwIO ReceivedNullBytes
         readLen (bs : bufs) (s - fromIntegral (BS.length bs))
-        
+
       -- we close the handle explicitely
       closeChannel = closeHandle h
 
