@@ -12,6 +12,7 @@ module System.Win32.Async.IOManager
       IOCompletionPort
     , associateWithIOCompletionPort
     , withIOManager
+    , IOManagerError (..)
 
       -- * Low level IOCP interface
     , dequeueCompletionPackets
@@ -21,8 +22,11 @@ module System.Win32.Async.IOManager
 
 import Control.Concurrent
 import Control.Exception ( Exception (..)
+                         , IOException
                          , bracket
+                         , catch
                          , throwIO
+                         , throwTo
                          )
 import Control.Monad (when)
 import Data.Word (Word32)
@@ -91,18 +95,41 @@ foreign import ccall safe "HsAssociateSocket"
                       -> IOCompletionPort -- ^ I/O completion port
                       -> IO BOOL
 
+
+-- | A newtype warpper for 'IOError's whihc are catched in the 'IOManager'
+-- thread and are re-thrown in the main application thread.
+--
+newtype IOManagerError = IOManagerError IOException
+  deriving (Show, Eq)
+
+instance Exception IOManagerError
+
+
 -- | Create an 'IOCompletionPort' and start a I/O manager thread (bound thread).
 -- The IOManager thread will only run for the duration of the callback.
+--
+-- The 'IOManager' will throw 'IOException' back to the starting thread (which
+-- should be the main application thread).  There's no point of running the
+-- application if the 'dequeueCompletionPackets' died, which most likely
+-- indicates a bug in itself.
 --
 -- TODO: add a tracer which logs when `dequeueCompletionPackets' errors
 --
 withIOManager :: (IOCompletionPort -> IO r) -> IO r
-withIOManager k =
+withIOManager k = do
+    tid <- myThreadId
     bracket
         (createIOCompletionPort maxBound)
         closeIOCompletionPort
         $ \iocp -> do
-          _ <- forkOS (void $ dequeueCompletionPackets iocp)
+          _ <-
+            forkOS
+              $ void $ dequeueCompletionPackets iocp
+                `catch`
+                \(e :: IOException) -> do
+                  -- throw IOExceptoin's back to the thread which started 'IOManager'
+                  throwTo tid (IOManagerError e)
+                  throwIO e
           k iocp
 
 
