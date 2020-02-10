@@ -48,7 +48,7 @@ readHandle :: HANDLE
            -> IO ByteString
 readHandle h size =
     BS.createAndTrim size $ \ptr ->
-      withIODataPtr "readHandle" $ \lpOverlapped waitVar -> do
+      withIODataPtr "readHandle" h $ \lpOverlapped waitVar -> do
         readResult <- c_ReadFile h ptr (fromIntegral size) nullPtr lpOverlapped
         errorCode <- Win32.getLastError
         if readResult || errorCode == eRROR_IO_PENDING
@@ -63,7 +63,6 @@ readHandle h size =
             if errorCode == eRROR_HANDLE_EOF
               then return $ ResultSync 0 False
               else return $ ErrorSync errorCode False
-
 
 foreign import ccall safe "ReadFile"
     c_ReadFile :: HANDLE
@@ -87,7 +86,7 @@ writeHandle :: HANDLE
             -> IO ()
 writeHandle h bs =
     BS.unsafeUseAsCStringLen bs $ \(str, len) ->
-      void $ withIODataPtr @Int "writeHandle" $ \lpOverlapped waitVar -> do
+      void $ withIODataPtr @Int "writeHandle" h $ \lpOverlapped waitVar -> do
         writeResult <- c_WriteFile h (castPtr str) (fromIntegral len) nullPtr lpOverlapped
         errorCode <- Win32.getLastError
         if writeResult || errorCode == eRROR_IO_PENDING
@@ -121,7 +120,7 @@ foreign import ccall safe "WriteFile"
 --
 connectNamedPipe :: HANDLE -> IO ()
 connectNamedPipe h =
-    void $ withIODataPtr "connectNamedPipe" $ \lpOverlapped waitVar -> do
+    void $ withIODataPtr "connectNamedPipe" h $ \lpOverlapped waitVar -> do
       connectResult <- c_ConnectNamedPipe h lpOverlapped
       errorCode <- Win32.getLastError
       if connectResult || errorCode == eRROR_IO_PENDING
