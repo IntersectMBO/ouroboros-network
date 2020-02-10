@@ -197,7 +197,11 @@ serverPingPong = withIOManager $ \iocp -> do
       defaultLocalSocketAddr
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+      (simpleSingletonVersions
+        (0::Int)
+        (NodeToNodeVersionData $ NetworkMagic 0)
+        (DictVersion nodeToNodeCodecCBORTerm)
+        (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
@@ -301,7 +305,11 @@ serverPingPong2 = withIOManager $ \iocp -> do
       defaultLocalSocketAddr
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+      (simpleSingletonVersions
+        (0::Int)
+        (NodeToNodeVersionData $ NetworkMagic 0)
+        (DictVersion nodeToNodeCodecCBORTerm)
+        (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
@@ -380,7 +388,11 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
       (localAddressFromPath sockAddr)
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+      (simpleSingletonVersions
+        (0::Int)
+        (NodeToNodeVersionData $ NetworkMagic 0)
+        (DictVersion nodeToNodeCodecCBORTerm)
+        (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
@@ -584,7 +596,11 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
       (localAddressFromPath sockAddr)
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+      (simpleSingletonVersions
+        (0::Int)
+        (NodeToNodeVersionData $ NetworkMagic 0)
+        (DictVersion nodeToNodeCodecCBORTerm)
+        (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception

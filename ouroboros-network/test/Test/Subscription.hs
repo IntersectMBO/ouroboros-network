@@ -560,7 +560,11 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         (Socket.addrAddress responderAddr)
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptEq)
-        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
+        (simpleSingletonVersions
+          NodeToNodeV_1
+          (NodeToNodeVersionData $ NetworkMagic 0)
+          (DictVersion nodeToNodeCodecCBORTerm)
+          (SomeResponderApplication responderApp))
         nullErrorPolicies
         $ \_ _ -> do
           dnsSubscriptionWorker'
@@ -695,7 +699,11 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
         responderAddr
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptEq)
-        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
+        (simpleSingletonVersions
+          NodeToNodeV_1
+          (NodeToNodeVersionData $ NetworkMagic 0)
+          (DictVersion nodeToNodeCodecCBORTerm)
+          (SomeResponderApplication (appX rrcfg)))
         nullErrorPolicies
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
@@ -713,7 +721,11 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
           responderAddr
           cborTermVersionDataCodec
           (\(DictVersion _) -> acceptEq)
-          ((simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
+          (simpleSingletonVersions
+            NodeToNodeV_1
+            (NodeToNodeVersionData $ NetworkMagic 0)
+            (DictVersion nodeToNodeCodecCBORTerm)
+            (SomeResponderApplication (appX rrcfg)))
           nullErrorPolicies
           $ \localAddr _ -> do
             peerStatesVar <- newPeerStatesVar
@@ -828,8 +840,11 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
             (Socket.addrAddress addr)
             cborTermVersionDataCodec
             (\(DictVersion _) -> acceptEq)
-            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
-                (DictVersion nodeToNodeCodecCBORTerm) appRsp)
+            (simpleSingletonVersions
+                NodeToNodeV_1
+                (NodeToNodeVersionData $ NetworkMagic 0)
+                (DictVersion nodeToNodeCodecCBORTerm)
+                (SomeResponderApplication appRsp))
             nullErrorPolicies
             (\_ _ -> threadDelay delay)
 

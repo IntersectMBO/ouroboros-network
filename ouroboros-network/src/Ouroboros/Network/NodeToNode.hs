@@ -247,7 +247,7 @@ withServer sn tracers networkState addr versions errPolicies =
     addr
     cborTermVersionDataCodec
     (\(DictVersion _) -> acceptEq)
-    versions
+    (SomeResponderApplication <$> versions)
     errPolicies
     (\_ async -> Async.wait async)
 
