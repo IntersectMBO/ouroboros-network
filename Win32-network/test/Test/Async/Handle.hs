@@ -49,8 +49,12 @@ tests =
       test_interruptible_readHandle_2
   , testCase "interruptible writeHandle"
       test_interruptible_writeHandle
+  , testCase "close iocp"
+      test_closeIOCP
+  , testCase "async cancel"
+      test_async_cancel
   , testProperty "async reads and writes"
-      prop_async_read_and_writes
+      prop_async_reads_and_writes
   , testProperty "PingPong test"
       prop_PingPong
   , testProperty "PingPongPipelined test"
@@ -181,6 +185,45 @@ test_interruptible_writeHandle = withIOManager $ \iocp -> do
         assertBool "test_interruptible_writeHandle" (ThreadKilled == e)
 
 
+-- | Close IOCP 'HANDLE'
+--
+test_closeIOCP :: IO ()
+test_closeIOCP = do
+    iocp <- createIOCompletionPort maxBound
+    _ <- forkIO $ do
+      threadDelay 100_000
+      closeIOCompletionPort iocp
+    dequeueCompletionPackets iocp
+
+
+-- | Test canceling of async io ('CancelIoEx').
+--
+test_async_cancel :: IO ()
+test_async_cancel = withIOManager $ \iocp -> do
+    h <- createNamedPipe pipeName
+                         (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                         (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                         pIPE_UNLIMITED_INSTANCES
+                         maxBound
+                         maxBound
+                         0
+                         Nothing
+    associateWithIOCompletionPort (Left h) iocp
+    asyncHandle <- async $ do
+      connectNamedPipe h
+      readHandle h 1
+    fh <- createFile pipeName
+                (gENERIC_READ .|. gENERIC_WRITE)
+                fILE_SHARE_NONE
+                Nothing
+                oPEN_EXISTING
+                fILE_FLAG_OVERLAPPED
+                Nothing
+    associateWithIOCompletionPort (Left fh) iocp
+    threadDelay 100_000
+    cancel asyncHandle
+
+
 --
 -- QuickCheck tests
 --
@@ -188,15 +231,15 @@ test_interruptible_writeHandle = withIOManager $ \iocp -> do
 -- | Run a server and client which both simultanously read and write from a
 -- handle.
 --
-prop_async_read_and_writes :: LargeNonEmptyBS
-                           -> LargeNonEmptyBS
-                           -> Property
-prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsOut bufSizeOut) =
+prop_async_reads_and_writes :: LargeNonEmptyBS
+                            -> LargeNonEmptyBS
+                            -> Property
+prop_async_reads_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsOut bufSizeOut) =
     ioProperty $ withIOManager $ \iocp -> do
       threadDelay 100
+      -- putStrLn "\nstart reads_and_writes test"
 
       syncVarStart <- newEmptyMVar
-      syncVarEnd   <- newEmptyMVar
       clientVar <- newEmptyMVar
       serverVar <- newEmptyMVar
 
@@ -211,17 +254,18 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
                              (fromIntegral bufSizeOut)
                              0
                              Nothing)
+            -- (\h -> putStrLn "server: close handle" >> closeHandle h)
             closeHandle
             $ \h -> do
               -- associate 'h' with  I/O completion 'port'
               _ <- associateWithIOCompletionPort (Left h) iocp
               putMVar syncVarStart ()
               connectNamedPipe h
-              void $ forkIO $
+              readerAsync <- async $
                 readHandle h (BS.length bsIn)
                   >>= putMVar serverVar
-              void $ forkIO $ writeHandle h bsOut
-              takeMVar syncVarEnd
+              writeHandle h bsOut
+              void $ wait readerAsync
 
 
       -- fork a client
@@ -235,6 +279,7 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
                       oPEN_EXISTING
                       fILE_FLAG_OVERLAPPED
                       Nothing)
+          -- (\h -> putStrLn "client: close handle" >> closeHandle h)
           closeHandle
           $ \h -> do
             -- associate 'h' with  I/O completion 'port'
@@ -242,14 +287,14 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
             readerAsync <- async $
               readHandle h (BS.length bsOut)
                 >>= putMVar clientVar
-            writerAsync <- async $ writeHandle h bsIn
-            _ <- waitBoth readerAsync writerAsync
-            putMVar syncVarEnd ()
+            writeHandle h bsIn
+            void $ wait readerAsync
 
       bsOut' <- takeMVar clientVar
       bsIn'  <- takeMVar serverVar
 
-      pure $ bsIn == bsIn' && bsOut == bsOut'
+      let result = bsIn == bsIn' && bsOut == bsOut'
+      return result
 
   where
     pname = pipeName ++ "-reads-and-writes"

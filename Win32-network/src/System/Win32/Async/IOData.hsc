@@ -16,7 +16,11 @@ module System.Win32.Async.IOData
 import Control.Concurrent ( MVar
                           , newEmptyMVar
                           )
-import Control.Exception (mask)
+import Control.Exception ( SomeAsyncException
+                         , catch
+                         , mask
+                         , throwIO
+                         )
 import Control.Monad (when)
 import Foreign ( Ptr
                , StablePtr
@@ -27,7 +31,9 @@ import Foreign ( Ptr
                , plusPtr
                )
 
-import           System.Win32.Types (ErrCode)
+import           System.Win32.Types ( HANDLE
+                                    , ErrCode
+                                    )
 import qualified System.Win32.Types as Win32
 import qualified System.Win32.Mem   as Win32
 
@@ -107,13 +113,14 @@ data Result a
 --
 withIODataPtr :: Show a
               => String
+              -> HANDLE
               -> (LPOVERLAPPED -> MVar (Either ErrCode a) -> IO (Result a))
               -- ^ continuation, executed with unmasked async exceptions.  It
               -- receives 'LPOVERLAPPED' allocated on process heap and an empty
               -- 'MVar' which will be filled by 'dequeueCompletionPackets'
               -- ('IOManager' thread), when the async IO terminates.
               -> IO a
-withIODataPtr errorTag k = mask $ \unmask -> do
+withIODataPtr errorTag handle k = mask $ \unmask -> do
     ph <- Win32.getProcessHeap
     -- using malloc will not work, we have to allocate memory in process heap
     -- succeeded
@@ -136,6 +143,24 @@ withIODataPtr errorTag k = mask $ \unmask -> do
     poke ioDataPtr ioData
     result <-
       (unmask $ k (iodOverlappedPtr ioDataPtr) waitVar)
+      `catch`
+         (\(e :: SomeAsyncException) -> do
+            -- CancelIoEx MSDN docs:
+            -- <https://docs.microsoft.com/en-us/windows/win32/fileio/cancelioex-func#remarks>
+            -- 
+            -- An MSDN example:
+            -- <https://docs.microsoft.com/en-us/windows/win32/fileio/canceling-pending-i-o-operations#canceling-asynchronous-io>
+            --
+            -- When we cancel an async operations an io completion packet the
+            -- io completion thread ('dequeueCompletionPackets') is notified.
+            -- 'GetQueuedCompletionStatus' sets error code to
+            -- 'ERROR_OPERATION_ABORTED';  thus the  'ioDataPtr' will be
+            -- freed by that thread.  There's no need for us to check the
+            -- status of the cancelation with 'GetOverlappedResult'
+            --
+            _cancelResult <- c_CancelIoEx handle (iodOverlappedPtr ioDataPtr)
+            -- TODO: trace cancelResult and the error code
+            throwIO e)
 
     case result of
       ResultAsync b ->
@@ -153,3 +178,8 @@ withIODataPtr errorTag k = mask $ \unmask -> do
         when deallocate
           $ Win32.heapFree ph 0 (castPtr ioDataPtr)
         Win32.failWith ("withIODataPtr (" ++ errorTag ++ ")") errorCode
+
+foreign import ccall unsafe "CancelIoEx"
+    c_CancelIoEx :: HANDLE
+                 -> LPOVERLAPPED
+                 -> IO Win32.BOOL
