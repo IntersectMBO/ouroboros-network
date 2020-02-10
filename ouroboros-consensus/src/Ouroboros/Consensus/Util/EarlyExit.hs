@@ -207,15 +207,6 @@ instance MonadTime m => MonadTime (WithEarlyExit m) where
 instance MonadDelay m => MonadDelay (WithEarlyExit m) where
   threadDelay = lift . threadDelay
 
-instance (MonadTimer m, MonadFork m) => MonadTimer (WithEarlyExit m) where
-  newtype Timeout (WithEarlyExit m) = WrapTimeout { unwrapTimeout :: Timeout m }
-
-  newTimeout    d = lift $ WrapTimeout <$> newTimeout d
-  readTimeout   t = lift $ readTimeout   (unwrapTimeout t)
-  updateTimeout t = lift . updateTimeout (unwrapTimeout t)
-  cancelTimeout t = lift $ cancelTimeout (unwrapTimeout t)
-  timeout       d = earlyExit . timeout d . withEarlyExit
-
 {-------------------------------------------------------------------------------
   Finally, the consensus IOLike wrapper
 -------------------------------------------------------------------------------}
