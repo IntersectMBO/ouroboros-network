@@ -671,7 +671,8 @@ validateStateFor cfg blockSlot st IS{isTxs, isTip, isSlotNo, isLastTicketNo}
              TxsForBlockInSlot s -> s
              TxsForUnknownBlock  ->
                case ledgerTipSlot st of
-                 -- TODO: 'genesisSlotNo' is badly named. This is the slot
-                 -- number of the first real block.
-                 Origin -> Block.genesisSlotNo
+                 -- TODO: We should not make assumptions about the underlying
+                 -- ledger. We will fix this in
+                 -- <https://github.com/input-output-hk/ouroboros-network/issues/1571>
+                 Origin -> Block.SlotNo 0
                  At s   -> succ s

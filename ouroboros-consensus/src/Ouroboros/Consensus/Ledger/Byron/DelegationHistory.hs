@@ -1,5 +1,9 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE RecordWildCards    #-}
 
 -- | Delegation history
 --
@@ -7,7 +11,6 @@
 module Ouroboros.Consensus.Ledger.Byron.DelegationHistory (
     DelegationHistory
   , empty
-  , toSequence
   , snapOld
   , find
     -- * Serialisation
@@ -16,13 +19,17 @@ module Ouroboros.Consensus.Ledger.Byron.DelegationHistory (
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
+import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import           Codec.Serialise (decode, encode)
+import           Control.Applicative ((<|>))
+import           Control.Monad (guard)
 import           Data.Coerce
 import qualified Data.Foldable as Foldable
 import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>), Empty))
 import qualified Data.Sequence.Strict as Seq
+import           GHC.Generics (Generic)
 
+import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import qualified Cardano.Chain.Common as CC
@@ -30,8 +37,8 @@ import qualified Cardano.Chain.Delegation as Delegation
 import           Cardano.Slotting.SlotBounded (Bounds (..), SlotBounded (..))
 import qualified Cardano.Slotting.SlotBounded as SB
 
-import           Ouroboros.Network.Block (SlotNo (..), genesisSlotNo)
-import           Ouroboros.Network.Point (WithOrigin (..), fromWithOrigin)
+import           Ouroboros.Network.Block (SlotNo (..))
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Ledger.Byron.PBFT
 import           Ouroboros.Consensus.Protocol.PBFT
@@ -63,24 +70,29 @@ import           Ouroboros.Consensus.Util (firstJust)
 --
 -- We never need to go back in history for more than @2k@ slots, allowing us
 -- to drop delegation states from history as time passes, keeping the history
--- bounded in size. We will however always keep at least /one/ value, so that
--- we correctly compute the lower bound when we take a snapshot. (Alternatively,
--- we could set "good enough" lower bounds based on the @2k@ limit, but this
--- design is easier to understand and verify).
+-- bounded in size. The history will be empty if
 --
--- The delegation history will only be empty if delegation has never changed;
--- in this case, the first snapshot we add must be the genesis delegation and
--- so its lower bound will be 'genesisSlotNo'.
-newtype DelegationHistory = DelegationHistory {
-      -- | Sequence of historical snapshots (see above)
-      --
-      -- More recent snapshots are stored at the end of the sequence.
-      --
-      -- Invariant: the (exclusive) upper bound of each snapshot must equal the
-      -- (inclusive) lower bound of the next.
-      toSequence :: StrictSeq Snapshot
+-- * The delegation state never changed, or
+-- * We cannot roll back far enough to require a historical delegation state.
+--
+-- Since the (inclusive) lower bound of the next snapshot will be set to be
+-- equal to the (exclusive) upper bound of the previous, we must remember this
+-- previous bound even when the ledger is empty. Near genesis we will set this
+-- at @Origin@, which will indeed by the lower bound for the first snapshot.
+data DelegationHistory = DelegationHistory {
+      historyAnchor    :: !(WithOrigin SlotNo)
+    , historySnapshots :: !Snapshots
     }
-  deriving (Show, Eq, NoUnexpectedThunks)
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass (NoUnexpectedThunks)
+
+-- | Snapshots strictly after genesis
+--
+-- More recent snapshots are stored at the end of the sequence.
+--
+-- Invariant: the (exclusive) upper bound of each snapshot must equal the
+-- (inclusive) lower bound of the next.
+type Snapshots = StrictSeq Snapshot
 
 -- | Historical snapshot of the delegation state
 --
@@ -88,29 +100,32 @@ newtype DelegationHistory = DelegationHistory {
 type Snapshot = SlotBounded IX Delegation.Map
 
 -- | Empty (genesis) delegation history
---
--- The delegation history should only be empty if it has never changed.
 empty :: DelegationHistory
-empty = DelegationHistory Seq.empty
-
--- | Internal auxiliary
-withDelegationHistory :: (StrictSeq Snapshot -> StrictSeq Snapshot)
-                      -> DelegationHistory -> DelegationHistory
-withDelegationHistory = coerce
+empty = DelegationHistory Origin Empty
 
 -- | Take a snapshot of the delegation state
 snapOld :: CC.BlockCount  -- ^ Maximum rollback (@k@)
         -> SlotNo         -- ^ Slot number of the block that changed delegation
         -> Delegation.Map -- ^ Delegation state /before/ it changed
         -> DelegationHistory -> DelegationHistory
-snapOld k now old = trim k now . withDelegationHistory append
+snapOld k now old = trim k now . go
   where
-    append :: StrictSeq Snapshot -> StrictSeq Snapshot
-    append ss = ss :|> SB.bounded (lowerBound ss) now old
+    go :: DelegationHistory -> DelegationHistory
+    go h@DelegationHistory{..} = DelegationHistory {
+          historyAnchor    = historyAnchor
+        , historySnapshots = historySnapshots
+                         :|> SB.bounded (lowerBound h) now old
+        }
 
-    lowerBound :: StrictSeq Snapshot -> SlotNo
-    lowerBound Empty     = genesisSlotNo
-    lowerBound (_ :|> s) = sbUpper s
+    -- Compute the (inclusive) lower bound for this snapshot
+    --
+    -- Must be equal to the (exclusive) upper bound for the preceding snapshot;
+    -- if the history is empty, we use its anchor instead.
+    lowerBound :: DelegationHistory -> WithOrigin SlotNo
+    lowerBound DelegationHistory{..} =
+        case historySnapshots of
+          Empty     -> historyAnchor
+          (_ :|> s) -> At (sbUpper s)
 
 -- | Drop snapshots guaranteed not to be needed anymore
 --
@@ -128,25 +143,26 @@ snapOld k now old = trim k now . withDelegationHistory append
 trim :: CC.BlockCount  -- ^ Maximum rollback (@k@)
      -> SlotNo         -- ^ Current slot
      -> DelegationHistory -> DelegationHistory
-trim k now = withDelegationHistory go
+trim k now h@DelegationHistory{..} =
+    case trimSeq historySnapshots of
+      Nothing      -> h
+      Just (s, ss) -> DelegationHistory (At (sbUpper s)) ss
   where
-    go :: StrictSeq Snapshot -> StrictSeq Snapshot
-    go Empty         = Empty
-    go (s :<| Empty) = s :<| Empty
-    go (s :<| ss)    = if s `SB.contains` earliest
-                         then s :<| ss
-                         else go ss
-
     -- Earliest slot we might roll back to
-    earliest :: SlotNo
-    earliest = now - 2 * coerce k
+    earliest :: WithOrigin SlotNo
+    earliest = if now >= (2 * coerce k)
+                 then At $ now - (2 * coerce k)
+                 else Origin
+
+    -- Trim the list of snapshots, if we can
+    -- Returns the most recent snapshot we dropped
+    trimSeq :: Snapshots -> Maybe (Snapshot, Snapshots)
+    trimSeq Empty      = Nothing
+    trimSeq (s :<| ss) = do guard (not (s `SB.contains` earliest))
+                            trimSeq ss <|> Just (s, ss)
 
 find :: WithOrigin SlotNo -> DelegationHistory -> Maybe Delegation.Map
-find slot (DelegationHistory history) =
-    firstJust (`SB.at` slot') history
-  where
-    slot' :: SlotNo
-    slot' = fromWithOrigin genesisSlotNo slot
+find slot = firstJust (`SB.at` slot) . historySnapshots
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -155,22 +171,24 @@ find slot (DelegationHistory history) =
   instance.
 -------------------------------------------------------------------------------}
 
-toLedgerViews :: DelegationHistory
+toLedgerViews :: Snapshots
               -> [SlotBounded IX (PBftLedgerView PBftCardanoCrypto)]
-toLedgerViews =
-      map (fmap toPBftLedgerView)
-    . Foldable.toList
-    . toSequence
+toLedgerViews = map (fmap toPBftLedgerView) . Foldable.toList
 
 fromLedgerViews :: [SlotBounded IX (PBftLedgerView PBftCardanoCrypto)]
-                -> DelegationHistory
-fromLedgerViews =
-      DelegationHistory
-    . Seq.fromList
-    . map (fmap fromPBftLedgerView)
+                -> Snapshots
+fromLedgerViews = Seq.fromList . map (fmap fromPBftLedgerView)
 
 encodeDelegationHistory :: DelegationHistory -> Encoding
-encodeDelegationHistory = encode . toLedgerViews
+encodeDelegationHistory DelegationHistory{..} = mconcat [
+      encodeListLen 2
+    , encode historyAnchor
+    , encode $ toLedgerViews historySnapshots
+    ]
 
 decodeDelegationHistory :: Decoder s DelegationHistory
-decodeDelegationHistory = fromLedgerViews <$> decode
+decodeDelegationHistory = do
+    enforceSize "DelegationHistory" 2
+    historyAnchor    <- decode
+    historySnapshots <- fromLedgerViews <$> decode
+    return DelegationHistory{..}

@@ -49,8 +49,6 @@ module Ouroboros.Network.Block (
   , BlockMeasure(..)
   , blockMeasure
   , genesisPoint
-  , genesisSlotNo
-  , genesisBlockNo
     -- * Serialisation
   , encodePoint
   , encodeChainHash
@@ -72,7 +70,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot (SlotNo (..), genesisSlotNo)
+import           Cardano.Slotting.Slot (SlotNo (..))
 
 import           Ouroboros.Network.Point (WithOrigin (..), block,
                      fromWithOrigin, origin, withOriginToMaybe)
@@ -219,6 +217,8 @@ getTipBlockNo (Tip _ _ b) = At b
 -- Usage of this function should be phased out.
 getLegacyTipBlockNo :: Tip b -> BlockNo
 getLegacyTipBlockNo = fromWithOrigin genesisBlockNo . getTipBlockNo
+  where
+    genesisBlockNo = BlockNo 0
 
 -- | Translate to the format it was before (to maintain binary compatibility)
 toLegacyTip :: Tip b -> (Point b, BlockNo)
