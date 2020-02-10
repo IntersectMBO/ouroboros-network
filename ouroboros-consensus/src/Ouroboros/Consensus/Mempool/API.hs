@@ -69,17 +69,6 @@ class ( UpdateLedger blk
             -> TickedLedgerState blk
             -> Except (ApplyTxErr blk) (TickedLedgerState blk)
 
-  -- | Re-apply a transaction to the very same state it was applied in before
-  --
-  -- In this case no error can occur.
-  --
-  -- See also 'ldbConfReapply' for comments on implementing this function.
-  reapplyTxSameState :: HasCallStack
-                     => LedgerConfig blk
-                     -> GenTx blk
-                     -> TickedLedgerState blk
-                     -> TickedLedgerState blk
-
 -- | Transactions with an identifier
 --
 -- The mempool will use these to locate transactions, so two different

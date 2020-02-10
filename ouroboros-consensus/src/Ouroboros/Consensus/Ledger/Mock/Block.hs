@@ -284,12 +284,8 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
 
   type ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
-  applyTx            = \_ -> updateSimpleUTxO
-  reapplyTx          = \_ -> updateSimpleUTxO
-  reapplyTxSameState = \_ -> (mustSucceed . runExcept) .: updateSimpleUTxO
-    where
-      mustSucceed (Left  _)  = error "reapplyTxSameState: unexpected error"
-      mustSucceed (Right st) = st
+  applyTx   = const updateSimpleUTxO
+  reapplyTx = const updateSimpleUTxO
 
 instance HasTxId (GenTx (SimpleBlock c ext)) where
   newtype TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId
