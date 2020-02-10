@@ -624,7 +624,7 @@ getMempoolReader mempool = Outbound.TxSubmissionMempoolReader
         }
 
 getMempoolWriter
-  :: (Monad m, HasTxId (GenTx blk))
+  :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
   => Mempool m blk TicketNo
   -> TxSubmissionMempoolWriter (GenTxId blk) (GenTx blk) TicketNo m
 getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter

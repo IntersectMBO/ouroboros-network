@@ -18,7 +18,7 @@ import           Data.Either (isRight)
 import           Data.List (find, foldl', isSuffixOf, nub, partition, sort)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (isJust, isNothing)
+import           Data.Maybe (isJust, isNothing, mapMaybe)
 import qualified Data.Set as Set
 import           Data.Word
 import           GHC.Stack (HasCallStack)
@@ -65,6 +65,8 @@ tests = testGroup "Mempool"
   , testProperty "addTxs txs == mapM (addTxs . pure) txs"  prop_Mempool_addTxs_one_vs_multiple
   , testProperty "result of addTxs"                        prop_Mempool_addTxs_result
   , testProperty "Invalid transactions are never added"    prop_Mempool_InvalidTxsNeverAdded
+  , testProperty "result of getCapacity"                   prop_Mempool_getCapacity
+  , testProperty "Mempool capacity implementation"         prop_Mempool_Capacity
   , testProperty "Added valid transactions are traced"     prop_Mempool_TraceValidTxs
   , testProperty "Rejected invalid txs are traced"         prop_Mempool_TraceRejectedTxs
   , testProperty "Removed invalid txs are traced"          prop_Mempool_TraceRemovedTxs
@@ -89,9 +91,8 @@ prop_Mempool_snapshotTxs_snapshotTxsAfter setup =
 prop_Mempool_addTxs_getTxs :: TestSetupWithTxs -> Property
 prop_Mempool_addTxs_getTxs setup =
     withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
-      let Mempool { addTxs, getSnapshot } = mempool
-      _ <- addTxs (allTxs setup)
-      MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
+      _ <- addTxs mempool (allTxs setup)
+      MempoolSnapshot { snapshotTxs } <- atomically $ getSnapshot mempool
       return $ counterexample (ppTxs (txs setup)) $
         validTxs setup `isSuffixOf` map fst snapshotTxs
 
@@ -100,9 +101,8 @@ prop_Mempool_addTxs_getTxs setup =
 prop_Mempool_addTxs_one_vs_multiple :: TestSetupWithTxs -> Property
 prop_Mempool_addTxs_one_vs_multiple setup =
     withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
-      let Mempool { addTxs, getSnapshot } = mempool
-      forM_ (allTxs setup) $ \tx -> addTxs [tx]
-      MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
+      forM_ (allTxs setup) $ \tx -> addTxs mempool [tx]
+      MempoolSnapshot { snapshotTxs } <- atomically $ getSnapshot mempool
       return $ counterexample (ppTxs (txs setup)) $
         validTxs setup `isSuffixOf` map fst snapshotTxs
 
@@ -112,20 +112,20 @@ prop_Mempool_addTxs_one_vs_multiple setup =
 prop_Mempool_addTxs_result :: TestSetupWithTxs -> Property
 prop_Mempool_addTxs_result setup =
     withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
-      let Mempool { addTxs } = mempool
-      result <- addTxs (allTxs setup)
+      result <- addTxs mempool (allTxs setup)
       return $ counterexample (ppTxs (txs setup)) $
-        sort [(tx, isNothing mbErr) | (tx, mbErr) <- result] ===
-        sort [(testTx, valid)       | (testTx, valid) <- txs setup]
+        [(tx, isNothing mbErr) | (tx, mbErr) <- result] ===
+        [(testTx, valid)       | (testTx, valid) <- txs setup]
 
 -- | Test that invalid transactions are never added to the 'Mempool'.
 prop_Mempool_InvalidTxsNeverAdded :: TestSetupWithTxs -> Property
 prop_Mempool_InvalidTxsNeverAdded setup =
     withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
-      let Mempool { addTxs, getSnapshot } = mempool
-      txsInMempoolBefore <- map fst . snapshotTxs <$> atomically getSnapshot
-      _ <- addTxs (allTxs setup)
-      txsInMempoolAfter <- map fst . snapshotTxs <$> atomically getSnapshot
+      txsInMempoolBefore <- map fst . snapshotTxs <$>
+        atomically (getSnapshot mempool)
+      _ <- addTxs mempool (allTxs setup)
+      txsInMempoolAfter <- map fst . snapshotTxs <$>
+        atomically (getSnapshot mempool)
       return $ counterexample (ppTxs (txs setup)) $ conjoin
         -- Check for each transaction in the mempool (ignoring those already
         -- in the mempool beforehand) that it was a valid transaction.
@@ -150,25 +150,87 @@ prop_Mempool_removeTxs (TestSetupWithTxInMempool testSetup txToRemove) =
          show txToRemove <> "): " <> show txsInMempoolAfter)
         (txToRemove `notElem` txsInMempoolAfter)
 
+-- | Test that 'getCapacity' returns the 'MempoolCapacityBytes' value that the
+-- mempool was initialized with.
+--
+-- Ignore the "100% empty Mempool" label in the test output, that is there
+-- because we reuse 'withTestMempool' and always start with an empty Mempool
+-- and 'LedgerState'.
+prop_Mempool_getCapacity :: MempoolCapTestSetup -> Property
+prop_Mempool_getCapacity mcts =
+    withTestMempool testSetup $ \TestMempool{mempool} -> do
+      mpCap <- atomically $ getCapacity mempool
+      pure (mpCap === testMempoolCap testSetup)
+  where
+    MempoolCapTestSetup (TestSetupWithTxs testSetup _txsToAdd) = mcts
+
+-- | Test the correctness of 'tryAddTxs' when the Mempool is (or will be) at
+-- capacity.
+--
+-- Ignore the "100% empty Mempool" label in the test output, that is there
+-- because we reuse 'withTestMempool' and always start with an empty Mempool
+-- and 'LedgerState'.
+prop_Mempool_Capacity :: MempoolCapTestSetup -> Property
+prop_Mempool_Capacity (MempoolCapTestSetup testSetupWithTxs) =
+  withTestMempool testSetup $ \TestMempool { mempool } -> do
+    curSize <- msNumBytes . snapshotMempoolSize <$>
+      atomically (getSnapshot mempool)
+    res@(processed, unprocessed) <- tryAddTxs mempool (map fst txsToAdd)
+    return $
+      counterexample ("Initial size: " <> show curSize)    $
+      classify (null processed)   "no transactions added"  $
+      classify (null unprocessed) "all transactions added" $
+      blindErrors res === expectedResult curSize
+  where
+    TestSetupWithTxs testSetup txsToAdd = testSetupWithTxs
+    MempoolCapacityBytes capacity = testMempoolCap testSetup
+
+    -- | Convert @Maybe TestTxError@ into a @Bool@: Nothing -> True, Just _ ->
+    -- False.
+    blindErrors
+      :: ([(GenTx TestBlock, Maybe TestTxError)], [GenTx TestBlock])
+      -> ([(GenTx TestBlock, Bool)], [GenTx TestBlock])
+    blindErrors (processed, toAdd) = (processed', toAdd)
+      where
+        processed' = [(tx, isNothing mbErr) | (tx, mbErr) <- processed]
+
+    expectedResult
+      :: Word32  -- ^ Current mempool size
+      -> ([(GenTx TestBlock, Bool)], [GenTx TestBlock])
+    expectedResult = \curSize -> go curSize [] txsToAdd
+      where
+        go
+          :: Word32
+          -> [(GenTx TestBlock, Bool)]
+          -> [(GenTx TestBlock, Bool)]
+          -> ([(GenTx TestBlock, Bool)], [GenTx TestBlock])
+        go curSize processed = \case
+          []
+            -> (reverse processed, [])
+          (tx, valid):txsToAdd'
+            | let curSize' = curSize + txSize tx
+            , curSize' <= capacity
+            -> go (if valid then curSize' else curSize)
+                  ((tx, valid):processed)
+                  txsToAdd'
+            | otherwise
+            -> (reverse processed, tx:map fst txsToAdd')
+
 -- | Test that all valid transactions added to a 'Mempool' via 'addTxs' are
 -- appropriately represented in the trace of events.
 prop_Mempool_TraceValidTxs :: TestSetupWithTxs -> Property
 prop_Mempool_TraceValidTxs setup =
     withTestMempool (testSetup setup) $ \testMempool -> do
       let TestMempool { mempool, getTraceEvents } = testMempool
-          Mempool { addTxs } = mempool
-      _ <- addTxs (allTxs setup)
+      _ <- addTxs mempool (allTxs setup)
       evs <- getTraceEvents
       return $ counterexample (ppTxs (txs setup)) $
-        let addedTxs = maybe
-              []
-              (\(TraceMempoolAddTxs txs _) -> txs)
-              (find isAddTxsEvent evs)
-        in sort (validTxs setup)  === sort addedTxs
+        let addedTxs = mapMaybe isAddedTxsEvent evs
+        in validTxs setup === addedTxs
   where
-    isAddTxsEvent :: TraceEventMempool blk -> Bool
-    isAddTxsEvent (TraceMempoolAddTxs _ _) = True
-    isAddTxsEvent _                        = False
+    isAddedTxsEvent :: TraceEventMempool blk -> Maybe (GenTx blk)
+    isAddedTxsEvent (TraceMempoolAddedTx tx _ _) = Just tx
+    isAddedTxsEvent _                            = Nothing
 
 -- | Test that all invalid rejected transactions returned from 'addTxs' are
 -- appropriately represented in the trace of events.
@@ -176,19 +238,15 @@ prop_Mempool_TraceRejectedTxs :: TestSetupWithTxs -> Property
 prop_Mempool_TraceRejectedTxs setup =
     withTestMempool (testSetup setup) $ \testMempool -> do
       let TestMempool { mempool, getTraceEvents } = testMempool
-          Mempool { addTxs } = mempool
-      _ <- addTxs (allTxs setup)
+      _ <- addTxs mempool (allTxs setup)
       evs <- getTraceEvents
       return $ counterexample (ppTxs (txs setup)) $
-        let rejectedTxs = maybe
-              []
-              (\(TraceMempoolRejectedTxs txsAndErrs _) -> map fst txsAndErrs)
-              (find isRejectedTxsEvent evs)
-        in sort (invalidTxs setup) === sort rejectedTxs
+        let rejectedTxs = mapMaybe isRejectedTxEvent evs
+        in invalidTxs setup === rejectedTxs
   where
-    isRejectedTxsEvent :: TraceEventMempool blk -> Bool
-    isRejectedTxsEvent (TraceMempoolRejectedTxs _ _) = True
-    isRejectedTxsEvent _                             = False
+    isRejectedTxEvent :: TraceEventMempool blk -> Maybe (GenTx blk)
+    isRejectedTxEvent (TraceMempoolRejectedTx tx _ _) = Just tx
+    isRejectedTxEvent _                               = Nothing
 
 -- | Test that all transactions in the 'Mempool' that have become invalid
 -- because of an update to the ledger are appropriately represented in the
@@ -197,8 +255,7 @@ prop_Mempool_TraceRemovedTxs :: TestSetup -> Property
 prop_Mempool_TraceRemovedTxs setup =
     withTestMempool setup $ \testMempool -> do
       let TestMempool { mempool, getTraceEvents, addTxsToLedger, getCurrentLedger } = testMempool
-          Mempool { getSnapshot, syncWithLedger } = mempool
-      MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
+      MempoolSnapshot { snapshotTxs } <- atomically $ getSnapshot mempool
       -- We add all the transactions in the mempool to the ledger. Some of
       -- them will become invalid because all inputs have been spent.
       let txsInMempool = map fst snapshotTxs
@@ -206,7 +263,7 @@ prop_Mempool_TraceRemovedTxs setup =
 
       -- Sync the mempool with the ledger. Now some of the transactions in the
       -- mempool should have been removed.
-      void syncWithLedger
+      void $ syncWithLedger mempool
 
       -- Predict which transactions should have been removed
       curLedger <- atomically getCurrentLedger
@@ -214,10 +271,7 @@ prop_Mempool_TraceRemovedTxs setup =
 
       -- Look at the trace to see which transactions actually got removed
       evs <- getTraceEvents
-      let removedTxs = maybe
-            []
-            (\(TraceMempoolRemoveTxs txs _) -> txs)
-            (find isRemoveTxsEvent evs)
+      let removedTxs = concat $ mapMaybe isRemoveTxsEvent evs
 
       -- Also check that 'addTxsToLedger' never resulted in an error.
       return $
@@ -225,9 +279,9 @@ prop_Mempool_TraceRemovedTxs setup =
         map (const (Right ())) errs === errs .&&.
         sort expected === sort removedTxs
   where
-    isRemoveTxsEvent :: TraceEventMempool blk -> Bool
-    isRemoveTxsEvent (TraceMempoolRemoveTxs _ _) = True
-    isRemoveTxsEvent _                           = False
+    isRemoveTxsEvent :: TraceEventMempool blk -> Maybe [GenTx blk]
+    isRemoveTxsEvent (TraceMempoolRemoveTxs txs _) = Just txs
+    isRemoveTxsEvent _                             = Nothing
 
     expectedToBeRemoved :: LedgerState TestBlock -> [TestTx] -> [TestTx]
     expectedToBeRemoved ledgerState txsInMempool =
@@ -502,13 +556,13 @@ instance Arbitrary TestSetupWithTxs where
       [ TestSetupWithTxs { testSetup = testSetup', txs }
       | testSetup' <- shrink testSetup ] <>
       [ TestSetupWithTxs { testSetup, txs = txs' }
-      | txs' <- map (revalidate testSetup) .
+      | txs' <- map (fst . revalidate testSetup) .
                 shrinkList (const []) .
                 map fst $ txs ]
 
-revalidate :: TestSetup -> [TestTx] -> [(TestTx, Bool)]
+revalidate :: TestSetup -> [TestTx] -> ([(TestTx, Bool)], LedgerState TestBlock)
 revalidate TestSetup { testLedgerState, testInitialTxs } =
-    fst . validateTxs initLedgerState
+    validateTxs initLedgerState
   where
     -- The LedgerState after adding the transactions initially in the mempool
     initLedgerState = repeatedly
@@ -659,12 +713,42 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
       where
         -- Wrap in 'TickedLedgerState' so that we can call 'applyTx'
         notReallyTicked :: LedgerState TestBlock -> TickedLedgerState TestBlock
-        notReallyTicked = TickedLedgerState (error "SlotNo unused")
+        notReallyTicked = TickedLedgerState 0
 
         txs = map fst snapshotTxs
         mkErrMsg e =
           "At the end of the test, the Mempool contents were invalid: " <>
           show e
+
+{-------------------------------------------------------------------------------
+  MempoolCapTestSetup
+-------------------------------------------------------------------------------}
+
+-- | Reuse 'TestSetupWithTxs' but just pick a specific capacity based on the
+-- transactions to add.
+newtype MempoolCapTestSetup = MempoolCapTestSetup TestSetupWithTxs
+  deriving (Show)
+
+instance Arbitrary MempoolCapTestSetup where
+  -- TODO: shrink
+  arbitrary = do
+    testSetupWithTxs@TestSetupWithTxs { testSetup, txs } <- arbitrary
+    -- The Mempool should at least be capable of containing the transactions
+    -- it already contains.
+    let currentSize      = sum (map txSize (testInitialTxs testSetup))
+        capacityMinBound = currentSize
+        validTxsToAdd    = [tx | (tx, True) <- txs]
+        -- Use the current size + the sum of all the valid transactions to add
+        -- as the upper bound.
+        capacityMaxBound = currentSize + sum (map txSize validTxsToAdd)
+    -- Note that we could pick @currentSize@, meaning that we can't add any
+    -- more transactions to the Mempool
+    capacity <- choose
+      ( capacityMinBound
+      , capacityMaxBound
+      )
+    let testSetup' = testSetup { testMempoolCap = MempoolCapacityBytes capacity }
+    return $ MempoolCapTestSetup testSetupWithTxs { testSetup = testSetup' }
 
 {-------------------------------------------------------------------------------
   TxSeq Properties
@@ -676,10 +760,10 @@ prop_TxSeq_lookupByTicketNo_complete xs =
     and [ case TxSeq.lookupByTicketNo txseq tn of
             Just tx' -> tx == tx'
             Nothing  -> False
-        | (tx, tn) <- TxSeq.fromTxSeq txseq ]
+        | (tx, tn) <- TxSeq.toTuples txseq ]
   where
     txseq :: TxSeq Int
-    txseq = TxSeq.toTxSeq $ zip3 xs (map TicketNo [0..]) (repeat 0)
+    txseq = TxSeq.fromList $ zipWith3 TxTicket xs (map TicketNo [0..]) (repeat 0)
 
 -- | Only finds elements in the sequence
 prop_TxSeq_lookupByTicketNo_sound ::
@@ -715,7 +799,7 @@ prop_TxSeq_lookupByTicketNo_sound smalls small =
 -- that of the 'TxSizeInBytes' which the 'TxSeq' was split on.
 prop_TxSeq_splitAfterTxSize :: TxSizeSplitTestSetup -> Property
 prop_TxSeq_splitAfterTxSize tss =
-      property $ txSizeSum (txTickets before) <= tssTxSizeToSplitOn
+      property $ txSizeSum (TxSeq.toList before) <= tssTxSizeToSplitOn
   where
     TxSizeSplitTestSetup { tssTxSizeToSplitOn } = tss
 
@@ -733,8 +817,8 @@ prop_TxSeq_splitAfterTxSize tss =
 -- implementation.
 prop_TxSeq_splitAfterTxSizeSpec :: TxSizeSplitTestSetup -> Property
 prop_TxSeq_splitAfterTxSizeSpec tss =
-         txTickets implBefore === txTickets specBefore
-    .&&. txTickets implAfter  === txTickets specAfter
+         TxSeq.toList implBefore === TxSeq.toList specBefore
+    .&&. TxSeq.toList implAfter  === TxSeq.toList specAfter
   where
     TxSizeSplitTestSetup { tssTxSizeToSplitOn } = tss
 
@@ -782,7 +866,7 @@ instance Arbitrary TxSizeSplitTestSetup where
 -- | Convert a 'TxSizeSplitTestSetup' to a 'TxSeq'.
 txSizeSplitTestSetupToTxSeq :: TxSizeSplitTestSetup -> TxSeq Int
 txSizeSplitTestSetupToTxSeq TxSizeSplitTestSetup { tssTxSizes } =
-  TxSeq.toTxSeq [(0, TicketNo 0, tssTxSize) | tssTxSize <- tssTxSizes]
+    TxSeq.fromList [TxTicket 0 (TicketNo 0) tssTxSize | tssTxSize <- tssTxSizes]
 
 {-------------------------------------------------------------------------------
   TicketNo Properties
@@ -895,36 +979,42 @@ expectedTicketAssignment actions =
 executeAction :: forall m. IOLike m => TestMempool m -> Action -> m Property
 executeAction testMempool action = case action of
     AddTxs txs -> do
-      void $ addTxs txs
-      expectTraceEvent $ \case
-        TraceMempoolAddTxs txs' _
-          | sort txs == sort txs'
-          -> property True
-        _ -> counterexample ("Transactions not added: " <> condense txs) False
+      void $ addTxs mempool txs
+      tracedAddedTxs <- expectTraceEvent $ \case
+        TraceMempoolAddedTx tx _ _ -> Just tx
+        _                          -> Nothing
+      return $ if tracedAddedTxs == txs
+        then property True
+        else counterexample
+          ("Expected TraceMempoolAddedTx events for " <> condense txs <>
+           " but got " <> condense tracedAddedTxs)
+          False
 
     RemoveTxs txs -> do
-      removeTxs (map txId txs)
-      expectTraceEvent $ \case
-        TraceMempoolManuallyRemovedTxs txIds' [] _
-          | sort (map txId txs) == sort txIds'
-          -> property True
-        _ -> counterexample ("Transactions not removed: " <> condense txs) False
+      removeTxs mempool (map txId txs)
+      tracedManuallyRemovedTxs <- expectTraceEvent $ \case
+        TraceMempoolManuallyRemovedTxs txIds _ _ -> Just txIds
+        _                                        -> Nothing
+      return $ if concat tracedManuallyRemovedTxs == map txId txs
+        then property True
+        else counterexample
+          ("Expected a TraceMempoolManuallyRemovedTxs event for " <>
+           condense txs <> " but got " <>
+           condense tracedManuallyRemovedTxs)
+          False
+
   where
     TestMempool
       { mempool
       , eraseTraceEvents
       , getTraceEvents
       } = testMempool
-    Mempool { addTxs, removeTxs } = mempool
 
-    expectTraceEvent :: (TraceEventMempool TestBlock -> Property) -> m Property
-    expectTraceEvent checker = do
+    expectTraceEvent :: (TraceEventMempool TestBlock -> Maybe a) -> m [a]
+    expectTraceEvent extractor = do
       evs <- getTraceEvents
       eraseTraceEvents
-      return $ case evs of
-        [ev] -> checker ev
-        []   -> counterexample "No events traced"       False
-        _    -> counterexample "Multiple events traced" False
+      return $ mapMaybe extractor evs
 
 currentTicketAssignment :: IOLike m
                         => Mempool m TestBlock TicketNo -> m TicketAssignment
