@@ -50,11 +50,6 @@ import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Testing.ConcreteBlock
 
-import           Network.TypedProtocol.Pipelined
-import           Network.TypedProtocol.PingPong.Client as PingPong
-import           Network.TypedProtocol.PingPong.Codec.CBOR
-import           Network.TypedProtocol.PingPong.Server as PingPong
-
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
@@ -79,17 +74,6 @@ main = do
     args <- getArgs
     let restArgs = drop 2 args
     case args of
-      "pingpong":"client":[]           -> clientPingPong False
-      "pingpong":"client-pipelined":[] -> clientPingPong True
-      "pingpong":"server":[] -> do
-        rmIfExists defaultLocalSocketAddrPath
-        void serverPingPong
-
-      "pingpong2":"client":[] -> clientPingPong2
-      "pingpong2":"server":[] -> do
-        rmIfExists defaultLocalSocketAddrPath
-        void serverPingPong2
-
       "chainsync":"client":_  ->
         case restArgs of
           []        -> clientChainSync [defaultLocalSocketAddrPath]
@@ -116,7 +100,7 @@ main = do
 
 usage :: IO ()
 usage = do
-    hPutStrLn stderr "usage: demo-chain-sync [pingpong|pingpong2|chainsync|blockfetch] {client|server} [addr]"
+    hPutStrLn stderr "usage: demo-chain-sync [chainsync|blockfetch] {client|server} [addr]"
     exitFailure
 
 defaultLocalSocketAddrPath :: FilePath
@@ -133,202 +117,6 @@ rmIfExists :: FilePath -> IO ()
 rmIfExists path = do
   b <- doesFileExist path
   when b (removeFile path)
-
---
--- Ping pong demo
---
-
-data DemoProtocol0 = PingPong0
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance ProtocolEnum DemoProtocol0 where
-  fromProtocolEnum PingPong0 = MiniProtocolNum 2
-
-instance MiniProtocolLimits DemoProtocol0 where
-  maximumIngressQueue _ = maxBound
-
-
-clientPingPong :: Bool -> IO ()
-clientPingPong pipelined = withIOManager $ \iocp -> 
-    connectToNode
-      (localSnocket iocp defaultLocalSocketAddrPath)
-      cborTermVersionDataCodec
-      nullNetworkConnectTracers
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-      Nothing
-      defaultLocalSocketAddr
-  where
-    app :: OuroborosApplication InitiatorApp
-                                LocalConnectionId
-                                DemoProtocol0
-                                IO LBS.ByteString () Void
-    app = simpleInitiatorApplication protocols
-
-    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols PingPong0 | pipelined =
-      MuxPeerPipelined
-        (contramap show stdoutTracer)
-        codecPingPong
-        (pingPongClientPeerPipelined (pingPongClientPipelinedMax 5))
-
-    protocols PingPong0 =
-      MuxPeer
-        (contramap show stdoutTracer)
-        codecPingPong
-        (pingPongClientPeer (pingPongClientCount 5))
-
-
-pingPongClientCount :: Applicative m => Int -> PingPongClient m ()
-pingPongClientCount 0 = PingPong.SendMsgDone ()
-pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
-
-serverPingPong :: IO Void
-serverPingPong = withIOManager $ \iocp -> do
-    networkState <- newNetworkMutableState
-    _ <- async $ cleanNetworkMutableState networkState
-    withServerNode
-      (localSnocket iocp defaultLocalSocketAddrPath)
-      nullNetworkServerTracers
-      networkState
-      defaultLocalSocketAddr
-      cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptableVersion)
-      (simpleSingletonVersions
-        (0::Int)
-        (NodeToNodeVersionData $ NetworkMagic 0)
-        (DictVersion nodeToNodeCodecCBORTerm)
-        (SomeResponderApplication app))
-      nullErrorPolicies
-      $ \_ serverAsync ->
-        wait serverAsync   -- block until async exception
-  where
-    app :: OuroborosApplication ResponderApp
-                                LocalConnectionId
-                                DemoProtocol0
-                                IO LBS.ByteString Void ()
-    app = simpleResponderApplication protocols
-
-    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols PingPong0 =
-      MuxPeer
-        (contramap show stdoutTracer)
-        codecPingPong
-        (pingPongServerPeer pingPongServerStandard)
-
-pingPongServerStandard
-  :: Applicative m
-  => PingPongServer m ()
-pingPongServerStandard =
-    PingPongServer {
-      recvMsgPing = pure pingPongServerStandard,
-      recvMsgDone = ()
-    }
-
-
---
--- Ping pong demo2
---
-
-data DemoProtocol1 = PingPong1 | PingPong1'
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance ProtocolEnum DemoProtocol1 where
-  fromProtocolEnum PingPong1  = MiniProtocolNum 2
-  fromProtocolEnum PingPong1' = MiniProtocolNum 3
-
-instance MiniProtocolLimits DemoProtocol1 where
-  maximumIngressQueue _ = maxBound
-
-
-clientPingPong2 :: IO ()
-clientPingPong2 = withIOManager $ \iocp ->
-    connectToNode
-      (localSnocket iocp defaultLocalSocketAddrPath)
-      cborTermVersionDataCodec
-      nullNetworkConnectTracers
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-      Nothing
-      defaultLocalSocketAddr
-  where
-    app :: OuroborosApplication InitiatorApp
-                                LocalConnectionId
-                                DemoProtocol1
-                                IO LBS.ByteString () Void
-    app = simpleInitiatorApplication protocols
-
-    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols PingPong1 =
-      MuxPeer
-        (contramap (show . (,) (1 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongClientPeer (pingPongClientCount 5))
-
-    protocols PingPong1' =
-      MuxPeer
-        (contramap (show . (,) (2 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongClientPeer (pingPongClientCount 5))
-
-pingPongClientPipelinedMax
-  :: forall m. Monad m
-  => Int
-  -> PingPongClientPipelined m ()
-pingPongClientPipelinedMax c =
-    PingPongClientPipelined (go [] Zero 0)
-  where
-    go :: [Either Int Int] -> Nat o -> Int
-       -> PingPongSender o Int m ()
-    go acc o        n | n < c
-                      = SendMsgPingPipelined
-                          (return n)
-                          (go (Left n : acc) (Succ o) (succ n))
-    go _    Zero     _ = SendMsgDonePipelined ()
-    go acc (Succ o) n = CollectPipelined
-                          Nothing
-                          (\n' -> go (Right n' : acc) o n)
-
-serverPingPong2 :: IO Void
-serverPingPong2 = withIOManager $ \iocp -> do
-    networkState <- newNetworkMutableState
-    _ <- async $ cleanNetworkMutableState networkState
-    withServerNode
-      (localSnocket iocp defaultLocalSocketAddrPath)
-      nullNetworkServerTracers
-      networkState
-      defaultLocalSocketAddr
-      cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptableVersion)
-      (simpleSingletonVersions
-        (0::Int)
-        (NodeToNodeVersionData $ NetworkMagic 0)
-        (DictVersion nodeToNodeCodecCBORTerm)
-        (SomeResponderApplication app))
-      nullErrorPolicies
-      $ \_ serverAsync ->
-        wait serverAsync   -- block until async exception
-  where
-    app :: OuroborosApplication ResponderApp
-                                LocalConnectionId
-                                DemoProtocol1
-                                IO LBS.ByteString Void ()
-    app = simpleResponderApplication protocols
-
-    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols PingPong1 =
-      MuxPeer
-        (contramap (show . (,) (1 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongServerPeer pingPongServerStandard)
-
-    protocols PingPong1' =
-      MuxPeer
-        (contramap (show . (,) (2 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongServerPeer pingPongServerStandard)
 
 
 --
