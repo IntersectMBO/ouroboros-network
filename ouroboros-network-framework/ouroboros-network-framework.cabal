@@ -112,3 +112,23 @@ test-suite ouroboros-network-framework-tests
                        -Wall
                        -Wno-unticked-promoted-constructors
 
+executable demo-ping-pong
+  hs-source-dirs:      demo test
+  main-is:             ping-pong.hs
+  build-depends:       base,
+                       async,
+                       bytestring,
+                       cborg,
+                       containers,
+                       contra-tracer,
+                       directory,
+                       network-mux,
+                       network,
+                       ouroboros-network-framework,
+                       io-sim-classes,
+                       stm,
+                       text,
+                       typed-protocols,
+                       typed-protocols-examples
+  default-language:    Haskell2010
+  ghc-options:         -Wall
