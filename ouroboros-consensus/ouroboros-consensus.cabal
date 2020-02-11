@@ -137,6 +137,7 @@ library
                        Ouroboros.Consensus.Util.Singletons
                        Ouroboros.Consensus.Util.STM
                        Ouroboros.Consensus.Util.TraceSize
+                       Ouroboros.Consensus.Util.Versioned
 
                        -- Storing things on disk
                        Ouroboros.Storage.Common
@@ -305,6 +306,7 @@ test-suite test-consensus
                     Test.Consensus.Node
                     Test.Consensus.Protocol.PBFT
                     Test.Consensus.ResourceRegistry
+                    Test.Consensus.Util.Versioned
                     Test.ThreadNet.BFT
                     Test.ThreadNet.DualPBFT
                     Test.ThreadNet.General
