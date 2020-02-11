@@ -33,6 +33,7 @@ module Ouroboros.Consensus.Node
   ) where
 
 import           Codec.Serialise (DeserialiseFailure)
+import           Control.Monad (when)
 import           Control.Tracer (Tracer)
 import           Crypto.Random
 import           Data.ByteString.Lazy (ByteString)
@@ -57,6 +58,7 @@ import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Node.Recovery
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
@@ -111,9 +113,8 @@ run
 run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
     networkMagic dbPath pInfo isProducer customiseChainDbArgs
     customiseNodeArgs onNodeKernel = do
-    let mountPoint = MountPoint dbPath
     either throwM return =<< checkDbMarker
-      (ioHasFS mountPoint)
+      hasFS
       mountPoint
       (nodeProtocolMagicId (Proxy @blk) cfg)
     withRegistry $ \registry -> do
@@ -125,59 +126,58 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
         (nodeStartTime (Proxy @blk) cfg)
         (focusSlotLengths slotLengths)
 
-      (_, chainDB) <- allocate registry
-        (\_ -> openChainDB
-          chainDbTracer registry btime dbPath cfg initLedger
-          customiseChainDbArgs)
-        ChainDB.closeDB
+      -- When we shut down cleanly, we create a marker file so that the next
+      -- time we start, we know we don't have to validate the contents of the
+      -- whole ChainDB. When we shut down with an exception indicating
+      -- corruption or something going wrong with the file system, we don't
+      -- create this marker file so that the next time we start, we do a full
+      -- validation.
+      lastShutDownWasClean <- hasCleanShutdownMarker hasFS
+      when lastShutDownWasClean $ removeCleanShutdownMarker hasFS
+      let customiseChainDbArgs' args
+            | lastShutDownWasClean
+            = customiseChainDbArgs args
+            | otherwise
+              -- When the last shutdown was not clean, validate the complete
+              -- ChainDB to detect and recover from any corruptions. This will
+              -- override the default value /and/ the user-customised value of
+              -- the 'ChainDB.cdbValidation' field.
+            = (customiseChainDbArgs args)
+              { ChainDB.cdbValidation = ValidateAllEpochs }
 
-      let nodeArgs = customiseNodeArgs $ mkNodeArgs
-            registry
-            cfg
-            initState
-            tracers
-            btime
-            chainDB
-            isProducer
+      -- On a clean shutdown, create a marker in the database folder so that
+      -- next time we start up, we know we don't have to validate the whole
+      -- database.
+      createMarkerOnCleanShutdown hasFS $ do
 
-      nodeKernel <- initNodeKernel nodeArgs
-      onNodeKernel registry nodeKernel
-      let networkApps :: NetworkApplication
-                           IO ConnectionId
-                           ByteString ByteString ByteString ByteString ByteString ByteString
-                           ()
-          networkApps = consensusNetworkApps
-            nodeKernel
-            protocolTracers
-            (protocolCodecs (getNodeConfig nodeKernel))
-            (protocolHandlers nodeArgs nodeKernel)
+        (_, chainDB) <- allocate registry
+          (\_ -> openChainDB
+            chainDbTracer registry btime dbPath cfg initLedger
+            customiseChainDbArgs')
+          ChainDB.closeDB
 
-          diffusionApplications = DiffusionApplications
-           { daResponderApplication =
-               simpleSingletonVersions
-                 NodeToNodeV_1
-                 nodeToNodeVersionData
-                 (DictVersion nodeToNodeCodecCBORTerm)
-                 (responderNetworkApplication networkApps)
-           , daInitiatorApplication =
-               simpleSingletonVersions
-                 NodeToNodeV_1
-                 nodeToNodeVersionData
-                 (DictVersion nodeToNodeCodecCBORTerm)
-                 (initiatorNetworkApplication networkApps)
-           , daLocalResponderApplication =
-               simpleSingletonVersions
-                 NodeToClientV_1
-                 nodeToClientVersionData
-                 (DictVersion nodeToClientCodecCBORTerm)
-                 (localResponderNetworkApplication networkApps)
-           , daErrorPolicies = consensusErrorPolicy
-           }
+        let nodeArgs = customiseNodeArgs $ mkNodeArgs
+              registry
+              cfg
+              initState
+              tracers
+              btime
+              chainDB
+              isProducer
 
-      runDataDiffusion diffusionTracers
-                       diffusionArguments
-                       diffusionApplications
+        nodeKernel <- initNodeKernel nodeArgs
+        onNodeKernel registry nodeKernel
+
+        let networkApps = mkNetworkApps nodeArgs nodeKernel
+            diffusionApplications = mkDiffusionApplications networkApps
+
+        runDataDiffusion diffusionTracers
+                         diffusionArguments
+                         diffusionApplications
   where
+    mountPoint = MountPoint dbPath
+    hasFS      = ioHasFS mountPoint
+
     ProtocolInfo
       { pInfoConfig     = cfg
       , pInfoInitLedger = initLedger
@@ -188,6 +188,41 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
 
     nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = networkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = networkMagic }
+
+    mkNetworkApps
+      :: NodeArgs   IO ConnectionId blk
+      -> NodeKernel IO ConnectionId blk
+      -> NetworkApplication
+           IO ConnectionId
+           ByteString ByteString ByteString ByteString ByteString ByteString
+           ()
+    mkNetworkApps nodeArgs nodeKernel = consensusNetworkApps
+      nodeKernel
+      protocolTracers
+      (protocolCodecs (getNodeConfig nodeKernel))
+      (protocolHandlers nodeArgs nodeKernel)
+
+    mkDiffusionApplications networkApps = DiffusionApplications
+     { daResponderApplication =
+         simpleSingletonVersions
+           NodeToNodeV_1
+           nodeToNodeVersionData
+           (DictVersion nodeToNodeCodecCBORTerm)
+           (responderNetworkApplication networkApps)
+     , daInitiatorApplication =
+         simpleSingletonVersions
+           NodeToNodeV_1
+           nodeToNodeVersionData
+           (DictVersion nodeToNodeCodecCBORTerm)
+           (initiatorNetworkApplication networkApps)
+     , daLocalResponderApplication =
+         simpleSingletonVersions
+           NodeToClientV_1
+           nodeToClientVersionData
+           (DictVersion nodeToClientCodecCBORTerm)
+           (localResponderNetworkApplication networkApps)
+     , daErrorPolicies = consensusErrorPolicy
+     }
 
 openChainDB
   :: forall blk. RunNode blk
