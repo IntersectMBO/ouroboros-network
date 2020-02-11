@@ -2,6 +2,8 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Ouroboros.Storage.ChainDB.AddBlock
   ( tests
   ) where
@@ -25,7 +27,7 @@ import           Control.Tracer
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
-import           Ouroboros.Consensus.Block (getHeader)
+import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -56,6 +58,7 @@ import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.SOP
 import           Test.Util.TestBlock
 
+import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock (..))
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.ChainDB.StateMachine ()
 
@@ -296,3 +299,10 @@ mkArgs cfg initLedger tracer registry hashInfo
       , headerOffset = 0
       , headerSize   = fromIntegral $ Lazy.length (CBOR.toLazyByteString blob)
       }
+
+{-------------------------------------------------------------------------------
+  Orphan instances
+-------------------------------------------------------------------------------}
+
+instance ModelSupportsBlock TestBlock where
+  isEBB = const IsNotEBB

@@ -19,6 +19,8 @@ module Ouroboros.Storage.ChainDB.Impl.ChainSel
   , ChainAndLedger -- Opaque
   , clChain
   , clLedger
+    -- * Exported for testing purposes
+  , olderThanK
   ) where
 
 import           Control.Exception (assert)
@@ -49,7 +51,7 @@ import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..),
-                     headerHash, headerPoint)
+                     IsEBB (..), headerHash, headerPoint)
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -186,7 +188,7 @@ addBlock cdb@CDB{..} b = do
 
     -- ### Ignore
     if
-      | At (blockNo b) <= immBlockNo && blockNo b /= 0 ->
+      | olderThanK hdr (cdbIsEBB hdr) immBlockNo ->
         trace $ IgnoreBlockOlderThanK (blockPoint b)
       | isMember (blockHash b) ->
         trace $ IgnoreBlockAlreadyInVolDB (blockPoint b)
@@ -227,6 +229,39 @@ addBlock cdb@CDB{..} b = do
 
     strictAppend :: (Semigroup (t a), Foldable t) => t a -> t a -> t a
     strictAppend x y = forceElemsToWHNF (x <> y)
+
+-- | Return 'True' when the given header should be ignored when adding it
+-- because it is too old, i.e., we wouldn't be able to switch to a chain
+-- containing the corresponding block because its block number is more than
+-- @k@ blocks or exactly @k@ blocks back.
+--
+-- Special case: the header corresponds to an EBB which has the same block
+-- number as the block @k@ blocks back (the most recent \"immutable\" block).
+-- As EBBs share their block number with the block before them, the EBB is not
+-- too old in that case and can be adopted as part of our chain.
+--
+-- This special case can occur, for example, when the VolatileDB is empty
+-- (because of corruption). The \"immutable\" block is then also the tip of
+-- the chain. If we then try to add the EBB after it, it will have the same
+-- block number, so we must allow it.
+olderThanK
+  :: HasHeader (Header blk)
+  => Header blk
+     -- ^ Header of the block to add
+  -> IsEBB
+     -- ^ Whether the block is an EBB or not
+  -> WithOrigin BlockNo
+     -- ^ The block number of the most recent \"immutable\" block, i.e., the
+     -- block @k@ blocks back.
+  -> Bool
+olderThanK hdr isEBB immBlockNo
+    | At bNo == immBlockNo
+    , isEBB == IsEBB
+    = False
+    | otherwise
+    = At bNo <= immBlockNo
+  where
+    bNo = blockNo hdr
 
 -- | Trigger chain selection for the given block.
 --
@@ -306,7 +341,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     if
       -- The chain might have grown since we added the block such that the
       -- block is older than @k@.
-      | At (blockNo hdr) <= immBlockNo && blockNo hdr /= 0 ->
+      | olderThanK hdr (cdbIsEBB hdr) immBlockNo ->
         trace $ IgnoreBlockOlderThanK p
 
       -- We might have validated the block in the meantime

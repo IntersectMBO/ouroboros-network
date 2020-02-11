@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Ouroboros.Storage.ChainDB.Model.Test (
     tests
   ) where
@@ -25,6 +26,7 @@ import           Ouroboros.Storage.ChainDB.API (StreamFrom (..), StreamTo (..))
 
 import           Test.Util.TestBlock
 
+import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock (..))
 import qualified Test.Ouroboros.Storage.ChainDB.Model as M
 
 tests :: TestTree
@@ -95,3 +97,10 @@ prop_between_currentChain bt =
     from     = StreamFromExclusive genesisPoint
     to       = StreamToInclusive $ M.tipPoint model
     secParam = protocolSecurityParam singleNodeTestConfig
+
+{-------------------------------------------------------------------------------
+  Orphan instances
+-------------------------------------------------------------------------------}
+
+instance ModelSupportsBlock TestBlock where
+  isEBB = const IsNotEBB
