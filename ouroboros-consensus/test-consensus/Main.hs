@@ -12,6 +12,7 @@ import qualified Test.Consensus.Mempool (tests)
 import qualified Test.Consensus.Node (tests)
 import qualified Test.Consensus.Protocol.PBFT (tests)
 import qualified Test.Consensus.ResourceRegistry (tests)
+import qualified Test.Consensus.Util.Versioned (tests)
 import qualified Test.ThreadNet.BFT (tests)
 import qualified Test.ThreadNet.DualPBFT (tests)
 import qualified Test.ThreadNet.LeaderSchedule (tests)
@@ -38,6 +39,7 @@ tests =
   , Test.Consensus.Node.tests
   , Test.Consensus.Protocol.PBFT.tests
   , Test.Consensus.ResourceRegistry.tests
+  , Test.Consensus.Util.Versioned.tests
   , Test.ThreadNet.Util.Tests.tests
   , Test.ThreadNet.BFT.tests
   , Test.ThreadNet.LeaderSchedule.tests
