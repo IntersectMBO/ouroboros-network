@@ -98,9 +98,6 @@ tests = testGroup "Byron"
       -- Note that for most Byron types, we simply wrap the en/decoders from
       -- cardano-ledger, which already has golden tests for them.
       [ test_golden_ChainState
-      , test_golden_ChainState_backwardsCompat_version0
-      , test_golden_ChainState_backwardsCompat_version1
-      , test_golden_ChainState_backwardsCompat_version2
       , test_golden_LedgerState
       , test_golden_GenTxId
       , test_golden_UPIState
@@ -257,9 +254,8 @@ secParam = SecurityParam 2
 windowSize :: CS.WindowSize
 windowSize = CS.WindowSize 2
 
-exampleChainStateWithoutEBB, exampleChainStateWithEBB :: ChainState (BlockProtocol ByronBlock)
-(exampleChainStateWithoutEBB, exampleChainStateWithEBB) =
-    (withoutEBB, withEBB)
+exampleChainState :: ChainState (BlockProtocol ByronBlock)
+exampleChainState = withEBB
   where
     signers = map (`CS.PBftSigner` CC.exampleKeyHash) [1..4]
 
@@ -283,29 +279,8 @@ test_golden_ChainState :: TestTree
 test_golden_ChainState = goldenTestCBOR
     "ChainState"
     encodeByronChainState
-    exampleChainStateWithEBB
-    "test-consensus/golden/cbor/byron/ChainState2"
-
-test_golden_ChainState_backwardsCompat_version0 :: TestTree
-test_golden_ChainState_backwardsCompat_version0 =
-    testCase "ChainState version 0" $ goldenTestCBORBackwardsCompat
-      (decodeByronChainState secParam)
-      exampleChainStateWithoutEBB
-      "test-consensus/golden/cbor/byron/ChainState0"
-
-test_golden_ChainState_backwardsCompat_version1 :: TestTree
-test_golden_ChainState_backwardsCompat_version1 =
-    testCase "ChainState version 1" $ goldenTestCBORBackwardsCompat
-      (decodeByronChainState secParam)
-      exampleChainStateWithoutEBB
-      "test-consensus/golden/cbor/byron/ChainState1"
-
-test_golden_ChainState_backwardsCompat_version2 :: TestTree
-test_golden_ChainState_backwardsCompat_version2 =
-    testCase "ChainState version 2" $ goldenTestCBORBackwardsCompat
-      (decodeByronChainState secParam)
-      exampleChainStateWithEBB
-      "test-consensus/golden/cbor/byron/ChainState2"
+    exampleChainState
+    "test-consensus/golden/cbor/byron/ChainState0"
 
 test_golden_LedgerState :: TestTree
 test_golden_LedgerState = goldenTestCBOR
@@ -350,13 +325,13 @@ goldenTestCBOR name enc a path =
 
 -- | Check whether we can successfully decode the contents of the given file.
 -- This file will typically contain an older serialisation format.
-goldenTestCBORBackwardsCompat
+_goldenTestCBORBackwardsCompat
   :: (Eq a, Show a)
   => (forall s. Decoder s a)
   -> a
   -> FilePath
   -> Assertion
-goldenTestCBORBackwardsCompat dec a path = do
+_goldenTestCBORBackwardsCompat dec a path = do
     bytes <- Lazy.readFile path
     case deserialiseFromBytes dec bytes of
       Left failure
