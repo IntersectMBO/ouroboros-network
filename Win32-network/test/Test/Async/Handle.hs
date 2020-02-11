@@ -70,7 +70,7 @@ tests =
   , testProperty "PingPong test"
       prop_PingPong
   , testProperty "PingPongPipelined test"
-      $ withMaxSuccess 50 prop_PingPongPipelined
+      prop_PingPongPipelined
   ]
 
 
