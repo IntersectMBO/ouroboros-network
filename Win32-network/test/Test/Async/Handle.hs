@@ -21,7 +21,9 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Char8 as BSC
 import           Data.Foldable (foldl', traverse_)
-import           GHC.IO.Exception (IOException (..))
+import           GHC.IO.Exception ( IOException (..)
+                                  , IOErrorType (..)
+                                  )
 
 import           System.Win32 hiding (try)
 
@@ -52,6 +54,10 @@ tests =
       test_interruptible_writeHandle
   , testCase "close iocp"
       test_closeIOCP
+  , testCase "ERROR_INVALID_HANDLE"
+      test_ERROR_INVALID_HANDLE
+  , testProperty "ERROR_BROKEN_PIPE"
+      test_ERROR_BROKEN_PIPE
   , testGroup "connectNamedPipe"
     -- [ testCase "ERROR_PIPE_LISTENING" test_connectNamedPipe_ERROR_PIPE_LISTENING
     [ testCase "ERROR_PIPE_CONNECTED" test_connectNamedPipe_ERROR_PIPE_CONNECTED
@@ -311,6 +317,99 @@ test_connectNamedPipe_ERROR_PIPE_CONNECTED =
       return ()
   where
     pname = pipeName ++ "-connectNamedPipe-ERROR_PIPE_CONNECTED"
+
+
+test_ERROR_INVALID_HANDLE :: IO ()
+test_ERROR_INVALID_HANDLE =
+    withIOManager $ \iocp -> do
+      hServer <-
+        createNamedPipe pname
+                        (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                        (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                        pIPE_UNLIMITED_INSTANCES
+                        maxBound
+                        maxBound
+                        0
+                        Nothing
+      associateWithIOCompletionPort (Left hServer) iocp
+      hClient <-
+        createFile pname
+                   (gENERIC_READ .|. gENERIC_WRITE)
+                   fILE_SHARE_NONE
+                   Nothing
+                   oPEN_EXISTING
+                   fILE_FLAG_OVERLAPPED
+                   Nothing
+      associateWithIOCompletionPort (Left hClient) iocp
+
+      connectNamedPipe hServer
+
+      closeHandle hServer
+      -- trying to read from a closed handle -> ERROR_INVALID_HANDLE
+      asyncRead <- async $ readHandle hServer 1
+
+      closeHandle hClient
+      result <- waitCatch asyncRead
+      case result of
+        Left e  -> case fromException e of
+          Just ioe | ioe_description ioe == "The handle is invalid."
+                   -> pure ()
+                   | otherwise
+                   -> throwIO ioe
+          Nothing -> throwIO e
+        Right _ -> error "impossible happend"
+      return ()
+  where
+    pname = pipeName ++ "-connectNamedPipe-ERROR_INVALID_HANDLE"
+
+
+-- | This is a QuickCheck test, because triggering 'ERROR_BROKEN_PIPE' is not
+-- deterministic.
+--
+test_ERROR_BROKEN_PIPE :: Int -> Property
+test_ERROR_BROKEN_PIPE _ =
+    ioProperty $ withIOManager $ \iocp -> do
+      hServer <-
+        createNamedPipe pname
+                        (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                        (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                        pIPE_UNLIMITED_INSTANCES
+                        maxBound
+                        maxBound
+                        0
+                        Nothing
+      associateWithIOCompletionPort (Left hServer) iocp
+      hClient <-
+        createFile pname
+                   (gENERIC_READ .|. gENERIC_WRITE)
+                   fILE_SHARE_NONE
+                   Nothing
+                   oPEN_EXISTING
+                   fILE_FLAG_OVERLAPPED
+                   Nothing
+      associateWithIOCompletionPort (Left hClient) iocp
+
+      connectNamedPipe hServer
+
+      asyncRead <- async $ readHandle hServer 1
+      closeHandle hClient
+      closeHandle hServer
+      result <- waitCatch asyncRead
+      case result of
+        Left e  -> case fromException e of
+          Just ioe | ioe_description ioe == "The handle is invalid."
+                   -> return True
+                   | ioe_description ioe == "The pipe has been ended."
+                   -> return True
+                   | ioe_type ioe == InvalidArgument
+                   -- at times 'readHandle' errors with 'IOError' of type 'InvalidArgument'.
+                   -> return True
+                   | otherwise
+                   -> return False
+          Nothing -> return False
+        Right _ -> error "impossible happend"
+  where
+    pname = pipeName ++ "-connectNamedPipe-ERROR_BROKEN_PIPE"
 
 
 -- | This test performs another scenario mentioned in 'connectNamedPipe' MSDN docs:
