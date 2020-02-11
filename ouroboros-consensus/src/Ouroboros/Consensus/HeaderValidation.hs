@@ -50,6 +50,7 @@ import           Data.Foldable (toList)
 import           Data.Proxy
 import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>), Empty))
 import qualified Data.Sequence.Strict as Seq
+import           Data.Text (Text)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (enforceSize)
@@ -225,6 +226,12 @@ data HeaderEnvelopeError blk =
     --
     -- We record both the expected and actual hash
   | UnexpectedPrevHash !(ChainHash blk) !(ChainHash blk)
+
+    -- | Block specific envelope error
+    --
+    -- We record this simply as Text to avoid yet another type family;
+    -- we can't really pattern match on this anyway.
+  | OtherEnvelopeError !Text
   deriving (Generic)
 
 deriving instance SupportedBlock blk => Eq                 (HeaderEnvelopeError blk)
@@ -234,6 +241,7 @@ deriving instance SupportedBlock blk => NoUnexpectedThunks (HeaderEnvelopeError 
 castHeaderEnvelopeError :: HeaderHash blk ~ HeaderHash blk'
                         => HeaderEnvelopeError blk -> HeaderEnvelopeError blk'
 castHeaderEnvelopeError = \case
+    OtherEnvelopeError err             -> OtherEnvelopeError err
     UnexpectedBlockNo  expected actual -> UnexpectedBlockNo  expected  actual
     UnexpectedSlotNo   expected actual -> UnexpectedSlotNo   expected  actual
     UnexpectedPrevHash expected actual -> UnexpectedPrevHash expected' actual'
