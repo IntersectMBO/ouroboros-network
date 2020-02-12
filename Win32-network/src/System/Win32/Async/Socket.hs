@@ -1,4 +1,3 @@
-{-# LANGUAGE InterruptibleFFI    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -14,9 +13,7 @@ import           Control.Concurrent
 import           Control.Exception
 import           Data.Word
 
-import           Foreign.C (CInt (..))
 import           Foreign.Ptr (Ptr)
-import           Foreign.StablePtr (StablePtr)
 import           Foreign.Marshal.Alloc (alloca)
 import           Foreign.Storable (Storable (poke))
 
@@ -24,8 +21,10 @@ import           Network.Socket (Socket, SockAddr)
 import qualified Network.Socket as Socket
 
 import           System.Win32.Types
-import           System.Win32.Async.Internal
 import           System.Win32.Async.WSABuf
+import           System.Win32.Async.IOData
+import           System.Win32.Async.ErrCode
+import           System.Win32.Async.Socket.Syscalls
 
 
 sendBuf :: Socket
@@ -35,16 +34,18 @@ sendBuf :: Socket
 sendBuf sock buf size = Socket.withFdSocket sock $ \fd ->
     -- on Windows sockets are Word32, GHC represents file descriptors with CInt
     -- which is Int32.
-    alloca $ \bufs_ptr -> do
-      poke bufs_ptr WSABuf {buf, len = fromIntegral size}
-      wsaWaitForCompletion "sendBuf" (c_sendBuf fd bufs_ptr 1)
-
-foreign import ccall safe "HsSendBuf"
-    c_sendBuf :: SOCKET
-              -> Ptr WSABuf  -- ^ lpBuffers
-              -> DWORD       -- ^ dwBufferCount
-              -> StablePtr b
-              -> IO ()
+    alloca $ \bufsPtr ->
+      withIOCPData "sendBuf" (FDSocket fd) $ \lpOverlapped waitVar -> do
+        poke bufsPtr WSABuf {buf, len = fromIntegral size}
+        sendResult <- c_WSASend fd bufsPtr 1 nullPtr 0 lpOverlapped nullPtr
+        errorCode <- wsaGetLastError
+        if sendResult == 0 || errorCode == wSA_IO_PENDING
+          then do
+            iocpResult <- takeMVar waitVar
+            case iocpResult of
+              Right numBytes -> return $ ResultAsync numBytes
+              Left  e        -> return $ ErrorAsync  (ErrorCode e)
+          else return $ ErrorSync (WsaErrorCode errorCode) False
 
 -- | Unfortunatelly `connect` using interruptible ffi is not interruptible. 
 -- Instead we run the `Socket.connect` in a dedicated thread and block on an
@@ -85,12 +86,19 @@ accept sock = do
 
 
 recvBuf :: Socket -> Ptr Word8 -> Int -> IO Int
-recvBuf sock buf size = Socket.withFdSocket sock $ \fd ->
-    wsaWaitForCompletion "recvBuf" (c_recvBuf fd buf (fromIntegral size))
-
-foreign import ccall safe "HsRecvBuf"
-    c_recvBuf :: SOCKET      -- ^ socket
-              -> Ptr Word8   -- ^ buffer
-              -> ULONG       -- ^ length of the buffer
-              -> StablePtr b -- ^ stable pointer
-              -> IO ()
+recvBuf sock buf size =
+    Socket.withFdSocket sock $ \fd ->
+      withIOCPData "recvBuf" (FDSocket fd) $ \lpOverlapped waitVar ->
+        alloca $ \wsaBuf ->
+          alloca $ \lpFlags -> do
+            poke wsaBuf (WSABuf (fromIntegral size) buf)
+            poke lpFlags 0
+            recvResult <- c_WSARecv fd wsaBuf 1 nullPtr lpFlags lpOverlapped nullPtr
+            errorCode <- wsaGetLastError
+            if recvResult == 0 || errorCode == wSA_IO_PENDING
+              then do
+                iocpResult <- takeMVar waitVar
+                case iocpResult of
+                  Right numBytes -> return $ ResultAsync numBytes
+                  Left e         -> return $ ErrorAsync  (ErrorCode e)
+              else return $ ErrorSync (WsaErrorCode errorCode) False
