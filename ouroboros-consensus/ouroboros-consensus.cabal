@@ -91,7 +91,7 @@ library
                        Ouroboros.Consensus.Node
                        Ouroboros.Consensus.Node.DbMarker
                        Ouroboros.Consensus.Node.ErrorPolicy
-                       Ouroboros.Consensus.Node.ExitFailure
+                       Ouroboros.Consensus.Node.Exit
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.ProtocolInfo.Abstract
                        Ouroboros.Consensus.Node.ProtocolInfo.Byron
@@ -99,6 +99,7 @@ library
                        Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT
                        Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos
                        Ouroboros.Consensus.Node.ProtocolInfo.Mock.PraosRule
+                       Ouroboros.Consensus.Node.Recovery
                        Ouroboros.Consensus.Node.Run
                        Ouroboros.Consensus.Node.Run.Abstract
                        Ouroboros.Consensus.Node.Run.Byron
