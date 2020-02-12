@@ -7,6 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DerivingVia         #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
@@ -72,20 +73,14 @@ data AsyncSing (asyncType :: AsyncType) where
     WsaAsyncSing :: AsyncSing WsaAsync
 
 
--- |  We use two overlapped structs: 'OVERLAPPED' or 'WSAOVERLAPPED'.  This is
--- a type safe wrapper for both.  The 'Storable' instances are derived
--- from storable instances of 'OVERLAPPED' or 'WSAOVERLAPPED' types.
+-- | This closed type family which maps 'AysncType' to overlapping type.
+-- Using only this type family, over using GADTs simplifies the types and
+-- number of storable instances as we can map directly @asyncType :: AsyncType@
+-- to the 'OVERLAPPED' or 'WSAOVERLAPPED' .
 --
-data Overlapped (a :: AsyncType) where
-    Overlapped :: OVERLAPPED
-               -> Overlapped Async
-
-    WsaOverlapped :: WSAOVERLAPPED
-                  -> Overlapped WsaAsync
-
-deriving via (Overlapped Async) instance Storable (Overlapped Async)
-
-deriving via (Overlapped WsaAsync) instance Storable (Overlapped WsaAsync)
+type family OverlappedType (asyncType :: AsyncType) :: * where
+  OverlappedType Async    = OVERLAPPED
+  OverlappedType WsaAsync = WSAOVERLAPPED
 
 
 --
@@ -111,7 +106,7 @@ deriving via (Overlapped WsaAsync) instance Storable (Overlapped WsaAsync)
 --  'WsaIOCPData' should be used.
 --
 data IOData (asyncType :: AsyncType) =
-    IOData { iodOverlapped :: Overlapped asyncType
+    IOData { iodOverlapped :: OverlappedType asyncType
              -- ^ overlapped structue passed through the iocp port
            , iodData       :: StablePtr (MVar (Either ErrCode Int))
              -- ^ associated stable pointer.
@@ -136,13 +131,13 @@ newIOData :: AsyncSing asyncType -> IO (IOData asyncType, MVar (Either ErrCode I
 newIOData AsyncSing    = do
     v <- newEmptyMVar
     p <- newStablePtr v
-    return ( IOData (Overlapped nullOVERLAPPED) p
+    return ( IOData nullOVERLAPPED p
            , v
            )
 newIOData WsaAsyncSing = do
     v <- newEmptyMVar
     p <- newStablePtr v
-    return ( IOData (WsaOverlapped nullWSAOVERLAPPED) p
+    return ( IOData nullWSAOVERLAPPED p
            , v
            )
 
@@ -154,35 +149,12 @@ newIOData WsaAsyncSing = do
 --
 -- >  ioData->iodOverlapped
 --
-iodOverlappedPtr' :: AsyncSing asyncType
-                  -> Ptr (IOData asyncType)
-                  -> Ptr (Overlapped asyncType)
-iodOverlappedPtr' AsyncSing    = (#ptr IODATA,    iodOverlapped)
-iodOverlappedPtr' WsaAsyncSing = (#ptr WSAIODATA, iodOverlapped)
-
--- | This closed type family is only to make 'castOverlappedPtr' type safe.
--- We could use 'castPtr' but it would leek outside of this module.  This is
--- more elegant.
---
-type family OverlappedType (asyncType :: AsyncType) :: * where
-  OverlappedType Async    = OVERLAPPED
-  OverlappedType WsaAsync = WSAOVERLAPPED
-
--- | Cast 'Overlapped asyncType' to 'OverlappedType asyncType' which is either
--- 'OVERLAPPED' or 'WSAOVERLLAPPED'.  This is safe because the underlaying data
--- is layed out in the same way.
---
-castOverlappedPtr :: Ptr (Overlapped asyncType) -> Ptr (OverlappedType asyncType)
-castOverlappedPtr = castPtr
-
--- | Access the 'lpdOverlapped' member of the 'IODATA' or 'WSAIODATA' struct and
--- cast it the the correct overlapped type: either 'OVERLAPPED' or
--- 'WSAOVERLAPPED'.
---
 iodOverlappedPtr :: AsyncSing asyncType
-                 -> Ptr (IOData asyncType)
-                 -> Ptr (OverlappedType asyncType)
-iodOverlappedPtr asyncTag = castOverlappedPtr . iodOverlappedPtr' asyncTag
+                  -> Ptr (IOData asyncType)
+                  -> Ptr (OverlappedType asyncType)
+iodOverlappedPtr AsyncSing    = (#ptr IODATA,    iodOverlapped)
+iodOverlappedPtr WsaAsyncSing = (#ptr WSAIODATA, iodOverlapped)
+
 
 -- | Access 'iodData' member of 'IODATA' or 'WSAIODATA' struct.
 --
@@ -200,14 +172,14 @@ instance Storable (IOData Async) where
     sizeOf    _ = (#const sizeof(IODATA))
     alignment _ = (#alignment IODATA)
 
-    poke buf IOData {iodOverlapped = Overlapped ovl, iodData} = do
+    poke buf IOData {iodOverlapped = ovl, iodData} = do
       (#poke IODATA, iodOverlapped) buf ovl
       (#poke IODATA, iodData)       buf iodData
 
     peek buf = do
       ovl     <- (#peek IODATA, iodOverlapped) buf
       iodData <- (#peek IODATA, iodData)       buf
-      return $ IOData { iodOverlapped = Overlapped ovl
+      return $ IOData { iodOverlapped = ovl
                       , iodData
                       }
 
@@ -215,14 +187,14 @@ instance Storable (IOData WsaAsync) where
     sizeOf    _ = (#const sizeof(WSAIODATA))
     alignment _ = (#alignment WSAIODATA)
 
-    poke buf IOData {iodOverlapped = WsaOverlapped ovl, iodData} = do
+    poke buf IOData {iodOverlapped = ovl, iodData} = do
       (#poke WSAIODATA, iodOverlapped) buf ovl
       (#poke WSAIODATA, iodData)       buf iodData
 
     peek buf = do
       ovl     <- (#peek WSAIODATA, iodOverlapped) buf
       iodData <- (#peek WSAIODATA, iodData)       buf
-      return $ IOData { iodOverlapped = WsaOverlapped ovl
+      return $ IOData { iodOverlapped = ovl
                       , iodData
                       }
 
