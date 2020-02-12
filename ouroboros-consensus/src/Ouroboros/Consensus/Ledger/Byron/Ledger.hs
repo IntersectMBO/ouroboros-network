@@ -61,6 +61,7 @@ import           Ouroboros.Consensus.Ledger.Byron.Conversions
 import           Ouroboros.Consensus.Ledger.Byron.DelegationHistory
                      (DelegationHistory)
 import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as History
+import           Ouroboros.Consensus.Ledger.Byron.HeaderValidation ()
 import           Ouroboros.Consensus.Ledger.Byron.PBFT
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtConfig
