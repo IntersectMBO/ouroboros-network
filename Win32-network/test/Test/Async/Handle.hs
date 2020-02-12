@@ -476,8 +476,10 @@ prop_async_reads_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bs
       clientVar <- newEmptyMVar
       serverVar <- newEmptyMVar
 
+      mainThread <- myThreadId
+
       -- fork a server
-      _ <- forkIO $
+      _ <- forkIO $ handle (\e -> throwTo mainThread e >> ioError e) $
         bracket
             (createNamedPipe pname
                              (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
@@ -502,7 +504,7 @@ prop_async_reads_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bs
 
 
       -- fork a client
-      _ <- forkIO $ do
+      _ <- forkIO $ handle (\e -> throwTo mainThread e >> ioError e) $ do
         takeMVar syncVarStart
         bracket
           (createFile pname
