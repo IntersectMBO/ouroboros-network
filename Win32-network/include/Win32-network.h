@@ -1,3 +1,4 @@
+#include <winsock2.h>
 #include <windows.h>
 #include <HsFFI.h>
 
@@ -8,6 +9,11 @@ typedef struct _IODATA {
     OVERLAPPED  iodOverlapped;
     HsStablePtr iodData;
 } IODATA;
+
+typedef struct _WSAIODATA {
+    WSAOVERLAPPED  iodOverlapped;
+    HsStablePtr    iodData;
+} WSAIODATA;
 
 typedef struct _GQCSRESULT {
     BOOL    gqcsResult;

@@ -1,7 +1,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-#include <windows.h>
 #include <Win32-network.h>
 
 module System.Win32.Async.IOData

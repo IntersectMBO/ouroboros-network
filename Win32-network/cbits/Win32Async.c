@@ -1,7 +1,6 @@
 // Taken from winio library by Felix Martini
-#include <windows.h>
-#include <HsFFI.h>
 #include <Win32-network.h>
+#include <HsFFI.h>
 #include <stdio.h>
 
 #define DllExport __declspec(dllexport)
