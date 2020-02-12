@@ -63,6 +63,8 @@ prop_getChain_addChain bc =
 
 prop_alwaysPickPreferredChain :: BlockTree -> Permutation -> Property
 prop_alwaysPickPreferredChain bt p =
+    counterexample ("blocks: " ++ show blocks) $
+    counterexample ("invalid: " ++ show (M.invalid model)) $
     conjoin [
         not $ preferCandidate' candidate
       | candidate <- treeToChains bt

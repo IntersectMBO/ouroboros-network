@@ -75,6 +75,7 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -147,11 +148,13 @@ data LgrDbArgs m blk = forall h. LgrDbArgs {
       lgrNodeConfig       :: NodeConfig (BlockProtocol blk)
     , lgrHasFS            :: HasFS m h
     , lgrDecodeLedger     :: forall s. Decoder s (LedgerState blk)
+    , lgrDecodeHash       :: forall s. Decoder s (HeaderHash  blk)
+    , lgrDecodeTipInfo    :: forall s. Decoder s (TipInfo     blk)
     , lgrDecodeChainState :: forall s. Decoder s (ChainState (BlockProtocol blk))
-    , lgrDecodeHash       :: forall s. Decoder s (HeaderHash blk)
     , lgrEncodeLedger     :: LedgerState blk                -> Encoding
+    , lgrEncodeHash       :: HeaderHash  blk                -> Encoding
+    , lgrEncodeTipInfo    :: TipInfo     blk                -> Encoding
     , lgrEncodeChainState :: ChainState (BlockProtocol blk) -> Encoding
-    , lgrEncodeHash       :: HeaderHash blk                 -> Encoding
     , lgrParams           :: LedgerDbParams
     , lgrDiskPolicy       :: DiskPolicy
     , lgrGenesis          :: m (ExtLedgerState blk)
@@ -168,9 +171,11 @@ data LgrDbArgs m blk = forall h. LgrDbArgs {
 -- * 'lgrDecodeLedger'
 -- * 'lgrDecodeChainState'
 -- * 'lgrDecodeHash'
+-- * 'lgrDecodeTipInfo'
 -- * 'lgrEncodeLedger'
 -- * 'lgrEncodeChainState'
 -- * 'lgrEncodeHash'
+-- * 'lgrEncodeTipInfo'
 -- * 'lgrMemPolicy'
 -- * 'lgrGenesis'
 defaultArgs :: FilePath -> LgrDbArgs IO blk
@@ -179,11 +184,13 @@ defaultArgs fp = LgrDbArgs {
       -- Fields without a default
     , lgrNodeConfig       = error "no default for lgrNodeConfig"
     , lgrDecodeLedger     = error "no default for lgrDecodeLedger"
-    , lgrDecodeChainState = error "no default for lgrDecodeChainState"
     , lgrDecodeHash       = error "no default for lgrDecodeHash"
+    , lgrDecodeTipInfo    = error "no default for lgrDecodeTipInfo"
+    , lgrDecodeChainState = error "no default for lgrDecodeChainState"
     , lgrEncodeLedger     = error "no default for lgrEncodeLedger"
-    , lgrEncodeChainState = error "no default for lgrEncodeChainState"
     , lgrEncodeHash       = error "no default for lgrEncodeHash"
+    , lgrEncodeTipInfo    = error "no default for lgrEncodeTipInfo"
+    , lgrEncodeChainState = error "no default for lgrEncodeChainState"
     , lgrParams           = error "no default for lgrParams"
     , lgrDiskPolicy       = error "no default for lgrDiskPolicy"
     , lgrGenesis          = error "no default for lgrGenesis"
@@ -261,7 +268,7 @@ reopen LgrDB{..} immDB replayTracer = do
     atomically $ writeTVar varDB db
     return replayed
 
-initFromDisk :: (IOLike m, HasHeader blk, HasCallStack)
+initFromDisk :: forall blk m. (IOLike m, HasHeader blk, HasCallStack)
              => LgrDbArgs m blk
              -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
              -> Conf      m blk
@@ -273,12 +280,19 @@ initFromDisk args@LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure args 
         replayTracer
         lgrTracer
         lgrHasFS
-        (decodeExtLedgerState lgrDecodeLedger lgrDecodeChainState)
+        decodeExtLedgerState'
         (Block.decodePoint lgrDecodeHash)
         lgrParams
         lgrDbConf
         (streamAPI immDB)
     return (db, replayed)
+  where
+    decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState blk)
+    decodeExtLedgerState' = decodeExtLedgerState
+                              lgrDecodeLedger
+                              lgrDecodeChainState
+                              lgrDecodeHash
+                              lgrDecodeTipInfo
 
 -- | For testing purposes
 mkLgrDB :: Conf m blk
@@ -359,9 +373,15 @@ takeSnapshot lgrDB@LgrDB{ args = args@LgrDbArgs{..} } = wrapFailure args $ do
     second tipToPoint <$> LedgerDB.takeSnapshot
       lgrTracer
       lgrHasFS
-      (encodeExtLedgerState lgrEncodeLedger lgrEncodeChainState)
+      encodeExtLedgerState'
       (Block.encodePoint lgrEncodeHash)
       ledgerDB
+  where
+    encodeExtLedgerState' = encodeExtLedgerState
+                              lgrEncodeLedger
+                              lgrEncodeChainState
+                              lgrEncodeHash
+                              lgrEncodeTipInfo
 
 trimSnapshots :: MonadThrow m => LgrDB m blk -> m [DiskSnapshot]
 trimSnapshots LgrDB{ args = args@LgrDbArgs{..} } = wrapFailure args $

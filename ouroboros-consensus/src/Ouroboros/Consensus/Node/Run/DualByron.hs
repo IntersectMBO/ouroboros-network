@@ -63,8 +63,10 @@ instance RunNode DualByronBlock where
   nodeMaxBlockSize          = nodeMaxBlockSize          . dualLedgerStateMain
   nodeBlockEncodingOverhead = nodeBlockEncodingOverhead . dualLedgerStateMain
 
-  -- The hash we use is the hash of the concrete block
-  nodeHashInfo = \_p -> nodeHashInfo pb
+  -- Envelope
+  nodeHashInfo      = \_p -> nodeHashInfo      pb
+  nodeEncodeTipInfo = \_p -> nodeEncodeTipInfo pb
+  nodeDecodeTipInfo = \_p -> nodeDecodeTipInfo pb
 
   -- We can look at the concrete header to see if this is an EBB
   nodeIsEBB = nodeIsEBB . dualHeaderMain

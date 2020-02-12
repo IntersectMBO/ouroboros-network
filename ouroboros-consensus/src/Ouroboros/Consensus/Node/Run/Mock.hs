@@ -66,6 +66,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeEncodeLedgerState     = const encode
   nodeEncodeChainState      = const mockEncodeChainState
   nodeEncodeApplyTxError    = const encode
+  nodeEncodeTipInfo         = const encode
   nodeEncodeQuery           = \case {}
   nodeEncodeResult          = \case {}
 
@@ -77,5 +78,6 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeDecodeLedgerState     = const decode
   nodeDecodeChainState      = const mockDecodeChainState
   nodeDecodeApplyTxError    = const decode
+  nodeDecodeTipInfo         = const decode
   nodeDecodeQuery           = error "Mock.nodeDecodeQuery"
   nodeDecodeResult          = \case {}

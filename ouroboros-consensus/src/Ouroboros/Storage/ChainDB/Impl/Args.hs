@@ -22,6 +22,7 @@ import           Ouroboros.Network.Block (HeaderHash)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -54,6 +55,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
       -- ^ The given encoding will include the header envelope
       -- ('cdbAddHdrEnv').
     , cdbDecodeLedger     :: forall s. Decoder s (LedgerState blk)
+    , cdbDecodeTipInfo    :: forall s. Decoder s (TipInfo blk)
     , cdbDecodeChainState :: forall s. Decoder s (ChainState (BlockProtocol blk))
 
       -- Encoders
@@ -67,6 +69,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
       -- often be encoding the in-memory headers. (It is cheap for Byron
       -- headers, as we store the serialisation in the annotation.)
     , cdbEncodeLedger     :: LedgerState blk -> Encoding
+    , cdbEncodeTipInfo    :: TipInfo blk -> Encoding
     , cdbEncodeChainState :: ChainState (BlockProtocol blk) -> Encoding
 
       -- Error handling
@@ -198,9 +201,11 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrDecodeLedger     = cdbDecodeLedger
         , lgrDecodeChainState = cdbDecodeChainState
         , lgrDecodeHash       = cdbDecodeHash
+        , lgrDecodeTipInfo    = cdbDecodeTipInfo
         , lgrEncodeLedger     = cdbEncodeLedger
         , lgrEncodeChainState = cdbEncodeChainState
         , lgrEncodeHash       = cdbEncodeHash
+        , lgrEncodeTipInfo    = cdbEncodeTipInfo
         , lgrParams           = cdbParamsLgrDB
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
@@ -234,12 +239,14 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbDecodeBlock      = immDecodeBlock
     , cdbDecodeHeader     = immDecodeHeader
     , cdbDecodeLedger     = lgrDecodeLedger
+    , cdbDecodeTipInfo    = lgrDecodeTipInfo
     , cdbDecodeChainState = lgrDecodeChainState
       -- Encoders
     , cdbEncodeHash       = immEncodeHash
     , cdbEncodeBlock      = immEncodeBlock
     , cdbEncodeHeader     = cdbsEncodeHeader
     , cdbEncodeLedger     = lgrEncodeLedger
+    , cdbEncodeTipInfo    = lgrEncodeTipInfo
     , cdbEncodeChainState = lgrEncodeChainState
       -- Error handling
     , cdbErrImmDb         = immErr

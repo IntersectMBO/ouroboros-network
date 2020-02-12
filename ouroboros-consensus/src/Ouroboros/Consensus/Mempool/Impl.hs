@@ -4,6 +4,7 @@
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.Mempool.Impl (
@@ -28,12 +29,12 @@ import           Control.Tracer
 
 import           Ouroboros.Network.Block (ChainHash, Point, SlotNo,
                      StandardHash)
-import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
@@ -49,7 +50,7 @@ import           Ouroboros.Consensus.Util.STM (onEachChange)
   Top-level API
 -------------------------------------------------------------------------------}
 
-openMempool :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
+openMempool :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
             => ResourceRegistry m
             -> LedgerInterface m blk
             -> LedgerConfig blk
@@ -66,7 +67,7 @@ openMempool registry ledger cfg capacity tracer = do
 --
 -- Intended for testing purposes.
 openMempoolWithoutSyncThread
-  :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
+  :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
   => LedgerInterface m blk
   -> LedgerConfig blk
   -> MempoolCapacityBytes
@@ -75,7 +76,7 @@ openMempoolWithoutSyncThread
 openMempoolWithoutSyncThread ledger cfg capacity tracer =
     mkMempool <$> initMempoolEnv ledger cfg capacity tracer
 
-mkMempool :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
+mkMempool :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
           => MempoolEnv m blk -> Mempool m blk TicketNo
 mkMempool env = Mempool
     { tryAddTxs      = implTryAddTxs      env
@@ -164,7 +165,7 @@ initInternalState lastTicketNo st = IS {
     , isLastTicketNo = lastTicketNo
     }
 
-initMempoolEnv :: (IOLike m, ApplyTx blk)
+initMempoolEnv :: (IOLike m, ApplyTx blk, ValidateEnvelope blk)
                => LedgerInterface m blk
                -> LedgerConfig blk
                -> MempoolCapacityBytes
@@ -184,7 +185,11 @@ initMempoolEnv ledgerInterface cfg capacity tracer = do
 
 -- | Spawn a thread which syncs the 'Mempool' state whenever the 'LedgerState'
 -- changes.
-forkSyncStateOnTipPointChange :: forall m blk. (IOLike m, ApplyTx blk)
+forkSyncStateOnTipPointChange :: forall m blk. (
+                                   IOLike m
+                                 , ApplyTx blk
+                                 , ValidateEnvelope blk
+                                 )
                               => ResourceRegistry m
                               -> MempoolEnv m blk
                               -> m ()
@@ -285,7 +290,7 @@ implTryAddTxs mpEnv = go []
                 go ((firstTx, Just err):acc) toAdd'
 
 implRemoveTxs
-  :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
+  :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
   => MempoolEnv m blk
   -> [GenTxId blk]
   -> m ()
@@ -320,7 +325,7 @@ implRemoveTxs mpEnv txIds = do
 
     toRemove = Set.fromList txIds
 
-implSyncWithLedger :: (IOLike m, ApplyTx blk)
+implSyncWithLedger :: (IOLike m, ApplyTx blk, ValidateEnvelope blk)
                    => MempoolEnv m blk -> m (MempoolSnapshot blk TicketNo)
 implSyncWithLedger mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} = do
     (removed, mempoolSize, snapshot) <- atomically $ do
@@ -340,7 +345,7 @@ implGetSnapshot :: (IOLike m, ApplyTx blk)
 implGetSnapshot MempoolEnv{mpEnvStateVar} =
     implSnapshotFromIS <$> readTVar mpEnvStateVar
 
-implGetSnapshotFor :: forall m blk. (IOLike m, ApplyTx blk)
+implGetSnapshotFor :: forall m blk. (IOLike m, ApplyTx blk, ValidateEnvelope blk)
                    => MempoolEnv m blk
                    -> BlockSlot
                    -> LedgerState blk
@@ -546,7 +551,7 @@ extendVRNew cfg tx vr = assert (isNothing vrNewValid) $
 
 -- | Validate the internal state against the current ledger state and the
 -- given 'BlockSlot', revalidating if necessary.
-validateIS :: forall m blk. (IOLike m, ApplyTx blk)
+validateIS :: forall m blk. (IOLike m, ApplyTx blk, ValidateEnvelope blk)
            => MempoolEnv m blk
            -> BlockSlot
            -> STM m (ValidationResult blk)
@@ -565,7 +570,7 @@ validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} blockSlot =
 -- When these don't match, the transaction in the internal state will be
 -- revalidated ('revalidateTxsFor').
 validateStateFor
-  :: forall blk. ApplyTx blk
+  :: forall blk. (ApplyTx blk, ValidateEnvelope blk)
   => LedgerConfig     blk
   -> BlockSlot
   -> LedgerState      blk
@@ -601,7 +606,7 @@ revalidateTxsFor cfg st lastTicketNo txTickets =
 
 -- | Tick the 'LedgerState' using the given 'BlockSlot'.
 tickLedgerState
-  :: UpdateLedger blk
+  :: forall blk. (UpdateLedger blk, ValidateEnvelope blk)
   => LedgerConfig blk
   -> BlockSlot
   -> LedgerState blk
@@ -614,9 +619,9 @@ tickLedgerState cfg blockSlot st = applyChainTick cfg slot st
     slot = case blockSlot of
       TxsForBlockInSlot s -> s
       TxsForUnknownBlock  ->
+        -- TODO: We should use time here instead
+        -- <https://github.com/input-output-hk/ouroboros-network/issues/1298>
+        -- Once we do, the ValidateEnvelope constraint can go.
         case ledgerTipSlot st of
-          -- TODO: We should not make assumptions about the underlying
-          -- ledger. We will fix this in
-          -- <https://github.com/input-output-hk/ouroboros-network/issues/1571>
-          Origin -> Block.SlotNo 0
+          Origin -> minimumPossibleSlotNo (Proxy @blk)
           At s   -> succ s

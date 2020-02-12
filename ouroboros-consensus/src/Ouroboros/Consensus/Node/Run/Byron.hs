@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Node.Run.Byron (
     extractEpochSlots
   ) where
 
+import           Codec.Serialise (decode, encode)
 import           Data.Coerce (coerce)
 
 import qualified Cardano.Chain.Block as Cardano.Block
@@ -95,6 +96,7 @@ instance RunNode ByronBlock where
   nodeEncodeLedgerState     = const encodeByronLedgerState
   nodeEncodeChainState      = \_proxy _cfg -> encodeByronChainState
   nodeEncodeApplyTxError    = const encodeByronApplyTxError
+  nodeEncodeTipInfo         = const encode
   nodeEncodeQuery           = encodeByronQuery
   nodeEncodeResult          = encodeByronResult
 
@@ -109,6 +111,7 @@ instance RunNode ByronBlock where
                                            pbftParams (extNodeConfigP cfg)
                                  in decodeByronChainState k
   nodeDecodeApplyTxError    = const decodeByronApplyTxError
+  nodeDecodeTipInfo         = const decode
   nodeDecodeQuery           = decodeByronQuery
   nodeDecodeResult          = decodeByronResult
 

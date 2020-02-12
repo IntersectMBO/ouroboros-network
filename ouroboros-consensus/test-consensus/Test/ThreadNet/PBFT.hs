@@ -12,6 +12,7 @@ import           Test.Tasty.QuickCheck
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError (..))
 import           Ouroboros.Consensus.Ledger.Mock.Block
 import           Ouroboros.Consensus.Ledger.Mock.Block.PBFT
@@ -67,9 +68,9 @@ expectedBlockRejection (NumCoreNodes nn) BlockRejection
   , brRejector  = CoreId (CoreNodeId i)
   }
   | ownBlock               = case err of
-    ExtValidationErrorOuroboros
-      PBftExceededSignThreshold{} -> True
-    _                             -> False
+    ExtValidationErrorHeader
+      (HeaderProtocolError PBftExceededSignThreshold{}) -> True
+    _                                                   -> False
   where
     -- Because of round-robin and the fact that the id divides slot, we know
     -- the node lead but rejected its own block. This is the only case we

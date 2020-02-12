@@ -244,6 +244,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbDecodeHeader     = const <$> decode
     , cdbDecodeLedger     = decode
     , cdbDecodeChainState = decode
+    , cdbDecodeTipInfo    = decode
 
       -- Encoders
     , cdbEncodeHash       = encode
@@ -251,6 +252,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbEncodeHeader     = encode
     , cdbEncodeLedger     = encode
     , cdbEncodeChainState = encode
+    , cdbEncodeTipInfo    = encode
 
       -- Error handling
     , cdbErrImmDb         = EH.monadCatch

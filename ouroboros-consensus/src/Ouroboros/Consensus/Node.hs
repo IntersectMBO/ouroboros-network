@@ -229,11 +229,13 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger
     , ChainDB.cdbDecodeChainState = nodeDecodeChainState    (Proxy @blk) cfg
     , ChainDB.cdbDecodeHash       = nodeDecodeHeaderHash    (Proxy @blk)
     , ChainDB.cdbDecodeLedger     = nodeDecodeLedgerState   cfg
+    , ChainDB.cdbDecodeTipInfo    = nodeDecodeTipInfo       (Proxy @blk)
     , ChainDB.cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
     , ChainDB.cdbEncodeHeader     = nodeEncodeHeader        cfg
     , ChainDB.cdbEncodeChainState = nodeEncodeChainState    (Proxy @blk) cfg
     , ChainDB.cdbEncodeHash       = nodeEncodeHeaderHash    (Proxy @blk)
     , ChainDB.cdbEncodeLedger     = nodeEncodeLedgerState   cfg
+    , ChainDB.cdbEncodeTipInfo    = nodeEncodeTipInfo       (Proxy @blk)
     , ChainDB.cdbEpochInfo        = epochInfo
     , ChainDB.cdbHashInfo         = nodeHashInfo            (Proxy @blk)
     , ChainDB.cdbGenesis          = return initLedger

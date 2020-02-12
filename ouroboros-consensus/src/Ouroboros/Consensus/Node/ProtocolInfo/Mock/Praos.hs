@@ -12,6 +12,7 @@ import qualified Data.Map as Map
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
@@ -35,8 +36,8 @@ protocolInfoPraos numCoreNodes nid params =
           , praosVerKeys      = verKeys
           }
       , pInfoInitLedger = ExtLedgerState {
-            ledgerState         = genesisSimpleLedgerState addrDist
-          , ouroborosChainState = []
+            ledgerState = genesisSimpleLedgerState addrDist
+          , headerState = genesisHeaderState []
           }
       , pInfoInitState = PraosNodeState $ SignKeyMockKES
            (fst $ verKeys Map.! nid)   -- key ID

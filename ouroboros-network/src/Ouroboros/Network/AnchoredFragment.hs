@@ -22,6 +22,7 @@ module Ouroboros.Network.AnchoredFragment (
   anchorToBlockNo,
   anchorToHash,
   anchorIsGenesis,
+  anchorToTip,
   castAnchor,
 
   valid,
@@ -221,6 +222,14 @@ anchorToSlotNo (Anchor s _h _b) = At s
 anchorToHash :: Anchor block -> ChainHash block
 anchorToHash AnchorGenesis    = GenesisHash
 anchorToHash (Anchor _s h _b) = BlockHash h
+
+-- | Translate 'Anchor' to 'Tip'
+--
+-- Right now this is in fact an isomorphism, but these two types are logically
+-- independent.
+anchorToTip :: (HeaderHash a ~ HeaderHash b) => Anchor a -> Tip b
+anchorToTip AnchorGenesis  = TipGenesis
+anchorToTip (Anchor s h b) = Tip s h b
 
 mkAnchoredFragment :: HasHeader block
                    => Anchor block -> ChainFragment block

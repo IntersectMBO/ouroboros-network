@@ -9,6 +9,7 @@ import qualified Data.Map as Map
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
@@ -39,8 +40,8 @@ protocolInfoPraosRule numCoreNodes
         , lsNodeConfigNodeId   = nid
         }
     , pInfoInitLedger = ExtLedgerState
-        { ledgerState         = genesisSimpleLedgerState addrDist
-        , ouroborosChainState = ()
+        { ledgerState = genesisSimpleLedgerState addrDist
+        , headerState = genesisHeaderState ()
         }
     , pInfoInitState  = ()
     }

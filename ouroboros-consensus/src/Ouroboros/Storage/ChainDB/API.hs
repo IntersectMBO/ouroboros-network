@@ -305,12 +305,7 @@ data ChainDB m blk = ChainDB {
 
 getCurrentTip :: (Monad (STM m), HasHeader (Header blk))
               => ChainDB m blk -> STM m (Network.Tip blk)
-getCurrentTip chainDB =
-    mkTip . AF.headAnchor <$> getCurrentChain chainDB
-  where
-    mkTip :: AF.Anchor (Header blk) -> Network.Tip blk
-    mkTip AF.AnchorGenesis  = Network.TipGenesis
-    mkTip (AF.Anchor s h b) = Network.Tip s h b
+getCurrentTip = fmap (AF.anchorToTip . AF.headAnchor) . getCurrentChain
 
 getTipBlockNo :: (Monad (STM m), HasHeader (Header blk))
               => ChainDB m blk -> STM m (WithOrigin BlockNo)

@@ -57,6 +57,7 @@ import qualified Cardano.Chain.UTxO as Impl
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.ByronSpec
 import qualified Ouroboros.Consensus.Ledger.ByronSpec.Genesis as Genesis
@@ -295,7 +296,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
                , dualLedgerStateAux    = initAbstractState
                , dualLedgerStateBridge = initBridge
                }
-           , ouroborosChainState = CS.empty
+           , headerState = genesisHeaderState CS.empty
            }
       }
   where
