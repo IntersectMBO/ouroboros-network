@@ -21,7 +21,6 @@ import           Cardano.Binary (Annotated)
 import           Cardano.Crypto.DSIGN
 
 import qualified Cardano.Chain.Block as CC
-import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Delegation as Delegation
 
 import           Ouroboros.Network.Block (HasHeader (..))

@@ -24,7 +24,7 @@ import qualified Data.ByteString.Lazy.Char8 as Lazy8
 import qualified Data.Sequence.Strict as Seq
 
 import           Cardano.Binary (fromCBOR, toCBOR)
-import           Cardano.Chain.Block (ABlockOrBoundary (..))
+import           Cardano.Chain.Block (ABlockOrBoundary (..), ABlockOrBoundaryHdr(..))
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Byron.API as API
 import           Cardano.Chain.Common (KeyHash)
@@ -455,14 +455,14 @@ instance Arbitrary (Header ByronBlock) where
     where
       genHeader :: Gen (Header ByronBlock)
       genHeader =
-        mkByronHeader epochSlots . API.ABOBBlockHdr .
+        mkByronHeader epochSlots . ABOBBlockHdr .
         API.reAnnotateUsing
           (CC.Block.toCBORHeader epochSlots)
           (CC.Block.fromCBORAHeader epochSlots) <$>
         hedgehog (CC.genHeader protocolMagicId epochSlots)
       genBoundaryHeader :: Gen (Header ByronBlock)
       genBoundaryHeader =
-        mkByronHeader epochSlots . API.ABOBBoundaryHdr .
+        mkByronHeader epochSlots . ABOBBoundaryHdr .
         API.reAnnotateUsing
           (CC.Block.toCBORABoundaryHeader protocolMagicId)
           CC.Block.fromCBORABoundaryHeader <$>
