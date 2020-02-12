@@ -42,8 +42,8 @@ instance RunNode ByronBlock where
   nodeBlockMatchesHeader    = verifyBlockMatchesHeader
   nodeBlockFetchSize        = const 2000 -- TODO #593
   nodeIsEBB                 = \hdr -> case byronHeaderRaw hdr of
-    API.ABOBBlockHdr _       -> Nothing
-    API.ABOBBoundaryHdr bhdr -> Just
+    Cardano.Block.ABOBBlockHdr _       -> Nothing
+    Cardano.Block.ABOBBoundaryHdr bhdr -> Just
                               . EpochNo
                               . Cardano.Block.boundaryEpoch
                               $ bhdr

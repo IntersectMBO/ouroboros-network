@@ -64,6 +64,7 @@ import qualified Cardano.Chain.ValidationMode as CC
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron.Block
+import           Ouroboros.Consensus.Ledger.Byron.Conversions (toByronSlotNo)
 import           Ouroboros.Consensus.Ledger.Byron.Ledger
 import           Ouroboros.Consensus.Ledger.Byron.Orphans ()
 import           Ouroboros.Consensus.Mempool.API
@@ -193,6 +194,7 @@ applyByronGenTx validationMode cfg genTx (TickedLedgerState slot st) =
       CC.applyMempoolPayload
         validationMode
         (unByronLedgerConfig cfg)
+        (toByronSlotNo slot)
         (toMempoolPayload genTx)
         (byronLedgerState st)
 
