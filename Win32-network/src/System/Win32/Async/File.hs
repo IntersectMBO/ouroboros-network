@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CApiFFI             #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE InterruptibleFFI    #-}
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -48,7 +49,7 @@ readHandle :: HANDLE
            -> IO ByteString
 readHandle h size =
     BS.createAndTrim size $ \ptr ->
-      withIODataPtr "readHandle" h $ \lpOverlapped waitVar -> do
+      withIOCPData "readHandle" (FDHandle h) $ \lpOverlapped waitVar -> do
         readResult <- c_ReadFile h ptr (fromIntegral size) nullPtr lpOverlapped
         errorCode <- Win32.getLastError
         if readResult || errorCode == eRROR_IO_PENDING
@@ -56,13 +57,13 @@ readHandle h size =
             iocpResult <- takeMVar waitVar
             case iocpResult of
               Right numBytes  -> return $ ResultAsync numBytes
-              Left errorAsync | errorAsync == eRROR_HANDLE_EOF
+              Left e          | e == eRROR_HANDLE_EOF
                               -> return $ ResultAsync 0
-              Left errorAsync -> return $ ErrorAsync errorAsync
+              Left errorAsync -> return $ ErrorAsync (ErrorCode errorAsync)
           else
             if errorCode == eRROR_HANDLE_EOF
               then return $ ResultSync 0 False
-              else return $ ErrorSync errorCode False
+              else return $ ErrorSync (ErrorCode errorCode) False
 
 foreign import ccall safe "ReadFile"
     c_ReadFile :: HANDLE
@@ -74,7 +75,7 @@ foreign import ccall safe "ReadFile"
                -- ^ lpNumberOfBytesRead
                -> LPOVERLAPPED
                -- ^ lpOverlapped
-               -> IO Win32.BOOL
+               -> IO BOOL
 
 
 -- | Write a 'ByteString' to a 'HANDLE'.  The 'HANDLE' must be opened with
@@ -86,7 +87,7 @@ writeHandle :: HANDLE
             -> IO ()
 writeHandle h bs =
     BS.unsafeUseAsCStringLen bs $ \(str, len) ->
-      void $ withIODataPtr @Int "writeHandle" h $ \lpOverlapped waitVar -> do
+      void $ withIOCPData @Int "writeHandle" (FDHandle h) $ \lpOverlapped waitVar -> do
         writeResult <- c_WriteFile h (castPtr str) (fromIntegral len) nullPtr lpOverlapped
         errorCode <- Win32.getLastError
         if writeResult || errorCode == eRROR_IO_PENDING
@@ -94,8 +95,8 @@ writeHandle h bs =
             iocpResult <- takeMVar waitVar
             case iocpResult of
               Right numBytes   -> return $ ResultAsync numBytes
-              Left  errorAsync -> return $ ErrorAsync errorAsync
-          else return $ ErrorSync errorCode False
+              Left  errorAsync -> return $ ErrorAsync (ErrorCode errorAsync)
+          else return $ ErrorSync (ErrorCode errorCode) False
 
 
 foreign import ccall safe "WriteFile"
@@ -111,7 +112,6 @@ foreign import ccall safe "WriteFile"
                 -- ^ lpOverlapped
                 -> IO BOOL
 
-
 -- | Connect named pipe aka accept a connection.  The 'HANDLE' must be opened
 -- with 'System.Win32.FILE_FLAG_OVERLLAPPED' and associated with IO completion
 -- port via 'System.Win32.Async.IOManager.associateWithIOCompletionPort'.
@@ -120,24 +120,24 @@ foreign import ccall safe "WriteFile"
 --
 connectNamedPipe :: HANDLE -> IO ()
 connectNamedPipe h =
-    void $ withIODataPtr "connectNamedPipe" h $ \lpOverlapped waitVar -> do
+    void $ withIOCPData "connectNamedPipe" (FDHandle h) $ \lpOverlapped waitVar -> do
       connectResult <- c_ConnectNamedPipe h lpOverlapped
       errorCode <- Win32.getLastError
       if connectResult || errorCode == eRROR_IO_PENDING
         then do
           iocpResult <- takeMVar waitVar
           case iocpResult of
-            Right numBytes  -> return $ ResultAsync numBytes
-            Left errorAsync | errorAsync == eRROR_PIPE_CONNECTED
-                            -> return $ ResultAsync (0 :: Int)
-            Left errorAsync -> return $ ErrorAsync errorAsync
+            Right _         -> return $ ResultAsync ()
+            Left e          | e == eRROR_PIPE_CONNECTED
+                            -> return $ ResultAsync ()
+            Left errorAsync -> return $ ErrorAsync (ErrorCode errorAsync)
         else
           if | errorCode == eRROR_PIPE_CONNECTED ->
-               return $ ResultSync 0 True
+               return $ ResultSync () True
              | errorCode == eRROR_NO_DATA ->
-               return $ ErrorSync errorCode True
+               return $ ErrorSync (ErrorCode errorCode) True
              | otherwise ->
-               return $ ErrorSync errorCode False
+               return $ ErrorSync (ErrorCode errorCode) False
 
 foreign import ccall interruptible "ConnectNamedPipe"
     c_ConnectNamedPipe :: HANDLE

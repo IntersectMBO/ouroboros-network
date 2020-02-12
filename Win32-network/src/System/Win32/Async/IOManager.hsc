@@ -1,9 +1,12 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE InterruptibleFFI    #-}
-{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
+{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 #include <Win32-network.h>
 
@@ -218,7 +221,7 @@ dequeueCompletionPackets iocp@(IOCompletionPort port) =
            -- 'GetQueuedCompletionStatus' system call returned without errors.
              !(numBytes :: Int) <-
                  fromIntegral <$> peek numBytesPtr
-             mvarPtr <- peek (iodDataPtr gqcsIODataPtr)
+             mvarPtr <- peek (iodDataPtr AsyncSing gqcsIODataPtr)
              mvar <- deRefStablePtr mvarPtr
              freeStablePtr mvarPtr
              hp <- Win32.getProcessHeap
@@ -229,12 +232,12 @@ dequeueCompletionPackets iocp@(IOCompletionPort port) =
              dequeueCompletionPackets iocp
          | otherwise -> do
            -- the async action returned with an error
-             mvarPtr <- peek (iodDataPtr gqcsIODataPtr)
+             mvarPtr <- peek (iodDataPtr AsyncSing gqcsIODataPtr)
              mvar <- deRefStablePtr mvarPtr
              freeStablePtr mvarPtr
              hp <- Win32.getProcessHeap
              Win32.heapFree hp 0 (castPtr gqcsIODataPtr)
-             success <- tryPutMVar mvar (Left errorCode)
+             success <- tryPutMVar mvar (Left (ErrorCode errorCode))
              when (not success)
                $ fail "System.Win32.Async.dequeueCompletionPackets: MVar is not empty."
              dequeueCompletionPackets iocp
@@ -255,8 +258,14 @@ data GQCSResult a = GQCSResult {
       --
       -- Source: <https://docs.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getqueuedcompletionstatus#remarks>
       gqcsCompletionKey   :: Bool,
-      -- ^ true iff 'completionKey' matches.
-      gqcsIODataPtr       :: Ptr (IOData a)
+      -- ^ true iff 'completionKey' matches with 'MAGIC_COMPLETION_KEY' which
+      -- we use in requests.
+      gqcsIODataPtr       :: Ptr AsyncIOCPData
+    -- ^ it is vital that 'gqcsIODataPtr' type is in sync with what we allocate
+    -- in 'withIODataPtr', otherwise 'dequeueCompletionPackets' likely
+    -- will crash.  For this reason we use a type alias.
+    -- 'dequeueCompletionPackets' will never see @'WsaAsyncIOCPData' a@, but it
+    -- is safe to use it (what we do in 'System.Win32.Async.Socket' module).
     }
 
 instance Storable (GQCSResult a) where
