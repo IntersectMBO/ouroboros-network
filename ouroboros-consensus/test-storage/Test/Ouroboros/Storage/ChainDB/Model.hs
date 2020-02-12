@@ -82,7 +82,6 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust)
-import           Data.Proxy
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -97,7 +96,6 @@ import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -112,6 +110,7 @@ import           Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB,
                      IteratorResult (..), LedgerCursorFailure (..),
                      StreamFrom (..), StreamTo (..), UnknownRange (..),
                      validBounds)
+import           Ouroboros.Storage.ChainDB.Impl.ChainSel (olderThanK)
 
 type IteratorId = Int
 
@@ -306,7 +305,7 @@ empty initLedger = Model {
 -- Besides updating the 'currentSlot', future blocks are also added to the
 -- model.
 advanceCurSlot
-  :: forall blk. ProtocolLedgerView blk
+  :: forall blk. (ProtocolLedgerView blk, ModelSupportsBlock blk)
   => NodeConfig (BlockProtocol blk)
   -> SlotNo  -- ^ The new current slot
   -> Model blk -> Model blk
@@ -328,18 +327,14 @@ advanceCurSlot cfg curSlot m =
     advance :: SlotNo -> Model blk -> Model blk
     advance slot m' = m' { currentSlot = slot `max` currentSlot m' }
 
-addBlock :: forall blk. ProtocolLedgerView blk
+addBlock :: forall blk. (ProtocolLedgerView blk, ModelSupportsBlock blk)
          => NodeConfig (BlockProtocol blk)
          -> blk
          -> Model blk -> Model blk
 addBlock cfg blk m
     -- If the block is as old as the tip of the ImmutableDB, i.e. older than
-    -- @k@, we ignore it, as we can never switch to it. TODO what about EBBs?
-  | At (Block.blockNo blk) <= immutableBlockNo secParam m
-    -- Unless we're adding the first block to the empty chain: the empty chain
-    -- has the same block number as the genesis EBB, i.e. 0, so we don't want
-    -- to ignore it in this case.
-  , not addingGenesisEBBToEmptyDB
+    -- @k@, we ignore it, as we can never switch to it.
+  | olderThanK hdr (isEBB hdr) immBlockNo
   = m
     -- The block is from the future, don't add it now, but remember when to
     -- add it.
@@ -366,9 +361,9 @@ addBlock cfg blk m
   where
     secParam = protocolSecurityParam cfg
 
-    -- If we switch to PBFT for these tests, this case is not required anymore
-    addingGenesisEBBToEmptyDB = tipPoint m == GenesisPoint
-                             && Block.blockNo blk == firstBlockNo (Proxy @blk)
+    immBlockNo = immutableBlockNo secParam m
+
+    hdr = getHeader blk
 
     slot = Block.blockSlot blk
 
@@ -399,7 +394,7 @@ addBlock cfg blk m
          Chain.toAnchoredFragment . fst)
         candidates
 
-addBlocks :: ProtocolLedgerView blk
+addBlocks :: (ProtocolLedgerView blk, ModelSupportsBlock blk)
           => NodeConfig (BlockProtocol blk)
           -> [blk]
           -> Model blk -> Model blk
