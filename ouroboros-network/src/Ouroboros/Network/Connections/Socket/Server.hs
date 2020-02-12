@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE CPP #-}
@@ -28,21 +29,24 @@ import Ouroboros.Network.Connections.Types
 -- accepting connections, and throwing away the decisions returned by the
 -- `Connections` term.
 server
-  :: SockAddr addrType -- Bind address
+  :: forall addrType request t .
+     SockAddr addrType -- Bind address
   -> (SockAddr addrType -> request Remote)
-  -> (Server ConnectionId Socket IO request -> IO t)
+  -> (SockAddr addrType -> Server ConnectionId Socket IO request -> IO t)
   -- ^ When this is called, the server is up and listening. When the callback
   -- returns or dies exceptionally, the listening socket is closed.
+  -- A SockAddr is given, which may differ from the requested bind address, in
+  -- case you give a 0 port, for instance.
   -> IO t
-server bindaddr mkRequest k = bracket openSocket closeSocket $ \sock ->
-    k (acceptOne bindaddr sock mkRequest)
+server bindaddr mkRequest k = bracket openSocket (closeSocket . snd) $
+  \(boundAddress, sock) -> k boundAddress (acceptOne bindaddr sock mkRequest)
   where
 
   -- Use bracketOnError to ensure the socket is closed if any of the preparation
   -- (setting options, bind, listen) fails. If not, the socket is returned
   -- and the caller is responsible for closing it (the bracket at the top level
   -- of this server definition).
-  openSocket :: IO Socket
+  openSocket :: IO (SockAddr addrType, Socket)
   openSocket = bracketOnError createSocket closeSocket $ \sock -> do
     when isInet $ do
       Socket.setSocketOption sock Socket.ReuseAddr 1
@@ -55,7 +59,10 @@ server bindaddr mkRequest k = bracket openSocket closeSocket $ \sock ->
     when isInet6 $ Socket.setSocketOption sock Socket.IPv6Only 1
     Socket.bind sock (forgetSockType bindaddr)
     Socket.listen sock 1
-    return sock
+    sockName <- Socket.getSocketName sock
+    case matchSockType bindaddr sockName of
+      Just boundAddr -> return (boundAddr, sock)
+      Nothing -> error "server bug: bound address of different family"
 
   createSocket :: IO Socket
   createSocket = Socket.socket family Socket.Stream Socket.defaultProtocol
@@ -154,5 +161,5 @@ acceptLoopOn
   -> Connections ConnectionId Socket request accept reject IO
   -> IO Void
 acceptLoopOn bindAddr mkRequest handleException connections =
-  server bindAddr mkRequest $ \serv ->
+  server bindAddr mkRequest $ \_ serv ->
     acceptLoop handleException connections serv

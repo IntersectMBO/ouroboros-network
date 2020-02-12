@@ -107,9 +107,9 @@ tests :: TestTree
 tests =
     testGroup "Subscription"
         [ testProperty "Resolve (Sim)"      prop_resolv_sim
-        , testProperty "Resolve (IO)"      _prop_resolv_io
-        -- ^ takes about 10 minutes to run due to delays in realtime.
+        , testProperty "Resolve (IO)"       _prop_resolv_io
         , testProperty "Resolve Subscribe (IO)" prop_sub_io
+        -- ^ takes about 10 minutes to run due to delays in realtime.
         , testProperty "Send Recive with Dns worker (IO)" prop_send_recv
         , testProperty "Send Recieve with IP worker, Initiator and responder (IO)"
                prop_send_recv_init_and_rsp
@@ -127,7 +127,6 @@ data LookupResult = LookupResult {
 data LookupResultIO = LookupResultIO {
       lrioIpv4Result :: !(Either DNS.DNSError [Word16])
     , lrioIpv6Result :: !(Either DNS.DNSError [Word16])
-    , lrioFirst      :: !Socket.Family
     , lrioValency    :: !Int
     }
 
@@ -144,11 +143,10 @@ mockResolver lr = Resolver lA lAAAA
         threadDelay (lrIpv6Delay lr)
         return $ lrIpv6Result lr
 
-mockResolverIO :: StrictTMVar IO ()
-               -> M.Map (Socket.Family, Word16) Socket.PortNumber
+mockResolverIO :: M.Map (Socket.Family, Word16) Socket.PortNumber
                -> LookupResultIO
                -> Resolver IO
-mockResolverIO firstDoneMVar portMap lr = Resolver lA lAAAA
+mockResolverIO portMap lr = Resolver lA lAAAA
   where
     sidToPort sid =
         case M.lookup sid portMap of
@@ -157,30 +155,20 @@ mockResolverIO firstDoneMVar portMap lr = Resolver lA lAAAA
 
     lA :: DNS.Domain -> IO (Either DNS.DNSError [Socket.SockAddr])
     lA    _ = do
-        when (lrioFirst lr == Socket.AF_INET6) $ do
-            void $ atomically $ takeTMVar firstDoneMVar
-            threadDelay 0.1
         let r = case lrioIpv4Result lr of
                      (Right sids) -> Right $ map (\sid -> Socket.SockAddrInet
                          (fromIntegral $ sidToPort (Socket.AF_INET, sid))
                          (IP.toHostAddress "127.0.0.1")) sids
                      (Left e)      -> Left e
-        when (lrioFirst lr == Socket.AF_INET) $
-            atomically $ putTMVar firstDoneMVar ()
         return r
 
     lAAAA :: DNS.Domain -> IO (Either DNS.DNSError [Socket.SockAddr])
     lAAAA _ = do
-        when (lrioFirst lr == Socket.AF_INET) $ do
-            void $ atomically $ takeTMVar firstDoneMVar
-            threadDelay $ 0.1 + resolutionDelay
         let r = case lrioIpv6Result lr of
                      (Right sids) -> Right $ map (\sid ->
                          Socket.SockAddrInet6 (fromIntegral $ sidToPort (Socket.AF_INET6, sid)) 0
                                               (IP.toHostAddress6 "::1") 0) sids
                      (Left e)      -> Left e
-        when (lrioFirst lr == Socket.AF_INET6) $
-            atomically $ putTMVar firstDoneMVar ()
         return r
 
 instance Show LookupResult where
@@ -192,7 +180,6 @@ instance Show LookupResultIO where
     show a = printf "LookupResultIO: ipv4: %s ipv6: %s first %s valency %d"
                     (show $ lrioIpv4Result a)
                     (show $ lrioIpv6Result a)
-                    (show $ lrioFirst a)
                     (lrioValency a)
 
 instance Arbitrary DNS.DNSError where
@@ -256,9 +243,8 @@ instance Arbitrary LookupResultIO where
         ipv6r <- oneof [ Left <$> arbitrary
                        , Right <$> shortList
                        ]
-        first <- arbitrary
         valency <- choose (1, 8)
-        return $ LookupResultIO ipv4r ipv6r first valency
+        return $ LookupResultIO ipv4r ipv6r valency
       where
         shortList :: Gen [Word16]
         shortList = do
@@ -399,8 +385,7 @@ prop_sub_io lr = ioProperty $ do
     clientCountVar <- newTVarM (ipv4ClientCount + ipv6ClientCount)
     serverCountVar <- newTVarM (ipv4ClientCount + ipv6ClientCount)
     serverPortMapVar  <- newTVarM M.empty
-    observerdConnectionOrderVar <- newTVarM []
-    firstDoneVar <- newEmptyTMVarM
+    observedConnectionOrderVar <- newTVarM []
     serverWaitVar <- newTVarM False
 
     ipv4Servers <- replicateM (length serverIdsv4) (head <$> Socket.getAddrInfo Nothing (Just "127.0.0.1")
@@ -412,7 +397,7 @@ prop_sub_io lr = ioProperty $ do
     ipv6Client <- head <$> Socket.getAddrInfo Nothing (Just "::1") (Just "0")
 
     serverAids <- mapM (async . spawnServer serverCountVar serverPortMapVar
-                        observerdConnectionOrderVar serverWaitVar ) $
+                        observedConnectionOrderVar serverWaitVar ) $
                            zip (serverIdsv4 ++ serverIdsv6) $ ipv4Servers ++ ipv6Servers
 
     atomically $ do
@@ -430,57 +415,60 @@ prop_sub_io lr = ioProperty $ do
             _ -> error "unexpected address family"
           _ -> error "unexpected address family"
 
-    Connections.concurrent (initiatorCallback clientCountVar) $ \connections -> do
-      let resolver = mockResolverIO firstDoneVar serverPortMap lr
-      addrs <- dnsResolve activeTracer resolver "shelley-0.iohk.example"
-      case ipSubscriptionTargets addrs localAddresses of
-        -- In thie Nothing case, it means we couldn't resolve any addresses
-        -- to match one in localAddresses. This could be due to a DNS resolution
-        -- failure, and that's OK: the test is set up so that, in case no
-        -- addresses could be resolved, it will pass.
-        Nothing -> pure ()
-        Just connIds -> do
-          let subWorker = Subscription.worker
-                activeTracer
-                activeTracer
-                connIds
-                -- Valency 1 guarantees ordering. Using lrioValency lr does not.
-                -- Higher valency does _not_ guarantee the subscriptions go
-                -- in order. Is that a problem?
-                -- FIXME
-                1
-                minConnectionAttemptDelay
-                (\connId -> Socket.client connId LocalOnlyRequest)
-                connections
-          withAsync subWorker $ \_workerThread ->
-            atomically $ do
-              c <- readTVar clientCountVar
-              when (c > 0) retry
-              writeTVar serverWaitVar True
+    let subThread = Connections.concurrent (initiatorCallback clientCountVar) $ \connections -> do
+          let resolver = mockResolverIO serverPortMap lr
+          addrs <- dnsResolve activeTracer resolver "shelley-0.iohk.example"
+          case ipSubscriptionTargets addrs localAddresses of
+            -- In thie Nothing case, it means we couldn't resolve any addresses
+            -- to match one in localAddresses. This could be due to a DNS resolution
+            -- failure, and that's OK: the test is set up so that, in case no
+            -- addresses could be resolved, it will pass.
+            Nothing -> pure ()
+            Just connIds -> Subscription.worker
+              activeTracer
+              activeTracer
+              connIds
+              -- Valency 1 guarantees ordering. Using lrioValency lr does not.
+              -- Higher valency does _not_ guarantee the subscriptions go
+              -- in order. Is that a problem?
+              -- FIXME
+              1
+              minConnectionAttemptDelay
+              (\connId -> Socket.client connId LocalOnlyRequest)
+              connections
 
-    mapM_ wait serverAids
+    -- FIXME
+    -- The reason why this fails is that the new DNS subscription target thing
+    -- simply waits for all resolutions before trying to subscribe.
+    -- So even though there is that wacky TVar trick to make one or the other
+    -- return first, it won't affect the order.
 
-    observerdConnectionOrder <- fmap reverse $ atomically $ readTVar observerdConnectionOrderVar
-
-    return $ property $ verifyOrder observerdConnectionOrder
+    withAsync subThread $ \_workerThread -> do
+      let waitForCount = atomically $ do
+            c <- readTVar clientCountVar
+            when (c > 0) retry
+            writeTVar serverWaitVar True
+      _ <- concurrently (mapM_ wait serverAids) waitForCount
+      observedConnectionOrder <- fmap reverse $ atomically $ readTVar observedConnectionOrderVar
+      return $ counterexample (show observedConnectionOrder) $
+        property $ verifyOrder observedConnectionOrder
 
   where
 
     verifyOrder
         :: [(Socket.Family, Word16)]
         -> Bool
-    verifyOrder observerdConnectionOrder =
+    verifyOrder observedConnectionOrder =
         case (lrioIpv4Result lr, lrioIpv6Result lr) of
-             (Left _, Left _)     -> null observerdConnectionOrder
-             (Right [], Right []) -> null observerdConnectionOrder
-             (Left _, Right a)    -> a == map snd observerdConnectionOrder
-             (Right a, Left _)    -> a == map snd observerdConnectionOrder
-             (Right a, Right [])  -> a == map snd observerdConnectionOrder
-             (Right [], Right a)  -> a == map snd observerdConnectionOrder
+             (Left _, Left _)     -> null observedConnectionOrder
+             (Right [], Right []) -> null observedConnectionOrder
+             (Left _, Right a)    -> a == map snd observedConnectionOrder
+             (Right a, Left _)    -> a == map snd observedConnectionOrder
+             (Right a, Right [])  -> a == map snd observedConnectionOrder
+             (Right [], Right a)  -> a == map snd observedConnectionOrder
              (Right r4, Right r6) ->
-                 not (null observerdConnectionOrder) &&
-                 (lrioFirst lr == fst (head observerdConnectionOrder)) &&
-                 permCheck (r4 ++ r6) (map snd observerdConnectionOrder)
+                 not (null observedConnectionOrder) &&
+                 permCheck (r4 ++ r6) (map snd observedConnectionOrder)
 
     initiatorCallback
         :: StrictTVar IO Int
@@ -493,12 +481,10 @@ prop_sub_io lr = ioProperty $ do
         tvar <- atomically $ newTVar Running
         pure $ Concurrent.Accept $ \_ ->
           let action = atomically $ do
-                clientsLeft <- readTVar clientCountVar
-                case clientsLeft of
-                     0 -> writeTVar tvar (Finished Nothing)
-                     _ -> modifyTVar clientCountVar (\a -> a - 1)
-              -- Really should put Finished into the TVar on exception but
-              -- shouldn't matter for this test env.
+                modifyTVar clientCountVar (\a -> a - 1)
+                -- Really should put Finished into the TVar on exception but
+                -- shouldn't matter for this test env.
+                writeTVar tvar (Finished Nothing)
               handle' = ConnectionHandle { status = readTVar tvar }
           in  pure (Concurrent.Handler handle' action)
 
@@ -533,7 +519,7 @@ prop_send_recv
     -> Property
 prop_send_recv f xs first = ioProperty $ do
 
-    let lr = LookupResultIO (Right [0]) (Right [0]) first 1
+    let lr = LookupResultIO (Right [0]) (Right [0]) 1
         serverPortMap = M.fromList [((Socket.AF_INET, 0), 6062), ((Socket.AF_INET6, 0), 6062)]
 
     responderAddr4:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6062")
@@ -553,8 +539,6 @@ prop_send_recv f xs first = ioProperty $ do
               Nothing
             _ -> error "unexpected address family"
           _ -> error "unexpected address family"
-
-    firstDoneVar <- newEmptyTMVarM
 
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
@@ -582,7 +566,6 @@ prop_send_recv f xs first = ioProperty $ do
             atomically $ putTMVar cv r
             waitSiblingSub siblingVar
 
-
         connectionRequest
           :: forall provenance .
              LocalOnlyRequest provenance
@@ -600,28 +583,31 @@ prop_send_recv f xs first = ioProperty $ do
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-        nullErrorPolicies $ \_ _ ->
-          Socket.withConnections connectionRequest $ \connections -> do
-            let resolver = mockResolverIO firstDoneVar serverPortMap lr
-            addrs <- dnsResolve activeTracer resolver "shelley-0.iohk.example"
-            case ipSubscriptionTargets addrs localAddresses of
-              Nothing -> error "unexpected"
-              Just connIds -> do
-                let subWorker = Subscription.worker
+        nullErrorPolicies $ \_ _ -> do
+          let subThread = Socket.withConnections connectionRequest $ \connections -> do
+                let resolver = mockResolverIO serverPortMap lr
+                addrs <- dnsResolve activeTracer resolver "shelley-0.iohk.example"
+                case ipSubscriptionTargets addrs localAddresses of
+                  Nothing -> error "unexpected"
+                  Just connIds -> do
+                    Subscription.worker
                       activeTracer
                       activeTracer
                       connIds
                       1 -- valency
-                      0 -- delay
+                      minConnectionAttemptDelay
                       (\connId -> Socket.client connId LocalOnlyRequest)
                       connections
-                withAsync subWorker $ \_workerThread ->
-                  atomically (waitSiblingSTM siblingVar)
+          withAsync subThread $ \_workerThread -> do
+            link _workerThread
+            atomically (waitSiblingSTM siblingVar)
 
     res <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
     return (res == mapAccumL f 0 xs)
 
   where
+    -- FIXME what is this testing? Why put up a "dummy server"? To test that
+    -- the client connects to the proper address family?
     withDummyServer addr k =
         bracket
             (Socket.socket (Socket.addrFamily addr) Socket.Stream Socket.defaultProtocol)
@@ -842,11 +828,11 @@ _demo = ioProperty $ do
                   (\connId -> Socket.client connId LocalOnlyRequest)
                   connections
             withAsync subWorker $ \_subThread -> do
-              threadDelay 130
+              (threadDelay 130 :: IO ())
               -- bring the servers back again
               spawnServer server6 10000
               spawnServer server6' 10000
-              threadDelay 1000
+              (threadDelay 1000 :: IO ())
               return ()
 
   where
@@ -860,7 +846,7 @@ _demo = ioProperty $ do
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
                 (DictVersion nodeToNodeCodecCBORTerm) appRsp)
             nullErrorPolicies
-            (\_ _ -> threadDelay delay)
+            (\_ _ -> (threadDelay delay :: IO ()))
 
 
     appReq = OuroborosInitiatorApplication (\_ ChainSyncPr -> error "req fail")

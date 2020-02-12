@@ -553,10 +553,10 @@ withServerNode
     -> IO t
 withServerNode tracers (Some sockAddr) versionDataCodec acceptVersion versions errorPolicies k =
     Connection.concurrent handleConnection $ \connections ->
-      server sockAddr (const WithServerNodeRequest) $ \serv ->
+      server sockAddr (const WithServerNodeRequest) $ \realAddr serv ->
         -- At this point the socket is bound and listening.
         withAsync (acceptLoop acceptException connections serv)
-                  (k (Connections.forgetSockType sockAddr))
+                  (k (Connections.forgetSockType realAddr))
 
   where
 
