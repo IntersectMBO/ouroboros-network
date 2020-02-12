@@ -443,7 +443,8 @@ prop_sub_io lr = ioProperty $ do
     -- So even though there is that wacky TVar trick to make one or the other
     -- return first, it won't affect the order.
 
-    withAsync subThread $ \_workerThread -> do
+    withAsync subThread $ \workerThread -> do
+      link workerThread
       let waitForCount = atomically $ do
             c <- readTVar clientCountVar
             when (c > 0) retry
@@ -598,8 +599,8 @@ prop_send_recv f xs first = ioProperty $ do
                       minConnectionAttemptDelay
                       (\connId -> Socket.client connId LocalOnlyRequest)
                       connections
-          withAsync subThread $ \_workerThread -> do
-            link _workerThread
+          withAsync subThread $ \workerThread -> do
+            link workerThread
             atomically (waitSiblingSTM siblingVar)
 
     res <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
@@ -733,8 +734,8 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
                   (DictVersion nodeToNodeCodecCBORTerm) $ appX rrcfg)
 
-          Socket.withConnections connectionRequest $ \connections -> do
-            let subWorker = Subscription.worker
+              subThread = Socket.withConnections connectionRequest $ \connections ->
+                Subscription.worker
                   activeTracer
                   activeTracer
                   (connectionId NE.:| [])
@@ -742,13 +743,11 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
                   minConnectionAttemptDelay
                   (\connId -> Socket.client connId LocalOnlyRequest)
                   connections
-            withAsync subWorker $ \_workerThread ->
-              atomically (waitSiblingSTM (rrcSiblingVar rrcfg))
-            -- TODO
-            --   waitSiblingSTM (rrcSiblingVar rrcfg)
-            -- should kill the subscription worker when it returns?
+          withAsync subThread $ \workerThread -> do
+            link workerThread
             atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
                              <*> takeTMVar (rrcClientVar rrcfg)
+
 
 waitSiblingSub :: StrictTVar IO Int -> IO ()
 waitSiblingSub cntVar = do
