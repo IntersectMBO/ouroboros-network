@@ -31,6 +31,7 @@ module Ouroboros.Network.Subscription.Worker
 -- the original async library.
 import           Control.Concurrent.Async (concurrently, forConcurrently_)
 import           Control.Concurrent.STM
+import           Control.Exception (IOException)
 import           Control.Monad (forM_, when)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -124,12 +125,23 @@ workerOneTarget tr errTrace delay q mkClient connections = do
   let (_localAddr, remoteAddr) = connectionIdPair connectionId
   traceWith tr $ SubscriptionTraceConnectStart remoteAddr
   start <- getMonotonicTime
-  decision <- runClientWith connections (mkClient connectionId)
+  -- Exception handling here is relevant to the resource acquisition which
+  -- is part of `mkClient connectionId`. Running this against the `connections`
+  -- term _may or may not_ require creating the resource, and in case it does,
+  -- that may raise an exception, so it must be dealt with here.
+  -- An exception on resource acquisition is different from a rejected
+  -- connection. The latter is relevant only cases in which the resource was
+  -- created, but the connection was rejected for other reasons.
+  -- TODO make this exception handling configurable.
+  decision <-
+     (Just <$> (runClientWith connections (mkClient connectionId)))
+    `catch` handleException
   case decision of
+    Nothing -> pure ()
     -- TODO trace the rejection reason.
-    Rejected (Concurrent.DomainSpecific _reason) -> pure ()
+    Just (Rejected (Concurrent.DomainSpecific _reason)) -> pure ()
     -- TODO trace that it was accepted? Sure.
-    Accepted (Concurrent.Accepted connhandle)    -> do
+    Just (Accepted (Concurrent.Accepted connhandle))    -> do
       -- Wait for the connection to finish.
       -- No need to trace the outcome, the connections manager can be
       -- assumed to do that as needed. But TODO should trace that
@@ -152,6 +164,11 @@ workerOneTarget tr errTrace delay q mkClient connections = do
   -- other threads spawned by `worker`, so who cares?
   atomically $ writeTQueue q connectionId
   workerOneTarget tr errTrace delay q mkClient connections
+
+  where
+
+  handleException :: IOException -> IO (Maybe t)
+  handleException = const (pure Nothing)
 
 --
 -- Auxiliary types: errors, traces
