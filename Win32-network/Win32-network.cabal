@@ -29,13 +29,13 @@ library
                        System.Win32.Async.File
                        System.Win32.Async.ErrCode
                        System.Win32.Async.IOManager
-                       System.Win32.Async.Internal
-                       System.Win32.Async.WSABuf
-                       System.Win32.Async.Overlapped
                        System.Win32.Async.IOData
+                       System.Win32.Async.Overlapped
                        System.Win32.Async.Socket
                        System.Win32.Async.Socket.ByteString
                        System.Win32.Async.Socket.ByteString.Lazy
+                       System.Win32.Async.Socket.Syscalls
+                       System.Win32.Async.WSABuf
     c-sources:         cbits/Win32Async.c
                        cbits/Win32Socket.c
     include-dirs:      include

@@ -55,7 +55,7 @@ import           System.Win32.Types ( HANDLE
 import qualified System.Win32.Types as Win32
 import qualified System.Win32.Mem   as Win32
 
-import System.Win32.Async.Internal (SOCKET)
+import System.Win32.Async.Socket.Syscalls (SOCKET)
 import System.Win32.Async.Overlapped
 import System.Win32.Async.ErrCode
 

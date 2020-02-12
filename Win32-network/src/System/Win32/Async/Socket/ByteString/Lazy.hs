@@ -7,6 +7,7 @@ module System.Win32.Async.Socket.ByteString.Lazy
   ) where
 
 
+import           Control.Concurrent (takeMVar)
 import           Control.Monad (when)
 import qualified Data.ByteString as BS
 import           Data.ByteString.Lazy (ByteString)
@@ -14,20 +15,21 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Internal as BL (ByteString (..))
 import           Data.ByteString.Unsafe (unsafeUseAsCStringLen)
 import           Data.Int (Int64)
-import           Foreign.C (CInt (..))
+import           Foreign ( Storable (..)
+                         , plusPtr
+                         , castPtr
+                         , nullPtr
+                         )
 import           Foreign.Marshal.Array (allocaArray)
-import           Foreign.Ptr
-import           Foreign.StablePtr (StablePtr)
-import           Foreign.Storable
 
 import           Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
-import           System.Win32.Types (DWORD)
-
+import           System.Win32.Async.ErrCode
+import           System.Win32.Async.IOData
 import           System.Win32.Async.WSABuf
-import           System.Win32.Async.Internal
 import qualified System.Win32.Async.Socket.ByteString as Socket.ByteString
+import           System.Win32.Async.Socket.Syscalls
 
 
 -- | Sending each chunk using vectored I/O.  In one system call one can
@@ -41,13 +43,23 @@ import qualified System.Win32.Async.Socket.ByteString as Socket.ByteString
 send :: Socket
      -> ByteString
      -> IO Int64
-send sock bs = do
-    let cs  = take maxNumChunks (BL.toChunks bs)
-        size = length cs
-    siz <- Socket.withFdSocket sock $ \fd -> allocaArray size $ \ptr ->
-             withPokes cs ptr $ \nwsabuf ->
-               wsaWaitForCompletion "send" (c_sendBuf fd ptr nwsabuf)
-    return $ fromIntegral siz
+send sock bs =
+    fmap fromIntegral $
+      Socket.withFdSocket sock $ \fd ->
+        withIOCPData "send" (FDSocket fd) $ \lpOverlapped waitVar ->
+          let cs  = take maxNumChunks (BL.toChunks bs)
+              size = length cs
+          in allocaArray size $ \ptr ->
+               withPokes cs ptr $ \nwsabuf -> do
+                 sendResult <- c_WSASend fd ptr nwsabuf nullPtr 0 lpOverlapped nullPtr
+                 errorCode <- wsaGetLastError
+                 if sendResult == 0 || errorCode == wSA_IO_PENDING
+                   then do
+                     iocpResult <- takeMVar waitVar
+                     case iocpResult of
+                       Right numBytes -> return $ ResultAsync numBytes
+                       Left  e        -> return $ ErrorAsync  (ErrorCode e)
+                   else return $ ErrorSync (WsaErrorCode errorCode) False
   where
     withPokes ss p f = loop ss p 0 0
       where
@@ -65,13 +77,6 @@ send sock bs = do
     maxNumBytes  = 4194304 -- maximum number of bytes to transmit in one system call
     maxNumChunks = 1024    -- maximum number of chunks to transmit in one system call
 
-
-foreign import ccall safe "HsSendBuf"
-    c_sendBuf :: SOCKET
-              -> Ptr WSABuf  -- ^ lpBuffers
-              -> DWORD       -- ^ dwBufferCount
-              -> StablePtr b
-              -> IO ()
 
 sendAll :: Socket
         -> ByteString
