@@ -11,11 +11,11 @@ module Ouroboros.Network.Protocol.ChainSync.Codec
   , codecChainSyncId
   ) where
 
-import           Control.Monad (when)
 import           Control.Monad.Class.MonadST
 
+import           Ouroboros.Network.Block (Point, Serialised (..), castPoint,
+                     fromSerialised, mkSerialised)
 import           Ouroboros.Network.Codec
-import           Ouroboros.Network.Block (Point, Serialised (..), castPoint)
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
 import qualified Data.ByteString.Lazy as LBS
@@ -25,8 +25,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (encodeListLen, encodeWord)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Write as CBOR
-
+import qualified Codec.Serialise as Serialise
 
 -- | The main CBOR 'Codec' for the 'ChainSync' protocol.
 --
@@ -144,24 +143,10 @@ codecChainSync encodeHeader decodeHeader =
     codecChainSyncUnwrapped encodeHeaderWrapped decodeHeaderWrapped
   where
     encodeHeaderWrapped :: header -> CBOR.Encoding
-    encodeHeaderWrapped header =
-      --TODO: replace with encodeEmbeddedCBOR from cborg-0.2.4 once
-      -- it is available, since that will be faster.
-        CBOR.encodeTag 24
-     <> CBOR.encodeBytes (CBOR.toStrictByteString (encodeHeader header))
+    encodeHeaderWrapped = Serialise.encode . mkSerialised encodeHeader
 
     decodeHeaderWrapped :: forall s. CBOR.Decoder s header
-    decodeHeaderWrapped = do
-      --TODO: replace this with decodeEmbeddedCBOR from cborg-0.2.4 once
-      -- it is available, since that will be faster.
-      tag <- CBOR.decodeTag
-      when (tag /= 24) $ fail "expected tag 24 (CBOR-in-CBOR)"
-      payload <- LBS.fromStrict <$> CBOR.decodeBytes
-      case CBOR.deserialiseFromBytes decodeHeader payload of
-        Left (CBOR.DeserialiseFailure _ reason) -> fail reason
-        Right (trailing, header)
-          | not (LBS.null trailing) -> fail "trailing bytes in CBOR-in-CBOR"
-          | otherwise               -> return (header payload)
+    decodeHeaderWrapped = fromSerialised decodeHeader =<< Serialise.decode
 
 codecChainSyncSerialised
   :: forall header tip m.
@@ -178,19 +163,10 @@ codecChainSyncSerialised encodePoint decodePoint =
       (encodePoint . castPoint) (castPoint <$> decodePoint)
   where
     encodeHeaderWrapped :: Serialised header -> CBOR.Encoding
-    encodeHeaderWrapped (Serialised bytes) =
-      --TODO: replace with encodeEmbeddedCBOR from cborg-0.2.4 once
-      -- it is available, since that will be faster.
-        CBOR.encodeTag 24
-     <> CBOR.encodeBytes (LBS.toStrict bytes)
+    encodeHeaderWrapped = Serialise.encode
 
     decodeHeaderWrapped :: forall s. CBOR.Decoder s (Serialised header)
-    decodeHeaderWrapped = do
-      --TODO: replace this with decodeEmbeddedCBOR from cborg-0.2.4 once
-      -- it is available, since that will be faster.
-      tag <- CBOR.decodeTag
-      when (tag /= 24) $ fail "expected tag 24 (CBOR-in-CBOR)"
-      Serialised . LBS.fromStrict <$> CBOR.decodeBytes
+    decodeHeaderWrapped = Serialise.decode
 
 encodeList :: (a -> CBOR.Encoding) -> [a] -> CBOR.Encoding
 encodeList _   [] = CBOR.encodeListLen 0
