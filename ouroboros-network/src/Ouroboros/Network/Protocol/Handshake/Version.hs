@@ -72,7 +72,7 @@ simpleSingletonVersions vNum vData extra r =
         (Sigma vData (Version (Application $ \_ _ -> r) extra))
 
 data Sigma f where
-  Sigma :: t -> f t -> Sigma f
+  Sigma :: !t -> !(f t) -> Sigma f
 
 -- | Takes a pair of version data: local then remote.
 newtype Application r vData = Application
