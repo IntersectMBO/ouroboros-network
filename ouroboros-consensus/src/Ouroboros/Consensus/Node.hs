@@ -43,10 +43,9 @@ import           Data.Time.Clock (secondsToDiffTime)
 import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (DictVersion (..),
-                     NodeToClientVersion (..), NodeToClientVersionData (..),
-                     nodeToClientCodecCBORTerm)
-import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
-                     NodeToNodeVersionData (..), nodeToNodeCodecCBORTerm)
+                     NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
+import           Ouroboros.Network.NodeToNode (NodeToNodeVersionData (..),
+                     nodeToNodeCodecCBORTerm)
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
 import           Ouroboros.Network.Socket (ConnectionId)
@@ -57,6 +56,7 @@ import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Recovery
 import           Ouroboros.Consensus.Node.Run
@@ -192,37 +192,60 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
     mkNetworkApps
       :: NodeArgs   IO ConnectionId blk
       -> NodeKernel IO ConnectionId blk
+      -> NetworkProtocolVersion blk
       -> NetworkApplication
            IO ConnectionId
            ByteString ByteString ByteString ByteString ByteString ByteString
            ()
-    mkNetworkApps nodeArgs nodeKernel = consensusNetworkApps
+    mkNetworkApps nodeArgs nodeKernel version = consensusNetworkApps
       nodeKernel
       protocolTracers
-      (protocolCodecs (getNodeConfig nodeKernel))
+      (protocolCodecs (getNodeConfig nodeKernel) version)
       (protocolHandlers nodeArgs nodeKernel)
 
+    mkDiffusionApplications
+      :: (   NetworkProtocolVersion blk
+          -> NetworkApplication
+               IO ConnectionId
+               ByteString ByteString ByteString ByteString ByteString ByteString
+               ()
+         )
+      -> DiffusionApplications
     mkDiffusionApplications networkApps = DiffusionApplications
-     { daResponderApplication =
-         simpleSingletonVersions
-           NodeToNodeV_1
-           nodeToNodeVersionData
-           (DictVersion nodeToNodeCodecCBORTerm)
-           (responderNetworkApplication networkApps)
-     , daInitiatorApplication =
-         simpleSingletonVersions
-           NodeToNodeV_1
-           nodeToNodeVersionData
-           (DictVersion nodeToNodeCodecCBORTerm)
-           (initiatorNetworkApplication networkApps)
-     , daLocalResponderApplication =
-         simpleSingletonVersions
-           NodeToClientV_1
-           nodeToClientVersionData
-           (DictVersion nodeToClientCodecCBORTerm)
-           (localResponderNetworkApplication networkApps)
+     { daResponderApplication = mustBeOneVersion [
+           simpleSingletonVersions
+             (nodeToNodeProtocolVersion (Proxy @blk) version)
+             nodeToNodeVersionData
+             (DictVersion nodeToNodeCodecCBORTerm)
+             (responderNetworkApplication $ networkApps version)
+         | version <- supportedNetworkProtocolVersions (Proxy @blk)
+         ]
+     , daInitiatorApplication = mustBeOneVersion [
+           simpleSingletonVersions
+             (nodeToNodeProtocolVersion (Proxy @blk) version)
+             nodeToNodeVersionData
+             (DictVersion nodeToNodeCodecCBORTerm)
+             (initiatorNetworkApplication $ networkApps version)
+         | version <- supportedNetworkProtocolVersions (Proxy @blk)
+         ]
+     , daLocalResponderApplication = mustBeOneVersion [
+           simpleSingletonVersions
+             (nodeToClientProtocolVersion (Proxy @blk) version)
+             nodeToClientVersionData
+             (DictVersion nodeToClientCodecCBORTerm)
+             (localResponderNetworkApplication $ networkApps version)
+         | version <- supportedNetworkProtocolVersions (Proxy @blk)
+         ]
      , daErrorPolicies = consensusErrorPolicy
      }
+
+    -- Ideally we'd have a Monoid instance in scope to combine these versions,
+    -- so that we can replace 'mustBeOneVersion' with just 'mconcat'
+    -- TODO: Use Semigroup instance once this is merged:
+    -- <https://github.com/input-output-hk/ouroboros-network/pull/1634>
+    mustBeOneVersion :: [a] -> a
+    mustBeOneVersion [x] = x
+    mustBeOneVersion _   = error "mustBeOneVersion: expected only one version"
 
 openChainDB
   :: forall blk. RunNode blk
@@ -260,13 +283,13 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger
               epochInfo = (ChainDB.defaultArgs dbPath)
     { ChainDB.cdbBlocksPerFile    = 1000
     , ChainDB.cdbDecodeBlock      = nodeDecodeBlock         cfg
-    , ChainDB.cdbDecodeHeader     = nodeDecodeHeader        cfg
+    , ChainDB.cdbDecodeHeader     = nodeDecodeHeader        cfg SerialisedToDisk
     , ChainDB.cdbDecodeChainState = nodeDecodeChainState    (Proxy @blk) cfg
     , ChainDB.cdbDecodeHash       = nodeDecodeHeaderHash    (Proxy @blk)
     , ChainDB.cdbDecodeLedger     = nodeDecodeLedgerState   cfg
     , ChainDB.cdbDecodeTipInfo    = nodeDecodeTipInfo       (Proxy @blk)
     , ChainDB.cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
-    , ChainDB.cdbEncodeHeader     = nodeEncodeHeader        cfg
+    , ChainDB.cdbEncodeHeader     = nodeEncodeHeader        cfg SerialisedToDisk
     , ChainDB.cdbEncodeChainState = nodeEncodeChainState    (Proxy @blk) cfg
     , ChainDB.cdbEncodeHash       = nodeEncodeHeaderHash    (Proxy @blk)
     , ChainDB.cdbEncodeLedger     = nodeEncodeLedgerState   cfg

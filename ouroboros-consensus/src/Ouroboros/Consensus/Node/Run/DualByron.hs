@@ -2,22 +2,26 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE PatternSynonyms   #-}
+{-# LANGUAGE TypeFamilies      #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Ouroboros.Consensus.Node.Run.DualByron () where
 
-import           Cardano.Chain.Slotting (EpochSlots)
 import           Data.Proxy
 
+import           Cardano.Chain.Slotting (EpochSlots)
+
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
-                     ChainHash (..), pattern GenesisPoint, SlotNo (..))
+                     ChainHash (..), pattern GenesisPoint, Serialised (..),
+                     SlotNo (..))
 
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.Dual.Byron
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run.Abstract
 import qualified Ouroboros.Consensus.Node.Run.Byron as Byron
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -27,6 +31,15 @@ import           Ouroboros.Consensus.Util.IOLike
 
 pb :: Proxy ByronBlock
 pb = Proxy
+
+instance HasNetworkProtocolVersion DualByronBlock where
+  type NetworkProtocolVersion DualByronBlock =
+       NetworkProtocolVersion ByronBlock
+
+  supportedNetworkProtocolVersions _ = supportedNetworkProtocolVersions pb
+  mostRecentNetworkProtocolVersion _ = mostRecentNetworkProtocolVersion pb
+  nodeToNodeProtocolVersion        _ = nodeToNodeProtocolVersion        pb
+  nodeToClientProtocolVersion      _ = nodeToClientProtocolVersion      pb
 
 instance RunNode DualByronBlock where
   nodeForgeBlock = forgeDualByronBlock
@@ -86,7 +99,8 @@ instance RunNode DualByronBlock where
 
   -- Encoders
   nodeEncodeBlockWithInfo = const $ encodeDualBlockWithInfo encodeByronBlockWithInfo
-  nodeEncodeHeader        = const $ encodeDualHeader        encodeByronHeader
+  nodeEncodeHeader        = \cfg version -> nodeEncodeHeader        (extNodeConfigP cfg) version . dualHeaderMain
+  nodeEncodeWrappedHeader = \cfg version -> nodeEncodeWrappedHeader (extNodeConfigP cfg) version . dualWrappedMain
   nodeEncodeLedgerState   = const $ encodeDualLedgerState   encodeByronLedgerState
   nodeEncodeApplyTxError  = const $ encodeDualGenTxErr      encodeByronApplyTxError
   nodeEncodeHeaderHash    = const $ encodeByronHeaderHash
@@ -97,8 +111,9 @@ instance RunNode DualByronBlock where
   nodeEncodeResult        = \case {}
 
   -- Decoders
-  nodeDecodeBlock         = decodeDualBlock  . decodeByronBlock  . extractEpochSlots
-  nodeDecodeHeader        = decodeDualHeader . decodeByronHeader . extractEpochSlots
+  nodeDecodeBlock         = decodeDualBlock  . decodeByronBlock   . extractEpochSlots
+  nodeDecodeHeader        = \cfg -> fmap (DualHeader .) . nodeDecodeHeader        (extNodeConfigP cfg)
+  nodeDecodeWrappedHeader = \cfg -> fmap rewrapMain     . nodeDecodeWrappedHeader (extNodeConfigP cfg)
   nodeDecodeGenTx         = decodeDualGenTx   decodeByronGenTx
   nodeDecodeGenTxId       = decodeDualGenTxId decodeByronGenTxId
   nodeDecodeHeaderHash    = const $ decodeByronHeaderHash
@@ -113,3 +128,16 @@ instance RunNode DualByronBlock where
 
 extractEpochSlots :: NodeConfig DualByronProtocol -> EpochSlots
 extractEpochSlots = Byron.extractEpochSlots . extNodeConfigP
+
+{-------------------------------------------------------------------------------
+  The headers for DualByronBlock and ByronBlock are identical, so we can
+  safely cast the serialised forms.
+-------------------------------------------------------------------------------}
+
+dualWrappedMain :: Serialised (Header DualByronBlock)
+                -> Serialised (Header ByronBlock)
+dualWrappedMain (Serialised bs) = Serialised bs
+
+rewrapMain :: Serialised (Header ByronBlock)
+           -> Serialised (Header DualByronBlock)
+rewrapMain (Serialised bs) = Serialised bs

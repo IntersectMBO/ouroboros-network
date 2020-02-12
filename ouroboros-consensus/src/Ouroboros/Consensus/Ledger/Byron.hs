@@ -18,4 +18,6 @@ import           Ouroboros.Consensus.Ledger.Byron.HeaderValidation as X ()
 import           Ouroboros.Consensus.Ledger.Byron.Integrity as X
 import           Ouroboros.Consensus.Ledger.Byron.Ledger as X
 import           Ouroboros.Consensus.Ledger.Byron.Mempool as X
+import           Ouroboros.Consensus.Ledger.Byron.NetworkProtocolVersion as X
 import           Ouroboros.Consensus.Ledger.Byron.PBFT as X
+import           Ouroboros.Consensus.Ledger.Byron.Serialisation as X

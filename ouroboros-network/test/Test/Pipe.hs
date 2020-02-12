@@ -106,7 +106,7 @@ demo chain0 updates = do
         consumerApp = simpleInitiatorApplication $
           \ChainSync ->
             MuxPeer nullTracer
-                    (ChainSync.codecChainSync encode             (fmap const decode)
+                    (ChainSync.codecChainSync encode             decode
                                               encode             decode
                                               (encodeTip encode) (decodeTip decode))
                     (ChainSync.chainSyncClientPeer
@@ -120,7 +120,7 @@ demo chain0 updates = do
         producerApp = simpleResponderApplication $
           \ChainSync ->
             MuxPeer nullTracer
-                    (ChainSync.codecChainSync encode             (fmap const decode)
+                    (ChainSync.codecChainSync encode             decode
                                               encode             decode
                                               (encodeTip encode) (decodeTip decode))
                     (ChainSync.chainSyncServerPeer server)

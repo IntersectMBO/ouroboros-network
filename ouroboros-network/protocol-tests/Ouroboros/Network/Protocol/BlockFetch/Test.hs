@@ -9,39 +9,40 @@
 
 module Ouroboros.Network.Protocol.BlockFetch.Test (tests) where
 
+import qualified Codec.Serialise as S
 import           Control.Monad.ST (runST)
 import           Data.ByteString.Lazy (ByteString)
-import qualified Codec.Serialise as S
 
-import           Control.Monad.IOSim (runSimOrThrow)
+import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSTM (MonadSTM)
-import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
+import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Driver
-import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Channel
+import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
 
 import           Ouroboros.Network.Block (Serialised (..), StandardHash,
-                   castPoint, genesisPoint)
+                     castPoint, genesisPoint, unwrapCBORinCBOR, wrapCBORinCBOR)
 import           Ouroboros.Network.MockChain.Chain (Chain, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 
-import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.BlockFetch.Client
-import           Ouroboros.Network.Protocol.BlockFetch.Server
+import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Direct
 import           Ouroboros.Network.Protocol.BlockFetch.Examples
-import           Ouroboros.Network.Protocol.BlockFetch.Codec
+import           Ouroboros.Network.Protocol.BlockFetch.Server
+import           Ouroboros.Network.Protocol.BlockFetch.Type
 
-import           Test.ChainGenerators ( TestChainAndPoints (..) )
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
+import           Test.ChainGenerators (TestChainAndPoints (..))
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+                     splits2, splits3)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -316,8 +317,17 @@ codec :: MonadST m
       => Codec (BlockFetch Block)
                S.DeserialiseFailure
                m ByteString
-codec = codecBlockFetch S.encode (fmap const S.decode)
-                        S.encode             S.decode
+codec = codecBlockFetch S.encode S.decode
+                        S.encode S.decode
+
+codecWrapped :: MonadST m
+             => Codec (BlockFetch Block)
+                      S.DeserialiseFailure
+                      m ByteString
+codecWrapped =
+    codecBlockFetch
+      (wrapCBORinCBOR S.encode) (unwrapCBORinCBOR (const <$> S.decode))
+      S.encode                  S.decode
 
 codecSerialised :: MonadST m
                 => Codec (BlockFetch (Serialised Block))
@@ -421,7 +431,7 @@ prop_codec_binary_compat_BlockFetch_BlockFetchSerialised
   :: AnyMessageAndAgency (BlockFetch Block)
   -> Bool
 prop_codec_binary_compat_BlockFetch_BlockFetchSerialised msg =
-    runST (prop_codec_binary_compatM codec codecSerialised stokEq msg)
+    runST (prop_codec_binary_compatM codecWrapped codecSerialised stokEq msg)
   where
     stokEq
       :: forall pr (stA :: BlockFetch Block).
@@ -437,7 +447,7 @@ prop_codec_binary_compat_BlockFetchSerialised_BlockFetch
   :: AnyMessageAndAgency (BlockFetch (Serialised Block))
   -> Bool
 prop_codec_binary_compat_BlockFetchSerialised_BlockFetch msg =
-    runST (prop_codec_binary_compatM codecSerialised codec stokEq msg)
+    runST (prop_codec_binary_compatM codecSerialised codecWrapped stokEq msg)
   where
     stokEq
       :: forall pr (stA :: BlockFetch (Serialised Block)).

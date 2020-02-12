@@ -35,11 +35,11 @@ import           System.IO.Error
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver
-import qualified Network.TypedProtocol.ReqResp.Type   as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Examples   as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 
 import           Control.Tracer
 
@@ -393,7 +393,7 @@ demo chain0 updates = do
                     codecChainSync
                     (ChainSync.chainSyncServerPeer server)
 
-        codecChainSync = ChainSync.codecChainSync encode (fmap const decode)
+        codecChainSync = ChainSync.codecChainSync encode             decode
                                                   encode             decode
                                                   (encodeTip encode) (decodeTip decode)
 

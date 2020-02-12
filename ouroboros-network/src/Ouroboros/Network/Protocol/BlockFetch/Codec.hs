@@ -10,6 +10,7 @@
 module Ouroboros.Network.Protocol.BlockFetch.Codec
   ( codecBlockFetch
   , codecBlockFetchSerialised
+  , codecBlockFetchSerialised'
   , codecBlockFetchId
   ) where
 
@@ -22,8 +23,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.Serialise as Serialise
 
-import           Ouroboros.Network.Block (HeaderHash, Point, Serialised (..),
-                     fromSerialised, mkSerialised)
+import           Ouroboros.Network.Block (HeaderHash, Point, Serialised (..))
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Type
@@ -89,23 +89,23 @@ codecBlockFetchUnwrapped encodeBlock     decodeBlock
   decodePoint :: forall s. CBOR.Decoder s (Point block)
   decodePoint = Block.decodePoint decodeBlockHash
 
+-- | Codec for chain sync that encodes/decodes blocks
+--
+-- NOTE: See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
+-- with a block type that has annotations.
 codecBlockFetch
   :: forall block m.
      MonadST m
-  => (block            -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s (LBS.ByteString -> block))
+  => (block -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s block)
   -> (HeaderHash block -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s (HeaderHash block))
   -> Codec (BlockFetch block) CBOR.DeserialiseFailure m LBS.ByteString
-codecBlockFetch encodeBlock decodeBlock =
-    codecBlockFetchUnwrapped encodeBlockWrapped decodeBlockWrapped
- where
-  encodeBlockWrapped :: block -> CBOR.Encoding
-  encodeBlockWrapped = Serialise.encode . mkSerialised encodeBlock
+codecBlockFetch = codecBlockFetchUnwrapped
 
-  decodeBlockWrapped :: forall s. CBOR.Decoder s block
-  decodeBlockWrapped = fromSerialised decodeBlock =<< Serialise.decode
-
+-- | Codec for chain sync that doesn't encode/decode blocks
+--
+-- Uses CBOR-in-CBOR by default; see also 'codecBlockFetchSerialised''.
 codecBlockFetchSerialised
   :: forall block m.
      MonadST m
@@ -113,13 +113,18 @@ codecBlockFetchSerialised
   -> (forall s. CBOR.Decoder s (HeaderHash block))
   -> Codec (BlockFetch (Serialised block)) CBOR.DeserialiseFailure m LBS.ByteString
 codecBlockFetchSerialised =
-  codecBlockFetchUnwrapped encodeBlockWrapped decodeBlockWrapped
- where
-  encodeBlockWrapped :: Serialised block -> CBOR.Encoding
-  encodeBlockWrapped = Serialise.encode
+  codecBlockFetchSerialised' Serialise.encode Serialise.decode
 
-  decodeBlockWrapped :: forall s. CBOR.Decoder s (Serialised block)
-  decodeBlockWrapped = Serialise.decode
+-- | Generalized version of 'codecBlockFetchSerialised'
+codecBlockFetchSerialised'
+  :: forall block m.
+     MonadST m
+  => (Serialised block -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s (Serialised block))
+  -> (HeaderHash block -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s (HeaderHash block))
+  -> Codec (BlockFetch (Serialised block)) CBOR.DeserialiseFailure m LBS.ByteString
+codecBlockFetchSerialised' = codecBlockFetchUnwrapped
 
 codecBlockFetchId
   :: forall block m. Monad m

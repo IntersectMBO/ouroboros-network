@@ -54,9 +54,9 @@ import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
 
-import Network.TypedProtocol.PingPong.Client as PingPong
-import Network.TypedProtocol.PingPong.Server as PingPong
-import Network.TypedProtocol.PingPong.Codec.CBOR
+import           Network.TypedProtocol.PingPong.Client as PingPong
+import           Network.TypedProtocol.PingPong.Codec.CBOR
+import           Network.TypedProtocol.PingPong.Server as PingPong
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -396,9 +396,9 @@ codecChainSync :: ( CBOR.Serialise (HeaderHash block)
                         IO LBS.ByteString
 codecChainSync =
     ChainSync.codecChainSync
-      CBOR.encode (fmap const CBOR.decode)
-      CBOR.encode             CBOR.decode
-      CBOR.encode             CBOR.decode
+      CBOR.encode CBOR.decode
+      CBOR.encode CBOR.decode
+      CBOR.encode CBOR.decode
 
 
 --
@@ -599,8 +599,8 @@ codecBlockFetch :: Codec (BlockFetch.BlockFetch Block)
                          IO LBS.ByteString
 codecBlockFetch =
     BlockFetch.codecBlockFetch
-      CBOR.encode (fmap const CBOR.decode)
-      CBOR.encode             CBOR.decode
+      CBOR.encode CBOR.decode
+      CBOR.encode CBOR.decode
 
 
 --

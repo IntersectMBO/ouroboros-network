@@ -87,7 +87,7 @@ import           Ouroboros.Storage.ChainDB.API (ChainDB)
 import           Ouroboros.Storage.ChainDB.API hiding (ChainDB (..),
                      Iterator (..), closeDB)
 import           Ouroboros.Storage.ChainDB.Impl.BlockComponent
-import           Ouroboros.Storage.Common (EpochNo, Tip (..))
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo (EpochInfo (..))
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
@@ -111,7 +111,7 @@ data ImmDB m blk = ImmDB {
     , encBlock  :: !(blk -> BinaryInfo Encoding)
     , epochInfo :: !(EpochInfo m)
     , isEBB     :: !(Header blk -> Maybe EpochNo)
-    , addHdrEnv :: !(IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+    , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     , err       :: !(ErrorHandling ImmDB.ImmutableDBError m)
     }
 
@@ -153,7 +153,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immValidation     :: ImmDB.ValidationPolicy
     , immIsEBB          :: Header blk -> Maybe EpochNo
     , immCheckIntegrity :: blk -> Bool
-    , immAddHdrEnv      :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+    , immAddHdrEnv      :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
     , immHasFS          :: HasFS m h
     , immTracer         :: Tracer m (TraceEvent blk)
     , immCacheConfig    :: Index.CacheConfig
@@ -256,7 +256,7 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (blk -> BinaryInfo Encoding)
         -> EpochInfo m
         -> (Header blk -> Maybe EpochNo)
-        -> (IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+        -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> ErrorHandling ImmDB.ImmutableDBError m
         -> ImmDB m blk
 mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv err = ImmDB {..}

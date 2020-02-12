@@ -23,6 +23,7 @@ import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime.Mock (fixedBlockchainTime)
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import           Ouroboros.Consensus.Ledger.Byron.Forge (forgeEBB)
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
                      (PBftSignatureThreshold (..), ProtocolInfo (..),
                      protocolInfo)
@@ -73,7 +74,7 @@ withImmDB k = withRegistry $ \registry -> do
       { immErr            = EH.monadCatch
       , immHasFS          = simHasFS EH.monadCatch immDbFsVar
       , immDecodeHash     = nodeDecodeHeaderHash (Proxy @ByronBlock)
-      , immDecodeHeader   = nodeDecodeHeader testCfg
+      , immDecodeHeader   = nodeDecodeHeader testCfg SerialisedToDisk
       , immDecodeBlock    = nodeDecodeBlock testCfg
       , immEncodeHash     = nodeEncodeHeaderHash (Proxy @ByronBlock)
       , immEncodeBlock    = nodeEncodeBlockWithInfo testCfg
