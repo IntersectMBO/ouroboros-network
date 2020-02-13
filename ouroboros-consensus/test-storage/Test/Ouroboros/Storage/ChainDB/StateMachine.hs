@@ -1455,8 +1455,8 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbHasFSLgrDB       = simHasFS EH.monadCatch lgrDbFsVar
 
       -- Policy
-    , cdbValidation       = ValidateAllEpochs
-    , cdbBlockValidation  = VolDB.ValidateAll
+    , cdbImmValidation    = ValidateAllEpochs
+    , cdbVolValidation    = VolDB.ValidateAll
     , cdbBlocksPerFile    = VolDB.mkBlocksPerFile 4
     , cdbParamsLgrDB      = LedgerDbParams {
                                 -- Pick a small value for 'ledgerDbSnapEvery',

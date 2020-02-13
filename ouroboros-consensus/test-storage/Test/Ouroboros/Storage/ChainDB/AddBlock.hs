@@ -270,8 +270,8 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbHasFSLgrDB       = simHasFS EH.monadCatch lgrDbFsVar
 
       -- Policy
-    , cdbValidation       = ValidateAllEpochs
-    , cdbBlockValidation  = ValidateAll
+    , cdbImmValidation    = ValidateAllEpochs
+    , cdbVolValidation    = ValidateAll
     , cdbBlocksPerFile    = mkBlocksPerFile 4
     , cdbParamsLgrDB      = ledgerDbDefaultParams (protocolSecurityParam cfg)
     , cdbDiskPolicy       = defaultDiskPolicy (protocolSecurityParam cfg)

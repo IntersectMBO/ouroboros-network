@@ -83,8 +83,8 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbHasFSLgrDB       :: HasFS m h3
 
       -- Policy
-    , cdbValidation       :: ImmDB.ValidationPolicy
-    , cdbBlockValidation  :: VolDB.BlockValidationPolicy
+    , cdbImmValidation    :: ImmDB.ValidationPolicy
+    , cdbVolValidation    :: VolDB.BlockValidationPolicy
     , cdbBlocksPerFile    :: VolDB.BlocksPerFile
     , cdbParamsLgrDB      :: LgrDB.LedgerDbParams
     , cdbDiskPolicy       :: LgrDB.DiskPolicy
@@ -175,7 +175,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immErr              = cdbErrImmDb
         , immEpochInfo        = cdbEpochInfo
         , immHashInfo         = cdbHashInfo
-        , immValidation       = cdbValidation
+        , immValidation       = cdbImmValidation
         , immIsEBB            = cdbIsEBB
         , immCheckIntegrity   = cdbCheckIntegrity
         , immHasFS            = cdbHasFSImmDb
@@ -195,7 +195,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , volDecodeBlock      = cdbDecodeBlock
         , volEncodeBlock      = cdbEncodeBlock
         , volAddHdrEnv        = cdbAddHdrEnv
-        , volValidation       = cdbBlockValidation
+        , volValidation       = cdbVolValidation
         , volTracer           = contramap TraceVolDBEvent cdbTracer
         , volIsEBB            = \blk -> case cdbIsEBB (getHeader blk) of
                                           Nothing -> IsNotEBB
@@ -263,8 +263,8 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbHasFSVolDb       = volHasFS
     , cdbHasFSLgrDB       = lgrHasFS
       -- Policy
-    , cdbValidation       = immValidation
-    , cdbBlockValidation  = volValidation
+    , cdbImmValidation    = immValidation
+    , cdbVolValidation    = volValidation
     , cdbBlocksPerFile    = volBlocksPerFile
     , cdbParamsLgrDB      = lgrParams
     , cdbDiskPolicy       = lgrDiskPolicy

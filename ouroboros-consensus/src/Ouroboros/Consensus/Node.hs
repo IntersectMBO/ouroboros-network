@@ -143,11 +143,11 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
               -- When the last shutdown was not clean, validate the complete
               -- ChainDB to detect and recover from any corruptions. This will
               -- override the default value /and/ the user-customised value of
-              -- the 'ChainDB.cdbValidation' and the
-              -- 'ChainDB.cdbBlockValidation' fields.
+              -- the 'ChainDB.cdbImmValidation' and the
+              -- 'ChainDB.cdbVolValidation' fields.
             = (customiseChainDbArgs args)
-              { ChainDB.cdbValidation      = ValidateAllEpochs
-              , ChainDB.cdbBlockValidation = ValidateAll
+              { ChainDB.cdbImmValidation = ValidateAllEpochs
+              , ChainDB.cdbVolValidation = ValidateAll
               }
 
       -- On a clean shutdown, create a marker in the database folder so that
@@ -310,8 +310,8 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger
     , ChainDB.cdbNodeConfig       = cfg
     , ChainDB.cdbRegistry         = registry
     , ChainDB.cdbTracer           = tracer
-    , ChainDB.cdbValidation       = ValidateMostRecentEpoch
-    , ChainDB.cdbBlockValidation  = NoValidation
+    , ChainDB.cdbImmValidation    = ValidateMostRecentEpoch
+    , ChainDB.cdbVolValidation    = NoValidation
     , ChainDB.cdbGcDelay          = secondsToDiffTime 10
     , ChainDB.cdbBlockchainTime   = btime
     }

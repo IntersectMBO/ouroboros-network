@@ -534,8 +534,8 @@ runThreadNetwork ThreadNetworkArgs
         , cdbHasFSVolDb       = simHasFS EH.monadCatch (nodeDBsVol nodeDBs)
         , cdbHasFSLgrDB       = simHasFS EH.monadCatch (nodeDBsLgr nodeDBs)
           -- Policy
-        , cdbValidation       = ImmDB.ValidateAllEpochs
-        , cdbBlockValidation  = VolDB.ValidateAll
+        , cdbImmValidation    = ImmDB.ValidateAllEpochs
+        , cdbVolValidation    = VolDB.ValidateAll
         , cdbBlocksPerFile    = VolDB.mkBlocksPerFile 4
         , cdbParamsLgrDB      = LgrDB.ledgerDbDefaultParams (protocolSecurityParam cfg)
         , cdbDiskPolicy       = LgrDB.defaultDiskPolicy (protocolSecurityParam cfg)
