@@ -17,7 +17,7 @@ module Ouroboros.Network.Connections.Concurrent
   ) where
 
 import Control.Exception (Exception, fromException)
-import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (MonadFork, ThreadId, myThreadId, throwTo)
 import Control.Monad.Class.MonadThrow hiding (handle)
@@ -312,7 +312,7 @@ concurrent withResource k = do
 
 -- IO sim stuff does not have MVars, so we use STM to approximate them
 -- Hopefully this is not too much slower.
-type MVar m = TMVar m
+type MVar m = StrictTMVar m
 
 newMVar :: (MonadSTM m) => a -> m (MVar m a)
 newMVar = atomically . newTMVar
