@@ -118,7 +118,10 @@ workerOneTarget
   -> DiffTime
   -> TQueue ConnectionId
   -> (ConnectionId -> Client ConnectionId socket IO request)
-  -> Connections ConnectionId socket request (Concurrent.Reject reject) (Concurrent.Accept (ConnectionHandle IO)) IO
+  -> Connections ConnectionId socket request
+       (Concurrent.Reject reject)
+       (Concurrent.Accept (ConnectionHandle IO))
+       IO
   -> IO x
 workerOneTarget tr errTrace delay q mkClient connections = do
   connectionId <- atomically $ readTQueue q
