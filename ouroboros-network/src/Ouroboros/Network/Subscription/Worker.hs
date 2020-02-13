@@ -89,7 +89,10 @@ worker
   -> (ConnectionId -> Client ConnectionId socket IO request)
   -- ^ "How" to carry out a request for a given connection identifier (pair of
   -- addresses in the same family).
-  -> Connections ConnectionId socket request (Concurrent.Reject reject) (Concurrent.Accept (ConnectionHandle IO)) IO
+  -> Connections ConnectionId socket request
+       (Concurrent.Reject reject)
+       (Concurrent.Accept (ConnectionHandle IO))
+       IO
   -- ^ "Where" to carry out a request.
   -- The ConenctionHandle type allows for us to wait for the connection to end,
   -- before attempting a connection to the next target.
