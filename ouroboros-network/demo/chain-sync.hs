@@ -77,6 +77,7 @@ import           Ouroboros.Network.BlockFetch.Client
 main :: IO ()
 main = do
     args <- getArgs
+    let restArgs = drop 2 args
     case args of
       "pingpong":"client":[]           -> clientPingPong False
       "pingpong":"client-pipelined":[] -> clientPingPong True
@@ -89,13 +90,25 @@ main = do
         rmIfExists defaultLocalSocketAddrPath
         void serverPingPong2
 
-      "chainsync":"client":sockAddrs   -> clientChainSync sockAddrs
-      "chainsync":"server":sockAddr:[] -> do
+      "chainsync":"client":_  ->
+        case restArgs of
+          []        -> clientChainSync [defaultLocalSocketAddrPath]
+          sockAddrs -> clientChainSync sockAddrs
+      "chainsync":"server":_          -> do
+        let sockAddr = case restArgs of
+              addr:_ -> addr
+              []     -> defaultLocalSocketAddrPath
         rmIfExists sockAddr
         void $ serverChainSync sockAddr
 
-      "blockfetch":"client":sockAddrs   -> clientBlockFetch sockAddrs
-      "blockfetch":"server":sockAddr:[] -> do
+      "blockfetch":"client":_ ->
+        case restArgs of
+          []        -> clientBlockFetch [defaultLocalSocketAddrPath]
+          sockAddrs -> clientBlockFetch sockAddrs
+      "blockfetch":"server":_ -> do
+        let sockAddr = case restArgs of
+              addr:_ -> addr
+              []     -> defaultLocalSocketAddrPath
         rmIfExists sockAddr
         void $ serverBlockFetch sockAddr
 
