@@ -212,7 +212,7 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
          )
       -> DiffusionApplications
     mkDiffusionApplications networkApps = DiffusionApplications
-     { daResponderApplication = mustBeOneVersion [
+     { daResponderApplication = combineVersions [
            simpleSingletonVersions
              (nodeToNodeProtocolVersion (Proxy @blk) version)
              nodeToNodeVersionData
@@ -220,7 +220,7 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
              (responderNetworkApplication $ networkApps version)
          | version <- supportedNetworkProtocolVersions (Proxy @blk)
          ]
-     , daInitiatorApplication = mustBeOneVersion [
+     , daInitiatorApplication = combineVersions [
            simpleSingletonVersions
              (nodeToNodeProtocolVersion (Proxy @blk) version)
              nodeToNodeVersionData
@@ -228,7 +228,7 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
              (initiatorNetworkApplication $ networkApps version)
          | version <- supportedNetworkProtocolVersions (Proxy @blk)
          ]
-     , daLocalResponderApplication = mustBeOneVersion [
+     , daLocalResponderApplication = combineVersions [
            simpleSingletonVersions
              (nodeToClientProtocolVersion (Proxy @blk) version)
              nodeToClientVersionData
@@ -239,13 +239,8 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
      , daErrorPolicies = consensusErrorPolicy
      }
 
-    -- Ideally we'd have a Monoid instance in scope to combine these versions,
-    -- so that we can replace 'mustBeOneVersion' with just 'mconcat'
-    -- TODO: Use Semigroup instance once this is merged:
-    -- <https://github.com/input-output-hk/ouroboros-network/pull/1634>
-    mustBeOneVersion :: [a] -> a
-    mustBeOneVersion [x] = x
-    mustBeOneVersion _   = error "mustBeOneVersion: expected only one version"
+    combineVersions :: Semigroup a => [a] -> a
+    combineVersions = foldr1 (<>)
 
 openChainDB
   :: forall blk. RunNode blk
