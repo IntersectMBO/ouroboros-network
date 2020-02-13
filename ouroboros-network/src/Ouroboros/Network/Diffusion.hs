@@ -220,6 +220,9 @@ runDataDiffusion tracers
         -- How to run a local server: take the `daLocalAddress` and run an
         -- accept loop on it against the node-to-client connetions (yet to
         -- be constructed).
+        runLocalServer
+          :: Connections Connections.ConnectionId Socket.Socket LocalRequest accept reject IO
+          -> IO Void
         runLocalServer n2cConnections = withSockType addr $ \addr' ->
           Server.acceptLoopOn addr' localClassifyRequest (acceptException addr)
             n2cConnections
@@ -229,6 +232,10 @@ runDataDiffusion tracers
         -- A node-to-node server will be run against a common connections
         -- manager (yet to be constructed) but on potentially many different
         -- bind addresses. This function will be mapped over the `daAddresses`.
+        runServer
+          :: Connections Connections.ConnectionId Socket.Socket Request accept reject IO
+          -> AddrInfo
+          -> IO Void
         runServer n2nConnections addrInfo = withSockType addr $ \addr' ->
           Server.acceptLoopOn addr' classifyRequest (acceptException addr)
             n2nConnections
