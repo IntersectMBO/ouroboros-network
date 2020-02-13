@@ -766,7 +766,8 @@ instance Exception ChainDbFailure where
       LgrDbFailure fse                    -> fsError fse
       ChainDbMissingBlock {}              -> corruption
     where
-      corruption = "The database got corrupted, please restart with validation mode enabled"
+      corruption =
+        "The database got corrupted, full validation will be enabled for the next startup"
 
       -- The output will be a bit too detailed, but it will be quite clear.
       fsError :: FsError -> String
