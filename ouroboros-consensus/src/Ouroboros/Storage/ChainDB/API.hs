@@ -728,6 +728,14 @@ data ChainDbFailure =
   | forall blk. (Typeable blk, StandardHash blk) =>
       VolDbMissingBlock (Proxy blk) (HeaderHash blk)
 
+    -- | A block got corrupted in the volatile DB
+    --
+    -- This exception gets thrown when, while copying blocks from the volatile
+    -- DB to the immutable DB, a block doesn't pass the integrity check
+    -- (hash/signature check).
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      VolDbCorruptBlock (BlockRef blk)
+
     -- | The volatile DB throw an "unexpected error"
     --
     -- These are errors indicative of a disk failure (as opposed to API misuse)
@@ -760,6 +768,7 @@ instance Exception ChainDbFailure where
       VolDbParseFailure {}                -> corruption
       VolDbTrailingData {}                -> corruption
       VolDbMissingBlock {}                -> corruption
+      VolDbCorruptBlock {}                -> corruption
       VolDbFailure e -> case e of
         VolDB.FileSystemError fse -> fsError fse
       LgrDbFailure fse                    -> fsError fse
@@ -819,6 +828,12 @@ instance Eq ChainDbFailure where
       Nothing   -> False
       Just Refl -> a1 == a2
   VolDbMissingBlock {} == _ = False
+
+  VolDbCorruptBlock (a1 :: BlockRef blk) == VolDbCorruptBlock (a2 :: BlockRef blk') =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> a1 == a2
+  VolDbCorruptBlock {} == _ = False
 
   VolDbFailure a1 == VolDbFailure a2 = VolDB.sameUnexpectedError a1 a2
   VolDbFailure {} == _               = False

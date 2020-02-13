@@ -32,7 +32,7 @@ module Ouroboros.Storage.ChainDB.Impl.Background
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (forM_, forever, void)
+import           Control.Monad (forM_, forever, unless, void)
 import           Control.Tracer
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
@@ -44,7 +44,7 @@ import           GHC.Stack (HasCallStack)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader, Point,
-                     SlotNo, pointHash, pointSlot)
+                     SlotNo, blockPoint, pointHash, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
@@ -55,6 +55,8 @@ import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
+import           Ouroboros.Storage.ChainDB.API (BlockRef (..),
+                     ChainDbFailure (..))
 import qualified Ouroboros.Storage.ChainDB.Impl.BlockCache as BlockCache
 import           Ouroboros.Storage.ChainDB.Impl.ChainSel
                      (chainSelectionForBlock)
@@ -144,6 +146,12 @@ copyToImmDB CDB{..} = withCopyLock $ do
         slotNoAtImmDBTip <- ImmDB.getSlotNoAtTip cdbImmDB
         assert (pointSlot pt >= slotNoAtImmDBTip) $ return ()
         blk <- VolDB.getKnownBlock cdbVolDB hash
+        -- When we found a corrupt block, shut down the node. This exception
+        -- will make sure we restart with validation enabled.
+        unless (cdbCheckIntegrity blk) $
+          let blockRef = BlockRef (blockPoint blk) (cdbIsEBB (getHeader blk))
+          in throwM $ VolDbCorruptBlock blockRef
+
         -- We're the only one modifying the ImmutableDB, so the tip cannot
         -- have changed since we last checked it.
         ImmDB.appendBlock cdbImmDB blk

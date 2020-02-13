@@ -74,9 +74,10 @@ import           Ouroboros.Storage.EpochInfo (EpochInfo, newEpochInfo)
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.ImmutableDB (ValidationPolicy (..))
-import           Ouroboros.Storage.VolatileDB (BlockValidationPolicy (..))
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
 import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
+import           Ouroboros.Storage.VolatileDB (BlockValidationPolicy (..),
+                     mkBlocksPerFile)
 
 -- | Whether the node produces blocks or not.
 data IsProducer
@@ -142,9 +143,12 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
               -- When the last shutdown was not clean, validate the complete
               -- ChainDB to detect and recover from any corruptions. This will
               -- override the default value /and/ the user-customised value of
-              -- the 'ChainDB.cdbValidation' field.
+              -- the 'ChainDB.cdbValidation' and the
+              -- 'ChainDB.cdbBlockValidation' fields.
             = (customiseChainDbArgs args)
-              { ChainDB.cdbValidation = ValidateAllEpochs }
+              { ChainDB.cdbValidation      = ValidateAllEpochs
+              , ChainDB.cdbBlockValidation = ValidateAll
+              }
 
       -- On a clean shutdown, create a marker in the database folder so that
       -- next time we start up, we know we don't have to validate the whole

@@ -217,6 +217,7 @@ data ChainDbEnv m blk = CDB
     -- ^ A handle to kill the background threads.
   , cdbEpochInfo       :: !(EpochInfo m)
   , cdbIsEBB           :: !(Header blk -> IsEBB)
+  , cdbCheckIntegrity  :: !(blk -> Bool)
   , cdbBlockchainTime  :: !(BlockchainTime m)
   , cdbFutureBlocks    :: !(StrictTVar m (Map SlotNo (NonEmpty (Header blk))))
     -- ^ Scheduled chain selections for blocks with a slot in the future.

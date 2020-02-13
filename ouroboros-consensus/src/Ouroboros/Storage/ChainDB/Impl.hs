@@ -144,6 +144,7 @@ openDBInternal args launchBgTasks = do
                   , cdbKillBgThreads   = varKillBgThreads
                   , cdbEpochInfo       = Args.cdbEpochInfo args
                   , cdbIsEBB           = toIsEBB . isJust . Args.cdbIsEBB args
+                  , cdbCheckIntegrity  = Args.cdbCheckIntegrity args
                   , cdbBlockchainTime  = Args.cdbBlockchainTime args
                   , cdbFutureBlocks    = varFutureBlocks
                   }
