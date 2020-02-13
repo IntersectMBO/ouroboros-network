@@ -15,7 +15,6 @@ module Ouroboros.Consensus.Util.CBOR (
     -- * HasFS interaction
   , ReadIncrementalErr(..)
   , readIncremental
-  , readIncrementalOffsets
   , withStreamIncrementalOffsets
     -- * Encoding/decoding containers
   , encodeList
@@ -137,7 +136,7 @@ data ReadIncrementalErr =
 -- small things this might not be ideal.
 --
 -- NOTE: This currently expects the file to contain precisely one value; see also
--- 'readIncrementalOffsets'.
+-- 'withStreamIncrementalOffsets'.
 readIncremental :: forall m h a. IOLike m
                 => HasFS m h
                 -> (forall s . CBOR.D.Decoder s a)
@@ -166,29 +165,14 @@ readIncremental hasFS@HasFS{..} decoder fp = withLiftST $ \liftST -> do
     checkEmpty bs | BS.null bs = Nothing
                   | otherwise  = Just bs
 
--- | Read multiple @a@s incrementally from a file.
---
--- Return the offset ('Word64') of the start of each @a@, the size ('Word64')
--- of each @a@, and each @a@ itself. When deserialising fails, return all
--- already deserialised @a@s, the error, and the offset after which the
--- failure occurred.
-readIncrementalOffsets
-  :: forall m h a. (IOLike m, HasCallStack)
-  => HasFS m h
-  -> (forall s . CBOR.D.Decoder s (LBS.ByteString -> a))
-  -> FsPath
-  -> m ([(Word64, (Word64, a))], Maybe (ReadIncrementalErr, Word64))
-     -- ^ ((the offset of the start of @a@ in the file,
-     --     (the size of @a@, and @a@ itself)),
-     --     error encountered during deserialisation and the offset after
-     --     which it occurred)
-readIncrementalOffsets hasFS decoder fp =
-    withStreamIncrementalOffsets hasFS decoder fp $ \stream ->
-      (\(as :> mbErr) -> (as, mbErr)) <$> S.toList stream
-
--- | Streaming variant of 'readIncrementalOffsets'
+-- | Read multiple @a@s incrementally from a file in a streaming way.
 --
 -- Continuation-passing style to ensure proper closure of the file.
+--
+-- Reads the offset ('Word64') of the start of each @a@, the size ('Word64')
+-- of each @a@, and each @a@ itself. When deserialising fails, it passes all
+-- already deserialised @a@s, the error, and the offset after which the
+-- failure occurred.
 --
 -- NOTE: f we introduce user-facing streaming API also, the fact that we are
 -- using @streaming@ here should not dictate that we should stick with it

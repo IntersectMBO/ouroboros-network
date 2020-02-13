@@ -76,6 +76,8 @@ import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.ImmutableDB (ValidationPolicy (..))
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
 import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
+import           Ouroboros.Storage.VolatileDB (BlockValidationPolicy (..),
+                     mkBlocksPerFile)
 
 -- | Whether the node produces blocks or not.
 data IsProducer
@@ -141,9 +143,12 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
               -- When the last shutdown was not clean, validate the complete
               -- ChainDB to detect and recover from any corruptions. This will
               -- override the default value /and/ the user-customised value of
-              -- the 'ChainDB.cdbValidation' field.
+              -- the 'ChainDB.cdbImmValidation' and the
+              -- 'ChainDB.cdbVolValidation' fields.
             = (customiseChainDbArgs args)
-              { ChainDB.cdbValidation = ValidateAllEpochs }
+              { ChainDB.cdbImmValidation = ValidateAllEpochs
+              , ChainDB.cdbVolValidation = ValidateAll
+              }
 
       -- On a clean shutdown, create a marker in the database folder so that
       -- next time we start up, we know we don't have to validate the whole
@@ -276,7 +281,7 @@ mkChainDbArgs
   -> ChainDbArgs IO blk
 mkChainDbArgs tracer registry btime dbPath cfg initLedger
               epochInfo = (ChainDB.defaultArgs dbPath)
-    { ChainDB.cdbBlocksPerFile    = 1000
+    { ChainDB.cdbBlocksPerFile    = mkBlocksPerFile 1000
     , ChainDB.cdbDecodeBlock      = nodeDecodeBlock         cfg
     , ChainDB.cdbDecodeHeader     = nodeDecodeHeader        cfg SerialisedToDisk
     , ChainDB.cdbDecodeChainState = nodeDecodeChainState    (Proxy @blk) cfg
@@ -300,7 +305,8 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger
     , ChainDB.cdbNodeConfig       = cfg
     , ChainDB.cdbRegistry         = registry
     , ChainDB.cdbTracer           = tracer
-    , ChainDB.cdbValidation       = ValidateMostRecentEpoch
+    , ChainDB.cdbImmValidation    = ValidateMostRecentEpoch
+    , ChainDB.cdbVolValidation    = NoValidation
     , ChainDB.cdbGcDelay          = secondsToDiffTime 10
     , ChainDB.cdbBlockchainTime   = btime
     }

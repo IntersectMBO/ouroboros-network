@@ -204,5 +204,5 @@ validateChainDb dbDir genesisConfig onlyImmDB verbose =
       let args = Node.mkChainDbArgs tracer registry btime
             (toFilePath dbDir) cfg initLedger epochInfo
       in args {
-          ChainDB.cdbValidation = ImmDB.ValidateAllEpochs
+          ChainDB.cdbImmValidation = ImmDB.ValidateAllEpochs
         }

@@ -147,7 +147,6 @@ toExitReason e
     volDbUnexpectedError :: VolDB.UnexpectedError -> ExitReason
     volDbUnexpectedError = \case
       VolDB.FileSystemError fe -> fsError fe
-      _                        -> DatabaseCorruption
 
     fsError :: FsError -> ExitReason
     fsError FsError { fsErrorType } = case fsErrorType of

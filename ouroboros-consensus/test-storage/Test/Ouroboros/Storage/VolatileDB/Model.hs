@@ -42,15 +42,16 @@ import           Data.Bifunctor
 import           Data.ByteString.Builder
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
-import           Data.Either
 import           Data.List (find, sortOn, splitAt)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe, isNothing, mapMaybe)
+import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable
+import           Data.Word
 
+import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (IsEBB)
@@ -71,8 +72,6 @@ type Index blockId = Map FsPath (MaxSlotNo, [(blockId, WithOrigin blockId)])
 data DBModel blockId = DBModel {
       blocksPerFile  :: Int
       -- ^ How many blocks each file has (should follow the real Impl).
-    , parseError     :: Maybe ParserError
-      -- ^ An error indicates a broken db and that parsing will fail.
     , open           :: Bool
       -- ^ Indicates if the db is open.
     , mp             :: Map blockId (SlotNo, IsEBB, BinaryInfo ByteString)
@@ -88,7 +87,6 @@ data DBModel blockId = DBModel {
 initDBModel :: Int -> DBModel blockId
 initDBModel bpf = DBModel {
       blocksPerFile  = bpf
-    , parseError     = Nothing
     , open           = True
     , mp             = Map.empty
     , latestGarbaged = Nothing
@@ -134,11 +132,8 @@ unsafeGetBlocks :: DBModel blockId
                 -> [(blockId, WithOrigin blockId)]
 unsafeGetBlocks file = snd . unsafeLookupIndex file
 
--- | It throws an error if any file of the index does not parse.
 unsafeLastFd :: DBModel blockId -> Maybe FileId
-unsafeLastFd DBModel {..} =
-    fromRight (error "filename in index didn't parse" ) $
-      findLastFd (Map.keys index)
+unsafeLastFd DBModel {..} = fst $ findLastFd (Map.keys index)
 
 getBlockId :: DBModel blockId -> [(blockId, WithOrigin blockId)]
 getBlockId DBModel {..} = concat $ snd <$> Map.elems index
@@ -173,12 +168,11 @@ isOpenModel = do
     return open
 
 reOpenModel :: MonadState (DBModel blockId) m
-            => ThrowCantCatch VolatileDBError m
-            -> m ()
-reOpenModel err = do
+            => m ()
+reOpenModel = do
     dbm <- get
     dbm' <- if not $ open dbm
-            then recover err dbm
+            then recover dbm
             else return dbm
     put dbm' {open = True}
 
@@ -254,10 +248,10 @@ garbageCollectModel :: forall m blockId
                     => ThrowCantCatch VolatileDBError m
                     -> SlotNo
                     -> m ()
-garbageCollectModel err sl = do
+garbageCollectModel err gcSlot = do
     dbm@DBModel {..} <- get
     whenClosedUserError dbm err
-    modify $ \dbm' -> dbm' {latestGarbaged = max latestGarbaged (Just sl)}
+    modify $ \dbm' -> dbm' { latestGarbaged = max latestGarbaged (Just gcSlot) }
     collectFiles (getCurrentFile dbm) $ sortedFilesOfIndex dbm
   where
 
@@ -266,12 +260,13 @@ garbageCollectModel err sl = do
       where
         collectFile :: (FsPath, MaxSlotNo)
                     -> m ()
-        collectFile (path, msl) =
-          if cmpMaybe (maxSlotNoToMaybe msl) sl
-          then return ()
-          else if path == currentFile
-          then modifyIndex $ Map.insert path (NoMaxSlotNo,[])
-          else modifyIndex $ Map.delete path
+        collectFile (path, fileMaxSlotNo)
+          | fileMaxSlotNo >= MaxSlotNo gcSlot
+          = return ()
+          | path == currentFile
+          = modifyIndex $ Map.insert path (NoMaxSlotNo,[])
+          | otherwise
+          = modifyIndex $ Map.delete path
 
 getBlockIdsModel :: forall m blockId
                  . MonadState (DBModel blockId) m
@@ -328,8 +323,7 @@ getMaxSlotNoModel err = do
   Corruptions
 ------------------------------------------------------------------------------}
 
-runCorruptionModel :: forall blockId m. MonadState (DBModel blockId) m
-                   => Ord blockId
+runCorruptionModel :: MonadState (DBModel BlockId) m
                    => Corruptions
                    -> m ()
 runCorruptionModel corrs = do
@@ -338,8 +332,8 @@ runCorruptionModel corrs = do
     put dbm'
   where
     corruptDBModel :: (FileCorruption, FsPath)
-                   -> DBModel blockId
-                   -> DBModel blockId
+                   -> DBModel BlockId
+                   -> DBModel BlockId
     corruptDBModel (corr, file) dbm@DBModel{..} = case corr of
         DeleteFile -> dbm {
               mp = Map.withoutKeys mp (Set.fromList $ fst <$> bids)
@@ -350,31 +344,24 @@ runCorruptionModel corrs = do
         DropLastBytes _n -> dbm {
               mp = mp'
             , index = index'
-            , parseError = parseError'
             }
           where
             bids = unsafeGetBlocks dbm file
             -- we prepend on list of blockIds, so last bytes
             -- are actually at the head of the list.
             (droppedBids, newBids) = splitAt 1 bids
-            newBidsWithSlots = (\(b,_) -> (b, unsafeGetSlot dbm b)) <$> newBids
-            newMmax = snd <$> maxSlotList newBidsWithSlots
-            index' = Map.insert file (maxSlotNoFromMaybe newMmax, newBids) index
+            newMaxSlotNo = foldMap (MaxSlotNo . unsafeGetSlot dbm . fst) newBids
+            index' = Map.insert file (newMaxSlotNo, newBids) index
             mp' = Map.withoutKeys mp (Set.fromList $ fst <$> droppedBids)
-            parseError' = if isNothing parseError
-                          then Nothing else parseError
-        AppendBytes n ->
+        AppendBytes _n ->
             -- Appending doesn't actually change anything, since additional
             -- bytes will be truncated. We have taken care that additional
             -- bytes cannot parse as a block. If something like this happens,
             -- there are not much we can do anyway.
-            dbm {parseError = parseError'}
-          where
-            -- We predict what error the parser will throw. It's easier to do
-            -- this here, rather than on reopening. reopening will later actualy
-            -- throw the error.
-            parseError' = if n > 0 && isNothing parseError
-                          then Nothing else parseError
+            dbm
+        PutCorrupted _tb ->
+            -- Putting a corrupted block is a no-op since they will be truncated.
+            dbm
 
 createFileModel :: forall blockId m. MonadState (DBModel blockId) m
                 => m ()
@@ -382,42 +369,31 @@ createFileModel = do
     dbm <- get
     put dbm {index = openNewFile dbm}
 
+-- | Creating invalid files is a no-op, since the parser ignores them.
 createInvalidFileModel :: forall blockId m. MonadState (DBModel blockId) m
-                       => FsPath
+                       => Word32
                        -> m ()
-createInvalidFileModel file = do
-    dbm <- get
-    put dbm {parseError = Just $ InvalidFilename file}
+createInvalidFileModel _n = return ()
 
+-- | Inserting a duplicate block is a no-op, since the parser truncates them.
 duplicateBlockModel :: forall blockId m. (
                          MonadState (DBModel blockId) m
                        , Typeable blockId
                        , Eq       blockId
                        , Show     blockId
                        )
-                    => (FsPath, blockId)
-                    -> m ()
-duplicateBlockModel (file, bid) = do
-    dbm <- get
-    let current = getCurrentFile dbm
-    put dbm {parseError = Just $ DuplicatedSlot bid file current}
+                    => m ()
+duplicateBlockModel = return ()
 
 recover :: MonadState (DBModel blockId) m
-        => ThrowCantCatch VolatileDBError m
-        -> DBModel blockId
+        => DBModel blockId
         -> m (DBModel blockId)
-recover err dbm@DBModel {..} =
-    case parseError of
-      Just pError -> EH.throwError' err $ UnexpectedError $ ParserError pError
-      Nothing -> return dbm {
-          index       = index'
-        , parseError  = Nothing
-          -- Recalculate it from the index to match the real implementation
-        , maxSlotNo   = maxSlotNoFromMaybe
-                      $ safeMaximum
-                      $ mapMaybe (\(mbS, _) -> maxSlotNoToMaybe mbS)
-                      $ Map.elems index'
-        }
+recover dbm@DBModel {..} =
+    return dbm {
+        index     = index'
+        -- Recalculate it from the index to match the real implementation
+      , maxSlotNo = foldMap fst index'
+      }
   where
     lastFd = unsafeLastFd dbm
     ls = Map.toList index

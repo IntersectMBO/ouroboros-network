@@ -13,6 +13,7 @@ module Ouroboros.Storage.VolatileDB.Index (
   , delete
   , toList
   , elems
+  , lastFile
   ) where
 
 import           Prelude hiding (lookup)
@@ -21,12 +22,11 @@ import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks(..))
-import           Ouroboros.Storage.VolatileDB.Types (FileId)
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Ouroboros.Storage.VolatileDB.FileInfo (FileInfo)
+import           Ouroboros.Storage.VolatileDB.Types (FileId)
 
--- For each file, we store the latest blockId, the number of blocks
--- and a Map for its contents.
+-- | Mapping from 'FileId' to 'FileInfo'
 newtype Index blockId = Index {unIndex :: IntMap (FileInfo blockId)}
   deriving (Generic, NoUnexpectedThunks)
 
@@ -52,3 +52,8 @@ toList (Index mp) = IM.toList mp
 
 elems :: Index blockId -> [FileInfo blockId]
 elems (Index mp) = IM.elems mp
+
+-- | Return the last, i.e. the /highest/, 'FileId' and corresponding
+-- 'FileInfo' stored in the 'Index'. Return 'Nothing' when empty.
+lastFile :: Index blockId -> Maybe (FileId, FileInfo blockId)
+lastFile = fmap fst . IM.maxViewWithKey . unIndex

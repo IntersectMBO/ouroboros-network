@@ -84,6 +84,7 @@ import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.ChainDB.Impl.LgrDB (LgrDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB)
+import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 
 -- | A handle to the internal ChainDB state
 newtype ChainDbHandle m blk = CDBHandle (StrictTVar m (ChainDbState m blk))
@@ -216,6 +217,7 @@ data ChainDbEnv m blk = CDB
     -- ^ A handle to kill the background threads.
   , cdbEpochInfo       :: !(EpochInfo m)
   , cdbIsEBB           :: !(Header blk -> IsEBB)
+  , cdbCheckIntegrity  :: !(blk -> Bool)
   , cdbBlockchainTime  :: !(BlockchainTime m)
   , cdbFutureBlocks    :: !(StrictTVar m (Map SlotNo (NonEmpty (Header blk))))
     -- ^ Scheduled chain selections for blocks with a slot in the future.
@@ -394,6 +396,7 @@ data TraceEvent blk
   | TraceLedgerEvent       (LgrDB.TraceEvent (Point blk))
   | TraceLedgerReplayEvent (LgrDB.TraceLedgerReplayEvent blk)
   | TraceImmDBEvent        (ImmDB.TraceEvent       blk)
+  | TraceVolDBEvent        (VolDB.TraceEvent       blk)
   deriving (Generic)
 
 deriving instance
