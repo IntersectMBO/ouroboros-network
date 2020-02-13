@@ -30,6 +30,7 @@ import           Ouroboros.Consensus.BlockchainTime.Mock (fixedBlockchainTime)
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock,
                      ByronConsensusProtocol, ByronHash)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Node.Run.Byron ()
@@ -257,7 +258,7 @@ withImmDB fp cfg epochInfo registry = ImmDB.withImmDB args
     args = (defaultArgs fp) {
           immDecodeHash     = nodeDecodeHeaderHash    (Proxy @ByronBlock)
         , immDecodeBlock    = nodeDecodeBlock         cfg
-        , immDecodeHeader   = nodeDecodeHeader        cfg
+        , immDecodeHeader   = nodeDecodeHeader        cfg SerialisedToDisk
         , immEncodeHash     = nodeEncodeHeaderHash    (Proxy @ByronBlock)
         , immEncodeBlock    = nodeEncodeBlockWithInfo cfg
         , immEpochInfo      = epochInfo

@@ -55,8 +55,10 @@ library
                        Ouroboros.Consensus.Ledger.Byron.Integrity
                        Ouroboros.Consensus.Ledger.Byron.Ledger
                        Ouroboros.Consensus.Ledger.Byron.Mempool
+                       Ouroboros.Consensus.Ledger.Byron.NetworkProtocolVersion
                        Ouroboros.Consensus.Ledger.Byron.Orphans
                        Ouroboros.Consensus.Ledger.Byron.PBFT
+                       Ouroboros.Consensus.Ledger.Byron.Serialisation
                        Ouroboros.Consensus.Ledger.ByronSpec
                        Ouroboros.Consensus.Ledger.ByronSpec.Accessors
                        Ouroboros.Consensus.Ledger.ByronSpec.Block
@@ -92,6 +94,7 @@ library
                        Ouroboros.Consensus.Node.DbMarker
                        Ouroboros.Consensus.Node.ErrorPolicy
                        Ouroboros.Consensus.Node.Exit
+                       Ouroboros.Consensus.Node.NetworkProtocolVersion
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.ProtocolInfo.Abstract
                        Ouroboros.Consensus.Node.ProtocolInfo.Byron

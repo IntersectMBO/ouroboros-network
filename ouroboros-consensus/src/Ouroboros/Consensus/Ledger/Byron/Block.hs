@@ -3,10 +3,8 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -27,15 +25,11 @@ module Ouroboros.Consensus.Ledger.Byron.Block (
   , countByronGenTxs
   , byronHeaderIsEBB
   , byronBlockIsEBB
-    -- * Serialisation
-  , encodeByronBlockWithInfo
-  , encodeByronBlock
-  , decodeByronBlock
-  , encodeByronHeader
-  , decodeByronHeader
-  , encodeByronHeaderHash
-  , decodeByronHeaderHash
-  , byronAddHeaderEnvelope
+    -- * Low-level API
+  , UnsizedHeader(..)
+  , mkUnsizedHeader
+  , splitSizeHint
+  , joinSizeHint
   ) where
 
 import           Data.Binary (Get, Put)
@@ -44,18 +38,12 @@ import qualified Data.Binary.Put as Put
 import qualified Data.ByteArray as ByteArray
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as Strict
-import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Maybe (maybeToList)
 import           Data.Proxy
 import           Data.Typeable
 import           Data.Word
 import           GHC.Generics (Generic)
-
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
-import qualified Codec.CBOR.Encoding as CBOR
-import           Codec.Serialise (Serialise (..))
 
 import           Cardano.Binary
 import           Cardano.Prelude (NoUnexpectedThunks (..))
@@ -71,13 +59,14 @@ import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Crypto.Hashing as CC
 
 import           Ouroboros.Network.Block
+import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Byron.Conversions
 import           Ouroboros.Consensus.Ledger.Byron.Orphans ()
 import           Ouroboros.Consensus.Util.Condense
 
-import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..))
+import           Ouroboros.Storage.ImmutableDB (HashInfo (..))
 
 {-------------------------------------------------------------------------------
   Header hash
@@ -87,10 +76,6 @@ newtype ByronHash = ByronHash { unByronHash :: CC.HeaderHash }
   deriving stock   (Eq, Ord, Show, Generic)
   deriving newtype (ToCBOR, FromCBOR, Condense)
   deriving anyclass (NoUnexpectedThunks)
-
-instance Serialise ByronHash where
-  decode = decodeByronHeaderHash
-  encode = encodeByronHeaderHash
 
 mkByronHash :: CC.ABlockOrBoundaryHdr ByteString -> ByronHash
 mkByronHash = ByronHash . CC.abobHdrHash
@@ -161,13 +146,25 @@ instance GetHeader ByronBlock where
         byronHeaderRaw    :: !(CC.ABlockOrBoundaryHdr ByteString)
       , byronHeaderSlotNo :: !SlotNo
       , byronHeaderHash   :: !ByronHash
+
+        -- | Hint about the block size
+        --
+        -- This is used only for the block fetch client. When this value is
+        -- wrong, block fetch might make suboptimal decisions, but it shouldn't
+        -- /break/ anything
+      , byronHeaderBlockSizeHint :: !SizeInBytes
       }
     deriving (Eq, Show, Generic)
 
-  getHeader ByronBlock{..} = ByronHeader{
-        byronHeaderRaw    = CC.abobHdrFromBlock byronBlockRaw
-      , byronHeaderSlotNo = byronBlockSlotNo
-      , byronHeaderHash   = byronBlockHash
+  getHeader ByronBlock{..} = ByronHeader {
+        byronHeaderRaw           = CC.abobHdrFromBlock byronBlockRaw
+      , byronHeaderSlotNo        = byronBlockSlotNo
+      , byronHeaderHash          = byronBlockHash
+      , byronHeaderBlockSizeHint = fromIntegral . Strict.length $
+          -- For some reason regular blocks lack a 'Decoded' instance
+          case byronBlockRaw of
+            CC.ABOBBlock    blk -> CC.blockAnnotation blk
+            CC.ABOBBoundary blk -> recoverBytes       blk
       }
 
 instance Condense (Header ByronBlock) where
@@ -178,12 +175,9 @@ instance NoUnexpectedThunks (Header ByronBlock) where
 
 mkByronHeader :: CC.EpochSlots
               -> CC.ABlockOrBoundaryHdr ByteString
+              -> SizeInBytes -- ^ Block size hint
               -> Header ByronBlock
-mkByronHeader epochSlots hdr = ByronHeader {
-      byronHeaderRaw    = hdr
-    , byronHeaderSlotNo = fromByronSlotNo $ CC.abobHdrSlotNo epochSlots hdr
-    , byronHeaderHash   = mkByronHash hdr
-    }
+mkByronHeader epochSlots = joinSizeHint . mkUnsizedHeader epochSlots
 
 {-------------------------------------------------------------------------------
   HasHeader instances
@@ -251,106 +245,41 @@ byronBlockIsEBB :: ByronBlock -> IsEBB
 byronBlockIsEBB = byronHeaderIsEBB . getHeader
 
 {-------------------------------------------------------------------------------
-  Serialisation
+  Unsized header
 -------------------------------------------------------------------------------}
 
-encodeByronHeaderHash :: HeaderHash ByronBlock -> Encoding
-encodeByronHeaderHash = toCBOR
-
-decodeByronHeaderHash :: Decoder s (HeaderHash ByronBlock)
-decodeByronHeaderHash = fromCBOR
-
--- | 'encodeByronBlock' including the offset and size of the header within the
--- resulting bytestring.
+-- | Header without a size hint
 --
--- NOTE: the bytestring obtained by slicing the serialised block using the
--- header offset and size will correspond to the /header annotation/, but not
--- to the serialised header, as we add an envelope ('encodeListLen' + tag)
--- around a header in 'encodeByronHeader'. This envelope must thus still be
--- added to the sliced bytestring before it can be deserialised using
--- 'decodeByronHeader'.
-encodeByronBlockWithInfo :: ByronBlock -> BinaryInfo Encoding
-encodeByronBlockWithInfo blk = BinaryInfo
-    { binaryBlob   = encodeByronBlock blk
-    , headerOffset = 1 {- 'encodeListLen' of the outer 'Either' envelope -}
-                   + 1 {- the tag -}
-                   + 1 {- 'encodeListLen' of the block: header + body + ...  -}
-      -- Compute the length of the annotated header
-    , headerSize   = fromIntegral $ Strict.length $ case byronBlockRaw blk of
-        CC.ABOBBoundary b -> CC.boundaryHeaderAnnotation $ CC.boundaryHeader b
-        CC.ABOBBlock    b -> CC.headerAnnotation         $ CC.blockHeader    b
+-- Defined in order to support backwards compatible binary encodings.
+data UnsizedHeader = UnsizedHeader {
+      unsizedHeaderRaw    :: !(CC.ABlockOrBoundaryHdr ByteString)
+    , unsizedHeaderSlotNo :: !SlotNo
+    , unsizedHeaderHash   :: !ByronHash
     }
 
--- | Encode a block
---
--- Should be backwards compatible with legacy (cardano-sl) nodes.
---
--- Implementation note: the decoder uses 'CC.fromCBORABlockOrBoundary', which
--- has inverse 'CC.toCBORABlockOrBoundary'. This encoder is intended to be
--- binary compatible with 'CC.toCBORABlockOrBoundary', but does not use it and
--- instead takes advantage of the annotations (using 'encodePreEncoded').
-encodeByronBlock :: ByronBlock -> Encoding
-encodeByronBlock blk = mconcat [
-      CBOR.encodeListLen 2
-    , case byronBlockRaw blk of
-        CC.ABOBBoundary b -> mconcat [
-            CBOR.encodeWord 0
-          , CBOR.encodePreEncoded $ CC.boundaryAnnotation b
-          ]
-        CC.ABOBBlock b -> mconcat [
-            CBOR.encodeWord 1
-          , CBOR.encodePreEncoded $ CC.blockAnnotation b
-          ]
-    ]
+mkUnsizedHeader :: CC.EpochSlots
+                -> CC.ABlockOrBoundaryHdr ByteString
+                -> UnsizedHeader
+mkUnsizedHeader epochSlots hdr = UnsizedHeader {
+      unsizedHeaderRaw    = hdr
+    , unsizedHeaderSlotNo = fromByronSlotNo $ CC.abobHdrSlotNo epochSlots hdr
+    , unsizedHeaderHash   = mkByronHash hdr
+    }
 
--- | Inverse of 'encodeByronBlock'
-decodeByronBlock :: CC.EpochSlots -> Decoder s (Lazy.ByteString -> ByronBlock)
-decodeByronBlock epochSlots =
-    fillInByteString <$> CC.fromCBORABlockOrBoundary epochSlots
-  where
-    fillInByteString :: CC.ABlockOrBoundary ByteSpan
-                     -> Lazy.ByteString
-                     -> ByronBlock
-    fillInByteString it theBytes = mkByronBlock epochSlots $
-      Lazy.toStrict . slice theBytes <$> it
+splitSizeHint :: Header ByronBlock -> (UnsizedHeader, SizeInBytes)
+splitSizeHint ByronHeader{..} = (
+      UnsizedHeader {
+          unsizedHeaderRaw    = byronHeaderRaw
+        , unsizedHeaderSlotNo = byronHeaderSlotNo
+        , unsizedHeaderHash   = byronHeaderHash
+        }
+    , byronHeaderBlockSizeHint
+    )
 
--- | Encode a header
---
--- Should be backwards compatible with legacy (cardano-sl) nodes.
---
--- This function should be inverse to 'decodeByronHeader'
--- (which uses 'fromCBORABlockOrBoundaryHdr').
-encodeByronHeader :: Header ByronBlock -> Encoding
-encodeByronHeader hdr = mconcat [
-      CBOR.encodeListLen 2
-    , case byronHeaderRaw hdr of
-        CC.ABOBBoundaryHdr h -> mconcat [
-            CBOR.encodeWord 0
-          , CBOR.encodePreEncoded $ CC.boundaryHeaderAnnotation h
-          ]
-        CC.ABOBBlockHdr h -> mconcat [
-            CBOR.encodeWord 1
-          , CBOR.encodePreEncoded $ CC.headerAnnotation h
-          ]
-    ]
-
--- | Inverse of 'encodeByronHeader'
-decodeByronHeader :: CC.EpochSlots
-                  -> Decoder s (Lazy.ByteString -> Header ByronBlock)
-decodeByronHeader epochSlots =
-    fillInByteString <$> CC.fromCBORABlockOrBoundaryHdr epochSlots
-  where
-    fillInByteString :: CC.ABlockOrBoundaryHdr ByteSpan
-                     -> Lazy.ByteString
-                     -> Header ByronBlock
-    fillInByteString it theBytes = mkByronHeader epochSlots $
-      Lazy.toStrict . slice theBytes <$> it
-
--- | When given the raw header bytes extracted from the block, i.e. the header
--- annotation, we still need to prepend @CBOR.encodeListLen 2@ and
--- @CBOR.encodeWord x@ where @x@ is 0 for an EBB and 1 for a regular header.
-byronAddHeaderEnvelope
-  :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
-byronAddHeaderEnvelope = mappend . \case
-    IsEBB    -> "\130\NUL"
-    IsNotEBB -> "\130\SOH"
+joinSizeHint :: UnsizedHeader -> SizeInBytes -> Header ByronBlock
+joinSizeHint UnsizedHeader{..} size = ByronHeader {
+      byronHeaderRaw           = unsizedHeaderRaw
+    , byronHeaderSlotNo        = unsizedHeaderSlotNo
+    , byronHeaderHash          = unsizedHeaderHash
+    , byronHeaderBlockSizeHint = size
+    }

@@ -29,6 +29,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron.Block
 import           Ouroboros.Consensus.Ledger.Byron.Config
+import           Ouroboros.Consensus.Ledger.Byron.Serialisation ()
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT

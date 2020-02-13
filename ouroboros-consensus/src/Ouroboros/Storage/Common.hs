@@ -27,6 +27,8 @@ module Ouroboros.Storage.Common (
   , DB (..)
   , BlockComponent (..)
   , castBlockComponent
+    -- * Re-exports
+  , SizeInBytes
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -43,6 +45,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..))
 
 import           Ouroboros.Network.Block (Point (..), SlotNo, genesisPoint)
+import           Ouroboros.Network.DeltaQ (SizeInBytes)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (IsEBB)

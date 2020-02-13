@@ -29,7 +29,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
-import           Ouroboros.Storage.Common (EpochNo)
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo (EpochInfo)
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling,
@@ -96,10 +96,12 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbCheckIntegrity   :: blk -> Bool
     , cdbGenesis          :: m (ExtLedgerState blk)
     , cdbBlockchainTime   :: BlockchainTime m
-    , cdbAddHdrEnv        :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+    , cdbAddHdrEnv        :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
       -- ^ The header envelope will only be added after extracting the binary
       -- header from the binary block. Note that we never have to remove an
       -- envelope.
+      --
+      -- The 'SizeInBytes' is the size of the block.
     , cdbImmDbCacheConfig :: ImmDB.CacheConfig
 
       -- Misc

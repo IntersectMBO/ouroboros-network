@@ -56,6 +56,8 @@ module Ouroboros.Network.Block (
   , decodeChainHash
     -- * Serialised block/header
   , Serialised(..)
+  , wrapCBORinCBOR
+  , unwrapCBORinCBOR
   , mkSerialised
   , fromSerialised
   ) where
@@ -387,6 +389,20 @@ newtype Serialised a = Serialised
 
 type instance HeaderHash (Serialised block) = HeaderHash block
 instance StandardHash block => StandardHash (Serialised block)
+
+-- | Wrap CBOR-in-CBOR
+--
+-- This is primarily useful for the /decoder/; see 'unwrapCBORinCBOR'
+wrapCBORinCBOR :: (a -> Encoding) -> a -> Encoding
+wrapCBORinCBOR enc = encode . mkSerialised enc
+
+-- | Unwrap CBOR-in-CBOR
+--
+-- The CBOR-in-CBOR encoding gives us the 'ByteString' we need in order to
+-- to construct annotations.
+unwrapCBORinCBOR :: (forall s. Decoder s (Lazy.ByteString -> a))
+                 -> (forall s. Decoder s a)
+unwrapCBORinCBOR dec = fromSerialised dec =<< decode
 
 -- | Construct 'Serialised' value from an unserialised value
 mkSerialised :: (a -> Encoding) -> a -> Serialised a

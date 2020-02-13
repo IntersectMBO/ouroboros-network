@@ -78,6 +78,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
@@ -512,14 +513,14 @@ runThreadNetwork ThreadNetworkArgs
         { -- Decoders
           cdbDecodeHash       = nodeDecodeHeaderHash (Proxy @blk)
         , cdbDecodeBlock      = nodeDecodeBlock       cfg
-        , cdbDecodeHeader     = nodeDecodeHeader      cfg
+        , cdbDecodeHeader     = nodeDecodeHeader      cfg SerialisedToDisk
         , cdbDecodeLedger     = nodeDecodeLedgerState cfg
         , cdbDecodeChainState = nodeDecodeChainState (Proxy @blk) cfg
         , cdbDecodeTipInfo    = nodeDecodeTipInfo    (Proxy @blk)
           -- Encoders
         , cdbEncodeHash       = nodeEncodeHeaderHash (Proxy @blk)
         , cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
-        , cdbEncodeHeader     = nodeEncodeHeader        cfg
+        , cdbEncodeHeader     = nodeEncodeHeader        cfg SerialisedToDisk
         , cdbEncodeLedger     = nodeEncodeLedgerState   cfg
         , cdbEncodeChainState = nodeEncodeChainState (Proxy @blk) cfg
         , cdbEncodeTipInfo    = nodeEncodeTipInfo    (Proxy @blk)
@@ -715,6 +716,7 @@ runThreadNetwork ThreadNetworkArgs
         }
       where
         binaryProtocolCodecs = protocolCodecs cfg
+                                 (mostRecentNetworkProtocolVersion (Proxy @blk))
 
 -- | Sum of 'CodecFailure' (from 'protocolCodecsId') and 'DeserialiseFailure'
 -- (from 'protocolCodecs').

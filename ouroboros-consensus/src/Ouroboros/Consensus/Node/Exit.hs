@@ -22,6 +22,8 @@ import qualified Ouroboros.Storage.ImmutableDB.Types as ImmDB
 import           Ouroboros.Storage.VolatileDB.Types (VolatileDBError)
 import qualified Ouroboros.Storage.VolatileDB.Types as VolDB
 
+import           Ouroboros.Consensus.Ledger.Byron.Serialisation
+                     (DropEncodedSizeException)
 import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
                      (PBftLeaderCredentialsError)
@@ -118,6 +120,8 @@ toExitReason e
         _               -> DatabaseCorruption
     | Just (_ :: PBftLeaderCredentialsError) <- fromException e
     = ConfigurationError
+    | Just (_ :: DropEncodedSizeException) <- fromException e
+    = DatabaseCorruption
 
     -- The three exceptions below will always be wrapped in a
     -- 'ChainDbFailure', but we include them just in case.

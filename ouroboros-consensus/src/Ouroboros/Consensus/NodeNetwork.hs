@@ -77,9 +77,10 @@ import           Ouroboros.Consensus.ChainSyncServer
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.LocalStateQueryServer
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.NodeKernel
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
-import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TxSubmission
 import           Ouroboros.Consensus.Util.IOLike
@@ -224,21 +225,24 @@ data ProtocolCodecs blk failure m
 --
 protocolCodecs :: forall m blk. (IOLike m, RunNode blk)
                => NodeConfig (BlockProtocol blk)
+               -> NetworkProtocolVersion blk
                -> ProtocolCodecs blk DeserialiseFailure m
                     ByteString ByteString ByteString ByteString ByteString
                     ByteString ByteString ByteString
-protocolCodecs cfg = ProtocolCodecs {
+protocolCodecs cfg version = ProtocolCodecs {
       pcChainSyncCodec =
         codecChainSync
-          (nodeEncodeHeader cfg)
-          (nodeDecodeHeader cfg)
+          (wrapCBORinCBOR   (nodeEncodeHeader cfg (SentAcrossNetwork version)))
+          (unwrapCBORinCBOR (nodeDecodeHeader cfg (SentAcrossNetwork version)))
           (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
           (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
           (encodeTip   (nodeEncodeHeaderHash (Proxy @blk)))
           (decodeTip   (nodeDecodeHeaderHash (Proxy @blk)))
 
     , pcChainSyncCodecSerialised =
-        codecChainSyncSerialised
+        codecChainSyncSerialised'
+          (nodeEncodeWrappedHeader cfg version)
+          (nodeDecodeWrappedHeader cfg version)
           (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
           (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
           (encodeTip   (nodeEncodeHeaderHash (Proxy @blk)))
@@ -246,8 +250,8 @@ protocolCodecs cfg = ProtocolCodecs {
 
     , pcBlockFetchCodec =
         codecBlockFetch
-          (nodeEncodeBlock cfg)
-          (nodeDecodeBlock cfg)
+          (wrapCBORinCBOR   (nodeEncodeBlock cfg))
+          (unwrapCBORinCBOR (nodeDecodeBlock cfg))
           (nodeEncodeHeaderHash (Proxy @blk))
           (nodeDecodeHeaderHash (Proxy @blk))
 

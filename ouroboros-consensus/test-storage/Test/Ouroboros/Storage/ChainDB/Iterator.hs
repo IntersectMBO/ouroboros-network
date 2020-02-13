@@ -41,7 +41,7 @@ import           Ouroboros.Storage.ChainDB.Impl.Iterator (IteratorEnv (..),
 import           Ouroboros.Storage.ChainDB.Impl.Types (IteratorKey (..),
                      TraceIteratorEvent (..))
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
-import           Ouroboros.Storage.Common (BinaryInfo (..), EpochSize)
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -411,8 +411,8 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     epochSize :: EpochSize
     epochSize = 10
 
-    addHdrEnv :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
-    addHdrEnv = const id
+    addHdrEnv :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
+    addHdrEnv _ _ = id
 
     -- | Open a mock ImmutableDB and add the given chain of blocks
     openImmDB :: Chain TestBlock -> m (ImmDB m TestBlock)

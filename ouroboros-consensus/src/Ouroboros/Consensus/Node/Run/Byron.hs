@@ -1,7 +1,4 @@
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE PatternSynonyms      #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Ouroboros.Consensus.Node.Run.Byron (
     -- * Exported for the benefit of ByronDual
@@ -40,7 +37,7 @@ import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
 instance RunNode ByronBlock where
   nodeForgeBlock            = forgeByronBlock
   nodeBlockMatchesHeader    = verifyBlockMatchesHeader
-  nodeBlockFetchSize        = const 2000 -- TODO #593
+  nodeBlockFetchSize        = byronHeaderBlockSizeHint
   nodeIsEBB                 = \hdr -> case byronHeaderRaw hdr of
     Cardano.Block.ABOBBlockHdr _       -> Nothing
     Cardano.Block.ABOBBoundaryHdr bhdr -> Just
@@ -89,7 +86,8 @@ instance RunNode ByronBlock where
   nodeAddHeaderEnvelope     = const byronAddHeaderEnvelope
 
   nodeEncodeBlockWithInfo   = const encodeByronBlockWithInfo
-  nodeEncodeHeader          = const encodeByronHeader
+  nodeEncodeHeader          = \_cfg -> encodeByronHeader
+  nodeEncodeWrappedHeader   = \_cfg -> encodeWrappedByronHeader
   nodeEncodeGenTx           = encodeByronGenTx
   nodeEncodeGenTxId         = encodeByronGenTxId
   nodeEncodeHeaderHash      = const encodeByronHeaderHash
@@ -100,8 +98,9 @@ instance RunNode ByronBlock where
   nodeEncodeQuery           = encodeByronQuery
   nodeEncodeResult          = encodeByronResult
 
-  nodeDecodeBlock           = decodeByronBlock  . extractEpochSlots
-  nodeDecodeHeader          = decodeByronHeader . extractEpochSlots
+  nodeDecodeBlock           = decodeByronBlock   . extractEpochSlots
+  nodeDecodeHeader          = \ cfg -> decodeByronHeader (extractEpochSlots cfg)
+  nodeDecodeWrappedHeader   = \_cfg -> decodeWrappedByronHeader
   nodeDecodeGenTx           = decodeByronGenTx
   nodeDecodeGenTxId         = decodeByronGenTxId
   nodeDecodeHeaderHash      = const decodeByronHeaderHash

@@ -81,7 +81,7 @@ import           Ouroboros.Storage.ChainDB.API (ChainDB)
 import           Ouroboros.Storage.ChainDB.API hiding (ChainDB (..), closeDB,
                      getMaxSlotNo)
 import           Ouroboros.Storage.ChainDB.Impl.BlockComponent
-import           Ouroboros.Storage.Common (BinaryInfo (..))
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
 import           Ouroboros.Storage.FS.IO (ioHasFS)
@@ -104,7 +104,7 @@ data VolDB m blk = VolDB {
       -- generics to derive the NoUnexpectedThunks instance.
     , encBlock  :: blk -> BinaryInfo Encoding
     , isEBB     :: blk -> IsEBB
-    , addHdrEnv :: !(IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+    , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     , err       :: ErrorHandling VolatileDBError m
     , errSTM    :: ThrowCantCatch VolatileDBError (STM m)
     }
@@ -136,7 +136,7 @@ data VolDbArgs m blk = forall h. VolDbArgs {
     , volDecodeBlock   :: forall s. Decoder s (Lazy.ByteString -> blk)
     , volEncodeBlock   :: blk -> BinaryInfo Encoding
     , volIsEBB         :: blk -> IsEBB
-    , volAddHdrEnv     :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+    , volAddHdrEnv     :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -189,7 +189,7 @@ mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> BinaryInfo Encoding)
         -> (blk -> IsEBB)
-        -> (IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+        -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> ErrorHandling VolatileDBError m
         -> ThrowCantCatch VolatileDBError (STM m)
         -> VolDB m blk

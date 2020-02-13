@@ -24,7 +24,8 @@ import qualified Data.ByteString.Lazy.Char8 as Lazy8
 import qualified Data.Sequence.Strict as Seq
 
 import           Cardano.Binary (fromCBOR, toCBOR)
-import           Cardano.Chain.Block (ABlockOrBoundary (..), ABlockOrBoundaryHdr(..))
+import           Cardano.Chain.Block (ABlockOrBoundary (..),
+                     ABlockOrBoundaryHdr (..))
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Byron.API as API
 import           Cardano.Chain.Common (KeyHash)
@@ -42,6 +43,7 @@ import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Byron
 import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as DH
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTxId)
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Protocol.Abstract (ChainState,
@@ -151,9 +153,20 @@ prop_roundtrip_Block :: ByronBlock -> Property
 prop_roundtrip_Block b =
     roundtrip' encodeByronBlock (decodeByronBlock epochSlots) b
 
-prop_roundtrip_Header :: Header ByronBlock -> Property
-prop_roundtrip_Header h =
-    roundtrip' encodeByronHeader (decodeByronHeader epochSlots) h
+prop_roundtrip_Header :: SerialisationVersion ByronNetworkProtocolVersion
+                      -> Header ByronBlock -> Property
+prop_roundtrip_Header v h =
+    roundtrip'
+      (encodeByronHeader v)
+      (decodeByronHeader epochSlots v)
+      h'
+  where
+    h' = case v of
+           SentAcrossNetwork ByronNetworkProtocolVersion1 ->
+             -- This is a lossy format
+             h { byronHeaderBlockSizeHint = fakeByronBlockSizeHint }
+           _otherwise ->
+             h
 
 prop_roundtrip_HeaderHash :: HeaderHash ByronBlock -> Property
 prop_roundtrip_HeaderHash =
@@ -454,19 +467,22 @@ instance Arbitrary (Header ByronBlock) where
       ]
     where
       genHeader :: Gen (Header ByronBlock)
-      genHeader =
-        mkByronHeader epochSlots . ABOBBlockHdr .
-        API.reAnnotateUsing
-          (CC.Block.toCBORHeader epochSlots)
-          (CC.Block.fromCBORAHeader epochSlots) <$>
-        hedgehog (CC.genHeader protocolMagicId epochSlots)
+      genHeader = do
+        blockSize <- arbitrary
+        flip (mkByronHeader epochSlots) blockSize . ABOBBlockHdr .
+          API.reAnnotateUsing
+            (CC.Block.toCBORHeader epochSlots)
+            (CC.Block.fromCBORAHeader epochSlots) <$>
+          hedgehog (CC.genHeader protocolMagicId epochSlots)
+
       genBoundaryHeader :: Gen (Header ByronBlock)
-      genBoundaryHeader =
-        mkByronHeader epochSlots . ABOBBoundaryHdr .
-        API.reAnnotateUsing
-          (CC.Block.toCBORABoundaryHeader protocolMagicId)
-          CC.Block.fromCBORABoundaryHeader <$>
-        hedgehog CC.genBoundaryHeader
+      genBoundaryHeader = do
+        blockSize <- arbitrary
+        flip (mkByronHeader epochSlots) blockSize . ABOBBoundaryHdr .
+          API.reAnnotateUsing
+            (CC.Block.toCBORABoundaryHeader protocolMagicId)
+            CC.Block.fromCBORABoundaryHeader <$>
+          hedgehog CC.genBoundaryHeader
 
 instance Arbitrary ByronHash where
   arbitrary = ByronHash <$> hedgehog CC.genHeaderHash
@@ -544,6 +560,15 @@ instance Arbitrary CC.UPI.State where
     <*> arbitrary
     <*> pure mempty -- TODO Endorsement is not exported
     <*> arbitrary
+
+instance Arbitrary (SerialisationVersion ByronNetworkProtocolVersion) where
+  arbitrary = elements $ SerialisedToDisk : map SentAcrossNetwork versions
+    where
+      -- We enumerate /all/ versions here, not just the ones returned by
+      -- 'supportedNetworkProtocolVersions', which may be fewer.
+      -- We might want to reconsider that later.
+      versions :: [ByronNetworkProtocolVersion]
+      versions = [minBound .. maxBound]
 
 {-------------------------------------------------------------------------------
   Orphans
