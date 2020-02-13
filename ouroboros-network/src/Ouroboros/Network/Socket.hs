@@ -298,7 +298,10 @@ withConnections
      , Show ptcl
      )
   => (forall provenance. request provenance -> ConnectionData ptcl vNumber provenance)
-  -> (Connections Connections.ConnectionId Socket.Socket request (Connection.Reject reject) (Connection.Accept (ConnectionHandle IO)) IO -> IO t)
+  -> (Connections Connections.ConnectionId Socket.Socket request
+        (Connection.Reject reject)
+        (Connection.Accept (ConnectionHandle IO))
+        IO -> IO t)
   -> IO t
 withConnections mk = Connection.concurrent (connection mk)
 

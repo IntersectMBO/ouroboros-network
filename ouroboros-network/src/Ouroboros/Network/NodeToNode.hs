@@ -176,8 +176,12 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 withConnections
   :: forall request t.
      ErrorPolicies Socket.SockAddr ()
-  -> (forall provenance . request provenance -> SomeVersionedApplication NodeToNodeProtocols NodeToNodeVersion DictVersion provenance)
-  -> (Connections Connections.ConnectionId Socket.Socket request (Connection.Reject RejectConnection) (Connection.Accept (ConnectionHandle IO)) IO -> IO t)
+  -> (forall provenance . request provenance -> SomeVersionedApplication
+       NodeToNodeProtocols NodeToNodeVersion DictVersion provenance)
+  -> (Connections Connections.ConnectionId Socket.Socket request
+       (Connection.Reject RejectConnection)
+       (Connection.Accept (ConnectionHandle IO))
+       IO -> IO t)
   -> IO t
 withConnections errorPolicies mkApp =
   Socket.withConnections mkConnectionData
