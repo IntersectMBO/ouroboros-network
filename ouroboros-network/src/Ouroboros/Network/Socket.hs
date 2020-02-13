@@ -135,6 +135,11 @@ instance NoUnexpectedThunks ConnectionId where
 maxTransmissionUnit :: Int64
 maxTransmissionUnit = 4 * 1440
 
+-- | The handshake protocol number.
+--
+handshakeProtocolNum :: MiniProtocolNum
+handshakeProtocolNum = MiniProtocolNum 0
+
 -- |
 -- Connect to a remote node.  It is using bracket to enclose the underlying
 -- socket acquisition.  This implies that when the continuation exits the
@@ -230,7 +235,7 @@ connectToNode' versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshak
               BL.length
               (contramap (Mx.WithMuxBearer connectionId) nctHandshakeTracer)
               codecHandshake
-              (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator))
+              (fromChannel (Mx.muxBearerAsChannel bearer handshakeProtocolNum Mx.ModeInitiator))
               (handshakeClientPeer versionDataCodec versions)
     ts_end <- getMonotonicTime
     case mapp of
@@ -307,7 +312,7 @@ beginConnection muxTracer handshakeTracer versionDataCodec acceptVersion fn t ad
                 BL.length
                 (contramap (Mx.WithMuxBearer peerid) handshakeTracer)
                 codecHandshake
-                (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeResponder))
+                (fromChannel (Mx.muxBearerAsChannel bearer handshakeProtocolNum Mx.ModeResponder))
                 (handshakeServerPeer versionDataCodec acceptVersion versions)
         case mapp of
           Left err -> do

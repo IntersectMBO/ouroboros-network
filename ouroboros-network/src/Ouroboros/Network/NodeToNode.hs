@@ -131,13 +131,18 @@ data NodeToNodeProtocols = ChainSyncWithHeadersPtcl
 
 -- | These are the actual wire format protocol numbers.
 --
--- The application specific protocol numbers start from 2 because of the two
--- mux built-in protocols.
+-- The application specific protocol numbers start from 2.  The
+-- @'MiniProtocolNum' 0@ is reserved for the 'Handshake' protocol, while
+-- @'MiniProtocolNum' 1@ is reserved for DeltaQ messages.
+-- 'Handshake' protocol is not included in 'NodeToNodeProtocols' as it runs
+-- before mux is started but it reusing 'MuxBearer' to send and receive
+-- messages.  Only when the handshake protocol suceedes, we will know which
+-- protocols to run / multiplex. 
 --
--- These are chosen to not overlap with the node to client protocol numbers.
--- This is not essential for correctness, but is helpful to allow a single
--- shared implementation of tools that can analyse both protocols, e.g.
--- wireshark plugins.
+-- These are chosen to not overlap with the node to client protocol numbers (and
+-- the handshake protocol number).  This is not essential for correctness, but
+-- is helpful to allow a single shared implementation of tools that can analyse
+-- both protocols, e.g.  wireshark plugins.
 --
 instance ProtocolEnum NodeToNodeProtocols where
   fromProtocolEnum ChainSyncWithHeadersPtcl = MiniProtocolNum 2
