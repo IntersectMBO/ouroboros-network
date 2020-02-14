@@ -15,6 +15,7 @@ import qualified Debug.Trace as Debug (traceM)
 import Network.Socket (Socket)
 import qualified Network.Socket as Socket
 import System.Environment (getArgs)
+import System.Random (randomRIO)
 
 import Ouroboros.Network.Connections.Types
 import Ouroboros.Network.Connections.Util (forContinuation)
@@ -45,6 +46,20 @@ import System.IO.Error (isAlreadyExistsError, isAlreadyInUseError, ioeGetErrorTy
 -- by each connection callback to bump the count at that given ConnectionId.
 -- If it passes 1, throw an error. Each thread can wait until the map is
 -- 1 for every connection pair.
+--
+-- TODO problem with this demo: since it runs over one common TCP/IP stack, and
+-- since we bind connecting sockets to a particular port, there is an inevitable
+-- bug. When a connection is created from port A to B, we'll have:
+-- - Thread `connect`ing establishes socket A:B.
+-- - Thread `accept`ing for B establishes socket B:A
+-- But, concurrently, the same thing happens for B to A.
+-- There is always some interval of time between returning from `accept`, and
+-- updating the shared state in the `Connections` term, during which the
+-- program may attempt to create a _new_ socket B:A when the accept loop has
+-- already got hold of one but not yet put it into the map.
+--
+-- In theory this could even happen between two TCP/IP stacks on different
+-- machines, but it's highly unlikely.
 
 data Request (provenance :: Provenance) where
   Request :: Request provenance
@@ -93,8 +108,11 @@ nodeAction addrs (Node address server client) = concurrent withConnection $ \con
               -- Connecting to the bind address is problematic: the accept loop
               -- has already bound to it, and the client will bind to it as
               -- well, which seems to result in a deadlock.
+              --
+              -- Randomly delay to avoid the address in use problem describes
+              -- at the top of this file.
               unless (peerAddr == address) $ 
-                void (runClientWith connections (client peerAddr))
+                (randomRIO (1000, 1000000) >>= \t -> threadDelay t >> void (runClientWith connections (client peerAddr)))
                 `catch`
                 handleException ("client " ++ show peerAddr)
         ]

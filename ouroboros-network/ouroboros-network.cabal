@@ -350,6 +350,7 @@ executable demo-connections
     build-depends:  base,
                     async,
                     network,
+                    random,
                     ouroboros-network
     default-language: Haskell2010
     ghc-options: -threaded
