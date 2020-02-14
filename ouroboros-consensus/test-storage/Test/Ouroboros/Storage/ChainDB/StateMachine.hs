@@ -300,15 +300,20 @@ type TestIterator m blk = WithEq (Iterator m blk (AllComponents blk))
 -- | Short-hand
 type TestReader   m blk = WithEq (Reader   m blk (AllComponents blk))
 
+-- | Environment to run commands against the real ChainDB implementation.
+data ChainDBEnv m blk = ChainDBEnv
+  { chainDB    :: ChainDB m blk
+  , internal   :: ChainDB.Internal m blk
+  , registry   :: ResourceRegistry m
+  , varCurSlot :: StrictTVar m SlotNo
+  , varNextId  :: StrictTVar m Id
+  }
+
 run :: forall m blk. (IOLike m, HasHeader blk)
-    => ChainDB          m blk
-    -> ChainDB.Internal m blk
-    -> ResourceRegistry m
-    -> StrictTVar m SlotNo
-    -> StrictTVar m Id
+    => ChainDBEnv m blk
     ->    Cmd     blk (TestIterator m blk) (TestReader m blk)
     -> m (Success blk (TestIterator m blk) (TestReader m blk))
-run chainDB@ChainDB{..} internal registry varCurSlot varNextId = \case
+run ChainDBEnv { chainDB = chainDB@ChainDB{..}, .. } = \case
     AddBlock blk             -> Point               <$> (advanceAndAdd (blockSlot blk) blk)
     AddFutureBlock blk s     -> Point               <$> (advanceAndAdd s               blk)
     GetCurrentChain          -> Chain               <$> atomically getCurrentChain
@@ -520,15 +525,10 @@ runPure cfg = \case
     openOrClosed f = first (Resp . Right . Unit) . f
 
 runIO :: HasHeader blk
-      => ChainDB          IO blk
-      -> ChainDB.Internal IO blk
-      -> ResourceRegistry IO
-      -> StrictTVar       IO SlotNo
-      -> StrictTVar       IO Id
-      ->     Cmd  blk (WithEq (Iterator IO blk (AllComponents blk))) (WithEq (Reader IO blk (AllComponents blk)))
-      -> IO (Resp blk (WithEq (Iterator IO blk (AllComponents blk))) (WithEq (Reader IO blk (AllComponents blk))))
-runIO db internal registry varCurSlot varNextId cmd =
-    Resp <$> try (run db internal registry varCurSlot varNextId cmd)
+      => ChainDBEnv IO blk
+      ->     Cmd  blk (TestIterator IO blk) (TestReader IO blk)
+      -> IO (Resp blk (TestIterator IO blk) (TestReader IO blk))
+runIO env cmd = Resp <$> try (run env cmd)
 
 {-------------------------------------------------------------------------------
   Collect arguments
@@ -979,39 +979,31 @@ postcondition model cmd resp =
     ev = lockstep model cmd resp
 
 semantics :: forall blk. TestConstraints blk
-          => ChainDB IO blk
-          -> ChainDB.Internal IO blk
-          -> ResourceRegistry IO
-          -> StrictTVar       IO SlotNo
-          -> StrictTVar       IO Id
+          => ChainDBEnv IO blk
           -> At Cmd blk IO Concrete
           -> IO (At Resp blk IO Concrete)
-semantics db internal registry varCurSlot varNextId (At cmd) =
+semantics env (At cmd) =
     At . (bimap (QSM.reference . QSM.Opaque) (QSM.reference . QSM.Opaque)) <$>
-    runIO db internal registry varCurSlot varNextId (bimap QSM.opaque QSM.opaque cmd)
+    runIO env (bimap QSM.opaque QSM.opaque cmd)
 
 -- | The state machine proper
 sm :: TestConstraints blk
-   => ChainDB          IO       blk
-   -> ChainDB.Internal IO       blk
-   -> ResourceRegistry IO
-   -> StrictTVar       IO SlotNo
-   -> StrictTVar       IO Id
-   -> BlockGen              blk IO
+   => ChainDBEnv IO blk
+   -> BlockGen                  blk IO
    -> TopLevelConfig        blk
-   -> ExtLedgerState        blk
-   -> StateMachine (Model   blk IO)
-                   (At Cmd  blk IO)
-                                IO
-                   (At Resp blk IO)
-sm db internal registry varCurSlot varNextId genBlock env initLedger = StateMachine
-  { initModel     = initModel env initLedger
+   -> ExtLedgerState            blk
+   -> StateMachine (Model       blk IO)
+                   (At Cmd      blk IO)
+                                    IO
+                   (At Resp     blk IO)
+sm env genBlock cfg initLedger = StateMachine
+  { initModel     = initModel cfg initLedger
   , transition    = transition
   , precondition  = precondition
   , postcondition = postcondition
   , generator     = Just . generator genBlock
   , shrinker      = shrinker
-  , semantics     = semantics db internal registry varCurSlot varNextId
+  , semantics     = semantics env
   , mock          = mock
   , invariant     = Nothing
   , cleanup       = noCleanup
@@ -1294,32 +1286,12 @@ testCfg = TopLevelConfig {
 
     k = SecurityParam 2
 
-dbUnused :: ChainDB blk m
-dbUnused = error "ChainDB used during command generation"
-
-internalUnused :: ChainDB.Internal blk m
-internalUnused = error "ChainDB.Internal used during command generation"
-
-registryUnunused :: ResourceRegistry m
-registryUnunused = error "ResourceRegistry used during command generation"
-
-varCurSlotUnused :: StrictTVar m SlotNo
-varCurSlotUnused = error "StrictTVar m SlotNo used during command generation"
-
-varNextIdUnused :: StrictTVar m Id
-varNextIdUnused = error "StrictTVar m Id used during command generation"
+envUnused :: ChainDBEnv m blk
+envUnused = error "ChainDBEnv used during command generation"
 
 smUnused :: ImmDB.ChunkInfo
          -> StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
-smUnused chunkInfo =
-    sm dbUnused
-       internalUnused
-       registryUnunused
-       varCurSlotUnused
-       varNextIdUnused
-       (genBlk chunkInfo)
-       testCfg
-       testInitExtLedger
+smUnused chunkInfo = sm envUnused (genBlk chunkInfo) testCfg testInitExtLedger
 
 prop_sequential :: SmallChunkInfo -> Property
 prop_sequential (SmallChunkInfo chunkInfo) =
@@ -1348,14 +1320,14 @@ prop_sequential (SmallChunkInfo chunkInfo) =
       (db, internal)     <- openDBInternal args False
       withAsync (intAddBlockRunner internal) $ \addBlockAsync -> do
         link addBlockAsync
-        let sm' = sm db
-                     internal
-                     iteratorRegistry
-                     varCurSlot
-                     varNextId
-                     (genBlk chunkInfo)
-                     testCfg
-                     testInitExtLedger
+        let env = ChainDBEnv
+              { chainDB = db
+              , internal
+              , registry = iteratorRegistry
+              , varCurSlot
+              , varNextId
+              }
+            sm' = sm env (genBlk chunkInfo) testCfg testInitExtLedger
         (hist, model, res) <- QSM.runCommands' sm' cmds
         cancel addBlockAsync
         trace <- getTrace
@@ -1568,21 +1540,25 @@ _runCmds chunkInfo cmds = withRegistry $ \registry -> do
           varCurSlot
           fsVars
     (db, internal) <- openDBInternal args False
-    evalStateT (mapM (go db internal registry varCurSlot varNextId) cmds) emptyRunCmdState
+    let env = ChainDBEnv
+          { chainDB = db
+          , internal
+          , registry
+          , varCurSlot
+          , varNextId
+          }
+    evalStateT (mapM (go env) cmds) emptyRunCmdState
   where
-    go :: ChainDB IO Blk -> ChainDB.Internal IO Blk
-       -> ResourceRegistry IO
-       -> StrictTVar IO SlotNo
-       -> StrictTVar IO Id
+    go :: ChainDBEnv IO Blk
        -> Cmd Blk IteratorId ReaderId
        -> StateT RunCmdState
                  IO
                  (Resp Blk IteratorId ReaderId)
-    go db internal resourceRegistry varCurSlot varNextId cmd = do
-      RunCmdState { rcsKnownIters, rcsKnownReaders} <- get
+    go env cmd = do
+      RunCmdState { rcsKnownIters, rcsKnownReaders } <- get
       let cmd' = At $
             bimap (revLookup rcsKnownIters) (revLookup rcsKnownReaders) cmd
-      resp <- lift $ unAt <$> semantics db internal resourceRegistry varCurSlot varNextId cmd'
+      resp <- lift $ unAt <$> semantics env cmd'
       newIters <- RE.fromList <$>
        mapM (\rdr -> (rdr, ) <$> newIteratorId) (iters resp)
       newReaders <- RE.fromList <$>
