@@ -364,6 +364,8 @@ outgoingConnection
   -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> ErrorPolicies Socket.SockAddr ()
+  -- ^ FIXME this includes "application" error policies as well as "connection"
+  -- error policies, but the latter is not relevant here. Use a smaller type.
   -> Connections.ConnectionId
   -> Socket.Socket       -- ^ Socket to peer; could have been established by us or them.
   -> IO (Connection.Decision IO Local reject (ConnectionHandle IO))
@@ -456,6 +458,8 @@ incomingConnection
     -> (forall vData . vDataT vData -> vData -> vData -> Accept)
     -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
     -> ErrorPolicies Socket.SockAddr ()
+    -- ^ FIXME this includes "application" error policies as well as "connection"
+    -- error policies, but the latter is not relevant here. Use a smaller type.
     -> Connections.ConnectionId -- ^ Includes our address and remote address.
     -> Socket.Socket            -- ^ Established by the remote peer.
     -> IO (Connection.Decision IO Remote reject (ConnectionHandle IO))
