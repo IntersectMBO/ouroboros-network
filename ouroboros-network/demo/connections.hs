@@ -58,7 +58,7 @@ data Node = forall sockType . Node
 -- | When the continuation goes, there is a socket listening.
 node :: Some SockAddr -> (Node -> IO t) -> IO t
 node (Some (bindAddr :: SockAddr sockType)) k =
-  Server.server bindAddr (const Request) $ \server -> do
+  Server.server bindAddr (const Request) $ \_boundAddr server -> do
     -- Type sig is required; GHC struggles with the higher-rank type (Client
     -- has foralls).
     let client :: SockAddr sockType -> Client ConnectionId Socket IO Request
