@@ -164,6 +164,7 @@ withConnections errorPolicies mkApp =
       versions
     SomeVersionedInitiatorApp connectTracers versions -> ConnectionDataLocal
       connectTracers
+      errorPolicies
       cborTermVersionDataCodec
       versions
 

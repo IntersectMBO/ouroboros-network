@@ -253,6 +253,7 @@ data ConnectionData ptcl vNumber provenance where
   ConnectionDataLocal
     :: ( Mx.HasInitiator appType ~ True )
     => NetworkConnectTracers ptcl vNumber
+    -> ErrorPolicies Socket.SockAddr ()
     -> VersionDataCodec vDataT CBOR.Term
     -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
     -> ConnectionData ptcl vNumber Local
@@ -336,8 +337,8 @@ connection mk _ connid socket request = case mk request of
 
     -- TODO should take an error policy. We'll use it for exception handling,
     -- to figure out when to blow everything up.
-    ConnectionDataLocal tracers vCodec versions ->
-        outgoingConnection vCodec tracers versions connid socket
+    ConnectionDataLocal tracers errPolicies vCodec versions ->
+        outgoingConnection tracers vCodec versions errPolicies connid socket
 
     ConnectionDataRemote tracers errPolicies vCodec accept versions ->
         incomingConnection tracers vCodec accept versions errPolicies connid socket
@@ -358,14 +359,15 @@ outgoingConnection
      , Show ptcl
      , MiniProtocolLimits ptcl
      )
-  => VersionDataCodec vDataT CBOR.Term
-  -> NetworkConnectTracers ptcl vNumber
+  => NetworkConnectTracers ptcl vNumber
+  -> VersionDataCodec vDataT CBOR.Term
   -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
+  -> ErrorPolicies Socket.SockAddr ()
   -> Connections.ConnectionId
   -> Socket.Socket       -- ^ Socket to peer; could have been established by us or them.
   -> IO (Connection.Decision IO Local reject (ConnectionHandle IO))
-outgoingConnection versionDataCodec tracers versions connId sd =
+outgoingConnection tracers versionDataCodec versions _errorPolicies connId sd =
     -- Always accept and run initiator mode mux on the socket.
     pure $ Connection.Accept $ \_connThread -> do
         -- io-sim-classes STM interface thinks this is ambgiuous in the monad
