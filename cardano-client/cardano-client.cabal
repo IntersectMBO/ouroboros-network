@@ -1,0 +1,29 @@
+name:                cardano-client
+version:             0.1.0.0
+synopsis:            An API for ouroboros-network
+-- description:
+license:             Apache-2.0
+license-files:       LICENSE
+copyright:           2019 Input Output (Hong Kong) Ltd.
+maintainer:
+category:            Network
+build-type:          Simple
+extra-source-files:
+  ChangeLog.md
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Cardano.Client.API
+  default-language:    Haskell2010
+  build-depends:       base,
+                       bytestring        >=0.10 && <0.11,
+                       io-sim-classes,
+                       ouroboros-consensus,
+                       ouroboros-network,
+                       ouroboros-network-framework,
+                       typed-protocols,
+                       network-mux
+
+  ghc-options:         -Wall
+                       -Wno-unticked-promoted-constructors
