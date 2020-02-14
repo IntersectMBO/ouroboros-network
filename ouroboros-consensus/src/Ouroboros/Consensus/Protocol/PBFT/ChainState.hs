@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiWayIf                 #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -40,7 +41,6 @@ module Ouroboros.Consensus.Protocol.PBFT.ChainState (
 
 import           Codec.Serialise (Serialise (..))
 import           Codec.Serialise.Decoding (Decoder)
-import qualified Codec.Serialise.Decoding as Serialise
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Serialise
 import qualified Control.Exception as Exn
@@ -54,6 +54,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
+import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (SlotNo (..))
@@ -64,6 +65,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Util (repeatedly)
+import           Ouroboros.Consensus.Util.Versioned
 
 {-------------------------------------------------------------------------------
   Types
@@ -565,30 +567,19 @@ fromList k n (anchor, signers, ebbs) =
   Serialization
 -------------------------------------------------------------------------------}
 
-serializationFormatVersion1 :: Word8
-serializationFormatVersion1 = 1
+serializationFormatVersion0 :: VersionNumber
+serializationFormatVersion0 = 0
 
-serializationFormatVersion2 :: Word8
-serializationFormatVersion2 = 2
-  -- CHANGELOG
-  --
-  -- Version 0 is 2 fields, the anchor and the window. Note that it does not
-  -- have the version marker.
-  --
-  -- Version 1 has 4 fields, the version marker, anchor, window, and @~(Map
-  -- SlotNo (WithOrigin SlotNo))@.
-  --
-  -- Version 2 has 4 fields, the version marker, anchor, window, and @~(Maybe EbbInfo)@.
-
-encodePBftChainState :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
-                     => PBftChainState c -> Encoding
-encodePBftChainState st@PBftChainState{..} = mconcat [
-      Serialise.encodeListLen 4
-    , encode serializationFormatVersion2
-    , encode (withOriginToMaybe anchor)
-    , encode signers
-    , encode ebbs'
-    ]
+encodePBftChainState
+  :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
+  => PBftChainState c -> Encoding
+encodePBftChainState st@PBftChainState{..} =
+    encodeVersion serializationFormatVersion0 $ mconcat [
+        Serialise.encodeListLen 3
+      , encode (withOriginToMaybe anchor)
+      , encode signers
+      , encode ebbs'
+      ]
   where
     (anchor, signers, ebbs') = toList st
 
@@ -596,27 +587,15 @@ decodePBftChainState :: (PBftCrypto c, Serialise (PBftVerKeyHash c), HasCallStac
                      => SecurityParam
                      -> WindowSize
                      -> Decoder s (PBftChainState c)
-decodePBftChainState k n = Serialise.decodeListLen >>= \case
-   2 -> do -- Version is 0
+decodePBftChainState k n = decodeVersion
+    [(serializationFormatVersion0, Decode decodePBftChainState0)]
+  where
+    decodePBftChainState0 = do
+      enforceSize "PBftChainState" 3
       anchor  <- withOriginFromMaybe <$> decode
       signers <- decode
-      return $ fromList k n (anchor, signers, ebbsEmpty)
-   4 -> decode >>= \v -> if
-      | v == serializationFormatVersion1 -> do
-        anchor  <- withOriginFromMaybe <$> decode
-        signers <- decode
-        ebbs'   <- decode
-        let _ = ebbs' :: Map SlotNo (WithOrigin SlotNo)
-        -- NB we discard ebbs'
-        return $ fromList k n (anchor, signers, ebbsEmpty)
-      | v == serializationFormatVersion2 -> do
-        anchor  <- withOriginFromMaybe <$> decode
-        signers <- decode
-        ebbs'   <- decode
-        return $ fromList k n (anchor, signers, ebbs')
-      | otherwise ->
-        error $ "unexpected serialisation format version: " <> show v
-   o -> error $ "unexpected list length: " <> show o
+      ebbs'   <- decode
+      return $ fromList k n (anchor, signers, ebbs')
 
 instance Serialise (PBftVerKeyHash c) => Serialise (PBftSigner c) where
   encode = encode . toPair

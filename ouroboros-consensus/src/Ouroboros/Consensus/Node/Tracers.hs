@@ -1,4 +1,7 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+
 module Ouroboros.Consensus.Node.Tracers
   ( -- * All tracers of a node bundled together
     Tracers' (..)
@@ -11,7 +14,7 @@ module Ouroboros.Consensus.Node.Tracers
 
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 
-import           Ouroboros.Network.Block (Point, SlotNo)
+import           Ouroboros.Network.Block (BlockNo, Point, SlotNo)
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
 import           Ouroboros.Network.TxSubmission.Inbound
@@ -51,6 +54,25 @@ data Tracers' peer blk f = Tracers
   , forgeTracer                   :: f (TraceForgeEvent blk (GenTx blk))
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
   }
+
+instance (forall a. Semigroup (f a)) => Semigroup (Tracers' peer blk f) where
+  l <> r = Tracers
+    { chainSyncClientTracer         = f chainSyncClientTracer
+    , chainSyncServerHeaderTracer   = f chainSyncServerHeaderTracer
+    , chainSyncServerBlockTracer    = f chainSyncServerBlockTracer
+    , blockFetchDecisionTracer      = f blockFetchDecisionTracer
+    , blockFetchClientTracer        = f blockFetchClientTracer
+    , blockFetchServerTracer        = f blockFetchServerTracer
+    , txInboundTracer               = f txInboundTracer
+    , txOutboundTracer              = f txOutboundTracer
+    , localTxSubmissionServerTracer = f localTxSubmissionServerTracer
+    , mempoolTracer                 = f mempoolTracer
+    , forgeTracer                   = f forgeTracer
+    , blockchainTimeTracer          = f blockchainTimeTracer
+    }
+    where
+      f :: forall a. Semigroup a => (Tracers' peer blk f -> a) -> a
+      f prj = prj l <> prj r
 
 -- | A record of 'Tracer's for the node.
 type Tracers m peer blk = Tracers' peer blk (Tracer m)
@@ -109,6 +131,8 @@ showTracers tr = Tracers
 -- >          +--- TraceNodeNotLeader
 -- >          |
 -- >          +--- TraceBlockFromFuture (leadership check failed)
+-- >          |
+-- >          +--- TraceSlotIsImmutable (leadership check failed)
 -- >          |
 -- >          +--- TraceNoLedgerState (leadership check failed)
 -- >          |
@@ -176,6 +200,23 @@ data TraceForgeEvent blk tx
   --
   -- See also <https://github.com/input-output-hk/ouroboros-network/issues/1462>
   | TraceBlockFromFuture SlotNo SlotNo
+
+  -- | Leadership check failed: the tip of the ImmDB inhabits the current slot
+  --
+  -- This might happen in two cases.
+  --
+  --  1. the clock moved backwards, on restart we ignored everything from the
+  --     VolatileDB since it's all in the future, and now the tip of the
+  --     ImmutableDB points to a block produced in the same slot we're trying
+  --     to produce a block in
+  --
+  --  2. k = 0 and we already adopted a block from another leader of the same
+  --     slot.
+  --
+  -- We record both the current slot number as well as the tip of the ImmDB.
+  --
+  -- See also <https://github.com/input-output-hk/ouroboros-network/issues/1462>
+  | TraceSlotIsImmutable SlotNo (Point blk) BlockNo
 
   -- | We did the leadership check and concluded we /are/ the leader
   --

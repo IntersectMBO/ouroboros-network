@@ -26,18 +26,21 @@ import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad (forM_, replicateM, unless, when)
 import           Control.Monad.State (StateT, evalStateT, get, lift, modify,
                      put)
+import           Control.Tracer
 import           Data.Bifoldable
 import           Data.Bifunctor
 import qualified Data.Bifunctor.TH as TH
 import           Data.Bitraversable
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Foldable (toList)
 import           Data.Functor.Classes (Eq1, Show1)
 import           Data.Functor.Identity (Identity (..))
 import           Data.List (sortOn)
 import qualified Data.Map as Map
 import           Data.Ord (Down (..))
 import           Data.Proxy
-import           Data.TreeDiff (ToExpr)
+import           Data.Sequence.Strict (StrictSeq)
+import           Data.TreeDiff (ToExpr (..))
 import           Data.Typeable
 import           Data.Word (Word16, Word32)
 import           GHC.Generics (Generic)
@@ -52,9 +55,6 @@ import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer
 
 import           Cardano.Crypto.DSIGN.Mock
 
@@ -73,6 +73,9 @@ import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.Mock
+                     (settableBlockchainTime)
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
@@ -99,6 +102,7 @@ import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
 import           Ouroboros.Storage.LedgerDB.InMemory (LedgerDbParams (..))
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import qualified Ouroboros.Storage.VolatileDB as VolDB
 
 import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
                      ModelSupportsBlock, ReaderId)
@@ -129,7 +133,6 @@ data Cmd blk it rdr
   | GetTipBlock
   | GetTipHeader
   | GetTipPoint
-  | GetTipBlockNo
   | GetBlockComponent     (Point blk)
   | GetGCedBlockComponent (Point blk)
     -- ^ Only for blocks that may have been garbage collected.
@@ -305,7 +308,6 @@ run chainDB@ChainDB{..} internal registry varCurSlot varNextId = \case
     GetTipBlock              -> MbBlock             <$> getTipBlock
     GetTipHeader             -> MbHeader            <$> getTipHeader
     GetTipPoint              -> Point               <$> atomically getTipPoint
-    GetTipBlockNo            -> BlockNo             <$> atomically getTipBlockNo
     GetBlockComponent pt     -> mbAllComponents     =<< getBlockComponent allComponents pt
     GetGCedBlockComponent pt -> mbGCedAllComponents =<< getBlockComponent allComponents pt
     GetMaxSlotNo             -> MaxSlot             <$> atomically getMaxSlotNo
@@ -462,7 +464,6 @@ runPure cfg = \case
     GetTipBlock              -> ok  MbBlock             $ query    Model.tipBlock
     GetTipHeader             -> ok  MbHeader            $ query   (fmap getHeader . Model.tipBlock)
     GetTipPoint              -> ok  Point               $ query    Model.tipPoint
-    GetTipBlockNo            -> ok  BlockNo             $ query    Model.tipBlockNo
     GetBlockComponent pt     -> err MbAllComponents     $ query   (Model.getBlockComponentByPoint @Identity allComponents pt)
     GetGCedBlockComponent pt -> err mbGCedAllComponents $ query   (Model.getBlockComponentByPoint @Identity allComponents pt)
     GetMaxSlotNo             -> ok  MaxSlot             $ query    Model.maxSlotNo
@@ -686,7 +687,6 @@ generator genBlock m@Model {..} = At <$> frequency
     , (if empty then 1 else 10, return GetTipBlock)
       -- To check that we're on the right chain
     , (if empty then 1 else 10, return GetTipPoint)
-    , (if empty then 1 else 10, return GetTipBlockNo)
     , (10, genGetBlockComponent)
     , (if empty then 1 else 10, return GetMaxSlotNo)
     , (if empty then 1 else 10, genGetPastLedger)
@@ -1033,7 +1033,7 @@ deriving instance Generic (Chain blk)
 deriving instance Generic (ChainProducerState blk)
 deriving instance Generic (ReaderState blk)
 
-deriving instance ( ToExpr (ChainState (BlockProtocol blk))
+deriving instance ( ToExpr (HeaderState blk)
                   , ToExpr (LedgerState blk)
                   )
                  => ToExpr (ExtLedgerState blk)
@@ -1058,15 +1058,15 @@ deriving instance ( ToExpr (HeaderHash blk)
                   )
                  => ToExpr (InvalidBlockReason blk)
 deriving instance ( ToExpr blk
-                  , ToExpr (HeaderHash blk)
-                  , ToExpr (ChainState (BlockProtocol blk))
+                  , ToExpr (HeaderHash  blk)
+                  , ToExpr (HeaderState blk)
                   , ToExpr (LedgerState blk)
                   , ToExpr (ExtValidationError blk)
                   )
                  => ToExpr (DBModel blk)
 deriving instance ( ToExpr blk
-                  , ToExpr (HeaderHash blk)
-                  , ToExpr (ChainState (BlockProtocol blk))
+                  , ToExpr (HeaderHash  blk)
+                  , ToExpr (HeaderState blk)
                   , ToExpr (LedgerState blk)
                   , ToExpr (ExtValidationError blk)
                   )
@@ -1081,9 +1081,16 @@ deriving instance ToExpr TestBody
 deriving instance ToExpr TestBodyHash
 deriving instance ToExpr TestBlockError
 deriving instance ToExpr Blk
+deriving instance ToExpr (AnnTip Blk)
 deriving instance ToExpr (LedgerState Blk)
+deriving instance ToExpr (HeaderState Blk)
+deriving instance ToExpr (HeaderError Blk)
+deriving instance ToExpr (HeaderEnvelopeError Blk)
 deriving instance ToExpr BftValidationErr
 deriving instance ToExpr (ExtValidationError Blk)
+
+instance ToExpr a => ToExpr (StrictSeq a) where
+  toExpr = toExpr . toList
 
 {-------------------------------------------------------------------------------
   Labelling
@@ -1113,6 +1120,8 @@ deriving instance SOP.Generic         (LedgerDB.TraceReplayEvent r replayTo bloc
 deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceReplayEvent r replayTo blockInfo)
 deriving instance SOP.Generic         (ImmDB.TraceEvent e hash)
 deriving instance SOP.HasDatatypeInfo (ImmDB.TraceEvent e hash)
+deriving instance SOP.Generic         (VolDB.TraceEvent e hash)
+deriving instance SOP.HasDatatypeInfo (VolDB.TraceEvent e hash)
 
 -- TODO labelling
 
@@ -1260,15 +1269,6 @@ smUnused =
     sm dbUnused internalUnused registryUnunused varCurSlotUnused varNextIdUnused
       genBlk testCfg testInitExtLedger
 
--- | The current slot can be changed by modifying the given 'StrictTVar'.
--- 'onSlotChange_' is not implemented as it is currently not used by the
--- ChainDB.
-settableBlockchainTime :: IOLike m => StrictTVar m SlotNo -> BlockchainTime m
-settableBlockchainTime varCurSlot = BlockchainTime {
-      getCurrentSlot = readTVar varCurSlot
-    , onSlotChange_  = error "unimplemented onSlotChange_"
-    }
-
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
     (hist, prop) <- test cmds
@@ -1412,6 +1412,7 @@ traceEventName = \case
     TraceLedgerEvent         ev    -> "Ledger."       <> constrName ev
     TraceLedgerReplayEvent   ev    -> "LedgerReplay." <> constrName ev
     TraceImmDBEvent          ev    -> "ImmDB."        <> constrName ev
+    TraceVolDBEvent          ev    -> "VolDB."        <> constrName ev
 
 fixedEpochSize :: EpochSize
 fixedEpochSize = 10
@@ -1433,6 +1434,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbDecodeHeader     = const <$> decode
     , cdbDecodeLedger     = decode
     , cdbDecodeChainState = decode
+    , cdbDecodeTipInfo    = decode
 
       -- Encoders
     , cdbEncodeHash       = encode
@@ -1440,6 +1442,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbEncodeHeader     = encode
     , cdbEncodeLedger     = encode
     , cdbEncodeChainState = encode
+    , cdbEncodeTipInfo    = encode
 
       -- Error handling
     , cdbErrImmDb         = EH.monadCatch
@@ -1452,8 +1455,9 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbHasFSLgrDB       = simHasFS EH.monadCatch lgrDbFsVar
 
       -- Policy
-    , cdbValidation       = ValidateAllEpochs
-    , cdbBlocksPerFile    = 4
+    , cdbImmValidation    = ValidateAllEpochs
+    , cdbVolValidation    = VolDB.ValidateAll
+    , cdbBlocksPerFile    = VolDB.mkBlocksPerFile 4
     , cdbParamsLgrDB      = LedgerDbParams {
                                 -- Pick a small value for 'ledgerDbSnapEvery',
                                 -- so that maximum supported rollback is limited
@@ -1470,7 +1474,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbCheckIntegrity   = testBlockIsValid
     , cdbGenesis          = return initLedger
     , cdbBlockchainTime   = settableBlockchainTime varCurSlot
-    , cdbAddHdrEnv        = const id
+    , cdbAddHdrEnv        = \_ _ -> id
     , cdbImmDbCacheConfig = Index.CacheConfig 2 60
 
     -- Misc

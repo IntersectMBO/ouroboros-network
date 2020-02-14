@@ -1,12 +1,12 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-# LANGUAGE GADTs               #-}
 
@@ -47,8 +47,9 @@ import           Network.Mux.Time (microsecondsToDiffTime)
 import           Network.TypedProtocol.Driver
 import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Codec.Cbor as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Examples   as ReqResp
+
 import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq, cborTermVersionDataCodec)
 import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
 
@@ -61,11 +62,14 @@ import qualified Ouroboros.Network.Connections.Socket.Types as Connections
 import qualified Ouroboros.Network.Connections.Socket.Client as Socket (client)
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToNode
+import           Ouroboros.Network.NodeToNode hiding (dnsSubscriptionWorker,
+                     ipSubscriptionWorker)
 import           Ouroboros.Network.Socket as Socket
 import           Ouroboros.Network.Subscription
-import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
+import           Ouroboros.Network.Subscription.Ip
+import           Ouroboros.Network.Subscription.PeerState
+import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker as Subscription
 
 defaultMiniProtocolLimit :: Int64
@@ -622,10 +626,10 @@ prop_send_recv f xs first = ioProperty $ do
 
 
 data ReqRspCfg = ReqRspCfg {
-      rrcTag         :: !String
-    , rrcServerVar   :: !(StrictTMVar IO Int)
-    , rrcClientVar   :: !(StrictTMVar IO [Int])
-    , rrcSiblingVar  :: !(StrictTVar IO Int)
+      rrcTag        :: !String
+    , rrcServerVar  :: !(StrictTMVar IO Int)
+    , rrcClientVar  :: !(StrictTMVar IO [Int])
+    , rrcSiblingVar :: !(StrictTVar IO Int)
 }
 
 newReqRspCfg :: String -> StrictTVar IO Int -> IO ReqRspCfg

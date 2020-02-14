@@ -1,6 +1,5 @@
-{-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE RankNTypes              #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RankNTypes       #-}
 
 -- | Infrastructure required to run a node
 --
@@ -19,17 +18,20 @@ import           Data.Word (Word32)
 
 import           Cardano.Crypto (ProtocolMagicId)
 
-import           Ouroboros.Network.Block (BlockNo, HeaderHash, SlotNo)
+import           Ouroboros.Network.Block (BlockNo, HeaderHash, Serialised,
+                     SlotNo)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
 import           Ouroboros.Network.Magic (NetworkMagic)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart)
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike (IOLike)
 
@@ -37,14 +39,18 @@ import           Ouroboros.Storage.ChainDB (ChainDB)
 import           Ouroboros.Storage.Common (EpochNo, EpochSize)
 import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo)
 
+{-------------------------------------------------------------------------------
+  RunNode proper
+-------------------------------------------------------------------------------}
+
 class ( ProtocolLedgerView blk
       , ApplyTx blk
       , HasTxId (GenTx blk)
       , QueryLedger blk
+      , HasNetworkProtocolVersion blk
         -- TODO: Remove after reconsidering rewindChainState:
       , Serialise (HeaderHash blk)
       ) => RunNode blk where
-
   nodeForgeBlock          :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
                           => NodeConfig (BlockProtocol blk)
                           -> SlotNo              -- ^ Current slot
@@ -102,10 +108,11 @@ class ( ProtocolLedgerView blk
   -- bytestring that can actually be decoded as a header.
   --
   -- For example, a CBOR tag may have to be added in front.
-  nodeAddHeaderEnvelope   :: Proxy blk
-                          -> IsEBB
-                          -> Lazy.ByteString -> Lazy.ByteString
-  nodeAddHeaderEnvelope _ _ = id  -- Default to no envelope
+  nodeAddHeaderEnvelope :: Proxy blk
+                        -> IsEBB
+                        -> SizeInBytes  -- ^ Block size
+                        -> Lazy.ByteString -> Lazy.ByteString
+  nodeAddHeaderEnvelope _ _ _ = id  -- Default to no envelope
 
 
   -- | This function is called when starting up the node, right after the
@@ -125,18 +132,29 @@ class ( ProtocolLedgerView blk
   nodeEncodeBlockWithInfo :: NodeConfig (BlockProtocol blk) -> blk -> BinaryInfo Encoding
   nodeEncodeBlock         :: NodeConfig (BlockProtocol blk) -> blk -> Encoding
   nodeEncodeBlock cfg blk =  binaryBlob $ nodeEncodeBlockWithInfo cfg blk
-  nodeEncodeHeader        :: NodeConfig (BlockProtocol blk) -> Header blk -> Encoding
+  nodeEncodeHeader        :: NodeConfig (BlockProtocol blk)
+                          -> SerialisationVersion (NetworkProtocolVersion blk)
+                          -> Header blk -> Encoding
+  nodeEncodeWrappedHeader :: NodeConfig (BlockProtocol blk)
+                          -> NetworkProtocolVersion blk
+                          -> Serialised (Header blk) -> Encoding
   nodeEncodeGenTx         :: GenTx  blk -> Encoding
   nodeEncodeGenTxId       :: GenTxId blk -> Encoding
   nodeEncodeHeaderHash    :: Proxy blk -> HeaderHash blk -> Encoding
   nodeEncodeLedgerState   :: NodeConfig (BlockProtocol blk) -> LedgerState blk -> Encoding
   nodeEncodeChainState    :: Proxy blk -> NodeConfig (BlockProtocol blk) -> ChainState (BlockProtocol blk) -> Encoding
   nodeEncodeApplyTxError  :: Proxy blk -> ApplyTxErr blk -> Encoding
+  nodeEncodeTipInfo       :: Proxy blk -> TipInfo blk -> Encoding
   nodeEncodeQuery         :: Query blk result -> Encoding
   nodeEncodeResult        :: Query blk result -> result -> Encoding
 
   -- Decoders
-  nodeDecodeHeader        :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Lazy.ByteString -> Header blk)
+  nodeDecodeHeader        :: forall s. NodeConfig (BlockProtocol blk)
+                          -> SerialisationVersion (NetworkProtocolVersion blk)
+                          -> Decoder s (Lazy.ByteString -> Header blk)
+  nodeDecodeWrappedHeader :: forall s. NodeConfig (BlockProtocol blk)
+                          -> NetworkProtocolVersion blk
+                          -> Decoder s (Serialised (Header blk))
   nodeDecodeBlock         :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Lazy.ByteString -> blk)
   nodeDecodeGenTx         :: forall s. Decoder s (GenTx blk)
   nodeDecodeGenTxId       :: forall s. Decoder s (GenTxId blk)
@@ -144,5 +162,6 @@ class ( ProtocolLedgerView blk
   nodeDecodeLedgerState   :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (LedgerState blk)
   nodeDecodeChainState    :: forall s. Proxy blk -> NodeConfig (BlockProtocol blk) -> Decoder s (ChainState (BlockProtocol blk))
   nodeDecodeApplyTxError  :: forall s. Proxy blk -> Decoder s (ApplyTxErr blk)
+  nodeDecodeTipInfo       :: forall s. Proxy blk -> Decoder s (TipInfo blk)
   nodeDecodeQuery         :: forall s. Decoder s (Some (Query blk))
   nodeDecodeResult        :: Query blk result -> forall s. Decoder s result

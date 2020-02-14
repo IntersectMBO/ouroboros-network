@@ -4,6 +4,7 @@
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TupleSections            #-}
 -- | The ImmutableDB doesn't care about the serialisation format, but in
 -- practice we use CBOR. If we were to change the serialisation format, we
 -- would have to write a new 'EpochFileParser' implementation, but the rest of
@@ -11,6 +12,7 @@
 module Ouroboros.Storage.ImmutableDB.Parser
   ( -- * EpochFileParser
     EpochFileError (..)
+  , BlockSummary(..)
   , epochFileParser
   , epochFileParser'
   ) where
@@ -24,8 +26,10 @@ import           Streaming (Of, Stream)
 import qualified Streaming as S
 import qualified Streaming.Prelude as S
 
+import           Cardano.Slotting.Block (BlockNo)
+
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
-                     HeaderHash)
+                     HeaderHash, SlotNo)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
@@ -55,11 +59,24 @@ data EpochFileError hash =
     -- 'BlockOrEBB' number returned 'False', indicating that the block got
     -- corrupted.
   | EpochErrCorrupt hash BlockOrEBB
+
+    -- | The block has a slot number greater than the current slot (wall
+    -- clock). This block is in the future, so we must truncate it.
+  | EpochErrFutureBlock
+      SlotNo  -- ^ Current slot (wall clock)
+      SlotNo  -- ^ Slot number of the block
   deriving (Eq, Show)
+
+-- | Information about a block returned by the parser
+data BlockSummary hash = BlockSummary {
+      summaryEntry   :: !(Secondary.Entry hash)
+    , summaryBlockNo :: !BlockNo
+    }
 
 epochFileParser'
   :: forall m blk hash h. (IOLike m, Eq hash)
   => (blk -> SlotNo)
+  -> (blk -> BlockNo)
   -> (blk -> hash)
   -> (blk -> WithOrigin hash)  -- ^ Previous hash
   -> HasFS m h
@@ -71,19 +88,39 @@ epochFileParser'
   -> EpochFileParser
        (EpochFileError hash)
        m
-       (Secondary.Entry hash)
+       (BlockSummary hash)
        hash
-epochFileParser' getSlotNo getHash getPrevHash hasFS decodeBlock isEBB
+epochFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEBB
                  getBinaryInfo isNotCorrupt =
-    EpochFileParser $ \fsPath expectedChecksums k ->
+    EpochFileParser $ \fsPath currentSlotNo expectedChecksums k ->
       Util.CBOR.withStreamIncrementalOffsets hasFS decoder fsPath
-        (k . checkIfHashesLineUp . checkEntries expectedChecksums)
+        ( k
+        . checkIfHashesLineUp
+        . checkEntries expectedChecksums
+        . checkFutureSlot currentSlotNo
+        . fmap (fmap (first EpochErrRead))
+        )
   where
     decoder :: forall s. Decoder s (BL.ByteString -> (blk, CRC))
     decoder = decodeBlock <&> \mkBlk bs ->
       let !blk      = mkBlk bs
           !checksum = computeCRC bs
       in (blk, checksum)
+
+    -- | Stop when a block has slot number > the current slot, return
+    -- 'EpochErrFutureBlock'.
+    checkFutureSlot
+      :: SlotNo  -- ^ Current slot (wall clock).
+      -> Stream (Of (Word64, (Word64, (blk, CRC))))
+                m
+                (Maybe (EpochFileError hash, Word64))
+      -> Stream (Of (Word64, (Word64, (blk, CRC))))
+                m
+                (Maybe (EpochFileError hash, Word64))
+    checkFutureSlot currentSlotNo = mapS $ \x@(offset, (_, (blk, _))) ->
+      if getSlotNo blk > currentSlotNo
+      then Left $ Just (EpochErrFutureBlock currentSlotNo (getSlotNo blk), offset)
+      else Right x
 
     -- | Go over the expected checksums and blocks in parallel. Stop with an
     -- error when a block is corrupt. Yield correct entries along the way.
@@ -100,38 +137,42 @@ epochFileParser' getSlotNo getHash getPrevHash hasFS decodeBlock isEBB
          -- ^ Expected checksums
       -> Stream (Of (Word64, (Word64, (blk, CRC))))
                 m
-                (Maybe (Util.CBOR.ReadIncrementalErr, Word64))
+                (Maybe (EpochFileError hash, Word64))
          -- ^ Input stream of blocks (with additional info)
-      -> Stream (Of (Secondary.Entry hash, WithOrigin hash))
+      -> Stream (Of (BlockSummary hash, WithOrigin hash))
                 m
                 (Maybe (EpochFileError hash, Word64))
-    checkEntries = go
+    checkEntries = \expected -> mapAccumS expected updateAcc
       where
-        go expected blkAndInfos = S.lift (S.next blkAndInfos) >>= \case
-          -- No more blocks, but maybe some expected entries. We ignore them.
-          Left mbErr -> return $ first EpochErrRead <$> mbErr
-          -- A block
-          Right (blkAndInfo@(offset, (_, (blk, checksum))), blkAndInfos') ->
-              case expected of
-                expectedChecksum:expected'
-                  | expectedChecksum == checksum
-                  -> S.yield entryAndPrevHash *> go expected' blkAndInfos'
-                -- No expected entry or a mismatch
-                _ | isNotCorrupt blk
-                    -- The (expensive) integrity check passed, so continue
-                  -> S.yield entryAndPrevHash *> go (drop 1 expected) blkAndInfos'
-                  | otherwise
-                    -- The block is corrupt, stop
-                  -> return $ Just (EpochErrCorrupt headerHash blockOrEBB, offset)
-            where
-              entryAndPrevHash@(actualEntry, _) =
-                entryForBlockAndInfo blkAndInfo
-              Secondary.Entry { headerHash, blockOrEBB } = actualEntry
+        updateAcc
+          :: [CRC]
+          -> (Word64, (Word64, (blk, CRC)))
+          -> Either (Maybe (EpochFileError hash, Word64))
+                    ( (BlockSummary hash, WithOrigin hash)
+                    , [CRC]
+                    )
+        updateAcc expected blkAndInfo@(offset, (_, (blk, checksum))) =
+            case expected of
+              expectedChecksum:expected'
+                | expectedChecksum == checksum
+                -> Right (entryAndPrevHash, expected')
+              -- No expected entry or a mismatch
+              _ | isNotCorrupt blk
+                  -- The (expensive) integrity check passed, so continue
+                -> Right (entryAndPrevHash, drop 1 expected)
+                | otherwise
+                  -- The block is corrupt, stop
+                -> Left $ Just (EpochErrCorrupt headerHash blockOrEBB, offset)
+          where
+            entryAndPrevHash@(BlockSummary actualEntry _, _) =
+              entryForBlockAndInfo blkAndInfo
+            Secondary.Entry { headerHash, blockOrEBB } = actualEntry
 
     entryForBlockAndInfo
       :: (Word64, (Word64, (blk, CRC)))
-      -> (Secondary.Entry hash, WithOrigin hash)
-    entryForBlockAndInfo (offset, (_size, (blk, checksum))) = (entry, prevHash)
+      -> (BlockSummary hash, WithOrigin hash)
+    entryForBlockAndInfo (offset, (_size, (blk, checksum))) =
+        (BlockSummary entry (getBlockNo blk), prevHash)
       where
         -- Don't accidentally hold on to the block!
         !prevHash = getPrevHash blk
@@ -148,32 +189,26 @@ epochFileParser' getSlotNo getHash getPrevHash hasFS decodeBlock isEBB
         BinaryInfo { headerOffset, headerSize } = getBinaryInfo blk
 
     checkIfHashesLineUp
-      :: Stream (Of (Secondary.Entry hash, WithOrigin hash))
+      :: Stream (Of (BlockSummary hash, WithOrigin hash))
                 m
                 (Maybe (EpochFileError hash, Word64))
-      -> Stream (Of (Secondary.Entry hash, WithOrigin hash))
+      -> Stream (Of (BlockSummary hash, WithOrigin hash))
                 m
                 (Maybe (EpochFileError hash, Word64))
-    checkIfHashesLineUp = \input -> S.lift (S.next input) >>= \case
-        Left mbErr ->
-          return mbErr
-        Right ((entry, prevHash), input') ->
-          S.yield (entry, prevHash) *>
-          go (At (Secondary.headerHash entry)) input'
+    checkIfHashesLineUp = mapAccumS0 checkFirst checkNext
       where
-        -- Loop invariant: the @hashOfPrevBlock@ is the hash of the most
-        -- recently checked block.
-        go hashOfPrevBlock input = S.lift (S.next input) >>= \case
-          Left mbErr
-            -> return mbErr
-          Right ((entry, prevHash), input')
-            | prevHash == hashOfPrevBlock
-            -> S.yield (entry, prevHash) *>
-               go (At (Secondary.headerHash entry)) input'
-            | otherwise
-            -> let err = EpochErrHashMismatch hashOfPrevBlock prevHash
-                   offset = Secondary.unBlockOffset $ Secondary.blockOffset entry
-               in return $ Just (err, offset)
+        -- We pass the hash of the previous block around as the state (@s@).
+        checkFirst x@(BlockSummary entry _, _) =
+            Right (x, Secondary.headerHash entry)
+
+        checkNext hashOfPrevBlock x@(BlockSummary entry _blockNo, prevHash)
+          | prevHash == At hashOfPrevBlock
+          = Right (x, Secondary.headerHash entry)
+          | otherwise
+          = Left (Just (err, offset))
+            where
+              err = EpochErrHashMismatch (At hashOfPrevBlock) prevHash
+              offset = Secondary.unBlockOffset $ Secondary.blockOffset entry
 
 -- | A version of 'epochFileParser'' for blocks that implement 'HasHeader'.
 epochFileParser
@@ -187,11 +222,55 @@ epochFileParser
   -> EpochFileParser
        (EpochFileError (HeaderHash blk))
        m
-       (Secondary.Entry (HeaderHash blk))
+       (BlockSummary (HeaderHash blk))
        (HeaderHash blk)
 epochFileParser =
-    epochFileParser' blockSlot blockHash (convertPrevHash . blockPrevHash)
+    epochFileParser' blockSlot blockNo blockHash (convertPrevHash . blockPrevHash)
   where
     convertPrevHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
     convertPrevHash GenesisHash   = Origin
     convertPrevHash (BlockHash h) = At h
+
+{-------------------------------------------------------------------------------
+  Streaming utilities
+-------------------------------------------------------------------------------}
+
+-- | Thread some state through a 'Stream'. An early return is possible by
+-- returning 'Left'.
+mapAccumS
+  :: Monad m
+  => s  -- ^ Initial state
+  -> (s -> a -> Either r (b, s))
+  -> Stream (Of a) m r
+  -> Stream (Of b) m r
+mapAccumS st0 updateAcc = go st0
+  where
+    go st input = S.lift (S.next input) >>= \case
+      Left  r           -> return r
+      Right (a, input') -> case updateAcc st a of
+        Left r         -> return r
+        Right (b, st') -> S.yield b *> go st' input'
+
+-- | Variant of 'mapAccumS' that calls the first function argument on the
+-- first element in the stream to construct the initial state. For all
+-- elements in the stream after the first one, the second function argument is
+-- used.
+mapAccumS0
+  :: forall m a b r s. Monad m
+  => (a -> Either r (b, s))
+  -> (s -> a -> Either r (b, s))
+  -> Stream (Of a) m r
+  -> Stream (Of b) m r
+mapAccumS0 initAcc updateAcc = mapAccumS Nothing updateAcc'
+  where
+    updateAcc' :: Maybe s -> a -> Either r (b, Maybe s)
+    updateAcc' mbSt = fmap (fmap Just) . maybe initAcc updateAcc mbSt
+
+-- | Map over elements of a stream, allowing an early return by returning
+-- 'Left'.
+mapS
+  :: Monad m
+  => (a -> Either r b)
+  -> Stream (Of a) m r
+  -> Stream (Of b) m r
+mapS updateAcc = mapAccumS () (\() a -> (, ()) <$> updateAcc a)

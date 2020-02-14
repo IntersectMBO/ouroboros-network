@@ -15,10 +15,10 @@ cabal new-test ntp-client-test
 ```
 or
 ```
-nix-build -A nix-tools.tests.ntp-client
+nix-build -A haskellPackages.ntp-client.checks
 ```
 
 ## demo app
 ```
-nix-build -A nix-tools.exes.ntp-client
+nix-build -A haskellPackages.ntp-client.components.exes.demo-ntp-client
 ```

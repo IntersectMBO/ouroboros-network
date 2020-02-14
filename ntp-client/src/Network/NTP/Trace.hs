@@ -1,35 +1,31 @@
 module Network.NTP.Trace
 where
-import           Control.Exception (IOException)
-import           Data.Time.Units (Microsecond)
+import           Network.NTP.Packet (Microsecond)
+
+data IPVersion = IPv4 | IPv6
+    deriving (Show)
 
 data NtpTrace
     = NtpTraceStartNtpClient
-    | NtpTraceClientActNow
-    | NtpTraceClientForceCheck
-    | NtpTraceClientAbort
-    | NtpTraceUpdateStatusNoResponses
-    | NtpTraceUpdateStatusClockOffset Microsecond
-    | NtpTraceSendLoopCollectedAllResponses
-    | NtpTraceSpawnNtpClientStarting
-    | NtpTraceSpawnNtpClientStarted
-    | NtpTraceSpawnNtpClientSocketsClosed
-    | NtpTraceSpawnNtpClientResolveDNS
-    | NtpTraceSpawnNtpClientResolvePending
-    | NtpTraceReceiveLoopDecodeError String
-    | NtpTraceReceiveLoopHandleIOException IOException
-    | NtpTraceReceiveLoopException
-    | NtpTraceReceiveLoopLatePacket
-    | NtpTraceReceiveLoopPacketReceived
-    | NtpTraceReceiveLoopPacketDeltaTime Microsecond
-    | NtpTraceMkSocketsNoSockets
-    | NtpTraceMkSocketsIOExecption IOException
-    | NtpTraceResolvHostIOException IOException
-    | NtpTraceResolveHostNotResolved String
-    | NtpTraceResolveHostResolved String -- todo also log addr
-    | NtpTraceSocketCreated String String
-    | NtpTraceSendPacketNoMatchingSocket String String
-    | NtpTraceSentToIOException String IOException
-    | NtpTraceSentTryResend String
-    | NtpTraceSentNotRetrying
+    | NtpTraceTriggerUpdate
+    | NtpTraceRestartDelay !Int
+    | NtpTraceRestartingClient
+    | NtpTraceClientSleeping
+    | NtpTraceIOError !IOError
+    | NtpTraceLookupServerFailed !String
+    | NtpTraceClientStartQuery
+    | NtpTraceNoLocalAddr
+    | NtpTraceIPv4IPv6NoReplies
+    | NtpTraceReportPolicyQueryFailed
+    | NtpTraceQueryResult !Microsecond
+    | NtpTraceRunProtocolError !IPVersion !IOError
+    | NtpTraceRunProtocolNoResult !IPVersion
+    | NtpTraceRunProtocolSuccess !IPVersion
+    | NtpTraceSocketOpen !IPVersion
+    | NtpTraceSocketClosed !IPVersion
+    | NtpTracePacketSent !IPVersion
+    | NtpTracePacketSentError !IPVersion !IOError
+    | NtpTracePacketDecodeError !IPVersion !String
+    | NtpTracePacketReceived !IPVersion
+    | NtpTraceWaitingForRepliesTimeout !IPVersion
     deriving (Show)

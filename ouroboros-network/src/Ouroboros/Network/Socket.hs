@@ -368,7 +368,10 @@ outgoingConnection
 outgoingConnection versionDataCodec tracers versions connId sd =
     -- Always accept and run initiator mode mux on the socket.
     pure $ Connection.Accept $ \_connThread -> do
-        statusVar <- atomically (newTVar Running)
+        -- io-sim-classes STM interface thinks this is ambgiuous in the monad
+        -- m... Shame shame
+        -- statusVar <- atomically (newTVar Running)
+        statusVar <- atomically (newTVar Running :: STM IO (StrictTVar IO ConnectionStatus))
         let connectionHandle = ConnectionHandle
               { status = readTVar statusVar }
             action = mask $ \restore -> do
@@ -464,7 +467,9 @@ incomingConnection NetworkServerTracers { nstMuxTracer
                    _errorPolicies
                    connId
                    sd = pure $ Connection.Accept $ \_ -> do
-  statusVar <- atomically (newTVar Running)
+  -- Sadly, the type signature _is_ needed. io-sim-classes is defined such
+  -- that the `m` type is ambiguous without it.
+  statusVar <- atomically (newTVar Running :: STM IO (StrictTVar IO ConnectionStatus))
   let connectionHandle = ConnectionHandle { status = readTVar statusVar }
       action = mask $ \restore -> do
         restore runResponder `catch`

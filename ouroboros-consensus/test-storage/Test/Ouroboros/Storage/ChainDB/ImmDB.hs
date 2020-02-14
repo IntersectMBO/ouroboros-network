@@ -20,8 +20,10 @@ import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
                      SlotNo (..), blockPoint)
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
+import           Ouroboros.Consensus.BlockchainTime.Mock (fixedBlockchainTime)
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import           Ouroboros.Consensus.Ledger.Byron.Forge (forgeEBB)
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
                      (PBftSignatureThreshold (..), ProtocolInfo (..),
                      protocolInfo)
@@ -72,7 +74,7 @@ withImmDB k = withRegistry $ \registry -> do
       { immErr            = EH.monadCatch
       , immHasFS          = simHasFS EH.monadCatch immDbFsVar
       , immDecodeHash     = nodeDecodeHeaderHash (Proxy @ByronBlock)
-      , immDecodeHeader   = nodeDecodeHeader testCfg
+      , immDecodeHeader   = nodeDecodeHeader testCfg SerialisedToDisk
       , immDecodeBlock    = nodeDecodeBlock testCfg
       , immEncodeHash     = nodeEncodeHeaderHash (Proxy @ByronBlock)
       , immEncodeBlock    = nodeEncodeBlockWithInfo testCfg
@@ -85,6 +87,8 @@ withImmDB k = withRegistry $ \registry -> do
       , immTracer         = nullTracer
       , immCacheConfig    = ImmDB.CacheConfig 2 60
       , immRegistry       = registry
+        -- All blocks will be in the past, so no truncation will happen
+      , immBlockchainTime = fixedBlockchainTime maxBound
       }
 
 testCfg :: NodeConfig (BlockProtocol ByronBlock)

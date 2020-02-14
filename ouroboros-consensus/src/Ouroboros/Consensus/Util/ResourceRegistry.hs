@@ -55,8 +55,6 @@ import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
-import           Control.Monad.Class.MonadThrow
-
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      UseIsNormalFormNamed (..), allNoUnexpectedThunks)
 

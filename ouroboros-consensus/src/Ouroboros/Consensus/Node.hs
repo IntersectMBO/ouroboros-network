@@ -32,21 +32,20 @@ module Ouroboros.Consensus.Node
   , mkNodeArgs
   ) where
 
+import           Codec.Serialise (DeserialiseFailure)
+import           Control.Monad (when)
 import           Control.Tracer (Tracer)
 import           Crypto.Random
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (secondsToDiffTime)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (DictVersion (..),
-                     NodeToClientVersion (..), NodeToClientVersionData (..),
-                     nodeToClientCodecCBORTerm)
-import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
-                     NodeToNodeVersionData (..), nodeToNodeCodecCBORTerm)
+                     NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
+import           Ouroboros.Network.NodeToNode (NodeToNodeVersionData (..),
+                     nodeToNodeCodecCBORTerm)
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
 import           Ouroboros.Network.Socket (ConnectionId)
@@ -57,12 +56,15 @@ import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Node.Recovery
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol hiding (Protocol)
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -74,6 +76,8 @@ import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.ImmutableDB (ValidationPolicy (..))
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
 import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
+import           Ouroboros.Storage.VolatileDB (BlockValidationPolicy (..),
+                     mkBlocksPerFile)
 
 -- | Whether the node produces blocks or not.
 data IsProducer
@@ -91,7 +95,9 @@ run
   :: forall blk.
      RunNode blk
   => Tracers IO ConnectionId blk          -- ^ Consensus tracers
-  -> Tracer  IO (ChainDB.TraceEvent blk)  -- ^ ChainDB tracer
+  -> ProtocolTracers IO ConnectionId blk DeserialiseFailure
+     -- ^ Protocol tracers
+  -> Tracer IO (ChainDB.TraceEvent blk)   -- ^ ChainDB tracer
   -> DiffusionTracers                     -- ^ Diffusion tracers
   -> DiffusionArguments                   -- ^ Diffusion arguments
   -> NetworkMagic
@@ -106,12 +112,11 @@ run
      -- ^ Called on the 'NodeKernel' after creating it, but before the network
      -- layer is initialised.
   -> IO ()
-run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
-    dbPath pInfo isProducer customiseChainDbArgs customiseNodeArgs
-    onNodeKernel = do
-    let mountPoint = MountPoint dbPath
+run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
+    networkMagic dbPath pInfo isProducer customiseChainDbArgs
+    customiseNodeArgs onNodeKernel = do
     either throwM return =<< checkDbMarker
-      (ioHasFS mountPoint)
+      hasFS
       mountPoint
       (nodeProtocolMagicId (Proxy @blk) cfg)
     withRegistry $ \registry -> do
@@ -123,59 +128,61 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
         (nodeStartTime (Proxy @blk) cfg)
         (focusSlotLengths slotLengths)
 
-      (_, chainDB) <- allocate registry
-        (\_ -> openChainDB
-          chainDbTracer registry btime dbPath cfg initLedger
-          customiseChainDbArgs)
-        ChainDB.closeDB
+      -- When we shut down cleanly, we create a marker file so that the next
+      -- time we start, we know we don't have to validate the contents of the
+      -- whole ChainDB. When we shut down with an exception indicating
+      -- corruption or something going wrong with the file system, we don't
+      -- create this marker file so that the next time we start, we do a full
+      -- validation.
+      lastShutDownWasClean <- hasCleanShutdownMarker hasFS
+      when lastShutDownWasClean $ removeCleanShutdownMarker hasFS
+      let customiseChainDbArgs' args
+            | lastShutDownWasClean
+            = customiseChainDbArgs args
+            | otherwise
+              -- When the last shutdown was not clean, validate the complete
+              -- ChainDB to detect and recover from any corruptions. This will
+              -- override the default value /and/ the user-customised value of
+              -- the 'ChainDB.cdbImmValidation' and the
+              -- 'ChainDB.cdbVolValidation' fields.
+            = (customiseChainDbArgs args)
+              { ChainDB.cdbImmValidation = ValidateAllEpochs
+              , ChainDB.cdbVolValidation = ValidateAll
+              }
 
-      let nodeArgs = customiseNodeArgs $ mkNodeArgs
-            registry
-            cfg
-            initState
-            tracers
-            btime
-            chainDB
-            isProducer
+      -- On a clean shutdown, create a marker in the database folder so that
+      -- next time we start up, we know we don't have to validate the whole
+      -- database.
+      createMarkerOnCleanShutdown hasFS $ do
 
-      nodeKernel <- initNodeKernel nodeArgs
-      onNodeKernel registry nodeKernel
-      let networkApps :: NetworkApplication
-                           IO ConnectionId
-                           ByteString ByteString ByteString ByteString ByteString ByteString
-                           ()
-          networkApps = consensusNetworkApps
-            nodeKernel
-            nullProtocolTracers
-            (protocolCodecs (getNodeConfig nodeKernel))
-            (protocolHandlers nodeArgs nodeKernel)
+        (_, chainDB) <- allocate registry
+          (\_ -> openChainDB
+            chainDbTracer registry btime dbPath cfg initLedger
+            customiseChainDbArgs')
+          ChainDB.closeDB
 
-          diffusionApplications = DiffusionApplications
-           { daResponderApplication =
-               simpleSingletonVersions
-                 NodeToNodeV_1
-                 nodeToNodeVersionData
-                 (DictVersion nodeToNodeCodecCBORTerm)
-                 (responderNetworkApplication networkApps)
-           , daInitiatorApplication =
-               simpleSingletonVersions
-                 NodeToNodeV_1
-                 nodeToNodeVersionData
-                 (DictVersion nodeToNodeCodecCBORTerm)
-                 (initiatorNetworkApplication networkApps)
-           , daLocalResponderApplication =
-               simpleSingletonVersions
-                 NodeToClientV_1
-                 nodeToClientVersionData
-                 (DictVersion nodeToClientCodecCBORTerm)
-                 (localResponderNetworkApplication networkApps)
-           , daErrorPolicies = consensusErrorPolicy
-           }
+        let nodeArgs = customiseNodeArgs $ mkNodeArgs
+              registry
+              cfg
+              initState
+              tracers
+              btime
+              chainDB
+              isProducer
 
-      runDataDiffusion diffusionTracers
-                       diffusionArguments
-                       diffusionApplications
+        nodeKernel <- initNodeKernel nodeArgs
+        onNodeKernel registry nodeKernel
+
+        let networkApps = mkNetworkApps nodeArgs nodeKernel
+            diffusionApplications = mkDiffusionApplications networkApps
+
+        runDataDiffusion diffusionTracers
+                         diffusionArguments
+                         diffusionApplications
   where
+    mountPoint = MountPoint dbPath
+    hasFS      = ioHasFS mountPoint
+
     ProtocolInfo
       { pInfoConfig     = cfg
       , pInfoInitLedger = initLedger
@@ -186,6 +193,59 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
 
     nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = networkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = networkMagic }
+
+    mkNetworkApps
+      :: NodeArgs   IO ConnectionId blk
+      -> NodeKernel IO ConnectionId blk
+      -> NetworkProtocolVersion blk
+      -> NetworkApplication
+           IO ConnectionId
+           ByteString ByteString ByteString ByteString ByteString ByteString
+           ()
+    mkNetworkApps nodeArgs nodeKernel version = consensusNetworkApps
+      nodeKernel
+      protocolTracers
+      (protocolCodecs (getNodeConfig nodeKernel) version)
+      (protocolHandlers nodeArgs nodeKernel)
+
+    mkDiffusionApplications
+      :: (   NetworkProtocolVersion blk
+          -> NetworkApplication
+               IO ConnectionId
+               ByteString ByteString ByteString ByteString ByteString ByteString
+               ()
+         )
+      -> DiffusionApplications
+    mkDiffusionApplications networkApps = DiffusionApplications
+     { daResponderApplication = combineVersions [
+           simpleSingletonVersions
+             (nodeToNodeProtocolVersion (Proxy @blk) version)
+             nodeToNodeVersionData
+             (DictVersion nodeToNodeCodecCBORTerm)
+             (responderNetworkApplication $ networkApps version)
+         | version <- supportedNetworkProtocolVersions (Proxy @blk)
+         ]
+     , daInitiatorApplication = combineVersions [
+           simpleSingletonVersions
+             (nodeToNodeProtocolVersion (Proxy @blk) version)
+             nodeToNodeVersionData
+             (DictVersion nodeToNodeCodecCBORTerm)
+             (initiatorNetworkApplication $ networkApps version)
+         | version <- supportedNetworkProtocolVersions (Proxy @blk)
+         ]
+     , daLocalResponderApplication = combineVersions [
+           simpleSingletonVersions
+             (nodeToClientProtocolVersion (Proxy @blk) version)
+             nodeToClientVersionData
+             (DictVersion nodeToClientCodecCBORTerm)
+             (localResponderNetworkApplication $ networkApps version)
+         | version <- supportedNetworkProtocolVersions (Proxy @blk)
+         ]
+     , daErrorPolicies = consensusErrorPolicy
+     }
+
+    combineVersions :: Semigroup a => [a] -> a
+    combineVersions = foldr1 (<>)
 
 openChainDB
   :: forall blk. RunNode blk
@@ -221,17 +281,19 @@ mkChainDbArgs
   -> ChainDbArgs IO blk
 mkChainDbArgs tracer registry btime dbPath cfg initLedger
               epochInfo = (ChainDB.defaultArgs dbPath)
-    { ChainDB.cdbBlocksPerFile    = 1000
+    { ChainDB.cdbBlocksPerFile    = mkBlocksPerFile 1000
     , ChainDB.cdbDecodeBlock      = nodeDecodeBlock         cfg
-    , ChainDB.cdbDecodeHeader     = nodeDecodeHeader        cfg
+    , ChainDB.cdbDecodeHeader     = nodeDecodeHeader        cfg SerialisedToDisk
     , ChainDB.cdbDecodeChainState = nodeDecodeChainState    (Proxy @blk) cfg
     , ChainDB.cdbDecodeHash       = nodeDecodeHeaderHash    (Proxy @blk)
     , ChainDB.cdbDecodeLedger     = nodeDecodeLedgerState   cfg
+    , ChainDB.cdbDecodeTipInfo    = nodeDecodeTipInfo       (Proxy @blk)
     , ChainDB.cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
-    , ChainDB.cdbEncodeHeader     = nodeEncodeHeader        cfg
+    , ChainDB.cdbEncodeHeader     = nodeEncodeHeader        cfg SerialisedToDisk
     , ChainDB.cdbEncodeChainState = nodeEncodeChainState    (Proxy @blk) cfg
     , ChainDB.cdbEncodeHash       = nodeEncodeHeaderHash    (Proxy @blk)
     , ChainDB.cdbEncodeLedger     = nodeEncodeLedgerState   cfg
+    , ChainDB.cdbEncodeTipInfo    = nodeEncodeTipInfo       (Proxy @blk)
     , ChainDB.cdbEpochInfo        = epochInfo
     , ChainDB.cdbHashInfo         = nodeHashInfo            (Proxy @blk)
     , ChainDB.cdbGenesis          = return initLedger
@@ -243,7 +305,8 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger
     , ChainDB.cdbNodeConfig       = cfg
     , ChainDB.cdbRegistry         = registry
     , ChainDB.cdbTracer           = tracer
-    , ChainDB.cdbValidation       = ValidateMostRecentEpoch
+    , ChainDB.cdbImmValidation    = ValidateMostRecentEpoch
+    , ChainDB.cdbVolValidation    = NoValidation
     , ChainDB.cdbGcDelay          = secondsToDiffTime 10
     , ChainDB.cdbBlockchainTime   = btime
     }

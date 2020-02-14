@@ -21,8 +21,6 @@ import           Data.Functor.Identity (Identity (..))
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Consensus.Block (IsEBB)

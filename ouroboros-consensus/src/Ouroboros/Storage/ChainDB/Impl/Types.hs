@@ -48,6 +48,7 @@ module Ouroboros.Storage.ChainDB.Impl.Types (
   , TraceIteratorEvent (..)
   ) where
 
+import           Control.Tracer
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Map.Strict (Map)
 import           Data.Time.Clock (DiffTime)
@@ -55,9 +56,6 @@ import           Data.Typeable
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
-
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 
@@ -86,6 +84,7 @@ import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.ChainDB.Impl.LgrDB (LgrDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB)
+import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 
 -- | A handle to the internal ChainDB state
 newtype ChainDbHandle m blk = CDBHandle (StrictTVar m (ChainDbState m blk))
@@ -159,13 +158,10 @@ data ChainDbEnv m blk = CDB
     -- Note that this fragment might also be /longer/ than @k@ headers,
     -- because the oldest blocks from the fragment might not yet have been
     -- copied from the VolatileDB to the ImmutableDB.
-  , cdbImmBlockNo      :: !(StrictTVar m BlockNo)
-    -- ^ The block number corresponding to the block @k@ blocks back. This is
-    -- the most recent \"immutable\" block according to the protocol, i.e., a
-    -- block that cannot be rolled back.
     --
-    -- INVARIANT: the anchor point of 'getCurrentChain' refers to the same
-    -- block as this 'BlockNo'.
+    -- The anchor point of this chain should be the most recent \"immutable\"
+    -- block according to the protocol, i.e., a block that cannot be rolled
+    -- back.
     --
     -- Note that the \"immutable\" block isn't necessarily at the tip of the
     -- ImmutableDB, but could temporarily still be on the in-memory chain
@@ -221,6 +217,7 @@ data ChainDbEnv m blk = CDB
     -- ^ A handle to kill the background threads.
   , cdbEpochInfo       :: !(EpochInfo m)
   , cdbIsEBB           :: !(Header blk -> IsEBB)
+  , cdbCheckIntegrity  :: !(blk -> Bool)
   , cdbBlockchainTime  :: !(BlockchainTime m)
   , cdbFutureBlocks    :: !(StrictTVar m (Map SlotNo (NonEmpty (Header blk))))
     -- ^ Scheduled chain selections for blocks with a slot in the future.
@@ -399,6 +396,7 @@ data TraceEvent blk
   | TraceLedgerEvent       (LgrDB.TraceEvent (Point blk))
   | TraceLedgerReplayEvent (LgrDB.TraceLedgerReplayEvent blk)
   | TraceImmDBEvent        (ImmDB.TraceEvent       blk)
+  | TraceVolDBEvent        (VolDB.TraceEvent       blk)
   deriving (Generic)
 
 deriving instance

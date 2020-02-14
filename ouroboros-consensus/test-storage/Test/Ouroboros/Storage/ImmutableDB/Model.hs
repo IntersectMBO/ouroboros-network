@@ -4,8 +4,10 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 
 -- | Model for the 'ImmutableDB' based on a chain.
@@ -14,6 +16,10 @@
 -- filled (@Just ByteString@).
 module Test.Ouroboros.Storage.ImmutableDB.Model
   ( DBModel(..)
+  , InSlot(..)
+  , dbmTip
+  , dbmRegular
+  , dbmEBBs
   , dbmCurrentEpoch
   , dbmBlobs
   , dbmTipBlock
@@ -22,12 +28,12 @@ module Test.Ouroboros.Storage.ImmutableDB.Model
   , IteratorId
   , IteratorModel
   , simulateCorruptions
-  , rollBackToTip
   , tips
   , closeAllIterators
    -- * ImmutableDB implementation
   , getTipModel
   , reopenModel
+  , reopenInThePastModel
   , deleteAfterModel
   , getBlockComponentModel
   , getEBBComponentModel
@@ -54,7 +60,8 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (catMaybes, fromJust, fromMaybe, mapMaybe)
+import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
+import           Data.Proxy
 import qualified Data.Text as Text
 import           Data.Word (Word64)
 
@@ -62,9 +69,10 @@ import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack, popCallStack)
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
-import           Ouroboros.Consensus.Util (lastMaybe)
+import           Ouroboros.Consensus.Util (lastMaybe, repeatedly)
+import           Ouroboros.Consensus.Util.RedundantConstraints
 
-import           Ouroboros.Network.Block (SlotNo (..))
+import           Ouroboros.Network.Block (BlockNo, SlotNo (..))
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -80,12 +88,30 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.TestBlock
 
+data InSlot hash =
+    -- | This slot contains only a regular block
+    InSlotBlock
+      (TipInfo hash SlotNo, BinaryInfo ByteString)
+
+    -- | This slot contains only an EBB
+  | InSlotEBB
+      (TipInfo hash EpochNo, BinaryInfo ByteString)
+
+    -- | This slot contains an EBB /and/ a regular block
+    --
+    -- NOTE: EBBs shares
+    --
+    -- o a block number with their predecessor
+    -- o a slot number with their successor
+    --
+    -- So within the same /slot/, the EBB comes /first/.
+  | InSlotBoth
+      (TipInfo hash EpochNo, BinaryInfo ByteString)
+      (TipInfo hash SlotNo , BinaryInfo ByteString)
+  deriving (Show, Generic)
+
 data DBModel hash = DBModel
-  { dbmChain        :: [Maybe (hash, BinaryInfo ByteString)]
-    -- ^ 'Nothing' when a slot is empty
-  , dbmTip          :: ImmTipWithHash hash
-  , dbmEBBs         :: Map EpochNo (hash, BinaryInfo ByteString)
-    -- ^ The EBB for each 'EpochNo'
+  { dbmSlots        :: Map SlotNo (InSlot hash)
   , dbmEpochInfo    :: EpochInfo Identity
   , dbmIterators    :: Map IteratorId (IteratorModel hash)
   , dbmNextIterator :: IteratorId
@@ -94,42 +120,120 @@ data DBModel hash = DBModel
 initDBModel :: EpochSize -- ^ We assume fixed epoch size
             -> DBModel hash
 initDBModel epochSize = DBModel
-  { dbmChain        = []
-  , dbmTip          = TipGen
-  , dbmEBBs         = Map.empty
+  { dbmSlots        = Map.empty
   , dbmEpochInfo    = fixedSizeEpochInfo epochSize
   , dbmIterators    = Map.empty
   , dbmNextIterator = 0
   }
 
+insertInSlot :: forall hash. HasCallStack
+             => SlotNo
+             -> TipInfo hash BlockOrEBB
+             -> BinaryInfo ByteString
+             -> Map SlotNo (InSlot hash)
+             -> Map SlotNo (InSlot hash)
+insertInSlot slot info xs =
+    Map.alter (Just . go (forgetTipInfo info)) slot
+  where
+    go :: BlockOrEBB -> Maybe (InSlot hash) -> InSlot hash
+    go (Block s) Nothing                  = InSlotBlock    (const s <$> info, xs)
+    go (EBB   e) Nothing                  = InSlotEBB      (const e <$> info, xs)
+    go (Block s) (Just (InSlotEBB   ebb)) = InSlotBoth ebb (const s <$> info, xs)
+    go (EBB   _) (Just (InSlotBlock _  )) = error "insertInSlot: EBB after block"
+    go _ _                                = error "insertInSlot: slot already filled"
+
+{-------------------------------------------------------------------------------
+  Derived values
+-------------------------------------------------------------------------------}
+
+dbmTip :: DBModel hash -> ImmTipWithInfo hash
+dbmTip DBModel{..} =
+    case Map.lookupMax dbmSlots of
+      Nothing              -> TipGen
+      Just (_slot, inSlot) -> Tip $
+        case inSlot of
+          InSlotBlock     (tip, _bytes) -> Block <$> tip
+          InSlotEBB       (tip, _bytes) -> EBB   <$> tip
+          InSlotBoth _ebb (tip, _bytes) -> Block <$> tip
+
+dbmEBBs :: forall hash.
+           DBModel hash -> Map EpochNo (hash, BinaryInfo ByteString)
+dbmEBBs =
+    Map.fromList . mapMaybe (containsEBB . snd) . Map.toList . dbmSlots
+  where
+    containsEBB :: InSlot hash
+                -> Maybe (EpochNo, (hash, BinaryInfo ByteString))
+    containsEBB (InSlotBlock _)                  = Nothing
+    containsEBB (InSlotEBB  (tip, bytes))        = Just $ swizzle tip bytes
+    containsEBB (InSlotBoth (tip, bytes) _block) = Just $ swizzle tip bytes
+
+    swizzle :: TipInfo hash EpochNo
+            -> BinaryInfo ByteString
+            -> (EpochNo, (hash, BinaryInfo ByteString))
+    swizzle info bytes = (forgetTipInfo info, (tipInfoHash info, bytes))
+
 dbmCurrentEpoch :: DBModel hash -> EpochNo
-dbmCurrentEpoch dbm@DBModel{..} =
-    case forgetHash <$> dbmTip of
+dbmCurrentEpoch dbm =
+    case forgetTipInfo <$> dbmTip dbm of
       TipGen           -> EpochNo 0
       Tip (Block slot) -> slotToEpoch dbm slot
       Tip (EBB epoch') -> epoch'
 
+-- | The chain containing the regular blocks /only/
+--
+-- Returns all slots from old to new, with 'Nothing' representing empty slots.
+-- May end on a 'Nothing' if the chain ends on an EBB.
+dbmRegular :: DBModel hash -> [Maybe (hash, BinaryInfo ByteString)]
+dbmRegular = expand (SlotNo 0) . Map.toList . dbmSlots
+  where
+    expand :: SlotNo -- Slot number we expect to see next
+           -> [(SlotNo, InSlot hash)]
+           -> [Maybe (hash, BinaryInfo ByteString)]
+    expand _ []                = []
+    expand s ((s', inSlot):ss) = concat [
+        replicate skipped Nothing
+      , case inSlot of
+          InSlotBlock (info, bytes) ->
+            Just (tipInfoHash info, bytes) : expand (succ s') ss
+          InSlotBoth _ebb (info, bytes) ->
+            Just (tipInfoHash info, bytes) : expand (succ s') ss
+          InSlotEBB _ ->
+            -- EBBs share a slot number with their successor
+            expand s' ss
+      ]
+      where
+        skipped :: Int
+        skipped = fromIntegral (unSlotNo s' - unSlotNo s)
+
+-- | All blobs in the DB
+--
+-- 'Left' values denote EBBs.
 dbmBlobs :: DBModel hash
          -> Map (EpochSlot, SlotNo)
                 (Either (hash, BinaryInfo ByteString)
                         (hash, BinaryInfo ByteString))
-dbmBlobs dbm@DBModel {..} = foldr add ebbs (zip (map SlotNo [0..]) dbmChain)
+dbmBlobs dbm = repeatedly insert (Map.toList $ dbmSlots dbm) Map.empty
   where
-    add (_,    Nothing)                = id
-    add (slot, Just hashAndBinaryInfo) =
-      Map.insert (slotToEpochSlot dbm slot, slot) (Right hashAndBinaryInfo)
+    insert (slot, inSlot) =
+      case inSlot of
+        InSlotBlock regular     -> insertRegular slot regular
+        InSlotEBB   ebb         -> insertEBB     slot ebb
+        InSlotBoth  ebb regular -> insertRegular slot regular
+                                 . insertEBB     slot ebb
 
-    ebbs = dbmEBBs
-         & Map.map Left
-         & Map.mapKeysMonotonic (`EpochSlot` 0)
-         & Map.mapKeysMonotonic (\epochSlot ->
-             (epochSlot, epochSlotToSlot dbm epochSlot))
+    insertRegular slot (info, xs) =
+        Map.insert (slotToEpochSlot dbm slot, slot)
+                   (Right (tipInfoHash info, xs))
+
+    insertEBB slot (info, xs) =
+        Map.insert (epochNoToEpochSlot (forgetTipInfo info), slot)
+                   (Left (tipInfoHash info, xs))
 
 -- TODO #1151
 dbmTipBlock :: DBModel hash -> Maybe TestBlock
-dbmTipBlock dbm = testBlockFromLazyByteString <$> case forgetHash <$> dbmTip dbm of
+dbmTipBlock dbm = testBlockFromLazyByteString <$> case forgetTipInfo <$> dbmTip dbm of
     TipGen            -> Nothing
-    Tip (Block _slot) -> Just $ binaryBlob $ snd $ mustBeJust $ last $ dbmChain dbm
+    Tip (Block _slot) -> Just $ binaryBlob $ snd $ mustBeJust $ last $ dbmRegular dbm
     Tip (EBB epoch)   -> Just $ binaryBlob $ snd $ dbmEBBs dbm Map.! epoch
   where
     mustBeJust = fromMaybe (error "chain ends with an empty slot")
@@ -156,6 +260,29 @@ newtype IteratorModel hash = IteratorModel [IterRes hash]
 -- 'iteratorHasNext'
 type IterRes hash = (Either EpochNo SlotNo, hash, BinaryInfo ByteString)
 
+{-------------------------------------------------------------------------------
+  Slot conversions
+-------------------------------------------------------------------------------}
+
+epochNoToEpochSlot :: EpochNo -> EpochSlot
+epochNoToEpochSlot = (`EpochSlot` 0)
+
+epochNoToSlot :: DBModel hash -> EpochNo -> SlotNo
+epochNoToSlot dbm = epochSlotToSlot dbm . epochNoToEpochSlot
+
+slotForBlockOrEBB :: DBModel hash -> BlockOrEBB -> SlotNo
+slotForBlockOrEBB dbm (EBB  epoch) = epochNoToSlot dbm epoch
+slotForBlockOrEBB _   (Block slot) = slot
+
+slotToEpoch :: DBModel hash -> SlotNo -> EpochNo
+slotToEpoch DBModel {..} = runIdentity . epochInfoEpoch dbmEpochInfo
+
+epochSlotToSlot :: DBModel hash -> EpochSlot -> SlotNo
+epochSlotToSlot DBModel {..} = runIdentity . epochInfoAbsolute dbmEpochInfo
+
+slotToEpochSlot :: DBModel hash -> SlotNo -> EpochSlot
+slotToEpochSlot DBModel {..} = runIdentity . epochInfoBlockRelative dbmEpochInfo
+
 {------------------------------------------------------------------------------
   Helpers
 ------------------------------------------------------------------------------}
@@ -166,15 +293,6 @@ throwUserError e = throwError $ UserError e (popCallStack callStack)
 
 lookupEpochSize :: DBModel hash -> EpochNo -> EpochSize
 lookupEpochSize DBModel {..} = runIdentity . epochInfoSize dbmEpochInfo
-
-epochSlotToSlot :: DBModel hash -> EpochSlot -> SlotNo
-epochSlotToSlot DBModel {..} = runIdentity . epochInfoAbsolute dbmEpochInfo
-
-slotToEpochSlot :: DBModel hash -> SlotNo -> EpochSlot
-slotToEpochSlot DBModel {..} = runIdentity . epochInfoBlockRelative dbmEpochInfo
-
-slotToEpoch :: DBModel hash -> SlotNo -> EpochNo
-slotToEpoch DBModel {..} = runIdentity . epochInfoEpoch dbmEpochInfo
 
 lookupBySlot :: HasCallStack => SlotNo -> [Maybe b] -> Maybe b
 lookupBySlot (SlotNo i) = go i
@@ -188,50 +306,33 @@ lookupBySlot (SlotNo i) = go i
 -- The user is responsible for giving a valid 'Tip', i.e. a tip that points to
 -- a filled slot or an existing EBB (Genesis is always valid). This function
 -- will not truncate to the last filled slot or EBB itself.
-rollBackToTip :: forall hash. ImmTip -> DBModel hash -> DBModel hash
+rollBackToTip :: forall hash. Show hash
+              => ImmTip -> DBModel hash -> DBModel hash
 rollBackToTip tip dbm@DBModel {..} = case tip of
-    TipGen    -> (initDBModel firstEpochSize)
-        { dbmNextIterator = dbmNextIterator }
+    TipGen ->
+        (initDBModel firstEpochSize) { dbmNextIterator = dbmNextIterator }
       where
         firstEpochSize = lookupEpochSize dbm 0
 
-    Tip (EBB epoch) -> dbm
-        { dbmChain = rolledBackChain
-        , dbmEBBs  = ebbsUpToEpoch epoch
-        , dbmTip   = addHash tip
-        }
+    Tip (EBB epoch) ->
+        dbm { dbmSlots = Map.update deleteRegular (epochNoToSlot dbm epoch)
+                       $ Map.filterWithKey shouldKeep
+                       $ dbmSlots
+            }
       where
-        firstSlotAfter  = epochSlotToSlot dbm (EpochSlot epoch 1)
-        rolledBackChain = dbmChain
-                        & zip [0..]
-                        & takeWhile ((< firstSlotAfter) . fst)
-                        & map snd
+        shouldKeep slot _inSlot = slot <= epochNoToSlot dbm epoch
 
-    Tip (Block slot)
-      | slot >= fromIntegral (length dbmChain) -> dbm
-      | otherwise                              -> dbm
-        { dbmChain = rolledBackChain
-        , dbmEBBs  = ebbsUpToEpoch epoch
-        , dbmTip   = addHash tip
-        }
+        deleteRegular :: InSlot hash -> Maybe (InSlot hash)
+        deleteRegular (InSlotEBB  ebb)   = Just $ InSlotEBB ebb
+        deleteRegular (InSlotBoth ebb _) = Just $ InSlotEBB ebb
+        deleteRegular (InSlotBlock _)    = Nothing
+
+    Tip (Block slot) ->
+        dbm { dbmSlots = Map.filterWithKey shouldKeep $ dbmSlots }
       where
-        EpochSlot epoch _ = slotToEpochSlot dbm slot
-        rolledBackChain   = dbmChain
-                          & zip [0..]
-                          & takeWhile ((<= slot) . fst)
-                          & map snd
+        shouldKeep slot' _inSlot = slot' <= slot
   where
-    ebbsUpToEpoch epoch =
-      Map.filterWithKey (\ebbEpoch _ -> ebbEpoch <= epoch) dbmEBBs
-
-    addHash :: ImmTip -> ImmTipWithHash hash
-    addHash = fmap $ \case
-      EBB   epoch ->
-        WithHash (fst $ dbmEBBs Map.! epoch) (EBB epoch)
-      Block slot  ->
-        WithHash
-          (fst $ fromJust $ dbmChain !! fromIntegral (unSlotNo slot))
-          (Block slot)
+    _ = keepRedundantConstraint (Proxy @(Show hash))
 
 -- | Return the filled 'EpochSlot's of the given 'EpochNo' stored in the model.
 epochSlotsInEpoch :: DBModel hash -> EpochNo -> [EpochSlot]
@@ -251,40 +352,31 @@ filledEpochSlots dbm epoch = (lt, eq, gt)
     (lt, geq) = span ((< epoch)      . _epoch) increasingEpochSlots
     (eq, gt)  = span ((< succ epoch) . _epoch) geq
 
+properTips :: DBModel hash -> [TipInfo hash BlockOrEBB]
+properTips = concatMap go . Map.elems . dbmSlots
+  where
+    go :: InSlot hash -> [TipInfo hash BlockOrEBB]
+    go (InSlotBlock (reg, _))          = [ Block <$> reg ]
+    go (InSlotEBB   (ebb, _))          = [ EBB   <$> ebb ]
+    go (InSlotBoth  (ebb, _) (reg, _)) = [ EBB   <$> ebb
+                                         , Block <$> reg ]
 
 -- | List all 'Tip's that point to a filled slot or an existing EBB in the
 -- model, including 'TipGenesis'. The tips will be sorted from old to recent.
-tips :: DBModel hash -> NonEmpty ImmTip
-tips dbm = TipGen NE.:| tipsAfter dbm TipGen
-
--- | List all 'Tip's that point to a filled slot or an existing EBB in the
--- model that are after the given 'Tip'. The tips will be sorted from old to
--- recent.
-tipsAfter :: DBModel hash -> ImmTip -> [ImmTip]
-tipsAfter dbm tip = map toTip $ dropWhile isBeforeTip blobLocations
-  where
-    blobLocations :: [(EpochSlot, SlotNo)]
-    blobLocations = Map.keys $ dbmBlobs dbm
-    isBeforeTip :: (EpochSlot, SlotNo) -> Bool
-    isBeforeTip (epochSlot, slot) = case tip of
-      TipGen            -> False
-      Tip (EBB epoch)   -> epochSlot < EpochSlot epoch 0
-      Tip (Block slot') -> slot      < slot'
-    toTip :: (EpochSlot, SlotNo) -> ImmTip
-    toTip (EpochSlot epoch 0, _)    = Tip (EBB epoch)
-    toTip (_                , slot) = Tip (Block slot)
+tips :: DBModel hash -> NonEmpty (ImmTipWithInfo hash)
+tips dbm = TipGen NE.:| map Tip (properTips dbm)
 
 -- | Return the blobs in the given 'EpochNo', in order.
 blobsInEpoch :: DBModel hash -> EpochNo -> [ByteString]
-blobsInEpoch dbm@DBModel {..} epoch =
+blobsInEpoch dbm epoch =
     maybe id (:) mbEBBBlob       $
     map (binaryBlob . snd)       $
     mapMaybe snd                 $
     takeWhile ((== epoch) . fst) $
     dropWhile ((/= epoch) . fst) $
-    zip (map (slotToEpoch dbm . SlotNo) [0..]) dbmChain
+    zip (map (slotToEpoch dbm . SlotNo) [0..]) (dbmRegular dbm)
   where
-    mbEBBBlob = binaryBlob . snd <$> Map.lookup epoch dbmEBBs
+    mbEBBBlob = binaryBlob . snd <$> Map.lookup epoch (dbmEBBs dbm)
 
 closeAllIterators :: DBModel hash -> DBModel hash
 closeAllIterators dbm = dbm { dbmIterators = mempty }
@@ -303,7 +395,8 @@ closeAllIterators dbm = dbm { dbmIterators = mempty }
 --
 -- Returns the new tip.
 simulateCorruptions
-  :: Corruptions -> DBModel hash -> (ImmTipWithHash hash, DBModel hash)
+  :: Show hash
+  => Corruptions -> DBModel hash -> (ImmTipWithInfo hash, DBModel hash)
 simulateCorruptions corrs dbm = (dbmTip dbm', dbm')
   where
     dbm' = closeAllIterators $ rollBack rbp dbm
@@ -331,7 +424,7 @@ instance Ord RollBackPoint where
     (DontRollBack, _)                                  -> GT
     (RollBackToEpochSlot es1, RollBackToEpochSlot es2) -> compare es1 es2
 
-rollBack :: RollBackPoint -> DBModel hash -> DBModel hash
+rollBack :: Show hash => RollBackPoint -> DBModel hash -> DBModel hash
 rollBack rbp dbm = case rbp of
     DontRollBack                            ->                                  dbm
     RollBackToGenesis                       -> rollBackToTip TipGen             dbm
@@ -413,20 +506,40 @@ rollbackToLastFilledSlotBefore epoch dbm = case lastMaybe beforeEpoch of
   ImmutableDB Implementation
 ------------------------------------------------------------------------------}
 
-getTipModel :: DBModel hash -> ImmTipWithHash hash
+getTipModel :: DBModel hash -> ImmTipWithInfo hash
 getTipModel = dbmTip
 
 -- | Close all open iterators and return the current tip
-reopenModel :: DBModel hash -> (ImmTipWithHash hash, DBModel hash)
+reopenModel :: DBModel hash -> (ImmTipWithInfo hash, DBModel hash)
 reopenModel dbm = (dbmTip dbm, closeAllIterators dbm)
 
-deleteAfterModel :: ImmTip -> DBModel hash -> DBModel hash
-deleteAfterModel tip =
-    -- First roll back to the given tip (which is not guaranteed to be
-    -- valid/exist!), then roll back to the last valid remaining tip.
-    rollBackToLastValidTip . rollBackToTip tip . closeAllIterators
+-- | Close all open iterators, truncate all blocks > the given slot, and
+-- return the current tip.
+reopenInThePastModel :: forall hash. Show hash
+                     => SlotNo  -- ^ Current slot
+                     -> DBModel hash
+                     -> (ImmTipWithInfo hash, DBModel hash)
+reopenInThePastModel curSlot dbm = (dbmTip dbm', dbm')
   where
-    rollBackToLastValidTip dbm = rollBackToTip (NE.last (tips dbm)) dbm
+    tipsInThePast :: [EpochSlot]
+    tipsInThePast =
+      [ slotToEpochSlot dbm slot
+      | tip <- properTips dbm
+      , let slot = slotForBlockOrEBB dbm (forgetTipInfo tip)
+      , slot <= curSlot
+      ]
+
+    rollBackPoint = case lastMaybe tipsInThePast of
+      Nothing        -> RollBackToGenesis
+      Just epochSlot -> RollBackToEpochSlot epochSlot
+
+    dbm' = rollBack rollBackPoint $ closeAllIterators dbm
+
+deleteAfterModel :: Show hash
+                 => ImmTipWithInfo hash -> DBModel hash -> DBModel hash
+deleteAfterModel tip =
+      rollBackToTip (forgetTipInfo <$> tip)
+    . closeAllIterators
 
 extractBlockComponent
   :: hash
@@ -458,17 +571,17 @@ getBlockComponentModel
   -> SlotNo
   -> DBModel hash
   -> Either ImmutableDBError (Maybe b)
-getBlockComponentModel blockComponent slot DBModel { dbmTip, dbmChain } = do
+getBlockComponentModel blockComponent slot dbm@DBModel{..} = do
     -- Check that the slot is not in the future
-    let inTheFuture = case forgetHash <$> dbmTip of
+    let inTheFuture = case forgetTipInfo <$> dbmTip dbm of
           TipGen               -> True
           Tip (Block lastSlot) -> slot > lastSlot
-          Tip (EBB  _ebb)      -> slot >= fromIntegral (length dbmChain)
+          Tip (EBB  _ebb)      -> slot >= fromIntegral (length (dbmRegular dbm))
 
     when inTheFuture $
-      throwUserError $ ReadFutureSlotError slot (forgetHash <$> dbmTip)
+      throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> dbmTip dbm)
 
-    return $ case lookupBySlot slot dbmChain of
+    return $ case lookupBySlot slot (dbmRegular dbm) of
       Nothing                 -> Nothing
       Just (hash, binaryInfo) -> Just $
         extractBlockComponent hash slot Nothing binaryInfo blockComponent
@@ -482,19 +595,19 @@ getEBBComponentModel
 getEBBComponentModel blockComponent epoch dbm@DBModel {..} = do
     let currentEpoch = dbmCurrentEpoch dbm
         inTheFuture  = epoch > currentEpoch ||
-          case dbmTip of
+          case dbmTip dbm of
             TipGen -> True
             Tip _  -> False
 
     when inTheFuture $
       throwUserError $ ReadFutureEBBError epoch currentEpoch
 
-    return $ case Map.lookup epoch dbmEBBs of
+    return $ case Map.lookup epoch (dbmEBBs dbm) of
       Nothing                 -> Nothing
       Just (hash, binaryInfo) -> Just $
           extractBlockComponent hash slot (Just epoch) binaryInfo blockComponent
         where
-          slot = epochSlotToSlot dbm (EpochSlot epoch 0)
+          slot = epochNoToSlot dbm epoch
 
 getBlockOrEBBComponentModel
   :: (HasCallStack, Eq hash)
@@ -505,13 +618,13 @@ getBlockOrEBBComponentModel
   -> Either ImmutableDBError (Maybe b)
 getBlockOrEBBComponentModel blockComponent slot hash dbm = do
     -- Check that the slot is not in the future
-    let inTheFuture = case forgetHash <$> dbmTip of
+    let inTheFuture = case forgetTipInfo <$> dbmTip dbm of
           TipGen               -> True
           Tip (Block lastSlot) -> slot > lastSlot
-          Tip (EBB   epoch)    -> slot > epochSlotToSlot dbm (EpochSlot epoch 0)
+          Tip (EBB   epoch)    -> slot > epochNoToSlot dbm epoch
 
     when inTheFuture $
-      throwUserError $ ReadFutureSlotError slot (forgetHash <$> dbmTip)
+      throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> dbmTip dbm)
 
     let (epoch, couldBeEBB) = case slotToEpochSlot dbm slot of
           EpochSlot e 1 -> (e, True)
@@ -524,75 +637,67 @@ getBlockOrEBBComponentModel blockComponent slot hash dbm = do
         -> Just $ extractBlockComponent hash slot Nothing binaryInfo blockComponent
       -- Fall back to EBB
       _ | couldBeEBB
-        , Just (hash', binaryInfo) <- Map.lookup epoch dbmEBBs
+        , Just (hash', binaryInfo) <- Map.lookup epoch (dbmEBBs dbm)
         , hash' == hash
         -> Just $ extractBlockComponent hash slot (Just epoch) binaryInfo blockComponent
         | otherwise
         -> Nothing
   where
-    DBModel { dbmTip, dbmChain, dbmEBBs } = dbm
-
     -- Return 'Nothing' when the chain is too short. In contrast to
     -- 'lookupBySlot', which would throw an error.
     lookupBySlotMaybe (SlotNo i')
       | let i = fromIntegral i'
-      , i < length dbmChain
-      = dbmChain !! i
+      , i < length (dbmRegular dbm)
+      = dbmRegular dbm !! i
       | otherwise
       = Nothing
 
 appendBlockModel
-  :: HasCallStack
+  :: forall hash. (HasCallStack, Show hash)
   => SlotNo
+  -> BlockNo
   -> hash
   -> BinaryInfo Builder
   -> DBModel hash
   -> Either ImmutableDBError (DBModel hash)
-appendBlockModel slot hash binaryInfo dbm@DBModel {..} = do
+appendBlockModel slot block hash binaryInfo dbm@DBModel {..} = do
     -- Check that we're not appending to the past
-    let inThePast = case forgetHash <$> dbmTip of
+    let inThePast = case forgetTipInfo <$> dbmTip dbm of
           Tip (Block lastSlot) -> slot <= lastSlot
-          Tip (EBB _)          -> slot < fromIntegral (length dbmChain)
+          Tip (EBB _)          -> slot < fromIntegral (length (dbmRegular dbm))
           TipGen               -> False
 
     when inThePast $
-      throwUserError $ AppendToSlotInThePastError slot (forgetHash <$> dbmTip)
+      throwUserError $ AppendToSlotInThePastError slot (forgetTipInfo <$> dbmTip dbm)
 
     let binaryInfo' = toLazyByteString <$> binaryInfo
-        toPad       = fromIntegral (unSlotNo slot) - length dbmChain
-
-    -- TODO snoc list?
-    return dbm
-      { dbmChain = dbmChain ++ replicate toPad Nothing ++ [Just (hash, binaryInfo')]
-      , dbmTip   = Tip (WithHash hash (Block slot))
-      }
+        tipInfo     = TipInfo hash (Block slot) block
+    return dbm { dbmSlots = insertInSlot slot tipInfo binaryInfo' dbmSlots }
+  where
+    _ = keepRedundantConstraint (Proxy @(Show hash))
 
 appendEBBModel
   :: EpochNo
+  -> BlockNo
   -> hash
   -> BinaryInfo Builder
   -> DBModel hash
   -> Either ImmutableDBError (DBModel hash)
-appendEBBModel epoch hash binaryInfo dbm@DBModel {..} = do
+appendEBBModel epoch block hash binaryInfo dbm@DBModel {..} = do
     -- Check that we're not appending to the past
     let currentEpoch = dbmCurrentEpoch dbm
-        inThePast    = epoch <= currentEpoch && case dbmTip of
+        inThePast    = epoch <= currentEpoch && case dbmTip dbm of
           TipGen -> False
           Tip _  -> True
 
     when inThePast $
       throwUserError $ AppendToEBBInThePastError epoch currentEpoch
 
-    let binaryInfo'  = toLazyByteString <$> binaryInfo
-        ebbEpochSlot = EpochSlot epoch 0
-        ebbSlot      = epochSlotToSlot dbm ebbEpochSlot
-        toPad        = fromIntegral (unSlotNo ebbSlot) - length dbmChain
+    let binaryInfo' = toLazyByteString <$> binaryInfo
+        ebbSlot     = epochNoToSlot dbm epoch
+        tipInfo     = TipInfo hash (EBB epoch) block
 
-    return dbm
-      { dbmChain = dbmChain ++ replicate toPad Nothing
-      , dbmTip   = Tip (WithHash hash (EBB epoch))
-      , dbmEBBs  = Map.insert epoch (hash, binaryInfo') dbmEBBs
-      }
+    return dbm { dbmSlots = insertInSlot ebbSlot tipInfo binaryInfo' dbmSlots }
 
 streamModel
   :: forall hash. (Eq hash, HasCallStack)
@@ -604,7 +709,7 @@ streamModel
                     (IteratorId, DBModel hash))
 streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
     validateIteratorRange err (generalizeEpochInfo dbmEpochInfo)
-      (forgetHash <$> dbmTip) mbStart mbEnd
+      (forgetTipInfo <$> dbmTip dbm) mbStart mbEnd
 
     -- The real implementation checks the end bound first, so we do the
     -- same to get the same errors
@@ -733,7 +838,7 @@ iteratorNextModel itId blockComponent dbm@DBModel {..} =
           res = IteratorResult $
             extractBlockComponent hash slot mbEpochNo bi blockComponent
           (slot, mbEpochNo) = case epochOrSlot of
-            Left epoch  -> (epochSlotToSlot dbm (EpochSlot epoch 0), Just epoch)
+            Left epoch  -> (epochNoToSlot dbm epoch, Just epoch)
             Right slot' -> (slot', Nothing)
 
 iteratorPeekModel
@@ -750,7 +855,7 @@ iteratorPeekModel itId blockComponent dbm@DBModel { dbmIterators } =
             extractBlockComponent hash slot mbEpochNo bi blockComponent
         where
           (slot, mbEpochNo) = case epochOrSlot of
-            Left epoch  -> (epochSlotToSlot dbm (EpochSlot epoch 0), Just epoch)
+            Left epoch  -> (epochNoToSlot dbm epoch, Just epoch)
             Right slot' -> (slot', Nothing)
 
 iteratorHasNextModel :: IteratorId

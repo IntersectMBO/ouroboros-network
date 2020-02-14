@@ -27,27 +27,19 @@ module Ouroboros.Storage.ChainDB.Impl (
   ) where
 
 import           Control.Monad (when)
+import           Control.Tracer
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
 
-import           Control.Tracer
-
-import           Control.Monad.Class.MonadThrow (bracket)
-
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader (..), castPoint,
-                     genesisBlockNo, genesisPoint)
+import           Ouroboros.Network.Block (castPoint)
 
-import           Ouroboros.Consensus.Block (headerPoint, toIsEBB)
+import           Ouroboros.Consensus.Block (toIsEBB)
 import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
-
-import           Ouroboros.Storage.Common (EpochNo)
-import           Ouroboros.Storage.EpochInfo (epochInfoEpoch)
 
 import           Ouroboros.Storage.ChainDB.API
 
@@ -89,15 +81,8 @@ openDBInternal
   -> m (ChainDB m blk, Internal m blk)
 openDBInternal args launchBgTasks = do
     immDB <- ImmDB.openDB argsImmDb
-    -- In order to figure out the 'BlockNo' and 'Point' at the tip of the
-    -- ImmutableDB, we need to read the header at the tip of the ImmutableDB.
-    immDbTipHeader <- sequence =<< ImmDB.getBlockComponentAtTip immDB GetHeader
-    -- Note that 'immDbTipBlockNo' might not end up being the \"immutable\"
-    -- block(no), because the current chain computed from the VolatileDB could
-    -- be longer than @k@.
-    let immDbTipBlockNo = maybe genesisBlockNo blockNo     immDbTipHeader
-        immDbTipPoint   = maybe genesisPoint   headerPoint immDbTipHeader
-    immDbTipEpoch      <- maybe (return 0)     blockEpoch  immDbTipHeader
+    immDbTipPoint <- ImmDB.getPointAtTip immDB
+    immDbTipEpoch <- Reopen.pointToEpoch (Args.cdbEpochInfo args) immDbTipPoint
     traceWith tracer $ TraceOpenEvent $ OpenedImmDB
       { _immDbTip      = immDbTipPoint
       , _immDbTipEpoch = immDbTipEpoch
@@ -127,15 +112,12 @@ openDBInternal args launchBgTasks = do
       varInvalid
       curSlot
 
-    let chain      = ChainSel.clChain  chainAndLedger
-        ledger     = ChainSel.clLedger chainAndLedger
-        cfg        = Args.cdbNodeConfig args
-        secParam   = protocolSecurityParam cfg
-        immBlockNo = ChainSel.getImmBlockNo secParam chain immDbTipBlockNo
+    let chain  = ChainSel.clChain  chainAndLedger
+        ledger = ChainSel.clLedger chainAndLedger
+        cfg    = Args.cdbNodeConfig args
 
     atomically $ LgrDB.setCurrent lgrDB ledger
     varChain           <- newTVarM chain
-    varImmBlockNo      <- newTVarM immBlockNo
     varIterators       <- newTVarM Map.empty
     varReaders         <- newTVarM Map.empty
     varNextIteratorKey <- newTVarM (IteratorKey 0)
@@ -148,7 +130,6 @@ openDBInternal args launchBgTasks = do
                   , cdbVolDB           = volDB
                   , cdbLgrDB           = lgrDB
                   , cdbChain           = varChain
-                  , cdbImmBlockNo      = varImmBlockNo
                   , cdbIterators       = varIterators
                   , cdbReaders         = varReaders
                   , cdbNodeConfig      = cfg
@@ -163,6 +144,7 @@ openDBInternal args launchBgTasks = do
                   , cdbKillBgThreads   = varKillBgThreads
                   , cdbEpochInfo       = Args.cdbEpochInfo args
                   , cdbIsEBB           = toIsEBB . isJust . Args.cdbIsEBB args
+                  , cdbCheckIntegrity  = Args.cdbCheckIntegrity args
                   , cdbBlockchainTime  = Args.cdbBlockchainTime args
                   , cdbFutureBlocks    = varFutureBlocks
                   }
@@ -174,7 +156,6 @@ openDBInternal args launchBgTasks = do
           , getTipBlock        = getEnv     h Query.getTipBlock
           , getTipHeader       = getEnv     h Query.getTipHeader
           , getTipPoint        = getEnvSTM  h Query.getTipPoint
-          , getTipBlockNo      = getEnvSTM  h Query.getTipBlockNo
           , getBlockComponent  = getEnv2    h Query.getBlockComponent
           , getIsFetched       = getEnvSTM  h Query.getIsFetched
           , getMaxSlotNo       = getEnvSTM  h Query.getMaxSlotNo
@@ -208,6 +189,3 @@ openDBInternal args launchBgTasks = do
   where
     tracer = Args.cdbTracer args
     (argsImmDb, argsVolDb, argsLgrDb, _) = Args.fromChainDbArgs args
-
-    blockEpoch :: forall b. HasHeader b => b -> m EpochNo
-    blockEpoch = epochInfoEpoch (Args.cdbEpochInfo args) . blockSlot

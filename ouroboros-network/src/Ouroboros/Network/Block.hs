@@ -33,6 +33,12 @@ module Ouroboros.Network.Block (
   , atSlot
   , withHash
   , Tip(..)
+  , castTip
+  , getTipPoint
+  , getTipBlockNo
+  , getLegacyTipBlockNo
+  , legacyTip
+  , toLegacyTip
   , encodeTip
   , decodeTip
   , ChainUpdate(..)
@@ -43,8 +49,6 @@ module Ouroboros.Network.Block (
   , BlockMeasure(..)
   , blockMeasure
   , genesisPoint
-  , genesisSlotNo
-  , genesisBlockNo
     -- * Serialisation
   , encodePoint
   , encodeChainHash
@@ -52,13 +56,20 @@ module Ouroboros.Network.Block (
   , decodeChainHash
     -- * Serialised block/header
   , Serialised(..)
+  , wrapCBORinCBOR
+  , unwrapCBORinCBOR
+  , mkSerialised
+  , fromSerialised
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
+import qualified Codec.CBOR.Read as Read
+import qualified Codec.CBOR.Write as Write
 import           Codec.Serialise (Serialise (..))
+import           Control.Monad (when)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured)
 import           Data.Typeable (Typeable)
@@ -66,10 +77,10 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot (SlotNo(..), genesisSlotNo)
+import           Cardano.Slotting.Slot (SlotNo (..))
 
-import           Ouroboros.Network.Point (WithOrigin (..), block, origin,
-                     withOriginToMaybe)
+import           Ouroboros.Network.Point (WithOrigin (..), block,
+                     fromWithOrigin, origin, withOriginToMaybe)
 import qualified Ouroboros.Network.Point as Point (Block (..))
 
 genesisPoint :: Point block
@@ -181,18 +192,62 @@ blockPoint b = Point (block (blockSlot b) (blockHash b))
 
 -- | Used in chain-sync protocol to advertise the tip of the server's chain.
 --
-data Tip b = Tip
-  { tipPoint   :: !(Point b)
-  , tipBlockNo :: !BlockNo
-  } deriving (Eq, Show, Generic, NoUnexpectedThunks)
+data Tip b =
+    -- | The tip is genesis
+    TipGenesis
+
+    -- | The tip is not genesis
+  | Tip !SlotNo !(HeaderHash b) !BlockNo
+  deriving (Generic)
+
+deriving instance StandardHash b => Eq                 (Tip b)
+deriving instance StandardHash b => Show               (Tip b)
+deriving instance StandardHash b => NoUnexpectedThunks (Tip b)
+
+-- | The equivalent of 'castPoint' for 'Tip'
+castTip :: (HeaderHash a ~ HeaderHash b) => Tip a -> Tip b
+castTip TipGenesis  = TipGenesis
+castTip (Tip s h b) = Tip s h b
+
+getTipPoint :: Tip b -> Point b
+getTipPoint TipGenesis  = GenesisPoint
+getTipPoint (Tip s h _) = BlockPoint s h
+
+getTipBlockNo :: Tip b -> WithOrigin BlockNo
+getTipBlockNo TipGenesis  = Origin
+getTipBlockNo (Tip _ _ b) = At b
+
+-- | Get the block number associated with a 'Tip', or 'genesisBlockNo' otherwise
+--
+-- TODO: This is /wrong/. There /is/ no block number if we are at genesis
+-- ('genesisBlockNo' is the block number of the first block on the chain).
+-- Usage of this function should be phased out.
+getLegacyTipBlockNo :: Tip b -> BlockNo
+getLegacyTipBlockNo = fromWithOrigin genesisBlockNo . getTipBlockNo
+  where
+    genesisBlockNo = BlockNo 0
+
+-- | Translate to the format it was before (to maintain binary compatibility)
+toLegacyTip :: Tip b -> (Point b, BlockNo)
+toLegacyTip tip = (getTipPoint tip, getLegacyTipBlockNo tip)
+
+-- | Inverse of 'toLegacyTip'
+--
+-- TODO: This should be phased out, since it makes no sense to have a
+-- 'BlockNo' for the genesis point.
+legacyTip :: Point b -> BlockNo -> Tip b
+legacyTip GenesisPoint     _ = TipGenesis -- Ignore block number
+legacyTip (BlockPoint s h) b = Tip s h b
 
 encodeTip :: (HeaderHash blk -> Encoding)
           -> (Tip        blk -> Encoding)
-encodeTip encodeHeaderHash Tip { tipPoint, tipBlockNo } = mconcat
+encodeTip encodeHeaderHash tip = mconcat
     [ Enc.encodeListLen 2
     , encodePoint encodeHeaderHash tipPoint
     , encode                       tipBlockNo
     ]
+  where
+    (tipPoint, tipBlockNo) = toLegacyTip tip
 
 decodeTip :: (forall s. Decoder s (HeaderHash blk))
           -> (forall s. Decoder s (Tip        blk))
@@ -200,7 +255,7 @@ decodeTip decodeHeaderHash = do
   Dec.decodeListLenOf 2
   tipPoint    <- decodePoint decodeHeaderHash
   tipBlockNo  <- decode
-  return Tip { tipPoint, tipBlockNo }
+  return $ legacyTip tipPoint tipBlockNo
 
 {-------------------------------------------------------------------------------
   ChainUpdate type
@@ -245,6 +300,13 @@ maxSlotNoToMaybe (MaxSlotNo s) = Just s
 
 maxSlotNoFromWithOrigin :: WithOrigin SlotNo -> MaxSlotNo
 maxSlotNoFromWithOrigin = maxSlotNoFromMaybe . withOriginToMaybe
+
+instance Semigroup MaxSlotNo where
+  (<>) = max
+
+instance Monoid MaxSlotNo where
+  mempty  = NoMaxSlotNo
+  mappend = (<>)
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -323,13 +385,63 @@ instance Monoid BlockMeasure where
   Serialised block/header
 -------------------------------------------------------------------------------}
 
--- | A block or header that is /still serialised/, i.e. not yet deserialised.
+-- | An already serialised value
+--
 -- When streaming blocks/header from disk to the network, there is often no
 -- need to deserialise them, as we'll just end up serialising them again when
 -- putting them on the wire.
-newtype Serialised block = Serialised
+newtype Serialised a = Serialised
   { unSerialised :: Lazy.ByteString }
   deriving (Eq, Show)
 
 type instance HeaderHash (Serialised block) = HeaderHash block
 instance StandardHash block => StandardHash (Serialised block)
+
+-- | Wrap CBOR-in-CBOR
+--
+-- This is primarily useful for the /decoder/; see 'unwrapCBORinCBOR'
+wrapCBORinCBOR :: (a -> Encoding) -> a -> Encoding
+wrapCBORinCBOR enc = encode . mkSerialised enc
+
+-- | Unwrap CBOR-in-CBOR
+--
+-- The CBOR-in-CBOR encoding gives us the 'ByteString' we need in order to
+-- to construct annotations.
+unwrapCBORinCBOR :: (forall s. Decoder s (Lazy.ByteString -> a))
+                 -> (forall s. Decoder s a)
+unwrapCBORinCBOR dec = fromSerialised dec =<< decode
+
+-- | Construct 'Serialised' value from an unserialised value
+mkSerialised :: (a -> Encoding) -> a -> Serialised a
+mkSerialised enc = Serialised . Write.toLazyByteString . enc
+
+-- | Decode a 'Serialised' value
+--
+-- Unlike a regular 'Decoder', which has an implicit input stream,
+-- 'fromSerialised' takes the 'Serialised' value as an argument.
+fromSerialised :: (forall s. Decoder s (Lazy.ByteString -> a))
+               -> Serialised a -> (forall s. Decoder s a)
+fromSerialised dec (Serialised payload) =
+    case Read.deserialiseFromBytes dec payload of
+      Left (Read.DeserialiseFailure _ reason) -> fail reason
+      Right (trailing, mkA)
+        | not (Lazy.null trailing) -> fail "trailing bytes in CBOR-in-CBOR"
+        | otherwise                -> return (mkA payload)
+
+-- | CBOR-in-CBOR
+--
+-- TODO: replace with encodeEmbeddedCBOR from cborg-0.2.4 once
+-- it is available, since that will be faster.
+--
+-- TODO: Avoid converting to a strict ByteString, as that requires copying O(n)
+-- in case the lazy ByteString consists of more than one chunks.
+instance Serialise (Serialised a) where
+  encode (Serialised bs) = mconcat [
+        Enc.encodeTag 24
+      , Enc.encodeBytes (Lazy.toStrict bs)
+      ]
+
+  decode = do
+      tag <- Dec.decodeTag
+      when (tag /= 24) $ fail "expected tag 24 (CBOR-in-CBOR)"
+      Serialised . Lazy.fromStrict <$> Dec.decodeBytes

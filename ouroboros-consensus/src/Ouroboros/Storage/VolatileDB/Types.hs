@@ -1,24 +1,38 @@
-{-# LANGUAGE DeriveAnyClass            #-}
-{-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE StandaloneDeriving        #-}
-
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Storage.VolatileDB.Types
-    (
-      module Ouroboros.Storage.VolatileDB.Types
-    , module Ouroboros.Network.Block
-    ) where
+  ( BlocksPerFile -- opaque
+  , unBlocksPerFile
+  , mkBlocksPerFile
+  , FileId
+  , ReverseIndex
+  , SuccessorsIndex
+  , BlockValidationPolicy (..)
+  , VolatileDBError (..)
+  , UserError (..)
+  , UnexpectedError (..)
+  , ParserError (..)
+  , sameVolatileDBError
+  , sameUnexpectedError
+  , BlockSize (..)
+  , BlockOffset
+  , Parser (..)
+  , ParsedInfo
+  , ParsedBlockInfo
+  , BlockInfo (..)
+  , InternalBlockInfo (..)
+    -- * Tracing
+  , TraceEvent (..)
+  ) where
 
 import           Control.Exception (Exception (..))
 import           Data.Map.Strict (Map)
 import           Data.Set (Set)
-import           Data.Typeable
-import           Data.Word (Word16, Word64)
+import           Data.Word (Word16, Word32, Word64)
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks, first)
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block hiding (Tip, decodeTip, encodeTip)
 import           Ouroboros.Network.Point (WithOrigin)
@@ -26,6 +40,17 @@ import           Ouroboros.Network.Point (WithOrigin)
 import           Ouroboros.Consensus.Block (IsEBB)
 
 import           Ouroboros.Storage.FS.API.Types
+
+-- | The maximum number of blocks to store per file.
+newtype BlocksPerFile = BlocksPerFile { unBlocksPerFile :: Word32 }
+
+-- | Create a 'BlocksPerFile'.
+--
+-- PRECONDITION: the given number must be greater than 0, if not, this
+-- function will throw an 'error'.
+mkBlocksPerFile :: Word32 -> BlocksPerFile
+mkBlocksPerFile 0 = error "BlocksPerFile must be positive"
+mkBlocksPerFile n = BlocksPerFile n
 
 -- | The 'FileId' is the unique identifier of each file found in the db.
 -- For example, the file @blocks-42.dat@ has 'FileId' @42@.
@@ -39,6 +64,13 @@ type ReverseIndex blockId = Map blockId (InternalBlockInfo blockId)
 -- a predecessor (set of successors).
 type SuccessorsIndex blockId = Map (WithOrigin blockId) (Set blockId)
 
+-- | When block validation is enabled, the parser checks for each block a number
+-- of properties and stops parsing if it finds any invalid blocks.
+data BlockValidationPolicy =
+      NoValidation
+    | ValidateAll
+    deriving Eq
+
 -- | Errors which might arise when working with this database.
 data VolatileDBError =
       UserError UserError
@@ -50,13 +82,11 @@ data VolatileDBError =
     deriving Show
 
 data UserError =
-      InvalidArgumentsError String
-    | ClosedDBError
+      ClosedDBError
     deriving (Show, Eq)
 
 data UnexpectedError =
       FileSystemError FsError
-    | ParserError ParserError
     deriving (Show)
 
 instance Eq VolatileDBError where
@@ -65,15 +95,21 @@ instance Eq VolatileDBError where
 instance Exception VolatileDBError where
     displayException = show
 
-data ParserError =
-      forall blockId. (Typeable blockId, Eq blockId, Show blockId) =>
-      DuplicatedSlot blockId FsPath FsPath
-    | InvalidFilename FsPath
-
-deriving instance Show ParserError
-
-instance Eq ParserError where
-    (==) = sameParseError
+-- | Note that we recover from the error, and thus never throw it as an
+-- 'Exception'.
+data ParserError blockId e =
+    BlockReadErr e
+    -- ^ A block could not be parsed.
+  | BlockCorruptedErr blockId
+    -- ^ A block was corrupted, e.g., checking its signature and/or hash
+    -- failed.
+  | DuplicatedBlock blockId FsPath FsPath
+    -- ^ A block with the same @blockId@ occurred twice in the VolatileDB
+    -- files.
+    --
+    -- We include the file in which it occurred first and the file in which it
+    -- occured the second time. The two files can be the same.
+  deriving (Eq, Show)
 
 sameVolatileDBError :: VolatileDBError
                     -> VolatileDBError
@@ -88,49 +124,31 @@ sameUnexpectedError :: UnexpectedError
                     -> Bool
 sameUnexpectedError e1 e2 = case (e1, e2) of
     (FileSystemError fs1, FileSystemError fs2) -> sameFsError fs1 fs2
-    (ParserError p1, ParserError p2)           -> p1 == p2
-    _                                          -> False
 
--- | This is not comparing the arguments of 'DuplicatedSlot', because it's not
--- deterministic which duplication we find. In other words, it's possible that
--- there are multiple pairs of duplicate blocks and our algorithm does not
--- guarantee we always find the same.
-sameParseError :: ParserError -> ParserError -> Bool
-sameParseError e1 e2 = case (e1, e2) of
-    (DuplicatedSlot {}, DuplicatedSlot {})       -> True
-    (InvalidFilename str1, InvalidFilename str2) -> str1 == str2
-    _                                            -> False
-
-newtype FileSize  = FileSize {unFileSize :: Word64}
-    deriving (Show, Generic, NoUnexpectedThunks)
 newtype BlockSize = BlockSize {unBlockSize :: Word64}
     deriving (Show, Generic, NoUnexpectedThunks)
 
-newtype Parser e m blockId = Parser {
-    -- | Parse block storage at the given path.
-    parse :: FsPath -> m ([(Word64, (Word64, BlockInfo blockId))], Maybe e)
-    }
+-- | The offset at which a block is stored in a file.
+type BlockOffset = Word64
 
--- | Simply wraps around the types of the parser.
-getParsedInfo :: Functor m
-              => Parser e m blockId
-              -> FsPath
-              -> m (ParsedInfo blockId, Maybe e)
-getParsedInfo (Parser parser) path =
-    first toParsedInfo <$> parser path
-  where
-    toParsedInfo :: [(Word64, (Word64, BlockInfo blockId))]
-                 -> ParsedInfo blockId
-    toParsedInfo = fmap $ \(o, (s, a)) -> (o, (BlockSize s, a))
-
--- | The offset of a slot in a file.
-type SlotOffset = Word64
-
--- | Information returned by the parser about a single file
+-- | Parse the given file containing blocks.
 --
--- The parser returns for each block, its size its blockId, its slot and its
--- predecessor's blockId.
-type ParsedInfo blockId = [(SlotOffset, (BlockSize, BlockInfo blockId))]
+-- Return the 'ParsedBlockInfo' for all the valid blocks in the file. Stop
+-- when encountering an error and include the offset to truncate to.
+newtype Parser e m blockId = Parser {
+    parse :: FsPath
+          -> m ( ParsedInfo blockId
+               , Maybe (ParserError blockId e, BlockOffset)
+               )
+  }
+
+-- | Information returned by the parser about a single file.
+type ParsedInfo blockId = [ParsedBlockInfo blockId]
+
+-- | Information returned by the parser about a single block.
+--
+-- The parser returns for each block, its offset, its size and its 'BlockInfo'
+type ParsedBlockInfo blockId = (BlockOffset, (BlockSize, BlockInfo blockId))
 
 -- | The information that the user has to provide for each new block.
 data BlockInfo blockId = BlockInfo {
@@ -144,12 +162,21 @@ data BlockInfo blockId = BlockInfo {
 
 -- | The internal information the db keeps for each block.
 data InternalBlockInfo blockId = InternalBlockInfo {
-      ibFile         :: !FsPath
-    , ibSlotOffset   :: !SlotOffset
-    , ibBlockSize    :: !BlockSize
-    , ibSlot         :: !SlotNo
-    , ibPreBid       :: !(WithOrigin blockId)
-    , ibIsEBB        :: !IsEBB
-    , ibHeaderOffset :: !Word16
-    , ibHeaderSize   :: !Word16
+      ibFile        :: !FsPath
+    , ibBlockOffset :: !BlockOffset
+    , ibBlockSize   :: !BlockSize
+    , ibBlockInfo   :: !(BlockInfo blockId)
     } deriving (Show, Generic, NoUnexpectedThunks)
+
+{------------------------------------------------------------------------------
+  Tracing
+------------------------------------------------------------------------------}
+
+data TraceEvent e blockId
+    = DBAlreadyClosed
+    | DBAlreadyOpen
+    | BlockAlreadyHere blockId
+    | TruncateCurrentFile FsPath
+    | Truncate (ParserError blockId e) FsPath BlockOffset
+    | InvalidFileNames [FsPath]
+  deriving (Eq, Generic, Show)

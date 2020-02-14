@@ -54,6 +54,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..),
                      cborError)
 
 import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.MempoolPayload as CC
 import qualified Cardano.Chain.Update.Proposal as Update
@@ -62,8 +63,8 @@ import qualified Cardano.Chain.UTxO as Utxo
 import qualified Cardano.Chain.ValidationMode as CC
 
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import           Ouroboros.Consensus.Ledger.Byron.Block
+import           Ouroboros.Consensus.Ledger.Byron.Conversions (toByronSlotNo)
 import           Ouroboros.Consensus.Ledger.Byron.Ledger
 import           Ouroboros.Consensus.Ledger.Byron.Orphans ()
 import           Ouroboros.Consensus.Mempool.API
@@ -87,16 +88,16 @@ instance ApplyTx ByronBlock where
     deriving NoUnexpectedThunks via UseIsNormalForm (GenTx ByronBlock)
 
   txSize =
-      fromIntegral . Strict.length . mempoolPayloadRecoverBytes . toMempoolPayload
+      fromIntegral . Strict.length . CC.mempoolPayloadRecoverBytes . toMempoolPayload
 
   -- Check that the annotation is the canonical encoding. This is currently
   -- enforced by 'decodeByronGenTx', see its docstring for more context.
   txInvariant tx =
-      mempoolPayloadRecoverBytes tx' == mempoolPayloadReencode tx'
+      CC.mempoolPayloadRecoverBytes tx' == CC.mempoolPayloadReencode tx'
     where
       tx' = toMempoolPayload tx
 
-  type ApplyTxErr ByronBlock = ApplyMempoolPayloadErr
+  type ApplyTxErr ByronBlock = CC.ApplyMempoolPayloadErr
 
   applyTx = applyByronGenTx validationMode
     where
@@ -105,12 +106,6 @@ instance ApplyTx ByronBlock where
   reapplyTx = applyByronGenTx validationMode
     where
       validationMode = CC.ValidationMode CC.NoBlockValidation Utxo.TxValidationNoCrypto
-
-  reapplyTxSameState cfg tx st =
-      validationErrorImpossible $
-        applyByronGenTx validationMode cfg tx st
-    where
-      validationMode = CC.ValidationMode CC.NoBlockValidation Utxo.NoTxValidation
 
 instance HasTxId (GenTx ByronBlock) where
   data TxId (GenTx ByronBlock)
@@ -194,11 +189,12 @@ applyByronGenTx :: CC.ValidationMode
                 -> GenTx ByronBlock
                 -> TickedLedgerState ByronBlock
                 -> Except (ApplyTxErr ByronBlock) (TickedLedgerState ByronBlock)
-applyByronGenTx validationMode cfg genTx (TickedLedgerState st) =
-    (\state -> TickedLedgerState $ st {byronLedgerState = state}) <$>
-      applyMempoolPayload
+applyByronGenTx validationMode cfg genTx (TickedLedgerState slot st) =
+    (\state -> TickedLedgerState slot $ st {byronLedgerState = state}) <$>
+      CC.applyMempoolPayload
         validationMode
         (unByronLedgerConfig cfg)
+        (toByronSlotNo slot)
         (toMempoolPayload genTx)
         (byronLedgerState st)
 

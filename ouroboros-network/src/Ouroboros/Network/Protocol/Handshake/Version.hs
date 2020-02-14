@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeOperators #-}
@@ -35,9 +36,22 @@ import Codec.SerialiseTerm
 
 -- | The set of versions supported by the local agent are described by a map
 -- keyed on the version identifier.
+--
+-- If one needs to combine multiple versions the simplest way is to use the
+-- 'Semigroup' instance.
+--
+-- >
+-- > fold $ (simpleSingletonVersions ...)
+-- >       :| [ (simpleSingletonVersions ...)
+-- >          , (simpleSingletonVersions ...)
+-- >          , ...
+-- >          ]
+-- >
+--
 newtype Versions vNum extra r = Versions
   { getVersions :: Map vNum (Sigma (Version extra r))
   }
+  deriving Semigroup via (Map vNum (Sigma (Version extra r)))
 
 instance Functor (Versions vNum extra) where
     fmap f (Versions vs) = Versions $ Map.map fmapSigma vs
@@ -58,7 +72,7 @@ simpleSingletonVersions vNum vData extra r =
         (Sigma vData (Version (Application $ \_ _ -> r) extra))
 
 data Sigma f where
-  Sigma :: t -> f t -> Sigma f
+  Sigma :: !t -> !(f t) -> Sigma f
 
 -- | Takes a pair of version data: local then remote.
 newtype Application r vData = Application

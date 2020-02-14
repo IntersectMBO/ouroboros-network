@@ -21,6 +21,7 @@ import           GHC.Stack
 
 import           Cardano.Binary (Annotated (..), reAnnotate)
 import qualified Cardano.Chain.Block as CC.Block
+import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
 import qualified Cardano.Chain.Genesis as CC.Genesis
@@ -35,7 +36,6 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import           Ouroboros.Consensus.Ledger.Byron.Block
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
@@ -70,7 +70,7 @@ forgeEBB
 forgeEBB cfg curSlot curNo prevHash =
         mkByronBlock pbftEpochSlots
       . CC.Block.ABOBBoundary
-      . reAnnotateBoundary protocolMagicId
+      . CC.reAnnotateBoundary protocolMagicId
       $ boundaryBlock
   where
     protocolMagicId = CC.Genesis.configProtocolMagicId (getGenesisConfig cfg)

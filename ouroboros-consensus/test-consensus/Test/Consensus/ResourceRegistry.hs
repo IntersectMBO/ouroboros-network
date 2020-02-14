@@ -30,7 +30,7 @@ import           Data.Typeable
 import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic, Generic1)
 
-import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTimer
 
 import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck as QC
@@ -345,7 +345,7 @@ newThread alive parentReg = \shouldLink -> do
               putMVar result ()
               error "crashing"
 
-runIO :: forall m. IOLike m
+runIO :: forall m. (IOLike m, MonadTimer m)
       => StrictTVar m [TestThread m]
       -> ResourceRegistry m
       -> Cmd (TestThread m) -> m (Resp (TestThread m))
@@ -511,7 +511,7 @@ instance (IOLike m) => ToExpr (TestThread m) where
   QSM toplevel
 -------------------------------------------------------------------------------}
 
-semantics :: (IOLike m, Typeable m)
+semantics :: (IOLike m, MonadTimer m, Typeable m)
           => StrictTVar m [TestThread m]
           -> ResourceRegistry m
           -> At m Cmd Concrete -> m (At m Resp Concrete)
@@ -552,7 +552,7 @@ symbolicResp m c = At <$> traverse (const genSym) resp
   where
     (resp, _mock') = step m c
 
-sm :: (IOLike m, Typeable m)
+sm :: (IOLike m, MonadTimer m, Typeable m)
    => StrictTVar m [TestThread m]
    -> ResourceRegistry m
    -> StateMachine (Model m) (At m Cmd) m (At m Resp)

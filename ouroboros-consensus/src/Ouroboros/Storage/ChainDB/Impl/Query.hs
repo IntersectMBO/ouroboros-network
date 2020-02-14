@@ -11,7 +11,6 @@ module Ouroboros.Storage.ChainDB.Impl.Query
   , getTipBlock
   , getTipHeader
   , getTipPoint
-  , getTipBlockNo
   , getBlockComponent
   , getIsFetched
   , getIsInvalidBlock
@@ -26,14 +25,11 @@ import           Control.Monad (join)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HasHeader,
-                     HeaderHash, MaxSlotNo, Point, StandardHash, castPoint,
-                     genesisPoint, maxSlotNoFromWithOrigin, pointHash,
-                     pointSlot)
+import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,
+                     MaxSlotNo, Point, StandardHash, castPoint, genesisPoint,
+                     maxSlotNoFromWithOrigin, pointHash, pointSlot)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended
@@ -106,7 +102,7 @@ getTipHeader CDB{..} = do
       Right hdr
         -> return $ Just hdr
       Left anchor
-        | anchor == genesisPoint
+        | AF.anchorIsGenesis anchor
         -> return Nothing
         | otherwise
           -- In this case, the fragment is empty but the anchor point is not
@@ -116,7 +112,7 @@ getTipHeader CDB{..} = do
           -- Note that we can't use 'getBlockAtTip' because a block might have
           -- been appended to the ImmutableDB since we obtained 'anchorOrHdr'.
         -> fmap Just . anchorMustBeThere =<<
-           ImmDB.getBlockComponentWithPoint cdbImmDB GetHeader (castPoint anchor)
+           ImmDB.getBlockComponentWithPoint cdbImmDB GetHeader (castPoint (AF.anchorToPoint anchor))
   where
     anchorMustBeThere :: Maybe a -> a
     anchorMustBeThere Nothing  = error "block at tip of ImmutableDB missing"
@@ -127,15 +123,6 @@ getTipPoint
   => ChainDbEnv m blk -> STM m (Point blk)
 getTipPoint CDB{..} =
     (castPoint . AF.headPoint) <$> readTVar cdbChain
-
-getTipBlockNo
-  :: forall m blk. (IOLike m, HasHeader (Header blk))
-  => ChainDbEnv m blk -> STM m BlockNo
-getTipBlockNo CDB{..} = do
-    mbTipBlockNo <- AF.headBlockNo <$> readTVar cdbChain
-    -- If the current chain is empty, then look at 'cdbImmBlockNo', see its
-    -- invariant.
-    maybe (readTVar cdbImmBlockNo) return mbTipBlockNo
 
 getBlockComponent
   :: forall m blk b. (MonadCatch m , HasHeader blk)

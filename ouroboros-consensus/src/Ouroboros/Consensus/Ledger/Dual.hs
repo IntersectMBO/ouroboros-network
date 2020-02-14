@@ -51,6 +51,7 @@ module Ouroboros.Consensus.Ledger.Dual (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import           Codec.Serialise
+import           Control.Exception (assert)
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
@@ -65,6 +66,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Storage.Common
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
@@ -250,20 +252,24 @@ instance Bridge m a => UpdateLedger (DualBlock m a) where
   applyChainTick DualLedgerConfig{..}
                  slot
                  DualLedgerState{..} =
-      TickedLedgerState DualLedgerState {
-          dualLedgerStateMain = getTickedLedgerState $
-            applyChainTick
-              dualLedgerConfigMain
-              slot
-              dualLedgerStateMain
-        , dualLedgerStateAux = getTickedLedgerState $
-            applyChainTick
-              dualLedgerConfigAux
-              slot
-              dualLedgerStateAux
-        , dualLedgerStateBridge =
-            dualLedgerStateBridge
+      assert (tickedSlotNo tickedM == tickedSlotNo tickedA) $
+      TickedLedgerState (tickedSlotNo tickedM) DualLedgerState {
+          dualLedgerStateMain   = tickedLedgerState tickedM
+        , dualLedgerStateAux    = tickedLedgerState tickedA
+        , dualLedgerStateBridge = dualLedgerStateBridge
         }
+    where
+      tickedM :: TickedLedgerState m
+      tickedM = applyChainTick
+                  dualLedgerConfigMain
+                  slot
+                  dualLedgerStateMain
+
+      tickedA :: TickedLedgerState a
+      tickedA = applyChainTick
+                  dualLedgerConfigAux
+                  slot
+                  dualLedgerStateAux
 
   applyLedgerBlock DualLedgerConfig{..}
                    block@DualBlock{..}
@@ -323,16 +329,16 @@ dualExtLedgerStateMain :: Bridge m a
                        => ExtLedgerState (DualBlock m a)
                        -> ExtLedgerState m
 dualExtLedgerStateMain ExtLedgerState{..} = ExtLedgerState{
-      ledgerState         = dualLedgerStateMain ledgerState
-    , ouroborosChainState = ouroborosChainState
+      ledgerState = dualLedgerStateMain ledgerState
+    , headerState = castHeaderState     headerState
     }
 
 dualExtValidationErrorMain :: Bridge m a
                            => ExtValidationError (DualBlock m a)
                            -> ExtValidationError m
 dualExtValidationErrorMain = \case
-    ExtValidationErrorLedger    e -> ExtValidationErrorLedger (dualLedgerErrorMain e)
-    ExtValidationErrorOuroboros e -> ExtValidationErrorOuroboros e
+    ExtValidationErrorLedger e -> ExtValidationErrorLedger (dualLedgerErrorMain e)
+    ExtValidationErrorHeader e -> ExtValidationErrorHeader (castHeaderError     e)
 
 {-------------------------------------------------------------------------------
   ProtocolLedgerView
@@ -340,6 +346,19 @@ dualExtValidationErrorMain = \case
   These definitions are asymmetric because the auxiliary block is not involved
   in the consensus protocol, and has no 'ProtocolLedgerView' instance.
 -------------------------------------------------------------------------------}
+
+instance Bridge m a => HasAnnTip (DualBlock m a) where
+  type TipInfo (DualBlock m a) = TipInfo m
+  getTipInfo = getTipInfo . dualHeaderMain
+
+instance Bridge m a => ValidateEnvelope (DualBlock m a) where
+  validateEnvelope cfg t =
+        withExcept castHeaderEnvelopeError
+      . validateEnvelope (extNodeConfigP cfg) (castAnnTip <$> t)
+      . dualHeaderMain
+
+  firstBlockNo          _ = firstBlockNo          (Proxy @m)
+  minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @m)
 
 instance Bridge m a => ProtocolLedgerView (DualBlock m a) where
   ledgerConfigView cfg = DualLedgerConfig {
@@ -396,19 +415,19 @@ instance Bridge m a => ApplyTx (DualBlock m a) where
 
   applyTx DualLedgerConfig{..}
           tx@DualGenTx{..}
-          (TickedLedgerState DualLedgerState{..}) = do
-      (TickedLedgerState main', TickedLedgerState aux') <-
+          (TickedLedgerState slot DualLedgerState{..}) = do
+      (TickedLedgerState _ main', TickedLedgerState _ aux') <-
         agreeOnError DualGenTxErr (
             applyTx
               dualLedgerConfigMain
               dualGenTxMain
-              (TickedLedgerState dualLedgerStateMain)
+              (TickedLedgerState slot dualLedgerStateMain)
           , applyTx
               dualLedgerConfigAux
               dualGenTxAux
-              (TickedLedgerState dualLedgerStateAux)
+              (TickedLedgerState slot dualLedgerStateAux)
           )
-      return $ TickedLedgerState DualLedgerState {
+      return $ TickedLedgerState slot DualLedgerState {
           dualLedgerStateMain   = main'
         , dualLedgerStateAux    = aux'
         , dualLedgerStateBridge = updateBridgeWithTx
@@ -418,44 +437,25 @@ instance Bridge m a => ApplyTx (DualBlock m a) where
 
   reapplyTx DualLedgerConfig{..}
             tx@DualGenTx{..}
-            (TickedLedgerState DualLedgerState{..}) = do
-      (TickedLedgerState main', TickedLedgerState aux') <-
+            (TickedLedgerState slot DualLedgerState{..}) = do
+      (TickedLedgerState _ main', TickedLedgerState _ aux') <-
         agreeOnError DualGenTxErr (
             reapplyTx
               dualLedgerConfigMain
               dualGenTxMain
-              (TickedLedgerState dualLedgerStateMain)
+              (TickedLedgerState slot dualLedgerStateMain)
           , reapplyTx
               dualLedgerConfigAux
               dualGenTxAux
-              (TickedLedgerState dualLedgerStateAux)
+              (TickedLedgerState slot dualLedgerStateAux)
           )
-      return $ TickedLedgerState DualLedgerState {
+      return $ TickedLedgerState slot DualLedgerState {
           dualLedgerStateMain   = main'
         , dualLedgerStateAux    = aux'
         , dualLedgerStateBridge = updateBridgeWithTx
                                     tx
                                     dualLedgerStateBridge
         }
-
-  reapplyTxSameState DualLedgerConfig{..}
-                     tx@DualGenTx{..}
-                     (TickedLedgerState DualLedgerState{..}) =
-    TickedLedgerState DualLedgerState {
-        dualLedgerStateMain   = getTickedLedgerState $
-                                  reapplyTxSameState
-                                    dualLedgerConfigMain
-                                    dualGenTxMain
-                                    (TickedLedgerState dualLedgerStateMain)
-      , dualLedgerStateAux    = getTickedLedgerState $
-                                  reapplyTxSameState
-                                    dualLedgerConfigAux
-                                    dualGenTxAux
-                                    (TickedLedgerState dualLedgerStateAux)
-      , dualLedgerStateBridge = updateBridgeWithTx
-                                  tx
-                                  dualLedgerStateBridge
-      }
 
 instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
   -- We don't need a pair of IDs, as long as we can unique ID the transaction

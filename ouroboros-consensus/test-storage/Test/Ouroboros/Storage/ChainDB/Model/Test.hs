@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Ouroboros.Storage.ChainDB.Model.Test (
     tests
   ) where
@@ -15,6 +16,7 @@ import           Test.Tasty.QuickCheck
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader (..), genesisPoint)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -24,6 +26,7 @@ import           Ouroboros.Storage.ChainDB.API (StreamFrom (..), StreamTo (..))
 
 import           Test.Util.TestBlock
 
+import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock (..))
 import qualified Test.Ouroboros.Storage.ChainDB.Model as M
 
 tests :: TestTree
@@ -44,7 +47,7 @@ addBlocks blks = M.addBlocks cfg blks m
 prop_getBlock_addBlock :: BlockTree -> Permutation -> Property
 prop_getBlock_addBlock bt p =
         M.getBlock (blockHash newBlock) (M.addBlock singleNodeTestConfig newBlock model)
-    === if blockNo newBlock > M.immutableBlockNo secParam model
+    === if At (blockNo newBlock) > M.immutableBlockNo secParam model
         then Just newBlock
         else Nothing
   where
@@ -62,6 +65,8 @@ prop_getChain_addChain bc =
 
 prop_alwaysPickPreferredChain :: BlockTree -> Permutation -> Property
 prop_alwaysPickPreferredChain bt p =
+    counterexample ("blocks: " ++ show blocks) $
+    counterexample ("invalid: " ++ show (M.invalid model)) $
     conjoin [
         not $ preferCandidate' candidate
       | candidate <- treeToChains bt
@@ -92,3 +97,10 @@ prop_between_currentChain bt =
     from     = StreamFromExclusive genesisPoint
     to       = StreamToInclusive $ M.tipPoint model
     secParam = protocolSecurityParam singleNodeTestConfig
+
+{-------------------------------------------------------------------------------
+  Orphan instances
+-------------------------------------------------------------------------------}
+
+instance ModelSupportsBlock TestBlock where
+  isEBB = const IsNotEBB

@@ -1,18 +1,20 @@
-{-# LANGUAGE CPP                        #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE CPP               #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies      #-}
 
 module Control.Monad.Class.MonadTimer (
-    MonadTimer(..)
+    MonadDelay(..)
+  , MonadTimer(..)
   , TimeoutState(..)
   ) where
 
 import qualified Control.Concurrent as IO
 import qualified Control.Concurrent.STM.TVar as STM
-import qualified Control.Monad.STM as STM
 import           Control.Exception (assert)
+import           Control.Monad.Reader
+import qualified Control.Monad.STM as STM
 import           Data.Functor (void)
 import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds)
 
@@ -28,10 +30,15 @@ import           Control.Monad.Class.MonadSTM
 
 import qualified System.Timeout as IO
 
-
 data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
 
-class MonadSTM m => MonadTimer m where
+class Monad m => MonadDelay m where
+  threadDelay :: DiffTime -> m ()
+
+  default threadDelay :: MonadTimer m => DiffTime -> m ()
+  threadDelay d   = void . atomically . awaitTimeout =<< newTimeout d
+
+class (MonadSTM m, MonadDelay m) => MonadTimer m where
   data Timeout m :: *
 
   -- | Create a new timeout which will fire at the given time duration in
@@ -85,9 +92,6 @@ class MonadSTM m => MonadTimer m where
                          TimeoutFired     -> return True
                          TimeoutCancelled -> return False
 
-  threadDelay    :: DiffTime -> m ()
-  threadDelay d   = void . atomically . awaitTimeout =<< newTimeout d
-
   registerDelay :: DiffTime -> m (TVar m Bool)
 
   default registerDelay :: MonadFork m => DiffTime -> m (TVar m Bool)
@@ -104,6 +108,8 @@ class MonadSTM m => MonadTimer m where
 -- Instances for IO
 --
 
+instance MonadDelay IO where
+  threadDelay d = IO.threadDelay (diffTimeToMicrosecondsAsInt d)
 
 #if defined(__GLASGOW_HASKELL__) && !defined(mingw32_HOST_OS) && !defined(__GHCJS__)
 instance MonadTimer IO where
@@ -168,8 +174,6 @@ instance MonadTimer IO where
       when (not fired) $ STM.writeTVar cancelvar True
 #endif
 
-  threadDelay d = IO.threadDelay (diffTimeToMicrosecondsAsInt d)
-
   registerDelay = STM.registerDelay . diffTimeToMicrosecondsAsInt
 
   timeout = IO.timeout . diffTimeToMicrosecondsAsInt
@@ -183,3 +187,22 @@ diffTimeToMicrosecondsAsInt d =
     -- systems means 2^31 usec, which is only ~35 minutes.
     assert (usec <= fromIntegral (maxBound :: Int)) $
     fromIntegral usec
+
+--
+-- Lift to ReaderT
+--
+
+instance MonadDelay m => MonadDelay (ReaderT r m) where
+  threadDelay = lift . threadDelay
+
+instance (MonadTimer m, MonadFork m) => MonadTimer (ReaderT r m) where
+  newtype Timeout (ReaderT r m) = WrapTimeoutReader {
+      unwrapTimeoutReader :: Timeout m
+    }
+
+  newTimeout    d = lift $ WrapTimeoutReader <$> newTimeout d
+  updateTimeout t = lift . updateTimeout (unwrapTimeoutReader t)
+  cancelTimeout t = lift $ cancelTimeout (unwrapTimeoutReader t)
+
+  timeout     d ma = ReaderT $ timeout d . runReaderT ma
+  readTimeout t    = readTimeout $ unwrapTimeoutReader t

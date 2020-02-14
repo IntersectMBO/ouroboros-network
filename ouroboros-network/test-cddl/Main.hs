@@ -29,7 +29,7 @@ import Codec.CBOR.Term as CBOR
 import Codec.CBOR.Read
 import Codec.CBOR.Write (toLazyByteString)
 
-import Ouroboros.Network.Block (HeaderHash, Point, Tip, encodeTip, decodeTip)
+import Ouroboros.Network.Block (HeaderHash, Point, Tip, encodeTip, decodeTip, wrapCBORinCBOR, unwrapCBORinCBOR)
 import Ouroboros.Network.Testing.ConcreteBlock (BlockHeader (..), Block)
 
 import Ouroboros.Network.Protocol.ChainSync.Type as CS
@@ -50,10 +50,10 @@ import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test as LocalTxSub
 
 
 import Network.TypedProtocol.Codec
-import Network.TypedProtocol.ReqResp.Codec.Cbor (codecReqResp)
+import Network.TypedProtocol.ReqResp.Codec.CBOR (codecReqResp)
 import Network.TypedProtocol.ReqResp.Type as ReqResp
 import Network.TypedProtocol.PingPong.Type as PingPong
-import Network.TypedProtocol.PingPong.Codec.Cbor (codecPingPong)
+import Network.TypedProtocol.PingPong.Codec.CBOR (codecPingPong)
 
 -- These files must be in place:
 specFile :: FilePath
@@ -95,12 +95,15 @@ type TS = TxSubmission TxId Tx
 type LT = LocalTxSubmission LocalTxSubmission.Tx LocalTxSubmission.Reject
 
 codecCS :: MonoCodec CS
-codecCS = codecChainSync Serialise.encode (fmap const Serialise.decode)
-                         Serialise.encode (Serialise.decode :: CBOR.Decoder s (Point BlockHeader))
-                         (encodeTip Serialise.encode) (decodeTip Serialise.decode)
+codecCS = codecChainSync
+            (wrapCBORinCBOR Serialise.encode) (unwrapCBORinCBOR (const <$> Serialise.decode))
+            Serialise.encode (Serialise.decode :: CBOR.Decoder s (Point BlockHeader))
+            (encodeTip Serialise.encode) (decodeTip Serialise.decode)
 
 codecBF :: MonoCodec BF
-codecBF = codecBlockFetch Serialise.encode (fmap const Serialise.decode) Serialise.encode Serialise.decode
+codecBF = codecBlockFetch
+            (wrapCBORinCBOR Serialise.encode) (unwrapCBORinCBOR (const <$> Serialise.decode))
+            Serialise.encode Serialise.decode
 
 codecTS :: MonoCodec TS
 codecTS = codecTxSubmission Serialise.encode Serialise.decode Serialise.encode Serialise.decode

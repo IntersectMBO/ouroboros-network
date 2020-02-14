@@ -29,7 +29,10 @@ import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
+import           Ouroboros.Network.Block (HeaderHash)
+
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (repeatedlyM)
@@ -40,16 +43,16 @@ import           Ouroboros.Consensus.Util (repeatedlyM)
 
 -- | Extended ledger state
 --
--- This is the combination of the ouroboros state and the ledger state proper.
+-- This is the combination of the header state and the ledger state proper.
 data ExtLedgerState blk = ExtLedgerState {
-      ledgerState         :: !(LedgerState blk)
-    , ouroborosChainState :: !(ChainState (BlockProtocol blk))
+      ledgerState :: !(LedgerState blk)
+    , headerState :: !(HeaderState blk)
     }
   deriving (Generic)
 
 data ExtValidationError blk =
     ExtValidationErrorLedger !(LedgerError blk)
-  | ExtValidationErrorOuroboros !(ValidationErr (BlockProtocol blk))
+  | ExtValidationErrorHeader !(HeaderError blk)
   deriving (Generic)
 
 instance ProtocolLedgerView blk => NoUnexpectedThunks (ExtValidationError blk)
@@ -100,25 +103,26 @@ applyExtLedgerState :: (ProtocolLedgerView blk, HasCallStack)
                     -> ExtLedgerState blk
                     -> Except (ExtValidationError blk) (ExtLedgerState blk)
 applyExtLedgerState prevApplied cfg blk ExtLedgerState{..} = do
-    ledgerState'        <- case prevApplied of
-                              BlockNotPreviouslyApplied ->
-                                withExcept ExtValidationErrorLedger $
-                                  applyLedgerBlock
-                                    (ledgerConfigView cfg)
-                                    blk
-                                    ledgerState
-                              BlockPreviouslyApplied -> pure $
-                                reapplyLedgerBlock
-                                  (ledgerConfigView cfg)
-                                  blk
-                                  ledgerState
-    ouroborosChainState' <- withExcept ExtValidationErrorOuroboros $
-                              applyChainState
-                                cfg
-                                (protocolLedgerView cfg ledgerState')
-                                (validateView cfg (getHeader blk))
-                                ouroborosChainState
-    return $ ExtLedgerState ledgerState' ouroborosChainState'
+    -- TODO: Flip order, and use anachronistic ledger view
+    ledgerState' <- case prevApplied of
+                       BlockNotPreviouslyApplied ->
+                         withExcept ExtValidationErrorLedger $
+                           applyLedgerBlock
+                             (ledgerConfigView cfg)
+                             blk
+                             ledgerState
+                       BlockPreviouslyApplied -> pure $
+                         reapplyLedgerBlock
+                           (ledgerConfigView cfg)
+                           blk
+                           ledgerState
+    headerState' <- withExcept ExtValidationErrorHeader $
+                      validateHeader
+                        cfg
+                        (protocolLedgerView cfg ledgerState')
+                        (getHeader blk)
+                        headerState
+    return $ ExtLedgerState ledgerState' headerState'
 
 foldExtLedgerState :: (ProtocolLedgerView blk, HasCallStack)
                    => BlockPreviouslyApplied
@@ -132,20 +136,39 @@ foldExtLedgerState prevApplied = repeatedlyM . (applyExtLedgerState prevApplied)
   Serialisation
 -------------------------------------------------------------------------------}
 
-encodeExtLedgerState :: (LedgerState blk -> Encoding)
+encodeExtLedgerState :: (LedgerState   blk -> Encoding)
                      -> (ChainState (BlockProtocol blk) -> Encoding)
+                     -> (HeaderHash    blk -> Encoding)
+                     -> (TipInfo       blk -> Encoding)
                      -> ExtLedgerState blk -> Encoding
-encodeExtLedgerState encodeLedger
+encodeExtLedgerState encodeLedgerState
                      encodeChainState
+                     encodeHash
+                     encodeInfo
                      ExtLedgerState{..} = mconcat [
-      encodeLedger     ledgerState
-    , encodeChainState ouroborosChainState
+      encodeLedgerState  ledgerState
+    , encodeHeaderState' headerState
     ]
+  where
+    encodeHeaderState' = encodeHeaderState
+                           encodeChainState
+                           encodeHash
+                           encodeInfo
 
-decodeExtLedgerState :: (forall s. Decoder s (LedgerState blk))
+decodeExtLedgerState :: (forall s. Decoder s (LedgerState    blk))
                      -> (forall s. Decoder s (ChainState (BlockProtocol blk)))
-                     -> forall s. Decoder s (ExtLedgerState blk)
-decodeExtLedgerState decodeLedger decodeChainState = do
-    ledgerState         <- decodeLedger
-    ouroborosChainState <- decodeChainState
+                     -> (forall s. Decoder s (HeaderHash     blk))
+                     -> (forall s. Decoder s (TipInfo        blk))
+                     -> (forall s. Decoder s (ExtLedgerState blk))
+decodeExtLedgerState decodeLedgerState
+                     decodeChainState
+                     decodeHash
+                     decodeInfo = do
+    ledgerState <- decodeLedgerState
+    headerState <- decodeHeaderState'
     return ExtLedgerState{..}
+  where
+    decodeHeaderState' = decodeHeaderState
+                           decodeChainState
+                           decodeHash
+                           decodeInfo

@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -10,30 +11,28 @@ module Ouroboros.Storage.ChainDB.Impl.Reopen
   ( isOpen
   , closeDB
   , reopen
+    -- * Auxiliary
+  , pointToEpoch
   ) where
 
 import           Control.Monad (when)
+import           Control.Tracer
 import           Data.Functor ((<&>))
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer
-
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader (..), castPoint,
-                     genesisBlockNo, genesisPoint)
+import           Ouroboros.Network.Block (pattern BlockPoint,
+                     pattern GenesisPoint, HasHeader (..), Point, castPoint)
 
-import           Ouroboros.Consensus.Block (Header, headerPoint)
+import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common (EpochNo)
-import           Ouroboros.Storage.EpochInfo (epochInfoEpoch)
+import           Ouroboros.Storage.EpochInfo (EpochInfo, epochInfoEpoch)
 
-import           Ouroboros.Storage.ChainDB.API (BlockComponent (..))
 import qualified Ouroboros.Storage.ChainDB.Impl.Background as Background
 import           Ouroboros.Storage.ChainDB.Impl.ChainSel
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -112,19 +111,9 @@ reopen (CDBHandle varState) launchBgTasks = do
         -- TODO what will actually happen if an exception is thrown? What if
         -- recovery is triggered?
 
-        let blockEpoch :: forall b. HasHeader b => b -> m EpochNo
-            blockEpoch = epochInfoEpoch cdbEpochInfo . blockSlot
-
         ImmDB.reopen cdbImmDB
-        -- In order to figure out the 'BlockNo' and 'Point' at the tip of the
-        -- ImmutableDB, we need to read the header at the tip of the ImmutableDB.
-        immDbTipHeader <- sequence =<< ImmDB.getBlockComponentAtTip cdbImmDB GetHeader
-        -- Note that 'immDbTipBlockNo' might not end up being the \"immutable\"
-        -- block(no), because the current chain computed from the VolatileDB could
-        -- be longer than @k@.
-        let immDbTipBlockNo = maybe genesisBlockNo blockNo     immDbTipHeader
-            immDbTipPoint   = maybe genesisPoint   headerPoint immDbTipHeader
-        immDbTipEpoch      <- maybe (return 0)     blockEpoch  immDbTipHeader
+        immDbTipPoint <- ImmDB.getPointAtTip cdbImmDB
+        immDbTipEpoch <- pointToEpoch cdbEpochInfo immDbTipPoint
         traceWith cdbTracer $ TraceOpenEvent $ OpenedImmDB
           { _immDbTip      = immDbTipPoint
           , _immDbTipEpoch = immDbTipEpoch
@@ -156,13 +145,10 @@ reopen (CDBHandle varState) launchBgTasks = do
 
         let chain      = clChain  chainAndLedger
             ledger     = clLedger chainAndLedger
-            secParam   = protocolSecurityParam cdbNodeConfig
-            immBlockNo = getImmBlockNo secParam chain immDbTipBlockNo
 
         atomically $ do
           writeTVar cdbChain chain
           LgrDB.setCurrent cdbLgrDB ledger
-          writeTVar cdbImmBlockNo immBlockNo
           -- Change the state from 'ChainDbReopening' to 'ChainDbOpen'
           writeTVar varState $ ChainDbOpen env
         traceWith cdbTracer $ TraceOpenEvent $ ReopenedDB
@@ -171,3 +157,13 @@ reopen (CDBHandle varState) launchBgTasks = do
           }
 
         when launchBgTasks $ Background.launchBgTasks env replayed
+
+
+{-------------------------------------------------------------------------------
+  Auxiliary
+-------------------------------------------------------------------------------}
+
+pointToEpoch :: Monad m => EpochInfo m -> Point blk -> m EpochNo
+pointToEpoch epochInfo = \case
+    GenesisPoint      -> return 0
+    BlockPoint slot _ -> epochInfoEpoch epochInfo slot

@@ -7,8 +7,6 @@ import           Control.Monad (void)
 import           Data.Bifunctor (first)
 import           Data.Tuple (swap)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Consensus.Util ((...:), (..:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -19,8 +17,7 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 
-
-openDBMock  :: forall m hash. (IOLike m, Eq hash)
+openDBMock  :: forall m hash. (IOLike m, Eq hash, Show hash)
             => ErrorHandling ImmutableDBError m
             -> EpochSize
             -> m (DBModel hash, ImmutableDB hash m)
@@ -35,12 +32,12 @@ openDBMock err epochSize = do
         { closeDB                = return ()
         , isOpen                 = return True
         , reopen                 = \_valPol -> void $ update reopenModel
-        , getTip                 = query      $ getTipModel
-        , getBlockComponent      = queryE    .: getBlockComponentModel
-        , getEBBComponent        = queryE    .: getEBBComponentModel
-        , getBlockOrEBBComponent = queryE   ..: getBlockOrEBBComponentModel
-        , appendBlock            = updateE_ ..: appendBlockModel
-        , appendEBB              = updateE_ ..: appendEBBModel
+        , getTip                 = query       $ getTipModel
+        , getBlockComponent      = queryE     .: getBlockComponentModel
+        , getEBBComponent        = queryE     .: getEBBComponentModel
+        , getBlockOrEBBComponent = queryE    ..: getBlockOrEBBComponentModel
+        , appendBlock            = updateE_ ...: appendBlockModel
+        , appendEBB              = updateE_ ...: appendEBBModel
         , stream                 = updateEE ...: \_rr bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
         , immutableDBErr         = err
         }

@@ -31,8 +31,9 @@ import           Network.TypedProtocol.Proofs (connect, connectPipelined)
 
 import           Ouroboros.Network.Channel
 
-import           Ouroboros.Network.Block (StandardHash, Tip (..), decodeTip,
-                     encodeTip, Serialised (..), castPoint)
+import           Ouroboros.Network.Block (Serialised (..), StandardHash,
+                     Tip (..), castPoint, decodeTip, encodeTip, legacyTip,
+                     unwrapCBORinCBOR, wrapCBORinCBOR)
 import           Ouroboros.Network.MockChain.Chain (Chain, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
@@ -365,14 +366,14 @@ genChainSync genPoint genHeader genTip = oneof
 instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))) where
   arbitrary = genChainSync arbitrary arbitrary genTip
     where
-      genTip = Tip <$> arbitrary <*> arbitrary
+      genTip = legacyTip <$> arbitrary <*> arbitrary
 
 instance Arbitrary (AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))) where
   arbitrary = genChainSync (castPoint <$> genPoint)
                            (serialiseBlock <$> arbitrary)
                            genTip
     where
-      genTip = Tip <$> arbitrary <*> arbitrary
+      genTip = legacyTip <$> arbitrary <*> arbitrary
 
       genPoint :: Gen (Point BlockHeader)
       genPoint = arbitrary
@@ -404,9 +405,21 @@ codec :: ( MonadST m
       => Codec (ChainSync block (Tip block))
                S.DeserialiseFailure
                m ByteString
-codec = codecChainSync S.encode (fmap const S.decode)
+codec = codecChainSync S.encode             S.decode
                        S.encode             S.decode
                        (encodeTip S.encode) (decodeTip S.decode)
+
+codecWrapped :: ( MonadST m
+                , S.Serialise block
+                , S.Serialise (Chain.HeaderHash block)
+                )
+             => Codec (ChainSync block (Tip block))
+                      S.DeserialiseFailure
+                      m ByteString
+codecWrapped =
+    codecChainSync (wrapCBORinCBOR S.encode) (unwrapCBORinCBOR (const <$> S.decode))
+                   S.encode                  S.decode
+                   (encodeTip S.encode)      (decodeTip S.decode)
 
 prop_codec_ChainSync
   :: AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))
@@ -482,7 +495,7 @@ prop_codec_binary_compat_ChainSync_ChainSyncSerialised
   :: AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))
   -> Bool
 prop_codec_binary_compat_ChainSync_ChainSyncSerialised msg =
-    ST.runST (prop_codec_binary_compatM codec codecSerialised stokEq msg)
+    ST.runST (prop_codec_binary_compatM codecWrapped codecSerialised stokEq msg)
   where
     stokEq
       :: forall pr (stA :: ChainSync BlockHeader (Tip BlockHeader)).
@@ -498,7 +511,7 @@ prop_codec_binary_compat_ChainSyncSerialised_ChainSync
   :: AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))
   -> Bool
 prop_codec_binary_compat_ChainSyncSerialised_ChainSync msg =
-    ST.runST (prop_codec_binary_compatM codecSerialised codec stokEq msg)
+    ST.runST (prop_codec_binary_compatM codecSerialised codecWrapped stokEq msg)
   where
     stokEq
       :: forall pr (stA :: ChainSync (Serialised BlockHeader) (Tip BlockHeader)).
@@ -507,7 +520,7 @@ prop_codec_binary_compat_ChainSyncSerialised_ChainSync msg =
     stokEq (ClientAgency ca) = case ca of
       TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
     stokEq (ServerAgency sa) = case sa of
-      TokNext k     -> SamePeerHasAgency $ ServerAgency (TokNext k)
+      TokNext k    -> SamePeerHasAgency $ ServerAgency (TokNext k)
       TokIntersect -> SamePeerHasAgency $ ServerAgency TokIntersect
 
 chainSyncDemo

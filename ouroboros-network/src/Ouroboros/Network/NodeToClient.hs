@@ -207,7 +207,7 @@ networkErrorPolicies = ErrorPolicies
                       MuxUnknownMiniProtocol  -> Just ourBug
                       MuxDecodeError          -> Just ourBug
                       MuxIngressQueueOverRun  -> Just ourBug
-                      MuxControlProtocolError -> Just ourBug
+                      MuxInitiatorOnly        -> Just ourBug
                       MuxTooLargeMessage      -> Just ourBug
 
                       -- in case of bearer closed / or IOException we suspend

@@ -19,10 +19,10 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , hasBlock
   , getTipInfo
   , getPointAtTip
+  , getAnchorForTip
   , getSlotNoAtTip
   , getKnownBlockComponent
   , getBlockComponent
-  , getBlockComponentAtTip
   , getBlockComponentWithPoint
     -- * Appending a block
   , appendBlock
@@ -69,15 +69,16 @@ import           GHC.Stack
 import           System.FilePath ((</>))
 
 import           Cardano.Prelude (allNoUnexpectedThunks)
+import           Cardano.Slotting.Block (BlockNo)
 
-import           Control.Monad.Class.MonadThrow
-
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
                      SlotNo, atSlot, pointHash, pointSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..))
+import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
@@ -86,13 +87,13 @@ import           Ouroboros.Storage.ChainDB.API (ChainDB)
 import           Ouroboros.Storage.ChainDB.API hiding (ChainDB (..),
                      Iterator (..), closeDB)
 import           Ouroboros.Storage.ChainDB.Impl.BlockComponent
-import           Ouroboros.Storage.Common (EpochNo, Tip (..))
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo (EpochInfo (..))
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..),
-                     ImmutableDB, WithHash (..))
+                     ImmutableDB, TipInfo (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
@@ -110,7 +111,7 @@ data ImmDB m blk = ImmDB {
     , encBlock  :: !(blk -> BinaryInfo Encoding)
     , epochInfo :: !(EpochInfo m)
     , isEBB     :: !(Header blk -> Maybe EpochNo)
-    , addHdrEnv :: !(IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+    , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     , err       :: !(ErrorHandling ImmDB.ImmutableDBError m)
     }
 
@@ -152,11 +153,12 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immValidation     :: ImmDB.ValidationPolicy
     , immIsEBB          :: Header blk -> Maybe EpochNo
     , immCheckIntegrity :: blk -> Bool
-    , immAddHdrEnv      :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+    , immAddHdrEnv      :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
     , immHasFS          :: HasFS m h
     , immTracer         :: Tracer m (TraceEvent blk)
     , immCacheConfig    :: Index.CacheConfig
     , immRegistry       :: ResourceRegistry m
+    , immBlockchainTime :: BlockchainTime m
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -175,6 +177,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immCheckIntegrity'
 -- * 'immAddHdrEnv'
 -- * 'immRegistry'
+-- * 'immBlockchainTime'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
       immErr          = EH.exceptions
@@ -194,6 +197,7 @@ defaultArgs fp = ImmDbArgs{
     , immCheckIntegrity = error "no default for immCheckIntegrity"
     , immAddHdrEnv      = error "no default for immAddHdrEnv"
     , immRegistry       = error "no default for immRegistry"
+    , immBlockchainTime = error "no default for immBlockchainTime"
     }
   where
     -- Cache 250 past epochs by default. This will take roughly 250 MB of RAM.
@@ -228,6 +232,7 @@ openDB ImmDbArgs{..} = do
       parser
       immTracer
       immCacheConfig
+      immBlockchainTime
     return ImmDB
       { immDB     = immDB
       , decHeader = immDecodeHeader
@@ -251,7 +256,7 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (blk -> BinaryInfo Encoding)
         -> EpochInfo m
         -> (Header blk -> Maybe EpochNo)
-        -> (IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+        -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> ErrorHandling ImmDB.ImmutableDBError m
         -> ImmDB m blk
 mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv err = ImmDB {..}
@@ -278,7 +283,7 @@ hasBlock db = \case
     BlockPoint { withHash = hash, atSlot = slot } ->
       withDB db $ \imm -> do
         immTip <- ImmDB.getTip imm
-        (slotNoAtTip, ebbAtTip) <- case forgetHash <$> immTip of
+        (slotNoAtTip, ebbAtTip) <- case forgetTipInfo <$> immTip of
           TipGen                   -> return (Origin, Nothing)
           Tip (ImmDB.EBB epochNo)  -> (, Just epochNo) . At  <$> epochInfoFirst epochNo
           Tip (ImmDB.Block slotNo) -> return (At slotNo, Nothing)
@@ -312,15 +317,16 @@ hasBlock db = \case
 
 getTipInfo :: forall m blk.
               (MonadCatch m, HasCallStack)
-           => ImmDB m blk -> m (WithOrigin (SlotNo, HeaderHash blk, IsEBB))
+           => ImmDB m blk
+           -> m (WithOrigin (SlotNo, HeaderHash blk, IsEBB, BlockNo))
 getTipInfo db = do
     immTip <- withDB db $ \imm -> ImmDB.getTip imm
     case immTip of
       TipGen -> return Origin
-      Tip (WithHash hash (ImmDB.EBB epochNo)) ->
-        At . (, hash, IsEBB) <$> epochInfoFirst epochNo
-      Tip (WithHash hash (ImmDB.Block slotNo)) ->
-        return $ At (slotNo, hash, IsNotEBB)
+      Tip (TipInfo hash (ImmDB.EBB epochNo) block) ->
+        At . (, hash, IsEBB, block) <$> epochInfoFirst epochNo
+      Tip (TipInfo hash (ImmDB.Block slotNo) block) ->
+        return $ At (slotNo, hash, IsNotEBB, block)
   where
     EpochInfo{..} = epochInfo db
 
@@ -328,8 +334,14 @@ getPointAtTip :: forall m blk.
                  (MonadCatch m, HasCallStack)
               => ImmDB m blk -> m (Point blk)
 getPointAtTip db = getTipInfo db <&> \case
-    Origin             -> GenesisPoint
-    At (slot, hash, _) -> BlockPoint slot hash
+    Origin                -> GenesisPoint
+    At (slot, hash, _, _) -> BlockPoint slot hash
+
+getAnchorForTip :: (MonadCatch m, HasCallStack)
+                => ImmDB m blk -> m (AF.Anchor blk)
+getAnchorForTip db = getTipInfo db <&> \case
+   Origin                    -> AF.AnchorGenesis
+   At (slot, hash, _, block) -> AF.Anchor slot hash block
 
 getSlotNoAtTip :: MonadCatch m => ImmDB m blk -> m (WithOrigin SlotNo)
 getSlotNoAtTip db = pointSlot <$> getPointAtTip db
@@ -359,18 +371,6 @@ getBlockComponent db blockComponent epochOrSlot = withDB db $ \imm ->
       Right slot -> ImmDB.getBlockComponent imm blockComponent' slot
   where
     blockComponent' = translateToRawDB (parse db) (addHdrEnv db) blockComponent
-
-getBlockComponentAtTip
-  :: (MonadCatch m, HasHeader blk, HasCallStack)
-  => ImmDB m blk -> BlockComponent (ChainDB m blk) b -> m (Maybe b)
-getBlockComponentAtTip db blockComponent = do
-    immTip <- withDB db $ \imm -> ImmDB.getTip imm
-    case forgetHash <$> immTip of
-      TipGen -> return Nothing
-      Tip (ImmDB.EBB epoch) ->
-        Just <$> getKnownBlockComponent db blockComponent (Left epoch)
-      Tip (ImmDB.Block slot) ->
-        Just <$> getKnownBlockComponent db blockComponent (Right slot)
 
 -- | Return the block component of the block corresponding to the given point,
 -- if it is part of the ImmutableDB.
@@ -404,12 +404,13 @@ appendBlock :: (MonadCatch m, HasHeader blk, GetHeader blk, HasCallStack)
             => ImmDB m blk -> blk -> m ()
 appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB (getHeader b) of
     Nothing      ->
-      ImmDB.appendBlock imm slotNo  hash (CBOR.toBuilder <$> encBlock b)
+      ImmDB.appendBlock imm slotNo  blockNr hash (CBOR.toBuilder <$> encBlock b)
     Just epochNo ->
-      ImmDB.appendEBB   imm epochNo hash (CBOR.toBuilder <$> encBlock b)
+      ImmDB.appendEBB   imm epochNo blockNr hash (CBOR.toBuilder <$> encBlock b)
   where
-    hash   = blockHash b
-    slotNo = blockSlot b
+    hash    = blockHash b
+    slotNo  = blockSlot b
+    blockNr = blockNo   b
     EpochInfo{..} = epochInfo
 
 {-------------------------------------------------------------------------------

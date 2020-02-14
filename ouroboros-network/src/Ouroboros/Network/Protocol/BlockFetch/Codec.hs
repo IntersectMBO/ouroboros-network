@@ -1,33 +1,31 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.Protocol.BlockFetch.Codec
   ( codecBlockFetch
   , codecBlockFetchSerialised
+  , codecBlockFetchSerialised'
   , codecBlockFetchId
   ) where
 
-import           Control.Monad (when)
 import           Control.Monad.Class.MonadST
 
 import qualified Data.ByteString.Lazy as LBS
 
-import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Read     as CBOR
-import qualified Codec.CBOR.Write    as CBOR
-
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Codec.Cbor
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.Serialise as Serialise
 
 import           Ouroboros.Network.Block (HeaderHash, Point, Serialised (..))
 import qualified Ouroboros.Network.Block as Block
+import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 
 -- | 'codecBlockFetch' but without the CBOR-in-CBOR trick
@@ -91,37 +89,23 @@ codecBlockFetchUnwrapped encodeBlock     decodeBlock
   decodePoint :: forall s. CBOR.Decoder s (Point block)
   decodePoint = Block.decodePoint decodeBlockHash
 
+-- | Codec for chain sync that encodes/decodes blocks
+--
+-- NOTE: See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
+-- with a block type that has annotations.
 codecBlockFetch
   :: forall block m.
      MonadST m
-  => (block            -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s (LBS.ByteString -> block))
+  => (block -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s block)
   -> (HeaderHash block -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s (HeaderHash block))
   -> Codec (BlockFetch block) CBOR.DeserialiseFailure m LBS.ByteString
-codecBlockFetch encodeBlock decodeBlock =
-    codecBlockFetchUnwrapped encodeBlockWrapped decodeBlockWrapped
- where
-  encodeBlockWrapped :: block -> CBOR.Encoding
-  encodeBlockWrapped block =
-    --TODO: replace with encodeEmbeddedCBOR from cborg-0.2.4 once
-    -- it is available, since that will be faster.
-      CBOR.encodeTag 24
-   <> CBOR.encodeBytes (CBOR.toStrictByteString (encodeBlock block))
+codecBlockFetch = codecBlockFetchUnwrapped
 
-  decodeBlockWrapped :: forall s. CBOR.Decoder s block
-  decodeBlockWrapped = do
-    --TODO: replace this with decodeEmbeddedCBOR from cborg-0.2.4 once
-    -- it is available, since that will be faster.
-    tag <- CBOR.decodeTag
-    when (tag /= 24) $ fail "expected tag 24 (CBOR-in-CBOR)"
-    payload <- LBS.fromStrict <$> CBOR.decodeBytes
-    case CBOR.deserialiseFromBytes decodeBlock payload of
-      Left (CBOR.DeserialiseFailure _ reason) -> fail reason
-      Right (trailing, block)
-        | not (LBS.null trailing) -> fail "trailing bytes in CBOR-in-CBOR"
-        | otherwise               -> return (block payload)
-
+-- | Codec for chain sync that doesn't encode/decode blocks
+--
+-- Uses CBOR-in-CBOR by default; see also 'codecBlockFetchSerialised''.
 codecBlockFetchSerialised
   :: forall block m.
      MonadST m
@@ -129,25 +113,18 @@ codecBlockFetchSerialised
   -> (forall s. CBOR.Decoder s (HeaderHash block))
   -> Codec (BlockFetch (Serialised block)) CBOR.DeserialiseFailure m LBS.ByteString
 codecBlockFetchSerialised =
-  codecBlockFetchUnwrapped encodeBlockWrapped decodeBlockWrapped
- where
-  -- Avoid converting to a strict ByteString, as that requires copying O(n)
-  -- in case the lazy ByteString consists of more than one chunks.
-  encodeBlockWrapped :: Serialised block -> CBOR.Encoding
-  encodeBlockWrapped (Serialised bytes) =
-    --TODO: replace with encodeEmbeddedCBOR from cborg-0.2.4 once
-    -- it is available, since that will be faster.
-      CBOR.encodeTag 24
-      -- TODO can this be improved?
-   <> CBOR.encodeBytes (LBS.toStrict bytes)
+  codecBlockFetchSerialised' Serialise.encode Serialise.decode
 
-  decodeBlockWrapped :: forall s. CBOR.Decoder s (Serialised block)
-  decodeBlockWrapped = do
-    --TODO: replace this with decodeEmbeddedCBOR from cborg-0.2.4 once
-    -- it is available, since that will be faster.
-    tag <- CBOR.decodeTag
-    when (tag /= 24) $ fail "expected tag 24 (CBOR-in-CBOR)"
-    Serialised . LBS.fromStrict <$> CBOR.decodeBytes
+-- | Generalized version of 'codecBlockFetchSerialised'
+codecBlockFetchSerialised'
+  :: forall block m.
+     MonadST m
+  => (Serialised block -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s (Serialised block))
+  -> (HeaderHash block -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s (HeaderHash block))
+  -> Codec (BlockFetch (Serialised block)) CBOR.DeserialiseFailure m LBS.ByteString
+codecBlockFetchSerialised' = codecBlockFetchUnwrapped
 
 codecBlockFetchId
   :: forall block m. Monad m

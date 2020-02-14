@@ -36,6 +36,7 @@ import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, HeaderHash, Point,
                      SlotNo (..), blockPoint)
 import qualified Ouroboros.Network.MockChain.Chain as MockChain
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
@@ -447,7 +448,9 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
             []   -> []
             x:ys -> foldr ((:) . (,) x) (orderedPairs ys) ys
 
-        prop_growth :: (SlotNo, BlockNo) -> (SlotNo, BlockNo) -> Property
+        prop_growth :: (SlotNo, WithOrigin BlockNo)
+                    -> (SlotNo, WithOrigin BlockNo)
+                    -> Property
         prop_growth (s1, b1) (s2, b2) =
             counterexample (condense (s1, s2, b1, b2, numActiveSlots)) $
             nonNegativeGrowth .&&.
@@ -461,7 +464,11 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
                 counterexample "insufficient chain growth" $
                     property (d >= toEnum numActiveSlots)
 
-            BlockNo d = b2 - b1
+            BlockNo d = case (b1, b2) of
+                          (At b1', At b2') -> b2' - b1'
+                          (Origin, At b2') -> b2' + 1
+                          (Origin, Origin) -> 0
+                          (At _,   Origin) -> error "prop_growth: negative growth"
             numActiveSlots =
                 Map.size $
                 flip Map.filterWithKey (getLeaderSchedule growthSchedule) $
@@ -469,10 +476,10 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
 
         -- @(s, min, max)@ the minimum and maximum block number of the tip of a
         -- chain at the onset of slot @s@.
-        extrema :: [(SlotNo, BlockNo, BlockNo)]
+        extrema :: [(SlotNo, WithOrigin BlockNo, WithOrigin BlockNo)]
         extrema =
             [ case map snd bnos' of
-                  [] -> (slot, 0, 0)
+                  [] -> (slot, Origin, Origin)
                   o  -> (slot, minimum o, maximum o)
             | (slot, bnos) <- tipBlockNos
             , let bnos' = filter (joinedBefore slot . fst) bnos
@@ -481,7 +488,7 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
         joinedBefore slot nid = nodeIdJoinSlot nodeJoinPlan nid < slot
 
     -- swizzled 'testOutputTipBlockNos'
-    tipBlockNos :: [(SlotNo, [(NodeId, BlockNo)])]
+    tipBlockNos :: [(SlotNo, [(NodeId, WithOrigin BlockNo)])]
     tipBlockNos =
         Map.toAscList $
         fmap Map.toAscList $

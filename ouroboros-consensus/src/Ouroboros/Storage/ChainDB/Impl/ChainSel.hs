@@ -19,13 +19,14 @@ module Ouroboros.Storage.ChainDB.Impl.ChainSel
   , ChainAndLedger -- Opaque
   , clChain
   , clLedger
-    -- * Helpers
-  , getImmBlockNo
+    -- * Exported for testing purposes
+  , olderThanK
   ) where
 
 import           Control.Exception (assert)
 import           Control.Monad.Except
 import           Control.Monad.Trans.State.Strict
+import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Foldable (foldl')
 import           Data.Function (on)
 import           Data.List (sortBy)
@@ -39,20 +40,18 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer, contramap, traceWith)
-
 import           Cardano.Prelude (forceElemsToWHNF)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
+import           Ouroboros.Network.AnchoredFragment (Anchor,
+                     AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
                      SlotNo, blockPoint, castHash, castPoint, pointHash)
-import           Ouroboros.Network.Point (WithOrigin)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..),
-                     headerHash, headerPoint)
+                     IsEBB (..), headerHash, headerPoint)
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -92,7 +91,7 @@ initialChainSelection
 initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
     -- We follow the steps from section "## Initialization" in ChainDB.md
 
-    i :: Point blk <- ImmDB.getPointAtTip immDB
+    i :: Anchor blk <- ImmDB.getAnchorForTip immDB
     (succsOf, ledger) <- atomically $ do
       invalid <- forgetFingerprint <$> readTVar varInvalid
       (,) <$> (ignoreInvalidSuc volDB invalid <$> VolDB.getSuccessors volDB)
@@ -102,7 +101,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
 
     -- We use the empty fragment anchored at @i@ as the current chain (and
     -- ledger) and the default in case there is no better candidate.
-    let curChain          = Empty (castPoint i)
+    let curChain          = Empty (AF.castAnchor i)
         curChainAndLedger = mkChainAndLedger curChain ledger
 
     case NE.nonEmpty (filter (preferAnchoredCandidate cfg curChain) chains) of
@@ -113,21 +112,21 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
   where
     -- | Use the VolatileDB to construct all chains starting from the tip of
     -- the ImmutableDB.
-    constructChains :: Point blk -- ^ Tip of the ImmutableDB, @i@
+    constructChains :: Anchor blk -- ^ Tip of the ImmutableDB, @i@
                     -> (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
                     -> m [AnchoredFragment (Header blk)]
     constructChains i succsOf = flip evalStateT Map.empty $
         mapM constructChain suffixesAfterI
       where
         suffixesAfterI :: [NonEmpty (HeaderHash blk)]
-        suffixesAfterI = VolDB.candidates succsOf i
+        suffixesAfterI = VolDB.candidates succsOf (AF.anchorToPoint i)
 
         constructChain :: NonEmpty (HeaderHash blk)
                        -> StateT (Map (HeaderHash blk) (Header blk))
                                  m
                                  (AnchoredFragment (Header blk))
         constructChain hashes =
-          AF.fromOldestFirst (castPoint i) .
+          AF.fromOldestFirst (AF.castAnchor i) .
           takeWhile ((<= curSlot) . blockSlot) <$>
           mapM (getKnownHeaderThroughCache volDB) (NE.toList hashes)
 
@@ -183,13 +182,13 @@ addBlock cdb@CDB{..} b = do
     (isMember, invalid, immBlockNo) <- atomically $ (,,)
       <$> VolDB.getIsMember               cdbVolDB
       <*> (forgetFingerprint <$> readTVar cdbInvalid)
-      <*> readTVar                        cdbImmBlockNo
+      <*> (AF.anchorBlockNo  <$> Query.getCurrentChain cdb)
 
     -- We follow the steps from section "## Adding a block" in ChainDB.md
 
     -- ### Ignore
     if
-      | blockNo b <= immBlockNo && blockNo b /= 0 ->
+      | olderThanK hdr (cdbIsEBB hdr) immBlockNo ->
         trace $ IgnoreBlockOlderThanK (blockPoint b)
       | isMember (blockHash b) ->
         trace $ IgnoreBlockAlreadyInVolDB (blockPoint b)
@@ -230,6 +229,39 @@ addBlock cdb@CDB{..} b = do
 
     strictAppend :: (Semigroup (t a), Foldable t) => t a -> t a -> t a
     strictAppend x y = forceElemsToWHNF (x <> y)
+
+-- | Return 'True' when the given header should be ignored when adding it
+-- because it is too old, i.e., we wouldn't be able to switch to a chain
+-- containing the corresponding block because its block number is more than
+-- @k@ blocks or exactly @k@ blocks back.
+--
+-- Special case: the header corresponds to an EBB which has the same block
+-- number as the block @k@ blocks back (the most recent \"immutable\" block).
+-- As EBBs share their block number with the block before them, the EBB is not
+-- too old in that case and can be adopted as part of our chain.
+--
+-- This special case can occur, for example, when the VolatileDB is empty
+-- (because of corruption). The \"immutable\" block is then also the tip of
+-- the chain. If we then try to add the EBB after it, it will have the same
+-- block number, so we must allow it.
+olderThanK
+  :: HasHeader (Header blk)
+  => Header blk
+     -- ^ Header of the block to add
+  -> IsEBB
+     -- ^ Whether the block is an EBB or not
+  -> WithOrigin BlockNo
+     -- ^ The block number of the most recent \"immutable\" block, i.e., the
+     -- block @k@ blocks back.
+  -> Bool
+olderThanK hdr isEBB immBlockNo
+    | At bNo == immBlockNo
+    , isEBB == IsEBB
+    = False
+    | otherwise
+    = At bNo <= immBlockNo
+  where
+    bNo = blockNo hdr
 
 -- | Trigger chain selection for the given block.
 --
@@ -275,24 +307,29 @@ chainSelectionForBlock
 chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     curSlot <- atomically $ getCurrentSlot cdbBlockchainTime
 
-    (invalid, isMember, succsOf, predecessor, curChain, tipPoint, ledgerDB, immBlockNo)
-      <- atomically $ (,,,,,,,)
+    (invalid, isMember, succsOf, predecessor, curChain, tipPoint, ledgerDB)
+      <- atomically $ (,,,,,,)
           <$> (forgetFingerprint <$> readTVar cdbInvalid)
-          <*> VolDB.getIsMember               cdbVolDB
-          <*> VolDB.getSuccessors             cdbVolDB
-          <*> VolDB.getPredecessor            cdbVolDB
-          <*> Query.getCurrentChain           cdb
-          <*> Query.getTipPoint               cdb
-          <*> LgrDB.getCurrent                cdbLgrDB
-          <*> readTVar                        cdbImmBlockNo
-    let curChainAndLedger =
+          <*> VolDB.getIsMember     cdbVolDB
+          <*> VolDB.getSuccessors   cdbVolDB
+          <*> VolDB.getPredecessor  cdbVolDB
+          <*> Query.getCurrentChain cdb
+          <*> Query.getTipPoint     cdb
+          <*> LgrDB.getCurrent      cdbLgrDB
+    let curChainAndLedger :: ChainAndLedger blk
+        curChainAndLedger =
           -- The current chain we're working with here is not longer than @k@
           -- blocks (see 'getCurrentChain' and 'cdbChain'), which is easier to
           -- reason about when doing chain selection, etc.
           assert (fromIntegral (AF.length curChain) <= k) $
           mkChainAndLedger curChain ledgerDB
+
+        immBlockNo :: WithOrigin BlockNo
+        immBlockNo = AF.anchorBlockNo curChain
+
         i :: Point blk
         i = castPoint $ AF.anchorPoint curChain
+
         -- Let these two functions ignore invalid blocks
         isMember' = ignoreInvalid    cdb invalid isMember
         succsOf'  = ignoreInvalidSuc cdb invalid succsOf
@@ -304,7 +341,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     if
       -- The chain might have grown since we added the block such that the
       -- block is older than @k@.
-      | blockNo hdr <= immBlockNo && blockNo hdr /= 0 ->
+      | olderThanK hdr (cdbIsEBB hdr) immBlockNo ->
         trace $ IgnoreBlockOlderThanK p
 
       -- We might have validated the block in the meantime
@@ -331,7 +368,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     -- will first copy the blocks/headers to trim (from the end of the
     -- fragment) from the VolatileDB to the ImmutableDB.
   where
-    secParam@(SecurityParam k) = protocolSecurityParam cdbNodeConfig
+    SecurityParam k = protocolSecurityParam cdbNodeConfig
 
     p :: Point blk
     p = headerPoint hdr
@@ -393,7 +430,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
               Nothing                -> return ()
               Just newChainAndLedger -> trySwitchTo newChainAndLedger
       where
-        curHead = AF.headPoint curChain
+        curHead = AF.headAnchor curChain
 
     -- | We have found a path of hashes to the new block through the
     -- VolatileDB. We try to extend this path by looking for forks that start
@@ -436,7 +473,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
               Nothing                -> return ()
               Just newChainAndLedger -> trySwitchTo newChainAndLedger
       where
-        i = castPoint $ anchorPoint curChain
+        i = AF.castAnchor $ anchor curChain
 
 
     -- | 'chainSelection' partially applied to the parameters from the
@@ -517,7 +554,6 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
                     AF.join curChainPrefix newChainSuffix
               writeTVar cdbChain newChain'
               LgrDB.setCurrent cdbLgrDB newLedger
-              modifyTVar cdbImmBlockNo $ getImmBlockNo secParam newChain'
 
               -- Update the readers
               -- 'Reader.switchFork' needs to know the intersection point
@@ -563,7 +599,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     -- headers instead of reading them from disk.
     constructFork
       :: SlotNo                     -- ^ Current slot
-      -> Point blk                  -- ^ Tip of ImmutableDB @i@
+      -> Anchor blk                 -- ^ Tip of ImmutableDB @i@
       -> NonEmpty (HeaderHash blk)  -- ^ Hashes of @(i,b]@
       -> [HeaderHash blk]           -- ^ Suffix @s@, hashes of @(b,?]@
       -> StateT (Map (HeaderHash blk) (Header blk))
@@ -572,7 +608,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
          -- ^ Fork, anchored at @i@, contains (the header of) @b@ and ends
          -- with the suffix @s@.
     constructFork curSlot i hashes suffixHashes
-      = fmap (AF.fromOldestFirst (castPoint i)
+      = fmap (AF.fromOldestFirst (AF.castAnchor i)
       .       takeWhile ((<= curSlot) . blockSlot))
       $ mapM (getKnownHeaderThroughCache cdbVolDB)
       $ NE.toList hashes <> suffixHashes
@@ -939,23 +975,3 @@ ignoreInvalidSuc
   -> (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
 ignoreInvalidSuc _ invalid succsOf =
     Set.filter (`Map.notMember` invalid) . succsOf
-
--- | Get the 'BlockNo' corresponding to the block @k@ blocks back in the given
--- new chain, i.e. the most recent \"immutable\" block.
---
--- As the given chain might be shorter than @k@ (see 'cdbImmBlockNo' for why),
--- the 'BlockNo' of the previous \"immutable\" block must be passed, since in
--- that case, it will not change.
---
--- Also, when switching to a chain that is exactly as long as the current
--- chain, there will be no header on the fragment @k@ blocks back, only the
--- anchor point. In that case, the \"immutable\" block will also not change.
-getImmBlockNo
-  :: HasHeader (Header blk)
-  => SecurityParam
-  -> AnchoredFragment (Header blk)  -- ^ New chain
-  -> BlockNo  -- ^ 'BlockNo' of the previous \"immutable\" block
-  -> BlockNo
-getImmBlockNo (SecurityParam k) chain prevBlockNo =
-    fromMaybe prevBlockNo $
-    AF.headBlockNo $ AF.dropNewest (fromIntegral k) chain

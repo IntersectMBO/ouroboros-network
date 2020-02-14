@@ -99,7 +99,7 @@ consensusErrorPolicy = ErrorPolicies {
             case e of
               HeaderExceedsClockSkew{} -> Just misconfiguredPeer
               ForkTooDeep{}            -> Just distantPeer
-              ChainError{}             -> Just theyBuggyOrEvil
+              HeaderError{}            -> Just theyBuggyOrEvil
               InvalidRollForward{}     -> Just distantPeer
               InvalidRollBack{}        -> Just theyBuggyOrEvil
               InvalidIntersection{}    -> Just theyBuggyOrEvil

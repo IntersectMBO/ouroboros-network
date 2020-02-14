@@ -1,16 +1,15 @@
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE PatternSynonyms      #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Ouroboros.Consensus.Node.Run.Byron (
     -- * Exported for the benefit of ByronDual
     extractEpochSlots
   ) where
 
+import           Codec.Serialise (decode, encode)
 import           Data.Coerce (coerce)
 
 import qualified Cardano.Chain.Block as Cardano.Block
+import qualified Cardano.Chain.Byron.API as API
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochSlots (..))
@@ -22,7 +21,6 @@ import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Ledger.Byron
-import qualified Ouroboros.Consensus.Ledger.Byron.Auxiliary as Aux
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtConfig
@@ -39,10 +37,10 @@ import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
 instance RunNode ByronBlock where
   nodeForgeBlock            = forgeByronBlock
   nodeBlockMatchesHeader    = verifyBlockMatchesHeader
-  nodeBlockFetchSize        = const 2000 -- TODO #593
+  nodeBlockFetchSize        = byronHeaderBlockSizeHint
   nodeIsEBB                 = \hdr -> case byronHeaderRaw hdr of
-    Aux.ABOBBlockHdr _       -> Nothing
-    Aux.ABOBBoundaryHdr bhdr -> Just
+    Cardano.Block.ABOBBlockHdr _       -> Nothing
+    Cardano.Block.ABOBBoundaryHdr bhdr -> Just
                               . EpochNo
                               . Cardano.Block.boundaryEpoch
                               $ bhdr
@@ -56,7 +54,7 @@ instance RunNode ByronBlock where
                                 . extractGenesisData
                                 $ cfg
 
-  nodeMaxBlockSize          = Aux.getMaxBlockSize . byronLedgerState
+  nodeMaxBlockSize          = API.getMaxBlockSize . byronLedgerState
   nodeBlockEncodingOverhead = const byronBlockEncodingOverhead
 
   -- If the current chain is empty, produce a genesis EBB and add it to the
@@ -88,18 +86,21 @@ instance RunNode ByronBlock where
   nodeAddHeaderEnvelope     = const byronAddHeaderEnvelope
 
   nodeEncodeBlockWithInfo   = const encodeByronBlockWithInfo
-  nodeEncodeHeader          = const encodeByronHeader
+  nodeEncodeHeader          = \_cfg -> encodeByronHeader
+  nodeEncodeWrappedHeader   = \_cfg -> encodeWrappedByronHeader
   nodeEncodeGenTx           = encodeByronGenTx
   nodeEncodeGenTxId         = encodeByronGenTxId
   nodeEncodeHeaderHash      = const encodeByronHeaderHash
   nodeEncodeLedgerState     = const encodeByronLedgerState
   nodeEncodeChainState      = \_proxy _cfg -> encodeByronChainState
   nodeEncodeApplyTxError    = const encodeByronApplyTxError
+  nodeEncodeTipInfo         = const encode
   nodeEncodeQuery           = encodeByronQuery
   nodeEncodeResult          = encodeByronResult
 
-  nodeDecodeBlock           = decodeByronBlock  . extractEpochSlots
-  nodeDecodeHeader          = decodeByronHeader . extractEpochSlots
+  nodeDecodeBlock           = decodeByronBlock   . extractEpochSlots
+  nodeDecodeHeader          = \ cfg -> decodeByronHeader (extractEpochSlots cfg)
+  nodeDecodeWrappedHeader   = \_cfg -> decodeWrappedByronHeader
   nodeDecodeGenTx           = decodeByronGenTx
   nodeDecodeGenTxId         = decodeByronGenTxId
   nodeDecodeHeaderHash      = const decodeByronHeaderHash
@@ -109,6 +110,7 @@ instance RunNode ByronBlock where
                                            pbftParams (extNodeConfigP cfg)
                                  in decodeByronChainState k
   nodeDecodeApplyTxError    = const decodeByronApplyTxError
+  nodeDecodeTipInfo         = const decode
   nodeDecodeQuery           = decodeByronQuery
   nodeDecodeResult          = decodeByronResult
 

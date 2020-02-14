@@ -9,12 +9,12 @@ module Ouroboros.Consensus.Ledger.Byron.Integrity
 import           Data.Either (isRight)
 
 import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Crypto.DSIGN.Class as CC.Crypto
 
 import           Ouroboros.Consensus.Block
 
-import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import           Ouroboros.Consensus.Ledger.Byron.Block
 import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
 import           Ouroboros.Consensus.Ledger.Byron.PBFT
@@ -27,7 +27,7 @@ import           Ouroboros.Consensus.Protocol.PBFT
 -- a hash of the EBB body.
 verifyBlockMatchesHeader :: Header ByronBlock -> ByronBlock -> Bool
 verifyBlockMatchesHeader hdr blk =
-    abobMatchesBody (byronHeaderRaw hdr) (byronBlockRaw blk)
+    CC.abobMatchesBody (byronHeaderRaw hdr) (byronBlockRaw blk)
 
 -- | Verify whether a header matches its signature.
 --
@@ -63,9 +63,9 @@ verifyHeaderIntegrity cfg hdr =
     -- @CC.headerProtocolMagicId@ is the only field of a regular header that
     -- is not signed, so check it manually.
     case byronHeaderRaw hdr of
-        ABOBBlockHdr h    -> CC.headerProtocolMagicId h == protocolMagicId
+        CC.ABOBBlockHdr h    -> CC.headerProtocolMagicId h == protocolMagicId
         -- EBB, we can't check it
-        ABOBBoundaryHdr _ -> True
+        CC.ABOBBoundaryHdr _ -> True
   where
     protocolMagicId = CC.Genesis.configProtocolMagicId (getGenesisConfig cfg)
 

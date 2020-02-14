@@ -38,6 +38,7 @@ import           Ouroboros.Consensus.Block (BlockProtocol, getHeader)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import qualified Ouroboros.Consensus.Crypto.DSIGN.Cardano as Crypto
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError (..))
@@ -223,6 +224,27 @@ tests = testGroup "RealPBFT" $
             , slotLengths  = defaultSlotLengths
             , initSeed     = seed
             }
+    , testProperty "exercise a corner case of mkCurrentBlockContext" $
+          -- The current chain fragment is @Empty a :> B@ and we're trying to
+          -- forge B'; the oddity is that B and B' have the same slot, since
+          -- the node is actually leading for the /second/ time in that slot
+          -- due to the 'NodeRestart'.
+          --
+          -- This failed with @Exception: the first block on the Byron chain
+          -- must be an EBB@.
+          let k   = SecurityParam 1
+              ncn = NumCoreNodes 2
+          in
+          prop_simple_real_pbft_convergence NoEBBs k TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 2
+            , nodeJoinPlan = trivialNodeJoinPlan ncn
+            , nodeRestarts = NodeRestarts $ Map.singleton
+                (SlotNo 1) (Map.singleton (CoreNodeId 1) NodeRestart)
+            , nodeTopology = meshNodeTopology ncn
+            , slotLengths  = defaultSlotLengths
+            , initSeed     = Seed (4690259409304062007,9560140637825988311,3774468764133159390,14745090572658815456,7199590241247856333)
+            }
     , testProperty "simple convergence" $
           \produceEBBs ->
           forAll (SecurityParam <$> elements [5, 10])
@@ -275,11 +297,13 @@ expectedBlockRejection
   , brRejector  = CoreId (CoreNodeId i)
   }
   | ownBlock                   = case err of
-    ExtValidationErrorOuroboros
-      PBftExceededSignThreshold{} -> True   -- TODO validate this against Ref
-                                            -- implementation?
-    ExtValidationErrorOuroboros
-      PBftNotGenesisDelegate{}    ->
+    ExtValidationErrorHeader
+      (HeaderProtocolError PBftExceededSignThreshold{}) ->
+        -- TODO validate this against Ref implementation?
+        True
+
+    ExtValidationErrorHeader
+      (HeaderProtocolError PBftNotGenesisDelegate{}) ->
         -- only if it rekeyed within before a restarts latest possible
         -- maturation
         not $ null $

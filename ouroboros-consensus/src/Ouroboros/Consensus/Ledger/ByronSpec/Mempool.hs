@@ -11,7 +11,6 @@ module Ouroboros.Consensus.Ledger.ByronSpec.Mempool (
   ) where
 
 import           Codec.Serialise
-import           Control.Monad.Trans.Except
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
@@ -42,19 +41,12 @@ instance ApplyTx ByronSpecBlock where
   -- spec does not impose a maximum block size.
   txSize _ = 0
 
-  applyTx cfg tx (TickedLedgerState st) =
-      (TickedLedgerState . updateByronSpecLedgerStateKeepTip st) <$>
+  applyTx cfg tx (TickedLedgerState slot st) =
+      (TickedLedgerState slot . updateByronSpecLedgerStateKeepTip st) <$>
         GenTx.apply
           (unByronSpecLedgerConfig cfg)
           (unByronSpecGenTx        tx)
           (byronSpecLedgerState    st)
 
   -- Byron spec doesn't have multiple validation modes
-
-  reapplyTx          cfg tx =                   applyTx cfg tx
-  reapplyTxSameState cfg tx = dontExpectError . applyTx cfg tx
-    where
-      dontExpectError :: Except a b -> b
-      dontExpectError mb = case runExcept mb of
-        Left  _ -> error "reapplyTxSameState: unexpected error"
-        Right b -> b
+  reapplyTx = applyTx

@@ -1,9 +1,9 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.BlockFetch.Examples (
     blockFetchExample1,
@@ -11,44 +11,43 @@ module Ouroboros.Network.BlockFetch.Examples (
     exampleFixedPeerGSVs,
   ) where
 
-import           Data.List (foldl')
-import qualified Data.Map.Strict as Map
-import           Data.Map (Map)
-import qualified Data.Set as Set
-import           Data.Set (Set)
+import           Codec.Serialise (Serialise (..))
 import qualified Data.ByteString.Lazy as LBS
-import           Codec.Serialise (Serialise(..))
+import           Data.List (foldl')
+import           Data.Map (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Set (Set)
+import qualified Data.Set as Set
 
+import           Control.Exception (assert)
 import           Control.Monad (forever)
-import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Tracer (Tracer, nullTracer, contramap)
-import           Control.Exception (assert)
+import           Control.Tracer (Tracer, contramap, nullTracer)
 
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.ChainFragment (ChainFragment(..))
-import qualified Ouroboros.Network.ChainFragment as ChainFragment
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment(..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..),
+                     anchorPoint)
 import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.ChainFragment (ChainFragment (..))
+import qualified Ouroboros.Network.ChainFragment as ChainFragment
 
-import           Ouroboros.Network.Protocol.BlockFetch.Type
-import           Ouroboros.Network.Protocol.BlockFetch.Server
-import           Ouroboros.Network.Protocol.BlockFetch.Codec
-import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver
+import           Network.TypedProtocol.Pipelined
+import           Ouroboros.Network.Protocol.BlockFetch.Codec
+import           Ouroboros.Network.Protocol.BlockFetch.Server
+import           Ouroboros.Network.Protocol.BlockFetch.Type
 
-import           Ouroboros.Network.DeltaQ
-import           Ouroboros.Network.BlockFetch.Client
-import           Ouroboros.Network.BlockFetch.ClientRegistry
-import           Ouroboros.Network.BlockFetch.State
 import           Ouroboros.Network.BlockFetch
+import           Ouroboros.Network.BlockFetch.Client
+import           Ouroboros.Network.DeltaQ
 
 import           Ouroboros.Network.Testing.ConcreteBlock
 
@@ -202,7 +201,7 @@ runFetchClient tracer registry peerid channel client =
       runPipelinedPeer tracer codec channel $
         client clientCtx
   where
-    codec = codecBlockFetch encode (fmap const decode) encode decode
+    codec = codecBlockFetch encode decode encode decode
 
 runFetchServer :: (MonadThrow m, MonadST m,
                    Serialise block,
@@ -215,7 +214,7 @@ runFetchServer tracer channel server =
     runPeer tracer codec channel $
       blockFetchServerPeer server
   where
-    codec = codecBlockFetch encode (fmap const decode) encode decode
+    codec = codecBlockFetch encode decode encode decode
 
 runFetchClientAndServerAsync
                :: (MonadCatch m, MonadAsync m, MonadFork m, MonadTimer m,
@@ -245,7 +244,7 @@ runFetchClientAndServerAsync clientTracer serverTracer
 
     -- we are tagging messages with the current peerid, not the target
     -- one, this is different than what's intended but it's fine to do that in
-    -- these examples; 
+    -- these examples;
     syncClientAsync <- async $ bracketSyncWithFetchClient
                                  registry peerid
                                  (forever (threadDelay 1000) >> return ())
@@ -299,8 +298,8 @@ mockBlockFetchServer1 chain =
 -- The interface is enough to use in examples and tests.
 --
 data TestFetchedBlockHeap m block = TestFetchedBlockHeap {
-       getTestFetchedBlocks  :: STM m (Set (Point block)),
-       addTestFetchedBlock   :: Point block -> block -> m ()
+       getTestFetchedBlocks :: STM m (Set (Point block)),
+       addTestFetchedBlock  :: Point block -> block -> m ()
      }
 
 -- | Make a 'TestFetchedBlockHeap' using a simple in-memory 'Map', stored in an
@@ -312,7 +311,7 @@ mkTestFetchedBlockHeap :: (MonadSTM m, Ord (Point block))
                        => [Point block]
                        -> m (TestFetchedBlockHeap m block)
 mkTestFetchedBlockHeap points = do
-    v <- atomically (newTVar (Set.fromList points))
+    v <- newTVarM (Set.fromList points)
     return TestFetchedBlockHeap {
       getTestFetchedBlocks = readTVar v,
       addTestFetchedBlock  = \p _b -> atomically (modifyTVar v (Set.insert p))

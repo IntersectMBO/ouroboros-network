@@ -60,8 +60,19 @@ unsafeNoThunks a = unsafePerformIO $ errorMessage =<< noUnexpectedThunks [] a
         -- because 'noUnexpectedThunks' might have forced some stuff. However,
         -- computing the tree beforehand, even when there is no failure, would
         -- be prohibitively expensive.
-        tree <- buildAndRenderClosureTree opts a
-        return $ Just $ show info ++ "\nTree:\n" ++ Text.unpack tree
+        --
+        -- TODO rendering the tree has been disabled for now, as this loops
+        -- indefinitely, consuming gigabytes of memory, and prevents us from
+        -- printing a message about the thunk. Moreover, the thunk info is in
+        -- most cases a clearer indication of where the thunk is than the
+        -- /huge/ tree. Use the two commented-out lines below to include the
+        -- tree in the message.
+        --
+        -- tree <- Text.unpack <$> buildAndRenderClosureTree opts a
+        -- return $ Just $ show info ++ "\nTree:\n" ++ tree
+
+        let _mkTree = Text.unpack <$> buildAndRenderClosureTree opts a
+        return $ Just $ show info
 
     opts :: ClosureTreeOptions
     opts = ClosureTreeOptions {

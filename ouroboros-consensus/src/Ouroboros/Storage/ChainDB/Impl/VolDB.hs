@@ -1,5 +1,7 @@
+{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
@@ -28,6 +30,7 @@ module Ouroboros.Storage.ChainDB.Impl.VolDB (
   , computePath
   , computePathSTM
     -- * Getting and parsing blocks
+  , BlockFileParserError
   , getKnownBlock
   , getKnownHeader
   , getKnownBlockComponent
@@ -41,8 +44,12 @@ module Ouroboros.Storage.ChainDB.Impl.VolDB (
   , closeDB
   , reopen
   , garbageCollect
+    -- * Tracing
+  , TraceEvent
     -- * Re-exports
   , VolatileDBError
+  , BlockValidationPolicy
+  , BlocksPerFile
     -- * Exported for testing purposes
   , mkVolDB
   , blockFileParser'
@@ -53,6 +60,8 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad (join)
+import           Control.Tracer (Tracer, nullTracer)
+import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -62,11 +71,11 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)
+import           Streaming.Prelude (Of (..), Stream)
+import qualified Streaming.Prelude as S
 import           System.FilePath ((</>))
 
-import           Cardano.Prelude (allNoUnexpectedThunks)
-
-import           Control.Monad.Class.MonadThrow
+import           Cardano.Prelude (Word64, allNoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader (..), HeaderHash,
@@ -83,14 +92,15 @@ import           Ouroboros.Storage.ChainDB.API (ChainDB)
 import           Ouroboros.Storage.ChainDB.API hiding (ChainDB (..), closeDB,
                      getMaxSlotNo)
 import           Ouroboros.Storage.ChainDB.Impl.BlockComponent
-import           Ouroboros.Storage.Common (BinaryInfo (..))
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling,
                      ThrowCantCatch)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-import           Ouroboros.Storage.VolatileDB (VolatileDB, VolatileDBError)
+import           Ouroboros.Storage.VolatileDB (BlockValidationPolicy (..),
+                     BlocksPerFile, VolatileDB, VolatileDBError)
 import qualified Ouroboros.Storage.VolatileDB as VolDB
 
 
@@ -106,7 +116,7 @@ data VolDB m blk = VolDB {
       -- generics to derive the NoUnexpectedThunks instance.
     , encBlock  :: blk -> BinaryInfo Encoding
     , isEBB     :: blk -> IsEBB
-    , addHdrEnv :: !(IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+    , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     , err       :: ErrorHandling VolatileDBError m
     , errSTM    :: ThrowCantCatch VolatileDBError (STM m)
     }
@@ -125,44 +135,56 @@ instance NoUnexpectedThunks (VolDB m blk) where
     , noUnexpectedThunks ctxt errSTM
     ]
 
+-- | Short-hand for events traced by the VolDB wrapper.
+type TraceEvent blk =
+  VolDB.TraceEvent Util.CBOR.ReadIncrementalErr (HeaderHash blk)
+
 {-------------------------------------------------------------------------------
   Initialization
 -------------------------------------------------------------------------------}
 
 data VolDbArgs m blk = forall h. VolDbArgs {
-      volHasFS         :: HasFS m h
-    , volErr           :: ErrorHandling VolatileDBError m
-    , volErrSTM        :: ThrowCantCatch VolatileDBError (STM m)
-    , volBlocksPerFile :: Int
-    , volDecodeHeader  :: forall s. Decoder s (Lazy.ByteString -> Header blk)
-    , volDecodeBlock   :: forall s. Decoder s (Lazy.ByteString -> blk)
-    , volEncodeBlock   :: blk -> BinaryInfo Encoding
-    , volIsEBB         :: blk -> IsEBB
-    , volAddHdrEnv     :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+      volHasFS          :: HasFS m h
+    , volErr            :: ErrorHandling VolatileDBError m
+    , volErrSTM         :: ThrowCantCatch VolatileDBError (STM m)
+    , volCheckIntegrity :: blk -> Bool
+    , volBlocksPerFile  :: BlocksPerFile
+    , volDecodeHeader   :: forall s. Decoder s (Lazy.ByteString -> Header blk)
+    , volDecodeBlock    :: forall s. Decoder s (Lazy.ByteString -> blk)
+    , volEncodeBlock    :: blk -> BinaryInfo Encoding
+    , volIsEBB          :: blk -> IsEBB
+    , volAddHdrEnv      :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
+    , volValidation     :: VolDB.BlockValidationPolicy
+    , volTracer         :: Tracer m (TraceEvent blk)
     }
 
 -- | Default arguments when using the 'IO' monad
 --
 -- The following fields must still be defined:
 --
+-- * 'volCheckIntegrity'
 -- * 'volBlocksPerFile'
 -- * 'volDecodeHeader'
 -- * 'volDecodeBlock'
 -- * 'volEncodeBlock'
 -- * 'volIsEBB'
 -- * 'volAddHdrEnv'
+-- * 'volValidation'
 defaultArgs :: FilePath -> VolDbArgs IO blk
 defaultArgs fp = VolDbArgs {
-      volErr    = EH.exceptions
-    , volErrSTM = EH.throwSTM
-    , volHasFS  = ioHasFS $ MountPoint (fp </> "volatile")
+      volErr            = EH.exceptions
+    , volErrSTM         = EH.throwSTM
+    , volHasFS          = ioHasFS $ MountPoint (fp </> "volatile")
+    , volTracer         = nullTracer
       -- Fields without a default
-    , volBlocksPerFile = error "no default for volBlocksPerFile"
-    , volDecodeHeader  = error "no default for volDecodeHeader"
-    , volDecodeBlock   = error "no default for volDecodeBlock"
-    , volEncodeBlock   = error "no default for volEncodeBlock"
-    , volIsEBB         = error "no default for volIsEBB"
-    , volAddHdrEnv     = error "no default for volAddHdrEnv"
+    , volCheckIntegrity = error "no default for volCheckIntegrity"
+    , volBlocksPerFile  = error "no default for volBlocksPerFile"
+    , volDecodeHeader   = error "no default for volDecodeHeader"
+    , volDecodeBlock    = error "no default for volDecodeBlock"
+    , volEncodeBlock    = error "no default for volEncodeBlock"
+    , volIsEBB          = error "no default for volIsEBB"
+    , volAddHdrEnv      = error "no default for volAddHdrEnv"
+    , volValidation     = error "no default for volValidation"
     }
 
 openDB :: (IOLike m, HasHeader blk) => VolDbArgs m blk -> m (VolDB m blk)
@@ -173,6 +195,7 @@ openDB args@VolDbArgs{..} = do
                volErr
                volErrSTM
                (blockFileParser args)
+               volTracer
                volBlocksPerFile
     return VolDB
       { volDB     = volDB
@@ -191,7 +214,7 @@ mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> BinaryInfo Encoding)
         -> (blk -> IsEBB)
-        -> (IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+        -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> ErrorHandling VolatileDBError m
         -> ThrowCantCatch VolatileDBError (STM m)
         -> VolDB m blk
@@ -475,8 +498,11 @@ getBlockComponent db blockComponent hash = withDB db $ \vol ->
     blockComponent' = translateToRawDB (parse db) (addHdrEnv db) blockComponent
 
 {-------------------------------------------------------------------------------
-  Auxiliary: parsing
+  Parsing
 -------------------------------------------------------------------------------}
+
+type BlockFileParserError hash =
+    VolDB.ParserError hash Util.CBOR.ReadIncrementalErr
 
 blockFileParser :: forall m blk. (IOLike m, HasHeader blk)
                 => VolDbArgs m blk
@@ -486,30 +512,52 @@ blockFileParser :: forall m blk. (IOLike m, HasHeader blk)
                      (HeaderHash blk)
 blockFileParser VolDbArgs{..} =
     blockFileParser' volHasFS volIsEBB volEncodeBlock volDecodeBlock
+      volCheckIntegrity volValidation
 
 -- | A version which is easier to use for tests, since it does not require
 -- the whole @VolDbArgs@.
-blockFileParser' :: forall m blk h. (IOLike m, HasHeader blk)
-                 => HasFS m h
-                 -> (blk -> IsEBB)
-                 -> (blk -> BinaryInfo Encoding)
-                 -> (forall s. Decoder s (Lazy.ByteString -> blk))
-                 -> VolDB.Parser
-                     Util.CBOR.ReadIncrementalErr
-                     m
-                     (HeaderHash blk)
-blockFileParser' hasFS isEBB encodeBlock decodeBlock = VolDB.Parser $
-       fmap (fmap (fmap fst)) -- Drop the offset of the error
-     . Util.CBOR.readIncrementalOffsets hasFS decoder'
+blockFileParser'
+  :: forall m blk h. (IOLike m, HasHeader blk)
+  => HasFS m h
+  -> (blk -> IsEBB)
+  -> (blk -> BinaryInfo Encoding)
+  -> (forall s. Decoder s (Lazy.ByteString -> blk))
+  -> (blk -> Bool)
+  -> VolDB.BlockValidationPolicy
+  -> VolDB.Parser
+       Util.CBOR.ReadIncrementalErr
+       m
+       (HeaderHash blk)
+blockFileParser' hasFS isEBB encodeBlock decodeBlock isNotCorrupt validationPolicy =
+    VolDB.Parser $ \fsPath -> Util.CBOR.withStreamIncrementalOffsets
+      hasFS decodeBlock fsPath (checkEntries [])
   where
-    -- TODO: It looks weird that we use an encoding function 'encodeBlock'
-    -- during parsing, but this is quite cheap, since the encoding is already
-    -- cached. We should consider improving this, so that it does not create
-    -- confusion.
-    decoder' :: forall s. Decoder s (Lazy.ByteString
-             -> VolDB.BlockInfo (HeaderHash blk))
-    decoder' = ((\blk -> extractInfo isEBB (encodeBlock blk) blk) .)
-      <$> decodeBlock
+    -- It looks weird that we use an encoding function 'encodeBlock' during
+    -- parsing, but this is quite cheap, since the encoding is already cached.
+    extractInfo' :: blk -> VolDB.BlockInfo (HeaderHash blk)
+    extractInfo' blk = extractInfo isEBB (encodeBlock blk) blk
+
+    noValidation :: Bool
+    noValidation = validationPolicy == VolDB.NoValidation
+
+    checkEntries :: VolDB.ParsedInfo (HeaderHash blk)
+                 -> Stream (Of (Word64, (Word64, blk)))
+                    m
+                    (Maybe (Util.CBOR.ReadIncrementalErr, Word64))
+                 -> m ( VolDB.ParsedInfo (HeaderHash blk)
+                      , Maybe (BlockFileParserError (HeaderHash blk), VolDB.BlockOffset)
+                      )
+    checkEntries parsed stream = S.next stream >>= \case
+      Left mbErr
+        -> return (reverse parsed, first VolDB.BlockReadErr <$> mbErr)
+      Right ((offset, (size, blk)), stream')
+        | noValidation || isNotCorrupt blk
+        -> let !blockInfo = extractInfo' blk
+               newParsed = (offset, (VolDB.BlockSize size, blockInfo))
+           in checkEntries (newParsed : parsed) stream'
+        | otherwise  -- The block was invalid
+        -> let !bid = VolDB.bbid $ extractInfo' blk
+           in return (reverse parsed, Just (VolDB.BlockCorruptedErr bid, offset))
 
 {-------------------------------------------------------------------------------
   Error handling

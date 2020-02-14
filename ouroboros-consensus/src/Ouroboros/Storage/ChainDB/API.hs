@@ -17,6 +17,8 @@
 module Ouroboros.Storage.ChainDB.API (
     -- * Main ChainDB API
     ChainDB(..)
+  , getCurrentTip
+  , getTipBlockNo
     -- * Useful utilities
   , getBlock
   , streamBlocks
@@ -67,10 +69,13 @@ import           GHC.Stack
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      ChainUpdate, pattern GenesisPoint, HasHeader (..),
                      HeaderHash, MaxSlotNo, Point, Serialised (..), SlotNo,
                      StandardHash, atSlot, genesisPoint)
+import qualified Ouroboros.Network.Block as Network
+import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..))
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
@@ -178,11 +183,6 @@ data ChainDB m blk = ChainDB {
       -- current chain fragment is empty due to data loss in the volatile DB,
       -- 'getTipPoint' will return the tip of the immutable DB.
     , getTipPoint        :: STM m (Point blk)
-
-      -- | Get block number of the tip of the chain
-      --
-      -- Will return 'genesisBlockNo' if the database is empty.
-    , getTipBlockNo      :: STM m BlockNo
 
       -- | Get the given component(s) of the block at the specified point. If
       -- there is no block at the given point, 'Nothing' is returned.
@@ -302,6 +302,14 @@ data ChainDB m blk = ChainDB {
       -- 'False' when the database is closed.
     , isOpen             :: STM m Bool
     }
+
+getCurrentTip :: (Monad (STM m), HasHeader (Header blk))
+              => ChainDB m blk -> STM m (Network.Tip blk)
+getCurrentTip = fmap (AF.anchorToTip . AF.headAnchor) . getCurrentChain
+
+getTipBlockNo :: (Monad (STM m), HasHeader (Header blk))
+              => ChainDB m blk -> STM m (WithOrigin BlockNo)
+getTipBlockNo = fmap Network.getTipBlockNo . getCurrentTip
 
 instance DB (ChainDB m blk) where
   -- Returning a block or header requires parsing. In case of failure, a
@@ -720,6 +728,14 @@ data ChainDbFailure =
   | forall blk. (Typeable blk, StandardHash blk) =>
       VolDbMissingBlock (Proxy blk) (HeaderHash blk)
 
+    -- | A block got corrupted in the volatile DB
+    --
+    -- This exception gets thrown when, while copying blocks from the volatile
+    -- DB to the immutable DB, a block doesn't pass the integrity check
+    -- (hash/signature check).
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      VolDbCorruptBlock (BlockRef blk)
+
     -- | The volatile DB throw an "unexpected error"
     --
     -- These are errors indicative of a disk failure (as opposed to API misuse)
@@ -752,13 +768,14 @@ instance Exception ChainDbFailure where
       VolDbParseFailure {}                -> corruption
       VolDbTrailingData {}                -> corruption
       VolDbMissingBlock {}                -> corruption
+      VolDbCorruptBlock {}                -> corruption
       VolDbFailure e -> case e of
         VolDB.FileSystemError fse -> fsError fse
-        VolDB.ParserError {}      -> corruption
       LgrDbFailure fse                    -> fsError fse
       ChainDbMissingBlock {}              -> corruption
     where
-      corruption = "The database got corrupted, please restart with validation mode enabled"
+      corruption =
+        "The database got corrupted, full validation will be enabled for the next startup"
 
       -- The output will be a bit too detailed, but it will be quite clear.
       fsError :: FsError -> String
@@ -812,6 +829,12 @@ instance Eq ChainDbFailure where
       Nothing   -> False
       Just Refl -> a1 == a2
   VolDbMissingBlock {} == _ = False
+
+  VolDbCorruptBlock (a1 :: BlockRef blk) == VolDbCorruptBlock (a2 :: BlockRef blk') =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> a1 == a2
+  VolDbCorruptBlock {} == _ = False
 
   VolDbFailure a1 == VolDbFailure a2 = VolDB.sameUnexpectedError a1 a2
   VolDbFailure {} == _               = False

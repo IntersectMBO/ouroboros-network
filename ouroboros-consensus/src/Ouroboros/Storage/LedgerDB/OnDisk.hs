@@ -34,6 +34,7 @@ import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
+import           Control.Tracer
 import qualified Data.Bifunctor.TH as TH
 import qualified Data.List as List
 import           Data.Maybe (mapMaybe)
@@ -43,10 +44,6 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack
 import           Text.Read (readMaybe)
-
-import           Control.Tracer
-
-import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      readIncremental)

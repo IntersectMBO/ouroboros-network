@@ -73,6 +73,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Address
 import           Ouroboros.Consensus.Ledger.Mock.State
@@ -224,6 +225,16 @@ instance Mock.HasUtxo SimpleBody where
   updateUtxo = Mock.updateUtxo . simpleTxs
 
 {-------------------------------------------------------------------------------
+  Envelope validation
+-------------------------------------------------------------------------------}
+
+instance (SimpleCrypto c, Typeable ext) => HasAnnTip (SimpleBlock c ext)
+  -- Use defaults
+
+instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
+  -- Use defaults
+
+{-------------------------------------------------------------------------------
   Update the ledger
 -------------------------------------------------------------------------------}
 
@@ -241,7 +252,7 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
 
   type LedgerError (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
-  applyChainTick _ _ = TickedLedgerState
+  applyChainTick _ = TickedLedgerState
   applyLedgerBlock _cfg = updateSimpleLedgerState
   reapplyLedgerBlock _cfg = (mustSucceed . runExcept) .: updateSimpleLedgerState
     where
@@ -249,23 +260,21 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
       mustSucceed (Right st)  = st
   ledgerTipPoint (SimpleLedgerState st) = mockTip st
 
-updateSimpleLedgerState :: (Monad m, SimpleCrypto c, Typeable ext)
+updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
                         => SimpleBlock c ext
                         -> LedgerState (SimpleBlock c ext)
-                        -> ExceptT (MockError (SimpleBlock c ext))
-                                   m
-                                   (LedgerState (SimpleBlock c ext))
+                        -> Except (MockError (SimpleBlock c ext))
+                                  (LedgerState (SimpleBlock c ext))
 updateSimpleLedgerState b (SimpleLedgerState st) =
     SimpleLedgerState <$> updateMockState b st
 
-updateSimpleUTxO :: (Monad m, Mock.HasUtxo a)
+updateSimpleUTxO :: Mock.HasUtxo a
                  => a
                  -> TickedLedgerState (SimpleBlock c ext)
-                 -> ExceptT (MockError (SimpleBlock c ext))
-                            m
-                            (TickedLedgerState (SimpleBlock c ext))
-updateSimpleUTxO b (TickedLedgerState (SimpleLedgerState st)) =
-    TickedLedgerState . SimpleLedgerState <$> updateMockUTxO b st
+                 -> Except (MockError (SimpleBlock c ext))
+                           (TickedLedgerState (SimpleBlock c ext))
+updateSimpleUTxO b (TickedLedgerState slot (SimpleLedgerState st)) =
+    TickedLedgerState slot . SimpleLedgerState <$> updateMockUTxO b st
 
 genesisSimpleLedgerState :: AddrDist -> LedgerState (SimpleBlock c ext)
 genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
@@ -279,19 +288,15 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
   data GenTx (SimpleBlock c ext) = SimpleGenTx
     { simpleGenTx   :: !Mock.Tx
     , simpleGenTxId :: !Mock.TxId
-    } deriving stock    (Generic)
+    } deriving stock    (Generic, Eq, Ord)
       deriving anyclass (Serialise)
 
   txSize = fromIntegral . Lazy.length . serialise
 
   type ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
-  applyTx            = \_ -> updateSimpleUTxO
-  reapplyTx          = \_ -> updateSimpleUTxO
-  reapplyTxSameState = \_ -> (mustSucceed . runExcept) .: updateSimpleUTxO
-    where
-      mustSucceed (Left  _)  = error "reapplyTxSameState: unexpected error"
-      mustSucceed (Right st) = st
+  applyTx   = const updateSimpleUTxO
+  reapplyTx = const updateSimpleUTxO
 
 instance HasTxId (GenTx (SimpleBlock c ext)) where
   newtype TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId

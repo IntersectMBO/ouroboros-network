@@ -11,8 +11,6 @@ import           Data.Bifunctor (first)
 import qualified Data.Map as Map
 import           GHC.Stack (callStack)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Network.Block (ChainUpdate)
 
 import           Ouroboros.Consensus.Block
@@ -128,7 +126,6 @@ openDB cfg initLedger btime = do
       , getTipBlock         = query    $ Model.tipBlock
       , getTipHeader        = query    $ (fmap getHeader . Model.tipBlock)
       , getTipPoint         = querySTM $ Model.tipPoint
-      , getTipBlockNo       = querySTM $ Model.tipBlockNo
       , getIsFetched        = querySTM $ flip Model.hasBlockByPoint
       , getIsInvalidBlock   = querySTM $ (fmap (fmap (fmap fst) . flip Map.lookup)) . Model.invalid
       , getMaxSlotNo        = querySTM $ Model.maxSlotNo

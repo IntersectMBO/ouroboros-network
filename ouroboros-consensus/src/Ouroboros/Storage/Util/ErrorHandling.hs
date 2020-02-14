@@ -49,7 +49,6 @@ import           Data.Void
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 import qualified Control.Monad.Class.MonadThrow as C
 
@@ -185,7 +184,7 @@ data ThrowCantCatch e m = ThrowCantCatch {
 throwCantCatch :: ErrorHandling e m -> ThrowCantCatch e m
 throwCantCatch ErrorHandling{..} = ThrowCantCatch throwError
 
-throwSTM :: (C.MonadThrow (STM m), Exception e) => ThrowCantCatch e (STM m)
+throwSTM :: (C.MonadThrow m, Exception e) => ThrowCantCatch e m
 throwSTM = ThrowCantCatch $ C.throwM
 
 {-------------------------------------------------------------------------------

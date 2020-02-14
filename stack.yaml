@@ -2,8 +2,9 @@ resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/0048
 
 packages:
   - ./typed-protocols
-  - ./typed-protocols-cbor
+  - ./typed-protocols-examples
   - ./network-mux
+  - ./ouroboros-network-framework
   - ./ouroboros-network
   - ./ouroboros-network-testing
   - ./ouroboros-consensus
@@ -19,6 +20,7 @@ flags:
     asserts: true
   ouroboros-network:
     asserts: true
+    cddl: false
   ouroboros-consensus:
     asserts: true
 
@@ -29,7 +31,7 @@ extra-deps:
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 965b8b143632faea16680a195e6de57091382700
+    commit: 474622cfde663730e10e2e0d5de0ed06a867a844
     subdirs:
       - binary
       - binary/test
@@ -50,7 +52,7 @@ extra-deps:
   - gray-code-0.3.1
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: c62e2eeba5756898cbf59732fccd6a83a4065c18
+    commit: 6d533b72d4a91b756cd8ffe164928d5f5eebcfa0
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -70,7 +72,6 @@ extra-deps:
   - hedgehog-quickcheck-0.1.1
   - quickcheck-state-machine-0.6.0
   - splitmix-0.0.2
-  - time-units-1.0.0
   - tasty-hedgehog-1.0.0.1
   - Unique-0.4.7.6
   - statistics-linreg-0.3

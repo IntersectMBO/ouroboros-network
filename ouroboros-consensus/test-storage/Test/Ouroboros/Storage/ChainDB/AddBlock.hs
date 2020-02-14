@@ -2,6 +2,8 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Ouroboros.Storage.ChainDB.AddBlock
   ( tests
   ) where
@@ -25,7 +27,7 @@ import           Control.Tracer
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
-import           Ouroboros.Consensus.Block (getHeader)
+import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -47,6 +49,8 @@ import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
 import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Storage.VolatileDB (BlockValidationPolicy (..),
+                     mkBlocksPerFile)
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -56,6 +60,7 @@ import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.SOP
 import           Test.Util.TestBlock
 
+import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock (..))
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.ChainDB.StateMachine ()
 
@@ -244,6 +249,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbDecodeHeader     = const <$> decode
     , cdbDecodeLedger     = decode
     , cdbDecodeChainState = decode
+    , cdbDecodeTipInfo    = decode
 
       -- Encoders
     , cdbEncodeHash       = encode
@@ -251,6 +257,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbEncodeHeader     = encode
     , cdbEncodeLedger     = encode
     , cdbEncodeChainState = encode
+    , cdbEncodeTipInfo    = encode
 
       -- Error handling
     , cdbErrImmDb         = EH.monadCatch
@@ -263,8 +270,9 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbHasFSLgrDB       = simHasFS EH.monadCatch lgrDbFsVar
 
       -- Policy
-    , cdbValidation       = ValidateAllEpochs
-    , cdbBlocksPerFile    = 4
+    , cdbImmValidation    = ValidateAllEpochs
+    , cdbVolValidation    = ValidateAll
+    , cdbBlocksPerFile    = mkBlocksPerFile 4
     , cdbParamsLgrDB      = ledgerDbDefaultParams (protocolSecurityParam cfg)
     , cdbDiskPolicy       = defaultDiskPolicy (protocolSecurityParam cfg)
 
@@ -276,7 +284,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbCheckIntegrity   = const True
     , cdbBlockchainTime   = fixedBlockchainTime maxBound
     , cdbGenesis          = return initLedger
-    , cdbAddHdrEnv        = const id
+    , cdbAddHdrEnv        = \_ _ -> id
     , cdbImmDbCacheConfig = Index.CacheConfig 2 60
 
     -- Misc
@@ -294,3 +302,10 @@ mkArgs cfg initLedger tracer registry hashInfo
       , headerOffset = 0
       , headerSize   = fromIntegral $ Lazy.length (CBOR.toLazyByteString blob)
       }
+
+{-------------------------------------------------------------------------------
+  Orphan instances
+-------------------------------------------------------------------------------}
+
+instance ModelSupportsBlock TestBlock where
+  isEBB = const IsNotEBB

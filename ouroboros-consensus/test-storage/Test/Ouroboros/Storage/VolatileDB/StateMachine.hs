@@ -25,6 +25,7 @@ import           Prelude hiding (elem)
 import           Codec.Serialise (decode)
 import           Control.Monad.Except
 import           Control.Monad.State
+import           Control.Tracer (nullTracer)
 import           Data.Bifunctor (bimap)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor.Classes
@@ -34,7 +35,7 @@ import qualified Data.Map as M
 import           Data.Maybe (fromJust, isJust, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as S
-import           Data.TreeDiff (ToExpr (..), defaultExprViaShow)
+import           Data.TreeDiff (ToExpr (..))
 import           Data.Word
 import           GHC.Generics
 import           GHC.Stack
@@ -50,6 +51,8 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Pretty (ppShow)
 
+import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
+                     MaxSlotNo, SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 import qualified Ouroboros.Network.Point as WithOrigin
 
@@ -155,7 +158,7 @@ data Cmd
     | AskIfMember [BlockId]
     | Corrupt Corruptions
     | CreateFile
-    | CreateInvalidFile
+    | CreateInvalidFile Word32
     | DuplicateBlock FsPath TestBlock
     | GetSuccessors [Predecessor]
     | GetPredecessor [BlockId]
@@ -198,9 +201,6 @@ deriving instance ToExpr (BinaryInfo ByteString)
 deriving instance ToExpr (ChainHash TestHeader)
 deriving instance ToExpr BlockNo
 
-instance ToExpr ParserError where
-  toExpr = defaultExprViaShow
-
 instance CommandNames (At Cmd) where
     cmdName (At cmd) = case cmd of
       GetBlockComponent {} -> "GetBlockComponent"
@@ -227,8 +227,6 @@ instance CommandNames (At CmdErr) where
 data Model (r :: Type -> Type) = Model {
       dbModel   :: DBModel BlockId
       -- ^ A model of the database.
-    , shouldEnd :: Bool
-      -- ^ Indicates that no further commands should be generated.
     } deriving (Generic, Show)
 
 type PureM = ExceptT VolatileDBError (State (DBModel BlockId))
@@ -245,9 +243,8 @@ data Event r = Event {
 lockstep :: forall r.
             Model     r
          -> At CmdErr r
-         -> At Resp   r
          -> Event     r
-lockstep model@Model {..} cmdErr (At resp) = Event {
+lockstep model@Model {..} cmdErr = Event {
       eventBefore   = model
     , eventCmd      = cmdErr
     , eventAfter    = model'
@@ -255,12 +252,8 @@ lockstep model@Model {..} cmdErr (At resp) = Event {
     }
   where
     (mockResp, dbModel') = step model cmdErr
-    ends = case resp of
-      Resp (Left (UnexpectedError (ParserError _))) -> True
-      _                                             -> False
     model' = model {
         dbModel   = dbModel'
-      , shouldEnd = ends
       }
 
 -- | Key property of the model is that we can go from real to mock responses.
@@ -296,7 +289,7 @@ runPure dbm (CmdErr cmd err) =
         let blockInfo = mkBlockInfo tb
             blob = testBlockToBuilder tb
         Unit <$> putBlockModel tnc blockInfo blob
-      GetSuccessors bids  -> do
+      GetSuccessors bids     -> do
         successors <- getSuccessorsModel tnc
         return $ Successors $ successors <$> bids
       GetPredecessor bids    -> do
@@ -305,38 +298,35 @@ runPure dbm (CmdErr cmd err) =
       GarbageCollect slot    -> Unit <$> garbageCollectModel tnc slot
       IsOpen                 -> Bl <$> isOpenModel
       Close                  -> Unit <$> closeModel
-      ReOpen                 -> Unit <$> reOpenModel tnc
+      ReOpen                 -> Unit <$> reOpenModel
       AskIfMember bids       -> do
         isMember <- getIsMemberModel tnc
         return $ IsMember $ isMember <$> bids
       GetMaxSlotNo           -> MaxSlot <$> getMaxSlotNoModel tnc
       Corrupt cors           -> withClosedDB $ runCorruptionModel cors
       CreateFile             -> withClosedDB createFileModel
-      CreateInvalidFile      -> withClosedDB $
-        createInvalidFileModel (mkFsPath ["invalidFileName.dat"])
-      DuplicateBlock file tb -> withClosedDB $
-        duplicateBlockModel (file, thHash $ testHeader tb)
+      CreateInvalidFile n    -> withClosedDB $ createInvalidFileModel n
+      DuplicateBlock _ _     -> withClosedDB duplicateBlockModel
 
     withClosedDB :: PureM () -> PureM Success
     withClosedDB act = do
       closeModel
       act
-      reOpenModel tnc
+      reOpenModel
       return $ Unit ()
 
 sm :: IOLike m
-   => Bool
-   -> StrictTVar m Errors
+   => StrictTVar m Errors
    -> VolatileDB BlockId m
    -> Internal.VolatileDBEnv m BlockId
    -> DBModel BlockId
    -> StateMachine Model (At CmdErr) m (At Resp)
-sm terminatingCmd errorsVar db env dbm = StateMachine {
+sm errorsVar db env dbm = StateMachine {
       initModel     = initModelImpl dbm
     , transition    = transitionImpl
     , precondition  = preconditionImpl
     , postcondition = postconditionImpl
-    , generator     = generatorImpl True terminatingCmd
+    , generator     = generatorImpl True
     , shrinker      = shrinkerImpl
     , semantics     = semanticsImpl errorsVar db env
     , mock          = mockImpl
@@ -348,7 +338,6 @@ stateMachine :: IOLike m
              => DBModel BlockId
              -> StateMachine Model (At CmdErr) m (At Resp)
 stateMachine = sm
-                True
                 (error "errorsVar unused")
                 (error "semantics and DB used during command generation")
                 (error "env used during command generation")
@@ -356,16 +345,13 @@ stateMachine = sm
 initModelImpl :: DBModel BlockId -> Model r
 initModelImpl dbm = Model {
       dbModel   = dbm
-    , shouldEnd = False
     }
 
 transitionImpl :: Model r -> At CmdErr r -> At Resp r -> Model r
-transitionImpl model cmd = eventAfter . lockstep model cmd
+transitionImpl model cmd _ = eventAfter $ lockstep model cmd
 
 preconditionImpl :: Model Symbolic -> At CmdErr Symbolic -> Logic
-preconditionImpl Model{..} (At (CmdErr cmd err)) =
-    Not (Boolean shouldEnd)
-    .&& compatibleWithError
+preconditionImpl Model{..} (At (CmdErr cmd err)) = compatibleWithError
     .&& case cmd of
       GetBlockComponent bid  -> Boolean $ afterGC bid
       GetPredecessor bids    -> forall bids (`elem` bidsInModel)
@@ -373,10 +359,11 @@ preconditionImpl Model{..} (At (CmdErr cmd err)) =
         Boolean $ (slotAfterGC $ Just $ thSlotNo $ testHeader tb)
                && (not $ M.member (thHash $ testHeader tb) (mp dbModel))
       AskIfMember bids       -> Boolean $ and (afterGC <$> bids)
-      Corrupt cors           -> isOpen .&&
-        forall (corruptionFiles cors) (`elem` getDBFiles dbModel)
+      Corrupt cors           -> isOpen
+        .&& forall (corruptionFiles cors) (`elem` getDBFiles dbModel)
+        .&& forall (corruptions cors) corruptionPrecondition
       CreateFile             -> isOpen
-      CreateInvalidFile      -> isOpen
+      CreateInvalidFile _n   -> isOpen
       DuplicateBlock file tb ->
         case fmap fst . snd <$> M.lookup file (index dbModel) of
           Nothing   -> Bot
@@ -411,69 +398,81 @@ preconditionImpl Model{..} (At (CmdErr cmd err)) =
       (False, True) -> Bot
       _             -> Top
 
-postconditionImpl :: Model Concrete 
-                  -> At CmdErr Concrete  
-                  -> At Resp Concrete 
+    corruptionPrecondition :: FileCorruption -> Logic
+    corruptionPrecondition (PutCorrupted tb) =
+            Boolean (not $ checkBlockIntegrity tb)
+        .&& Boolean (M.notMember (thHash $ testHeader tb) (mp dbModel))
+        .&& Boolean (slotAfterGC $ Just $ thSlotNo $ testHeader tb)
+    corruptionPrecondition _                 = Top
+
+postconditionImpl :: Model Concrete
+                  -> At CmdErr Concrete
+                  -> At Resp Concrete
                   -> Logic
 postconditionImpl model cmdErr resp =
     toMock (eventAfter ev) resp .== eventMockResp ev
   where
-    ev = lockstep model cmdErr resp
+    ev = lockstep model cmdErr
 
-generatorCmdImpl :: Bool -> Model Symbolic -> Maybe (Gen (At Cmd Symbolic))
-generatorCmdImpl terminatingCmd m@Model {..} =
-    if shouldEnd then Nothing else Just $ do
+generatorCmdImpl :: Model Symbolic -> Maybe (Gen (At Cmd Symbolic))
+generatorCmdImpl m@Model {..} = Just $ do
     blockId <- blockIdGenerator m
-    pblockId <- predecessorGenerator
     blockIds <- listOf $ blockIdGenerator m
     slot <- arbitrary -- TODO: We may want to have more collisions.
-    isEBB <- elements [IsNotEBB, IsEBB]
-    -- Many fields of the TestBlock are never used, so we use fixed values.
-    let testBody = TestBody 0 True
-        hashBody' = hashBody testBody
-        testHeaderHash = BlockHash pblockId
-        testHeader =
-          TestHeader blockId testHeaderHash hashBody' slot (BlockNo 0) isEBB
-        testBlock = TestBlock testHeader testBody
+    testBlock <- genBlock
     duplicate <- mkDuplicate testBlock
-    let allowDuplication = terminatingCmd && isJust duplicate
+    invalidId <- arbitrary
     At <$> frequency [
         (150, return $ GetBlockComponent blockId)
       , (100, return $ GetBlockIds)
       , (150, return $ PutBlock testBlock)
-      , (100, return $ GetSuccessors $ WithOrigin.At blockId :
-          (WithOrigin.At <$> possiblePredecessors))
+      , (100, return $ GetSuccessors $ WithOrigin.At blockId : possiblePredecessors)
       , (100, return $ GetPredecessor blockIds)
       , (100, return $ GetMaxSlotNo)
       , (50, return $ GarbageCollect slot)
       , (50, return $ IsOpen)
       , (50, return $ Close)
       , (30, return CreateFile)
+      , (20, return $ CreateInvalidFile invalidId)
       -- When the db is Closed, we try to ReOpen it asap.
       -- This helps minimize TagClosedError and create more
       -- interesting tests.
       , (if open dbModel then 10 else 1000, return $ ReOpen)
       , (if null blockIds then 0 else 30, return $ AskIfMember blockIds)
-      , (if null dbFiles then 0 else 30, Corrupt <$> generateCorruptions dbFiles)
-      , (if terminatingCmd then 1 else 0, return CreateInvalidFile)
-      , (if allowDuplication then 1 else 0, return $ fromJust duplicate)
+      , (if null dbFiles then 0 else 100,
+          Corrupt <$> generateCorruptions testBlock dbFiles)
+      , (if isJust duplicate then 20 else 0, return $ fromJust duplicate)
       ]
   where
     dbFiles = getDBFiles dbModel
-    mkDuplicate tb@TestBlock{..} =
+    mkDuplicate TestBlock{..} =
       case getDBBlocksWithFiles dbModel of
         []   -> return Nothing
         bids -> do
           (f, b) <- elements bids
-          let testHead' = testHeader{thHash = b}
-          return $ Just $ DuplicateBlock f (tb {testHeader = testHead'})
+          let testHeader' = testHeader {thHash = b}
+          -- This is an invalid block in the sense that the thHash is not the
+          -- real hash of the block. The validation check in not performed for
+          -- these blocks, in order to test what happens with duplicated blocks.
+          let testBlock' = testBody {tbIsValid = False }
+          return $ Just $ DuplicateBlock f (TestBlock testHeader' testBlock')
 
-generatorImpl :: Bool 
-              -> Bool 
-              -> Model Symbolic 
+-- Many fields of the TestBlock are never used, so we use fixed values.
+genBlock :: Gen TestBlock
+genBlock = do
+    pblockId <- predecessorGenerator
+    isEBB    <- elements [IsNotEBB, IsEBB]
+    slot     <- arbitrary
+    -- We don't care about these
+    let body = TestBody 0 True
+        blockNo = 0
+    return $ mkBlock body (fromOrigin pblockId) slot blockNo isEBB
+
+generatorImpl :: Bool
+              -> Model Symbolic
               -> Maybe (Gen (At CmdErr Symbolic))
-generatorImpl mkErr terminatingCmd m@Model {..} = do
-    genCmd <- generatorCmdImpl terminatingCmd m
+generatorImpl mkErr m@Model {..} = do
+    genCmd <- generatorCmdImpl m
     Just $ do
       At cmd <- genCmd
       err <- if not (allowErrorFor cmd) then return Nothing
@@ -498,11 +497,11 @@ blockIdGenerator Model {..} = do
     bid <- TestHeaderHash <$> arbitrary
     elements $ bid : (fst <$> getBlockId dbModel)
 
-predecessorGenerator :: Gen BlockId
+predecessorGenerator :: Gen (WithOrigin BlockId)
 predecessorGenerator = elements possiblePredecessors
 
-possiblePredecessors :: [BlockId]
-possiblePredecessors = TestHeaderHash <$> [0,1,2]
+possiblePredecessors :: [WithOrigin BlockId]
+possiblePredecessors = WithOrigin.Origin : map (WithOrigin.At . TestHeaderHash) [0,1,2]
 
 shrinkerImpl :: Model Symbolic -> At CmdErr Symbolic -> [At CmdErr Symbolic]
 shrinkerImpl m (At (CmdErr cmd mbErr)) = fmap At $
@@ -527,7 +526,7 @@ semanticsImpl errorsVar m env (At cmderr) = At . Resp <$> case cmderr of
     CmdErr cmd Nothing -> try (runDB m cmd env)
     CmdErr cmd (Just errors) -> do
       res <- withErrors errorsVar errors $
-        try (runDB m cmd env)
+        tryDB (runDB m cmd env)
       case res of
         Left (UserError ClosedDBError) -> return res
         _                              -> do
@@ -536,7 +535,7 @@ semanticsImpl errorsVar m env (At cmderr) = At . Resp <$> case cmderr of
           closeDB m
           return $ Right $ SimulatedError res
   where
-    try = tryVolDB EH.monadCatch EH.monadCatch
+    tryDB = tryVolDB EH.monadCatch EH.monadCatch
 
     restore (PutBlock tb) = putBlock m
       (mkBlockInfo tb)
@@ -550,7 +549,7 @@ runDB :: forall m. (HasCallStack, IOLike m)
       -> Internal.VolatileDBEnv m BlockId
       -> m Success
 runDB db cmd env@Internal.VolatileDBEnv{..} = case cmd of
-    GetBlockComponent bid -> 
+    GetBlockComponent bid ->
       MbAllComponents <$> getBlockComponent db allComponents bid
     GetBlockIds           -> Blocks <$> getBlockIds db
     PutBlock tb           -> Unit <$> putBlock db
@@ -577,15 +576,15 @@ runDB db cmd env@Internal.VolatileDBEnv{..} = case cmd of
     CreateFile            -> do
       createFile env
       withClosedDB $ return ()
-    CreateInvalidFile     ->
+    CreateInvalidFile n   ->
       withClosedDB $
-        withFile _dbHasFS (mkFsPath ["invalidFileName.dat"])
-          (AppendMode MustBeNew) $ \_hndl -> return ()
+        withFile _dbHasFS (mkFsPath ["invalid-" ++ show n ++ "-file.dat" ])
+          (AppendMode AllowExisting) $ \_hndl -> return ()
     DuplicateBlock _file  tb -> do
         _ <- withDBState $ \hasFS st ->
-          hPut hasFS (Internal._currentWriteHandle st)
-                          (testBlockToBuilder tb)
+          hPut hasFS (Internal._currentWriteHandle st) (testBlockToBuilder tb)
         withClosedDB $ return ()
+
   where
     withClosedDB action = do
       closeDB db
@@ -609,6 +608,12 @@ mockImpl model cmdErr = At <$> return mockResp
   where
     (mockResp, _dbModel') = step model cmdErr
 
+-- | Some blocks are intentionally invalid, for example to test duplicate blocks
+-- and their 'tbIsValid' is @False@. We don't care about checking these blocks.
+checkBlockIntegrity :: TestBlock -> Bool
+checkBlockIntegrity testBlock =
+    testBlockIsValid testBlock || not (tbIsValid (testBody testBlock))
+
 prop_sequential :: Property
 prop_sequential =
     forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
@@ -618,10 +623,11 @@ prop_sequential =
             test errorsVar hasFS = do
               let ec = EH.throwCantCatch EH.monadCatch
               let parser = blockFileParser' hasFS testBlockIsEBB
-                    testBlockToBinaryInfo (const <$> decode)
+                    testBlockToBinaryInfo (const <$> decode) checkBlockIntegrity
+                    ValidateAll
               (db, env) <- run $
-                    Internal.openDBFull hasFS EH.monadCatch ec parser 3
-              let sm' = sm True errorsVar db env dbm
+                Internal.openDBFull hasFS EH.monadCatch ec parser nullTracer (mkBlocksPerFile 3)
+              let sm' = sm errorsVar db env dbm
               (hist, _model, res) <- runCommands sm' cmds
               run $ closeDB db
               return (hist, res)
@@ -634,9 +640,9 @@ prop_sequential =
             $ tabulate "Tags" (map show $ tag events)
             $ tabulate "Commands" (cmdName . eventCmd <$> events)
             $ tabulate "Error Tags" (tagSimulatedErrors events)
-            $ tabulate "IsMember: Total number of True's" 
+            $ tabulate "IsMember: Total number of True's"
                 [groupIsMember $ isMemberTrue events]
-            $ tabulate "IsMember: At least one True" 
+            $ tabulate "IsMember: At least one True"
                 [show $ isMemberTrue' events]
             $ tabulate "Successors" (tagGetSuccessors events)
             $ tabulate "Predecessor" (tagGetPredecessor events)
@@ -689,7 +695,6 @@ tag ls = C.classify
     , tagAppendRecover
     , tagIsClosedError
     , tagGarbageCollectThenReOpen
-    , tagImpossibleToRecover
     ] ls
   where
 
@@ -706,7 +711,7 @@ tag ls = C.classify
     tagGetReOpenGet = tagGetJust $ Right $ tagReOpen False $
                         Right $ tagGetJust $ Left TagGetReOpenGet
 
-    -- This rarely succeeds. I think this is because the last part 
+    -- This rarely succeeds. I think this is because the last part
     -- (get -> Nothing) rarelly succeeds. This happens because when a blockId is
     -- deleted is very unlikely to be requested.
     tagGarbageCollect :: Bool
@@ -723,9 +728,9 @@ tag ls = C.classify
                        Nothing
         (Nothing, _, GarbageCollect sl)
           -> Right $ tagGarbageCollect True bids (Just sl)
-        (Just _gced, MbAllComponents Nothing, GetBlockComponent bid) 
+        (Just _gced, MbAllComponents Nothing, GetBlockComponent bid)
           | (S.member bid bids) -> Left TagGarbageCollect
-        (_, _, Corrupt _) 
+        (_, _, Corrupt _)
           -> Right $ tagGarbageCollect False bids mgced
         _ -> Right $ tagGarbageCollect True bids mgced
 
@@ -735,7 +740,7 @@ tag ls = C.classify
       _                        -> Right $ tagGetJust next
 
     tagReOpen :: Bool -> Either Tag EventPred -> EventPred
-    tagReOpen hasClosed next = successful $ \ev _ -> 
+    tagReOpen hasClosed next = successful $ \ev _ ->
       case (hasClosed, getCmd ev) of
         (True, ReOpen)     -> next
         (False, Close)     -> Right $ tagReOpen True next
@@ -769,15 +774,9 @@ tag ls = C.classify
 
     tagGarbageCollectThenReOpen :: EventPred
     tagGarbageCollectThenReOpen = successful $ \ev _ -> case getCmd ev of
-      GarbageCollect _ -> Right $ tagReOpen False $ 
+      GarbageCollect _ -> Right $ tagReOpen False $
                             Left TagGarbageCollectThenReOpen
       _                -> Right $ tagGarbageCollectThenReOpen
-
-    tagImpossibleToRecover :: EventPred
-    tagImpossibleToRecover = C.predicate $ \ev ->
-      if shouldEnd (eventBefore ev) || shouldEnd (eventAfter ev)
-      then Left TagImpossibleToRecover
-      else Right tagImpossibleToRecover
 
 getCmd :: Event r -> Cmd
 getCmd ev = cmd $ unAt (eventCmd ev)
@@ -797,7 +796,7 @@ isMemberTrue' events = sum $ count <$> events
     count :: Event Symbolic -> Int
     count e = case eventMockResp e of
         Resp (Left _)              -> 0
-        Resp (Right (IsMember ls)) -> if length (filter id ls) > 0 then 1 else 0
+        Resp (Right (IsMember ls)) -> if null ls then 0 else 1
         Resp (Right _)             -> 0
 
 data Tag =
@@ -858,8 +857,6 @@ data Tag =
     -- > ReOpen
     | TagGarbageCollectThenReOpen
 
-    -- | Command which irreversibly corrupt the db.
-    | TagImpossibleToRecover
     deriving Show
 
 tagSimulatedErrors :: [Event Symbolic] -> [String]
@@ -892,7 +889,7 @@ tagGetPredecessor = mapMaybe f
 execCmd :: Model Symbolic
         -> Command (At CmdErr) (At Resp)
         -> Event Symbolic
-execCmd model (Command cmdErr resp _vars) = lockstep model cmdErr resp
+execCmd model (Command cmdErr _resp _vars) = lockstep model cmdErr
 
 execCmds :: Model Symbolic -> Commands (At CmdErr) (At Resp) -> [Event Symbolic]
 execCmds model (Commands cs) = go model cs

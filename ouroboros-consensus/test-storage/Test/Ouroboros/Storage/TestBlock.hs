@@ -47,6 +47,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
@@ -331,7 +332,7 @@ instance UpdateLedger TestBlock where
   data LedgerConfig TestBlock = LedgerConfig
   type LedgerError  TestBlock = TestBlockError
 
-  applyChainTick _ _ = TickedLedgerState
+  applyChainTick _ = TickedLedgerState
 
   applyLedgerBlock _ tb@TestBlock{..} TestLedger{..}
     | blockPrevHash tb /= lastAppliedHash
@@ -346,6 +347,12 @@ instance UpdateLedger TestBlock where
 
   ledgerTipPoint = lastAppliedPoint
 
+instance HasAnnTip TestBlock where
+  -- Use defaults
+
+instance ValidateEnvelope TestBlock where
+  -- Use defaults
+
 instance ProtocolLedgerView TestBlock where
   ledgerConfigView _ = LedgerConfig
   protocolLedgerView _ _ = ()
@@ -356,8 +363,8 @@ testInitLedger = TestLedger GenesisPoint GenesisHash
 
 testInitExtLedger :: ExtLedgerState TestBlock
 testInitExtLedger = ExtLedgerState {
-      ledgerState         = testInitLedger
-    , ouroborosChainState = ()
+      ledgerState = testInitLedger
+    , headerState = genesisHeaderState ()
     }
 
 -- | Trivial test configuration with a single core node

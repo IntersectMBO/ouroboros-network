@@ -159,7 +159,7 @@ preferAnchoredCandidate cfg ours theirs =
         False
       (Empty ourAnchor, _ :> theirTip) ->
         -- Case 3
-        blockPoint theirTip /= ourAnchor
+        blockPoint theirTip /= AF.anchorToPoint ourAnchor
       (_ :> ourTip, _ :> theirTip) ->
         -- Case 4
         preferCandidate cfg (selectView cfg ourTip) (selectView cfg theirTip)

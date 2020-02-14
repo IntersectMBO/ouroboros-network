@@ -7,6 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans     #-}
 module Test.Socket (tests) where
@@ -35,7 +36,7 @@ import           System.IO.Error
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver
 import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Codec.Cbor as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
@@ -43,13 +44,13 @@ import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 import           Control.Tracer
 
 -- TODO: remove Mx prefixes
-import qualified Network.Mux as Mx hiding (MiniProtocolLimits(..))
+import qualified Network.Mux as Mx hiding (MiniProtocolLimits (..))
 import qualified Network.Mux.Bearer.Socket as Mx
 import           Ouroboros.Network.Mux as Mx
 
 import           Ouroboros.Network.Socket
 
-import           Ouroboros.Network.Block (Tip, encodeTip, decodeTip)
+import           Ouroboros.Network.Block (Tip, decodeTip, encodeTip)
 import           Ouroboros.Network.Connections.Socket.Types hiding (ConnectionId)
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
@@ -60,7 +61,8 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
-import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq, cborTermVersionDataCodec)
+import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq,
+                     cborTermVersionDataCodec)
 import           Ouroboros.Network.Protocol.Handshake.Version
                      (simpleSingletonVersions)
 import           Ouroboros.Network.Testing.Serialise
@@ -397,7 +399,7 @@ demo chain0 updates = do
                     codecChainSync
                     (ChainSync.chainSyncServerPeer server)
 
-        codecChainSync = ChainSync.codecChainSync encode (fmap const decode)
+        codecChainSync = ChainSync.codecChainSync encode             decode
                                                   encode             decode
                                                   (encodeTip encode) (decodeTip decode)
 

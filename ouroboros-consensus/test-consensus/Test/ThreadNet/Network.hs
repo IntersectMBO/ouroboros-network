@@ -48,15 +48,13 @@ import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           GHC.Stack
 
-import           Control.Monad.Class.MonadThrow
-
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
-import           Ouroboros.Network.Point (WithOrigin (..))
+import           Ouroboros.Network.Point (WithOrigin (..), fromWithOrigin)
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -75,10 +73,12 @@ import qualified Ouroboros.Consensus.BlockFetchServer as BFServer
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import qualified Ouroboros.Consensus.ChainSyncClient as CSClient
 import           Ouroboros.Consensus.ChainSyncServer (Tip)
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
@@ -101,6 +101,7 @@ import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Storage.LedgerDB.InMemory as LgrDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import qualified Ouroboros.Storage.VolatileDB as VolDB
 
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util.NodeJoinPlan
@@ -266,6 +267,7 @@ runThreadNetwork ThreadNetworkArgs
         forkBothEdges
           sharedRegistry
           sharedBtime
+          -- traces when/why the mini protocol instances start and stop
           nullDebugTracer
           vertexStatusVars
           uedge
@@ -451,7 +453,8 @@ runThreadNetwork ThreadNetworkArgs
         varDRG <- uncheckedNewTVarM =<< produceDRG
         txs <- atomically $ do
           ledger <- ledgerState <$> getExtLedger
-          simChaChaT varDRG id $ testGenTxs numCoreNodes curSlotNo cfg ledger
+          runSim (simChaChaT varDRG simId) $
+            testGenTxs numCoreNodes curSlotNo cfg ledger
         void $ addTxs mempool txs
 
     forkEbbProducer :: HasCallStack
@@ -484,7 +487,8 @@ runThreadNetwork ThreadNetworkArgs
                   Origin -> True
                   At s   -> s >= (ebbSlotNo - min ebbSlotNo (2 * k))
                 bno <- ChainDB.getTipBlockNo chainDB
-                pure (mSlot, bno, pointHash p)
+                -- The EBB shares its BlockNo with its predecessor (if there is one)
+                pure (mSlot, fromWithOrigin (firstBlockNo (Proxy @blk)) bno, pointHash p)
               when (prevSlot < At ebbSlotNo) $ do
                 let ebb = forgeEBB cfg ebbSlotNo ebbBlockNo prevHash
                 ChainDB.addBlock chainDB ebb
@@ -510,15 +514,17 @@ runThreadNetwork ThreadNetworkArgs
         { -- Decoders
           cdbDecodeHash       = nodeDecodeHeaderHash (Proxy @blk)
         , cdbDecodeBlock      = nodeDecodeBlock       cfg
-        , cdbDecodeHeader     = nodeDecodeHeader      cfg
+        , cdbDecodeHeader     = nodeDecodeHeader      cfg SerialisedToDisk
         , cdbDecodeLedger     = nodeDecodeLedgerState cfg
         , cdbDecodeChainState = nodeDecodeChainState (Proxy @blk) cfg
+        , cdbDecodeTipInfo    = nodeDecodeTipInfo    (Proxy @blk)
           -- Encoders
         , cdbEncodeHash       = nodeEncodeHeaderHash (Proxy @blk)
         , cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
-        , cdbEncodeHeader     = nodeEncodeHeader        cfg
+        , cdbEncodeHeader     = nodeEncodeHeader        cfg SerialisedToDisk
         , cdbEncodeLedger     = nodeEncodeLedgerState   cfg
         , cdbEncodeChainState = nodeEncodeChainState (Proxy @blk) cfg
+        , cdbEncodeTipInfo    = nodeEncodeTipInfo    (Proxy @blk)
           -- Error handling
         , cdbErrImmDb         = EH.monadCatch
         , cdbErrVolDb         = EH.monadCatch
@@ -528,8 +534,9 @@ runThreadNetwork ThreadNetworkArgs
         , cdbHasFSVolDb       = simHasFS EH.monadCatch (nodeDBsVol nodeDBs)
         , cdbHasFSLgrDB       = simHasFS EH.monadCatch (nodeDBsLgr nodeDBs)
           -- Policy
-        , cdbValidation       = ImmDB.ValidateAllEpochs
-        , cdbBlocksPerFile    = 4
+        , cdbImmValidation    = ImmDB.ValidateAllEpochs
+        , cdbVolValidation    = VolDB.ValidateAll
+        , cdbBlocksPerFile    = VolDB.mkBlocksPerFile 4
         , cdbParamsLgrDB      = LgrDB.ledgerDbDefaultParams (protocolSecurityParam cfg)
         , cdbDiskPolicy       = LgrDB.defaultDiskPolicy (protocolSecurityParam cfg)
           -- Integration
@@ -543,21 +550,24 @@ runThreadNetwork ThreadNetworkArgs
         , cdbAddHdrEnv        = nodeAddHeaderEnvelope (Proxy @blk)
         , cdbImmDbCacheConfig = Index.CacheConfig 2 60
         -- Misc
-        , cdbTracer           = Tracer $ \case
-              ChainDB.TraceAddBlockEvent
-                  (ChainDB.AddBlockValidation ChainDB.InvalidBlock
-                      { _invalidPoint  = p
-                      , _validationErr = e
-                      })
-                  -> traceWith invalidTracer (p, e)
-              ChainDB.TraceAddBlockEvent
-                  (ChainDB.AddedBlockToVolDB p bno IsNotEBB)
-                  -> traceWith addTracer (p, bno)
-              _   -> pure ()
-        , cdbTraceLedger      = nullTracer
+        , cdbTracer           = instrumentationTracer <> nullDebugTracer
+        , cdbTraceLedger      = nullDebugTracer
         , cdbRegistry         = registry
         , cdbGcDelay          = 0
         }
+      where
+        -- prop_general relies on this tracer
+        instrumentationTracer = Tracer $ \case
+          ChainDB.TraceAddBlockEvent
+              (ChainDB.AddBlockValidation ChainDB.InvalidBlock
+                  { _invalidPoint  = p
+                  , _validationErr = e
+                  })
+              -> traceWith invalidTracer (p, e)
+          ChainDB.TraceAddBlockEvent
+              (ChainDB.AddedBlockToVolDB p bno IsNotEBB)
+              -> traceWith addTracer (p, bno)
+          _   -> pure ()
 
     forkNode
       :: HasCallStack
@@ -578,7 +588,8 @@ runThreadNetwork ThreadNetworkArgs
       let blockProduction :: BlockProduction m blk
           blockProduction = BlockProduction {
               produceBlock = nodeForgeBlock pInfoConfig
-            , produceDRG   = atomically $ simChaChaT varRNG id $ drgNew
+            , produceDRG   = atomically $
+                               runSim (simChaChaT varRNG simId) drgNew
             }
 
       let NodeInfo
@@ -586,13 +597,16 @@ runThreadNetwork ThreadNetworkArgs
             , nodeInfoDBs
             } = nodeInfo
 
+      -- prop_general relies on these tracers
+      let invalidTracer = (nodeEventsInvalids nodeInfoEvents)
+          addTracer = Tracer $ \(p, bno) -> do
+            s <- atomically $ getCurrentSlot btime
+            traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno)
       let chainDbArgs = mkArgs
             btime registry
             pInfoConfig pInfoInitLedger epochInfo
-            (nodeEventsInvalids nodeInfoEvents)
-            (Tracer $ \(p, bno) -> do
-                s <- atomically $ getCurrentSlot btime
-                traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno))
+            invalidTracer
+            addTracer
             nodeInfoDBs
       chainDB <- snd <$>
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
@@ -604,16 +618,21 @@ runThreadNetwork ThreadNetworkArgs
       -- variable in order to unblock the node's block production thread.
       nextEbbSlotVar <- uncheckedNewTVarM 0
 
+      -- prop_general relies on these tracers
+      let instrumentationTracers = nullTracers
+            { forgeTracer       = Tracer $ \case
+                TraceStartLeadershipCheck s -> do
+                  atomically $ do
+                    lim <- readTVar nextEbbSlotVar
+                    check $ s < lim
+                o                           -> do
+                  traceWith (nodeEventsForges nodeInfoEvents) o
+            }
       let nodeArgs = NodeArgs
-            { tracers             = nullDebugTracers
-                { forgeTracer       = Tracer $ \case
-                    TraceStartLeadershipCheck s -> do
-                      atomically $ do
-                        lim <- readTVar nextEbbSlotVar
-                        check $ s < lim
-                    o                       -> do
-                      traceWith (nodeEventsForges nodeInfoEvents) o
-                }
+            { tracers             =
+                -- traces the node's local events other than those from the
+                -- ChainDB
+                instrumentationTracers <> nullDebugTracers
             , registry
             , maxClockSkew        = ClockSkew 1
             , cfg                 = pInfoConfig
@@ -633,6 +652,8 @@ runThreadNetwork ThreadNetworkArgs
       nodeKernel <- initNodeKernel nodeArgs
       let app = consensusNetworkApps
                   nodeKernel
+                  -- these tracers report every message sent/received by this
+                  -- node
                   nullDebugProtocolTracers
                   (customProtocolCodecs pInfoConfig)
                   (protocolHandlers nodeArgs nodeKernel)
@@ -697,6 +718,7 @@ runThreadNetwork ThreadNetworkArgs
         }
       where
         binaryProtocolCodecs = protocolCodecs cfg
+                                 (mostRecentNetworkProtocolVersion (Proxy @blk))
 
 -- | Sum of 'CodecFailure' (from 'protocolCodecsId') and 'DeserialiseFailure'
 -- (from 'protocolCodecs').
@@ -914,7 +936,7 @@ data NodeEvents blk ev = NodeEvents
     -- ^ every 'TraceForgeEvent'
   , nodeEventsInvalids    :: ev (Point blk, ExtValidationError blk)
     -- ^ the point of every 'ChainDB.InvalidBlock' event
-  , nodeEventsTipBlockNos :: ev (SlotNo, BlockNo)
+  , nodeEventsTipBlockNos :: ev (SlotNo, WithOrigin BlockNo)
     -- ^ 'ChainDB.getTipBlockNo' for each node at the onset of each slot
   }
 
@@ -977,7 +999,7 @@ data NodeOutput blk = NodeOutput
 
 data TestOutput blk = TestOutput
     { testOutputNodes       :: Map NodeId (NodeOutput blk)
-    , testOutputTipBlockNos :: Map SlotNo (Map NodeId BlockNo)
+    , testOutputTipBlockNos :: Map SlotNo (Map NodeId (WithOrigin BlockNo))
     }
 
 -- | Gather the test output from the nodes
@@ -1029,9 +1051,11 @@ mkTestOutput vertexInfos = do
   Constraints needed for verbose tracing
 -------------------------------------------------------------------------------}
 
+-- | Occurs throughout in positions that might be useful for debugging.
 nullDebugTracer :: (Applicative m, Show a) => Tracer m a
 nullDebugTracer = nullTracer `asTypeOf` showTracing debugTracer
 
+-- | Occurs throughout in positions that might be useful for debugging.
 nullDebugTracers ::
      ( Monad m
      , Show peer
@@ -1042,6 +1066,7 @@ nullDebugTracers ::
   => Tracers m peer blk
 nullDebugTracers = nullTracers `asTypeOf` showTracers debugTracer
 
+-- | Occurs throughout in positions that might be useful for debugging.
 nullDebugProtocolTracers ::
      ( Monad m
      , HasHeader blk

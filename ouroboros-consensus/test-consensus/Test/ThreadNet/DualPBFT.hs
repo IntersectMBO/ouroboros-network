@@ -269,7 +269,7 @@ instance TxGen DualByronBlock where
          -> m [GenTx DualByronBlock]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
-          mTx <- hedgehogAdapter $ genTx cfg (getTickedLedgerState st)
+          mTx <- hedgehogAdapter $ genTx cfg (tickedLedgerState st)
           case mTx of
             Nothing -> return (reverse acc)
             Just tx ->

@@ -22,13 +22,14 @@ import           Ouroboros.Network.Block (HeaderHash)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
-import           Ouroboros.Storage.Common (EpochNo)
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo (EpochInfo)
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling,
@@ -54,6 +55,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
       -- ^ The given encoding will include the header envelope
       -- ('cdbAddHdrEnv').
     , cdbDecodeLedger     :: forall s. Decoder s (LedgerState blk)
+    , cdbDecodeTipInfo    :: forall s. Decoder s (TipInfo blk)
     , cdbDecodeChainState :: forall s. Decoder s (ChainState (BlockProtocol blk))
 
       -- Encoders
@@ -67,6 +69,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
       -- often be encoding the in-memory headers. (It is cheap for Byron
       -- headers, as we store the serialisation in the annotation.)
     , cdbEncodeLedger     :: LedgerState blk -> Encoding
+    , cdbEncodeTipInfo    :: TipInfo blk -> Encoding
     , cdbEncodeChainState :: ChainState (BlockProtocol blk) -> Encoding
 
       -- Error handling
@@ -80,8 +83,9 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbHasFSLgrDB       :: HasFS m h3
 
       -- Policy
-    , cdbValidation       :: ImmDB.ValidationPolicy
-    , cdbBlocksPerFile    :: Int
+    , cdbImmValidation    :: ImmDB.ValidationPolicy
+    , cdbVolValidation    :: VolDB.BlockValidationPolicy
+    , cdbBlocksPerFile    :: VolDB.BlocksPerFile
     , cdbParamsLgrDB      :: LgrDB.LedgerDbParams
     , cdbDiskPolicy       :: LgrDB.DiskPolicy
 
@@ -93,10 +97,12 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbCheckIntegrity   :: blk -> Bool
     , cdbGenesis          :: m (ExtLedgerState blk)
     , cdbBlockchainTime   :: BlockchainTime m
-    , cdbAddHdrEnv        :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+    , cdbAddHdrEnv        :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
       -- ^ The header envelope will only be added after extracting the binary
       -- header from the binary block. Note that we never have to remove an
       -- envelope.
+      --
+      -- The 'SizeInBytes' is the size of the block.
     , cdbImmDbCacheConfig :: ImmDB.CacheConfig
 
       -- Misc
@@ -169,7 +175,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immErr              = cdbErrImmDb
         , immEpochInfo        = cdbEpochInfo
         , immHashInfo         = cdbHashInfo
-        , immValidation       = cdbValidation
+        , immValidation       = cdbImmValidation
         , immIsEBB            = cdbIsEBB
         , immCheckIntegrity   = cdbCheckIntegrity
         , immHasFS            = cdbHasFSImmDb
@@ -177,16 +183,20 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immAddHdrEnv        = cdbAddHdrEnv
         , immCacheConfig      = cdbImmDbCacheConfig
         , immRegistry         = cdbRegistry
+        , immBlockchainTime   = cdbBlockchainTime
         }
     , VolDB.VolDbArgs {
           volHasFS            = cdbHasFSVolDb
         , volErr              = cdbErrVolDb
         , volErrSTM           = cdbErrVolDbSTM
+        , volCheckIntegrity   = cdbCheckIntegrity
         , volBlocksPerFile    = cdbBlocksPerFile
         , volDecodeHeader     = cdbDecodeHeader
         , volDecodeBlock      = cdbDecodeBlock
         , volEncodeBlock      = cdbEncodeBlock
         , volAddHdrEnv        = cdbAddHdrEnv
+        , volValidation       = cdbVolValidation
+        , volTracer           = contramap TraceVolDBEvent cdbTracer
         , volIsEBB            = \blk -> case cdbIsEBB (getHeader blk) of
                                           Nothing -> IsNotEBB
                                           Just _  -> IsEBB
@@ -197,9 +207,11 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrDecodeLedger     = cdbDecodeLedger
         , lgrDecodeChainState = cdbDecodeChainState
         , lgrDecodeHash       = cdbDecodeHash
+        , lgrDecodeTipInfo    = cdbDecodeTipInfo
         , lgrEncodeLedger     = cdbEncodeLedger
         , lgrEncodeChainState = cdbEncodeChainState
         , lgrEncodeHash       = cdbEncodeHash
+        , lgrEncodeTipInfo    = cdbEncodeTipInfo
         , lgrParams           = cdbParamsLgrDB
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
@@ -233,12 +245,14 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbDecodeBlock      = immDecodeBlock
     , cdbDecodeHeader     = immDecodeHeader
     , cdbDecodeLedger     = lgrDecodeLedger
+    , cdbDecodeTipInfo    = lgrDecodeTipInfo
     , cdbDecodeChainState = lgrDecodeChainState
       -- Encoders
     , cdbEncodeHash       = immEncodeHash
     , cdbEncodeBlock      = immEncodeBlock
     , cdbEncodeHeader     = cdbsEncodeHeader
     , cdbEncodeLedger     = lgrEncodeLedger
+    , cdbEncodeTipInfo    = lgrEncodeTipInfo
     , cdbEncodeChainState = lgrEncodeChainState
       -- Error handling
     , cdbErrImmDb         = immErr
@@ -249,7 +263,8 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbHasFSVolDb       = volHasFS
     , cdbHasFSLgrDB       = lgrHasFS
       -- Policy
-    , cdbValidation       = immValidation
+    , cdbImmValidation    = immValidation
+    , cdbVolValidation    = volValidation
     , cdbBlocksPerFile    = volBlocksPerFile
     , cdbParamsLgrDB      = lgrParams
     , cdbDiskPolicy       = lgrDiskPolicy

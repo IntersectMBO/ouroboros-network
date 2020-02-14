@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.IOSim
     ( tests
@@ -14,16 +14,15 @@ import           Data.Graph
 import           Data.List (sort)
 import           Data.Time.Clock (DiffTime, picosecondsToDiffTime)
 
+import           Control.Exception (ArithException (..))
 import           Control.Monad
-import           Control.Exception
-                   ( ArithException(..) )
-import           System.IO.Error (IOError, isUserError, ioeGetErrorString)
+import           System.IO.Error (IOError, ioeGetErrorString, isUserError)
 
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.IOSim
 
 import           Test.STM
@@ -104,7 +103,7 @@ prop_stm_graph_sim g =
 prop_stm_graph :: (MonadFork m, MonadSTM m) => TestThreadGraph -> m ()
 prop_stm_graph (TestThreadGraph g) = do
     vars <- listArray (bounds g) <$>
-            sequence [ atomically (newTVar False) | _ <- vertices g ]
+            sequence [ newTVarM False | _ <- vertices g ]
     forM_ (vertices g) $ \v ->
       void $ fork $ do
         -- read all the inputs and wait for them to become true
@@ -219,7 +218,7 @@ test_timers xs =
     experiment :: Probe m (DiffTime, Int) -> m ()
     experiment p = do
       tvars <- forM (zip xs [0..]) $ \(t, idx) -> do
-        v <- atomically $ newTVar False
+        v <- newTVarM False
         void $ fork $ threadDelay t >> do
           probeOutput p (t, idx)
           atomically $ writeTVar v True
@@ -263,7 +262,7 @@ test_fork_order = \(Positive n) -> isValid n <$> withProbe (experiment n)
     experiment :: Int -> Probe m Int -> m ()
     experiment 0 _ = return ()
     experiment n p = do
-      v <- atomically $ newTVar False
+      v <- newTVarM False
 
       void $ fork $ do
         probeOutput p n
@@ -295,7 +294,7 @@ test_threadId_order = \(Positive n) -> do
   where
     experiment :: m (ThreadId m)
     experiment = do
-      v <- atomically $ newTVar False
+      v <- newTVarM False
 
       tid <- fork $ atomically $ writeTVar v True
 
@@ -326,7 +325,7 @@ test_wakeup_order :: ( MonadFork m
                      )
                 => m Property
 test_wakeup_order = do
-    v          <- atomically $ newTVar False
+    v          <- newTVarM False
     wakupOrder <-
       withProbe $ \p -> do
         sequence_

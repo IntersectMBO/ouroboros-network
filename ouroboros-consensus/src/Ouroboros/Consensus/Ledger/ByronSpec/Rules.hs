@@ -86,9 +86,6 @@ applyChainTick cfg slot st =
           -- Apply scheduled delegations (empty list of new delegation certs)
       >=> liftDELEG cfg []
 
-          -- Set most recent slot
-      >=> modChainStateSlot (\_oldSlot -> pure slot)
-
 {-------------------------------------------------------------------------------
   Lift STS transition rules to the chain level
 -------------------------------------------------------------------------------}

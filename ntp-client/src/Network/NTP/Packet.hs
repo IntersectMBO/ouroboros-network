@@ -1,16 +1,17 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ViewPatterns               #-}
 
 module Network.NTP.Packet
     ( NtpPacket (..)
     , ntpPacketSize
     , mkNtpPacket
     , NtpOffset (..)
+    , getCurrentTime
     , clockOffsetPure
     , clockOffset
     , realMcsToNtp
     , ntpToRealMcs
+    , Microsecond (..)
     ) where
 
 
@@ -20,9 +21,10 @@ import           Data.Binary.Get (getInt8, getWord32be, getWord8, skip)
 import           Data.Binary.Put (putInt8, putWord32be, putWord8)
 import           Data.Int (Int8)
 import           Data.Time.Clock.POSIX (getPOSIXTime)
-import           Data.Time.Units (Microsecond, TimeUnit, fromMicroseconds,
-                     toMicroseconds)
 import           Data.Word (Word32, Word8)
+
+newtype Microsecond = Microsecond Integer
+  deriving (Enum, Eq, Integral, Num, Ord, Real, Show)
 
 data NtpPacket = NtpPacket
     { ntpParams       :: Word8        -- ^ some magic parameters
@@ -98,7 +100,7 @@ ntpToRealMcs sec frac =
         -- ref: https://tools.ietf.org/html/rfc5905#section-6
         fracMicro :: Integer
         fracMicro = (fromIntegral frac) `div` 4294
-    in fromMicroseconds $ secMicro + fracMicro
+    in Microsecond $ secMicro + fracMicro
 
 -- |
 -- It is a partial function, since @Microsecond ~ Integer@; it is well defined
@@ -108,7 +110,7 @@ ntpToRealMcs sec frac =
 -- @
 -- (in microseconds; this is roughly 66 years, so we're fine untill 2036).
 realMcsToNtp :: Microsecond -> (Word32, Word32)
-realMcsToNtp (toMicroseconds -> mcs) =
+realMcsToNtp (Microsecond mcs) =
     let (sec, frac) = divMod mcs 1000000
     in  ( fromIntegral $ sec + ntpTimestampDelta
         , fromIntegral $ frac * 4294)
@@ -127,7 +129,7 @@ mkNtpPacket = do
 -- |
 -- @'NtpOffset'@ is the difference between NTP time and local time.
 newtype NtpOffset = NtpOffset { getNtpOffset :: Microsecond }
-    deriving (Enum, Eq, Integral, Num, Ord, Real, Show, TimeUnit)
+    deriving (Enum, Eq, Integral, Num, Ord, Real, Show)
 
 clockOffsetPure :: NtpPacket -> Microsecond -> NtpOffset
 clockOffsetPure NtpPacket{..} localTime = NtpOffset
@@ -152,4 +154,4 @@ clockOffset respTimeout packet = do
 -- |
 -- Helper function to get current time in @Microsecond@.
 getCurrentTime :: IO Microsecond
-getCurrentTime = fromMicroseconds . round . ( * 1000000) <$> getPOSIXTime
+getCurrentTime = Microsecond . round . ( * 1000000) <$> getPOSIXTime

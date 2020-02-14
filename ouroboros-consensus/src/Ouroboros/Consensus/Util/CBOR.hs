@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -14,12 +15,21 @@ module Ouroboros.Consensus.Util.CBOR (
     -- * HasFS interaction
   , ReadIncrementalErr(..)
   , readIncremental
-  , readIncrementalOffsets
   , withStreamIncrementalOffsets
+    -- * Encoding/decoding containers
+  , encodeList
+  , decodeList
+  , encodeSeq
+  , decodeSeq
+  , encodeMaybe
+  , decodeMaybe
+  , encodeWithOrigin
+  , decodeWithOrigin
   ) where
 
-import qualified Codec.CBOR.Decoding as CBOR (Decoder)
-import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Decoding as CBOR.D
+import qualified Codec.CBOR.Encoding as CBOR.E
+import qualified Codec.CBOR.Read as CBOR.R
 import           Control.Exception (assert, throwIO)
 import           Control.Monad
 import           Control.Monad.ST
@@ -27,12 +37,19 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import           Data.ByteString.Builder.Extra (defaultChunkSize)
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Foldable (toList)
 import           Data.IORef
+import           Data.Sequence.Strict (StrictSeq)
+import qualified Data.Sequence.Strict as Seq
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
+
 import qualified Streaming as S
 import           Streaming.Prelude (Of (..), Stream)
 import qualified Streaming.Prelude as S
+
+import           Cardano.Slotting.Slot (WithOrigin, withOriginFromMaybe,
+                     withOriginToMaybe)
 
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -45,16 +62,18 @@ import           Ouroboros.Storage.FS.API.Types
 
 data IDecodeIO a =
     Partial (Maybe ByteString -> IO (IDecodeIO a))
-  | Done !ByteString !CBOR.ByteOffset a
-  | Fail !ByteString !CBOR.ByteOffset CBOR.DeserialiseFailure
+  | Done !ByteString !CBOR.R.ByteOffset a
+  | Fail !ByteString !CBOR.R.ByteOffset CBOR.R.DeserialiseFailure
 
-fromIDecode :: CBOR.IDecode RealWorld a -> IDecodeIO a
-fromIDecode (CBOR.Partial k)     = Partial $ fmap fromIDecode . stToIO . k
-fromIDecode (CBOR.Done bs off x) = Done bs off x
-fromIDecode (CBOR.Fail bs off e) = Fail bs off e
+fromIDecode :: CBOR.R.IDecode RealWorld a -> IDecodeIO a
+fromIDecode (CBOR.R.Partial k)     = Partial $ fmap fromIDecode . stToIO . k
+fromIDecode (CBOR.R.Done bs off x) = Done bs off x
+fromIDecode (CBOR.R.Fail bs off e) = Fail bs off e
 
-deserialiseIncrementalIO :: (forall s. CBOR.Decoder s a) -> IO (IDecodeIO a)
-deserialiseIncrementalIO = fmap fromIDecode . stToIO . CBOR.deserialiseIncremental
+deserialiseIncrementalIO :: (forall s. CBOR.D.Decoder s a) -> IO (IDecodeIO a)
+deserialiseIncrementalIO = fmap fromIDecode
+                         . stToIO
+                         . CBOR.R.deserialiseIncremental
 
 {-------------------------------------------------------------------------------
   Higher-level incremental interface
@@ -64,7 +83,7 @@ data Decoder m = Decoder {
       -- | Decode next failure
       --
       -- May throw 'CBOR.DeserialiseFailure'
-      decodeNext :: forall a. (forall s. CBOR.Decoder s a) -> m a
+      decodeNext :: forall a. (forall s. CBOR.D.Decoder s a) -> m a
     }
 
 -- | Construct incremental decoder given a way to get chunks
@@ -73,7 +92,7 @@ data Decoder m = Decoder {
 initDecoderIO :: IO ByteString -> IO (Decoder IO)
 initDecoderIO getChunk = do
     leftover <- newIORef BS.empty
-    let go :: forall a. (forall s. CBOR.Decoder s a) -> IO a
+    let go :: forall a. (forall s. CBOR.D.Decoder s a) -> IO a
         go decoder = do
            i <- deserialiseIncrementalIO decoder
            case i of
@@ -102,7 +121,7 @@ initDecoderIO getChunk = do
 
 data ReadIncrementalErr =
     -- | Could not deserialise the data
-    ReadFailed CBOR.DeserialiseFailure
+    ReadFailed CBOR.R.DeserialiseFailure
 
     -- | Deserialisation was successful, but there was additional data
   | TrailingBytes ByteString
@@ -117,58 +136,43 @@ data ReadIncrementalErr =
 -- small things this might not be ideal.
 --
 -- NOTE: This currently expects the file to contain precisely one value; see also
--- 'readIncrementalOffsets'.
+-- 'withStreamIncrementalOffsets'.
 readIncremental :: forall m h a. IOLike m
                 => HasFS m h
-                -> (forall s . CBOR.Decoder s a)
+                -> (forall s . CBOR.D.Decoder s a)
                 -> FsPath
                 -> m (Either ReadIncrementalErr a)
 readIncremental hasFS@HasFS{..} decoder fp = withLiftST $ \liftST -> do
     withFile hasFS fp ReadMode $ \h ->
-      go liftST h =<< liftST (CBOR.deserialiseIncremental decoder)
+      go liftST h =<< liftST (CBOR.R.deserialiseIncremental decoder)
   where
     go :: (forall x. ST s x -> m x)
        -> Handle h
-       -> CBOR.IDecode s a
+       -> CBOR.R.IDecode s a
        -> m (Either ReadIncrementalErr a)
-    go liftST h (CBOR.Partial k) = do
+    go liftST h (CBOR.R.Partial k) = do
         bs   <- hGetSome h (fromIntegral defaultChunkSize)
         dec' <- liftST $ k (checkEmpty bs)
         go liftST h dec'
-    go _ _ (CBOR.Done leftover _ a) =
+    go _ _ (CBOR.R.Done leftover _ a) =
         return $ if BS.null leftover
                    then Right a
                    else Left $ TrailingBytes leftover
-    go _ _ (CBOR.Fail _ _ err) =
+    go _ _ (CBOR.R.Fail _ _ err) =
         return $ Left $ ReadFailed err
 
     checkEmpty :: ByteString -> Maybe ByteString
     checkEmpty bs | BS.null bs = Nothing
                   | otherwise  = Just bs
 
--- | Read multiple @a@s incrementally from a file.
---
--- Return the offset ('Word64') of the start of each @a@, the size ('Word64')
--- of each @a@, and each @a@ itself. When deserialising fails, return all
--- already deserialised @a@s, the error, and the offset after which the
--- failure occurred.
-readIncrementalOffsets
-  :: forall m h a. (IOLike m, HasCallStack)
-  => HasFS m h
-  -> (forall s . CBOR.Decoder s (LBS.ByteString -> a))
-  -> FsPath
-  -> m ([(Word64, (Word64, a))], Maybe (ReadIncrementalErr, Word64))
-     -- ^ ((the offset of the start of @a@ in the file,
-     --     (the size of @a@, and @a@ itself)),
-     --     error encountered during deserialisation and the offset after
-     --     which it occurred)
-readIncrementalOffsets hasFS decoder fp =
-    withStreamIncrementalOffsets hasFS decoder fp $ \stream ->
-      (\(as :> mbErr) -> (as, mbErr)) <$> S.toList stream
-
--- | Streaming variant of 'readIncrementalOffsets'
+-- | Read multiple @a@s incrementally from a file in a streaming way.
 --
 -- Continuation-passing style to ensure proper closure of the file.
+--
+-- Reads the offset ('Word64') of the start of each @a@, the size ('Word64')
+-- of each @a@, and each @a@ itself. When deserialising fails, it passes all
+-- already deserialised @a@s, the error, and the offset after which the
+-- failure occurred.
 --
 -- NOTE: f we introduce user-facing streaming API also, the fact that we are
 -- using @streaming@ here should not dictate that we should stick with it
@@ -176,7 +180,7 @@ readIncrementalOffsets hasFS decoder fp =
 withStreamIncrementalOffsets
   :: forall m h a r. (IOLike m, HasCallStack)
   => HasFS m h
-  -> (forall s . CBOR.Decoder s (LBS.ByteString -> a))
+  -> (forall s . CBOR.D.Decoder s (LBS.ByteString -> a))
   -> FsPath
   -> (Stream (Of (Word64, (Word64, a))) m (Maybe (ReadIncrementalErr, Word64)) -> m r)
   -> m r
@@ -188,7 +192,7 @@ withStreamIncrementalOffsets hasFS@HasFS{..} decoder fp = \k ->
           -- If the file is empty, we will immediately get "end of input"
           return Nothing
         else
-          S.lift (liftST (CBOR.deserialiseIncremental decoder)) >>=
+          S.lift (liftST (CBOR.R.deserialiseIncremental decoder)) >>=
             go liftST h 0 Nothing [] fileSize
   where
     -- TODO stream from HasFS?
@@ -198,10 +202,10 @@ withStreamIncrementalOffsets hasFS@HasFS{..} decoder fp = \k ->
        -> Maybe ByteString         -- ^ Unconsumed bytes from last time
        -> [ByteString]             -- ^ Chunks pushed for this item (rev order)
        -> Word64                   -- ^ Total file size
-       -> CBOR.IDecode s (LBS.ByteString -> a)
+       -> CBOR.R.IDecode s (LBS.ByteString -> a)
        -> Stream (Of (Word64, (Word64, a))) m (Maybe (ReadIncrementalErr, Word64))
     go liftST h offset mbUnconsumed bss fileSize dec = case dec of
-      CBOR.Partial k -> do
+      CBOR.R.Partial k -> do
         -- First use the unconsumed bytes from a previous read before read
         -- some more bytes from the file.
         bs   <- case mbUnconsumed of
@@ -210,7 +214,7 @@ withStreamIncrementalOffsets hasFS@HasFS{..} decoder fp = \k ->
         dec' <- S.lift $ liftST $ k (checkEmpty bs)
         go liftST h offset Nothing (bs:bss) fileSize dec'
 
-      CBOR.Done leftover size mkA -> do
+      CBOR.R.Done leftover size mkA -> do
         let nextOffset = offset + fromIntegral size
             -- We've been keeping track of the bytes pushed into the decoder
             -- for this item so far in bss. Now there's some trailing data to
@@ -237,11 +241,55 @@ withStreamIncrementalOffsets hasFS@HasFS{..} decoder fp = \k ->
             -> return Nothing
           -- Some more bytes, so try to read the next @a@.
           mbLeftover ->
-            S.lift (liftST (CBOR.deserialiseIncremental decoder)) >>=
+            S.lift (liftST (CBOR.R.deserialiseIncremental decoder)) >>=
             go liftST h nextOffset mbLeftover [] fileSize
 
-      CBOR.Fail _ _ err -> return $ Just (ReadFailed err, offset)
+      CBOR.R.Fail _ _ err -> return $ Just (ReadFailed err, offset)
 
     checkEmpty :: ByteString -> Maybe ByteString
     checkEmpty bs | BS.null bs = Nothing
                   | otherwise  = Just bs
+
+{-------------------------------------------------------------------------------
+  Encoding/decoding lists
+-------------------------------------------------------------------------------}
+
+encodeList :: (a -> CBOR.E.Encoding) -> [a] -> CBOR.E.Encoding
+encodeList _   [] = CBOR.E.encodeListLen 0
+encodeList enc xs = mconcat [
+      CBOR.E.encodeListLenIndef
+    , foldr (\x r -> enc x <> r) CBOR.E.encodeBreak xs
+    ]
+
+decodeList :: CBOR.D.Decoder s a -> CBOR.D.Decoder s [a]
+decodeList dec = do
+    mn <- CBOR.D.decodeListLenOrIndef
+    case mn of
+      Nothing -> CBOR.D.decodeSequenceLenIndef (flip (:)) [] reverse   dec
+      Just n  -> CBOR.D.decodeSequenceLenN     (flip (:)) [] reverse n dec
+
+encodeSeq :: (a -> CBOR.E.Encoding) -> StrictSeq a -> CBOR.E.Encoding
+encodeSeq f = encodeList f . toList
+
+decodeSeq :: CBOR.D.Decoder s a -> CBOR.D.Decoder s (StrictSeq a)
+decodeSeq f = Seq.fromList <$> decodeList f
+
+encodeMaybe :: (a -> CBOR.E.Encoding) -> Maybe a -> CBOR.E.Encoding
+encodeMaybe enc = \case
+    Nothing -> CBOR.E.encodeListLen 0
+    Just x  -> CBOR.E.encodeListLen 1 <> enc x
+
+decodeMaybe :: CBOR.D.Decoder s a -> CBOR.D.Decoder s (Maybe a)
+decodeMaybe dec = do
+    n <- CBOR.D.decodeListLen
+    case n of
+      0 -> return Nothing
+      1 -> do !x <- dec
+              return (Just x)
+      _ -> fail "unknown tag"
+
+encodeWithOrigin :: (a -> CBOR.E.Encoding) -> WithOrigin a -> CBOR.E.Encoding
+encodeWithOrigin f = encodeMaybe f . withOriginToMaybe
+
+decodeWithOrigin :: CBOR.D.Decoder s a -> CBOR.D.Decoder s (WithOrigin a)
+decodeWithOrigin f = withOriginFromMaybe <$> decodeMaybe f

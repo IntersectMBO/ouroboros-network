@@ -17,19 +17,14 @@ module Ouroboros.Consensus.Util.STM (
   , Fingerprint (..)
   , WithFingerprint (..)
     -- * Simulate various monad stacks in STM
-  , Sim
+  , Sim(..)
   , simId
-  , simReaderT
-  , simWriterT
   , simStateT
   , simOuroborosStateT
   , simChaChaT
   ) where
 
-import           Control.Monad.Reader
 import           Control.Monad.State
-import           Control.Monad.Writer
-
 import           Data.Coerce
 import           Data.Void
 import           Data.Word (Word64)
@@ -46,8 +41,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 -------------------------------------------------------------------------------}
 
 -- | Wait until the TVar changed
-blockUntilChanged :: forall m a b. (IOLike m, Eq b)
-                  => (a -> b) -> b -> STM m a -> STM m (a, b)
+blockUntilChanged :: forall stm a b. (MonadSTMTx stm, Eq b)
+                  => (a -> b) -> b -> stm a -> stm (a, b)
 blockUntilChanged f b getA = do
     a <- getA
     let b' = f a
@@ -102,14 +97,14 @@ runWhenJust registry getMaybeA action =
     void $ forkLinkedThread registry $
       action =<< atomically (blockUntilJust getMaybeA)
 
-blockUntilJust :: IOLike m => STM m (Maybe a) -> STM m a
+blockUntilJust :: MonadSTMTx stm => stm (Maybe a) -> stm a
 blockUntilJust getMaybeA = do
     ma <- getMaybeA
     case ma of
       Nothing -> retry
       Just a  -> return a
 
-blockUntilAllJust :: IOLike m => [STM m (Maybe a)] -> STM m [a]
+blockUntilAllJust :: MonadSTMTx stm => [stm (Maybe a)] -> stm [a]
 blockUntilAllJust = mapM blockUntilJust
 
 -- | Simple type that can be used to indicate something in a @TVar@ is
@@ -129,54 +124,34 @@ data WithFingerprint a = WithFingerprint
   Simulate monad stacks
 -------------------------------------------------------------------------------}
 
-type Sim n m = forall a. n a -> STM m a
+newtype Sim n m = Sim { runSim :: forall a. n a -> STM m a }
 
 simId :: Sim (STM m) m
-simId = id
-
-simReaderT :: IOLike m => StrictTVar m st -> Sim n m -> Sim (ReaderT st n) m
-simReaderT tvar k (ReaderT f) = do
-    st <- readTVar tvar
-    k (f st)
-
-simWriterT :: IOLike m => StrictTVar m st -> Sim n m -> Sim (WriterT st n) m
-simWriterT tvar k (WriterT f) = do
-    (a, st') <- k f
-    writeTVar tvar st'
-    return a
+simId = Sim id
 
 simStateT :: IOLike m => StrictTVar m st -> Sim n m -> Sim (StateT st n) m
-simStateT tvar k (StateT f) = do
-    st       <- readTVar tvar
+simStateT stVar (Sim k) = Sim $ \(StateT f) -> do
+    st       <- readTVar stVar
     (a, st') <- k (f st)
-    writeTVar tvar st'
+    writeTVar stVar st'
     return a
 
 simOuroborosStateT :: IOLike m
                    => StrictTVar m s
                    -> Sim n m
                    -> Sim (NodeStateT_ s n) m
-simOuroborosStateT tvar k n = do
-    st       <- readTVar tvar
+simOuroborosStateT stVar (Sim k) = Sim $ \n -> do
+    st       <- readTVar stVar
     (a, st') <- k (runNodeStateT n st)
-    writeTVar tvar st'
+    writeTVar stVar st'
     return a
 
 simChaChaT :: (IOLike m, Coercible a ChaChaDRG)
            => StrictTVar m a
            -> Sim n m
            -> Sim (ChaChaT n) m
-simChaChaT tvar k n = do
-    st       <- readTVar tvar
+simChaChaT stVar (Sim k) = Sim $ \n -> do
+    st       <- readTVar stVar
     (a, st') <- k (runChaChaT n (coerce st))
-    writeTVar tvar (coerce st')
+    writeTVar stVar (coerce st')
     return a
-
--- | Example of composition
-_exampleComposition :: IOLike m
-                    => StrictTVar m r
-                    -> StrictTVar m w
-                    -> StrictTVar m s
-                    -> Sim n m
-                    -> Sim (ReaderT r (WriterT w (StateT s n))) m
-_exampleComposition r w s k = simReaderT r $ simWriterT w $ simStateT s $ k

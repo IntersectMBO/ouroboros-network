@@ -38,6 +38,7 @@ import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
@@ -127,8 +128,8 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
                               Just cred -> PBftIsALeader $ pbftLeaderOrNot cred
           }
       , pInfoInitLedger = ExtLedgerState {
-            ledgerState         = initByronLedgerState genesisConfig Nothing
-          , ouroborosChainState = CS.empty
+            ledgerState = initByronLedgerState genesisConfig Nothing
+          , headerState = genesisHeaderState CS.empty
           }
       , pInfoInitState  = ()
       }

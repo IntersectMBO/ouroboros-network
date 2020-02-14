@@ -19,6 +19,7 @@ import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Ledger.Mock.Run
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..),
                      protocolSecurityParam)
@@ -28,6 +29,9 @@ import           Ouroboros.Storage.Common (EpochSize (..))
 {-------------------------------------------------------------------------------
   RunNode instance for the mock ledger
 -------------------------------------------------------------------------------}
+
+instance HasNetworkProtocolVersion (SimpleBlock SimpleMockCrypto ext) where
+  -- Use defaults
 
 instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
            -- The below constraint seems redundant but is not! When removed,
@@ -59,23 +63,27 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeCheckIntegrity        = \_ _ -> True
 
   nodeEncodeBlockWithInfo   = const simpleBlockBinaryInfo
-  nodeEncodeHeader          = const encode
+  nodeEncodeHeader          = \_ _ -> encode
+  nodeEncodeWrappedHeader   = \_ _ -> encode
   nodeEncodeGenTx           =       encode
   nodeEncodeGenTxId         =       encode
   nodeEncodeHeaderHash      = const encode
   nodeEncodeLedgerState     = const encode
   nodeEncodeChainState      = const mockEncodeChainState
   nodeEncodeApplyTxError    = const encode
+  nodeEncodeTipInfo         = const encode
   nodeEncodeQuery           = \case {}
   nodeEncodeResult          = \case {}
 
   nodeDecodeBlock           = const (const <$> decode)
-  nodeDecodeHeader          = const (const <$> decode)
+  nodeDecodeHeader          = \_ _ -> (const <$> decode)
+  nodeDecodeWrappedHeader   = \_ _ -> decode
   nodeDecodeGenTx           =       decode
   nodeDecodeGenTxId         =       decode
   nodeDecodeHeaderHash      = const decode
   nodeDecodeLedgerState     = const decode
   nodeDecodeChainState      = const mockDecodeChainState
   nodeDecodeApplyTxError    = const decode
+  nodeDecodeTipInfo         = const decode
   nodeDecodeQuery           = error "Mock.nodeDecodeQuery"
   nodeDecodeResult          = \case {}

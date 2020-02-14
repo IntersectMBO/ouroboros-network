@@ -1,7 +1,11 @@
 {-# LANGUAGE DataKinds               #-}
+{-# LANGUAGE DeriveAnyClass          #-}
+{-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE TypeOperators           #-}
+{-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 
 -- | Interface to the ledger layer
@@ -20,6 +24,7 @@ module Ouroboros.Consensus.Ledger.Abstract (
 
 import           Control.Monad.Except
 import           Data.Type.Equality ((:~:))
+import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -31,6 +36,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (ShowQuery (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Protocol.Abstract
 
 {-------------------------------------------------------------------------------
@@ -114,14 +120,32 @@ ledgerTipSlot = pointSlot . ledgerTipPoint
 
 -- | Ledger state with the chain tick function already applied
 --
--- This is merely a marker, so that we can keep track at the type level whether
--- or not the chain tick function has been applied.
-newtype TickedLedgerState blk = TickedLedgerState {
-      getTickedLedgerState :: LedgerState blk
+-- 'applyChainTick' is intended to mark the passage of time, without changing
+-- the tip of the underlying ledger (i.e., no blocks have been applied).
+data TickedLedgerState blk = TickedLedgerState {
+      -- | The slot number supplied to 'applyChainTick'
+      tickedSlotNo      :: !SlotNo
+
+      -- | The underlying ledger state
+      --
+      -- NOTE: 'applyChainTick' should /not/ change the tip of the underlying
+      -- ledger state, which should still refer to the most recent applied
+      -- /block/. In other words, we should have
+      --
+      -- >    ledgerTipPoint (tickedLedgerState (applyChainTick cfg slot st)
+      -- > == ledgerTipPoint st
+    , tickedLedgerState :: !(LedgerState blk)
     }
+  deriving (Generic)
+
+deriving instance NoUnexpectedThunks       (LedgerState blk)
+               => NoUnexpectedThunks (TickedLedgerState blk)
 
 -- | Link protocol to ledger
-class (SupportedBlock blk, UpdateLedger blk) => ProtocolLedgerView blk where
+class ( SupportedBlock   blk
+      , UpdateLedger     blk
+      , ValidateEnvelope blk
+      ) => ProtocolLedgerView blk where
   -- | Extract the ledger environment from the node config
   ledgerConfigView :: NodeConfig (BlockProtocol blk)
                    -> LedgerConfig blk

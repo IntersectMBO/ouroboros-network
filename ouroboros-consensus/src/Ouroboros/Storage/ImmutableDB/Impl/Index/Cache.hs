@@ -53,11 +53,6 @@ import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
 
-import           Control.Monad.Class.MonadSTM.Strict (StrictTMVar, isEmptyTMVar,
-                     newEmptyTMVarM, putTMVar, tryTakeTMVar)
-import           Control.Monad.Class.MonadThrow (bracketOnError)
-import           Control.Monad.Class.MonadTime (Time (..))
-
 import           Cardano.Prelude (NoUnexpectedThunks (..), forceElemsToWHNF)
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
@@ -80,7 +75,7 @@ import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary
                      (BlockSize (..))
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
-import           Ouroboros.Storage.ImmutableDB.Impl.Util (onException,
+import           Ouroboros.Storage.ImmutableDB.Impl.Util (onImmDbException,
                      renderFile, throwUnexpectedError)
 import           Ouroboros.Storage.ImmutableDB.Layout (RelativeSlot (..))
 import           Ouroboros.Storage.ImmutableDB.Types (HashInfo (..),
@@ -356,7 +351,8 @@ data CacheEnv m hash h = CacheEnv
   , tracer      :: Tracer m TraceCacheEvent
   , cacheVar    :: StrictMVar m (Cached hash)
   , cacheConfig :: CacheConfig
-  , bgThreadVar :: StrictTMVar m (Thread m Void)
+  , bgThreadVar :: StrictMVar m (Maybe (Thread m Void))
+    -- ^ Nothing if no thread running
   }
 
 -- | Creates a new 'CacheEnv' and launches a background thread that expires
@@ -379,10 +375,11 @@ newEnv hasFS err hashInfo registry tracer cacheConfig epoch = do
 
     currentEpochInfo <- loadCurrentEpochInfo hasFS err hashInfo epoch
     cacheVar <- newMVarWithInvariants $ emptyCached epoch currentEpochInfo
-    bgThreadVar <- newEmptyTMVarM
+    bgThreadVar <- newMVar Nothing
     let cacheEnv = CacheEnv {..}
-    bgThread <- forkLinkedThread registry $ expireUnusedEpochs cacheEnv
-    atomically $ putTMVar bgThreadVar bgThread
+    mask_ $ modifyMVar_ bgThreadVar $ \_mustBeNothing -> do
+      !bgThread <- forkLinkedThread registry $ expireUnusedEpochs cacheEnv
+      return $ Just bgThread
     return cacheEnv
   where
     CacheConfig { pastEpochsToCache } = cacheConfig
@@ -591,9 +588,10 @@ getEpochInfo cacheEnv epoch = do
 --
 -- This operation is idempotent.
 close :: IOLike m => CacheEnv m hash h -> m ()
-close CacheEnv { bgThreadVar } = do
-    mbBgThread <- atomically $ tryTakeTMVar bgThreadVar
-    mapM_ cancelThread mbBgThread
+close CacheEnv { bgThreadVar } =
+    mask_ $ modifyMVar_ bgThreadVar $ \mbBgThread -> do
+      mapM_ cancelThread mbBgThread
+      return Nothing
 
 -- | Restarts the background expiration thread, drops all previously cached
 -- information, loads the given epoch.
@@ -608,11 +606,12 @@ restart
 restart cacheEnv epoch = do
     currentEpochInfo <- loadCurrentEpochInfo hasFS err hashInfo epoch
     void $ swapMVar cacheVar $ emptyCached epoch currentEpochInfo
-    noRunningBgThread <- atomically $ isEmptyTMVar bgThreadVar
-    if noRunningBgThread then do
-      bgThread <- forkLinkedThread registry $ expireUnusedEpochs cacheEnv
-      atomically $ putTMVar bgThreadVar bgThread
-    else error "background thread still running"
+    mask_ $ modifyMVar_ bgThreadVar $ \mbBgThread ->
+      case mbBgThread of
+        Just _  -> throwM $ userError "background thread still running"
+        Nothing -> do
+          !bgThread <- forkLinkedThread registry $ expireUnusedEpochs cacheEnv
+          return $ Just bgThread
   where
     CacheEnv { hasFS, err, hashInfo, registry, cacheVar, bgThreadVar } = cacheEnv
 
@@ -686,7 +685,7 @@ openPrimaryIndex cacheEnv epoch allowExisting = do
     lastUsed <- LastUsed <$> getMonotonicTime
     pHnd <- Primary.open hasFS epoch allowExisting
     -- Don't leak the handle in case of an exception
-    onException hasFsErr err (hClose pHnd) $ do
+    onImmDbException hasFsErr err (hClose pHnd) $ do
       newCurrentEpochInfo <- case allowExisting of
         MustBeNew     -> return emptyCurrentEpochInfo
         AllowExisting -> loadCurrentEpochInfo hasFS err hashInfo epoch

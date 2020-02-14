@@ -26,9 +26,9 @@ library
   hs-source-dirs:      src
 
   if os(windows)
-     hs-source-dirs:   src-win32/
+     hs-source-dirs:   src-win32
   else
-     hs-source-dirs:   src-unix/
+     hs-source-dirs:   src-unix
 
   exposed-modules:
                        Ouroboros.Consensus.Block
@@ -42,20 +42,23 @@ library
                        Ouroboros.Consensus.ChainSyncClient
                        Ouroboros.Consensus.ChainSyncServer
                        Ouroboros.Consensus.Crypto.DSIGN.Cardano
+                       Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Byron
-                       Ouroboros.Consensus.Ledger.Byron.Auxiliary
                        Ouroboros.Consensus.Ledger.Byron.Block
                        Ouroboros.Consensus.Ledger.Byron.Config
                        Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
                        Ouroboros.Consensus.Ledger.Byron.Conversions
                        Ouroboros.Consensus.Ledger.Byron.DelegationHistory
                        Ouroboros.Consensus.Ledger.Byron.Forge
+                       Ouroboros.Consensus.Ledger.Byron.HeaderValidation
                        Ouroboros.Consensus.Ledger.Byron.Integrity
                        Ouroboros.Consensus.Ledger.Byron.Ledger
                        Ouroboros.Consensus.Ledger.Byron.Mempool
+                       Ouroboros.Consensus.Ledger.Byron.NetworkProtocolVersion
                        Ouroboros.Consensus.Ledger.Byron.Orphans
                        Ouroboros.Consensus.Ledger.Byron.PBFT
+                       Ouroboros.Consensus.Ledger.Byron.Serialisation
                        Ouroboros.Consensus.Ledger.ByronSpec
                        Ouroboros.Consensus.Ledger.ByronSpec.Accessors
                        Ouroboros.Consensus.Ledger.ByronSpec.Block
@@ -90,7 +93,8 @@ library
                        Ouroboros.Consensus.Node
                        Ouroboros.Consensus.Node.DbMarker
                        Ouroboros.Consensus.Node.ErrorPolicy
-                       Ouroboros.Consensus.Node.ExitFailure
+                       Ouroboros.Consensus.Node.Exit
+                       Ouroboros.Consensus.Node.NetworkProtocolVersion
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.ProtocolInfo.Abstract
                        Ouroboros.Consensus.Node.ProtocolInfo.Byron
@@ -98,6 +102,7 @@ library
                        Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT
                        Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos
                        Ouroboros.Consensus.Node.ProtocolInfo.Mock.PraosRule
+                       Ouroboros.Consensus.Node.Recovery
                        Ouroboros.Consensus.Node.Run
                        Ouroboros.Consensus.Node.Run.Abstract
                        Ouroboros.Consensus.Node.Run.Byron
@@ -138,6 +143,7 @@ library
                        Ouroboros.Consensus.Util.Singletons
                        Ouroboros.Consensus.Util.STM
                        Ouroboros.Consensus.Util.TraceSize
+                       Ouroboros.Consensus.Util.Versioned
 
                        -- Storing things on disk
                        Ouroboros.Storage.Common
@@ -232,10 +238,10 @@ library
                        ViewPatterns
 
   build-depends:       base              >=4.9 && <4.13,
-                       ouroboros-network,
                        network-mux,
                        typed-protocols,
-                       typed-protocols-cbor,
+                       ouroboros-network-framework,
+                       ouroboros-network,
                        io-sim-classes,
                        contra-tracer,
 
@@ -301,11 +307,10 @@ test-suite test-consensus
                     Test.Consensus.Ledger.Mock
                     Test.Consensus.LocalStateQueryServer
                     Test.Consensus.Mempool
-                    Test.Consensus.Mempool.TestBlock
-                    Test.Consensus.Mempool.TestTx
                     Test.Consensus.Node
                     Test.Consensus.Protocol.PBFT
                     Test.Consensus.ResourceRegistry
+                    Test.Consensus.Util.Versioned
                     Test.ThreadNet.BFT
                     Test.ThreadNet.DualPBFT
                     Test.ThreadNet.General

@@ -33,6 +33,7 @@ import           Cardano.Crypto.KES (MockKES, NeverKES, SigKES,
                      pattern SigMockKES, pattern SigSimpleKES,
                      pattern SignKeyMockKES, SignedKES (..), SimpleKES,
                      pattern VerKeyMockKES)
+import           Cardano.Slotting.Slot (WithOrigin (..))
 
 import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
                      HeaderHash, SlotNo (..))
@@ -153,6 +154,10 @@ instance Condense SlotNo where
 instance Condense (HeaderHash b) => Condense (ChainHash b) where
   condense GenesisHash   = "genesis"
   condense (BlockHash h) = condense h
+
+instance Condense a => Condense (WithOrigin a) where
+  condense Origin = "origin"
+  condense (At a) = condense a
 
 {-------------------------------------------------------------------------------
   Orphans for cardano-crypto-wrapper

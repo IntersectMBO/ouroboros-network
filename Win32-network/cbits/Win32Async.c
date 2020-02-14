@@ -63,7 +63,6 @@ void HsAsyncRead(HANDLE handle, void *buf, DWORD size,
                  HsStablePtr userData)
 {
     PER_IO_DATA *perIoDataPtr;
-    DWORD numBytesRead;
     BOOL res;
     
     perIoDataPtr =
@@ -75,8 +74,7 @@ void HsAsyncRead(HANDLE handle, void *buf, DWORD size,
         perIoDataPtr->Overlapped.Offset = 0;
         perIoDataPtr->Overlapped.OffsetHigh = 0;
         perIoDataPtr->UserData = userData;
-        res = ReadFile(handle, buf, size, &numBytesRead,
-                  &(perIoDataPtr->Overlapped));
+        res = ReadFile(handle, buf, size, NULL, &(perIoDataPtr->Overlapped));
         if (!res) {
             DWORD error;
             error = GetLastError();

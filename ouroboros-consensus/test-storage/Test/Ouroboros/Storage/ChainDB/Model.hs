@@ -30,7 +30,6 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , lastK
   , tipBlock
   , tipPoint
-  , tipBlockNo
   , getBlock
   , getBlockByPoint
   , getBlockComponentByPoint
@@ -87,9 +86,9 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
-import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
-                     ChainHash (..), pattern GenesisPoint, HasHeader,
-                     HeaderHash, MaxSlotNo (..), Point, SlotNo, pointSlot)
+import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
+                     pattern GenesisPoint, HasHeader, HeaderHash,
+                     MaxSlotNo (..), Point, SlotNo, pointSlot)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -111,6 +110,7 @@ import           Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB,
                      IteratorResult (..), LedgerCursorFailure (..),
                      StreamFrom (..), StreamTo (..), UnknownRange (..),
                      validBounds)
+import           Ouroboros.Storage.ChainDB.Impl.ChainSel (olderThanK)
 
 type IteratorId = Int
 
@@ -212,9 +212,6 @@ tipBlock = Chain.head . currentChain
 tipPoint :: HasHeader blk => Model blk -> Point blk
 tipPoint = maybe Block.genesisPoint Block.blockPoint . tipBlock
 
-tipBlockNo :: HasHeader blk => Model blk -> BlockNo
-tipBlockNo = maybe Block.genesisBlockNo Block.blockNo . tipBlock
-
 lastK :: HasHeader a
       => SecurityParam
       -> (blk -> a)  -- ^ Provided since `AnchoredFragment` is not a functor
@@ -232,7 +229,7 @@ lastK (SecurityParam k) f =
 -- In the real implementation this will correspond to the block number of the
 -- block at the tip of the Immutable DB.
 immutableBlockNo :: HasHeader blk
-                 => SecurityParam -> Model blk -> Block.BlockNo
+                 => SecurityParam -> Model blk -> WithOrigin Block.BlockNo
 immutableBlockNo (SecurityParam k) =
         Chain.headBlockNo
       . Chain.drop (fromIntegral k)
@@ -308,7 +305,7 @@ empty initLedger = Model {
 -- Besides updating the 'currentSlot', future blocks are also added to the
 -- model.
 advanceCurSlot
-  :: forall blk. ProtocolLedgerView blk
+  :: forall blk. (ProtocolLedgerView blk, ModelSupportsBlock blk)
   => NodeConfig (BlockProtocol blk)
   -> SlotNo  -- ^ The new current slot
   -> Model blk -> Model blk
@@ -330,18 +327,14 @@ advanceCurSlot cfg curSlot m =
     advance :: SlotNo -> Model blk -> Model blk
     advance slot m' = m' { currentSlot = slot `max` currentSlot m' }
 
-addBlock :: forall blk. ProtocolLedgerView blk
+addBlock :: forall blk. (ProtocolLedgerView blk, ModelSupportsBlock blk)
          => NodeConfig (BlockProtocol blk)
          -> blk
          -> Model blk -> Model blk
 addBlock cfg blk m
     -- If the block is as old as the tip of the ImmutableDB, i.e. older than
-    -- @k@, we ignore it, as we can never switch to it. TODO what about EBBs?
-  | Block.blockNo blk <= immutableBlockNo secParam m
-    -- Unless we're adding the first block to the empty chain: the empty chain
-    -- has the same block number as the genesis EBB, i.e. 0, so we don't want
-    -- to ignore it in this case.
-  , not addingGenesisEBBToEmptyDB
+    -- @k@, we ignore it, as we can never switch to it.
+  | olderThanK hdr (isEBB hdr) immBlockNo
   = m
     -- The block is from the future, don't add it now, but remember when to
     -- add it.
@@ -368,8 +361,9 @@ addBlock cfg blk m
   where
     secParam = protocolSecurityParam cfg
 
-    addingGenesisEBBToEmptyDB = tipPoint m == GenesisPoint
-                             && Block.blockNo blk == Block.genesisBlockNo
+    immBlockNo = immutableBlockNo secParam m
+
+    hdr = getHeader blk
 
     slot = Block.blockSlot blk
 
@@ -400,7 +394,7 @@ addBlock cfg blk m
          Chain.toAnchoredFragment . fst)
         candidates
 
-addBlocks :: ProtocolLedgerView blk
+addBlocks :: (ProtocolLedgerView blk, ModelSupportsBlock blk)
           => NodeConfig (BlockProtocol blk)
           -> [blk]
           -> Model blk -> Model blk

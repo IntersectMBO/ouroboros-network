@@ -45,7 +45,7 @@ data MockState blk = MockState {
 deriving instance Serialise (HeaderHash blk) => Serialise (MockState blk)
 
 data MockError blk =
-    MockInvalidInputs InvalidInputs
+    MockUtxoError UtxoError
   | MockInvalidHash (ChainHash blk) (ChainHash blk)
   deriving (Generic, NoUnexpectedThunks)
 
@@ -53,34 +53,34 @@ deriving instance StandardHash blk => Show (MockError blk)
 deriving instance StandardHash blk => Eq   (MockError blk)
 deriving instance Serialise (HeaderHash blk) => Serialise (MockError blk)
 
-updateMockState :: ( Monad m
-                  , GetHeader blk
-                  , HasHeader (Header blk)
-                  , StandardHash blk
-                  , HasUtxo blk
-                  )
+updateMockState :: ( GetHeader blk
+                   , HasHeader (Header blk)
+                   , StandardHash blk
+                   , HasUtxo blk
+                   )
                 => blk
                 -> MockState blk
-                -> ExceptT (MockError blk) m (MockState blk)
+                -> Except (MockError blk) (MockState blk)
 updateMockState b st = do
     st' <- updateMockTip (getHeader b) st
     updateMockUTxO b st'
 
-updateMockTip :: (Monad m, HasHeader (Header blk), StandardHash blk)
+updateMockTip :: (HasHeader (Header blk), StandardHash blk)
               => Header blk
               -> MockState blk
-              -> ExceptT (MockError blk) m (MockState blk)
-updateMockTip hdr (MockState u c t) = ExceptT $ return $
-    if headerPrevHash hdr == pointHash t
-      then Right $ MockState u c (headerPoint hdr)
-      else Left  $ MockInvalidHash (headerPrevHash hdr) (pointHash t)
+              -> Except (MockError blk) (MockState blk)
+updateMockTip hdr (MockState u c t)
+    | headerPrevHash hdr == pointHash t
+    = return $ MockState u c (headerPoint hdr)
+    | otherwise
+    = throwError $ MockInvalidHash (headerPrevHash hdr) (pointHash t)
 
-updateMockUTxO :: (Monad m, HasUtxo a)
+updateMockUTxO :: HasUtxo a
                => a
                -> MockState blk
-               -> ExceptT (MockError blk) m (MockState blk)
+               -> Except (MockError blk) (MockState blk)
 updateMockUTxO b (MockState u c t) = do
-    u' <- withExceptT MockInvalidInputs $ updateUtxo b u
+    u' <- withExcept MockUtxoError $ updateUtxo b u
     return $ MockState u' (c `Set.union` confirmed b) t
 
 {-------------------------------------------------------------------------------

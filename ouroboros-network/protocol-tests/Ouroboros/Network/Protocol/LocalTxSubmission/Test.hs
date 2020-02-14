@@ -31,8 +31,8 @@ import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Proofs
-import           Network.TypedProtocol.Codec.Cbor hiding (prop_codec)
 
+import           Ouroboros.Network.Codec hiding (prop_codec)
 import           Ouroboros.Network.Channel
 
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client

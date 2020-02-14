@@ -4,22 +4,25 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE ViewPatterns               #-}
-
+-- | Intended for qualified import.
+--
+-- > import           Ouroboros.Consensus.Mempool.TxSeq (TxSeq (..))
+-- > import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 module Ouroboros.Consensus.Mempool.TxSeq (
     TicketNo(..)
   , TxTicket(..)
   , TxSeq(Empty, (:>), (:<))
-  , toTxSeq
-  , fromTxSeq
-  , fromTxTickets
-  , txTickets
+  , fromList
+  , toList
+  , toTuples
   , lookupByTicketNo
   , splitAfterTicketNo
   , splitAfterTxSize
   , zeroTicketNo
-  , filterTxs
+  , toMempoolSize
 
   -- * Reference implementations for testing
   , splitAfterTxSizeSpec
@@ -32,7 +35,10 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
+
+import           Ouroboros.Consensus.Mempool.API (MempoolSize (..))
 
 {-------------------------------------------------------------------------------
   Mempool transaction sequence as a finger tree
@@ -199,7 +205,7 @@ splitAfterTxSize (TxSeq txs) n =
 -- expected.
 splitAfterTxSizeSpec :: TxSeq tx -> TxSizeInBytes -> (TxSeq tx, TxSeq tx)
 splitAfterTxSizeSpec txseq n =
-    mapTuple fromTxTickets $ go 0 [] (txTickets txseq)
+    mapTuple fromList $ go 0 [] (toList txseq)
   where
     mapTuple :: (a -> b) -> (a, a) -> (b, b)
     mapTuple f (x, y) = (f x, f y)
@@ -218,34 +224,26 @@ splitAfterTxSizeSpec txseq n =
         | otherwise
         -> (reverse accTickets, t:ts)
 
--- | Given a list of triples consisting of transactions, ticket numbers, and
--- the transaction sizes in bytes, construct a 'TxSeq'.
-toTxSeq :: [(tx, TicketNo, TxSizeInBytes)] -> TxSeq tx
-toTxSeq ts = fromTxTickets $ map (uncurry3 TxTicket) ts
-  where
-    uncurry3 :: (a -> b -> c -> d) -> ((a, b, c) -> d)
-    uncurry3 f (a, b, c) = f a b c
-
 -- | Given a list of 'TxTicket's, construct a 'TxSeq'.
-fromTxTickets :: [TxTicket tx] -> TxSeq tx
-fromTxTickets = Foldable.foldl' (:>) Empty
+fromList :: [TxTicket tx] -> TxSeq tx
+fromList = Foldable.foldl' (:>) Empty
+
+-- | Convert a 'TxSeq' to a list of 'TxTicket's.
+toList :: TxSeq tx -> [TxTicket tx]
+toList (TxSeq ftree) = Foldable.toList ftree
 
 -- | Convert a 'TxSeq' to a list of pairs of transactions and their
 -- associated 'TicketNo's.
-fromTxSeq :: TxSeq tx -> [(tx, TicketNo)]
-fromTxSeq (TxSeq ftree) = fmap
-  (\ticket -> (txTicketTx ticket, txTicketNo ticket))
-  (Foldable.toList $ ftree)
+toTuples :: TxSeq tx -> [(tx, TicketNo)]
+toTuples (TxSeq ftree) = fmap
+    (\ticket -> (txTicketTx ticket, txTicketNo ticket))
+    (Foldable.toList ftree)
 
--- | \( O(n) \). Filter the 'TxSeq'.
-filterTxs :: (TxTicket tx -> Bool) -> TxSeq tx -> TxSeq tx
-filterTxs p (TxSeq ftree) =
-      TxSeq
-    . FingerTree.fromList
-    . filter p
-    . Foldable.toList
-    $ ftree
-
--- | Convert a 'TxSeq' to a list of 'TxTicket's.
-txTickets :: TxSeq tx -> [TxTicket tx]
-txTickets (TxSeq ftree) = Foldable.toList ftree
+-- | \( O(1) \). Return the 'MempoolSize' of the given 'TxSeq'.
+toMempoolSize :: TxSeq tx -> MempoolSize
+toMempoolSize (TxSeq ftree) = MempoolSize
+    { msNumTxs   = fromIntegral mSize
+    , msNumBytes = mSizeBytes
+    }
+  where
+    TxSeqMeasure { mSizeBytes, mSize } = FingerTree.measure ftree
