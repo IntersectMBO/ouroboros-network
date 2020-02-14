@@ -11,6 +11,7 @@ packages: ./typed-protocols
           ./io-sim
           ./io-sim-classes
           ./ntp-client
+          ./cardano-api
           ./Win32-network
 
 constraints:
