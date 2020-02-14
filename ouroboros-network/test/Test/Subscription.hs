@@ -62,14 +62,11 @@ import qualified Ouroboros.Network.Connections.Socket.Types as Connections
 import qualified Ouroboros.Network.Connections.Socket.Client as Socket (client)
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToNode hiding (dnsSubscriptionWorker,
-                     ipSubscriptionWorker)
+import           Ouroboros.Network.NodeToNode
 import           Ouroboros.Network.Socket as Socket
 import           Ouroboros.Network.Subscription
 import           Ouroboros.Network.Subscription.Dns
 import           Ouroboros.Network.Subscription.Ip
-import           Ouroboros.Network.Subscription.PeerState
-import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker as Subscription
 
 defaultMiniProtocolLimit :: Int64
@@ -483,7 +480,8 @@ prop_sub_io lr = ioProperty $ do
         -> LocalOnlyRequest provenance
         -> IO (Concurrent.Decision IO provenance reject (ConnectionHandle IO))
     initiatorCallback clientCountVar _ _ _ _ = do
-        tvar <- atomically $ newTVar Running
+        -- Type annotation is necessary. STM type family is ambiguous without it
+        tvar <- atomically (newTVar Running :: STM IO (StrictTVar IO ConnectionStatus))
         pure $ Concurrent.Accept $ \_ ->
           let action = atomically $ do
                 modifyTVar clientCountVar (\a -> a - 1)
