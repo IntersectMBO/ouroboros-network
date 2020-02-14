@@ -20,5 +20,5 @@ cabal new-run test-network-mux
 ```
 or
 ```
-nix-build -A nix-tools.tests.network-mux
+nix-build -A haskellPackages.network-mux.checks
 ```

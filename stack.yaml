@@ -20,6 +20,7 @@ flags:
     asserts: true
   ouroboros-network:
     asserts: true
+    cddl: false
   ouroboros-consensus:
     asserts: true
 

@@ -1,110 +1,71 @@
+############################################################################
+#
+# Hydra release jobset.
+#
+# The purpose of this file is to select jobs defined in default.nix and map
+# them to all supported build platforms.
+#
+############################################################################
 
-{ ouroboros-network ? { outPath = ./.; rev = "acdef"; }, ... }@args:
+# The project sources
+{ ouroroboros-network ? { outPath = ./.; rev = "abcdef"; }
+
+# Function arguments to pass to the project
+, projectArgs ? {
+    config = { allowUnfree = false; inHydra = true; };
+    gitrev = ouroroboros-network.rev;
+  }
+
+# The systems that the jobset will be built for.
+, supportedSystems ? [ "x86_64-linux" "x86_64-darwin" ]
+
+# The systems used for cross-compiling
+, supportedCrossSystems ? [ "x86_64-linux" ]
+
+# A Hydra option
+, scrubJobs ? true
+
+# Dependencies overrides
+, sourcesOverride ? {}
+
+# Import pkgs, including IOHK common nix lib
+, pkgs ? import ./nix { inherit sourcesOverride; }
+
+}:
+
+with (import pkgs.iohkNix.release-lib) {
+  inherit pkgs;
+  inherit supportedSystems supportedCrossSystems scrubJobs projectArgs;
+  packageSet = import ouroroboros-network;
+  gitrev = ouroroboros-network.rev;
+};
+
+with pkgs.lib;
+
 let
-  commonLib = import ./nix/iohk-common.nix;
-  default = import ./default.nix {};
+  testsSupportedSystems = [ "x86_64-linux" "x86_64-darwin" ];
+  # Recurse through an attrset, returning all test derivations in a list.
+  collectTests' = ds: filter (d: elem d.system testsSupportedSystems) (collect isDerivation ds);
+  # Adds the package name to the test derivations for windows-testing-bundle.nix
+  # (passthru.identifier.name does not survive mapTestOn)
+  collectTests = ds: concatLists (
+    mapAttrsToList (packageName: package:
+      map (drv: drv // { inherit packageName; }) (collectTests' package)
+    ) ds);
+    disabledTests = {
+      checks.tests.ouroboros-consensus.test-storage.x86_64-darwin = null;
+    };
 
-in commonLib.nix-tools.release-nix {
-  package-set-path = ./nix/nix-tools.nix;
-  _this = ouroboros-network;
+  inherit (systems.examples) mingwW64 musl64;
 
-  # packages from our stack.yaml or plan file (via nix/pkgs.nix) we
-  # are interested in building on CI via nix-tools.
-  packages = [ "typed-protocols"
-               "typed-protocols-examples"
-               "Win32-network"
-               "network-mux"
-               "ouroboros-network-framework"
-               "ouroboros-network"
-               "ouroboros-network-testing"
-               "ouroboros-consensus"
-               "io-sim"
-               "io-sim-classes"
-               "ntp-client"               
-             ];
+  jobs = {
+    native = recursiveUpdate (mapTestOn (__trace (__toJSON (packagePlatforms project)) (packagePlatforms project))) disabledTests;
+    "${mingwW64.config}" = mapTestOnCross mingwW64 (packagePlatformsCross project);
+    # TODO: fix broken evals
+    #musl64 = mapTestOnCross musl64 (packagePlatformsCross project);
+  } // (mkRequiredJob (
+      collectTests jobs.native.checks ++
+      collectTests jobs.native.benchmarks
+    ));
 
-  # The set of jobs we consider crutial for each CI run.
-  # if a single one of these fails, the build will be marked
-  # as failed.
-  #
-  # The names can be looked up on hydra when in doubt.
-  #
-  # custom jobs will follow their name as set forth in
-  # other-packages.
-  #
-  # nix-tools packages are prefixed with `nix-tools` and
-  # follow the following naming convention:
-  #
-  #   namespace                      optional cross compilation prefix                 build machine
-  #   .-------.                              .----------------.                .--------------------------.
-  #   nix-tools.{libs,exes,tests,benchmarks}.[x86_64-pc-mingw-]$pkg.$component.{x86_64-linux,x86_64-darwin}
-  #             '--------------------------'                    '-------------'
-  #                 component type                          cabal pkg and component*
-  #
-  # * note that for `libs`, $component is empty, as cabal only
-  #   provides a single library for packages right now.
-  # * note that for `exes`, $component is also empty, because it
-  #   it provides all exes under a single result directory.
-  #   To  specify a single executable component to build, use
-  #   `cexes` as component type.
-  # 
-  # Aggregates of all components of a given type accross all
-  # specified packages are also available:
-  #
-  #   namespace                              component aggregate type
-  #   .-------.                            .--------------------------.
-  #   nix-tools.[x86_64-pc-mingw-]packages-{libs,exes,tests,benchmarks}.{x86_64-linux,x86_64-darwin}
-  #             '----------------'                                      '--------------------------'
-  #     optional cross compilation prefix                                      build machine
-
-  #
-  # Example:
-  #
-  #   nix-tools.libs.ouroboros-consensus.x86_64-darwin -- will build the ouroboros-consensus library on and for macOS
-  #   nix-tools.libs.x86_64-pc-mingw32-ouroboros-network.x86_64-linux -- will build the ouroboros-network library on linux for windows.
-  #   nix-tools.tests.ouroboros-consensus.test-crypto.x86_64-linux -- will build and run the test-crypto from the
-  #                                                          ouroboros-consensus package on linux.
-  #   nix-tools.packages-tests.x86_64-linux -- will build and run all the tests from all the packages specified above.
-
-  extraBuilds = {
-    tests = default.tests;
-  };
-  # so that the shell is also built for darwin:
-  builds-on-supported-systems = [ "shell" ];
-  # FIXME: some jobs currently don't build:
-  disabled-jobs = [
-    # "Please use win32/Makefile.gcc instead.":
-    "nix-tools.tests.x86_64-pc-mingw32-ouroboros-network.test-cddl.x86_64-linux"
-    # hangs at Socket tests:
-    "nix-tools.tests.x86_64-pc-mingw32-ouroboros-network.test-network.x86_64-linux"
-    # 'Network.Socket.bind: permission denied (Operation not permitted)' at Socket tests:
-    "nix-tools.tests.ouroboros-network.test-network.x86_64-darwin"
-    # 'Storage.HasFS.HasFS' test failing:
-    "nix-tools.tests.ouroboros-consensus.test-storage.x86_64-darwin"
-    # Win32-network tests do not run using win64
-    "nix-tools.tests.x86_64-pc-mingw32-Win32-network.test-Win32-network.x84_64-linux"
-  ];
-  # The required jobs that must pass for ci not to fail:
-  required-name = "ouroboros-network-required-checks";
-  required-targets = jobs: [
-    # targets are specified using above nomenclature:
-    jobs.nix-tools.packages-libs.x86_64-linux
-    jobs.nix-tools.packages-tests.x86_64-linux
-    jobs.nix-tools.packages-exes.x86_64-linux
-    
-    jobs.nix-tools.packages-libs.x86_64-darwin
-    jobs.nix-tools.packages-tests.x86_64-darwin
-    jobs.nix-tools.packages-exes.x86_64-darwin
-
-    # windows cross compilation targets
-    jobs.nix-tools.x86_64-pc-mingw32-packages-libs.x86_64-linux
-    jobs.nix-tools.x86_64-pc-mingw32-packages-tests.x86_64-linux
-    jobs.nix-tools.x86_64-pc-mingw32-packages-exes.x86_64-linux
-
-    # additional required jobs:
-    jobs.shell.x86_64-linux
-    
-    # FIXME: https://github.com/NixOS/nix/issues/2311
-    # jobs.shell.x86_64-darwin
-  ];
-} (builtins.removeAttrs args ["ouroboros-network"])
+in jobs
