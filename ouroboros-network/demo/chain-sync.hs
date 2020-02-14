@@ -37,8 +37,6 @@ import           System.Random.SplitMix
 import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as CBOR
 
-import qualified Network.Socket as Socket
-
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.ChainFragment as CF
