@@ -51,6 +51,7 @@ library
                        Ouroboros.Consensus.Ledger.Extended
                        Ouroboros.Consensus.Ledger.SupportsProtocol
                        Ouroboros.Consensus.LocalStateQueryServer
+                       Ouroboros.Consensus.LocalTxSubmissionServer
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
                        Ouroboros.Consensus.Mempool.Impl
@@ -79,7 +80,6 @@ library
                        Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
                        Ouroboros.Consensus.Protocol.PBFT.Crypto
                        Ouroboros.Consensus.Protocol.Signed
-                       Ouroboros.Consensus.TxSubmission
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.AnchoredFragment
                        Ouroboros.Consensus.Util.CBOR

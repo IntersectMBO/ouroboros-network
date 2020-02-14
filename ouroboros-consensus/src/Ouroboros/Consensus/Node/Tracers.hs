@@ -30,10 +30,10 @@ import           Ouroboros.Consensus.ChainSyncClient (InvalidBlockReason,
                      TraceChainSyncClientEvent)
 import           Ouroboros.Consensus.ChainSyncServer (TraceChainSyncServerEvent)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.LocalTxSubmissionServer
+                     (TraceLocalTxSubmissionServerEvent (..))
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTx, GenTxId,
                      MempoolSize, TraceEventMempool)
-import           Ouroboros.Consensus.TxSubmission
-                     (TraceLocalTxSubmissionServerEvent (..))
 
 {-------------------------------------------------------------------------------
   All tracers of a node bundled together

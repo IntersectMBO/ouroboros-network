@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Ouroboros.Consensus.TxSubmission
+module Ouroboros.Consensus.LocalTxSubmissionServer
   ( localTxSubmissionServer
     -- * Trace events
   , TraceLocalTxSubmissionServerEvent (..)
