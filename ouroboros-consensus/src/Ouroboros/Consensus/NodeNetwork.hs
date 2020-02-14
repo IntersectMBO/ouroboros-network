@@ -194,6 +194,7 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncP
         localTxSubmissionServer
           (localTxSubmissionServerTracer tracers)
           getMempool
+          getRecentTxIds
     , phLocalStateQueryServer =
         localStateQueryServer
           (ChainDB.newLedgerCursor getChainDB)
