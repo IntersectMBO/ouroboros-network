@@ -35,7 +35,7 @@ module Network.Mux (
     ) where
 
 import           Data.Int (Int64)
-import           Data.Maybe (catMaybes)
+import           Data.Maybe (catMaybes, isJust)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Array
 import qualified Data.Set as Set
@@ -113,20 +113,22 @@ muxStart tracer (MuxApplication ptcls) bearer = do
 
     let jobs = muxerJob tq cnt
              : demuxerJob dispatchtbl
-             : catMaybes [ miniProtocolInitiatorJob cnt tq ptcl pix initQ respQ
+             : catMaybes [ miniProtocolInitiatorJob Nothing cnt tq ptcl pix initQ respQ
                          | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
-
+        ejsM = [ miniProtocolResponderJob (Just StartEagerly) cnt tq ptcl pix initQ respQ
+                         | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
         respondertbl = setupResponderTable
-                         [ miniProtocolResponderJob cnt tq ptcl pix initQ respQ
+                         [ miniProtocolResponderJob (Just StartOnDemand) cnt tq ptcl pix initQ respQ
                          | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
+        eagerIdxs = map fst $ filter (\ (_, a) -> isJust a) (zip [0..] ejsM)
 
     JobPool.withJobPool $ \jobpool -> do
-      mapM_ (JobPool.forkJob jobpool) jobs
+      mapM_ (JobPool.forkJob jobpool) $ jobs ++ (catMaybes ejsM)
       traceWith tracer (MuxTraceState Mature)
 
       -- Wait for the first job to terminate, successfully or otherwise.
       -- All the other jobs are shut down Upon completion of withJobPool.
-      monitor tracer jobpool dispatchtbl respondertbl
+      monitor tracer jobpool dispatchtbl respondertbl eagerIdxs
   where
     addProtocolQueues :: MuxMiniProtocol appType m a b
                       -> m ( MuxMiniProtocol appType m a b
@@ -189,7 +191,7 @@ muxStart tracer (MuxApplication ptcls) bearer = do
     selectInitiator (ResponderProtocolOnly                   _) = Nothing
     selectInitiator (InitiatorProtocolOnly         initiator)   = Just initiator
     selectInitiator (InitiatorAndResponderProtocol initiator _) = Just initiator
-    
+
     selectResponder :: RunMiniProtocol appType m a b -> Maybe (Channel m -> m b)
     selectResponder (ResponderProtocolOnly           responder) = Just responder
     selectResponder (InitiatorProtocolOnly         _)           = Nothing
@@ -198,6 +200,7 @@ muxStart tracer (MuxApplication ptcls) bearer = do
     miniProtocolJob
       :: (RunMiniProtocol appType m a b -> Maybe (Channel m -> m c))
       -> MiniProtocolMode
+      -> Maybe StartOnDemand
       -> StrictTVar m Int
       -> EgressQueue m
       -> MuxMiniProtocol appType m a b
@@ -205,7 +208,8 @@ muxStart tracer (MuxApplication ptcls) bearer = do
       -> StrictTVar m BL.ByteString
       -> StrictTVar m BL.ByteString
       -> Maybe (JobPool.Job m MuxJobResult)
-    miniProtocolJob selectRunner pmode cnt tq
+    miniProtocolJob _ _ (Just startOnDemand) _ _ ptcl _ _ _ | miniProtocolStartOnDemand ptcl /= startOnDemand = Nothing
+    miniProtocolJob selectRunner pmode _ cnt tq
                     MuxMiniProtocol {
                       miniProtocolNum    = pnum,
                       miniProtocolLimits = plimits,
@@ -256,11 +260,15 @@ monitor :: forall m. (MonadSTM m, MonadAsync m, MonadMask m)
         -> JobPool.JobPool m MuxJobResult
         -> MiniProtocolDispatch m
         -> MiniProtocolResponders m
+        -> [MiniProtocolIx]
         -> m ()
 monitor tracer jobpool
         (MiniProtocolDispatch _ dispatchtbl)
-        (MiniProtocolResponders respondertbl) =
-    go (Set.fromList . range . bounds $ respondertbl)
+        (MiniProtocolResponders onDemandTbl)
+        eagers =
+    let onDemandSet = Set.fromList . range . bounds $ onDemandTbl
+        eagerSet = Set.fromList eagers in
+    go (Set.difference onDemandSet eagerSet)
   where
     -- To do this second job it needs to keep track of which responder protocol
     -- threads are running.
@@ -303,7 +311,7 @@ monitor tracer jobpool
 
         -- Data has arrived on a channel for a mini-protocol that do not yet
         -- have a responder thread running. So we start it now.
-        Right ix | Just job <- respondertbl ! ix -> do
+        Right ix | Just job <- onDemandTbl ! ix -> do
          JobPool.forkJob jobpool job
          go (Set.delete ix idleResponders)
 

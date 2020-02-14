@@ -117,6 +117,9 @@ instance MiniProtocolLimits NodeToClientProtocols where
   maximumMessageSize  _ = 0xffffffff
   maximumIngressQueue _ = 0xffffffff
 
+instance MiniProtocolStartOnDemand NodeToClientProtocols where
+  startOnDemand _ = StartEagerly
+
 -- | Enumeration of node to client protocol versions.
 --
 data NodeToClientVersion = NodeToClientV_1

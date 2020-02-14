@@ -142,6 +142,8 @@ instance MiniProtocolLimits DemoProtocol0 where
   maximumMessageSize _ = maxBound
   maximumIngressQueue _ = maxBound
 
+instance MiniProtocolStartOnDemand DemoProtocol0 where
+  startOnDemand _ = StartEagerly
 
 clientPingPong :: Bool -> IO ()
 clientPingPong pipelined =
@@ -231,6 +233,8 @@ instance MiniProtocolLimits DemoProtocol1 where
   maximumMessageSize _ = maxBound
   maximumIngressQueue _ = maxBound
 
+instance MiniProtocolStartOnDemand DemoProtocol1 where
+  startOnDemand _ = StartEagerly
 
 clientPingPong2 :: IO ()
 clientPingPong2 =
@@ -329,6 +333,8 @@ instance MiniProtocolLimits DemoProtocol2 where
   maximumMessageSize _ = maxBound
   maximumIngressQueue _ = maxBound
 
+instance MiniProtocolStartOnDemand DemoProtocol2 where
+  startOnDemand _ = StartEagerly
 
 clientChainSync :: [FilePath] -> IO ()
 clientChainSync sockAddrs =
@@ -416,6 +422,8 @@ instance MiniProtocolLimits DemoProtocol3 where
   maximumMessageSize _ = maxBound
   maximumIngressQueue _ = maxBound
 
+instance MiniProtocolStartOnDemand DemoProtocol3 where
+  startOnDemand _ = StartEagerly
 
 clientBlockFetch :: [FilePath] -> IO ()
 clientBlockFetch sockAddrs = do

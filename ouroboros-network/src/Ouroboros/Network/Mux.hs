@@ -9,6 +9,8 @@ module Ouroboros.Network.Mux
   , ProtocolEnum (..)
   , MiniProtocolLimits (..)
   , MiniProtocolNum (..)
+  , MiniProtocolStartOnDemand (..)
+  , StartOnDemand (..)
   , runMuxPeer
   , simpleInitiatorApplication
   , simpleResponderApplication
@@ -65,8 +67,12 @@ class MiniProtocolLimits ptcl where
     maximumMessageSize :: ptcl -> Int64
     maximumIngressQueue :: ptcl -> Int64
 
+class MiniProtocolStartOnDemand ptcl where
+    startOnDemand :: ptcl -> StartOnDemand
+
 toApplication :: (Enum ptcl, Bounded ptcl,
-                  ProtocolEnum ptcl, MiniProtocolLimits ptcl)
+                  ProtocolEnum ptcl, MiniProtocolLimits ptcl,
+                  MiniProtocolStartOnDemand ptcl)
               => OuroborosApplication appType peerid ptcl m LBS.ByteString a b
               -> peerid
               -> MuxApplication appType m a b
@@ -78,6 +84,7 @@ toApplication (OuroborosInitiatorApplication f) peerid =
                                  Mux.maximumMessageSize  = maximumMessageSize ptcl,
                                  Mux.maximumIngressQueue = maximumIngressQueue ptcl
                                },
+          miniProtocolStartOnDemand = startOnDemand ptcl,
           miniProtocolRun    =
             InitiatorProtocolOnly
               (\channel -> f peerid ptcl (fromChannel channel))
@@ -92,6 +99,7 @@ toApplication (OuroborosResponderApplication f) peerid =
                                  Mux.maximumMessageSize  = maximumMessageSize ptcl,
                                  Mux.maximumIngressQueue = maximumIngressQueue ptcl
                                },
+          miniProtocolStartOnDemand  = startOnDemand ptcl,
           miniProtocolRun    =
             ResponderProtocolOnly
               (\channel -> f peerid ptcl (fromChannel channel))
@@ -106,6 +114,7 @@ toApplication (OuroborosInitiatorAndResponderApplication f g) peerid =
                                  Mux.maximumMessageSize  = maximumMessageSize ptcl,
                                  Mux.maximumIngressQueue = maximumIngressQueue ptcl
                                },
+          miniProtocolStartOnDemand  = startOnDemand ptcl,
           miniProtocolRun    =
             InitiatorAndResponderProtocol
               (\channel -> f peerid ptcl (fromChannel channel))

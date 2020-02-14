@@ -122,6 +122,9 @@ instance Mx.MiniProtocolLimits TestProtocols1 where
   maximumMessageSize ChainSyncPr  = defaultMiniProtocolLimit
   maximumIngressQueue ChainSyncPr = defaultMiniProtocolLimit
 
+instance MiniProtocolStartOnDemand TestProtocols1 where
+  startOnDemand _ = StartEagerly
+
 -- |
 -- Allow to run a singly req-resp protocol.
 --
@@ -134,6 +137,9 @@ instance Mx.ProtocolEnum TestProtocols2 where
 instance Mx.MiniProtocolLimits TestProtocols2 where
   maximumMessageSize ReqRespPr  = defaultMiniProtocolLimit
   maximumIngressQueue ReqRespPr = defaultMiniProtocolLimit
+
+instance MiniProtocolStartOnDemand TestProtocols2 where
+  startOnDemand _ = StartEagerly
 
 --
 -- Properties

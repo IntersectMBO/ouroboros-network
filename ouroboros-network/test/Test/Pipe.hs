@@ -79,6 +79,9 @@ data DemoProtocols = ChainSync
 instance ProtocolEnum DemoProtocols where
   fromProtocolEnum ChainSync = MiniProtocolNum 2
 
+instance MiniProtocolStartOnDemand DemoProtocols where
+  startOnDemand _ = StartEagerly
+
 instance MiniProtocolLimits DemoProtocols where
   maximumMessageSize ChainSync  = defaultMiniProtocolLimit
   maximumIngressQueue ChainSync = defaultMiniProtocolLimit

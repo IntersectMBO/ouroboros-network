@@ -77,6 +77,12 @@ instance MiniProtocolLimits TestProtocols1 where
   maximumMessageSize ChainSyncPr  = defaultMiniProtocolLimit
   maximumIngressQueue ChainSyncPr = defaultMiniProtocolLimit
 
+instance MiniProtocolStartOnDemand TestProtocols1 where
+  startOnDemand _ = StartEagerly
+
+instance MiniProtocolStartOnDemand TestProtocols2 where
+  startOnDemand _ = StartEagerly
+
 -- |
 -- Allow to run a singly req-resp protocol.
 --

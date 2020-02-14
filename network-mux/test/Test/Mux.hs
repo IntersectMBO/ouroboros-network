@@ -89,7 +89,7 @@ smallMiniProtocolLimit = 16*1024
 
 activeTracer :: forall m a. (MonadSay m, Show a) => Tracer m a
 activeTracer = nullTracer
---activeTracer = showTracing sayTracer
+--activeTracer = showTracing _sayTracer
 
 _sayTracer :: MonadSay m => Tracer m String
 _sayTracer = Tracer say
@@ -310,17 +310,19 @@ prop_mux_snd_recv messages = ioProperty $ do
 
     let clientApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_mp
+                          Mx.miniProtocolNum           = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits        = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun           = Mx.InitiatorProtocolOnly client_mp,
+                          Mx.miniProtocolStartOnDemand = Mx.StartEagerly
                         }
                       ]
 
         serverApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_mp
+                          Mx.miniProtocolNum           = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits        = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun           = Mx.ResponderProtocolOnly server_mp,
+                          Mx.miniProtocolStartOnDemand = Mx.StartEagerly
                         }
                       ]
 
@@ -439,27 +441,31 @@ prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
 
     let clientApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_mp0
+                          Mx.miniProtocolNum           = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits        = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun           = Mx.InitiatorProtocolOnly client_mp0,
+                          Mx.miniProtocolStartOnDemand = Mx.StartEagerly
                         }
                       , Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_mp1
+                          Mx.miniProtocolNum           = Mx.MiniProtocolNum 3,
+                          Mx.miniProtocolLimits        = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun           = Mx.InitiatorProtocolOnly client_mp1,
+                          Mx.miniProtocolStartOnDemand = Mx.StartEagerly
                         }
                       ]
 
         serverApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_mp0
+                          Mx.miniProtocolNum           = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits        = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun           = Mx.ResponderProtocolOnly server_mp0,
+                          Mx.miniProtocolStartOnDemand = Mx.StartOnDemand
                         }
                       , Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_mp1
+                          Mx.miniProtocolNum           = Mx.MiniProtocolNum 3,
+                          Mx.miniProtocolLimits        = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun           = Mx.ResponderProtocolOnly server_mp1,
+                          Mx.miniProtocolStartOnDemand = Mx.StartOnDemand
                         }
                       ]
 
@@ -515,27 +521,31 @@ prop_mux_starvation (Uneven response0 response1) =
 
     let clientApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_short
+                          Mx.miniProtocolNum           = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits        = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun           = Mx.InitiatorProtocolOnly client_short,
+                          Mx.miniProtocolStartOnDemand = Mx.StartEagerly
                         }
                       , Mx.MuxMiniProtocol  {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_long
+                          Mx.miniProtocolNum           = Mx.MiniProtocolNum 3,
+                          Mx.miniProtocolLimits        = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun           = Mx.InitiatorProtocolOnly client_long,
+                          Mx.miniProtocolStartOnDemand = Mx.StartEagerly
                         }
                       ]
 
         serverApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_short
+                          Mx.miniProtocolNum           = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits        = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun           = Mx.ResponderProtocolOnly server_short,
+                          Mx.miniProtocolStartOnDemand = Mx.StartOnDemand
                         }
                       , Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_long
+                          Mx.miniProtocolNum           = Mx.MiniProtocolNum 3,
+                          Mx.miniProtocolLimits        = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun           = Mx.ResponderProtocolOnly server_long,
+                          Mx.miniProtocolStartOnDemand = Mx.StartOnDemand
                         }
                       ]
 
@@ -641,9 +651,10 @@ prop_demux_sdu a = do
         -- triggered by a single segment.
         let server_mps = Mx.MuxApplication
                            [ Mx.MuxMiniProtocol {
-                               Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                               Mx.miniProtocolLimits = smallMiniProtocolLimits,
-                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (serverRsp stopVar)
+                               Mx.miniProtocolNum           = Mx.MiniProtocolNum 2,
+                               Mx.miniProtocolLimits        = smallMiniProtocolLimits,
+                               Mx.miniProtocolRun           = Mx.ResponderProtocolOnly (serverRsp stopVar),
+                               Mx.miniProtocolStartOnDemand = Mx.StartOnDemand
                              }
                            ]
 
@@ -667,9 +678,10 @@ prop_demux_sdu a = do
 
         let server_mps = Mx.MuxApplication
                            [ Mx.MuxMiniProtocol {
-                               Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                               Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (serverRsp stopVar)
+                               Mx.miniProtocolNum           = Mx.MiniProtocolNum 2,
+                               Mx.miniProtocolLimits        = defaultMiniProtocolLimits,
+                               Mx.miniProtocolRun           = Mx.ResponderProtocolOnly (serverRsp stopVar),
+                               Mx.miniProtocolStartOnDemand = Mx.StartOnDemand
                              }
                            ]
 
@@ -695,9 +707,10 @@ prop_demux_sdu a = do
 
         let server_mps = Mx.MuxApplication
                            [ Mx.MuxMiniProtocol {
-                               Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                               Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (serverRsp stopVar)
+                               Mx.miniProtocolNum           = Mx.MiniProtocolNum 2,
+                               Mx.miniProtocolLimits        = defaultMiniProtocolLimits,
+                               Mx.miniProtocolRun           = Mx.ResponderProtocolOnly (serverRsp stopVar),
+                               Mx.miniProtocolStartOnDemand = Mx.StartOnDemand
                              }
                            ]
 

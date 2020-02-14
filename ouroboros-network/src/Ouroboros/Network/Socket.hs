@@ -157,6 +157,7 @@ connectToNode
      , Show vNumber
      , Show ptcl
      , MiniProtocolLimits ptcl
+     , MiniProtocolStartOnDemand ptcl
      , Mx.HasInitiator appType ~ True
      )
   => VersionDataCodec extra CBOR.Term
@@ -210,6 +211,7 @@ connectToNode'
      , Show vNumber
      , Show ptcl
      , MiniProtocolLimits ptcl
+     , MiniProtocolStartOnDemand ptcl
      , Mx.HasInitiator appType ~ True
      )
   => VersionDataCodec extra CBOR.Term
@@ -281,6 +283,7 @@ beginConnection
        , Bounded ptcl
        , Show ptcl
        , MiniProtocolLimits ptcl
+       , MiniProtocolStartOnDemand ptcl
        , Ord vNumber
        , Enum vNumber
        , Serialise vNumber
@@ -428,6 +431,7 @@ runServerThread
        , Bounded ptcl
        , Show ptcl
        , MiniProtocolLimits ptcl
+       , MiniProtocolStartOnDemand ptcl
        , Ord vNumber
        , Enum vNumber
        , Serialise vNumber
@@ -522,6 +526,7 @@ withServerNode
        , Bounded ptcl
        , Show ptcl
        , MiniProtocolLimits ptcl
+       , MiniProtocolStartOnDemand ptcl
        , Ord vNumber
        , Enum vNumber
        , Serialise vNumber

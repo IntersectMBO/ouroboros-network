@@ -21,6 +21,7 @@ module Network.Mux.Types (
     , muxBearerAsControlChannel
     , MuxSDU (..)
     , RemoteClockModel (..)
+    , StartOnDemand (..)
     , remoteClockPrecision
     ) where
 
@@ -122,10 +123,13 @@ newtype MuxApplication (appType :: AppType) m a b =
 
 data MuxMiniProtocol (appType :: AppType) m a b =
      MuxMiniProtocol {
-       miniProtocolNum    :: !MiniProtocolNum,
-       miniProtocolLimits :: !MiniProtocolLimits,
-       miniProtocolRun    :: !(RunMiniProtocol appType m a b)
+       miniProtocolNum           :: !MiniProtocolNum,
+       miniProtocolLimits        :: !MiniProtocolLimits,
+       miniProtocolRun           :: !(RunMiniProtocol appType m a b),
+       miniProtocolStartOnDemand :: !StartOnDemand
      }
+
+data StartOnDemand = StartOnDemand | StartEagerly deriving Eq
 
 data RunMiniProtocol (appType :: AppType) m a b where
   InitiatorProtocolOnly

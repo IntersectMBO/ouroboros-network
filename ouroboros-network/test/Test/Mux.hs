@@ -69,6 +69,8 @@ instance Mx.MiniProtocolLimits TestProtocols where
 instance Mx.ProtocolEnum TestProtocols where
   fromProtocolEnum ChainSyncPr = Mx.MiniProtocolNum 2
 
+instance Mx.MiniProtocolStartOnDemand TestProtocols where
+  startOnDemand _ = Mx.StartEagerly
 
 demo :: forall m block.
         ( MonadAsync m

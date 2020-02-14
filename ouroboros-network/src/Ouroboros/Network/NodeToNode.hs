@@ -150,6 +150,10 @@ instance MiniProtocolLimits NodeToNodeProtocols where
   maximumMessageSize  _ = 0xffffffff
   maximumIngressQueue _ = 0xffffffff
 
+instance MiniProtocolStartOnDemand NodeToNodeProtocols where
+  startOnDemand TxSubmissionPtcl = StartEagerly
+  startOnDemand _                = StartOnDemand
+
 -- | Enumeration of node to node protocol versions.
 --
 data NodeToNodeVersion = NodeToNodeV_1
