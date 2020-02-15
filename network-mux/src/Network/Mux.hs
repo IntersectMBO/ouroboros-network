@@ -115,6 +115,8 @@ muxStart tracer (MuxApplication ptcls) bearer = do
              : demuxerJob dispatchtbl
              : catMaybes [ miniProtocolInitiatorJob cnt tq ptcl pix initQ respQ
                          | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
+            ++ catMaybes [ miniProtocolResponderJob cnt tq ptcl pix initQ respQ
+                         | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
 
         respondertbl = setupResponderTable
                          [ miniProtocolResponderJob cnt tq ptcl pix initQ respQ
@@ -260,7 +262,15 @@ monitor :: forall m. (MonadSTM m, MonadAsync m, MonadMask m)
 monitor tracer jobpool
         (MiniProtocolDispatch _ dispatchtbl)
         (MiniProtocolResponders respondertbl) =
-    go (Set.fromList . range . bounds $ respondertbl)
+    go Set.empty
+--  TODO: for the moment on-demand starting is disabled and all mini-protocol
+--  threads are started eagerly. Doing this properly involves distinguishing
+--  between on-demand and eager mini-protocols, but doing so independently of
+--  whether overall we established the bearer as an initiator or as a responder.
+--  The on-demand vs eager distinction can be derived from which peer(s) have
+--  agency in the initial state of each mini-protocol.
+--
+--  go (Set.fromList . range . bounds $ respondertbl)
   where
     -- To do this second job it needs to keep track of which responder protocol
     -- threads are running.
