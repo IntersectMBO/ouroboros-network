@@ -25,10 +25,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Concurrent (ThreadId)
 import           Control.Tracer
 
--- TODO: remove Mx prefixes
-import qualified Network.Mux as Mx hiding (MiniProtocolLimits(..))
-import           Ouroboros.Network.Mux as Mx
-
+import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
 
@@ -72,14 +69,20 @@ tests =
 defaultMiniProtocolLimit :: Int64
 defaultMiniProtocolLimit = 3000000
 
-data TestProtocols1 = ChainSyncPr
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance Mx.ProtocolEnum TestProtocols1 where
-  fromProtocolEnum ChainSyncPr = MiniProtocolNum 2
-
-instance Mx.MiniProtocolLimits TestProtocols1 where
-  maximumIngressQueue ChainSyncPr = defaultMiniProtocolLimit
+-- | The bundle of mini-protocols in our test protocol: only chain sync
+--
+testProtocols1 :: RunMiniProtocol appType bytes m a b
+               -> OuroborosApplication appType bytes m a b
+testProtocols1 chainSync =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolLimits = MiniProtocolLimits {
+                               maximumIngressQueue = defaultMiniProtocolLimit
+                             },
+        miniProtocolRun    = chainSync
+      }
+    ]
 
 
 --
@@ -111,9 +114,11 @@ demo chain0 updates = withIOManager $ \iocp -> do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        initiatorApp :: OuroborosApplication Mx.InitiatorApp TestProtocols1 BL.ByteString IO () Void
-        initiatorApp = simpleInitiatorApplication $
-          \ChainSyncPr ->
+        initiatorApp :: OuroborosApplication InitiatorApp BL.ByteString IO () Void
+        initiatorApp = testProtocols1 chainSyncInitator
+
+        chainSyncInitator =
+          InitiatorProtocolOnly $
               MuxPeer nullTracer
                       codecChainSync
                       (ChainSync.chainSyncClientPeer
@@ -123,9 +128,11 @@ demo chain0 updates = withIOManager $ \iocp -> do
         server :: ChainSync.ChainSyncServer block (Tip block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
-        responderApp :: OuroborosApplication Mx.ResponderApp TestProtocols1 BL.ByteString IO Void ()
-        responderApp = simpleResponderApplication $
-          \ChainSyncPr ->
+        responderApp :: OuroborosApplication ResponderApp BL.ByteString IO Void ()
+        responderApp = testProtocols1 chainSyncResponder
+
+        chainSyncResponder =
+          ResponderProtocolOnly $
             MuxPeer nullTracer
                     codecChainSync
                     (ChainSync.chainSyncServerPeer server)

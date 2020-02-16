@@ -37,8 +37,6 @@ import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 import           Control.Tracer
 
-import           Network.Mux
-
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
@@ -429,12 +427,12 @@ data NetworkApplication m peer localPeer
 initiatorNetworkApplication
   :: NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
   -> peer
-  -> OuroborosApplication InitiatorApp NodeToNodeProtocols bytes m a Void
+  -> OuroborosApplication InitiatorApp bytes m a Void
 initiatorNetworkApplication NetworkApplication {..} them =
-    OuroborosInitiatorApplication $ \ptcl -> case ptcl of
-      ChainSyncWithHeadersPtcl -> naChainSyncClient them
-      BlockFetchPtcl           -> naBlockFetchClient them
-      TxSubmissionPtcl         -> naTxSubmissionClient them
+    nodeToNodeProtocols
+      (InitiatorProtocolOnly (MuxPeerRaw (naChainSyncClient them)))
+      (InitiatorProtocolOnly (MuxPeerRaw (naBlockFetchClient them)))
+      (InitiatorProtocolOnly (MuxPeerRaw (naTxSubmissionClient them)))
 
 -- | A projection from 'NetworkApplication' to a server-side
 -- 'OuroborosApplication' for the node-to-node protocols.
@@ -442,12 +440,12 @@ initiatorNetworkApplication NetworkApplication {..} them =
 responderNetworkApplication
   :: NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
   -> peer
-  -> OuroborosApplication ResponderApp NodeToNodeProtocols bytes m Void a
+  -> OuroborosApplication ResponderApp bytes m Void a
 responderNetworkApplication NetworkApplication {..} them =
-    OuroborosResponderApplication $ \ptcl -> case ptcl of
-      ChainSyncWithHeadersPtcl -> naChainSyncServer them
-      BlockFetchPtcl           -> naBlockFetchServer them
-      TxSubmissionPtcl         -> naTxSubmissionServer them
+    nodeToNodeProtocols
+      (ResponderProtocolOnly (MuxPeerRaw (naChainSyncServer them)))
+      (ResponderProtocolOnly (MuxPeerRaw (naBlockFetchServer them)))
+      (ResponderProtocolOnly (MuxPeerRaw (naTxSubmissionServer them)))
 
 -- | A projection from 'NetworkApplication' to a server-side
 -- 'OuroborosApplication' for the node-to-client protocols.
@@ -455,11 +453,11 @@ responderNetworkApplication NetworkApplication {..} them =
 localResponderNetworkApplication
   :: NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
   -> localPeer
-  -> OuroborosApplication ResponderApp NodeToClientProtocols bytes m Void a
+  -> OuroborosApplication ResponderApp bytes m Void a
 localResponderNetworkApplication NetworkApplication {..} peer =
-    OuroborosResponderApplication $ \ptcl -> case ptcl of
-      ChainSyncWithBlocksPtcl -> naLocalChainSyncServer peer
-      LocalTxSubmissionPtcl   -> naLocalTxSubmissionServer peer
+    nodeToClientProtocols
+      (ResponderProtocolOnly (MuxPeerRaw (naLocalChainSyncServer peer)))
+      (ResponderProtocolOnly (MuxPeerRaw (naLocalTxSubmissionServer peer)))
 
 
 -- | Example function which creates consensus mux applications, this is useful

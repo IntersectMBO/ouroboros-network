@@ -9,7 +9,7 @@
 -- overall node to client protocol, as a collection of mini-protocols.
 --
 module Ouroboros.Network.NodeToClient (
-    NodeToClientProtocols(..)
+    nodeToClientProtocols
   , NodeToClientVersion (..)
   , NodeToClientVersionData (..)
   , DictVersion (..)
@@ -79,8 +79,6 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 
-import           Network.Mux hiding (MiniProtocolLimits(..))
-
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
 import           Ouroboros.Network.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Ouroboros.Network.Mux
@@ -100,28 +98,41 @@ import           Ouroboros.Network.Subscription.Ip (SubscriptionTrace (..))
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.IOManager
 
--- | An index type used with the mux to enumerate all the mini-protocols that
+-- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-client protocol.
 --
-data NodeToClientProtocols = ChainSyncWithBlocksPtcl
-                           | LocalTxSubmissionPtcl
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
--- | These are the actual wire format protocol numbers.
+-- This function specifies the wire format protocol numbers.
 --
--- These are chosen to not overlap with the node to node protocol numbers.
+-- They are chosen to not overlap with the node to node protocol numbers.
 -- This is not essential for correctness, but is helpful to allow a single
 -- shared implementation of tools that can analyse both protocols, e.g.
 -- wireshark plugins.
 --
-instance ProtocolEnum NodeToClientProtocols where
-  fromProtocolEnum ChainSyncWithBlocksPtcl = MiniProtocolNum 5
-  fromProtocolEnum LocalTxSubmissionPtcl   = MiniProtocolNum 6
+nodeToClientProtocols
+  :: RunMiniProtocol appType bytes m a b -- ^ localChainSync
+  -> RunMiniProtocol appType bytes m a b -- ^ localTxSubmission
+  -> OuroborosApplication appType bytes m a b
+nodeToClientProtocols localChainSync localTxSubmission =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 5,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = localChainSync
+      }
+    , MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 6,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = localTxSubmission
+      }
+    ]
 
-instance MiniProtocolLimits NodeToClientProtocols where
   -- TODO: provide sensible limits
   -- https://github.com/input-output-hk/ouroboros-network/issues/575
-  maximumIngressQueue _ = 0xffffffff
+maximumMiniProtocolLimits :: MiniProtocolLimits
+maximumMiniProtocolLimits =
+    MiniProtocolLimits {
+      maximumIngressQueue = 0xffffffff
+    }
 
 -- | Enumeration of node to client protocol versions.
 --
@@ -170,7 +181,7 @@ connectTo
   -> Versions NodeToClientVersion
               DictVersion
               (ConnectionId LocalAddress ->
-                 OuroborosApplication InitiatorApp NodeToClientProtocols BL.ByteString IO a b)
+                 OuroborosApplication InitiatorApp BL.ByteString IO a b)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
@@ -195,7 +206,7 @@ connectTo_V1
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
   -> (ConnectionId LocalAddress ->
-        OuroborosApplication InitiatorApp NodeToClientProtocols BL.ByteString IO a b)
+        OuroborosApplication InitiatorApp BL.ByteString IO a b)
   -- ^ 'OuroborosInitiatorApplication' which is run on an established connection
   -- using a multiplexer after the initial handshake protocol suceeds.
   -> FilePath
@@ -227,7 +238,7 @@ withServer
   -> LocalAddress
   -> Versions NodeToClientVersion DictVersion
               (ConnectionId LocalAddress ->
-                 OuroborosApplication appType NodeToClientProtocols BL.ByteString IO a b)
+                 OuroborosApplication appType BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState addr versions errPolicies =
@@ -258,7 +269,7 @@ withServer_V1
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
   -> (ConnectionId LocalAddress ->
-        OuroborosApplication appType NodeToClientProtocols BL.ByteString IO a b)
+        OuroborosApplication appType BL.ByteString IO a b)
   -- ^ applications which has the reponder side, i.e.
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
@@ -294,7 +305,6 @@ ncSubscriptionWorker
         (ConnectionId LocalAddress ->
            OuroborosApplication
              appType
-             NodeToClientProtocols
              BL.ByteString IO x y)
     -> IO Void
 ncSubscriptionWorker
@@ -334,7 +344,6 @@ ncSubscriptionWorker_V1
     -> (ConnectionId LocalAddress ->
           OuroborosApplication
             appType
-            NodeToClientProtocols
             BL.ByteString IO x y)
     -> IO Void
 ncSubscriptionWorker_V1

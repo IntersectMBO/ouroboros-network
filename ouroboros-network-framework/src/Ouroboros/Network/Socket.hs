@@ -175,25 +175,19 @@ handshakeProtocolNum = MiniProtocolNum 0
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode
-  :: forall appType ptcl vNumber extra a b fd addr.
-     ( ProtocolEnum ptcl
-     , Ord ptcl
-     , Enum ptcl
-     , Bounded ptcl
-     , Ord vNumber
+  :: forall appType vNumber extra fd addr a b.
+     ( Ord vNumber
      , Enum vNumber
      , Serialise vNumber
      , Typeable vNumber
      , Show vNumber
-     , Show ptcl
-     , MiniProtocolLimits ptcl
      , Mx.HasInitiator appType ~ True
      )
   => Snocket IO fd addr
   -> VersionDataCodec extra CBOR.Term
   -> NetworkConnectTracers addr vNumber
   -> Versions vNumber extra
-              (ConnectionId addr -> OuroborosApplication appType ptcl BL.ByteString IO a b)
+              (ConnectionId addr -> OuroborosApplication appType BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> Maybe addr
   -- ^ local address; the created socket will bind to it
@@ -221,25 +215,19 @@ connectToNode sn versionDataCodec tracers versions localAddr remoteAddr =
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode'
-  :: forall appType ptcl vNumber extra a b fd addr.
-     ( ProtocolEnum ptcl
-     , Ord ptcl
-     , Enum ptcl
-     , Bounded ptcl
-     , Ord vNumber
+  :: forall appType vNumber extra fd addr a b.
+     ( Ord vNumber
      , Enum vNumber
      , Serialise vNumber
      , Typeable vNumber
      , Show vNumber
-     , Show ptcl
-     , MiniProtocolLimits ptcl
      , Mx.HasInitiator appType ~ True
      )
   => Snocket IO fd addr
   -> VersionDataCodec extra CBOR.Term
   -> NetworkConnectTracers addr vNumber
   -> Versions vNumber extra
-              (ConnectionId addr -> OuroborosApplication appType ptcl BL.ByteString IO a b)
+              (ConnectionId addr -> OuroborosApplication appType BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> fd
   -> IO ()
@@ -267,25 +255,20 @@ connectToNode' sn versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHands
 
 -- Wraps a Socket inside a Snocket and calls connectToNode'
 connectToNodeSocket
-  :: forall appType ptcl vNumber extra a b.
-     ( ProtocolEnum ptcl
-     , Ord ptcl
-     , Enum ptcl
-     , Bounded ptcl
-     , Ord vNumber
+  :: forall appType vNumber extra a b.
+     ( Ord vNumber
      , Enum vNumber
      , Serialise vNumber
      , Typeable vNumber
      , Show vNumber
-     , Show ptcl
-     , MiniProtocolLimits ptcl
      , Mx.HasInitiator appType ~ True
      )
   => AssociateWithIOCP
   -> VersionDataCodec extra CBOR.Term
   -> NetworkConnectTracers Socket.SockAddr vNumber
   -> Versions vNumber extra
-              (ConnectionId Socket.SockAddr -> OuroborosApplication appType ptcl BL.ByteString IO a b)
+              (ConnectionId Socket.SockAddr ->
+                 OuroborosApplication appType BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
@@ -300,12 +283,12 @@ connectToNodeSocket iocp versionDataCodec tracers versions sd =
 -- |
 -- Wrapper for OuroborosResponderApplication and OuroborosInitiatorAndResponderApplication.
 --
-data SomeResponderApplication ptcl bytes m b where
+data SomeResponderApplication bytes m b where
      SomeResponderApplication
        :: forall appType ptcl m bytes a b.
           Mx.HasResponder appType ~ True
-       => (OuroborosApplication appType ptcl bytes m a b)
-       -> SomeResponderApplication ptcl bytes m b
+       => (OuroborosApplication appType bytes m a b)
+       -> SomeResponderApplication bytes m b
 
 -- |
 -- Accept or reject an incoming connection.  Each record contains the new state
@@ -318,19 +301,19 @@ data SomeResponderApplication ptcl bytes m b where
 -- connection, the whole connection will terminate.  We might want to be more
 -- admissible in this scenario: leave the server thread running and let only
 -- the client thread to die.
-data AcceptConnection st vNumber extra peerid ptcl m bytes where
+data AcceptConnection st vNumber extra peerid m bytes where
 
     AcceptConnection
-      :: forall st vNumber extra peerid ptcl m bytes b.
+      :: forall st vNumber extra peerid m bytes b.
          !st
       -> !peerid
-      -> Versions vNumber extra (peerid -> SomeResponderApplication ptcl bytes m b)
-      -> AcceptConnection st vNumber extra peerid ptcl m bytes
+      -> Versions vNumber extra (peerid -> SomeResponderApplication bytes m b)
+      -> AcceptConnection st vNumber extra peerid m bytes
 
     RejectConnection
       :: !st
       -> !peerid
-      -> AcceptConnection st vNumber extra peerid ptcl m bytes
+      -> AcceptConnection st vNumber extra peerid m bytes
 
 
 -- |
@@ -338,14 +321,8 @@ data AcceptConnection st vNumber extra peerid ptcl m bytes where
 -- of the incoming connection.
 --
 beginConnection
-    :: forall peerid ptcl vNumber extra addr st fd.
-       ( ProtocolEnum ptcl
-       , Ord ptcl
-       , Enum ptcl
-       , Bounded ptcl
-       , Show ptcl
-       , MiniProtocolLimits ptcl
-       , Ord vNumber
+    :: forall peerid vNumber extra addr st fd.
+       ( Ord vNumber
        , Enum vNumber
        , Serialise vNumber
        , Typeable vNumber
@@ -356,7 +333,7 @@ beginConnection
     -> Tracer IO (Mx.WithMuxBearer peerid (TraceSendRecv (Handshake vNumber CBOR.Term)))
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber extra peerid ptcl IO BL.ByteString))
+    -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber extra peerid IO BL.ByteString))
     -- ^ either accept or reject a connection.
     -> Server.BeginConnection addr fd st ()
 beginConnection sn muxTracer handshakeTracer versionDataCodec acceptVersion fn t addr st = do
@@ -486,14 +463,8 @@ cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
 -- Thin wrapper around @'Server.run'@.
 --
 runServerThread
-    :: forall ptcl vNumber extra fd addr b.
-       ( ProtocolEnum ptcl
-       , Ord ptcl
-       , Enum ptcl
-       , Bounded ptcl
-       , Show ptcl
-       , MiniProtocolLimits ptcl
-       , Ord vNumber
+    :: forall vNumber extra fd addr b.
+       ( Ord vNumber
        , Enum vNumber
        , Serialise vNumber
        , Typeable vNumber
@@ -507,7 +478,7 @@ runServerThread
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -> Versions vNumber extra
-                (ConnectionId addr -> SomeResponderApplication ptcl BL.ByteString IO b)
+                (ConnectionId addr -> SomeResponderApplication BL.ByteString IO b)
     -> ErrorPolicies
     -> IO Void
 runServerThread NetworkServerTracers { nstMuxTracer
@@ -583,14 +554,8 @@ runServerThread NetworkServerTracers { nstMuxTracer
 -- thread which runs the server.  This makes it useful for testing, where we
 -- need to guarantee that a socket is open before we try to connect to it.
 withServerNode
-    :: forall ptcl vNumber extra t fd addr b.
-       ( ProtocolEnum ptcl
-       , Ord ptcl
-       , Enum ptcl
-       , Bounded ptcl
-       , Show ptcl
-       , MiniProtocolLimits ptcl
-       , Ord vNumber
+    :: forall vNumber extra t fd addr b.
+       ( Ord vNumber
        , Enum vNumber
        , Serialise vNumber
        , Typeable vNumber
@@ -604,7 +569,7 @@ withServerNode
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -> Versions vNumber extra
-                (ConnectionId addr -> SomeResponderApplication ptcl BL.ByteString IO b)
+                (ConnectionId addr -> SomeResponderApplication BL.ByteString IO b)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.

@@ -51,7 +51,6 @@ import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Testing.ConcreteBlock
 
 import           Ouroboros.Network.Codec
-import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -118,19 +117,30 @@ rmIfExists path = do
   b <- doesFileExist path
   when b (removeFile path)
 
+-- TODO: provide sensible limits
+-- https://github.com/input-output-hk/ouroboros-network/issues/575
+maximumMiniProtocolLimits :: MiniProtocolLimits
+maximumMiniProtocolLimits =
+    MiniProtocolLimits {
+      maximumIngressQueue = maxBound
+    }
+
 
 --
 -- Chain sync demo
 --
 
-data DemoProtocol2 = ChainSync2
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance ProtocolEnum DemoProtocol2 where
-  fromProtocolEnum ChainSync2  = MiniProtocolNum 2
-
-instance MiniProtocolLimits DemoProtocol2 where
-  maximumIngressQueue _ = maxBound
+demoProtocol2
+  :: RunMiniProtocol appType bytes m a b -- ^ chainSync
+  -> OuroborosApplication appType bytes m a b
+demoProtocol2 chainSync =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = chainSync
+      }
+    ]
 
 
 clientChainSync :: [FilePath] -> IO ()
@@ -149,12 +159,11 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
         (localAddressFromPath sockPath)
 
   where
-    app :: OuroborosApplication InitiatorApp DemoProtocol2 LBS.ByteString IO () Void
-    app = simpleInitiatorApplication protocols
+    app :: OuroborosApplication InitiatorApp LBS.ByteString IO () Void
+    app = demoProtocol2 chainSync
 
-    protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols ChainSync2 =
+    chainSync =
+      InitiatorProtocolOnly $
       MuxPeer
         (contramap show stdoutTracer)
          codecChainSync
@@ -183,12 +192,11 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
   where
     prng = mkSMGen 0
 
-    app :: OuroborosApplication ResponderApp DemoProtocol2 LBS.ByteString IO Void ()
-    app = simpleResponderApplication protocols
+    app :: OuroborosApplication ResponderApp LBS.ByteString IO Void ()
+    app = demoProtocol2 chainSync
 
-    protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols ChainSync2 =
+    chainSync =
+      ResponderProtocolOnly $
       MuxPeer
         (contramap show stdoutTracer)
          codecChainSync
@@ -213,15 +221,23 @@ codecChainSync =
 -- Block fetch demo
 --
 
-data DemoProtocol3 = BlockFetch3 | ChainSync3
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance ProtocolEnum DemoProtocol3 where
-  fromProtocolEnum ChainSync3  = MiniProtocolNum 2
-  fromProtocolEnum BlockFetch3 = MiniProtocolNum 3
-
-instance MiniProtocolLimits DemoProtocol3 where
-  maximumIngressQueue _ = maxBound
+demoProtocol3
+  :: RunMiniProtocol appType bytes m a b -- ^ chainSync
+  -> RunMiniProtocol appType bytes m a b -- ^ blockFetch
+  -> OuroborosApplication appType bytes m a b
+demoProtocol3 chainSync blockFetch =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = chainSync
+      }
+    , MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 3,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = blockFetch
+      }
+    ]
 
 
 clientBlockFetch :: [FilePath] -> IO ()
@@ -233,14 +249,14 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
     currentChainVar    <- newTVarIO genesisChainFragment
 
     let app :: LocalConnectionId
-            -> OuroborosApplication InitiatorApp DemoProtocol3 LBS.ByteString IO () Void
-        app peerid = OuroborosInitiatorApplication (protocols peerid)
+            -> OuroborosApplication InitiatorApp LBS.ByteString IO () Void
+        app peerid = demoProtocol3 (chainSync peerid) (blockFetch peerid)
 
-        protocols :: LocalConnectionId
-                  -> DemoProtocol3
-                  -> Channel IO LBS.ByteString
-                  -> IO ()
-        protocols peerid ChainSync3 channel =
+        chainSync peerid =
+          InitiatorProtocolOnly $
+          -- TODO: this currently needs MuxPeerRaw because of the resource
+          -- bracket
+          MuxPeerRaw $ \channel ->
           bracket register unregister $ \chainVar ->
           runPeer
             nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
@@ -258,7 +274,11 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                              modifyTVar' candidateChainsVar
                                          (Map.delete peerid)
 
-        protocols peerid BlockFetch3 channel =
+        blockFetch peerid =
+          InitiatorProtocolOnly $
+          -- TODO: this currently needs MuxPeerRaw because of the resource
+          -- bracket
+          MuxPeerRaw $ \channel ->
           bracketFetchClient registry peerid $ \clientCtx ->
             runPipelinedPeer
               nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
@@ -389,18 +409,18 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
   where
     prng = mkSMGen 0
 
-    app :: OuroborosApplication ResponderApp DemoProtocol3 LBS.ByteString IO Void ()
-    app = simpleResponderApplication protocols
+    app :: OuroborosApplication ResponderApp LBS.ByteString IO Void ()
+    app = demoProtocol3 chainSync blockFetch
 
-    protocols :: DemoProtocol3 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols ChainSync3 =
+    chainSync =
+      ResponderProtocolOnly $
       MuxPeer
         (contramap show stdoutTracer)
          codecChainSync
         (ChainSync.chainSyncServerPeer (chainSyncServer prng))
 
-    protocols BlockFetch3 =
+    blockFetch =
+      ResponderProtocolOnly $
       MuxPeer
         (contramap show stdoutTracer)
          codecBlockFetch

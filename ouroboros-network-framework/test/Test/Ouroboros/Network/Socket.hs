@@ -51,7 +51,7 @@ import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 -- TODO: remove Mx prefixes
-import           Ouroboros.Network.Mux as Mx
+import           Ouroboros.Network.Mux
 import qualified Network.Mux as Mx (MuxError(..), MuxErrorType(..), muxStart)
 import qualified Network.Mux.Bearer.Socket as Mx (socketAsMuxBearer)
 
@@ -102,26 +102,21 @@ activeMuxTracer = nullTracer
 defaultMiniProtocolLimit :: Int64
 defaultMiniProtocolLimit = 3000000
 
-data TestProtocols1 = ChainSyncPr
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance Mx.ProtocolEnum TestProtocols1 where
-  fromProtocolEnum ChainSyncPr = MiniProtocolNum 2
-
-instance Mx.MiniProtocolLimits TestProtocols1 where
-  maximumIngressQueue ChainSyncPr = defaultMiniProtocolLimit
-
 -- |
 -- Allow to run a singly req-resp protocol.
 --
-data TestProtocols2 = ReqRespPr
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance Mx.ProtocolEnum TestProtocols2 where
-  fromProtocolEnum ReqRespPr = MiniProtocolNum 4
-
-instance Mx.MiniProtocolLimits TestProtocols2 where
-  maximumIngressQueue ReqRespPr = defaultMiniProtocolLimit
+testProtocols2 :: RunMiniProtocol appType bytes m a b
+               -> OuroborosApplication appType bytes m a b
+testProtocols2 reqResp =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 4,
+        miniProtocolLimits = MiniProtocolLimits {
+                               maximumIngressQueue = defaultMiniProtocolLimit
+                             },
+        miniProtocolRun    = reqResp
+      }
+    ]
 
 
 --
@@ -198,9 +193,15 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
     siblingVar <- newTVarM 2
 
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication ResponderApp TestProtocols2 BL.ByteString IO Void ()
-        responderApp = OuroborosResponderApplication $
-          \ReqRespPr channel -> do
+        responderApp :: OuroborosApplication ResponderApp BL.ByteString IO Void ()
+        responderApp = testProtocols2 reqRespResponder
+
+        reqRespResponder =
+          ResponderProtocolOnly $
+          -- TODO: For the moment this needs MuxPeerRaw because it has to
+          -- do something with the result after the protocol is run.
+          -- This should be replaced with use of the handles.
+          MuxPeerRaw $ \channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
                          channel
@@ -209,10 +210,15 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
             waitSibling siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: ConnectionId Socket.SockAddr
-                     -> OuroborosApplication InitiatorApp TestProtocols2 BL.ByteString IO () Void
-        initiatorApp _peerid = OuroborosInitiatorApplication $
-          \ReqRespPr channel -> do
+        initiatorApp :: OuroborosApplication InitiatorApp BL.ByteString IO () Void
+        initiatorApp = testProtocols2 reqRespInitiator
+
+        reqRespInitiator =
+          InitiatorProtocolOnly $
+          -- TODO: For the moment this needs MuxPeerRaw because it has to
+          -- do something with the result after the protocol is run.
+          -- This should be replaced with use of the handles.
+          MuxPeerRaw $ \channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
                          channel
@@ -236,7 +242,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
             snocket
             cborTermVersionDataCodec
             (NetworkConnectTracers activeMuxTracer nullTracer)
-            (unversionedProtocol initiatorApp)
+            (unversionedProtocol (\_peerid -> initiatorApp))
             (Just initiatorAddr)
             responderAddr
           atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
@@ -270,9 +276,15 @@ prop_socket_recv_close f _ =
 
     sv   <- newEmptyTMVarM
 
-    let app :: OuroborosApplication ResponderApp TestProtocols2 BL.ByteString IO Void ()
-        app = OuroborosResponderApplication $
-          \ReqRespPr channel -> do
+    let app :: OuroborosApplication ResponderApp BL.ByteString IO Void ()
+        app = testProtocols2 reqRespResponder
+
+        reqRespResponder =
+          ResponderProtocolOnly $
+          -- TODO: For the moment this needs MuxPeerRaw because it has to
+          -- do something with the result after the protocol is run.
+          -- This should be replaced with use of the handles.
+          MuxPeerRaw $ \channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
                          channel
@@ -335,24 +347,28 @@ prop_socket_client_connect_error _ xs =
 
     cv <- newEmptyTMVarM
 
-    let app :: ConnectionId Socket.SockAddr
-            -> OuroborosApplication InitiatorApp TestProtocols2 BL.ByteString IO () Void
-        app _peerid = OuroborosInitiatorApplication $
-                \ReqRespPr channel -> do
-                  _ <- runPeer nullTracer
-                          ReqResp.codecReqResp
-                          channel
-                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs)
-                                  :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO [Int])
-                  atomically $ putTMVar cv ()
+    let app :: OuroborosApplication InitiatorApp BL.ByteString IO () Void
+        app = testProtocols2 reqRespInitiator
 
+        reqRespInitiator =
+          InitiatorProtocolOnly $
+          -- TODO: For the moment this needs MuxPeerRaw because it has to
+          -- do something with the result after the protocol is run.
+          -- This should be replaced with use of the handles.
+          MuxPeerRaw $ \channel -> do
+            _ <- runPeer nullTracer
+                    ReqResp.codecReqResp
+                    channel
+                    (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs)
+                            :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO [Int])
+            atomically $ putTMVar cv ()
 
     (res :: Either IOException Bool)
       <- try $ False <$ connectToNode
         (socketSnocket iomgr)
         cborTermVersionDataCodec
         nullNetworkConnectTracers
-        (unversionedProtocol app)
+        (unversionedProtocol (\_peerid -> app))
         (Just $ Socket.addrAddress clientAddr)
         (Socket.addrAddress serverAddr)
 

@@ -37,13 +37,9 @@ import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToClient ( NodeToClientProtocols (..)
-                                                , NodeToClientVersion (..)
-                                                )
+import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..) )
 import qualified Ouroboros.Network.NodeToClient as NodeToClient
-import           Ouroboros.Network.NodeToNode ( NodeToNodeProtocols (..)
-                                              , NodeToNodeVersion (..)
-                                              )
+import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
 import           Ouroboros.Network.Socket ( ConnectionId (..)
                                           , NetworkMutableState
@@ -99,7 +95,6 @@ data DiffusionApplications = DiffusionApplications {
                                        (ConnectionId SockAddr ->
                                           OuroborosApplication
                                             ResponderApp
-                                            NodeToNodeProtocols
                                             ByteString IO Void ())
       -- ^ NodeToNode reposnder application (server role)
 
@@ -109,7 +104,6 @@ data DiffusionApplications = DiffusionApplications {
                                        (ConnectionId SockAddr ->
                                           OuroborosApplication
                                             InitiatorApp
-                                            NodeToNodeProtocols
                                             ByteString IO () Void)
       -- ^ NodeToNode initiator application (client role)
 
@@ -119,7 +113,6 @@ data DiffusionApplications = DiffusionApplications {
                                        (ConnectionId SockAddr ->
                                           OuroborosApplication
                                             ResponderApp
-                                            NodeToClientProtocols
                                             ByteString IO Void ())
       -- ^ NodeToClient responder applicaton (server role)
 

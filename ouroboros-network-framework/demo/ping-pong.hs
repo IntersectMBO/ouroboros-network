@@ -23,7 +23,6 @@ import System.Directory
 import System.Environment
 import System.Exit
 
-import Ouroboros.Network.Codec
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Mux
@@ -72,20 +71,29 @@ rmIfExists path = do
   b <- doesFileExist path
   when b (removeFile path)
 
+-- TODO: provide sensible limits
+-- https://github.com/input-output-hk/ouroboros-network/issues/575
+maximumMiniProtocolLimits :: MiniProtocolLimits
+maximumMiniProtocolLimits =
+    MiniProtocolLimits {
+      maximumIngressQueue = maxBound
+    }
 
 
 --
 -- Ping pong demo
 --
 
-data DemoProtocol0 = PingPong0
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance ProtocolEnum DemoProtocol0 where
-  fromProtocolEnum PingPong0 = MiniProtocolNum 2
-
-instance MiniProtocolLimits DemoProtocol0 where
-  maximumIngressQueue _ = maxBound
+demoProtocol0 :: RunMiniProtocol appType bytes m a b
+              -> OuroborosApplication appType bytes m a b
+demoProtocol0 pingPong =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = pingPong
+      }
+    ]
 
 
 clientPingPong :: Bool -> IO ()
@@ -99,18 +107,18 @@ clientPingPong pipelined =
       Nothing
       defaultLocalSocketAddr
   where
-    app :: OuroborosApplication InitiatorApp DemoProtocol0 LBS.ByteString IO () Void
-    app = simpleInitiatorApplication protocols
+    app :: OuroborosApplication InitiatorApp LBS.ByteString IO () Void
+    app = demoProtocol0 pingPongInitiator
 
-    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols PingPong0 | pipelined =
+    pingPongInitiator | pipelined =
+      InitiatorProtocolOnly $
       MuxPeerPipelined
         (contramap show stdoutTracer)
         codecPingPong
         (pingPongClientPeerPipelined (pingPongClientPipelinedMax 5))
 
-    protocols PingPong0 =
+      | otherwise =
+      InitiatorProtocolOnly $
       MuxPeer
         (contramap show stdoutTracer)
         codecPingPong
@@ -138,12 +146,11 @@ serverPingPong =
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    app :: OuroborosApplication ResponderApp DemoProtocol0 LBS.ByteString IO Void ()
-    app = simpleResponderApplication protocols
+    app :: OuroborosApplication ResponderApp LBS.ByteString IO Void ()
+    app = demoProtocol0 pingPongResponder
 
-    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols PingPong0 =
+    pingPongResponder =
+      ResponderProtocolOnly $
       MuxPeer
         (contramap show stdoutTracer)
         codecPingPong
@@ -163,15 +170,22 @@ pingPongServerStandard =
 -- Ping pong demo2
 --
 
-data DemoProtocol1 = PingPong1 | PingPong1'
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance ProtocolEnum DemoProtocol1 where
-  fromProtocolEnum PingPong1  = MiniProtocolNum 2
-  fromProtocolEnum PingPong1' = MiniProtocolNum 3
-
-instance MiniProtocolLimits DemoProtocol1 where
-  maximumIngressQueue _ = maxBound
+demoProtocol1 :: RunMiniProtocol appType bytes m a b
+              -> RunMiniProtocol appType bytes m a b
+              -> OuroborosApplication appType bytes m a b
+demoProtocol1 pingPong pingPong' =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = pingPong
+      }
+    , MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 3,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = pingPong'
+      }
+    ]
 
 
 clientPingPong2 :: IO ()
@@ -185,18 +199,18 @@ clientPingPong2 =
       Nothing
       defaultLocalSocketAddr
   where
-    app :: OuroborosApplication InitiatorApp DemoProtocol1 LBS.ByteString IO  () Void
-    app = simpleInitiatorApplication protocols
+    app :: OuroborosApplication InitiatorApp LBS.ByteString IO  () Void
+    app = demoProtocol1 pingpong pingpong'
 
-    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols PingPong1 =
+    pingpong =
+      InitiatorProtocolOnly $
       MuxPeer
         (contramap (show . (,) (1 :: Int)) stdoutTracer)
         codecPingPong
         (pingPongClientPeer (pingPongClientCount 5))
 
-    protocols PingPong1' =
+    pingpong'=
+      InitiatorProtocolOnly $
       MuxPeer
         (contramap (show . (,) (2 :: Int)) stdoutTracer)
         codecPingPong
@@ -237,18 +251,18 @@ serverPingPong2 =
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    app :: OuroborosApplication ResponderApp DemoProtocol1 LBS.ByteString IO Void ()
-    app = simpleResponderApplication protocols
+    app :: OuroborosApplication ResponderApp LBS.ByteString IO Void ()
+    app = demoProtocol1 pingpong pingpong'
 
-    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols PingPong1 =
+    pingpong =
+      ResponderProtocolOnly $
       MuxPeer
         (contramap (show . (,) (1 :: Int)) stdoutTracer)
         codecPingPong
         (pingPongServerPeer pingPongServerStandard)
 
-    protocols PingPong1' =
+    pingpong' =
+      ResponderProtocolOnly $
       MuxPeer
         (contramap (show . (,) (2 :: Int)) stdoutTracer)
         codecPingPong

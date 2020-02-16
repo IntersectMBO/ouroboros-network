@@ -1,20 +1,24 @@
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Mux
   ( AppType (..)
   , OuroborosApplication (..)
-  , MuxPeer (..)
-  , ProtocolEnum (..)
-  , MiniProtocolLimits (..)
+  , MiniProtocol (..)
   , MiniProtocolNum (..)
-  , fromInitiatorAndResponderToResponder
-  , runMuxPeer
-  , simpleInitiatorApplication
-  , simpleResponderApplication
-
+  , MiniProtocolLimits (..)
+  , RunMiniProtocol (..)
+  , MuxPeer (..)
   , toApplication
+
+    -- * Re-exports
+    -- | from "Network.Mux"
+  , MuxError(..)
+  , MuxErrorType(..)
+  , HasInitiator
+  , HasResponder
   ) where
 
 import           Control.Monad.Class.MonadAsync
@@ -29,111 +33,86 @@ import qualified Data.ByteString.Lazy as LBS
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
 
-import           Network.Mux.Types hiding (MiniProtocolLimits(..))
-import qualified Network.Mux.Types as Mux
+import qualified Network.Mux as Mux
+import           Network.Mux
+                   ( AppType(..), HasInitiator, HasResponder
+                   , MiniProtocolNum, MiniProtocolLimits(..)
+                   , MuxError(..), MuxErrorType(..) )
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 
 
--- |  Like 'MuxApplication' but using a more polymorphic 'Channel' type.
+-- |  Like 'MuxApplication' but using a 'MuxPeer' rather than a raw
+-- @Channel -> m a@ action.
 --
-data OuroborosApplication (appType :: AppType) ptcl bytes m a b where
-     OuroborosInitiatorApplication
-       :: (ptcl -> Channel m bytes -> m a)
-       -> OuroborosApplication InitiatorApp ptcl bytes m a Void
+newtype OuroborosApplication (appType :: AppType) bytes m a b =
+        OuroborosApplication [MiniProtocol appType bytes m a b]
 
-     OuroborosResponderApplication
-       :: (ptcl -> Channel m bytes -> m b)
-       -> OuroborosApplication ResponderApp ptcl bytes m Void b
+data MiniProtocol (appType :: AppType) bytes m a b =
+     MiniProtocol {
+       miniProtocolNum    :: !MiniProtocolNum,
+       miniProtocolLimits :: !MiniProtocolLimits,
+       miniProtocolRun    :: !(RunMiniProtocol appType bytes m a b)
+     }
 
-     OuroborosInitiatorAndResponderApplication
-       :: (ptcl -> Channel m bytes -> m a)
-       -> (ptcl -> Channel m bytes -> m b)
-       -> OuroborosApplication InitiatorAndResponderApp ptcl bytes m a b
+data RunMiniProtocol (appType :: AppType) bytes m a b where
+     InitiatorProtocolOnly
+       :: MuxPeer bytes m a
+       -> RunMiniProtocol InitiatorApp bytes m a Void
 
---TODO: the OuroborosApplication type needs to be updated to follow the new
--- structure of the MuxApplication, which no longer uses the bounded enumeration
--- idiom. For now, toApplication converts from the bounded enumeration style to
--- the simple list style that MuxApplication now uses.
+     ResponderProtocolOnly
+       :: MuxPeer bytes m b
+       -> RunMiniProtocol ResponderApp bytes m Void b
 
-class ProtocolEnum ptcl where
-    fromProtocolEnum :: ptcl -> MiniProtocolNum
+     InitiatorAndResponderProtocol
+       :: MuxPeer bytes m a
+       -> MuxPeer bytes m b
+       -> RunMiniProtocol InitiatorAndResponderApp bytes m a b
 
-class MiniProtocolLimits ptcl where
-    maximumIngressQueue :: ptcl -> Int64
-
-toApplication :: (Enum ptcl, Bounded ptcl,
-                  ProtocolEnum ptcl, MiniProtocolLimits ptcl)
-              => OuroborosApplication appType ptcl LBS.ByteString m a b
-              -> MuxApplication appType m a b
-toApplication (OuroborosInitiatorApplication f) =
-    MuxApplication
-      [ MuxMiniProtocol {
-          miniProtocolNum    = fromProtocolEnum ptcl,
-          miniProtocolLimits = Mux.MiniProtocolLimits {
-                                 Mux.maximumIngressQueue = maximumIngressQueue ptcl
-                               },
-          miniProtocolRun    =
-            InitiatorProtocolOnly
-              (\channel -> f ptcl (fromChannel channel))
-        }
-      | ptcl <- [minBound..maxBound] ]
-
-toApplication (OuroborosResponderApplication f) =
-    MuxApplication
-      [ MuxMiniProtocol {
-          miniProtocolNum    = fromProtocolEnum ptcl,
-          miniProtocolLimits = Mux.MiniProtocolLimits {
-                                 Mux.maximumIngressQueue = maximumIngressQueue ptcl
-                               },
-          miniProtocolRun    =
-            ResponderProtocolOnly
-              (\channel -> f ptcl (fromChannel channel))
-        }
-      | ptcl <- [minBound..maxBound] ]
-
-toApplication (OuroborosInitiatorAndResponderApplication f g) =
-    MuxApplication
-      [ MuxMiniProtocol {
-          miniProtocolNum    = fromProtocolEnum ptcl,
-          miniProtocolLimits = Mux.MiniProtocolLimits {
-                                 Mux.maximumIngressQueue = maximumIngressQueue ptcl
-                               },
-          miniProtocolRun    =
-            InitiatorAndResponderProtocol
-              (\channel -> f ptcl (fromChannel channel))
-              (\channel -> g ptcl (fromChannel channel))
-        }
-      | ptcl <- [minBound..maxBound] ]
-
-
--- |
--- Extract the responder part of an InitiatorAndResponderApp.
-fromInitiatorAndResponderToResponder
-    :: OuroborosApplication InitiatorAndResponderApp ptcl bytes m a b
-    -> OuroborosApplication ResponderApp ptcl bytes m Void b
-fromInitiatorAndResponderToResponder
-  (OuroborosInitiatorAndResponderApplication _ g ) = OuroborosResponderApplication g
-
-
--- |
--- This type is only necessary to use the @'simpleMuxClient'@ and
--- @'simpleMuxServer'@ smart constructors.
---
-data MuxPeer failure m bytes a where
-    MuxPeer :: Tracer m (TraceSendRecv ps)
+data MuxPeer bytes m a where
+    MuxPeer :: Exception failure
+            => Tracer m (TraceSendRecv ps)
             -> Codec ps failure m bytes
             -> Peer ps pr st m a
-            -> MuxPeer failure m bytes a
+            -> MuxPeer bytes m a
 
     MuxPeerPipelined
-            :: Tracer m (TraceSendRecv ps)
+            :: Exception failure
+            => Tracer m (TraceSendRecv ps)
             -> Codec ps failure m bytes
             -> PeerPipelined ps pr st m a
-            -> MuxPeer failure m bytes a
+            -> MuxPeer bytes m a
 
+    MuxPeerRaw
+           :: (Channel m bytes -> m a)
+           -> MuxPeer bytes m a
+
+toApplication :: (MonadCatch m, MonadAsync m)
+              => OuroborosApplication appType LBS.ByteString m a b
+              -> Mux.MuxApplication appType m a b
+toApplication (OuroborosApplication ptcls) =
+  Mux.MuxApplication
+    [ Mux.MuxMiniProtocol {
+        Mux.miniProtocolNum    = miniProtocolNum ptcl,
+        Mux.miniProtocolLimits = miniProtocolLimits ptcl,
+        Mux.miniProtocolRun    = toMuxRunMiniProtocol (miniProtocolRun ptcl)
+      }
+    | ptcl <- ptcls ]
+  where
+
+toMuxRunMiniProtocol :: forall appType m a b.
+                        (MonadCatch m, MonadAsync m)
+                     => RunMiniProtocol appType LBS.ByteString m a b
+                     -> Mux.RunMiniProtocol appType m a b
+toMuxRunMiniProtocol (InitiatorProtocolOnly i) =
+  Mux.InitiatorProtocolOnly (runMuxPeer i . fromChannel)
+toMuxRunMiniProtocol (ResponderProtocolOnly r) =
+  Mux.ResponderProtocolOnly (runMuxPeer r . fromChannel)
+toMuxRunMiniProtocol (InitiatorAndResponderProtocol i r) =
+  Mux.InitiatorAndResponderProtocol (runMuxPeer i . fromChannel)
+                                    (runMuxPeer r . fromChannel)
 
 -- |
 -- Run a @'MuxPeer'@ using either @'runPeer'@ or @'runPipelinedPeer'@.
@@ -142,9 +121,8 @@ runMuxPeer
   :: ( MonadThrow m
      , MonadCatch m
      , MonadAsync m
-     , Exception failure
      )
-  => MuxPeer failure m bytes a
+  => MuxPeer bytes m a
   -> Channel m bytes
   -> m a
 runMuxPeer (MuxPeer tracer codec peer) channel =
@@ -153,32 +131,5 @@ runMuxPeer (MuxPeer tracer codec peer) channel =
 runMuxPeer (MuxPeerPipelined tracer codec peer) channel =
     runPipelinedPeer tracer codec channel peer
 
-
--- |
--- Smart constructor for @'MuxInitiatorApplication'@.  It is a simple client, since
--- none of the applications requires resource handling to run in the monad @m@.
--- Each one is simply run either by @'runPeer'@ or @'runPipelinedPeer'@.
---
-simpleInitiatorApplication
-  :: MonadThrow m
-  => MonadCatch m
-  => MonadAsync m
-  => Exception failure
-  => (ptcl -> MuxPeer failure m bytes a)
-  -> OuroborosApplication InitiatorApp ptcl bytes m a Void
-simpleInitiatorApplication fn = OuroborosInitiatorApplication $ \ptcl channel ->
-  runMuxPeer (fn ptcl) channel
-
-
--- |
--- Smart constructor for @'MuxResponderApplicatin'@, similar to @'simpleMuxInitiator'@.
---
-simpleResponderApplication
-  :: MonadThrow m
-  => MonadCatch m
-  => MonadAsync m
-  => Exception failure
-  => (ptcl -> MuxPeer failure m bytes a)
-  -> OuroborosApplication ResponderApp ptcl bytes m Void a
-simpleResponderApplication fn = OuroborosResponderApplication $ \ptcl channel ->
-  runMuxPeer (fn ptcl) channel
+runMuxPeer (MuxPeerRaw action) channel =
+    action channel

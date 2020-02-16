@@ -42,7 +42,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
 
 import qualified Network.Mux               as Mx (muxStart)
 import qualified Network.Mux.Bearer.Queues as Mx
-import qualified Ouroboros.Network.Mux as Mx
+import           Ouroboros.Network.Mux as Mx
 
 
 tests :: TestTree
@@ -60,14 +60,18 @@ _sayTracer :: MonadSay m => Tracer m String
 _sayTracer = Tracer say
 
 
-data TestProtocols = ChainSyncPr
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance Mx.MiniProtocolLimits TestProtocols where
-    maximumIngressQueue _ = 0xffff
-
-instance Mx.ProtocolEnum TestProtocols where
-  fromProtocolEnum ChainSyncPr = Mx.MiniProtocolNum 2
+testProtocols :: RunMiniProtocol appType bytes m a b
+              -> OuroborosApplication appType bytes m a b
+testProtocols chainSync =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolLimits = MiniProtocolLimits {
+                               maximumIngressQueue = 0xffff
+                             },
+        miniProtocolRun    = chainSync
+      }
+    ]
 
 
 demo :: forall m block.
@@ -100,31 +104,37 @@ demo chain0 updates delay = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
+        consumerApp = testProtocols chainSyncInitator
+
+        chainSyncInitator =
+          InitiatorProtocolOnly $
+          MuxPeer
+            nullTracer
+            (ChainSync.codecChainSync
+               encode             decode
+               encode             decode
+               (encodeTip encode) (decodeTip decode))
+            consumerPeer
+
         consumerPeer :: Peer (ChainSync.ChainSync block (Tip block)) AsClient ChainSync.StIdle m ()
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
-        consumerApp = Mx.simpleInitiatorApplication
-                        (\ChainSyncPr ->
-                        Mx.MuxPeer
-                        nullTracer
-                        (ChainSync.codecChainSync
-                        encode             decode
-                        encode             decode
-                        (encodeTip encode) (decodeTip decode))
-                        (consumerPeer))
+
+        producerApp = testProtocols chainSyncResponder
+
+        chainSyncResponder =
+          ResponderProtocolOnly $
+          MuxPeer
+            nullTracer
+            (ChainSync.codecChainSync
+               encode             decode
+               encode             decode
+               (encodeTip encode) (decodeTip decode))
+            producerPeer
 
         producerPeer :: Peer (ChainSync.ChainSync block (Tip block)) AsServer ChainSync.StIdle m ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
-        producerApp = Mx.simpleResponderApplication
-                        (\ChainSyncPr ->
-                        Mx.MuxPeer
-                        nullTracer
-                        (ChainSync.codecChainSync
-                        encode             decode
-                        encode             decode
-                        (encodeTip encode) (decodeTip decode))
-                        producerPeer)
 
     let clientBearer = Mx.queuesAsMuxBearer activeTracer client_w client_r sduLen
         serverBearer = Mx.queuesAsMuxBearer activeTracer server_w server_r sduLen
