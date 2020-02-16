@@ -169,7 +169,8 @@ connectTo
   -> NetworkConnectTracers LocalAddress NodeToClientProtocols NodeToClientVersion
   -> Versions NodeToClientVersion
               DictVersion
-              (OuroborosApplication InitiatorApp (ConnectionId LocalAddress) NodeToClientProtocols IO BL.ByteString a b)
+              (ConnectionId LocalAddress ->
+                 OuroborosApplication InitiatorApp NodeToClientProtocols BL.ByteString IO a b)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
@@ -193,7 +194,8 @@ connectTo_V1
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> (OuroborosApplication InitiatorApp (ConnectionId LocalAddress) NodeToClientProtocols IO BL.ByteString a b)
+  -> (ConnectionId LocalAddress ->
+        OuroborosApplication InitiatorApp NodeToClientProtocols BL.ByteString IO a b)
   -- ^ 'OuroborosInitiatorApplication' which is run on an established connection
   -- using a multiplexer after the initial handshake protocol suceeds.
   -> FilePath
@@ -224,7 +226,8 @@ withServer
   -> NetworkMutableState LocalAddress
   -> LocalAddress
   -> Versions NodeToClientVersion DictVersion
-              (OuroborosApplication appType (ConnectionId LocalAddress) NodeToClientProtocols IO BL.ByteString a b)
+              (ConnectionId LocalAddress ->
+                 OuroborosApplication appType NodeToClientProtocols BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState addr versions errPolicies =
@@ -235,7 +238,7 @@ withServer sn tracers networkState addr versions errPolicies =
     addr
     cborTermVersionDataCodec
     (\(DictVersion _) -> acceptableVersion)
-    (SomeResponderApplication <$> versions)
+    (fmap (SomeResponderApplication .) versions)
     errPolicies
     (\_ async -> Async.wait async)
 
@@ -254,7 +257,8 @@ withServer_V1
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> (OuroborosApplication appType (ConnectionId LocalAddress) NodeToClientProtocols IO BL.ByteString a b)
+  -> (ConnectionId LocalAddress ->
+        OuroborosApplication appType NodeToClientProtocols BL.ByteString IO a b)
   -- ^ applications which has the reponder side, i.e.
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
@@ -287,11 +291,11 @@ ncSubscriptionWorker
     -> Versions
         NodeToClientVersion
         DictVersion
-        (OuroborosApplication
-          appType
-          (ConnectionId LocalAddress)
-          NodeToClientProtocols
-          IO BL.ByteString x y)
+        (ConnectionId LocalAddress ->
+           OuroborosApplication
+             appType
+             NodeToClientProtocols
+             BL.ByteString IO x y)
     -> IO Void
 ncSubscriptionWorker
   sn
@@ -327,11 +331,11 @@ ncSubscriptionWorker_V1
     -> NetworkMutableState LocalAddress
     -> ClientSubscriptionParams ()
     -> NodeToClientVersionData
-    -> (OuroborosApplication
-          appType
-          (ConnectionId LocalAddress)
-          NodeToClientProtocols
-          IO BL.ByteString x y)
+    -> (ConnectionId LocalAddress ->
+          OuroborosApplication
+            appType
+            NodeToClientProtocols
+            BL.ByteString IO x y)
     -> IO Void
 ncSubscriptionWorker_V1
   sn

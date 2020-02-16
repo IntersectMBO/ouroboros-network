@@ -527,9 +527,9 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
     clientTbl <- newConnectionTable
 
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication ResponderApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString Void ()
+        responderApp :: OuroborosApplication ResponderApp TestProtocols2 BL.ByteString IO Void ()
         responderApp = OuroborosResponderApplication $
-          \_peerid ReqRespPr channel -> do
+          \ReqRespPr channel -> do
             r <- runPeer (tagTrace "Responder" activeTracer)
                          ReqResp.codecReqResp
                          channel
@@ -538,9 +538,9 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
             waitSiblingSub siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
+        initiatorApp :: OuroborosApplication InitiatorApp TestProtocols2 BL.ByteString IO () Void
         initiatorApp = OuroborosInitiatorApplication $
-          \_peerid ReqRespPr channel -> do
+          \ReqRespPr channel -> do
             r <- runPeer (tagTrace "Initiator" activeTracer)
                          ReqResp.codecReqResp
                          channel
@@ -558,7 +558,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         (Socket.addrAddress responderAddr)
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptableVersion)
-        (unversionedProtocol (SomeResponderApplication responderApp))
+        (unversionedProtocol (\_peerid -> SomeResponderApplication responderApp))
         nullErrorPolicies
         $ \_ _ -> do
           dnsSubscriptionWorker'
@@ -580,7 +580,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
                 iocp
                 cborTermVersionDataCodec
                 nullNetworkConnectTracers
-                (unversionedProtocol initiatorApp))
+                (unversionedProtocol (\_peerid -> initiatorApp)))
 
     res <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
     return (res == mapAccumL f 0 xs)
@@ -661,10 +661,10 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
 
   where
 
-    appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString () ()
+    appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp TestProtocols2 BL.ByteString IO () ()
     appX ReqRspCfg {rrcTag, rrcServerVar, rrcClientVar, rrcSiblingVar} = OuroborosInitiatorAndResponderApplication
             -- Initiator
-            (\_peerid ReqRespPr channel -> do
+            (\ReqRespPr channel -> do
              r <- runPeer (tagTrace (rrcTag ++ " Initiator") activeTracer)
                          ReqResp.codecReqResp
                          channel
@@ -674,7 +674,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
              waitSiblingSub rrcSiblingVar
             )
             -- Responder
-            (\_peerid ReqRespPr channel -> do
+            (\ReqRespPr channel -> do
              r <- runPeer (tagTrace (rrcTag ++ " Responder") activeTracer)
                          ReqResp.codecReqResp
                          channel
@@ -692,7 +692,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
         responderAddr
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptableVersion)
-        (unversionedProtocol (SomeResponderApplication (appX rrcfg)))
+        (unversionedProtocol (\_peerid -> SomeResponderApplication (appX rrcfg)))
         nullErrorPolicies
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
@@ -710,7 +710,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
           responderAddr
           cborTermVersionDataCodec
           (\(DictVersion _) -> acceptableVersion)
-          (unversionedProtocol (SomeResponderApplication (appX rrcfg)))
+          (unversionedProtocol (\_peerid -> SomeResponderApplication (appX rrcfg)))
           nullErrorPolicies
           $ \localAddr _ -> do
             peerStatesVar <- newPeerStatesVar
@@ -734,7 +734,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
                   iocp
                   cborTermVersionDataCodec
                   nullNetworkConnectTracers
-                  (unversionedProtocol (appX rrcfg)))
+                  (unversionedProtocol (\_peerid -> appX rrcfg)))
 
             atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
                              <*> takeTMVar (rrcClientVar rrcfg)
@@ -804,7 +804,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
                 iocp
                 cborTermVersionDataCodec
                 nullNetworkConnectTracers
-                (unversionedProtocol appReq))
+                (unversionedProtocol (\_peerid -> appReq)))
 
     threadDelay 130
     -- bring the servers back again
@@ -823,13 +823,13 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
             (Socket.addrAddress addr)
             cborTermVersionDataCodec
             (\(DictVersion _) -> acceptableVersion)
-            (unversionedProtocol (SomeResponderApplication appRsp))
+            (unversionedProtocol (\_peerid -> SomeResponderApplication appRsp))
             nullErrorPolicies
             (\_ _ -> threadDelay delay)
 
 
-    appReq = OuroborosInitiatorApplication (\_ ChainSyncPr -> error "req fail")
-    appRsp = OuroborosResponderApplication (\_ ChainSyncPr -> error "rsp fail")
+    appReq = OuroborosInitiatorApplication (\ChainSyncPr -> error "req fail")
+    appRsp = OuroborosResponderApplication (\ChainSyncPr -> error "rsp fail")
 
 
 data WithThreadAndTime a = WithThreadAndTime {

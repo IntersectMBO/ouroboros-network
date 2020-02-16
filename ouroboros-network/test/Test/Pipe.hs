@@ -144,7 +144,7 @@ demo chain0 updates = do
         let Just expectedChain = Chain.applyChainUpdates updates chain0
             target = Chain.headPoint expectedChain
 
-            consumerApp :: OuroborosApplication InitiatorApp String DemoProtocols IO BL.ByteString () Void
+            consumerApp :: OuroborosApplication InitiatorApp DemoProtocols BL.ByteString IO () Void
             consumerApp = simpleInitiatorApplication $
               \ChainSync ->
                 MuxPeer nullTracer
@@ -158,7 +158,7 @@ demo chain0 updates = do
             server :: ChainSyncServer block (Tip block) IO ()
             server = ChainSync.chainSyncServerExample () producerVar
 
-            producerApp ::OuroborosApplication ResponderApp String DemoProtocols IO BL.ByteString Void ()
+            producerApp ::OuroborosApplication ResponderApp DemoProtocols BL.ByteString IO Void ()
             producerApp = simpleResponderApplication $
               \ChainSync ->
                 MuxPeer nullTracer
@@ -170,8 +170,8 @@ demo chain0 updates = do
         let clientBearer = Mx.pipeAsMuxBearer activeTracer chan1
             serverBearer = Mx.pipeAsMuxBearer activeTracer chan2
 
-        _ <- async $ Mx.muxStart activeTracer (toApplication producerApp "producer") clientBearer
-        _ <- async $ Mx.muxStart activeTracer (toApplication consumerApp "consumer") serverBearer
+        _ <- async $ Mx.muxStart activeTracer (toApplication producerApp) clientBearer
+        _ <- async $ Mx.muxStart activeTracer (toApplication consumerApp) serverBearer
 
         void $ fork $ sequence_
             [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest

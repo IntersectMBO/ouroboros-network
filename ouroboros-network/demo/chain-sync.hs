@@ -140,15 +140,16 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
         (localSnocket iocp sockPath)
         cborTermVersionDataCodec
         nullNetworkConnectTracers
-        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+        (simpleSingletonVersions
+           (0::Int)
+           (NodeToNodeVersionData $ NetworkMagic 0)
+           (DictVersion nodeToNodeCodecCBORTerm)
+           (\_peerid -> app))
         Nothing
         (localAddressFromPath sockPath)
 
   where
-    app :: OuroborosApplication InitiatorApp
-                                LocalConnectionId
-                                DemoProtocol2
-                                IO LBS.ByteString () Void
+    app :: OuroborosApplication InitiatorApp DemoProtocol2 LBS.ByteString IO () Void
     app = simpleInitiatorApplication protocols
 
     protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure
@@ -175,17 +176,14 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
         (0::Int)
         (NodeToNodeVersionData $ NetworkMagic 0)
         (DictVersion nodeToNodeCodecCBORTerm)
-        (SomeResponderApplication app))
+        (\_peerid -> SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     prng = mkSMGen 0
 
-    app :: OuroborosApplication ResponderApp
-                                LocalConnectionId
-                                DemoProtocol2
-                                IO LBS.ByteString Void ()
+    app :: OuroborosApplication ResponderApp DemoProtocol2 LBS.ByteString IO Void ()
     app = simpleResponderApplication protocols
 
     protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure
@@ -234,11 +232,9 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
     candidateChainsVar <- newTVarIO Map.empty
     currentChainVar    <- newTVarIO genesisChainFragment
 
-    let app :: OuroborosApplication InitiatorApp
-                                    LocalConnectionId
-                                    DemoProtocol3
-                                    IO LBS.ByteString () Void
-        app = OuroborosInitiatorApplication protocols
+    let app :: LocalConnectionId
+            -> OuroborosApplication InitiatorApp DemoProtocol3 LBS.ByteString IO () Void
+        app peerid = OuroborosInitiatorApplication (protocols peerid)
 
         protocols :: LocalConnectionId
                   -> DemoProtocol3
@@ -382,17 +378,14 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
         (0::Int)
         (NodeToNodeVersionData $ NetworkMagic 0)
         (DictVersion nodeToNodeCodecCBORTerm)
-        (SomeResponderApplication app))
+        (\_peerid -> SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     prng = mkSMGen 0
 
-    app :: OuroborosApplication ResponderApp
-                                LocalConnectionId
-                                DemoProtocol3
-                                IO LBS.ByteString Void ()
+    app :: OuroborosApplication ResponderApp DemoProtocol3 LBS.ByteString IO Void ()
     app = simpleResponderApplication protocols
 
     protocols :: DemoProtocol3 -> MuxPeer DeserialiseFailure

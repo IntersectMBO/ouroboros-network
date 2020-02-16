@@ -111,7 +111,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        initiatorApp :: OuroborosApplication Mx.InitiatorApp (ConnectionId Socket.SockAddr) TestProtocols1 IO BL.ByteString () Void
+        initiatorApp :: OuroborosApplication Mx.InitiatorApp TestProtocols1 BL.ByteString IO () Void
         initiatorApp = simpleInitiatorApplication $
           \ChainSyncPr ->
               MuxPeer nullTracer
@@ -123,7 +123,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         server :: ChainSync.ChainSyncServer block (Tip block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
-        responderApp :: OuroborosApplication Mx.ResponderApp (ConnectionId Socket.SockAddr) TestProtocols1 IO BL.ByteString Void ()
+        responderApp :: OuroborosApplication Mx.ResponderApp TestProtocols1 BL.ByteString IO Void ()
         responderApp = simpleResponderApplication $
           \ChainSyncPr ->
             MuxPeer nullTracer
@@ -145,7 +145,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         (0::Int)
         (NodeToNodeVersionData $ NetworkMagic 0)
         (DictVersion nodeToNodeCodecCBORTerm)
-        (SomeResponderApplication responderApp))
+        (\_peerid -> SomeResponderApplication responderApp))
       nullErrorPolicies
       $ \_ _ -> do
       withAsync
@@ -153,7 +153,11 @@ demo chain0 updates = withIOManager $ \iocp -> do
           (socketSnocket iocp)
           cborTermVersionDataCodec
           nullNetworkConnectTracers
-          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
+          (simpleSingletonVersions
+            (0::Int)
+            (NodeToNodeVersionData $ NetworkMagic 0)
+            (DictVersion nodeToNodeCodecCBORTerm)
+            (\_peerid -> initiatorApp))
           (Just consumerAddress)
           producerAddress)
         $ \ _connAsync -> do

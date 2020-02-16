@@ -129,8 +129,8 @@ demo chain0 updates delay = do
     let clientBearer = Mx.queuesAsMuxBearer activeTracer client_w client_r sduLen
         serverBearer = Mx.queuesAsMuxBearer activeTracer server_w server_r sduLen
 
-    clientAsync <- async $ Mx.muxStart activeTracer (Mx.toApplication consumerApp "consumer") clientBearer
-    serverAsync <- async $ Mx.muxStart activeTracer (Mx.toApplication producerApp "producer") serverBearer
+    clientAsync <- async $ Mx.muxStart activeTracer (Mx.toApplication consumerApp) clientBearer
+    serverAsync <- async $ Mx.muxStart activeTracer (Mx.toApplication producerApp) serverBearer
 
     updateAid <- async $ sequence_
         [ do

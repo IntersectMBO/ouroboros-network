@@ -120,14 +120,11 @@ clientPingPong pipelined =
       (simpleSingletonVersions (0::Int)
                                NullVersionData
                                (DictVersion nullVersionDataCodecCBORTerm)
-                               app)
+                               (\_peerid -> app))
       Nothing
       defaultLocalSocketAddr
   where
-    app :: OuroborosApplication InitiatorApp
-                                (ConnectionId LocalAddress)
-                                DemoProtocol0
-                                IO LBS.ByteString () Void
+    app :: OuroborosApplication InitiatorApp DemoProtocol0 LBS.ByteString IO () Void
     app = simpleInitiatorApplication protocols
 
     protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure
@@ -164,15 +161,12 @@ serverPingPong =
       (simpleSingletonVersions (0::Int)
                                NullVersionData
                                (DictVersion nullVersionDataCodecCBORTerm)
-                               (SomeResponderApplication app))
+                               (\_peerid -> SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    app :: OuroborosApplication ResponderApp
-                                (ConnectionId LocalAddress)
-                                DemoProtocol0
-                                IO LBS.ByteString Void ()
+    app :: OuroborosApplication ResponderApp DemoProtocol0 LBS.ByteString IO Void ()
     app = simpleResponderApplication protocols
 
     protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure
@@ -218,14 +212,11 @@ clientPingPong2 =
       (simpleSingletonVersions (0::Int)
                                NullVersionData
                                (DictVersion nullVersionDataCodecCBORTerm)
-                               app)
+                               (\_peerid -> app))
       Nothing
       defaultLocalSocketAddr
   where
-    app :: OuroborosApplication InitiatorApp
-                                (ConnectionId LocalAddress)
-                                DemoProtocol1
-                                IO LBS.ByteString () Void
+    app :: OuroborosApplication InitiatorApp DemoProtocol1 LBS.ByteString IO  () Void
     app = simpleInitiatorApplication protocols
 
     protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure
@@ -275,15 +266,12 @@ serverPingPong2 =
       (simpleSingletonVersions (0::Int)
                                NullVersionData
                                (DictVersion nullVersionDataCodecCBORTerm)
-                               (SomeResponderApplication app))
+                               (\_peerid -> SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    app :: OuroborosApplication ResponderApp
-                                (ConnectionId LocalAddress)
-                                DemoProtocol1
-                                IO LBS.ByteString Void ()
+    app :: OuroborosApplication ResponderApp DemoProtocol1 LBS.ByteString IO Void ()
     app = simpleResponderApplication protocols
 
     protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure

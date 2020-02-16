@@ -200,9 +200,9 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
     siblingVar <- newTVarM 2
 
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication Mx.ResponderApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString Void ()
+        responderApp :: OuroborosApplication ResponderApp TestProtocols2 BL.ByteString IO Void ()
         responderApp = OuroborosResponderApplication $
-          \_peerid ReqRespPr channel -> do
+          \ReqRespPr channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
                          channel
@@ -211,9 +211,10 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
             waitSibling siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication Mx.InitiatorApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
-        initiatorApp = OuroborosInitiatorApplication $
-          \_peerid ReqRespPr channel -> do
+        initiatorApp :: ConnectionId Socket.SockAddr
+                     -> OuroborosApplication InitiatorApp TestProtocols2 BL.ByteString IO () Void
+        initiatorApp _peerid = OuroborosInitiatorApplication $
+          \ReqRespPr channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
                          channel
@@ -230,7 +231,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
         responderAddr
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptableVersion)
-        (unversionedProtocol (SomeResponderApplication responderApp))
+        (unversionedProtocol (\_peerid -> SomeResponderApplication responderApp))
         nullErrorPolicies
         $ \_ _ -> do
           connectToNode
@@ -271,9 +272,9 @@ prop_socket_recv_close f _ =
 
     sv   <- newEmptyTMVarM
 
-    let app :: OuroborosApplication ResponderApp () TestProtocols2 IO BL.ByteString Void ()
+    let app :: OuroborosApplication ResponderApp TestProtocols2 BL.ByteString IO Void ()
         app = OuroborosResponderApplication $
-          \_peerid ReqRespPr channel -> do
+          \ReqRespPr channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
                          channel
@@ -301,7 +302,7 @@ prop_socket_recv_close f _ =
                 (\(sd', _, _) -> Socket.close sd')
                 $ \(sd', _, _) -> do
                   let bearer = Mx.socketAsMuxBearer nullTracer sd'
-                  Mx.muxStart nullTracer (toApplication app ()) bearer
+                  Mx.muxStart nullTracer (toApplication app) bearer
           )
           $ \muxAsync -> do
 
@@ -336,9 +337,10 @@ prop_socket_client_connect_error _ xs =
 
     cv <- newEmptyTMVarM
 
-    let app :: OuroborosApplication Mx.InitiatorApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
-        app = OuroborosInitiatorApplication $
-                \_peerid ReqRespPr channel -> do
+    let app :: ConnectionId Socket.SockAddr
+            -> OuroborosApplication InitiatorApp TestProtocols2 BL.ByteString IO () Void
+        app _peerid = OuroborosInitiatorApplication $
+                \ReqRespPr channel -> do
                   _ <- runPeer nullTracer
                           ReqResp.codecReqResp
                           channel

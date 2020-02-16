@@ -201,7 +201,8 @@ connectTo
   -> NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
   -> Versions NodeToNodeVersion
               DictVersion
-              (OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
+              (ConnectionId Socket.SockAddr ->
+                 OuroborosApplication InitiatorApp NodeToNodeProtocols BL.ByteString IO a b)
   -> Maybe Socket.SockAddr
   -> Socket.SockAddr
   -> IO ()
@@ -215,7 +216,8 @@ connectTo_V1
   :: SocketSnocket
   -> NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> (OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
+  -> (ConnectionId Socket.SockAddr ->
+        OuroborosApplication InitiatorApp NodeToNodeProtocols BL.ByteString IO a b)
   -> Maybe Socket.SockAddr
   -> Socket.SockAddr
   -> IO ()
@@ -245,7 +247,9 @@ withServer
   -> NetworkServerTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
   -> NetworkMutableState Socket.SockAddr
   -> Socket.SockAddr
-  -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
+  -> Versions NodeToNodeVersion DictVersion
+              (ConnectionId Socket.SockAddr ->
+                 OuroborosApplication appType NodeToNodeProtocols BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState addr versions errPolicies =
@@ -256,7 +260,7 @@ withServer sn tracers networkState addr versions errPolicies =
     addr
     cborTermVersionDataCodec
     (\(DictVersion _) -> acceptableVersion)
-    (SomeResponderApplication <$> versions)
+    (fmap (SomeResponderApplication .) versions)
     errPolicies
     (\_ async -> Async.wait async)
 
@@ -270,7 +274,8 @@ withServer_V1
   -> NetworkMutableState Socket.SockAddr
   -> Socket.SockAddr
   -> NodeToNodeVersionData
-  -> (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString x y)
+  -> (ConnectionId Socket.SockAddr ->
+        OuroborosApplication appType NodeToNodeProtocols BL.ByteString IO x y)
   -> ErrorPolicies
   -> IO Void
 withServer_V1 sn tracers networkState addr versionData application =
@@ -296,11 +301,8 @@ ipSubscriptionWorker
     -> Versions
         NodeToNodeVersion
         DictVersion
-        (OuroborosApplication
-          appType
-          (ConnectionId Socket.SockAddr)
-          NodeToNodeProtocols
-          IO BL.ByteString x y)
+        (ConnectionId Socket.SockAddr ->
+           OuroborosApplication appType NodeToNodeProtocols BL.ByteString IO x y)
     -> IO Void
 ipSubscriptionWorker
   sn
@@ -336,11 +338,8 @@ ipSubscriptionWorker_V1
     -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> NodeToNodeVersionData
-    -> (OuroborosApplication
-          appType
-          (ConnectionId Socket.SockAddr)
-          NodeToNodeProtocols
-          IO BL.ByteString x y)
+    -> (ConnectionId Socket.SockAddr ->
+          OuroborosApplication appType NodeToNodeProtocols BL.ByteString IO x y)
     -> IO Void
 ipSubscriptionWorker_V1
   sn
@@ -374,11 +373,8 @@ dnsSubscriptionWorker
     -> Versions
         NodeToNodeVersion
         DictVersion
-        (OuroborosApplication
-          appType
-          (ConnectionId Socket.SockAddr)
-          NodeToNodeProtocols
-          IO BL.ByteString x y)
+        (ConnectionId Socket.SockAddr ->
+           OuroborosApplication appType NodeToNodeProtocols BL.ByteString IO x y)
     -> IO Void
 dnsSubscriptionWorker
   sn
@@ -416,11 +412,8 @@ dnsSubscriptionWorker_V1
     -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> NodeToNodeVersionData
-    -> (OuroborosApplication
-          appType
-          (ConnectionId Socket.SockAddr)
-          NodeToNodeProtocols
-          IO BL.ByteString x y)
+    -> (ConnectionId Socket.SockAddr ->
+          OuroborosApplication appType NodeToNodeProtocols BL.ByteString IO x y)
     -> IO Void
 dnsSubscriptionWorker_V1
   sn

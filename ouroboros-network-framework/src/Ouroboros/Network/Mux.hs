@@ -39,19 +39,19 @@ import           Ouroboros.Network.Driver
 
 -- |  Like 'MuxApplication' but using a more polymorphic 'Channel' type.
 --
-data OuroborosApplication (appType :: AppType) peerid ptcl m bytes a b where
+data OuroborosApplication (appType :: AppType) ptcl bytes m a b where
      OuroborosInitiatorApplication
-       :: (peerid -> ptcl -> Channel m bytes -> m a)
-       -> OuroborosApplication InitiatorApp peerid ptcl m bytes a Void
+       :: (ptcl -> Channel m bytes -> m a)
+       -> OuroborosApplication InitiatorApp ptcl bytes m a Void
 
      OuroborosResponderApplication
-       :: (peerid -> ptcl -> Channel m bytes -> m a)
-       -> OuroborosApplication ResponderApp peerid ptcl m bytes Void a
+       :: (ptcl -> Channel m bytes -> m b)
+       -> OuroborosApplication ResponderApp ptcl bytes m Void b
 
      OuroborosInitiatorAndResponderApplication
-       :: (peerid -> ptcl -> Channel m bytes -> m a)
-       -> (peerid -> ptcl -> Channel m bytes -> m b)
-       -> OuroborosApplication InitiatorAndResponderApp peerid ptcl m bytes a b
+       :: (ptcl -> Channel m bytes -> m a)
+       -> (ptcl -> Channel m bytes -> m b)
+       -> OuroborosApplication InitiatorAndResponderApp ptcl bytes m a b
 
 --TODO: the OuroborosApplication type needs to be updated to follow the new
 -- structure of the MuxApplication, which no longer uses the bounded enumeration
@@ -66,10 +66,9 @@ class MiniProtocolLimits ptcl where
 
 toApplication :: (Enum ptcl, Bounded ptcl,
                   ProtocolEnum ptcl, MiniProtocolLimits ptcl)
-              => OuroborosApplication appType peerid ptcl m LBS.ByteString a b
-              -> peerid
+              => OuroborosApplication appType ptcl LBS.ByteString m a b
               -> MuxApplication appType m a b
-toApplication (OuroborosInitiatorApplication f) peerid =
+toApplication (OuroborosInitiatorApplication f) =
     MuxApplication
       [ MuxMiniProtocol {
           miniProtocolNum    = fromProtocolEnum ptcl,
@@ -78,11 +77,11 @@ toApplication (OuroborosInitiatorApplication f) peerid =
                                },
           miniProtocolRun    =
             InitiatorProtocolOnly
-              (\channel -> f peerid ptcl (fromChannel channel))
+              (\channel -> f ptcl (fromChannel channel))
         }
       | ptcl <- [minBound..maxBound] ]
 
-toApplication (OuroborosResponderApplication f) peerid =
+toApplication (OuroborosResponderApplication f) =
     MuxApplication
       [ MuxMiniProtocol {
           miniProtocolNum    = fromProtocolEnum ptcl,
@@ -91,11 +90,11 @@ toApplication (OuroborosResponderApplication f) peerid =
                                },
           miniProtocolRun    =
             ResponderProtocolOnly
-              (\channel -> f peerid ptcl (fromChannel channel))
+              (\channel -> f ptcl (fromChannel channel))
         }
       | ptcl <- [minBound..maxBound] ]
 
-toApplication (OuroborosInitiatorAndResponderApplication f g) peerid =
+toApplication (OuroborosInitiatorAndResponderApplication f g) =
     MuxApplication
       [ MuxMiniProtocol {
           miniProtocolNum    = fromProtocolEnum ptcl,
@@ -104,8 +103,8 @@ toApplication (OuroborosInitiatorAndResponderApplication f g) peerid =
                                },
           miniProtocolRun    =
             InitiatorAndResponderProtocol
-              (\channel -> f peerid ptcl (fromChannel channel))
-              (\channel -> g peerid ptcl (fromChannel channel))
+              (\channel -> f ptcl (fromChannel channel))
+              (\channel -> g ptcl (fromChannel channel))
         }
       | ptcl <- [minBound..maxBound] ]
 
@@ -113,8 +112,8 @@ toApplication (OuroborosInitiatorAndResponderApplication f g) peerid =
 -- |
 -- Extract the responder part of an InitiatorAndResponderApp.
 fromInitiatorAndResponderToResponder
-    :: OuroborosApplication 'InitiatorAndResponderApp peerid ptcl m bytes a b
-    -> OuroborosApplication 'ResponderApp peerid ptcl m bytes Void b
+    :: OuroborosApplication InitiatorAndResponderApp ptcl bytes m a b
+    -> OuroborosApplication ResponderApp ptcl bytes m Void b
 fromInitiatorAndResponderToResponder
   (OuroborosInitiatorAndResponderApplication _ g ) = OuroborosResponderApplication g
 
@@ -166,8 +165,8 @@ simpleInitiatorApplication
   => MonadAsync m
   => Exception failure
   => (ptcl -> MuxPeer failure m bytes a)
-  -> OuroborosApplication InitiatorApp peerid ptcl m bytes a Void
-simpleInitiatorApplication fn = OuroborosInitiatorApplication $ \_peerid ptcl channel ->
+  -> OuroborosApplication InitiatorApp ptcl bytes m a Void
+simpleInitiatorApplication fn = OuroborosInitiatorApplication $ \ptcl channel ->
   runMuxPeer (fn ptcl) channel
 
 
@@ -180,6 +179,6 @@ simpleResponderApplication
   => MonadAsync m
   => Exception failure
   => (ptcl -> MuxPeer failure m bytes a)
-  -> OuroborosApplication ResponderApp peerid ptcl m bytes Void a
-simpleResponderApplication fn = OuroborosResponderApplication $ \_peerid ptcl channel ->
+  -> OuroborosApplication ResponderApp ptcl bytes m Void a
+simpleResponderApplication fn = OuroborosResponderApplication $ \ptcl channel ->
   runMuxPeer (fn ptcl) channel

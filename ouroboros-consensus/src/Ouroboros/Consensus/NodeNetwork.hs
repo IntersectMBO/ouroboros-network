@@ -10,7 +10,8 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints -Werror=missing-fields #-}
+{-# OPTIONS_GHC -Wredundant-constraints -Werror=missing-fields
+                -Wno-unticked-promoted-constructors #-}
 
 module Ouroboros.Consensus.NodeNetwork (
     ProtocolHandlers (..)
@@ -422,38 +423,41 @@ data NetworkApplication m peer localPeer
     }
 
 
--- | A projection from 'NetworkApplication' to a client-side 'MuxApplication'
--- for the 'NodeToNodeProtocols'.
+-- | A projection from 'NetworkApplication' to a client-side
+-- 'OuroborosApplication' for the node-to-node protocols.
 --
 initiatorNetworkApplication
   :: NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
-  -> OuroborosApplication 'InitiatorApp peer NodeToNodeProtocols m bytes a Void
-initiatorNetworkApplication NetworkApplication {..} =
-    OuroborosInitiatorApplication $ \them ptcl -> case ptcl of
+  -> peer
+  -> OuroborosApplication InitiatorApp NodeToNodeProtocols bytes m a Void
+initiatorNetworkApplication NetworkApplication {..} them =
+    OuroborosInitiatorApplication $ \ptcl -> case ptcl of
       ChainSyncWithHeadersPtcl -> naChainSyncClient them
       BlockFetchPtcl           -> naBlockFetchClient them
       TxSubmissionPtcl         -> naTxSubmissionClient them
 
--- | A projection from 'NetworkApplication' to a server-side 'MuxApplication'
--- for the 'NodeToNodeProtocols'.
+-- | A projection from 'NetworkApplication' to a server-side
+-- 'OuroborosApplication' for the node-to-node protocols.
 --
 responderNetworkApplication
   :: NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
-  -> OuroborosApplication 'ResponderApp peer NodeToNodeProtocols m bytes Void a
-responderNetworkApplication NetworkApplication {..} =
-    OuroborosResponderApplication $ \them ptcl -> case ptcl of
+  -> peer
+  -> OuroborosApplication ResponderApp NodeToNodeProtocols bytes m Void a
+responderNetworkApplication NetworkApplication {..} them =
+    OuroborosResponderApplication $ \ptcl -> case ptcl of
       ChainSyncWithHeadersPtcl -> naChainSyncServer them
       BlockFetchPtcl           -> naBlockFetchServer them
       TxSubmissionPtcl         -> naTxSubmissionServer them
 
--- | A projection from 'NetworkApplication' to a server-side 'MuxApplication'
--- for the 'NodeToClientProtocols'.
+-- | A projection from 'NetworkApplication' to a server-side
+-- 'OuroborosApplication' for the node-to-client protocols.
 --
 localResponderNetworkApplication
   :: NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
-  -> OuroborosApplication 'ResponderApp localPeer NodeToClientProtocols m bytes Void a
-localResponderNetworkApplication NetworkApplication {..} =
-    OuroborosResponderApplication $ \peer  ptcl -> case ptcl of
+  -> localPeer
+  -> OuroborosApplication ResponderApp NodeToClientProtocols bytes m Void a
+localResponderNetworkApplication NetworkApplication {..} peer =
+    OuroborosResponderApplication $ \ptcl -> case ptcl of
       ChainSyncWithBlocksPtcl -> naLocalChainSyncServer peer
       LocalTxSubmissionPtcl   -> naLocalTxSubmissionServer peer
 

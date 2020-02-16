@@ -96,39 +96,31 @@ data DiffusionApplications = DiffusionApplications {
       daResponderApplication      :: Versions
                                        NodeToNodeVersion
                                        DictVersion
-                                       (OuroborosApplication
-                                         'ResponderApp
-                                         (ConnectionId SockAddr)
-                                         NodeToNodeProtocols
-                                         IO
-                                         ByteString
-                                         Void
-                                         ())
+                                       (ConnectionId SockAddr ->
+                                          OuroborosApplication
+                                            ResponderApp
+                                            NodeToNodeProtocols
+                                            ByteString IO Void ())
       -- ^ NodeToNode reposnder application (server role)
 
     , daInitiatorApplication      :: Versions
                                        NodeToNodeVersion
                                        DictVersion 
-                                       (OuroborosApplication
-                                         'InitiatorApp
-                                         (ConnectionId SockAddr)
-                                         NodeToNodeProtocols
-                                         IO
-                                         ByteString
-                                         () Void)
+                                       (ConnectionId SockAddr ->
+                                          OuroborosApplication
+                                            InitiatorApp
+                                            NodeToNodeProtocols
+                                            ByteString IO () Void)
       -- ^ NodeToNode initiator application (client role)
 
     , daLocalResponderApplication :: Versions
                                        NodeToClientVersion
                                        DictVersion
-                                       (OuroborosApplication
-                                          'ResponderApp
-                                          (ConnectionId LocalAddress)
-                                          NodeToClientProtocols
-                                          IO
-                                          ByteString
-                                          Void
-                                          ())
+                                       (ConnectionId SockAddr ->
+                                          OuroborosApplication
+                                            ResponderApp
+                                            NodeToClientProtocols
+                                            ByteString IO Void ())
       -- ^ NodeToClient responder applicaton (server role)
 
     , daErrorPolicies :: ErrorPolicies
