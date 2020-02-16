@@ -11,8 +11,6 @@
 module Main where
 
 import qualified Data.ByteString.Lazy as LBS
-import qualified Data.Text as Text
-import           Data.Text (Text)
 import           Data.Functor (void)
 import           Data.Void (Void)
 
@@ -33,8 +31,7 @@ import Ouroboros.Network.ErrorPolicy
 import Ouroboros.Network.IOManager
 
 import Ouroboros.Network.Protocol.Handshake.Type
-import Ouroboros.Network.Protocol.Handshake.Version as Version
-import qualified Codec.CBOR.Term as CBOR
+import Ouroboros.Network.Protocol.Handshake.Version
 
 import Network.TypedProtocol.Pipelined
 import Network.TypedProtocol.PingPong.Client as PingPong
@@ -75,25 +72,6 @@ rmIfExists path = do
   b <- doesFileExist path
   when b (removeFile path)
 
---
--- Version negotation
---
-
-data NullVersionData = NullVersionData
-  deriving (Eq, Show)
-
-instance Acceptable NullVersionData where
-  acceptableVersion NullVersionData NullVersionData = Version.Accept
-
-nullVersionDataCodecCBORTerm :: CodecCBORTerm Text NullVersionData
-nullVersionDataCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
-    where
-      encodeTerm :: NullVersionData -> CBOR.Term
-      encodeTerm NullVersionData = CBOR.TNull
-
-      decodeTerm :: CBOR.Term -> Either Text NullVersionData
-      decodeTerm CBOR.TNull = Right NullVersionData
-      decodeTerm t          = Left $ Text.pack $ "unexpected term: " ++ show t
 
 
 --
@@ -117,10 +95,7 @@ clientPingPong pipelined =
       (localSnocket iomgr defaultLocalSocketAddrPath)
       cborTermVersionDataCodec
       nullNetworkConnectTracers
-      (simpleSingletonVersions (0::Int)
-                               NullVersionData
-                               (DictVersion nullVersionDataCodecCBORTerm)
-                               (\_peerid -> app))
+      (unversionedProtocol (\_peerid -> app))
       Nothing
       defaultLocalSocketAddr
   where
@@ -158,10 +133,7 @@ serverPingPong =
       defaultLocalSocketAddr
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptableVersion)
-      (simpleSingletonVersions (0::Int)
-                               NullVersionData
-                               (DictVersion nullVersionDataCodecCBORTerm)
-                               (\_peerid -> SomeResponderApplication app))
+      (unversionedProtocol (\_peerid -> SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
@@ -209,10 +181,7 @@ clientPingPong2 =
       (localSnocket iomgr defaultLocalSocketAddrPath)
       cborTermVersionDataCodec
       nullNetworkConnectTracers
-      (simpleSingletonVersions (0::Int)
-                               NullVersionData
-                               (DictVersion nullVersionDataCodecCBORTerm)
-                               (\_peerid -> app))
+      (unversionedProtocol (\_peerid -> app))
       Nothing
       defaultLocalSocketAddr
   where
@@ -263,10 +232,7 @@ serverPingPong2 =
       defaultLocalSocketAddr
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptableVersion)
-      (simpleSingletonVersions (0::Int)
-                               NullVersionData
-                               (DictVersion nullVersionDataCodecCBORTerm)
-                               (\_peerid -> SomeResponderApplication app))
+      (unversionedProtocol (\_peerid -> SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception

@@ -331,7 +331,11 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                           (localSnocket iocp defaultLocalSocketAddrPath)
                           cborTermVersionDataCodec
                           nullNetworkConnectTracers
-                          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+                          (simpleSingletonVersions
+                            (0 :: Int)
+                            (NodeToNodeVersionData (NetworkMagic 0))
+                            (DictVersion nodeToNodeCodecCBORTerm)
+                            app)
                           Nothing
                           (localAddressFromPath sockAddr)
                     | sockAddr <- sockAddrs ]

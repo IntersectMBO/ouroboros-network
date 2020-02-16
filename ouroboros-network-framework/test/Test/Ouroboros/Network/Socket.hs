@@ -58,8 +58,6 @@ import qualified Network.Mux.Bearer.Socket as Mx (socketAsMuxBearer)
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 
-import           Test.Ouroboros.Network.Handshake
-
 import           Test.QuickCheck
 import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)

@@ -92,7 +92,6 @@ test-suite ouroboros-network-framework-tests
                        Test.Ouroboros.Network.Driver
                        Test.Ouroboros.Network.Socket
                        Test.Ouroboros.Network.Subscription
-                       Test.Ouroboros.Network.Handshake
 
   build-depends:       base
                      , bytestring
