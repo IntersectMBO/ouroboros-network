@@ -166,7 +166,7 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 connectTo
   :: LocalSnocket
   -- ^ callback constructed by 'Ouroboros.Network.IOManager.withIOManager'
-  -> NetworkConnectTracers LocalAddress NodeToClientProtocols NodeToClientVersion
+  -> NetworkConnectTracers LocalAddress NodeToClientVersion
   -> Versions NodeToClientVersion
               DictVersion
               (ConnectionId LocalAddress ->
@@ -190,7 +190,7 @@ connectTo snocket tracers versions path =
 --
 connectTo_V1
   :: LocalSnocket
-  -> NetworkConnectTracers LocalAddress NodeToClientProtocols NodeToClientVersion
+  -> NetworkConnectTracers LocalAddress NodeToClientVersion
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
@@ -222,7 +222,7 @@ withServer
   :: ( HasResponder appType ~ True
      )
   => LocalSnocket
-  -> NetworkServerTracers LocalAddress NodeToClientProtocols NodeToClientVersion
+  -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
   -> LocalAddress
   -> Versions NodeToClientVersion DictVersion
@@ -251,7 +251,7 @@ withServer_V1
   :: ( HasResponder appType ~ True
      )
   => LocalSnocket
-  -> NetworkServerTracers LocalAddress NodeToClientProtocols NodeToClientVersion
+  -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
   -> LocalAddress
   -> NodeToClientVersionData
@@ -274,7 +274,7 @@ withServer_V1 sn tracers networkState addr versionData application =
         application)
 
 type NetworkClientSubcriptionTracers
-    = NetworkSubscriptionTracers Identity LocalAddress NodeToClientProtocols NodeToClientVersion
+    = NetworkSubscriptionTracers Identity LocalAddress NodeToClientVersion
 
 
 -- | 'ncSubscriptionWorker' which starts given application versions on each
@@ -327,7 +327,7 @@ ncSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => LocalSnocket
-    -> NetworkSubscriptionTracers Identity LocalAddress NodeToClientProtocols NodeToClientVersion
+    -> NetworkClientSubcriptionTracers
     -> NetworkMutableState LocalAddress
     -> ClientSubscriptionParams ()
     -> NodeToClientVersionData

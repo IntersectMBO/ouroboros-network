@@ -198,7 +198,7 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 --
 connectTo
   :: Snocket IO Socket.Socket Socket.SockAddr
-  -> NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+  -> NetworkConnectTracers Socket.SockAddr NodeToNodeVersion
   -> Versions NodeToNodeVersion
               DictVersion
               (ConnectionId Socket.SockAddr ->
@@ -214,7 +214,7 @@ connectTo sn =
 --
 connectTo_V1
   :: SocketSnocket
-  -> NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+  -> NetworkConnectTracers Socket.SockAddr NodeToNodeVersion
   -> NodeToNodeVersionData
   -> (ConnectionId Socket.SockAddr ->
         OuroborosApplication InitiatorApp NodeToNodeProtocols BL.ByteString IO a b)
@@ -244,7 +244,7 @@ connectTo_V1 sn tracers versionData application localAddr remoteAddr =
 withServer
   :: ( HasResponder appType ~ True )
   => SocketSnocket
-  -> NetworkServerTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+  -> NetworkServerTracers Socket.SockAddr NodeToNodeVersion
   -> NetworkMutableState Socket.SockAddr
   -> Socket.SockAddr
   -> Versions NodeToNodeVersion DictVersion
@@ -270,7 +270,7 @@ withServer sn tracers networkState addr versions errPolicies =
 withServer_V1
   :: ( HasResponder appType ~ True )
   => SocketSnocket
-  -> NetworkServerTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+  -> NetworkServerTracers Socket.SockAddr NodeToNodeVersion
   -> NetworkMutableState Socket.SockAddr
   -> Socket.SockAddr
   -> NodeToNodeVersionData
@@ -295,7 +295,7 @@ ipSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => SocketSnocket
-    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeVersion
     -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> Versions
@@ -334,7 +334,7 @@ ipSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => SocketSnocket
-    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeVersion
     -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> NodeToNodeVersionData
@@ -367,7 +367,7 @@ dnsSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => SocketSnocket
-    -> NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion Socket.SockAddr
+    -> NetworkDNSSubscriptionTracers NodeToNodeVersion Socket.SockAddr
     -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> Versions
@@ -408,7 +408,7 @@ dnsSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => SocketSnocket
-    -> NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion Socket.SockAddr
+    -> NetworkDNSSubscriptionTracers NodeToNodeVersion Socket.SockAddr
     -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> NodeToNodeVersionData

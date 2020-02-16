@@ -107,7 +107,7 @@ import           Ouroboros.Network.Server.ConnectionTable
 -- 'Ouroboros.Network.NodeToNode.connectTo' or
 -- 'Ouroboros.Network.NodeToClient.connectTo).
 --
-data NetworkConnectTracers addr ptcl vNumber = NetworkConnectTracers {
+data NetworkConnectTracers addr vNumber = NetworkConnectTracers {
       nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr)  Mx.MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
@@ -117,15 +117,15 @@ data NetworkConnectTracers addr ptcl vNumber = NetworkConnectTracers {
       -- negotation mismatches.
     }
 
-nullNetworkConnectTracers :: NetworkConnectTracers addr ptcl vNumber
+nullNetworkConnectTracers :: NetworkConnectTracers addr vNumber
 nullNetworkConnectTracers = NetworkConnectTracers {
       nctMuxTracer       = nullTracer,
       nctHandshakeTracer = nullTracer
     }
 
 
-debuggingNetworkConnectTracers :: (Show addr, Show ptcl, Show vNumber)
-                               => NetworkConnectTracers addr ptcl vNumber
+debuggingNetworkConnectTracers :: (Show addr, Show vNumber)
+                               => NetworkConnectTracers addr vNumber
 debuggingNetworkConnectTracers = NetworkConnectTracers {
       nctMuxTracer       = showTracing stdoutTracer, 
       nctHandshakeTracer = showTracing stdoutTracer
@@ -191,7 +191,7 @@ connectToNode
      )
   => Snocket IO fd addr
   -> VersionDataCodec extra CBOR.Term
-  -> NetworkConnectTracers addr ptcl vNumber
+  -> NetworkConnectTracers addr vNumber
   -> Versions vNumber extra
               (ConnectionId addr -> OuroborosApplication appType ptcl BL.ByteString IO a b)
   -- ^ application to run over the connection
@@ -237,7 +237,7 @@ connectToNode'
      )
   => Snocket IO fd addr
   -> VersionDataCodec extra CBOR.Term
-  -> NetworkConnectTracers addr ptcl vNumber
+  -> NetworkConnectTracers addr vNumber
   -> Versions vNumber extra
               (ConnectionId addr -> OuroborosApplication appType ptcl BL.ByteString IO a b)
   -- ^ application to run over the connection
@@ -283,7 +283,7 @@ connectToNodeSocket
      )
   => AssociateWithIOCP
   -> VersionDataCodec extra CBOR.Term
-  -> NetworkConnectTracers Socket.SockAddr ptcl vNumber
+  -> NetworkConnectTracers Socket.SockAddr vNumber
   -> Versions vNumber extra
               (ConnectionId Socket.SockAddr -> OuroborosApplication appType ptcl BL.ByteString IO a b)
   -- ^ application to run over the connection
@@ -426,7 +426,7 @@ fromSnocket tblVar sn sd = go (Snocket.accept sn sd)
 
 -- | Tracers required by a server which handles inbound connections.
 --
-data NetworkServerTracers addr ptcl vNumber = NetworkServerTracers {
+data NetworkServerTracers addr vNumber = NetworkServerTracers {
       nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr) Mx.MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
@@ -440,15 +440,15 @@ data NetworkServerTracers addr ptcl vNumber = NetworkServerTracers {
       -- and not logged or rethrown.
     }
 
-nullNetworkServerTracers :: NetworkServerTracers addr ptcl vNumber
+nullNetworkServerTracers :: NetworkServerTracers addr vNumber
 nullNetworkServerTracers = NetworkServerTracers {
       nstMuxTracer         = nullTracer,
       nstHandshakeTracer   = nullTracer,
       nstErrorPolicyTracer = nullTracer
     }
 
-debuggingNetworkServerTracers :: (Show addr, Show ptcl, Show vNumber)
-                              =>  NetworkServerTracers addr ptcl vNumber
+debuggingNetworkServerTracers :: (Show addr, Show vNumber)
+                              =>  NetworkServerTracers addr vNumber
 debuggingNetworkServerTracers = NetworkServerTracers {
       nstMuxTracer         = showTracing stdoutTracer,
       nstHandshakeTracer   = showTracing stdoutTracer,
@@ -500,7 +500,7 @@ runServerThread
        , Show vNumber
        , Ord addr
        )
-    => NetworkServerTracers addr ptcl vNumber
+    => NetworkServerTracers addr vNumber
     -> NetworkMutableState addr
     -> Snocket IO fd addr
     -> fd
@@ -598,7 +598,7 @@ withServerNode
        , Ord addr
        )
     => Snocket IO fd addr
-    -> NetworkServerTracers addr ptcl vNumber
+    -> NetworkServerTracers addr vNumber
     -> NetworkMutableState addr
     -> addr
     -> VersionDataCodec extra CBOR.Term

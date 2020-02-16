@@ -20,7 +20,7 @@ import           Ouroboros.Network.Subscription.Dns
 
 -- | IP subscription tracers.
 --
-data NetworkSubscriptionTracers withIPList addr ptcl vNumber = NetworkSubscriptionTracers {
+data NetworkSubscriptionTracers withIPList addr vNumber = NetworkSubscriptionTracers {
       nsMuxTracer          :: Tracer IO (WithMuxBearer (ConnectionId addr) MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
@@ -37,9 +37,10 @@ data NetworkSubscriptionTracers withIPList addr ptcl vNumber = NetworkSubscripti
       -- by default.
     }
 
-type NetworkIPSubscriptionTracers addr ptcl vNumber = NetworkSubscriptionTracers WithIPList addr ptcl vNumber
+type NetworkIPSubscriptionTracers addr vNumber =
+     NetworkSubscriptionTracers WithIPList addr vNumber
 
-nullNetworkSubscriptionTracers :: NetworkSubscriptionTracers withIPList addr ptcl vNumber
+nullNetworkSubscriptionTracers :: NetworkSubscriptionTracers withIPList addr vNumber
 nullNetworkSubscriptionTracers = NetworkSubscriptionTracers {
       nsMuxTracer          = nullTracer,
       nsHandshakeTracer    = nullTracer,
@@ -49,7 +50,7 @@ nullNetworkSubscriptionTracers = NetworkSubscriptionTracers {
 
 -- | DNS subscription tracers.
 --
-data NetworkDNSSubscriptionTracers ptcl vNumber addr = NetworkDNSSubscriptionTracers {
+data NetworkDNSSubscriptionTracers vNumber addr = NetworkDNSSubscriptionTracers {
       ndstMuxTracer          :: Tracer IO (WithMuxBearer (ConnectionId addr) MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
@@ -70,7 +71,7 @@ data NetworkDNSSubscriptionTracers ptcl vNumber addr = NetworkDNSSubscriptionTra
 
     }
 
-nullNetworkDNSSubscriptionTracers :: NetworkDNSSubscriptionTracers ptcl vNumber peerid
+nullNetworkDNSSubscriptionTracers :: NetworkDNSSubscriptionTracers vNumber peerid
 nullNetworkDNSSubscriptionTracers = NetworkDNSSubscriptionTracers {
       ndstMuxTracer          = nullTracer,
       ndstHandshakeTracer    = nullTracer,
