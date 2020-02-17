@@ -162,6 +162,8 @@ data Cmd blk it rdr
   | Reopen
     -- Internal
   | RunBgTasks
+    -- Corruption
+  | WipeVolDB
   deriving (Generic, Show, Functor, Foldable, Traversable)
 
 -- = Invalid blocks
@@ -307,6 +309,7 @@ data ChainDBEnv m blk = ChainDBEnv
   , registry   :: ResourceRegistry m
   , varCurSlot :: StrictTVar m SlotNo
   , varNextId  :: StrictTVar m Id
+  , varVolDbFs :: StrictTVar m MockFS
   }
 
 run :: forall m blk. (IOLike m, HasHeader blk)
@@ -336,6 +339,7 @@ run ChainDBEnv { chainDB = chainDB@ChainDB{..}, .. } = \case
     Close                    -> Unit                <$> closeDB
     Reopen                   -> Unit                <$> intReopen internal False
     RunBgTasks               -> ignore              <$> runBgTasks internal
+    WipeVolDB                -> Point               <$> wipeVolDB
   where
     mbAllComponents = fmap MbAllComponents . traverse runAllComponentsM
     mbGCedAllComponents = fmap (MbGCedAllComponents . MaybeGCedBlock True) . traverse runAllComponentsM
@@ -354,6 +358,13 @@ run ChainDBEnv { chainDB = chainDB@ChainDB{..}, .. } = \case
           atomically $ writeTVar varCurSlot slot
           intScheduledChainSelection internal slot
       addBlock chainDB blk
+
+    wipeVolDB :: m (Point blk)
+    wipeVolDB = do
+      closeDB
+      atomically $ writeTVar varVolDbFs Mock.empty
+      intReopen internal False
+      atomically $ getTipPoint
 
     giveWithEq :: a -> m (WithEq a)
     giveWithEq a =
@@ -490,9 +501,10 @@ runPure cfg = \case
     ReaderForward rdr pts    -> err MbPoint             $ updateE (Model.readerForward rdr pts)
     ReaderClose rdr          -> ok  Unit                $ update_ (Model.readerClose rdr)
     -- TODO can this execute while closed?
-    RunBgTasks               -> ok  Unit                $ update_ (Model.garbageCollect k)
+    RunBgTasks               -> ok  Unit                $ update_ (Model.garbageCollect k . Model.copyToImmDB k)
     Close                    -> openOrClosed            $ update_  Model.closeDB
     Reopen                   -> openOrClosed            $ update_  Model.reopen
+    WipeVolDB                -> ok  Point               $ update  (Model.wipeVolDB cfg)
   where
     k = configSecurityParam cfg
 
@@ -667,6 +679,11 @@ lockstep model@Model {..} cmd (At resp) = Event
         , knownIters   = RE.empty
         , knownReaders = RE.empty
         }
+      WipeVolDB -> model
+        { dbModel      = dbModel'
+        , knownIters   = RE.empty
+        , knownReaders = RE.empty
+        }
       _ -> model
         { dbModel      = dbModel'
         , knownIters   = knownIters `RE.union` newIters
@@ -717,6 +734,7 @@ generator genBlock m@Model {..} = At <$> frequency
 
       -- Internal
     , (if empty then 1 else 10, return RunBgTasks)
+    , (if empty then 1 else 10, return WipeVolDB)
     ]
     -- TODO adjust the frequencies after labelling
   where
@@ -891,16 +909,26 @@ precondition Model {..} (At cmd) =
      -- with iterators that the model allows. So we only test a subset of the
      -- functionality, which does not include error paths.
      Stream from to           -> isValidIterator from to
-     -- Make sure we don't close (and reopen) when there are other chain
+     -- Make sure we don't close (and reopen) when there are other chains
      -- equally preferable or even more preferable (which we can't switch to
      -- because they fork back more than @k@) than the current chain in the
      -- ChainDB. We might pick another one than the current one when
      -- reopening, which would bring us out of sync with the model, for which
      -- reopening is a no-op (no chain selection). See #1533.
-     Close                    -> Not equallyOrMorePreferableFork
+     --
+     -- Similary, don't close (and reopen) when there are future blocks. The
+     -- real implementation will drop the scheduled chain selections for
+     -- those, so it will not automatically run chain selection for them when
+     -- their slot becomes the current slot after reopening. Such blocks will
+     -- only be adopted when a successor of them is added. However, in the
+     -- model, we run chain selection from scratch, so we might adopt one of
+     -- the future blocks when adding another block (that we don't adopt).
+     Close                    -> Not equallyOrMorePreferableFork .&&
+                                 Boolean (Map.null (Model.futureBlocks dbModel))
      -- To be in the future, @blockSlot blk@ must be greater than @slot@.
      AddFutureBlock blk s     -> s .>= Model.currentSlot dbModel .&&
                                  blockSlot blk .> s
+     WipeVolDB                -> Boolean $ Model.isOpen dbModel
      _                        -> Top
   where
     garbageCollectable :: RealPoint blk -> Logic
@@ -1311,7 +1339,7 @@ prop_sequential (SmallChunkInfo chunkInfo) =
       (tracer, getTrace) <- recordingTracerIORef
       varCurSlot         <- uncheckedNewTVarM 0
       varNextId          <- uncheckedNewTVarM 0
-      fsVars             <- (,,)
+      fsVars@(_, varVolDbFs, _) <- (,,)
         <$> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
@@ -1326,6 +1354,7 @@ prop_sequential (SmallChunkInfo chunkInfo) =
               , registry = iteratorRegistry
               , varCurSlot
               , varNextId
+              , varVolDbFs
               }
             sm' = sm env (genBlk chunkInfo) testCfg testInitExtLedger
         (hist, model, res) <- QSM.runCommands' sm' cmds
@@ -1527,7 +1556,7 @@ _runCmds :: ImmDB.ChunkInfo
 _runCmds chunkInfo cmds = withRegistry $ \registry -> do
     varCurSlot <- uncheckedNewTVarM 0
     varNextId  <- uncheckedNewTVarM 0
-    fsVars <- (,,)
+    fsVars@(_, varVolDbFs, _) <- (,,)
       <$> uncheckedNewTVarM Mock.empty
       <*> uncheckedNewTVarM Mock.empty
       <*> uncheckedNewTVarM Mock.empty
@@ -1546,6 +1575,7 @@ _runCmds chunkInfo cmds = withRegistry $ \registry -> do
           , registry
           , varCurSlot
           , varNextId
+          , varVolDbFs
           }
     evalStateT (mapM (go env) cmds) emptyRunCmdState
   where
