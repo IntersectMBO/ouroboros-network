@@ -35,10 +35,11 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.FS.API (HasFS (..), hPut, withFile)
-import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.VolatileDB
-import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
+import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hPut, withFile)
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.VolatileDB
+import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl as Internal hiding
+                     (openDB)
 
 import           Test.Ouroboros.Storage.TestBlock as TestBlock hiding
                      (Corruptions, FileCorruption (..), corruptFile,

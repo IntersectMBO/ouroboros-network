@@ -10,7 +10,7 @@ import           Test.Ouroboros.Storage.Util
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 
-import           Ouroboros.Storage.FS.API
+import           Ouroboros.Consensus.Storage.FS.API
 
 tests :: FilePath -> TestTree
 tests tmpDir = testGroup "HasFS"

@@ -29,8 +29,8 @@ import           Cardano.Crypto (ProtocolMagicId (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.FS.API
-import           Ouroboros.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.FS.API
+import           Ouroboros.Consensus.Storage.FS.API.Types
 
 {-------------------------------------------------------------------------------
   Check proper

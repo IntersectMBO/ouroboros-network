@@ -21,8 +21,6 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftParams(..)
   , PBftIsLeader(..)
   , PBftIsLeaderOrNot(..)
-  , genesisKeyCoreNodeId
-  , nodeIdToGenesisKey
   , pbftWindowSize
     -- * Forging
   , ConstructContextDSIGN(..)
@@ -30,7 +28,6 @@ module Ouroboros.Consensus.Protocol.PBFT (
     -- * Classes
   , PBftCrypto(..)
   , PBftMockCrypto
-  , PBftCardanoCrypto
   , PBftValidateView(..)
   , pbftValidateRegular
   , pbftValidateBoundary
@@ -47,16 +44,12 @@ import           Crypto.Random (MonadRandom)
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.Proxy (Proxy (..))
-import           Data.Set (Set)
-import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
-import qualified Cardano.Chain.Common as CC.Common
-import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -67,9 +60,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
-import           Ouroboros.Consensus.Ledger.Byron.Config
-import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState (PBftChainState)
@@ -164,9 +155,6 @@ class ConstructContextDSIGN cfg c where
 
 instance ConstructContextDSIGN ext PBftMockCrypto where
   constructContextDSIGN _p _cfg _genKey = ()
-
-instance ConstructContextDSIGN ByronConfig PBftCardanoCrypto where
-  constructContextDSIGN _p cfg genKey = (cfg, genKey)
 
 forgePBftFields :: forall m c toSign. (
                        MonadRandom m
@@ -296,8 +284,8 @@ instance PBftCrypto c => OuroborosTag (PBft c) where
         -- slot number. Our node index depends which genesis key has delegated
         -- to us, see 'genesisKeyCoreNodeId'.
         PBftIsALeader credentials
-          | n `mod` numCoreNodes == fromIntegral i -> return (Just credentials)
-          | otherwise                              -> return Nothing
+          | n `mod` numCoreNodes == i -> return (Just credentials)
+          | otherwise                 -> return Nothing
           where
             PBftIsLeader{pbftCoreNodeId = CoreNodeId i} = credentials
             PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams
@@ -428,35 +416,6 @@ rewind PBftNodeConfig{..} PBftWindowParams{..} p =
     p' = case p of
       GenesisPoint    -> Origin
       BlockPoint s hh -> At (s, headerHashBytes (Proxy :: Proxy hdr) hh)
-
-{-------------------------------------------------------------------------------
-  PBFT node order
--------------------------------------------------------------------------------}
-
--- | Determine the 'CoreNodeId' for a code node, based on the genesis key it
--- will sign blocks on behalf of.
---
--- In PBFT, the 'CoreNodeId' index is determined by the 0-based position in
--- the sort order of the genesis key hashes.
-genesisKeyCoreNodeId :: CC.Genesis.Config
-                     -> VerKeyDSIGN CardanoDSIGN
-                        -- ^ The genesis verification key
-                     -> Maybe CoreNodeId
-genesisKeyCoreNodeId gc vkey =
-    CoreNodeId . fromIntegral <$>
-      Set.lookupIndex (hashVerKey vkey) (genesisKeyHashes gc)
-
--- | Inverse of 'genesisKeyCoreNodeId'
-nodeIdToGenesisKey :: CC.Genesis.Config
-                   -> CoreNodeId
-                   -> Maybe CC.Common.KeyHash
-nodeIdToGenesisKey gc (CoreNodeId nid) = do
-    guard $ nid < fromIntegral (Set.size (genesisKeyHashes gc))
-    return $ Set.elemAt (fromIntegral nid) (genesisKeyHashes gc)
-
-genesisKeyHashes :: CC.Genesis.Config -> Set CC.Common.KeyHash
-genesisKeyHashes = CC.Genesis.unGenesisKeyHashes
-                 . CC.Genesis.configGenesisKeyHashes
 
 {-------------------------------------------------------------------------------
   PBFT specific types

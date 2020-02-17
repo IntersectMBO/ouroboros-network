@@ -17,9 +17,9 @@ import           Data.Word
 import           Ouroboros.Network.Block (Point (..), SlotNo (..))
 import           Ouroboros.Network.Point (Block (..), WithOrigin (..))
 
-import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.LedgerDB.InMemory (LedgerDB)
-import qualified Ouroboros.Storage.LedgerDB.InMemory as LedgerDB
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
+import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 
 {-------------------------------------------------------------------------------
   Generic

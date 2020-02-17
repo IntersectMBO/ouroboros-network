@@ -18,19 +18,19 @@ import           Test.Tasty.HUnit
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.Condense (Condense, condense)
 
-import           Ouroboros.Storage.FS.API (HasFS (..))
-import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.IO (ioHasFS)
-import           Ouroboros.Storage.ImmutableDB (ImmutableDBError (..),
+import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
+import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDBError (..),
                      prettyImmutableDBError, sameImmutableDBError)
-import qualified Ouroboros.Storage.ImmutableDB as Immutable
-import           Ouroboros.Storage.ImmutableDB.Impl.Util (tryImmDB)
-import           Ouroboros.Storage.IO (sameError)
-import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-import           Ouroboros.Storage.VolatileDB (VolatileDBError (..),
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as Immutable
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (tryImmDB)
+import           Ouroboros.Consensus.Storage.IO (sameError)
+import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDBError (..),
                      sameVolatileDBError)
-import           Ouroboros.Storage.VolatileDB.Util (tryVolDB)
+import           Ouroboros.Consensus.Storage.VolatileDB.Util (tryVolDB)
 
 import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock

@@ -53,8 +53,8 @@ import           Cardano.Slotting.Slot (WithOrigin, withOriginFromMaybe,
 
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.FS.API
-import           Ouroboros.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.FS.API
+import           Ouroboros.Consensus.Storage.FS.API.Types
 
 {-------------------------------------------------------------------------------
   Incremental parsing in I/O

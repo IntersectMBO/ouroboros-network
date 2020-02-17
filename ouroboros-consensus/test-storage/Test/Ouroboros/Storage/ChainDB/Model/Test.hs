@@ -22,7 +22,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 
-import           Ouroboros.Storage.ChainDB.API (StreamFrom (..), StreamTo (..))
+import           Ouroboros.Consensus.Storage.ChainDB.API (StreamFrom (..),
+                     StreamTo (..))
 
 import           Test.Util.TestBlock
 

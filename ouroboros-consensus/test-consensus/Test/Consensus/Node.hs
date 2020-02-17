@@ -17,9 +17,9 @@ import           Cardano.Crypto (ProtocolMagicId (..))
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Util.ResourceRegistry (withRegistry)
 
-import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.IO (ioHasFS)
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Tasty
 import           Test.Tasty.HUnit

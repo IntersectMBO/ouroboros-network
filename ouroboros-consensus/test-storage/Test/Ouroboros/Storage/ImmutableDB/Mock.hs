@@ -10,10 +10,10 @@ import           Data.Tuple (swap)
 import           Ouroboros.Consensus.Util ((...:), (..:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.Common (BlockComponent, EpochSize)
-import           Ouroboros.Storage.ImmutableDB.API
-import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Consensus.Storage.Common (BlockComponent, EpochSize)
+import           Ouroboros.Consensus.Storage.ImmutableDB.API
+import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 

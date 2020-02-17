@@ -15,18 +15,16 @@ import           Control.Exception (AsyncException (..), SomeException,
 
 import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
 
-import           Ouroboros.Storage.ChainDB.API (ChainDbFailure (..))
-import           Ouroboros.Storage.FS.API.Types (FsError (..), FsErrorType (..))
-import           Ouroboros.Storage.ImmutableDB.Types (ImmutableDBError)
-import qualified Ouroboros.Storage.ImmutableDB.Types as ImmDB
-import           Ouroboros.Storage.VolatileDB.Types (VolatileDBError)
-import qualified Ouroboros.Storage.VolatileDB.Types as VolDB
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
+import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..),
+                     FsErrorType (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB.Types
+                     (ImmutableDBError)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Types as ImmDB
+import           Ouroboros.Consensus.Storage.VolatileDB.Types (VolatileDBError)
+import qualified Ouroboros.Consensus.Storage.VolatileDB.Types as VolDB
 
-import           Ouroboros.Consensus.Ledger.Byron.Serialisation
-                     (DropEncodedSizeException)
 import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
-import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
-                     (PBftLeaderCredentialsError)
 
 {-------------------------------------------------------------------------------
   ExitFailure
@@ -118,10 +116,6 @@ toExitReason e
         VolDbFailure ue -> volDbUnexpectedError ue
         LgrDbFailure fe -> fsError fe
         _               -> DatabaseCorruption
-    | Just (_ :: PBftLeaderCredentialsError) <- fromException e
-    = ConfigurationError
-    | Just (_ :: DropEncodedSizeException) <- fromException e
-    = DatabaseCorruption
 
     -- The three exceptions below will always be wrapped in a
     -- 'ChainDbFailure', but we include them just in case.

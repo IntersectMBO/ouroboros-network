@@ -50,7 +50,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
@@ -58,11 +58,12 @@ import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
-import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
-import           Ouroboros.Storage.FS.API (HasFS (..), hGetExactly, hPutAll,
-                     hSeek, withFile)
-import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.ImmutableDB.Types (BinaryInfo (..),
+import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
+                     EpochSize (..))
+import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
+                     hPutAll, hSeek, withFile)
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BinaryInfo (..),
                      HashInfo (..))
 
 import           Test.Util.Orphans.Arbitrary ()

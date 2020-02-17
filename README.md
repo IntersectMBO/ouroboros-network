@@ -73,7 +73,7 @@ Consensus layer of the family Ouroboros blockchain protocols.
 
 ### Consensus test suite
 ```
-cabal new-run pkg:ouroboros-consensus:test-consensus
+cabal new-run ouroboros-consensus:test-consensus
 ```
 or with `nix`
 ```
@@ -81,9 +81,33 @@ nix-build -A haskellPackages.ouroboros-consensus.checks.test-consensus
 ```
 ### Storage test suite
 ```
-cabal new-run pkg:ouroboros-consensus:test-storage
+cabal new-run ouroboros-consensus:test-storage
 ```
 or with `nix`
 ```
 nix-build -A haskellPackages.ouroboros-consensus.checks.test-storage
+```
+### Mock test suite
+```
+cabal new-run ouroboros-consensus-mock:test
+```
+or with `nix`
+```
+nix-build -A haskellPackages.ouroboros-consensus-mock.checks.test
+```
+### Byron test suite
+```
+cabal new-run ouroboros-consensus-byron:test
+```
+or with `nix`
+```
+nix-build -A haskellPackages.ouroboros-consensus-byron.checks.test
+```
+### Test infrastructure test suite
+```
+cabal new-run ouroboros-consensus-test-infra:test
+```
+or with `nix`
+```
+nix-build -A haskellPackages.ouroboros-consensus-test-infra.checks.test
 ```

@@ -32,20 +32,20 @@ import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.ChainDB.API (BlockComponent (..),
+import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
                      Iterator (..), IteratorResult (..), StreamFrom (..),
                      StreamTo (..), UnknownRange (..), traverseIterator)
-import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, mkImmDB)
-import           Ouroboros.Storage.ChainDB.Impl.Iterator (IteratorEnv (..),
-                     newIterator)
-import           Ouroboros.Storage.ChainDB.Impl.Types (IteratorKey (..),
-                     TraceIteratorEvent (..))
-import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
-import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
-import qualified Ouroboros.Storage.ImmutableDB as ImmDB
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-import qualified Ouroboros.Storage.VolatileDB as VolDB
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB, mkImmDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
+                     (IteratorEnv (..), newIterator)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
+                     (IteratorKey (..), TraceIteratorEvent (..))
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.EpochInfo (fixedSizeEpochInfo)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Tracer (recordingTracerTVar)

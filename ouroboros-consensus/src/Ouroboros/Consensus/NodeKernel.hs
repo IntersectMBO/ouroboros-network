@@ -71,9 +71,8 @@ import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 
-import           Ouroboros.Storage.ChainDB.API (ChainDB)
-import qualified Ouroboros.Storage.ChainDB.API as ChainDB
-
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 
 {-------------------------------------------------------------------------------
   Relay node

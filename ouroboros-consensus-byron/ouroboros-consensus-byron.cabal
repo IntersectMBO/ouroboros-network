@@ -1,0 +1,193 @@
+name:                  ouroboros-consensus-byron
+version:               0.1.0.0
+synopsis:              Byron ledger integration in the Ouroboros consensus layer
+-- description:
+license:               Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
+copyright:             2019 Input Output (Hong Kong) Ltd.
+author:                IOHK Engineering Team
+maintainer:            operations@iohk.io
+category:              Network
+build-type:            Simple
+cabal-version:         >=1.10
+
+source-repository head
+  type:     git
+  location: https://github.com/input-output-hk/ouroboros-network
+
+flag asserts
+  description: Enable assertions
+  manual:      False
+  default:     False
+
+library
+  hs-source-dirs:      src
+
+  exposed-modules:
+                       Ouroboros.Consensus.Byron.Crypto.DSIGN
+                       Ouroboros.Consensus.Byron.Ledger
+                       Ouroboros.Consensus.Byron.Ledger.Block
+                       Ouroboros.Consensus.Byron.Ledger.Config
+                       Ouroboros.Consensus.Byron.Ledger.ContainsGenesis
+                       Ouroboros.Consensus.Byron.Ledger.Conversions
+                       Ouroboros.Consensus.Byron.Ledger.DelegationHistory
+                       Ouroboros.Consensus.Byron.Ledger.Forge
+                       Ouroboros.Consensus.Byron.Ledger.HeaderValidation
+                       Ouroboros.Consensus.Byron.Ledger.Integrity
+                       Ouroboros.Consensus.Byron.Ledger.Ledger
+                       Ouroboros.Consensus.Byron.Ledger.Mempool
+                       Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
+                       Ouroboros.Consensus.Byron.Ledger.Orphans
+                       Ouroboros.Consensus.Byron.Ledger.PBFT
+                       Ouroboros.Consensus.Byron.Ledger.Serialisation
+                       Ouroboros.Consensus.Byron.Protocol
+                       Ouroboros.Consensus.Byron.Node
+
+  build-depends:       base              >=4.9   && <4.13
+                     , binary            >=0.8   && <0.9
+                     , bytestring        >=0.10  && <0.11
+                     , cardano-binary
+                     , cardano-crypto-class
+                     , cardano-crypto-wrapper
+                     , cardano-ledger
+                     , cardano-prelude
+                     , cardano-slotting
+                     , cborg             >=0.2.2 && <0.3
+                     , containers        >=0.5   && <0.7
+                     , cryptonite        >=0.25  && <0.26
+                     , formatting        >=6.3   && <6.4
+                     , memory
+                     , mtl               >=2.2   && <2.3
+                     , serialise         >=0.2   && <0.3
+                     , text              >=1.2   && <1.3
+
+                     , ouroboros-network
+                     , ouroboros-consensus
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+  if flag(asserts)
+    ghc-options:       -fno-ignore-asserts
+
+-- This should be an external library, but we depend on it in our tests
+library byrondual
+  hs-source-dirs:      ouroboros-consensus-byrondual/src
+
+  exposed-modules:
+                       Ouroboros.Consensus.ByronDual.Ledger
+                       Ouroboros.Consensus.ByronDual.Node
+
+  build-depends:       base              >=4.9   && <4.13
+                     , bytestring        >=0.10  && <0.11
+                     , cardano-crypto-class
+                     , cardano-ledger
+                     , cardano-ledger-test
+                     , containers        >=0.5   && <0.7
+                     , cryptonite        >=0.25  && <0.26
+                     , cs-ledger
+                     , serialise         >=0.2   && <0.3
+
+                     , ouroboros-network
+                     , ouroboros-consensus
+                     , ouroboros-consensus-byron
+                     , ouroboros-consensus-byronspec
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+
+test-suite test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Main.hs
+  other-modules:
+                       Test.Consensus.Byron.Ledger
+                       Test.ThreadNet.DualPBFT
+                       Test.ThreadNet.RealPBFT
+                       Test.ThreadNet.Ref.RealPBFT
+                       Test.ThreadNet.TxGen.Byron
+  build-depends:       base
+                     , binary
+                     , binary-search
+                     , bytestring
+                     , cardano-binary
+                     , cardano-crypto-class
+                     , cardano-crypto-test
+                     , cardano-crypto-wrapper
+                     , cardano-ledger
+                     , cardano-ledger-test
+                     , cardano-prelude
+                     , cborg
+                     , containers
+                     , cryptonite
+                     , hedgehog-quickcheck
+                     , mtl
+                     , QuickCheck
+                     , tasty
+                     , tasty-golden
+                     , tasty-hunit
+                     , tasty-quickcheck
+                     , time
+                     , transformers
+
+                       -- Needed for the dual ledger
+                     , cs-blockchain
+                     , cs-ledger
+                     , small-steps
+                     , hedgehog
+
+                     , ouroboros-network
+                     , ouroboros-consensus
+                     , ouroboros-consensus-test-infra
+                     , ouroboros-consensus-byron
+                     , ouroboros-consensus-byronspec
+                     , byrondual
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -threaded
+                       -rtsopts
+
+executable db-converter
+   hs-source-dirs:     tools/db-converter
+   main-is:            Main.hs
+   build-depends:      base
+                     , bytestring
+                     , cardano-binary
+                     , cardano-crypto-wrapper
+                     , cardano-ledger
+                     , contra-tracer
+                     , directory
+                     , mtl
+                     , optparse-applicative
+                     , optparse-generic
+                     , path < 0.7
+                     , path-io
+                     , resourcet
+                     , streaming
+                     , text
+                     , time
+
+                     , ouroboros-consensus
+                     , ouroboros-consensus-byron
+
+   default-language:   Haskell2010
+   ghc-options:        -Wall
+
+executable db-analyser
+  hs-source-dirs:      tools/db-analyser
+  main-is:             Main.hs
+  build-depends:       base
+                     , cardano-binary
+                     , cardano-crypto-wrapper
+                     , cardano-ledger
+                     , mtl
+                     , optparse-applicative
+
+                     , ouroboros-consensus
+                     , ouroboros-consensus-byron
+                     , ouroboros-network
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall

@@ -87,8 +87,8 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.ChainDB.API (ChainDB)
-import qualified Ouroboros.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 
 -- | The collection of all the mini-protocol handlers provided by the consensus
 -- layer.

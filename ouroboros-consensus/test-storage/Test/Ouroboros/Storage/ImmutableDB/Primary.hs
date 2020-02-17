@@ -10,15 +10,15 @@ import           Test.QuickCheck.Monadic (monadicIO, run)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.FS.API
-import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary (PrimaryIndex,
-                     SecondaryOffset)
-import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
-import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
-import           Ouroboros.Storage.ImmutableDB.Layout
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.FS.API
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
+                     (PrimaryIndex, SecondaryOffset)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
+import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.Util (tryFS)
 
