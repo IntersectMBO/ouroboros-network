@@ -14,7 +14,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Oddchain where
+module Ouroboros.Consensus.Ledger.OddChain where
 
 import           Prelude hiding (flip)
 
@@ -62,7 +62,7 @@ import           Ouroboros.Consensus.Mempool.API (ApplyTx, ApplyTxErr, GenTx,
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
                      (HasNetworkProtocolVersion)
 import           Ouroboros.Consensus.Node.Run.Abstract (RunNode,
-                     nodeAddHeaderEnvelope, nodeBlockEncodingOverhead,
+                     nodeBlockEncodingOverhead,
                      nodeBlockFetchSize, nodeBlockMatchesHeader,
                      nodeCheckIntegrity, nodeDecodeApplyTxError,
                      nodeDecodeBlock, nodeDecodeChainState, nodeDecodeGenTx,
@@ -74,7 +74,7 @@ import           Ouroboros.Consensus.Node.Run.Abstract (RunNode,
                      nodeEncodeHeader, nodeEncodeHeaderHash,
                      nodeEncodeLedgerState, nodeEncodeQuery, nodeEncodeResult,
                      nodeEncodeTipInfo, nodeEncodeWrappedHeader, nodeEpochSize,
-                     nodeForgeBlock, nodeHashInfo, nodeInitChainDB, nodeIsEBB,
+                     nodeForgeBlock, nodeHashInfo, nodeIsEBB,
                      nodeMaxBlockSize, nodeNetworkMagic, nodeProtocolMagicId,
                      nodeStartTime)
 import           Ouroboros.Consensus.Protocol.Abstract (HasNodeState,
@@ -99,13 +99,14 @@ import           Ouroboros.Storage.Common (BinaryInfo (BinaryInfo), EpochNo,
                      headerSize)
 import           Ouroboros.Storage.ImmutableDB.Types (HashInfo (HashInfo),
                      getHash, hashSize, putHash)
+import           Ouroboros.Consensus.Util.Condense (Condense (condense))
 
 
 data OddBlock
   = OddBlock
     { oddBlockHeader  :: !(Header OddBlock)
     , oddBlockPayload :: ![Tx]
-    } deriving (HasAnnTip, ValidateEnvelope, HasNetworkProtocolVersion)
+    } deriving (Eq, Show,  HasAnnTip, ValidateEnvelope, HasNetworkProtocolVersion)
 
 type Hash a = Crypto.Hash.Hash ShortHash a
 
@@ -135,7 +136,7 @@ data SignedPart
     , oddBlockSlot        :: !SlotNo
     , oddBlockPayloadHash :: !(Hash [Tx])
     , oddBlockSize        :: !SizeInBytes
-    } deriving (Eq, Generic, NoUnexpectedThunks)
+    } deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 instance GetHeader OddBlock where
   data Header OddBlock
@@ -143,7 +144,7 @@ instance GetHeader OddBlock where
       { oddBlockSignedPart :: !SignedPart
       , oddBlockSignature  :: !(SigDSIGN (BftDSIGN BftMockCrypto))
         -- ^ The signed data must correspond with the 'Signed' type instance.
-      } deriving (Eq, Generic, NoUnexpectedThunks)
+      } deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
   getHeader = oddBlockHeader
 
@@ -204,13 +205,14 @@ instance UpdateLedger OddBlock where
     = OddConfig
     { slotsPerEpoch    :: !Word64
       -- ^ How many slots can you fit in an epoch. We use epochs to change phases.
-    , cfgNodeStartTime :: UTCTime
+    , cfgNodeStartTime :: !UTCTime
     } deriving (Show, Generic, NoUnexpectedThunks)
 
   applyChainTick cfg currentSlot st
     = TickedLedgerState
       { tickedSlotNo      = currentSlot
       , tickedLedgerState =
+          -- Note that the current slot shouldn't be changed here since no block is applied.
           st { phase = changePhaseOnEpochBoundary cfg currentSlot (phase st) }
       }
 
@@ -218,15 +220,26 @@ instance UpdateLedger OddBlock where
     = let st'@LedgerState { phase } = tickedLedgerState
                                     $ applyChainTick cfg (blockSlot blk) st
       in case catMaybes $ fmap (checkTx st') oddBlockPayload of
-          [] -> pure $! st' { phase = bump oddBlockPayload phase }
+          -- Remember to update the current slot. I didn't do it and I got a
+          -- failed assertion, in  Ouroboros.Storage.ChainDB.Impl.ChainSel
+          --
+          -- >     assert (castPoint (AF.headPoint c) == LgrDB.currentPoint l) $
+          --
+          -- the problem was that the ledger was not reporting the tip of the
+          -- last applied block.
+          --
+          [] -> pure $! st' { stCurrentSlot = blockSlot blk
+                            , phase         = bump oddBlockPayload phase
+                            }
           xs -> throwError $ OddError
                              { currentPhase = phase
                              , errors       = xs
                              }
 
-  reapplyLedgerBlock _cfg OddBlock { oddBlockHeader, oddBlockPayload } st@LedgerState { phase }
-    = st { stPrevHash = castHash $ blockPrevHash oddBlockHeader
-         , phase      = bump oddBlockPayload phase
+  reapplyLedgerBlock _cfg blk@OddBlock { oddBlockHeader, oddBlockPayload } st@LedgerState { phase }
+    = st { stPrevHash    = castHash $ blockPrevHash oddBlockHeader
+         , stCurrentSlot = blockSlot blk -- QUESTION: Is this needed here?
+         , phase         = bump oddBlockPayload phase
          }
 
   ledgerTipPoint LedgerState { stPrevHash, stCurrentSlot }
@@ -336,7 +349,7 @@ instance ProtocolLedgerView OddBlock where
 
 instance ApplyTx OddBlock where
   newtype GenTx OddBlock = OddTx { unOddTx :: Tx }
-    deriving (Eq, Ord, Generic)
+    deriving (Show, Eq, Ord, Generic)
     deriving newtype (ToCBOR, FromCBOR)
     deriving anyclass (NoUnexpectedThunks)
 
@@ -646,6 +659,39 @@ instance RunNode OddBlock where
   nodeDecodeQuery = error "OddChain.nodeDecodeQuery"
 
   nodeDecodeResult = \case {}
+
+-- We need to define the OddChain protocol, with all the data that is needed to
+-- run it. This is done in
+--
+-- > module Ouroboros.Consensus.Protocol
+--
+-- Once this is defined, we need a way to translate this protocol value to a
+-- 'ProtocolInfo' value, which contains the data required to run a protocol:
+--
+-- > module Ouroboros.Consensus.Node.ProtocolInfo.Abstract
+-- > ...
+-- > data ProtocolInfo b = ProtocolInfo {
+-- >        pInfoConfig     :: NodeConfig (BlockProtocol b)
+-- >      , pInfoInitState  :: NodeState  (BlockProtocol b)
+-- >        -- | The ledger state at genesis
+-- >      , pInfoInitLedger :: ExtLedgerState b
+-- >      }
+--
+--
+-- The translation from Protocol values to ProtocolInfo happens in:
+--
+-- > module Ouroboros.Consensus.Node.ProtocolInfo
+-- > ...
+-- > protocolInfo :: Protocol blk -> ProtocolInfo blk
+--
+-- The extensions of 'Protocol' and 'protocolInfo' to support the OddChain are
+-- defined in the modules where these symbols are declared, otherwise we have a
+-- circular dependency. This is just a temporary solution while the refactoring
+-- is on its way.
+--
+
+instance Condense OddBlock where
+  condense = show
 
 --------------------------------------------------------------------------------
 -- Testing the odd chain ...

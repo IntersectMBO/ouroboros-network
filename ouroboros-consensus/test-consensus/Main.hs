@@ -20,6 +20,7 @@ import qualified Test.ThreadNet.PBFT (tests)
 -- import qualified Test.ThreadNet.Praos (tests)
 import qualified Test.ThreadNet.RealPBFT (tests)
 import qualified Test.ThreadNet.Util.Tests (tests)
+import qualified Test.ThreadNet.OddChain (tests)
 
 import qualified Test.Util.Split (tests)
 
@@ -48,4 +49,5 @@ tests =
   , Test.ThreadNet.RealPBFT.tests
   , Test.ThreadNet.DualPBFT.tests
   , Test.Util.Split.tests
+  , Test.ThreadNet.OddChain.tests
   ]

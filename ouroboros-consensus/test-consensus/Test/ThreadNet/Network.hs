@@ -550,8 +550,9 @@ runThreadNetwork ThreadNetworkArgs
         , cdbAddHdrEnv        = nodeAddHeaderEnvelope (Proxy @blk)
         , cdbImmDbCacheConfig = Index.CacheConfig 2 60
         -- Misc
-        , cdbTracer           = instrumentationTracer <> nullDebugTracer
-        , cdbTraceLedger      = nullDebugTracer
+        , cdbTracer           = instrumentationTracer <> showTracing debugTracer
+          -- nullDebugTracer
+        , cdbTraceLedger      = showTracing debugTracer -- nullDebugTracer
         , cdbRegistry         = registry
         , cdbGcDelay          = 0
         }

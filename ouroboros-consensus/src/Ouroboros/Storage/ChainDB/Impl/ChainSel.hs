@@ -23,6 +23,8 @@ module Ouroboros.Storage.ChainDB.Impl.ChainSel
   , olderThanK
   ) where
 
+import qualified Debug.Trace as Debug
+
 import           Control.Exception (assert)
 import           Control.Monad.Except
 import           Control.Monad.Trans.State.Strict
@@ -851,6 +853,8 @@ mkChainAndLedger :: (HasHeader blk, UpdateLedger blk)
                  => AnchoredFragment (Header blk) -> LgrDB.LedgerDB blk
                  -> ChainAndLedger blk
 mkChainAndLedger c l =
+    Debug.trace ("\nAF.headPoint c = " ++ show (AF.headPoint c) ++ "\n") $
+    Debug.trace ("\nLgrDB.currentPoint l = " ++ show (LgrDB.currentPoint l) ++ "\n") $
     assert (castPoint (AF.headPoint c) == LgrDB.currentPoint l) $
     ChainAndLedger c l
 

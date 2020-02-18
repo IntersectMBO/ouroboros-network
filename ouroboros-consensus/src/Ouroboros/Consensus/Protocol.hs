@@ -38,6 +38,11 @@ import           Ouroboros.Consensus.Protocol.PBFT as X
 import           Ouroboros.Consensus.Protocol.Praos as X
 import           Ouroboros.Consensus.Util
 
+import           Ouroboros.Consensus.Ledger.OddChain (OddBlock)
+import           Data.Word (Word64)
+import           Data.Time.Clock (UTCTime)
+import           Ouroboros.Network.Block (SlotNo)
+
 {-------------------------------------------------------------------------------
   Supported protocols
 -------------------------------------------------------------------------------}
@@ -100,6 +105,21 @@ data Protocol blk where
     -> Maybe CoreNodeId
     -> Protocol DualByronBlock
 
+  -- | Run the BFT with the odd ledger.
+  ProtocolOdd
+    :: NumCoreNodes
+    -> CoreNodeId
+    -> SecurityParam
+    -> SlotLengths
+    -> Word64
+    -- ^ Number of slots per epoch. This is used to initialize the ledger
+    -- configuration.
+    --
+    -- TODO: this should be wrapped in a newtype.
+    -> UTCTime
+    -> SlotNo
+    -> Protocol OddBlock
+
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols
 -------------------------------------------------------------------------------}
@@ -111,3 +131,4 @@ runProtocol ProtocolLeaderSchedule{} = Dict
 runProtocol ProtocolMockPBFT{}       = Dict
 runProtocol ProtocolRealPBFT{}       = Dict
 runProtocol ProtocolDualPBFT{}       = Dict
+runProtocol ProtocolOdd{}            = Dict

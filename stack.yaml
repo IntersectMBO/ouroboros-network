@@ -8,7 +8,6 @@ packages:
   - ./ouroboros-network
   - ./ouroboros-network-testing
   - ./ouroboros-consensus
-  - ./ouroboros-consensus/examples/oddchain/
   - ./io-sim
   - ./io-sim-classes
   - ./ntp-client
