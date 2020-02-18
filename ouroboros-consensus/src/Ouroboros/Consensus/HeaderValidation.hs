@@ -60,6 +60,7 @@ import           Cardano.Slotting.Slot (WithOrigin (..))
 import           Ouroboros.Network.Block hiding (Tip (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 
@@ -193,11 +194,11 @@ rewindHeaderState :: forall blk.
                      ( SupportedBlock blk
                      , Serialise (HeaderHash blk)
                      )
-                  => NodeConfig (BlockProtocol blk)
+                  => TopLevelConfig blk
                   -> Point blk
                   -> HeaderState blk -> Maybe (HeaderState blk)
 rewindHeaderState cfg p HeaderState{..} = do
-    chainState' <- rewindChainState cfg headerStateChain p
+    chainState' <- rewindChainState (configConsensus cfg) headerStateChain p
     return $ HeaderState {
         headerStateChain  = chainState'
       , headerStateTips   = Seq.dropWhileR rolledBack headerStateTips
@@ -251,7 +252,7 @@ castHeaderEnvelopeError = \case
 
 class HasAnnTip blk => ValidateEnvelope blk where
   -- | Validate the header envelope
-  validateEnvelope :: NodeConfig (BlockProtocol blk)
+  validateEnvelope :: TopLevelConfig blk
                    -> WithOrigin (AnnTip blk)
                    -> Header blk
                    -> Except (HeaderEnvelopeError blk) ()
@@ -268,7 +269,7 @@ class HasAnnTip blk => ValidateEnvelope blk where
   minimumPossibleSlotNo _ = SlotNo 0
 
   default validateEnvelope :: HasHeader (Header blk)
-                           => NodeConfig (BlockProtocol blk)
+                           => TopLevelConfig blk
                            -> WithOrigin (AnnTip blk)
                            -> Header blk
                            -> Except (HeaderEnvelopeError blk) ()
@@ -365,7 +366,7 @@ castHeaderError (HeaderEnvelopeError e) = HeaderEnvelopeError $
 -- it will get the chance to do so in 'applyLedgerBlock', which is passed the
 -- entire block (not just the block body).
 validateHeader :: (SupportedBlock blk, ValidateEnvelope blk)
-               => NodeConfig (BlockProtocol blk)
+               => TopLevelConfig blk
                -> LedgerView (BlockProtocol blk)
                -> Header blk
                -> HeaderState blk
@@ -375,12 +376,12 @@ validateHeader cfg ledgerView hdr st = do
       validateEnvelope cfg (headerStateTip st) hdr
     chainState' <- withExcept HeaderProtocolError $
                      applyChainState
-                       cfg
+                       (configConsensus cfg)
                        ledgerView
                        (validateView cfg hdr)
                        (headerStateChain st)
     return $ headerStatePush
-               (protocolSecurityParam cfg)
+               (configSecurityParam cfg)
                chainState'
                (getAnnTip hdr)
                st

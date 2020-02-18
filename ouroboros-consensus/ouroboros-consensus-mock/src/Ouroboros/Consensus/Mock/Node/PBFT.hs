@@ -9,6 +9,7 @@ import qualified Data.Bimap as Bimap
 
 import           Cardano.Crypto.DSIGN
 
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
@@ -24,14 +25,17 @@ protocolInfoMockPBFT :: PBftParams
                                                       PBftMockCrypto)
 protocolInfoMockPBFT params nid =
     ProtocolInfo {
-        pInfoConfig = ExtNodeConfig ledgerView PBftNodeConfig {
-            pbftParams   = params
-          , pbftIsLeader = PBftIsALeader PBftIsLeader {
-                pbftCoreNodeId = nid
-              , pbftSignKey    = signKey nid
-                -- For Mock PBFT, we use our key as the genesis key.
-              , pbftDlgCert    = (verKey nid, verKey nid)
-              }
+        pInfoConfig = TopLevelConfig {
+            configConsensus = ExtNodeConfig ledgerView PBftNodeConfig {
+                 pbftParams   = params
+               , pbftIsLeader = PBftIsALeader PBftIsLeader {
+                     pbftCoreNodeId = nid
+                   , pbftSignKey    = signKey nid
+                     -- For Mock PBFT, we use our key as the genesis key.
+                   , pbftDlgCert    = (verKey nid, verKey nid)
+                   }
+               }
+          , configLedger = SimpleLedgerConfig
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState CS.empty)

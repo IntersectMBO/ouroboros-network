@@ -44,6 +44,7 @@ library
                        Ouroboros.Consensus.BlockchainTime.WallClock
                        Ouroboros.Consensus.ChainSyncClient
                        Ouroboros.Consensus.ChainSyncServer
+                       Ouroboros.Consensus.Config
                        Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Dual

@@ -44,8 +44,9 @@ class ( HasHeader blk
       , Show (LedgerError blk)
       , Eq   (LedgerState blk)
       , Eq   (LedgerError blk)
-      , NoUnexpectedThunks (LedgerState blk)
-      , NoUnexpectedThunks (LedgerError blk)
+      , NoUnexpectedThunks (LedgerState  blk)
+      , NoUnexpectedThunks (LedgerError  blk)
+      , NoUnexpectedThunks (LedgerConfig blk)
       ) => UpdateLedger blk where
   data family LedgerState blk :: *
   type family LedgerError blk :: *

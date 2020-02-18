@@ -9,6 +9,7 @@ import qualified Data.Map as Map
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
@@ -27,17 +28,20 @@ protocolInfoPraosRule numCoreNodes
                       params
                       schedule =
     ProtocolInfo {
-      pInfoConfig    = WLSNodeConfig
-        { lsNodeConfigSchedule = schedule
-        , lsNodeConfigP        = PraosNodeConfig
-            { praosParams       = params
-            , praosNodeId       = CoreId nid
-            , praosSignKeyVRF   = NeverUsedSignKeyVRF
-            , praosInitialEta   = 0
-            , praosInitialStake = genesisStakeDist addrDist
-            , praosVerKeys      = verKeys
+      pInfoConfig = TopLevelConfig {
+          configConsensus = WLSNodeConfig {
+              lsNodeConfigSchedule = schedule
+            , lsNodeConfigP        = PraosNodeConfig
+                { praosParams       = params
+                , praosNodeId       = CoreId nid
+                , praosSignKeyVRF   = NeverUsedSignKeyVRF
+                , praosInitialEta   = 0
+                , praosInitialStake = genesisStakeDist addrDist
+                , praosVerKeys      = verKeys
+                }
+            , lsNodeConfigNodeId   = nid
             }
-        , lsNodeConfigNodeId   = nid
+        , configLedger = SimpleLedgerConfig
         }
     , pInfoInitLedger = ExtLedgerState
         { ledgerState = genesisSimpleLedgerState addrDist

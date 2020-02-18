@@ -71,6 +71,7 @@ import           Ouroboros.Network.TxSubmission.Inbound
 import           Ouroboros.Network.TxSubmission.Outbound
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.BlockFetchServer
 import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.ChainSyncServer
@@ -82,7 +83,6 @@ import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TxSubmission
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -225,7 +225,7 @@ data ProtocolCodecs blk failure m
 -- | The real codecs
 --
 protocolCodecs :: forall m blk. (IOLike m, RunNode blk)
-               => NodeConfig (BlockProtocol blk)
+               => TopLevelConfig blk
                -> NetworkProtocolVersion blk
                -> ProtocolCodecs blk DeserialiseFailure m
                     ByteString ByteString ByteString ByteString ByteString

@@ -24,6 +24,7 @@ module Test.Util.TestBlock (
   , TestBlock(..)
   , TestBlockError(..)
   , Header(..)
+  , LedgerConfig(..)
   , Query(..)
   , firstBlock
   , successorBlock
@@ -80,6 +81,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -259,9 +261,10 @@ data TestBlockError
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 instance SupportedBlock TestBlock where
-  validateView BftNodeConfig{bftParams = BftParams{..}} =
+  validateView TopLevelConfig{..} =
       bftValidateView bftFields
     where
+      BftNodeConfig{bftParams = BftParams{..}} = configConsensus
       NumCoreNodes numCore = bftNumNodes
 
       bftFields :: Header TestBlock -> BftFields BftMockCrypto ()
@@ -284,7 +287,10 @@ instance UpdateLedger TestBlock where
     deriving newtype (Serialise, NoUnexpectedThunks)
 
   data LedgerConfig TestBlock = LedgerConfig
-  type LedgerError  TestBlock = TestBlockError
+    deriving stock    (Generic)
+    deriving anyclass (NoUnexpectedThunks)
+
+  type LedgerError TestBlock = TestBlockError
 
   applyChainTick _ = TickedLedgerState
 
@@ -308,7 +314,6 @@ instance ValidateEnvelope TestBlock where
   firstBlockNo _ = Block.BlockNo 1
 
 instance ProtocolLedgerView TestBlock where
-  ledgerConfigView _ = LedgerConfig
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right ()
 
@@ -336,16 +341,19 @@ testInitExtLedger = ExtLedgerState {
     }
 
 -- | Trivial test configuration with a single core node
-singleNodeTestConfig :: NodeConfig (Bft BftMockCrypto)
-singleNodeTestConfig = BftNodeConfig {
-      bftParams   = BftParams { bftSecurityParam = k
-                              , bftNumNodes      = NumCoreNodes 1
-                              , bftSlotLengths   = singletonSlotLengths $
-                                                     slotLengthFromSec 20
-                              }
-    , bftNodeId   = CoreId (CoreNodeId 0)
-    , bftSignKey  = SignKeyMockDSIGN 0
-    , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
+singleNodeTestConfig :: TopLevelConfig TestBlock
+singleNodeTestConfig = TopLevelConfig {
+      configConsensus = BftNodeConfig {
+          bftParams   = BftParams { bftSecurityParam = k
+                                  , bftNumNodes      = NumCoreNodes 1
+                                  , bftSlotLengths   = singletonSlotLengths $
+                                                         slotLengthFromSec 20
+                                  }
+        , bftNodeId   = CoreId (CoreNodeId 0)
+        , bftSignKey  = SignKeyMockDSIGN 0
+        , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
+        }
+    , configLedger = LedgerConfig
     }
   where
     -- We fix k at 4 for now
@@ -428,11 +436,12 @@ treeToBlocks = Tree.flatten . blockTree
 treeToChains :: BlockTree -> [Chain TestBlock]
 treeToChains = map Chain.fromOldestFirst . allPaths . blockTree
 
-treePreferredChain :: NodeConfig (Bft BftMockCrypto)
+treePreferredChain :: TopLevelConfig TestBlock
                    -> BlockTree -> Chain TestBlock
-treePreferredChain cfg = fromMaybe Genesis
-                       . selectUnvalidatedChain Block.blockNo cfg Genesis
-                       . treeToChains
+treePreferredChain cfg =
+      fromMaybe Genesis
+    . selectUnvalidatedChain Block.blockNo (configConsensus cfg) Genesis
+    . treeToChains
 
 instance Show BlockTree where
   show (BlockTree t) = Tree.drawTree (fmap show t)

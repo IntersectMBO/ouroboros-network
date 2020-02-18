@@ -75,6 +75,7 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -148,7 +149,7 @@ type Conf m blk =
 -------------------------------------------------------------------------------}
 
 data LgrDbArgs m blk = forall h. LgrDbArgs {
-      lgrNodeConfig       :: NodeConfig (BlockProtocol blk)
+      lgrNodeConfig       :: TopLevelConfig blk
     , lgrHasFS            :: HasFS m h
     , lgrDecodeLedger     :: forall s. Decoder s (LedgerState blk)
     , lgrDecodeHash       :: forall s. Decoder s (HeaderHash  blk)

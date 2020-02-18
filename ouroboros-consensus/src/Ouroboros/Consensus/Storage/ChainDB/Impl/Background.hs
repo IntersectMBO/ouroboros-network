@@ -49,6 +49,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (onSlotChange)
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
@@ -164,7 +165,7 @@ copyToImmDB CDB{..} = withCopyLock $ do
     -- Get the /possibly/ updated tip of the ImmDB
     ImmDB.getSlotNoAtTip cdbImmDB
   where
-    SecurityParam k = protocolSecurityParam cdbNodeConfig
+    SecurityParam k = configSecurityParam cdbNodeConfig
     trace = traceWith (contramap TraceCopyToImmDBEvent cdbTracer)
 
     -- | Remove the header corresponding to the given point from the beginning
@@ -229,8 +230,8 @@ copyAndSnapshotRunner
 copyAndSnapshotRunner cdb@CDB{..} gcSchedule =
     loop Nothing
   where
-    SecurityParam k      = protocolSecurityParam cdbNodeConfig
-    LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy   cdbLgrDB
+    SecurityParam k      = configSecurityParam cdbNodeConfig
+    LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy cdbLgrDB
 
     loop :: Maybe Time -> Word64 -> m Void
     loop mPrevSnapshot distance = do

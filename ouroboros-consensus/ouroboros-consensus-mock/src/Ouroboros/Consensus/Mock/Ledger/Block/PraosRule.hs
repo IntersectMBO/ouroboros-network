@@ -25,6 +25,7 @@ import           Cardano.Crypto.VRF
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
@@ -76,7 +77,7 @@ instance RunMockProtocol (WithLeaderSchedule p) where
 
 instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
   forgeExt cfg () SimpleBlock{..} = do
-      let ext = SimplePraosRuleExt $ lsNodeConfigNodeId cfg
+      let ext = SimplePraosRuleExt $ lsNodeConfigNodeId (configConsensus cfg)
       return SimpleBlock {
           simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
         , simpleBody   = simpleBody
@@ -90,7 +91,6 @@ instance SimpleCrypto c
 
 instance SimpleCrypto c
       => ProtocolLedgerView (SimplePraosRuleBlock c) where
-  ledgerConfigView _ = SimpleLedgerConfig
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right ()
 

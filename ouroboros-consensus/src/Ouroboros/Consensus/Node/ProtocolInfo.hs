@@ -11,6 +11,7 @@ import           Data.Word
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -33,7 +34,7 @@ enumCoreNodes (NumCoreNodes numNodes) =
 
 -- | Data required to run the specified protocol.
 data ProtocolInfo b = ProtocolInfo {
-        pInfoConfig     :: NodeConfig (BlockProtocol b)
+        pInfoConfig     :: TopLevelConfig b
       , pInfoInitState  :: NodeState  (BlockProtocol b)
         -- | The ledger state at genesis
       , pInfoInitLedger :: ExtLedgerState b

@@ -75,6 +75,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
                      (settableBlockchainTime)
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -454,11 +455,11 @@ instance (TestConstraints blk, Eq it, Eq rdr) => Eq (Resp blk it rdr) where
 -- We can't reuse 'run' because the 'ChainDB' API uses 'STM'. Instead, we call
 -- the model directly.
 runPure :: forall blk.
-           TestConstraints           blk
-        => NodeConfig (BlockProtocol blk)
-        -> Cmd                       blk   IteratorId ReaderId
-        -> DBModel                   blk
-        -> (Resp                     blk   IteratorId ReaderId, DBModel blk)
+           TestConstraints blk
+        => TopLevelConfig  blk
+        -> Cmd             blk IteratorId ReaderId
+        -> DBModel         blk
+        -> (Resp           blk IteratorId ReaderId, DBModel blk)
 runPure cfg = \case
     AddBlock blk             -> ok  Unit                $ update_ (advanceAndAdd (blockSlot blk) blk)
     AddFutureBlock blk s     -> ok  Unit                $ update_ (advanceAndAdd s               blk)
@@ -484,7 +485,7 @@ runPure cfg = \case
     Close                    -> openOrClosed            $ update_  Model.closeDB
     Reopen                   -> openOrClosed            $ update_  Model.reopen
   where
-    k = protocolSecurityParam cfg
+    k = configSecurityParam cfg
 
     advanceAndAdd slot blk =
       Model.addBlock cfg blk . Model.advanceCurSlot cfg slot
@@ -556,16 +557,16 @@ type DBModel blk = Model.Model blk
 
 -- | Execution model
 data Model blk m r = Model
-  { dbModel      :: DBModel                           blk
-  , knownIters   :: KnownIters                        blk m r
-  , knownReaders :: KnownReaders                      blk m r
-  , modelConfig  :: Opaque (NodeConfig (BlockProtocol blk))
+  { dbModel      :: DBModel                blk
+  , knownIters   :: KnownIters             blk m r
+  , knownReaders :: KnownReaders           blk m r
+  , modelConfig  :: Opaque (TopLevelConfig blk)
   } deriving (Generic)
 
 deriving instance (TestConstraints blk, Show1 r) => Show (Model blk m r)
 
 -- | Initial model
-initModel :: NodeConfig (BlockProtocol blk)
+initModel :: TopLevelConfig blk
           -> ExtLedgerState blk
           -> Model blk m r
 initModel cfg initLedger = Model
@@ -718,11 +719,11 @@ generator genBlock m@Model {..} = At <$> frequency
     ]
     -- TODO adjust the frequencies after labelling
   where
-    cfg :: NodeConfig (BlockProtocol blk)
+    cfg :: TopLevelConfig blk
     cfg = unOpaque modelConfig
 
     secParam :: SecurityParam
-    secParam = protocolSecurityParam cfg
+    secParam = configSecurityParam cfg
 
     iterators :: [Reference (Opaque (TestIterator m blk)) Symbolic]
     iterators = RE.keys knownIters
@@ -909,11 +910,11 @@ precondition Model {..} (At cmd) =
       Boolean (equallyOrMorePreferable cfg curChain fork) .&&
       Chain.head curChain ./= Chain.head fork
 
-    cfg :: NodeConfig (BlockProtocol blk)
+    cfg :: TopLevelConfig blk
     cfg = unOpaque modelConfig
 
     secParam :: SecurityParam
-    secParam = protocolSecurityParam cfg
+    secParam = configSecurityParam cfg
 
     isValidIterator :: StreamFrom blk -> StreamTo blk -> Logic
     isValidIterator from to =
@@ -925,7 +926,7 @@ precondition Model {..} (At cmd) =
           forgetFingerprint (Model.invalid dbModel)
 
 equallyOrMorePreferable :: forall blk. SupportedBlock blk
-                        => NodeConfig (BlockProtocol blk)
+                        => TopLevelConfig blk
                         -> Chain blk -> Chain blk -> Bool
 equallyOrMorePreferable cfg chain1 chain2 =
     not (preferAnchoredCandidate cfg chain1' chain2')
@@ -935,7 +936,7 @@ equallyOrMorePreferable cfg chain1 chain2 =
     chain2' = Chain.toAnchoredFragment (getHeader <$> chain2)
 
 equallyPreferable :: forall blk. SupportedBlock blk
-                  => NodeConfig (BlockProtocol blk)
+                  => TopLevelConfig blk
                   -> Chain blk -> Chain blk -> Bool
 equallyPreferable cfg chain1 chain2 =
     not (preferAnchoredCandidate cfg chain1' chain2') &&
@@ -983,13 +984,13 @@ sm :: TestConstraints blk
    -> ResourceRegistry IO
    -> StrictTVar       IO SlotNo
    -> StrictTVar       IO Id
-   -> BlockGen                  blk IO
-   -> NodeConfig (BlockProtocol blk)
-   -> ExtLedgerState            blk
-   -> StateMachine (Model       blk IO)
-                   (At Cmd      blk IO)
-                                    IO
-                   (At Resp     blk IO)
+   -> BlockGen              blk IO
+   -> TopLevelConfig        blk
+   -> ExtLedgerState        blk
+   -> StateMachine (Model   blk IO)
+                   (At Cmd  blk IO)
+                                IO
+                   (At Resp blk IO)
 sm db internal registry varCurSlot varNextId genBlock env initLedger = StateMachine
   { initModel     = initModel env initLedger
   , transition    = transition
@@ -1239,16 +1240,19 @@ genBlk Model{..} = frequency
   Top-level tests
 -------------------------------------------------------------------------------}
 
-testCfg :: NodeConfig (BlockProtocol Blk)
-testCfg = BftNodeConfig
-    { bftParams   = BftParams { bftSecurityParam = k
-                              , bftNumNodes      = NumCoreNodes 1
-                              , bftSlotLengths   = singletonSlotLengths $
-                                                     slotLengthFromSec 20
-                              }
-    , bftNodeId   = CoreId (CoreNodeId 0)
-    , bftSignKey  = SignKeyMockDSIGN 0
-    , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
+testCfg :: TopLevelConfig TestBlock
+testCfg = TopLevelConfig {
+      configConsensus = BftNodeConfig
+        { bftParams   = BftParams { bftSecurityParam = k
+                                  , bftNumNodes      = NumCoreNodes 1
+                                  , bftSlotLengths   = singletonSlotLengths $
+                                                         slotLengthFromSec 20
+                                  }
+        , bftNodeId   = CoreId (CoreNodeId 0)
+        , bftSignKey  = SignKeyMockDSIGN 0
+        , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
+        }
+    , configLedger = LedgerConfig
     }
   where
     k = SecurityParam 2
@@ -1422,7 +1426,7 @@ fixedEpochSize :: EpochSize
 fixedEpochSize = 10
 
 mkArgs :: IOLike m
-       => NodeConfig (BlockProtocol Blk)
+       => TopLevelConfig Blk
        -> ExtLedgerState Blk
        -> Tracer m (TraceEvent Blk)
        -> ResourceRegistry m
@@ -1466,9 +1470,9 @@ mkArgs cfg initLedger tracer registry varCurSlot
                                 -- Pick a small value for 'ledgerDbSnapEvery',
                                 -- so that maximum supported rollback is limited
                                 ledgerDbSnapEvery     = 2
-                              , ledgerDbSecurityParam = protocolSecurityParam cfg
+                              , ledgerDbSecurityParam = configSecurityParam cfg
                               }
-    , cdbDiskPolicy       = defaultDiskPolicy (protocolSecurityParam cfg)
+    , cdbDiskPolicy       = defaultDiskPolicy (configSecurityParam cfg)
 
       -- Integration
     , cdbNodeConfig       = cfg

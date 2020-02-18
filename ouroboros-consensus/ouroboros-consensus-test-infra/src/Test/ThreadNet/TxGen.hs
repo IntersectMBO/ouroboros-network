@@ -8,11 +8,10 @@ import           Crypto.Number.Generate (generateBetween)
 
 import           Cardano.Slotting.Slot (SlotNo)
 
-import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API (GenTx)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Random
 
 {-------------------------------------------------------------------------------
@@ -25,7 +24,7 @@ class TxGen blk where
   testGenTx :: MonadRandom m
             => NumCoreNodes
             -> SlotNo
-            -> NodeConfig (BlockProtocol blk)
+            -> TopLevelConfig blk
             -> LedgerState blk
             -> m (GenTx blk)
 
@@ -37,7 +36,7 @@ class TxGen blk where
   testGenTxs :: MonadRandom m
              => NumCoreNodes
              -> SlotNo
-             -> NodeConfig (BlockProtocol blk)
+             -> TopLevelConfig blk
              -> LedgerState blk
              -> m [GenTx blk]
   testGenTxs  numCoreNodes curSlotNo cfg ledger = do

@@ -18,6 +18,7 @@ import           GHC.Stack
 import           Cardano.Crypto (ProtocolMagicId (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 
@@ -38,7 +39,7 @@ class RunMockProtocol (BlockProtocol (SimpleBlock c ext))
               , MonadRandom m
               , p ~ BlockProtocol (SimpleBlock c ext)
               )
-           => NodeConfig p
+           => TopLevelConfig (SimpleBlock c ext)
            -> IsLeader p
            -> SimpleBlock' c ext ()
            -> m (SimpleBlock c ext)

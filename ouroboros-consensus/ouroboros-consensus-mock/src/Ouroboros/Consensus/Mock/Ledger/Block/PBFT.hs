@@ -29,6 +29,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (HasHeader (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
@@ -103,7 +104,7 @@ instance ( SimpleCrypto c
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
         forgePBftFields
-          (constructContextDSIGN (Proxy @c') (extNodeConfig cfg))
+          (constructContextDSIGN (Proxy @c') (extNodeConfig $ configConsensus cfg))
           isLeader
           SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
       return SimpleBlock {
@@ -124,12 +125,10 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => ProtocolLedgerView (SimplePBftBlock c PBftMockCrypto) where
-  ledgerConfigView _ =
-      SimpleLedgerConfig
-  protocolLedgerView ExtNodeConfig{..} _ls =
-      extNodeConfig
-  anachronisticProtocolLedgerView ExtNodeConfig{..} _ _ =
-      Right $ extNodeConfig
+  protocolLedgerView TopLevelConfig{..} _ls =
+      extNodeConfig configConsensus
+  anachronisticProtocolLedgerView TopLevelConfig{..} _ _ =
+      Right $ extNodeConfig configConsensus
 
 {-------------------------------------------------------------------------------
   Serialisation

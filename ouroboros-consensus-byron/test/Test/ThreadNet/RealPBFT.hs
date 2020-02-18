@@ -37,6 +37,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Consensus.Block (BlockProtocol, getHeader)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -274,7 +275,7 @@ prop_setup_coreNodeId ::
   -> CoreNodeId
   -> Property
 prop_setup_coreNodeId numCoreNodes coreNodeId =
-    case pbftIsLeader $ extNodeConfigP $ pInfoConfig protInfo of
+    case pbftIsLeader $ extNodeConfigP $ configConsensus $ pInfoConfig protInfo of
       PBftIsALeader isLeader ->
           coreNodeId === pbftCoreNodeId isLeader
       _ ->
@@ -767,16 +768,19 @@ mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
           genSK = genesisSecretFor genesisConfig genesisSecrets pbftCoreNodeId
           isLeader' = updSignKey genSK extNodeConfig isLeader (coerce eno) newSK
           pInfo' = pInfo
-            { pInfoConfig = ExtNodeConfig extNodeConfig extNodeConfigP
-              { pbftIsLeader = PBftIsALeader isLeader'
-              }
+            { pInfoConfig = TopLevelConfig {
+                  configConsensus = ExtNodeConfig extNodeConfig extNodeConfigP
+                    { pbftIsLeader = PBftIsALeader isLeader'
+                    }
+                , configLedger = configLedger
+                }
             }
 
           PBftIsLeader{pbftDlgCert} = isLeader'
       in Just (pInfo', dlgTx pbftDlgCert)
   where
-    ProtocolInfo{pInfoConfig} = pInfo
-    ExtNodeConfig{extNodeConfig, extNodeConfigP} = pInfoConfig
+    ProtocolInfo{pInfoConfig = TopLevelConfig{configConsensus, configLedger}} = pInfo
+    ExtNodeConfig{extNodeConfig, extNodeConfigP} = configConsensus
 
 -- | The secret key for a node index
 --

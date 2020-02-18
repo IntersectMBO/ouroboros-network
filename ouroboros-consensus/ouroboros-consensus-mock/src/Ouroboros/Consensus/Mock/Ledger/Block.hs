@@ -247,9 +247,9 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
     deriving stock   (Generic, Show, Eq)
     deriving newtype (Serialise, NoUnexpectedThunks)
 
-  data LedgerConfig (SimpleBlock c ext) =
-      SimpleLedgerConfig
-    deriving (Show)
+  data LedgerConfig (SimpleBlock c ext) = SimpleLedgerConfig
+    deriving stock    (Show, Generic)
+    deriving anyclass (NoUnexpectedThunks)
 
   type LedgerError (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 

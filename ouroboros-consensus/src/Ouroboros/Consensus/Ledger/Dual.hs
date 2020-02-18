@@ -27,6 +27,7 @@ module Ouroboros.Consensus.Ledger.Dual (
     -- * Lifted functions
   , dualExtLedgerStateMain
   , dualExtValidationErrorMain
+  , dualTopLevelConfigMain
     -- * Type class family instances
   , Header(..)
   , LedgerState(..)
@@ -66,6 +67,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Consensus.Storage.Common
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -200,9 +202,18 @@ instance Bridge m a => HasHeader (DualHeader m a) where
 type DualBlockProtocol m a = ExtConfig (BlockProtocol m) (LedgerConfig a)
 type instance BlockProtocol (DualBlock m a) = DualBlockProtocol m a
 
+-- TODO: If we reduce the use of TopLevelConfig, we might not need this anymore
+dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
+dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
+      -- TODO: This use of extNodeConfigP should go (there should be no need
+      -- to use ExtConfig here)
+      configConsensus = extNodeConfigP       configConsensus
+    , configLedger    = dualLedgerConfigMain configLedger
+    }
+
 instance Bridge m a => SupportedBlock (DualBlock m a) where
-  validateView cfg = validateView (extNodeConfigP cfg) . dualHeaderMain
-  selectView   cfg = selectView   (extNodeConfigP cfg) . dualHeaderMain
+  validateView cfg = validateView (dualTopLevelConfigMain cfg) . dualHeaderMain
+  selectView   cfg = selectView   (dualTopLevelConfigMain cfg) . dualHeaderMain
 
 {-------------------------------------------------------------------------------
   Ledger errors
@@ -247,6 +258,7 @@ instance Bridge m a => UpdateLedger (DualBlock m a) where
         dualLedgerConfigMain :: LedgerConfig m
       , dualLedgerConfigAux  :: LedgerConfig a
       }
+    deriving NoUnexpectedThunks via AllowThunk (LedgerConfig (DualBlock m a))
 
   type LedgerError (DualBlock m a) = DualLedgerError m a
 
@@ -355,28 +367,22 @@ instance Bridge m a => HasAnnTip (DualBlock m a) where
 instance Bridge m a => ValidateEnvelope (DualBlock m a) where
   validateEnvelope cfg t =
         withExcept castHeaderEnvelopeError
-      . validateEnvelope (extNodeConfigP cfg) (castAnnTip <$> t)
+      . validateEnvelope (dualTopLevelConfigMain cfg) (castAnnTip <$> t)
       . dualHeaderMain
 
   firstBlockNo          _ = firstBlockNo          (Proxy @m)
   minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @m)
 
 instance Bridge m a => ProtocolLedgerView (DualBlock m a) where
-  ledgerConfigView cfg = DualLedgerConfig {
-        dualLedgerConfigMain = ledgerConfigView $ extNodeConfigP cfg
-      , dualLedgerConfigAux  = extNodeConfig cfg
-      }
-
   protocolLedgerView cfg state =
       protocolLedgerView
-        (extNodeConfigP      cfg)
-        (dualLedgerStateMain state)
+        (dualTopLevelConfigMain cfg)
+        (dualLedgerStateMain    state)
 
   anachronisticProtocolLedgerView cfg state =
       anachronisticProtocolLedgerView
-        (extNodeConfigP      cfg)
-        (dualLedgerStateMain state)
-
+        (dualTopLevelConfigMain cfg)
+        (dualLedgerStateMain    state)
 
 {-------------------------------------------------------------------------------
   Querying the ledger

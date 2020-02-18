@@ -73,6 +73,7 @@ import qualified Ouroboros.Consensus.BlockFetchServer as BFServer
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import qualified Ouroboros.Consensus.ChainSyncClient as CSClient
 import           Ouroboros.Consensus.ChainSyncServer (Tip)
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -116,9 +117,9 @@ import           Test.Util.Tracer
 -- | How to forge an EBB
 --
 type ForgeEBB blk =
-     NodeConfig (BlockProtocol blk)
-  -> SlotNo   -- ^ EBB slot
-  -> BlockNo   -- ^ EBB block number (i.e. that of its predecessor)
+     TopLevelConfig blk
+  -> SlotNo          -- ^ EBB slot
+  -> BlockNo         -- ^ EBB block number (i.e. that of its predecessor)
   -> ChainHash blk   -- ^ EBB predecessor's hash
   -> blk
 
@@ -441,7 +442,7 @@ runThreadNetwork ThreadNetworkArgs
     -- the mempool.
     forkTxProducer :: HasCallStack
                    => BlockchainTime m
-                   -> NodeConfig (BlockProtocol blk)
+                   -> TopLevelConfig blk
                    -> m ChaChaDRG
                       -- ^ How to get a DRG
                    -> STM m (ExtLedgerState blk)
@@ -461,7 +462,7 @@ runThreadNetwork ThreadNetworkArgs
                     => BlockchainTime m
                     -> ResourceRegistry m
                     -> StrictTVar m SlotNo
-                    -> NodeConfig (BlockProtocol blk)
+                    -> TopLevelConfig blk
                     -> ChainDB.ChainDB m blk
                     -> EpochInfo m
                     -> m ()
@@ -482,7 +483,7 @@ runThreadNetwork ThreadNetworkArgs
               (prevSlot, ebbBlockNo, prevHash) <- atomically $ do
                 p <- ChainDB.getTipPoint chainDB
                 let mSlot = pointSlot p
-                let k = SlotNo $ maxRollbacks $ protocolSecurityParam cfg
+                let k = SlotNo $ maxRollbacks $ configSecurityParam cfg
                 check $ case mSlot of
                   Origin -> True
                   At s   -> s >= (ebbSlotNo - min ebbSlotNo (2 * k))
@@ -497,7 +498,7 @@ runThreadNetwork ThreadNetworkArgs
 
     mkArgs :: BlockchainTime m
            -> ResourceRegistry m
-           -> NodeConfig (BlockProtocol blk)
+           -> TopLevelConfig blk
            -> ExtLedgerState blk
            -> EpochInfo m
            -> Tracer m (Point blk, ExtValidationError blk)
@@ -537,8 +538,8 @@ runThreadNetwork ThreadNetworkArgs
         , cdbImmValidation    = ImmDB.ValidateAllEpochs
         , cdbVolValidation    = VolDB.ValidateAll
         , cdbBlocksPerFile    = VolDB.mkBlocksPerFile 4
-        , cdbParamsLgrDB      = LgrDB.ledgerDbDefaultParams (protocolSecurityParam cfg)
-        , cdbDiskPolicy       = LgrDB.defaultDiskPolicy (protocolSecurityParam cfg)
+        , cdbParamsLgrDB      = LgrDB.ledgerDbDefaultParams (configSecurityParam cfg)
+        , cdbDiskPolicy       = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
           -- Integration
         , cdbNodeConfig       = cfg
         , cdbEpochInfo        = epochInfo
@@ -680,7 +681,7 @@ runThreadNetwork ThreadNetworkArgs
       return (nodeKernel, LimitedApp app)
 
     customProtocolCodecs
-      :: NodeConfig (BlockProtocol blk)
+      :: TopLevelConfig blk
       -> ProtocolCodecs blk CodecError m
            Lazy.ByteString
            Lazy.ByteString

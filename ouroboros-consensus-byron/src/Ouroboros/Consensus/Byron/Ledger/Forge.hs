@@ -34,6 +34,7 @@ import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Network.Block
 
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -55,7 +56,7 @@ forgeByronBlock
      , MonadRandom m
      , HasCallStack
      )
-  => NodeConfig ByronConsensusProtocol
+  => TopLevelConfig ByronBlock
   -> SlotNo                          -- ^ Current slot
   -> BlockNo                         -- ^ Current block number
   -> ExtLedgerState ByronBlock       -- ^ Ledger
@@ -65,7 +66,7 @@ forgeByronBlock
 forgeByronBlock = forgeRegularBlock
 
 forgeEBB
-  :: NodeConfig ByronConsensusProtocol
+  :: TopLevelConfig ByronBlock
   -> SlotNo                          -- ^ Current slot
   -> BlockNo                         -- ^ Current block number
   -> ChainHash ByronBlock            -- ^ Previous hash
@@ -76,10 +77,11 @@ forgeEBB cfg curSlot curNo prevHash =
       . CC.reAnnotateBoundary protocolMagicId
       $ boundaryBlock
   where
-    protocolMagicId = CC.Genesis.configProtocolMagicId (getGenesisConfig cfg)
+    protocolMagicId = CC.Genesis.configProtocolMagicId $
+                       getGenesisConfig (configConsensus cfg)
     ByronConfig { pbftGenesisHash
                 , pbftEpochSlots
-                } = extNodeConfig cfg
+                } = extNodeConfig (configConsensus cfg)
 
     prevHeaderHash :: Either CC.Genesis.GenesisHash CC.Block.HeaderHash
     prevHeaderHash = case prevHash of
@@ -138,7 +140,7 @@ forgeRegularBlock
      , MonadRandom m
      , HasCallStack
      )
-  => NodeConfig ByronConsensusProtocol
+  => TopLevelConfig ByronBlock
   -> SlotNo                            -- ^ Current slot
   -> BlockNo                           -- ^ Current block number
   -> ExtLedgerState ByronBlock         -- ^ Ledger
@@ -148,7 +150,8 @@ forgeRegularBlock
 forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
     ouroborosPayload <-
       forgePBftFields
-        (constructContextDSIGN (Proxy @PBftByronCrypto) (extNodeConfig cfg))
+        (constructContextDSIGN (Proxy @PBftByronCrypto) $
+           extNodeConfig (configConsensus cfg))
         isLeader
         (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload
@@ -159,7 +162,7 @@ forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
       , pbftProtocolVersion
       , pbftSoftwareVersion
       , pbftProtocolMagic
-      } = extNodeConfig cfg
+      } = extNodeConfig (configConsensus cfg)
 
     blockPayloads :: BlockPayloads
     blockPayloads = foldr extendBlockPayloads initBlockPayloads txs

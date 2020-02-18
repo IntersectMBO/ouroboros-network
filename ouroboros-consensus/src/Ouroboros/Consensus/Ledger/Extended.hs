@@ -32,6 +32,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Ouroboros.Network.Block (HeaderHash)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -99,7 +100,7 @@ data BlockPreviouslyApplied =
 -- See <https://github.com/input-output-hk/cardano-ledger-specs/issues/1007>
 applyExtLedgerState :: (ProtocolLedgerView blk, HasCallStack)
                     => BlockPreviouslyApplied
-                    -> NodeConfig (BlockProtocol blk)
+                    -> TopLevelConfig blk
                     -> blk
                     -> ExtLedgerState blk
                     -> Except (ExtValidationError blk) (ExtLedgerState blk)
@@ -109,12 +110,12 @@ applyExtLedgerState prevApplied cfg blk ExtLedgerState{..} = do
                        BlockNotPreviouslyApplied ->
                          withExcept ExtValidationErrorLedger $
                            applyLedgerBlock
-                             (ledgerConfigView cfg)
+                             (configLedger cfg)
                              blk
                              ledgerState
                        BlockPreviouslyApplied -> pure $
                          reapplyLedgerBlock
-                           (ledgerConfigView cfg)
+                           (configLedger cfg)
                            blk
                            ledgerState
     headerState' <- withExcept ExtValidationErrorHeader $
@@ -127,7 +128,7 @@ applyExtLedgerState prevApplied cfg blk ExtLedgerState{..} = do
 
 foldExtLedgerState :: (ProtocolLedgerView blk, HasCallStack)
                    => BlockPreviouslyApplied
-                   -> NodeConfig (BlockProtocol blk)
+                   -> TopLevelConfig blk
                    -> [blk] -- ^ Blocks to apply, oldest first
                    -> ExtLedgerState blk
                    -> Except (ExtValidationError blk) (ExtLedgerState blk)

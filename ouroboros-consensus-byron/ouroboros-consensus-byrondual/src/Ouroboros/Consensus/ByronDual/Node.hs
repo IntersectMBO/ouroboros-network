@@ -38,6 +38,7 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.HeaderValidation
 
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -73,13 +74,19 @@ protocolInfoDualByron :: ByronSpecGenesis
                       -> ProtocolInfo DualByronBlock
 protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     ProtocolInfo {
-        pInfoConfig = ExtNodeConfig {
-            extNodeConfig  = abstractConfig
-          , extNodeConfigP = ExtNodeConfig concreteConfig PBftNodeConfig {
-                pbftParams    = params
-              , pbftIsLeader  = case mLeader of
-                                  Nothing  -> PBftIsNotALeader
-                                  Just nid -> PBftIsALeader $ pbftIsLeader nid
+        pInfoConfig = TopLevelConfig {
+            configConsensus = ExtNodeConfig {
+                extNodeConfig  = abstractConfig
+              , extNodeConfigP = ExtNodeConfig concreteConfig PBftNodeConfig {
+                    pbftParams    = params
+                  , pbftIsLeader  = case mLeader of
+                                      Nothing  -> PBftIsNotALeader
+                                      Just nid -> PBftIsALeader $ pbftIsLeader nid
+                  }
+              }
+          , configLedger = DualLedgerConfig {
+                dualLedgerConfigMain = ByronLedgerConfig     concreteGenesis
+              , dualLedgerConfigAux  = ByronSpecLedgerConfig abstractGenesis
               }
           }
       , pInfoInitState =
@@ -204,16 +211,16 @@ instance RunNode DualByronBlock where
 
             byronEBB :: ByronBlock
             byronEBB = forgeEBB
-                         (extNodeConfigP cfg)
+                         (dualTopLevelConfigMain cfg)
                          (SlotNo 0)
                          (BlockNo 0)
                          GenesisHash
 
   -- Node config is a consensus concern, determined by the main block only
-  nodeEpochSize       = \_p -> nodeEpochSize       pb . extNodeConfigP
-  nodeStartTime       = \_p -> nodeStartTime       pb . extNodeConfigP
-  nodeNetworkMagic    = \_p -> nodeNetworkMagic    pb . extNodeConfigP
-  nodeProtocolMagicId = \_p -> nodeProtocolMagicId pb . extNodeConfigP
+  nodeEpochSize       = \_p -> nodeEpochSize       pb . dualTopLevelConfigMain
+  nodeStartTime       = \_p -> nodeStartTime       pb . dualTopLevelConfigMain
+  nodeNetworkMagic    = \_p -> nodeNetworkMagic    pb . dualTopLevelConfigMain
+  nodeProtocolMagicId = \_p -> nodeProtocolMagicId pb . dualTopLevelConfigMain
 
   -- The max block size we set to the max block size of the /concrete/ block
   -- (Correspondingly, 'txSize' for the Byron spec returns 0)
@@ -235,8 +242,8 @@ instance RunNode DualByronBlock where
   -- We don't really care too much about data loss or malicious behaviour for
   -- the dual ledger tests, so integrity and match checks can just use the
   -- concrete implementation
-  nodeBlockMatchesHeader hdr = nodeBlockMatchesHeader (dualHeaderMain hdr) . dualBlockMain
-  nodeCheckIntegrity     cfg = nodeCheckIntegrity     (extNodeConfigP cfg) . dualBlockMain
+  nodeBlockMatchesHeader hdr = nodeBlockMatchesHeader (dualHeaderMain         hdr) . dualBlockMain
+  nodeCheckIntegrity     cfg = nodeCheckIntegrity     (dualTopLevelConfigMain cfg) . dualBlockMain
 
   -- The header is just the concrete header, so we can just reuse the Byron def
   nodeAddHeaderEnvelope = \_ -> nodeAddHeaderEnvelope pb
@@ -245,8 +252,8 @@ instance RunNode DualByronBlock where
 
   -- Encoders
   nodeEncodeBlockWithInfo = const $ encodeDualBlockWithInfo encodeByronBlockWithInfo
-  nodeEncodeHeader        = \cfg version -> nodeEncodeHeader        (extNodeConfigP cfg) version . dualHeaderMain
-  nodeEncodeWrappedHeader = \cfg version -> nodeEncodeWrappedHeader (extNodeConfigP cfg) version . dualWrappedMain
+  nodeEncodeHeader        = \cfg version -> nodeEncodeHeader        (dualTopLevelConfigMain cfg) version . dualHeaderMain
+  nodeEncodeWrappedHeader = \cfg version -> nodeEncodeWrappedHeader (dualTopLevelConfigMain cfg) version . dualWrappedMain
   nodeEncodeLedgerState   = const $ encodeDualLedgerState   encodeByronLedgerState
   nodeEncodeApplyTxError  = const $ encodeDualGenTxErr      encodeByronApplyTxError
   nodeEncodeHeaderHash    = const $ encodeByronHeaderHash
@@ -258,8 +265,8 @@ instance RunNode DualByronBlock where
 
   -- Decoders
   nodeDecodeBlock         = decodeDualBlock  . decodeByronBlock   . extractEpochSlots
-  nodeDecodeHeader        = \cfg -> fmap (DualHeader .) . nodeDecodeHeader        (extNodeConfigP cfg)
-  nodeDecodeWrappedHeader = \cfg -> fmap rewrapMain     . nodeDecodeWrappedHeader (extNodeConfigP cfg)
+  nodeDecodeHeader        = \cfg -> fmap (DualHeader .) . nodeDecodeHeader        (dualTopLevelConfigMain cfg)
+  nodeDecodeWrappedHeader = \cfg -> fmap rewrapMain     . nodeDecodeWrappedHeader (dualTopLevelConfigMain cfg)
   nodeDecodeGenTx         = decodeDualGenTx   decodeByronGenTx
   nodeDecodeGenTxId       = decodeDualGenTxId decodeByronGenTxId
   nodeDecodeHeaderHash    = const $ decodeByronHeaderHash
@@ -267,13 +274,13 @@ instance RunNode DualByronBlock where
   nodeDecodeApplyTxError  = const $ decodeDualGenTxErr    decodeByronApplyTxError
   nodeDecodeChainState    = \_proxy cfg ->
                                let k = pbftSecurityParam . pbftParams $
-                                          extNodeConfigP (extNodeConfigP cfg)
+                                          extNodeConfigP (extNodeConfigP (configConsensus cfg))
                                in decodeByronChainState k
   nodeDecodeQuery         = error "DualByron.nodeDecodeQuery"
   nodeDecodeResult        = \case {}
 
-extractEpochSlots :: NodeConfig DualByronProtocol -> EpochSlots
-extractEpochSlots = Byron.extractEpochSlots . extNodeConfigP
+extractEpochSlots :: TopLevelConfig DualByronBlock -> EpochSlots
+extractEpochSlots = Byron.extractEpochSlots . dualTopLevelConfigMain
 
 {-------------------------------------------------------------------------------
   The headers for DualByronBlock and ByronBlock are identical, so we can

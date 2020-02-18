@@ -16,13 +16,13 @@ import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..),
-                     protocolSecurityParam)
+import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
 import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
 
@@ -47,14 +47,14 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeBlockFetchSize        = fromIntegral . simpleBlockSize . simpleHeaderStd
   nodeIsEBB                 = const Nothing
   nodeEpochSize             = \_ cfg _ -> return $
-    EpochSize $ 10 * maxRollbacks (protocolSecurityParam cfg)
+    EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
   nodeStartTime             = \_ _ -> SystemStart dummyDate
     where
       --  This doesn't matter much
       dummyDate = UTCTime (fromGregorian 2019 8 13) 0
   nodeNetworkMagic          = \_ _ -> NetworkMagic 0x0000ffff
 
-  nodeProtocolMagicId       = const mockProtocolMagicId
+  nodeProtocolMagicId       = \_ -> mockProtocolMagicId . configConsensus
   nodeHashInfo              = const simpleBlockHashInfo
   nodeMaxBlockSize          = const 2000000 -- TODO
   nodeBlockEncodingOverhead = const 1000 -- TODO
@@ -67,7 +67,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeEncodeGenTxId         =       encode
   nodeEncodeHeaderHash      = const encode
   nodeEncodeLedgerState     = const encode
-  nodeEncodeChainState      = const mockEncodeChainState
+  nodeEncodeChainState      = \_ -> mockEncodeChainState . configConsensus
   nodeEncodeApplyTxError    = const encode
   nodeEncodeTipInfo         = const encode
   nodeEncodeQuery           = \case {}
@@ -80,7 +80,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeDecodeGenTxId         =       decode
   nodeDecodeHeaderHash      = const decode
   nodeDecodeLedgerState     = const decode
-  nodeDecodeChainState      = const mockDecodeChainState
+  nodeDecodeChainState      = \_ -> mockDecodeChainState . configConsensus
   nodeDecodeApplyTxError    = const decode
   nodeDecodeTipInfo         = const decode
   nodeDecodeQuery           = error "Mock.nodeDecodeQuery"

@@ -25,6 +25,7 @@ import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
@@ -85,7 +86,7 @@ instance ( SimpleCrypto c
       => RunMockBlock c (SimpleBftExt c c') where
   forgeExt cfg () SimpleBlock{..} = do
       ext :: SimpleBftExt c c' <- fmap SimpleBftExt $
-        forgeBftFields cfg $
+        forgeBftFields (configConsensus cfg) $
           SignedSimpleBft {
               signedSimpleBft = simpleHeaderStd
             }
@@ -106,7 +107,6 @@ instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          ) => ProtocolLedgerView (SimpleBftBlock c c') where
-  ledgerConfigView _ = SimpleLedgerConfig
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right ()
 

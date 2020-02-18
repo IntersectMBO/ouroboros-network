@@ -15,9 +15,9 @@ import           Ouroboros.Network.Block (ChainUpdate)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((...:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
@@ -33,7 +33,7 @@ openDB :: forall m blk. (
           , ProtocolLedgerView blk
           , ModelSupportsBlock blk
           )
-       => NodeConfig (BlockProtocol blk)
+       => TopLevelConfig blk
        -> ExtLedgerState blk
        -> BlockchainTime m
        -> m (ChainDB m blk)
@@ -136,4 +136,4 @@ openDB cfg initLedger btime = do
       , isOpen              = Model.isOpen <$> readTVar db
       }
   where
-    k = protocolSecurityParam cfg
+    k = configSecurityParam cfg

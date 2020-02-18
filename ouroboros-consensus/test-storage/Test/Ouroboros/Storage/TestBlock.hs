@@ -47,6 +47,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -296,9 +297,10 @@ instance SignedHeader (Header TestBlock) where
   headerSigned _ = ()
 
 instance SupportedBlock TestBlock where
-  validateView BftNodeConfig{ bftParams = BftParams{..} } =
+  validateView TopLevelConfig{..} =
       bftValidateView bftFields
     where
+      BftNodeConfig{ bftParams = BftParams{..} } = configConsensus
       NumCoreNodes numCore = bftNumNodes
 
       bftFields :: Header TestBlock -> BftFields BftMockCrypto ()
@@ -332,7 +334,10 @@ instance UpdateLedger TestBlock where
     deriving anyclass (Serialise, NoUnexpectedThunks)
 
   data LedgerConfig TestBlock = LedgerConfig
-  type LedgerError  TestBlock = TestBlockError
+    deriving stock    (Generic)
+    deriving anyclass (NoUnexpectedThunks)
+
+  type LedgerError TestBlock = TestBlockError
 
   applyChainTick _ = TickedLedgerState
 
@@ -356,7 +361,6 @@ instance ValidateEnvelope TestBlock where
   -- Use defaults
 
 instance ProtocolLedgerView TestBlock where
-  ledgerConfigView _ = LedgerConfig
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right ()
 

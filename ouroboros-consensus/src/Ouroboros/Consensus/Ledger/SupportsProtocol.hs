@@ -7,6 +7,7 @@ import           Ouroboros.Network.Block (SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -18,12 +19,8 @@ class ( SupportedBlock   blk
       , UpdateLedger     blk
       , ValidateEnvelope blk
       ) => ProtocolLedgerView blk where
-  -- | Extract the ledger environment from the node config
-  ledgerConfigView :: NodeConfig (BlockProtocol blk)
-                   -> LedgerConfig blk
-
   -- | Extract ledger view from the ledger state
-  protocolLedgerView :: NodeConfig (BlockProtocol blk)
+  protocolLedgerView :: TopLevelConfig blk
                      -> LedgerState blk
                      -> LedgerView (BlockProtocol blk)
 
@@ -60,7 +57,7 @@ class ( SupportedBlock   blk
   -- Invariant: when calling this function with slot @s@ yields a
   -- 'SlotBounded' @sb@, then @'atSlot' sb@ yields a 'Just'.
   anachronisticProtocolLedgerView
-    :: NodeConfig (BlockProtocol blk)
+    :: TopLevelConfig blk
     -> LedgerState blk
     -> WithOrigin SlotNo -- ^ Slot for which you would like a ledger view
     -> Either AnachronyFailure (LedgerView (BlockProtocol blk))

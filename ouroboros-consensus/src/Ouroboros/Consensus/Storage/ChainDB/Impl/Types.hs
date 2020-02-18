@@ -64,11 +64,11 @@ import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
                      SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Block (BlockProtocol, Header, IsEBB (..))
+import           Ouroboros.Consensus.Block (Header, IsEBB (..))
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
@@ -191,7 +191,7 @@ data ChainDbEnv m blk = CDB
     -- INVARIANT: the 'readerPoint' of each reader is 'withinFragmentBounds'
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
-  , cdbNodeConfig      :: !(NodeConfig (BlockProtocol blk))
+  , cdbNodeConfig      :: !(TopLevelConfig blk)
   , cdbInvalid         :: !(StrictTVar m (WithFingerprint (InvalidBlocks blk)))
     -- ^ See the docstring of 'InvalidBlocks'.
     --

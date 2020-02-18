@@ -53,14 +53,12 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtConfig
-import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
-import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.ContainsGenesis
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Ledger.DelegationHistory
@@ -80,8 +78,9 @@ instance UpdateLedger ByronBlock where
   type LedgerError ByronBlock = CC.ChainValidationError
 
   newtype LedgerConfig ByronBlock = ByronLedgerConfig {
-      unByronLedgerConfig :: Gen.Config
-    }
+        unByronLedgerConfig :: Gen.Config
+      }
+    deriving (Generic, NoUnexpectedThunks)
 
   applyChainTick cfg slotNo ByronLedgerState{..} =
       TickedLedgerState slotNo ByronLedgerState {
@@ -146,9 +145,6 @@ instance ConfigContainsGenesis (LedgerConfig ByronBlock) where
   getGenesisConfig = unByronLedgerConfig
 
 instance ProtocolLedgerView ByronBlock where
-  ledgerConfigView ExtNodeConfig{..} = ByronLedgerConfig $
-      pbftGenesisConfig extNodeConfig
-
   protocolLedgerView _cfg =
         toPBftLedgerView
       . CC.getDelegationMap
@@ -218,7 +214,7 @@ instance ProtocolLedgerView ByronBlock where
               At s -> Right $ toPBftLedgerView $
                 CC.previewDelegationMap (toByronSlotNo s) ls
     where
-      SecurityParam k = pbftSecurityParam . pbftParams $ extNodeConfigP cfg
+      SecurityParam k = configSecurityParam cfg
 
       now, maxHi, maxLo :: SlotNo
       now   = fromByronSlotNo $ CC.cvsLastSlot ls

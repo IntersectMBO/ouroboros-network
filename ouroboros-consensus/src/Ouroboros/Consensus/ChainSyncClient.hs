@@ -53,6 +53,7 @@ import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -241,7 +242,7 @@ chainSyncClient
        )
     => MkPipelineDecision
     -> Tracer m (TraceChainSyncClientEvent blk)
-    -> NodeConfig (BlockProtocol blk)
+    -> TopLevelConfig blk
     -> BlockchainTime m
     -> ClockSkew   -- ^ Maximum clock skew
     -> ChainDbView m blk
@@ -696,12 +697,12 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
         l = k `min` maxOffset
 
     k :: Word64
-    k = maxRollbacks $ protocolSecurityParam cfg
+    k = maxRollbacks $ configSecurityParam cfg
 
 attemptRollback :: ( SupportedBlock blk
                    , Serialise (HeaderHash blk)
                    )
-                => NodeConfig (BlockProtocol blk)
+                => TopLevelConfig blk
                 -> Point blk
                 -> (AnchoredFragment (Header blk), HeaderState blk)
                 -> Maybe (AnchoredFragment (Header blk), HeaderState blk)

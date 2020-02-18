@@ -7,6 +7,7 @@ import qualified Data.Map.Strict as Map
 import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
@@ -22,18 +23,21 @@ protocolInfoBft :: NumCoreNodes
                 -> ProtocolInfo (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
 protocolInfoBft numCoreNodes nid securityParam slotLengths =
     ProtocolInfo {
-        pInfoConfig = BftNodeConfig {
-            bftParams   = BftParams {
-                              bftNumNodes      = numCoreNodes
-                            , bftSecurityParam = securityParam
-                            , bftSlotLengths   = slotLengths
-                            }
-          , bftNodeId   = CoreId nid
-          , bftSignKey  = signKey nid
-          , bftVerKeys  = Map.fromList [
-                (CoreId n, verKey n)
-              | n <- enumCoreNodes numCoreNodes
-              ]
+        pInfoConfig = TopLevelConfig {
+            configConsensus = BftNodeConfig {
+                bftParams   = BftParams {
+                                  bftNumNodes      = numCoreNodes
+                                , bftSecurityParam = securityParam
+                                , bftSlotLengths   = slotLengths
+                                }
+              , bftNodeId   = CoreId nid
+              , bftSignKey  = signKey nid
+              , bftVerKeys  = Map.fromList [
+                    (CoreId n, verKey n)
+                  | n <- enumCoreNodes numCoreNodes
+                  ]
+              }
+          , configLedger = SimpleLedgerConfig
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState ())

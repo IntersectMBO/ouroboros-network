@@ -54,6 +54,7 @@ import qualified Ouroboros.Network.TxSubmission.Outbound as Outbound
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -88,7 +89,7 @@ data NodeKernel m peer blk = NodeKernel {
     , getMempool             :: Mempool m blk TicketNo
 
       -- | The node's static configuration
-    , getNodeConfig          :: NodeConfig (BlockProtocol blk)
+    , getNodeConfig          :: TopLevelConfig blk
 
       -- | The fetch client registry, used for the block fetch clients.
     , getFetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
@@ -156,11 +157,11 @@ data NodeArgs m peer blk = NodeArgs {
       tracers             :: Tracers m peer blk
     , registry            :: ResourceRegistry m
     , maxClockSkew        :: ClockSkew
-    , cfg                 :: NodeConfig (BlockProtocol blk)
+    , cfg                 :: TopLevelConfig blk
     , initState           :: NodeState (BlockProtocol blk)
     , btime               :: BlockchainTime m
     , chainDB             :: ChainDB m blk
-    , initChainDB         :: NodeConfig (BlockProtocol blk) -> ChainDB m blk -> m ()
+    , initChainDB         :: TopLevelConfig blk -> ChainDB m blk -> m ()
     , blockFetchSize      :: Header blk -> SizeInBytes
     , blockProduction     :: Maybe (BlockProduction m blk)
     , blockMatchesHeader  :: Header blk -> blk -> Bool
@@ -222,7 +223,7 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
 
 data InternalState m peer blk = IS {
       tracers             :: Tracers m peer blk
-    , cfg                 :: NodeConfig (BlockProtocol blk)
+    , cfg                 :: TopLevelConfig blk
     , registry            :: ResourceRegistry m
     , btime               :: BlockchainTime m
     , chainDB             :: ChainDB m blk
@@ -262,7 +263,7 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
       pure (mempoolCapacity ledger)
     mempool        <- openMempool registry
                                   (chainDBLedgerInterface chainDB)
-                                  (ledgerConfigView cfg)
+                                  (configLedger cfg)
                                   mpCap
                                   (mempoolTracer tracers)
 
@@ -286,7 +287,7 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
 
 initBlockFetchConsensusInterface
     :: forall m peer blk. (IOLike m, SupportedBlock blk)
-    => NodeConfig (BlockProtocol blk)
+    => TopLevelConfig blk
     -> ChainDB m blk
     -> STM m (Map peer (AnchoredFragment (Header blk)))
     -> (Header blk -> SizeInBytes)
@@ -392,7 +393,7 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
             Right ledgerView -> do
               mIsLeader <- lift $ atomically $ runProtocol varDRG $
                 checkIsLeader
-                  cfg
+                  (configConsensus cfg)
                   currentSlot
                   ledgerView
                   (headerStateChain (headerState extLedger))

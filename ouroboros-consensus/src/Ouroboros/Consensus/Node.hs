@@ -54,6 +54,7 @@ import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
@@ -191,7 +192,7 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
       , pInfoInitState  = initState
       } = pInfo
 
-    slotLengths = protocolSlotLengths cfg
+    slotLengths = protocolSlotLengths (configConsensus cfg)
 
     nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = networkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = networkMagic }
@@ -256,7 +257,7 @@ openChainDB
   -> BlockchainTime IO
   -> FilePath
      -- ^ Database path
-  -> NodeConfig (BlockProtocol blk)
+  -> TopLevelConfig blk
   -> ExtLedgerState blk
      -- ^ Initial ledger
   -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
@@ -276,7 +277,7 @@ mkChainDbArgs
   -> BlockchainTime IO
   -> FilePath
      -- ^ Database path
-  -> NodeConfig (BlockProtocol blk)
+  -> TopLevelConfig blk
   -> ExtLedgerState blk
      -- ^ Initial ledger
   -> EpochInfo IO
@@ -313,13 +314,13 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger
     , ChainDB.cdbBlockchainTime   = btime
     }
   where
-    secParam = protocolSecurityParam cfg
+    secParam = configSecurityParam cfg
 
 mkNodeArgs
   :: forall blk. RunNode blk
   => ResourceRegistry IO
-  -> NodeConfig (BlockProtocol blk)
-  -> NodeState  (BlockProtocol blk)
+  -> TopLevelConfig blk
+  -> NodeState (BlockProtocol blk)
   -> Tracers IO RemoteConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk

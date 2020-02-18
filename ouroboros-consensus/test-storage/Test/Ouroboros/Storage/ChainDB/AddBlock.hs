@@ -29,9 +29,8 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
 import           Ouroboros.Consensus.BlockchainTime.Mock
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (chunks)
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.Condense (condense)
@@ -150,7 +149,7 @@ prop_addBlock_multiple_threads bpt =
         (Chain.toAnchoredFragment (getHeader <$> chain1))
         (Chain.toAnchoredFragment (getHeader <$> chain2)) == EQ
 
-    cfg :: NodeConfig (BlockProtocol TestBlock)
+    cfg :: TopLevelConfig TestBlock
     cfg = singleNodeTestConfig
 
     initLedger :: ExtLedgerState TestBlock
@@ -235,7 +234,7 @@ fixedEpochSize :: EpochSize
 fixedEpochSize = 10
 
 mkArgs :: IOLike m
-       => NodeConfig (BlockProtocol TestBlock)
+       => TopLevelConfig TestBlock
        -> ExtLedgerState TestBlock
        -> Tracer m (ChainDB.TraceEvent TestBlock)
        -> ResourceRegistry m
@@ -275,8 +274,8 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbImmValidation    = ValidateAllEpochs
     , cdbVolValidation    = ValidateAll
     , cdbBlocksPerFile    = mkBlocksPerFile 4
-    , cdbParamsLgrDB      = ledgerDbDefaultParams (protocolSecurityParam cfg)
-    , cdbDiskPolicy       = defaultDiskPolicy (protocolSecurityParam cfg)
+    , cdbParamsLgrDB      = ledgerDbDefaultParams (configSecurityParam cfg)
+    , cdbDiskPolicy       = defaultDiskPolicy (configSecurityParam cfg)
 
       -- Integration
     , cdbNodeConfig       = cfg

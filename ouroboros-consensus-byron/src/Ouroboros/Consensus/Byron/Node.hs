@@ -51,6 +51,7 @@ import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.Exit (ExitReason (..))
@@ -137,11 +138,14 @@ protocolInfoByron :: Genesis.Config
                   -> ProtocolInfo ByronBlock
 protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     ProtocolInfo {
-        pInfoConfig = ExtNodeConfig byronConfig PBftNodeConfig {
-            pbftParams    = byronPBftParams genesisConfig mSigThresh
-          , pbftIsLeader  = case mLeader of
-                              Nothing   -> PBftIsNotALeader
-                              Just cred -> PBftIsALeader $ pbftLeaderOrNot cred
+        pInfoConfig = TopLevelConfig {
+            configConsensus = ExtNodeConfig byronConfig PBftNodeConfig {
+                pbftParams    = byronPBftParams genesisConfig mSigThresh
+              , pbftIsLeader  = case mLeader of
+                                  Nothing   -> PBftIsNotALeader
+                                  Just cred -> PBftIsALeader $ pbftLeaderOrNot cred
+              }
+          , configLedger = ByronLedgerConfig genesisConfig
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = initByronLedgerState genesisConfig Nothing
@@ -279,7 +283,7 @@ instance RunNode ByronBlock where
   nodeDecodeLedgerState     = const decodeByronLedgerState
   nodeDecodeChainState      = \_proxy cfg ->
                                  let k = pbftSecurityParam $
-                                           pbftParams (extNodeConfigP cfg)
+                                           pbftParams (extNodeConfigP (configConsensus cfg))
                                  in decodeByronChainState k
   nodeDecodeApplyTxError    = const decodeByronApplyTxError
   nodeDecodeTipInfo         = const decode
@@ -287,8 +291,12 @@ instance RunNode ByronBlock where
   nodeDecodeResult          = decodeByronResult
 
 
-extractGenesisData :: NodeConfig ByronConsensusProtocol -> Genesis.GenesisData
-extractGenesisData = Genesis.configGenesisData . getGenesisConfig
+extractGenesisData :: TopLevelConfig ByronBlock -> Genesis.GenesisData
+extractGenesisData = Genesis.configGenesisData
+                   . getGenesisConfig
+                   . configConsensus
 
-extractEpochSlots :: NodeConfig ByronConsensusProtocol -> EpochSlots
-extractEpochSlots = Genesis.configEpochSlots . getGenesisConfig
+extractEpochSlots :: TopLevelConfig ByronBlock -> EpochSlots
+extractEpochSlots = Genesis.configEpochSlots
+                  . getGenesisConfig
+                  . configConsensus

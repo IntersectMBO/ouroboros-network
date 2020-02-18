@@ -26,6 +26,7 @@ import qualified Cardano.Chain.Delegation as Delegation
 import           Ouroboros.Network.Block (HasHeader (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
@@ -67,9 +68,9 @@ instance SupportedBlock ByronBlock where
                (blockSlot hdr)
                pbftFields
                (CC.recoverSignedBytes epochSlots regular)
-               (extNodeConfig cfg, pbftGenKey pbftFields)
+               (extNodeConfig (configConsensus cfg), pbftGenKey pbftFields)
     where
-      epochSlots = pbftEpochSlots (extNodeConfig cfg)
+      epochSlots = pbftEpochSlots (extNodeConfig (configConsensus cfg))
 
   selectView _ hdr = (blockNo hdr, byronHeaderIsEBB hdr)
 

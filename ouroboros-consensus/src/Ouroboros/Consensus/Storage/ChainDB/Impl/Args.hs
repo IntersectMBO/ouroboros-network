@@ -22,6 +22,7 @@ import           Ouroboros.Network.Block (HeaderHash)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -91,7 +92,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbDiskPolicy       :: LgrDB.DiskPolicy
 
       -- Integration
-    , cdbNodeConfig       :: NodeConfig (BlockProtocol blk)
+    , cdbNodeConfig       :: TopLevelConfig blk
     , cdbEpochInfo        :: EpochInfo m
     , cdbHashInfo         :: HashInfo (HeaderHash blk)
     , cdbIsEBB            :: Header blk -> Maybe EpochNo

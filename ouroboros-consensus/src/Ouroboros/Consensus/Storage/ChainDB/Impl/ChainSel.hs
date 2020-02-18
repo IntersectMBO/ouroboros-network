@@ -50,9 +50,10 @@ import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      SlotNo, blockPoint, castHash, castPoint, pointHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..),
-                     IsEBB (..), headerHash, headerPoint)
+import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..),
+                     headerHash, headerPoint)
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..))
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -87,7 +88,7 @@ initialChainSelection
   -> VolDB m blk
   -> LgrDB m blk
   -> Tracer m (TraceEvent blk)
-  -> NodeConfig (BlockProtocol blk)
+  -> TopLevelConfig blk
   -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
   -> SlotNo -- ^ Current slot
   -> m (ChainAndLedger blk)
@@ -371,7 +372,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     -- will first copy the blocks/headers to trim (from the end of the
     -- fragment) from the VolatileDB to the ImmutableDB.
   where
-    SecurityParam k = protocolSecurityParam cdbNodeConfig
+    SecurityParam k = configSecurityParam cdbNodeConfig
 
     p :: Point blk
     p = headerPoint hdr
@@ -657,7 +658,7 @@ chainSelection
      )
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
-  -> NodeConfig (BlockProtocol blk)
+  -> TopLevelConfig blk
   -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
   -> BlockCache blk
   -> ChainAndLedger blk              -- ^ The current chain and ledger
@@ -769,7 +770,7 @@ validateCandidate
      )
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
-  -> NodeConfig (BlockProtocol blk)
+  -> TopLevelConfig blk
   -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
   -> BlockCache blk
   -> ChainAndLedger  blk                   -- ^ Current chain and ledger
