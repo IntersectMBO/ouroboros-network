@@ -32,6 +32,9 @@ library
 
   exposed-modules:
                        Ouroboros.Consensus.Block
+                       Ouroboros.Consensus.Block.Abstract
+                       Ouroboros.Consensus.Block.EBB
+                       Ouroboros.Consensus.Block.SupportsProtocol
                        Ouroboros.Consensus.BlockFetchServer
                        Ouroboros.Consensus.BlockchainTime
                        Ouroboros.Consensus.BlockchainTime.API
