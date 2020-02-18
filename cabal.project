@@ -70,7 +70,37 @@ package ouroboros-consensus-cardano
   flags: +asserts
 
 
+package cardano-ledger
+  tests: False
+
+package cardano-binary
+  tests: False
+
+package cardano-crypto
+  tests: False
+
+package cardano-crypto-class
+  tests: False
+
+package cardano-crypto-wrapper
+  tests: False
+
+package cardano-prelude
+  tests: False
+
 package contra-tracer
+  tests: False
+
+package cs-blockchain
+  tests: False
+
+package cs-ledger
+  tests: False
+
+package goblins
+  tests: False
+
+package small-steps
   tests: False
 
 source-repository-package
