@@ -75,6 +75,7 @@ import           Ouroboros.Consensus.BlockFetchServer
 import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.ChainSyncServer
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.LocalStateQueryServer
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.NodeKernel

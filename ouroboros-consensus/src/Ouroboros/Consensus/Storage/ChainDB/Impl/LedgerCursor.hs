@@ -8,8 +8,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor
 
 import           Ouroboros.Network.Block (Point, pointSlot)
 
-import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (LedgerCursor (..),

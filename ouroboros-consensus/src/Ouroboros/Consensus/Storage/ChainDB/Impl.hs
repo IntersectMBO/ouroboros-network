@@ -36,7 +36,7 @@ import           Ouroboros.Network.Block (castPoint)
 
 import           Ouroboros.Consensus.Block (toIsEBB)
 import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
