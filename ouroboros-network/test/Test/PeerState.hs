@@ -32,6 +32,7 @@ import           Control.Tracer
 
 import           Data.Semigroup.Action
 import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Server.ConnectionTable
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.PeerState
@@ -216,59 +217,80 @@ data Sock addr = Sock {
   , localAddr  :: addr
   }
 
-data SocketType where
+data SnocketType where
 
      -- socket which allocates and connects with out an error, any error can
      -- only come from an application
-     WorkingSocket :: SocketType
+     WorkingSnocket :: SnocketType
 
      -- socket which errors when allocating a socket
      AllocateError :: forall e. Exception e
                    => e
-                   -> SocketType
+                   -> SnocketType
 
      -- socket which errors when attempting a connection
      ConnectError :: forall e. Exception e
                   => e
-                  -> SocketType
+                  -> SnocketType
 
-instance Show SocketType where
+instance Show SnocketType where
     show (AllocateError e) = "AllocateError " ++show e
     show (ConnectError e) = "ConnectError " ++show e
-    show WorkingSocket = "WorkingSocket"
+    show WorkingSnocket = "WorkingSnocket"
 
-instance Arbitrary SocketType where
+instance Arbitrary SnocketType where
     arbitrary = oneof
       -- we are not generating 'AllocateErrors', they will not kill the worker,
       -- but only the connection thread.
       [ (\(ArbException e) -> ConnectError e) <$> arbitrary
-      , pure WorkingSocket
+      , pure WorkingSnocket
       ]
 
-mkSocket :: MonadThrow m
-          => SocketType
+-- | 'addrFamily', 'accept' and 'toBearer' are not needed to run the test suite.
+--
+mkSnocket :: MonadThrow m
+          => SnocketType
           -> addr
-          -> Socket m addr (Sock addr)
-mkSocket (AllocateError e) _remoteAddr = Socket {
-    allocate = \_ -> throwM e
-  , connect = \_ _ _ -> pure ()
+          -> addr
+          -> Snocket m (Sock addr) addr
+mkSnocket (AllocateError e) _localAddr _remoteAddr = Snocket {
+    getLocalAddr = \Sock{localAddr} -> pure localAddr
+  , getRemoteAddr = \Sock{remoteAddr = addr} -> pure addr
+  , addrFamily = error "not supported"
+  , open = \_ -> throwM e
+  , openToConnect = \_  -> throwM e
+  , connect = \_ _ -> pure ()
+  , bind = \_ _ -> pure ()
+  , listen = \_ -> pure ()
+  , accept = \_ -> error "not supported"
   , close = \_ -> pure ()
-  , getSocketName = \Sock{localAddr} -> pure localAddr
-  , getPeerName = \Sock{remoteAddr = addr} -> pure addr
+  , toBearer = \_ _ -> error "not supported"
   }
-mkSocket (ConnectError e) remoteAddr = Socket {
-    allocate = \localAddr -> pure Sock {remoteAddr, localAddr}
-  , connect = \_ _ _ -> throwM e
+mkSnocket (ConnectError e) localAddr remoteAddr = Snocket {
+    getLocalAddr = \Sock{localAddr = addr} -> pure addr
+  , getRemoteAddr = \Sock{remoteAddr = addr} -> pure addr
+  , addrFamily = error "not supported"
+  , open = \_ -> pure Sock {remoteAddr, localAddr}
+  , openToConnect = \_ -> pure Sock {remoteAddr, localAddr}
+  , connect = \_ _ -> throwM e
+  , accept = \_ -> error "not supported"
+  , bind = \_ _ -> pure ()
+  , listen = \_ -> pure ()
   , close = \_ -> pure ()
-  , getSocketName = \Sock{localAddr} -> pure localAddr
-  , getPeerName = \Sock{remoteAddr = addr} -> pure addr
+  , toBearer = \_ _ -> error "not supported"
   }
-mkSocket WorkingSocket remoteAddr = Socket {
-    allocate = \localAddr -> pure Sock {remoteAddr, localAddr}
-  , connect = \_ _ _ -> pure ()
+mkSnocket WorkingSnocket localAddr remoteAddr = Snocket {
+    getLocalAddr = \Sock{localAddr = addr} -> pure addr
+  , getRemoteAddr = \Sock{remoteAddr = addr} -> pure addr
+  , addrFamily = error "not supported"
+  , open = \_ -> pure Sock {remoteAddr, localAddr}
+  , openToConnect = \_ -> pure Sock {remoteAddr, localAddr}
+  , connect = \_ _ -> pure ()
+  , bind = \_ _ -> pure ()
+  , listen = \_ -> pure ()
+  , accept = \_ -> error "not supported"
   , close = \_ -> pure ()
-  , getSocketName = \Sock{localAddr} -> pure localAddr
-  , getPeerName = \Sock{remoteAddr = addr} -> pure addr
+  , toBearer = \_ _ -> error "not supported"
   }
 
 data ArbApp addr = ArbApp (Maybe ArbException) (Sock addr -> IO ())
@@ -318,17 +340,16 @@ instance Function ArbTime where
     function = functionRealFrac
 
 prop_subscriptionWorker
-    :: SocketType
+    :: SnocketType
     -> Int -- local address
     -> Int -- remote address
     -> ArbValidPeerState IO
-    -> (Fun (ArbTime, Int, ()) (ArbSuspendDecision ArbDiffTime))
     -> ArbErrorPolicies
     -> (Blind (ArbApp Int))
     -> Property
 prop_subscriptionWorker
     sockType localAddr remoteAddr (ArbValidPeerState ps)
-    returnCallback (ArbErrorPolicies appErrPolicies conErrPolicies)
+    (ArbErrorPolicies appErrPolicies conErrPolicies)
     (Blind (ArbApp merr app))
   =
     tabulate "peer states & app errors" [printf "%-20s %s" (peerStateType ps) (exceptionType merr)] $
@@ -340,7 +361,7 @@ prop_subscriptionWorker
              nullTracer
              tbl
              peerStatesVar
-             (mkSocket sockType remoteAddr)
+             (mkSnocket sockType localAddr remoteAddr)
              WorkerCallbacks {
                  wcSocketStateChangeTx = \ss s -> do
                    s' <- socketStateChangeTx ss s
@@ -356,12 +377,12 @@ prop_subscriptionWorker
                      laIpv6 = Just localAddr,
                      laUnix = Nothing
                    },
+                 wpSelectAddress = \_ LocalAddresses {laIpv4, laIpv6} -> getFirst (First laIpv4 <> First laIpv6),
                  wpConnectionAttemptDelay = const Nothing,
                  wpSubscriptionTarget = 
                    pure $ ipSubscriptionTarget nullTracer peerStatesVar [remoteAddr],
                  wpValency = 1
                }
-             (\_ LocalAddresses {laIpv4, laIpv6} -> getFirst (First laIpv4 <> First laIpv6))
              (\sock -> app sock
                 `finally`
                 (void $ atomically $ tryPutTMVar doneVar ()))
@@ -369,16 +390,13 @@ prop_subscriptionWorker
     completeTx = completeApplicationTx
        (ErrorPolicies
           appErrPolicies
-          conErrPolicies
-          (\t addr r -> fmap getArbDiffTime . getArbSuspendDecision $ case returnCallback of
-              Fn3 f -> f (ArbTime t) addr r
-              _     -> error "impossible happend"))
+          conErrPolicies)
 
     main :: StrictTMVar IO () -> Main IO (PeerStates IO Int) Bool
     main doneVar s = do
       done <- maybe False (const True) <$> tryReadTMVar doneVar
       let r = case sockType of
-            WorkingSocket   -> case merr of
+            WorkingSnocket   -> case merr of
               -- TODO: we don't have access to the time when the transition was
               -- evaluated.
               Nothing -> True

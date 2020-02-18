@@ -1072,9 +1072,10 @@ nullDebugProtocolTracers ::
      , HasHeader blk
      , TracingConstraints blk
      , Show peer
+     , Show localPeer
      , Show failure
      )
-  => ProtocolTracers m peer blk failure
+  => ProtocolTracers m peer localPeer blk failure
 nullDebugProtocolTracers =
   nullProtocolTracers `asTypeOf` showProtocolTracers debugTracer
 
@@ -1121,7 +1122,7 @@ data LimitedApp m peer blk =
 --
 -- Used internal to this module, essentially as an abbreviation.
 type LimitedApp' m peer blk unused1 unused2 unused3 =
-    NetworkApplication m peer
+    NetworkApplication m peer peer
         -- The 'ChainSync' and 'BlockFetch' protocols use @'Serialised' x@ for
         -- the servers and @x@ for the clients. Since both have to match to be
         -- sent across a channel, we can't use @'AnyMessage' ..@, instead, we

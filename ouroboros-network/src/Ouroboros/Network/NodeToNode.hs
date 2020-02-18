@@ -33,8 +33,9 @@ module Ouroboros.Network.NodeToNode (
   -- * Subscription Workers
   -- ** IP subscriptin worker
   , IPSubscriptionTarget (..)
-  , NetworkIPSubscriptionTracers (..)
-  , nullNetworkIPSubscriptionTracers
+  , NetworkIPSubscriptionTracers
+  , NetworkSubscriptionTracers (..)
+  , nullNetworkSubscriptionTracers
   , SubscriptionParams (..)
   , IPSubscriptionParams
   , ipSubscriptionWorker
@@ -50,6 +51,7 @@ module Ouroboros.Network.NodeToNode (
 
   -- * Re-exports
   , ConnectionId (..)
+  , RemoteConnectionId
   , DecoderFailureOrTooMuchInput
   , Handshake
   , LocalAddresses (..)
@@ -114,6 +116,7 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , WithDomainName (..)
                                                     )
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
+import           Ouroboros.Network.Snocket
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
@@ -185,27 +188,31 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --
 connectTo
-  :: NetworkConnectTracers NodeToNodeProtocols NodeToNodeVersion
+  :: Snocket IO Socket.Socket Socket.SockAddr
+  -> NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
   -> Versions NodeToNodeVersion
               DictVersion
-              (OuroborosApplication InitiatorApp ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
-  -> Maybe Socket.AddrInfo
-  -> Socket.AddrInfo
+              (OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
+  -> Maybe Socket.SockAddr
+  -> Socket.SockAddr
   -> IO ()
-connectTo = connectToNode cborTermVersionDataCodec
+connectTo sn =
+    connectToNode sn cborTermVersionDataCodec
 
 
 -- | Like 'connectTo' but specific to 'NodeToNodeV_1'.
 --
 connectTo_V1
-  :: NetworkConnectTracers NodeToNodeProtocols NodeToNodeVersion
+  :: SocketSnocket
+  -> NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> (OuroborosApplication InitiatorApp ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
-  -> Maybe Socket.AddrInfo
-  -> Socket.AddrInfo
+  -> (OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
+  -> Maybe Socket.SockAddr
+  -> Socket.SockAddr
   -> IO ()
-connectTo_V1 tracers versionData application localAddr remoteAddr =
+connectTo_V1 sn tracers versionData application localAddr remoteAddr =
     connectTo
+      sn
       tracers
       (simpleSingletonVersions
           NodeToNodeV_1
@@ -224,15 +231,17 @@ connectTo_V1 tracers versionData application localAddr remoteAddr =
 --   will be cancelled as well (by 'withAsync')
 --
 withServer
-  :: ( HasResponder appType ~ True)
-  => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion
-  -> NetworkMutableState
-  -> Socket.AddrInfo
-  -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
-  -> ErrorPolicies Socket.SockAddr ()
+  :: ( HasResponder appType ~ True )
+  => SocketSnocket
+  -> NetworkServerTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+  -> NetworkMutableState Socket.SockAddr
+  -> Socket.SockAddr
+  -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
+  -> ErrorPolicies
   -> IO Void
-withServer tracers networkState addr versions errPolicies =
+withServer sn tracers networkState addr versions errPolicies =
   withServerNode
+    sn
     tracers
     networkState
     addr
@@ -247,16 +256,17 @@ withServer tracers networkState addr versions errPolicies =
 --
 withServer_V1
   :: ( HasResponder appType ~ True )
-  => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion
-  -> NetworkMutableState
-  -> Socket.AddrInfo
+  => SocketSnocket
+  -> NetworkServerTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+  -> NetworkMutableState Socket.SockAddr
+  -> Socket.SockAddr
   -> NodeToNodeVersionData
-  -> (OuroborosApplication appType ConnectionId NodeToNodeProtocols IO BL.ByteString x y)
-  -> ErrorPolicies Socket.SockAddr ()
+  -> (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString x y)
+  -> ErrorPolicies
   -> IO Void
-withServer_V1 tracers networkState addr versionData application =
+withServer_V1 sn tracers networkState addr versionData application =
     withServer
-      tracers networkState addr
+      sn tracers networkState addr
       (simpleSingletonVersions
           NodeToNodeV_1
           versionData
@@ -270,36 +280,40 @@ withServer_V1 tracers networkState addr versionData application =
 ipSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion
-    -> NetworkMutableState
+    => SocketSnocket
+    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+    -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> Versions
         NodeToNodeVersion
         DictVersion
         (OuroborosApplication
           appType
-          ConnectionId
+          (ConnectionId Socket.SockAddr)
           NodeToNodeProtocols
           IO BL.ByteString x y)
     -> IO Void
 ipSubscriptionWorker
-  NetworkIPSubscriptionTracers
-    { nistSubscriptionTracer
-    , nistMuxTracer
-    , nistHandshakeTracer
-    , nistErrorPolicyTracer
+  sn
+  NetworkSubscriptionTracers
+    { nsSubscriptionTracer
+    , nsMuxTracer
+    , nsHandshakeTracer
+    , nsErrorPolicyTracer
     }
   networkState
   subscriptionParams
   versions
     = Subscription.ipSubscriptionWorker
-        nistSubscriptionTracer
-        nistErrorPolicyTracer
+        sn
+        nsSubscriptionTracer
+        nsErrorPolicyTracer
         networkState
         subscriptionParams
         (connectToNode'
+          sn
           cborTermVersionDataCodec
-          (NetworkConnectTracers nistMuxTracer nistHandshakeTracer)
+          (NetworkConnectTracers nsMuxTracer nsHandshakeTracer)
           versions)
 
 
@@ -308,23 +322,26 @@ ipSubscriptionWorker
 ipSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion
-    -> NetworkMutableState
+    => SocketSnocket
+    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+    -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> NodeToNodeVersionData
     -> (OuroborosApplication
           appType
-          ConnectionId
+          (ConnectionId Socket.SockAddr)
           NodeToNodeProtocols
           IO BL.ByteString x y)
     -> IO Void
 ipSubscriptionWorker_V1
+  sn
   tracers
   networkState
   subscriptionParams
   versionData
   application
     = ipSubscriptionWorker
+        sn
         tracers
         networkState
         subscriptionParams
@@ -341,19 +358,21 @@ ipSubscriptionWorker_V1
 dnsSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion ConnectionId
-    -> NetworkMutableState
+    => SocketSnocket
+    -> NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion Socket.SockAddr
+    -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> Versions
         NodeToNodeVersion
         DictVersion
         (OuroborosApplication
           appType
-          ConnectionId
+          (ConnectionId Socket.SockAddr)
           NodeToNodeProtocols
           IO BL.ByteString x y)
     -> IO Void
 dnsSubscriptionWorker
+  sn
   NetworkDNSSubscriptionTracers
     { ndstSubscriptionTracer
     , ndstDnsTracer
@@ -365,12 +384,14 @@ dnsSubscriptionWorker
   subscriptionParams
   versions =
     Subscription.dnsSubscriptionWorker
+      sn
       ndstSubscriptionTracer
       ndstDnsTracer
       ndstErrorPolicyTracer
       networkState
       subscriptionParams
       (connectToNode'
+        sn
         cborTermVersionDataCodec
         (NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer)
         versions)
@@ -381,23 +402,26 @@ dnsSubscriptionWorker
 dnsSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion ConnectionId
-    -> NetworkMutableState
+    => SocketSnocket
+    -> NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion Socket.SockAddr
+    -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> NodeToNodeVersionData
     -> (OuroborosApplication
           appType
-          ConnectionId
+          (ConnectionId Socket.SockAddr)
           NodeToNodeProtocols
           IO BL.ByteString x y)
     -> IO Void
 dnsSubscriptionWorker_V1
+  sn
   tracers
   networkState
   subscriptionParams
   versionData
   application =
      dnsSubscriptionWorker
+      sn
       tracers
       networkState
       subscriptionParams
@@ -410,7 +434,7 @@ dnsSubscriptionWorker_V1
 -- | A minimal error policy for remote peers, which only handles exceptions
 -- raised by `ouroboros-network`.
 --
-remoteNetworkErrorPolicy :: ErrorPolicies Socket.SockAddr a
+remoteNetworkErrorPolicy :: ErrorPolicies
 remoteNetworkErrorPolicy = ErrorPolicies {
       epAppErrorPolicies = [
           -- Handshake client protocol error: we either did not recognise received
@@ -477,9 +501,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
       epConErrorPolicies = [
           ErrorPolicy $ \(_ :: IOException) -> Just $
             SuspendConsumer shortDelay
-        ],
-
-      epReturnCallback = \_ _ _ -> ourBug
+        ]
     }
   where
     theyBuggyOrEvil :: SuspendDecision DiffTime
@@ -487,9 +509,6 @@ remoteNetworkErrorPolicy = ErrorPolicies {
 
     misconfiguredPeer :: SuspendDecision DiffTime
     misconfiguredPeer = SuspendConsumer defaultDelay
-
-    ourBug :: SuspendDecision DiffTime
-    ourBug = Throw
 
     defaultDelay :: DiffTime
     defaultDelay = 200 -- seconds
@@ -505,7 +524,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
 -- killed and not penalised by this policy.  This allows to restart the local
 -- client without a delay.
 --
-localNetworkErrorPolicy :: ErrorPolicies Socket.SockAddr a
+localNetworkErrorPolicy :: ErrorPolicies
 localNetworkErrorPolicy = ErrorPolicies {
       epAppErrorPolicies = [
           -- exception thrown by `runDecoderWithByteLimit`
@@ -524,10 +543,7 @@ localNetworkErrorPolicy = ErrorPolicies {
         ],
 
       -- The node never connects to a local client
-      epConErrorPolicies = [],
-
-      epReturnCallback = \_ _ _ -> ourBug
+      epConErrorPolicies = []
     }
-  where
-    ourBug :: SuspendDecision DiffTime
-    ourBug = Throw
+
+type RemoteConnectionId = ConnectionId Socket.SockAddr

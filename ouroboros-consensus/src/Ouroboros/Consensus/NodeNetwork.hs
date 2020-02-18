@@ -315,20 +315,20 @@ protocolCodecsId = ProtocolCodecs {
     }
 
 -- | A record of 'Tracer's for the different protocols.
-type ProtocolTracers m peer blk failure = ProtocolTracers' peer blk failure (Tracer m)
+type ProtocolTracers m peer localPeer blk failure = ProtocolTracers' peer localPeer blk failure (Tracer m)
 
-data ProtocolTracers' peer blk failure f = ProtocolTracers {
+data ProtocolTracers' peer localPeer blk failure f = ProtocolTracers {
     ptChainSyncTracer            :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Header blk) (Tip blk))))
   , ptChainSyncSerialisedTracer  :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Serialised (Header blk)) (Tip blk))))
   , ptBlockFetchTracer           :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch blk)))
   , ptBlockFetchSerialisedTracer :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch (Serialised blk))))
   , ptTxSubmissionTracer         :: f (TraceLabelPeer peer (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))))
-  , ptLocalChainSyncTracer       :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Serialised blk) (Tip blk))))
-  , ptLocalTxSubmissionTracer    :: f (TraceLabelPeer peer (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))))
-  , ptLocalStateQueryTracer      :: f (TraceLabelPeer peer (TraceSendRecv (LocalStateQuery blk (Query blk))))
+  , ptLocalChainSyncTracer       :: f (TraceLabelPeer localPeer (TraceSendRecv (ChainSync (Serialised blk) (Tip blk))))
+  , ptLocalTxSubmissionTracer    :: f (TraceLabelPeer localPeer (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))))
+  , ptLocalStateQueryTracer      :: f (TraceLabelPeer localPeer (TraceSendRecv (LocalStateQuery blk (Query blk))))
   }
 
-instance (forall a. Semigroup (f a)) => Semigroup (ProtocolTracers' peer blk failure f) where
+instance (forall a. Semigroup (f a)) => Semigroup (ProtocolTracers' peer localPeer blk failure f) where
   l <> r = ProtocolTracers {
       ptChainSyncTracer            = f ptChainSyncTracer
     , ptChainSyncSerialisedTracer  = f ptChainSyncSerialisedTracer
@@ -341,12 +341,12 @@ instance (forall a. Semigroup (f a)) => Semigroup (ProtocolTracers' peer blk fai
     }
     where
       f :: forall a. Semigroup a
-        => (ProtocolTracers' peer blk failure f -> a)
+        => (ProtocolTracers' peer localPeer blk failure f -> a)
         -> a
       f prj = prj l <> prj r
 
 -- | Use a 'nullTracer' for each protocol.
-nullProtocolTracers :: Monad m => ProtocolTracers m peer blk failure
+nullProtocolTracers :: Monad m => ProtocolTracers m peer localPeer blk failure
 nullProtocolTracers = ProtocolTracers {
     ptChainSyncTracer            = nullTracer
   , ptChainSyncSerialisedTracer  = nullTracer
@@ -360,6 +360,7 @@ nullProtocolTracers = ProtocolTracers {
 
 showProtocolTracers :: ( Show blk
                        , Show peer
+                       , Show localPeer
                        , Show (Header blk)
                        , Show (GenTx blk)
                        , Show (GenTxId blk)
@@ -367,7 +368,7 @@ showProtocolTracers :: ( Show blk
                        , ShowQuery (Query blk)
                        , HasHeader blk
                        )
-                    => Tracer m String -> ProtocolTracers m peer blk failure
+                    => Tracer m String -> ProtocolTracers m peer localPeer blk failure
 showProtocolTracers tr = ProtocolTracers {
     ptChainSyncTracer            = showTracing tr
   , ptChainSyncSerialisedTracer  = showTracing tr
@@ -385,7 +386,7 @@ showProtocolTracers tr = ProtocolTracers {
 -- useful for running different encoding on each channel in tests (identity
 -- codecs).
 --
-data NetworkApplication m peer
+data NetworkApplication m peer localPeer
                         bytesCS bytesBF bytesTX
                         bytesLCS bytesLTX bytesLSQ a = NetworkApplication {
       -- | Start a chain sync client that communicates with the given upstream
@@ -410,13 +411,13 @@ data NetworkApplication m peer
     , naTxSubmissionServer      :: peer -> Channel m bytesTX -> m a
 
       -- | Start a local chain sync server.
-    , naLocalChainSyncServer    :: peer -> Channel m bytesLCS -> m a
+    , naLocalChainSyncServer    :: localPeer -> Channel m bytesLCS -> m a
 
       -- | Start a local transaction submission server.
-    , naLocalTxSubmissionServer :: peer -> Channel m bytesLTX -> m a
+    , naLocalTxSubmissionServer :: localPeer -> Channel m bytesLTX -> m a
 
       -- | Start a local state query server.
-    , naLocalStateQueryServer   :: peer -> Channel m bytesLSQ -> m a
+    , naLocalStateQueryServer   :: localPeer -> Channel m bytesLSQ -> m a
     }
 
 
@@ -424,7 +425,7 @@ data NetworkApplication m peer
 -- for the 'NodeToNodeProtocols'.
 --
 initiatorNetworkApplication
-  :: NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
+  :: NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
   -> OuroborosApplication 'InitiatorApp peer NodeToNodeProtocols m bytes a Void
 initiatorNetworkApplication NetworkApplication {..} =
     OuroborosInitiatorApplication $ \them ptcl -> case ptcl of
@@ -436,7 +437,7 @@ initiatorNetworkApplication NetworkApplication {..} =
 -- for the 'NodeToNodeProtocols'.
 --
 responderNetworkApplication
-  :: NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
+  :: NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
   -> OuroborosApplication 'ResponderApp peer NodeToNodeProtocols m bytes Void a
 responderNetworkApplication NetworkApplication {..} =
     OuroborosResponderApplication $ \them ptcl -> case ptcl of
@@ -448,8 +449,8 @@ responderNetworkApplication NetworkApplication {..} =
 -- for the 'NodeToClientProtocols'.
 --
 localResponderNetworkApplication
-  :: NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
-  -> OuroborosApplication 'ResponderApp peer NodeToClientProtocols m bytes Void a
+  :: NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
+  -> OuroborosApplication 'ResponderApp localPeer NodeToClientProtocols m bytes Void a
 localResponderNetworkApplication NetworkApplication {..} =
     OuroborosResponderApplication $ \peer  ptcl -> case ptcl of
       ChainSyncWithBlocksPtcl -> naLocalChainSyncServer peer
@@ -461,17 +462,17 @@ localResponderNetworkApplication NetworkApplication {..} =
 -- 'NodeToNodeVersions'.
 --
 consensusNetworkApps
-    :: forall m peer blk failure bytesCS bytesBF bytesTX bytesLCS bytesLTX bytesLSQ.
+    :: forall m peer localPeer blk failure bytesCS bytesBF bytesTX bytesLCS bytesLTX bytesLSQ.
        ( IOLike m
        , Ord peer
        , Exception failure
        , ProtocolLedgerView blk
        )
     => NodeKernel m peer blk
-    -> ProtocolTracers m peer blk failure
+    -> ProtocolTracers m peer localPeer blk failure
     -> ProtocolCodecs blk failure m bytesCS bytesCS bytesBF bytesBF bytesTX bytesLCS bytesLTX bytesLSQ
     -> ProtocolHandlers m peer blk
-    -> NetworkApplication m peer bytesCS bytesBF bytesTX bytesLCS bytesLTX bytesLSQ ()
+    -> NetworkApplication m peer localPeer bytesCS bytesBF bytesTX bytesLCS bytesLTX bytesLSQ ()
 consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHandlers {..} =
     NetworkApplication {
       naChainSyncClient,
@@ -569,7 +570,7 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
         (txSubmissionServerPeerPipelined phTxSubmissionServer)
 
     naLocalChainSyncServer
-      :: peer
+      :: localPeer
       -> Channel m bytesLCS
       -> m ()
     naLocalChainSyncServer them channel = withRegistry $ \registry ->
@@ -581,7 +582,7 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
         $ phLocalChainSyncServer registry
 
     naLocalTxSubmissionServer
-      :: peer
+      :: localPeer
       -> Channel m bytesLTX
       -> m ()
     naLocalTxSubmissionServer them channel =
@@ -592,7 +593,7 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
         (localTxSubmissionServerPeer (pure phLocalTxSubmissionServer))
 
     naLocalStateQueryServer
-      :: peer
+      :: localPeer
       -> Channel m bytesLSQ
       -> m ()
     naLocalStateQueryServer them channel =

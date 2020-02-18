@@ -1,7 +1,9 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -22,16 +24,19 @@ module Ouroboros.Network.Socket (
     , ConnectionId (..)
     , withServerNode
     , connectToNode
+    , connectToNodeSocket
     , connectToNode'
 
     -- * Traces
     , NetworkConnectTracers (..)
     , nullNetworkConnectTracers
+    , debuggingNetworkConnectTracers
     , NetworkServerTracers (..)
     , nullNetworkServerTracers
+    , debuggingNetworkServerTracers
 
     -- * Helper function for creating servers
-    , fromSocket
+    , fromSnocket
     , beginConnection
 
     -- * Re-export of PeerStates
@@ -47,11 +52,15 @@ module Ouroboros.Network.Socket (
     , remValencyCounter
     , waitValencyCounter
     , readValencyCounter
+
+    -- * Auxiliary functions
+    , sockAddrFamily
     ) where
+
+import           Cardano.Prelude (UseIsNormalForm (..))
 
 import           Control.Concurrent.Async
 import           Control.Exception (IOException, SomeException (..))
-import           Control.Monad (when)
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import qualified Control.Monad.STM as STM
 import           Control.Monad.Class.MonadSTM.Strict
@@ -64,10 +73,11 @@ import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Void
+import           GHC.Generics (Generic)
 
 import qualified Network.Socket as Socket
 
-import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Control.Tracer
 
@@ -77,15 +87,18 @@ import           Network.TypedProtocol.Driver (TraceSendRecv)
 import qualified Network.Mux as Mx
 import Network.Mux.DeltaQ.TraceTransformer
 import qualified Network.Mux.Types as Mx
-import qualified Network.Mux.Bearer.Socket as Mx
+import           Network.Mux.Types (MuxBearer)
 
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
+import           Ouroboros.Network.IOManager (AssociateWithIOCP)
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Snocket (Snocket)
+import qualified Ouroboros.Network.Snocket as Snocket
 import qualified Ouroboros.Network.Server.Socket as Server
 import           Ouroboros.Network.Server.ConnectionTable
 
@@ -94,21 +107,36 @@ import           Ouroboros.Network.Server.ConnectionTable
 -- 'Ouroboros.Network.NodeToNode.connectTo' or
 -- 'Ouroboros.Network.NodeToClient.connectTo).
 --
-data NetworkConnectTracers ptcl vNumber = NetworkConnectTracers {
-      nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId Mx.MuxTrace),
+data NetworkConnectTracers addr ptcl vNumber = NetworkConnectTracers {
+      nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr)  Mx.MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nctHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer ConnectionId
+      nctHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr)
                                           (TraceSendRecv (Handshake vNumber CBOR.Term)))
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
     }
 
-nullNetworkConnectTracers :: NetworkConnectTracers ptcl vNumber
+nullNetworkConnectTracers :: NetworkConnectTracers addr ptcl vNumber
 nullNetworkConnectTracers = NetworkConnectTracers {
       nctMuxTracer       = nullTracer,
       nctHandshakeTracer = nullTracer
     }
+
+
+debuggingNetworkConnectTracers :: (Show addr, Show ptcl, Show vNumber)
+                               => NetworkConnectTracers addr ptcl vNumber
+debuggingNetworkConnectTracers = NetworkConnectTracers {
+      nctMuxTracer       = showTracing stdoutTracer, 
+      nctHandshakeTracer = showTracing stdoutTracer
+    }
+
+sockAddrFamily
+    :: Socket.SockAddr
+    -> Socket.Family
+sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
+sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
+sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
 
 
 -- | Connection is identified by local and remote address.
@@ -116,15 +144,12 @@ nullNetworkConnectTracers = NetworkConnectTracers {
 -- TODO: the type variable which this data type fills in is called `peerid`.  We
 -- should renamed to `connectionId`.
 --
-data ConnectionId = ConnectionId {
-    localAddress  :: !Socket.SockAddr,
-    remoteAddress :: !Socket.SockAddr
+data ConnectionId addr = ConnectionId {
+    localAddress  :: !addr,
+    remoteAddress :: !addr
   }
-  deriving (Eq, Ord, Show)
-
-instance NoUnexpectedThunks ConnectionId where
-    showTypeOf _ = "Peer"
-    whnfNoUnexpectedThunks _ctxt _act = return NoUnexpectedThunks
+  deriving (Eq, Ord, Show, Generic)
+  deriving NoUnexpectedThunks via (UseIsNormalForm (ConnectionId addr))
 
 -- |
 -- We assume that a TCP segment size of 1440 bytes with initial window of size
@@ -145,7 +170,7 @@ maxTransmissionUnit = 4 * 1440
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode
-  :: forall appType ptcl vNumber extra a b.
+  :: forall appType ptcl vNumber extra a b fd addr.
      ( ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -159,34 +184,26 @@ connectToNode
      , MiniProtocolLimits ptcl
      , Mx.HasInitiator appType ~ True
      )
-  => VersionDataCodec extra CBOR.Term
-  -> NetworkConnectTracers ptcl vNumber
-  -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+  => Snocket IO fd addr
+  -> VersionDataCodec extra CBOR.Term
+  -> NetworkConnectTracers addr ptcl vNumber
+  -> Versions vNumber extra (OuroborosApplication appType (ConnectionId addr) ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
-  -> Maybe Socket.AddrInfo
+  -> Maybe addr
   -- ^ local address; the created socket will bind to it
-  -> Socket.AddrInfo
+  -> addr
   -- ^ remote address
   -> IO ()
-connectToNode versionDataCodec tracers versions localAddr remoteAddr =
+connectToNode sn versionDataCodec tracers versions localAddr remoteAddr =
     bracket
-      (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
-      Socket.close
+      (Snocket.openToConnect sn remoteAddr)
+      (Snocket.close sn)
       (\sd -> do
-          when (Socket.addrFamily remoteAddr == Socket.AF_INET ||
-                Socket.addrFamily remoteAddr == Socket.AF_INET6) $ do
-              Socket.setSocketOption sd Socket.ReuseAddr 1
-#if !defined(mingw32_HOST_OS)
-              Socket.setSocketOption sd Socket.ReusePort 1
-#endif
           case localAddr of
-            Just addr -> do
-              when (Socket.addrFamily remoteAddr == Socket.AF_INET6) $
-                Socket.setSocketOption sd Socket.IPv6Only 1
-              Socket.bind sd (Socket.addrAddress addr)
+            Just addr -> Snocket.bind sn sd addr
             Nothing   -> return ()
-          Socket.connect sd (Socket.addrAddress remoteAddr)
-          connectToNode' versionDataCodec tracers versions sd
+          Snocket.connect sn sd remoteAddr
+          connectToNode' sn versionDataCodec tracers versions sd
       )
 
 -- |
@@ -198,6 +215,51 @@ connectToNode versionDataCodec tracers versions localAddr remoteAddr =
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode'
+  :: forall appType ptcl vNumber extra a b fd addr.
+     ( ProtocolEnum ptcl
+     , Ord ptcl
+     , Enum ptcl
+     , Bounded ptcl
+     , Ord vNumber
+     , Enum vNumber
+     , Serialise vNumber
+     , Typeable vNumber
+     , Show vNumber
+     , Show ptcl
+     , MiniProtocolLimits ptcl
+     , Mx.HasInitiator appType ~ True
+     )
+  => Snocket IO fd addr
+  -> VersionDataCodec extra CBOR.Term
+  -> NetworkConnectTracers addr ptcl vNumber
+  -> Versions vNumber extra (OuroborosApplication appType (ConnectionId addr) ptcl IO BL.ByteString a b)
+  -- ^ application to run over the connection
+  -> fd
+  -> IO ()
+connectToNode' sn versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } versions sd = do
+    connectionId <- ConnectionId <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
+    muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
+    let bearer = Snocket.toBearer sn muxTracer sd
+    ts_start <- getMonotonicTime
+    mapp <- runPeerWithByteLimit
+              maxTransmissionUnit
+              BL.length
+              (contramap (Mx.WithMuxBearer connectionId) nctHandshakeTracer)
+              codecHandshake
+              (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator))
+              (handshakeClientPeer versionDataCodec versions)
+    ts_end <- getMonotonicTime
+    case mapp of
+         Left err -> do
+            traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
+            throwIO err
+         Right app -> do
+            traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
+            Mx.muxStart muxTracer (toApplication app connectionId) bearer
+
+
+-- Wraps a Socket inside a Snocket and calls connectToNode'
+connectToNodeSocket
   :: forall appType ptcl vNumber extra a b.
      ( ProtocolEnum ptcl
      , Ord ptcl
@@ -212,35 +274,20 @@ connectToNode'
      , MiniProtocolLimits ptcl
      , Mx.HasInitiator appType ~ True
      )
-  => VersionDataCodec extra CBOR.Term
-  -> NetworkConnectTracers ptcl vNumber
-  -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+  => AssociateWithIOCP
+  -> VersionDataCodec extra CBOR.Term
+  -> NetworkConnectTracers Socket.SockAddr ptcl vNumber
+  -> Versions vNumber extra (OuroborosApplication appType (ConnectionId Socket.SockAddr) ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
-connectToNode' versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } versions sd = do
-    connectionId <- ConnectionId <$> Socket.getSocketName sd <*> Socket.getPeerName sd
-    muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
-    let bearer = Mx.socketAsMuxBearer muxTracer sd
-    Mx.traceMuxBearerState muxTracer Mx.Connected
-    traceWith muxTracer $ Mx.MuxTraceHandshakeStart
-    ts_start <- getMonotonicTime
-    !mapp <- runPeerWithByteLimit
-              maxTransmissionUnit
-              BL.length
-              (contramap (Mx.WithMuxBearer connectionId) nctHandshakeTracer)
-              codecHandshake
-              (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator))
-              (handshakeClientPeer versionDataCodec versions)
-    ts_end <- getMonotonicTime
-    case mapp of
-         Left err -> do
-             traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
-             throwIO err
-         Right app -> do
-             traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             Mx.muxStart muxTracer (toApplication app connectionId) bearer
-
+connectToNodeSocket iocp versionDataCodec tracers versions sd =
+    connectToNode'
+      (Snocket.socketSnocket iocp)
+      versionDataCodec
+      tracers
+      versions
+      sd
 
 -- |
 -- Accept or reject an incoming connection.  Each record contains the new state
@@ -274,7 +321,7 @@ data AcceptConnection st vNumber extra peerid ptcl m bytes where
 -- of the incoming connection.
 --
 beginConnection
-    :: forall peerid ptcl vNumber extra addr st.
+    :: forall peerid ptcl vNumber extra addr st fd.
        ( ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -287,20 +334,21 @@ beginConnection
        , Typeable vNumber
        , Show vNumber
        )
-    => Tracer IO (Mx.WithMuxBearer peerid Mx.MuxTrace)
+    => Snocket IO fd addr
+    -> Tracer IO (Mx.WithMuxBearer peerid Mx.MuxTrace)
     -> Tracer IO (Mx.WithMuxBearer peerid (TraceSendRecv (Handshake vNumber CBOR.Term)))
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber extra peerid ptcl IO BL.ByteString))
     -- ^ either accept or reject a connection.
-    -> Server.BeginConnection addr Socket.Socket st ()
-beginConnection muxTracer handshakeTracer versionDataCodec acceptVersion fn t addr st = do
+    -> Server.BeginConnection addr fd st ()
+beginConnection sn muxTracer handshakeTracer versionDataCodec acceptVersion fn t addr st = do
     accept <- fn t addr st
     case accept of
       AcceptConnection st' peerid versions -> pure $ Server.Accept st' $ \sd -> do
         muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` muxTracer
-        let bearer = Mx.socketAsMuxBearer muxTracer' sd
-        Mx.traceMuxBearerState muxTracer' Mx.Connected
+        let bearer :: MuxBearer IO
+            bearer = Snocket.toBearer sn muxTracer' sd
         traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
         mapp <- runPeerWithByteLimit
                 maxTransmissionUnit
@@ -318,100 +366,99 @@ beginConnection muxTracer handshakeTracer versionDataCodec acceptVersion fn t ad
             Mx.muxStart muxTracer' (toApplication app peerid) bearer
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 
-
--- Make the server listening socket
 mkListeningSocket
-    :: Socket.Family
-    -> Maybe Socket.SockAddr
-    -> IO Socket.Socket
-mkListeningSocket addrFamily_ addr = do
-    sd <- Socket.socket addrFamily_ Socket.Stream Socket.defaultProtocol
-    when (addrFamily_ == Socket.AF_INET ||
-          addrFamily_ == Socket.AF_INET6) $ do
-        Socket.setSocketOption sd Socket.ReuseAddr 1
-#if !defined(mingw32_HOST_OS)
-        Socket.setSocketOption sd Socket.ReusePort 1
-#endif
+    :: Snocket IO fd addr
+    -> Maybe addr
+    -> Snocket.AddressFamily addr
+    -> IO fd
+mkListeningSocket sn addr family_ = do
+    sd <- Snocket.open sn family_
+
     case addr of
       Nothing -> pure ()
       Just addr_ -> do
-        when (addrFamily_ == Socket.AF_INET6) $
-           -- An AF_INET6 socket can be used to talk to both IPv4 and IPv6 end points, and
-           -- it is enabled by default on some systems. Disabled here since we run a separate
-           -- IPv4 server instance if configured to use IPv4.
-           Socket.setSocketOption sd Socket.IPv6Only 1
-
-        Socket.bind sd addr_
-        Socket.listen sd 1
+        Snocket.bind sn sd addr_
+        Snocket.listen sn sd
     pure sd
-
 
 -- |
 -- Make a server-compatible socket from a network socket.
 --
-fromSocket
-    :: ConnectionTable IO Socket.SockAddr
-    -> Socket.Socket
-    -> Server.Socket Socket.SockAddr Socket.Socket
-fromSocket tblVar sd = Server.Socket
-    { Server.acceptConnection = do
-        (sd', remoteAddr) <- Socket.accept sd
-        localAddr <- Socket.getSocketName sd'
-        atomically $ addConnection tblVar remoteAddr localAddr Nothing
-        pure (remoteAddr, sd', close remoteAddr localAddr sd')
-    }
+fromSnocket
+    :: forall fd addr. Ord addr
+    => ConnectionTable IO addr
+    -> Snocket IO fd addr
+    -> fd -- ^ socket or handle
+    -> Server.Socket addr fd
+fromSnocket tblVar sn sd = go (Snocket.accept sn sd)
   where
+    go :: Snocket.Accept addr fd -> Server.Socket addr fd
+    go (Snocket.Accept accept) = Server.Socket $ do
+      (sd', remoteAddr, next) <- accept
+      -- TOOD: we don't need to that on each accept
+      localAddr <- Snocket.getLocalAddr sn sd'
+      atomically $ addConnection tblVar remoteAddr localAddr Nothing
+      pure (remoteAddr, sd', close remoteAddr localAddr sd', go next)
+
     close remoteAddr localAddr sd' = do
         removeConnection tblVar remoteAddr localAddr
-        Socket.close sd'
+        Snocket.close sn sd'
 
 
 -- | Tracers required by a server which handles inbound connections.
 --
-data NetworkServerTracers ptcl vNumber = NetworkServerTracers {
-      nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId Mx.MuxTrace),
+data NetworkServerTracers addr ptcl vNumber = NetworkServerTracers {
+      nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr) Mx.MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nstHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer ConnectionId
+      nstHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr)
                                           (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
-      nstErrorPolicyTracer :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+      nstErrorPolicyTracer :: Tracer IO (WithAddr addr ErrorPolicyTrace)
       -- ^ error policy tracer; must not be 'nullTracer', otherwise all the
       -- exceptions which are not matched by any error policy will be caught
       -- and not logged or rethrown.
     }
 
-nullNetworkServerTracers :: NetworkServerTracers ptcl vNumber
+nullNetworkServerTracers :: NetworkServerTracers addr ptcl vNumber
 nullNetworkServerTracers = NetworkServerTracers {
       nstMuxTracer         = nullTracer,
       nstHandshakeTracer   = nullTracer,
       nstErrorPolicyTracer = nullTracer
     }
 
+debuggingNetworkServerTracers :: (Show addr, Show ptcl, Show vNumber)
+                              =>  NetworkServerTracers addr ptcl vNumber
+debuggingNetworkServerTracers = NetworkServerTracers {
+      nstMuxTracer         = showTracing stdoutTracer,
+      nstHandshakeTracer   = showTracing stdoutTracer,
+      nstErrorPolicyTracer = showTracing stdoutTracer
+    }
+
 
 -- | Mutable state maintained by the network component.
 --
-data NetworkMutableState = NetworkMutableState {
-    nmsConnectionTable :: ConnectionTable IO Socket.SockAddr,
+data NetworkMutableState addr = NetworkMutableState {
+    nmsConnectionTable :: ConnectionTable IO addr,
     -- ^ 'ConnectionTable' which maintains information about current upstream and
     -- downstream connections.
-    nmsPeerStates      :: StrictTVar IO (PeerStates IO Socket.SockAddr)
+    nmsPeerStates      :: StrictTVar IO (PeerStates IO addr)
     -- ^ 'PeerStates' which maintains state of each downstream / upstream peer
     -- that errored, misbehaved or was not interesting to us.
   }
 
-newNetworkMutableStateSTM :: STM.STM NetworkMutableState
+newNetworkMutableStateSTM :: STM.STM (NetworkMutableState addr)
 newNetworkMutableStateSTM =
     NetworkMutableState <$> newConnectionTableSTM
                         <*> newPeerStatesVarSTM
 
-newNetworkMutableState :: IO NetworkMutableState
+newNetworkMutableState :: IO (NetworkMutableState addr)
 newNetworkMutableState = atomically newNetworkMutableStateSTM
 
 -- | Clean 'PeerStates' within 'NetworkMutableState' every 200s
 --
-cleanNetworkMutableState :: NetworkMutableState
+cleanNetworkMutableState :: NetworkMutableState addr
                          -> IO ()
 cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
     cleanPeerStates 200 nmsPeerStates
@@ -420,7 +467,7 @@ cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
 -- Thin wrapper around @'Server.run'@.
 --
 runServerThread
-    :: forall appType ptcl vNumber extra a b.
+    :: forall appType ptcl vNumber extra fd addr a b.
        ( Mx.HasResponder appType ~ True
        , ProtocolEnum ptcl
        , Ord ptcl
@@ -433,38 +480,41 @@ runServerThread
        , Serialise vNumber
        , Typeable vNumber
        , Show vNumber
+       , Ord addr
        )
-    => NetworkServerTracers ptcl vNumber
-    -> NetworkMutableState
-    -> Socket.Socket
+    => NetworkServerTracers addr ptcl vNumber
+    -> NetworkMutableState addr
+    -> Snocket IO fd addr
+    -> fd
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
-    -> ErrorPolicies Socket.SockAddr ()
+    -> Versions vNumber extra (OuroborosApplication appType (ConnectionId addr) ptcl IO BL.ByteString a b)
+    -> ErrorPolicies
     -> IO Void
 runServerThread NetworkServerTracers { nstMuxTracer
                                      , nstHandshakeTracer
                                      , nstErrorPolicyTracer }
                 NetworkMutableState { nmsConnectionTable
                                     , nmsPeerStates }
+                sn
                 sd
                 versionDataCodec
                 acceptVersion
                 versions
                 errorPolicies = do
-    sockAddr <- Socket.getSocketName sd
+    sockAddr <- Snocket.getLocalAddr sn sd
     Server.run
         nstErrorPolicyTracer
-        (fromSocket nmsConnectionTable sd)
+        (fromSnocket nmsConnectionTable sn sd)
         (acceptException sockAddr)
-        (beginConnection nstMuxTracer nstHandshakeTracer versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
+        (beginConnection sn nstMuxTracer nstHandshakeTracer versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
         -- register producer when application starts, it will be unregistered
         -- using 'CompleteConnection'
         (\remoteAddr thread st -> pure $ registerProducer remoteAddr thread
         st)
         completeTx mainTx (toLazyTVar nmsPeerStates)
   where
-    mainTx :: Server.Main (PeerStates IO Socket.SockAddr) Void
+    mainTx :: Server.Main (PeerStates IO addr) Void
     mainTx (ThrowException e) = throwM e
     mainTx PeerStates{}       = retry
 
@@ -472,9 +522,9 @@ runServerThread NetworkServerTracers { nstMuxTracer
     -- Crucially: we don't re-throw exceptions, because doing so would
     -- bring down the server.
     completeTx :: Server.CompleteConnection
-                    Socket.SockAddr
-                    (PeerStates IO Socket.SockAddr)
-                    (WithAddr Socket.SockAddr ErrorPolicyTrace)
+                    addr
+                    (PeerStates IO addr)
+                    (WithAddr addr ErrorPolicyTrace)
                     ()
     completeTx result st = case result of
 
@@ -486,7 +536,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
         fmap (unregisterProducer remoteAddr thread)
           <$> completeApplicationTx errorPolicies (ApplicationResult t remoteAddr r) st
 
-    acceptException :: Socket.SockAddr -> IOException -> IO ()
+    acceptException :: addr -> IOException -> IO ()
     acceptException a e = do
       traceWith (WithAddr a `contramap` nstErrorPolicyTracer) $ ErrorPolicyAcceptException e
 
@@ -514,7 +564,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
 -- thread which runs the server.  This makes it useful for testing, where we
 -- need to guarantee that a socket is open before we try to connect to it.
 withServerNode
-    :: forall appType ptcl vNumber extra t a b.
+    :: forall appType ptcl vNumber extra t fd addr a b.
        ( Mx.HasResponder appType ~ True
        , ProtocolEnum ptcl
        , Ord ptcl
@@ -527,29 +577,32 @@ withServerNode
        , Serialise vNumber
        , Typeable vNumber
        , Show vNumber
+       , Ord addr
        )
-    => NetworkServerTracers ptcl vNumber
-    -> NetworkMutableState
-    -> Socket.AddrInfo
+    => Snocket IO fd addr
+    -> NetworkServerTracers addr ptcl vNumber
+    -> NetworkMutableState addr
+    -> addr
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+    -> Versions vNumber extra (OuroborosApplication appType (ConnectionId addr) ptcl IO BL.ByteString a b)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
-    -> ErrorPolicies Socket.SockAddr ()
-    -> (Socket.SockAddr -> Async Void -> IO t)
+    -> ErrorPolicies
+    -> (addr -> Async Void -> IO t)
     -- ^ callback which takes the @Async@ of the thread that is running the server.
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode tracers networkState addr versionDataCodec acceptVersion versions errorPolicies k =
-    bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
-      addr' <- Socket.getSocketName sd
+withServerNode sn tracers networkState addr versionDataCodec acceptVersion versions errorPolicies k =
+    bracket (mkListeningSocket sn (Just addr) (Snocket.addrFamily sn addr)) (Snocket.close sn) $ \sd -> do
+      addr' <- Snocket.getLocalAddr sn sd
       withAsync
         (runServerThread
           tracers
           networkState
+          sn
           sd
           versionDataCodec
           acceptVersion

@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Node
   , IPSubscriptionTarget (..)
   , DnsSubscriptionTarget (..)
   , ConnectionId (..)
+  , RemoteConnectionId
     -- * Internal helpers
   , openChainDB
   , mkChainDbArgs
@@ -43,12 +44,12 @@ import           Data.Time.Clock (secondsToDiffTime)
 import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (DictVersion (..),
-                     NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
+                     LocalConnectionId, NodeToClientVersionData (..),
+                     nodeToClientCodecCBORTerm)
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersionData (..),
-                     nodeToNodeCodecCBORTerm)
+                     RemoteConnectionId, nodeToNodeCodecCBORTerm)
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
-import           Ouroboros.Network.Socket (ConnectionId)
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
@@ -94,8 +95,8 @@ data IsProducer
 run
   :: forall blk.
      RunNode blk
-  => Tracers IO ConnectionId blk          -- ^ Consensus tracers
-  -> ProtocolTracers IO ConnectionId blk DeserialiseFailure
+  => Tracers IO RemoteConnectionId  blk   -- ^ Consensus tracers
+  -> ProtocolTracers IO RemoteConnectionId LocalConnectionId blk DeserialiseFailure
      -- ^ Protocol tracers
   -> Tracer IO (ChainDB.TraceEvent blk)   -- ^ ChainDB tracer
   -> DiffusionTracers                     -- ^ Diffusion tracers
@@ -106,9 +107,9 @@ run
   -> IsProducer
   -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
       -- ^ Customise the 'ChainDbArgs'
-  -> (NodeArgs IO ConnectionId blk -> NodeArgs IO ConnectionId blk)
+  -> (NodeArgs IO RemoteConnectionId blk -> NodeArgs IO RemoteConnectionId blk)
       -- ^ Customise the 'NodeArgs'
-  -> (ResourceRegistry IO -> NodeKernel IO ConnectionId blk -> IO ())
+  -> (ResourceRegistry IO -> NodeKernel IO RemoteConnectionId blk -> IO ())
      -- ^ Called on the 'NodeKernel' after creating it, but before the network
      -- layer is initialised.
   -> IO ()
@@ -163,13 +164,12 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
 
         let nodeArgs = customiseNodeArgs $ mkNodeArgs
               registry
-              cfg
-              initState
-              tracers
-              btime
-              chainDB
-              isProducer
-
+                cfg
+                initState
+                tracers
+                btime
+                chainDB
+                isProducer
         nodeKernel <- initNodeKernel nodeArgs
         onNodeKernel registry nodeKernel
 
@@ -195,11 +195,11 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = networkMagic }
 
     mkNetworkApps
-      :: NodeArgs   IO ConnectionId blk
-      -> NodeKernel IO ConnectionId blk
+      :: NodeArgs   IO RemoteConnectionId blk
+      -> NodeKernel IO RemoteConnectionId blk
       -> NetworkProtocolVersion blk
       -> NetworkApplication
-           IO ConnectionId
+           IO RemoteConnectionId LocalConnectionId
            ByteString ByteString ByteString ByteString ByteString ByteString
            ()
     mkNetworkApps nodeArgs nodeKernel version = consensusNetworkApps
@@ -211,20 +211,20 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
     mkDiffusionApplications
       :: (   NetworkProtocolVersion blk
           -> NetworkApplication
-               IO ConnectionId
-               ByteString ByteString ByteString ByteString ByteString ByteString
-               ()
+              IO RemoteConnectionId LocalConnectionId
+              ByteString ByteString ByteString ByteString ByteString ByteString
+              ()
          )
       -> DiffusionApplications
     mkDiffusionApplications networkApps = DiffusionApplications
-     { daResponderApplication = combineVersions [
-           simpleSingletonVersions
-             (nodeToNodeProtocolVersion (Proxy @blk) version)
-             nodeToNodeVersionData
-             (DictVersion nodeToNodeCodecCBORTerm)
-             (responderNetworkApplication $ networkApps version)
-         | version <- supportedNetworkProtocolVersions (Proxy @blk)
-         ]
+      { daResponderApplication = combineVersions [
+      simpleSingletonVersions
+    (nodeToNodeProtocolVersion (Proxy @blk) version)
+    nodeToNodeVersionData
+    (DictVersion nodeToNodeCodecCBORTerm)
+    (responderNetworkApplication $ networkApps version)
+      | version <- supportedNetworkProtocolVersions (Proxy @blk)
+      ]
      , daInitiatorApplication = combineVersions [
            simpleSingletonVersions
              (nodeToNodeProtocolVersion (Proxy @blk) version)
@@ -318,11 +318,11 @@ mkNodeArgs
   => ResourceRegistry IO
   -> NodeConfig (BlockProtocol blk)
   -> NodeState  (BlockProtocol blk)
-  -> Tracers IO ConnectionId blk
+  -> Tracers IO RemoteConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
   -> IsProducer
-  -> NodeArgs IO ConnectionId blk
+  -> NodeArgs IO RemoteConnectionId blk
 mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     { tracers
     , registry

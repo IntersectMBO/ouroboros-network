@@ -55,6 +55,7 @@ library
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.Channel
                        Ouroboros.Network.DeltaQ
+                       Ouroboros.Network.IOManager
                        Ouroboros.Network.Magic
                        Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.Mux
@@ -72,10 +73,12 @@ library
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Server.Version.CBOR
                        Ouroboros.Network.Server.Version.Protocol
+                       Ouroboros.Network.Snocket
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Subscription
                        Ouroboros.Network.Subscription.Ip
                        Ouroboros.Network.Subscription.Dns
+                       Ouroboros.Network.Subscription.Client
                        Ouroboros.Network.Subscription.Subscriber
                        Ouroboros.Network.Subscription.PeerState
                        Ouroboros.Network.Subscription.Worker
@@ -161,6 +164,10 @@ library
                        serialise         >=0.2 && <0.3,
                        stm               >=2.4 && <2.6,
                        time              >=1.6 && <1.10
+
+  if os(windows)
+    build-depends:     Win32-network                 <0.2.0.0,
+                       Win32           >= 2.5.4.1 && <2.9
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -277,6 +284,14 @@ test-suite test-network
                        ouroboros-network,
                        ouroboros-protocol-tests
 
+  if os(windows)
+    build-depends:     Win32-network                 <0.2.0.0,
+                       Win32           >= 2.5.4.1 && <2.9
+
+  if os(windows)
+    build-depends:     Win32-network                 <0.2.0.0,
+                       Win32           >= 2.5.4.1 && <2.9
+
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
@@ -342,3 +357,4 @@ executable demo-chain-sync
                        typed-protocols-examples
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -threaded

@@ -46,6 +46,7 @@ import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker
+import           Ouroboros.Network.Snocket (Snocket)
 import           Ouroboros.Network.Socket
 
 
@@ -220,16 +221,17 @@ dnsResolve tracer resolver peerStatesVar beforeConnect (DnsSubscriptionTarget do
 
 
 dnsSubscriptionWorker'
-    :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
+    :: Snocket IO Socket.Socket Socket.SockAddr
+    -> Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> Resolver IO
     -> DnsSubscriptionParams a
     -> Main IO (PeerStates IO Socket.SockAddr) x
     -> (Socket.Socket -> IO a)
     -> IO x
-dnsSubscriptionWorker' subTracer dnsTracer errorPolicyTracer
+dnsSubscriptionWorker' snocket subTracer dnsTracer errorPolicyTracer
                        networkState@NetworkMutableState { nmsPeerStates }
                        resolver
                        SubscriptionParams { spLocalAddresses
@@ -238,7 +240,8 @@ dnsSubscriptionWorker' subTracer dnsTracer errorPolicyTracer
                                           , spErrorPolicies
                                           }
                        main k =
-    subscriptionWorker (WithDomainName (dstDomain dst) `contramap` subTracer)
+    subscriptionWorker snocket
+                       (WithDomainName (dstDomain dst) `contramap` subTracer)
                        errorPolicyTracer
                        networkState
                        WorkerParams { wpLocalAddresses = spLocalAddresses
@@ -248,6 +251,7 @@ dnsSubscriptionWorker' subTracer dnsTracer errorPolicyTracer
                                           (WithDomainName (dstDomain dst) `contramap` dnsTracer)
                                           resolver nmsPeerStates beforeConnectTx dst
                                     , wpValency = dstValency dst
+                                    , wpSelectAddress = selectSockAddr 
                                     }
                        spErrorPolicies
                        main
@@ -257,18 +261,20 @@ dnsSubscriptionWorker' subTracer dnsTracer errorPolicyTracer
 type DnsSubscriptionParams a = SubscriptionParams a DnsSubscriptionTarget
 
 dnsSubscriptionWorker
-    :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
+    :: Snocket IO Socket.Socket Socket.SockAddr
+    -> Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams a
     -> (Socket.Socket -> IO a)
     -> IO Void
-dnsSubscriptionWorker subTracer dnsTracer errTrace networkState
+dnsSubscriptionWorker snocket subTracer dnsTracer errTrace networkState
                       params@SubscriptionParams { spSubscriptionTarget } k =
     do rs <- DNS.makeResolvSeed DNS.defaultResolvConf
        DNS.withResolver rs $ \dnsResolver ->
          dnsSubscriptionWorker'
+           snocket
            subTracer dnsTracer errTrace
            networkState
            (Resolver

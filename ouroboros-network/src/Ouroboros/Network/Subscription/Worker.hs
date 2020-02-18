@@ -23,8 +23,6 @@ module Ouroboros.Network.Subscription.Worker
   , WorkerParams (..)
   , worker
     -- * Socket API
-  , Socket (..)
-  , ioSocket
   , safeConnect
     -- * Constants
   , defaultConnectionAttemptDelay
@@ -35,8 +33,6 @@ module Ouroboros.Network.Subscription.Worker
   , SubscriberError (..)
     -- * Tracing
   , SubscriptionTrace (..)
-    -- * Auxiliary functions
-  , sockAddrFamily
   ) where
 
 import           Control.Exception (SomeException (..))
@@ -50,8 +46,6 @@ import           Data.Void (Void)
 import           GHC.Stack
 import           Text.Printf
 
-import qualified Network.Socket as Socket
-
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
@@ -62,6 +56,8 @@ import           Control.Tracer
 
 import           Ouroboros.Network.ErrorPolicy (CompleteApplication, Result (..), CompleteApplicationResult (..), WithAddr, ErrorPolicyTrace)
 import           Ouroboros.Network.Server.ConnectionTable
+import           Ouroboros.Network.Snocket (Snocket (..))
+import qualified Ouroboros.Network.Snocket as Snocket
 import           Ouroboros.Network.Subscription.Subscriber
 
 -- | Time to wait between connection attempts when we don't have any DeltaQ
@@ -130,16 +126,6 @@ type SocketStateChange m s addr = SocketState m addr -> s -> STM m s
 --
 type Main m s t = s -> STM m t
 
--- | Abstract socket interface
---
-data Socket m addr sock = Socket {
-    allocate      :: addr -> m sock
-  , connect       :: addr -> addr -> sock -> m ()
-  , close         :: sock -> m ()
-  , getSocketName :: sock -> m addr
-  , getPeerName   :: sock -> m addr
-  }
-
 data LocalAddresses addr = LocalAddresses {
     -- | Local IPv4 address to use, Nothing indicates don't use IPv4
     laIpv4 :: Maybe addr
@@ -149,36 +135,6 @@ data LocalAddresses addr = LocalAddresses {
   , laUnix :: Maybe addr
   } deriving (Eq, Show)
 
-sockAddrFamily
-    :: Socket.SockAddr
-    -> Socket.Family
-sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
-sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
-sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
-
--- | 'Socket' term instanciated with 'Network.Socket'.
---
-ioSocket :: Socket IO Socket.SockAddr Socket.Socket
-ioSocket = Socket {
-
-    allocate = \remoteAddr -> do
-      sock <- Socket.socket (sockAddrFamily remoteAddr) Socket.Stream Socket.defaultProtocol
-      return sock
-
-  , connect = \remoteAddr localAddr sock -> do
-      let af = sockAddrFamily remoteAddr
-      when (af == Socket.AF_INET || af == Socket.AF_INET6) $ do
-        Socket.setSocketOption sock Socket.ReuseAddr 1
-#if !defined(mingw32_HOST_OS)
-        Socket.setSocketOption sock Socket.ReusePort 1
-#endif
-        Socket.bind sock localAddr
-      Socket.connect sock remoteAddr
-
-  , close         = Socket.close
-  , getSocketName = Socket.getSocketName
-  , getPeerName   = Socket.getPeerName
-  }
 
 -- | Allocate a socket and connect to a peer, execute the continuation with
 -- async exceptions masked.  The continuation receives the 'unmask' callback.
@@ -186,7 +142,7 @@ ioSocket = Socket {
 safeConnect :: ( MonadThrow m
                , MonadMask m
                )
-            => Socket m addr sock
+            => Snocket m sock addr
             -> addr
             -- ^ remote addr
             -> addr
@@ -202,16 +158,17 @@ safeConnect :: ( MonadThrow m
             -- masked; it receives: unmask function, allocated socket and
             -- connection error.
             -> m t
-safeConnect Socket {allocate, connect, close} remoteAddr localAddr malloc mclean k =
+safeConnect sn remoteAddr localAddr malloc mclean k =
     bracket
-      (do sock <- allocate remoteAddr
+      (do sock <- Snocket.open sn (Snocket.addrFamily sn remoteAddr)
           malloc
           pure sock
       )
-      (\sock -> close sock >> mclean)
+      (\sock -> Snocket.close sn sock >> mclean)
       (\sock -> mask $ \unmask -> do
+          Snocket.bind sn sock localAddr 
           res :: Either SomeException ()
-              <- try (unmask $ connect remoteAddr localAddr sock)
+              <- try (unmask $ Snocket.connect sn sock remoteAddr)
           k unmask sock res)
 
 
@@ -236,7 +193,7 @@ data ConnectResult =
 -- | Traverse 'SubscriptionTarget's in an infinite loop.
 --
 subscriptionLoop
-    :: forall m s sock addr a x.
+    :: forall m s sock localAddrs addr a x.
        ( MonadAsync m
        , MonadFork  m
        , MonadMask  m
@@ -256,17 +213,16 @@ subscriptionLoop
     -> StateVar            m s
     -> ThreadsVar          m
 
-    -> Socket              m   addr sock
+    -> Snocket             m sock addr
 
     -> WorkerCallbacks m s addr a x
-    -> WorkerParams m addr
-    -> (addr -> LocalAddresses addr -> Maybe addr)
+    -> WorkerParams m localAddrs addr
     -- ^ given a remote address, pick the local one
     -> (sock -> m a)
     -- ^ application
     -> m Void
 subscriptionLoop
-      tr tbl resQ sVar threadsVar socket
+      tr tbl resQ sVar threadsVar snocket
       WorkerCallbacks { wcSocketStateChangeTx   = socketStateChangeTx
                       , wcCompleteApplicationTx = completeApplicationTx
                       }
@@ -274,8 +230,8 @@ subscriptionLoop
                    , wpConnectionAttemptDelay = connectionAttemptDelay
                    , wpSubscriptionTarget     = subscriptionTargets
                    , wpValency                = valency
+                   , wpSelectAddress
                    }
-      selectAddress
       k = do
     valencyVar <- atomically $ newValencyCounter tbl valency
 
@@ -305,14 +261,6 @@ subscriptionLoop
           threadDelay $ ipRetryDelay - duration
 
   where
-    -- if socket allocation errors, we log the exception and rethrow it
-    -- which will kill the connection thread, but not the application itself.
-    socket' = socket { allocate = \remoteAddr -> allocate socket remoteAddr `catch`
-                                    (\(SomeException e) -> do
-                                      traceWith tr (SubscriptionTraceSocketAllocationException remoteAddr e)
-                                      throwM e
-                                    )
-                     }
     -- a single run through @sTarget :: SubcriptionTarget m addr@.
     innerLoop :: StrictTVar m (Set (Async m ()))
               -> ValencyCounter m
@@ -361,7 +309,7 @@ subscriptionLoop
       r <- refConnection tbl remoteAddr valencyVar
       case r of
         ConnectionTableCreate ->
-          case selectAddress remoteAddr localAddresses of
+          case wpSelectAddress remoteAddr localAddresses of
             Nothing ->
               traceWith tr (SubscriptionTraceUnsupportedRemoteAddr remoteAddr)
 
@@ -379,7 +327,7 @@ subscriptionLoop
                     -- exceptions masked, and receives the unmask function from
                     -- this bracket.
                     safeConnect
-                      socket'
+                      snocket
                       remoteAddr
                       localAddr
                       (do
@@ -428,7 +376,7 @@ subscriptionLoop
                -> Either SomeException ()
                -> m ()
     connAction thread conThreads valencyVar remoteAddr unmask sock connectionRes = do
-      localAddr <- getSocketName socket sock
+      localAddr <- Snocket.getLocalAddr snocket sock
       t <- getMonotonicTime
       case connectionRes of
         -- connection error
@@ -566,8 +514,11 @@ data WorkerCallbacks m s addr a t = WorkerCallbacks {
 
 -- | Worker parameters
 --
-data WorkerParams m addr = WorkerParams {
-    wpLocalAddresses         :: LocalAddresses addr,
+data WorkerParams m localAddrs addr = WorkerParams {
+    wpLocalAddresses         :: localAddrs addr,
+    -- ^ local addresses of the server
+    wpSelectAddress          :: addr -> localAddrs addr -> Maybe addr,
+    -- ^ given remote addr pick the local address 
     wpConnectionAttemptDelay :: addr -> Maybe DiffTime,
     -- ^ delay after a connection attempt to 'addr'
     wpSubscriptionTarget     :: m (SubscriptionTarget m addr),
@@ -583,7 +534,7 @@ data WorkerParams m addr = WorkerParams {
 -- 'orElse', PR #432.
 --
 worker
-    :: forall s sock addr a x.
+    :: forall s sock localAddrs addr a x.
        ( Ord addr
        , Show addr
        )
@@ -592,21 +543,20 @@ worker
     -> ConnectionTable     IO   addr
     -> StateVar            IO s
 
-    -> Socket              IO   addr sock
+    -> Snocket             IO sock addr
 
     -> WorkerCallbacks     IO s addr a x
-    -> WorkerParams        IO   addr
-    -> (addr -> LocalAddresses addr -> Maybe addr)
+    -> WorkerParams        IO   localAddrs addr
 
     -> (sock -> IO a)
     -- ^ application
     -> IO x
-worker tr errTrace tbl sVar socket workerCallbacks@WorkerCallbacks {wcCompleteApplicationTx, wcMainTx} workerParams selectAddress k = do
+worker tr errTrace tbl sVar snocket workerCallbacks@WorkerCallbacks {wcCompleteApplicationTx, wcMainTx } workerParams k = do
     resQ <- newResultQ
     threadsVar <- atomically $ newTVar Set.empty
     withAsync
-      (subscriptionLoop tr tbl resQ sVar threadsVar socket
-         workerCallbacks workerParams selectAddress k) $ \_ ->
+      (subscriptionLoop tr tbl resQ sVar threadsVar snocket
+         workerCallbacks workerParams k) $ \_ ->
            mainLoop errTrace resQ threadsVar sVar wcCompleteApplicationTx wcMainTx
            `finally` killThreads threadsVar
   where
