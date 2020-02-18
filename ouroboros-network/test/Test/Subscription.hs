@@ -48,8 +48,8 @@ import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Examples   as ReqResp
 
-import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq, cborTermVersionDataCodec)
-import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
+import           Ouroboros.Network.Protocol.Handshake.Type (cborTermVersionDataCodec)
+import           Ouroboros.Network.Protocol.Handshake.Version (acceptableVersion, simpleSingletonVersions)
 
 
 import           Ouroboros.Network.IOManager
@@ -559,8 +559,12 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         (NetworkMutableState tbl peerStatesVar)
         (Socket.addrAddress responderAddr)
         cborTermVersionDataCodec
-        (\(DictVersion _) -> acceptEq)
-        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
+        (\(DictVersion _) -> acceptableVersion)
+        (simpleSingletonVersions
+          NodeToNodeV_1
+          (NodeToNodeVersionData $ NetworkMagic 0)
+          (DictVersion nodeToNodeCodecCBORTerm)
+          (SomeResponderApplication responderApp))
         nullErrorPolicies
         $ \_ _ -> do
           dnsSubscriptionWorker'
@@ -694,8 +698,12 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
         (NetworkMutableState tbl stVar)
         responderAddr
         cborTermVersionDataCodec
-        (\(DictVersion _) -> acceptEq)
-        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
+        (\(DictVersion _) -> acceptableVersion)
+        (simpleSingletonVersions
+          NodeToNodeV_1
+          (NodeToNodeVersionData $ NetworkMagic 0)
+          (DictVersion nodeToNodeCodecCBORTerm)
+          (SomeResponderApplication (appX rrcfg)))
         nullErrorPolicies
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
@@ -712,8 +720,12 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
           (NetworkMutableState tbl stVar)
           responderAddr
           cborTermVersionDataCodec
-          (\(DictVersion _) -> acceptEq)
-          ((simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
+          (\(DictVersion _) -> acceptableVersion)
+          (simpleSingletonVersions
+            NodeToNodeV_1
+            (NodeToNodeVersionData $ NetworkMagic 0)
+            (DictVersion nodeToNodeCodecCBORTerm)
+            (SomeResponderApplication (appX rrcfg)))
           nullErrorPolicies
           $ \localAddr _ -> do
             peerStatesVar <- newPeerStatesVar
@@ -827,9 +839,12 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
             (NetworkMutableState tbl stVar)
             (Socket.addrAddress addr)
             cborTermVersionDataCodec
-            (\(DictVersion _) -> acceptEq)
-            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
-                (DictVersion nodeToNodeCodecCBORTerm) appRsp)
+            (\(DictVersion _) -> acceptableVersion)
+            (simpleSingletonVersions
+                NodeToNodeV_1
+                (NodeToNodeVersionData $ NetworkMagic 0)
+                (DictVersion nodeToNodeCodecCBORTerm)
+                (SomeResponderApplication appRsp))
             nullErrorPolicies
             (\_ _ -> threadDelay delay)
 

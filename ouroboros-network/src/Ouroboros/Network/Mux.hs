@@ -9,6 +9,7 @@ module Ouroboros.Network.Mux
   , ProtocolEnum (..)
   , MiniProtocolLimits (..)
   , MiniProtocolNum (..)
+  , fromInitiatorAndResponderToResponder
   , runMuxPeer
   , simpleInitiatorApplication
   , simpleResponderApplication
@@ -112,6 +113,15 @@ toApplication (OuroborosInitiatorAndResponderApplication f g) peerid =
               (\channel -> g peerid ptcl (fromChannel channel))
         }
       | ptcl <- [minBound..maxBound] ]
+
+
+-- |
+-- Extract the responder part of an InitiatorAndResponderApp.
+fromInitiatorAndResponderToResponder
+    :: OuroborosApplication 'InitiatorAndResponderApp peerid ptcl m bytes a b
+    -> OuroborosApplication 'ResponderApp peerid ptcl m bytes Void b
+fromInitiatorAndResponderToResponder
+  (OuroborosInitiatorAndResponderApplication _ g ) = OuroborosResponderApplication g
 
 
 -- |

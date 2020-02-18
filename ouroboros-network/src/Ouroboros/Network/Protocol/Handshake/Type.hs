@@ -28,9 +28,6 @@ module Ouroboros.Network.Protocol.Handshake.Type
   , handshakeClientPeer
   -- ** Handshake server
   , handshakeServerPeer
-  , Accept (..)
-  , acceptEq
-
 
   -- ** Version data codec
   , VersionDataCodec (..)
@@ -44,7 +41,6 @@ module Ouroboros.Network.Protocol.Handshake.Type
 
 import           Control.Exception
 import           Data.Text (Text)
-import qualified Data.Text as T
 import           Data.Typeable (Typeable, cast)
 import           Data.List (intersect)
 import           Data.Map (Map)
@@ -238,27 +234,6 @@ handshakeClientPeer VersionDataCodec {encodeData, decodeData} versions =
               Right vData' ->
                 Done TokDone $ Right $ runApplication (versionApplication version) vData vData'
 
--- |
--- A @'Maybe'@ like type which better explains its purpose.
---
-data Accept
-  = Accept
-  | Refuse !Text
-  deriving (Eq, Show)
-
-
--- |
--- Accept version fields when they are equal.
---
-acceptEq
-    :: ( Eq v
-       , Show v
-       )
-    => v
-    -> v
-    -> Accept
-acceptEq v1 v2 | v1 == v2 = Accept
-               | otherwise = Refuse $ T.pack $ "version data mismatch: " ++ show v1 ++ " /= " ++ show v2
 
 -- |
 -- Server following the handshake protocol; it accepts highest version offered
@@ -271,7 +246,7 @@ handshakeServerPeer
   -> (forall vData. extra vData -> vData -> vData -> Accept)
   -> Versions vNumber extra r
   -> Peer (Handshake vNumber vParams) AsServer StPropose m (Either (RefuseReason vNumber) r)
-handshakeServerPeer VersionDataCodec {encodeData, decodeData} acceptVersion versions =
+handshakeServerPeer VersionDataCodec {encodeData, decodeData} accVersion versions =
     -- await for versions proposed by a client
     Await (ClientAgency TokPropose) $ \msg -> case msg of
 
@@ -296,7 +271,7 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData} acceptVersion vers
                            (Done TokDone $ Left vReason)
 
                 Right vData' ->
-                  case acceptVersion (versionExtra version) vData vData' of
+                  case accVersion (versionExtra version) vData vData' of
 
                     -- We agree on the version; send back the agreed version
                     -- number @vNumber@ and encoded data associated with our

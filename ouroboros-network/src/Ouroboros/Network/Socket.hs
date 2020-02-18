@@ -18,6 +18,7 @@ module Ouroboros.Network.Socket (
     , ConnectionTableRef (..)
     , ValencyCounter
     , NetworkMutableState (..)
+    , SomeResponderApplication (..)
     , newNetworkMutableState
     , newNetworkMutableStateSTM
     , cleanNetworkMutableState
@@ -290,6 +291,16 @@ connectToNodeSocket iocp versionDataCodec tracers versions sd =
       sd
 
 -- |
+-- Wrapper for OuroborosResponderApplication and OuroborosInitiatorAndResponderApplication.
+--
+data SomeResponderApplication peerid ptcl m bytes b where
+     SomeResponderApplication
+       :: forall appType peerid ptcl m bytes a b.
+          Mx.HasResponder appType ~ True
+       => (OuroborosApplication appType peerid ptcl m bytes a b)
+       -> SomeResponderApplication peerid ptcl m bytes b
+
+-- |
 -- Accept or reject an incoming connection.  Each record contains the new state
 -- after accepting / rejecting a connection.  When accepting a connection one
 -- has to give a mux application which necessarily has the server side, and
@@ -303,11 +314,10 @@ connectToNodeSocket iocp versionDataCodec tracers versions sd =
 data AcceptConnection st vNumber extra peerid ptcl m bytes where
 
     AcceptConnection
-      :: forall appType st vNumber extra peerid ptcl m bytes a b.
-         Mx.HasResponder appType ~ True
-      => !st
+      :: forall st vNumber extra peerid ptcl m bytes b.
+         !st
       -> !peerid
-      -> Versions vNumber extra (OuroborosApplication appType peerid ptcl m bytes a b)
+      -> Versions vNumber extra (SomeResponderApplication peerid ptcl m bytes b)
       -> AcceptConnection st vNumber extra peerid ptcl m bytes
 
     RejectConnection
@@ -361,7 +371,7 @@ beginConnection sn muxTracer handshakeTracer versionDataCodec acceptVersion fn t
           Left err -> do
             traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
             throwIO err
-          Right app -> do
+          Right (SomeResponderApplication app) -> do
             traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
             Mx.muxStart muxTracer' (toApplication app peerid) bearer
       RejectConnection st' _peerid -> pure $ Server.Reject st'
@@ -467,9 +477,8 @@ cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
 -- Thin wrapper around @'Server.run'@.
 --
 runServerThread
-    :: forall appType ptcl vNumber extra fd addr a b.
-       ( Mx.HasResponder appType ~ True
-       , ProtocolEnum ptcl
+    :: forall ptcl vNumber extra fd addr b.
+       ( ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
@@ -488,7 +497,7 @@ runServerThread
     -> fd
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (OuroborosApplication appType (ConnectionId addr) ptcl IO BL.ByteString a b)
+    -> Versions vNumber extra (SomeResponderApplication (ConnectionId addr) ptcl IO BL.ByteString b)
     -> ErrorPolicies
     -> IO Void
 runServerThread NetworkServerTracers { nstMuxTracer
@@ -564,9 +573,8 @@ runServerThread NetworkServerTracers { nstMuxTracer
 -- thread which runs the server.  This makes it useful for testing, where we
 -- need to guarantee that a socket is open before we try to connect to it.
 withServerNode
-    :: forall appType ptcl vNumber extra t fd addr a b.
-       ( Mx.HasResponder appType ~ True
-       , ProtocolEnum ptcl
+    :: forall ptcl vNumber extra t fd addr b.
+       ( ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
@@ -585,7 +593,7 @@ withServerNode
     -> addr
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (OuroborosApplication appType (ConnectionId addr) ptcl IO BL.ByteString a b)
+    -> Versions vNumber extra (SomeResponderApplication (ConnectionId addr) ptcl IO BL.ByteString b)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
