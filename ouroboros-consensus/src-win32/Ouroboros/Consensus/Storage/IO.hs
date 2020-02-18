@@ -7,6 +7,7 @@ module Ouroboros.Consensus.Storage.IO (
     , read
     , pread
     , write
+    , pwrite
     , close
     , getSize
     , sameError
@@ -56,9 +57,17 @@ open filename openMode = do
     createNew AllowExisting = oPEN_ALWAYS
     createNew MustBeNew     = cREATE_NEW
 
-write :: FHandle -> Ptr Word8 -> Int64 -> IO Word32
+write :: FHandle -> Ptr Word8 -> Word32 -> IO Word32
 write fh data' bytes = withOpenHandle "write" fh $ \h ->
   win32_WriteFile h data' (fromIntegral bytes) Nothing
+
+pwrite :: FHandle -> Ptr Word8 -> Word32 -> Word64 -> IO Word32
+pwrite fh data' bytes pos = withOpenHandle "write" fh $ \h -> do
+  initialOffset <- getCurrentFileOffset h
+  _ <- setFilePointerEx h (fromIntegral pos) fILE_BEGIN
+  n <- fromIntegral <$> win32_WriteFile h data' (fromIntegral bytes) Nothing
+  _ <- setFilePointerEx h initialOffset fILE_BEGIN
+  return n
 
 seek :: FHandle -> SeekMode -> Int64 -> IO ()
 seek fh seekMode size = void <$> withOpenHandle "seek" fh $ \h ->

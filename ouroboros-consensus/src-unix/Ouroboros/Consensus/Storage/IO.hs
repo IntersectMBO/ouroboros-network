@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Storage.IO (
     , read
     , pread
     , write
+    , pwrite
     , close
     , getSize
     , sameError
@@ -25,7 +26,8 @@ import           System.Posix (Fd)
 import qualified System.Posix as Posix
 
 -- Package 'unix' exports the same module.
-import           "unix-bytestring" System.Posix.IO.ByteString (fdPreadBuf)
+import           "unix-bytestring" System.Posix.IO.ByteString (fdPreadBuf,
+                     fdPwriteBuf)
 
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
                      FsError, OpenMode (..), SeekMode (..), sameFsError)
@@ -78,9 +80,14 @@ open fp openMode = Posix.openFd fp posixOpenMode fileMode fileFlags
 
 
 -- | Writes the data pointed by the input 'Ptr Word8' into the input 'FHandle'.
-write :: FHandle -> Ptr Word8 -> Int64 -> IO Word32
+write :: FHandle -> Ptr Word8 -> Word32 -> IO Word32
 write h data' bytes = withOpenHandle "write" h $ \fd ->
     fromIntegral <$> Posix.fdWriteBuf fd data' (fromIntegral bytes)
+
+pwrite :: FHandle -> Ptr Word8 -> Word32 -> Word64 -> IO Word32
+pwrite h data' bytes offset = withOpenHandle "pwrite" h $ \fd ->
+    fromIntegral <$>
+      fdPwriteBuf fd data' (fromIntegral bytes) (fromIntegral offset)
 
 -- | Seek within the file.
 --

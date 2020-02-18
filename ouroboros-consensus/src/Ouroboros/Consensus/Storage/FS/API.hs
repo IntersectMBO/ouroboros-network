@@ -14,8 +14,11 @@ module Ouroboros.Consensus.Storage.FS.API (
     , hGetAll
     , hGetAllAt
     , hPut
+    , hPutAt
     , hPutAll
+    , hPutAllAt
     , hPutAllStrict
+    , hPutAllStrictAt
     , withFile
     ) where
 
@@ -96,6 +99,13 @@ data HasFS m h = HasFS {
     -- bytestring is empty, in which case the return value can be 0.
   , hPutSome                 :: HasCallStack => Handle h -> BS.ByteString -> m Word64
 
+    -- | Same as 'hPutSome', but does not affect the file offset. An additional
+    -- argument is used to specify the offset.
+  , hPutSomeAt               :: HasCallStack
+                             => Handle h
+                             -> BS.ByteString
+                             -> AbsOffset
+                             -> m Word64
     -- | Truncate the file to the specified size
     --
     -- NOTE: Only supported in append mode.
@@ -243,6 +253,26 @@ hPutAllStrict hasFS h = go 0
         then return written'
         else go written' bs'
 
+-- | Like 'hPutAllStrict' but it does not change or depend on the file offset.
+-- @pwrite@ syscall is used internally.
+hPutAllStrictAt :: forall m h
+                .  (HasCallStack, Monad m)
+                => HasFS m h
+                -> Handle h
+                -> BS.ByteString
+                -> AbsOffset
+                -> m Word64
+hPutAllStrictAt hasFS h = go 0
+  where
+    go :: Word64 -> BS.ByteString -> AbsOffset ->  m Word64
+    go !written bs offset = do
+      n <- hPutSomeAt hasFS h bs offset
+      let bs'      = BS.drop (fromIntegral n) bs
+          written' = written + n
+      if BS.null bs'
+        then return written'
+        else go written' bs' (offset + fromIntegral n)
+
 -- | This function makes sure that the whole 'BL.ByteString' is written.
 hPutAll :: forall m h
         .  (HasCallStack, Monad m)
@@ -257,6 +287,24 @@ hPutAll hasFS h = foldM putChunk 0 . BL.toChunks
       written' <- hPutAllStrict hasFS h chunk
       return $! written + written'
 
+-- | Like 'hPutAll' but it does not change or depend on the file offset.
+-- @pwrite@ syscall is used internally.
+hPutAllAt :: forall m h
+          .  (HasCallStack, Monad m)
+          => HasFS m h
+          -> Handle h
+          -> BL.ByteString
+          -> AbsOffset
+          -> m Word64
+hPutAllAt hasFS h bs offset = fst <$> foldM putChunk (0, offset) (BL.toChunks bs)
+  where
+    putChunk :: (Word64, AbsOffset) -> BS.ByteString -> m (Word64, AbsOffset)
+    putChunk (written, offset') chunk = do
+      written' <- hPutAllStrictAt hasFS h chunk offset'
+      let !writtenTotal = written +              written'
+          !newOffset    = offset' + fromIntegral written'
+      return (writtenTotal, newOffset)
+
 -- | This function makes sure that the whole 'Builder' is written.
 --
 -- The chunk size of the resulting 'BL.ByteString' determines how much memory
@@ -268,3 +316,14 @@ hPut :: forall m h
      -> Builder
      -> m Word64
 hPut hasFS g = hPutAll hasFS g . BS.toLazyByteString
+
+-- | Like 'hPut' but it does not change or depend on the file offset.
+-- @pwrite@ syscall is used internally.
+hPutAt :: forall m h
+       .  (HasCallStack, Monad m)
+       => HasFS m h
+       -> Handle h
+       -> Builder
+       -> AbsOffset
+       -> m Word64
+hPutAt hasFS g builder = hPutAllAt hasFS g (BS.toLazyByteString builder)

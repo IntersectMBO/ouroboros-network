@@ -53,6 +53,10 @@ ioHasFS mount = HasFS {
     , hPutSome = \(Handle h fp) bs -> rethrowFsError fp $ do
         BS.unsafeUseAsCStringLen bs $ \(ptr, len) ->
             fromIntegral <$> F.write h (castPtr ptr) (fromIntegral len)
+    , hPutSomeAt = \(Handle h fp) bs o -> rethrowFsError fp $ do
+        BS.unsafeUseAsCStringLen bs $ \(ptr, len) ->
+            fromIntegral <$>
+                F.pwrite h (castPtr ptr) (fromIntegral len) (unAbsOffset o)
     , createDirectory = \fp -> rethrowFsError fp $
         Dir.createDirectory (root fp)
     , listDirectory = \fp -> rethrowFsError fp $
