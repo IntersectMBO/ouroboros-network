@@ -43,17 +43,17 @@ class (HasSignTag a, Decoded a) => ByronSignable a
 instance (HasSignTag a, Decoded a) => ByronSignable a
 
 class HasSignTag a where
-  signTag :: ByronConfig -> VerKeyDSIGN ByronDSIGN -> proxy a -> SignTag
+  signTag :: VerKeyDSIGN ByronDSIGN -> proxy a -> SignTag
 
 signTagFor :: forall a. HasSignTag a
-           => ByronConfig -> VerKeyDSIGN ByronDSIGN -> a -> SignTag
-signTagFor cfg genKey _ = signTag cfg genKey (Proxy @a)
+           => VerKeyDSIGN ByronDSIGN -> a -> SignTag
+signTagFor genKey _ = signTag genKey (Proxy @a)
 
 instance HasSignTag CC.UTxO.TxSigData where
-  signTag _ _ = const SignTx
+  signTag _ = const SignTx
 
 instance HasSignTag (Annotated CC.Block.ToSign ByteString) where
-  signTag _ (VerKeyByronDSIGN vk) = const $ SignBlock vk
+  signTag (VerKeyByronDSIGN vk) = const $ SignBlock vk
 
 data ByronDSIGN
 
@@ -96,10 +96,10 @@ instance DSIGNAlgorithm ByronDSIGN where
     signDSIGN (cfg, genKey) a (SignKeyByronDSIGN sk) = return
         . SigByronDSIGN
         . coerce
-        $ signRaw (pbftProtocolMagicId cfg) (Just $ signTagFor cfg genKey a) sk (recoverBytes a)
+        $ signRaw (pbftProtocolMagicId cfg) (Just $ signTagFor genKey a) sk (recoverBytes a)
 
     verifyDSIGN (cfg, genKey) (VerKeyByronDSIGN vk) a (SigByronDSIGN sig) =
-        if verifySignatureRaw vk (Crypto.signTag (pbftProtocolMagicId cfg) (signTagFor cfg genKey a) <> recoverBytes a) $ coerce sig
+        if verifySignatureRaw vk (Crypto.signTag (pbftProtocolMagicId cfg) (signTagFor genKey a) <> recoverBytes a) $ coerce sig
           then Right ()
           else Left "Verification failed"
 
