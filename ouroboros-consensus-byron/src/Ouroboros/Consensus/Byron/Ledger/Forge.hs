@@ -44,7 +44,6 @@ import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Config
-import           Ouroboros.Consensus.Byron.Ledger.ContainsGenesis
 import           Ouroboros.Consensus.Byron.Ledger.Mempool
 import           Ouroboros.Consensus.Byron.Protocol
 
@@ -76,7 +75,7 @@ forgeEBB cfg curSlot curNo prevHash =
       $ boundaryBlock
   where
     protocolMagicId = CC.Genesis.configProtocolMagicId $
-                       getGenesisConfig (configConsensus cfg)
+                        pbftGenesisConfig $ extNodeConfig (configConsensus cfg)
     ByronConfig { pbftGenesisHash
                 , pbftEpochSlots
                 } = extNodeConfig (configConsensus cfg)

@@ -15,10 +15,11 @@ import qualified Cardano.Crypto.DSIGN.Class as CC.Crypto
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
-import           Ouroboros.Consensus.Byron.Ledger.ContainsGenesis
+import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.PBFT ()
 
 -- | Check if a block matches its header
@@ -66,7 +67,7 @@ verifyHeaderIntegrity cfg hdr =
         CC.ABOBBoundaryHdr _ -> True
   where
     protocolMagicId = CC.Genesis.configProtocolMagicId $
-                        getGenesisConfig (configConsensus cfg)
+                        pbftGenesisConfig $ extNodeConfig (configConsensus cfg)
 
 -- | Verifies whether the block is not corrupted by checking its signature and
 -- witnesses.

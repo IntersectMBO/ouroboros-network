@@ -30,7 +30,6 @@ library
                        Ouroboros.Consensus.Byron.Ledger
                        Ouroboros.Consensus.Byron.Ledger.Block
                        Ouroboros.Consensus.Byron.Ledger.Config
-                       Ouroboros.Consensus.Byron.Ledger.ContainsGenesis
                        Ouroboros.Consensus.Byron.Ledger.Conversions
                        Ouroboros.Consensus.Byron.Ledger.DelegationHistory
                        Ouroboros.Consensus.Byron.Ledger.Forge

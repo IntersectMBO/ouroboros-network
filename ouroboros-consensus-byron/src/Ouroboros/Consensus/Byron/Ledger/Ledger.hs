@@ -59,7 +59,6 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
-import           Ouroboros.Consensus.Byron.Ledger.ContainsGenesis
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Ledger.DelegationHistory
                      (DelegationHistory)
@@ -140,9 +139,6 @@ deriving instance Show (Query ByronBlock result)
 
 instance ShowQuery (Query ByronBlock) where
   showResult GetUpdateInterfaceState = show
-
-instance ConfigContainsGenesis (LedgerConfig ByronBlock) where
-  getGenesisConfig = unByronLedgerConfig
 
 instance ProtocolLedgerView ByronBlock where
   protocolLedgerView _cfg =

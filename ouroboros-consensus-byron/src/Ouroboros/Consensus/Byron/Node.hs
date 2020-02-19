@@ -294,10 +294,12 @@ instance RunNode ByronBlock where
 
 extractGenesisData :: TopLevelConfig ByronBlock -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData
-                   . getGenesisConfig
+                   . pbftGenesisConfig
+                   . extNodeConfig
                    . configConsensus
 
 extractEpochSlots :: TopLevelConfig ByronBlock -> EpochSlots
 extractEpochSlots = Genesis.configEpochSlots
-                  . getGenesisConfig
+                  . pbftGenesisConfig
+                  . extNodeConfig
                   . configConsensus
