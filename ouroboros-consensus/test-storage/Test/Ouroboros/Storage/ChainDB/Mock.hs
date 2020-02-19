@@ -30,7 +30,7 @@ import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 
 openDB :: forall m blk. (
             IOLike m
-          , ProtocolLedgerView blk
+          , LedgerSupportsProtocol blk
           , ModelSupportsBlock blk
           )
        => TopLevelConfig blk

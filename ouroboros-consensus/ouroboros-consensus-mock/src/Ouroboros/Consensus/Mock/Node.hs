@@ -33,11 +33,11 @@ import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
 instance HasNetworkProtocolVersion (SimpleBlock SimpleMockCrypto ext) where
   -- Use defaults
 
-instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
+instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
            -- The below constraint seems redundant but is not! When removed,
            -- some of the tests loop, but only when compiled with @-O2@ ; with
            -- @-O0@ it is perfectly fine. ghc bug?!
-         , SupportedBlock (SimpleBlock SimpleMockCrypto ext)
+         , BlockSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
          , Typeable ext
          , Serialise ext
          , RunMockBlock SimpleMockCrypto ext

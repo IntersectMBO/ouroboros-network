@@ -143,7 +143,7 @@ deriving instance Show (Query ByronBlock result)
 instance ShowQuery (Query ByronBlock) where
   showResult GetUpdateInterfaceState = show
 
-instance ProtocolLedgerView ByronBlock where
+instance LedgerSupportsProtocol ByronBlock where
   protocolSlotLengths =
         singletonSlotLengths
       . slotLengthFromMillisec

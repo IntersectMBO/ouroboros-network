@@ -63,20 +63,20 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 -------------------------------------------------------------------------------}
 
 withDB
-  :: forall m blk a. (IOLike m, ProtocolLedgerView blk)
+  :: forall m blk a. (IOLike m, LedgerSupportsProtocol blk)
   => ChainDbArgs m blk
   -> (ChainDB m blk -> m a)
   -> m a
 withDB args = bracket (fst <$> openDBInternal args True) closeDB
 
 openDB
-  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
+  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
   => ChainDbArgs m blk
   -> m (ChainDB m blk)
 openDB args = fst <$> openDBInternal args True
 
 openDBInternal
-  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
+  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
   => ChainDbArgs m blk
   -> Bool -- ^ 'True' = Launch background tasks
   -> m (ChainDB m blk, Internal m blk)

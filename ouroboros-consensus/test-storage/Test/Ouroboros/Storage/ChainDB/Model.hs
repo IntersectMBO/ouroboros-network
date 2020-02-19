@@ -146,7 +146,7 @@ data Model blk = Model {
 
 deriving instance
   ( OuroborosTag (BlockProtocol blk)
-  , ProtocolLedgerView          blk
+  , LedgerSupportsProtocol      blk
   , Block.StandardHash          blk
   , Show                        blk
   ) => Show (Model blk)
@@ -257,7 +257,7 @@ immutableSlotNo (SecurityParam k) =
 -- that specific range depends currently on the ledger DB's in-memory
 -- representation. Right now we return 'Nothing' only if requesting a 'Point'
 -- that doesn't lie on the current chain
-getPastLedger :: forall blk. ProtocolLedgerView blk
+getPastLedger :: forall blk. LedgerSupportsProtocol blk
               => TopLevelConfig blk
               -> Point blk -> Model blk -> Maybe (ExtLedgerState blk)
 getPastLedger cfg p m@Model{..} =
@@ -306,7 +306,7 @@ empty initLedger = Model {
 -- Besides updating the 'currentSlot', future blocks are also added to the
 -- model.
 advanceCurSlot
-  :: forall blk. (ProtocolLedgerView blk, ModelSupportsBlock blk)
+  :: forall blk. (LedgerSupportsProtocol blk, ModelSupportsBlock blk)
   => TopLevelConfig blk
   -> SlotNo  -- ^ The new current slot
   -> Model blk -> Model blk
@@ -328,7 +328,7 @@ advanceCurSlot cfg curSlot m =
     advance :: SlotNo -> Model blk -> Model blk
     advance slot m' = m' { currentSlot = slot `max` currentSlot m' }
 
-addBlock :: forall blk. (ProtocolLedgerView blk, ModelSupportsBlock blk)
+addBlock :: forall blk. (LedgerSupportsProtocol blk, ModelSupportsBlock blk)
          => TopLevelConfig blk
          -> blk
          -> Model blk -> Model blk
@@ -395,7 +395,7 @@ addBlock cfg blk m
          Chain.toAnchoredFragment . fst)
         candidates
 
-addBlocks :: (ProtocolLedgerView blk, ModelSupportsBlock blk)
+addBlocks :: (LedgerSupportsProtocol blk, ModelSupportsBlock blk)
           => TopLevelConfig blk
           -> [blk]
           -> Model blk -> Model blk
@@ -531,7 +531,7 @@ readerClose rdrId m
 -------------------------------------------------------------------------------}
 
 getLedgerCursor
-  :: forall blk. ProtocolLedgerView blk
+  :: forall blk. LedgerSupportsProtocol blk
   => Model blk -> (LedgerCursorId, Model blk)
 getLedgerCursor m@Model { ledgerCursors = lcs, currentLedger } =
     (lcId, m { ledgerCursors = Map.insert lcId currentLedger lcs })
@@ -547,7 +547,7 @@ ledgerCursorState lcId m
     = error $ "unknown ledgerCursor: " <> show lcId
 
 ledgerCursorMove
-  :: forall blk. ProtocolLedgerView blk
+  :: forall blk. LedgerSupportsProtocol blk
   => TopLevelConfig blk
   -> LedgerCursorId
   -> Point blk
@@ -599,7 +599,7 @@ data ValidationResult blk
       -- ^ The ledger state corresponding to the tip of the valid prefix of
       -- the chain.
 
-validate :: forall blk. ProtocolLedgerView blk
+validate :: forall blk. LedgerSupportsProtocol blk
          => TopLevelConfig blk
          -> ExtLedgerState blk
          -> Chain blk
@@ -639,7 +639,7 @@ chains bs = go Chain.Genesis
     fwd :: Map (ChainHash blk) (Map (HeaderHash blk) blk)
     fwd = successors (Map.elems bs)
 
-validChains :: forall blk. ProtocolLedgerView blk
+validChains :: forall blk. LedgerSupportsProtocol blk
             => TopLevelConfig blk
             -> ExtLedgerState blk
             -> Map (HeaderHash blk) blk

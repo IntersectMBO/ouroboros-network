@@ -143,7 +143,7 @@ protocolHandlers
        ( IOLike m
        , ApplyTx blk
        , HasTxId (GenTx blk)
-       , ProtocolLedgerView blk
+       , LedgerSupportsProtocol blk
        , QueryLedger blk
        , Serialise (HeaderHash blk)
        )
@@ -467,7 +467,7 @@ consensusNetworkApps
        ( IOLike m
        , Ord peer
        , Exception failure
-       , ProtocolLedgerView blk
+       , LedgerSupportsProtocol blk
        )
     => NodeKernel m peer blk
     -> ProtocolTracers m peer localPeer blk failure

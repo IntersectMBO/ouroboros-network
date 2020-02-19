@@ -133,7 +133,7 @@ data LgrDB m blk = LgrDB {
       -- 'LgrDB'.
     } deriving (Generic)
 
-deriving instance (IOLike m, ProtocolLedgerView blk)
+deriving instance (IOLike m, LedgerSupportsProtocol blk)
                => NoUnexpectedThunks (LgrDB m blk)
   -- use generic instance
 
@@ -206,7 +206,7 @@ defaultArgs fp = LgrDbArgs {
 --
 -- In addition to the ledger DB also returns the number of immutable blocks
 -- that were replayed.
-openDB :: forall m blk. (IOLike m, ProtocolLedgerView blk)
+openDB :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
        => LgrDbArgs m blk
        -- ^ Stateless initializaton arguments
        -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
@@ -262,7 +262,7 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
 -- | Reopen the ledger DB
 --
 -- Returns the number of immutable blocks replayed.
-reopen :: (IOLike m, ProtocolLedgerView blk, HasCallStack)
+reopen :: (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
        => LgrDB  m blk
        -> ImmDB  m blk
        -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
@@ -401,7 +401,7 @@ getDiskPolicy LgrDB{ args = LgrDbArgs{..} } = lgrDiskPolicy
 type ValidateResult blk =
   LedgerDB.SwitchResult (ExtValidationError blk) (ExtLedgerState blk) (Point blk) 'False
 
-validate :: forall m blk. (IOLike m, ProtocolLedgerView blk, HasCallStack)
+validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
          => LgrDB m blk
          -> LedgerDB blk
             -- ^ This is used as the starting point for validation, not the one

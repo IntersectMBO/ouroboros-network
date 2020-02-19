@@ -300,7 +300,7 @@ type instance Signed (Header TestBlock) = ()
 instance SignedHeader (Header TestBlock) where
   headerSigned _ = ()
 
-instance SupportedBlock TestBlock where
+instance BlockSupportsProtocol TestBlock where
   validateView TopLevelConfig{..} =
       bftValidateView bftFields
     where
@@ -364,7 +364,7 @@ instance HasAnnTip TestBlock where
 instance ValidateEnvelope TestBlock where
   -- Use defaults
 
-instance ProtocolLedgerView TestBlock where
+instance LedgerSupportsProtocol TestBlock where
   protocolSlotLengths =
       testBlockSlotLengths . configBlock
   protocolLedgerView _ _ =

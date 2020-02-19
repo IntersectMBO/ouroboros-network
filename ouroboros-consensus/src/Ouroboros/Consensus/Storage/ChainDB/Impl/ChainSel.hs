@@ -83,7 +83,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 --
 -- See "## Initialization" in ChainDB.md.
 initialChainSelection
-  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
+  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
   => ImmDB m blk
   -> VolDB m blk
   -> LgrDB m blk
@@ -173,7 +173,7 @@ addBlock
   :: forall m blk.
      ( IOLike m
      , HasHeader blk
-     , ProtocolLedgerView blk
+     , LedgerSupportsProtocol blk
      , HasCallStack
      )
   => ChainDbEnv m blk
@@ -301,7 +301,7 @@ chainSelectionForBlock
   :: forall m blk.
      ( IOLike m
      , HasHeader blk
-     , ProtocolLedgerView blk
+     , LedgerSupportsProtocol blk
      , HasCallStack
      )
   => ChainDbEnv m blk
@@ -653,7 +653,7 @@ getKnownHeaderThroughCache volDB hash = gets (Map.lookup hash) >>= \case
 chainSelection
   :: forall m blk.
      ( IOLike m
-     , ProtocolLedgerView blk
+     , LedgerSupportsProtocol blk
      , HasCallStack
      )
   => LgrDB m blk
@@ -765,7 +765,7 @@ chainSelection lgrDB tracer cfg varInvalid blockCache
 validateCandidate
   :: forall m blk.
      ( IOLike m
-     , ProtocolLedgerView blk
+     , LedgerSupportsProtocol blk
      , HasCallStack
      )
   => LgrDB m blk

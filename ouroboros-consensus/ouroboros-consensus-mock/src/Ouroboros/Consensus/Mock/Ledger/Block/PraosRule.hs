@@ -97,11 +97,11 @@ instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
   mockDecodeChainState = const decode
 
 instance SimpleCrypto c
-      => SupportedBlock (SimpleBlock c SimplePraosRuleExt) where
+      => BlockSupportsProtocol (SimpleBlock c SimplePraosRuleExt) where
   validateView _ _ = ()
 
 instance SimpleCrypto c
-      => ProtocolLedgerView (SimplePraosRuleBlock c) where
+      => LedgerSupportsProtocol (SimplePraosRuleBlock c) where
   protocolSlotLengths =
       simplePraosRuleSlotLengths . configBlock
   protocolLedgerView _ _ =

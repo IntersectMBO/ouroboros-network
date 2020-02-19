@@ -124,7 +124,7 @@ instance ( SimpleCrypto c
 
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
-         ) => SupportedBlock (SimplePBftBlock c PBftMockCrypto) where
+         ) => BlockSupportsProtocol (SimplePBftBlock c PBftMockCrypto) where
   validateView _     = pbftValidateRegular () (simplePBftExt . simpleHeaderExt)
   selectView   _ hdr = (blockNo hdr, IsNotEBB)
 
@@ -132,7 +132,7 @@ instance ( SimpleCrypto c
 -- (mock blocks cannot change delegation)
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
-         ) => ProtocolLedgerView (SimplePBftBlock c PBftMockCrypto) where
+         ) => LedgerSupportsProtocol (SimplePBftBlock c PBftMockCrypto) where
   protocolSlotLengths =
       simplePBftSlotLengths . configBlock
   protocolLedgerView TopLevelConfig{..} _ls =

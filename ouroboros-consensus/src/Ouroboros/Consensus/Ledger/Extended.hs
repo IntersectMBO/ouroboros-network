@@ -57,20 +57,20 @@ data ExtValidationError blk =
   | ExtValidationErrorHeader !(HeaderError blk)
   deriving (Generic)
 
-instance ProtocolLedgerView blk => NoUnexpectedThunks (ExtValidationError blk)
+instance LedgerSupportsProtocol blk => NoUnexpectedThunks (ExtValidationError blk)
 
-deriving instance ProtocolLedgerView blk => Show (ExtLedgerState     blk)
-deriving instance ProtocolLedgerView blk => Show (ExtValidationError blk)
-deriving instance ProtocolLedgerView blk => Eq   (ExtValidationError blk)
+deriving instance LedgerSupportsProtocol blk => Show (ExtLedgerState     blk)
+deriving instance LedgerSupportsProtocol blk => Show (ExtValidationError blk)
+deriving instance LedgerSupportsProtocol blk => Eq   (ExtValidationError blk)
 
 -- | We override 'showTypeOf' to show the type of the block
 --
 -- This makes debugging a bit easier, as the block gets used to resolve all
 -- kinds of type families.
-instance ProtocolLedgerView blk => NoUnexpectedThunks (ExtLedgerState blk) where
+instance LedgerSupportsProtocol blk => NoUnexpectedThunks (ExtLedgerState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(ExtLedgerState blk))
 
-deriving instance (ProtocolLedgerView blk, Eq (ChainState (BlockProtocol blk)))
+deriving instance (LedgerSupportsProtocol blk, Eq (ChainState (BlockProtocol blk)))
                => Eq (ExtLedgerState blk)
 
 data BlockPreviouslyApplied =
@@ -98,7 +98,7 @@ data BlockPreviouslyApplied =
 -- way around. This means that in the spec delegation updates scheduled for
 -- slot @n@ are really only in effect at slot @n+1@.
 -- See <https://github.com/input-output-hk/cardano-ledger-specs/issues/1007>
-applyExtLedgerState :: (ProtocolLedgerView blk, HasCallStack)
+applyExtLedgerState :: (LedgerSupportsProtocol blk, HasCallStack)
                     => BlockPreviouslyApplied
                     -> TopLevelConfig blk
                     -> blk
@@ -126,7 +126,7 @@ applyExtLedgerState prevApplied cfg blk ExtLedgerState{..} = do
                         headerState
     return $ ExtLedgerState ledgerState' headerState'
 
-foldExtLedgerState :: (ProtocolLedgerView blk, HasCallStack)
+foldExtLedgerState :: (LedgerSupportsProtocol blk, HasCallStack)
                    => BlockPreviouslyApplied
                    -> TopLevelConfig blk
                    -> [blk] -- ^ Blocks to apply, oldest first

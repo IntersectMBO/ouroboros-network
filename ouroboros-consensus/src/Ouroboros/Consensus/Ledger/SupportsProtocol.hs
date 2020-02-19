@@ -1,5 +1,5 @@
 module Ouroboros.Consensus.Ledger.SupportsProtocol (
-    ProtocolLedgerView(..)
+    LedgerSupportsProtocol(..)
   , AnachronyFailure(..)
   ) where
 
@@ -14,12 +14,10 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | Link protocol to ledger
---
--- TODO: Rename to 'LedgerSupportsProtocol'
-class ( SupportedBlock   blk
-      , UpdateLedger     blk
-      , ValidateEnvelope blk
-      ) => ProtocolLedgerView blk where
+class ( BlockSupportsProtocol blk
+      , UpdateLedger          blk
+      , ValidateEnvelope      blk
+      ) => LedgerSupportsProtocol blk where
   -- | Extract ledger view from the ledger state
   protocolLedgerView :: TopLevelConfig blk
                      -> LedgerState blk

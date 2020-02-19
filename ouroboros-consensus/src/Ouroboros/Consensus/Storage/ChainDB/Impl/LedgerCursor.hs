@@ -18,7 +18,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 
 newLedgerCursor
-  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
+  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
   => LgrDB m blk
   -> STM m (Point blk)
      -- ^ Get the immutable point

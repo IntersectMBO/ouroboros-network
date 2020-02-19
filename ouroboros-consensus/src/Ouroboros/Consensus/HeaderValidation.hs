@@ -161,9 +161,9 @@ headerStatePush (SecurityParam k) chainState newTip HeaderState{..} =
         Just (newAnchor, trimmed)
     trim _otherwise = Nothing
 
-deriving instance (SupportedBlock blk, HasAnnTip blk) => Show               (HeaderState blk)
-deriving instance (SupportedBlock blk, HasAnnTip blk) => NoUnexpectedThunks (HeaderState blk)
-deriving instance ( SupportedBlock blk
+deriving instance (BlockSupportsProtocol blk, HasAnnTip blk) => Show               (HeaderState blk)
+deriving instance (BlockSupportsProtocol blk, HasAnnTip blk) => NoUnexpectedThunks (HeaderState blk)
+deriving instance ( BlockSupportsProtocol blk
                   , HasAnnTip blk
                   , Eq (ChainState (BlockProtocol blk))
                   ) => Eq (HeaderState blk)
@@ -191,7 +191,7 @@ castHeaderState HeaderState{..} = HeaderState{
     castSeq f = Seq.fromList . map f . toList
 
 rewindHeaderState :: forall blk.
-                     ( SupportedBlock blk
+                     ( BlockSupportsProtocol blk
                      , Serialise (HeaderHash blk)
                      )
                   => TopLevelConfig blk
@@ -235,9 +235,9 @@ data HeaderEnvelopeError blk =
   | OtherEnvelopeError !Text
   deriving (Generic)
 
-deriving instance SupportedBlock blk => Eq                 (HeaderEnvelopeError blk)
-deriving instance SupportedBlock blk => Show               (HeaderEnvelopeError blk)
-deriving instance SupportedBlock blk => NoUnexpectedThunks (HeaderEnvelopeError blk)
+deriving instance BlockSupportsProtocol blk => Eq                 (HeaderEnvelopeError blk)
+deriving instance BlockSupportsProtocol blk => Show               (HeaderEnvelopeError blk)
+deriving instance BlockSupportsProtocol blk => NoUnexpectedThunks (HeaderEnvelopeError blk)
 
 castHeaderEnvelopeError :: HeaderHash blk ~ HeaderHash blk'
                         => HeaderEnvelopeError blk -> HeaderEnvelopeError blk'
@@ -316,9 +316,9 @@ data HeaderError blk =
   | HeaderEnvelopeError (HeaderEnvelopeError blk)
   deriving (Generic)
 
-deriving instance SupportedBlock blk => Eq                 (HeaderError blk)
-deriving instance SupportedBlock blk => Show               (HeaderError blk)
-deriving instance SupportedBlock blk => NoUnexpectedThunks (HeaderError blk)
+deriving instance BlockSupportsProtocol blk => Eq                 (HeaderError blk)
+deriving instance BlockSupportsProtocol blk => Show               (HeaderError blk)
+deriving instance BlockSupportsProtocol blk => NoUnexpectedThunks (HeaderError blk)
 
 castHeaderError :: (   ValidationErr (BlockProtocol blk )
                      ~ ValidationErr (BlockProtocol blk')
@@ -365,7 +365,7 @@ castHeaderError (HeaderEnvelopeError e) = HeaderEnvelopeError $
 -- /If/ a particular ledger wants to verify additional fields in the header,
 -- it will get the chance to do so in 'applyLedgerBlock', which is passed the
 -- entire block (not just the block body).
-validateHeader :: (SupportedBlock blk, ValidateEnvelope blk)
+validateHeader :: (BlockSupportsProtocol blk, ValidateEnvelope blk)
                => TopLevelConfig blk
                -> LedgerView (BlockProtocol blk)
                -> Header blk

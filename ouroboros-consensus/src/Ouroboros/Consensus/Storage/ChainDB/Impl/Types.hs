@@ -233,7 +233,7 @@ data ChainDbEnv m blk = CDB
 -- | We include @blk@ in 'showTypeOf' because it helps resolving type families
 -- (but avoid including @m@ because we cannot impose @Typeable m@ as a
 -- constraint and still have it work with the simulator)
-instance (IOLike m, ProtocolLedgerView blk)
+instance (IOLike m, LedgerSupportsProtocol blk)
       => NoUnexpectedThunks (ChainDbEnv m blk) where
     showTypeOf _ = "ChainDbEnv m " ++ show (typeRep (Proxy @blk))
 
@@ -402,12 +402,12 @@ data TraceEvent blk
 deriving instance
   ( HasHeader blk
   , Eq (Header blk)
-  , ProtocolLedgerView blk
+  , LedgerSupportsProtocol blk
   ) => Eq (TraceEvent blk)
 deriving instance
   ( HasHeader blk
   , Show (Header blk)
-  , ProtocolLedgerView blk
+  , LedgerSupportsProtocol blk
   ) => Show (TraceEvent blk)
 
 data TraceOpenEvent blk
@@ -513,14 +513,14 @@ data TraceAddBlockEvent blk
   deriving (Generic)
 
 deriving instance
-  ( HasHeader                 blk
-  , Eq (Header                blk)
-  , ProtocolLedgerView        blk
+  ( HasHeader              blk
+  , Eq (Header             blk)
+  , LedgerSupportsProtocol blk
   ) => Eq (TraceAddBlockEvent blk)
 deriving instance
-  ( HasHeader                   blk
-  , Show (Header                blk)
-  , ProtocolLedgerView          blk
+  ( HasHeader              blk
+  , Show (Header           blk)
+  , LedgerSupportsProtocol blk
   ) => Show (TraceAddBlockEvent blk)
 
 data TraceValidationEvent blk
@@ -550,13 +550,13 @@ data TraceValidationEvent blk
   deriving (Generic)
 
 deriving instance
-  ( HasHeader                 blk
-  , Eq (Header                blk)
-  , ProtocolLedgerView        blk
+  ( HasHeader              blk
+  , Eq (Header             blk)
+  , LedgerSupportsProtocol blk
   ) => Eq (TraceValidationEvent blk)
 deriving instance
-  ( Show (Header                blk)
-  , ProtocolLedgerView          blk
+  ( Show (Header           blk)
+  , LedgerSupportsProtocol blk
   ) => Show (TraceValidationEvent blk)
 
 data TraceInitChainSelEvent blk
@@ -566,13 +566,13 @@ data TraceInitChainSelEvent blk
   deriving (Generic)
 
 deriving instance
-  ( HasHeader                     blk
-  , Eq (Header                    blk)
-  , ProtocolLedgerView            blk
+  ( HasHeader              blk
+  , Eq (Header             blk)
+  , LedgerSupportsProtocol blk
   ) => Eq (TraceInitChainSelEvent blk)
 deriving instance
-  ( Show (Header                    blk)
-  , ProtocolLedgerView              blk
+  ( Show (Header           blk)
+  , LedgerSupportsProtocol blk
   ) => Show (TraceInitChainSelEvent blk)
 
 

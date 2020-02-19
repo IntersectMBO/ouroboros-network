@@ -237,7 +237,7 @@ data InternalState m peer blk = IS {
 initInternalState
     :: forall m peer blk.
        ( IOLike m
-       , ProtocolLedgerView blk
+       , LedgerSupportsProtocol blk
        , Ord peer
        , NoUnexpectedThunks peer
        , RunNode blk
@@ -286,7 +286,7 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
         noOverride = MempoolCapacityBytes (nodeMaxBlockSize ledger * 2)
 
 initBlockFetchConsensusInterface
-    :: forall m peer blk. (IOLike m, SupportedBlock blk)
+    :: forall m peer blk. (IOLike m, BlockSupportsProtocol blk)
     => TopLevelConfig blk
     -> ChainDB m blk
     -> STM m (Map peer (AnchoredFragment (Header blk)))

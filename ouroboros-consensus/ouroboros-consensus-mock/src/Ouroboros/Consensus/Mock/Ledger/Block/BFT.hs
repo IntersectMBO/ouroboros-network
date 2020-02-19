@@ -109,13 +109,13 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
-         ) => SupportedBlock (SimpleBftBlock c c') where
+         ) => BlockSupportsProtocol (SimpleBftBlock c c') where
   validateView _ = bftValidateView (simpleBftExt . simpleHeaderExt)
 
 instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
-         ) => ProtocolLedgerView (SimpleBftBlock c c') where
+         ) => LedgerSupportsProtocol (SimpleBftBlock c c') where
   protocolSlotLengths =
       simpleBftSlotLengths . configBlock
   protocolLedgerView _ _ =

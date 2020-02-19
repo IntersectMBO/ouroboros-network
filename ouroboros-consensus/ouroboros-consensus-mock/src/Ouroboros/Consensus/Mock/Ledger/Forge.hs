@@ -29,7 +29,7 @@ forgeSimple :: forall p c m ext.
                , MonadRandom m
                , SimpleCrypto c
                , RunMockBlock c ext
-               , SupportedBlock (SimpleBlock c ext)
+               , BlockSupportsProtocol (SimpleBlock c ext)
                , Typeable ext
                , p ~ BlockProtocol (SimpleBlock c ext)
                )

@@ -71,7 +71,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 -------------------------------------------------------------------------------}
 
 launchBgTasks
-  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
+  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
   => ChainDbEnv m blk
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m ()
@@ -380,7 +380,7 @@ gcScheduleRunner (GcSchedule queue) runGc = forever $ do
 -- | Retrieve the blocks from 'cdbFutureBlocks' for which chain selection was
 -- scheduled at the current slot. Run chain selection for each of them.
 scheduledChainSelection
-  :: (IOLike m, ProtocolLedgerView blk, HasCallStack)
+  :: (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
   => ChainDbEnv m blk
   -> SlotNo  -- ^ The current slot
   -> m ()
@@ -420,7 +420,7 @@ scheduledChainSelection cdb@CDB{..} curSlot = do
 -- This function forks of a background thread and terminates afterwards,
 -- returning a handle to kill the background thread.
 scheduledChainSelectionRunner
-  :: (IOLike m, ProtocolLedgerView blk, HasCallStack)
+  :: (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
   => ChainDbEnv m blk -> m (m ())
 scheduledChainSelectionRunner cdb@CDB{..} =
     onSlotChange cdbBlockchainTime (scheduledChainSelection cdb)

@@ -88,7 +88,7 @@ closeDB (CDBHandle varState) = do
 reopen
   :: forall m blk.
      ( IOLike m
-     , ProtocolLedgerView blk
+     , LedgerSupportsProtocol blk
      , HasCallStack
      )
   => ChainDbHandle m blk

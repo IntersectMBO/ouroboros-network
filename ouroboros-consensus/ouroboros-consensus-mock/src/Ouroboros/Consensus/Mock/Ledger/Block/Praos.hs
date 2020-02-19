@@ -75,7 +75,7 @@ data SignedSimplePraos c c' = SignedSimplePraos {
     }
 
 data instance BlockConfig (SimplePraosBlock c c') = SimplePraosBlockConfig {
-      -- | See 'ProtocolLedgerView' instance for why we need the 'AddrDist'
+      -- | See 'LedgerSupportsProtocol' instance for why we need the 'AddrDist'
       simplePraosAddrDist :: AddrDist
 
       -- | Slot lengths
@@ -142,7 +142,7 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => SupportedBlock (SimpleBlock c (SimplePraosExt c c')) where
+         ) => BlockSupportsProtocol (SimpleBlock c (SimplePraosExt c c')) where
   validateView _ = praosValidateView (simplePraosExt . simpleHeaderExt)
 
 -- | Praos needs a ledger that can give it the "active stake distribution"
@@ -156,7 +156,7 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => ProtocolLedgerView (SimplePraosBlock c c') where
+         ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
   protocolSlotLengths =
       simplePraosSlotLengths . configBlock
 

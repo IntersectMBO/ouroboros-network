@@ -99,7 +99,7 @@ showTracers :: ( Show blk
                , Show (ApplyTxErr blk)
                , Show (Header blk)
                , Show peer
-               , ProtocolLedgerView blk
+               , LedgerSupportsProtocol blk
                )
             => Tracer m String -> Tracers m peer blk
 showTracers tr = Tracers

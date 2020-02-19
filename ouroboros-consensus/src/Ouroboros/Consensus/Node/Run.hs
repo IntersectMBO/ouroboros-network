@@ -47,7 +47,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
   RunNode proper
 -------------------------------------------------------------------------------}
 
-class ( ProtocolLedgerView blk
+class ( LedgerSupportsProtocol blk
       , ApplyTx blk
       , HasTxId (GenTx blk)
       , QueryLedger blk

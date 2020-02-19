@@ -46,7 +46,7 @@ mkByronContextDSIGN :: TopLevelConfig ByronBlock
                     -> ContextDSIGN ByronDSIGN
 mkByronContextDSIGN cfg = (byronProtocolMagicId (configBlock cfg),)
 
-instance SupportedBlock ByronBlock where
+instance BlockSupportsProtocol ByronBlock where
   validateView cfg hdr@ByronHeader{..} =
       case byronHeaderRaw of
         CC.ABOBBoundaryHdr _    -> pbftValidateBoundary hdr

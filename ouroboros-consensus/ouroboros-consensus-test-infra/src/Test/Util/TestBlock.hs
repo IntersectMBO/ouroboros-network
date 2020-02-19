@@ -265,7 +265,7 @@ data TestBlockError
     -- ^ The block itself is invalid
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
-instance SupportedBlock TestBlock where
+instance BlockSupportsProtocol TestBlock where
   validateView TopLevelConfig{..} =
       bftValidateView bftFields
     where
@@ -318,7 +318,7 @@ instance ValidateEnvelope TestBlock where
   -- The block number of a test block is derived from the length of the hash
   firstBlockNo _ = Block.BlockNo 1
 
-instance ProtocolLedgerView TestBlock where
+instance LedgerSupportsProtocol TestBlock where
   protocolSlotLengths = testBlockSlotLengths . configBlock
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right ()

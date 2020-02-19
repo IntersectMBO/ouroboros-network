@@ -100,8 +100,8 @@ newtype Our   a = Our   { unOur   :: a }
 bracketChainSyncClient
     :: ( IOLike m
        , Ord peer
-       , SupportedBlock blk
-       , ProtocolLedgerView blk
+       , BlockSupportsProtocol blk
+       , LedgerSupportsProtocol blk
        )
     => Tracer m (TraceChainSyncClientEvent blk)
     -> ChainDbView m blk
@@ -197,7 +197,7 @@ data UnknownIntersectionState blk = UnknownIntersectionState
   }
   deriving (Generic)
 
-instance ( ProtocolLedgerView blk
+instance ( LedgerSupportsProtocol blk
          ) => NoUnexpectedThunks (UnknownIntersectionState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(UnknownIntersectionState blk))
 
@@ -225,7 +225,7 @@ data KnownIntersectionState blk = KnownIntersectionState
   }
   deriving (Generic)
 
-instance ( ProtocolLedgerView blk
+instance ( LedgerSupportsProtocol blk
          ) => NoUnexpectedThunks (KnownIntersectionState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(KnownIntersectionState blk))
 
@@ -237,7 +237,7 @@ instance ( ProtocolLedgerView blk
 chainSyncClient
     :: forall m blk.
        ( IOLike m
-       , ProtocolLedgerView blk
+       , LedgerSupportsProtocol blk
        , Serialise (HeaderHash blk)
        )
     => MkPipelineDecision
@@ -699,7 +699,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
     k :: Word64
     k = maxRollbacks $ configSecurityParam cfg
 
-attemptRollback :: ( SupportedBlock blk
+attemptRollback :: ( BlockSupportsProtocol blk
                    , Serialise (HeaderHash blk)
                    )
                 => TopLevelConfig blk
@@ -731,8 +731,8 @@ attemptRollback cfg intersection (frag, state) = do
 rejectInvalidBlocks
     :: forall m blk.
        ( IOLike m
-       , SupportedBlock blk
-       , ProtocolLedgerView blk
+       , BlockSupportsProtocol blk
+       , LedgerSupportsProtocol blk
        )
     => Tracer m (TraceChainSyncClientEvent blk)
     -> ResourceRegistry m
@@ -790,7 +790,7 @@ data ChainSyncClientException =
       --
       -- I.e., the slot of the received header was > current slot (according
       -- to the wall time) + the max clock skew.
-      forall blk. SupportedBlock blk => HeaderExceedsClockSkew
+      forall blk. BlockSupportsProtocol blk => HeaderExceedsClockSkew
       { _receivedHeader    :: Point blk
       , _currentWallSlotNo :: SlotNo
       , _ourTip            :: Our   (Tip blk)
@@ -798,7 +798,7 @@ data ChainSyncClientException =
       }
 
       -- | The server we're connecting to forked more than @k@ blocks ago.
-    | forall blk. SupportedBlock blk =>
+    | forall blk. BlockSupportsProtocol blk =>
         ForkTooDeep
         { _intersection :: Point blk
         , _ourTip       :: Our   (Tip blk)
@@ -806,7 +806,7 @@ data ChainSyncClientException =
         }
 
       -- | Header validation threw an error.
-    | forall blk. SupportedBlock blk =>
+    | forall blk. BlockSupportsProtocol blk =>
         HeaderError
         { _newPoint  :: Point       blk
         , _headerErr :: HeaderError blk
@@ -817,7 +817,7 @@ data ChainSyncClientException =
       -- | The upstream node rolled forward to a point too far in our past.
       -- This may happen if, during catch-up, our local node has moved too far
       -- ahead of the upstream node.
-    | forall blk. SupportedBlock blk =>
+    | forall blk. BlockSupportsProtocol blk =>
         InvalidRollForward
         { _newPoint :: Point blk
         , _ourTip   :: Our   (Tip blk)
@@ -825,7 +825,7 @@ data ChainSyncClientException =
         }
 
       -- | The upstream node rolled back more than @k@ blocks.
-    | forall blk. SupportedBlock blk =>
+    | forall blk. BlockSupportsProtocol blk =>
         InvalidRollBack
         { _newPoint :: Point blk
         , _ourTip   :: Our   (Tip blk)
@@ -837,7 +837,7 @@ data ChainSyncClientException =
       -- our chain fragment, and thus not among the points we sent.
       --
       -- We store the intersection point the upstream node sent us.
-    | forall blk. SupportedBlock blk =>
+    | forall blk. BlockSupportsProtocol blk =>
         InvalidIntersection
         { _intersection :: Point blk
         , _ourTip       :: Our   (Tip blk)
@@ -847,7 +847,7 @@ data ChainSyncClientException =
       -- | Our chain changed such that it no longer intersects with the
       -- candidate's fragment, and asking for a new intersection did not yield
       -- one.
-    | forall blk. SupportedBlock blk =>
+    | forall blk. BlockSupportsProtocol blk =>
         NoMoreIntersection
         { _ourTip   :: Our   (Tip blk)
         , _theirTip :: Their (Tip blk)
@@ -858,7 +858,7 @@ data ChainSyncClientException =
       --
       -- The first 'ChainHash' is the previous hash of the received header and
       -- the second 'ChainHash' is that of the previous one.
-    | forall blk. SupportedBlock blk =>
+    | forall blk. BlockSupportsProtocol blk =>
         DoesntFit
         { _receivedPrevHash :: ChainHash blk
         , _expectedPrevHash :: ChainHash blk
@@ -867,7 +867,7 @@ data ChainSyncClientException =
         }
 
       -- | The upstream node's chain contained a block that we know is invalid.
-    | forall blk. ProtocolLedgerView blk =>
+    | forall blk. LedgerSupportsProtocol blk =>
         InvalidBlock
         { _invalidBlock :: Point blk
         , _reason       :: InvalidBlockReason blk
@@ -991,12 +991,12 @@ data TraceChainSyncClientEvent blk
   | TraceException ChainSyncClientException
     -- ^ An exception was thrown by the Chain Sync Client.
 
-deriving instance ( SupportedBlock blk
+deriving instance ( BlockSupportsProtocol blk
                   , Eq (ValidationErr (BlockProtocol blk))
                   , Eq (Header blk)
                   )
                => Eq   (TraceChainSyncClientEvent blk)
-deriving instance ( SupportedBlock blk
+deriving instance ( BlockSupportsProtocol blk
                   , Show (Header blk)
                   )
                => Show (TraceChainSyncClientEvent blk)

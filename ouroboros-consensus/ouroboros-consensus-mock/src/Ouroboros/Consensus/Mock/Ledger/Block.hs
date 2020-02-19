@@ -239,7 +239,7 @@ instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
   Update the ledger
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
+instance (SimpleCrypto c, Typeable ext, BlockSupportsProtocol (SimpleBlock c ext))
       => UpdateLedger (SimpleBlock c ext) where
   newtype LedgerState (SimpleBlock c ext) = SimpleLedgerState {
         simpleLedgerState :: MockState (SimpleBlock c ext)
@@ -284,7 +284,7 @@ genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
   Support for the mempool
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
+instance (SimpleCrypto c, Typeable ext, BlockSupportsProtocol (SimpleBlock c ext))
       => ApplyTx (SimpleBlock c ext) where
   data GenTx (SimpleBlock c ext) = SimpleGenTx
     { simpleGenTx   :: !Mock.Tx
@@ -335,7 +335,7 @@ mkSimpleGenTx tx = SimpleGenTx
   Support for QueryLedger
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
+instance (SimpleCrypto c, Typeable ext, BlockSupportsProtocol (SimpleBlock c ext))
       => QueryLedger (SimpleBlock c ext) where
   data Query (SimpleBlock c ext) result
     deriving (Show)

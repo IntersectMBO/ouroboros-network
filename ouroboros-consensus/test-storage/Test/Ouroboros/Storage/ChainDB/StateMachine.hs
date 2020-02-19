@@ -272,7 +272,7 @@ runAllComponentsM (mblk, mhdr, a, b, c, d, e, f, g) = do
 
 type TestConstraints blk =
   ( OuroborosTag   (BlockProtocol blk)
-  , ProtocolLedgerView            blk
+  , LedgerSupportsProtocol        blk
   , Eq (ChainState (BlockProtocol blk))
   , Eq (LedgerState               blk)
   , Eq                            blk
@@ -925,7 +925,7 @@ precondition Model {..} (At cmd) =
           Map.notMember (blockHash blk) $
           forgetFingerprint (Model.invalid dbModel)
 
-equallyOrMorePreferable :: forall blk. SupportedBlock blk
+equallyOrMorePreferable :: forall blk. BlockSupportsProtocol blk
                         => TopLevelConfig blk
                         -> Chain blk -> Chain blk -> Bool
 equallyOrMorePreferable cfg chain1 chain2 =
@@ -935,7 +935,7 @@ equallyOrMorePreferable cfg chain1 chain2 =
     chain1' = Chain.toAnchoredFragment (getHeader <$> chain1)
     chain2' = Chain.toAnchoredFragment (getHeader <$> chain2)
 
-equallyPreferable :: forall blk. SupportedBlock blk
+equallyPreferable :: forall blk. BlockSupportsProtocol blk
                   => TopLevelConfig blk
                   -> Chain blk -> Chain blk -> Bool
 equallyPreferable cfg chain1 chain2 =

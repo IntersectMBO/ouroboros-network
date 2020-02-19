@@ -590,7 +590,8 @@ data InvalidBlockReason blk
     -- invalid block are stored.
   deriving (Eq, Show, Generic)
 
-instance ProtocolLedgerView blk => NoUnexpectedThunks (InvalidBlockReason blk)
+instance LedgerSupportsProtocol blk
+      => NoUnexpectedThunks (InvalidBlockReason blk)
 
 {-------------------------------------------------------------------------------
   Readers

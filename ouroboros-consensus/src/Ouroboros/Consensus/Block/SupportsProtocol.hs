@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeFamilies      #-}
 
 module Ouroboros.Consensus.Block.SupportsProtocol (
-    SupportedBlock(..)
+    BlockSupportsProtocol(..)
   ) where
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -25,7 +25,7 @@ class ( GetHeader blk
       , OuroborosTag (BlockProtocol blk)
       , NoUnexpectedThunks (Header blk)
       , NoUnexpectedThunks (BlockConfig blk)
-      ) => SupportedBlock blk where
+      ) => BlockSupportsProtocol blk where
   validateView :: TopLevelConfig blk
                -> Header blk -> ValidateView (BlockProtocol blk)
 

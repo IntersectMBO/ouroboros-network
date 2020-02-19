@@ -148,7 +148,7 @@ forksAtMostKBlocks k ours theirs = case ours `AF.intersect` theirs of
 -- fragment or the candidate fragment is empty, we can decide whether or not
 -- the candidate is preferred using only the "always extend" rule: we never
 -- need the header that corresponds to the anchor point.
-preferAnchoredCandidate :: forall blk. SupportedBlock blk
+preferAnchoredCandidate :: forall blk. BlockSupportsProtocol blk
                         => TopLevelConfig blk
                         -> AnchoredFragment (Header blk)      -- ^ Our chain
                         -> AnchoredFragment (Header blk)      -- ^ Candidate
@@ -175,7 +175,7 @@ preferAnchoredCandidate cfg ours theirs =
 -- Implementation note: since the empty fragment is never preferred over our
 -- chain, this is trivial. See discussion in 'preferAnchoredCandidate' for
 -- details.
-compareAnchoredCandidates :: (SupportedBlock blk, HasCallStack)
+compareAnchoredCandidates :: (BlockSupportsProtocol blk, HasCallStack)
                           => TopLevelConfig blk
                           -> AnchoredFragment (Header blk)
                           -> AnchoredFragment (Header blk)

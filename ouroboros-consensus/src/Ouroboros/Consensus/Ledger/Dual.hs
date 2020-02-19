@@ -145,13 +145,13 @@ class (
         HasHeader          m
       , GetHeader          m
       , HasHeader (Header  m)
-      , ProtocolLedgerView m
+      , LedgerSupportsProtocol m
       , ApplyTx            m
       , HasTxId (GenTx     m)
       , Show (ApplyTxErr   m)
 
         -- Requirements on the auxiliary block
-        -- No 'ProtocolLedgerView' for @a@!
+        -- No 'LedgerSupportsProtocol' for @a@!
       , Typeable         a
       , UpdateLedger     a
       , ApplyTx          a
@@ -217,7 +217,7 @@ dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
     , configBlock     = dualBlockConfigMain  configBlock
     }
 
-instance Bridge m a => SupportedBlock (DualBlock m a) where
+instance Bridge m a => BlockSupportsProtocol (DualBlock m a) where
   validateView cfg = validateView (dualTopLevelConfigMain cfg) . dualHeaderMain
   selectView   cfg = selectView   (dualTopLevelConfigMain cfg) . dualHeaderMain
 
@@ -360,10 +360,10 @@ dualExtValidationErrorMain = \case
     ExtValidationErrorHeader e -> ExtValidationErrorHeader (castHeaderError     e)
 
 {-------------------------------------------------------------------------------
-  ProtocolLedgerView
+  LedgerSupportsProtocol
 
   These definitions are asymmetric because the auxiliary block is not involved
-  in the consensus protocol, and has no 'ProtocolLedgerView' instance.
+  in the consensus protocol, and has no 'LedgerSupportsProtocol' instance.
 -------------------------------------------------------------------------------}
 
 instance Bridge m a => HasAnnTip (DualBlock m a) where
@@ -379,7 +379,7 @@ instance Bridge m a => ValidateEnvelope (DualBlock m a) where
   firstBlockNo          _ = firstBlockNo          (Proxy @m)
   minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @m)
 
-instance Bridge m a => ProtocolLedgerView (DualBlock m a) where
+instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
   protocolSlotLengths cfg =
       protocolSlotLengths
         (dualTopLevelConfigMain cfg)
