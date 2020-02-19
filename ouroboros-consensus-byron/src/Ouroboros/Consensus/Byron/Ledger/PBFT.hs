@@ -1,16 +1,17 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Instances required to support PBFT
 module Ouroboros.Consensus.Byron.Ledger.PBFT (
-    ByronConsensusProtocol
-  , toPBftLedgerView
+    toPBftLedgerView
   , fromPBftLedgerView
   , encodeByronChainState
   , decodeByronChainState
+  , mkByronContextDSIGN
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -26,8 +27,8 @@ import qualified Cardano.Chain.Delegation as Delegation
 import           Ouroboros.Network.Block (HasHeader (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
@@ -37,10 +38,15 @@ import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation ()
 import           Ouroboros.Consensus.Byron.Protocol
 
-type ByronConsensusProtocol = ExtConfig (PBft PBftByronCrypto) ByronConfig
-type instance BlockProtocol ByronBlock = ByronConsensusProtocol
+type instance BlockProtocol ByronBlock = PBft PBftByronCrypto
 
-instance SupportedBlock ByronBlock where
+-- | Construct DSIGN required for Byron crypto
+mkByronContextDSIGN :: TopLevelConfig ByronBlock
+                    -> VerKeyDSIGN ByronDSIGN
+                    -> ContextDSIGN ByronDSIGN
+mkByronContextDSIGN cfg = (byronProtocolMagicId (configBlock cfg),)
+
+instance BlockSupportsProtocol ByronBlock where
   validateView cfg hdr@ByronHeader{..} =
       case byronHeaderRaw of
         CC.ABOBBoundaryHdr _    -> pbftValidateBoundary hdr
@@ -67,9 +73,9 @@ instance SupportedBlock ByronBlock where
                (blockSlot hdr)
                pbftFields
                (CC.recoverSignedBytes epochSlots regular)
-               (extNodeConfig cfg, pbftGenKey pbftFields)
+               (mkByronContextDSIGN cfg (pbftGenKey pbftFields))
     where
-      epochSlots = pbftEpochSlots (extNodeConfig cfg)
+      epochSlots = byronEpochSlots (configBlock cfg)
 
   selectView _ hdr = (blockNo hdr, byronHeaderIsEBB hdr)
 

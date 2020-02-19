@@ -18,7 +18,6 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
-import           Ouroboros.Consensus.Byron.Ledger.Config
 
 {-------------------------------------------------------------------------------
   Crypto
@@ -34,9 +33,6 @@ instance PBftCrypto PBftByronCrypto where
   dlgCertGenVerKey = VerKeyByronDSIGN . CC.Delegation.issuerVK
   dlgCertDlgVerKey = VerKeyByronDSIGN . CC.Delegation.delegateVK
   hashVerKey (VerKeyByronDSIGN pk) = CC.Common.hashKey pk
-
-instance ConstructContextDSIGN ByronConfig PBftByronCrypto where
-  constructContextDSIGN _p cfg genKey = (cfg, genKey)
 
 {-------------------------------------------------------------------------------
   PBFT node order

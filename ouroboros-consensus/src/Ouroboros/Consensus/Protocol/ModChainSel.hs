@@ -24,8 +24,8 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Protocol.Abstract
 
--- | Redefine the chain selection part of 'OuroborosTag'
-class OuroborosTag p => ChainSelection p s where
+-- | Redefine the chain selection part of 'ConsensusProtocol'
+class ConsensusProtocol p => ChainSelection p s where
   type family SelectView' p :: *
 
   preferCandidate'   :: proxy s
@@ -39,7 +39,8 @@ data ModChainSel p s
 newtype instance NodeConfig (ModChainSel p s) = McsNodeConfig (NodeConfig p)
   deriving (Generic)
 
-instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainSel p s) where
+instance (Typeable p, Typeable s, ChainSelection p s)
+      => ConsensusProtocol (ModChainSel p s) where
     type NodeState     (ModChainSel p s) = NodeState     p
     type ChainState    (ModChainSel p s) = ChainState    p
     type IsLeader      (ModChainSel p s) = IsLeader      p
@@ -52,10 +53,10 @@ instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainS
     applyChainState       (McsNodeConfig cfg) = applyChainState       cfg
     rewindChainState      (McsNodeConfig cfg) = rewindChainState      cfg
     protocolSecurityParam (McsNodeConfig cfg) = protocolSecurityParam cfg
-    protocolSlotLengths   (McsNodeConfig cfg) = protocolSlotLengths   cfg
 
     preferCandidate   (McsNodeConfig cfg) = preferCandidate'   (Proxy :: Proxy s) cfg
     compareCandidates (McsNodeConfig cfg) = compareCandidates' (Proxy :: Proxy s) cfg
 
-instance OuroborosTag p => NoUnexpectedThunks (NodeConfig (ModChainSel p s))
+instance ConsensusProtocol p
+      => NoUnexpectedThunks (NodeConfig (ModChainSel p s))
   -- use generic instance

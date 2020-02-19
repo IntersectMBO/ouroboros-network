@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -14,6 +16,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block.BFT (
   , SimpleBftHeader
   , SimpleBftExt(..)
   , SignedSimpleBft(..)
+  , BlockConfig(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -25,7 +28,9 @@ import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
@@ -49,7 +54,8 @@ type SimpleBftHeader c c' = SimpleHeader c (SimpleBftExt c c')
 newtype SimpleBftExt c c' = SimpleBftExt {
       simpleBftExt :: BftFields c' (SignedSimpleBft c c')
     }
-  deriving (Condense, Show, Eq, NoUnexpectedThunks)
+  deriving stock   (Show, Eq)
+  deriving newtype (Condense, NoUnexpectedThunks)
 
 -- | Part of the block that gets signed
 data SignedSimpleBft c c' = SignedSimpleBft {
@@ -57,8 +63,13 @@ data SignedSimpleBft c c' = SignedSimpleBft {
     }
   deriving (Generic)
 
-type instance BlockProtocol (SimpleBftBlock  c c') = Bft c'
-type instance BlockProtocol (SimpleBftHeader c c') = BlockProtocol (SimpleBftBlock c c')
+data instance BlockConfig (SimpleBftBlock c c') = SimpleBftBlockConfig {
+      -- | Slot lengths
+      simpleBftSlotLengths :: SlotLengths
+    }
+  deriving (Generic, NoUnexpectedThunks)
+
+type instance BlockProtocol (SimpleBftBlock c c') = Bft c'
 
 -- | Sanity check that block and header type synonyms agree
 _simpleBFtHeader :: SimpleBftBlock c c' -> SimpleBftHeader c c'
@@ -73,19 +84,14 @@ type instance Signed (SimpleBftHeader c c') = SignedSimpleBft c c'
 instance SignedHeader (SimpleBftHeader c c') where
   headerSigned = SignedSimpleBft . simpleHeaderStd
 
-instance RunMockProtocol (Bft c') where
-  mockProtocolMagicId  = const constructMockProtocolMagicId
-  mockEncodeChainState = const encode
-  mockDecodeChainState = const decode
-
 instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          )
-      => RunMockBlock (Bft c') c (SimpleBftExt c c') where
+      => RunMockBlock c (SimpleBftExt c c') where
   forgeExt cfg () SimpleBlock{..} = do
       ext :: SimpleBftExt c c' <- fmap SimpleBftExt $
-        forgeBftFields cfg $
+        forgeBftFields (configConsensus cfg) $
           SignedSimpleBft {
               signedSimpleBft = simpleHeaderStd
             }
@@ -96,19 +102,26 @@ instance ( SimpleCrypto c
     where
       SimpleHeader{..} = simpleHeader
 
+  mockProtocolMagicId  = const constructMockProtocolMagicId
+  mockEncodeChainState = const encode
+  mockDecodeChainState = const decode
+
 instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
-         ) => SupportedBlock (SimpleBftBlock c c') where
+         ) => BlockSupportsProtocol (SimpleBftBlock c c') where
   validateView _ = bftValidateView (simpleBftExt . simpleHeaderExt)
 
 instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
-         ) => ProtocolLedgerView (SimpleBftBlock c c') where
-  ledgerConfigView _ = SimpleLedgerConfig
-  protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Right ()
+         ) => LedgerSupportsProtocol (SimpleBftBlock c c') where
+  protocolSlotLengths =
+      simpleBftSlotLengths . configBlock
+  protocolLedgerView _ _ =
+      ()
+  anachronisticProtocolLedgerView _ _ _ =
+      Right ()
 
 {-------------------------------------------------------------------------------
   Serialisation

@@ -8,8 +8,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor
 
 import           Ouroboros.Network.Block (Point, pointSlot)
 
-import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (LedgerCursor (..),
@@ -18,7 +18,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 
 newLedgerCursor
-  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
+  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
   => LgrDB m blk
   -> STM m (Point blk)
      -- ^ Get the immutable point

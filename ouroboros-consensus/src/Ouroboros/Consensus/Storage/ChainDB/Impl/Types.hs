@@ -64,11 +64,11 @@ import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
                      SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Block (BlockProtocol, Header, IsEBB (..))
+import           Ouroboros.Consensus.Block (Header, IsEBB (..))
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
-import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
-import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
@@ -191,7 +191,7 @@ data ChainDbEnv m blk = CDB
     -- INVARIANT: the 'readerPoint' of each reader is 'withinFragmentBounds'
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
-  , cdbNodeConfig      :: !(NodeConfig (BlockProtocol blk))
+  , cdbNodeConfig      :: !(TopLevelConfig blk)
   , cdbInvalid         :: !(StrictTVar m (WithFingerprint (InvalidBlocks blk)))
     -- ^ See the docstring of 'InvalidBlocks'.
     --
@@ -233,7 +233,7 @@ data ChainDbEnv m blk = CDB
 -- | We include @blk@ in 'showTypeOf' because it helps resolving type families
 -- (but avoid including @m@ because we cannot impose @Typeable m@ as a
 -- constraint and still have it work with the simulator)
-instance (IOLike m, ProtocolLedgerView blk)
+instance (IOLike m, LedgerSupportsProtocol blk)
       => NoUnexpectedThunks (ChainDbEnv m blk) where
     showTypeOf _ = "ChainDbEnv m " ++ show (typeRep (Proxy @blk))
 
@@ -402,12 +402,12 @@ data TraceEvent blk
 deriving instance
   ( HasHeader blk
   , Eq (Header blk)
-  , ProtocolLedgerView blk
+  , LedgerSupportsProtocol blk
   ) => Eq (TraceEvent blk)
 deriving instance
   ( HasHeader blk
   , Show (Header blk)
-  , ProtocolLedgerView blk
+  , LedgerSupportsProtocol blk
   ) => Show (TraceEvent blk)
 
 data TraceOpenEvent blk
@@ -513,14 +513,14 @@ data TraceAddBlockEvent blk
   deriving (Generic)
 
 deriving instance
-  ( HasHeader                 blk
-  , Eq (Header                blk)
-  , ProtocolLedgerView        blk
+  ( HasHeader              blk
+  , Eq (Header             blk)
+  , LedgerSupportsProtocol blk
   ) => Eq (TraceAddBlockEvent blk)
 deriving instance
-  ( HasHeader                   blk
-  , Show (Header                blk)
-  , ProtocolLedgerView          blk
+  ( HasHeader              blk
+  , Show (Header           blk)
+  , LedgerSupportsProtocol blk
   ) => Show (TraceAddBlockEvent blk)
 
 data TraceValidationEvent blk
@@ -550,13 +550,13 @@ data TraceValidationEvent blk
   deriving (Generic)
 
 deriving instance
-  ( HasHeader                 blk
-  , Eq (Header                blk)
-  , ProtocolLedgerView        blk
+  ( HasHeader              blk
+  , Eq (Header             blk)
+  , LedgerSupportsProtocol blk
   ) => Eq (TraceValidationEvent blk)
 deriving instance
-  ( Show (Header                blk)
-  , ProtocolLedgerView          blk
+  ( Show (Header           blk)
+  , LedgerSupportsProtocol blk
   ) => Show (TraceValidationEvent blk)
 
 data TraceInitChainSelEvent blk
@@ -566,13 +566,13 @@ data TraceInitChainSelEvent blk
   deriving (Generic)
 
 deriving instance
-  ( HasHeader                     blk
-  , Eq (Header                    blk)
-  , ProtocolLedgerView            blk
+  ( HasHeader              blk
+  , Eq (Header             blk)
+  , LedgerSupportsProtocol blk
   ) => Eq (TraceInitChainSelEvent blk)
 deriving instance
-  ( Show (Header                    blk)
-  , ProtocolLedgerView              blk
+  ( Show (Header           blk)
+  , LedgerSupportsProtocol blk
   ) => Show (TraceInitChainSelEvent blk)
 
 

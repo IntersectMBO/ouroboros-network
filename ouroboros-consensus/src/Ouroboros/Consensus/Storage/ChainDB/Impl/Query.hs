@@ -32,6 +32,7 @@ import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,
                      maxSlotNoFromWithOrigin, pointHash, pointSlot)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
@@ -66,14 +67,14 @@ getCurrentChain
   :: forall m blk.
      ( IOLike m
      , HasHeader (Header blk)
-     , OuroborosTag (BlockProtocol blk)
+     , ConsensusProtocol (BlockProtocol blk)
      )
   => ChainDbEnv m blk
   -> STM m (AnchoredFragment (Header blk))
 getCurrentChain CDB{..} =
     AF.anchorNewest k <$> readTVar cdbChain
   where
-    SecurityParam k = protocolSecurityParam cdbNodeConfig
+    SecurityParam k = configSecurityParam cdbNodeConfig
 
 getCurrentLedger :: IOLike m => ChainDbEnv m blk -> STM m (ExtLedgerState blk)
 getCurrentLedger CDB{..} = LgrDB.getCurrentState cdbLgrDB

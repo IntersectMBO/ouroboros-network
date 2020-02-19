@@ -15,7 +15,6 @@ import           Control.Monad (void)
 import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
-import           Data.Proxy
 import           Data.Word (Word32)
 import           GHC.Stack
 
@@ -34,20 +33,18 @@ import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Network.Block
 
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Config
-import           Ouroboros.Consensus.Byron.Ledger.ContainsGenesis
 import           Ouroboros.Consensus.Byron.Ledger.Mempool
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Protocol
-
 
 forgeByronBlock
   :: forall m.
@@ -55,7 +52,7 @@ forgeByronBlock
      , MonadRandom m
      , HasCallStack
      )
-  => NodeConfig ByronConsensusProtocol
+  => TopLevelConfig ByronBlock
   -> SlotNo                          -- ^ Current slot
   -> BlockNo                         -- ^ Current block number
   -> ExtLedgerState ByronBlock       -- ^ Ledger
@@ -65,25 +62,23 @@ forgeByronBlock
 forgeByronBlock = forgeRegularBlock
 
 forgeEBB
-  :: NodeConfig ByronConsensusProtocol
+  :: TopLevelConfig ByronBlock
   -> SlotNo                          -- ^ Current slot
   -> BlockNo                         -- ^ Current block number
   -> ChainHash ByronBlock            -- ^ Previous hash
   -> ByronBlock
 forgeEBB cfg curSlot curNo prevHash =
-        mkByronBlock pbftEpochSlots
+        mkByronBlock (byronEpochSlots byronConfig)
       . CC.Block.ABOBBoundary
-      . CC.reAnnotateBoundary protocolMagicId
+      . CC.reAnnotateBoundary (byronProtocolMagicId byronConfig)
       $ boundaryBlock
   where
-    protocolMagicId = CC.Genesis.configProtocolMagicId (getGenesisConfig cfg)
-    ByronConfig { pbftGenesisHash
-                , pbftEpochSlots
-                } = extNodeConfig cfg
+    byronConfig :: BlockConfig ByronBlock
+    byronConfig = configBlock cfg
 
     prevHeaderHash :: Either CC.Genesis.GenesisHash CC.Block.HeaderHash
     prevHeaderHash = case prevHash of
-      GenesisHash             -> Left  pbftGenesisHash
+      GenesisHash             -> Left  (byronGenesisHash byronConfig)
       BlockHash (ByronHash h) -> Right h
 
     boundaryBlock :: CC.Block.ABoundaryBlock ()
@@ -104,7 +99,7 @@ forgeEBB cfg curSlot curNo prevHash =
       where
         CC.Slot.EpochNumber epoch =
             CC.Slot.epochNo
-          . CC.Slot.fromSlotNumber pbftEpochSlots
+          . CC.Slot.fromSlotNumber (byronEpochSlots byronConfig)
           $ coerce curSlot
 
 -- | Internal helper data type for 'forgeRegularBlock' used to accumulate the
@@ -138,7 +133,7 @@ forgeRegularBlock
      , MonadRandom m
      , HasCallStack
      )
-  => NodeConfig ByronConsensusProtocol
+  => TopLevelConfig ByronBlock
   -> SlotNo                            -- ^ Current slot
   -> BlockNo                           -- ^ Current block number
   -> ExtLedgerState ByronBlock         -- ^ Ledger
@@ -148,18 +143,13 @@ forgeRegularBlock
 forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
     ouroborosPayload <-
       forgePBftFields
-        (constructContextDSIGN (Proxy @PBftByronCrypto) (extNodeConfig cfg))
+        (mkByronContextDSIGN cfg)
         isLeader
         (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload
   where
-    -- TODO: Might be sufficient to add 'ConfigContainsGenesis' constraint.
-    ByronConfig
-      { pbftEpochSlots
-      , pbftProtocolVersion
-      , pbftSoftwareVersion
-      , pbftProtocolMagic
-      } = extNodeConfig cfg
+    byronConfig :: BlockConfig ByronBlock
+    byronConfig = configBlock cfg
 
     blockPayloads :: BlockPayloads
     blockPayloads = foldr extendBlockPayloads initBlockPayloads txs
@@ -209,7 +199,8 @@ forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
       BlockHash (ByronHash h) -> h
 
     epochAndSlotCount :: CC.Slot.EpochAndSlotCount
-    epochAndSlotCount = CC.Slot.fromSlotNumber pbftEpochSlots $ coerce curSlot
+    epochAndSlotCount = CC.Slot.fromSlotNumber (byronEpochSlots byronConfig) $
+                          coerce curSlot
 
     toSign :: CC.Block.ToSign
     toSign = CC.Block.ToSign {
@@ -217,8 +208,8 @@ forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
         , CC.Block.tsSlot            = epochAndSlotCount
         , CC.Block.tsDifficulty      = coerce curNo
         , CC.Block.tsBodyProof       = proof
-        , CC.Block.tsProtocolVersion = pbftProtocolVersion
-        , CC.Block.tsSoftwareVersion = pbftSoftwareVersion
+        , CC.Block.tsProtocolVersion = byronProtocolVersion byronConfig
+        , CC.Block.tsSoftwareVersion = byronSoftwareVersion byronConfig
         }
 
     headerGenesisKey :: Crypto.VerificationKey
@@ -230,7 +221,7 @@ forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
     forge :: PBftFields PBftByronCrypto (Annotated CC.Block.ToSign ByteString)
           -> ByronBlock
     forge ouroborosPayload =
-       annotateByronBlock pbftEpochSlots block
+       annotateByronBlock (byronEpochSlots byronConfig) block
       where
         block :: CC.Block.Block
         block = CC.Block.ABlock {
@@ -247,12 +238,12 @@ forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
 
         header :: CC.Block.Header
         header = CC.Block.AHeader {
-              CC.Block.aHeaderProtocolMagicId = ann (Crypto.getProtocolMagicId pbftProtocolMagic)
+              CC.Block.aHeaderProtocolMagicId = ann (Crypto.getProtocolMagicId (byronProtocolMagic byronConfig))
             , CC.Block.aHeaderPrevHash        = ann prevHeaderHash
             , CC.Block.aHeaderSlot            = ann (coerce curSlot)
             , CC.Block.aHeaderDifficulty      = ann (coerce curNo)
-            , CC.Block.headerProtocolVersion  = pbftProtocolVersion
-            , CC.Block.headerSoftwareVersion  = pbftSoftwareVersion
+            , CC.Block.headerProtocolVersion  = byronProtocolVersion byronConfig
+            , CC.Block.headerSoftwareVersion  = byronSoftwareVersion byronConfig
             , CC.Block.aHeaderProof           = ann proof
             , CC.Block.headerGenesisKey       = headerGenesisKey
             , CC.Block.headerSignature        = headerSignature

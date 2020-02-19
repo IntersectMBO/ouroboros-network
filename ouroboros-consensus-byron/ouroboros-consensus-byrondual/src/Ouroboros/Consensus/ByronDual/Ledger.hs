@@ -11,7 +11,6 @@
 module Ouroboros.Consensus.ByronDual.Ledger (
     -- * Shorthand
     DualByronBlock
-  , DualByronProtocol
   , DualByronBridge
     -- * Bridge
   , ByronSpecBridge(..)
@@ -45,10 +44,10 @@ import qualified Cardano.Chain.UTxO as Impl
 
 import           Ouroboros.Network.Block
 
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -61,9 +60,8 @@ import           Ouroboros.Consensus.ByronSpec.Ledger
   Shorthand
 -------------------------------------------------------------------------------}
 
-type DualByronBlock    = DualBlock         ByronBlock ByronSpecBlock
-type DualByronProtocol = DualBlockProtocol ByronBlock ByronSpecBlock
-type DualByronBridge   = BridgeLedger      ByronBlock ByronSpecBlock
+type DualByronBlock  = DualBlock    ByronBlock ByronSpecBlock
+type DualByronBridge = BridgeLedger ByronBlock ByronSpecBlock
 
 {-------------------------------------------------------------------------------
   Map transaction Ids (part of the bridge)
@@ -214,7 +212,7 @@ forgeDualByronBlock
      , MonadRandom m
      , HasCallStack
      )
-  => NodeConfig DualByronProtocol
+  => TopLevelConfig DualByronBlock
   -> SlotNo                          -- ^ Current slot
   -> BlockNo                         -- ^ Current block number
   -> ExtLedgerState DualByronBlock   -- ^ Ledger
@@ -230,7 +228,7 @@ forgeDualByronBlock cfg curSlotNo curBlockNo extLedger txs isLeader = do
     -- block can be computed from the bridge information of all of the txs.
 
     main <- forgeByronBlock
-              (extNodeConfigP cfg)
+              (dualTopLevelConfigMain cfg)
               curSlotNo
               curBlockNo
               (dualExtLedgerStateMain extLedger)

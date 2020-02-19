@@ -50,11 +50,13 @@ import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      SlotNo, blockPoint, castHash, castPoint, pointHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..),
-                     IsEBB (..), headerHash, headerPoint)
+import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..),
+                     headerHash, headerPoint)
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..))
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.IOLike
@@ -81,12 +83,12 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 --
 -- See "## Initialization" in ChainDB.md.
 initialChainSelection
-  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
+  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
   => ImmDB m blk
   -> VolDB m blk
   -> LgrDB m blk
   -> Tracer m (TraceEvent blk)
-  -> NodeConfig (BlockProtocol blk)
+  -> TopLevelConfig blk
   -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
   -> SlotNo -- ^ Current slot
   -> m (ChainAndLedger blk)
@@ -171,7 +173,7 @@ addBlock
   :: forall m blk.
      ( IOLike m
      , HasHeader blk
-     , ProtocolLedgerView blk
+     , LedgerSupportsProtocol blk
      , HasCallStack
      )
   => ChainDbEnv m blk
@@ -299,7 +301,7 @@ chainSelectionForBlock
   :: forall m blk.
      ( IOLike m
      , HasHeader blk
-     , ProtocolLedgerView blk
+     , LedgerSupportsProtocol blk
      , HasCallStack
      )
   => ChainDbEnv m blk
@@ -370,7 +372,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     -- will first copy the blocks/headers to trim (from the end of the
     -- fragment) from the VolatileDB to the ImmutableDB.
   where
-    SecurityParam k = protocolSecurityParam cdbNodeConfig
+    SecurityParam k = configSecurityParam cdbNodeConfig
 
     p :: Point blk
     p = headerPoint hdr
@@ -651,12 +653,12 @@ getKnownHeaderThroughCache volDB hash = gets (Map.lookup hash) >>= \case
 chainSelection
   :: forall m blk.
      ( IOLike m
-     , ProtocolLedgerView blk
+     , LedgerSupportsProtocol blk
      , HasCallStack
      )
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
-  -> NodeConfig (BlockProtocol blk)
+  -> TopLevelConfig blk
   -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
   -> BlockCache blk
   -> ChainAndLedger blk              -- ^ The current chain and ledger
@@ -763,12 +765,12 @@ chainSelection lgrDB tracer cfg varInvalid blockCache
 validateCandidate
   :: forall m blk.
      ( IOLike m
-     , ProtocolLedgerView blk
+     , LedgerSupportsProtocol blk
      , HasCallStack
      )
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
-  -> NodeConfig (BlockProtocol blk)
+  -> TopLevelConfig blk
   -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
   -> BlockCache blk
   -> ChainAndLedger  blk                   -- ^ Current chain and ledger

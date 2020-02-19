@@ -9,6 +9,8 @@ import qualified Data.Map as Map
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
+import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
@@ -20,24 +22,30 @@ import           Ouroboros.Consensus.Protocol.LeaderSchedule
 protocolInfoPraosRule :: NumCoreNodes
                       -> CoreNodeId
                       -> PraosParams
+                      -> SlotLengths
                       -> LeaderSchedule
                       -> ProtocolInfo (SimplePraosRuleBlock SimpleMockCrypto)
 protocolInfoPraosRule numCoreNodes
                       nid
                       params
+                      slotLengths
                       schedule =
     ProtocolInfo {
-      pInfoConfig    = WLSNodeConfig
-        { lsNodeConfigSchedule = schedule
-        , lsNodeConfigP        = PraosNodeConfig
-            { praosParams       = params
-            , praosNodeId       = CoreId nid
-            , praosSignKeyVRF   = NeverUsedSignKeyVRF
-            , praosInitialEta   = 0
-            , praosInitialStake = genesisStakeDist addrDist
-            , praosVerKeys      = verKeys
+      pInfoConfig = TopLevelConfig {
+          configConsensus = WLSNodeConfig {
+              lsNodeConfigSchedule = schedule
+            , lsNodeConfigP        = PraosNodeConfig
+                { praosParams       = params
+                , praosNodeId       = CoreId nid
+                , praosSignKeyVRF   = NeverUsedSignKeyVRF
+                , praosInitialEta   = 0
+                , praosInitialStake = genesisStakeDist addrDist
+                , praosVerKeys      = verKeys
+                }
+            , lsNodeConfigNodeId   = nid
             }
-        , lsNodeConfigNodeId   = nid
+        , configLedger = SimpleLedgerConfig
+        , configBlock  = SimplePraosRuleBlockConfig slotLengths
         }
     , pInfoInitLedger = ExtLedgerState
         { ledgerState = genesisSimpleLedgerState addrDist

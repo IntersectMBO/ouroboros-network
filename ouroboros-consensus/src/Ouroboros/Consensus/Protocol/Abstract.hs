@@ -14,7 +14,7 @@
 
 module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocol
-    OuroborosTag(..)
+    ConsensusProtocol(..)
   , NodeConfig
   , SecurityParam(..)
     -- * State monad for Ouroboros state
@@ -44,14 +44,13 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point,
                      SlotNo (..))
 
-import           Ouroboros.Consensus.BlockchainTime.SlotLengths
 import           Ouroboros.Consensus.Util.Random
 
 -- | Static node configuration
 --
--- Every method in the 'OuroborosTag' class takes the node configuration as a
--- parameter, so having this as a data family rather than a type family resolves
--- most ambiguity.
+-- Every method in the 'ConsensusProtocol' class takes the node configuration as
+-- a parameter, so having this as a data family rather than a type family
+-- resolves most ambiguity.
 --
 -- Defined out of the class so that protocols can define this type without
 -- having to define the entire protocol at the same time (or indeed in the same
@@ -70,7 +69,7 @@ class ( Show (ChainState    p)
       , NoUnexpectedThunks (NodeState     p)
       , NoUnexpectedThunks (ValidationErr p)
       , Typeable p -- so that p can appear in exceptions
-      ) => OuroborosTag p where
+      ) => ConsensusProtocol p where
 
   -- | State of the node required to run the protocol
   type family NodeState p :: *
@@ -178,9 +177,6 @@ class ( Show (ChainState    p)
 
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: NodeConfig p -> SecurityParam
-
-  -- | The slot lengths (across all hard forks)
-  protocolSlotLengths :: NodeConfig p -> SlotLengths
 
   -- | We require that it's possible to reverse the chain state up to @k@
   -- blocks.

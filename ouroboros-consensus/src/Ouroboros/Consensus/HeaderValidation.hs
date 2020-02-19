@@ -60,6 +60,7 @@ import           Cardano.Slotting.Slot (WithOrigin (..))
 import           Ouroboros.Network.Block hiding (Tip (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 
@@ -160,9 +161,9 @@ headerStatePush (SecurityParam k) chainState newTip HeaderState{..} =
         Just (newAnchor, trimmed)
     trim _otherwise = Nothing
 
-deriving instance (SupportedBlock blk, HasAnnTip blk) => Show               (HeaderState blk)
-deriving instance (SupportedBlock blk, HasAnnTip blk) => NoUnexpectedThunks (HeaderState blk)
-deriving instance ( SupportedBlock blk
+deriving instance (BlockSupportsProtocol blk, HasAnnTip blk) => Show               (HeaderState blk)
+deriving instance (BlockSupportsProtocol blk, HasAnnTip blk) => NoUnexpectedThunks (HeaderState blk)
+deriving instance ( BlockSupportsProtocol blk
                   , HasAnnTip blk
                   , Eq (ChainState (BlockProtocol blk))
                   ) => Eq (HeaderState blk)
@@ -190,14 +191,14 @@ castHeaderState HeaderState{..} = HeaderState{
     castSeq f = Seq.fromList . map f . toList
 
 rewindHeaderState :: forall blk.
-                     ( SupportedBlock blk
+                     ( BlockSupportsProtocol blk
                      , Serialise (HeaderHash blk)
                      )
-                  => NodeConfig (BlockProtocol blk)
+                  => TopLevelConfig blk
                   -> Point blk
                   -> HeaderState blk -> Maybe (HeaderState blk)
 rewindHeaderState cfg p HeaderState{..} = do
-    chainState' <- rewindChainState cfg headerStateChain p
+    chainState' <- rewindChainState (configConsensus cfg) headerStateChain p
     return $ HeaderState {
         headerStateChain  = chainState'
       , headerStateTips   = Seq.dropWhileR rolledBack headerStateTips
@@ -234,9 +235,9 @@ data HeaderEnvelopeError blk =
   | OtherEnvelopeError !Text
   deriving (Generic)
 
-deriving instance SupportedBlock blk => Eq                 (HeaderEnvelopeError blk)
-deriving instance SupportedBlock blk => Show               (HeaderEnvelopeError blk)
-deriving instance SupportedBlock blk => NoUnexpectedThunks (HeaderEnvelopeError blk)
+deriving instance BlockSupportsProtocol blk => Eq                 (HeaderEnvelopeError blk)
+deriving instance BlockSupportsProtocol blk => Show               (HeaderEnvelopeError blk)
+deriving instance BlockSupportsProtocol blk => NoUnexpectedThunks (HeaderEnvelopeError blk)
 
 castHeaderEnvelopeError :: HeaderHash blk ~ HeaderHash blk'
                         => HeaderEnvelopeError blk -> HeaderEnvelopeError blk'
@@ -251,7 +252,7 @@ castHeaderEnvelopeError = \case
 
 class HasAnnTip blk => ValidateEnvelope blk where
   -- | Validate the header envelope
-  validateEnvelope :: NodeConfig (BlockProtocol blk)
+  validateEnvelope :: TopLevelConfig blk
                    -> WithOrigin (AnnTip blk)
                    -> Header blk
                    -> Except (HeaderEnvelopeError blk) ()
@@ -268,7 +269,7 @@ class HasAnnTip blk => ValidateEnvelope blk where
   minimumPossibleSlotNo _ = SlotNo 0
 
   default validateEnvelope :: HasHeader (Header blk)
-                           => NodeConfig (BlockProtocol blk)
+                           => TopLevelConfig blk
                            -> WithOrigin (AnnTip blk)
                            -> Header blk
                            -> Except (HeaderEnvelopeError blk) ()
@@ -315,9 +316,9 @@ data HeaderError blk =
   | HeaderEnvelopeError (HeaderEnvelopeError blk)
   deriving (Generic)
 
-deriving instance SupportedBlock blk => Eq                 (HeaderError blk)
-deriving instance SupportedBlock blk => Show               (HeaderError blk)
-deriving instance SupportedBlock blk => NoUnexpectedThunks (HeaderError blk)
+deriving instance BlockSupportsProtocol blk => Eq                 (HeaderError blk)
+deriving instance BlockSupportsProtocol blk => Show               (HeaderError blk)
+deriving instance BlockSupportsProtocol blk => NoUnexpectedThunks (HeaderError blk)
 
 castHeaderError :: (   ValidationErr (BlockProtocol blk )
                      ~ ValidationErr (BlockProtocol blk')
@@ -364,8 +365,8 @@ castHeaderError (HeaderEnvelopeError e) = HeaderEnvelopeError $
 -- /If/ a particular ledger wants to verify additional fields in the header,
 -- it will get the chance to do so in 'applyLedgerBlock', which is passed the
 -- entire block (not just the block body).
-validateHeader :: (SupportedBlock blk, ValidateEnvelope blk)
-               => NodeConfig (BlockProtocol blk)
+validateHeader :: (BlockSupportsProtocol blk, ValidateEnvelope blk)
+               => TopLevelConfig blk
                -> LedgerView (BlockProtocol blk)
                -> Header blk
                -> HeaderState blk
@@ -375,12 +376,12 @@ validateHeader cfg ledgerView hdr st = do
       validateEnvelope cfg (headerStateTip st) hdr
     chainState' <- withExcept HeaderProtocolError $
                      applyChainState
-                       cfg
+                       (configConsensus cfg)
                        ledgerView
                        (validateView cfg hdr)
                        (headerStateChain st)
     return $ headerStatePush
-               (protocolSecurityParam cfg)
+               (configSecurityParam cfg)
                chainState'
                (getAnnTip hdr)
                st

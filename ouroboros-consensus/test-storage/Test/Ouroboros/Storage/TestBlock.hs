@@ -47,9 +47,11 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -152,6 +154,10 @@ instance HasHeader (Header TestBlock) where
   blockNo        =            thBlockNo  . unTestHeader
   blockInvariant = const True
 
+data instance BlockConfig TestBlock = TestBlockConfig {
+      testBlockSlotLengths :: SlotLengths
+    }
+  deriving (Generic, NoUnexpectedThunks)
 
 instance Condense TestBlock where
   condense = show -- TODO
@@ -294,10 +300,11 @@ type instance Signed (Header TestBlock) = ()
 instance SignedHeader (Header TestBlock) where
   headerSigned _ = ()
 
-instance SupportedBlock TestBlock where
-  validateView BftNodeConfig{ bftParams = BftParams{..} } =
+instance BlockSupportsProtocol TestBlock where
+  validateView TopLevelConfig{..} =
       bftValidateView bftFields
     where
+      BftNodeConfig{ bftParams = BftParams{..} } = configConsensus
       NumCoreNodes numCore = bftNumNodes
 
       bftFields :: Header TestBlock -> BftFields BftMockCrypto ()
@@ -331,7 +338,10 @@ instance UpdateLedger TestBlock where
     deriving anyclass (Serialise, NoUnexpectedThunks)
 
   data LedgerConfig TestBlock = LedgerConfig
-  type LedgerError  TestBlock = TestBlockError
+    deriving stock    (Generic)
+    deriving anyclass (NoUnexpectedThunks)
+
+  type LedgerError TestBlock = TestBlockError
 
   applyChainTick _ = TickedLedgerState
 
@@ -354,10 +364,13 @@ instance HasAnnTip TestBlock where
 instance ValidateEnvelope TestBlock where
   -- Use defaults
 
-instance ProtocolLedgerView TestBlock where
-  ledgerConfigView _ = LedgerConfig
-  protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Right ()
+instance LedgerSupportsProtocol TestBlock where
+  protocolSlotLengths =
+      testBlockSlotLengths . configBlock
+  protocolLedgerView _ _ =
+      ()
+  anachronisticProtocolLedgerView _ _ _ =
+      Right ()
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint GenesisHash
@@ -373,8 +386,6 @@ singleNodeTestConfig :: NodeConfig (Bft BftMockCrypto)
 singleNodeTestConfig = BftNodeConfig {
       bftParams   = BftParams { bftSecurityParam = k
                               , bftNumNodes      = NumCoreNodes 1
-                              , bftSlotLengths   = singletonSlotLengths $
-                                                     slotLengthFromSec 20
                               }
     , bftNodeId   = CoreId (CoreNodeId 0)
     , bftSignKey  = SignKeyMockDSIGN 0

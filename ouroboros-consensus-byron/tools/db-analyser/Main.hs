@@ -27,11 +27,10 @@ import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      genesisPoint)
 
 import           Ouroboros.Consensus.BlockchainTime.Mock (fixedBlockchainTime)
-
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
@@ -45,8 +44,7 @@ import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
 import           Ouroboros.Consensus.Storage.EpochInfo
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmDB
 
-import           Ouroboros.Consensus.Byron.Ledger (ByronBlock,
-                     ByronConsensusProtocol, ByronHash)
+import           Ouroboros.Consensus.Byron.Ledger (ByronBlock, ByronHash)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import           Ouroboros.Consensus.Byron.Node
 
@@ -240,7 +238,7 @@ openGenesis configFile onMainNet = do
   PBFT NodeConfig
 -------------------------------------------------------------------------------}
 
-mkPBftNodeConfig :: Genesis.Config -> NodeConfig ByronConsensusProtocol
+mkPBftNodeConfig :: Genesis.Config -> TopLevelConfig ByronBlock
 mkPBftNodeConfig genesisConfig = pInfoConfig $
     protocolInfoByron
       genesisConfig
@@ -253,7 +251,9 @@ mkPBftNodeConfig genesisConfig = pInfoConfig $
   Interface with the ImmDB
 -------------------------------------------------------------------------------}
 
-withImmDB :: FilePath -> NodeConfig ByronConsensusProtocol -> EpochInfo IO
+withImmDB :: FilePath
+          -> TopLevelConfig ByronBlock
+          -> EpochInfo IO
           -> ResourceRegistry IO
           -> (ImmDB IO ByronBlock -> IO a)
           -> IO a

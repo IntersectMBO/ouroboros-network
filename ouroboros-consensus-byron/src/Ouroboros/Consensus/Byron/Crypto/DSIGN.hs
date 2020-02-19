@@ -24,9 +24,9 @@ module Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Cardano.Binary
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.UTxO as CC.UTxO
-import           Cardano.Crypto (SignTag (..), Signature, SigningKey,
-                     VerificationKey, keyGen, signRaw, toVerification,
-                     verifySignatureRaw)
+import           Cardano.Crypto (ProtocolMagicId, SignTag (..), Signature,
+                     SigningKey, VerificationKey, keyGen, signRaw,
+                     toVerification, verifySignatureRaw)
 import           Cardano.Crypto.DSIGN.Class
 import qualified Cardano.Crypto.Signing as Crypto
 import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
@@ -37,34 +37,31 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Util.Condense
 
-import           Ouroboros.Consensus.Byron.Ledger.Config
-
 class (HasSignTag a, Decoded a) => ByronSignable a
 instance (HasSignTag a, Decoded a) => ByronSignable a
 
 class HasSignTag a where
-  signTag :: ByronConfig -> VerKeyDSIGN ByronDSIGN -> proxy a -> SignTag
+  signTag :: VerKeyDSIGN ByronDSIGN -> proxy a -> SignTag
 
 signTagFor :: forall a. HasSignTag a
-           => ByronConfig -> VerKeyDSIGN ByronDSIGN -> a -> SignTag
-signTagFor cfg genKey _ = signTag cfg genKey (Proxy @a)
+           => VerKeyDSIGN ByronDSIGN -> a -> SignTag
+signTagFor genKey _ = signTag genKey (Proxy @a)
 
 instance HasSignTag CC.UTxO.TxSigData where
-  signTag _ _ = const SignTx
+  signTag _ = const SignTx
 
 instance HasSignTag (Annotated CC.Block.ToSign ByteString) where
-  signTag _ (VerKeyByronDSIGN vk) = const $ SignBlock vk
+  signTag (VerKeyByronDSIGN vk) = const $ SignBlock vk
 
 data ByronDSIGN
 
 instance DSIGNAlgorithm ByronDSIGN where
     -- Context required for Byron digital signatures
     --
-    -- We require the ByronConfig (from which we just extract the protocol
-    -- magic) as well as the verification key of the genesis stakeholder of
-    -- which the signing node is a delegate, which is required for signing
-    -- blocks.
-    type ContextDSIGN ByronDSIGN = (ByronConfig, VerKeyDSIGN ByronDSIGN)
+    -- We require the the protocol magic as well as the verification key of the
+    -- genesis stakeholder of which the signing node is a delegate, which is
+    -- required for signing blocks.
+    type ContextDSIGN ByronDSIGN = (ProtocolMagicId, VerKeyDSIGN ByronDSIGN)
 
     newtype VerKeyDSIGN ByronDSIGN = VerKeyByronDSIGN VerificationKey
         deriving (Show, Eq, Generic)
@@ -93,13 +90,13 @@ instance DSIGNAlgorithm ByronDSIGN where
 
     deriveVerKeyDSIGN (SignKeyByronDSIGN sk) = VerKeyByronDSIGN $ toVerification sk
 
-    signDSIGN (cfg, genKey) a (SignKeyByronDSIGN sk) = return
+    signDSIGN (magic, genKey) a (SignKeyByronDSIGN sk) = return
         . SigByronDSIGN
         . coerce
-        $ signRaw (pbftProtocolMagicId cfg) (Just $ signTagFor cfg genKey a) sk (recoverBytes a)
+        $ signRaw magic (Just $ signTagFor genKey a) sk (recoverBytes a)
 
-    verifyDSIGN (cfg, genKey) (VerKeyByronDSIGN vk) a (SigByronDSIGN sig) =
-        if verifySignatureRaw vk (Crypto.signTag (pbftProtocolMagicId cfg) (signTagFor cfg genKey a) <> recoverBytes a) $ coerce sig
+    verifyDSIGN (magic, genKey) (VerKeyByronDSIGN vk) a (SigByronDSIGN sig) =
+        if verifySignatureRaw vk (Crypto.signTag magic (signTagFor genKey a) <> recoverBytes a) $ coerce sig
           then Right ()
           else Left "Verification failed"
 

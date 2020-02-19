@@ -16,8 +16,8 @@ import qualified Cardano.Chain.Slotting as CC
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Protocol.ExtConfig
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Config
@@ -81,4 +81,4 @@ instance ValidateEnvelope ByronBlock where
       canBeEBB (SlotNo s) = s `mod` epochSlots == 0
 
       epochSlots :: Word64
-      epochSlots = CC.unEpochSlots $ pbftEpochSlots $ extNodeConfig cfg
+      epochSlots = CC.unEpochSlots $ byronEpochSlots (configBlock cfg)

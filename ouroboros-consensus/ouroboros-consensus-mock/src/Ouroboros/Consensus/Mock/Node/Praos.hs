@@ -12,28 +12,34 @@ import qualified Data.Map as Map
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
+import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
-import           Ouroboros.Consensus.Protocol.ExtConfig
 
 protocolInfoPraos :: NumCoreNodes
                   -> CoreNodeId
                   -> PraosParams
+                  -> SlotLengths
                   -> ProtocolInfo (SimplePraosBlock SimpleMockCrypto
                                                     PraosMockCrypto)
-protocolInfoPraos numCoreNodes nid params =
+protocolInfoPraos numCoreNodes nid params slotLengths =
     ProtocolInfo {
-        pInfoConfig = ExtNodeConfig addrDist PraosNodeConfig {
-            praosParams       = params
-          , praosNodeId       = CoreId nid
-          , praosSignKeyVRF   = signKeyVRF nid
-          , praosInitialEta   = 0
-          , praosInitialStake = genesisStakeDist addrDist
-          , praosVerKeys      = verKeys
+        pInfoConfig = TopLevelConfig {
+            configConsensus = PraosNodeConfig {
+                praosParams       = params
+              , praosNodeId       = CoreId nid
+              , praosSignKeyVRF   = signKeyVRF nid
+              , praosInitialEta   = 0
+              , praosInitialStake = genesisStakeDist addrDist
+              , praosVerKeys      = verKeys
+              }
+          , configLedger = SimpleLedgerConfig
+          , configBlock  = SimplePraosBlockConfig addrDist slotLengths
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = genesisSimpleLedgerState addrDist

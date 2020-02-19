@@ -23,7 +23,6 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftIsLeaderOrNot(..)
   , pbftWindowSize
     -- * Forging
-  , ConstructContextDSIGN(..)
   , forgePBftFields
     -- * Classes
   , PBftCrypto(..)
@@ -59,7 +58,6 @@ import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -147,23 +145,13 @@ type PBftSelectView = (BlockNo, IsEBB)
   Block forging
 -------------------------------------------------------------------------------}
 
-class ConstructContextDSIGN cfg c where
-  constructContextDSIGN :: proxy c
-                        -> cfg
-                        -> VerKeyDSIGN (PBftDSIGN c)
-                        -> ContextDSIGN (PBftDSIGN c)
-
-instance ConstructContextDSIGN ext PBftMockCrypto where
-  constructContextDSIGN _p _cfg _genKey = ()
-
 forgePBftFields :: forall m c toSign. (
                        MonadRandom m
                      , PBftCrypto c
                      , Signable (PBftDSIGN c) toSign
                      )
                 => (VerKeyDSIGN (PBftDSIGN c) -> ContextDSIGN (PBftDSIGN c))
-                -- ^ Construct DSIGN context
-                -- See 'constructContextDSIGN' for a suitable argument.
+                -- ^ Construct DSIGN context given 'pbftGenKey'
                 -> IsLeader (PBft c)
                 -> toSign
                 -> m (PBftFields c toSign)
@@ -228,9 +216,6 @@ data PBftParams = PBftParams {
       -- but this implementation follows the specification by fixing that
       -- parameter to the ambient security parameter @k@.
     , pbftSignatureThreshold :: !Double
-
-      -- | Slot length
-    , pbftSlotLength         :: !SlotLength
     }
   deriving (Generic, NoUnexpectedThunks, Show)
 
@@ -259,7 +244,7 @@ data instance NodeConfig (PBft c) = PBftNodeConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
-instance PBftCrypto c => OuroborosTag (PBft c) where
+instance PBftCrypto c => ConsensusProtocol (PBft c) where
   type ValidationErr (PBft c) = PBftValidationErr c
   type ValidateView  (PBft c) = PBftValidateView  c
   type SelectView    (PBft c) = PBftSelectView
@@ -273,8 +258,7 @@ instance PBftCrypto c => OuroborosTag (PBft c) where
   type IsLeader       (PBft c) = PBftIsLeader   c
   type ChainState     (PBft c) = PBftChainState c
 
-  protocolSecurityParam =                        pbftSecurityParam . pbftParams
-  protocolSlotLengths   = singletonSlotLengths . pbftSlotLength    . pbftParams
+  protocolSecurityParam = pbftSecurityParam . pbftParams
 
   checkIsLeader PBftNodeConfig{pbftIsLeader, pbftParams} (SlotNo n) _l _cs =
       case pbftIsLeader of

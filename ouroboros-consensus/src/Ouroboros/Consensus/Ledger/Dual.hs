@@ -21,14 +21,15 @@ module Ouroboros.Consensus.Ledger.Dual (
     -- * Pair types
   , DualBlock(..)
   , DualHeader
-  , DualBlockProtocol
   , DualLedgerError(..)
   , DualGenTxErr(..)
     -- * Lifted functions
   , dualExtLedgerStateMain
   , dualExtValidationErrorMain
+  , dualTopLevelConfigMain
     -- * Type class family instances
   , Header(..)
+  , BlockConfig(..)
   , LedgerState(..)
   , LedgerConfig(..)
   , GenTx(..)
@@ -66,11 +67,12 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Consensus.Storage.Common
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -124,6 +126,16 @@ type DualHeader m a = Header (DualBlock m a)
 deriving instance Show (Header m) => Show (DualHeader m a)
 
 {-------------------------------------------------------------------------------
+  Config
+-------------------------------------------------------------------------------}
+
+data instance BlockConfig (DualBlock m a) = DualBlockConfig {
+      dualBlockConfigMain :: BlockConfig m
+    , dualBlockConfigAux  :: BlockConfig a
+    }
+  deriving NoUnexpectedThunks via AllowThunk (BlockConfig (DualBlock m a))
+
+{-------------------------------------------------------------------------------
   Bridge two ledgers
 -------------------------------------------------------------------------------}
 
@@ -133,13 +145,13 @@ class (
         HasHeader          m
       , GetHeader          m
       , HasHeader (Header  m)
-      , ProtocolLedgerView m
+      , LedgerSupportsProtocol m
       , ApplyTx            m
       , HasTxId (GenTx     m)
       , Show (ApplyTxErr   m)
 
         -- Requirements on the auxiliary block
-        -- No 'ProtocolLedgerView' for @a@!
+        -- No 'LedgerSupportsProtocol' for @a@!
       , Typeable         a
       , UpdateLedger     a
       , ApplyTx          a
@@ -196,12 +208,18 @@ instance Bridge m a => HasHeader (DualHeader m a) where
   Protocol
 -------------------------------------------------------------------------------}
 
-type DualBlockProtocol m a = ExtConfig (BlockProtocol m) (LedgerConfig a)
-type instance BlockProtocol (DualBlock m a) = DualBlockProtocol m a
+type instance BlockProtocol (DualBlock m a) = BlockProtocol m
 
-instance Bridge m a => SupportedBlock (DualBlock m a) where
-  validateView cfg = validateView (extNodeConfigP cfg) . dualHeaderMain
-  selectView   cfg = selectView   (extNodeConfigP cfg) . dualHeaderMain
+dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
+dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
+      configConsensus =                      configConsensus
+    , configLedger    = dualLedgerConfigMain configLedger
+    , configBlock     = dualBlockConfigMain  configBlock
+    }
+
+instance Bridge m a => BlockSupportsProtocol (DualBlock m a) where
+  validateView cfg = validateView (dualTopLevelConfigMain cfg) . dualHeaderMain
+  selectView   cfg = selectView   (dualTopLevelConfigMain cfg) . dualHeaderMain
 
 {-------------------------------------------------------------------------------
   Ledger errors
@@ -246,6 +264,7 @@ instance Bridge m a => UpdateLedger (DualBlock m a) where
         dualLedgerConfigMain :: LedgerConfig m
       , dualLedgerConfigAux  :: LedgerConfig a
       }
+    deriving NoUnexpectedThunks via AllowThunk (LedgerConfig (DualBlock m a))
 
   type LedgerError (DualBlock m a) = DualLedgerError m a
 
@@ -341,10 +360,10 @@ dualExtValidationErrorMain = \case
     ExtValidationErrorHeader e -> ExtValidationErrorHeader (castHeaderError     e)
 
 {-------------------------------------------------------------------------------
-  ProtocolLedgerView
+  LedgerSupportsProtocol
 
   These definitions are asymmetric because the auxiliary block is not involved
-  in the consensus protocol, and has no 'ProtocolLedgerView' instance.
+  in the consensus protocol, and has no 'LedgerSupportsProtocol' instance.
 -------------------------------------------------------------------------------}
 
 instance Bridge m a => HasAnnTip (DualBlock m a) where
@@ -354,28 +373,26 @@ instance Bridge m a => HasAnnTip (DualBlock m a) where
 instance Bridge m a => ValidateEnvelope (DualBlock m a) where
   validateEnvelope cfg t =
         withExcept castHeaderEnvelopeError
-      . validateEnvelope (extNodeConfigP cfg) (castAnnTip <$> t)
+      . validateEnvelope (dualTopLevelConfigMain cfg) (castAnnTip <$> t)
       . dualHeaderMain
 
   firstBlockNo          _ = firstBlockNo          (Proxy @m)
   minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @m)
 
-instance Bridge m a => ProtocolLedgerView (DualBlock m a) where
-  ledgerConfigView cfg = DualLedgerConfig {
-        dualLedgerConfigMain = ledgerConfigView $ extNodeConfigP cfg
-      , dualLedgerConfigAux  = extNodeConfig cfg
-      }
+instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
+  protocolSlotLengths cfg =
+      protocolSlotLengths
+        (dualTopLevelConfigMain cfg)
 
   protocolLedgerView cfg state =
       protocolLedgerView
-        (extNodeConfigP      cfg)
-        (dualLedgerStateMain state)
+        (dualTopLevelConfigMain cfg)
+        (dualLedgerStateMain    state)
 
   anachronisticProtocolLedgerView cfg state =
       anachronisticProtocolLedgerView
-        (extNodeConfigP      cfg)
-        (dualLedgerStateMain state)
-
+        (dualTopLevelConfigMain cfg)
+        (dualLedgerStateMain    state)
 
 {-------------------------------------------------------------------------------
   Querying the ledger

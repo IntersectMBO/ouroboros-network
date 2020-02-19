@@ -35,14 +35,14 @@ import qualified Ledger.UTxO as Spec
 
 import qualified Test.Cardano.Chain.Elaboration.UTxO as Spec.Test
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock (NumSlots (..))
-import           Ouroboros.Consensus.BlockchainTime.SlotLengths
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.PBFT
 
@@ -117,18 +117,11 @@ setupTestOutput SetupDualPBft{..} =
       }
 
 -- | Override 'TestConfig'
---
--- This is intended to update the rest of the setup after shrinking the
--- 'TestConfig'. Right now this just updates the PBFT slot length.
 setupOverrideConfig :: TestConfig -> SetupDualPBft -> SetupDualPBft
 setupOverrideConfig newConfig setup = setup {
       setupConfig = newConfig
-    , setupParams = (setupParams setup) {
-                        pbftSlotLength = slotLength
-                      }
+    , setupParams = setupParams setup
     }
-  where
-    SlotLengths slotLength Nothing = slotLengths newConfig
 
 setupExpectedRejections :: SetupDualPBft
                         -> BlockRejection DualByronBlock -> Bool
@@ -237,7 +230,7 @@ genDualPBFTTestConfig numSlots params = do
 
     return TestConfig {
           nodeRestarts = noRestarts
-        , slotLengths  = singletonSlotLengths (pbftSlotLength params)
+        , slotLengths  = singletonSlotLengths (slotLengthFromSec 20)
         , numCoreNodes = pbftNumNodes params
         , ..
         }
@@ -262,7 +255,7 @@ instance TxGen DualByronBlock where
 
   testGenTxs _numCoreNodes curSlotNo cfg = \st -> do
       n <- generateBetween 0 20
-      go [] n $ applyChainTick (ledgerConfigView cfg) curSlotNo st
+      go [] n $ applyChainTick (configLedger cfg) curSlotNo st
     where
       -- Attempt to produce @n@ transactions
       -- Stops when the transaction generator cannot produce more txs
@@ -278,7 +271,7 @@ instance TxGen DualByronBlock where
             Nothing -> return (reverse acc)
             Just tx ->
               case runExcept $ applyTx
-                                 (ledgerConfigView cfg)
+                                 (configLedger cfg)
                                  tx
                                  st of
                 Right st' -> go (tx:acc) (n - 1) st'
@@ -290,7 +283,7 @@ instance TxGen DualByronBlock where
 -- certificates and update proposals/votes is out of the scope of this test,
 -- for now. Extending the scope will require integration with the restart/rekey
 -- infrastructure of the RealPBFT tests.
-genTx :: NodeConfig DualByronProtocol
+genTx :: TopLevelConfig DualByronBlock
       -> LedgerState DualByronBlock
       -> Hedgehog.Gen (GenTx DualByronBlock)
 genTx cfg st = HH.choice [
@@ -310,7 +303,7 @@ genTx cfg st = HH.choice [
     cfg' :: ByronSpecGenesis
     st'  :: Spec.State Spec.CHAIN
 
-    cfg' = unByronSpecLedgerConfig $ extNodeConfig cfg
+    cfg' = unByronSpecLedgerConfig $ dualLedgerConfigAux (configLedger cfg)
     st'  = byronSpecLedgerState    $ dualLedgerStateAux st
 
     bridge :: ByronSpecBridge

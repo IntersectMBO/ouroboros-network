@@ -32,6 +32,9 @@ library
 
   exposed-modules:
                        Ouroboros.Consensus.Block
+                       Ouroboros.Consensus.Block.Abstract
+                       Ouroboros.Consensus.Block.EBB
+                       Ouroboros.Consensus.Block.SupportsProtocol
                        Ouroboros.Consensus.BlockFetchServer
                        Ouroboros.Consensus.BlockchainTime
                        Ouroboros.Consensus.BlockchainTime.API
@@ -41,10 +44,12 @@ library
                        Ouroboros.Consensus.BlockchainTime.WallClock
                        Ouroboros.Consensus.ChainSyncClient
                        Ouroboros.Consensus.ChainSyncServer
+                       Ouroboros.Consensus.Config
                        Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Dual
                        Ouroboros.Consensus.Ledger.Extended
+                       Ouroboros.Consensus.Ledger.SupportsProtocol
                        Ouroboros.Consensus.LocalStateQueryServer
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
@@ -64,7 +69,6 @@ library
                        Ouroboros.Consensus.NodeNetwork
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
-                       Ouroboros.Consensus.Protocol.ExtConfig
                        Ouroboros.Consensus.Protocol.LeaderSchedule
                        Ouroboros.Consensus.Protocol.MockChainSel
                        Ouroboros.Consensus.Protocol.ModChainSel

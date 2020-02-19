@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -14,6 +16,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PraosRule (
   , SimplePraosRuleExt(..)
   , SimplePraosRuleHeader
   , PraosCryptoUnused
+  , BlockConfig(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -25,7 +28,9 @@ import           Cardano.Crypto.VRF
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
@@ -56,7 +61,15 @@ type SimplePraosRuleHeader c = SimpleHeader c SimplePraosRuleExt
 newtype SimplePraosRuleExt = SimplePraosRuleExt {
       simplePraosRuleExt :: CoreNodeId
     }
-  deriving (Generic, Condense, Show, Eq, NoUnexpectedThunks)
+  deriving stock    (Generic, Show, Eq)
+  deriving newtype  (Condense)
+  deriving anyclass (NoUnexpectedThunks)
+
+data instance BlockConfig (SimplePraosRuleBlock c) = SimplePraosRuleBlockConfig {
+      -- | Slot lengths
+      simplePraosRuleSlotLengths :: SlotLengths
+    }
+  deriving (Generic, NoUnexpectedThunks)
 
 type instance BlockProtocol (SimplePraosRuleBlock c) =
    WithLeaderSchedule (Praos PraosCryptoUnused)
@@ -69,15 +82,9 @@ _simplePraosRuleHeader = simpleHeader
   Evidence that 'SimpleBlock' can support Praos with an explicit leader schedule
 -------------------------------------------------------------------------------}
 
-instance RunMockProtocol (WithLeaderSchedule p) where
-  mockProtocolMagicId  = const constructMockProtocolMagicId
-  mockEncodeChainState = const encode
-  mockDecodeChainState = const decode
-
-instance SimpleCrypto c
-      => RunMockBlock (WithLeaderSchedule p) c SimplePraosRuleExt where
+instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
   forgeExt cfg () SimpleBlock{..} = do
-      let ext = SimplePraosRuleExt $ lsNodeConfigNodeId cfg
+      let ext = SimplePraosRuleExt $ lsNodeConfigNodeId (configConsensus cfg)
       return SimpleBlock {
           simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
         , simpleBody   = simpleBody
@@ -85,15 +92,22 @@ instance SimpleCrypto c
     where
       SimpleHeader{..} = simpleHeader
 
+  mockProtocolMagicId  = const constructMockProtocolMagicId
+  mockEncodeChainState = const encode
+  mockDecodeChainState = const decode
+
 instance SimpleCrypto c
-      => SupportedBlock (SimpleBlock c SimplePraosRuleExt) where
+      => BlockSupportsProtocol (SimpleBlock c SimplePraosRuleExt) where
   validateView _ _ = ()
 
 instance SimpleCrypto c
-      => ProtocolLedgerView (SimplePraosRuleBlock c) where
-  ledgerConfigView _ = SimpleLedgerConfig
-  protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Right ()
+      => LedgerSupportsProtocol (SimplePraosRuleBlock c) where
+  protocolSlotLengths =
+      simplePraosRuleSlotLengths . configBlock
+  protocolLedgerView _ _ =
+      ()
+  anachronisticProtocolLedgerView _ _ _ =
+      Right ()
 
 {-------------------------------------------------------------------------------
   We don't need crypto for this protocol

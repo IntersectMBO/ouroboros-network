@@ -40,12 +40,12 @@ import           Ouroboros.Network.Point (WithOrigin (At))
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block (BlockProtocol, Header)
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract (ChainState,
                      SecurityParam (..))
-import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
 
@@ -331,7 +331,7 @@ prop_detectCorruption_RegularBlock (RegularBlock blk) =
       (verifyBlockIntegrity testCfg)
       blk
 
-testCfg :: NodeConfig ByronConsensusProtocol
+testCfg :: TopLevelConfig ByronBlock
 testCfg = pInfoConfig $ protocolInfoByron
     CC.dummyConfig
     (Just (PBftSignatureThreshold 0.5))

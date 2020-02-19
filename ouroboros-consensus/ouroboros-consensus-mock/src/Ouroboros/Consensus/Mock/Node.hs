@@ -16,13 +16,13 @@ import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..),
-                     protocolSecurityParam)
+import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
 import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
 
@@ -33,23 +33,21 @@ import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
 instance HasNetworkProtocolVersion (SimpleBlock SimpleMockCrypto ext) where
   -- Use defaults
 
-instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
+instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
            -- The below constraint seems redundant but is not! When removed,
            -- some of the tests loop, but only when compiled with @-O2@ ; with
            -- @-O0@ it is perfectly fine. ghc bug?!
-         , SupportedBlock (SimpleBlock SimpleMockCrypto ext)
+         , BlockSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
          , Typeable ext
          , Serialise ext
-         , RunMockBlock (BlockProtocol (SimpleBlock SimpleMockCrypto ext))
-                        SimpleMockCrypto
-                        ext
+         , RunMockBlock SimpleMockCrypto ext
          ) => RunNode (SimpleBlock SimpleMockCrypto ext) where
   nodeForgeBlock            = forgeSimple
   nodeBlockMatchesHeader    = matchesSimpleHeader
   nodeBlockFetchSize        = fromIntegral . simpleBlockSize . simpleHeaderStd
   nodeIsEBB                 = const Nothing
   nodeEpochSize             = \_ cfg _ -> return $
-    EpochSize $ 10 * maxRollbacks (protocolSecurityParam cfg)
+    EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
   nodeStartTime             = \_ _ -> SystemStart dummyDate
     where
       --  This doesn't matter much

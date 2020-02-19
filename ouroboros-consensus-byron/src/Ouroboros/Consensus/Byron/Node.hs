@@ -12,7 +12,6 @@
 
 module Ouroboros.Consensus.Byron.Node (
     protocolInfoByron
-  , ByronConfig
   , mkByronConfig
   , PBftSignatureThreshold(..)
   , defaultPBftSignatureThreshold
@@ -34,8 +33,6 @@ import           Data.Coerce (coerce)
 import           Data.Maybe
 import qualified Data.Set as Set
 
-import           Cardano.Prelude (Natural)
-
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Byron.API as API
 import           Cardano.Chain.Common (BlockCount (..))
@@ -51,6 +48,7 @@ import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.Exit (ExitReason (..))
@@ -58,7 +56,6 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
@@ -137,11 +134,15 @@ protocolInfoByron :: Genesis.Config
                   -> ProtocolInfo ByronBlock
 protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     ProtocolInfo {
-        pInfoConfig = ExtNodeConfig byronConfig PBftNodeConfig {
-            pbftParams    = byronPBftParams genesisConfig mSigThresh
-          , pbftIsLeader  = case mLeader of
-                              Nothing   -> PBftIsNotALeader
-                              Just cred -> PBftIsALeader $ pbftLeaderOrNot cred
+        pInfoConfig = TopLevelConfig {
+            configConsensus = PBftNodeConfig {
+                pbftParams    = byronPBftParams genesisConfig mSigThresh
+              , pbftIsLeader  = case mLeader of
+                                  Nothing   -> PBftIsNotALeader
+                                  Just cred -> PBftIsALeader $ pbftLeaderOrNot cred
+              }
+          , configLedger = ByronLedgerConfig genesisConfig
+          , configBlock  = byronConfig
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = initByronLedgerState genesisConfig Nothing
@@ -160,11 +161,6 @@ byronPBftParams cfg threshold = PBftParams {
                              $ genesisKeyHashes
     , pbftSignatureThreshold = unSignatureThreshold
                              $ fromMaybe defaultPBftSignatureThreshold threshold
-    , pbftSlotLength         = slotLengthFromMillisec
-                             . (fromIntegral :: Natural -> Integer)
-                             . Update.ppSlotDuration
-                             . Genesis.configProtocolParameters
-                             $ cfg
     }
   where
     Genesis.Config {
@@ -185,15 +181,11 @@ pbftLeaderOrNot (PBftLeaderCredentials sk cert nid) = PBftIsLeader {
 mkByronConfig :: Genesis.Config
               -> Update.ProtocolVersion
               -> Update.SoftwareVersion
-              -> ByronConfig
+              -> BlockConfig ByronBlock
 mkByronConfig genesisConfig pVer sVer = ByronConfig {
-      pbftGenesisConfig   = genesisConfig
-    , pbftProtocolVersion = pVer
-    , pbftSoftwareVersion = sVer
-      -- TODO: Remove these 3 fields
-    , pbftProtocolMagic   = Genesis.configProtocolMagic genesisConfig
-    , pbftGenesisHash     = Genesis.configGenesisHash genesisConfig
-    , pbftEpochSlots      = Genesis.configEpochSlots genesisConfig
+      byronGenesisConfig   = genesisConfig
+    , byronProtocolVersion = pVer
+    , byronSoftwareVersion = sVer
     }
 
 {-------------------------------------------------------------------------------
@@ -278,8 +270,7 @@ instance RunNode ByronBlock where
   nodeDecodeHeaderHash      = const decodeByronHeaderHash
   nodeDecodeLedgerState     = const decodeByronLedgerState
   nodeDecodeChainState      = \_proxy cfg ->
-                                 let k = pbftSecurityParam $
-                                           pbftParams (extNodeConfigP cfg)
+                                 let k = configSecurityParam cfg
                                  in decodeByronChainState k
   nodeDecodeApplyTxError    = const decodeByronApplyTxError
   nodeDecodeTipInfo         = const decode
@@ -287,8 +278,12 @@ instance RunNode ByronBlock where
   nodeDecodeResult          = decodeByronResult
 
 
-extractGenesisData :: NodeConfig ByronConsensusProtocol -> Genesis.GenesisData
-extractGenesisData = Genesis.configGenesisData . getGenesisConfig
+extractGenesisData :: TopLevelConfig ByronBlock -> Genesis.GenesisData
+extractGenesisData = Genesis.configGenesisData
+                   . byronGenesisConfig
+                   . configBlock
 
-extractEpochSlots :: NodeConfig ByronConsensusProtocol -> EpochSlots
-extractEpochSlots = Genesis.configEpochSlots . getGenesisConfig
+extractEpochSlots :: TopLevelConfig ByronBlock -> EpochSlots
+extractEpochSlots = Genesis.configEpochSlots
+                  . byronGenesisConfig
+                  . configBlock

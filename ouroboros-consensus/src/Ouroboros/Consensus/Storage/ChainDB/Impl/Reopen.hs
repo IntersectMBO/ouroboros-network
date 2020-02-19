@@ -26,7 +26,7 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
 
 import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -88,7 +88,7 @@ closeDB (CDBHandle varState) = do
 reopen
   :: forall m blk.
      ( IOLike m
-     , ProtocolLedgerView blk
+     , LedgerSupportsProtocol blk
      , HasCallStack
      )
   => ChainDbHandle m blk

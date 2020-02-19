@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -14,6 +16,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block.Praos (
   , SimplePraosHeader
   , SimplePraosExt(..)
   , SignedSimplePraos(..)
+  , BlockConfig(..)
   ) where
 
 import           Codec.CBOR.Decoding (decodeListLenOf)
@@ -28,13 +31,14 @@ import           Cardano.Crypto.KES
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 
@@ -55,7 +59,9 @@ type SimplePraosHeader c c' = SimpleHeader c (SimplePraosExt c c')
 newtype SimplePraosExt c c' = SimplePraosExt {
     simplePraosExt :: PraosFields c' (SignedSimplePraos c c')
   }
-  deriving (Generic, Condense, Show, Eq, NoUnexpectedThunks)
+  deriving stock    (Generic, Show, Eq)
+  deriving newtype  (Condense)
+  deriving anyclass (NoUnexpectedThunks)
 
 -- | Part of the block that gets signed
 --
@@ -68,9 +74,16 @@ data SignedSimplePraos c c' = SignedSimplePraos {
     , signedPraosFields :: PraosExtraFields c'
     }
 
--- | See 'ProtocolLedgerView' instance for why we need the 'AddrDist'
-type instance BlockProtocol (SimplePraosBlock  c c') = ExtConfig (Praos c') AddrDist
-type instance BlockProtocol (SimplePraosHeader c c') = BlockProtocol (SimplePraosBlock c c')
+data instance BlockConfig (SimplePraosBlock c c') = SimplePraosBlockConfig {
+      -- | See 'LedgerSupportsProtocol' instance for why we need the 'AddrDist'
+      simplePraosAddrDist :: AddrDist
+
+      -- | Slot lengths
+    , simplePraosSlotLengths :: SlotLengths
+    }
+  deriving (Generic, NoUnexpectedThunks)
+
+type instance BlockProtocol (SimplePraosBlock c c') = Praos c'
 
 -- | Sanity check that block and header type synonyms agree
 _simplePraosHeader :: SimplePraosBlock c c' -> SimplePraosHeader c c'
@@ -87,11 +100,6 @@ instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
         signedSimplePraos = simpleHeaderStd
       , signedPraosFields = praosExtraFields (simplePraosExt simpleHeaderExt)
       }
-
-instance PraosCrypto c' => RunMockProtocol (ExtConfig (Praos c') ext) where
-  mockProtocolMagicId  = const constructMockProtocolMagicId
-  mockEncodeChainState = const encode
-  mockDecodeChainState = const decode
 
 instance PraosCrypto c' => Serialise (BlockInfo c') where
   encode BlockInfo {..} = mconcat
@@ -110,10 +118,10 @@ instance PraosCrypto c' => Serialise (BlockInfo c') where
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => RunMockBlock (ExtConfig (Praos c') ext) c (SimplePraosExt c c') where
+         ) => RunMockBlock c (SimplePraosExt c c') where
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
-        forgePraosFields (extNodeConfigP cfg)
+        forgePraosFields (configConsensus cfg)
                          isLeader
                          $ \praosExtraFields ->
           SignedSimplePraos {
@@ -127,10 +135,14 @@ instance ( SimpleCrypto c
     where
       SimpleHeader{..} = simpleHeader
 
+  mockProtocolMagicId  = const constructMockProtocolMagicId
+  mockEncodeChainState = const encode
+  mockDecodeChainState = const decode
+
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => SupportedBlock (SimpleBlock c (SimplePraosExt c c')) where
+         ) => BlockSupportsProtocol (SimpleBlock c (SimplePraosExt c c')) where
   validateView _ = praosValidateView (simplePraosExt . simpleHeaderExt)
 
 -- | Praos needs a ledger that can give it the "active stake distribution"
@@ -144,15 +156,15 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => ProtocolLedgerView (SimplePraosBlock c c') where
-  ledgerConfigView _ =
-      SimpleLedgerConfig
+         ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
+  protocolSlotLengths =
+      simplePraosSlotLengths . configBlock
 
-  protocolLedgerView ExtNodeConfig{..} _ =
-      equalStakeDist extNodeConfig
+  protocolLedgerView TopLevelConfig{..} _ =
+      equalStakeDist (simplePraosAddrDist configBlock)
 
-  anachronisticProtocolLedgerView ExtNodeConfig{..} _ _ =
-      Right $ equalStakeDist extNodeConfig
+  anachronisticProtocolLedgerView TopLevelConfig{..} _ _ =
+      Right $ equalStakeDist (simplePraosAddrDist configBlock)
 
 {-------------------------------------------------------------------------------
   Serialisation

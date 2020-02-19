@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Consensus.Mock.Ledger.Forge (forgeSimple) where
 
@@ -16,6 +17,7 @@ import           Cardano.Crypto.Hash
 import           Ouroboros.Network.Block (BlockNo, SlotNo)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger.Block
@@ -26,11 +28,12 @@ forgeSimple :: forall p c m ext.
                ( HasNodeState p m
                , MonadRandom m
                , SimpleCrypto c
-               , RunMockBlock p c ext
-               , SupportedBlock (SimpleBlock c ext)
+               , RunMockBlock c ext
+               , BlockSupportsProtocol (SimpleBlock c ext)
                , Typeable ext
+               , p ~ BlockProtocol (SimpleBlock c ext)
                )
-            => NodeConfig p
+            => TopLevelConfig (SimpleBlock c ext)
             -> SlotNo                              -- ^ Current slot
             -> BlockNo                             -- ^ Current block number
             -> ExtLedgerState (SimpleBlock c ext)  -- ^ Current ledger

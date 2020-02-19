@@ -34,16 +34,16 @@ import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
-import           Ouroboros.Consensus.Block (BlockProtocol, getHeader)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run (nodeIsEBB)
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.Crypto as Crypto
 import           Ouroboros.Consensus.Util.Condense (condense)
@@ -274,7 +274,7 @@ prop_setup_coreNodeId ::
   -> CoreNodeId
   -> Property
 prop_setup_coreNodeId numCoreNodes coreNodeId =
-    case pbftIsLeader $ extNodeConfigP $ pInfoConfig protInfo of
+    case pbftIsLeader $ configConsensus $ pInfoConfig protInfo of
       PBftIsALeader isLeader ->
           coreNodeId === pbftCoreNodeId isLeader
       _ ->
@@ -491,7 +491,6 @@ realPBftParams paramK numCoreNodes = PBftParams
   , pbftSecurityParam      = paramK
   , pbftSignatureThreshold = (1 / n) + (1 / k) + epsilon
     -- crucially: @floor (k * t) >= ceil (k / n)@
-  , pbftSlotLength         = slotLengthFromSec 20
   }
     where
       epsilon = 1/10000   -- avoid problematic floating point round-off
@@ -501,6 +500,9 @@ realPBftParams paramK numCoreNodes = PBftParams
 
       k :: Num a => a
       k = fromIntegral x where SecurityParam x = paramK
+
+pbftSlotLength :: SlotLength
+pbftSlotLength = slotLengthFromSec 20
 
 -- Instead of using 'Dummy.dummyConfig', which hard codes the number of rich
 -- men (= CoreNodes for us) to 4, we generate a dummy config with the given
@@ -644,7 +646,7 @@ genRealPBFTTestConfig k = do
       , nodeTopology
       , numCoreNodes
       , numSlots
-      , slotLengths = singletonSlotLengths (pbftSlotLength params)
+      , slotLengths = singletonSlotLengths pbftSlotLength
       , initSeed
       }
 
@@ -752,31 +754,36 @@ genNodeRekeys params (NodeJoinPlan njp) numSlots@(NumSlots t)
 -- transaction for its new delegation certificate
 --
 mkRekeyUpd
-  :: (BlockProtocol b ~ ExtConfig (PBft PBftByronCrypto) ByronConfig)
-  => Genesis.Config
+  :: Genesis.Config
   -> Genesis.GeneratedSecrets
-  -> ProtocolInfo b
+  -> ProtocolInfo ByronBlock
   -> EpochNo
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-  -> Maybe (ProtocolInfo b, Byron.GenTx ByronBlock)
+  -> Maybe (ProtocolInfo ByronBlock, Byron.GenTx ByronBlock)
 mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
-  case pbftIsLeader extNodeConfigP of
+  case pbftIsLeader configConsensus of
     PBftIsNotALeader       -> Nothing
     PBftIsALeader isLeader ->
       let PBftIsLeader{pbftCoreNodeId} = isLeader
           genSK = genesisSecretFor genesisConfig genesisSecrets pbftCoreNodeId
-          isLeader' = updSignKey genSK extNodeConfig isLeader (coerce eno) newSK
+          isLeader' = updSignKey genSK configBlock isLeader (coerce eno) newSK
           pInfo' = pInfo
-            { pInfoConfig = ExtNodeConfig extNodeConfig extNodeConfigP
-              { pbftIsLeader = PBftIsALeader isLeader'
-              }
+            { pInfoConfig = TopLevelConfig {
+                  configConsensus = configConsensus
+                    { pbftIsLeader = PBftIsALeader isLeader'
+                    }
+                , configLedger = configLedger
+                , configBlock  = configBlock
+                }
             }
 
           PBftIsLeader{pbftDlgCert} = isLeader'
       in Just (pInfo', dlgTx pbftDlgCert)
   where
-    ProtocolInfo{pInfoConfig} = pInfo
-    ExtNodeConfig{extNodeConfig, extNodeConfigP} = pInfoConfig
+    ProtocolInfo{pInfoConfig = TopLevelConfig{ configConsensus
+                                             , configLedger
+                                             , configBlock
+                                             }} = pInfo
 
 -- | The secret key for a node index
 --
@@ -805,7 +812,7 @@ genesisSecretFor genesisConfig genesisSecrets cid =
 --
 updSignKey
   :: Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-  -> ByronConfig
+  -> BlockConfig ByronBlock
   -> PBftIsLeader PBftByronCrypto
   -> EpochNumber
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
@@ -817,7 +824,7 @@ updSignKey genSK extCfg isLeader eno newSK = isLeader
   where
     newCert =
         Delegation.signCertificate
-            (Byron.pbftProtocolMagicId extCfg)
+            (Byron.byronProtocolMagicId extCfg)
             (Crypto.toVerification sk')
             eno
             (Crypto.noPassSafeSigner gsk')

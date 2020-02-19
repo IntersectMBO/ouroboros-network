@@ -49,7 +49,8 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (onSlotChange)
-import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
@@ -70,7 +71,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 -------------------------------------------------------------------------------}
 
 launchBgTasks
-  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
+  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
   => ChainDbEnv m blk
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m ()
@@ -113,7 +114,7 @@ launchBgTasks cdb@CDB{..} replayed = do
 copyToImmDB
   :: forall m blk.
      ( IOLike m
-     , OuroborosTag (BlockProtocol blk)
+     , ConsensusProtocol (BlockProtocol blk)
      , HasHeader blk
      , GetHeader blk
      , HasHeader (Header blk)
@@ -164,7 +165,7 @@ copyToImmDB CDB{..} = withCopyLock $ do
     -- Get the /possibly/ updated tip of the ImmDB
     ImmDB.getSlotNoAtTip cdbImmDB
   where
-    SecurityParam k = protocolSecurityParam cdbNodeConfig
+    SecurityParam k = configSecurityParam cdbNodeConfig
     trace = traceWith (contramap TraceCopyToImmDBEvent cdbTracer)
 
     -- | Remove the header corresponding to the given point from the beginning
@@ -217,7 +218,7 @@ copyToImmDB CDB{..} = withCopyLock $ do
 copyAndSnapshotRunner
   :: forall m blk.
      ( IOLike m
-     , OuroborosTag (BlockProtocol blk)
+     , ConsensusProtocol (BlockProtocol blk)
      , HasHeader blk
      , GetHeader blk
      , HasHeader (Header blk)
@@ -229,8 +230,8 @@ copyAndSnapshotRunner
 copyAndSnapshotRunner cdb@CDB{..} gcSchedule =
     loop Nothing
   where
-    SecurityParam k      = protocolSecurityParam cdbNodeConfig
-    LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy   cdbLgrDB
+    SecurityParam k      = configSecurityParam cdbNodeConfig
+    LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy cdbLgrDB
 
     loop :: Maybe Time -> Word64 -> m Void
     loop mPrevSnapshot distance = do
@@ -379,7 +380,7 @@ gcScheduleRunner (GcSchedule queue) runGc = forever $ do
 -- | Retrieve the blocks from 'cdbFutureBlocks' for which chain selection was
 -- scheduled at the current slot. Run chain selection for each of them.
 scheduledChainSelection
-  :: (IOLike m, ProtocolLedgerView blk, HasCallStack)
+  :: (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
   => ChainDbEnv m blk
   -> SlotNo  -- ^ The current slot
   -> m ()
@@ -419,7 +420,7 @@ scheduledChainSelection cdb@CDB{..} curSlot = do
 -- This function forks of a background thread and terminates afterwards,
 -- returning a handle to kill the background thread.
 scheduledChainSelectionRunner
-  :: (IOLike m, ProtocolLedgerView blk, HasCallStack)
+  :: (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
   => ChainDbEnv m blk -> m (m ())
 scheduledChainSelectionRunner cdb@CDB{..} =
     onSlotChange cdbBlockchainTime (scheduledChainSelection cdb)

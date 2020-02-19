@@ -27,9 +27,11 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart)
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Exit (ExitReason)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -45,7 +47,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
   RunNode proper
 -------------------------------------------------------------------------------}
 
-class ( ProtocolLedgerView blk
+class ( LedgerSupportsProtocol blk
       , ApplyTx blk
       , HasTxId (GenTx blk)
       , QueryLedger blk
@@ -54,7 +56,7 @@ class ( ProtocolLedgerView blk
       , Serialise (HeaderHash blk)
       ) => RunNode blk where
   nodeForgeBlock          :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
-                          => NodeConfig (BlockProtocol blk)
+                          => TopLevelConfig blk
                           -> SlotNo              -- ^ Current slot
                           -> BlockNo             -- ^ Current block number
                           -> ExtLedgerState blk  -- ^ Current ledger
@@ -67,16 +69,16 @@ class ( ProtocolLedgerView blk
   nodeIsEBB               :: Header blk -> Maybe EpochNo
   nodeEpochSize           :: Monad m
                           => Proxy blk
-                          -> NodeConfig (BlockProtocol blk)
+                          -> TopLevelConfig blk
                           -> EpochNo -> m EpochSize
   nodeStartTime           :: Proxy blk
-                          -> NodeConfig (BlockProtocol blk)
+                          -> TopLevelConfig blk
                           -> SystemStart
   nodeNetworkMagic        :: Proxy blk
-                          -> NodeConfig (BlockProtocol blk)
+                          -> TopLevelConfig blk
                           -> NetworkMagic
   nodeProtocolMagicId     :: Proxy blk
-                          -> NodeConfig (BlockProtocol blk)
+                          -> TopLevelConfig blk
                           -> ProtocolMagicId
   nodeHashInfo            :: Proxy blk
                           -> HashInfo (HeaderHash blk)
@@ -102,7 +104,7 @@ class ( ProtocolLedgerView blk
   -- This does not check the validity of the contents of the block, e.g.,
   -- whether the transactions are valid w.r.t. the ledger, or whether it's
   -- sent by a malicious node.
-  nodeCheckIntegrity      :: NodeConfig (BlockProtocol blk)
+  nodeCheckIntegrity      :: TopLevelConfig blk
                           -> blk -> Bool
 
   -- | When extracting the bytes corresponding to header from a serialised
@@ -124,7 +126,7 @@ class ( ProtocolLedgerView blk
   -- This function can be used to, for example, create the genesis EBB in case
   -- the chain(DB) is empty.
   nodeInitChainDB         :: IOLike m
-                          => NodeConfig (BlockProtocol blk)
+                          => TopLevelConfig blk
                           -> ChainDB m blk
                           -> m ()
   nodeInitChainDB _ _ = return ()
@@ -149,38 +151,38 @@ class ( ProtocolLedgerView blk
   nodeToExitReason _ _ = Nothing
 
   -- Encoders
-  nodeEncodeBlockWithInfo :: NodeConfig (BlockProtocol blk) -> blk -> BinaryInfo Encoding
-  nodeEncodeBlock         :: NodeConfig (BlockProtocol blk) -> blk -> Encoding
+  nodeEncodeBlockWithInfo :: TopLevelConfig blk -> blk -> BinaryInfo Encoding
+  nodeEncodeBlock         :: TopLevelConfig blk -> blk -> Encoding
   nodeEncodeBlock cfg blk =  binaryBlob $ nodeEncodeBlockWithInfo cfg blk
-  nodeEncodeHeader        :: NodeConfig (BlockProtocol blk)
+  nodeEncodeHeader        :: TopLevelConfig blk
                           -> SerialisationVersion (NetworkProtocolVersion blk)
                           -> Header blk -> Encoding
-  nodeEncodeWrappedHeader :: NodeConfig (BlockProtocol blk)
+  nodeEncodeWrappedHeader :: TopLevelConfig blk
                           -> NetworkProtocolVersion blk
                           -> Serialised (Header blk) -> Encoding
   nodeEncodeGenTx         :: GenTx  blk -> Encoding
   nodeEncodeGenTxId       :: GenTxId blk -> Encoding
   nodeEncodeHeaderHash    :: Proxy blk -> HeaderHash blk -> Encoding
-  nodeEncodeLedgerState   :: NodeConfig (BlockProtocol blk) -> LedgerState blk -> Encoding
-  nodeEncodeChainState    :: Proxy blk -> NodeConfig (BlockProtocol blk) -> ChainState (BlockProtocol blk) -> Encoding
+  nodeEncodeLedgerState   :: TopLevelConfig blk -> LedgerState blk -> Encoding
+  nodeEncodeChainState    :: Proxy blk -> TopLevelConfig blk -> ChainState (BlockProtocol blk) -> Encoding
   nodeEncodeApplyTxError  :: Proxy blk -> ApplyTxErr blk -> Encoding
   nodeEncodeTipInfo       :: Proxy blk -> TipInfo blk -> Encoding
   nodeEncodeQuery         :: Query blk result -> Encoding
   nodeEncodeResult        :: Query blk result -> result -> Encoding
 
   -- Decoders
-  nodeDecodeHeader        :: forall s. NodeConfig (BlockProtocol blk)
+  nodeDecodeHeader        :: forall s. TopLevelConfig blk
                           -> SerialisationVersion (NetworkProtocolVersion blk)
                           -> Decoder s (Lazy.ByteString -> Header blk)
-  nodeDecodeWrappedHeader :: forall s. NodeConfig (BlockProtocol blk)
+  nodeDecodeWrappedHeader :: forall s. TopLevelConfig blk
                           -> NetworkProtocolVersion blk
                           -> Decoder s (Serialised (Header blk))
-  nodeDecodeBlock         :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Lazy.ByteString -> blk)
+  nodeDecodeBlock         :: forall s. TopLevelConfig blk -> Decoder s (Lazy.ByteString -> blk)
   nodeDecodeGenTx         :: forall s. Decoder s (GenTx blk)
   nodeDecodeGenTxId       :: forall s. Decoder s (GenTxId blk)
   nodeDecodeHeaderHash    :: forall s. Proxy blk -> Decoder s (HeaderHash blk)
-  nodeDecodeLedgerState   :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (LedgerState blk)
-  nodeDecodeChainState    :: forall s. Proxy blk -> NodeConfig (BlockProtocol blk) -> Decoder s (ChainState (BlockProtocol blk))
+  nodeDecodeLedgerState   :: forall s. TopLevelConfig blk -> Decoder s (LedgerState blk)
+  nodeDecodeChainState    :: forall s. Proxy blk -> TopLevelConfig blk -> Decoder s (ChainState (BlockProtocol blk))
   nodeDecodeApplyTxError  :: forall s. Proxy blk -> Decoder s (ApplyTxErr blk)
   nodeDecodeTipInfo       :: forall s. Proxy blk -> Decoder s (TipInfo blk)
   nodeDecodeQuery         :: forall s. Decoder s (Some (Query blk))

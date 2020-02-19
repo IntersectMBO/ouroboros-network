@@ -65,7 +65,6 @@ import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (At))
 
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -214,7 +213,6 @@ data PraosParams = PraosParams {
     , praosSecurityParam :: !SecurityParam
     , praosSlotsPerEpoch :: !Word64
     , praosLifetimeKES   :: !Natural
-    , praosSlotLength    :: !SlotLength
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -237,9 +235,8 @@ data instance NodeConfig (Praos c) = PraosNodeConfig
   }
   deriving (Generic)
 
-instance PraosCrypto c => OuroborosTag (Praos c) where
-  protocolSecurityParam =                        praosSecurityParam . praosParams
-  protocolSlotLengths   = singletonSlotLengths . praosSlotLength    . praosParams
+instance PraosCrypto c => ConsensusProtocol (Praos c) where
+  protocolSecurityParam = praosSecurityParam . praosParams
 
   type NodeState     (Praos c) = PraosNodeState c
   type LedgerView    (Praos c) = StakeDist

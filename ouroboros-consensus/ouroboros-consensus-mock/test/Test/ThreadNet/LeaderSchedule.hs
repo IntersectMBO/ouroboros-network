@@ -70,13 +70,15 @@ tests = testGroup "LeaderSchedule"
       , praosSlotsPerEpoch = 3
       , praosLeaderF       = 0.5
       , praosLifetimeKES   = 1000000
-      , praosSlotLength    = slotLengthFromSec 2
       }
 
     numCoreNodes = NumCoreNodes 3
     numSlots     = NumSlots $ maxRollbacks k * praosSlotsPerEpoch * numEpochs
     numEpochs    = 3
     slotLengths  = singletonSlotLengths praosSlotLength
+
+praosSlotLength :: SlotLength
+praosSlotLength = slotLengthFromSec 2
 
 prop_simple_leader_schedule_convergence :: PraosParams
                                         -> TestConfig
@@ -97,8 +99,12 @@ prop_simple_leader_schedule_convergence
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork testConfig TestConfigBlock
             { forgeEBB = Nothing
-            , nodeInfo = \nid ->
-                protocolInfoPraosRule numCoreNodes nid params schedule
+            , nodeInfo = \nid -> protocolInfoPraosRule
+                                   numCoreNodes
+                                   nid
+                                   params
+                                   (singletonSlotLengths praosSlotLength)
+                                   schedule
             , rekeying = Nothing
             }
 

@@ -10,7 +10,6 @@ module Ouroboros.Consensus.Byron.Ledger (
 
 import           Ouroboros.Consensus.Byron.Ledger.Block as X
 import           Ouroboros.Consensus.Byron.Ledger.Config as X
-import           Ouroboros.Consensus.Byron.Ledger.ContainsGenesis as X
 import           Ouroboros.Consensus.Byron.Ledger.DelegationHistory as X
                      (DelegationHistory)
 import           Ouroboros.Consensus.Byron.Ledger.Forge as X
