@@ -210,11 +210,8 @@ instance Bridge m a => HasHeader (DualHeader m a) where
 
 type instance BlockProtocol (DualBlock m a) = BlockProtocol m
 
--- TODO: If we reduce the use of TopLevelConfig, we might not need this anymore
 dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
 dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
-      -- TODO: This use of extNodeConfigP should go (there should be no need
-      -- to use ExtConfig here)
       configConsensus =                      configConsensus
     , configLedger    = dualLedgerConfigMain configLedger
     , configBlock     = dualBlockConfigMain  configBlock

@@ -19,9 +19,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -------------------------------------------------------------------------------}
 
 -- | Evidence that a block supports its protocol
---
--- TODO: Rename to 'BlockSupportsProtocol'.
--- TODO: Reconsider if we need the full TopLevelConfig here.
 class ( GetHeader blk
       , HasHeader blk
       , HasHeader (Header blk)
