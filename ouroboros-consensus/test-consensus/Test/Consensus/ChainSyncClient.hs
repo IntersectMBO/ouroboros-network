@@ -403,7 +403,6 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
           { bftParams   = BftParams
             { bftSecurityParam = securityParam
             , bftNumNodes      = NumCoreNodes 2
-            , bftSlotLengths   = slotLengths
             }
           , bftNodeId   = fromCoreNodeId coreNodeId
           , bftSignKey  = SignKeyMockDSIGN 0
@@ -413,7 +412,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                           ]
           }
       , configLedger = LedgerConfig
-      , configBlock  = TestBlockConfig
+      , configBlock  = TestBlockConfig slotLengths
       }
 
     -- | Take the last slot at which a client or server update is planned, or

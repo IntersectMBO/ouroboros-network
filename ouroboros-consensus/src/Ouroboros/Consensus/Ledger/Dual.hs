@@ -383,6 +383,10 @@ instance Bridge m a => ValidateEnvelope (DualBlock m a) where
   minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @m)
 
 instance Bridge m a => ProtocolLedgerView (DualBlock m a) where
+  protocolSlotLengths cfg =
+      protocolSlotLengths
+        (dualTopLevelConfigMain cfg)
+
   protocolLedgerView cfg state =
       protocolLedgerView
         (dualTopLevelConfigMain cfg)

@@ -31,6 +31,7 @@ import           Cardano.Crypto.KES
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Address
@@ -76,6 +77,9 @@ data SignedSimplePraos c c' = SignedSimplePraos {
 data instance BlockConfig (SimplePraosBlock c c') = SimplePraosBlockConfig {
       -- | See 'ProtocolLedgerView' instance for why we need the 'AddrDist'
       simplePraosAddrDist :: AddrDist
+
+      -- | Slot lengths
+    , simplePraosSlotLengths :: SlotLengths
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -153,6 +157,9 @@ instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => ProtocolLedgerView (SimplePraosBlock c c') where
+  protocolSlotLengths =
+      simplePraosSlotLengths . configBlock
+
   protocolLedgerView TopLevelConfig{..} _ =
       equalStakeDist (simplePraosAddrDist configBlock)
 

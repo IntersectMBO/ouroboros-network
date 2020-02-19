@@ -28,6 +28,7 @@ import           Cardano.Crypto.VRF
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
@@ -64,7 +65,10 @@ newtype SimplePraosRuleExt = SimplePraosRuleExt {
   deriving newtype  (Condense)
   deriving anyclass (NoUnexpectedThunks)
 
-data instance BlockConfig (SimplePraosRuleBlock c) = SimplePraosRuleBlockConfig
+data instance BlockConfig (SimplePraosRuleBlock c) = SimplePraosRuleBlockConfig {
+      -- | Slot lengths
+      simplePraosRuleSlotLengths :: SlotLengths
+    }
   deriving (Generic, NoUnexpectedThunks)
 
 type instance BlockProtocol (SimplePraosRuleBlock c) =
@@ -98,8 +102,12 @@ instance SimpleCrypto c
 
 instance SimpleCrypto c
       => ProtocolLedgerView (SimplePraosRuleBlock c) where
-  protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Right ()
+  protocolSlotLengths =
+      simplePraosRuleSlotLengths . configBlock
+  protocolLedgerView _ _ =
+      ()
+  anachronisticProtocolLedgerView _ _ _ =
+      Right ()
 
 {-------------------------------------------------------------------------------
   We don't need crypto for this protocol

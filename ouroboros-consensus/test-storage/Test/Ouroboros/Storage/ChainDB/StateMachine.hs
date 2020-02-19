@@ -1245,17 +1245,18 @@ testCfg = TopLevelConfig {
       configConsensus = BftNodeConfig
         { bftParams   = BftParams { bftSecurityParam = k
                                   , bftNumNodes      = NumCoreNodes 1
-                                  , bftSlotLengths   = singletonSlotLengths $
-                                                         slotLengthFromSec 20
                                   }
         , bftNodeId   = CoreId (CoreNodeId 0)
         , bftSignKey  = SignKeyMockDSIGN 0
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = LedgerConfig
-    , configBlock  = TestBlockConfig
+    , configBlock  = TestBlockConfig slotLengths
     }
   where
+    slotLengths :: SlotLengths
+    slotLengths = singletonSlotLengths $ slotLengthFromSec 20
+
     k = SecurityParam 2
 
 dbUnused :: ChainDB blk m

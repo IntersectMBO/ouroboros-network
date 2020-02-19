@@ -54,14 +54,19 @@ prop_simple_pbft_convergence
     NumCoreNodes nn = numCoreNodes
 
     sigThd = (1.0 / fromIntegral nn) + 0.1
-    params = PBftParams k numCoreNodes sigThd (slotLengthFromSec 20)
+    params = PBftParams k numCoreNodes sigThd
 
     testOutput =
         runTestNetwork testConfig TestConfigBlock
             { forgeEBB = Nothing
-            , nodeInfo = protocolInfoMockPBFT params
+            , nodeInfo = protocolInfoMockPBFT
+                           params
+                           (singletonSlotLengths pbftSlotLength)
             , rekeying = Nothing
             }
+
+pbftSlotLength :: SlotLength
+pbftSlotLength = slotLengthFromSec 20
 
 type Blk = SimpleBlock SimpleMockCrypto
              (SimplePBftExt SimpleMockCrypto PBftMockCrypto)

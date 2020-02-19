@@ -81,8 +81,10 @@ tests = testGroup "Praos"
       , praosSlotsPerEpoch = 3
       , praosLeaderF       = 0.5
       , praosLifetimeKES   = 1000000
-      , praosSlotLength    = slotLengthFromSec 2
       }
+
+praosSlotLength :: SlotLength
+praosSlotLength = slotLengthFromSec 2
 
 prop_simple_praos_convergence :: PraosParams
                               -> TestConfig
@@ -102,7 +104,10 @@ prop_simple_praos_convergence
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork testConfig TestConfigBlock
             { forgeEBB = Nothing
-            , nodeInfo = \nid ->
-                protocolInfoPraos numCoreNodes nid params
+            , nodeInfo = \nid -> protocolInfoPraos
+                                   numCoreNodes
+                                   nid
+                                   params
+                                   (singletonSlotLengths praosSlotLength)
             , rekeying = Nothing
             }

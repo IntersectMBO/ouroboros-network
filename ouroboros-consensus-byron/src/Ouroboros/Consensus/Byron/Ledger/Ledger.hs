@@ -38,12 +38,13 @@ import           Data.ByteString (ByteString)
 import           Data.Type.Equality ((:~:) (Refl))
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (Natural, NoUnexpectedThunks)
 
 import           Cardano.Binary (fromCBOR, toCBOR)
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Genesis as Gen
+import qualified Cardano.Chain.Update as CC
 import qualified Cardano.Chain.Update.Validation.Interface as UPI
 import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Chain.ValidationMode as CC
@@ -53,12 +54,14 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
+import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Ledger.DelegationHistory
                      (DelegationHistory)
@@ -141,6 +144,15 @@ instance ShowQuery (Query ByronBlock) where
   showResult GetUpdateInterfaceState = show
 
 instance ProtocolLedgerView ByronBlock where
+  protocolSlotLengths =
+        singletonSlotLengths
+      . slotLengthFromMillisec
+      . (fromIntegral :: Natural -> Integer)
+      . CC.ppSlotDuration
+      . Gen.configProtocolParameters
+      . byronGenesisConfig
+      . configBlock
+
   protocolLedgerView _cfg =
         toPBftLedgerView
       . CC.getDelegationMap

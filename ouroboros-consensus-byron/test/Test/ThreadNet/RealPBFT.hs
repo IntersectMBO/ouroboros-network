@@ -491,7 +491,6 @@ realPBftParams paramK numCoreNodes = PBftParams
   , pbftSecurityParam      = paramK
   , pbftSignatureThreshold = (1 / n) + (1 / k) + epsilon
     -- crucially: @floor (k * t) >= ceil (k / n)@
-  , pbftSlotLength         = slotLengthFromSec 20
   }
     where
       epsilon = 1/10000   -- avoid problematic floating point round-off
@@ -501,6 +500,9 @@ realPBftParams paramK numCoreNodes = PBftParams
 
       k :: Num a => a
       k = fromIntegral x where SecurityParam x = paramK
+
+pbftSlotLength :: SlotLength
+pbftSlotLength = slotLengthFromSec 20
 
 -- Instead of using 'Dummy.dummyConfig', which hard codes the number of rich
 -- men (= CoreNodes for us) to 4, we generate a dummy config with the given
@@ -644,7 +646,7 @@ genRealPBFTTestConfig k = do
       , nodeTopology
       , numCoreNodes
       , numSlots
-      , slotLengths = singletonSlotLengths (pbftSlotLength params)
+      , slotLengths = singletonSlotLengths pbftSlotLength
       , initSeed
       }
 

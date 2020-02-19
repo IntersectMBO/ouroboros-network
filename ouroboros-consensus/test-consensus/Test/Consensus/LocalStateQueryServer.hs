@@ -28,10 +28,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (AcquireFailure (..))
 
 import           Ouroboros.Consensus.Block (getHeader)
-import           Ouroboros.Consensus.BlockchainTime.SlotLength
-                     (slotLengthFromSec)
-import           Ouroboros.Consensus.BlockchainTime.SlotLengths
-                     (singletonSlotLengths)
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -241,16 +238,17 @@ testCfg securityParam = TopLevelConfig {
       configConsensus = BftNodeConfig
         { bftParams   = BftParams { bftSecurityParam = securityParam
                                   , bftNumNodes      = NumCoreNodes 1
-                                  , bftSlotLengths   = singletonSlotLengths $
-                                                         slotLengthFromSec 20
                                   }
         , bftNodeId   = CoreId (CoreNodeId 0)
         , bftSignKey  = SignKeyMockDSIGN 0
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = LedgerConfig
-    , configBlock  = TestBlockConfig
+    , configBlock  = TestBlockConfig slotLengths
     }
+  where
+    slotLengths :: SlotLengths
+    slotLengths = singletonSlotLengths $ slotLengthFromSec 20
 
 {-------------------------------------------------------------------------------
   Orphans

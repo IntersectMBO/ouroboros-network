@@ -9,6 +9,7 @@ import qualified Data.Bimap as Bimap
 
 import           Cardano.Crypto.DSIGN
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
@@ -19,10 +20,11 @@ import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
 protocolInfoMockPBFT :: PBftParams
+                     -> SlotLengths
                      -> CoreNodeId
                      -> ProtocolInfo (SimplePBftBlock SimpleMockCrypto
                                                       PBftMockCrypto)
-protocolInfoMockPBFT params nid =
+protocolInfoMockPBFT params slotLengths nid =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             configConsensus = PBftNodeConfig {
@@ -35,7 +37,7 @@ protocolInfoMockPBFT params nid =
                    }
                }
           , configLedger = SimpleLedgerConfig
-          , configBlock  = SimplePBftBlockConfig ledgerView
+          , configBlock  = SimplePBftBlockConfig ledgerView slotLengths
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState CS.empty)

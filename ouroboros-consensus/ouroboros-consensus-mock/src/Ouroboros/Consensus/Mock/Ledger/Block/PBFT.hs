@@ -31,6 +31,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (HasHeader (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
@@ -76,6 +77,9 @@ data SignedSimplePBft c c' = SignedSimplePBft {
 data instance BlockConfig (SimplePBftBlock c c') = SimplePBftBlockConfig {
     -- | PBFT requires the ledger view; for the mock ledger, this is constant
     simplePBftLedgerView :: PBftLedgerView c'
+
+    -- | Slot lengths
+  , simplePBftSlotLengths :: SlotLengths
   }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -129,6 +133,8 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => ProtocolLedgerView (SimplePBftBlock c PBftMockCrypto) where
+  protocolSlotLengths =
+      simplePBftSlotLengths . configBlock
   protocolLedgerView TopLevelConfig{..} _ls =
       simplePBftLedgerView configBlock
   anachronisticProtocolLedgerView TopLevelConfig{..} _ _ =

@@ -44,7 +44,6 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point,
                      SlotNo (..))
 
-import           Ouroboros.Consensus.BlockchainTime.SlotLengths
 import           Ouroboros.Consensus.Util.Random
 
 -- | Static node configuration
@@ -178,9 +177,6 @@ class ( Show (ChainState    p)
 
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: NodeConfig p -> SecurityParam
-
-  -- | The slot lengths (across all hard forks)
-  protocolSlotLengths :: NodeConfig p -> SlotLengths
 
   -- | We require that it's possible to reverse the chain state up to @k@
   -- blocks.

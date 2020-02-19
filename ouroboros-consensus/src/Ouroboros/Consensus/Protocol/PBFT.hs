@@ -58,7 +58,6 @@ import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -217,9 +216,6 @@ data PBftParams = PBftParams {
       -- but this implementation follows the specification by fixing that
       -- parameter to the ambient security parameter @k@.
     , pbftSignatureThreshold :: !Double
-
-      -- | Slot length
-    , pbftSlotLength         :: !SlotLength
     }
   deriving (Generic, NoUnexpectedThunks, Show)
 
@@ -262,8 +258,7 @@ instance PBftCrypto c => OuroborosTag (PBft c) where
   type IsLeader       (PBft c) = PBftIsLeader   c
   type ChainState     (PBft c) = PBftChainState c
 
-  protocolSecurityParam =                        pbftSecurityParam . pbftParams
-  protocolSlotLengths   = singletonSlotLengths . pbftSlotLength    . pbftParams
+  protocolSecurityParam = pbftSecurityParam . pbftParams
 
   checkIsLeader PBftNodeConfig{pbftIsLeader, pbftParams} (SlotNo n) _l _cs =
       case pbftIsLeader of

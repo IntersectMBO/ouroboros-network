@@ -28,6 +28,7 @@ import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
@@ -62,7 +63,10 @@ data SignedSimpleBft c c' = SignedSimpleBft {
     }
   deriving (Generic)
 
-data instance BlockConfig (SimpleBftBlock c c') = SimpleBftBlockConfig
+data instance BlockConfig (SimpleBftBlock c c') = SimpleBftBlockConfig {
+      -- | Slot lengths
+      simpleBftSlotLengths :: SlotLengths
+    }
   deriving (Generic, NoUnexpectedThunks)
 
 type instance BlockProtocol (SimpleBftBlock c c') = Bft c'
@@ -112,8 +116,12 @@ instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          ) => ProtocolLedgerView (SimpleBftBlock c c') where
-  protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Right ()
+  protocolSlotLengths =
+      simpleBftSlotLengths . configBlock
+  protocolLedgerView _ _ =
+      ()
+  anachronisticProtocolLedgerView _ _ _ =
+      Right ()
 
 {-------------------------------------------------------------------------------
   Serialisation

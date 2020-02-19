@@ -28,7 +28,6 @@ protocolInfoBft numCoreNodes nid securityParam slotLengths =
                 bftParams   = BftParams {
                                   bftNumNodes      = numCoreNodes
                                 , bftSecurityParam = securityParam
-                                , bftSlotLengths   = slotLengths
                                 }
               , bftNodeId   = CoreId nid
               , bftSignKey  = signKey nid
@@ -38,7 +37,7 @@ protocolInfoBft numCoreNodes nid securityParam slotLengths =
                   ]
               }
           , configLedger = SimpleLedgerConfig
-          , configBlock  = SimpleBftBlockConfig
+          , configBlock  = SimpleBftBlockConfig slotLengths
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState ())

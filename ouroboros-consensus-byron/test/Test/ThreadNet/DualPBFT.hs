@@ -35,8 +35,8 @@ import qualified Ledger.UTxO as Spec
 
 import qualified Test.Cardano.Chain.Elaboration.UTxO as Spec.Test
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock (NumSlots (..))
-import           Ouroboros.Consensus.BlockchainTime.SlotLengths
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
@@ -117,18 +117,11 @@ setupTestOutput SetupDualPBft{..} =
       }
 
 -- | Override 'TestConfig'
---
--- This is intended to update the rest of the setup after shrinking the
--- 'TestConfig'. Right now this just updates the PBFT slot length.
 setupOverrideConfig :: TestConfig -> SetupDualPBft -> SetupDualPBft
 setupOverrideConfig newConfig setup = setup {
       setupConfig = newConfig
-    , setupParams = (setupParams setup) {
-                        pbftSlotLength = slotLength
-                      }
+    , setupParams = setupParams setup
     }
-  where
-    SlotLengths slotLength Nothing = slotLengths newConfig
 
 setupExpectedRejections :: SetupDualPBft
                         -> BlockRejection DualByronBlock -> Bool
@@ -237,7 +230,7 @@ genDualPBFTTestConfig numSlots params = do
 
     return TestConfig {
           nodeRestarts = noRestarts
-        , slotLengths  = singletonSlotLengths (pbftSlotLength params)
+        , slotLengths  = singletonSlotLengths (slotLengthFromSec 20)
         , numCoreNodes = pbftNumNodes params
         , ..
         }

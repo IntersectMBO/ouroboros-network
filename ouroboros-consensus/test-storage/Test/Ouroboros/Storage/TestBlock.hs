@@ -154,7 +154,9 @@ instance HasHeader (Header TestBlock) where
   blockNo        =            thBlockNo  . unTestHeader
   blockInvariant = const True
 
-data instance BlockConfig TestBlock = TestBlockConfig
+data instance BlockConfig TestBlock = TestBlockConfig {
+      testBlockSlotLengths :: SlotLengths
+    }
   deriving (Generic, NoUnexpectedThunks)
 
 instance Condense TestBlock where
@@ -363,8 +365,12 @@ instance ValidateEnvelope TestBlock where
   -- Use defaults
 
 instance ProtocolLedgerView TestBlock where
-  protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Right ()
+  protocolSlotLengths =
+      testBlockSlotLengths . configBlock
+  protocolLedgerView _ _ =
+      ()
+  anachronisticProtocolLedgerView _ _ _ =
+      Right ()
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint GenesisHash
@@ -380,8 +386,6 @@ singleNodeTestConfig :: NodeConfig (Bft BftMockCrypto)
 singleNodeTestConfig = BftNodeConfig {
       bftParams   = BftParams { bftSecurityParam = k
                               , bftNumNodes      = NumCoreNodes 1
-                              , bftSlotLengths   = singletonSlotLengths $
-                                                     slotLengthFromSec 20
                               }
     , bftNodeId   = CoreId (CoreNodeId 0)
     , bftSignKey  = SignKeyMockDSIGN 0

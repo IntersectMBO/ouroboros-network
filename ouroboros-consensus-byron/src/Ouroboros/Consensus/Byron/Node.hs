@@ -33,8 +33,6 @@ import           Data.Coerce (coerce)
 import           Data.Maybe
 import qualified Data.Set as Set
 
-import           Cardano.Prelude (Natural)
-
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Byron.API as API
 import           Cardano.Chain.Common (BlockCount (..))
@@ -163,11 +161,6 @@ byronPBftParams cfg threshold = PBftParams {
                              $ genesisKeyHashes
     , pbftSignatureThreshold = unSignatureThreshold
                              $ fromMaybe defaultPBftSignatureThreshold threshold
-    , pbftSlotLength         = slotLengthFromMillisec
-                             . (fromIntegral :: Natural -> Integer)
-                             . Update.ppSlotDuration
-                             . Genesis.configProtocolParameters
-                             $ cfg
     }
   where
     Genesis.Config {

@@ -80,6 +80,7 @@ data Protocol blk p where
     :: NumCoreNodes
     -> CoreNodeId
     -> PraosParams
+    -> SlotLengths
     -> Protocol
          (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
          ProtocolMockPraos
@@ -89,6 +90,7 @@ data Protocol blk p where
     :: NumCoreNodes
     -> CoreNodeId
     -> PraosParams
+    -> SlotLengths
     -> LeaderSchedule
     -> Protocol
          (SimplePraosRuleBlock SimpleMockCrypto)
@@ -97,6 +99,7 @@ data Protocol blk p where
   -- | Run PBFT against the mock ledger
   ProtocolMockPBFT
     :: PBftParams
+    -> SlotLengths
     -> CoreNodeId
     -> Protocol
          (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
@@ -129,14 +132,14 @@ protocolInfo :: Protocol blk p -> ProtocolInfo blk
 protocolInfo (ProtocolMockBFT nodes nid params slotLengths) =
     protocolInfoBft nodes nid params slotLengths
 
-protocolInfo (ProtocolMockPraos nodes nid params) =
-    protocolInfoPraos nodes nid params
+protocolInfo (ProtocolMockPraos nodes nid params slotLengths) =
+    protocolInfoPraos nodes nid params slotLengths
 
-protocolInfo (ProtocolLeaderSchedule nodes nid params schedule) =
-    protocolInfoPraosRule nodes nid params schedule
+protocolInfo (ProtocolLeaderSchedule nodes nid params slotLengths schedule) =
+    protocolInfoPraosRule nodes nid params slotLengths schedule
 
-protocolInfo (ProtocolMockPBFT params nid) =
-    protocolInfoMockPBFT params nid
+protocolInfo (ProtocolMockPBFT params slotLengths nid) =
+    protocolInfoMockPBFT params slotLengths nid
 
 protocolInfo (ProtocolRealPBFT gc mthr prv swv mplc) =
     protocolInfoByron gc mthr prv swv mplc

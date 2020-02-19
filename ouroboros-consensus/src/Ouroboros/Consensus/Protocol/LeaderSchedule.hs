@@ -63,7 +63,6 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
   preferCandidate       WLSNodeConfig{..} = preferCandidate       lsNodeConfigP
   compareCandidates     WLSNodeConfig{..} = compareCandidates     lsNodeConfigP
   protocolSecurityParam WLSNodeConfig{..} = protocolSecurityParam lsNodeConfigP
-  protocolSlotLengths   WLSNodeConfig{..} = protocolSlotLengths   lsNodeConfigP
 
   checkIsLeader WLSNodeConfig{..} slot _ _ = return $
     case Map.lookup slot $ getLeaderSchedule lsNodeConfigSchedule of

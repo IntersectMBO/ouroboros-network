@@ -9,6 +9,7 @@ import qualified Data.Map as Map
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
@@ -21,11 +22,13 @@ import           Ouroboros.Consensus.Protocol.LeaderSchedule
 protocolInfoPraosRule :: NumCoreNodes
                       -> CoreNodeId
                       -> PraosParams
+                      -> SlotLengths
                       -> LeaderSchedule
                       -> ProtocolInfo (SimplePraosRuleBlock SimpleMockCrypto)
 protocolInfoPraosRule numCoreNodes
                       nid
                       params
+                      slotLengths
                       schedule =
     ProtocolInfo {
       pInfoConfig = TopLevelConfig {
@@ -42,7 +45,7 @@ protocolInfoPraosRule numCoreNodes
             , lsNodeConfigNodeId   = nid
             }
         , configLedger = SimpleLedgerConfig
-        , configBlock  = SimplePraosRuleBlockConfig
+        , configBlock  = SimplePraosRuleBlockConfig slotLengths
         }
     , pInfoInitLedger = ExtLedgerState
         { ledgerState = genesisSimpleLedgerState addrDist

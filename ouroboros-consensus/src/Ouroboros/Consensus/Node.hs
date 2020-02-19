@@ -56,6 +56,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -192,7 +193,7 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
       , pInfoInitState  = initState
       } = pInfo
 
-    slotLengths = protocolSlotLengths (configConsensus cfg)
+    slotLengths = protocolSlotLengths cfg
 
     nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = networkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = networkMagic }

@@ -240,7 +240,9 @@ instance Condense (ChainHash TestBlock) where
   condense GenesisHash   = "genesis"
   condense (BlockHash h) = show h
 
-data instance BlockConfig TestBlock = TestBlockConfig
+data instance BlockConfig TestBlock = TestBlockConfig {
+      testBlockSlotLengths :: SlotLengths
+    }
   deriving (Generic, NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
@@ -317,6 +319,7 @@ instance ValidateEnvelope TestBlock where
   firstBlockNo _ = Block.BlockNo 1
 
 instance ProtocolLedgerView TestBlock where
+  protocolSlotLengths = testBlockSlotLengths . configBlock
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right ()
 
@@ -349,17 +352,18 @@ singleNodeTestConfig = TopLevelConfig {
       configConsensus = BftNodeConfig {
           bftParams   = BftParams { bftSecurityParam = k
                                   , bftNumNodes      = NumCoreNodes 1
-                                  , bftSlotLengths   = singletonSlotLengths $
-                                                         slotLengthFromSec 20
                                   }
         , bftNodeId   = CoreId (CoreNodeId 0)
         , bftSignKey  = SignKeyMockDSIGN 0
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = LedgerConfig
-    , configBlock  = TestBlockConfig
+    , configBlock  = TestBlockConfig slotLengths
     }
   where
+    slotLengths :: SlotLengths
+    slotLengths = singletonSlotLengths $ slotLengthFromSec 20
+
     -- We fix k at 4 for now
     k = SecurityParam 4
 
