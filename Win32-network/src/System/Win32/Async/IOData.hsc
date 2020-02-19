@@ -45,7 +45,8 @@ import Control.Monad ( when
 import Foreign ( Ptr
                , StablePtr
                , Storable (..)
-               , castPtr
+               , free
+               , malloc
                , newStablePtr
                , plusPtr
                )
@@ -54,7 +55,6 @@ import           System.Win32.Types ( HANDLE
                                     , ErrCode
                                     )
 import qualified System.Win32.Types as Win32
-import qualified System.Win32.Mem   as Win32
 
 import System.Win32.Async.Socket.Syscalls (SOCKET)
 import System.Win32.Async.Overlapped
@@ -284,13 +284,27 @@ withIOCPData :: forall a (asyncType :: AsyncType).
              --
              -> IO a
 withIOCPData errorTag fd k = mask $ \unmask -> do
-    ph <- Win32.getProcessHeap
-    -- Using malloc will not work, we have to allocate memory on the process heap.
-    ioDataPtr <-
-      castPtr <$>
-        Win32.heapAlloc
-          ph Win32.hEAP_ZERO_MEMORY
-          (fromIntegral $ sizeOf (undefined :: IOData asyncType))
+    -- both 'IOData' and the stable pointer are allocated here and free either
+    --  * by 'IOManager' thread ('dequeueCompletionPackets')
+    --  * or here in case of some synchronous operations which do not push
+    --    a notifiction to IOCP.
+    -- We cannot simply use `allocaBytes` and make the allocation local, since
+    -- in case of async exception the IOCP thread will access already freed
+    -- memory.
+    --
+    -- TODO: hovewer, if we synchronously cancel operations we could use local
+    -- allocations for both 'IOData' and the stable pointer, which would make
+    -- this library much safer.  For that reason we woudl need to solve two problems:
+    --
+    --   *  'CancelIoEx' does not wait for an operation to be cancelled, we
+    --      would still need to do that.  The simplest solution which could work
+    --      is to await on the 'waitVar' (the thread that was waiting on it was
+    --      cancelled, so we could safely do that).
+    --
+    --   *  Find how to cancel asynchronous winsock2 operations.  Maybe
+    --   'CancelIoEx' works for them too?
+    --
+    ioDataPtr <- malloc
     -- allocate stable pointer
     (ioData, v) <- newIOData asyncTag
     poke ioDataPtr ioData
@@ -330,12 +344,12 @@ withIOCPData errorTag fd k = mask $ \unmask -> do
 
       ResultSync b deallocate -> do
         when deallocate
-          $ Win32.heapFree ph 0 (castPtr ioDataPtr)
+          (free ioDataPtr)
         return b
 
       ErrorSync errorCode deallocate -> do
         when deallocate
-          $ Win32.heapFree ph 0 (castPtr ioDataPtr)
+          (free ioDataPtr)
         failWithErrorCode ("withIODataPtr (" ++ errorTag ++ ")") errorCode
 
   where

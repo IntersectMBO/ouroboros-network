@@ -35,9 +35,9 @@ import Control.Monad (when)
 import Data.Word (Word32)
 import Data.Functor (void)
 import Foreign.C (CInt (..))
-import Foreign.Ptr (Ptr, castPtr, nullPtr)
+import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.StablePtr (deRefStablePtr, freeStablePtr)
-import Foreign.Marshal (alloca)
+import Foreign.Marshal (alloca, free)
 import Foreign.Storable (Storable (..))
 
 import           Network.Socket (Socket)
@@ -45,7 +45,6 @@ import qualified Network.Socket as Socket
 
 import System.Win32.Types (BOOL, HANDLE, DWORD)
 import qualified System.Win32.Types as Win32
-import qualified System.Win32.Mem   as Win32
 import qualified System.Win32.File  as Win32 (closeHandle)
 import System.Win32.Async.ErrCode
 import System.Win32.Async.IOData
@@ -224,8 +223,7 @@ dequeueCompletionPackets iocp@(IOCompletionPort port) =
              mvarPtr <- peek (iodDataPtr AsyncSing gqcsIODataPtr)
              mvar <- deRefStablePtr mvarPtr
              freeStablePtr mvarPtr
-             hp <- Win32.getProcessHeap
-             Win32.heapFree hp 0 (castPtr gqcsIODataPtr)
+             free gqcsIODataPtr
              success <- tryPutMVar mvar (Right numBytes)
              when (not success)
                $ fail "System.Win32.Async.dequeueCompletionPackets: MVar is not empty."
@@ -235,8 +233,7 @@ dequeueCompletionPackets iocp@(IOCompletionPort port) =
              mvarPtr <- peek (iodDataPtr AsyncSing gqcsIODataPtr)
              mvar <- deRefStablePtr mvarPtr
              freeStablePtr mvarPtr
-             hp <- Win32.getProcessHeap
-             Win32.heapFree hp 0 (castPtr gqcsIODataPtr)
+             free gqcsIODataPtr
              success <- tryPutMVar mvar (Left (ErrorCode errorCode))
              when (not success)
                $ fail "System.Win32.Async.dequeueCompletionPackets: MVar is not empty."
