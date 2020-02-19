@@ -97,9 +97,9 @@ instance (PBftCrypto c', Serialise (PBftVerKeyHash c'))
 instance ( SimpleCrypto c
          , PBftCrypto c'
          , Signable (PBftDSIGN c') (SignedSimplePBft c c')
-         , ConstructContextDSIGN ext c'
+         , ConstructContextDSIGN (PBftLedgerView c') c'
          , Serialise (PBftVerKeyHash c')
-         ) => RunMockBlock (ExtConfig (PBft c') ext) c (SimplePBftExt c c') where
+         ) => RunMockBlock c (SimplePBftExt c c') where
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
         forgePBftFields

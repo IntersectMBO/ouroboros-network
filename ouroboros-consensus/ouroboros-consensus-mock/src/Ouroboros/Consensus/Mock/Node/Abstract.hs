@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Consensus.Mock.Node.Abstract (
     RunMockProtocol(..)
@@ -16,6 +17,7 @@ import           GHC.Stack
 
 import           Cardano.Crypto (ProtocolMagicId (..))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 
@@ -26,12 +28,16 @@ class RunMockProtocol p where
   mockDecodeChainState :: forall s. NodeConfig p -> Decoder s (ChainState p)
 
 -- | Protocol specific functionality required to run consensus with mock blocks
-class RunMockProtocol p => RunMockBlock p c ext where
+class RunMockProtocol (BlockProtocol (SimpleBlock c ext))
+   => RunMockBlock c ext where
   -- | Construct the protocol specific part of the block
   --
   -- This is used in 'forgeSimple', which takes care of the generic part of
   -- the mock block.
-  forgeExt :: (HasNodeState p m, MonadRandom m)
+  forgeExt :: ( HasNodeState p m
+              , MonadRandom m
+              , p ~ BlockProtocol (SimpleBlock c ext)
+              )
            => NodeConfig p
            -> IsLeader p
            -> SimpleBlock' c ext ()

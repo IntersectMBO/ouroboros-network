@@ -110,7 +110,7 @@ instance PraosCrypto c' => Serialise (BlockInfo c') where
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => RunMockBlock (ExtConfig (Praos c') ext) c (SimplePraosExt c c') where
+         ) => RunMockBlock c (SimplePraosExt c c') where
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
         forgePraosFields (extNodeConfigP cfg)

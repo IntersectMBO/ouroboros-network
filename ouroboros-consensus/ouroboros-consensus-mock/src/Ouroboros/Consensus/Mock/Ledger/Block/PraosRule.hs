@@ -74,8 +74,7 @@ instance RunMockProtocol (WithLeaderSchedule p) where
   mockEncodeChainState = const encode
   mockDecodeChainState = const decode
 
-instance SimpleCrypto c
-      => RunMockBlock (WithLeaderSchedule p) c SimplePraosRuleExt where
+instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
   forgeExt cfg () SimpleBlock{..} = do
       let ext = SimplePraosRuleExt $ lsNodeConfigNodeId cfg
       return SimpleBlock {

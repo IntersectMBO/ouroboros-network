@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Consensus.Mock.Ledger.Forge (forgeSimple) where
 
@@ -26,9 +27,10 @@ forgeSimple :: forall p c m ext.
                ( HasNodeState p m
                , MonadRandom m
                , SimpleCrypto c
-               , RunMockBlock p c ext
+               , RunMockBlock c ext
                , SupportedBlock (SimpleBlock c ext)
                , Typeable ext
+               , p ~ BlockProtocol (SimpleBlock c ext)
                )
             => NodeConfig p
             -> SlotNo                              -- ^ Current slot

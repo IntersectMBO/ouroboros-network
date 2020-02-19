@@ -82,7 +82,7 @@ instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          )
-      => RunMockBlock (Bft c') c (SimpleBftExt c c') where
+      => RunMockBlock c (SimpleBftExt c c') where
   forgeExt cfg () SimpleBlock{..} = do
       ext :: SimpleBftExt c c' <- fmap SimpleBftExt $
         forgeBftFields cfg $

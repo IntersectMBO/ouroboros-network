@@ -40,9 +40,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
          , SupportedBlock (SimpleBlock SimpleMockCrypto ext)
          , Typeable ext
          , Serialise ext
-         , RunMockBlock (BlockProtocol (SimpleBlock SimpleMockCrypto ext))
-                        SimpleMockCrypto
-                        ext
+         , RunMockBlock SimpleMockCrypto ext
          ) => RunNode (SimpleBlock SimpleMockCrypto ext) where
   nodeForgeBlock            = forgeSimple
   nodeBlockMatchesHeader    = matchesSimpleHeader
