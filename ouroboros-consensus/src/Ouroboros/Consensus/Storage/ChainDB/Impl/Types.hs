@@ -468,19 +468,35 @@ data TraceAddBlockEvent blk
     -- ^ The block doesn't fit onto any other block, so we store it and ignore
     -- it.
 
-  | SwitchedToChain
-    { _prevChain :: AnchoredFragment (Header blk)
-    , _newChain  :: AnchoredFragment (Header blk)
-    }
-    -- ^ We successfully installed a new chain.
+  | AddedToCurrentChain
+      (Point blk)
+      (AnchoredFragment (Header blk))
+      (AnchoredFragment (Header blk))
+    -- ^ The new block (the 'Point') fits onto the current chain (first
+    -- fragment) and we have successfully used it to extend our (new) current
+    -- chain (second fragment).
+    --
+    -- Note that the new block isn't necessarily the tip of the new current
+    -- chain, as the new block might be the missing link between newer blocks
+    -- that come after it. For example, with our current chain being A and
+    -- having a disconnect C lying around, adding B will result in A -> B -> C
+    -- as the new chain.
+
+  | SwitchedToAFork
+      (Point blk)
+      (AnchoredFragment (Header blk))
+      (AnchoredFragment (Header blk))
+    -- ^ The new block (the 'Point') fits onto some fork and we have switched
+    -- to that fork (second fragment), as it is preferable to our (previous)
+    -- current chain (first fragment).
 
   | ChainChangedInBg
-    { _prevChain :: AnchoredFragment (Header blk)
-    , _newChain  :: AnchoredFragment (Header blk)
-    }
-    -- ^ We have found a new chain, but the current chain has changed in the
-    -- background such that our new chain is no longer preferable to the
-    -- current chain.
+      (AnchoredFragment (Header blk))
+      (AnchoredFragment (Header blk))
+    -- ^ While trying to extend our chain or switching to a fork, the current
+    -- chain was changed in the background by a concurrently added block such
+    -- that the new chain (second fragment) is no longer peferable to the
+    -- updated current chain (first fragment).
 
   | AddBlockValidation (TraceValidationEvent blk)
     -- ^ An event traced during validating performed while adding a block.
