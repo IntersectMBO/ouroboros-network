@@ -191,9 +191,9 @@ mkByronConfig :: Genesis.Config
               -> Update.SoftwareVersion
               -> BlockConfig ByronBlock
 mkByronConfig genesisConfig pVer sVer = ByronConfig {
-      pbftGenesisConfig   = genesisConfig
-    , pbftProtocolVersion = pVer
-    , pbftSoftwareVersion = sVer
+      byronGenesisConfig   = genesisConfig
+    , byronProtocolVersion = pVer
+    , byronSoftwareVersion = sVer
     }
 
 {-------------------------------------------------------------------------------
@@ -289,12 +289,12 @@ instance RunNode ByronBlock where
 
 extractGenesisData :: TopLevelConfig ByronBlock -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData
-                   . pbftGenesisConfig
+                   . byronGenesisConfig
                    . extNodeConfig
                    . configConsensus
 
 extractEpochSlots :: TopLevelConfig ByronBlock -> EpochSlots
 extractEpochSlots = Genesis.configEpochSlots
-                  . pbftGenesisConfig
+                  . byronGenesisConfig
                   . extNodeConfig
                   . configConsensus

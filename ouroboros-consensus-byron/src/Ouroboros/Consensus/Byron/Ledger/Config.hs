@@ -7,10 +7,10 @@
 
 module Ouroboros.Consensus.Byron.Ledger.Config (
     BlockConfig(..)
-  , pbftProtocolMagicId
-  , pbftProtocolMagic
-  , pbftGenesisHash
-  , pbftEpochSlots
+  , byronProtocolMagicId
+  , byronProtocolMagic
+  , byronGenesisHash
+  , byronEpochSlots
   ) where
 
 import           GHC.Generics (Generic)
@@ -28,30 +28,30 @@ import           Ouroboros.Consensus.Byron.Ledger.Block
 -- | Extended configuration we need for Byron
 data instance BlockConfig ByronBlock = ByronConfig {
       -- | Genesis configuration
-      pbftGenesisConfig   :: !CC.Genesis.Config
+      byronGenesisConfig   :: !CC.Genesis.Config
 
       -- | Node protocol version
       --
       -- NOTE: This is /static/ for the node, and may not correspond to what's
       -- on the chain. It's the protocol supported by /this/ node; to change it,
       -- you'd have to change the software.
-    , pbftProtocolVersion :: !CC.Update.ProtocolVersion
+    , byronProtocolVersion :: !CC.Update.ProtocolVersion
 
       -- | Node software version
       --
-      -- Like 'pbftProtocolVersion', this is independent from the chain.
-    , pbftSoftwareVersion :: !CC.Update.SoftwareVersion
+      -- Like 'byronProtocolVersion', this is independent from the chain.
+    , byronSoftwareVersion :: !CC.Update.SoftwareVersion
     }
   deriving (Generic, NoUnexpectedThunks)
 
-pbftProtocolMagicId :: BlockConfig ByronBlock -> Crypto.ProtocolMagicId
-pbftProtocolMagicId = Crypto.getProtocolMagicId . pbftProtocolMagic
+byronProtocolMagicId :: BlockConfig ByronBlock -> Crypto.ProtocolMagicId
+byronProtocolMagicId = Crypto.getProtocolMagicId . byronProtocolMagic
 
-pbftProtocolMagic :: BlockConfig ByronBlock -> Crypto.ProtocolMagic
-pbftProtocolMagic = CC.Genesis.configProtocolMagic . pbftGenesisConfig
+byronProtocolMagic :: BlockConfig ByronBlock -> Crypto.ProtocolMagic
+byronProtocolMagic = CC.Genesis.configProtocolMagic . byronGenesisConfig
 
-pbftGenesisHash :: BlockConfig ByronBlock -> CC.Genesis.GenesisHash
-pbftGenesisHash = CC.Genesis.configGenesisHash . pbftGenesisConfig
+byronGenesisHash :: BlockConfig ByronBlock -> CC.Genesis.GenesisHash
+byronGenesisHash = CC.Genesis.configGenesisHash . byronGenesisConfig
 
-pbftEpochSlots :: BlockConfig ByronBlock -> CC.Slot.EpochSlots
-pbftEpochSlots = CC.Genesis.configEpochSlots . pbftGenesisConfig
+byronEpochSlots :: BlockConfig ByronBlock -> CC.Slot.EpochSlots
+byronEpochSlots = CC.Genesis.configEpochSlots . byronGenesisConfig

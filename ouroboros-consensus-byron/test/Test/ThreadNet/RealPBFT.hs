@@ -825,7 +825,7 @@ updSignKey genSK extCfg isLeader eno newSK = isLeader
   where
     newCert =
         Delegation.signCertificate
-            (Byron.pbftProtocolMagicId extCfg)
+            (Byron.byronProtocolMagicId extCfg)
             (Crypto.toVerification sk')
             eno
             (Crypto.noPassSafeSigner gsk')

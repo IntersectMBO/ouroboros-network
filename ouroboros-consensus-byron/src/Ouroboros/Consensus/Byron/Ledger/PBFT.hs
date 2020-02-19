@@ -46,7 +46,7 @@ type instance BlockProtocol ByronBlock = ByronConsensusProtocol
 mkByronContextDSIGN :: TopLevelConfig ByronBlock
                     -> VerKeyDSIGN ByronDSIGN
                     -> ContextDSIGN ByronDSIGN
-mkByronContextDSIGN cfg genKey = (pbftProtocolMagicId (extNodeConfig (configConsensus cfg)), genKey)
+mkByronContextDSIGN cfg genKey = (byronProtocolMagicId (extNodeConfig (configConsensus cfg)), genKey)
 
 instance SupportedBlock ByronBlock where
   validateView cfg hdr@ByronHeader{..} =
@@ -77,7 +77,7 @@ instance SupportedBlock ByronBlock where
                (CC.recoverSignedBytes epochSlots regular)
                (mkByronContextDSIGN cfg (pbftGenKey pbftFields))
     where
-      epochSlots = pbftEpochSlots (extNodeConfig (configConsensus cfg))
+      epochSlots = byronEpochSlots (extNodeConfig (configConsensus cfg))
 
   selectView _ hdr = (blockNo hdr, byronHeaderIsEBB hdr)
 

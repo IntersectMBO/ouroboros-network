@@ -67,7 +67,7 @@ verifyHeaderIntegrity cfg hdr =
         CC.ABOBBoundaryHdr _ -> True
   where
     protocolMagicId = CC.Genesis.configProtocolMagicId $
-                        pbftGenesisConfig $ extNodeConfig (configConsensus cfg)
+                        byronGenesisConfig $ extNodeConfig (configConsensus cfg)
 
 -- | Verifies whether the block is not corrupted by checking its signature and
 -- witnesses.
