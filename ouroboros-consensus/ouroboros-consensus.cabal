@@ -69,7 +69,6 @@ library
                        Ouroboros.Consensus.NodeNetwork
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
-                       Ouroboros.Consensus.Protocol.ExtConfig
                        Ouroboros.Consensus.Protocol.LeaderSchedule
                        Ouroboros.Consensus.Protocol.MockChainSel
                        Ouroboros.Consensus.Protocol.ModChainSel

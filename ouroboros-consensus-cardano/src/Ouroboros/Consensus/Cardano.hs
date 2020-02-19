@@ -40,7 +40,6 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract as X
 import           Ouroboros.Consensus.Protocol.BFT as X
-import           Ouroboros.Consensus.Protocol.ExtConfig as X
 import           Ouroboros.Consensus.Protocol.LeaderSchedule as X
 import           Ouroboros.Consensus.Protocol.PBFT as X
 import           Ouroboros.Consensus.Util
