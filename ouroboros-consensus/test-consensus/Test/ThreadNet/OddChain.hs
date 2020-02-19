@@ -71,7 +71,7 @@ prop_simple_oddchain_convergence
 
 
 countOddTxs :: OddBlock -> Word64
-countOddTxs = undefined
+countOddTxs = fromIntegral . length . oddBlockPayload
 
 instance TxGen OddBlock where
   testGenTx _numCoreNodes _slotNo _cfg _ledgerSt =

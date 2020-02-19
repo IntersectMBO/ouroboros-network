@@ -229,6 +229,7 @@ instance UpdateLedger OddBlock where
           -- last applied block.
           --
           [] -> pure $! st' { stCurrentSlot = blockSlot blk
+                            , stPrevHash    = BlockHash $ blockHash blk
                             , phase         = bump oddBlockPayload phase
                             }
           xs -> throwError $ OddError
@@ -237,7 +238,7 @@ instance UpdateLedger OddBlock where
                              }
 
   reapplyLedgerBlock _cfg blk@OddBlock { oddBlockHeader, oddBlockPayload } st@LedgerState { phase }
-    = st { stPrevHash    = castHash $ blockPrevHash oddBlockHeader
+    = st { stPrevHash    = BlockHash $ blockHash blk
          , stCurrentSlot = blockSlot blk -- QUESTION: Is this needed here?
          , phase         = bump oddBlockPayload phase
          }
