@@ -105,12 +105,12 @@ import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
-import           Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB,
-                     ChainDbError (..), InvalidBlockReason (..),
+import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
+                     ChainDB, ChainDbError (..), InvalidBlockReason (..),
                      IteratorResult (..), LedgerCursorFailure (..),
                      StreamFrom (..), StreamTo (..), UnknownRange (..),
                      validBounds)
-import           Ouroboros.Storage.ChainDB.Impl.ChainSel (olderThanK)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (olderThanK)
 
 type IteratorId = Int
 

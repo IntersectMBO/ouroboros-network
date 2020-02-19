@@ -57,13 +57,13 @@ import           Ouroboros.Network.Point (WithOrigin)
 import           Ouroboros.Consensus.Block (IsEBB)
 import           Ouroboros.Consensus.Util (safeMaximum)
 
-import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.Util.ErrorHandling (ThrowCantCatch)
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-import           Ouroboros.Storage.VolatileDB.API
-import qualified Ouroboros.Storage.VolatileDB.Impl as Internal
-import           Ouroboros.Storage.VolatileDB.Util
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ThrowCantCatch)
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Consensus.Storage.VolatileDB.API
+import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl as Internal
+import           Ouroboros.Consensus.Storage.VolatileDB.Util
 
 import           Test.Ouroboros.Storage.VolatileDB.TestBlock
 

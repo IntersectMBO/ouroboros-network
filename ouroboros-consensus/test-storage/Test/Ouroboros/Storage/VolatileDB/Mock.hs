@@ -9,10 +9,10 @@ import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM
 
-import           Ouroboros.Storage.Common (castBlockComponent)
-import           Ouroboros.Storage.Util.ErrorHandling (ThrowCantCatch)
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-import           Ouroboros.Storage.VolatileDB.API
+import           Ouroboros.Consensus.Storage.Common (castBlockComponent)
+import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ThrowCantCatch)
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Consensus.Storage.VolatileDB.API
 
 import           Test.Ouroboros.Storage.VolatileDB.Model
 

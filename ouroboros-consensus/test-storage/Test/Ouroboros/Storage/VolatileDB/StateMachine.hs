@@ -60,14 +60,16 @@ import           Ouroboros.Consensus.Block (IsEBB (..))
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.ChainDB.Impl.VolDB (blockFileParser')
-import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.FS.API
-import           Ouroboros.Storage.FS.API.Types
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-import           Ouroboros.Storage.VolatileDB.API
-import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
-import           Ouroboros.Storage.VolatileDB.Util
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
+                     (blockFileParser')
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.FS.API
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Consensus.Storage.VolatileDB.API
+import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl as Internal hiding
+                     (openDB)
+import           Ouroboros.Consensus.Storage.VolatileDB.Util
 
 import           Test.Util.FS.Sim.Error hiding (null)
 import qualified Test.Util.FS.Sim.MockFS as Mock

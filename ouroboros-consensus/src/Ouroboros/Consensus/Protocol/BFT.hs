@@ -41,7 +41,7 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed

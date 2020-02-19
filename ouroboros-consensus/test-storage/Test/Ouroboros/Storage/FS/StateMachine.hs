@@ -63,11 +63,11 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Storage.FS.API (HasFS (..))
-import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.IO
-import qualified Ouroboros.Storage.IO as F
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.FS.IO
+import qualified Ouroboros.Consensus.Storage.IO as F
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.Condense

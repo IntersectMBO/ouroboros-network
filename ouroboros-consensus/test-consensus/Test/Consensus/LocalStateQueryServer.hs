@@ -43,13 +43,13 @@ import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 
-import qualified Ouroboros.Storage.ChainDB.Impl.BlockCache as BlockCache
-import qualified Ouroboros.Storage.ChainDB.Impl.LedgerCursor as LedgerCursor
-import           Ouroboros.Storage.ChainDB.Impl.LgrDB (LedgerDbParams (..),
-                     LgrDB, LgrDbArgs (..), mkLgrDB)
-import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
-import           Ouroboros.Storage.LedgerDB.Conf (LedgerDbConf (..))
-import qualified Ouroboros.Storage.LedgerDB.InMemory as LgrDB
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor as LedgerCursor
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
+                     (LedgerDbParams (..), LgrDB, LgrDbArgs (..), mkLgrDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
+import           Ouroboros.Consensus.Storage.LedgerDB.Conf (LedgerDbConf (..))
+import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
                      (ledgerDbFromGenesis)
 
 import           Test.QuickCheck hiding (Result)

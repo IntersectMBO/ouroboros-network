@@ -41,50 +41,10 @@ library
                        Ouroboros.Consensus.BlockchainTime.WallClock
                        Ouroboros.Consensus.ChainSyncClient
                        Ouroboros.Consensus.ChainSyncServer
-                       Ouroboros.Consensus.Crypto.DSIGN.Cardano
                        Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract
-                       Ouroboros.Consensus.Ledger.Byron
-                       Ouroboros.Consensus.Ledger.Byron.Block
-                       Ouroboros.Consensus.Ledger.Byron.Config
-                       Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
-                       Ouroboros.Consensus.Ledger.Byron.Conversions
-                       Ouroboros.Consensus.Ledger.Byron.DelegationHistory
-                       Ouroboros.Consensus.Ledger.Byron.Forge
-                       Ouroboros.Consensus.Ledger.Byron.HeaderValidation
-                       Ouroboros.Consensus.Ledger.Byron.Integrity
-                       Ouroboros.Consensus.Ledger.Byron.Ledger
-                       Ouroboros.Consensus.Ledger.Byron.Mempool
-                       Ouroboros.Consensus.Ledger.Byron.NetworkProtocolVersion
-                       Ouroboros.Consensus.Ledger.Byron.Orphans
-                       Ouroboros.Consensus.Ledger.Byron.PBFT
-                       Ouroboros.Consensus.Ledger.Byron.Serialisation
-                       Ouroboros.Consensus.Ledger.ByronSpec
-                       Ouroboros.Consensus.Ledger.ByronSpec.Accessors
-                       Ouroboros.Consensus.Ledger.ByronSpec.Block
-                       Ouroboros.Consensus.Ledger.ByronSpec.Conversions
-                       Ouroboros.Consensus.Ledger.ByronSpec.Forge
-                       Ouroboros.Consensus.Ledger.ByronSpec.Genesis
-                       Ouroboros.Consensus.Ledger.ByronSpec.GenTx
-                       Ouroboros.Consensus.Ledger.ByronSpec.Ledger
-                       Ouroboros.Consensus.Ledger.ByronSpec.Mempool
-                       Ouroboros.Consensus.Ledger.ByronSpec.Orphans
-                       Ouroboros.Consensus.Ledger.ByronSpec.Rules
                        Ouroboros.Consensus.Ledger.Dual
-                       Ouroboros.Consensus.Ledger.Dual.Byron
                        Ouroboros.Consensus.Ledger.Extended
-                       Ouroboros.Consensus.Ledger.Mock
-                       Ouroboros.Consensus.Ledger.Mock.Address
-                       Ouroboros.Consensus.Ledger.Mock.Block
-                       Ouroboros.Consensus.Ledger.Mock.Block.BFT
-                       Ouroboros.Consensus.Ledger.Mock.Block.PBFT
-                       Ouroboros.Consensus.Ledger.Mock.Block.Praos
-                       Ouroboros.Consensus.Ledger.Mock.Block.PraosRule
-                       Ouroboros.Consensus.Ledger.Mock.Forge
-                       Ouroboros.Consensus.Ledger.Mock.Run
-                       Ouroboros.Consensus.Ledger.Mock.Stake
-                       Ouroboros.Consensus.Ledger.Mock.State
-                       Ouroboros.Consensus.Ledger.Mock.UTxO
                        Ouroboros.Consensus.LocalStateQueryServer
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
@@ -96,23 +56,12 @@ library
                        Ouroboros.Consensus.Node.Exit
                        Ouroboros.Consensus.Node.NetworkProtocolVersion
                        Ouroboros.Consensus.Node.ProtocolInfo
-                       Ouroboros.Consensus.Node.ProtocolInfo.Abstract
-                       Ouroboros.Consensus.Node.ProtocolInfo.Byron
-                       Ouroboros.Consensus.Node.ProtocolInfo.Mock.BFT
-                       Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT
-                       Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos
-                       Ouroboros.Consensus.Node.ProtocolInfo.Mock.PraosRule
                        Ouroboros.Consensus.Node.Recovery
                        Ouroboros.Consensus.Node.Run
-                       Ouroboros.Consensus.Node.Run.Abstract
-                       Ouroboros.Consensus.Node.Run.Byron
-                       Ouroboros.Consensus.Node.Run.DualByron
-                       Ouroboros.Consensus.Node.Run.Mock
                        Ouroboros.Consensus.Node.Tracers
                        Ouroboros.Consensus.NodeId
                        Ouroboros.Consensus.NodeKernel
                        Ouroboros.Consensus.NodeNetwork
-                       Ouroboros.Consensus.Protocol
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.ExtConfig
@@ -123,7 +72,6 @@ library
                        Ouroboros.Consensus.Protocol.PBFT.ChainState
                        Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
                        Ouroboros.Consensus.Protocol.PBFT.Crypto
-                       Ouroboros.Consensus.Protocol.Praos
                        Ouroboros.Consensus.Protocol.Signed
                        Ouroboros.Consensus.TxSubmission
                        Ouroboros.Consensus.Util
@@ -140,66 +88,66 @@ library
                        Ouroboros.Consensus.Util.Random
                        Ouroboros.Consensus.Util.RedundantConstraints
                        Ouroboros.Consensus.Util.ResourceRegistry
-                       Ouroboros.Consensus.Util.Singletons
                        Ouroboros.Consensus.Util.STM
+                       Ouroboros.Consensus.Util.Singletons
                        Ouroboros.Consensus.Util.TraceSize
                        Ouroboros.Consensus.Util.Versioned
 
                        -- Storing things on disk
-                       Ouroboros.Storage.Common
-                       Ouroboros.Storage.ChainDB
-                       Ouroboros.Storage.ChainDB.API
-                       Ouroboros.Storage.ChainDB.Impl
-                       Ouroboros.Storage.ChainDB.Impl.Args
-                       Ouroboros.Storage.ChainDB.Impl.Background
-                       Ouroboros.Storage.ChainDB.Impl.BlockCache
-                       Ouroboros.Storage.ChainDB.Impl.BlockComponent
-                       Ouroboros.Storage.ChainDB.Impl.ChainSel
-                       Ouroboros.Storage.ChainDB.Impl.ImmDB
-                       Ouroboros.Storage.ChainDB.Impl.Iterator
-                       Ouroboros.Storage.ChainDB.Impl.LedgerCursor
-                       Ouroboros.Storage.ChainDB.Impl.LgrDB
-                       Ouroboros.Storage.ChainDB.Impl.Query
-                       Ouroboros.Storage.ChainDB.Impl.Reader
-                       Ouroboros.Storage.ChainDB.Impl.Reopen
-                       Ouroboros.Storage.ChainDB.Impl.Types
-                       Ouroboros.Storage.ChainDB.Impl.VolDB
-                       Ouroboros.Storage.EpochInfo
-                       Ouroboros.Storage.EpochInfo.API
-                       Ouroboros.Storage.EpochInfo.CumulEpochSizes
-                       Ouroboros.Storage.EpochInfo.Impl
-                       Ouroboros.Storage.FS.API
-                       Ouroboros.Storage.FS.API.Types
-                       Ouroboros.Storage.FS.CRC
-                       Ouroboros.Storage.FS.Handle
-                       Ouroboros.Storage.FS.IO
-                       Ouroboros.Storage.ImmutableDB
-                       Ouroboros.Storage.ImmutableDB.API
-                       Ouroboros.Storage.ImmutableDB.Impl
-                       Ouroboros.Storage.ImmutableDB.Impl.Index
-                       Ouroboros.Storage.ImmutableDB.Impl.Index.Cache
-                       Ouroboros.Storage.ImmutableDB.Impl.Index.Primary
-                       Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary
-                       Ouroboros.Storage.ImmutableDB.Impl.Iterator
-                       Ouroboros.Storage.ImmutableDB.Impl.State
-                       Ouroboros.Storage.ImmutableDB.Impl.Util
-                       Ouroboros.Storage.ImmutableDB.Impl.Validation
-                       Ouroboros.Storage.ImmutableDB.Layout
-                       Ouroboros.Storage.ImmutableDB.Parser
-                       Ouroboros.Storage.ImmutableDB.Types
-                       Ouroboros.Storage.IO
-                       Ouroboros.Storage.LedgerDB.Conf
-                       Ouroboros.Storage.LedgerDB.DiskPolicy
-                       Ouroboros.Storage.LedgerDB.InMemory
-                       Ouroboros.Storage.LedgerDB.OnDisk
-                       Ouroboros.Storage.Util.ErrorHandling
-                       Ouroboros.Storage.VolatileDB
-                       Ouroboros.Storage.VolatileDB.API
-                       Ouroboros.Storage.VolatileDB.FileInfo
-                       Ouroboros.Storage.VolatileDB.Impl
-                       Ouroboros.Storage.VolatileDB.Index
-                       Ouroboros.Storage.VolatileDB.Types
-                       Ouroboros.Storage.VolatileDB.Util
+                       Ouroboros.Consensus.Storage.ChainDB
+                       Ouroboros.Consensus.Storage.ChainDB.API
+                       Ouroboros.Consensus.Storage.ChainDB.Impl
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.Args
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.Background
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.BlockComponent
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.Query
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.Reader
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.Reopen
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.Types
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
+                       Ouroboros.Consensus.Storage.Common
+                       Ouroboros.Consensus.Storage.EpochInfo
+                       Ouroboros.Consensus.Storage.EpochInfo.API
+                       Ouroboros.Consensus.Storage.EpochInfo.CumulEpochSizes
+                       Ouroboros.Consensus.Storage.EpochInfo.Impl
+                       Ouroboros.Consensus.Storage.FS.API
+                       Ouroboros.Consensus.Storage.FS.API.Types
+                       Ouroboros.Consensus.Storage.FS.CRC
+                       Ouroboros.Consensus.Storage.FS.Handle
+                       Ouroboros.Consensus.Storage.FS.IO
+                       Ouroboros.Consensus.Storage.IO
+                       Ouroboros.Consensus.Storage.ImmutableDB
+                       Ouroboros.Consensus.Storage.ImmutableDB.API
+                       Ouroboros.Consensus.Storage.ImmutableDB.Impl
+                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
+                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
+                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
+                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
+                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Iterator
+                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
+                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
+                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
+                       Ouroboros.Consensus.Storage.ImmutableDB.Layout
+                       Ouroboros.Consensus.Storage.ImmutableDB.Parser
+                       Ouroboros.Consensus.Storage.ImmutableDB.Types
+                       Ouroboros.Consensus.Storage.LedgerDB.Conf
+                       Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                       Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                       Ouroboros.Consensus.Storage.LedgerDB.OnDisk
+                       Ouroboros.Consensus.Storage.Util.ErrorHandling
+                       Ouroboros.Consensus.Storage.VolatileDB
+                       Ouroboros.Consensus.Storage.VolatileDB.API
+                       Ouroboros.Consensus.Storage.VolatileDB.FileInfo
+                       Ouroboros.Consensus.Storage.VolatileDB.Impl
+                       Ouroboros.Consensus.Storage.VolatileDB.Index
+                       Ouroboros.Consensus.Storage.VolatileDB.Types
+                       Ouroboros.Consensus.Storage.VolatileDB.Util
 
   default-language:    Haskell2010
   other-extensions:
@@ -237,299 +185,237 @@ library
                        UndecidableSuperClasses
                        ViewPatterns
 
-  build-depends:       base              >=4.9 && <4.13,
-                       network-mux,
-                       typed-protocols,
-                       ouroboros-network-framework,
-                       ouroboros-network,
-                       io-sim-classes,
-                       contra-tracer,
+  build-depends:       base              >=4.9 && <4.13
+                     , bifunctors
+                     , bimap             >=0.3   && <0.5
+                     , binary            >=0.8   && <0.9
+                     , bytestring        >=0.10  && <0.11
+                     , cardano-binary
+                     , cardano-crypto-class
+                     , cardano-crypto-wrapper
+                     , cardano-prelude
+                     , cardano-slotting
+                     , cborg             >=0.2.2 && <0.3
+                     , containers        >=0.5   && <0.7
+                     , contra-tracer
+                     , cryptonite        >=0.25  && <0.26
+                     , deepseq
+                     , digest
+                     , directory         >=1.3   && <1.4
+                     , filelock
+                     , filepath          >=1.4   && <1.5
+                     , formatting        >=6.3   && <6.4
+                     , hashable
+                     , mmorph            >=1.1   && <1.2
+                     , mtl               >=2.2   && <2.3
+                     , network           >=3.1   && <3.2
+                     , psqueues          >=0.2.3 && <0.3
+                     , serialise         >=0.2   && <0.3
+                     , stm
+                     , streaming
+                     , text              >=1.2   && <1.3
+                     , time
+                     , transformers
+                     , vector            >=0.12  && <0.13
 
-                       bifunctors,
-                       bimap             >=0.3   && <0.5,
-                       binary            >=0.8   && <0.9,
-                       bytestring        >=0.10  && <0.11,
-                       cardano-binary,
-                       cardano-crypto-class,
-                       cardano-crypto-wrapper,
-                       cardano-ledger,
-                       cardano-ledger-test,
-                       cardano-prelude,
-                       cardano-slotting,
-                       cborg             >=0.2.2 && <0.3,
-                       containers        >=0.5   && <0.7,
-                       cryptonite        >=0.25  && <0.26,
-                       cs-blockchain,
-                       cs-ledger,
-                       deepseq,
-                       digest,
-                       directory         >=1.3   && <1.4,
-                       filelock,
-                       filepath          >=1.4   && <1.5,
-                       fingertree        >=0.1.4.2 && <0.2,
-                       formatting        >=6.3   && <6.4,
-                       hashable,
-                       memory,
-                       mmorph            >=1.1   && <1.2,
-                       mtl               >=2.2   && <2.3,
-                       network           >=3.1   && <3.2,
-                       psqueues          >=0.2.3 && <0.3,
-                       serialise         >=0.2   && <0.3,
-                       small-steps,
-                       stm,
-                       streaming,
-                       text              >=1.2   && <1.3,
-                       time,
-                       transformers,
-                       vector            >=0.12  && <0.13
+                     , io-sim-classes
+                     , typed-protocols
+                     , network-mux
+                     , ouroboros-network-framework
+                     , ouroboros-network
+
 
   if os(windows)
-     build-depends:       Win32 >= 2.6.2.0
+     build-depends:    Win32 >= 2.6.2.0
   else
-     build-depends:       unix
-                        , unix-bytestring
+     build-depends:    unix
+                     , unix-bytestring
 
   ghc-options:         -Wall
-                       -Wno-unticked-promoted-constructors
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
 
 test-suite test-consensus
-  type:             exitcode-stdio-1.0
-  hs-source-dirs:   test-consensus test-util
-  default-language: Haskell2010
-  main-is:          Main.hs
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test-consensus ouroboros-consensus-test-infra/src ouroboros-consensus-mock/src
+  main-is:             Main.hs
   other-modules:
-                    Test.Consensus.BlockchainTime.SlotLengths
-                    Test.Consensus.BlockchainTime.WallClock
-                    Test.Consensus.ChainSyncClient
-                    Test.Consensus.Ledger.Byron
-                    Test.Consensus.Ledger.Mock
-                    Test.Consensus.LocalStateQueryServer
-                    Test.Consensus.Mempool
-                    Test.Consensus.Node
-                    Test.Consensus.Protocol.PBFT
-                    Test.Consensus.ResourceRegistry
-                    Test.Consensus.Util.Versioned
-                    Test.ThreadNet.BFT
-                    Test.ThreadNet.DualPBFT
-                    Test.ThreadNet.General
-                    Test.ThreadNet.LeaderSchedule
-                    Test.ThreadNet.Network
-                    Test.ThreadNet.PBFT
-                    Test.ThreadNet.Praos
-                    Test.ThreadNet.RealPBFT
-                    Test.ThreadNet.Ref.RealPBFT
-                    Test.ThreadNet.TxGen
-                    Test.ThreadNet.Util
-                    Test.ThreadNet.Util.Expectations
-                    Test.ThreadNet.Util.NodeJoinPlan
-                    Test.ThreadNet.Util.NodeTopology
-                    Test.ThreadNet.Util.NodeRestarts
-                    Test.ThreadNet.Util.Tests
-                    Test.Util.BlockchainTime
-                    Test.Util.FS.Sim.FsTree
-                    Test.Util.FS.Sim.MockFS
-                    Test.Util.FS.Sim.STM
-                    Test.Util.HasCreator
-                    Test.Util.MockChain
-                    Test.Util.Orphans.Arbitrary
-                    Test.Util.Orphans.IOLike
-                    Test.Util.Orphans.NoUnexpectedThunks
-                    Test.Util.QSM
-                    Test.Util.QuickCheck
-                    Test.Util.Range
-                    Test.Util.SOP
-                    Test.Util.Shrink
-                    Test.Util.Split
-                    Test.Util.Stream
-                    Test.Util.TestBlock
-                    Test.Util.Tracer
-  build-depends:    base,
-                    base16-bytestring,
-                    binary,
-                    bytestring,
-                    cardano-binary,
-                    cardano-crypto-class,
-                    cardano-crypto-test,
-                    cardano-crypto-wrapper,
-                    cardano-ledger,
-                    cardano-ledger-test,
-                    cardano-prelude,
-                    cardano-slotting,
-                    typed-protocols,
-                    network-mux,
-                    ouroboros-network,
-                    ouroboros-consensus,
-                    io-sim-classes,
-                    io-sim,
+                       Test.Consensus.BlockchainTime.SlotLengths
+                       Test.Consensus.BlockchainTime.WallClock
+                       Test.Consensus.ChainSyncClient
+                       Test.Consensus.LocalStateQueryServer
+                       Test.Consensus.Mempool
+                       Test.Consensus.Node
+                       Test.Consensus.Protocol.PBFT
+                       Test.Consensus.ResourceRegistry
+                       Test.Consensus.Util.Versioned
 
-                    -- Needed for the dual ledger
-                    cs-blockchain,
-                    cs-ledger,
-                    small-steps,
-                    hedgehog,
-                    hedgehog-quickcheck,
+                       -- ouroboros-consensus-mock
+                       Ouroboros.Consensus.Mock.Ledger
+                       Ouroboros.Consensus.Mock.Ledger.Address
+                       Ouroboros.Consensus.Mock.Ledger.Block
+                       Ouroboros.Consensus.Mock.Ledger.Block.BFT
+                       Ouroboros.Consensus.Mock.Ledger.Block.PBFT
+                       Ouroboros.Consensus.Mock.Ledger.Block.Praos
+                       Ouroboros.Consensus.Mock.Ledger.Block.PraosRule
+                       Ouroboros.Consensus.Mock.Ledger.Forge
+                       Ouroboros.Consensus.Mock.Ledger.Stake
+                       Ouroboros.Consensus.Mock.Ledger.State
+                       Ouroboros.Consensus.Mock.Ledger.UTxO
+                       Ouroboros.Consensus.Mock.Node.Abstract
+                       Ouroboros.Consensus.Mock.Protocol.Praos
 
-                    binary-search,
-                    cborg,
-                    containers,
-                    contra-tracer,
-                    cryptonite,
-                    deepseq,
-                    directory,
-                    fgl,
-                    filepath,
-                    fingertree,
-                    generics-sop,
-                    graphviz,
-                    hedgehog-quickcheck,
-                    mtl,
-                    QuickCheck,
-                    quickcheck-state-machine,
-                    random,
-                    serialise,
-                    tasty,
-                    tasty-golden,
-                    tasty-hunit,
-                    tasty-quickcheck,
-                    temporary,
-                    text,
-                    time,
-                    transformers,
-                    tree-diff
+                       -- ouroboros-consensus-test-infra
+                       Test.Util.BlockchainTime
+                       Test.Util.FS.Sim.FsTree
+                       Test.Util.FS.Sim.MockFS
+                       Test.Util.FS.Sim.STM
+                       Test.Util.Orphans.Arbitrary
+                       Test.Util.Orphans.IOLike
+                       Test.Util.Orphans.NoUnexpectedThunks
+                       Test.Util.QSM
+                       Test.Util.QuickCheck
+                       Test.Util.Range
+                       Test.Util.Roundtrip
+                       Test.Util.SOP
+                       Test.Util.Split
+                       Test.Util.TestBlock
+                       Test.Util.Tracer
 
-  ghc-options:      -Wall
-                    -fno-ignore-asserts
-                    -threaded
-                    -rtsopts
-
-test-suite test-storage
-  type:             exitcode-stdio-1.0
-  hs-source-dirs:   test-storage test-util
-  default-language: Haskell2010
-  main-is:          Main.hs
-  other-modules:
-                    Test.Ouroboros.Storage
-                    Test.Ouroboros.Storage.ChainDB
-                    Test.Ouroboros.Storage.ChainDB.AddBlock
-                    Test.Ouroboros.Storage.ChainDB.ImmDB
-                    Test.Ouroboros.Storage.ChainDB.Iterator
-                    Test.Ouroboros.Storage.ChainDB.Mock
-                    Test.Ouroboros.Storage.ChainDB.Mock.Test
-                    Test.Ouroboros.Storage.ChainDB.Model
-                    Test.Ouroboros.Storage.ChainDB.Model.Test
-                    Test.Ouroboros.Storage.ChainDB.StateMachine
-                    Test.Ouroboros.Storage.FS
-                    Test.Ouroboros.Storage.FS.StateMachine
-                    Test.Ouroboros.Storage.ImmutableDB
-                    Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes
-                    Test.Ouroboros.Storage.ImmutableDB.Mock
-                    Test.Ouroboros.Storage.ImmutableDB.Model
-                    Test.Ouroboros.Storage.ImmutableDB.Primary
-                    Test.Ouroboros.Storage.ImmutableDB.StateMachine
-                    Test.Ouroboros.Storage.LedgerDB
-                    Test.Ouroboros.Storage.LedgerDB.InMemory
-                    Test.Ouroboros.Storage.LedgerDB.OnDisk
-                    Test.Ouroboros.Storage.TestBlock
-                    Test.Ouroboros.Storage.Util
-                    Test.Ouroboros.Storage.VolatileDB
-                    Test.Ouroboros.Storage.VolatileDB.Mock
-                    Test.Ouroboros.Storage.VolatileDB.Model
-                    Test.Ouroboros.Storage.VolatileDB.StateMachine
-                    Test.Ouroboros.Storage.VolatileDB.TestBlock
-                    Test.Util.Blob
-                    Test.Util.FS.Sim.Error
-                    Test.Util.FS.Sim.FsTree
-                    Test.Util.FS.Sim.MockFS
-                    Test.Util.FS.Sim.Pure
-                    Test.Util.FS.Sim.STM
-                    Test.Util.Orphans.Arbitrary
-                    Test.Util.Orphans.IOLike
-                    Test.Util.Orphans.NoUnexpectedThunks
-                    Test.Util.QuickCheck
-                    Test.Util.Range
-                    Test.Util.RefEnv
-                    Test.Util.SOP
-                    Test.Util.TestBlock
-                    Test.Util.Tracer
-                    Test.Util.WithEq
-  build-depends:    base,
-                    cardano-crypto-class,
-                    cardano-ledger,
-                    cardano-ledger-test,
-                    cardano-prelude,
-                    ouroboros-network,
-                    ouroboros-network-testing,
-                    ouroboros-consensus,
-                    io-sim-classes,
-                    io-sim,
-
-                    base16-bytestring,
-                    bifunctors,
-                    binary,
-                    bytestring,
-                    cborg,
-                    cereal,
-                    containers,
-                    contra-tracer,
-                    deepseq,
-                    directory,
-                    fingertree,
-                    generics-sop,
-                    hashable,
-                    mtl,
-                    pretty-show,
-                    QuickCheck,
-                    quickcheck-state-machine >=0.6.0,
-                    random,
-                    serialise,
-                    tasty,
-                    tasty-hunit,
-                    tasty-quickcheck,
-                    temporary,
-                    text,
-                    time,
-                    transformers,
-                    tree-diff
-
-  ghc-options:      -Wall
-                    -fno-ignore-asserts
-
-executable byron-db-converter
-   hs-source-dirs:     tools/db-convert
-   build-depends:      base
-                     , bytestring
+  build-depends:       base
                      , cardano-binary
+                     , cardano-crypto-class
                      , cardano-crypto-wrapper
-                     , cardano-ledger
+                     , cardano-prelude
+                     , cardano-slotting
+                     , cborg
                      , containers
                      , contra-tracer
                      , directory
+                     , filepath
+                     , generics-sop
                      , mtl
-                     , optparse-applicative
-                     , optparse-generic
-                     , ouroboros-consensus
-                     , path < 0.7
-                     , path-io
-                     , resourcet
-                     , streaming
+                     , QuickCheck
+                     , quickcheck-state-machine
+                     , serialise
+                     , tasty
+                     , tasty-hunit
+                     , tasty-quickcheck
+                     , temporary
                      , text
                      , time
-   default-language:   Haskell2010
-   main-is:            Main.hs
-   ghc-options:        -Wall
+                     , tree-diff
 
-executable analyse-db
-  hs-source-dirs:      tools/db-analyse
-  main-is:             Main.hs
-  build-depends:       base
-                     , cardano-binary
-                     , cardano-crypto-wrapper
-                     , cardano-ledger
-                     , mtl
-                     , optparse-applicative
-                     , ouroboros-consensus
+                     , io-sim-classes
+                     , io-sim
+                     , typed-protocols
                      , ouroboros-network
+                     , ouroboros-consensus
+
+                       -- ouroboros-consensus-test-infra
+                     , base16-bytestring
+                     , deepseq
+
+                       -- ouroboros-consensus-mock
+                     , binary
+                     , bytestring
+                     , cryptonite
+                     , hashable
+                     , random
+
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -fno-ignore-asserts
+                       -threaded
+                       -rtsopts
+
+test-suite test-storage
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test-storage ouroboros-consensus-test-infra/src
+  main-is:             Main.hs
+  other-modules:
+                       Test.Ouroboros.Storage
+                       Test.Ouroboros.Storage.ChainDB
+                       Test.Ouroboros.Storage.ChainDB.AddBlock
+                       Test.Ouroboros.Storage.ChainDB.Iterator
+                       Test.Ouroboros.Storage.ChainDB.Mock
+                       Test.Ouroboros.Storage.ChainDB.Mock.Test
+                       Test.Ouroboros.Storage.ChainDB.Model
+                       Test.Ouroboros.Storage.ChainDB.Model.Test
+                       Test.Ouroboros.Storage.ChainDB.StateMachine
+                       Test.Ouroboros.Storage.FS
+                       Test.Ouroboros.Storage.FS.StateMachine
+                       Test.Ouroboros.Storage.ImmutableDB
+                       Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes
+                       Test.Ouroboros.Storage.ImmutableDB.Mock
+                       Test.Ouroboros.Storage.ImmutableDB.Model
+                       Test.Ouroboros.Storage.ImmutableDB.Primary
+                       Test.Ouroboros.Storage.ImmutableDB.StateMachine
+                       Test.Ouroboros.Storage.LedgerDB
+                       Test.Ouroboros.Storage.LedgerDB.InMemory
+                       Test.Ouroboros.Storage.LedgerDB.OnDisk
+                       Test.Ouroboros.Storage.TestBlock
+                       Test.Ouroboros.Storage.Util
+                       Test.Ouroboros.Storage.VolatileDB
+                       Test.Ouroboros.Storage.VolatileDB.Mock
+                       Test.Ouroboros.Storage.VolatileDB.Model
+                       Test.Ouroboros.Storage.VolatileDB.StateMachine
+                       Test.Ouroboros.Storage.VolatileDB.TestBlock
+
+                       Test.Util.Blob
+                       Test.Util.FS.Sim.Error
+                       Test.Util.FS.Sim.FsTree
+                       Test.Util.FS.Sim.MockFS
+                       Test.Util.FS.Sim.Pure
+                       Test.Util.FS.Sim.STM
+                       Test.Util.Orphans.Arbitrary
+                       Test.Util.Orphans.IOLike
+                       Test.Util.Orphans.NoUnexpectedThunks
+                       Test.Util.QuickCheck
+                       Test.Util.Range
+                       Test.Util.RefEnv
+                       Test.Util.SOP
+                       Test.Util.TestBlock
+                       Test.Util.Tracer
+                       Test.Util.WithEq
+
+  build-depends:       base
+                     , bifunctors
+                     , binary
+                     , bytestring
+                     , cardano-crypto-class
+                     , cardano-prelude
+                     , cborg
+                     , containers
+                     , contra-tracer
+                     , directory
+                     , generics-sop
+                     , hashable
+                     , mtl
+                     , pretty-show
+                     , QuickCheck
+                     , quickcheck-state-machine >=0.6.0
+                     , random
+                     , serialise
+                     , tasty
+                     , tasty-hunit
+                     , tasty-quickcheck
+                     , temporary
+                     , text
+                     , time
+                     , transformers
+                     , tree-diff
+
+                     , io-sim-classes
+                     , io-sim
+                     , ouroboros-network
+                     , ouroboros-network-testing
+                     , ouroboros-consensus
+
+                       -- ouroboros-consensus-test-infra
+                     , base16-bytestring
+                     , deepseq
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -fno-ignore-asserts

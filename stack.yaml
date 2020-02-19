@@ -8,6 +8,11 @@ packages:
   - ./ouroboros-network
   - ./ouroboros-network-testing
   - ./ouroboros-consensus
+  - ./ouroboros-consensus/ouroboros-consensus-test-infra
+  - ./ouroboros-consensus/ouroboros-consensus-mock
+  - ./ouroboros-consensus-byron
+  - ./ouroboros-consensus-byronspec
+  - ./ouroboros-consensus-cardano
   - ./io-sim
   - ./io-sim-classes
   - ./ntp-client
@@ -20,8 +25,12 @@ flags:
     asserts: true
   ouroboros-network:
     asserts: true
-    cddl: false
+    cddl: true
   ouroboros-consensus:
+    asserts: true
+  ouroboros-consensus-byron:
+    asserts: true
+  ouroboros-consensus-cardano:
     asserts: true
 
 extra-deps:

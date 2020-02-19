@@ -22,7 +22,7 @@ import           Ouroboros.Consensus.Util ((...:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
-import           Ouroboros.Storage.ChainDB.API
+import           Ouroboros.Consensus.Storage.ChainDB.API
 
 import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
                      LedgerCursorId, Model, ModelSupportsBlock, ReaderId)

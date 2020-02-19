@@ -18,7 +18,7 @@ import           Ouroboros.Consensus.Ledger.Abstract (LedgerState (..),
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.ChainDB (LedgerCursor (..),
+import           Ouroboros.Consensus.Storage.ChainDB (LedgerCursor (..),
                      LedgerCursorFailure (..))
 
 localStateQueryServer

@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE KindSignatures         #-}
 {-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE TypeFamilies           #-}
@@ -6,21 +7,18 @@
 {-# LANGUAGE TypeOperators          #-}
 {-# LANGUAGE UndecidableInstances   #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Protocol.PBFT.Crypto (
     PBftCrypto(..)
   , PBftMockCrypto
-  , PBftCardanoCrypto
   ) where
 
 import           Data.Typeable
 
-import qualified Cardano.Chain.Common as CC.Common
-import qualified Cardano.Chain.Delegation as CC.Delegation
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Util.Condense
 
 -- | Crypto primitives required by BFT
@@ -47,6 +45,7 @@ class ( Typeable c
   dlgCertDlgVerKey :: PBftDelegationCert c -> VerKeyDSIGN (PBftDSIGN c)
   hashVerKey       :: VerKeyDSIGN (PBftDSIGN c) -> PBftVerKeyHash c
 
+
 data PBftMockCrypto
 
 instance PBftCrypto PBftMockCrypto where
@@ -57,14 +56,3 @@ instance PBftCrypto PBftMockCrypto where
   dlgCertGenVerKey = fst
   dlgCertDlgVerKey = snd
   hashVerKey       = id
-
-data PBftCardanoCrypto
-
-instance PBftCrypto PBftCardanoCrypto where
-  type PBftDSIGN          PBftCardanoCrypto = CardanoDSIGN
-  type PBftDelegationCert PBftCardanoCrypto = CC.Delegation.Certificate
-  type PBftVerKeyHash     PBftCardanoCrypto = CC.Common.KeyHash
-
-  dlgCertGenVerKey = VerKeyCardanoDSIGN . CC.Delegation.issuerVK
-  dlgCertDlgVerKey = VerKeyCardanoDSIGN . CC.Delegation.delegateVK
-  hashVerKey (VerKeyCardanoDSIGN pk) = CC.Common.hashKey pk

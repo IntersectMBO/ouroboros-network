@@ -27,6 +27,11 @@ let
        ouroboros-network
        ouroboros-network-testing
        ouroboros-consensus
+       ouroboros-consensus-byron
+       ouroboros-consensus-byronspec
+       ouroboros-consensus-cardano
+       ouroboros-consensus-mock
+       ouroboros-consensus-test-infra
        io-sim
        io-sim-classes
        ntp-client

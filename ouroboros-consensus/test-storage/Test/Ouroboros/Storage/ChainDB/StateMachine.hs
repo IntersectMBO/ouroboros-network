@@ -78,7 +78,7 @@ import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
@@ -90,19 +90,22 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
-import           Ouroboros.Storage.ChainDB hiding (TraceReaderEvent (..))
-import qualified Ouroboros.Storage.ChainDB as ChainDB
-import           Ouroboros.Storage.Common (EpochSize (..))
-import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
-import           Ouroboros.Storage.ImmutableDB
+import           Ouroboros.Consensus.Storage.ChainDB hiding
+                     (TraceReaderEvent (..))
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
+import           Ouroboros.Consensus.Storage.EpochInfo (fixedSizeEpochInfo)
+import           Ouroboros.Consensus.Storage.ImmutableDB
                      (ValidationPolicy (ValidateAllEpochs))
-import qualified Ouroboros.Storage.ImmutableDB as ImmDB
-import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
-import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
-import           Ouroboros.Storage.LedgerDB.InMemory (LedgerDbParams (..))
-import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-import qualified Ouroboros.Storage.VolatileDB as VolDB
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                     (defaultDiskPolicy)
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                     (LedgerDbParams (..))
+import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
 import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
                      ModelSupportsBlock, ReaderId)

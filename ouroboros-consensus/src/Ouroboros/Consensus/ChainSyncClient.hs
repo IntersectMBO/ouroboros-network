@@ -65,7 +65,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..),
                      onEachChange)
 
-import           Ouroboros.Storage.ChainDB (InvalidBlockReason)
+import           Ouroboros.Consensus.Storage.ChainDB (InvalidBlockReason)
 
 -- | Clock skew: the number of slots the chain of an upstream node may be
 -- ahead of the current slot (according to 'BlockchainTime').
@@ -260,7 +260,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
   where
     -- | Start ChainSync by looking for an intersection between our current
     -- chain fragment and their chain.
-    initialise :: Stateful m blk () (ClientPipelinedStIdle Z)
+    initialise :: Stateful m blk () (ClientPipelinedStIdle 'Z)
     initialise = findIntersection (ForkTooDeep GenesisPoint)
 
     -- | Try to find an intersection by sending points of our current chain to
@@ -271,7 +271,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
     findIntersection
       :: (Our (Tip blk) -> Their (Tip blk) -> ChainSyncClientException)
          -- ^ Exception to throw when no intersection is found.
-      -> Stateful m blk () (ClientPipelinedStIdle Z)
+      -> Stateful m blk () (ClientPipelinedStIdle 'Z)
     findIntersection mkEx = Stateful $ \() -> do
       (ourFrag, ourHeaderState, ourTip) <- atomically $ (,,)
         <$> getCurrentChain
@@ -304,7 +304,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
                    -> Their (Tip blk)
                    -> Stateful m blk
                         (UnknownIntersectionState blk)
-                        (ClientPipelinedStIdle Z)
+                        (ClientPipelinedStIdle 'Z)
     intersectFound intersection theirTip
                  = Stateful $ \UnknownIntersectionState
                      { ourFrag
@@ -442,7 +442,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
     -- finally execute the given action.
     drainThePipe :: forall s n. NoUnexpectedThunks s
                  => Nat n
-                 -> Stateful m blk s (ClientPipelinedStIdle Z)
+                 -> Stateful m blk s (ClientPipelinedStIdle 'Z)
                  -> Stateful m blk s (ClientPipelinedStIdle n)
     drainThePipe n0 m = Stateful $ go n0
       where

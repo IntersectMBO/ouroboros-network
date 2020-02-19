@@ -23,10 +23,10 @@ import           Ouroboros.Consensus.Util
 
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 
-import           Ouroboros.Storage.Common
+import           Ouroboros.Consensus.Storage.Common
 
-import           Ouroboros.Storage.LedgerDB.Conf
-import           Ouroboros.Storage.LedgerDB.InMemory
+import           Ouroboros.Consensus.Storage.LedgerDB.Conf
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
 import           Test.Util.QuickCheck
 

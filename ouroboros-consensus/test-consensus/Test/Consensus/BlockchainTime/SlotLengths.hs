@@ -12,7 +12,7 @@ import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
 
-import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Orphans.Arbitrary (SmallDiffTime (..))
 import           Test.Util.QuickCheck
 
 tests :: TestTree
@@ -171,67 +171,3 @@ prop_delayEffective (SystemStart start) ls (SmallDiffTime offset) =
 
     (_this'', (slotAfterDelay, timeInSlot)) =
         slotFromUTCTime (SystemStart start) timeAfterDelay focused
-
-
-{-------------------------------------------------------------------------------
-  Arbitrary instances
--------------------------------------------------------------------------------}
-
-instance Arbitrary SlotLengths where
-  arbitrary = slotLengthsFromList <$> arbitrary <*> arbitrary
-  shrink (SlotLengths l ls) = concat [
-        -- Shrink the slot length in this segment
-        [ SlotLengths l' ls
-        | l' <- shrink l
-        ]
-
-        -- Shrink the tail
-      , [ SlotLengths l ls'
-        | ls' <- shrink ls
-        ]
-
-        -- Drop the head
-      , [ ls'
-        | Just (_, ls') <- [ls]
-        ]
-      ]
-
-instance Arbitrary SegmentLength where
-  -- No point choosing very large segments (not interested in testing overflow)
-  -- Segments of length 0 make no sense (important for 'tickSlotLengths').
-  arbitrary = SegmentLength <$> choose (1, 1000)
-  shrink (SegmentLength l) = SegmentLength <$> shrink l
-
--- | Wrapper around NominalDiffTime with custom 'Arbitrary' instance
---
--- The default 'Arbitrary' instance for 'NominalDiffTime' isn't very useful:
---
--- * It tends to pick huge values
--- * It tends not to pick integer values
--- * It does not shrink
---
--- Our custom instance
---
--- * Picks values between 0 and (1000 * 20 * 10) seconds:
---   - Maximum segment length: 1000
---   - Maximum slot length: 20 seconds
---   - Maximum number of segments: 10
--- * With a 0.1 second precision
--- * Shrinks
-newtype SmallDiffTime = SmallDiffTime NominalDiffTime
-  deriving (Show)
-
-instance Arbitrary SmallDiffTime where
-  arbitrary = conv <$> choose (0, 1000 * 20 * 10 * 10)
-    where
-      -- NominalDiffTime conversion functions treat it as seconds
-      conv :: Integer -> SmallDiffTime
-      conv n = SmallDiffTime $ realToFrac seconds
-        where
-          seconds :: Double
-          seconds = fromInteger n / 10
-
-  -- try to shrink to some small, simple values
-  -- (include 1.5 so that we can shrink to a simple, but yet not whole, value)
-  shrink (SmallDiffTime d) = map SmallDiffTime $
-      filter (< d) [1, 1.5, 2, 3, 100]

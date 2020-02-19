@@ -64,21 +64,23 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.NodeNetwork
-import           Ouroboros.Consensus.Protocol hiding (Protocol)
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.ChainDB (ChainDB, ChainDbArgs)
-import qualified Ouroboros.Storage.ChainDB as ChainDB
-import           Ouroboros.Storage.EpochInfo (EpochInfo, newEpochInfo)
-import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.IO (ioHasFS)
-import           Ouroboros.Storage.ImmutableDB (ValidationPolicy (..))
-import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
-import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
-import           Ouroboros.Storage.VolatileDB (BlockValidationPolicy (..),
-                     mkBlocksPerFile)
+import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo, newEpochInfo)
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
+import           Ouroboros.Consensus.Storage.ImmutableDB (ValidationPolicy (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                     (defaultDiskPolicy)
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                     (ledgerDbDefaultParams)
+import           Ouroboros.Consensus.Storage.VolatileDB
+                     (BlockValidationPolicy (..), mkBlocksPerFile)
 
 -- | Whether the node produces blocks or not.
 data IsProducer
@@ -154,7 +156,7 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
       -- On a clean shutdown, create a marker in the database folder so that
       -- next time we start up, we know we don't have to validate the whole
       -- database.
-      createMarkerOnCleanShutdown hasFS $ do
+      createMarkerOnCleanShutdown (Proxy @blk) hasFS $ do
 
         (_, chainDB) <- allocate registry
           (\_ -> openChainDB

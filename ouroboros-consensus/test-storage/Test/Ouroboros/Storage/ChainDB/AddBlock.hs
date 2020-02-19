@@ -38,19 +38,21 @@ import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.ChainDB (ChainDbArgs (..),
+import           Ouroboros.Consensus.Storage.ChainDB (ChainDbArgs (..),
                      TraceAddBlockEvent (..), addBlock, toChain, withDB)
-import qualified Ouroboros.Storage.ChainDB as ChainDB
-import           Ouroboros.Storage.Common (EpochSize (..))
-import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
-import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..),
-                     ValidationPolicy (ValidateAllEpochs))
-import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
-import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
-import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-import           Ouroboros.Storage.VolatileDB (BlockValidationPolicy (..),
-                     mkBlocksPerFile)
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
+import           Ouroboros.Consensus.Storage.EpochInfo (fixedSizeEpochInfo)
+import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
+                     HashInfo (..), ValidationPolicy (ValidateAllEpochs))
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                     (defaultDiskPolicy)
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                     (ledgerDbDefaultParams)
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Consensus.Storage.VolatileDB
+                     (BlockValidationPolicy (..), mkBlocksPerFile)
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock

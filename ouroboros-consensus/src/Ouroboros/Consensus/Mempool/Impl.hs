@@ -31,8 +31,8 @@ import           Ouroboros.Network.Block (ChainHash, Point, SlotNo,
                      StandardHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Storage.ChainDB (ChainDB)
-import qualified Ouroboros.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract

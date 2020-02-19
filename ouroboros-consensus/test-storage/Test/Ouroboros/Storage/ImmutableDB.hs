@@ -19,20 +19,22 @@ import           Ouroboros.Consensus.BlockchainTime.Mock (fixedBlockchainTime)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.EpochInfo
-import           Ouroboros.Storage.FS.API
-import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.EpochInfo
+import           Ouroboros.Consensus.Storage.FS.API
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
 
-import           Ouroboros.Storage.ImmutableDB
-import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
-import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary (PrimaryIndex)
-import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
-import           Ouroboros.Storage.ImmutableDB.Impl.Validation
+import           Ouroboros.Consensus.Storage.ImmutableDB
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
+                     (PrimaryIndex)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
                      (ShouldBeFinalised (..), reconstructPrimaryIndex)
-import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.ImmutableDB.Parser (epochFileParser)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
+import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
+                     (epochFileParser)
 
 import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CumulEpochSizes
 import qualified Test.Ouroboros.Storage.ImmutableDB.Primary as Primary

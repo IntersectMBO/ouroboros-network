@@ -8,14 +8,16 @@ module Ouroboros.Consensus.Node.Recovery
 
 import           Control.Exception (SomeException)
 import           Control.Monad (unless, when)
+import           Data.Proxy (Proxy)
 
 import           Ouroboros.Consensus.Node.Exit (ExitReason (..), toExitReason)
+import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.FS.API (HasFS, doesFileExist, removeFile,
-                     withFile)
-import           Ouroboros.Storage.FS.API.Types (AllowExisting (..), FsPath,
-                     OpenMode (..), mkFsPath)
+import           Ouroboros.Consensus.Storage.FS.API (HasFS, doesFileExist,
+                     removeFile, withFile)
+import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
+                     FsPath, OpenMode (..), mkFsPath)
 
 -- | The path to the /clean shutdown marker file/.
 cleanShutdownMarkerFile :: FsPath
@@ -30,12 +32,13 @@ cleanShutdownMarkerFile = mkFsPath ["clean"]
 -- A /clean/ exception is an exception for 'exceptionRequiresRecovery' returns
 -- 'False'.
 createMarkerOnCleanShutdown
-  :: IOLike m
-  => HasFS m h
+  :: (IOLike m, RunNode blk)
+  => Proxy blk
+  -> HasFS m h
   -> m a  -- ^ Action to run
   -> m a
-createMarkerOnCleanShutdown mp = onExceptionIf
-    (not . exceptionRequiresRecovery)
+createMarkerOnCleanShutdown proxy mp = onExceptionIf
+    (not . exceptionRequiresRecovery proxy)
     (createCleanShutdownMarker mp)
 
 -- | Return 'True' when 'cleanShutdownMarkerFile' exists.
@@ -71,10 +74,16 @@ removeCleanShutdownMarker hasFS =
 
 -- | Return 'True' if the given exception indicates that recovery of the
 -- database is required on the next startup.
-exceptionRequiresRecovery :: SomeException -> Bool
-exceptionRequiresRecovery e = case toExitReason e of
+exceptionRequiresRecovery :: RunNode blk => Proxy blk -> SomeException -> Bool
+exceptionRequiresRecovery blkProxy e = case reason of
     DatabaseCorruption -> True
     _                  -> False
+  where
+    reason
+      | Just nodeReason <- nodeToExitReason blkProxy e
+      = nodeReason
+      | otherwise
+      = toExitReason e
 
 {-------------------------------------------------------------------------------
   Auxiliary

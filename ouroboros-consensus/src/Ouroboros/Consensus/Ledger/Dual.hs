@@ -63,7 +63,7 @@ import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block
 
-import           Ouroboros.Storage.Common
+import           Ouroboros.Consensus.Storage.Common
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
@@ -554,16 +554,16 @@ decodeDualBlock :: (Bridge m a, Serialise a)
                 -> Decoder s (Lazy.ByteString -> DualBlock m a)
 decodeDualBlock decodeMain = do
     enforceSize "DualBlock" 3
-    dualByronBlock
+    dualBlock
       <$> decodeMain
       <*> decode
       <*> decode
   where
-    dualByronBlock :: (Lazy.ByteString -> m)
-                   -> Maybe a
-                   -> BridgeBlock m a
-                   -> (Lazy.ByteString -> DualBlock m a)
-    dualByronBlock conc abst bridge bs = DualBlock (conc bs) abst bridge
+    dualBlock :: (Lazy.ByteString -> m)
+              -> Maybe a
+              -> BridgeBlock m a
+              -> (Lazy.ByteString -> DualBlock m a)
+    dualBlock conc abst bridge bs = DualBlock (conc bs) abst bridge
 
 encodeDualHeader :: (Header m -> Encoding)
                  -> Header (DualBlock m a) -> Encoding
@@ -572,11 +572,11 @@ encodeDualHeader encodeMain DualHeader{..} = encodeMain dualHeaderMain
 decodeDualHeader :: Decoder s (Lazy.ByteString -> Header m)
                  -> Decoder s (Lazy.ByteString -> Header (DualBlock m a))
 decodeDualHeader decodeMain =
-    dualByronHeader <$> decodeMain
+    dualHeader <$> decodeMain
   where
-    dualByronHeader :: (Lazy.ByteString -> Header m)
-                    -> (Lazy.ByteString -> Header (DualBlock m a))
-    dualByronHeader conc bs = DualHeader (conc bs)
+    dualHeader :: (Lazy.ByteString -> Header m)
+               -> (Lazy.ByteString -> Header (DualBlock m a))
+    dualHeader conc bs = DualHeader (conc bs)
 
 encodeDualGenTx :: (Bridge m a, Serialise (GenTx a))
                 => (GenTx m -> Encoding)

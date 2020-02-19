@@ -66,14 +66,14 @@ import           Ouroboros.Consensus.Util
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.FS.API
-import           Ouroboros.Storage.FS.API.Types
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.FS.API
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
-import           Ouroboros.Storage.LedgerDB.Conf
-import           Ouroboros.Storage.LedgerDB.InMemory
-import           Ouroboros.Storage.LedgerDB.OnDisk
+import           Ouroboros.Consensus.Storage.LedgerDB.Conf
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
 
 import qualified Test.Util.FS.Sim.MockFS as MockFS
 import           Test.Util.FS.Sim.STM

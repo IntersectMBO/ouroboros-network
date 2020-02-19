@@ -28,9 +28,10 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
-import           Ouroboros.Storage.ChainDB (ChainDB, IteratorResult (..),
-                     SerialisedWithPoint (..), getSerialisedBlockWithPoint)
-import qualified Ouroboros.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
+                     IteratorResult (..), SerialisedWithPoint (..),
+                     getSerialisedBlockWithPoint)
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 
 data BlockFetchServerException =
       -- | A block that was supposed to be included in a batch was garbage
