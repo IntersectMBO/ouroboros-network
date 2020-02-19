@@ -314,6 +314,7 @@ runDataDiffusion tracers
         Just connIds -> Subscription.worker
           (contramap (WithIPList initiatorLocalAddresses (ispIps daIpProducers)) dtIpSubscriptionTracer)
           dtErrorPolicyTracer
+          errorPolicy
           connIds
           (ispValency daIpProducers)
           ipRetryDelay
@@ -337,6 +338,7 @@ runDataDiffusion tracers
         Just connIds -> Subscription.worker
           (contramap (WithDomainName (dstDomain target)) dtDnsSubscriptionTracer)
           dtErrorPolicyTracer
+          errorPolicy
           connIds
           (dstValency target)
           ipRetryDelay

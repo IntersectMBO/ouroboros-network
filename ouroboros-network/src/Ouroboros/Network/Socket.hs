@@ -369,7 +369,7 @@ outgoingConnection
   -> Connections.ConnectionId
   -> Socket.Socket       -- ^ Socket to peer; could have been established by us or them.
   -> IO (Connection.Decision IO Local reject (ConnectionHandle IO))
-outgoingConnection tracers versionDataCodec versions _errorPolicies connId sd =
+outgoingConnection tracers versionDataCodec versions errorPolicies connId sd =
     -- Always accept and run initiator mode mux on the socket.
     pure $ Connection.Accept $ \_connThread -> do
         -- io-sim-classes STM interface thinks this is ambgiuous in the monad
@@ -379,9 +379,16 @@ outgoingConnection tracers versionDataCodec versions _errorPolicies connId sd =
         let connectionHandle = ConnectionHandle
               { status = readTVar statusVar }
             action = mask $ \restore -> do
-              restore (runInitiator versionDataCodec tracers versions connId sd) `catch`
-                (\e -> atomically (writeTVar statusVar (Finished (Just e))))
-              atomically (writeTVar statusVar (Finished Nothing))
+              result <- try (restore (runInitiator versionDataCodec tracers versions connId sd))
+              case result of
+                Left (exception :: SomeException) -> do
+                  atomically (writeTVar statusVar (Finished (Just exception)))
+                  case evalErrorPolicies exception (epAppErrorPolicies errorPolicies) of
+                    -- This will make the `Connections` term re-throw the
+                    -- exception and bring down the application.
+                    Just Throw -> throwIO exception
+                    _ -> pure ()
+                Right _ -> atomically (writeTVar statusVar (Finished Nothing))
         pure $ Handler { handle = connectionHandle, action = action }
 
 -- | Outgoing (locally-initiated) connection action. Runs the initiator-side
@@ -469,8 +476,7 @@ incomingConnection NetworkServerTracers { nstMuxTracer
                    versionDataCodec
                    acceptVersion
                    versions
-                   -- TODO use these for exception handling.
-                   _errorPolicies
+                   errorPolicies
                    connId
                    sd = pure $ Connection.Accept $ \_ -> do
   -- Sadly, the type signature _is_ needed. io-sim-classes is defined such
@@ -478,9 +484,14 @@ incomingConnection NetworkServerTracers { nstMuxTracer
   statusVar <- atomically (newTVar Running :: STM IO (StrictTVar IO ConnectionStatus))
   let connectionHandle = ConnectionHandle { status = readTVar statusVar }
       action = mask $ \restore -> do
-        restore runResponder `catch`
-          (\e -> atomically (writeTVar statusVar (Finished (Just e))) >> throwIO e)
-        atomically (writeTVar statusVar (Finished Nothing))
+        result <- try (restore runResponder)
+        case result of
+          Left (exception :: SomeException) -> do
+            atomically (writeTVar statusVar (Finished (Just exception)))
+            case evalErrorPolicies exception (epAppErrorPolicies errorPolicies) of
+              Just Throw -> throwIO exception
+              _ -> pure ()
+          Right _ -> atomically (writeTVar statusVar (Finished Nothing))
       -- This is the action to run for this connection.
       -- Does version negotiation, sets up mux, and starts it.
       runResponder = do

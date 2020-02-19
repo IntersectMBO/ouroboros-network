@@ -31,7 +31,6 @@ module Ouroboros.Network.Subscription.Worker
 -- the original async library.
 import           Control.Concurrent.Async (concurrently, forConcurrently_)
 import           Control.Concurrent.STM
-import           Control.Exception (IOException)
 import           Control.Monad (forM_, when)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -49,7 +48,9 @@ import qualified Network.Socket as Socket (SockAddr)
 import           Ouroboros.Network.Connections.Types
 import qualified Ouroboros.Network.Connections.Concurrent as Concurrent
 import           Ouroboros.Network.Connections.Socket.Types
-import           Ouroboros.Network.ErrorPolicy (WithAddr, ErrorPolicyTrace)
+import           Ouroboros.Network.ErrorPolicy (WithAddr, ErrorPolicies (..),
+                   ErrorPolicyTrace, SuspendDecision(Throw),
+                   evalErrorPolicies)
 import           Ouroboros.Network.Socket (ConnectionHandle, waitForConnection)
 
 -- | Time to wait between connection attempts when we don't have any DeltaQ
@@ -77,6 +78,7 @@ maxConnectionAttemptDelay = 2 -- 2s delay
 worker
   :: Tracer IO (SubscriptionTrace Socket.SockAddr)
   -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+  -> ErrorPolicies Socket.SockAddr ()
   -> NonEmpty ConnectionId
   -- ^ Targets for subscription. Each one indicates a local address and a remote
   -- address, so one worker can do both IPv4 and IPv6.
@@ -97,16 +99,16 @@ worker
   -- The ConenctionHandle type allows for us to wait for the connection to end,
   -- before attempting a connection to the next target.
   -> IO x
-worker tr errTrace targets valency delay mkClient connections = do
+worker tr errTrace errPolicies targets valency delay mkClient connections = do
   q <- newTQueueIO
   atomically $ forM_ (NE.toList targets) (writeTQueue q)
   let numThreads = max 1 (min (fromIntegral valency) (NE.length targets))
   -- Write it out like this so that we can convince GHC that this program
   -- really does not ever return (hence `IO x`).
   (impossible, _) <- concurrently
-    (workerOneTarget tr errTrace delay q mkClient connections)
+    (workerOneTarget tr errTrace errPolicies delay q mkClient connections)
     (forConcurrently_ [1..(numThreads-1)] $ \_ ->
-       workerOneTarget tr errTrace delay q mkClient connections)
+       workerOneTarget tr errTrace errPolicies delay q mkClient connections)
   absurd impossible
 
 -- | Worker for one subscription target sequence.
@@ -118,6 +120,7 @@ worker tr errTrace targets valency delay mkClient connections = do
 workerOneTarget
   :: Tracer IO (SubscriptionTrace Socket.SockAddr)
   -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+  -> ErrorPolicies Socket.SockAddr ()
   -> DiffTime
   -> TQueue ConnectionId
   -> (ConnectionId -> Client ConnectionId socket IO request)
@@ -126,7 +129,7 @@ workerOneTarget
        (Concurrent.Accept (ConnectionHandle IO))
        IO
   -> IO x
-workerOneTarget tr errTrace delay q mkClient connections = do
+workerOneTarget tr errTrace errPolicies delay q mkClient connections = do
   connectionId <- atomically $ readTQueue q
   let (_localAddr, remoteAddr) = connectionIdPair connectionId
   traceWith tr $ SubscriptionTraceConnectStart remoteAddr
@@ -138,30 +141,30 @@ workerOneTarget tr errTrace delay q mkClient connections = do
   -- An exception on resource acquisition is different from a rejected
   -- connection. The latter is relevant only cases in which the resource was
   -- created, but the connection was rejected for other reasons.
-  -- TODO make this exception handling configurable.
-  decision <-
-     (Just <$> (runClientWith connections (mkClient connectionId)))
-    `catch` handleException
-  case decision of
-    Nothing -> pure ()
-    -- TODO trace the rejection reason.
-    Just (Rejected (Concurrent.DomainSpecific _reason)) -> pure ()
-    -- TODO trace that it was accepted? Sure.
-    Just (Accepted (Concurrent.Accepted connhandle))    -> do
-      -- Wait for the connection to finish.
-      -- No need to trace the outcome, the connections manager can be
-      -- assumed to do that as needed. But TODO should trace that
-      -- the connection is over and this thread is going to try another.
-      outcome <- waitForConnection connhandle
-      -- TBD should we change behaviour depending on whether it crashed
-      -- or not?
-      --
-      -- Also NB: we don't deal with any exception handling / masking here.
-      -- If the subscription thread is killed, that does NOT mean any or all
-      -- connections it created should have their handlers torn down.
-      case outcome of
-        Nothing -> pure ()
-        Just _exception -> pure ()
+  decisionOrException <- try (runClientWith connections (mkClient connectionId))
+  case decisionOrException of
+    -- This is a connection error, so we choose the epConErrorPolicies field.
+    -- FIXME we actually don't need the "app" error policies. Those are dealt
+    -- with by the connection handler callbacks in Ouroboros.Network.Socket.
+    -- Ideally the "connection" error policies would also be built-in there.
+    Left (exception :: SomeException) ->
+      case evalErrorPolicies exception (epConErrorPolicies errPolicies) of
+        Just Throw -> throwM exception
+        _ -> pure ()
+    Right decision -> case decision of
+      -- TODO trace the rejection reason.
+      Rejected (Concurrent.DomainSpecific _reason) -> pure ()
+      -- TODO trace that it was accepted? Sure.
+      Accepted (Concurrent.Accepted connhandle)    -> do
+        -- Wait for the connection to finish.
+        -- No need to trace the outcome, the connections manager can be
+        -- assumed to do that as needed. But TODO should trace that
+        -- the connection is over and this thread is going to try another.
+        -- Exceptions are not-rethrown: the `Connections` term is responsible
+        -- for doing that as necessary (according to some "application" error
+        -- policy).
+        _ <- waitForConnection connhandle
+        pure ()
   end <- getMonotonicTime
   let duration = diffTime end start
   when (duration < delay) (threadDelay (delay - duration))
@@ -169,12 +172,7 @@ workerOneTarget tr errTrace delay q mkClient connections = do
   -- Why? Because if this thread dies with an exception, so do all of the
   -- other threads spawned by `worker`, so who cares?
   atomically $ writeTQueue q connectionId
-  workerOneTarget tr errTrace delay q mkClient connections
-
-  where
-
-  handleException :: IOException -> IO (Maybe t)
-  handleException = const (pure Nothing)
+  workerOneTarget tr errTrace errPolicies delay q mkClient connections
 
 --
 -- Auxiliary types: errors, traces
