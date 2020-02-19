@@ -26,12 +26,14 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -- * Rename 'NodeConfig' to 'ConsensusConfig'
 data TopLevelConfig blk = TopLevelConfig {
       configConsensus :: !(NodeConfig (BlockProtocol blk))
-    , configLedger    :: !(LedgerConfig blk)
+    , configLedger    :: !(LedgerConfig              blk)
+    , configBlock     :: !(BlockConfig               blk)
     }
   deriving (Generic)
 
-instance ( OuroborosTag (BlockProtocol blk)
-         , UpdateLedger blk
+instance ( OuroborosTag       (BlockProtocol blk)
+         , UpdateLedger                      blk
+         , NoUnexpectedThunks (BlockConfig   blk)
          ) => NoUnexpectedThunks (TopLevelConfig blk)
 
 configSecurityParam :: OuroborosTag (BlockProtocol blk)

@@ -1253,6 +1253,7 @@ testCfg = TopLevelConfig {
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = LedgerConfig
+    , configBlock  = TestBlockConfig
     }
   where
     k = SecurityParam 2

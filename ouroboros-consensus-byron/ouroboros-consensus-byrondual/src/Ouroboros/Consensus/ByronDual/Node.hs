@@ -45,7 +45,6 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
@@ -87,6 +86,10 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
           , configLedger = DualLedgerConfig {
                 dualLedgerConfigMain = ByronLedgerConfig     concreteGenesis
               , dualLedgerConfigAux  = ByronSpecLedgerConfig abstractGenesis
+              }
+          , configBlock = DualBlockConfig {
+                dualBlockConfigMain = ByronBlockConfig
+              , dualBlockConfigAux  = ByronSpecBlockConfig
               }
           }
       , pInfoInitState =

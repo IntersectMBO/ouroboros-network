@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -15,6 +17,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PBFT (
   , SimplePBftHeader
   , SimplePBftExt(..)
   , SignedSimplePBft(..)
+  , BlockConfig(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -56,7 +59,9 @@ type SimplePBftHeader c c' = SimpleHeader c (SimplePBftExt c c')
 newtype SimplePBftExt c c' = SimplePBftExt {
       simplePBftExt :: PBftFields c' (SignedSimplePBft c c')
     }
-  deriving (Generic, Condense, Show, Eq, NoUnexpectedThunks)
+  deriving stock    (Generic, Show, Eq)
+  deriving newtype  (Condense)
+  deriving anyclass (NoUnexpectedThunks)
 
 -- | Part of the block that gets signed
 --
@@ -69,6 +74,9 @@ data SignedSimplePBft c c' = SignedSimplePBft {
       signedSimplePBft :: SimpleStdHeader c (SimplePBftExt c c')
     }
   deriving (Generic)
+
+data instance BlockConfig (SimplePBftBlock c c') = SimplePBftBlockConfig
+  deriving (Generic, NoUnexpectedThunks)
 
 -- | PBFT requires the ledger view; for the mock ledger, this is constant
 type instance BlockProtocol (SimplePBftBlock c c') = ExtConfig (PBft c') (PBftLedgerView c')

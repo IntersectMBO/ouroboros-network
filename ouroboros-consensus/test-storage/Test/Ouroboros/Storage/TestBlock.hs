@@ -154,6 +154,8 @@ instance HasHeader (Header TestBlock) where
   blockNo        =            thBlockNo  . unTestHeader
   blockInvariant = const True
 
+data instance BlockConfig TestBlock = TestBlockConfig
+  deriving (Generic, NoUnexpectedThunks)
 
 instance Condense TestBlock where
   condense = show -- TODO

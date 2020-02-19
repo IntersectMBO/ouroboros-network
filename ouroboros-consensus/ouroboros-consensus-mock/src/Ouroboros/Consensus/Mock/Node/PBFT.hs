@@ -36,6 +36,7 @@ protocolInfoMockPBFT params nid =
                    }
                }
           , configLedger = SimpleLedgerConfig
+          , configBlock  = SimplePBftBlockConfig
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState CS.empty)

@@ -413,6 +413,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                           ]
           }
       , configLedger = LedgerConfig
+      , configBlock  = TestBlockConfig
       }
 
     -- | Take the last slot at which a client or server update is planned, or

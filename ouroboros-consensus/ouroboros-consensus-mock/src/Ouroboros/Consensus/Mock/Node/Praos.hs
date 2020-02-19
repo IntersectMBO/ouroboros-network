@@ -38,6 +38,7 @@ protocolInfoPraos numCoreNodes nid params =
               , praosVerKeys      = verKeys
               }
           , configLedger = SimpleLedgerConfig
+          , configBlock  = SimplePraosBlockConfig
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = genesisSimpleLedgerState addrDist

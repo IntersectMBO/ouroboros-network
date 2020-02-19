@@ -49,7 +49,6 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN

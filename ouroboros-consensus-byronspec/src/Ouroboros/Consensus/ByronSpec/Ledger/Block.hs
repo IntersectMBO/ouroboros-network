@@ -9,6 +9,7 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Block (
     ByronSpecBlock(..)
   , ByronSpecHeader -- type alias
   , Header(..)
+  , BlockConfig(..)
   ) where
 
 import           Codec.Serialise
@@ -87,3 +88,9 @@ instance HasHeader ByronSpecHeader where
   blockSlot      = fromByronSpecSlotNo      . Spec._bhSlot     . byronSpecHeader
 
   blockInvariant = const True
+
+{-------------------------------------------------------------------------------
+  Config
+-------------------------------------------------------------------------------}
+
+data instance BlockConfig ByronSpecBlock = ByronSpecBlockConfig

@@ -773,13 +773,17 @@ mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
                     { pbftIsLeader = PBftIsALeader isLeader'
                     }
                 , configLedger = configLedger
+                , configBlock  = configBlock
                 }
             }
 
           PBftIsLeader{pbftDlgCert} = isLeader'
       in Just (pInfo', dlgTx pbftDlgCert)
   where
-    ProtocolInfo{pInfoConfig = TopLevelConfig{configConsensus, configLedger}} = pInfo
+    ProtocolInfo{pInfoConfig = TopLevelConfig{ configConsensus
+                                             , configLedger
+                                             , configBlock
+                                             }} = pInfo
     ExtNodeConfig{extNodeConfig, extNodeConfigP} = configConsensus
 
 -- | The secret key for a node index

@@ -30,6 +30,7 @@ module Ouroboros.Consensus.Ledger.Dual (
   , dualTopLevelConfigMain
     -- * Type class family instances
   , Header(..)
+  , BlockConfig(..)
   , LedgerState(..)
   , LedgerConfig(..)
   , GenTx(..)
@@ -127,6 +128,16 @@ type DualHeader m a = Header (DualBlock m a)
 deriving instance Show (Header m) => Show (DualHeader m a)
 
 {-------------------------------------------------------------------------------
+  Config
+-------------------------------------------------------------------------------}
+
+data instance BlockConfig (DualBlock m a) = DualBlockConfig {
+      dualBlockConfigMain :: BlockConfig m
+    , dualBlockConfigAux  :: BlockConfig a
+    }
+  deriving NoUnexpectedThunks via AllowThunk (BlockConfig (DualBlock m a))
+
+{-------------------------------------------------------------------------------
   Bridge two ledgers
 -------------------------------------------------------------------------------}
 
@@ -209,6 +220,7 @@ dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
       -- to use ExtConfig here)
       configConsensus = extNodeConfigP       configConsensus
     , configLedger    = dualLedgerConfigMain configLedger
+    , configBlock     = dualBlockConfigMain  configBlock
     }
 
 instance Bridge m a => SupportedBlock (DualBlock m a) where

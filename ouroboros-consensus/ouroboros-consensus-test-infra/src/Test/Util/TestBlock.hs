@@ -24,6 +24,7 @@ module Test.Util.TestBlock (
   , TestBlock(..)
   , TestBlockError(..)
   , Header(..)
+  , BlockConfig(..)
   , LedgerConfig(..)
   , Query(..)
   , firstBlock
@@ -239,6 +240,8 @@ instance Condense (ChainHash TestBlock) where
   condense GenesisHash   = "genesis"
   condense (BlockHash h) = show h
 
+data instance BlockConfig TestBlock = TestBlockConfig
+  deriving (Generic, NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   Test infrastructure: ledger state
@@ -354,6 +357,7 @@ singleNodeTestConfig = TopLevelConfig {
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = LedgerConfig
+    , configBlock  = TestBlockConfig
     }
   where
     -- We fix k at 4 for now

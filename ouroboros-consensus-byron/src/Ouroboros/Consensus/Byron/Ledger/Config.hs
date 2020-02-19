@@ -1,10 +1,14 @@
 {-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies      #-}
+
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Ouroboros.Consensus.Byron.Ledger.Config (
     ByronConfig(..)
   , pbftProtocolMagicId
+  , BlockConfig(..)
   ) where
 
 import           GHC.Generics (Generic)
@@ -15,6 +19,9 @@ import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Slotting as CC.Slot
 import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Crypto as Crypto
+
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Ledger.Block
 
 -- | Extended configuration we need for Byron
 data ByronConfig = ByronConfig {
@@ -39,3 +46,7 @@ data ByronConfig = ByronConfig {
 
 pbftProtocolMagicId :: ByronConfig -> Crypto.ProtocolMagicId
 pbftProtocolMagicId = Crypto.getProtocolMagicId . pbftProtocolMagic
+
+-- | TODO: This can probably replace ByronConfig
+data instance BlockConfig ByronBlock = ByronBlockConfig
+  deriving (Generic, NoUnexpectedThunks)

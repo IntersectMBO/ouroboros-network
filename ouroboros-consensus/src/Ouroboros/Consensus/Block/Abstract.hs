@@ -5,6 +5,8 @@
 module Ouroboros.Consensus.Block.Abstract (
     -- * Protocol
     BlockProtocol
+    -- * Configuration
+  , BlockConfig
     -- * Working with headers
   , GetHeader(..)
   , headerHash
@@ -24,6 +26,13 @@ import           Ouroboros.Network.Block
 
 -- | Map block to consensus protocol
 type family BlockProtocol blk :: *
+
+{-------------------------------------------------------------------------------
+  Configuration
+-------------------------------------------------------------------------------}
+
+-- | Static configuration required to work with this type of blocks
+data family BlockConfig blk :: *
 
 {-------------------------------------------------------------------------------
   Link block to its header

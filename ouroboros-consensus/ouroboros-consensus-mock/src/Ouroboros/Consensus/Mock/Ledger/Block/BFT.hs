@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -14,6 +16,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block.BFT (
   , SimpleBftHeader
   , SimpleBftExt(..)
   , SignedSimpleBft(..)
+  , BlockConfig(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -50,13 +53,17 @@ type SimpleBftHeader c c' = SimpleHeader c (SimpleBftExt c c')
 newtype SimpleBftExt c c' = SimpleBftExt {
       simpleBftExt :: BftFields c' (SignedSimpleBft c c')
     }
-  deriving (Condense, Show, Eq, NoUnexpectedThunks)
+  deriving stock   (Show, Eq)
+  deriving newtype (Condense, NoUnexpectedThunks)
 
 -- | Part of the block that gets signed
 data SignedSimpleBft c c' = SignedSimpleBft {
       signedSimpleBft :: SimpleStdHeader c (SimpleBftExt c c')
     }
   deriving (Generic)
+
+data instance BlockConfig (SimpleBftBlock c c') = SimpleBftBlockConfig
+  deriving (Generic, NoUnexpectedThunks)
 
 type instance BlockProtocol (SimpleBftBlock c c') = Bft c'
 

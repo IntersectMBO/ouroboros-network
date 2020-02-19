@@ -46,9 +46,7 @@ import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.ContainsGenesis
 import           Ouroboros.Consensus.Byron.Ledger.Mempool
-import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Protocol
-
 
 forgeByronBlock
   :: forall m.

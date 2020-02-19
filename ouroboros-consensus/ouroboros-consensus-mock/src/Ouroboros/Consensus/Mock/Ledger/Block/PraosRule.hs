@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -14,6 +16,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PraosRule (
   , SimplePraosRuleExt(..)
   , SimplePraosRuleHeader
   , PraosCryptoUnused
+  , BlockConfig(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -57,7 +60,12 @@ type SimplePraosRuleHeader c = SimpleHeader c SimplePraosRuleExt
 newtype SimplePraosRuleExt = SimplePraosRuleExt {
       simplePraosRuleExt :: CoreNodeId
     }
-  deriving (Generic, Condense, Show, Eq, NoUnexpectedThunks)
+  deriving stock    (Generic, Show, Eq)
+  deriving newtype  (Condense)
+  deriving anyclass (NoUnexpectedThunks)
+
+data instance BlockConfig (SimplePraosRuleBlock c) = SimplePraosRuleBlockConfig
+  deriving (Generic, NoUnexpectedThunks)
 
 type instance BlockProtocol (SimplePraosRuleBlock c) =
    WithLeaderSchedule (Praos PraosCryptoUnused)

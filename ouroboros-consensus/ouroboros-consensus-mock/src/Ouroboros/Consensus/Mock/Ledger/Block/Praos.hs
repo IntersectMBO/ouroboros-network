@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -14,6 +16,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block.Praos (
   , SimplePraosHeader
   , SimplePraosExt(..)
   , SignedSimplePraos(..)
+  , BlockConfig(..)
   ) where
 
 import           Codec.CBOR.Decoding (decodeListLenOf)
@@ -56,7 +59,9 @@ type SimplePraosHeader c c' = SimpleHeader c (SimplePraosExt c c')
 newtype SimplePraosExt c c' = SimplePraosExt {
     simplePraosExt :: PraosFields c' (SignedSimplePraos c c')
   }
-  deriving (Generic, Condense, Show, Eq, NoUnexpectedThunks)
+  deriving stock    (Generic, Show, Eq)
+  deriving newtype  (Condense)
+  deriving anyclass (NoUnexpectedThunks)
 
 -- | Part of the block that gets signed
 --
@@ -68,6 +73,9 @@ data SignedSimplePraos c c' = SignedSimplePraos {
       signedSimplePraos :: SimpleStdHeader c (SimplePraosExt c c')
     , signedPraosFields :: PraosExtraFields c'
     }
+
+data instance BlockConfig (SimplePraosBlock c c') = SimplePraosBlockConfig
+  deriving (Generic, NoUnexpectedThunks)
 
 -- | See 'ProtocolLedgerView' instance for why we need the 'AddrDist'
 type instance BlockProtocol (SimplePraosBlock c c') = ExtConfig (Praos c') AddrDist

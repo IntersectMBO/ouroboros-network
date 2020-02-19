@@ -27,6 +27,7 @@ class ( GetHeader blk
       , HasHeader (Header blk)
       , OuroborosTag (BlockProtocol blk)
       , NoUnexpectedThunks (Header blk)
+      , NoUnexpectedThunks (BlockConfig blk)
       ) => SupportedBlock blk where
   validateView :: TopLevelConfig blk
                -> Header blk -> ValidateView (BlockProtocol blk)
