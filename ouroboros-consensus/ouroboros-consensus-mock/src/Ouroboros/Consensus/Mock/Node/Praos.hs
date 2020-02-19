@@ -19,7 +19,6 @@ import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
-import           Ouroboros.Consensus.Protocol.ExtConfig
 
 protocolInfoPraos :: NumCoreNodes
                   -> CoreNodeId
@@ -29,7 +28,7 @@ protocolInfoPraos :: NumCoreNodes
 protocolInfoPraos numCoreNodes nid params =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = ExtNodeConfig addrDist PraosNodeConfig {
+            configConsensus = PraosNodeConfig {
                 praosParams       = params
               , praosNodeId       = CoreId nid
               , praosSignKeyVRF   = signKeyVRF nid
@@ -38,7 +37,7 @@ protocolInfoPraos numCoreNodes nid params =
               , praosVerKeys      = verKeys
               }
           , configLedger = SimpleLedgerConfig
-          , configBlock  = SimplePraosBlockConfig
+          , configBlock  = SimplePraosBlockConfig addrDist
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = genesisSimpleLedgerState addrDist

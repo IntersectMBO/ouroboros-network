@@ -15,7 +15,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
@@ -26,7 +25,7 @@ protocolInfoMockPBFT :: PBftParams
 protocolInfoMockPBFT params nid =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = ExtNodeConfig ledgerView PBftNodeConfig {
+            configConsensus = PBftNodeConfig {
                  pbftParams   = params
                , pbftIsLeader = PBftIsALeader PBftIsLeader {
                      pbftCoreNodeId = nid
@@ -36,7 +35,7 @@ protocolInfoMockPBFT params nid =
                    }
                }
           , configLedger = SimpleLedgerConfig
-          , configBlock  = SimplePBftBlockConfig
+          , configBlock  = SimplePBftBlockConfig ledgerView
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState CS.empty)

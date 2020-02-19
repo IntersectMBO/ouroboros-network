@@ -55,9 +55,9 @@ import           Ouroboros.Consensus.Util
 -------------------------------------------------------------------------------}
 
 type ProtocolMockBFT        = Bft BftMockCrypto
-type ProtocolMockPraos      = ExtConfig (Praos PraosMockCrypto) AddrDist
+type ProtocolMockPraos      = Praos PraosMockCrypto
 type ProtocolLeaderSchedule = WithLeaderSchedule (Praos PraosCryptoUnused)
-type ProtocolMockPBFT       = ExtConfig (PBft PBftMockCrypto) (PBftLedgerView PBftMockCrypto)
+type ProtocolMockPBFT       = PBft PBftMockCrypto
 type ProtocolRealPBFT       = ExtConfig (PBft PBftByronCrypto) ByronConfig
 
 {-------------------------------------------------------------------------------

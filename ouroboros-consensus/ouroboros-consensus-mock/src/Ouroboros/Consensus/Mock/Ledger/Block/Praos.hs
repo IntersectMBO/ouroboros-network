@@ -38,7 +38,6 @@ import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 
@@ -74,11 +73,13 @@ data SignedSimplePraos c c' = SignedSimplePraos {
     , signedPraosFields :: PraosExtraFields c'
     }
 
-data instance BlockConfig (SimplePraosBlock c c') = SimplePraosBlockConfig
+data instance BlockConfig (SimplePraosBlock c c') = SimplePraosBlockConfig {
+      -- | See 'ProtocolLedgerView' instance for why we need the 'AddrDist'
+      simplePraosAddrDist :: AddrDist
+    }
   deriving (Generic, NoUnexpectedThunks)
 
--- | See 'ProtocolLedgerView' instance for why we need the 'AddrDist'
-type instance BlockProtocol (SimplePraosBlock c c') = ExtConfig (Praos c') AddrDist
+type instance BlockProtocol (SimplePraosBlock c c') = Praos c'
 
 -- | Sanity check that block and header type synonyms agree
 _simplePraosHeader :: SimplePraosBlock c c' -> SimplePraosHeader c c'
@@ -116,7 +117,7 @@ instance ( SimpleCrypto c
          ) => RunMockBlock c (SimplePraosExt c c') where
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
-        forgePraosFields (extNodeConfigP $ configConsensus cfg)
+        forgePraosFields (configConsensus cfg)
                          isLeader
                          $ \praosExtraFields ->
           SignedSimplePraos {
@@ -153,10 +154,10 @@ instance ( SimpleCrypto c
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => ProtocolLedgerView (SimplePraosBlock c c') where
   protocolLedgerView TopLevelConfig{..} _ =
-      equalStakeDist (extNodeConfig configConsensus)
+      equalStakeDist (simplePraosAddrDist configBlock)
 
   anachronisticProtocolLedgerView TopLevelConfig{..} _ _ =
-      Right $ equalStakeDist (extNodeConfig configConsensus)
+      Right $ equalStakeDist (simplePraosAddrDist configBlock)
 
 {-------------------------------------------------------------------------------
   Serialisation

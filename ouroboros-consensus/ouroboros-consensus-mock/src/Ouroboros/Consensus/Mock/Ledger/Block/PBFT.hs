@@ -36,7 +36,6 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.Signed
@@ -75,11 +74,13 @@ data SignedSimplePBft c c' = SignedSimplePBft {
     }
   deriving (Generic)
 
-data instance BlockConfig (SimplePBftBlock c c') = SimplePBftBlockConfig
+data instance BlockConfig (SimplePBftBlock c c') = SimplePBftBlockConfig {
+    -- | PBFT requires the ledger view; for the mock ledger, this is constant
+    simplePBftLedgerView :: PBftLedgerView c'
+  }
   deriving (Generic, NoUnexpectedThunks)
 
--- | PBFT requires the ledger view; for the mock ledger, this is constant
-type instance BlockProtocol (SimplePBftBlock c c') = ExtConfig (PBft c') (PBftLedgerView c')
+type instance BlockProtocol (SimplePBftBlock c c') = PBft c'
 
 -- | Sanity check that block and header type synonyms agree
 _simplePBftHeader :: SimplePBftBlock c c' -> SimplePBftHeader c c'
@@ -103,7 +104,7 @@ instance ( SimpleCrypto c
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
         forgePBftFields
-          (constructContextDSIGN (Proxy @c') (extNodeConfig $ configConsensus cfg))
+          (constructContextDSIGN (Proxy @c') (simplePBftLedgerView $ configBlock cfg))
           isLeader
           SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
       return SimpleBlock {
@@ -130,9 +131,9 @@ instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => ProtocolLedgerView (SimplePBftBlock c PBftMockCrypto) where
   protocolLedgerView TopLevelConfig{..} _ls =
-      extNodeConfig configConsensus
+      simplePBftLedgerView configBlock
   anachronisticProtocolLedgerView TopLevelConfig{..} _ _ =
-      Right $ extNodeConfig configConsensus
+      Right $ simplePBftLedgerView configBlock
 
 {-------------------------------------------------------------------------------
   Serialisation
