@@ -116,7 +116,7 @@ instance Arbitrary TestConfig where
       numSlots     <- arbitrary
       nodeJoinPlan <- genNodeJoinPlan numCoreNodes numSlots
       nodeTopology <- genNodeTopology numCoreNodes
-      slotLengths  <- arbitrary
+      slotLengths  <- singletonSlotLengths <$> arbitrary
       initSeed     <- arbitrary
       pure TestConfig
         { numCoreNodes
@@ -145,7 +145,7 @@ instance Arbitrary TestConfig where
           , nodeJoinPlan = p'
           , nodeRestarts = r'
           , nodeTopology = top'
-          , slotLengths  = ls'
+          , slotLengths  = slotLengths
           , initSeed
           }
       | n'             <- andId shrink numCoreNodes
@@ -156,7 +156,6 @@ instance Arbitrary TestConfig where
       , p'             <- andId shrinkNodeJoinPlan adjustedP
       , r'             <- andId shrinkNodeRestarts adjustedR
       , top'           <- andId shrinkNodeTopology adjustedTop
-      , ls'            <- andId shrink slotLengths
       ]
 
 {-------------------------------------------------------------------------------
