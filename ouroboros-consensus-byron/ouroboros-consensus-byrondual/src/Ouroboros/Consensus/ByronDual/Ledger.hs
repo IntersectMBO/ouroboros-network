@@ -11,7 +11,6 @@
 module Ouroboros.Consensus.ByronDual.Ledger (
     -- * Shorthand
     DualByronBlock
-  , DualByronProtocol
   , DualByronBridge
     -- * Bridge
   , ByronSpecBridge(..)
@@ -61,9 +60,8 @@ import           Ouroboros.Consensus.ByronSpec.Ledger
   Shorthand
 -------------------------------------------------------------------------------}
 
-type DualByronProtocol = ByronConsensusProtocol
-type DualByronBlock    = DualBlock    ByronBlock ByronSpecBlock
-type DualByronBridge   = BridgeLedger ByronBlock ByronSpecBlock
+type DualByronBlock  = DualBlock    ByronBlock ByronSpecBlock
+type DualByronBridge = BridgeLedger ByronBlock ByronSpecBlock
 
 {-------------------------------------------------------------------------------
   Map transaction Ids (part of the bridge)

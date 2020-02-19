@@ -58,7 +58,6 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
@@ -138,7 +137,7 @@ protocolInfoByron :: Genesis.Config
 protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = ExtNodeConfig byronConfig PBftNodeConfig {
+            configConsensus = PBftNodeConfig {
                 pbftParams    = byronPBftParams genesisConfig mSigThresh
               , pbftIsLeader  = case mLeader of
                                   Nothing   -> PBftIsNotALeader
@@ -278,8 +277,7 @@ instance RunNode ByronBlock where
   nodeDecodeHeaderHash      = const decodeByronHeaderHash
   nodeDecodeLedgerState     = const decodeByronLedgerState
   nodeDecodeChainState      = \_proxy cfg ->
-                                 let k = pbftSecurityParam $
-                                           pbftParams (extNodeConfigP (configConsensus cfg))
+                                 let k = configSecurityParam cfg
                                  in decodeByronChainState k
   nodeDecodeApplyTxError    = const decodeByronApplyTxError
   nodeDecodeTipInfo         = const decode
@@ -290,11 +288,9 @@ instance RunNode ByronBlock where
 extractGenesisData :: TopLevelConfig ByronBlock -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData
                    . byronGenesisConfig
-                   . extNodeConfig
-                   . configConsensus
+                   . configBlock
 
 extractEpochSlots :: TopLevelConfig ByronBlock -> EpochSlots
 extractEpochSlots = Genesis.configEpochSlots
                   . byronGenesisConfig
-                  . extNodeConfig
-                  . configConsensus
+                  . configBlock

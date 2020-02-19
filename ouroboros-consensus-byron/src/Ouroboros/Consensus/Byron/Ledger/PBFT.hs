@@ -1,13 +1,13 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Instances required to support PBFT
 module Ouroboros.Consensus.Byron.Ledger.PBFT (
-    ByronConsensusProtocol
-  , toPBftLedgerView
+    toPBftLedgerView
   , fromPBftLedgerView
   , encodeByronChainState
   , decodeByronChainState
@@ -29,7 +29,6 @@ import           Ouroboros.Network.Block (HasHeader (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
@@ -39,14 +38,13 @@ import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation ()
 import           Ouroboros.Consensus.Byron.Protocol
 
-type ByronConsensusProtocol = ExtConfig (PBft PBftByronCrypto) (BlockConfig ByronBlock)
-type instance BlockProtocol ByronBlock = ByronConsensusProtocol
+type instance BlockProtocol ByronBlock = PBft PBftByronCrypto
 
 -- | Construct DSIGN required for Byron crypto
 mkByronContextDSIGN :: TopLevelConfig ByronBlock
                     -> VerKeyDSIGN ByronDSIGN
                     -> ContextDSIGN ByronDSIGN
-mkByronContextDSIGN cfg genKey = (byronProtocolMagicId (extNodeConfig (configConsensus cfg)), genKey)
+mkByronContextDSIGN cfg = (byronProtocolMagicId (configBlock cfg),)
 
 instance SupportedBlock ByronBlock where
   validateView cfg hdr@ByronHeader{..} =
@@ -77,7 +75,7 @@ instance SupportedBlock ByronBlock where
                (CC.recoverSignedBytes epochSlots regular)
                (mkByronContextDSIGN cfg (pbftGenKey pbftFields))
     where
-      epochSlots = byronEpochSlots (extNodeConfig (configConsensus cfg))
+      epochSlots = byronEpochSlots (configBlock cfg)
 
   selectView _ hdr = (blockNo hdr, byronHeaderIsEBB hdr)
 

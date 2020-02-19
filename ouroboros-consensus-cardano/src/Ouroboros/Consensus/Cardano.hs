@@ -58,7 +58,7 @@ type ProtocolMockBFT        = Bft BftMockCrypto
 type ProtocolMockPraos      = Praos PraosMockCrypto
 type ProtocolLeaderSchedule = WithLeaderSchedule (Praos PraosCryptoUnused)
 type ProtocolMockPBFT       = PBft PBftMockCrypto
-type ProtocolRealPBFT       = ExtConfig (PBft PBftByronCrypto) (BlockConfig ByronBlock)
+type ProtocolRealPBFT       = PBft PBftByronCrypto
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols

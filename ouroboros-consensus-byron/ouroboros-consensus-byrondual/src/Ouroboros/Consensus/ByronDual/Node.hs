@@ -45,7 +45,6 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
@@ -74,7 +73,7 @@ protocolInfoDualByron :: ByronSpecGenesis
 protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = ExtNodeConfig concreteConfig PBftNodeConfig {
+            configConsensus = PBftNodeConfig {
                 pbftParams    = params
               , pbftIsLeader  = case mLeader of
                                   Nothing  -> PBftIsNotALeader

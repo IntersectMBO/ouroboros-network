@@ -10,12 +10,10 @@ import           Data.Either (isRight)
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
-import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Crypto.DSIGN.Class as CC.Crypto
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
@@ -66,8 +64,7 @@ verifyHeaderIntegrity cfg hdr =
         -- EBB, we can't check it
         CC.ABOBBoundaryHdr _ -> True
   where
-    protocolMagicId = CC.Genesis.configProtocolMagicId $
-                        byronGenesisConfig $ extNodeConfig (configConsensus cfg)
+    protocolMagicId = byronProtocolMagicId (configBlock cfg)
 
 -- | Verifies whether the block is not corrupted by checking its signature and
 -- witnesses.

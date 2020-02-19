@@ -44,7 +44,6 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run (nodeIsEBB)
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.Crypto as Crypto
 import           Ouroboros.Consensus.Util.Condense (condense)
@@ -275,7 +274,7 @@ prop_setup_coreNodeId ::
   -> CoreNodeId
   -> Property
 prop_setup_coreNodeId numCoreNodes coreNodeId =
-    case pbftIsLeader $ extNodeConfigP $ configConsensus $ pInfoConfig protInfo of
+    case pbftIsLeader $ configConsensus $ pInfoConfig protInfo of
       PBftIsALeader isLeader ->
           coreNodeId === pbftCoreNodeId isLeader
       _ ->
@@ -753,23 +752,22 @@ genNodeRekeys params (NodeJoinPlan njp) numSlots@(NumSlots t)
 -- transaction for its new delegation certificate
 --
 mkRekeyUpd
-  :: (BlockProtocol b ~ ExtConfig (PBft PBftByronCrypto) (BlockConfig ByronBlock))
-  => Genesis.Config
+  :: Genesis.Config
   -> Genesis.GeneratedSecrets
-  -> ProtocolInfo b
+  -> ProtocolInfo ByronBlock
   -> EpochNo
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-  -> Maybe (ProtocolInfo b, Byron.GenTx ByronBlock)
+  -> Maybe (ProtocolInfo ByronBlock, Byron.GenTx ByronBlock)
 mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
-  case pbftIsLeader extNodeConfigP of
+  case pbftIsLeader configConsensus of
     PBftIsNotALeader       -> Nothing
     PBftIsALeader isLeader ->
       let PBftIsLeader{pbftCoreNodeId} = isLeader
           genSK = genesisSecretFor genesisConfig genesisSecrets pbftCoreNodeId
-          isLeader' = updSignKey genSK extNodeConfig isLeader (coerce eno) newSK
+          isLeader' = updSignKey genSK configBlock isLeader (coerce eno) newSK
           pInfo' = pInfo
             { pInfoConfig = TopLevelConfig {
-                  configConsensus = ExtNodeConfig extNodeConfig extNodeConfigP
+                  configConsensus = configConsensus
                     { pbftIsLeader = PBftIsALeader isLeader'
                     }
                 , configLedger = configLedger
@@ -784,7 +782,6 @@ mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
                                              , configLedger
                                              , configBlock
                                              }} = pInfo
-    ExtNodeConfig{extNodeConfig, extNodeConfigP} = configConsensus
 
 -- | The secret key for a node index
 --
