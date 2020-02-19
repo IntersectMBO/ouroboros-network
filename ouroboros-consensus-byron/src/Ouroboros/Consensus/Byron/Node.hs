@@ -12,7 +12,6 @@
 
 module Ouroboros.Consensus.Byron.Node (
     protocolInfoByron
-  , ByronConfig
   , mkByronConfig
   , PBftSignatureThreshold(..)
   , defaultPBftSignatureThreshold
@@ -146,7 +145,7 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
                                   Just cred -> PBftIsALeader $ pbftLeaderOrNot cred
               }
           , configLedger = ByronLedgerConfig genesisConfig
-          , configBlock  = ByronBlockConfig
+          , configBlock  = byronConfig
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = initByronLedgerState genesisConfig Nothing
@@ -190,7 +189,7 @@ pbftLeaderOrNot (PBftLeaderCredentials sk cert nid) = PBftIsLeader {
 mkByronConfig :: Genesis.Config
               -> Update.ProtocolVersion
               -> Update.SoftwareVersion
-              -> ByronConfig
+              -> BlockConfig ByronBlock
 mkByronConfig genesisConfig pVer sVer = ByronConfig {
       pbftGenesisConfig   = genesisConfig
     , pbftProtocolVersion = pVer

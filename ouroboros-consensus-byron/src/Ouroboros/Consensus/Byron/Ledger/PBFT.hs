@@ -39,7 +39,7 @@ import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation ()
 import           Ouroboros.Consensus.Byron.Protocol
 
-type ByronConsensusProtocol = ExtConfig (PBft PBftByronCrypto) ByronConfig
+type ByronConsensusProtocol = ExtConfig (PBft PBftByronCrypto) (BlockConfig ByronBlock)
 type instance BlockProtocol ByronBlock = ByronConsensusProtocol
 
 -- | Construct DSIGN required for Byron crypto

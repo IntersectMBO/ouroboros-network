@@ -6,9 +6,8 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Ouroboros.Consensus.Byron.Ledger.Config (
-    ByronConfig(..)
+    BlockConfig(..)
   , pbftProtocolMagicId
-  , BlockConfig(..)
   ) where
 
 import           GHC.Generics (Generic)
@@ -24,7 +23,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Byron.Ledger.Block
 
 -- | Extended configuration we need for Byron
-data ByronConfig = ByronConfig {
+data instance BlockConfig ByronBlock = ByronConfig {
       pbftProtocolMagic   :: !Crypto.ProtocolMagic
     , pbftEpochSlots      :: !CC.Slot.EpochSlots
     , pbftGenesisConfig   :: !CC.Genesis.Config
@@ -44,9 +43,5 @@ data ByronConfig = ByronConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
-pbftProtocolMagicId :: ByronConfig -> Crypto.ProtocolMagicId
+pbftProtocolMagicId :: BlockConfig ByronBlock -> Crypto.ProtocolMagicId
 pbftProtocolMagicId = Crypto.getProtocolMagicId . pbftProtocolMagic
-
--- | TODO: This can probably replace ByronConfig
-data instance BlockConfig ByronBlock = ByronBlockConfig
-  deriving (Generic, NoUnexpectedThunks)

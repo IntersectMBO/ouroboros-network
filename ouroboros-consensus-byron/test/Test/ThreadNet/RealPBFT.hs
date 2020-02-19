@@ -34,7 +34,7 @@ import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
-import           Ouroboros.Consensus.Block (BlockProtocol, getHeader)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Config
@@ -753,7 +753,7 @@ genNodeRekeys params (NodeJoinPlan njp) numSlots@(NumSlots t)
 -- transaction for its new delegation certificate
 --
 mkRekeyUpd
-  :: (BlockProtocol b ~ ExtConfig (PBft PBftByronCrypto) ByronConfig)
+  :: (BlockProtocol b ~ ExtConfig (PBft PBftByronCrypto) (BlockConfig ByronBlock))
   => Genesis.Config
   -> Genesis.GeneratedSecrets
   -> ProtocolInfo b
@@ -813,7 +813,7 @@ genesisSecretFor genesisConfig genesisSecrets cid =
 --
 updSignKey
   :: Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-  -> ByronConfig
+  -> BlockConfig ByronBlock
   -> PBftIsLeader PBftByronCrypto
   -> EpochNumber
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN

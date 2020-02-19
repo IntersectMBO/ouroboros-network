@@ -85,7 +85,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
               , dualLedgerConfigAux  = abstractConfig
               }
           , configBlock = DualBlockConfig {
-                dualBlockConfigMain = ByronBlockConfig
+                dualBlockConfigMain = concreteConfig
               , dualBlockConfigAux  = ByronSpecBlockConfig
               }
           }
@@ -117,7 +117,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     initConcreteState = initByronLedgerState     concreteGenesis (Just initUtxo)
 
     abstractConfig :: LedgerConfig ByronSpecBlock
-    concreteConfig :: ByronConfig
+    concreteConfig :: BlockConfig ByronBlock
 
     abstractConfig = ByronSpecLedgerConfig abstractGenesis
     concreteConfig = mkByronConfig
