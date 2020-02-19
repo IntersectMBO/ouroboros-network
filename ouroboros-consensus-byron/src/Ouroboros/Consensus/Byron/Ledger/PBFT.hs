@@ -46,7 +46,7 @@ type instance BlockProtocol ByronBlock = ByronConsensusProtocol
 mkByronContextDSIGN :: TopLevelConfig ByronBlock
                     -> VerKeyDSIGN ByronDSIGN
                     -> ContextDSIGN ByronDSIGN
-mkByronContextDSIGN cfg genKey = (extNodeConfig (configConsensus cfg), genKey)
+mkByronContextDSIGN cfg genKey = (pbftProtocolMagicId (extNodeConfig (configConsensus cfg)), genKey)
 
 instance SupportedBlock ByronBlock where
   validateView cfg hdr@ByronHeader{..} =
