@@ -14,7 +14,7 @@
 
 module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocol
-    OuroborosTag(..)
+    ConsensusProtocol(..)
   , NodeConfig
   , SecurityParam(..)
     -- * State monad for Ouroboros state
@@ -48,9 +48,9 @@ import           Ouroboros.Consensus.Util.Random
 
 -- | Static node configuration
 --
--- Every method in the 'OuroborosTag' class takes the node configuration as a
--- parameter, so having this as a data family rather than a type family resolves
--- most ambiguity.
+-- Every method in the 'ConsensusProtocol' class takes the node configuration as
+-- a parameter, so having this as a data family rather than a type family
+-- resolves most ambiguity.
 --
 -- Defined out of the class so that protocols can define this type without
 -- having to define the entire protocol at the same time (or indeed in the same
@@ -69,7 +69,7 @@ class ( Show (ChainState    p)
       , NoUnexpectedThunks (NodeState     p)
       , NoUnexpectedThunks (ValidationErr p)
       , Typeable p -- so that p can appear in exceptions
-      ) => OuroborosTag p where
+      ) => ConsensusProtocol p where
 
   -- | State of the node required to run the protocol
   type family NodeState p :: *

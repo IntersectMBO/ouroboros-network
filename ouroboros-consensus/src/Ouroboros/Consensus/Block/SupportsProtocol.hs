@@ -22,7 +22,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 class ( GetHeader blk
       , HasHeader blk
       , HasHeader (Header blk)
-      , OuroborosTag (BlockProtocol blk)
+      , ConsensusProtocol (BlockProtocol blk)
       , NoUnexpectedThunks (Header blk)
       , NoUnexpectedThunks (BlockConfig blk)
       ) => BlockSupportsProtocol blk where

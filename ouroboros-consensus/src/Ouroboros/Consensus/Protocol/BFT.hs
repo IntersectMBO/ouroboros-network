@@ -125,7 +125,7 @@ data instance NodeConfig (Bft c) = BftNodeConfig {
     }
   deriving (Generic)
 
-instance BftCrypto c => OuroborosTag (Bft c) where
+instance BftCrypto c => ConsensusProtocol (Bft c) where
   type ValidationErr (Bft c) = BftValidationErr
   type ValidateView  (Bft c) = BftValidateView c
   type NodeState     (Bft c) = ()

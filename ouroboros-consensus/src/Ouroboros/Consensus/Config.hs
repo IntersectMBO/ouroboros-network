@@ -31,11 +31,11 @@ data TopLevelConfig blk = TopLevelConfig {
     }
   deriving (Generic)
 
-instance ( OuroborosTag       (BlockProtocol blk)
+instance ( ConsensusProtocol  (BlockProtocol blk)
          , UpdateLedger                      blk
          , NoUnexpectedThunks (BlockConfig   blk)
          ) => NoUnexpectedThunks (TopLevelConfig blk)
 
-configSecurityParam :: OuroborosTag (BlockProtocol blk)
+configSecurityParam :: ConsensusProtocol (BlockProtocol blk)
                     => TopLevelConfig blk -> SecurityParam
 configSecurityParam = protocolSecurityParam . configConsensus

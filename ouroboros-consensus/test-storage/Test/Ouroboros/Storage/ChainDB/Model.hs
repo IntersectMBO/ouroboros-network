@@ -145,10 +145,10 @@ data Model blk = Model {
   deriving (Generic)
 
 deriving instance
-  ( OuroborosTag (BlockProtocol blk)
-  , LedgerSupportsProtocol      blk
-  , Block.StandardHash          blk
-  , Show                        blk
+  ( ConsensusProtocol (BlockProtocol blk)
+  , LedgerSupportsProtocol           blk
+  , Block.StandardHash               blk
+  , Show                             blk
   ) => Show (Model blk)
 
 -- [MaxSlotNo and future blocks]

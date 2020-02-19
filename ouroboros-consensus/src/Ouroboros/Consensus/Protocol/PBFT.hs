@@ -244,7 +244,7 @@ data instance NodeConfig (PBft c) = PBftNodeConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
-instance PBftCrypto c => OuroborosTag (PBft c) where
+instance PBftCrypto c => ConsensusProtocol (PBft c) where
   type ValidationErr (PBft c) = PBftValidationErr c
   type ValidateView  (PBft c) = PBftValidateView  c
   type SelectView    (PBft c) = PBftSelectView

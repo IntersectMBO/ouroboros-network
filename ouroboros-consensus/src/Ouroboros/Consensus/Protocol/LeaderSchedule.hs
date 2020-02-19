@@ -51,7 +51,7 @@ data instance NodeConfig (WithLeaderSchedule p) = WLSNodeConfig
   }
   deriving (Generic)
 
-instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
+instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
   type ChainState    (WithLeaderSchedule p) = ()
   type NodeState     (WithLeaderSchedule p) = ()
   type LedgerView    (WithLeaderSchedule p) = ()
@@ -74,4 +74,5 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
   applyChainState _ _ _ _ = return ()
   rewindChainState _ _ _  = Just ()
 
-instance OuroborosTag p => NoUnexpectedThunks (NodeConfig (WithLeaderSchedule p))
+instance ConsensusProtocol p
+      => NoUnexpectedThunks (NodeConfig (WithLeaderSchedule p))

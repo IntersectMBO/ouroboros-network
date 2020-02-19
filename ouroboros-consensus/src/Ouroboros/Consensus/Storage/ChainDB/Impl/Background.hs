@@ -114,7 +114,7 @@ launchBgTasks cdb@CDB{..} replayed = do
 copyToImmDB
   :: forall m blk.
      ( IOLike m
-     , OuroborosTag (BlockProtocol blk)
+     , ConsensusProtocol (BlockProtocol blk)
      , HasHeader blk
      , GetHeader blk
      , HasHeader (Header blk)
@@ -218,7 +218,7 @@ copyToImmDB CDB{..} = withCopyLock $ do
 copyAndSnapshotRunner
   :: forall m blk.
      ( IOLike m
-     , OuroborosTag (BlockProtocol blk)
+     , ConsensusProtocol (BlockProtocol blk)
      , HasHeader blk
      , GetHeader blk
      , HasHeader (Header blk)

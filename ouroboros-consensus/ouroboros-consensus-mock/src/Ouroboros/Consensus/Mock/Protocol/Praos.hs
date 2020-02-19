@@ -235,7 +235,7 @@ data instance NodeConfig (Praos c) = PraosNodeConfig
   }
   deriving (Generic)
 
-instance PraosCrypto c => OuroborosTag (Praos c) where
+instance PraosCrypto c => ConsensusProtocol (Praos c) where
   protocolSecurityParam = praosSecurityParam . praosParams
 
   type NodeState     (Praos c) = PraosNodeState c

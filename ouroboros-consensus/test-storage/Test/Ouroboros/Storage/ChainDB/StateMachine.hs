@@ -271,19 +271,19 @@ runAllComponentsM (mblk, mhdr, a, b, c, d, e, f, g) = do
     return (Identity blk, Identity hdr, a, b, c, d, e, f, g)
 
 type TestConstraints blk =
-  ( OuroborosTag   (BlockProtocol blk)
-  , LedgerSupportsProtocol        blk
-  , Eq (ChainState (BlockProtocol blk))
-  , Eq (LedgerState               blk)
-  , Eq                            blk
-  , Show                          blk
-  , HasHeader                     blk
-  , StandardHash                  blk
-  , Serialise                     blk
-  , ModelSupportsBlock            blk
-  , Eq                    (Header blk)
-  , Show                  (Header blk)
-  , Serialise             (Header blk)
+  ( ConsensusProtocol (BlockProtocol blk)
+  , LedgerSupportsProtocol           blk
+  , Eq (ChainState (BlockProtocol    blk))
+  , Eq (LedgerState                  blk)
+  , Eq                               blk
+  , Show                             blk
+  , HasHeader                        blk
+  , StandardHash                     blk
+  , Serialise                        blk
+  , ModelSupportsBlock               blk
+  , Eq                       (Header blk)
+  , Show                     (Header blk)
+  , Serialise                (Header blk)
   )
 
 deriving instance (TestConstraints blk, Eq   it, Eq   rdr)

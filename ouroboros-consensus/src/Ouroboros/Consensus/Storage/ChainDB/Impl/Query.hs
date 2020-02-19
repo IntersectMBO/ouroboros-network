@@ -67,7 +67,7 @@ getCurrentChain
   :: forall m blk.
      ( IOLike m
      , HasHeader (Header blk)
-     , OuroborosTag (BlockProtocol blk)
+     , ConsensusProtocol (BlockProtocol blk)
      )
   => ChainDbEnv m blk
   -> STM m (AnchoredFragment (Header blk))
