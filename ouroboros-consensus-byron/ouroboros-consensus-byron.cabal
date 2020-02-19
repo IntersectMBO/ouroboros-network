@@ -71,35 +71,9 @@ library
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
 
--- This should be an external library, but we depend on it in our tests
-library byrondual
-  hs-source-dirs:      ouroboros-consensus-byrondual/src
-
-  exposed-modules:
-                       Ouroboros.Consensus.ByronDual.Ledger
-                       Ouroboros.Consensus.ByronDual.Node
-
-  build-depends:       base              >=4.9   && <4.13
-                     , bytestring        >=0.10  && <0.11
-                     , cardano-crypto-class
-                     , cardano-ledger
-                     , cardano-ledger-test
-                     , containers        >=0.5   && <0.7
-                     , cryptonite        >=0.25  && <0.26
-                     , cs-ledger
-                     , serialise         >=0.2   && <0.3
-
-                     , ouroboros-network
-                     , ouroboros-consensus
-                     , ouroboros-consensus-byron
-                     , ouroboros-consensus-byronspec
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-
 test-suite test
   type:                exitcode-stdio-1.0
-  hs-source-dirs:      test
+  hs-source-dirs:      test ouroboros-consensus-byrondual/src
   main-is:             Main.hs
   other-modules:
                        Test.Consensus.Byron.Ledger
@@ -107,6 +81,10 @@ test-suite test
                        Test.ThreadNet.RealPBFT
                        Test.ThreadNet.Ref.RealPBFT
                        Test.ThreadNet.TxGen.Byron
+
+                       Ouroboros.Consensus.ByronDual.Ledger
+                       Ouroboros.Consensus.ByronDual.Node
+
   build-depends:       base
                      , binary
                      , binary-search
@@ -131,18 +109,18 @@ test-suite test
                      , time
                      , transformers
 
-                       -- Needed for the dual ledger
-                     , cs-blockchain
-                     , cs-ledger
-                     , small-steps
-                     , hedgehog
-
                      , ouroboros-network
                      , ouroboros-consensus
                      , ouroboros-consensus-test-infra
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-byronspec
-                     , byrondual
+
+                       -- ouroboros-consensus-byrondual
+                     , cs-blockchain
+                     , cs-ledger
+                     , small-steps
+                     , hedgehog
+                     , serialise
 
   default-language:    Haskell2010
   ghc-options:         -Wall
