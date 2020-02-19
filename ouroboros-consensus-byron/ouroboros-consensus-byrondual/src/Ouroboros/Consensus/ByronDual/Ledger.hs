@@ -61,9 +61,9 @@ import           Ouroboros.Consensus.ByronSpec.Ledger
   Shorthand
 -------------------------------------------------------------------------------}
 
-type DualByronBlock    = DualBlock         ByronBlock ByronSpecBlock
-type DualByronProtocol = DualBlockProtocol ByronBlock ByronSpecBlock
-type DualByronBridge   = BridgeLedger      ByronBlock ByronSpecBlock
+type DualByronProtocol = ByronConsensusProtocol
+type DualByronBlock    = DualBlock    ByronBlock ByronSpecBlock
+type DualByronBridge   = BridgeLedger ByronBlock ByronSpecBlock
 
 {-------------------------------------------------------------------------------
   Map transaction Ids (part of the bridge)

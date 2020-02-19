@@ -21,7 +21,6 @@ module Ouroboros.Consensus.Ledger.Dual (
     -- * Pair types
   , DualBlock(..)
   , DualHeader
-  , DualBlockProtocol
   , DualLedgerError(..)
   , DualGenTxErr(..)
     -- * Lifted functions
@@ -74,7 +73,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.Protocol.ExtConfig
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -210,15 +208,14 @@ instance Bridge m a => HasHeader (DualHeader m a) where
   Protocol
 -------------------------------------------------------------------------------}
 
-type DualBlockProtocol m a = ExtConfig (BlockProtocol m) (LedgerConfig a)
-type instance BlockProtocol (DualBlock m a) = DualBlockProtocol m a
+type instance BlockProtocol (DualBlock m a) = BlockProtocol m
 
 -- TODO: If we reduce the use of TopLevelConfig, we might not need this anymore
 dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
 dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
       -- TODO: This use of extNodeConfigP should go (there should be no need
       -- to use ExtConfig here)
-      configConsensus = extNodeConfigP       configConsensus
+      configConsensus =                      configConsensus
     , configLedger    = dualLedgerConfigMain configLedger
     , configBlock     = dualBlockConfigMain  configBlock
     }

@@ -74,18 +74,15 @@ protocolInfoDualByron :: ByronSpecGenesis
 protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = ExtNodeConfig {
-                extNodeConfig  = abstractConfig
-              , extNodeConfigP = ExtNodeConfig concreteConfig PBftNodeConfig {
-                    pbftParams    = params
-                  , pbftIsLeader  = case mLeader of
-                                      Nothing  -> PBftIsNotALeader
-                                      Just nid -> PBftIsALeader $ pbftIsLeader nid
-                  }
+            configConsensus = ExtNodeConfig concreteConfig PBftNodeConfig {
+                pbftParams    = params
+              , pbftIsLeader  = case mLeader of
+                                  Nothing  -> PBftIsNotALeader
+                                  Just nid -> PBftIsALeader $ pbftIsLeader nid
               }
           , configLedger = DualLedgerConfig {
-                dualLedgerConfigMain = ByronLedgerConfig     concreteGenesis
-              , dualLedgerConfigAux  = ByronSpecLedgerConfig abstractGenesis
+                dualLedgerConfigMain = ByronLedgerConfig concreteGenesis
+              , dualLedgerConfigAux  = abstractConfig
               }
           , configBlock = DualBlockConfig {
                 dualBlockConfigMain = ByronBlockConfig
@@ -276,8 +273,7 @@ instance RunNode DualByronBlock where
   nodeDecodeLedgerState   = const $ decodeDualLedgerState decodeByronLedgerState
   nodeDecodeApplyTxError  = const $ decodeDualGenTxErr    decodeByronApplyTxError
   nodeDecodeChainState    = \_proxy cfg ->
-                               let k = pbftSecurityParam . pbftParams $
-                                          extNodeConfigP (extNodeConfigP (configConsensus cfg))
+                               let k = configSecurityParam cfg
                                in decodeByronChainState k
   nodeDecodeQuery         = error "DualByron.nodeDecodeQuery"
   nodeDecodeResult        = \case {}
