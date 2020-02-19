@@ -194,10 +194,6 @@ mkByronConfig genesisConfig pVer sVer = ByronConfig {
       pbftGenesisConfig   = genesisConfig
     , pbftProtocolVersion = pVer
     , pbftSoftwareVersion = sVer
-      -- TODO: Remove these 3 fields
-    , pbftProtocolMagic   = Genesis.configProtocolMagic genesisConfig
-    , pbftGenesisHash     = Genesis.configGenesisHash genesisConfig
-    , pbftEpochSlots      = Genesis.configEpochSlots genesisConfig
     }
 
 {-------------------------------------------------------------------------------

@@ -8,6 +8,9 @@
 module Ouroboros.Consensus.Byron.Ledger.Config (
     BlockConfig(..)
   , pbftProtocolMagicId
+  , pbftProtocolMagic
+  , pbftGenesisHash
+  , pbftEpochSlots
   ) where
 
 import           GHC.Generics (Generic)
@@ -24,10 +27,8 @@ import           Ouroboros.Consensus.Byron.Ledger.Block
 
 -- | Extended configuration we need for Byron
 data instance BlockConfig ByronBlock = ByronConfig {
-      pbftProtocolMagic   :: !Crypto.ProtocolMagic
-    , pbftEpochSlots      :: !CC.Slot.EpochSlots
-    , pbftGenesisConfig   :: !CC.Genesis.Config
-    , pbftGenesisHash     :: !CC.Genesis.GenesisHash
+      -- | Genesis configuration
+      pbftGenesisConfig   :: !CC.Genesis.Config
 
       -- | Node protocol version
       --
@@ -45,3 +46,12 @@ data instance BlockConfig ByronBlock = ByronConfig {
 
 pbftProtocolMagicId :: BlockConfig ByronBlock -> Crypto.ProtocolMagicId
 pbftProtocolMagicId = Crypto.getProtocolMagicId . pbftProtocolMagic
+
+pbftProtocolMagic :: BlockConfig ByronBlock -> Crypto.ProtocolMagic
+pbftProtocolMagic = CC.Genesis.configProtocolMagic . pbftGenesisConfig
+
+pbftGenesisHash :: BlockConfig ByronBlock -> CC.Genesis.GenesisHash
+pbftGenesisHash = CC.Genesis.configGenesisHash . pbftGenesisConfig
+
+pbftEpochSlots :: BlockConfig ByronBlock -> CC.Slot.EpochSlots
+pbftEpochSlots = CC.Genesis.configEpochSlots . pbftGenesisConfig
