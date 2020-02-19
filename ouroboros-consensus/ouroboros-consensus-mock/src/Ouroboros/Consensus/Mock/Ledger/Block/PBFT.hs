@@ -71,8 +71,7 @@ data SignedSimplePBft c c' = SignedSimplePBft {
   deriving (Generic)
 
 -- | PBFT requires the ledger view; for the mock ledger, this is constant
-type instance BlockProtocol (SimplePBftBlock  c c') = ExtConfig (PBft c') (PBftLedgerView c')
-type instance BlockProtocol (SimplePBftHeader c c') = BlockProtocol (SimplePBftBlock c c')
+type instance BlockProtocol (SimplePBftBlock c c') = ExtConfig (PBft c') (PBftLedgerView c')
 
 -- | Sanity check that block and header type synonyms agree
 _simplePBftHeader :: SimplePBftBlock c c' -> SimplePBftHeader c c'

@@ -70,8 +70,7 @@ data SignedSimplePraos c c' = SignedSimplePraos {
     }
 
 -- | See 'ProtocolLedgerView' instance for why we need the 'AddrDist'
-type instance BlockProtocol (SimplePraosBlock  c c') = ExtConfig (Praos c') AddrDist
-type instance BlockProtocol (SimplePraosHeader c c') = BlockProtocol (SimplePraosBlock c c')
+type instance BlockProtocol (SimplePraosBlock c c') = ExtConfig (Praos c') AddrDist
 
 -- | Sanity check that block and header type synonyms agree
 _simplePraosHeader :: SimplePraosBlock c c' -> SimplePraosHeader c c'
