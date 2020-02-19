@@ -15,7 +15,6 @@ import           Control.Monad (void)
 import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
-import           Data.Proxy
 import           Data.Word (Word32)
 import           GHC.Stack
 
@@ -45,6 +44,7 @@ import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.Mempool
+import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Protocol
 
 forgeByronBlock
@@ -147,8 +147,7 @@ forgeRegularBlock
 forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
     ouroborosPayload <-
       forgePBftFields
-        (constructContextDSIGN (Proxy @PBftByronCrypto) $
-           extNodeConfig (configConsensus cfg))
+        (mkByronContextDSIGN cfg)
         isLeader
         (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload

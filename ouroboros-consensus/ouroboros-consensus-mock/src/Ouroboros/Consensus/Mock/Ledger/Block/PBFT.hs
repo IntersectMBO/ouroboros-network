@@ -21,7 +21,6 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PBFT (
   ) where
 
 import           Codec.Serialise (Serialise (..))
-import           Data.Proxy
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
@@ -98,13 +97,13 @@ instance SignedHeader (SimplePBftHeader c c') where
 instance ( SimpleCrypto c
          , PBftCrypto c'
          , Signable (PBftDSIGN c') (SignedSimplePBft c c')
-         , ConstructContextDSIGN (PBftLedgerView c') c'
+         , ContextDSIGN (PBftDSIGN c') ~ ()
          , Serialise (PBftVerKeyHash c')
          ) => RunMockBlock c (SimplePBftExt c c') where
-  forgeExt cfg isLeader SimpleBlock{..} = do
+  forgeExt _cfg isLeader SimpleBlock{..} = do
       ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
         forgePBftFields
-          (constructContextDSIGN (Proxy @c') (simplePBftLedgerView $ configBlock cfg))
+          (const ())
           isLeader
           SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
       return SimpleBlock {

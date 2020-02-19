@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Byron.Ledger.PBFT (
   , fromPBftLedgerView
   , encodeByronChainState
   , decodeByronChainState
+  , mkByronContextDSIGN
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -41,6 +42,12 @@ import           Ouroboros.Consensus.Byron.Protocol
 type ByronConsensusProtocol = ExtConfig (PBft PBftByronCrypto) ByronConfig
 type instance BlockProtocol ByronBlock = ByronConsensusProtocol
 
+-- | Construct DSIGN required for Byron crypto
+mkByronContextDSIGN :: TopLevelConfig ByronBlock
+                    -> VerKeyDSIGN ByronDSIGN
+                    -> ContextDSIGN ByronDSIGN
+mkByronContextDSIGN cfg genKey = (extNodeConfig (configConsensus cfg), genKey)
+
 instance SupportedBlock ByronBlock where
   validateView cfg hdr@ByronHeader{..} =
       case byronHeaderRaw of
@@ -68,7 +75,7 @@ instance SupportedBlock ByronBlock where
                (blockSlot hdr)
                pbftFields
                (CC.recoverSignedBytes epochSlots regular)
-               (extNodeConfig (configConsensus cfg), pbftGenKey pbftFields)
+               (mkByronContextDSIGN cfg (pbftGenKey pbftFields))
     where
       epochSlots = pbftEpochSlots (extNodeConfig (configConsensus cfg))
 

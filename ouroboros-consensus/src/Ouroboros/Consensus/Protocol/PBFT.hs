@@ -23,7 +23,6 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftIsLeaderOrNot(..)
   , pbftWindowSize
     -- * Forging
-  , ConstructContextDSIGN(..)
   , forgePBftFields
     -- * Classes
   , PBftCrypto(..)
@@ -147,23 +146,13 @@ type PBftSelectView = (BlockNo, IsEBB)
   Block forging
 -------------------------------------------------------------------------------}
 
-class ConstructContextDSIGN cfg c where
-  constructContextDSIGN :: proxy c
-                        -> cfg
-                        -> VerKeyDSIGN (PBftDSIGN c)
-                        -> ContextDSIGN (PBftDSIGN c)
-
-instance ConstructContextDSIGN ext PBftMockCrypto where
-  constructContextDSIGN _p _cfg _genKey = ()
-
 forgePBftFields :: forall m c toSign. (
                        MonadRandom m
                      , PBftCrypto c
                      , Signable (PBftDSIGN c) toSign
                      )
                 => (VerKeyDSIGN (PBftDSIGN c) -> ContextDSIGN (PBftDSIGN c))
-                -- ^ Construct DSIGN context
-                -- See 'constructContextDSIGN' for a suitable argument.
+                -- ^ Construct DSIGN context given 'pbftGenKey'
                 -> IsLeader (PBft c)
                 -> toSign
                 -> m (PBftFields c toSign)
