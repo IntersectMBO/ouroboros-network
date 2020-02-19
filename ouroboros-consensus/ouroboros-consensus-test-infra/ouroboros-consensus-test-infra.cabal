@@ -17,8 +17,6 @@ source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
 
--- This section must be kept in sync with the internal test-infra library in
--- ouroboros-consensus.cabal
 library
   hs-source-dirs:      src
   exposed-modules:
