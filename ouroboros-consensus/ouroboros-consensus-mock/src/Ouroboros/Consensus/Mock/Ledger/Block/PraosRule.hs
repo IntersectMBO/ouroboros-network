@@ -78,11 +78,6 @@ _simplePraosRuleHeader = simpleHeader
   Evidence that 'SimpleBlock' can support Praos with an explicit leader schedule
 -------------------------------------------------------------------------------}
 
-instance RunMockProtocol (WithLeaderSchedule p) where
-  mockProtocolMagicId  = const constructMockProtocolMagicId
-  mockEncodeChainState = const encode
-  mockDecodeChainState = const decode
-
 instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
   forgeExt cfg () SimpleBlock{..} = do
       let ext = SimplePraosRuleExt $ lsNodeConfigNodeId (configConsensus cfg)
@@ -92,6 +87,10 @@ instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
         }
     where
       SimpleHeader{..} = simpleHeader
+
+  mockProtocolMagicId  = const constructMockProtocolMagicId
+  mockEncodeChainState = const encode
+  mockDecodeChainState = const decode
 
 instance SimpleCrypto c
       => SupportedBlock (SimpleBlock c SimplePraosRuleExt) where

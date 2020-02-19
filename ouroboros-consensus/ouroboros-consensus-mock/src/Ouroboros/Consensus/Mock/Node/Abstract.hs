@@ -4,8 +4,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Consensus.Mock.Node.Abstract (
-    RunMockProtocol(..)
-  , RunMockBlock(..)
+    RunMockBlock(..)
   , constructMockProtocolMagicId
   ) where
 
@@ -22,15 +21,8 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 
--- | The part of 'RunMock' that depends only on @p@
-class RunMockProtocol p where
-  mockProtocolMagicId  ::           NodeConfig p -> ProtocolMagicId
-  mockEncodeChainState ::           NodeConfig p -> ChainState p -> Encoding
-  mockDecodeChainState :: forall s. NodeConfig p -> Decoder s (ChainState p)
-
 -- | Protocol specific functionality required to run consensus with mock blocks
-class RunMockProtocol (BlockProtocol (SimpleBlock c ext))
-   => RunMockBlock c ext where
+class RunMockBlock c ext where
   -- | Construct the protocol specific part of the block
   --
   -- This is used in 'forgeSimple', which takes care of the generic part of
@@ -43,6 +35,13 @@ class RunMockProtocol (BlockProtocol (SimpleBlock c ext))
            -> IsLeader p
            -> SimpleBlock' c ext ()
            -> m (SimpleBlock c ext)
+
+  mockProtocolMagicId  :: TopLevelConfig (SimpleBlock c ext)
+                       -> ProtocolMagicId
+  mockEncodeChainState :: TopLevelConfig (SimpleBlock c ext)
+                       -> ChainState (BlockProtocol (SimpleBlock c ext)) -> Encoding
+  mockDecodeChainState :: TopLevelConfig (SimpleBlock c ext)
+                       -> Decoder s (ChainState (BlockProtocol (SimpleBlock c ext)))
 
 -- | Construct protocol magic ID depending on where in the code this is called
 --

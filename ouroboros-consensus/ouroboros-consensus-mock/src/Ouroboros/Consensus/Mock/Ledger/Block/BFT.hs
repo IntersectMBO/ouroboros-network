@@ -80,11 +80,6 @@ type instance Signed (SimpleBftHeader c c') = SignedSimpleBft c c'
 instance SignedHeader (SimpleBftHeader c c') where
   headerSigned = SignedSimpleBft . simpleHeaderStd
 
-instance RunMockProtocol (Bft c') where
-  mockProtocolMagicId  = const constructMockProtocolMagicId
-  mockEncodeChainState = const encode
-  mockDecodeChainState = const decode
-
 instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
@@ -102,6 +97,10 @@ instance ( SimpleCrypto c
         }
     where
       SimpleHeader{..} = simpleHeader
+
+  mockProtocolMagicId  = const constructMockProtocolMagicId
+  mockEncodeChainState = const encode
+  mockDecodeChainState = const decode
 
 instance ( SimpleCrypto c
          , BftCrypto c'

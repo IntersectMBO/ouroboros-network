@@ -94,14 +94,6 @@ type instance Signed (SimplePBftHeader c c') = SignedSimplePBft c c'
 instance SignedHeader (SimplePBftHeader c c') where
   headerSigned = SignedSimplePBft . simpleHeaderStd
 
-instance (PBftCrypto c', Serialise (PBftVerKeyHash c'))
-      => RunMockProtocol (ExtConfig (PBft c') ext) where
-  mockProtocolMagicId  = const constructMockProtocolMagicId
-  mockEncodeChainState = const CS.encodePBftChainState
-  mockDecodeChainState = \cfg -> let k = pbftSecurityParam $
-                                           pbftParams (extNodeConfigP cfg)
-                                 in CS.decodePBftChainState k (pbftWindowSize k)
-
 instance ( SimpleCrypto c
          , PBftCrypto c'
          , Signable (PBftDSIGN c') (SignedSimplePBft c c')
@@ -120,6 +112,11 @@ instance ( SimpleCrypto c
         }
     where
       SimpleHeader{..} = simpleHeader
+
+  mockProtocolMagicId  = const constructMockProtocolMagicId
+  mockEncodeChainState = const CS.encodePBftChainState
+  mockDecodeChainState = \cfg -> let k = configSecurityParam cfg
+                                 in CS.decodePBftChainState k (pbftWindowSize k)
 
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)

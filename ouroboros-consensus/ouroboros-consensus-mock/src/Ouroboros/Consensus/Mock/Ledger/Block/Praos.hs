@@ -96,11 +96,6 @@ instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
       , signedPraosFields = praosExtraFields (simplePraosExt simpleHeaderExt)
       }
 
-instance PraosCrypto c' => RunMockProtocol (ExtConfig (Praos c') ext) where
-  mockProtocolMagicId  = const constructMockProtocolMagicId
-  mockEncodeChainState = const encode
-  mockDecodeChainState = const decode
-
 instance PraosCrypto c' => Serialise (BlockInfo c') where
   encode BlockInfo {..} = mconcat
     [ encodeListLen 3
@@ -134,6 +129,10 @@ instance ( SimpleCrypto c
         }
     where
       SimpleHeader{..} = simpleHeader
+
+  mockProtocolMagicId  = const constructMockProtocolMagicId
+  mockEncodeChainState = const encode
+  mockDecodeChainState = const decode
 
 instance ( SimpleCrypto c
          , PraosCrypto c'

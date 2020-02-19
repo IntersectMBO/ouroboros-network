@@ -54,7 +54,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
       dummyDate = UTCTime (fromGregorian 2019 8 13) 0
   nodeNetworkMagic          = \_ _ -> NetworkMagic 0x0000ffff
 
-  nodeProtocolMagicId       = \_ -> mockProtocolMagicId . configConsensus
+  nodeProtocolMagicId       = const mockProtocolMagicId
   nodeHashInfo              = const simpleBlockHashInfo
   nodeMaxBlockSize          = const 2000000 -- TODO
   nodeBlockEncodingOverhead = const 1000 -- TODO
@@ -67,7 +67,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeEncodeGenTxId         =       encode
   nodeEncodeHeaderHash      = const encode
   nodeEncodeLedgerState     = const encode
-  nodeEncodeChainState      = \_ -> mockEncodeChainState . configConsensus
+  nodeEncodeChainState      = const mockEncodeChainState
   nodeEncodeApplyTxError    = const encode
   nodeEncodeTipInfo         = const encode
   nodeEncodeQuery           = \case {}
@@ -80,7 +80,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeDecodeGenTxId         =       decode
   nodeDecodeHeaderHash      = const decode
   nodeDecodeLedgerState     = const decode
-  nodeDecodeChainState      = \_ -> mockDecodeChainState . configConsensus
+  nodeDecodeChainState      = const mockDecodeChainState
   nodeDecodeApplyTxError    = const decode
   nodeDecodeTipInfo         = const decode
   nodeDecodeQuery           = error "Mock.nodeDecodeQuery"
