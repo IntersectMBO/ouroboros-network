@@ -430,7 +430,8 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
           Just candidateSuffixes' ->
             chainSelection' curChainAndLedger candidateSuffixes' >>= \case
               Nothing                -> return ()
-              Just newChainAndLedger -> trySwitchTo newChainAndLedger
+              Just newChainAndLedger ->
+                trySwitchTo newChainAndLedger (AddedToCurrentChain p)
       where
         curHead = AF.headAnchor curChain
 
@@ -473,7 +474,8 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
           Just candidateSuffixes' ->
             chainSelection' curChainAndLedger candidateSuffixes' >>= \case
               Nothing                -> return ()
-              Just newChainAndLedger -> trySwitchTo newChainAndLedger
+              Just newChainAndLedger ->
+                trySwitchTo newChainAndLedger (SwitchedToAFork p)
       where
         i = AF.castAnchor $ anchor curChain
 
@@ -536,10 +538,17 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     -- must know of our block. In either case, somebody computed candidates
     -- with knowledge of both blocks, so we're safe. See See "### Concurrency"
     -- in ChainDB.md for more details.
-    trySwitchTo :: HasCallStack
-                => ChainAndLedger blk  -- ^ Chain and ledger to switch to
-                -> m ()
-    trySwitchTo (ChainAndLedger newChain newLedger) = do
+    trySwitchTo
+      :: HasCallStack
+      => ChainAndLedger blk  -- ^ Chain and ledger to switch to
+      -> (    AnchoredFragment (Header blk)
+           -> AnchoredFragment (Header blk)
+           -> TraceAddBlockEvent blk
+         )
+         -- ^ Given the previous chain and the new chain, return the event
+         -- to trace when we switched to the new chain.
+      -> m ()
+    trySwitchTo (ChainAndLedger newChain newLedger) mkTraceEvent = do
       (curChain, switched) <- atomically $ do
         curChain <- readTVar cdbChain
         case AF.intersect curChain newChain of
@@ -570,7 +579,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
           -- no longer preferred.
           _ -> return (curChain, False)
       if switched then do
-        trace $ SwitchedToChain curChain newChain
+        trace $ mkTraceEvent curChain newChain
         traceWith cdbTraceLedger newLedger
       else do
         trace $ ChainChangedInBg curChain newChain
