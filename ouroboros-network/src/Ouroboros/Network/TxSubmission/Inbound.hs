@@ -156,8 +156,8 @@ txSubmissionInbound
 txSubmissionInbound _tracer maxUnacked recentTxIdsVar mpWriter =
     TxSubmissionServerPipelined (serverIdle Zero initialServerState)
   where
-    --TODO: replace these fixed limits by policies based on TxSizeInBytes
-    -- and delta-Q and the bandwidth/delay product.
+    -- TODO #1656: replace these fixed limits by policies based on
+    -- TxSizeInBytes and delta-Q and the bandwidth/delay product.
     -- These numbers are for demo purposes only, the throughput will be low.
     maxTxIdsToRequest = 3 :: Word16
     maxTxToRequest    = 2 :: Word16
