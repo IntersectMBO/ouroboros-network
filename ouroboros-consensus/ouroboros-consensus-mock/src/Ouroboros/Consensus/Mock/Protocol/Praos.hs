@@ -29,6 +29,7 @@ module Ouroboros.Consensus.Mock.Protocol.Praos (
   , PraosMockCrypto
   , PraosValidateView(..)
   , praosValidateView
+  , PraosValidationError(..)
     -- * Type instances
   , NodeConfig(..)
   , BlockInfo(..)
