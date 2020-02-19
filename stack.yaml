@@ -25,7 +25,7 @@ flags:
     asserts: true
   ouroboros-network:
     asserts: true
-    cddl: false
+    cddl: true
   ouroboros-consensus:
     asserts: true
   ouroboros-consensus-byron:

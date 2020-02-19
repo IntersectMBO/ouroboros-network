@@ -50,7 +50,7 @@ package mux
 
 package ouroboros-network
   tests: True
-  flags: +asserts -cddl
+  flags: +asserts +cddl
 
 package ouroboros-consensus
   tests: True
