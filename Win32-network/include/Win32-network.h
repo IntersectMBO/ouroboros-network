@@ -14,10 +14,3 @@ typedef struct _WSAIODATA {
     WSAOVERLAPPED  iodOverlapped;
     HsStablePtr    iodData;
 } WSAIODATA;
-
-typedef struct _GQCSRESULT {
-    BOOL    gqcsResult;
-    BOOL    gqcsOverlappedIsNull;
-    BOOL    gqcsCompletionKey;
-    IODATA *gqcsIODataPtr;
-} GQCSRESULT;
