@@ -252,7 +252,7 @@ castHeaderEnvelopeError = \case
 
 class HasAnnTip blk => ValidateEnvelope blk where
   -- | Validate the header envelope
-  validateEnvelope :: TopLevelConfig blk
+  validateEnvelope :: BlockConfig blk
                    -> WithOrigin (AnnTip blk)
                    -> Header blk
                    -> Except (HeaderEnvelopeError blk) ()
@@ -269,7 +269,7 @@ class HasAnnTip blk => ValidateEnvelope blk where
   minimumPossibleSlotNo _ = SlotNo 0
 
   default validateEnvelope :: HasHeader (Header blk)
-                           => TopLevelConfig blk
+                           => BlockConfig blk
                            -> WithOrigin (AnnTip blk)
                            -> Header blk
                            -> Except (HeaderEnvelopeError blk) ()
@@ -373,7 +373,7 @@ validateHeader :: (BlockSupportsProtocol blk, ValidateEnvelope blk)
                -> Except (HeaderError blk) (HeaderState blk)
 validateHeader cfg ledgerView hdr st = do
     withExcept HeaderEnvelopeError $
-      validateEnvelope cfg (headerStateTip st) hdr
+      validateEnvelope (configBlock cfg) (headerStateTip st) hdr
     chainState' <- withExcept HeaderProtocolError $
                      applyChainState
                        (configConsensus cfg)
