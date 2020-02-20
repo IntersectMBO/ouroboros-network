@@ -137,6 +137,14 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
     }
   deriving NoUnexpectedThunks via AllowThunk (BlockConfig (DualBlock m a))
 
+-- | This is only used for block production
+dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
+dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
+      configConsensus =                      configConsensus
+    , configLedger    = dualLedgerConfigMain configLedger
+    , configBlock     = dualBlockConfigMain  configBlock
+    }
+
 {-------------------------------------------------------------------------------
   Bridge two ledgers
 -------------------------------------------------------------------------------}
@@ -213,13 +221,6 @@ instance Bridge m a => HasHeader (DualHeader m a) where
 
 type instance NodeState     (DualBlock m a) = NodeState     m
 type instance BlockProtocol (DualBlock m a) = BlockProtocol m
-
-dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
-dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
-      configConsensus =                      configConsensus
-    , configLedger    = dualLedgerConfigMain configLedger
-    , configBlock     = dualBlockConfigMain  configBlock
-    }
 
 instance Bridge m a => BlockSupportsProtocol (DualBlock m a) where
   validateView cfg = validateView (dualBlockConfigMain cfg) . dualHeaderMain
@@ -386,13 +387,13 @@ instance Bridge m a => ValidateEnvelope (DualBlock m a) where
 instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
   protocolLedgerView cfg state =
       protocolLedgerView
-        (dualTopLevelConfigMain cfg)
-        (dualLedgerStateMain    state)
+        (dualLedgerConfigMain cfg)
+        (dualLedgerStateMain  state)
 
   anachronisticProtocolLedgerView cfg state =
       anachronisticProtocolLedgerView
-        (dualTopLevelConfigMain cfg)
-        (dualLedgerStateMain    state)
+        (dualLedgerConfigMain cfg)
+        (dualLedgerStateMain  state)
 
 instance Bridge m a => LedgerDerivedInfo (DualBlock m a) where
   knownSlotLengths cfg =

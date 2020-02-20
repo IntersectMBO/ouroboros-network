@@ -147,6 +147,13 @@ instance ( SimpleCrypto c
          ) => BlockSupportsProtocol (SimpleBlock c (SimplePraosExt c c')) where
   validateView _ = praosValidateView (simplePraosExt . simpleHeaderExt)
 
+instance ( SimpleCrypto c
+         , PraosCrypto c'
+         , Signable (PraosKES c') (SignedSimplePraos c c')
+         ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
+  protocolLedgerView              cfg _   =         stakeDist cfg
+  anachronisticProtocolLedgerView cfg _ _ = Right $ stakeDist cfg
+
 -- | Praos needs a ledger that can give it the "active stake distribution"
 --
 -- TODO: Currently our mock ledger does not do this, and just assumes that all
@@ -155,15 +162,8 @@ instance ( SimpleCrypto c
 -- documentation of 'LedgerView'). Ideally we'd change this however, but it
 -- may not be worth it; it would be a bit of work, and after we have integrated
 -- the Shelley rules, we'll have a proper instance anyway.
-instance ( SimpleCrypto c
-         , PraosCrypto c'
-         , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
-  protocolLedgerView TopLevelConfig{..} _ =
-      equalStakeDist (simpleMockLedgerConfig configLedger)
-
-  anachronisticProtocolLedgerView TopLevelConfig{..} _ _ =
-      Right $ equalStakeDist (simpleMockLedgerConfig configLedger)
+stakeDist :: LedgerConfig (SimplePraosBlock c c') -> StakeDist
+stakeDist cfg = equalStakeDist (simpleMockLedgerConfig cfg)
 
 {-------------------------------------------------------------------------------
   Serialisation

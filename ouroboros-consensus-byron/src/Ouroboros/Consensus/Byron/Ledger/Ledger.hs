@@ -55,7 +55,6 @@ import qualified Ouroboros.Network.Point as Point
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.LedgerDerivedInfo
@@ -214,7 +213,7 @@ instance LedgerSupportsProtocol ByronBlock where
               At s -> Right $ toPBftLedgerView $
                 CC.previewDelegationMap (toByronSlotNo s) ls
     where
-      SecurityParam k = configSecurityParam cfg
+      SecurityParam k = genesisSecurityParam (unByronLedgerConfig cfg)
 
       now, maxHi, maxLo :: SlotNo
       now   = fromByronSlotNo $ CC.cvsLastSlot ls

@@ -388,7 +388,10 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
 
         -- Check if we are the leader
         proof <-
-          case anachronisticProtocolLedgerView cfg ledger (At currentSlot) of
+          case anachronisticProtocolLedgerView
+                 (configLedger cfg)
+                 ledger
+                 (At currentSlot) of
             Right ledgerView -> do
               mIsLeader :: Maybe (IsLeader (BlockProtocol blk)) <- lift $
                 runMonadRandom $
