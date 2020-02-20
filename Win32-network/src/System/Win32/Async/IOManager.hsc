@@ -34,7 +34,7 @@ import Control.Exception ( Exception (..)
 import Control.Monad (when)
 import Data.Word (Word32)
 import Data.Functor (void)
-import Foreign.C (CInt (..))
+import Foreign.C (CInt (..), CUIntPtr (..))
 import Foreign.Ptr (Ptr, castPtr, nullPtr)
 import Foreign.StablePtr (deRefStablePtr, freeStablePtr)
 import Foreign.Marshal (alloca, free)
@@ -49,6 +49,8 @@ import qualified System.Win32.File  as Win32 (closeHandle)
 import System.Win32.Async.ErrCode
 import System.Win32.Async.IOData
 import System.Win32.Async.Overlapped
+
+import Unsafe.Coerce (unsafeCoerce)
 
 -- | New type wrapper which holds 'HANDLE' of the I/O completion port.
 -- <https://docs.microsoft.com/en-us/windows/win32/fileio/createiocompletionport>
@@ -73,13 +75,14 @@ createIOCompletionPort concurrentThreads
     = IOCompletionPort <$>
         Win32.failIfNull "createIoCompletionPort"
           (c_CreateIoCompletionPort
-            Win32.iNVALID_HANDLE_VALUE
-            nullPtr
-            nullPtr
-            concurrentThreads)
+              Win32.iNVALID_HANDLE_VALUE
+              nullPtr
+              0 -- it is ignored since we are passing 'iNVALID_HANDLE_VALUE':
+                -- <https://docs.microsoft.com/en-us/windows/win32/fileio/createiocompletionport#parameters>
+              concurrentThreads)
 
 foreign import ccall unsafe "windows.h CreateIoCompletionPort"
-    c_CreateIoCompletionPort :: HANDLE -> HANDLE -> Ptr () -> DWORD -> IO HANDLE
+    c_CreateIoCompletionPort :: HANDLE -> HANDLE -> ULONG_PTR -> DWORD -> IO HANDLE
 
 -- | Associate with I/O completion port.  This can be used multiple times on
 -- a file descriptor.
@@ -87,22 +90,18 @@ foreign import ccall unsafe "windows.h CreateIoCompletionPort"
 associateWithIOCompletionPort :: Either HANDLE Socket
                               -> IOCompletionPort
                               -> IO ()
-associateWithIOCompletionPort (Left h) iocp = do
-    Win32.failIfFalse_ "associateWithIOCompletionPort" (c_AssociateHandle h iocp)
-associateWithIOCompletionPort (Right sock) iocp =
-    Socket.withFdSocket sock $ \fd -> do
-      Win32.failIfFalse_ "associateWithIOCompletionPort" (c_AssociateSocket fd iocp)
-
-foreign import ccall safe "HsAssociateHandle"
-    c_AssociateHandle :: HANDLE           -- ^ handle
-                      -> IOCompletionPort -- ^ I/O completion port
-                      -> IO BOOL
-
-foreign import ccall safe "HsAssociateSocket"
-    c_AssociateSocket :: CInt             -- ^ Socket descriptor
-                      -> IOCompletionPort -- ^ I/O completion port
-                      -> IO BOOL
-
+associateWithIOCompletionPort (Left h) (IOCompletionPort iocp) = do
+    Win32.failIfFalse_ "associateWithIOCompletionPort (HANDLE)" $
+      (iocp ==) <$> c_CreateIoCompletionPort h iocp magicCompletionKey 0
+associateWithIOCompletionPort (Right sock) (IOCompletionPort iocp) =
+    Socket.withFdSocket sock $ \fd ->
+      let h = coerceFdToHANDLE fd
+      in Win32.failIfFalse_ "associateWithIOCompletionPort (SOCKET)" $
+          (iocp ==) <$> c_CreateIoCompletionPort h iocp magicCompletionKey 0
+  where
+    -- this is actually safe
+    coerceFdToHANDLE :: CInt -> HANDLE
+    coerceFdToHANDLE = unsafeCoerce
 
 -- | A newtype warpper for 'IOError's whihc are catched in the 'IOManager'
 -- thread and are re-thrown in the main application thread.

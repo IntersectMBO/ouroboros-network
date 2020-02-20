@@ -34,7 +34,6 @@ library
                        System.Win32.Async.Overlapped
                        System.Win32.Async.Socket.Syscalls
                        System.Win32.Async.WSABuf
-    c-sources:         cbits/Win32Async.c
     include-dirs:      include
     build-depends:     base              >= 4.5  && < 4.13,
                        bytestring        >= 0.10 && < 0.11,
