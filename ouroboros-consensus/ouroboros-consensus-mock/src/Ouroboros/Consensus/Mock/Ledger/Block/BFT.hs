@@ -16,7 +16,6 @@ module Ouroboros.Consensus.Mock.Ledger.Block.BFT (
   , SimpleBftHeader
   , SimpleBftExt(..)
   , SignedSimpleBft(..)
-  , BlockConfig(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -28,12 +27,10 @@ import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
-import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
@@ -64,12 +61,6 @@ data SignedSimpleBft c c' = SignedSimpleBft {
       signedSimpleBft :: SimpleStdHeader c (SimpleBftExt c c')
     }
   deriving (Generic)
-
-data instance BlockConfig (SimpleBftBlock c c') = SimpleBftBlockConfig {
-      -- | Slot lengths
-      simpleBftSlotLengths :: SlotLengths
-    }
-  deriving (Generic, NoUnexpectedThunks)
 
 type instance NodeState     (SimpleBftBlock c c') = ()
 type instance BlockProtocol (SimpleBftBlock c c') = Bft c'
@@ -131,9 +122,6 @@ instance ( SimpleCrypto c
       ()
   anachronisticProtocolLedgerView _ _ _ =
       Right ()
-
-instance LedgerDerivedInfo (SimpleBftBlock c c') where
-  knownSlotLengths = simpleBftSlotLengths
 
 {-------------------------------------------------------------------------------
   Serialisation

@@ -17,7 +17,6 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PBFT (
   , SimplePBftHeader
   , SimplePBftExt(..)
   , SignedSimplePBft(..)
-  , BlockConfig(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -31,12 +30,10 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (HasHeader (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
-import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
@@ -75,12 +72,6 @@ data SignedSimplePBft c c' = SignedSimplePBft {
       signedSimplePBft :: SimpleStdHeader c (SimplePBftExt c c')
     }
   deriving (Generic)
-
-data instance BlockConfig (SimplePBftBlock c c') = SimplePBftBlockConfig {
-    -- | Slot lengths
-    simplePBftSlotLengths :: SlotLengths
-  }
-  deriving (Generic, NoUnexpectedThunks)
 
 type instance NodeState     (SimplePBftBlock c c') = ()
 type instance BlockProtocol (SimplePBftBlock c c') = PBft c'
@@ -146,9 +137,6 @@ instance ( SimpleCrypto c
       simpleMockLedgerConfig configLedger
   anachronisticProtocolLedgerView TopLevelConfig{..} _ _ =
       Right $ simpleMockLedgerConfig configLedger
-
-instance LedgerDerivedInfo (SimplePBftBlock c PBftMockCrypto) where
-  knownSlotLengths = simplePBftSlotLengths
 
 {-------------------------------------------------------------------------------
   Serialisation

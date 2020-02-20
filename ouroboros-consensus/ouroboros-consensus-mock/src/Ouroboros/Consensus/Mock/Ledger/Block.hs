@@ -33,6 +33,8 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , mkSimpleHeader
   , matchesSimpleHeader
   , countSimpleGenTxs
+    -- * Configuration
+  , BlockConfig(..)
     -- * Protocol-specific part
   , MockProtocolSpecific(..)
     -- * 'UpdateLedger'
@@ -76,12 +78,14 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -237,6 +241,18 @@ instance (SimpleCrypto c, Typeable ext) => HasAnnTip (SimpleBlock c ext)
 
 instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
   -- Use defaults
+
+{-------------------------------------------------------------------------------
+  Config
+-------------------------------------------------------------------------------}
+
+data instance BlockConfig (SimpleBlock c ext) = SimpleBlockConfig {
+      simpleBlockSlotLengths :: !SlotLengths
+    }
+  deriving (Generic, NoUnexpectedThunks)
+
+instance LedgerDerivedInfo (SimpleBlock c ext) where
+  knownSlotLengths = simpleBlockSlotLengths
 
 {-------------------------------------------------------------------------------
   Protocol specific constraints

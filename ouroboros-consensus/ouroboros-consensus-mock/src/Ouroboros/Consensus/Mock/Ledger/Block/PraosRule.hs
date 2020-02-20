@@ -16,7 +16,6 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PraosRule (
   , SimplePraosRuleExt(..)
   , SimplePraosRuleHeader
   , PraosCryptoUnused
-  , BlockConfig(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -28,13 +27,11 @@ import           Cardano.Crypto.VRF
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
-import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
@@ -66,12 +63,6 @@ newtype SimplePraosRuleExt = SimplePraosRuleExt {
   deriving stock    (Generic, Show, Eq)
   deriving newtype  (Condense)
   deriving anyclass (NoUnexpectedThunks)
-
-data instance BlockConfig (SimplePraosRuleBlock c) = SimplePraosRuleBlockConfig {
-      -- | Slot lengths
-      simplePraosRuleSlotLengths :: SlotLengths
-    }
-  deriving (Generic, NoUnexpectedThunks)
 
 type instance NodeState     (SimplePraosRuleBlock c) = ()
 type instance BlockProtocol (SimplePraosRuleBlock c) =
@@ -116,9 +107,6 @@ instance SimpleCrypto c
       ()
   anachronisticProtocolLedgerView _ _ _ =
       Right ()
-
-instance LedgerDerivedInfo (SimplePraosRuleBlock c) where
-  knownSlotLengths = simplePraosRuleSlotLengths
 
 {-------------------------------------------------------------------------------
   We don't need crypto for this protocol

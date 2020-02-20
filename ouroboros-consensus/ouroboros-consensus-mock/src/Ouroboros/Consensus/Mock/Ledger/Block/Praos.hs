@@ -16,7 +16,6 @@ module Ouroboros.Consensus.Mock.Ledger.Block.Praos (
   , SimplePraosHeader
   , SimplePraosExt(..)
   , SignedSimplePraos(..)
-  , BlockConfig(..)
   ) where
 
 import           Codec.CBOR.Decoding (decodeListLenOf)
@@ -32,7 +31,6 @@ import           Cardano.Crypto.KES
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Address
@@ -40,7 +38,6 @@ import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
-import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -76,12 +73,6 @@ data SignedSimplePraos c c' = SignedSimplePraos {
       signedSimplePraos :: SimpleStdHeader c (SimplePraosExt c c')
     , signedPraosFields :: PraosExtraFields c'
     }
-
-data instance BlockConfig (SimplePraosBlock c c') = SimplePraosBlockConfig {
-      -- | Slot lengths
-      simplePraosSlotLengths :: SlotLengths
-    }
-  deriving (Generic, NoUnexpectedThunks)
 
 type instance NodeState     (SimplePraosBlock c c') = PraosNodeState c'
 type instance BlockProtocol (SimplePraosBlock c c') = Praos c'
@@ -173,9 +164,6 @@ instance ( SimpleCrypto c
 
   anachronisticProtocolLedgerView TopLevelConfig{..} _ _ =
       Right $ equalStakeDist (simpleMockLedgerConfig configLedger)
-
-instance LedgerDerivedInfo (SimplePraosBlock c c') where
-  knownSlotLengths = simplePraosSlotLengths
 
 {-------------------------------------------------------------------------------
   Serialisation
