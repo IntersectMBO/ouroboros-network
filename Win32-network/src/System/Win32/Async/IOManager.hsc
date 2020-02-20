@@ -35,7 +35,7 @@ import Control.Monad (when)
 import Data.Word (Word32)
 import Data.Functor (void)
 import Foreign.C (CInt (..))
-import Foreign.Ptr (Ptr, nullPtr)
+import Foreign.Ptr (Ptr, castPtr, nullPtr)
 import Foreign.StablePtr (deRefStablePtr, freeStablePtr)
 import Foreign.Marshal (alloca, free)
 import Foreign.Storable (Storable (..))
@@ -43,11 +43,12 @@ import Foreign.Storable (Storable (..))
 import           Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
-import System.Win32.Types (BOOL, HANDLE, DWORD)
+import System.Win32.Types (BOOL, HANDLE, DWORD, ULONG_PTR)
 import qualified System.Win32.Types as Win32
 import qualified System.Win32.File  as Win32 (closeHandle)
 import System.Win32.Async.ErrCode
 import System.Win32.Async.IOData
+import System.Win32.Async.Overlapped
 
 -- | New type wrapper which holds 'HANDLE' of the I/O completion port.
 -- <https://docs.microsoft.com/en-us/windows/win32/fileio/createiocompletionport>
@@ -57,6 +58,11 @@ newtype IOCompletionPort = IOCompletionPort HANDLE
 
 closeIOCompletionPort :: IOCompletionPort -> IO ()
 closeIOCompletionPort (IOCompletionPort iocp) = Win32.closeHandle iocp
+
+-- | The completion key used by this library for all overllaped IO.
+--
+magicCompletionKey :: ULONG_PTR
+magicCompletionKey = 696205568
 
 -- | Windows documentation:
 --
@@ -158,19 +164,19 @@ dequeueCompletionPackets :: IOCompletionPort
                          -- ^ handle of a completion port
                          -> IO ()
 dequeueCompletionPackets iocp@(IOCompletionPort port) =
-    alloca $ \numBytesPtr -> do
+    alloca $ \numBytesPtr ->
+      alloca $ \lpCompletionKey ->
+        alloca $ \lpOverlappedPtr -> do
       -- make 'GetQueuedCompletionStatus' system call which dequeues
       -- a packet from io completion packet.  We use 'maxBound' as the timeouts
       -- for dequeueing completion packets from IOCP.  The thread that runs
       -- 'dequeueCompletionPackets' is ment to run for the entire execution time
       -- of an appliction.
-      GQCSResult { gqcsResult
-                 , gqcsOverlappedIsNull
-                 , gqcsCompletionKey
-                 , gqcsIODataPtr
-                 }
-          <- getQueuedCompletionStatus port numBytesPtr maxBound
+      gqcsResult <- c_GetQueuedCompletionStatus port numBytesPtr lpCompletionKey lpOverlappedPtr maxBound
       errorCode <- Win32.getLastError
+      lpOverlapped <- peek lpOverlappedPtr
+      completionKey <- peek lpCompletionKey
+      let gqcsOverlappedIsNull = lpOverlapped == nullPtr
 
       -- gqcsIODataPtr was allocated by 'withIODataPtr' or
       -- 'wsaWaitForCompletion', and we are responsible to deallocate it but
@@ -212,106 +218,46 @@ dequeueCompletionPackets iocp@(IOCompletionPort port) =
            -- from the completion port.  Must be the first clause, since if
            -- this is not true we cannot trust other arguments.
               throwIO NullOverlappedPointer
-         | not gqcsCompletionKey ->
-           -- skip if the completion key did not match with our
-           -- 'MAGIC_COMPLETION_KEY'
+         | completionKey /= magicCompletionKey ->
             dequeueCompletionPackets iocp
          | gqcsResult -> do
            -- 'GetQueuedCompletionStatus' system call returned without errors.
              !(numBytes :: Int) <-
                  fromIntegral <$> peek numBytesPtr
-             mvarPtr <- peek (iodDataPtr AsyncSing gqcsIODataPtr)
+             let ioDataPtr :: Ptr AsyncIOCPData
+                 ioDataPtr = castPtr lpOverlapped
+             mvarPtr <- peek (iodDataPtr AsyncSing ioDataPtr)
              mvar <- deRefStablePtr mvarPtr
              freeStablePtr mvarPtr
-             free gqcsIODataPtr
+             free ioDataPtr
              success <- tryPutMVar mvar (Right numBytes)
              when (not success)
                $ fail "System.Win32.Async.dequeueCompletionPackets: MVar is not empty."
              dequeueCompletionPackets iocp
          | otherwise -> do
            -- the async action returned with an error
-             mvarPtr <- peek (iodDataPtr AsyncSing gqcsIODataPtr)
+             let ioDataPtr :: Ptr AsyncIOCPData
+                 ioDataPtr = castPtr lpOverlapped
+             mvarPtr <- peek (iodDataPtr AsyncSing ioDataPtr)
              mvar <- deRefStablePtr mvarPtr
              freeStablePtr mvarPtr
-             free gqcsIODataPtr
+             free ioDataPtr
              success <- tryPutMVar mvar (Left (ErrorCode errorCode))
              when (not success)
                $ fail "System.Win32.Async.dequeueCompletionPackets: MVar is not empty."
              dequeueCompletionPackets iocp
 
 
--- | Return value of 'HsGetQueuedCompletionStatus'.
---
-data GQCSResult a = GQCSResult {
-      gqcsResult           :: Bool,
-      -- ^ return valud of 'GetQueuedCompletionStatus'
-      gqcsOverlappedIsNull :: Bool,
-      -- ^ wheather 'OVERLAPPED' pointer was null.  According to MSDN:
-      --
-      -- lpOverlapped is NULL, the function did not dequeue a completion packet
-      -- from the completion port. In this case, the function does not store
-      -- information in the variables pointed to by the lpNumberOfBytes and
-      -- lpCompletionKey parameters, and their values are indeterminate.
-      --
-      -- Source: <https://docs.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getqueuedcompletionstatus#remarks>
-      gqcsCompletionKey   :: Bool,
-      -- ^ true iff 'completionKey' matches with 'MAGIC_COMPLETION_KEY' which
-      -- we use in requests.
-      gqcsIODataPtr       :: Ptr AsyncIOCPData
-    -- ^ it is vital that 'gqcsIODataPtr' type is in sync with what we allocate
-    -- in 'withIODataPtr', otherwise 'dequeueCompletionPackets' likely
-    -- will crash.  For this reason we use a type alias.
-    -- 'dequeueCompletionPackets' will never see @'WsaAsyncIOCPData' a@, but it
-    -- is safe to use it (what we do in 'System.Win32.Async.Socket' module).
-    }
-
-instance Storable (GQCSResult a) where
-    sizeOf    _ = (#const sizeof(GQCSRESULT))
-    alignment _ = (#alignment GQCSRESULT)
-
-    poke buf GQCSResult { gqcsResult
-                        , gqcsOverlappedIsNull
-                        , gqcsCompletionKey
-                        , gqcsIODataPtr
-                        } = do
-      (#poke GQCSRESULT, gqcsResult)           buf gqcsResult
-      (#poke GQCSRESULT, gqcsOverlappedIsNull) buf gqcsOverlappedIsNull
-      (#poke GQCSRESULT, gqcsCompletionKey)    buf gqcsCompletionKey
-      (#poke GQCSRESULT, gqcsIODataPtr)        buf gqcsIODataPtr
-
-    peek buf =
-      GQCSResult <$> (#peek GQCSRESULT, gqcsResult)           buf
-                 <*> (#peek GQCSRESULT, gqcsOverlappedIsNull) buf
-                 <*> (#peek GQCSRESULT, gqcsCompletionKey)    buf
-                 <*> (#peek GQCSRESULT, gqcsIODataPtr)        buf
-
-
--- | A thin wrapper around 'HsGetQueuedCompletionStatus', this makes clear the
--- intention of 'GQCSResult' data type.
---
-getQueuedCompletionStatus
-    :: HANDLE
-      -- ^ completion port's 'HANDLE'
-    -> Ptr Word32
-      -- ^ lpNumberOfBytesTransferred; For the stored value to make sense the
-      -- 'gqcsOverlappedIsNull' must be 'True'.
-    -> Word32
-      -- ^ timeout in millisecons
-    -> IO (GQCSResult a)
-getQueuedCompletionStatus completionPort lpNumberOfBytesTransferred dwMilliseconds =
-    alloca $ \gqcsResultPtr -> do
-      c_GetQueuedCompletionStatus completionPort lpNumberOfBytesTransferred dwMilliseconds gqcsResultPtr
-      peek gqcsResultPtr
-
-
-foreign import ccall safe "HsGetQueuedCompletionStatus"
+foreign import ccall safe "GetQueuedCompletionStatus"
     c_GetQueuedCompletionStatus
       :: HANDLE
       -- ^ completion port
       -> Ptr Word32
       -- ^ lpNumberOfBytesTransferred
+      -> Ptr ULONG_PTR
+      -- ^ lpCompletionKey
+      -> Ptr LPOVERLAPPED
+      -- ^ lpOverlapped
       -> Word32
       -- ^ dwMilliseconds
-      -> Ptr (GQCSResult a)
-      -- ^ result of 'GetQueuedCompletinStatus' system call
-      -> IO ()
+      -> IO BOOL

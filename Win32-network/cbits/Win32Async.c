@@ -7,38 +7,6 @@
 
 #define MAGIC_COMPLETION_KEY 696205568
 
-// A wrapper around 'GetQueuedCompletionStatus' system call.  It frees the
-// 'IODATA' record which wrappes 'OVERLLAPPED' struct, which is allocated
-// by 'HsAsyncRead' or 'HsAsyncWrite'.
-//
-DllExport
-BOOL HsGetQueuedCompletionStatus( HANDLE       port
-                                , DWORD       *numBytes
-                                , DWORD        timeout
-                                , GQCSRESULT  *gqcsResult
-                                )
-{
-    OVERLAPPED *overlappedPtr = NULL;
-    LONGLONG    completionKey = 0;
-    BOOL result;
-
-    result = GetQueuedCompletionStatus(port,
-                                       numBytes,
-                                       &completionKey,
-                                       &overlappedPtr,
-				       timeout);
-
-    gqcsResult->gqcsResult           = result;
-    gqcsResult->gqcsOverlappedIsNull = overlappedPtr == NULL;
-    gqcsResult->gqcsCompletionKey    = completionKey == MAGIC_COMPLETION_KEY;
-    if (overlappedPtr != NULL && completionKey == MAGIC_COMPLETION_KEY) {
-      gqcsResult->gqcsIODataPtr =
-          CONTAINING_RECORD(overlappedPtr, IODATA, iodOverlapped);
-    } else {
-      gqcsResult->gqcsIODataPtr = NULL;
-    }
-}
-
 
 DllExport
 BOOL HsAssociateHandle(HANDLE handle, HANDLE port)
