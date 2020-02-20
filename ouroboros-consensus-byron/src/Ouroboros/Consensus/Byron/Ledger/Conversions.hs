@@ -60,7 +60,6 @@ genesisSecurityParam =
     . Genesis.gdK
     . Genesis.configGenesisData
 
-
 genesisNumCoreNodes :: Genesis.Config -> NumCoreNodes
 genesisNumCoreNodes =
       NumCoreNodes
