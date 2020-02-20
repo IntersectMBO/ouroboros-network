@@ -39,6 +39,7 @@ import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 
@@ -83,6 +84,7 @@ data instance BlockConfig (SimplePraosBlock c c') = SimplePraosBlockConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
+type instance NodeState     (SimplePraosBlock c c') = PraosNodeState c'
 type instance BlockProtocol (SimplePraosBlock c c') = Praos c'
 
 -- | Sanity check that block and header type synonyms agree
@@ -90,7 +92,7 @@ _simplePraosHeader :: SimplePraosBlock c c' -> SimplePraosHeader c c'
 _simplePraosHeader = simpleHeader
 
 {-------------------------------------------------------------------------------
-  Evidence that SimpleBlock can support BFT
+  Evidence that SimpleBlock can support Praos
 -------------------------------------------------------------------------------}
 
 type instance Signed (SimplePraosHeader c c') = SignedSimplePraos c c'
@@ -119,9 +121,10 @@ instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => RunMockBlock c (SimplePraosExt c c') where
-  forgeExt cfg isLeader SimpleBlock{..} = do
+  forgeExt cfg updateState isLeader SimpleBlock{..} = do
       ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
         forgePraosFields (configConsensus cfg)
+                         updateState
                          isLeader
                          $ \praosExtraFields ->
           SignedSimplePraos {

@@ -12,6 +12,8 @@ import           Data.Time.Calendar (fromGregorian)
 import           Data.Time.Clock (UTCTime (..))
 import           Data.Typeable (Typeable)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Block
@@ -22,6 +24,7 @@ import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
 import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
@@ -38,6 +41,7 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
            -- some of the tests loop, but only when compiled with @-O2@ ; with
            -- @-O0@ it is perfectly fine. ghc bug?!
          , BlockSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
+         , NoUnexpectedThunks (NodeState (SimpleBlock SimpleMockCrypto ext))
          , Typeable ext
          , Serialise ext
          , RunMockBlock SimpleMockCrypto ext

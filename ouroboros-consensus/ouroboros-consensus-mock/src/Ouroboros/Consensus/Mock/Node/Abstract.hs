@@ -19,6 +19,7 @@ import           Cardano.Crypto (ProtocolMagicId (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Mock.Ledger.Block
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | Protocol specific functionality required to run consensus with mock blocks
@@ -27,12 +28,10 @@ class RunMockBlock c ext where
   --
   -- This is used in 'forgeSimple', which takes care of the generic part of
   -- the mock block.
-  forgeExt :: ( HasNodeState p m
-              , MonadRandom m
-              , p ~ BlockProtocol (SimpleBlock c ext)
-              )
-           => TopLevelConfig (SimpleBlock c ext)
-           -> IsLeader p
+  forgeExt :: MonadRandom m
+           => TopLevelConfig          (SimpleBlock c ext)
+           -> Update m     (NodeState (SimpleBlock c ext))
+           -> IsLeader (BlockProtocol (SimpleBlock c ext))
            -> SimpleBlock' c ext ()
            -> m (SimpleBlock c ext)
 

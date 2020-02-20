@@ -1,12 +1,11 @@
 {-# LANGUAGE BangPatterns              #-}
-{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE DerivingVia               #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
-{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE KindSignatures            #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
@@ -47,6 +46,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Typeable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           GHC.Stack
 import           Numeric.Natural
 
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
@@ -66,6 +66,7 @@ import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
 import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Mock.Ledger.Stake
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
@@ -115,38 +116,87 @@ praosValidateView :: ( HasHeader    hdr
 praosValidateView getFields hdr =
     PraosValidateView (blockSlot hdr) (getFields hdr) (headerSigned hdr)
 
-forgePraosFields :: ( HasNodeState (Praos c) m
-                    , MonadRandom m
+{-------------------------------------------------------------------------------
+  Forging
+-------------------------------------------------------------------------------}
+
+data PraosNodeState c =
+    -- | The KES key is available
+    PraosKeyAvailable (SignKeyKES (PraosKES c))
+
+    -- | The KES key is being evolved by another thread
+    --
+    -- Any thread that sees this value should back off and retry.
+  | PraosKeyEvolving
+  deriving (Generic)
+
+-- We override 'showTypeOf' to make sure to show @c@
+instance PraosCrypto c => NoUnexpectedThunks (PraosNodeState c) where
+  showTypeOf _ = show $ typeRep (Proxy @(PraosNodeState c))
+
+forgePraosFields :: ( MonadRandom m
                     , PraosCrypto c
                     , Cardano.Crypto.KES.Class.Signable (PraosKES c) toSign
                     )
                  => NodeConfig (Praos c)
+                 -> Update m (PraosNodeState c)
                  -> PraosProof c
                  -> (PraosExtraFields c -> toSign)
                  -> m (PraosFields c toSign)
-forgePraosFields PraosNodeConfig{..} PraosProof{..} mkToSign = do
-    keyKES <- unPraosNodeState <$> getNodeState
+forgePraosFields PraosNodeConfig{..} updateState PraosProof{..} mkToSign = do
+    -- For the mock implementation, we consider the KES period to be the slot.
+    -- In reality, there will be some kind of constant slotsPerPeriod factor.
+    -- (Put another way, we consider slotsPerPeriod to be 1 here.)
+    let kesPeriod :: Natural
+        kesPeriod = fromIntegral (unSlotNo praosProofSlot)
+
+    oldKey <- runUpdate updateState $ \case
+      PraosKeyEvolving ->
+        -- Another thread is currently evolving the key; wait
+        Nothing
+      PraosKeyAvailable oldKey ->
+        return (PraosKeyEvolving, oldKey)
+
+    -- Evolve the key
+    newKey <- fromMaybe (error "mkOutoborosPayload: updateKES failed") <$>
+                 updateKESTo () kesPeriod oldKey
+    runUpdate updateState $ \_ -> return (PraosKeyAvailable newKey, ())
+
     let signedFields = PraosExtraFields {
           praosCreator = praosLeader
         , praosRho     = praosProofRho
         , praosY       = praosProofY
         }
-    m <- signedKES
-           ()
-           (fromIntegral (unSlotNo praosProofSlot))
-           (mkToSign signedFields)
-           keyKES
+    m <- signedKES () kesPeriod (mkToSign signedFields) newKey
     case m of
       Nothing -> error "mkOutoborosPayload: signedKES failed"
       Just signature -> do
-        -- TODO : We should not update the key on each signing, but X slots
-        -- (for configurable param X)
-        newKey <- fromMaybe (error "mkOutoborosPayload: updateKES failed") <$> updateKES () keyKES
-        putNodeState (PraosNodeState newKey)
         return $ PraosFields {
-            praosSignature    = signature
+            praosSignature   = signature
           , praosExtraFields = signedFields
           }
+
+-- | Update key to specified period
+--
+-- Throws an error if the key is already /past/ the period
+updateKESTo :: forall m v. (MonadRandom m, HasCallStack, KESAlgorithm v)
+            => ContextKES v
+            -> Natural -- ^ KES period to evolve to
+            -> SignKeyKES v
+            -> m (Maybe (SignKeyKES v))
+updateKESTo ctxt evolveTo = go
+  where
+    go :: SignKeyKES v -> m (Maybe (SignKeyKES v))
+    go key
+      | iterationCountKES ctxt key < evolveTo = do
+          mKey' <- updateKES ctxt key
+          case mKey' of
+            Nothing   -> return Nothing
+            Just key' -> go key'
+      | iterationCountKES ctxt key == evolveTo =
+          return (Just key)
+      | otherwise =
+          error "updateKESTo: key already past period"
 
 {-------------------------------------------------------------------------------
   Praos specific types
@@ -216,15 +266,6 @@ data PraosParams = PraosParams {
     }
   deriving (Generic, NoUnexpectedThunks)
 
-newtype PraosNodeState c = PraosNodeState {
-      unPraosNodeState :: SignKeyKES (PraosKES c)
-    }
-  deriving (Generic)
-
--- We override 'showTypeOf' to make sure to show @c@
-instance PraosCrypto c => NoUnexpectedThunks (PraosNodeState c) where
-  showTypeOf _ = show $ typeRep (Proxy @(PraosNodeState c))
-
 data instance NodeConfig (Praos c) = PraosNodeConfig
   { praosParams       :: !PraosParams
   , praosInitialEta   :: !Natural
@@ -238,7 +279,6 @@ data instance NodeConfig (Praos c) = PraosNodeConfig
 instance PraosCrypto c => ConsensusProtocol (Praos c) where
   protocolSecurityParam = praosSecurityParam . praosParams
 
-  type NodeState     (Praos c) = PraosNodeState c
   type LedgerView    (Praos c) = StakeDist
   type IsLeader      (Praos c) = PraosProof c
   type ValidationErr (Praos c) = PraosValidationError c

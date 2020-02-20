@@ -33,6 +33,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -69,6 +70,7 @@ data instance BlockConfig (SimpleBftBlock c c') = SimpleBftBlockConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
+type instance NodeState     (SimpleBftBlock c c') = ()
 type instance BlockProtocol (SimpleBftBlock c c') = Bft c'
 
 -- | Sanity check that block and header type synonyms agree
@@ -89,7 +91,7 @@ instance ( SimpleCrypto c
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          )
       => RunMockBlock c (SimpleBftExt c c') where
-  forgeExt cfg () SimpleBlock{..} = do
+  forgeExt cfg _updateState () SimpleBlock{..} = do
       ext :: SimpleBftExt c c' <- fmap SimpleBftExt $
         forgeBftFields (configConsensus cfg) $
           SignedSimpleBft {

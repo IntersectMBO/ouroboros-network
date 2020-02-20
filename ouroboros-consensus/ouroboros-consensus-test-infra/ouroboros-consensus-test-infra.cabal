@@ -43,6 +43,7 @@ library
                        Test.Util.Orphans.NoUnexpectedThunks
                        Test.Util.QSM
                        Test.Util.QuickCheck
+                       Test.Util.Random
                        Test.Util.Range
                        Test.Util.RefEnv
                        Test.Util.Roundtrip

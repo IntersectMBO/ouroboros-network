@@ -35,7 +35,7 @@ import           Codec.CBOR.Read (DeserialiseFailure)
 import qualified Control.Exception as Exn
 import           Control.Monad
 import           Control.Tracer
-import           Crypto.Random (ChaChaDRG, drgNew)
+import           Crypto.Random (ChaChaDRG)
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
@@ -89,8 +89,8 @@ import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM
 
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
@@ -112,6 +112,7 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
+import           Test.Util.Random
 import           Test.Util.Tracer
 
 -- | How to forge an EBB
@@ -443,19 +444,16 @@ runThreadNetwork ThreadNetworkArgs
     forkTxProducer :: HasCallStack
                    => BlockchainTime m
                    -> TopLevelConfig blk
-                   -> m ChaChaDRG
-                      -- ^ How to get a DRG
+                   -> RunMonadRandom m
                    -> STM m (ExtLedgerState blk)
                       -- ^ How to get the current ledger state
                    -> Mempool m blk TicketNo
                    -> m ()
-    forkTxProducer btime cfg produceDRG getExtLedger mempool =
+    forkTxProducer btime cfg runMonadRandomDict getExtLedger mempool =
       void $ onSlotChange btime $ \curSlotNo -> do
-        varDRG <- uncheckedNewTVarM =<< produceDRG
-        txs <- atomically $ do
-          ledger <- ledgerState <$> getExtLedger
-          runSim (simChaChaT varDRG simId) $
-            testGenTxs numCoreNodes curSlotNo cfg ledger
+        ledger <- atomically $ ledgerState <$> getExtLedger
+        txs    <- runMonadRandom runMonadRandomDict $
+          testGenTxs numCoreNodes curSlotNo cfg ledger
         void $ addTxs mempool txs
 
     forkEbbProducer :: HasCallStack
@@ -588,9 +586,8 @@ runThreadNetwork ThreadNetworkArgs
 
       let blockProduction :: BlockProduction m blk
           blockProduction = BlockProduction {
-              produceBlock = nodeForgeBlock pInfoConfig
-            , produceDRG   = atomically $
-                               runSim (simChaChaT varRNG simId) drgNew
+              produceBlock       = nodeForgeBlock pInfoConfig
+            , runMonadRandomDict = runMonadRandomWithTVar varRNG
             }
 
       let NodeInfo
@@ -666,7 +663,9 @@ runThreadNetwork ThreadNetworkArgs
       forkTxProducer
         btime
         pInfoConfig
-        (produceDRG blockProduction)
+        -- Uses the same varRNG as the block producer, but we split the RNG
+        -- each time, so this is fine.
+        (runMonadRandomWithTVar varRNG)
         (ChainDB.getCurrentLedger chainDB)
         mempool
 

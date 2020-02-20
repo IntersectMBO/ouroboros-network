@@ -20,20 +20,15 @@ module Ouroboros.Consensus.Util.STM (
   , Sim(..)
   , simId
   , simStateT
-  , simOuroborosStateT
-  , simChaChaT
   ) where
 
 import           Control.Monad.State
-import           Data.Coerce
 import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 {-------------------------------------------------------------------------------
@@ -134,24 +129,4 @@ simStateT stVar (Sim k) = Sim $ \(StateT f) -> do
     st       <- readTVar stVar
     (a, st') <- k (f st)
     writeTVar stVar st'
-    return a
-
-simOuroborosStateT :: IOLike m
-                   => StrictTVar m s
-                   -> Sim n m
-                   -> Sim (NodeStateT_ s n) m
-simOuroborosStateT stVar (Sim k) = Sim $ \n -> do
-    st       <- readTVar stVar
-    (a, st') <- k (runNodeStateT n st)
-    writeTVar stVar st'
-    return a
-
-simChaChaT :: (IOLike m, Coercible a ChaChaDRG)
-           => StrictTVar m a
-           -> Sim n m
-           -> Sim (ChaChaT n) m
-simChaChaT stVar (Sim k) = Sim $ \n -> do
-    st       <- readTVar stVar
-    (a, st') <- k (runChaChaT n (coerce st))
-    writeTVar stVar (coerce st')
     return a

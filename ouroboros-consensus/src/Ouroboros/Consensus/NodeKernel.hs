@@ -23,17 +23,14 @@ module Ouroboros.Consensus.NodeKernel (
   , initNodeKernel
   , getMempoolReader
   , getMempoolWriter
-  , ProtocolM
   ) where
 
 import           Control.Monad
-import           Crypto.Random (ChaChaDRG)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (isJust, isNothing)
 import           Data.Proxy
 import           Data.Word (Word16, Word32)
 
-import           Cardano.Prelude (UseIsNormalForm (..))
 import           Control.Tracer
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -61,7 +58,8 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
-import           Ouroboros.Consensus.Node.Run (RunNode (..))
+import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
@@ -101,9 +99,6 @@ data NodeKernel m peer blk = NodeKernel {
     , getTracers             :: Tracers m peer blk
     }
 
--- | Monad that we run protocol specific functions in
-type ProtocolM blk m = NodeStateT (BlockProtocol blk) (ChaChaT (STM m))
-
 -- | Callbacks required to produce blocks
 data BlockProduction m blk = BlockProduction {
       -- | Produce a block
@@ -113,23 +108,27 @@ data BlockProduction m blk = BlockProduction {
       -- (also provided as an argument) and with each other (when applied in
       -- order). In principle /all/ of them could be included in the block (up
       -- to maximum block size).
-      produceBlock :: SlotNo             -- Current slot
+      --
+      -- Note that this function is not run in @m@, but in some monad @n@
+      -- which only has the ability to produce random number and access to the
+      -- 'NodeState'.
+      produceBlock :: forall n. MonadRandom n
+                   => Update n (NodeState blk)
+                   -> SlotNo             -- Current slot
                    -> BlockNo            -- Current block number
                    -> ExtLedgerState blk -- Current ledger state
                    -> [GenTx blk]        -- Contents of the mempool
                    -> IsLeader (BlockProtocol blk) -- Proof we are leader
-                   -> ProtocolM blk m blk
+                   -> n blk
 
-      -- | Produce a random seed
+      -- | How to run a computation requiring 'MonadRandom'.
       --
-      -- We want to be able to use real (crypto strength) random numbers, but
-      -- obviously have no access to a sytem random number source inside an
-      -- STM transaction. So we use the system RNG to generate a local DRG,
-      -- which we then use for this transaction, and /only/ this transaction.
-      -- The loss of entropy therefore is minimal.
+      -- When @m = IO@, this can be 'runMonadRandomIO', because the
+      -- 'MonadRandom' instance for 'IO' can be used.
       --
-      -- In IO, can use 'Crypto.Random.drgNew'.
-    , produceDRG :: m ChaChaDRG
+      -- In the tests, we can simulate a 'MonadRandom' by keeping track of a
+      -- DRG in a 'TVar'.
+    , runMonadRandomDict :: RunMonadRandom m
     }
 
 -- | An override for the maximum block size from the protocol parameters in
@@ -158,7 +157,7 @@ data NodeArgs m peer blk = NodeArgs {
     , registry            :: ResourceRegistry m
     , maxClockSkew        :: ClockSkew
     , cfg                 :: TopLevelConfig blk
-    , initState           :: NodeState (BlockProtocol blk)
+    , initState           :: NodeState blk
     , btime               :: BlockchainTime m
     , chainDB             :: ChainDB m blk
     , initChainDB         :: TopLevelConfig blk -> ChainDB m blk -> m ()
@@ -230,7 +229,7 @@ data InternalState m peer blk = IS {
     , blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
     , varCandidates       :: StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
-    , varState            :: StrictTVar m (NodeState (BlockProtocol blk))
+    , varState            :: StrictTVar m (NodeState blk)
     , mempool             :: Mempool m blk TicketNo
     }
 
@@ -350,12 +349,12 @@ forkBlockProduction
     -> BlockProduction m blk
     -> m ()
 forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
-    void $ onSlotChange btime $ \currentSlot -> do
-      varDRG <- newTVarM =<< (PRNG <$> produceDRG)
-      withEarlyExit_ $ go currentSlot varDRG
+    void $ onSlotChange btime $ withEarlyExit_ . go
   where
-    go :: SlotNo -> StrictTVar m PRNG -> WithEarlyExit m ()
-    go currentSlot varDRG = do
+    RunMonadRandom{..} = runMonadRandomDict
+
+    go :: SlotNo -> WithEarlyExit m ()
+    go currentSlot = do
         trace $ TraceStartLeadershipCheck currentSlot
 
         -- Figure out which block to connect to
@@ -391,12 +390,13 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
         proof <-
           case anachronisticProtocolLedgerView cfg ledger (At currentSlot) of
             Right ledgerView -> do
-              mIsLeader <- lift $ atomically $ runProtocol varDRG $
-                checkIsLeader
-                  (configConsensus cfg)
-                  currentSlot
-                  ledgerView
-                  (headerStateChain (headerState extLedger))
+              mIsLeader :: Maybe (IsLeader (BlockProtocol blk)) <- lift $
+                runMonadRandom $
+                  checkIsLeader
+                    (configConsensus cfg)
+                    currentSlot
+                    ledgerView
+                    (headerStateChain (headerState extLedger))
               case mIsLeader of
                 Just p  -> return p
                 Nothing -> do
@@ -431,8 +431,9 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
                               (maxBlockBodySize ledger)
 
         -- Actually produce the block
-        newBlock <- lift $ atomically $ runProtocol varDRG $
+        newBlock <- lift $ runMonadRandom $
           produceBlock
+            (updateFromTVar (castStrictTVar varState))
             currentSlot
             bcBlockNo
             extLedger
@@ -496,18 +497,6 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
       where
         blockEncOverhead = nodeBlockEncodingOverhead ledger
         noOverride       = nodeMaxBlockSize ledger - blockEncOverhead
-
-    runProtocol :: StrictTVar m PRNG -> ProtocolM blk m a -> STM m a
-    runProtocol varDRG = runSim sim
-      where
-        sim :: Sim (NodeStateT (BlockProtocol blk) (ChaChaT (STM m))) m
-        sim = simOuroborosStateT varState
-            $ simChaChaT         varDRG
-            $ simId
-
--- | State of the pseudo-random number generator
-newtype PRNG = PRNG ChaChaDRG
-  deriving NoUnexpectedThunks via UseIsNormalForm PRNG
 
 -- | Context required to forge a block
 data BlockContext blk = BlockContext

@@ -248,7 +248,6 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
   type ValidationErr (PBft c) = PBftValidationErr c
   type ValidateView  (PBft c) = PBftValidateView  c
   type SelectView    (PBft c) = PBftSelectView
-  type NodeState     (PBft c) = ()
 
   -- | We require two things from the ledger state:
   --

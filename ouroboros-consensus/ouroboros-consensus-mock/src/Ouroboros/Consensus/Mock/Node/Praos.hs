@@ -45,7 +45,7 @@ protocolInfoPraos numCoreNodes nid params slotLengths =
             ledgerState = genesisSimpleLedgerState addrDist
           , headerState = genesisHeaderState []
           }
-      , pInfoInitState = PraosNodeState $ SignKeyMockKES
+      , pInfoInitState = PraosKeyAvailable $ SignKeyMockKES
            (fst $ verKeys Map.! nid)   -- key ID
            0                           -- KES initial slot
            (praosLifetimeKES params)   -- KES lifetime
