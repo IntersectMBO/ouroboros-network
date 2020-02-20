@@ -97,7 +97,8 @@ _simplePBftHeader = simpleHeader
 -------------------------------------------------------------------------------}
 
 instance (SimpleCrypto c, Typeable c')
-      => MockProtocolSpecific c (SimplePBftExt c c')
+      => MockProtocolSpecific c (SimplePBftExt c c') where
+  type MockLedgerConfig c (SimplePBftExt c c') = ()
 
 {-------------------------------------------------------------------------------
   Evidence that SimpleBlock can support PBFT

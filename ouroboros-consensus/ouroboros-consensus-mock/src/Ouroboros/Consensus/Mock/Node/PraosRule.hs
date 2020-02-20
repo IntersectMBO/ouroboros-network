@@ -44,7 +44,7 @@ protocolInfoPraosRule numCoreNodes
                 }
             , lsNodeConfigNodeId   = nid
             }
-        , configLedger = SimpleLedgerConfig
+        , configLedger = SimpleLedgerConfig ()
         , configBlock  = SimplePraosRuleBlockConfig slotLengths
         }
     , pInfoInitLedger = ExtLedgerState

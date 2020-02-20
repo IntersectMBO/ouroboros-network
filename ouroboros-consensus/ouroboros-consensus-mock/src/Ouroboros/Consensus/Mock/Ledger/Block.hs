@@ -12,6 +12,7 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -33,7 +34,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , matchesSimpleHeader
   , countSimpleGenTxs
     -- * Protocol-specific part
-  , MockProtocolSpecific
+  , MockProtocolSpecific(..)
     -- * 'UpdateLedger'
   , LedgerState(..)
   , LedgerConfig(..)
@@ -243,7 +244,10 @@ instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
 
 class ( SimpleCrypto c
       , Typeable ext
+      , Show               (MockLedgerConfig c ext)
+      , NoUnexpectedThunks (MockLedgerConfig c ext)
       ) => MockProtocolSpecific c ext where
+  type family MockLedgerConfig c ext :: *
 
 {-------------------------------------------------------------------------------
   Update the ledger
@@ -256,9 +260,10 @@ instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext) where
     deriving stock   (Generic, Show, Eq)
     deriving newtype (Serialise, NoUnexpectedThunks)
 
-  data LedgerConfig (SimpleBlock c ext) = SimpleLedgerConfig
-    deriving stock    (Show, Generic)
-    deriving anyclass (NoUnexpectedThunks)
+  data LedgerConfig (SimpleBlock c ext) = SimpleLedgerConfig {
+        simpleMockLedgerConfig :: MockLedgerConfig c ext
+      }
+    deriving stock (Generic)
 
   type LedgerError (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
@@ -269,6 +274,11 @@ instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext) where
       mustSucceed (Left  err) = error ("reapplyLedgerBlock: unexpected error: " <> show err)
       mustSucceed (Right st)  = st
   ledgerTipPoint (SimpleLedgerState st) = mockTip st
+
+deriving instance MockProtocolSpecific c ext
+               => Show (LedgerConfig (SimpleBlock c ext))
+deriving instance MockProtocolSpecific c ext
+               => NoUnexpectedThunks (LedgerConfig (SimpleBlock c ext))
 
 updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
                         => SimpleBlock c ext

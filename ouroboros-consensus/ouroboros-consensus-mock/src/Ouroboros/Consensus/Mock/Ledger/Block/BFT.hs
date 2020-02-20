@@ -83,7 +83,8 @@ _simpleBFtHeader = simpleHeader
 -------------------------------------------------------------------------------}
 
 instance (SimpleCrypto c, Typeable c')
-      => MockProtocolSpecific c (SimpleBftExt c c')
+      => MockProtocolSpecific c (SimpleBftExt c c') where
+  type MockLedgerConfig c (SimpleBftExt c c') = ()
 
 {-------------------------------------------------------------------------------
   Evidence that SimpleBlock can support BFT

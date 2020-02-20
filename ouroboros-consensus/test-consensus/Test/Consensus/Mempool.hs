@@ -637,7 +637,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
     classify (not (null testInitialTxs)) "non-empty Mempool" $
     runSimOrThrow setUpAndRun
   where
-    cfg = SimpleLedgerConfig
+    cfg = SimpleLedgerConfig ()
 
     setUpAndRun :: forall m. IOLike m => m Property
     setUpAndRun = do
@@ -705,7 +705,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
                          -> Property
     checkMempoolValidity ledgerState MempoolSnapshot { snapshotTxs } =
         case runExcept $ repeatedlyM
-               (applyTx SimpleLedgerConfig)
+               (applyTx (SimpleLedgerConfig ()))
                txs
                (notReallyTicked ledgerState) of
           Right _ -> property True

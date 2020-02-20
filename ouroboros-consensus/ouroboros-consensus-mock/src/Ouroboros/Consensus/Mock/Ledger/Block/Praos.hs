@@ -98,7 +98,8 @@ _simplePraosHeader = simpleHeader
 -------------------------------------------------------------------------------}
 
 instance (SimpleCrypto c, Typeable c')
-      => MockProtocolSpecific c (SimplePraosExt c c')
+      => MockProtocolSpecific c (SimplePraosExt c c') where
+  type MockLedgerConfig c (SimplePraosExt c c') = ()
 
 {-------------------------------------------------------------------------------
   Evidence that SimpleBlock can support Praos
