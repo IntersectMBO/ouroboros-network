@@ -9,7 +9,6 @@ module Ouroboros.Consensus.Mock.Ledger.Forge (forgeSimple) where
 import           Codec.Serialise (Serialise (..), serialise)
 import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Typeable (Typeable)
 import           Data.Word
 
 import           Cardano.Crypto.Hash
@@ -25,21 +24,14 @@ import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract
 
-forgeSimple :: forall p c m ext.
-               ( MonadRandom m
-               , SimpleCrypto c
-               , RunMockBlock c ext
-               , BlockSupportsProtocol (SimpleBlock c ext)
-               , Typeable ext
-               , p ~ BlockProtocol (SimpleBlock c ext)
-               )
+forgeSimple :: forall c m ext. (MonadRandom m, RunMockBlock c ext)
             => TopLevelConfig (SimpleBlock c ext)
             -> Update m (NodeState (SimpleBlock c ext))
-            -> SlotNo                              -- ^ Current slot
-            -> BlockNo                             -- ^ Current block number
-            -> ExtLedgerState (SimpleBlock c ext)  -- ^ Current ledger
-            -> [GenTx (SimpleBlock c ext)]         -- ^ Txs to add in the block
-            -> IsLeader p                          -- ^ Proof we are slot leader
+            -> SlotNo                             -- ^ Current slot
+            -> BlockNo                            -- ^ Current block number
+            -> ExtLedgerState (SimpleBlock c ext) -- ^ Current ledger
+            -> [GenTx (SimpleBlock c ext)]        -- ^ Txs to add in the block
+            -> IsLeader (BlockProtocol (SimpleBlock c ext))
             -> m (SimpleBlock c ext)
 forgeSimple cfg updateState curSlot curBlock extLedger txs proof = do
     forgeExt cfg updateState proof $ SimpleBlock {

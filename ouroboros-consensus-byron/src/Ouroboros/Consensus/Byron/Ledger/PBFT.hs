@@ -27,7 +27,6 @@ import qualified Cardano.Chain.Delegation as Delegation
 import           Ouroboros.Network.Block (HasHeader (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
@@ -43,10 +42,10 @@ type instance NodeState     ByronBlock = ()
 type instance BlockProtocol ByronBlock = PBft PBftByronCrypto
 
 -- | Construct DSIGN required for Byron crypto
-mkByronContextDSIGN :: TopLevelConfig ByronBlock
-                    -> VerKeyDSIGN ByronDSIGN
+mkByronContextDSIGN :: BlockConfig  ByronBlock
+                    -> VerKeyDSIGN  ByronDSIGN
                     -> ContextDSIGN ByronDSIGN
-mkByronContextDSIGN cfg = (byronProtocolMagicId (configBlock cfg),)
+mkByronContextDSIGN = (,) . byronProtocolMagicId
 
 instance BlockSupportsProtocol ByronBlock where
   validateView cfg hdr@ByronHeader{..} =
@@ -77,7 +76,7 @@ instance BlockSupportsProtocol ByronBlock where
                (CC.recoverSignedBytes epochSlots regular)
                (mkByronContextDSIGN cfg (pbftGenKey pbftFields))
     where
-      epochSlots = byronEpochSlots (configBlock cfg)
+      epochSlots = byronEpochSlots cfg
 
   selectView _ hdr = (blockNo hdr, byronHeaderIsEBB hdr)
 

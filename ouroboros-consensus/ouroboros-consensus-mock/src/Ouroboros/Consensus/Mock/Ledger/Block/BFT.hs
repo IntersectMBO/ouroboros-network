@@ -16,7 +16,6 @@ module Ouroboros.Consensus.Mock.Ledger.Block.BFT (
   , SimpleBftHeader
   , SimpleBftExt(..)
   , SignedSimpleBft(..)
-  , BlockConfig(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -28,7 +27,6 @@ import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
@@ -64,18 +62,20 @@ data SignedSimpleBft c c' = SignedSimpleBft {
     }
   deriving (Generic)
 
-data instance BlockConfig (SimpleBftBlock c c') = SimpleBftBlockConfig {
-      -- | Slot lengths
-      simpleBftSlotLengths :: SlotLengths
-    }
-  deriving (Generic, NoUnexpectedThunks)
-
 type instance NodeState     (SimpleBftBlock c c') = ()
 type instance BlockProtocol (SimpleBftBlock c c') = Bft c'
 
 -- | Sanity check that block and header type synonyms agree
 _simpleBFtHeader :: SimpleBftBlock c c' -> SimpleBftHeader c c'
 _simpleBFtHeader = simpleHeader
+
+{-------------------------------------------------------------------------------
+  Customization of the generic infrastructure
+-------------------------------------------------------------------------------}
+
+instance (SimpleCrypto c, Typeable c')
+      => MockProtocolSpecific c (SimpleBftExt c c') where
+  type MockLedgerConfig c (SimpleBftExt c c') = ()
 
 {-------------------------------------------------------------------------------
   Evidence that SimpleBlock can support BFT
@@ -118,8 +118,6 @@ instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          ) => LedgerSupportsProtocol (SimpleBftBlock c c') where
-  protocolSlotLengths =
-      simpleBftSlotLengths . configBlock
   protocolLedgerView _ _ =
       ()
   anachronisticProtocolLedgerView _ _ _ =

@@ -17,7 +17,6 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PBFT (
   , SimplePBftHeader
   , SimplePBftExt(..)
   , SignedSimplePBft(..)
-  , BlockConfig(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -31,7 +30,6 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (HasHeader (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
@@ -75,21 +73,21 @@ data SignedSimplePBft c c' = SignedSimplePBft {
     }
   deriving (Generic)
 
-data instance BlockConfig (SimplePBftBlock c c') = SimplePBftBlockConfig {
-    -- | PBFT requires the ledger view; for the mock ledger, this is constant
-    simplePBftLedgerView :: PBftLedgerView c'
-
-    -- | Slot lengths
-  , simplePBftSlotLengths :: SlotLengths
-  }
-  deriving (Generic, NoUnexpectedThunks)
-
 type instance NodeState     (SimplePBftBlock c c') = ()
 type instance BlockProtocol (SimplePBftBlock c c') = PBft c'
 
 -- | Sanity check that block and header type synonyms agree
 _simplePBftHeader :: SimplePBftBlock c c' -> SimplePBftHeader c c'
 _simplePBftHeader = simpleHeader
+
+{-------------------------------------------------------------------------------
+  Customization of the generic infrastructure
+-------------------------------------------------------------------------------}
+
+instance (SimpleCrypto c, PBftCrypto c')
+      => MockProtocolSpecific c (SimplePBftExt c c') where
+  -- | PBFT requires the ledger view; for the mock ledger, this is constant
+  type MockLedgerConfig c (SimplePBftExt c c') = PBftLedgerView c'
 
 {-------------------------------------------------------------------------------
   Evidence that SimpleBlock can support PBFT
@@ -135,12 +133,8 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => LedgerSupportsProtocol (SimplePBftBlock c PBftMockCrypto) where
-  protocolSlotLengths =
-      simplePBftSlotLengths . configBlock
-  protocolLedgerView TopLevelConfig{..} _ls =
-      simplePBftLedgerView configBlock
-  anachronisticProtocolLedgerView TopLevelConfig{..} _ _ =
-      Right $ simplePBftLedgerView configBlock
+  protocolLedgerView              cfg _   =         simpleMockLedgerConfig cfg
+  anachronisticProtocolLedgerView cfg _ _ = Right $ simpleMockLedgerConfig cfg
 
 {-------------------------------------------------------------------------------
   Serialisation

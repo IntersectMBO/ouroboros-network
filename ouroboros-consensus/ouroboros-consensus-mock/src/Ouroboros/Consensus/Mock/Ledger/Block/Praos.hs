@@ -16,7 +16,6 @@ module Ouroboros.Consensus.Mock.Ledger.Block.Praos (
   , SimplePraosHeader
   , SimplePraosExt(..)
   , SignedSimplePraos(..)
-  , BlockConfig(..)
   ) where
 
 import           Codec.CBOR.Decoding (decodeListLenOf)
@@ -24,6 +23,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (encodeListLen)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
@@ -31,7 +31,6 @@ import           Cardano.Crypto.KES
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Address
@@ -75,21 +74,21 @@ data SignedSimplePraos c c' = SignedSimplePraos {
     , signedPraosFields :: PraosExtraFields c'
     }
 
-data instance BlockConfig (SimplePraosBlock c c') = SimplePraosBlockConfig {
-      -- | See 'LedgerSupportsProtocol' instance for why we need the 'AddrDist'
-      simplePraosAddrDist :: AddrDist
-
-      -- | Slot lengths
-    , simplePraosSlotLengths :: SlotLengths
-    }
-  deriving (Generic, NoUnexpectedThunks)
-
 type instance NodeState     (SimplePraosBlock c c') = PraosNodeState c'
 type instance BlockProtocol (SimplePraosBlock c c') = Praos c'
 
 -- | Sanity check that block and header type synonyms agree
 _simplePraosHeader :: SimplePraosBlock c c' -> SimplePraosHeader c c'
 _simplePraosHeader = simpleHeader
+
+{-------------------------------------------------------------------------------
+  Customization of the generic infrastructure
+-------------------------------------------------------------------------------}
+
+instance (SimpleCrypto c, Typeable c')
+      => MockProtocolSpecific c (SimplePraosExt c c') where
+  -- | See 'LedgerSupportsProtocol' instance for why we need the 'AddrDist'
+  type MockLedgerConfig c (SimplePraosExt c c') = AddrDist
 
 {-------------------------------------------------------------------------------
   Evidence that SimpleBlock can support Praos
@@ -148,6 +147,13 @@ instance ( SimpleCrypto c
          ) => BlockSupportsProtocol (SimpleBlock c (SimplePraosExt c c')) where
   validateView _ = praosValidateView (simplePraosExt . simpleHeaderExt)
 
+instance ( SimpleCrypto c
+         , PraosCrypto c'
+         , Signable (PraosKES c') (SignedSimplePraos c c')
+         ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
+  protocolLedgerView              cfg _   =         stakeDist cfg
+  anachronisticProtocolLedgerView cfg _ _ = Right $ stakeDist cfg
+
 -- | Praos needs a ledger that can give it the "active stake distribution"
 --
 -- TODO: Currently our mock ledger does not do this, and just assumes that all
@@ -156,18 +162,8 @@ instance ( SimpleCrypto c
 -- documentation of 'LedgerView'). Ideally we'd change this however, but it
 -- may not be worth it; it would be a bit of work, and after we have integrated
 -- the Shelley rules, we'll have a proper instance anyway.
-instance ( SimpleCrypto c
-         , PraosCrypto c'
-         , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
-  protocolSlotLengths =
-      simplePraosSlotLengths . configBlock
-
-  protocolLedgerView TopLevelConfig{..} _ =
-      equalStakeDist (simplePraosAddrDist configBlock)
-
-  anachronisticProtocolLedgerView TopLevelConfig{..} _ _ =
-      Right $ equalStakeDist (simplePraosAddrDist configBlock)
+stakeDist :: LedgerConfig (SimplePraosBlock c c') -> StakeDist
+stakeDist cfg = equalStakeDist (simpleMockLedgerConfig cfg)
 
 {-------------------------------------------------------------------------------
   Serialisation

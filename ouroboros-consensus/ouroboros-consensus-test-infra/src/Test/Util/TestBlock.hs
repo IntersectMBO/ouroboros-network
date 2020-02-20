@@ -87,6 +87,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -242,6 +243,12 @@ instance Condense (ChainHash TestBlock) where
 
 data instance BlockConfig TestBlock = TestBlockConfig {
       testBlockSlotLengths :: SlotLengths
+
+      -- | Number of core nodes
+      --
+      -- We need this in order to compute the 'ValidateView', which must
+      -- conjure up a validation key out of thin air
+    , testBlockNumCoreNodes :: NumCoreNodes
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -266,11 +273,10 @@ data TestBlockError
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 instance BlockSupportsProtocol TestBlock where
-  validateView TopLevelConfig{..} =
+  validateView TestBlockConfig{..} =
       bftValidateView bftFields
     where
-      BftNodeConfig{bftParams = BftParams{..}} = configConsensus
-      NumCoreNodes numCore = bftNumNodes
+      NumCoreNodes numCore = testBlockNumCoreNodes
 
       bftFields :: Header TestBlock -> BftFields BftMockCrypto ()
       bftFields (TestHeader tb) = BftFields {
@@ -319,9 +325,11 @@ instance ValidateEnvelope TestBlock where
   firstBlockNo _ = Block.BlockNo 1
 
 instance LedgerSupportsProtocol TestBlock where
-  protocolSlotLengths = testBlockSlotLengths . configBlock
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right ()
+
+instance LedgerDerivedInfo TestBlock where
+  knownSlotLengths = testBlockSlotLengths
 
 instance QueryLedger TestBlock where
   data Query TestBlock result where
@@ -351,18 +359,21 @@ singleNodeTestConfig :: TopLevelConfig TestBlock
 singleNodeTestConfig = TopLevelConfig {
       configConsensus = BftNodeConfig {
           bftParams   = BftParams { bftSecurityParam = k
-                                  , bftNumNodes      = NumCoreNodes 1
+                                  , bftNumNodes      = numCoreNodes
                                   }
         , bftNodeId   = CoreId (CoreNodeId 0)
         , bftSignKey  = SignKeyMockDSIGN 0
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = LedgerConfig
-    , configBlock  = TestBlockConfig slotLengths
+    , configBlock  = TestBlockConfig slotLengths numCoreNodes
     }
   where
     slotLengths :: SlotLengths
     slotLengths = singletonSlotLengths $ slotLengthFromSec 20
+
+    numCoreNodes :: NumCoreNodes
+    numCoreNodes = NumCoreNodes 1
 
     -- We fix k at 4 for now
     k = SecurityParam 4

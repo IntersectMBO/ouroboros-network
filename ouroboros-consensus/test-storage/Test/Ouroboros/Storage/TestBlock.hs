@@ -47,11 +47,11 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -156,6 +156,12 @@ instance HasHeader (Header TestBlock) where
 
 data instance BlockConfig TestBlock = TestBlockConfig {
       testBlockSlotLengths :: SlotLengths
+
+      -- | Number of core nodes
+      --
+      -- We need this in order to compute the 'ValidateView', which must
+      -- conjure up a validation key out of thin air
+    , testBlockNumCoreNodes :: NumCoreNodes
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -301,11 +307,10 @@ instance SignedHeader (Header TestBlock) where
   headerSigned _ = ()
 
 instance BlockSupportsProtocol TestBlock where
-  validateView TopLevelConfig{..} =
+  validateView TestBlockConfig{..} =
       bftValidateView bftFields
     where
-      BftNodeConfig{ bftParams = BftParams{..} } = configConsensus
-      NumCoreNodes numCore = bftNumNodes
+      NumCoreNodes numCore = testBlockNumCoreNodes
 
       bftFields :: Header TestBlock -> BftFields BftMockCrypto ()
       bftFields hdr = BftFields {
@@ -365,12 +370,13 @@ instance ValidateEnvelope TestBlock where
   -- Use defaults
 
 instance LedgerSupportsProtocol TestBlock where
-  protocolSlotLengths =
-      testBlockSlotLengths . configBlock
   protocolLedgerView _ _ =
       ()
   anachronisticProtocolLedgerView _ _ _ =
       Right ()
+
+instance LedgerDerivedInfo TestBlock where
+  knownSlotLengths = testBlockSlotLengths
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint GenesisHash

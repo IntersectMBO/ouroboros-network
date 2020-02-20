@@ -11,7 +11,6 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block.Abstract
-import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Protocol.Abstract
 
 {-------------------------------------------------------------------------------
@@ -26,14 +25,14 @@ class ( GetHeader blk
       , NoUnexpectedThunks (Header blk)
       , NoUnexpectedThunks (BlockConfig blk)
       ) => BlockSupportsProtocol blk where
-  validateView :: TopLevelConfig blk
+  validateView :: BlockConfig blk
                -> Header blk -> ValidateView (BlockProtocol blk)
 
-  selectView   :: TopLevelConfig blk
+  selectView   :: BlockConfig blk
                -> Header blk -> SelectView   (BlockProtocol blk)
 
   -- Default chain selection just looks at longest chains
   default selectView :: SelectView (BlockProtocol blk) ~ BlockNo
-                     => TopLevelConfig blk
+                     => BlockConfig blk
                      -> Header blk -> SelectView (BlockProtocol blk)
   selectView _ = blockNo

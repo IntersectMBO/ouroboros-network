@@ -1244,18 +1244,21 @@ testCfg :: TopLevelConfig TestBlock
 testCfg = TopLevelConfig {
       configConsensus = BftNodeConfig
         { bftParams   = BftParams { bftSecurityParam = k
-                                  , bftNumNodes      = NumCoreNodes 1
+                                  , bftNumNodes      = numCoreNodes
                                   }
         , bftNodeId   = CoreId (CoreNodeId 0)
         , bftSignKey  = SignKeyMockDSIGN 0
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = LedgerConfig
-    , configBlock  = TestBlockConfig slotLengths
+    , configBlock  = TestBlockConfig slotLengths numCoreNodes
     }
   where
     slotLengths :: SlotLengths
     slotLengths = singletonSlotLengths $ slotLengthFromSec 20
+
+    numCoreNodes :: NumCoreNodes
+    numCoreNodes = NumCoreNodes 1
 
     k = SecurityParam 2
 

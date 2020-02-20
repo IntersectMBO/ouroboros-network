@@ -73,6 +73,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Util.Condense
 
@@ -136,6 +137,14 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
     }
   deriving NoUnexpectedThunks via AllowThunk (BlockConfig (DualBlock m a))
 
+-- | This is only used for block production
+dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
+dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
+      configConsensus =                      configConsensus
+    , configLedger    = dualLedgerConfigMain configLedger
+    , configBlock     = dualBlockConfigMain  configBlock
+    }
+
 {-------------------------------------------------------------------------------
   Bridge two ledgers
 -------------------------------------------------------------------------------}
@@ -143,13 +152,14 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
 -- | Bridge the two ledgers
 class (
         -- Requirements on the main block
-        HasHeader          m
-      , GetHeader          m
-      , HasHeader (Header  m)
+        HasHeader              m
+      , GetHeader              m
+      , HasHeader     (Header  m)
       , LedgerSupportsProtocol m
-      , ApplyTx            m
-      , HasTxId (GenTx     m)
-      , Show (ApplyTxErr   m)
+      , LedgerDerivedInfo      m
+      , ApplyTx                m
+      , HasTxId (GenTx         m)
+      , Show (ApplyTxErr       m)
 
         -- Requirements on the auxiliary block
         -- No 'LedgerSupportsProtocol' for @a@!
@@ -212,16 +222,9 @@ instance Bridge m a => HasHeader (DualHeader m a) where
 type instance NodeState     (DualBlock m a) = NodeState     m
 type instance BlockProtocol (DualBlock m a) = BlockProtocol m
 
-dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
-dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
-      configConsensus =                      configConsensus
-    , configLedger    = dualLedgerConfigMain configLedger
-    , configBlock     = dualBlockConfigMain  configBlock
-    }
-
 instance Bridge m a => BlockSupportsProtocol (DualBlock m a) where
-  validateView cfg = validateView (dualTopLevelConfigMain cfg) . dualHeaderMain
-  selectView   cfg = selectView   (dualTopLevelConfigMain cfg) . dualHeaderMain
+  validateView cfg = validateView (dualBlockConfigMain cfg) . dualHeaderMain
+  selectView   cfg = selectView   (dualBlockConfigMain cfg) . dualHeaderMain
 
 {-------------------------------------------------------------------------------
   Ledger errors
@@ -375,26 +378,27 @@ instance Bridge m a => HasAnnTip (DualBlock m a) where
 instance Bridge m a => ValidateEnvelope (DualBlock m a) where
   validateEnvelope cfg t =
         withExcept castHeaderEnvelopeError
-      . validateEnvelope (dualTopLevelConfigMain cfg) (castAnnTip <$> t)
+      . validateEnvelope (dualBlockConfigMain cfg) (castAnnTip <$> t)
       . dualHeaderMain
 
   firstBlockNo          _ = firstBlockNo          (Proxy @m)
   minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @m)
 
 instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
-  protocolSlotLengths cfg =
-      protocolSlotLengths
-        (dualTopLevelConfigMain cfg)
-
   protocolLedgerView cfg state =
       protocolLedgerView
-        (dualTopLevelConfigMain cfg)
-        (dualLedgerStateMain    state)
+        (dualLedgerConfigMain cfg)
+        (dualLedgerStateMain  state)
 
   anachronisticProtocolLedgerView cfg state =
       anachronisticProtocolLedgerView
-        (dualTopLevelConfigMain cfg)
-        (dualLedgerStateMain    state)
+        (dualLedgerConfigMain cfg)
+        (dualLedgerStateMain  state)
+
+instance Bridge m a => LedgerDerivedInfo (DualBlock m a) where
+  knownSlotLengths cfg =
+      knownSlotLengths
+        (dualBlockConfigMain cfg)
 
 {-------------------------------------------------------------------------------
   Querying the ledger

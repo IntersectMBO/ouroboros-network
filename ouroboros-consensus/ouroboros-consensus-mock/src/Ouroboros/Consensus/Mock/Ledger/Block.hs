@@ -12,6 +12,7 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -32,6 +33,10 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , mkSimpleHeader
   , matchesSimpleHeader
   , countSimpleGenTxs
+    -- * Configuration
+  , BlockConfig(..)
+    -- * Protocol-specific part
+  , MockProtocolSpecific(..)
     -- * 'UpdateLedger'
   , LedgerState(..)
   , LedgerConfig(..)
@@ -73,12 +78,14 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -236,20 +243,43 @@ instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
   -- Use defaults
 
 {-------------------------------------------------------------------------------
+  Config
+-------------------------------------------------------------------------------}
+
+data instance BlockConfig (SimpleBlock c ext) = SimpleBlockConfig {
+      simpleBlockSlotLengths :: !SlotLengths
+    }
+  deriving (Generic, NoUnexpectedThunks)
+
+instance LedgerDerivedInfo (SimpleBlock c ext) where
+  knownSlotLengths = simpleBlockSlotLengths
+
+{-------------------------------------------------------------------------------
+  Protocol specific constraints
+-------------------------------------------------------------------------------}
+
+class ( SimpleCrypto c
+      , Typeable ext
+      , Show               (MockLedgerConfig c ext)
+      , NoUnexpectedThunks (MockLedgerConfig c ext)
+      ) => MockProtocolSpecific c ext where
+  type family MockLedgerConfig c ext :: *
+
+{-------------------------------------------------------------------------------
   Update the ledger
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Typeable ext, BlockSupportsProtocol (SimpleBlock c ext))
-      => UpdateLedger (SimpleBlock c ext) where
+instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext) where
   newtype LedgerState (SimpleBlock c ext) = SimpleLedgerState {
         simpleLedgerState :: MockState (SimpleBlock c ext)
       }
     deriving stock   (Generic, Show, Eq)
     deriving newtype (Serialise, NoUnexpectedThunks)
 
-  data LedgerConfig (SimpleBlock c ext) = SimpleLedgerConfig
-    deriving stock    (Show, Generic)
-    deriving anyclass (NoUnexpectedThunks)
+  data LedgerConfig (SimpleBlock c ext) = SimpleLedgerConfig {
+        simpleMockLedgerConfig :: MockLedgerConfig c ext
+      }
+    deriving stock (Generic)
 
   type LedgerError (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
@@ -260,6 +290,11 @@ instance (SimpleCrypto c, Typeable ext, BlockSupportsProtocol (SimpleBlock c ext
       mustSucceed (Left  err) = error ("reapplyLedgerBlock: unexpected error: " <> show err)
       mustSucceed (Right st)  = st
   ledgerTipPoint (SimpleLedgerState st) = mockTip st
+
+deriving instance MockProtocolSpecific c ext
+               => Show (LedgerConfig (SimpleBlock c ext))
+deriving instance MockProtocolSpecific c ext
+               => NoUnexpectedThunks (LedgerConfig (SimpleBlock c ext))
 
 updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
                         => SimpleBlock c ext
@@ -284,8 +319,7 @@ genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
   Support for the mempool
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Typeable ext, BlockSupportsProtocol (SimpleBlock c ext))
-      => ApplyTx (SimpleBlock c ext) where
+instance MockProtocolSpecific c ext => ApplyTx (SimpleBlock c ext) where
   data GenTx (SimpleBlock c ext) = SimpleGenTx
     { simpleGenTx   :: !Mock.Tx
     , simpleGenTxId :: !Mock.TxId
@@ -335,8 +369,7 @@ mkSimpleGenTx tx = SimpleGenTx
   Support for QueryLedger
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Typeable ext, BlockSupportsProtocol (SimpleBlock c ext))
-      => QueryLedger (SimpleBlock c ext) where
+instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
   data Query (SimpleBlock c ext) result
     deriving (Show)
 

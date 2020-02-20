@@ -13,7 +13,6 @@ import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Crypto.DSIGN.Class as CC.Crypto
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
@@ -32,7 +31,7 @@ verifyBlockMatchesHeader hdr blk =
 --
 -- Note that we cannot check this for an EBB, as an EBB contains no signature.
 -- This function will always return 'True' for an EBB.
-verifyHeaderSignature :: TopLevelConfig ByronBlock -> Header ByronBlock -> Bool
+verifyHeaderSignature :: BlockConfig ByronBlock -> Header ByronBlock -> Bool
 verifyHeaderSignature cfg hdr =
     case validateView cfg hdr of
       PBftValidateBoundary{} ->
@@ -54,7 +53,7 @@ verifyHeaderSignature cfg hdr =
 --
 -- Note that we cannot check this for an EBB, as an EBB contains no signature.
 -- This function will always return 'True' for an EBB.
-verifyHeaderIntegrity :: TopLevelConfig ByronBlock -> Header ByronBlock -> Bool
+verifyHeaderIntegrity :: BlockConfig ByronBlock -> Header ByronBlock -> Bool
 verifyHeaderIntegrity cfg hdr =
     verifyHeaderSignature cfg hdr &&
     -- @CC.headerProtocolMagicId@ is the only field of a regular header that
@@ -64,14 +63,14 @@ verifyHeaderIntegrity cfg hdr =
         -- EBB, we can't check it
         CC.ABOBBoundaryHdr _ -> True
   where
-    protocolMagicId = byronProtocolMagicId (configBlock cfg)
+    protocolMagicId = byronProtocolMagicId cfg
 
 -- | Verifies whether the block is not corrupted by checking its signature and
 -- witnesses.
 --
 -- This function will always return 'True' for an EBB, as we cannot check
 -- anything for an EBB.
-verifyBlockIntegrity :: TopLevelConfig ByronBlock -> ByronBlock -> Bool
+verifyBlockIntegrity :: BlockConfig ByronBlock -> ByronBlock -> Bool
 verifyBlockIntegrity cfg blk =
     verifyHeaderIntegrity    cfg hdr &&
     verifyBlockMatchesHeader     hdr blk

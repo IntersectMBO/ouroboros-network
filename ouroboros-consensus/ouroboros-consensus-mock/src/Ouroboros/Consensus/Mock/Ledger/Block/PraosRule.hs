@@ -16,7 +16,6 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PraosRule (
   , SimplePraosRuleExt(..)
   , SimplePraosRuleHeader
   , PraosCryptoUnused
-  , BlockConfig(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -28,7 +27,6 @@ import           Cardano.Crypto.VRF
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
@@ -66,12 +64,6 @@ newtype SimplePraosRuleExt = SimplePraosRuleExt {
   deriving newtype  (Condense)
   deriving anyclass (NoUnexpectedThunks)
 
-data instance BlockConfig (SimplePraosRuleBlock c) = SimplePraosRuleBlockConfig {
-      -- | Slot lengths
-      simplePraosRuleSlotLengths :: SlotLengths
-    }
-  deriving (Generic, NoUnexpectedThunks)
-
 type instance NodeState     (SimplePraosRuleBlock c) = ()
 type instance BlockProtocol (SimplePraosRuleBlock c) =
     WithLeaderSchedule (Praos PraosCryptoUnused)
@@ -79,6 +71,13 @@ type instance BlockProtocol (SimplePraosRuleBlock c) =
 -- | Sanity check that block and header type synonyms agree
 _simplePraosRuleHeader :: SimplePraosRuleBlock c -> SimplePraosRuleHeader c
 _simplePraosRuleHeader = simpleHeader
+
+{-------------------------------------------------------------------------------
+  Customization of the generic infrastructure
+-------------------------------------------------------------------------------}
+
+instance SimpleCrypto c => MockProtocolSpecific c SimplePraosRuleExt where
+  type MockLedgerConfig c SimplePraosRuleExt = ()
 
 {-------------------------------------------------------------------------------
   Evidence that 'SimpleBlock' can support Praos with an explicit leader schedule
@@ -102,14 +101,9 @@ instance SimpleCrypto c
       => BlockSupportsProtocol (SimpleBlock c SimplePraosRuleExt) where
   validateView _ _ = ()
 
-instance SimpleCrypto c
-      => LedgerSupportsProtocol (SimplePraosRuleBlock c) where
-  protocolSlotLengths =
-      simplePraosRuleSlotLengths . configBlock
-  protocolLedgerView _ _ =
-      ()
-  anachronisticProtocolLedgerView _ _ _ =
-      Right ()
+instance SimpleCrypto c => LedgerSupportsProtocol (SimplePraosRuleBlock c) where
+  protocolLedgerView              _ _   = ()
+  anachronisticProtocolLedgerView _ _ _ = Right ()
 
 {-------------------------------------------------------------------------------
   We don't need crypto for this protocol

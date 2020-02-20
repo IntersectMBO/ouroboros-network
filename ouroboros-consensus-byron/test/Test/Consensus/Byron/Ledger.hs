@@ -328,7 +328,7 @@ prop_detectCorruption_RegularBlock (RegularBlock blk) =
     detectCorruption
       encodeByronBlock
       (decodeByronBlock epochSlots)
-      (verifyBlockIntegrity testCfg)
+      (verifyBlockIntegrity (configBlock testCfg))
       blk
 
 testCfg :: TopLevelConfig ByronBlock

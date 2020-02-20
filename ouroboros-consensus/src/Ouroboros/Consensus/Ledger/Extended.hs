@@ -121,7 +121,7 @@ applyExtLedgerState prevApplied cfg blk ExtLedgerState{..} = do
     headerState' <- withExcept ExtValidationErrorHeader $
                       validateHeader
                         cfg
-                        (protocolLedgerView cfg ledgerState')
+                        (protocolLedgerView (configLedger cfg) ledgerState')
                         (getHeader blk)
                         headerState
     return $ ExtLedgerState ledgerState' headerState'
