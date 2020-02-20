@@ -67,6 +67,7 @@ magicCompletionKey :: ULONG_PTR
 magicCompletionKey = 696205568
 
 -- | Windows documentation:
+-- <https://docs.microsoft.com/en-us/windows/win32/fileio/createiocompletionport>
 --
 createIOCompletionPort
     :: DWORD  -- ^ number of concurrent threads
@@ -82,7 +83,11 @@ createIOCompletionPort concurrentThreads
               concurrentThreads)
 
 foreign import ccall unsafe "windows.h CreateIoCompletionPort"
-    c_CreateIoCompletionPort :: HANDLE -> HANDLE -> ULONG_PTR -> DWORD -> IO HANDLE
+    c_CreateIoCompletionPort :: HANDLE    -- ^ FileHandle
+                             -> HANDLE    -- ^ ExistingCompletionPort
+                             -> ULONG_PTR -- ^ CompletionKey
+                             -> DWORD     -- ^ NumberOfConcurrentConnections
+                             -> IO HANDLE
 
 -- | Associate with I/O completion port.  This can be used multiple times on
 -- a file descriptor.
