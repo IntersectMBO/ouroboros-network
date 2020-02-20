@@ -77,11 +77,8 @@ data SignedSimplePBft c c' = SignedSimplePBft {
   deriving (Generic)
 
 data instance BlockConfig (SimplePBftBlock c c') = SimplePBftBlockConfig {
-    -- | PBFT requires the ledger view; for the mock ledger, this is constant
-    simplePBftLedgerView :: PBftLedgerView c'
-
     -- | Slot lengths
-  , simplePBftSlotLengths :: SlotLengths
+    simplePBftSlotLengths :: SlotLengths
   }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -96,9 +93,10 @@ _simplePBftHeader = simpleHeader
   Customization of the generic infrastructure
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Typeable c')
+instance (SimpleCrypto c, PBftCrypto c')
       => MockProtocolSpecific c (SimplePBftExt c c') where
-  type MockLedgerConfig c (SimplePBftExt c c') = ()
+  -- | PBFT requires the ledger view; for the mock ledger, this is constant
+  type MockLedgerConfig c (SimplePBftExt c c') = PBftLedgerView c'
 
 {-------------------------------------------------------------------------------
   Evidence that SimpleBlock can support PBFT
@@ -145,9 +143,9 @@ instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => LedgerSupportsProtocol (SimplePBftBlock c PBftMockCrypto) where
   protocolLedgerView TopLevelConfig{..} _ls =
-      simplePBftLedgerView configBlock
+      simpleMockLedgerConfig configLedger
   anachronisticProtocolLedgerView TopLevelConfig{..} _ _ =
-      Right $ simplePBftLedgerView configBlock
+      Right $ simpleMockLedgerConfig configLedger
 
 instance LedgerDerivedInfo (SimplePBftBlock c PBftMockCrypto) where
   knownSlotLengths = simplePBftSlotLengths

@@ -36,8 +36,8 @@ protocolInfoMockPBFT params slotLengths nid =
                    , pbftDlgCert    = (verKey nid, verKey nid)
                    }
                }
-          , configLedger = SimpleLedgerConfig ()
-          , configBlock  = SimplePBftBlockConfig ledgerView slotLengths
+          , configLedger = SimpleLedgerConfig ledgerView
+          , configBlock  = SimplePBftBlockConfig slotLengths
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState CS.empty)

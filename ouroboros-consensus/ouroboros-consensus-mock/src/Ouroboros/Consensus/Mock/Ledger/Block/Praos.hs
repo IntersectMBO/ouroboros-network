@@ -78,11 +78,8 @@ data SignedSimplePraos c c' = SignedSimplePraos {
     }
 
 data instance BlockConfig (SimplePraosBlock c c') = SimplePraosBlockConfig {
-      -- | See 'LedgerSupportsProtocol' instance for why we need the 'AddrDist'
-      simplePraosAddrDist :: AddrDist
-
       -- | Slot lengths
-    , simplePraosSlotLengths :: SlotLengths
+      simplePraosSlotLengths :: SlotLengths
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -99,7 +96,8 @@ _simplePraosHeader = simpleHeader
 
 instance (SimpleCrypto c, Typeable c')
       => MockProtocolSpecific c (SimplePraosExt c c') where
-  type MockLedgerConfig c (SimplePraosExt c c') = ()
+  -- | See 'LedgerSupportsProtocol' instance for why we need the 'AddrDist'
+  type MockLedgerConfig c (SimplePraosExt c c') = AddrDist
 
 {-------------------------------------------------------------------------------
   Evidence that SimpleBlock can support Praos
@@ -171,10 +169,10 @@ instance ( SimpleCrypto c
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
   protocolLedgerView TopLevelConfig{..} _ =
-      equalStakeDist (simplePraosAddrDist configBlock)
+      equalStakeDist (simpleMockLedgerConfig configLedger)
 
   anachronisticProtocolLedgerView TopLevelConfig{..} _ _ =
-      Right $ equalStakeDist (simplePraosAddrDist configBlock)
+      Right $ equalStakeDist (simpleMockLedgerConfig configLedger)
 
 instance LedgerDerivedInfo (SimplePraosBlock c c') where
   knownSlotLengths = simplePraosSlotLengths
