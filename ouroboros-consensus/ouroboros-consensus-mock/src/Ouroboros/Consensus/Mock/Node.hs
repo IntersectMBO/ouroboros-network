@@ -22,6 +22,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node.Abstract
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.State
@@ -37,6 +38,7 @@ instance HasNetworkProtocolVersion (SimpleBlock SimpleMockCrypto ext) where
   -- Use defaults
 
 instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
+         , LedgerDerivedInfo      (SimpleBlock SimpleMockCrypto ext)
            -- The below constraint seems redundant but is not! When removed,
            -- some of the tests loop, but only when compiled with @-O2@ ; with
            -- @-O0@ it is perfectly fine. ghc bug?!

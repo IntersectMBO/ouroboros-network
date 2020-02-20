@@ -39,6 +39,7 @@ import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -160,14 +161,14 @@ instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
-  protocolSlotLengths =
-      simplePraosSlotLengths . configBlock
-
   protocolLedgerView TopLevelConfig{..} _ =
       equalStakeDist (simplePraosAddrDist configBlock)
 
   anachronisticProtocolLedgerView TopLevelConfig{..} _ _ =
       Right $ equalStakeDist (simplePraosAddrDist configBlock)
+
+instance LedgerDerivedInfo (SimplePraosBlock c c') where
+  knownSlotLengths = simplePraosSlotLengths
 
 {-------------------------------------------------------------------------------
   Serialisation

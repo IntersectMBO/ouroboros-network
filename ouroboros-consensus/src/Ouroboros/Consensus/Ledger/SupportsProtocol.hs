@@ -7,7 +7,6 @@ import           Ouroboros.Network.Block (SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -60,12 +59,6 @@ class ( BlockSupportsProtocol blk
     -> LedgerState blk
     -> WithOrigin SlotNo -- ^ Slot for which you would like a ledger view
     -> Either AnachronyFailure (LedgerView (BlockProtocol blk))
-
-  -- | The slot lengths (across all hard forks)
-  --
-  -- TODO: This should take the LedgerState as argument
-  -- <https://github.com/input-output-hk/ouroboros-network/issues/1637>
-  protocolSlotLengths :: TopLevelConfig blk -> SlotLengths
 
 -- | See 'anachronisticProtocolLedgerView'.
 data AnachronyFailure

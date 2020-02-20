@@ -87,6 +87,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -324,9 +325,11 @@ instance ValidateEnvelope TestBlock where
   firstBlockNo _ = Block.BlockNo 1
 
 instance LedgerSupportsProtocol TestBlock where
-  protocolSlotLengths = testBlockSlotLengths . configBlock
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right ()
+
+instance LedgerDerivedInfo TestBlock where
+  knownSlotLengths = testBlockSlotLengths
 
 instance QueryLedger TestBlock where
   data Query TestBlock result where

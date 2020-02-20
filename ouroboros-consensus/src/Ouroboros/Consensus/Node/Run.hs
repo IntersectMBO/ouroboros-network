@@ -34,6 +34,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Exit (ExitReason)
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -48,10 +49,11 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
   RunNode proper
 -------------------------------------------------------------------------------}
 
-class ( LedgerSupportsProtocol blk
-      , ApplyTx blk
-      , HasTxId (GenTx blk)
-      , QueryLedger blk
+class ( LedgerSupportsProtocol    blk
+      , LedgerDerivedInfo         blk
+      , ApplyTx                   blk
+      , HasTxId            (GenTx blk)
+      , QueryLedger               blk
       , HasNetworkProtocolVersion blk
       , NoUnexpectedThunks (NodeState blk)
         -- TODO: Remove after reconsidering rewindChainState:

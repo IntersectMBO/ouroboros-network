@@ -73,6 +73,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Util.Condense
 
@@ -143,13 +144,14 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
 -- | Bridge the two ledgers
 class (
         -- Requirements on the main block
-        HasHeader          m
-      , GetHeader          m
-      , HasHeader (Header  m)
+        HasHeader              m
+      , GetHeader              m
+      , HasHeader     (Header  m)
       , LedgerSupportsProtocol m
-      , ApplyTx            m
-      , HasTxId (GenTx     m)
-      , Show (ApplyTxErr   m)
+      , LedgerDerivedInfo      m
+      , ApplyTx                m
+      , HasTxId (GenTx         m)
+      , Show (ApplyTxErr       m)
 
         -- Requirements on the auxiliary block
         -- No 'LedgerSupportsProtocol' for @a@!
@@ -382,10 +384,6 @@ instance Bridge m a => ValidateEnvelope (DualBlock m a) where
   minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @m)
 
 instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
-  protocolSlotLengths cfg =
-      protocolSlotLengths
-        (dualTopLevelConfigMain cfg)
-
   protocolLedgerView cfg state =
       protocolLedgerView
         (dualTopLevelConfigMain cfg)
@@ -395,6 +393,11 @@ instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
       anachronisticProtocolLedgerView
         (dualTopLevelConfigMain cfg)
         (dualLedgerStateMain    state)
+
+instance Bridge m a => LedgerDerivedInfo (DualBlock m a) where
+  knownSlotLengths cfg =
+      knownSlotLengths
+        (dualBlockConfigMain cfg)
 
 {-------------------------------------------------------------------------------
   Querying the ledger

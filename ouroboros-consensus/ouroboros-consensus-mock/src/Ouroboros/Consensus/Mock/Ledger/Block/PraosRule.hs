@@ -34,6 +34,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
@@ -104,12 +105,13 @@ instance SimpleCrypto c
 
 instance SimpleCrypto c
       => LedgerSupportsProtocol (SimplePraosRuleBlock c) where
-  protocolSlotLengths =
-      simplePraosRuleSlotLengths . configBlock
   protocolLedgerView _ _ =
       ()
   anachronisticProtocolLedgerView _ _ _ =
       Right ()
+
+instance LedgerDerivedInfo (SimplePraosRuleBlock c) where
+  knownSlotLengths = simplePraosRuleSlotLengths
 
 {-------------------------------------------------------------------------------
   We don't need crypto for this protocol

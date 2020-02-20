@@ -59,6 +59,7 @@ library
                        Ouroboros.Consensus.Node.DbMarker
                        Ouroboros.Consensus.Node.ErrorPolicy
                        Ouroboros.Consensus.Node.Exit
+                       Ouroboros.Consensus.Node.LedgerDerivedInfo
                        Ouroboros.Consensus.Node.NetworkProtocolVersion
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.Recovery

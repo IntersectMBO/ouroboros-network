@@ -33,6 +33,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
@@ -118,12 +119,13 @@ instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          ) => LedgerSupportsProtocol (SimpleBftBlock c c') where
-  protocolSlotLengths =
-      simpleBftSlotLengths . configBlock
   protocolLedgerView _ _ =
       ()
   anachronisticProtocolLedgerView _ _ _ =
       Right ()
+
+instance LedgerDerivedInfo (SimpleBftBlock c c') where
+  knownSlotLengths = simpleBftSlotLengths
 
 {-------------------------------------------------------------------------------
   Serialisation

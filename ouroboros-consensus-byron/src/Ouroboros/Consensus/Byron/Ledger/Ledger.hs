@@ -58,6 +58,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
@@ -144,15 +145,6 @@ instance ShowQuery (Query ByronBlock) where
   showResult GetUpdateInterfaceState = show
 
 instance LedgerSupportsProtocol ByronBlock where
-  protocolSlotLengths =
-        singletonSlotLengths
-      . slotLengthFromMillisec
-      . (fromIntegral :: Natural -> Integer)
-      . CC.ppSlotDuration
-      . Gen.configProtocolParameters
-      . byronGenesisConfig
-      . configBlock
-
   protocolLedgerView _cfg =
         toPBftLedgerView
       . CC.getDelegationMap
@@ -230,6 +222,15 @@ instance LedgerSupportsProtocol ByronBlock where
                         then 0
                         else unSlotNo now - (2 * k)
       maxHi = SlotNo $ unSlotNo now + (2 * k)
+
+instance LedgerDerivedInfo ByronBlock where
+  knownSlotLengths =
+        singletonSlotLengths
+      . slotLengthFromMillisec
+      . (fromIntegral :: Natural -> Integer)
+      . CC.ppSlotDuration
+      . Gen.configProtocolParameters
+      . byronGenesisConfig
 
 {-------------------------------------------------------------------------------
   Auxiliary
