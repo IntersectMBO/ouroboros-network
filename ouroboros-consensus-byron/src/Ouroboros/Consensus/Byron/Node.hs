@@ -31,11 +31,9 @@ import           Control.Exception (Exception (..))
 import           Control.Monad.Except
 import           Data.Coerce (coerce)
 import           Data.Maybe
-import qualified Data.Set as Set
 
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Byron.API as API
-import           Cardano.Chain.Common (BlockCount (..))
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
@@ -55,7 +53,6 @@ import           Ouroboros.Consensus.Node.Exit (ExitReason (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
@@ -65,8 +62,8 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Protocol
-
 
 {-------------------------------------------------------------------------------
   Credentials
@@ -155,21 +152,11 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
 
 byronPBftParams :: Genesis.Config -> Maybe PBftSignatureThreshold -> PBftParams
 byronPBftParams cfg threshold = PBftParams {
-      pbftSecurityParam      = SecurityParam (fromIntegral kParam)
-    , pbftNumNodes           = NumCoreNodes . fromIntegral . Set.size
-                             . Genesis.unGenesisKeyHashes
-                             $ genesisKeyHashes
+      pbftSecurityParam      = genesisSecurityParam cfg
+    , pbftNumNodes           = genesisNumCoreNodes  cfg
     , pbftSignatureThreshold = unSignatureThreshold
                              $ fromMaybe defaultPBftSignatureThreshold threshold
     }
-  where
-    Genesis.Config {
-        Genesis.configGenesisData =
-          Genesis.GenesisData {
-            Genesis.gdK                = BlockCount kParam
-          , Genesis.gdGenesisKeyHashes = genesisKeyHashes
-          }
-      } = cfg
 
 pbftLeaderOrNot :: PBftLeaderCredentials -> PBftIsLeader PBftByronCrypto
 pbftLeaderOrNot (PBftLeaderCredentials sk cert nid) = PBftIsLeader {
