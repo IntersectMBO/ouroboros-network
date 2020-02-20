@@ -47,7 +47,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -207,19 +207,16 @@ bridgeTransactionIds = Spec.Test.transactionIds
 -------------------------------------------------------------------------------}
 
 forgeDualByronBlock
-  :: forall m.
-     ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
-     , MonadRandom m
-     , HasCallStack
-     )
+  :: forall m. (MonadRandom m, HasCallStack)
   => TopLevelConfig DualByronBlock
+  -> Update m (NodeState DualByronBlock)
   -> SlotNo                          -- ^ Current slot
   -> BlockNo                         -- ^ Current block number
   -> ExtLedgerState DualByronBlock   -- ^ Ledger
   -> [GenTx DualByronBlock]          -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto    -- ^ Leader proof ('IsLeader')
   -> m DualByronBlock
-forgeDualByronBlock cfg curSlotNo curBlockNo extLedger txs isLeader = do
+forgeDualByronBlock cfg updateState curSlotNo curBlockNo extLedger txs isLeader = do
     -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but
     -- instead we /forge/ it. This is important, because we want to test that
     -- codepath. This does mean that we do not get any kind of "bridge" between
@@ -229,6 +226,7 @@ forgeDualByronBlock cfg curSlotNo curBlockNo extLedger txs isLeader = do
 
     main <- forgeByronBlock
               (dualTopLevelConfigMain cfg)
+              updateState
               curSlotNo
               curBlockNo
               (dualExtLedgerStateMain extLedger)

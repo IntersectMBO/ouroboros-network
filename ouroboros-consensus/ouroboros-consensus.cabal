@@ -63,6 +63,7 @@ library
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.Recovery
                        Ouroboros.Consensus.Node.Run
+                       Ouroboros.Consensus.Node.State
                        Ouroboros.Consensus.Node.Tracers
                        Ouroboros.Consensus.NodeId
                        Ouroboros.Consensus.NodeKernel

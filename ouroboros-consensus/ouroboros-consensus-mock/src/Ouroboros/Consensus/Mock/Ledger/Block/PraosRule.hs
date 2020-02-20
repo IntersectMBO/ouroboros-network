@@ -34,6 +34,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Util.Condense
@@ -71,8 +72,9 @@ data instance BlockConfig (SimplePraosRuleBlock c) = SimplePraosRuleBlockConfig 
     }
   deriving (Generic, NoUnexpectedThunks)
 
+type instance NodeState     (SimplePraosRuleBlock c) = ()
 type instance BlockProtocol (SimplePraosRuleBlock c) =
-   WithLeaderSchedule (Praos PraosCryptoUnused)
+    WithLeaderSchedule (Praos PraosCryptoUnused)
 
 -- | Sanity check that block and header type synonyms agree
 _simplePraosRuleHeader :: SimplePraosRuleBlock c -> SimplePraosRuleHeader c
@@ -83,7 +85,7 @@ _simplePraosRuleHeader = simpleHeader
 -------------------------------------------------------------------------------}
 
 instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
-  forgeExt cfg () SimpleBlock{..} = do
+  forgeExt cfg _updateState () SimpleBlock{..} = do
       let ext = SimplePraosRuleExt $ lsNodeConfigNodeId (configConsensus cfg)
       return SimpleBlock {
           simpleHeader = mkSimpleHeader encode simpleHeaderStd ext

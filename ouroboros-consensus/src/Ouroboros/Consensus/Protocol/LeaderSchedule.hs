@@ -53,7 +53,6 @@ data instance NodeConfig (WithLeaderSchedule p) = WLSNodeConfig
 
 instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
   type ChainState    (WithLeaderSchedule p) = ()
-  type NodeState     (WithLeaderSchedule p) = ()
   type LedgerView    (WithLeaderSchedule p) = ()
   type ValidationErr (WithLeaderSchedule p) = ()
   type IsLeader      (WithLeaderSchedule p) = ()

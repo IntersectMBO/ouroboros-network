@@ -35,8 +35,9 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Exit (ExitReason)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.IOLike (IOLike)
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import           Ouroboros.Consensus.Storage.Common (EpochNo, EpochSize)
@@ -52,11 +53,13 @@ class ( LedgerSupportsProtocol blk
       , HasTxId (GenTx blk)
       , QueryLedger blk
       , HasNetworkProtocolVersion blk
+      , NoUnexpectedThunks (NodeState blk)
         -- TODO: Remove after reconsidering rewindChainState:
       , Serialise (HeaderHash blk)
       ) => RunNode blk where
-  nodeForgeBlock          :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
+  nodeForgeBlock          :: MonadRandom m
                           => TopLevelConfig blk
+                          -> Update m (NodeState blk)
                           -> SlotNo              -- ^ Current slot
                           -> BlockNo             -- ^ Current block number
                           -> ExtLedgerState blk  -- ^ Current ledger

@@ -36,7 +36,6 @@ module Ouroboros.Consensus.Node
 import           Codec.Serialise (DeserialiseFailure)
 import           Control.Monad (when)
 import           Control.Tracer (Tracer)
-import           Crypto.Random
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (secondsToDiffTime)
@@ -51,7 +50,6 @@ import           Ouroboros.Network.NodeToNode (NodeToNodeVersionData (..),
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
 
-import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Config
@@ -63,12 +61,13 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Recovery
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.NodeNetwork
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
@@ -321,7 +320,7 @@ mkNodeArgs
   :: forall blk. RunNode blk
   => ResourceRegistry IO
   -> TopLevelConfig blk
-  -> NodeState (BlockProtocol blk)
+  -> NodeState blk
   -> Tracers IO RemoteConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
@@ -348,6 +347,6 @@ mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     blockProduction = case isProducer of
       IsNotProducer -> Nothing
       IsProducer    -> Just BlockProduction
-                         { produceDRG   = drgNew
-                         , produceBlock = nodeForgeBlock cfg
+                         { produceBlock       = nodeForgeBlock cfg
+                         , runMonadRandomDict = runMonadRandomIO
                          }

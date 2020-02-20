@@ -36,7 +36,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -47,12 +47,9 @@ import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Protocol
 
 forgeByronBlock
-  :: forall m.
-     ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
-     , MonadRandom m
-     , HasCallStack
-     )
+  :: forall m. (MonadRandom m, HasCallStack)
   => TopLevelConfig ByronBlock
+  -> Update m (NodeState ByronBlock)
   -> SlotNo                          -- ^ Current slot
   -> BlockNo                         -- ^ Current block number
   -> ExtLedgerState ByronBlock       -- ^ Ledger
@@ -128,19 +125,16 @@ initBlockPayloads = BlockPayloads
   }
 
 forgeRegularBlock
-  :: forall m.
-     ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
-     , MonadRandom m
-     , HasCallStack
-     )
+  :: forall m. (MonadRandom m, HasCallStack)
   => TopLevelConfig ByronBlock
+  -> Update m (NodeState ByronBlock)
   -> SlotNo                            -- ^ Current slot
   -> BlockNo                           -- ^ Current block number
   -> ExtLedgerState ByronBlock         -- ^ Ledger
   -> [GenTx ByronBlock]                -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto    -- ^ Leader proof ('IsLeader')
   -> m ByronBlock
-forgeRegularBlock cfg curSlot curNo extLedger txs isLeader = do
+forgeRegularBlock cfg _updateState curSlot curNo extLedger txs isLeader = do
     ouroborosPayload <-
       forgePBftFields
         (mkByronContextDSIGN cfg)

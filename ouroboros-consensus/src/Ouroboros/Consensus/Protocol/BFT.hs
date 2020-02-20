@@ -128,7 +128,6 @@ data instance NodeConfig (Bft c) = BftNodeConfig {
 instance BftCrypto c => ConsensusProtocol (Bft c) where
   type ValidationErr (Bft c) = BftValidationErr
   type ValidateView  (Bft c) = BftValidateView c
-  type NodeState     (Bft c) = ()
   type LedgerView    (Bft c) = ()
   type IsLeader      (Bft c) = ()
   type ChainState    (Bft c) = ()

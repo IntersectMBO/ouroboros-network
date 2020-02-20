@@ -22,11 +22,11 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract
 
 forgeSimple :: forall p c m ext.
-               ( HasNodeState p m
-               , MonadRandom m
+               ( MonadRandom m
                , SimpleCrypto c
                , RunMockBlock c ext
                , BlockSupportsProtocol (SimpleBlock c ext)
@@ -34,14 +34,15 @@ forgeSimple :: forall p c m ext.
                , p ~ BlockProtocol (SimpleBlock c ext)
                )
             => TopLevelConfig (SimpleBlock c ext)
+            -> Update m (NodeState (SimpleBlock c ext))
             -> SlotNo                              -- ^ Current slot
             -> BlockNo                             -- ^ Current block number
             -> ExtLedgerState (SimpleBlock c ext)  -- ^ Current ledger
             -> [GenTx (SimpleBlock c ext)]         -- ^ Txs to add in the block
             -> IsLeader p                          -- ^ Proof we are slot leader
             -> m (SimpleBlock c ext)
-forgeSimple cfg curSlot curBlock extLedger txs proof = do
-    forgeExt cfg proof $ SimpleBlock {
+forgeSimple cfg updateState curSlot curBlock extLedger txs proof = do
+    forgeExt cfg updateState proof $ SimpleBlock {
         simpleHeader = mkSimpleHeader encode stdHeader ()
       , simpleBody   = body
       }

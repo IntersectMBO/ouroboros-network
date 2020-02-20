@@ -73,6 +73,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -208,6 +209,7 @@ instance Bridge m a => HasHeader (DualHeader m a) where
   Protocol
 -------------------------------------------------------------------------------}
 
+type instance NodeState     (DualBlock m a) = NodeState     m
 type instance BlockProtocol (DualBlock m a) = BlockProtocol m
 
 dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m

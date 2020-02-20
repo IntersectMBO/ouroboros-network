@@ -28,6 +28,7 @@ import           Ouroboros.Network.Block (HasHeader (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
@@ -38,6 +39,7 @@ import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation ()
 import           Ouroboros.Consensus.Byron.Protocol
 
+type instance NodeState     ByronBlock = ()
 type instance BlockProtocol ByronBlock = PBft PBftByronCrypto
 
 -- | Construct DSIGN required for Byron crypto

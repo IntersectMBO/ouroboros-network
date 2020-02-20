@@ -36,6 +36,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.Signed
@@ -83,6 +84,7 @@ data instance BlockConfig (SimplePBftBlock c c') = SimplePBftBlockConfig {
   }
   deriving (Generic, NoUnexpectedThunks)
 
+type instance NodeState     (SimplePBftBlock c c') = ()
 type instance BlockProtocol (SimplePBftBlock c c') = PBft c'
 
 -- | Sanity check that block and header type synonyms agree
@@ -104,7 +106,7 @@ instance ( SimpleCrypto c
          , ContextDSIGN (PBftDSIGN c') ~ ()
          , Serialise (PBftVerKeyHash c')
          ) => RunMockBlock c (SimplePBftExt c c') where
-  forgeExt _cfg isLeader SimpleBlock{..} = do
+  forgeExt _cfg _updateState isLeader SimpleBlock{..} = do
       ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
         forgePBftFields
           (const ())
