@@ -79,6 +79,13 @@ _simpleBFtHeader :: SimpleBftBlock c c' -> SimpleBftHeader c c'
 _simpleBFtHeader = simpleHeader
 
 {-------------------------------------------------------------------------------
+  Customization of the generic infrastructure
+-------------------------------------------------------------------------------}
+
+instance (SimpleCrypto c, Typeable c')
+      => MockProtocolSpecific c (SimpleBftExt c c')
+
+{-------------------------------------------------------------------------------
   Evidence that SimpleBlock can support BFT
 -------------------------------------------------------------------------------}
 

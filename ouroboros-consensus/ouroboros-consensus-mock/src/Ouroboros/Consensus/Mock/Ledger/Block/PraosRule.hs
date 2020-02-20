@@ -82,6 +82,12 @@ _simplePraosRuleHeader :: SimplePraosRuleBlock c -> SimplePraosRuleHeader c
 _simplePraosRuleHeader = simpleHeader
 
 {-------------------------------------------------------------------------------
+  Customization of the generic infrastructure
+-------------------------------------------------------------------------------}
+
+instance SimpleCrypto c => MockProtocolSpecific c SimplePraosRuleExt
+
+{-------------------------------------------------------------------------------
   Evidence that 'SimpleBlock' can support Praos with an explicit leader schedule
 -------------------------------------------------------------------------------}
 

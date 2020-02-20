@@ -93,6 +93,13 @@ _simplePBftHeader :: SimplePBftBlock c c' -> SimplePBftHeader c c'
 _simplePBftHeader = simpleHeader
 
 {-------------------------------------------------------------------------------
+  Customization of the generic infrastructure
+-------------------------------------------------------------------------------}
+
+instance (SimpleCrypto c, Typeable c')
+      => MockProtocolSpecific c (SimplePBftExt c c')
+
+{-------------------------------------------------------------------------------
   Evidence that SimpleBlock can support PBFT
 -------------------------------------------------------------------------------}
 

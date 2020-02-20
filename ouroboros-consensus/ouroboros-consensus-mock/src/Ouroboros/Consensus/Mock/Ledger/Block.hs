@@ -32,6 +32,8 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , mkSimpleHeader
   , matchesSimpleHeader
   , countSimpleGenTxs
+    -- * Protocol-specific part
+  , MockProtocolSpecific
     -- * 'UpdateLedger'
   , LedgerState(..)
   , LedgerConfig(..)
@@ -236,11 +238,18 @@ instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
   -- Use defaults
 
 {-------------------------------------------------------------------------------
+  Protocol specific constraints
+-------------------------------------------------------------------------------}
+
+class ( SimpleCrypto c
+      , Typeable ext
+      ) => MockProtocolSpecific c ext where
+
+{-------------------------------------------------------------------------------
   Update the ledger
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Typeable ext, BlockSupportsProtocol (SimpleBlock c ext))
-      => UpdateLedger (SimpleBlock c ext) where
+instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext) where
   newtype LedgerState (SimpleBlock c ext) = SimpleLedgerState {
         simpleLedgerState :: MockState (SimpleBlock c ext)
       }
@@ -284,8 +293,7 @@ genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
   Support for the mempool
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Typeable ext, BlockSupportsProtocol (SimpleBlock c ext))
-      => ApplyTx (SimpleBlock c ext) where
+instance MockProtocolSpecific c ext => ApplyTx (SimpleBlock c ext) where
   data GenTx (SimpleBlock c ext) = SimpleGenTx
     { simpleGenTx   :: !Mock.Tx
     , simpleGenTxId :: !Mock.TxId
@@ -335,8 +343,7 @@ mkSimpleGenTx tx = SimpleGenTx
   Support for QueryLedger
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Typeable ext, BlockSupportsProtocol (SimpleBlock c ext))
-      => QueryLedger (SimpleBlock c ext) where
+instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
   data Query (SimpleBlock c ext) result
     deriving (Show)
 

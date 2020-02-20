@@ -23,7 +23,7 @@ import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | Protocol specific functionality required to run consensus with mock blocks
-class RunMockBlock c ext where
+class MockProtocolSpecific c ext => RunMockBlock c ext where
   -- | Construct the protocol specific part of the block
   --
   -- This is used in 'forgeSimple', which takes care of the generic part of

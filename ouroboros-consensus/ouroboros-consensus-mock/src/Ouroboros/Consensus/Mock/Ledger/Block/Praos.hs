@@ -24,6 +24,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (encodeListLen)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
@@ -91,6 +92,13 @@ type instance BlockProtocol (SimplePraosBlock c c') = Praos c'
 -- | Sanity check that block and header type synonyms agree
 _simplePraosHeader :: SimplePraosBlock c c' -> SimplePraosHeader c c'
 _simplePraosHeader = simpleHeader
+
+{-------------------------------------------------------------------------------
+  Customization of the generic infrastructure
+-------------------------------------------------------------------------------}
+
+instance (SimpleCrypto c, Typeable c')
+      => MockProtocolSpecific c (SimplePraosExt c c')
 
 {-------------------------------------------------------------------------------
   Evidence that SimpleBlock can support Praos
