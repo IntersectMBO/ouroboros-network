@@ -402,7 +402,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         configConsensus = BftNodeConfig
           { bftParams   = BftParams
             { bftSecurityParam = securityParam
-            , bftNumNodes      = NumCoreNodes 2
+            , bftNumNodes      = numCoreNodes
             }
           , bftNodeId   = fromCoreNodeId coreNodeId
           , bftSignKey  = SignKeyMockDSIGN 0
@@ -412,8 +412,11 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                           ]
           }
       , configLedger = LedgerConfig
-      , configBlock  = TestBlockConfig slotLengths
+      , configBlock  = TestBlockConfig slotLengths numCoreNodes
       }
+
+    numCoreNodes :: NumCoreNodes
+    numCoreNodes = NumCoreNodes 2
 
     -- | Take the last slot at which a client or server update is planned, or
     -- the slot at which syncing starts, and add one to it

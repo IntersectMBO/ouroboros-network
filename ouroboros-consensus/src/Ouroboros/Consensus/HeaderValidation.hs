@@ -378,7 +378,7 @@ validateHeader cfg ledgerView hdr st = do
                      applyChainState
                        (configConsensus cfg)
                        ledgerView
-                       (validateView cfg hdr)
+                       (validateView (configBlock cfg) hdr)
                        (headerStateChain st)
     return $ headerStatePush
                (configSecurityParam cfg)

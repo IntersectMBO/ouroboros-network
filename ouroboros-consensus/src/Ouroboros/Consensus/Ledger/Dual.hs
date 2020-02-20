@@ -220,8 +220,8 @@ dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
     }
 
 instance Bridge m a => BlockSupportsProtocol (DualBlock m a) where
-  validateView cfg = validateView (dualTopLevelConfigMain cfg) . dualHeaderMain
-  selectView   cfg = selectView   (dualTopLevelConfigMain cfg) . dualHeaderMain
+  validateView cfg = validateView (dualBlockConfigMain cfg) . dualHeaderMain
+  selectView   cfg = selectView   (dualBlockConfigMain cfg) . dualHeaderMain
 
 {-------------------------------------------------------------------------------
   Ledger errors

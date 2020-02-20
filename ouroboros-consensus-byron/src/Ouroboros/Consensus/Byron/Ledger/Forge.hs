@@ -137,7 +137,7 @@ forgeRegularBlock
 forgeRegularBlock cfg _updateState curSlot curNo extLedger txs isLeader = do
     ouroborosPayload <-
       forgePBftFields
-        (mkByronContextDSIGN cfg)
+        (mkByronContextDSIGN (configBlock cfg))
         isLeader
         (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload

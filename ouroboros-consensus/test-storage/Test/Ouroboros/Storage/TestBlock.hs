@@ -156,6 +156,12 @@ instance HasHeader (Header TestBlock) where
 
 data instance BlockConfig TestBlock = TestBlockConfig {
       testBlockSlotLengths :: SlotLengths
+
+      -- | Number of core nodes
+      --
+      -- We need this in order to compute the 'ValidateView', which must
+      -- conjure up a validation key out of thin air
+    , testBlockNumCoreNodes :: NumCoreNodes
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -301,11 +307,10 @@ instance SignedHeader (Header TestBlock) where
   headerSigned _ = ()
 
 instance BlockSupportsProtocol TestBlock where
-  validateView TopLevelConfig{..} =
+  validateView TestBlockConfig{..} =
       bftValidateView bftFields
     where
-      BftNodeConfig{ bftParams = BftParams{..} } = configConsensus
-      NumCoreNodes numCore = bftNumNodes
+      NumCoreNodes numCore = testBlockNumCoreNodes
 
       bftFields :: Header TestBlock -> BftFields BftMockCrypto ()
       bftFields hdr = BftFields {

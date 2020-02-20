@@ -240,7 +240,7 @@ instance RunNode ByronBlock where
                             $ Genesis.gdProtocolMagicId
                             . extractGenesisData
   nodeHashInfo              = const byronHashInfo
-  nodeCheckIntegrity        = verifyBlockIntegrity
+  nodeCheckIntegrity        = verifyBlockIntegrity . configBlock
   nodeAddHeaderEnvelope     = const byronAddHeaderEnvelope
   nodeToExitReason _ e
     | Just (_ :: DropEncodedSizeException) <- fromException e

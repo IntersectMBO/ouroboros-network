@@ -388,12 +388,17 @@ addBlock cfg blk m
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk
     (newChain, newLedger) =
-      fromMaybe (currentChain m, currentLedger m) $
-      selectChain (selectView cfg . getHeader) (configConsensus cfg) (currentChain m) $
-      filter
-        (Fragment.forksAtMostKBlocks (maxRollbacks secParam) currentChainFrag .
-         Chain.toAnchoredFragment . fst)
-        candidates
+        fromMaybe (currentChain m, currentLedger m)
+      . selectChain
+          (selectView (configBlock cfg) . getHeader)
+          (configConsensus cfg)
+          (currentChain m)
+      . filter
+          ( Fragment.forksAtMostKBlocks (maxRollbacks secParam) currentChainFrag
+          . Chain.toAnchoredFragment
+          . fst
+          )
+      $ candidates
 
 addBlocks :: (LedgerSupportsProtocol blk, ModelSupportsBlock blk)
           => TopLevelConfig blk

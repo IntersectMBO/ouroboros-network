@@ -165,8 +165,8 @@ preferAnchoredCandidate cfg ours theirs =
         -- Case 4
         preferCandidate
           (configConsensus cfg)
-          (selectView cfg ourTip)
-          (selectView cfg theirTip)
+          (selectView (configBlock cfg) ourTip)
+          (selectView (configBlock cfg) theirTip)
 
 -- | Lift 'compareCandidates' to 'AnchoredFragment'
 --
@@ -185,7 +185,7 @@ compareAnchoredCandidates cfg ours theirs =
       (_ :> ourTip, _ :> theirTip) ->
         compareCandidates
           (configConsensus cfg)
-          (selectView cfg ourTip)
-          (selectView cfg theirTip)
+          (selectView (configBlock cfg) ourTip)
+          (selectView (configBlock cfg) theirTip)
       _otherwise ->
         error "compareAnchoredCandidates: precondition violated"
