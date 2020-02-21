@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE CApiFFI             #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE InterruptibleFFI    #-}
 {-# LANGUAGE MultiWayIf          #-}
