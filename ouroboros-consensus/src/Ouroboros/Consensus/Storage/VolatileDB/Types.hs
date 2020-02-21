@@ -43,6 +43,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 
 -- | The maximum number of blocks to store per file.
 newtype BlocksPerFile = BlocksPerFile { unBlocksPerFile :: Word32 }
+    deriving (Generic, Show)
 
 -- | Create a 'BlocksPerFile'.
 --
