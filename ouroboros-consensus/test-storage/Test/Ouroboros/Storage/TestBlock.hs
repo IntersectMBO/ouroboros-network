@@ -471,6 +471,10 @@ shrinkCorruptions cs =
     shrinkCor :: (FileCorruption, FsPath) -> [(FileCorruption, FsPath)]
     shrinkCor (c, f) = [(c', f) | c' <- shrink c]
 
+-- | Return a list of all files that will be corrupted
+corruptionFiles :: Corruptions -> [FsPath]
+corruptionFiles = map snd . NE.toList
+
 {-------------------------------------------------------------------------------
   Orphans
 -------------------------------------------------------------------------------}
