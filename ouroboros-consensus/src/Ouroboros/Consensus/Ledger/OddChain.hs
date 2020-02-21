@@ -17,11 +17,13 @@
 module Ouroboros.Consensus.Ledger.OddChain where
 
 import           Prelude hiding (flip)
+import qualified Prelude
 
+import           Control.Exception (assert)
 import           Cardano.Prelude (cborError)
 import           Codec.CBOR.Decoding as D
 import           Codec.Serialise (decode, encode)
-import           Control.Monad.Except (throwError)
+import           Control.Monad.Except (throwError, runExcept)
 import           Crypto.Random (MonadRandom)
 import qualified Data.Binary.Get as Get
 import qualified Data.Binary.Put as Put
@@ -29,7 +31,6 @@ import qualified Data.ByteString as Strict
 import           Data.Either (isRight)
 import           Data.FingerTree (Measured, measure)
 import           Data.Map.Strict ((!))
-import           Data.Maybe (catMaybes)
 import           Data.Proxy (Proxy (Proxy))
 import           Data.Time.Clock (UTCTime)
 import           Data.Word (Word64)
@@ -183,6 +184,12 @@ bump :: [Tx] -> Phase -> Phase
 bump xs (Decrease i) = Decrease $ minimum $ i:(unTx <$> xs)
 bump xs (Increase i) = Increase $ maximum $ i:(unTx <$> xs)
 
+updatePhase :: Tx -> Phase -> Phase
+updatePhase (Tx i) (Decrease j)
+  = if i < j then Decrease i else Decrease j
+updatePhase (Tx i) (Increase j)
+  = if j < i then Increase i else Increase j
+
 data OddError
   = OddError
     { currentPhase :: !Phase
@@ -217,30 +224,44 @@ instance UpdateLedger OddBlock where
       }
 
   applyLedgerBlock cfg blk@(OddBlock { oddBlockPayload }) st
-    = let st'@LedgerState { phase } = tickedLedgerState
-                                    $ applyChainTick cfg (blockSlot blk) st
-      in case catMaybes $ fmap (checkTx st') oddBlockPayload of
-          -- Remember to update the current slot. I didn't do it and I got a
-          -- failed assertion, in  Ouroboros.Storage.ChainDB.Impl.ChainSel
-          --
-          -- >     assert (castPoint (AF.headPoint c) == LgrDB.currentPoint l) $
-          --
-          -- the problem was that the ledger was not reporting the tip of the
-          -- last applied block.
-          --
-          [] -> pure $! st' { stCurrentSlot = blockSlot blk
-                            , stPrevHash    = BlockHash $ blockHash blk
-                            , phase         = bump oddBlockPayload phase
-                            }
-          xs -> throwError $ OddError
-                             { currentPhase = phase
-                             , errors       = xs
-                             }
+  -- In this function, remember to update the current slot. I didn't do it and
+  -- I got a failed assertion, in Ouroboros.Storage.ChainDB.Impl.ChainSel
+  --
+  -- >     assert (castPoint (AF.headPoint c) == LgrDB.currentPoint l) $
+  --
+  -- the problem was that the ledger was not reporting the tip of the
+  -- last applied block.
+  --
+    = case foldTxs cfg tickedSt oddBlockPayload of
+        ([]  , tickedSt') -> do
+          let st' = tickedLedgerState tickedSt'
+          pure $! st' { stCurrentSlot = blockSlot blk
+                      , stPrevHash    = BlockHash $ blockHash blk
+                      }
+        (errs, _  ) -> throwError $ OddError
+                                    { currentPhase = phase (tickedLedgerState tickedSt)
+                                    , errors       = errs
+                                    }
+    where
+      tickedSt = applyChainTick cfg (blockSlot blk) st
+
+    -- let st'@LedgerState { phase } = tickedLedgerState
+    --                                 $ applyChainTick cfg (blockSlot blk) st
+    --   in case catMaybes $ fmap (checkTx st') oddBlockPayload of
+
+    --       [] -> pure $! st' { stCurrentSlot = blockSlot blk
+    --                         , stPrevHash    = BlockHash $ blockHash blk
+    --                         , phase         = bump oddBlockPayload phase
+    --                         }
+    --       xs -> throwError $ OddError
+    --                          { currentPhase = phase
+    --                          , errors       = xs
+    --                          }
 
   reapplyLedgerBlock _cfg blk@OddBlock { oddBlockHeader, oddBlockPayload } st@LedgerState { phase }
     = st { stPrevHash    = BlockHash $ blockHash blk
          , stCurrentSlot = blockSlot blk -- QUESTION: Is this needed here?
-         , phase         = bump oddBlockPayload phase
+         , phase         = foldl (Prelude.flip updatePhase) phase oddBlockPayload
          }
 
   ledgerTipPoint LedgerState { stPrevHash, stCurrentSlot }
@@ -258,7 +279,8 @@ changePhaseOnEpochBoundary
   -> Phase
   -> Phase
 changePhaseOnEpochBoundary OddConfig { slotsPerEpoch } currentSlot phase
-  = if unSlotNo currentSlot `mod` slotsPerEpoch == 0
+  = assert (slotsPerEpoch /= 0)
+  $ if unSlotNo currentSlot `mod` slotsPerEpoch == 0
     then flip phase
     else phase
 
@@ -364,10 +386,35 @@ instance ApplyTx OddBlock where
 
   applyTx _cfg (OddTx i) st@TickedLedgerState { tickedLedgerState } =
     case checkTx tickedLedgerState i of
-      Nothing  -> pure st
+      Nothing  ->
+        pure $! st { tickedLedgerState
+                       = tickedLedgerState
+                         { phase = updatePhase i (phase tickedLedgerState) }
+                   }
       Just err -> throwError err
 
   reapplyTx = applyTx
+
+foldTxs
+  :: LedgerConfig OddBlock
+  -> TickedLedgerState OddBlock
+  -> [Tx]
+  -> ([OddTxError], TickedLedgerState OddBlock)
+foldTxs cfg tickedSt txs  = foldl (Prelude.flip (applyOddTx cfg)) ([], tickedSt) txs
+
+-- | Apply a transaction to a given state. The first component of the given
+-- tuple is an errors accumulator.
+--
+applyOddTx
+  :: LedgerConfig OddBlock
+  -> Tx
+  -> ([OddTxError], TickedLedgerState OddBlock)
+  -> ([OddTxError], TickedLedgerState OddBlock)
+applyOddTx cfg tx (errs, st') =
+  case runExcept $ applyTx cfg (OddTx tx) st' of
+    Left err   -> (err: errs, st' )
+    Right st'' -> (     errs, st'')
+
 
 checkTx :: LedgerState OddBlock -> Tx -> Maybe OddTxError
 checkTx LedgerState { phase } (Tx i) =
@@ -585,7 +632,6 @@ instance RunNode OddBlock where
     BinaryInfo
     { binaryBlob   = toCBOR blk
     , headerOffset = 1 -- CBOR tag
-                   + 1 -- 'encodeListLen' of the block
       -- NOTE: here we should check/assert that the length fits in a 'Word16'.
     , headerSize   = fromIntegral $ Strict.length $ serialize' $ getHeader blk
     }

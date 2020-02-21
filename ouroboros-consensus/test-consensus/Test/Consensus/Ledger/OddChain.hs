@@ -1,6 +1,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
@@ -8,19 +9,19 @@
 
 module Test.Consensus.Ledger.OddChain (tests) where
 
+import           Control.Monad.Except (Except, runExcept)
 import           Test.QuickCheck (Property, counterexample, (===), withMaxSuccess
                    , Gen, Arbitrary
                    , arbitrary, shrink
                    , Positive (Positive)
-                   , oneof, vectorOf, elements
+                   , oneof, vectorOf, elements, suchThat
                    )
 import           Test.Tasty (testGroup, TestTree)
 import           Test.Tasty.QuickCheck (testProperty)
+import           Control.Arrow (second)
 
 import           Data.Word (Word64)
 import qualified Data.ByteString.Base16.Lazy as Base16
-
-
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
@@ -40,19 +41,28 @@ import           Cardano.Crypto.DSIGN.Mock (mockSign, MockDSIGN
 import qualified Cardano.Crypto.Hash.Class as Cardano.Crypto
 
 import           Ouroboros.Network.Block (ChainHash (GenesisHash, BlockHash), HeaderHash)
-import           Ouroboros.Consensus.Ledger.OddChain (Tx (Tx), SignedPart
+import           Ouroboros.Consensus.Ledger.OddChain (Tx (Tx), SignedPart, GenTx (OddTx)
                    , Header (OddHeader), oddBlockSignedPart, oddBlockSignature
                    , OddBlock (OddBlock), oddBlockHeader, oddBlockPayload
-                   , mkSignedPart
+                   , mkSignedPart, errors
                    , Phase (Decrease, Increase)
                    , LedgerState (LedgerState), stCurrentSlot, stPrevHash, phase
                    , OddError
                    , OddTxError (NotOdd, OddBut)
                    , OutOfBoundError (NotDecreasing, NotIncreasing)
+                   , LedgerConfig (OddConfig), slotsPerEpoch, cfgNodeStartTime
                    )
 
 import qualified Cardano.Crypto.Hash.Class as Crypto.Hash
 import           Cardano.Crypto.Hash.Short (ShortHash)
+
+import           Ouroboros.Consensus.Ledger.Abstract (applyLedgerBlock
+                   , TickedLedgerState, tickedLedgerState
+                   , applyChainTick
+                   , LedgerConfig
+                   )
+import           Ouroboros.Network.Block (blockSlot)
+import           Ouroboros.Consensus.Mempool.API (applyTx, GenTx)
 
 tests :: TestTree
 tests = testGroup "Odd Chain"
@@ -66,6 +76,9 @@ tests = testGroup "Odd Chain"
       , testRoundtrip @(LedgerState OddBlock) "LedgerState"
       , testRoundtrip @OddTxError             "Tx Error"
       , testRoundtrip @OutOfBoundError        "Out of bound error"
+      ]
+  , testGroup "Ledger properties"
+      [ testProperty "Mempool safety" prop_mempool
       ]
   ]
 
@@ -126,6 +139,67 @@ roundtrip' enc dec a
       -> counterexample (show e) False
   where
     bs = toLazyByteString (enc a)
+
+
+--------------------------------------------------------------------------------
+-- Ledger properties
+--------------------------------------------------------------------------------
+
+-- | This is a property that every ledger should satisfy:
+--
+-- Applying a sequence of transactions should result in the same state as
+-- applying those transactions in a block.
+--
+-- Given a sequence of transactions @[tx0 .. txn]@, the mempool validates these
+-- transactions starting in a given state @s0@, resulting in a sequence of
+-- intermediate states:
+--
+-- > s0 -- tx0 --> s1 -- tx1 --> .. --> sn -- txn --> sn+1
+--
+--
+-- These transactions can end up in different blocks. So it is important that
+-- when bundling a sub-sequence of transactions @[tx0 .. txj]@, @j <= n@ the
+-- resulting state of applying a block with this sub-sequence of transactions
+-- is the same as @sj+1@.
+--
+-- TODO: This should be better explained.
+-- TODO: This should be made more generic.
+--
+prop_mempool
+  :: LedgerConfig OddBlock
+  -> OddBlock
+  -> LedgerState OddBlock
+  -> Property
+prop_mempool cfg blk@OddBlock { oddBlockPayload } st
+  = withMaxSuccess 10000
+  $ counterexample (show $ tickedLedgerState tickedSt)
+  $ case blockApplicationResult of
+      ([], _) -> blockApplicationResult     === payloadApplicationResult
+      _       -> fst blockApplicationResult === fst payloadApplicationResult
+  where
+    tickedSt = applyChainTick cfg slot st
+    blockApplicationResult :: ([OddTxError], Phase)
+    blockApplicationResult
+      = second phase
+      $ case runExcept $ applyLedgerBlock cfg blk st of
+          Left err  -> (errors err, tickedLedgerState tickedSt)
+          Right st' -> ([]        , st')
+
+    payloadApplicationResult :: ([OddTxError], Phase)
+    payloadApplicationResult
+      = second phase
+      $ second tickedLedgerState
+      $ foldl (flip apply) ([], tickedSt) oddBlockPayload
+
+    slot = blockSlot blk
+    apply
+      :: Tx
+      -> ([OddTxError], TickedLedgerState OddBlock)
+      -> ([OddTxError], TickedLedgerState OddBlock)
+    apply tx (errs, st') =
+      case runExcept $ applyTx cfg (OddTx tx) st' of
+        Left err   -> (err: errs, st' )
+        Right st'' -> (     errs, st'')
 
 --------------------------------------------------------------------------------
 -- Arbitrary instances and generators
@@ -218,3 +292,13 @@ instance Arbitrary OddTxError where
 
 instance Arbitrary OutOfBoundError where
   arbitrary = elements [NotDecreasing, NotIncreasing]
+
+instance Arbitrary (LedgerConfig OddBlock) where
+  arbitrary = do
+    aNumberOfSlots <- arbitrary `suchThat` (/= 0) -- Zero slots per epoch aren't allowed.
+    aStartTime     <- arbitrary
+    pure $!
+      OddConfig
+      { slotsPerEpoch = aNumberOfSlots
+      , cfgNodeStartTime = aStartTime
+      }

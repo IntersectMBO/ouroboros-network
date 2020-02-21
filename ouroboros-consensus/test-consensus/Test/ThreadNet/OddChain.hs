@@ -37,15 +37,15 @@ prop_simple_oddchain_convergence :: SecurityParam
 prop_simple_oddchain_convergence
   k
   testConfig@TestConfig{numCoreNodes, numSlots, slotLengths}
-  =
-  tabulate "slot length changes" [show $ countSlotLengthChanges numSlots slotLengths] $
-  prop_general
-    countOddTxs
-    k
-    testConfig
-    (Just $ roundRobinLeaderSchedule numCoreNodes numSlots) -- Q: What happens if I pass 'Nothing' here?
-    (const False)
-    testOutput
+  = tabulate "slot length changes" [show $ countSlotLengthChanges numSlots slotLengths]
+  $ withMaxSuccess 1000
+  $ prop_general
+      countOddTxs
+      k
+      testConfig
+      (Just $ roundRobinLeaderSchedule numCoreNodes numSlots) -- Q: What happens if I pass 'Nothing' here?
+      (const False)
+      testOutput
   where
     testOutput =
         runTestNetwork testConfig TestConfigBlock
@@ -74,7 +74,9 @@ countOddTxs :: OddBlock -> Word64
 countOddTxs = fromIntegral . length . oddBlockPayload
 
 instance TxGen OddBlock where
-  testGenTxs _ _ _ _ = return []
+  testGenTx _numCoreNodes _slotNo _cfg _ledgerSt =
+    OddTx . Tx . fromIntegral <$> generateBetween (-100) 100
 
-  testGenTx _numCoreNodes _slotNo _cfg _ledgerSt = error "testGenTxs shouldn't call testGenTx"
---    OddTx . Tx . fromIntegral <$> generateBetween (-100) 100
+    -- error "testGenTxs shouldn't call testGenTx"
+
+--  testGenTxs _ _ _ _ = return []
