@@ -3,7 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.Ouroboros.Storage.ImmutableDB.Mock (openDBMock) where
 
-import           Control.Monad (void)
+import           Control.Monad (join, void)
 import           Data.Bifunctor (first)
 import           Data.Tuple (swap)
 
@@ -59,20 +59,22 @@ openDBMock err epochSize = do
         update f = atomically $ updateTVar dbVar (swap . f)
 
         updateE_ :: (DBModel hash -> Either ImmutableDBError (DBModel hash)) -> m ()
-        updateE_ f = atomically $ do
-          db <- readTVar dbVar
-          case f db of
-            Left  e   -> throwM e
-            Right db' -> writeTVar dbVar db'
+        updateE_ f = join $ atomically $
+          (f <$> readTVar dbVar) >>= \case
+            Left  e   -> return $ EH.throwError err e
+            Right db' -> do
+              writeTVar dbVar db'
+              return $ return ()
 
         updateEE :: (DBModel hash -> Either ImmutableDBError (Either e (a, DBModel hash)))
                  -> m (Either e a)
-        updateEE f = atomically $ do
-          db <- readTVar dbVar
-          case f db of
-            Left  e                -> throwM e
-            Right (Left e)         -> return (Left e)
-            Right (Right (a, db')) -> writeTVar dbVar db' >> return (Right a)
+        updateEE f = join $ atomically $
+          (f <$> readTVar dbVar) >>= \case
+            Left  e                -> return $ EH.throwError err e
+            Right (Left e)         -> return $ return (Left e)
+            Right (Right (a, db')) -> do
+              writeTVar dbVar db'
+              return $ return (Right a)
 
         query :: (DBModel hash -> a) -> m a
         query f = fmap f $ atomically $ readTVar dbVar
