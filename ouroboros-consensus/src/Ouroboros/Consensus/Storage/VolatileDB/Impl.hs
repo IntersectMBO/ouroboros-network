@@ -91,13 +91,6 @@
 module Ouroboros.Consensus.Storage.VolatileDB.Impl
     ( -- * Opening a database
       openDB
-      -- * tests only
-    , VolatileDBEnv(..)
-    , InternalState(..)
-    , OpenOrClosed(..)
-    , filePath
-    , modifyState
-    , openDBFull
     ) where
 
 import           Control.Monad
@@ -196,25 +189,19 @@ openDB :: ( HasCallStack
        -> Tracer m (TraceEvent e blockId)
        -> BlocksPerFile
        -> m (VolatileDB blockId m)
-openDB h e e' p t m = fst <$> openDBFull h e e' p t m
-
-openDBFull :: ( HasCallStack
-              , IOLike m
-              , Ord                blockId
-              , NoUnexpectedThunks blockId
-              , Typeable           blockId
-              , Show               blockId
-              )
-           => HasFS m h
-           -> ErrorHandling VolatileDBError m
-           -> ThrowCantCatch VolatileDBError (STM m)
-           -> Parser e m blockId
-           -> Tracer m (TraceEvent e blockId)
-           -> BlocksPerFile
-           -> m (VolatileDB blockId m, VolatileDBEnv m blockId)
-openDBFull hasFS err errSTM parser tracer maxBlocksPerFile = do
-    env <- openDBImpl hasFS err errSTM parser tracer maxBlocksPerFile
-    return $ (, env) VolatileDB {
+openDB hasFS err errSTM parser tracer maxBlocksPerFile = do
+    st    <- mkInternalStateDB hasFS err parser tracer maxBlocksPerFile
+    stVar <- newMVar $ VolatileDbOpen st
+    let env = VolatileDBEnv {
+            _dbHasFS          = hasFS
+          , _dbErr            = err
+          , _dbErrSTM         = errSTM
+          , _dbInternalState  = stVar
+          , _maxBlocksPerFile = maxBlocksPerFile
+          , _parser           = parser
+          , _tracer           = tracer
+          }
+    return VolatileDB {
         closeDB           = closeDBImpl           env
       , isOpenDB          = isOpenDBImpl          env
       , reOpenDB          = reOpenDBImpl          env
@@ -226,33 +213,6 @@ openDBFull hasFS err errSTM parser tracer maxBlocksPerFile = do
       , getSuccessors     = getSuccessorsImpl     env
       , getPredecessor    = getPredecessorImpl    env
       , getMaxSlotNo      = getMaxSlotNoImpl      env
-      }
-
-openDBImpl :: ( HasCallStack
-              , IOLike m
-              , Ord                blockId
-              , NoUnexpectedThunks blockId
-              , Typeable           blockId
-              , Show               blockId
-              )
-           => HasFS m h
-           -> ErrorHandling VolatileDBError m
-           -> ThrowCantCatch VolatileDBError (STM m)
-           -> Parser e m blockId
-           -> Tracer m (TraceEvent e blockId)
-           -> BlocksPerFile
-           -> m (VolatileDBEnv m blockId)
-openDBImpl hasFS@HasFS{..} err errSTM parser tracer maxBlocksPerFile = do
-    st    <- mkInternalStateDB hasFS err parser tracer maxBlocksPerFile
-    stVar <- newMVar $ VolatileDbOpen st
-    return VolatileDBEnv {
-        _dbHasFS          = hasFS
-      , _dbErr            = err
-      , _dbErrSTM         = errSTM
-      , _dbInternalState  = stVar
-      , _maxBlocksPerFile = maxBlocksPerFile
-      , _parser           = parser
-      , _tracer           = tracer
       }
 
 closeDBImpl :: IOLike m
