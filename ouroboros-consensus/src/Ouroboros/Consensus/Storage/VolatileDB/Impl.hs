@@ -158,8 +158,6 @@ data InternalState blockId h = InternalState {
       -- ^ The 'FileId' of the same file.
     , _currentWriteOffset :: !Word64
       -- ^ The offset of the same file.
-    , _nextNewFileId      :: !FileId
-      -- ^ The next file name Id.
     , _currentMap         :: !(Index blockId)
       -- ^ The contents of each file.
     , _currentRevMap      :: !(ReverseIndex blockId)
@@ -476,14 +474,14 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
     return st {
         _currentWriteHandle = hndl
       , _currentWritePath   = file
-      , _currentWriteId     = _nextNewFileId
+      , _currentWriteId     = currentWriteId'
       , _currentWriteOffset = 0
-      , _currentMap         = Index.insert _nextNewFileId FileInfo.empty
+      , _currentMap         = Index.insert currentWriteId' FileInfo.empty
                                 _currentMap
-      , _nextNewFileId      = _nextNewFileId + 1
       }
   where
-    file = filePath _nextNewFileId
+    currentWriteId' = _currentWriteId + 1
+    file = filePath currentWriteId'
 
 -- | Truncates a file to 0 and update its state accordingly.
 -- This may throw an FsError.
@@ -581,7 +579,6 @@ mkInternalState hasFS err parser tracer maxBlocksPerFile files =
               -> (lastWriteId, currentMap')
 
       let currentWritePath = filePath currentWriteId
-          nextNewFileId    = currentWriteId + 1
 
       currentWriteHandle <- hOpen hasFS currentWritePath (AppendMode AllowExisting)
       -- If 'hGetSize' fails, we should close the opened handle that didn't
@@ -596,7 +593,6 @@ mkInternalState hasFS err parser tracer maxBlocksPerFile files =
         , _currentWritePath   = currentWritePath
         , _currentWriteId     = currentWriteId
         , _currentWriteOffset = currentWriteOffset
-        , _nextNewFileId      = nextNewFileId
         , _currentMap         = currentMap''
         , _currentRevMap      = currentRevMap'
         , _currentSuccMap     = currentSuccMap'
