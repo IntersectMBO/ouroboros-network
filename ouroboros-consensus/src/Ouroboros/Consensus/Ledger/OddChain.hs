@@ -42,7 +42,7 @@ import           Cardano.Crypto (ProtocolMagicId (ProtocolMagicId))
 import           Cardano.Crypto.DSIGN.Class (SigDSIGN,
                      SignedDSIGN (SignedDSIGN), VerKeyDSIGN, signDSIGN,
                      verifyDSIGN)
-import           Cardano.Crypto.DSIGN.Mock ()
+import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
 import           Cardano.Crypto.Hash.Class (hash)
 import qualified Cardano.Crypto.Hash.Class as Crypto.Hash
 import qualified Cardano.Crypto.Hash.Class
@@ -440,29 +440,11 @@ instance RunNode OddBlock where
     -- ^ IsLeader (ExtConfig (Bft BftMockCrypto) (LedgerConfig OddBlock))
     -> m OddBlock
   nodeForgeBlock cfg slotNo aBlockNo extLedgerState txs () = do
-    let payload    = fmap unOddTx txs
-        tag x      = 1 + x -- Account for the CBOR tag when computing the upper bound on the block size.
+    let signedPart = mkSignedPart nodeVKey prevHash aBlockNo slotNo payload
         nodeVKey   = vkeysMap ! bftNodeId (extNodeConfigP cfg)
         vkeysMap   = bftVerKeys $ extNodeConfigP cfg
-        signedPart = SignedPart
-                     { oddBlockIssuer      = nodeVKey
-                     , oddBlockPrevHash    = stPrevHash $ ledgerState $ extLedgerState
-                     , oddBlockNo          = aBlockNo
-                     , oddBlockSlot        = slotNo
-                     , oddBlockPayloadHash = hash payload
-                     -- We give an upper bound estimate of the block size
-                     --
-                     -- NOTE: encoding and computing the number of bytes would
-                     -- be a less error prone way of doing this. For the
-                     -- purposes of our prototype this method should suffice.
-                     , oddBlockSize        = tag 32 -- Prev hash
-                                           + tag 4  -- Block number
-                                           + tag 4  -- Slot number
-                                           + tag 4  -- Payload hash
-                                           + tag 4  -- Odd Block size
-                                           + tag (32 + 64) -- Signature
-                                           + tag (tag 4 * fromIntegral (length payload))
-                     }
+        prevHash   = stPrevHash $ ledgerState $ extLedgerState
+        payload    = fmap unOddTx txs
     oddSignature <- signDSIGN () signedPart (bftSignKey $ extNodeConfigP cfg)
     let
         header     = OddHeader
@@ -661,6 +643,38 @@ instance RunNode OddBlock where
 
   nodeDecodeResult = \case {}
 
+
+mkSignedPart
+  :: VerKeyDSIGN MockDSIGN
+  -> ChainHash OddBlock
+  -> BlockNo
+  -> SlotNo
+  -> [Tx]
+  -> SignedPart
+mkSignedPart nodeVKey prevHash aBlockNo slotNo payload
+  = SignedPart
+    { oddBlockIssuer      = nodeVKey
+    , oddBlockPrevHash    = prevHash
+    , oddBlockNo          = aBlockNo
+    , oddBlockSlot        = slotNo
+    , oddBlockPayloadHash = hash payload
+      -- We give an upper bound estimate of the block size
+      --
+      -- NOTE: encoding and computing the number of bytes would
+      -- be a less error prone way of doing this. For the
+      -- purposes of our prototype this method should suffice.
+    , oddBlockSize        = tag 32 -- Prev hash
+                          + tag 4  -- Block number
+                          + tag 4  -- Slot number
+                          + tag 4  -- Payload hash
+                          + tag 4  -- Odd Block size
+                          + tag (32 + 64) -- Signature
+                          + tag (tag 4 * fromIntegral (length payload))
+    }
+  where
+    tag x      = 1 + x -- Account for the CBOR tag when computing the upper
+                       -- bound on the block size.
+
 -- We need to define the OddChain protocol, with all the data that is needed to
 -- run it. This is done in
 --
@@ -841,12 +855,12 @@ instance FromCBOR OddTxError where
     t <- D.decodeWord
     case t of
       0 -> do
-        !i    <- fromCBOR
         !mobe <- fromCBOR
+        !i    <- fromCBOR
         pure $! NotOdd mobe i
       1 -> do
-        !i   <- fromCBOR
         !obe <- fromCBOR
+        !i   <- fromCBOR
         pure $! OddBut obe i
       _ -> cborError $ DecoderErrorUnknownTag "OddTxError" (fromIntegral t)
 

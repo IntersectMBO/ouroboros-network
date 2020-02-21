@@ -15,7 +15,7 @@ import           Data.Time
 import           Data.Word (Word64)
 import           Test.QuickCheck hiding (Fixed (..))
 
-import           Ouroboros.Network.Block (SlotNo (..))
+import           Ouroboros.Network.Block (SlotNo (..), BlockNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
@@ -65,6 +65,7 @@ instance Arbitrary SlotLength where
 
 deriving via UTCTime         instance Arbitrary SystemStart
 deriving via Positive Word64 instance Arbitrary SlotNo
+deriving via Positive Word64 instance Arbitrary BlockNo
 deriving via Word64          instance Arbitrary EpochNo
 deriving via Positive Word64 instance Arbitrary EpochSize
 deriving via Word64          instance Arbitrary RelativeSlot

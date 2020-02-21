@@ -18,7 +18,7 @@ import           Test.Consensus.BlockchainTime.SlotLengths ()
 import           Test.Util.Orphans.Arbitrary ()
 
 import           Ouroboros.Consensus.Ledger.OddChain
-import           Test.ThreadNet.TxGen (TxGen, testGenTx)
+import           Test.ThreadNet.TxGen (TxGen, testGenTx, testGenTxs)
 import           Crypto.Number.Generate (generateBetween)
 import           Data.Time.Clock (UTCTime (UTCTime), utctDay, utctDayTime)
 import           Data.Time.Calendar (Day (ModifiedJulianDay))
@@ -74,5 +74,7 @@ countOddTxs :: OddBlock -> Word64
 countOddTxs = fromIntegral . length . oddBlockPayload
 
 instance TxGen OddBlock where
-  testGenTx _numCoreNodes _slotNo _cfg _ledgerSt =
-    OddTx . Tx . fromIntegral <$> generateBetween (-100) 100
+  testGenTxs _ _ _ _ = return []
+
+  testGenTx _numCoreNodes _slotNo _cfg _ledgerSt = error "testGenTxs shouldn't call testGenTx"
+--    OddTx . Tx . fromIntegral <$> generateBetween (-100) 100

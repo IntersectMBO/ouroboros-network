@@ -21,6 +21,7 @@ import qualified Test.ThreadNet.PBFT (tests)
 import qualified Test.ThreadNet.RealPBFT (tests)
 import qualified Test.ThreadNet.Util.Tests (tests)
 import qualified Test.ThreadNet.OddChain (tests)
+import qualified Test.Consensus.Ledger.OddChain (tests)
 
 import qualified Test.Util.Split (tests)
 
@@ -35,6 +36,7 @@ tests =
   , Test.Consensus.ChainSyncClient.tests
   , Test.Consensus.Ledger.Byron.tests
   , Test.Consensus.Ledger.Mock.tests
+  , Test.Consensus.Ledger.OddChain.tests
   , Test.Consensus.LocalStateQueryServer.tests
   , Test.Consensus.Mempool.tests
   , Test.Consensus.Node.tests

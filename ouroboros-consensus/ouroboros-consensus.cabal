@@ -306,6 +306,7 @@ test-suite test-consensus
                     Test.Consensus.ChainSyncClient
                     Test.Consensus.Ledger.Byron
                     Test.Consensus.Ledger.Mock
+                    Test.Consensus.Ledger.OddChain
                     Test.Consensus.LocalStateQueryServer
                     Test.Consensus.Mempool
                     Test.Consensus.Node
@@ -399,7 +400,9 @@ test-suite test-consensus
                     text,
                     time,
                     transformers,
-                    tree-diff
+                    tree-diff,
+
+                    base16-bytestring
 
   ghc-options:      -Wall
                     -fno-ignore-asserts
