@@ -340,10 +340,10 @@ prop_mux_snd_recv messages = ioProperty $ do
 
     clientAsync <-
       async $ Mx.runMuxWithQueues (contramap (Mx.WithMuxBearer "client") activeTracer)
-                                  clientApp client_w client_r sduLen Nothing
+                                  clientApp client_w client_r sduLen
     serverAsync <-
       async $ Mx.runMuxWithQueues (contramap (Mx.WithMuxBearer "server") activeTracer)
-                                  serverApp server_w server_r sduLen Nothing
+                                  serverApp server_w server_r sduLen
 
     r <- waitBoth clientAsync serverAsync
     case r of
@@ -452,11 +452,11 @@ runWithQueues initApp respApp k = do
     respAsync <- async $ do
                Mx.runMuxWithQueues
                  (Mx.WithMuxBearer "server" `contramap` nullTracer)
-                 respApp server_w server_r sduLen Nothing
+                 respApp server_w server_r sduLen
     initAsync <- async $ do
                Mx.runMuxWithQueues
                  (Mx.WithMuxBearer "client" `contramap` nullTracer)
-                 initApp client_w client_r sduLen Nothing
+                 initApp client_w client_r sduLen
 
     waitBoth respAsync initAsync
       >>= k
@@ -658,8 +658,13 @@ prop_mux_starvation (Uneven response0 response1) =
     activeMpsVar <- atomically $ newTVar 0
     -- 2 active initiators and 2 active responders
     endMpsVar <- atomically $ newTVar 4
-    -- At most track 100 packets per test run
-    traceQueueVar <- atomically $ newTBQueue 100
+    -- track SDU headers in the test run
+    traceHeaderVar <- newTVarM []
+    let headerTracer =
+          Tracer $ \e -> case e of
+            Mx.MuxTraceRecvHeaderEnd header
+              -> atomically (modifyTVar traceHeaderVar (header:))
+            _ -> return ()
 
     let server_w = client_r
         server_r = client_w
@@ -698,13 +703,13 @@ prop_mux_starvation (Uneven response0 response1) =
                       ]
 
     clientAsync <- async $ Mx.runMuxWithQueues
-                             (contramap (Mx.WithMuxBearer "client") activeTracer)
+                             (contramap (Mx.WithMuxBearer "client") activeTracer <> headerTracer)
                              clientApp client_w client_r
-                             sduLen (Just traceQueueVar)
+                             sduLen
     serverAsync <- async $ Mx.runMuxWithQueues
                              (contramap (Mx.WithMuxBearer "server") activeTracer)
                              serverApp server_w server_r
-                             sduLen Nothing
+                             sduLen
 
     -- First verify that all messages where received correctly
     r <- waitBoth clientAsync serverAsync
@@ -717,8 +722,8 @@ prop_mux_starvation (Uneven response0 response1) =
              res_long <- verify_long
 
              -- Then look at the message trace to check for starvation.
-             trace <- atomically $ flushTBQueue traceQueueVar []
-             let es = map (\(e, _, _) -> e) trace
+             trace <- atomically $ readTVar traceHeaderVar
+             let es = map Mx.msNum (take 100 (reverse trace))
                  ls = dropWhile (\e -> e == head es) es
                  fair = verifyStarvation ls
              return $ res_short .&&. res_long .&&. fair
@@ -752,13 +757,6 @@ prop_mux_starvation (Uneven response0 response1) =
     labelPr_ n | n >= 100  = "100"
                | otherwise = label_ n
 
-
-    flushTBQueue q acc = do
-        e <- isEmptyTBQueue q
-        if e then return $ reverse acc
-             else do
-                 a <- readTBQueue q
-                 flushTBQueue q (a : acc)
 
 encodeInvalidMuxSDU :: InvalidSDU -> BL.ByteString
 encodeInvalidMuxSDU sdu =
@@ -879,7 +877,7 @@ prop_demux_sdu a = do
 
         said <- async $ Mx.runMuxWithQueues
                           (contramap (Mx.WithMuxBearer "server") activeTracer)
-                          server_mps server_w server_r 1280 Nothing
+                          server_mps server_w server_r 1280
 
         return (server_r, said)
 

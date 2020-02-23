@@ -34,9 +34,8 @@ queuesAsMuxBearer
   -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
   -> Word16
-  -> Maybe (TBQueue m (Mx.MiniProtocolNum, Mx.MiniProtocolMode, Time))
   -> MuxBearer m
-queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
+queuesAsMuxBearer tracer writeQueue readQueue sduSize = do
       Mx.MuxBearer {
         Mx.read    = readMux,
         Mx.write   = writeMux,
@@ -54,13 +53,7 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
                   traceWith tracer $ Mx.MuxTraceRecvHeaderEnd header
                   traceWith tracer $ Mx.MuxTraceRecvPayloadStart $ fromIntegral $ BL.length payload
                   ts <- getMonotonicTime
-                  traceWith tracer (Mx.MuxTraceRecvDeltaQObservation header ts)
-                  case traceQueue of
-                        Just q  -> atomically $ do
-                            full <- isFullTBQueue q
-                            if full then return ()
-                                    else writeTBQueue q (Mx.msNum header, Mx.msMode header, ts)
-                        Nothing -> return ()
+                  traceWith tracer $ Mx.MuxTraceRecvDeltaQObservation header ts
                   traceWith tracer $ Mx.MuxTraceRecvPayloadEnd payload
                   return (header {Mx.msBlob = payload}, ts)
 
@@ -91,11 +84,10 @@ runMuxWithQueues
   -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
   -> Word16
-  -> Maybe (TBQueue m (Mx.MiniProtocolNum, Mx.MiniProtocolMode, Time))
   -> m (Maybe SomeException)
-runMuxWithQueues muxTracer app wq rq mtu trace = do
-    let bearer    = queuesAsMuxBearer muxTracer wq rq mtu trace
-    res_e <- try $ Mx.muxStart muxTracer app bearer
+runMuxWithQueues tracer app wq rq mtu = do
+    let bearer = queuesAsMuxBearer tracer wq rq mtu
+    res_e <- try $ Mx.muxStart tracer app bearer
     case res_e of
          Left  e -> return (Just e)
          Right _ -> return Nothing
