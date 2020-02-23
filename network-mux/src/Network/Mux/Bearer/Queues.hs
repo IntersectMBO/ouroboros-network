@@ -3,7 +3,6 @@
 
 module Network.Mux.Bearer.Queues
   ( queuesAsMuxBearer
-  , runMuxWithQueues
   ) where
 
 import qualified Data.ByteString.Lazy as BL
@@ -12,7 +11,6 @@ import           Data.Word (Word16)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
@@ -68,26 +66,3 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize = do
           traceWith tracer $ Mx.MuxTraceSendEnd
           return ts
 
-runMuxWithQueues
-  :: ( MonadAsync m
-     , MonadCatch m
-     , MonadMask m
-     , MonadSTM m
-     , MonadThrow m
-     , MonadThrow (STM m)
-     , MonadTime m
-     , MonadTimer m
-     , Eq  (Async m ())
-     )
-  => Tracer m Mx.MuxTrace
-  -> Mx.MuxApplication appType m a b
-  -> TBQueue m BL.ByteString
-  -> TBQueue m BL.ByteString
-  -> Word16
-  -> m (Maybe SomeException)
-runMuxWithQueues tracer app wq rq mtu = do
-    let bearer = queuesAsMuxBearer tracer wq rq mtu
-    res_e <- try $ Mx.muxStart tracer app bearer
-    case res_e of
-         Left  e -> return (Just e)
-         Right _ -> return Nothing

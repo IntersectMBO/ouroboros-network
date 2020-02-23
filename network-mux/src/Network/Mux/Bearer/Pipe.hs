@@ -12,7 +12,6 @@ module Network.Mux.Bearer.Pipe (
   , pipeChannelFromNamedPipe
 #endif
   , pipeAsMuxBearer
-  , runMuxWithPipes
   ) where
 
 import           Control.Monad.Class.MonadThrow
@@ -119,11 +118,3 @@ pipeAsMuxBearer tracer channel =
           traceWith tracer $ Mx.MuxTraceSendEnd
           return ts
 
-runMuxWithPipes
-    :: Tracer IO Mx.MuxTrace
-    -> Mx.MuxApplication appType IO a b
-    -> PipeChannel
-    -> IO ()
-runMuxWithPipes muxTracer app channel = do
-    let bearer = pipeAsMuxBearer muxTracer channel
-    Mx.muxStart muxTracer app bearer

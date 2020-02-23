@@ -25,6 +25,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Tracer
 
+import qualified Network.Mux             as Mx (muxStart)
 import qualified Network.Mux.Bearer.Pipe as Mx
 import           Ouroboros.Network.Mux
 
@@ -167,8 +168,11 @@ demo chain0 updates = do
                                                   (encodeTip encode) (decodeTip decode))
                         (ChainSync.chainSyncServerPeer server)
 
-        _ <- async $ Mx.runMuxWithPipes activeTracer (toApplication producerApp "producer") chan1
-        _ <- async $ Mx.runMuxWithPipes activeTracer (toApplication consumerApp "consumer") chan2
+        let clientBearer = Mx.pipeAsMuxBearer activeTracer chan1
+            serverBearer = Mx.pipeAsMuxBearer activeTracer chan2
+
+        _ <- async $ Mx.muxStart activeTracer (toApplication producerApp "producer") clientBearer
+        _ <- async $ Mx.muxStart activeTracer (toApplication consumerApp "consumer") serverBearer
 
         void $ fork $ sequence_
             [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest
@@ -179,6 +183,7 @@ demo chain0 updates = do
                  | update <- updates
             ]
 
+        -- TODO: use new mechanism to collect mini-protocol result:
         atomically $ takeTMVar done
 
   where
