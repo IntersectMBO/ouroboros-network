@@ -84,7 +84,6 @@ tests =
 defaultMiniProtocolLimits :: MiniProtocolLimits
 defaultMiniProtocolLimits =
     MiniProtocolLimits {
-      maximumMessageSize  = defaultMiniProtocolLimit,
       maximumIngressQueue = defaultMiniProtocolLimit
     }
 
@@ -94,7 +93,6 @@ defaultMiniProtocolLimit = 3000000
 smallMiniProtocolLimits :: MiniProtocolLimits
 smallMiniProtocolLimits =
     MiniProtocolLimits {
-      maximumMessageSize  = smallMiniProtocolLimit,
       maximumIngressQueue = smallMiniProtocolLimit
     }
 

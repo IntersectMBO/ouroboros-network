@@ -63,7 +63,6 @@ class ProtocolEnum ptcl where
     fromProtocolEnum :: ptcl -> MiniProtocolNum
 
 class MiniProtocolLimits ptcl where
-    maximumMessageSize :: ptcl -> Int64
     maximumIngressQueue :: ptcl -> Int64
 
 toApplication :: (Enum ptcl, Bounded ptcl,
@@ -76,7 +75,6 @@ toApplication (OuroborosInitiatorApplication f) peerid =
       [ MuxMiniProtocol {
           miniProtocolNum    = fromProtocolEnum ptcl,
           miniProtocolLimits = Mux.MiniProtocolLimits {
-                                 Mux.maximumMessageSize  = maximumMessageSize ptcl,
                                  Mux.maximumIngressQueue = maximumIngressQueue ptcl
                                },
           miniProtocolRun    =
@@ -90,7 +88,6 @@ toApplication (OuroborosResponderApplication f) peerid =
       [ MuxMiniProtocol {
           miniProtocolNum    = fromProtocolEnum ptcl,
           miniProtocolLimits = Mux.MiniProtocolLimits {
-                                 Mux.maximumMessageSize  = maximumMessageSize ptcl,
                                  Mux.maximumIngressQueue = maximumIngressQueue ptcl
                                },
           miniProtocolRun    =
@@ -104,7 +101,6 @@ toApplication (OuroborosInitiatorAndResponderApplication f g) peerid =
       [ MuxMiniProtocol {
           miniProtocolNum    = fromProtocolEnum ptcl,
           miniProtocolLimits = Mux.MiniProtocolLimits {
-                                 Mux.maximumMessageSize  = maximumMessageSize ptcl,
                                  Mux.maximumIngressQueue = maximumIngressQueue ptcl
                                },
           miniProtocolRun    =

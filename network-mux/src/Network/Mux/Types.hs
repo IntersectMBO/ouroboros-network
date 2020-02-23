@@ -60,14 +60,8 @@ newtype MiniProtocolNum = MiniProtocolNum Word16
   deriving (Eq, Ord, Enum, Ix, Show)
 
 -- | Per Miniprotocol limits
--- maximumIngressQueue must be >= maximumMessageSize
 data MiniProtocolLimits =
      MiniProtocolLimits {
-       -- | Limit on the maximum size of an individual message that can be sent
-       -- over a given miniprotocol.
-       --
-       maximumMessageSize :: !Int64,
-
        -- | Limit on the maximum number of bytes that can be queued in the
        -- miniprotocol's ingress queue.
        --

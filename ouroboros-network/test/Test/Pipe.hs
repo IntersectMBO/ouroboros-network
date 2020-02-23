@@ -81,7 +81,6 @@ instance ProtocolEnum DemoProtocols where
   fromProtocolEnum ChainSync = MiniProtocolNum 2
 
 instance MiniProtocolLimits DemoProtocols where
-  maximumMessageSize ChainSync  = defaultMiniProtocolLimit
   maximumIngressQueue ChainSync = defaultMiniProtocolLimit
 
 -- | A demonstration that we can run the simple chain consumer protocol

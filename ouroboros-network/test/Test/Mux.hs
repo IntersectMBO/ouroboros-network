@@ -64,7 +64,6 @@ data TestProtocols = ChainSyncPr
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.MiniProtocolLimits TestProtocols where
-    maximumMessageSize _  = 0xffff
     maximumIngressQueue _ = 0xffff
 
 instance Mx.ProtocolEnum TestProtocols where

@@ -156,7 +156,6 @@ instance ProtocolEnum NodeToNodeProtocols where
 instance MiniProtocolLimits NodeToNodeProtocols where
   -- TODO: provide sensible limits
   -- https://github.com/input-output-hk/ouroboros-network/issues/575
-  maximumMessageSize  _ = 0xffffffff
   maximumIngressQueue _ = 0xffffffff
 
 -- | Enumeration of node to node protocol versions.
@@ -478,7 +477,6 @@ remoteNetworkErrorPolicy = ErrorPolicies {
                         MuxDecodeError          -> Just theyBuggyOrEvil
                         MuxIngressQueueOverRun  -> Just theyBuggyOrEvil
                         MuxInitiatorOnly        -> Just theyBuggyOrEvil
-                        MuxTooLargeMessage      -> Just theyBuggyOrEvil
 
                         -- in case of bearer closed / or IOException we suspend
                         -- the peer for a short time
