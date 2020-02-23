@@ -44,7 +44,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimStrictShutdown)
-import           Control.Tracer (Tracer (..), contramap, nullTracer, showTracing)
+import           Control.Tracer (Tracer (..), contramap, nullTracer)
 
 #if defined(mingw32_HOST_OS)
 import qualified System.Win32.NamedPipes as Win32.NamedPipes
@@ -319,6 +319,9 @@ prop_mux_snd_recv messages = ioProperty $ do
     let server_w = client_r
         server_r = client_w
 
+        clientTracer = contramap (Mx.WithMuxBearer "client") activeTracer
+        serverTracer = contramap (Mx.WithMuxBearer "server") activeTracer
+
     (verify, client_mp, server_mp) <- setupMiniReqRsp
                                         (return ()) endMpsVar messages
 
@@ -339,10 +342,10 @@ prop_mux_snd_recv messages = ioProperty $ do
                       ]
 
     clientAsync <-
-      async $ Mx.runMuxWithQueues (contramap (Mx.WithMuxBearer "client") activeTracer)
+      async $ Mx.runMuxWithQueues clientTracer
                                   clientApp client_w client_r sduLen
     serverAsync <-
-      async $ Mx.runMuxWithQueues (contramap (Mx.WithMuxBearer "server") activeTracer)
+      async $ Mx.runMuxWithQueues serverTracer
                                   serverApp server_w server_r sduLen
 
     r <- waitBoth clientAsync serverAsync
@@ -494,7 +497,7 @@ runWithPipe initApp respApp k =
              initAsync <- async $ do
                 let clientChannel = Mx.pipeChannelFromNamedPipe hCli
                 res <- try $ Mx.runMuxWithPipes
-                              (Mx.WithMuxBearer "client" `contramap` showTracing nullTracer)
+                              clientTracer
                               initApp clientChannel
                 pure $ either Just (const Nothing) res
 
@@ -502,7 +505,7 @@ runWithPipe initApp respApp k =
                 Win32.Async.connectNamedPipe hSrv
                 let serverChannel = Mx.pipeChannelFromNamedPipe hSrv
                 res <- try $ Mx.runMuxWithPipes
-                              (Mx.WithMuxBearer "server"`contramap` showTracing nullTracer)
+                              serverTracer
                               respApp serverChannel
                 pure $ either Just (const Nothing) res
 
@@ -521,20 +524,24 @@ runWithPipe initApp respApp k =
             let clientChannel = Mx.pipeChannelFromHandles rCli wSrv
             res <- try $
                 Mx.runMuxWithPipes
-                  (Mx.WithMuxBearer "client" `contramap` showTracing nullTracer)
+                  clientTracer
                   initApp clientChannel
             pure $ either Just (const Nothing) res
         respAsync <- async $ do
             let serverChannel = Mx.pipeChannelFromHandles rSrv wCli
             res <- try $
                 Mx.runMuxWithPipes
-                  (Mx.WithMuxBearer "server"`contramap` showTracing nullTracer)
+                  serverTracer
                   respApp serverChannel
             pure $ either Just (const Nothing) res
 
         waitBoth respAsync initAsync
           >>= k
 #endif
+  where
+    clientTracer = contramap (Mx.WithMuxBearer "client") activeTracer
+    serverTracer = contramap (Mx.WithMuxBearer "server") activeTracer
+
 
 -- | Verify that it is possible to run two miniprotocols over the same bearer.
 -- Makes sure that messages are delivered to the correct miniprotocol in order.
@@ -669,6 +676,9 @@ prop_mux_starvation (Uneven response0 response1) =
     let server_w = client_r
         server_r = client_w
 
+        clientTracer = contramap (Mx.WithMuxBearer "client") activeTracer
+        serverTracer = contramap (Mx.WithMuxBearer "server") activeTracer
+
     (verify_short, client_short, server_short) <-
         setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                         endMpsVar  $ DummyTrace [(request, response0)]
@@ -703,11 +713,11 @@ prop_mux_starvation (Uneven response0 response1) =
                       ]
 
     clientAsync <- async $ Mx.runMuxWithQueues
-                             (contramap (Mx.WithMuxBearer "client") activeTracer <> headerTracer)
+                             (clientTracer <> headerTracer)
                              clientApp client_w client_r
                              sduLen
     serverAsync <- async $ Mx.runMuxWithQueues
-                             (contramap (Mx.WithMuxBearer "server") activeTracer)
+                             serverTracer
                              serverApp server_w server_r
                              sduLen
 
@@ -875,8 +885,10 @@ prop_demux_sdu a = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
 
+        let serverTracer = contramap (Mx.WithMuxBearer "server") activeTracer
+
         said <- async $ Mx.runMuxWithQueues
-                          (contramap (Mx.WithMuxBearer "server") activeTracer)
+                          serverTracer
                           server_mps server_w server_r 1280
 
         return (server_r, said)
