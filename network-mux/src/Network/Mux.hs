@@ -115,17 +115,16 @@ muxStart tracer (MuxApplication ptcls) bearer = do
     ptcls' <- mapM addProtocolQueues ptcls
     let dispatchtbl = setupDispatchTable  ptcls'
     tq <- atomically $ newTBQueue 100
-    cnt <- newTVarM 0
 
-    let jobs = muxerJob tq cnt
+    let jobs = muxerJob tq
              : demuxerJob dispatchtbl
-             : catMaybes [ miniProtocolInitiatorJob cnt tq ptcl pix initQ respQ
+             : catMaybes [ miniProtocolInitiatorJob tq ptcl pix initQ respQ
                          | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
-            ++ catMaybes [ miniProtocolResponderJob cnt tq ptcl pix initQ respQ
+            ++ catMaybes [ miniProtocolResponderJob tq ptcl pix initQ respQ
                          | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
 
         respondertbl = setupResponderTable
-                         [ miniProtocolResponderJob cnt tq ptcl pix initQ respQ
+                         [ miniProtocolResponderJob tq ptcl pix initQ respQ
                          | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
 
     JobPool.withJobPool $ \jobpool -> do
@@ -182,8 +181,8 @@ muxStart tracer (MuxApplication ptcls) bearer = do
         minpix = 0
         maxpix = fromIntegral (length jobs - 1)
 
-    muxerJob tq cnt =
-      JobPool.Job (mux cnt MuxState { egressQueue   = tq,  Egress.bearer })
+    muxerJob tq =
+      JobPool.Job (mux MuxState { egressQueue   = tq,  Egress.bearer })
                   MuxerException "muxer"
 
     demuxerJob tbl =
@@ -206,14 +205,13 @@ muxStart tracer (MuxApplication ptcls) bearer = do
     miniProtocolJob
       :: (RunMiniProtocol appType m a b -> Maybe (Channel m -> m c))
       -> MiniProtocolMode
-      -> StrictTVar m Int
       -> EgressQueue m
       -> MuxMiniProtocol appType m a b
       -> MiniProtocolIx
       -> StrictTVar m BL.ByteString
       -> StrictTVar m BL.ByteString
       -> Maybe (JobPool.Job m MuxJobResult)
-    miniProtocolJob selectRunner pmode cnt tq
+    miniProtocolJob selectRunner pmode tq
                     MuxMiniProtocol {
                       miniProtocolNum    = pnum,
                       miniProtocolRun    = prunner
@@ -226,27 +224,27 @@ muxStart tracer (MuxApplication ptcls) bearer = do
                               ((show pix) ++ "." ++ (show pmode))
 
         jobAction run = do
-          chan    <- mkChannel
+          w       <- newTVarM BL.empty
+          let chan = muxChannel tracer tq (Wanton w)
+                                pnum pmode
+                                (selectQueue pmode)
           _result <- run chan
-          mpsJobExit cnt
+          mpsJobExit w
           return (MiniProtocolShutdown pnum pix pmode)
-
-        mkChannel = muxChannel tracer tq pnum pmode
-                               (selectQueue pmode) cnt
 
         selectQueue ModeInitiator = initQ
         selectQueue ModeResponder = respQ
 
-    -- cnt represent the number of SDUs that are queued but not yet sent.  Job
-    -- threads will be prevented from exiting until all SDUs have been
+    -- The Wanton w is the SDUs that are queued but not yet sent for this job.
+    -- Job threads will be prevented from exiting until all their SDUs have been
     -- transmitted unless an exception/error is encounter. In that case all
     -- jobs will be cancelled directly.
-    mpsJobExit :: StrictTVar m Int -> m ()
-    mpsJobExit cnt = do
+    mpsJobExit :: StrictTVar m BL.ByteString -> m ()
+    mpsJobExit w = do
         traceWith tracer (MuxTraceState Dying)
         atomically $ do
-            c <- readTVar cnt
-            unless (c == 0) retry
+            buf <- readTVar w
+            check (BL.null buf)
 
 newtype MiniProtocolResponders m =
         MiniProtocolResponders
@@ -368,24 +366,20 @@ muxChannel
        )
     => Tracer m MuxTrace
     -> EgressQueue m
+    -> Wanton m
     -> MiniProtocolNum
     -> MiniProtocolMode
     -> StrictTVar m BL.ByteString
-    -> StrictTVar m Int
-    -> m (Channel m)
-muxChannel tracer tq mc md q cnt = do
-    w <- newTVarM BL.empty
-    return $ Channel { send = send (Wanton w)
-                     , recv}
+    -> Channel m
+muxChannel tracer tq want@(Wanton w) mc md q =
+    Channel { send, recv}
   where
     -- Limit for the message buffer between send and mux thread.
     perMiniProtocolBufferSize :: Int64
     perMiniProtocolBufferSize = 0x3ffff
 
-    send :: Wanton m
-         -> BL.ByteString
-         -> m ()
-    send want@(Wanton w) encoding = do
+    send :: BL.ByteString -> m ()
+    send encoding = do
         -- We send CBOR encoded messages by encoding them into by ByteString
         -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
 
@@ -397,8 +391,7 @@ muxChannel tracer tq mc md q cnt = do
                then do
                    let wasEmpty = BL.null buf
                    writeTVar w (BL.append buf encoding)
-                   when wasEmpty $ do
-                       modifyTVar cnt (+ 1)
+                   when wasEmpty $
                        writeTBQueue tq (TLSRDemand mc md want)
                else retry
 
