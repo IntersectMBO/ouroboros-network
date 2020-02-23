@@ -42,7 +42,7 @@ import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (isNothing, maybeToList)
+import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -91,6 +91,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.STM
 
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
@@ -137,8 +138,11 @@ data ForgeEbbEnv blk = ForgeEbbEnv
 -- | How to rekey a node with a fresh operational key
 --
 type RekeyM m blk =
-     ProtocolInfo blk
-  -> EpochNo
+     CoreNodeId
+  -> ProtocolInfo blk
+  -> SlotNo
+     -- ^ The slot in which the node is rekeying
+  -> (SlotNo -> m EpochNo)
   -> m (ProtocolInfo blk, Maybe (GenTx blk))
      -- ^ resulting config and any corresponding delegation certificate transaction
 
@@ -400,8 +404,7 @@ runThreadNetwork ThreadNetworkArgs
             -- the node is restarting because it just rekeyed
             (pInfo', txs0) <- case (nr, mbRekeyM) of
               (NodeRekey, Just rekeyM) -> do
-                eno <- epochInfoEpoch epochInfo s
-                fmap maybeToList <$> rekeyM pInfo eno
+                fmap maybeToList <$> rekeyM coreNodeId pInfo s (epochInfoEpoch epochInfo)
               _                        -> pure (pInfo, [])
 
             -- allocate the node's internal state and fork its internal threads
@@ -437,17 +440,40 @@ runThreadNetwork ThreadNetworkArgs
             forM_ edgeStatusVars $ \edgeStatusVar -> atomically $ do
               readTVar edgeStatusVar >>= check . (== EDown)
 
-            -- close the ChainDB
+            -- assuming nothing else is changing it, read the final chain
             let chainDB = getChainDB kernel
             finalChain <- ChainDB.toChain chainDB
 
-            pure (again, finalChain)
+            pure (again, finalChain)   -- end of the node's withRegistry
 
           atomically $ writeTVar vertexStatusVar $ VDown finalChain
 
           case again of
             Nothing                     -> pure ()
             Just (s', pInfo', nr', rs') -> loop s' pInfo' nr' rs'
+
+    -- | Persistently attempt to add the given transactions to the mempool
+    -- every time the ledger slot changes, even if successful!
+    --
+    -- If we add the transaction and then the mempools discards it for some
+    -- reason, this thread will add it again.
+    --
+    forkTxs0
+      :: HasCallStack
+      => ResourceRegistry m
+      -> STM m (WithOrigin SlotNo)
+      -- ^ How to get the slot of the current ledger state
+      -> Mempool m blk TicketNo
+      -> [GenTx blk]
+         -- ^ valid transactions the node should immediately propagate
+      -> m ()
+    forkTxs0 registry get mempool txs0 =
+      void $ forkLinkedThread registry $ do
+        let loop mbSlot = do
+              _ <- addTxs mempool txs0
+              (mbSlot', _) <- atomically $ blockUntilChanged id mbSlot get
+              loop mbSlot'
+        loop Origin
 
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
@@ -659,6 +685,7 @@ runThreadNetwork ThreadNetworkArgs
             }
 
       nodeKernel <- initNodeKernel nodeArgs
+      let mempool = getMempool nodeKernel
       let app = consensusNetworkApps
                   nodeKernel
                   -- these tracers report every message sent/received by this
@@ -667,10 +694,26 @@ runThreadNetwork ThreadNetworkArgs
                   (customProtocolCodecs pInfoConfig)
                   (protocolHandlers nodeArgs nodeKernel)
 
-      let mempool = getMempool nodeKernel
-      addTxs mempool txs0 >>= \x ->
-        if length txs0 == length x && all (isNothing . snd) x then pure () else
-        fail $ "initial transactions were not valid" ++ show x
+      -- In practice, a robust wallet/user can persistently add a transaction
+      -- until it appears on the chain. This thread adds robustness for the
+      -- @txs0@ argument, which in practice contains delegation certificates
+      -- that the node operator would very insistently add.
+      --
+      -- It's necessary here because under some circumstances a transaction in
+      -- the mempool can be \"lost\" due to no fault of its own. If a dlg cert
+      -- is lost, a node that rekeyed can never lead again.
+      --
+      -- The thread might also have to block until enough of the chain is
+      -- synced that the transaction is valid.
+      --
+      -- TODO Is there a risk that this will block because the 'forkTxProducer'
+      -- fills up the mempool too quickly?
+      forkTxs0
+        registry
+        ((ledgerTipSlot . ledgerState) <$> ChainDB.getCurrentLedger chainDB)
+        mempool
+        txs0
+
       forkTxProducer
         btime
         pInfoConfig

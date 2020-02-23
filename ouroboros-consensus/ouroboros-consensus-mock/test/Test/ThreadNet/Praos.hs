@@ -98,6 +98,7 @@ prop_simple_praos_convergence
       praosSecurityParam
       testConfig
       Nothing
+      Nothing
       (const False)
       testOutput
   where

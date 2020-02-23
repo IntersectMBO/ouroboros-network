@@ -93,6 +93,7 @@ prop_simple_leader_schedule_convergence
       praosSecurityParam
       testConfig
       (Just schedule)
+      Nothing
       (const False)
       testOutput
   where

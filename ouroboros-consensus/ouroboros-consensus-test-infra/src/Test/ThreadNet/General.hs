@@ -170,7 +170,11 @@ data TestConfigBlock blk = TestConfigBlock
   }
 
 data Rekeying blk = forall opKey. Rekeying
-  { rekeyUpd ::
+  { rekeyOracle
+      :: CoreNodeId -> SlotNo -> Maybe SlotNo
+    -- ^ The first /nominal/ slot after the given slot, assuming the given core
+    -- node cannot lead.
+  , rekeyUpd ::
          ProtocolInfo blk
       -> EpochNo
       -> opKey
@@ -225,16 +229,19 @@ runTestNetwork
 
     case rekeying of
       Nothing                                -> runThreadNetwork tna
-      Just Rekeying{rekeyUpd, rekeyFreshSKs} -> do
+      Just Rekeying{rekeyFreshSKs, rekeyOracle, rekeyUpd} -> do
         rekeyVar <- uncheckedNewTVarM rekeyFreshSKs
         runThreadNetwork tna
-          { tnaRekeyM = Just $ \pInfo eno -> do
-              x <- atomically $ do
-                x :< xs <- readTVar rekeyVar
-                x <$ writeTVar rekeyVar xs
-              pure $ case rekeyUpd pInfo eno x of
-                Nothing           -> (pInfo, Nothing)
-                Just (pInfo', tx) -> (pInfo', Just tx)
+          { tnaRekeyM = Just $ \cid pInfo s mkEno -> case rekeyOracle cid s of
+              Nothing -> pure (pInfo, Nothing)
+              Just s' -> do
+                x <- atomically $ do
+                  x :< xs <- readTVar rekeyVar
+                  x <$ writeTVar rekeyVar xs
+                eno <- mkEno s'
+                pure $ case rekeyUpd pInfo eno x of
+                  Nothing           -> (pInfo, Nothing)
+                  Just (pInfo', tx) -> (pInfo', Just tx)
           }
 
 {-------------------------------------------------------------------------------
@@ -271,11 +278,12 @@ prop_general ::
   -> SecurityParam
   -> TestConfig
   -> Maybe LeaderSchedule
+  -> Maybe NumBlocks
   -> (BlockRejection blk -> Bool)
   -> TestOutput blk
   -> Property
 prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
-  mbSchedule expectedBlockRejection
+  mbSchedule mbMaxForkLength expectedBlockRejection
   TestOutput{testOutputNodes, testOutputTipBlockNos} =
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
@@ -286,8 +294,11 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
     counterexample ("growth schedule: " <> condense growthSchedule) $
     counterexample ("actual leader schedule: " <> condense actualLeaderSchedule) $
     counterexample ("consensus expected: " <> show isConsensusExpected) $
+    counterexample ("maxForkLength: " <> show maxForkLength) $
     tabulate "consensus expected" [show isConsensusExpected] $
-    tabulate "shortestLength" [show (rangeK k (shortestLength nodeChains))] $
+    tabulate "k" [show (maxRollbacks k)] $
+    tabulate ("shortestLength (k = " <> show (maxRollbacks k) <> ")")
+      [show (rangeK k (shortestLength nodeChains))] $
     tabulate "floor(4 * lastJoinSlot / numSlots)" [show lastJoinSlot] $
     tabulate "minimumDegreeNodeTopology" [show (minimumDegreeNodeTopology nodeTopology)] $
     tabulate "involves >=1 re-delegation" [show hasNodeRekey] $
@@ -331,7 +342,9 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
         Nothing    -> actualLeaderSchedule
         Just sched -> sched
 
-    NumBlocks maxForkLength = determineForkLength k nodeJoinPlan schedule
+    NumBlocks maxForkLength = case mbMaxForkLength of
+      Nothing -> determineForkLength k nodeJoinPlan schedule
+      Just fl -> fl
 
     -- build a leader schedule which includes every node that forged unless:
     --
