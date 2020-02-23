@@ -57,12 +57,12 @@ import           System.Process (createPipe)
 
 import           Test.Mux.ReqResp
 
-import qualified Network.Mux as Mx
-import qualified Network.Mux.Codec as Mx
-import qualified Network.Mux.Channel as Mx
-import qualified Network.Mux.Types as Mx
-import qualified Network.Mux.Bearer.Queues as Mx
-import qualified Network.Mux.Bearer.Pipe as Mx
+import           Network.Mux
+import           Network.Mux.Codec
+import           Network.Mux.Channel
+import           Network.Mux.Types
+import           Network.Mux.Bearer.Queues
+import           Network.Mux.Bearer.Pipe
 
 tests :: TestTree
 tests =
@@ -81,21 +81,21 @@ tests =
     ]
   ]
 
-defaultMiniProtocolLimits :: Mx.MiniProtocolLimits
+defaultMiniProtocolLimits :: MiniProtocolLimits
 defaultMiniProtocolLimits =
-    Mx.MiniProtocolLimits {
-      Mx.maximumMessageSize  = defaultMiniProtocolLimit,
-      Mx.maximumIngressQueue = defaultMiniProtocolLimit
+    MiniProtocolLimits {
+      maximumMessageSize  = defaultMiniProtocolLimit,
+      maximumIngressQueue = defaultMiniProtocolLimit
     }
 
 defaultMiniProtocolLimit :: Int64
 defaultMiniProtocolLimit = 3000000
 
-smallMiniProtocolLimits :: Mx.MiniProtocolLimits
+smallMiniProtocolLimits :: MiniProtocolLimits
 smallMiniProtocolLimits =
-    Mx.MiniProtocolLimits {
-      Mx.maximumMessageSize  = smallMiniProtocolLimit,
-      Mx.maximumIngressQueue = smallMiniProtocolLimit
+    MiniProtocolLimits {
+      maximumMessageSize  = smallMiniProtocolLimit,
+      maximumIngressQueue = smallMiniProtocolLimit
     }
 
 smallMiniProtocolLimit :: Int64
@@ -190,7 +190,7 @@ instance Arbitrary DummyTrace where
         DummyTrace <$> vector len
 
 data InvalidSDU = InvalidSDU {
-      isTimestamp  :: !Mx.RemoteClockModel
+      isTimestamp  :: !RemoteClockModel
     , isIdAndMode  :: !Word16
     , isLength     :: !Word16
     , isRealLength :: !Int64
@@ -199,14 +199,14 @@ data InvalidSDU = InvalidSDU {
 
 instance Show InvalidSDU where
     show a = printf "InvalidSDU 0x%08x 0x%04x 0x%04x 0x%04x 0x%02x\n"
-                    (Mx.unRemoteClockModel $ isTimestamp a)
+                    (unRemoteClockModel $ isTimestamp a)
                     (isIdAndMode a)
                     (isLength a)
                     (isRealLength a)
                     (isPattern a)
 
-data ArbitrarySDU = ArbitraryInvalidSDU InvalidSDU Mx.MuxBearerState Mx.MuxErrorType
-                  | ArbitraryValidSDU DummyPayload Mx.MuxBearerState (Maybe Mx.MuxErrorType)
+data ArbitrarySDU = ArbitraryInvalidSDU InvalidSDU MuxBearerState MuxErrorType
+                  | ArbitraryValidSDU DummyPayload MuxBearerState (Maybe MuxErrorType)
                   deriving Show
 
 instance Arbitrary ArbitrarySDU where
@@ -222,9 +222,9 @@ instance Arbitrary ArbitrarySDU where
             -- Valid SDUs before version negotiation does only make sense for single SDUs.
             state <- if BL.length (unDummyPayload b) < 0xffff
                          then arbitrary
-                         else return Mx.Mature
-            let err_m = if state == Mx.Larval || state == Mx.Connected
-                            then Just Mx.MuxUnknownMiniProtocol
+                         else return Mature
+            let err_m = if state == Larval || state == Connected
+                            then Just MuxUnknownMiniProtocol
                             else Nothing
 
             return $ ArbitraryValidSDU b state err_m
@@ -236,7 +236,7 @@ instance Arbitrary ArbitrarySDU where
             -- This SDU is still considered valid, since the header itself will
             -- not cause a trouble, the error will be triggered by the fact that
             -- it is sent as a single message.
-            return $ ArbitraryValidSDU (DummyPayload pl) Mx.Mature (Just Mx.MuxIngressQueueOverRun)
+            return $ ArbitraryValidSDU (DummyPayload pl) Mature (Just MuxIngressQueueOverRun)
 
         unknownMiniProtocol = do
             ts  <- arbitrary
@@ -246,10 +246,10 @@ instance Arbitrary ArbitrarySDU where
             state <- arbitrary
             p <- arbitrary
 
-            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) (mid .|. mode) len
+            return $ ArbitraryInvalidSDU (InvalidSDU (RemoteClockModel ts) (mid .|. mode) len
                                           (8 + fromIntegral len) p)
                                          state
-                                         Mx.MuxUnknownMiniProtocol
+                                         MuxUnknownMiniProtocol
         invalidLenght = do
             ts  <- arbitrary
             mid <- arbitrary
@@ -258,18 +258,18 @@ instance Arbitrary ArbitrarySDU where
             p <- arbitrary
             state <- arbitrary
 
-            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) mid len realLen p)
+            return $ ArbitraryInvalidSDU (InvalidSDU (RemoteClockModel ts) mid len realLen p)
                                          state
-                                         Mx.MuxDecodeError
+                                         MuxDecodeError
 
-instance Arbitrary Mx.MuxBearerState where
+instance Arbitrary MuxBearerState where
      -- XXX Larval and Connected test behaviour is dependant on version
      -- negotation so they are disabled for now.
-     arbitrary = elements [ -- Mx.Larval
-                            -- , Mx.Connected
-                            Mx.Mature
-                          , Mx.Dying
-                          , Mx.Dead
+     arbitrary = elements [ -- Larval
+                            -- , Connected
+                            Mature
+                          , Dying
+                          , Dead
                           ]
 
 
@@ -319,33 +319,33 @@ prop_mux_snd_recv messages = ioProperty $ do
     let server_w = client_r
         server_r = client_w
 
-        clientBearer = Mx.queuesAsMuxBearer clientTracer client_w client_r sduLen
-        serverBearer = Mx.queuesAsMuxBearer serverTracer server_w server_r sduLen
+        clientBearer = queuesAsMuxBearer clientTracer client_w client_r sduLen
+        serverBearer = queuesAsMuxBearer serverTracer server_w server_r sduLen
 
-        clientTracer = contramap (Mx.WithMuxBearer "client") activeTracer
-        serverTracer = contramap (Mx.WithMuxBearer "server") activeTracer
+        clientTracer = contramap (WithMuxBearer "client") activeTracer
+        serverTracer = contramap (WithMuxBearer "server") activeTracer
 
     (verify, client_mp, server_mp) <- setupMiniReqRsp
                                         (return ()) endMpsVar messages
 
-    let clientApp = Mx.MuxApplication
-                      [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_mp
+    let clientApp = MuxApplication
+                      [ MuxMiniProtocol {
+                          miniProtocolNum    = MiniProtocolNum 2,
+                          miniProtocolLimits = defaultMiniProtocolLimits,
+                          miniProtocolRun    = InitiatorProtocolOnly client_mp
                         }
                       ]
 
-        serverApp = Mx.MuxApplication
-                      [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_mp
+        serverApp = MuxApplication
+                      [ MuxMiniProtocol {
+                          miniProtocolNum    = MiniProtocolNum 2,
+                          miniProtocolLimits = defaultMiniProtocolLimits,
+                          miniProtocolRun    = ResponderProtocolOnly server_mp
                         }
                       ]
 
-    clientAsync <- async $ Mx.muxStart clientTracer clientApp clientBearer
-    serverAsync <- async $ Mx.muxStart serverTracer serverApp serverBearer
+    clientAsync <- async $ muxStart clientTracer clientApp clientBearer
+    serverAsync <- async $ muxStart serverTracer serverApp serverBearer
 
     _ <- waitBoth clientAsync serverAsync
     property <$> verify
@@ -358,8 +358,8 @@ setupMiniReqRsp :: IO ()              -- | Action performed by responder before 
                 -> StrictTVar IO Int  -- | Total number of miniprotocols.
                 -> DummyTrace         -- | Trace of messages
                 -> IO ( IO Bool
-                      , Mx.Channel IO -> IO ()
-                      , Mx.Channel IO -> IO ()
+                      , Channel IO -> IO ()
+                      , Channel IO -> IO ()
                       )
 setupMiniReqRsp serverAction mpsEndVar (DummyTrace msgs) = do
     serverResultVar <- newEmptyTMVarM
@@ -398,7 +398,7 @@ setupMiniReqRsp serverAction mpsEndVar (DummyTrace msgs) = do
         go resps (req:reqs) = SendMsgReq req $ \resp -> return (go (resp:resps) reqs)
 
     clientApp :: StrictTMVar IO Bool
-              -> Mx.Channel IO
+              -> Channel IO
               -> IO ()
     clientApp clientResultVar clientChan = do
         result <- runClient nullTracer clientChan (reqRespClient requests)
@@ -406,7 +406,7 @@ setupMiniReqRsp serverAction mpsEndVar (DummyTrace msgs) = do
         end
 
     serverApp :: StrictTMVar IO Bool
-              -> Mx.Channel IO
+              -> Channel IO
               -> IO ()
     serverApp serverResultVar serverChan = do
         result <- runServer nullTracer serverChan (reqRespServer responses)
@@ -435,8 +435,8 @@ waitOnAllClients clientVar clientTot = do
 
 -- Run applications continuation
 type RunMuxApplications
-    =  Mx.MuxApplication Mx.InitiatorApp IO () Void 
-    -> Mx.MuxApplication Mx.ResponderApp IO Void ()
+    =  MuxApplication InitiatorApp IO () Void
+    -> MuxApplication ResponderApp IO Void ()
     -> IO ()
 
 
@@ -448,14 +448,14 @@ runWithQueues initApp respApp = do
     let server_w = client_r
         server_r = client_w
 
-        clientBearer = Mx.queuesAsMuxBearer clientTracer client_w client_r sduLen
-        serverBearer = Mx.queuesAsMuxBearer serverTracer server_w server_r sduLen
+        clientBearer = queuesAsMuxBearer clientTracer client_w client_r sduLen
+        serverBearer = queuesAsMuxBearer serverTracer server_w server_r sduLen
 
-        clientTracer = contramap (Mx.WithMuxBearer "client") activeTracer
-        serverTracer = contramap (Mx.WithMuxBearer "server") activeTracer
+        clientTracer = contramap (WithMuxBearer "client") activeTracer
+        serverTracer = contramap (WithMuxBearer "server") activeTracer
 
-    initAsync <- async $ Mx.muxStart clientTracer initApp clientBearer
-    respAsync <- async $ Mx.muxStart serverTracer respApp serverBearer
+    initAsync <- async $ muxStart clientTracer initApp clientBearer
+    respAsync <- async $ muxStart serverTracer respApp serverBearer
     void $ waitBoth initAsync respAsync
 
 
@@ -489,16 +489,16 @@ runWithPipe initApp respApp =
              Win32.Async.associateWithIOCompletionPort (Left hSrv) iocp
              Win32.Async.associateWithIOCompletionPort (Left hCli) iocp
 
-             let clientChannel = Mx.pipeChannelFromNamedPipe hCli
-                 serverChannel = Mx.pipeChannelFromNamedPipe hSrv
+             let clientChannel = pipeChannelFromNamedPipe hCli
+                 serverChannel = pipeChannelFromNamedPipe hSrv
 
-                 clientBearer  = Mx.pipeAsMuxBearer clientTracer clientChannel
-                 serverBearer  = Mx.pipeAsMuxBearer serverTracer serverChannel
+                 clientBearer  = pipeAsMuxBearer clientTracer clientChannel
+                 serverBearer  = pipeAsMuxBearer serverTracer serverChannel
 
-             initAsync <- async $ Mx.muxStart clientTracer initApp clientBearer
+             initAsync <- async $ muxStart clientTracer initApp clientBearer
              respAsync <- async $ do
                 Win32.Async.connectNamedPipe hSrv
-                Mx.muxStart serverTracer respApp serverBearer
+                muxStart serverTracer respApp serverBearer
 
              void $ waitBoth respAsync initAsync
 #else
@@ -510,20 +510,20 @@ runWithPipe initApp respApp =
         hClose rSrv
         hClose wSrv)
       $ \ ((rCli, wCli), (rSrv, wSrv)) -> do
-        let clientChannel = Mx.pipeChannelFromHandles rCli wSrv
-            serverChannel = Mx.pipeChannelFromHandles rSrv wCli
+        let clientChannel = pipeChannelFromHandles rCli wSrv
+            serverChannel = pipeChannelFromHandles rSrv wCli
 
-            clientBearer  = Mx.pipeAsMuxBearer clientTracer clientChannel
-            serverBearer  = Mx.pipeAsMuxBearer serverTracer serverChannel
+            clientBearer  = pipeAsMuxBearer clientTracer clientChannel
+            serverBearer  = pipeAsMuxBearer serverTracer serverChannel
 
-        initAsync <- async $ Mx.muxStart clientTracer initApp clientBearer
-        respAsync <- async $ Mx.muxStart serverTracer respApp serverBearer
+        initAsync <- async $ muxStart clientTracer initApp clientBearer
+        respAsync <- async $ muxStart serverTracer respApp serverBearer
 
         void $ waitBoth respAsync initAsync
 #endif
   where
-    clientTracer = contramap (Mx.WithMuxBearer "client") activeTracer
-    serverTracer = contramap (Mx.WithMuxBearer "server") activeTracer
+    clientTracer = contramap (WithMuxBearer "client") activeTracer
+    serverTracer = contramap (WithMuxBearer "server") activeTracer
 
 
 -- | Verify that it is possible to run two miniprotocols over the same bearer.
@@ -539,18 +539,18 @@ test_mux_1_mini run msgTrace = do
     (verify, client_mp, server_mp) <-
         setupMiniReqRsp (return ()) endMpsVar msgTrace
 
-    let clientApp = Mx.MuxApplication
-                      [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_mp
+    let clientApp = MuxApplication
+                      [ MuxMiniProtocol {
+                          miniProtocolNum    = MiniProtocolNum 2,
+                          miniProtocolLimits = defaultMiniProtocolLimits,
+                          miniProtocolRun    = InitiatorProtocolOnly client_mp
                         }
                       ]
-        serverApp = Mx.MuxApplication
-                      [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_mp
+        serverApp = MuxApplication
+                      [ MuxMiniProtocol {
+                          miniProtocolNum    = MiniProtocolNum 2,
+                          miniProtocolLimits = defaultMiniProtocolLimits,
+                          miniProtocolRun    = ResponderProtocolOnly server_mp
                         }
                       ]
 
@@ -579,29 +579,29 @@ test_mux_2_minis run msgTrace0 msgTrace1 = do
     (verify_1, client_mp1, server_mp1) <-
         setupMiniReqRsp (return ()) endMpsVar msgTrace1
 
-    let clientApp = Mx.MuxApplication
-                      [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_mp0
+    let clientApp = MuxApplication
+                      [ MuxMiniProtocol {
+                          miniProtocolNum    = MiniProtocolNum 2,
+                          miniProtocolLimits = defaultMiniProtocolLimits,
+                          miniProtocolRun    = InitiatorProtocolOnly client_mp0
                         }
-                      , Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_mp1
+                      , MuxMiniProtocol {
+                          miniProtocolNum    = MiniProtocolNum 3,
+                          miniProtocolLimits = defaultMiniProtocolLimits,
+                          miniProtocolRun    = InitiatorProtocolOnly client_mp1
                         }
                       ]
 
-        serverApp = Mx.MuxApplication
-                      [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_mp0
+        serverApp = MuxApplication
+                      [ MuxMiniProtocol {
+                          miniProtocolNum    = MiniProtocolNum 2,
+                          miniProtocolLimits = defaultMiniProtocolLimits,
+                          miniProtocolRun    = ResponderProtocolOnly server_mp0
                         }
-                      , Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_mp1
+                      , MuxMiniProtocol {
+                          miniProtocolNum    = MiniProtocolNum 3,
+                          miniProtocolLimits = defaultMiniProtocolLimits,
+                          miniProtocolRun    = ResponderProtocolOnly server_mp1
                         }
                       ]
 
@@ -642,18 +642,18 @@ prop_mux_starvation (Uneven response0 response1) =
     traceHeaderVar <- newTVarM []
     let headerTracer =
           Tracer $ \e -> case e of
-            Mx.MuxTraceRecvHeaderEnd header
+            MuxTraceRecvHeaderEnd header
               -> atomically (modifyTVar traceHeaderVar (header:))
             _ -> return ()
 
     let server_w = client_r
         server_r = client_w
 
-        clientBearer = Mx.queuesAsMuxBearer clientTracer client_w client_r sduLen
-        serverBearer = Mx.queuesAsMuxBearer serverTracer server_w server_r sduLen
+        clientBearer = queuesAsMuxBearer clientTracer client_w client_r sduLen
+        serverBearer = queuesAsMuxBearer serverTracer server_w server_r sduLen
 
-        clientTracer = contramap (Mx.WithMuxBearer "client") activeTracer
-        serverTracer = contramap (Mx.WithMuxBearer "server") activeTracer
+        clientTracer = contramap (WithMuxBearer "client") activeTracer
+        serverTracer = contramap (WithMuxBearer "server") activeTracer
 
     (verify_short, client_short, server_short) <-
         setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
@@ -662,35 +662,35 @@ prop_mux_starvation (Uneven response0 response1) =
         setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                         endMpsVar $ DummyTrace [(request, response1)]
 
-    let clientApp = Mx.MuxApplication
-                      [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_short
+    let clientApp = MuxApplication
+                      [ MuxMiniProtocol {
+                          miniProtocolNum    = MiniProtocolNum 2,
+                          miniProtocolLimits = defaultMiniProtocolLimits,
+                          miniProtocolRun    = InitiatorProtocolOnly client_short
                         }
-                      , Mx.MuxMiniProtocol  {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_long
-                        }
-                      ]
-
-        serverApp = Mx.MuxApplication
-                      [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_short
-                        }
-                      , Mx.MuxMiniProtocol {
-                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
-                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_long
+                      , MuxMiniProtocol  {
+                          miniProtocolNum    = MiniProtocolNum 3,
+                          miniProtocolLimits = defaultMiniProtocolLimits,
+                          miniProtocolRun    = InitiatorProtocolOnly client_long
                         }
                       ]
 
-    clientAsync <- async $ Mx.muxStart (clientTracer <> headerTracer)
-                                       clientApp clientBearer
-    serverAsync <- async $ Mx.muxStart serverTracer serverApp serverBearer
+        serverApp = MuxApplication
+                      [ MuxMiniProtocol {
+                          miniProtocolNum    = MiniProtocolNum 2,
+                          miniProtocolLimits = defaultMiniProtocolLimits,
+                          miniProtocolRun    = ResponderProtocolOnly server_short
+                        }
+                      , MuxMiniProtocol {
+                          miniProtocolNum    = MiniProtocolNum 3,
+                          miniProtocolLimits = defaultMiniProtocolLimits,
+                          miniProtocolRun    = ResponderProtocolOnly server_long
+                        }
+                      ]
+
+    clientAsync <- async $ muxStart (clientTracer <> headerTracer)
+                                    clientApp clientBearer
+    serverAsync <- async $ muxStart serverTracer serverApp serverBearer
 
     -- First verify that all messages where received correctly
     _ <- waitBoth clientAsync serverAsync
@@ -699,14 +699,14 @@ prop_mux_starvation (Uneven response0 response1) =
 
     -- Then look at the message trace to check for starvation.
     trace <- atomically $ readTVar traceHeaderVar
-    let es = map Mx.msNum (take 100 (reverse trace))
+    let es = map msNum (take 100 (reverse trace))
         ls = dropWhile (\e -> e == head es) es
         fair = verifyStarvation ls
     return $ res_short .&&. res_long .&&. fair
   where
    -- We can't make 100% sure that both servers start responding at the same
    -- time but once they are both up and running messages should alternate
-   -- between Mx.ReqResp2 and Mx.ReqResp3
+   -- between ReqResp2 and ReqResp3
     verifyStarvation :: Eq a => [a] -> Property
     verifyStarvation [] = property True
     verifyStarvation ms =
@@ -740,7 +740,7 @@ encodeInvalidMuxSDU sdu =
     BL.append header $ BL.replicate (fromIntegral $ isLength sdu) (isPattern sdu)
   where
     enc = do
-        Bin.putWord32be $ Mx.unRemoteClockModel $ isTimestamp sdu
+        Bin.putWord32be $ unRemoteClockModel $ isTimestamp sdu
         Bin.putWord16be $ isIdAndMode sdu
         Bin.putWord16be $ isLength sdu
 
@@ -765,17 +765,17 @@ prop_demux_sdu a = do
     return $ tabulate "SDU type" [stateLabel a] $
              tabulate "SDU Violation " [violationLabel a] r
   where
-    run (ArbitraryValidSDU sdu state (Just Mx.MuxIngressQueueOverRun)) = do
+    run (ArbitraryValidSDU sdu state (Just MuxIngressQueueOverRun)) = do
         stopVar <- newEmptyTMVarM
 
         -- To trigger MuxIngressQueueOverRun we use a special test protocol
         -- with an ingress queue which is less than 0xffff so that it can be
         -- triggered by a single segment.
-        let server_mps = Mx.MuxApplication
-                           [ Mx.MuxMiniProtocol {
-                               Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                               Mx.miniProtocolLimits = smallMiniProtocolLimits,
-                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (serverRsp stopVar)
+        let server_mps = MuxApplication
+                           [ MuxMiniProtocol {
+                               miniProtocolNum    = MiniProtocolNum 2,
+                               miniProtocolLimits = smallMiniProtocolLimits,
+                               miniProtocolRun    = ResponderProtocolOnly (serverRsp stopVar)
                              }
                            ]
 
@@ -790,18 +790,18 @@ prop_demux_sdu a = do
         case res of
             Left e  ->
                 case fromException e of
-                    Just me -> return $ Mx.errorType me === Mx.MuxIngressQueueOverRun
+                    Just me -> return $ errorType me === MuxIngressQueueOverRun
                     Nothing -> return $ property False
             Right _ -> return $ property False
 
     run (ArbitraryValidSDU sdu state err_m) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mps = Mx.MuxApplication
-                           [ Mx.MuxMiniProtocol {
-                               Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                               Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (serverRsp stopVar)
+        let server_mps = MuxApplication
+                           [ MuxMiniProtocol {
+                               miniProtocolNum    = MiniProtocolNum 2,
+                               miniProtocolLimits = defaultMiniProtocolLimits,
+                               miniProtocolRun    = ResponderProtocolOnly (serverRsp stopVar)
                              }
                            ]
 
@@ -817,7 +817,7 @@ prop_demux_sdu a = do
             Left e  ->
                 case fromException e of
                     Just me -> case err_m of
-                                    Just err -> return $ Mx.errorType me === err
+                                    Just err -> return $ errorType me === err
                                     Nothing  -> return $ property False
                     Nothing -> return $ property False
             Right _ -> return $ err_m === Nothing
@@ -825,11 +825,11 @@ prop_demux_sdu a = do
     run (ArbitraryInvalidSDU badSdu state err) = do
         stopVar <- newEmptyTMVarM
 
-        let serverApp  = Mx.MuxApplication
-                           [ Mx.MuxMiniProtocol {
-                               Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-                               Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (serverRsp stopVar)
+        let serverApp  = MuxApplication
+                           [ MuxMiniProtocol {
+                               miniProtocolNum    = MiniProtocolNum 2,
+                               miniProtocolLimits = defaultMiniProtocolLimits,
+                               miniProtocolRun    = ResponderProtocolOnly (serverRsp stopVar)
                              }
                            ]
 
@@ -843,7 +843,7 @@ prop_demux_sdu a = do
         case res of
             Left e  ->
                 case fromException e of
-                    Just me -> return $ Mx.errorType me === err
+                    Just me -> return $ errorType me === err
                     Nothing -> return $ property False
             Right _ -> return $ property False
 
@@ -851,10 +851,10 @@ prop_demux_sdu a = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
 
-        let serverBearer = Mx.queuesAsMuxBearer serverTracer server_w server_r 1280
-            serverTracer = contramap (Mx.WithMuxBearer "server") activeTracer
+        let serverBearer = queuesAsMuxBearer serverTracer server_w server_r 1280
+            serverTracer = contramap (WithMuxBearer "server") activeTracer
 
-        said <- async $ try $ Mx.muxStart serverTracer serverApp serverBearer
+        said <- async $ try $ muxStart serverTracer serverApp serverBearer
 
         return (server_r, said)
 
@@ -865,7 +865,7 @@ prop_demux_sdu a = do
       where
         loop e | e == BL.empty = return ()
         loop e = do
-            msg_m <- Mx.recv chan
+            msg_m <- recv chan
             case msg_m of
                  Just msg ->
                      case BL.stripPrefix msg e of
@@ -876,41 +876,41 @@ prop_demux_sdu a = do
     writeSdu _ payload | payload == BL.empty = return ()
     writeSdu queue payload = do
         let (!frag, !rest) = BL.splitAt 0xffff payload
-            sdu' = Mx.MuxSDU (Mx.RemoteClockModel 0)
-                             (Mx.MiniProtocolNum 2)
-                              Mx.ModeInitiator
-                             (fromIntegral $ BL.length frag) frag
-            !pkt = Mx.encodeMuxSDU (sdu' :: Mx.MuxSDU)
+            sdu' = MuxSDU (RemoteClockModel 0)
+                          (MiniProtocolNum 2)
+                           ModeInitiator
+                          (fromIntegral $ BL.length frag) frag
+            !pkt = encodeMuxSDU (sdu' :: MuxSDU)
 
         atomically $ writeTBQueue queue pkt
         writeSdu queue rest
 
     -- Unless we are in Larval or Connected we fake version negotiation before
     -- we run the test.
-    {- Not yet! setup state q | state /= Mx.Larval && state /= Mx.Connected = do
-        let msg = Mx.MsgInitReq [version0]
-            blob = toLazyByteString $ Mx.encodeControlMsg msg
-            pkt = Mx.MuxSDU (Mx.RemoteClockModel 0) Mx.Muxcontrol Mx.ModeInitiator
+    {- Not yet! setup state q | state /= Larval && state /= Connected = do
+        let msg = MsgInitReq [version0]
+            blob = toLazyByteString $ encodeControlMsg msg
+            pkt = MuxSDU (RemoteClockModel 0) Muxcontrol ModeInitiator
                             (fromIntegral $ BL.length blob) blob
-        atomically $ writeTBQueue q $ Mx.encodeMuxSDU (pkt :: Mx.MuxSDU)
+        atomically $ writeTBQueue q $ encodeMuxSDU (pkt :: MuxSDU)
         return () -}
     setup _ _ = return ()
 
     stateLabel (ArbitraryInvalidSDU _ state _) = "Invalid " ++ versionLabel state
     stateLabel (ArbitraryValidSDU _ state _)   = "Valid " ++ versionLabel state
 
-    versionLabel Mx.Larval    = "before version negotiation"
-    versionLabel Mx.Connected = "before version negotiation"
-    versionLabel _            = "after version negotiation"
+    versionLabel Larval    = "before version negotiation"
+    versionLabel Connected = "before version negotiation"
+    versionLabel _         = "after version negotiation"
 
     violationLabel (ArbitraryValidSDU _ _ err_m) = sduViolation err_m
     violationLabel (ArbitraryInvalidSDU _ _ err) = sduViolation $ Just err
 
-    sduViolation (Just Mx.MuxUnknownMiniProtocol) = "unknown miniprotocol"
-    sduViolation (Just Mx.MuxDecodeError        ) = "decode error"
-    sduViolation (Just Mx.MuxIngressQueueOverRun) = "ingress queue overrun"
-    sduViolation (Just _                        ) = "unknown violation"
-    sduViolation Nothing                          = "none"
+    sduViolation (Just MuxUnknownMiniProtocol) = "unknown miniprotocol"
+    sduViolation (Just MuxDecodeError        ) = "decode error"
+    sduViolation (Just MuxIngressQueueOverRun) = "ingress queue overrun"
+    sduViolation (Just _                     ) = "unknown violation"
+    sduViolation Nothing                       = "none"
 
 prop_demux_sdu_sim :: ArbitrarySDU
                      -> Property
