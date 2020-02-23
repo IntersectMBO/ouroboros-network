@@ -153,14 +153,13 @@ mux
        , MonadTimer m
        , MonadTime m
        )
-    => StrictTVar m Int
-    -> MuxState m
+    => MuxState m
     -> m void
-mux cnt muxstate@MuxState{egressQueue} =
+mux muxstate@MuxState{egressQueue} =
     withTimeoutSerial $ \timeout ->
     forever $ do
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
-      processSingleWanton muxstate timeout mpc md d cnt
+      processSingleWanton muxstate timeout mpc md d
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
@@ -172,9 +171,8 @@ processSingleWanton :: MonadSTM m
                     -> MiniProtocolNum
                     -> MiniProtocolMode
                     -> Wanton m
-                    -> StrictTVar m Int
                     -> m ()
-processSingleWanton MuxState{egressQueue, bearer} timeout mpc md wanton cnt = do
+processSingleWanton MuxState{egressQueue, bearer} timeout mpc md wanton = do
     blob <- atomically $ do
       -- extract next SDU
       d <- readTVar (want wanton)
@@ -188,7 +186,6 @@ processSingleWanton MuxState{egressQueue, bearer} timeout mpc md wanton cnt = do
           -- must be inside the same STM transaction.
           writeTVar (want wanton) rest
           writeTBQueue egressQueue (TLSRDemand mpc md wanton)
-          modifyTVar cnt (+ 1)
       -- return data to send
       pure frag
     let sdu = MuxSDU {
@@ -201,5 +198,4 @@ processSingleWanton MuxState{egressQueue, bearer} timeout mpc md wanton cnt = do
                 msBlob = blob
               }
     void $ write bearer timeout sdu
-    atomically $ modifyTVar cnt (\a -> a - 1)
     --paceTransmission tNow
