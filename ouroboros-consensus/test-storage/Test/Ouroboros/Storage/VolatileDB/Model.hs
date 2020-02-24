@@ -16,7 +16,6 @@ module Test.Ouroboros.Storage.VolatileDB.Model
     , getBlockComponentModel
     , putBlockModel
     , garbageCollectModel
-    , getBlockIdsModel
     , getSuccessorsModel
     , getPredecessorModel
     , getIsMemberModel
@@ -320,9 +319,6 @@ garbageCollectModel slot dbm = whenOpen dbm $
             emptyFile
             (fileIndex dbm')
         }
-
-getBlockIdsModel :: DBModel blockId -> Either VolatileDBError [blockId]
-getBlockIdsModel dbm = whenOpen dbm $ blockIds dbm
 
 getSuccessorsModel
   :: forall blockId. Ord blockId

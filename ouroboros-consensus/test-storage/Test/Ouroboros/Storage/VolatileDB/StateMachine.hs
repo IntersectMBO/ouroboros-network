@@ -119,7 +119,6 @@ data Cmd
     | Close
     | ReOpen
     | GetBlockComponent BlockId
-    | GetBlockIds
     | PutBlock TestBlock
     | GarbageCollect SlotNo
     | GetSuccessors [Predecessor]
@@ -140,7 +139,6 @@ data CmdErr = CmdErr {
 data Success
     = Unit            ()
     | MbAllComponents (Maybe AllComponents)
-    | Blocks          (Set BlockId)  -- ^ Order doesn't matter
     | Bool            Bool
     | IsMember        [Bool]
     | Successors      [Set BlockId]
@@ -239,7 +237,6 @@ runPure :: Cmd
         -> (Resp, DBModel BlockId)
 runPure = \case
     GetBlockComponent bid -> ok MbAllComponents            $ queryE   (getBlockComponentModel allComponents bid)
-    GetBlockIds           -> ok (Blocks . Set.fromList)    $ queryE    getBlockIdsModel
     GetSuccessors bids    -> ok (Successors  . (<$> bids)) $ queryE    getSuccessorsModel
     GetPredecessor bids   -> ok (Predecessor . (<$> bids)) $ queryE    getPredecessorModel
     GetIsMember bids      -> ok (IsMember    . (<$> bids)) $ queryE    getIsMemberModel
@@ -357,7 +354,6 @@ generatorCmdImpl Model {..} = frequency
       -- When the DB is closed, we try to reopen it ASAP.
     , (if open dbModel then 1 else 5, return ReOpen)
     , (2, GetBlockComponent <$> genBlockId)
-    , (2, return GetBlockIds)
     , (2, GarbageCollect <$> genGCSlot)
     , (2, GetIsMember <$> listOf genBlockId)
     , (2, GetPredecessor <$> listOf genBlockId)
@@ -517,7 +513,6 @@ runDB :: HasCallStack
       -> IO Success
 runDB VolatileDBEnv { db, hasFS } cmd = case cmd of
     GetBlockComponent bid -> MbAllComponents          <$> getBlockComponent db allComponents bid
-    GetBlockIds           -> Blocks . Set.fromList    <$> getBlockIds db
     PutBlock b            -> Unit                     <$> putBlock db (testBlockToBlockInfo b) (testBlockToBuilder b)
     GetSuccessors  bids   -> Successors .  (<$> bids) <$> atomically (getSuccessors db)
     GetPredecessor bids   -> Predecessor . (<$> bids) <$> atomically (getPredecessor db)

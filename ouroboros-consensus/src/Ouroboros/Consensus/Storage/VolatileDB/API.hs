@@ -45,7 +45,6 @@ data VolatileDB blockId m = VolatileDB {
                         -> blockId
                         -> m (Maybe b)
     , putBlock          :: HasCallStack => BlockInfo blockId -> Builder -> m ()
-    , getBlockIds       :: HasCallStack => m [blockId]
       -- | Return a function that returns the successors of the block with the
       -- given @blockId@.
       --

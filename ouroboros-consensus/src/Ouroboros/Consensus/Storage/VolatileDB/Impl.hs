@@ -210,7 +210,6 @@ openDB hasFS err errSTM parser tracer maxBlocksPerFile = do
       , putBlock          = putBlockImpl          env
       , garbageCollect    = garbageCollectImpl    env
       , getIsMember       = getIsMemberImpl       env
-      , getBlockIds       = getBlockIdsImpl       env
       , getSuccessors     = getSuccessorsImpl     env
       , getPredecessor    = getPredecessorImpl    env
       , getMaxSlotNo      = getMaxSlotNoImpl      env
@@ -444,11 +443,6 @@ getIsMemberImpl :: forall m blockId. (IOLike m, Ord blockId)
                 => VolatileDBEnv m blockId
                 -> STM m (blockId -> Bool)
 getIsMemberImpl = getterSTM $ \st bid -> Map.member bid (_currentRevMap st)
-
-getBlockIdsImpl :: forall m blockId. (IOLike m)
-                => VolatileDBEnv m blockId
-                -> m [blockId]
-getBlockIdsImpl = getter $ Map.keys . _currentRevMap
 
 getSuccessorsImpl :: forall m blockId. (IOLike m, Ord blockId)
                   => VolatileDBEnv m blockId
@@ -706,17 +700,6 @@ modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
     closeOpenHandle VolatileDbClosed                    = return ()
     closeOpenHandle (VolatileDbOpen InternalState {..}) =
       wrapFsError hasFsErr _dbErr $ hClose _currentWriteHandle
-
--- | Gets part of the 'InternalState', without modifying it.
-getter :: IOLike m
-       => (forall h. InternalState blockId h -> a)
-       -> VolatileDBEnv m blockId
-       -> m a
-getter fromSt VolatileDBEnv{..} = do
-    mSt <- readMVar _dbInternalState
-    case mSt of
-      VolatileDbClosed  -> EH.throwError _dbErr $ UserError ClosedDBError
-      VolatileDbOpen st -> return $ fromSt st
 
 -- | Gets part of the 'InternalState' in 'STM'.
 getterSTM :: forall m blockId a. IOLike m
