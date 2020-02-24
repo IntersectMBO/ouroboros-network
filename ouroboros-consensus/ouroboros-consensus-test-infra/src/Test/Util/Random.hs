@@ -2,6 +2,8 @@ module Test.Util.Random
   ( runMonadRandomWithTVar
   ) where
 
+import           Control.Monad.Trans (lift)
+
 import           Crypto.Random (MonadRandom, drgNew)
 
 import           Ouroboros.Consensus.Util.IOLike
@@ -31,7 +33,7 @@ runMonadRandomWithTVar varRNG = RunMonadRandom $ \n -> do
       ((split1, split2), _rng') <- runChaChaT fakeSplitDRG rng
       writeTVar varRNG split1
       return split2
-    fst <$> runChaChaT n rng
+    fst <$> runChaChaT (n lift) rng
   where
     -- The 'ChaChaDRG' is not splittable. We fake splitting it by using the
     -- 'ChaChaT' 'MonadRandom' instance to generate two new 'ChaChaDRG's. If

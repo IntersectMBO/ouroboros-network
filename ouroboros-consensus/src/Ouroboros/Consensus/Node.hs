@@ -347,6 +347,6 @@ mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     blockProduction = case isProducer of
       IsNotProducer -> Nothing
       IsProducer    -> Just BlockProduction
-                         { produceBlock       = nodeForgeBlock cfg
+                         { produceBlock       = \_lift' -> nodeForgeBlock cfg
                          , runMonadRandomDict = runMonadRandomIO
                          }

@@ -452,7 +452,7 @@ runThreadNetwork ThreadNetworkArgs
     forkTxProducer btime cfg runMonadRandomDict getExtLedger mempool =
       void $ onSlotChange btime $ \curSlotNo -> do
         ledger <- atomically $ ledgerState <$> getExtLedger
-        txs    <- runMonadRandom runMonadRandomDict $
+        txs    <- runMonadRandom runMonadRandomDict $ \_lift' ->
           testGenTxs numCoreNodes curSlotNo cfg ledger
         void $ addTxs mempool txs
 
@@ -586,7 +586,7 @@ runThreadNetwork ThreadNetworkArgs
 
       let blockProduction :: BlockProduction m blk
           blockProduction = BlockProduction {
-              produceBlock       = nodeForgeBlock pInfoConfig
+              produceBlock       = \_lift' -> nodeForgeBlock pInfoConfig
             , runMonadRandomDict = runMonadRandomWithTVar varRNG
             }
 
