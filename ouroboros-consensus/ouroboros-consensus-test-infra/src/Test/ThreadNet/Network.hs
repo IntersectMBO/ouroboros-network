@@ -52,11 +52,14 @@ import           GHC.Stack
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
+import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
 import           Ouroboros.Network.Block
+import           Ouroboros.Network.BlockFetch.ClientState (TraceLabelPeer (..))
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import           Ouroboros.Network.Point (WithOrigin (..), fromWithOrigin)
 import qualified Ouroboros.Network.RecentTxIds as RecentTxIds
+import           Ouroboros.Network.RecentTxIds (RecentTxIds (..))
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -654,11 +657,22 @@ runThreadNetwork ThreadNetworkArgs
             }
 
       nodeKernel <- initNodeKernel nodeArgs
-      let app = consensusNetworkApps
+
+      let instrumentedProtocolTracers = nullProtocolTracers
+            { ptTxSubmissionTracer = Tracer $ \(TraceLabelPeer _peerid traceSendRecv) ->
+                case traceSendRecv of
+                  -- We only care about sent requests for transactions.
+                  TraceSendMsg (AnyMessage (MsgRequestTxs txids)) -> do
+                    recentTxIds <- atomically $ readTVar (getRecentTxIds nodeKernel)
+                    traceWith (nodeEventsTxRequests nodeInfoEvents) (txids, recentTxIds)
+                  _ -> pure ()
+            }
+
+          app = consensusNetworkApps
                   nodeKernel
                   -- these tracers report every message sent/received by this
                   -- node
-                  nullDebugProtocolTracers
+                  (instrumentedProtocolTracers <> nullDebugProtocolTracers)
                   (customProtocolCodecs pInfoConfig)
                   (protocolHandlers nodeArgs nodeKernel)
 
@@ -944,6 +958,10 @@ data NodeEvents blk ev = NodeEvents
     -- ^ the point of every 'ChainDB.InvalidBlock' event
   , nodeEventsTipBlockNos :: ev (SlotNo, WithOrigin BlockNo)
     -- ^ 'ChainDB.getTipBlockNo' for each node at the onset of each slot
+  , nodeEventsTxRequests  :: ev ([GenTxId blk], RecentTxIds (GenTxId blk))
+    -- ^ every request for transactions made by the node-to-node
+    -- 'TxSubmission' mini-protocol along with the 'RecentTxIds' at the time
+    -- each request was made.
   }
 
 -- | A vector with an element for each database of a node
@@ -968,9 +986,10 @@ newNodeInfo = do
       (t2, m2) <- recordingTracerTVar
       (t3, m3) <- recordingTracerTVar
       (t4, m4) <- recordingTracerTVar
+      (t5, m5) <- recordingTracerTVar
       pure
-          ( NodeEvents     t1     t2     t3     t4
-          , NodeEvents <$> m1 <*> m2 <*> m3 <*> m4
+          ( NodeEvents     t1     t2     t3     t4     t5
+          , NodeEvents <$> m1 <*> m2 <*> m3 <*> m4 <*> m5
           )
 
   (nodeInfoDBs, readDBs) <- do
@@ -1001,6 +1020,7 @@ data NodeOutput blk = NodeOutput
   , nodeOutputNodeDBs    :: NodeDBs MockFS
   , nodeOutputForges     :: Map SlotNo blk
   , nodeOutputInvalids   :: Map (Point blk) [ExtValidationError blk]
+  , nodeOutputTxRequests :: [([GenTxId blk], RecentTxIds (GenTxId blk))]
   }
 
 data TestOutput blk = TestOutput
@@ -1030,6 +1050,7 @@ mkTestOutput vertexInfos = do
               , nodeEventsForges
               , nodeEventsInvalids
               , nodeEventsTipBlockNos
+              , nodeEventsTxRequests
               } = nodeInfoEvents
         let nodeOutput = NodeOutput
               { nodeOutputAdds       =
@@ -1041,6 +1062,7 @@ mkTestOutput vertexInfos = do
                   Map.fromList $
                   [ (s, b) | TraceForgedBlock s b _ <- nodeEventsForges ]
               , nodeOutputInvalids   = (:[]) <$> Map.fromList nodeEventsInvalids
+              , nodeOutputTxRequests = nodeEventsTxRequests
               }
 
         pure

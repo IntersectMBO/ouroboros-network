@@ -24,6 +24,7 @@ module Test.ThreadNet.General (
   ) where
 
 import           Control.Monad (guard)
+import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -38,6 +39,8 @@ import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      SlotNo (..), blockPoint)
 import qualified Ouroboros.Network.MockChain.Chain as MockChain
 import           Ouroboros.Network.Point (WithOrigin (..))
+import qualified Ouroboros.Network.RecentTxIds as RecentTxIds
+import           Ouroboros.Network.RecentTxIds (RecentTxIds (..))
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
@@ -267,6 +270,7 @@ prop_general ::
      , HasHeader blk
      , RunNode blk
      , Show (LedgerView (BlockProtocol blk))
+     , Show (TxId (GenTx blk))
      )
   => (blk -> Word64) -- ^ Count transactions
   -> SecurityParam
@@ -299,6 +303,7 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
         (Map.elems nodeChains) .&&.
     prop_all_growth .&&.
     prop_no_unexpected_message_delays .&&.
+    prop_no_txs_repeatedly_requested .&&.
     conjoin
       [ fileHandleLeakCheck nid nodeDBs
       | (nid, nodeDBs) <- Map.toList nodeOutputDBs ]
@@ -392,8 +397,9 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
           where
             NodeJoinPlan mjoin = nodeJoinPlan
 
-    nodeChains    = nodeOutputFinalChain <$> testOutputNodes
-    nodeOutputDBs = nodeOutputNodeDBs    <$> testOutputNodes
+    nodeChains     = nodeOutputFinalChain <$> testOutputNodes
+    nodeOutputDBs  = nodeOutputNodeDBs    <$> testOutputNodes
+    nodeTxRequests = nodeOutputTxRequests <$> testOutputNodes
 
     isConsensusExpected :: Bool
     isConsensusExpected = consensusExpected k nodeJoinPlan schedule
@@ -586,6 +592,32 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
                 _            -> False
               where
                 LeaderSchedule sched = actualLeaderSchedule
+
+    -- Ensure that transactions that have been recently requested and added to
+    -- the mempool are not requested again.
+    --
+    -- i.e. Transactions that are in a node's 'RecentTxIds' should not be
+    -- requested from a peer.
+    prop_no_txs_repeatedly_requested :: Property
+    prop_no_txs_repeatedly_requested =
+        counterexample ("nodeTxRequests: " <> show counterexampleTxReqs) $
+        counterexample counterexampleMsg $
+        property (all noIntersecting txRequests)
+      where
+        counterexampleTxReqs :: Map NodeId [([GenTxId blk], [(GenTxId blk, Time)])]
+        counterexampleTxReqs = Map.map
+          (map (\(txids, recentTxIds) -> (txids, RecentTxIds.toList recentTxIds)))
+          nodeTxRequests
+
+        counterexampleMsg :: String
+        counterexampleMsg =
+          "Transactions that are in the RecentTxIds have been requested."
+
+        txRequests :: [([GenTxId blk], RecentTxIds (GenTxId blk))]
+        txRequests = concat (Map.elems nodeTxRequests)
+
+        noIntersecting :: ([GenTxId blk], RecentTxIds (GenTxId blk)) -> Bool
+        noIntersecting = null . (uncurry RecentTxIds.intersection)
 
     hasNodeRekey :: Bool
     hasNodeRekey =
