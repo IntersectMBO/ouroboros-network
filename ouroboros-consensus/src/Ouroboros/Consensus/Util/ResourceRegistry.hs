@@ -29,6 +29,7 @@ module Ouroboros.Consensus.Util.ResourceRegistry (
   , threadId
   , forkThread
   , cancelThread
+  , withThread
   , waitThread
   , waitAnyThread
   , linkToRegistry
@@ -247,39 +248,29 @@ import           Ouroboros.Consensus.Util.Orphans ()
 --
 -- # Combining the registry and with-style allocation
 --
--- The presence of a registry does not mean it /must/ be used. Whenever
--- 'bracket' is applicable, it can (and probably should) still be used. T
+-- It is perfectly possible (indeed, advisable) to use 'bracket' and
+-- bracket-like allocation functions alongside the registry, but note that the
+-- usual caveats with 'bracket' and forking threads still applies. In
+-- particular, spawning threads inside the 'bracket' that make use of the
+-- bracketed resource is problematic; this is of course true whether or not a
+-- registry is used.
 --
--- This includes 'withAsync': after all, 'withAsync' can't result in a child
--- thread that outlives its parent, so this is safe. In particular, if a parent
--- thread wants to link to a child thread /and handle any exceptions arising
--- from the link/, it should probably use `withAsync`:
+-- In principle this also includes 'withAsync'; however, since 'withAsync'
+-- results in a thread that is not known to the registry, such a thread will not
+-- be able to use the registry (the registry would throw an unknown thread
+-- exception, as described above). For this purpose we provide 'withThread';
+-- 'withThread' (as opposed to 'forkThread') should be used when a parent thread
+-- wants to handle exceptions in the child thread; see 'withThread' for
+-- detailed discussion.
 --
--- > let handleLinkException :: ExceptionInLinkedThread -> m ()
--- >     handleLinkException = ..
--- > in handle handleLinkException $
--- >      withAsync codeInChild $ \child ->
--- >        ..
---
--- instead of
---
--- > handle handleLinkException $ do  -- PROBABLY NOT CORRECT!
--- >   child <- async codeInChild
--- >   ..
---
--- where the parent may exit the scope of the exception handler before the child
--- terminates. If the lifetime of the child cannot be limited to the lifetime of
--- the parent, the child should probably be linked to the registry instead and
--- the thread that spawned the registry should handle any exceptions.
---
--- Apart from `withAsync`, it is /also/ fine to includes nested calls to
--- 'withRegistry'. Since the lifetime of such a registry (and all resources
--- within) is tied to the thread calling 'withRegistry', which itself is tied to
--- the "parent registry" in which it was created, this creates a hierarchy of
--- registries. It is of course essential for compositionality that we should be
--- able to create local registries, but even if we do have easy access to a
--- parent regisry, creating a local one where possibly is useful as it limits
--- the scope of the resources created within, and hence their maximum lifetimes.
+-- It is /also/ fine to includes nested calls to 'withRegistry'. Since the
+-- lifetime of such a registry (and all resources within) is tied to the thread
+-- calling 'withRegistry', which itself is tied to the "parent registry" in
+-- which it was created, this creates a hierarchy of registries. It is of course
+-- essential for compositionality that we should be able to create local
+-- registries, but even if we do have easy access to a parent regisry, creating
+-- a local one where possibly is useful as it limits the scope of the resources
+-- created within, and hence their maximum lifetimes.
 data ResourceRegistry m = ResourceRegistry {
       -- | Context in which the registry was created
       registryContext :: !(Context m)
@@ -813,6 +804,66 @@ forkThread rr body = snd <$>
         updateState rr $ do
           removeThread tid
           void $ removeResource rid
+
+-- | Bracketed version of 'forkThread'
+--
+-- The analogue of 'withAsync' for the registry.
+--
+-- Scoping thread lifetime using 'withThread' is important when a parent
+-- thread wants to link to a child thread /and handle any exceptions arising
+-- from the link/:
+--
+-- > let handleLinkException :: ExceptionInLinkedThread -> m ()
+-- >     handleLinkException = ..
+-- > in handle handleLinkException $
+-- >      withThread registry codeInChild $ \child ->
+-- >        ..
+--
+-- instead of
+--
+-- > handle handleLinkException $ do  -- PROBABLY NOT CORRECT!
+-- >   child <- forkThread registry codeInChild
+-- >   ..
+--
+-- where the parent may exit the scope of the exception handler before the child
+-- terminates. If the lifetime of the child cannot be limited to the lifetime of
+-- the parent, the child should probably be linked to the registry instead and
+-- the thread that spawned the registry should handle any exceptions.
+--
+-- Note that in /principle/ there is no problem in using 'withAync' alongside a
+-- registry. After all, in a pattern like
+--
+-- > withRegistry $ \registry ->
+-- >   ..
+-- >   withAsync (.. registry ..) $ \async ->
+-- >     ..
+--
+-- the async will be cancelled when leaving the scope of 'withAsync' and so
+-- that reference to the registry, or indeed any of the resources inside the
+-- registry, is safe. However, the registry implements a sanity check that the
+-- registry is only used from known threads. This is useful: when a thread that
+-- is not known to the registry (in other words, whose lifetime is not tied to
+-- the lifetime of the registry) spawns a resource in that registry, that
+-- resource may well be deallocated before the thread terminates, leading to
+-- undefined and hard to debug behaviour (indeed, whether or not this results in
+-- problems may well depend on precise timing); an exception that is thrown when
+-- /allocating/ the resource is (more) deterministic and easier to debug.
+-- Unfortunately, it means that the above pattern is not applicable, as the
+-- thread spawned by 'withAsync' is not known to the registry, and so if it were
+-- to try to use the registry, the registry would throw an error (even though
+-- this pattern is actually safe). This situation is not ideal, but for now we
+-- merely provide an alternative to 'withAsync' that /does/ register the thread
+-- with the registry.
+--
+-- NOTE: Threads that are spawned out of the user's control but that must still
+-- make use of the registry can use the unsafe API. This should be used with
+-- caution, however.
+withThread :: IOLike m
+           => ResourceRegistry m
+           -> m a
+           -> (Thread m a -> m b)
+           -> m b
+withThread rr body = bracket (forkThread rr body) cancelThread
 
 -- | Link specified 'Thread' to the (thread that created) the registry
 linkToRegistry :: IOLike m => Thread m a -> m ()
