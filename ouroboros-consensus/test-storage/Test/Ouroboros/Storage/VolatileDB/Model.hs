@@ -294,31 +294,14 @@ garbageCollectModel
   -> DBModel blockId
   -> Either VolatileDBError (DBModel blockId)
 garbageCollectModel slot dbm = whenOpen dbm $
-     keepCurrentFile (getCurrentFileId dbm) $ dbm {
-         fileIndex = fileIndex'
-       }
+     dbm { fileIndex = fileIndex' }
   where
-    (_garbageCollected, fileIndex') = Map.partition canGC (fileIndex dbm)
+    (_garbageCollected, fileIndex') = Map.partitionWithKey canGC (fileIndex dbm)
 
-    canGC :: BlocksInFile blockId -> Bool
-    canGC file = fileMaxSlotNo file < MaxSlotNo slot
-
-    -- | Make sure that the current file doesn't change, even when it was
-    -- garbage collected. We do this to keep in sync with the implementation,
-    -- which garbage collects the current file (i.e., truncates) when
-    -- possible, so we must recreate the (empty) file.
-    --
-    -- When we change the real implementation to never garbage collect the
-    -- current file, this function can be removed and 'canGC' can be extended
-    -- to ignore the current file.
-    keepCurrentFile :: FileId -> DBModel blockId -> DBModel blockId
-    keepCurrentFile prevCurrentFileId dbm' = dbm' {
-          fileIndex = Map.insertWith
-            (\_new existing -> existing)
-            prevCurrentFileId
-            emptyFile
-            (fileIndex dbm')
-        }
+    canGC :: FileId -> BlocksInFile blockId -> Bool
+    canGC fileId file =
+      fileId /= getCurrentFileId dbm &&
+      fileMaxSlotNo file < MaxSlotNo slot
 
 getSuccessorsModel
   :: forall blockId. Ord blockId

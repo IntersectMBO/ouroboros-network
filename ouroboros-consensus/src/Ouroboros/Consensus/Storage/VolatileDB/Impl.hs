@@ -387,9 +387,11 @@ garbageCollectImpl env@VolatileDBEnv{..} slot =
 -- | For the given file, we garbage collect it if possible and return the
 -- updated 'InternalState'.
 --
--- Important note here is that, every call should leave the fs in a
--- consistent state, without depending on other calls. This is achieved
--- so far, since fs calls are reduced to removeFile and truncate 0.
+-- NOTE: the current file is never garbage collected.
+--
+-- Important to note here is that, every call should leave the file system in
+-- a consistent state, without depending on other calls. We achieve this by
+-- only needed a single system call: 'removeFile'.
 --
 -- NOTE: the returned 'InternalState' is inconsistent in the follow respect:
 -- the cached '_currentMaxSlotNo' hasn't been updated yet.
@@ -403,36 +405,23 @@ tryCollectFile :: forall m h blockId
                -> InternalState blockId h
                -> (FileId, FileInfo blockId)
                -> m (InternalState blockId h)
-tryCollectFile hasFS env@VolatileDBEnv{..} slot st (fileId, fileInfo) =
-    if  | not canGC     -> return st
-        | not isCurrent -> do
-            removeFile hasFS $ filePath fileId
-            return st {
-                _currentMap     = Index.delete fileId _currentMap
-              , _currentRevMap  = currentRevMap'
-              , _currentSuccMap = succMap'
-              }
-        | isCurrentNew  -> return st
-        | otherwise     -> do
-            -- We reach this case if we have to garbage collect the current file
-            -- we are appending blocks to. For this to happen, a garbage
-            -- collection would have to be triggered for a slot which is bigger
-            -- than any recently inserted blocks.
-            --
-            -- 'reOpenFile' technically truncates the file to 0 offset, so any
-            -- concurrent readers may fail. This may become an issue after:
-            -- <https://github.com/input-output-hk/ouroboros-network/issues/767>
-            traceWith _tracer $ TruncateCurrentFile _currentWritePath
-            st' <- reOpenFile hasFS _dbErr env st
-            return st' {
-                _currentRevMap  = currentRevMap'
-              , _currentSuccMap = succMap'
-              }
+tryCollectFile hasFS VolatileDBEnv{..} slot st (fileId, fileInfo)
+    | FileInfo.canGC fileInfo slot && not isCurrent
+      -- We don't GC the current file. This is unlikely to happen in practice
+      -- anyway, and it makes things simpler.
+    = do
+      removeFile hasFS $ filePath fileId
+      return st {
+          _currentMap     = Index.delete fileId _currentMap
+        , _currentRevMap  = currentRevMap'
+        , _currentSuccMap = succMap'
+        }
+
+    | otherwise
+    = return st
   where
     InternalState{..} = st
-    canGC             = FileInfo.canGC fileInfo slot
     isCurrent         = fileId == _currentWriteId
-    isCurrentNew      = _currentWriteOffset == 0
     bids              = FileInfo.blockIds fileInfo
     currentRevMap'    = Map.withoutKeys _currentRevMap (Set.fromList bids)
     deletedPairs      =
@@ -489,25 +478,6 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
   where
     currentWriteId' = _currentWriteId + 1
     file = filePath currentWriteId'
-
--- | Truncates a file to 0 and update its state accordingly.
--- This may throw an FsError.
-reOpenFile :: forall m h blockId
-           .  (MonadThrow m)
-           => HasFS m h
-           -> ErrorHandling VolatileDBError m
-           -> VolatileDBEnv m blockId
-           -> InternalState blockId h
-           -> m (InternalState blockId h)
-reOpenFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
-    -- The manual for truncate states that it does not affect offset.
-    -- However the file is open on Append Only, so it should automatically go
-    -- to the end before each write.
-   hTruncate _currentWriteHandle 0
-   return st {
-        _currentMap = Index.insert _currentWriteId FileInfo.empty _currentMap
-      , _currentWriteOffset = 0
-      }
 
 mkInternalStateDB :: forall m blockId e h.
                      ( HasCallStack
