@@ -27,12 +27,13 @@ import           Control.Monad.Class.MonadSTM.Strict (StrictTVar, modifyTVar,
                      readTVar)
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (MonadTime (..))
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, traceWith)
 
 import           Network.TypedProtocol.Pipelined (N, Nat (..))
 
 import           Ouroboros.Network.Protocol.TxSubmission.Server
-import           Ouroboros.Network.RecentTxIds (RecentTxIds)
+import           Ouroboros.Network.RecentTxIds (RecentTxIds,
+                     TraceRecentTxIdsEvent (..))
 import qualified Ouroboros.Network.RecentTxIds as RecentTxIds
 
 
@@ -146,6 +147,8 @@ txSubmissionInbound
   :: forall txid tx idx m.
      (Ord txid, Ord idx, MonadSTM m, MonadThrow m, MonadTime m)
   => Tracer m (TraceTxSubmissionInbound txid tx)
+  -> Tracer m (TraceRecentTxIdsEvent txid)
+  -- ^ Tracer for events related to the 'RecentTxIds' data structure.
   -> Word16
   -- ^ Maximum number of unacknowledged txids allowed
   -> StrictTVar m (RecentTxIds txid)
@@ -153,7 +156,7 @@ txSubmissionInbound
   -- mempool from instances of the transaction submission server.
   -> TxSubmissionMempoolWriter txid tx idx m
   -> TxSubmissionServerPipelined txid tx m ()
-txSubmissionInbound _tracer maxUnacked recentTxIdsVar mpWriter =
+txSubmissionInbound _tracer recentTxIdsTr maxUnacked recentTxIdsVar mpWriter =
     TxSubmissionServerPipelined (serverIdle Zero initialServerState)
   where
     -- TODO #1656: replace these fixed limits by policies based on
@@ -300,10 +303,14 @@ txSubmissionInbound _tracer maxUnacked recentTxIdsVar mpWriter =
 
       -- Insert the transactions that were added to the mempool into the
       -- 'RecentTxIds'.
-      currTime <- getMonotonicTime
-      atomically $ modifyTVar
-        recentTxIdsVar
-        (RecentTxIds.insertTxIds addedTxIds currTime)
+      unless (null addedTxIds) $ do
+        currTime <- getMonotonicTime
+        atomically $ modifyTVar
+          recentTxIdsVar
+          (RecentTxIds.insertTxIds addedTxIds currTime)
+        traceWith
+          recentTxIdsTr
+          (TraceRecentTxIdsInserted addedTxIds currTime)
 
       serverIdle n st {
         bufferedTxs         = bufferedTxs'',

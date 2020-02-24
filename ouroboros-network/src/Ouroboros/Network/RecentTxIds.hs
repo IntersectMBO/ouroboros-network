@@ -28,6 +28,9 @@ module Ouroboros.Network.RecentTxIds
 
     -- * Conversion
   , toList
+
+    -- * Tracing
+  , TraceRecentTxIdsEvent (..)
   ) where
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
@@ -143,6 +146,22 @@ toList (RecentTxIds psq) = OrdPSQ.fold'
   (\k p _ acc -> (k, p):acc)
   []
   psq
+
+{-----------------------------------------------------------------------------
+  Tracing
+-----------------------------------------------------------------------------}
+
+data TraceRecentTxIdsEvent txid
+  = TraceRecentTxIdsInserted
+      ![txid]
+      -- ^ Transaction IDs that have been inserted into the 'RecentTxIds'.
+      !Time
+      -- ^ The time at which the transactions were added to the 'RecentTxIds'.
+  | TraceRecentTxIdsExpired
+      ![(txid, Time)]
+      -- ^ Transaction IDs, along with their expiration times, that have been
+      -- expired from the 'RecentTxIds'.
+  deriving Show
 
 {-----------------------------------------------------------------------------
   Orphan instances

@@ -17,6 +17,7 @@ import           Control.Tracer (Tracer, nullTracer, showTracing)
 import           Ouroboros.Network.Block (BlockNo, Point, SlotNo)
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
+import           Ouroboros.Network.RecentTxIds (TraceRecentTxIdsEvent)
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TraceTxSubmissionInbound)
 import           Ouroboros.Network.TxSubmission.Outbound
@@ -46,6 +47,7 @@ data Tracers' peer blk f = Tracers
   , blockFetchDecisionTracer      :: f [TraceLabelPeer peer (FetchDecision [Point (Header blk)])]
   , blockFetchClientTracer        :: f (TraceLabelPeer peer (TraceFetchClientState (Header blk)))
   , blockFetchServerTracer        :: f (TraceBlockFetchServerEvent blk)
+  , recentTxIdsTracer             :: f (TraceRecentTxIdsEvent (GenTxId blk))
   , txInboundTracer               :: f (TraceTxSubmissionInbound  (GenTxId blk) (GenTx blk))
   , txOutboundTracer              :: f (TraceTxSubmissionOutbound (GenTxId blk) (GenTx blk))
   , localTxSubmissionServerTracer :: f (TraceLocalTxSubmissionServerEvent blk)
@@ -62,6 +64,7 @@ instance (forall a. Semigroup (f a)) => Semigroup (Tracers' peer blk f) where
     , blockFetchDecisionTracer      = f blockFetchDecisionTracer
     , blockFetchClientTracer        = f blockFetchClientTracer
     , blockFetchServerTracer        = f blockFetchServerTracer
+    , recentTxIdsTracer             = f recentTxIdsTracer
     , txInboundTracer               = f txInboundTracer
     , txOutboundTracer              = f txOutboundTracer
     , localTxSubmissionServerTracer = f localTxSubmissionServerTracer
@@ -85,6 +88,7 @@ nullTracers = Tracers
   , blockFetchDecisionTracer      = nullTracer
   , blockFetchClientTracer        = nullTracer
   , blockFetchServerTracer        = nullTracer
+  , recentTxIdsTracer             = nullTracer
   , txInboundTracer               = nullTracer
   , txOutboundTracer              = nullTracer
   , localTxSubmissionServerTracer = nullTracer
@@ -109,6 +113,7 @@ showTracers tr = Tracers
   , blockFetchDecisionTracer      = showTracing tr
   , blockFetchClientTracer        = showTracing tr
   , blockFetchServerTracer        = showTracing tr
+  , recentTxIdsTracer             = showTracing tr
   , txInboundTracer               = showTracing tr
   , txOutboundTracer              = showTracing tr
   , localTxSubmissionServerTracer = showTracing tr

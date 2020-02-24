@@ -182,6 +182,7 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncP
     , phTxSubmissionServer =
         txSubmissionInbound
           (txInboundTracer tracers)
+          (recentTxIdsTracer tracers)
           maxUnackTxs
           getRecentTxIds
           (getMempoolWriter getMempool)

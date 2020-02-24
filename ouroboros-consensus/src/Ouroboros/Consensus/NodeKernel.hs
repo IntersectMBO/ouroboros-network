@@ -42,7 +42,8 @@ import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (MkPipelineDecision)
-import           Ouroboros.Network.RecentTxIds (RecentTxIds)
+import           Ouroboros.Network.RecentTxIds
+                     (RecentTxIds, TraceRecentTxIdsEvent (..))
 import qualified Ouroboros.Network.RecentTxIds as RecentTxIds
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TxSubmissionMempoolWriter)
@@ -264,7 +265,9 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              initState, mempoolCap, recentTxIdsExpiryThresh } = do
     varCandidates  <- newTVarM mempty
     varState       <- newTVarM initState
-    recentTxIds    <- openRecentTxIds registry recentTxIdsExpiryThresh
+    recentTxIds    <- openRecentTxIds registry
+                                      recentTxIdsExpiryThresh
+                                      (recentTxIdsTracer tracers)
     mpCap          <- atomically $ do
       -- If no override is provided, calculate the default mempool capacity as
       -- 2x the current ledger's maximum block size.
@@ -364,10 +367,11 @@ openRecentTxIds
     :: (Ord txid, IOLike m)
     => ResourceRegistry m
     -> RecentTxIds.ExpiryThreshold
+    -> Tracer m (TraceRecentTxIdsEvent txid)
     -> m (StrictTVar m (RecentTxIds txid))
-openRecentTxIds registry recentTxIdsExpiryThresh = do
+openRecentTxIds registry recentTxIdsExpiryThresh tracer = do
     t <- newTVarM RecentTxIds.empty
-    forkExpireRecentTxIds registry recentTxIdsExpiryThresh t
+    forkExpireRecentTxIds registry recentTxIdsExpiryThresh t tracer
     pure t
 
 -- | Spawn a thread that periodically attempts to remove expired elements from
@@ -377,20 +381,30 @@ forkExpireRecentTxIds
     => ResourceRegistry m
     -> RecentTxIds.ExpiryThreshold
     -> StrictTVar m (RecentTxIds txid)
+    -> Tracer m (TraceRecentTxIdsEvent txid)
     -> m ()
-forkExpireRecentTxIds registry recentTxIdsExpiryThresh t =
+forkExpireRecentTxIds registry recentTxIdsExpiryThresh varRecentTxIds tracer =
     void $ forkLinkedThread registry $ forever $ do
       timeScheduledForExpiry <- atomically $ do
-        txids <- readTVar t
-        case RecentTxIds.earliestInsertionTime txids of
+        recentTxIds <- readTVar varRecentTxIds
+        case RecentTxIds.earliestInsertionTime recentTxIds of
           Nothing            -> retry
           Just insertionTime -> pure (threshold `addTime` insertionTime)
 
       waitUntil timeScheduledForExpiry
 
       currentTime <- getMonotonicTime
-      atomically $ modifyTVar t $
-        snd . RecentTxIds.expireTxIds recentTxIdsExpiryThresh currentTime
+      expired <- atomically $ do
+        recentTxIds <- readTVar varRecentTxIds
+        let (expired, recentTxIds') = RecentTxIds.expireTxIds
+              recentTxIdsExpiryThresh
+              currentTime
+              recentTxIds
+        writeTVar varRecentTxIds recentTxIds'
+        pure expired
+
+      unless (null expired) $
+        traceWith tracer (TraceRecentTxIdsExpired expired)
   where
     RecentTxIds.ExpiryThreshold threshold = recentTxIdsExpiryThresh
 
