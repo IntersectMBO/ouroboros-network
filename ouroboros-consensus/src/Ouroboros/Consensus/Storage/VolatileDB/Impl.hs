@@ -165,7 +165,10 @@ data InternalState blockId h = InternalState {
     , _currentSuccMap     :: !(SuccessorsIndex blockId)
       -- ^ The successors for each block.
     , _currentMaxSlotNo   :: !MaxSlotNo
-      -- ^ Highest ever stored SlotNo.
+      -- ^ Highest stored SlotNo.
+      --
+      -- INVARIANT: this is the cached value of:
+      -- > FileInfo.maxSlotInFiles (Index.elems (_currentMap st))
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -373,14 +376,24 @@ garbageCollectImpl env@VolatileDBEnv{..} slot =
     modifyState env $ \hasFS st -> do
       st' <- foldM (tryCollectFile hasFS env slot) st
               (sortOn fst $ Index.toList (_currentMap st))
-      return (st', ())
+      -- Recompute the 'MaxSlotNo' based on the files left in the VolatileDB.
+      -- This value can never go down, except to 'NoMaxSlotNo' (when we GC
+      -- everything), because a GC can only delete blocks < a slot.
+      let st'' = st' {
+              _currentMaxSlotNo = FileInfo.maxSlotInFiles
+                (Index.elems (_currentMap st'))
+            }
+      return (st'', ())
 
--- | For the given file, we check if it should be garbage collected and
--- return the updated InternalState.
+-- | For the given file, we garbage collect it if possible and return the
+-- updated 'InternalState'.
 --
 -- Important note here is that, every call should leave the fs in a
 -- consistent state, without depending on other calls. This is achieved
 -- so far, since fs calls are reduced to removeFile and truncate 0.
+--
+-- NOTE: the returned 'InternalState' is inconsistent in the follow respect:
+-- the cached '_currentMaxSlotNo' hasn't been updated yet.
 --
 -- This may throw an FsError.
 tryCollectFile :: forall m h blockId

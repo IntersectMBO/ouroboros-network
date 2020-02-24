@@ -69,22 +69,14 @@ data DBModel blockId = DBModel {
       --
       -- INVARIANT: the 'BlocksInFile' associated with the highest 'FileId'
       -- has always fewer than 'blocksPerFile' blocks.
-    , maxSlotNo     :: MaxSlotNo
-      -- ^ Highest ever stored 'SlotNo'.
-      --
-      -- Note that this doesn't need to match the result of
-      -- 'computeMaxSlotNo', as we could have seen a slot that has been
-      -- garbage collected already. This is unlikely to happen in practice,
-      -- though.
     }
   deriving (Show, Generic)
 
 initDBModel :: BlocksPerFile -> DBModel blockId
 initDBModel blocksPerFile = DBModel {
-      blocksPerFile   = blocksPerFile
-    , open            = True
-    , fileIndex       = Map.singleton 0 emptyFile
-    , maxSlotNo       = NoMaxSlotNo
+      blocksPerFile = blocksPerFile
+    , open          = True
+    , fileIndex     = Map.singleton 0 emptyFile
     }
 
 blockIndex
@@ -131,9 +123,6 @@ restoreInvariants dbm = case fst <$> Map.maxViewWithKey fileIndex of
       -> dbm
   where
     DBModel { blocksPerFile, fileIndex } = dbm
-
-computeMaxSlotNo :: Map FileId (BlocksInFile blockId) -> MaxSlotNo
-computeMaxSlotNo = foldMap fileMaxSlotNo
 
 whenOpen :: MonadError VolatileDBError m
          => DBModel blockId
@@ -234,16 +223,11 @@ isOpenModel :: DBModel blockId -> Bool
 isOpenModel = open
 
 reOpenModel :: DBModel blockId -> DBModel blockId
-reOpenModel dbm@DBModel { fileIndex }
+reOpenModel dbm
     | open dbm
     = dbm
     | otherwise
-    = restoreInvariants $ dbm {
-        open      = True
-        -- When restarting, we forget the 'MaxSlotNo' and compute it based on
-        -- the blocks we still have.
-      , maxSlotNo = computeMaxSlotNo fileIndex
-      }
+    = restoreInvariants $ dbm { open = True }
 
 getBlockComponentModel
   :: Ord blockId
@@ -288,7 +272,7 @@ putBlockModel
   -> Builder
   -> DBModel blockId
   -> Either VolatileDBError (DBModel blockId)
-putBlockModel blockInfo@BlockInfo { bbid, bslot } builder dbm = whenOpen dbm $
+putBlockModel blockInfo@BlockInfo { bbid } builder dbm = whenOpen dbm $
     case Map.lookup bbid (blockIndex dbm) of
       -- Block already stored
       Just _  -> dbm
@@ -299,10 +283,9 @@ putBlockModel blockInfo@BlockInfo { bbid, bslot } builder dbm = whenOpen dbm $
             (appendBlock blockInfo bytes)
             (getCurrentFileId dbm)
             fileIndex
-        , maxSlotNo  = maxSlotNo `max` MaxSlotNo bslot
         }
   where
-    DBModel { fileIndex, maxSlotNo } = dbm
+    DBModel { fileIndex } = dbm
 
     bytes = toLazyByteString builder
 
@@ -374,7 +357,8 @@ getIsMemberModel dbm = whenOpen dbm $ \blockId ->
 getMaxSlotNoModel
   :: DBModel blockId
   -> Either VolatileDBError MaxSlotNo
-getMaxSlotNoModel dbm = whenOpen dbm $ maxSlotNo dbm
+getMaxSlotNoModel dbm = whenOpen dbm $
+    foldMap fileMaxSlotNo $ fileIndex dbm
 
 {------------------------------------------------------------------------------
   Corruptions

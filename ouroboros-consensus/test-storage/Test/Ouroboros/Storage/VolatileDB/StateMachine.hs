@@ -275,22 +275,12 @@ runPure = \case
     noop = id
 
 -- | When simulating an error in the real implementation, we reopen the
--- VolatileDB and run the command again, as each command is idempotent, and
--- the reopen again. In the model, we do exactly the same thing.
+-- VolatileDB and run the command again, as each command is idempotent. In the
+-- model, we can just run the command once.
 runPureErr :: DBModel BlockId
            -> CmdErr
            -> (Resp, DBModel BlockId)
-runPureErr dbm (CmdErr cmd mbErrors) = case mbErrors of
-    Nothing      -> runPure cmd dbm
-    Just _errors -> (res, reOpenModel $ closeModel dbm')
-      where
-        (res, dbm') =
-            runPure cmd
-          . reOpenModel
-          . closeModel
-          . snd
-          . runPure cmd
-          $ dbm
+runPureErr dbm (CmdErr cmd _mbErrors) = runPure cmd dbm
 
 sm :: VolatileDBEnv h
    -> DBModel BlockId
@@ -517,14 +507,7 @@ semanticsImpl env@VolatileDBEnv { db, varErrors }  (At (CmdErr cmd mbErrors)) =
         -- (idempotent), reopen it, and run the command again.
         closeDB  db
         reOpenDB db
-        res <- try (runDB env cmd)
-        -- Close and reopen the VolatileDB /again/, because in case no
-        -- simulated error was encountered, we might have retained some state
-        -- from before the restart, i.e., 'getMaxSlotNo'. To avoid getting out
-        -- of sync with the model, restart yet again.
-        closeDB  db
-        reOpenDB db
-        return res
+        try (runDB env cmd)
   where
     tryDB = tryVolDB EH.monadCatch EH.monadCatch
 
