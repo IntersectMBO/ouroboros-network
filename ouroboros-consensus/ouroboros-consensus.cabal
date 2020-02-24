@@ -48,6 +48,7 @@ library
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Dual
                        Ouroboros.Consensus.Ledger.Extended
+                       Ouroboros.Consensus.Ledger.History
                        Ouroboros.Consensus.Ledger.SupportsProtocol
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
