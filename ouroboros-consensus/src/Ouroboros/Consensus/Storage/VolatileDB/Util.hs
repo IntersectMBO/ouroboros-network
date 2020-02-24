@@ -4,7 +4,6 @@
 module Ouroboros.Consensus.Storage.VolatileDB.Util
     ( -- * FileId utilities
       parseFd
-    , unsafeParseFd
     , parseAllFds
     , filePath
     , findLastFd
@@ -23,7 +22,6 @@ import           Control.Monad
 import           Data.Bifunctor (first)
 import           Data.List (sortOn)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
@@ -73,11 +71,6 @@ findLastFd = first (fmap fst . lastMaybe) . parseAllFds
 
 filePath :: FileId -> FsPath
 filePath fd = mkFsPath ["blocks-" ++ show fd ++ ".dat"]
-
-unsafeParseFd :: FsPath -> FileId
-unsafeParseFd file = fromMaybe
-    (error $ "Could not parse filename " <> show file)
-    (parseFd file)
 
 {------------------------------------------------------------------------------
   Exception handling

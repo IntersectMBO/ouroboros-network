@@ -44,6 +44,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -67,6 +68,7 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BinaryInfo (..),
                      HashInfo (..))
+import           Ouroboros.Consensus.Storage.VolatileDB.Types (BlockInfo (..))
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -231,6 +233,20 @@ testBlockFromLazyByteString bs = case CBOR.deserialiseFromBytes decode bs of
 
 testBlockFromBinaryInfo :: HasCallStack => BinaryInfo Lazy.ByteString -> TestBlock
 testBlockFromBinaryInfo = testBlockFromLazyByteString . binaryBlob
+
+testBlockToBlockInfo :: TestBlock -> BlockInfo TestHeaderHash
+testBlockToBlockInfo tb = BlockInfo {
+      bbid          = thHash
+    , bslot         = thSlotNo
+    , bpreBid       = case thPrevHash of
+        GenesisHash -> Origin
+        BlockHash h -> At h
+    , bisEBB        = thIsEBB
+    , bheaderOffset = testBlockHeaderOffset
+    , bheaderSize   = testBlockHeaderSize tb
+    }
+  where
+    TestHeader{..} = testHeader tb
 
 {-------------------------------------------------------------------------------
   Creating blocks
@@ -470,6 +486,10 @@ shrinkCorruptions cs =
   where
     shrinkCor :: (FileCorruption, FsPath) -> [(FileCorruption, FsPath)]
     shrinkCor (c, f) = [(c', f) | c' <- shrink c]
+
+-- | Return a list of all files that will be corrupted
+corruptionFiles :: Corruptions -> [FsPath]
+corruptionFiles = map snd . NE.toList
 
 {-------------------------------------------------------------------------------
   Orphans

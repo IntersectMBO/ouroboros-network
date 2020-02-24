@@ -730,13 +730,13 @@ precondition Model {..} (At (CmdErr { _cmd = cmd })) =
       AppendEBB      _ _ b -> fitsOnTip b
       DeleteAfter tip      -> tip `elem` NE.toList (tips dbModel)
       Corruption corr ->
-        forall (corruptionFiles corr) (`elem` getDBFiles dbModel)
+        forall
+          (corruptionFiles (getCorruptions corr))
+          (`elem` getDBFiles dbModel)
       ReopenInThePast _ curSlot ->
         0 .<= curSlot .&& curSlot .<= lastSlot
       _ -> Top
   where
-    corruptionFiles (MkCorruption corrs) = map snd $ NE.toList corrs
-
     fitsOnTip :: TestBlock -> Logic
     fitsOnTip b = case dbmTipBlock dbModel of
       Nothing    -> blockPrevHash b .== Block.GenesisHash
