@@ -15,7 +15,7 @@
 module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocol
     ConsensusProtocol(..)
-  , NodeConfig
+  , ConsensusConfig
   , SecurityParam(..)
   ) where
 
@@ -32,32 +32,35 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point,
                      SlotNo (..))
 
--- | Static node configuration
+-- | Static configuration required to run the consensus protocol
 --
--- Every method in the 'ConsensusProtocol' class takes the node configuration as
--- a parameter, so having this as a data family rather than a type family
--- resolves most ambiguity.
+-- Every method in the 'ConsensusProtocol' class takes the consensus
+-- configuration as a parameter, so having this as a data family rather than a
+-- type family resolves most ambiguity.
 --
 -- Defined out of the class so that protocols can define this type without
 -- having to define the entire protocol at the same time (or indeed in the same
 -- module).
-data family NodeConfig p :: *
+data family ConsensusConfig p :: *
 
 -- | The (open) universe of Ouroboros protocols
 --
 -- This class encodes the part that is independent from any particular
 -- block representation.
-class ( Show (ChainState    p)
-      , Show (ValidationErr p)
-      , Eq   (ValidationErr p)
-      , NoUnexpectedThunks (NodeConfig    p)
-      , NoUnexpectedThunks (ChainState    p)
-      , NoUnexpectedThunks (ValidationErr p)
+class ( Show (ConsensusState p)
+      , Show (ValidationErr  p)
+      , Eq   (ValidationErr  p)
+      , NoUnexpectedThunks (ConsensusConfig p)
+      , NoUnexpectedThunks (ConsensusState  p)
+      , NoUnexpectedThunks (ValidationErr   p)
       , Typeable p -- so that p can appear in exceptions
       ) => ConsensusProtocol p where
 
-  -- | Blockchain dependent protocol-specific state
-  type family ChainState p :: *
+  -- | Protocol-specific state
+  --
+  -- NOTE: This chain is blockchain dependent, i.e., updated when new blocks
+  -- come in (more precisely, new /headers/), and subject to rollback.
+  type family ConsensusState p :: *
 
   -- | Evidence that a node is the leader
   type family IsLeader p :: *
@@ -131,34 +134,37 @@ class ( Show (ChainState    p)
   -- see the chain database spec in @ChainDB.md@). This means that any chain
   -- is always preferred over the empty chain, and 'preferCandidate' does not
   -- need (indeed, cannot) be called if our current chain is empty.
-  preferCandidate :: NodeConfig p
-                  -> SelectView p      -- ^ Tip of our chain
-                  -> SelectView p      -- ^ Tip of the candidate
+  preferCandidate :: ConsensusConfig p
+                  -> SelectView      p      -- ^ Tip of our chain
+                  -> SelectView      p      -- ^ Tip of the candidate
                   -> Bool
 
   -- | Compare two candidates, both of which we prefer to our own chain
   --
   -- PRECONDITION: both candidates must be preferred to our own chain
-  compareCandidates :: NodeConfig p -> SelectView p -> SelectView p -> Ordering
+  compareCandidates :: ConsensusConfig p
+                    -> SelectView      p
+                    -> SelectView      p
+                    -> Ordering
 
   -- | Check if a node is the leader
   checkIsLeader :: MonadRandom m
-                => NodeConfig p
+                => ConsensusConfig p
                 -> SlotNo
-                -> LedgerView p
-                -> ChainState p
+                -> LedgerView      p
+                -> ConsensusState  p
                 -> m (Maybe (IsLeader p))
 
   -- | Apply a header
-  applyChainState :: HasCallStack
-                  => NodeConfig   p
-                  -> LedgerView   p -- /Updated/ ledger state
-                  -> ValidateView p
-                  -> ChainState   p -- /Previous/ Ouroboros state
-                  -> Except (ValidationErr p) (ChainState p)
+  updateConsensusState :: HasCallStack
+                       => ConsensusConfig p
+                       -> LedgerView      p -- /Updated/ ledger state
+                       -> ValidateView    p
+                       -> ConsensusState  p -- /Previous/ Ouroboros state
+                       -> Except (ValidationErr p) (ConsensusState p)
 
   -- | We require that protocols support a @k@ security parameter
-  protocolSecurityParam :: NodeConfig p -> SecurityParam
+  protocolSecurityParam :: ConsensusConfig p -> SecurityParam
 
   -- | We require that it's possible to reverse the chain state up to @k@
   -- blocks.
@@ -168,12 +174,12 @@ class ( Show (ChainState    p)
   --
   -- PRECONDITION: the point to rewind to must correspond to a header (or
   -- 'GenesisPoint') that was previously applied to the chain state using
-  -- 'applyChainState'.
+  -- 'updateConsensusState'.
   --
   -- Rewinding the chain state is intended to be used when switching to a
   -- fork, longer or equally long to the chain to which the current chain
   -- state corresponds. So each rewinding should be followed by rolling
-  -- forward (using 'applyChainState') at least as many blocks that we have
+  -- forward (using 'updateConsensusState') at least as many blocks that we have
   -- rewound.
   --
   -- Note that repeatedly rewinding a chain state does not make it possible to
@@ -185,11 +191,11 @@ class ( Show (ChainState    p)
   --
   -- TODO: The Serialise instance is only required for a hack in PBFT.
   -- Reconsider later.
-  rewindChainState :: Serialise (HeaderHash hdr)
-                   => NodeConfig p
-                   -> ChainState p
-                   -> Point hdr    -- ^ Point to rewind to
-                   -> Maybe (ChainState p)
+  rewindConsensusState :: Serialise (HeaderHash hdr)
+                       => ConsensusConfig p
+                       -> ConsensusState  p
+                       -> Point hdr    -- ^ Point to rewind to
+                       -> Maybe (ConsensusState p)
 
   --
   -- Default chain selection
@@ -204,8 +210,10 @@ class ( Show (ChainState    p)
     compareCandidates cfg ours cand == LT
 
   default compareCandidates :: Ord (SelectView p)
-                            => NodeConfig p
-                            -> SelectView p -> SelectView p -> Ordering
+                            => ConsensusConfig p
+                            -> SelectView      p
+                            -> SelectView      p
+                            -> Ordering
   compareCandidates _ = compare
 
 -- | Protocol security parameter

@@ -32,9 +32,9 @@ protocolInfoPraosRule numCoreNodes
                       schedule =
     ProtocolInfo {
       pInfoConfig = TopLevelConfig {
-          configConsensus = WLSNodeConfig {
-              lsNodeConfigSchedule = schedule
-            , lsNodeConfigP        = PraosNodeConfig
+          configConsensus = WLSConfig {
+              wlsConfigSchedule = schedule
+            , wlsConfigP        = PraosConfig
                 { praosParams       = params
                 , praosNodeId       = CoreId nid
                 , praosSignKeyVRF   = NeverUsedSignKeyVRF
@@ -42,7 +42,7 @@ protocolInfoPraosRule numCoreNodes
                 , praosInitialStake = genesisStakeDist addrDist
                 , praosVerKeys      = verKeys
                 }
-            , lsNodeConfigNodeId   = nid
+            , wlsConfigNodeId   = nid
             }
         , configLedger = SimpleLedgerConfig ()
         , configBlock  = SimpleBlockConfig slotLengths

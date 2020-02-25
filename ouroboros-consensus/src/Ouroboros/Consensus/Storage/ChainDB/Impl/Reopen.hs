@@ -140,7 +140,7 @@ reopen (CDBHandle varState) launchBgTasks = do
            cdbVolDB
            cdbLgrDB
            cdbTracer
-           cdbNodeConfig
+           cdbTopLevelConfig
            cdbInvalid
            curSlot
 

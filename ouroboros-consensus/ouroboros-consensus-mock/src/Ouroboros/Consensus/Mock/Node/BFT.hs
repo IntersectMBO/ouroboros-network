@@ -24,7 +24,7 @@ protocolInfoBft :: NumCoreNodes
 protocolInfoBft numCoreNodes nid securityParam slotLengths =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = BftNodeConfig {
+            configConsensus = BftConfig {
                 bftParams   = BftParams {
                                   bftNumNodes      = numCoreNodes
                                 , bftSecurityParam = securityParam

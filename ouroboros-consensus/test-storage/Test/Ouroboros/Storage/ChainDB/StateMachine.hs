@@ -271,19 +271,19 @@ runAllComponentsM (mblk, mhdr, a, b, c, d, e, f, g) = do
     return (Identity blk, Identity hdr, a, b, c, d, e, f, g)
 
 type TestConstraints blk =
-  ( ConsensusProtocol (BlockProtocol blk)
-  , LedgerSupportsProtocol           blk
-  , Eq (ChainState (BlockProtocol    blk))
-  , Eq (LedgerState                  blk)
-  , Eq                               blk
-  , Show                             blk
-  , HasHeader                        blk
-  , StandardHash                     blk
-  , Serialise                        blk
-  , ModelSupportsBlock               blk
-  , Eq                       (Header blk)
-  , Show                     (Header blk)
-  , Serialise                (Header blk)
+  ( ConsensusProtocol  (BlockProtocol blk)
+  , LedgerSupportsProtocol            blk
+  , Eq (ConsensusState (BlockProtocol blk))
+  , Eq (LedgerState                   blk)
+  , Eq                                blk
+  , Show                              blk
+  , HasHeader                         blk
+  , StandardHash                      blk
+  , Serialise                         blk
+  , ModelSupportsBlock                blk
+  , Eq                       (Header  blk)
+  , Show                     (Header  blk)
+  , Serialise                (Header  blk)
   )
 
 deriving instance (TestConstraints blk, Eq   it, Eq   rdr)
@@ -1242,7 +1242,7 @@ genBlk Model{..} = frequency
 
 testCfg :: TopLevelConfig TestBlock
 testCfg = TopLevelConfig {
-      configConsensus = BftNodeConfig
+      configConsensus = BftConfig
         { bftParams   = BftParams { bftSecurityParam = k
                                   , bftNumNodes      = numCoreNodes
                                   }
@@ -1366,7 +1366,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
             counterexample
              ("Real chain after reopening: " <> show realChain' <> "\n" <>
               "Chain after reopening not equally preferable to previous chain")
-             (equallyPreferable (cdbNodeConfig args) realChain realChain') .&&.
+             (equallyPreferable (cdbTopLevelConfig args) realChain realChain') .&&.
             counterexample "ImmutableDB is leaking file handles"
                            (Mock.numOpenHandles immDbFs === 0) .&&.
             counterexample "VolatileDB is leaking file handles"
@@ -1442,59 +1442,59 @@ mkArgs :: IOLike m
 mkArgs cfg initLedger tracer registry varCurSlot
        (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
     { -- Decoders
-      cdbDecodeHash       = decode
-    , cdbDecodeBlock      = const <$> decode
-    , cdbDecodeHeader     = const <$> decode
-    , cdbDecodeLedger     = decode
-    , cdbDecodeChainState = decode
-    , cdbDecodeTipInfo    = decode
+      cdbDecodeHash           = decode
+    , cdbDecodeBlock          = const <$> decode
+    , cdbDecodeHeader         = const <$> decode
+    , cdbDecodeLedger         = decode
+    , cdbDecodeConsensusState = decode
+    , cdbDecodeTipInfo        = decode
 
       -- Encoders
-    , cdbEncodeHash       = encode
-    , cdbEncodeBlock      = testBlockToBinaryInfo
-    , cdbEncodeHeader     = encode
-    , cdbEncodeLedger     = encode
-    , cdbEncodeChainState = encode
-    , cdbEncodeTipInfo    = encode
+    , cdbEncodeHash           = encode
+    , cdbEncodeBlock          = testBlockToBinaryInfo
+    , cdbEncodeHeader         = encode
+    , cdbEncodeLedger         = encode
+    , cdbEncodeConsensusState = encode
+    , cdbEncodeTipInfo        = encode
 
       -- Error handling
-    , cdbErrImmDb         = EH.monadCatch
-    , cdbErrVolDb         = EH.monadCatch
-    , cdbErrVolDbSTM      = EH.throwSTM
+    , cdbErrImmDb             = EH.monadCatch
+    , cdbErrVolDb             = EH.monadCatch
+    , cdbErrVolDbSTM          = EH.throwSTM
 
       -- HasFS instances
-    , cdbHasFSImmDb       = simHasFS EH.monadCatch immDbFsVar
-    , cdbHasFSVolDb       = simHasFS EH.monadCatch volDbFsVar
-    , cdbHasFSLgrDB       = simHasFS EH.monadCatch lgrDbFsVar
+    , cdbHasFSImmDb           = simHasFS EH.monadCatch immDbFsVar
+    , cdbHasFSVolDb           = simHasFS EH.monadCatch volDbFsVar
+    , cdbHasFSLgrDB           = simHasFS EH.monadCatch lgrDbFsVar
 
       -- Policy
-    , cdbImmValidation    = ValidateAllEpochs
-    , cdbVolValidation    = VolDB.ValidateAll
-    , cdbBlocksPerFile    = VolDB.mkBlocksPerFile 4
-    , cdbParamsLgrDB      = LedgerDbParams {
-                                -- Pick a small value for 'ledgerDbSnapEvery',
-                                -- so that maximum supported rollback is limited
-                                ledgerDbSnapEvery     = 2
-                              , ledgerDbSecurityParam = configSecurityParam cfg
-                              }
-    , cdbDiskPolicy       = defaultDiskPolicy (configSecurityParam cfg)
+    , cdbImmValidation        = ValidateAllEpochs
+    , cdbVolValidation        = VolDB.ValidateAll
+    , cdbBlocksPerFile        = VolDB.mkBlocksPerFile 4
+    , cdbParamsLgrDB          = LedgerDbParams {
+                                    -- Pick a small value for 'ledgerDbSnapEvery',
+                                    -- so that maximum supported rollback is limited
+                                    ledgerDbSnapEvery     = 2
+                                  , ledgerDbSecurityParam = configSecurityParam cfg
+                                  }
+    , cdbDiskPolicy           = defaultDiskPolicy (configSecurityParam cfg)
 
       -- Integration
-    , cdbNodeConfig       = cfg
-    , cdbEpochInfo        = fixedSizeEpochInfo fixedEpochSize
-    , cdbHashInfo         = testHashInfo
-    , cdbIsEBB            = testHeaderEpochNoIfEBB fixedEpochSize
-    , cdbCheckIntegrity   = testBlockIsValid
-    , cdbGenesis          = return initLedger
-    , cdbBlockchainTime   = settableBlockchainTime varCurSlot
-    , cdbAddHdrEnv        = \_ _ -> id
-    , cdbImmDbCacheConfig = Index.CacheConfig 2 60
+    , cdbTopLevelConfig       = cfg
+    , cdbEpochInfo            = fixedSizeEpochInfo fixedEpochSize
+    , cdbHashInfo             = testHashInfo
+    , cdbIsEBB                = testHeaderEpochNoIfEBB fixedEpochSize
+    , cdbCheckIntegrity       = testBlockIsValid
+    , cdbGenesis              = return initLedger
+    , cdbBlockchainTime       = settableBlockchainTime varCurSlot
+    , cdbAddHdrEnv            = \_ _ -> id
+    , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
 
     -- Misc
-    , cdbTracer           = tracer
-    , cdbTraceLedger      = nullTracer
-    , cdbRegistry         = registry
-    , cdbGcDelay          = 0
+    , cdbTracer               = tracer
+    , cdbTraceLedger          = nullTracer
+    , cdbRegistry             = registry
+    , cdbGcDelay              = 0
     }
 
 tests :: TestTree

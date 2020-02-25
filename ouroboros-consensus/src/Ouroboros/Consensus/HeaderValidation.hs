@@ -125,14 +125,14 @@ getAnnTip hdr = AnnTip {
 --
 -- See 'validateHeader' for details
 data HeaderState blk = HeaderState {
-      -- | Protocol-specific chain state
-      headerStateChain  :: !(ChainState (BlockProtocol blk))
+      -- | Protocol-specific state
+      headerStateConsensus :: !(ConsensusState (BlockProtocol blk))
 
       -- | The most recent @k@ tips
-    , headerStateTips   :: !(StrictSeq (AnnTip blk))
+    , headerStateTips      :: !(StrictSeq (AnnTip blk))
 
       -- | Tip /before/ 'headerStateTips'
-    , headerStateAnchor :: !(WithOrigin (AnnTip blk))
+    , headerStateAnchor    :: !(WithOrigin (AnnTip blk))
     }
   deriving (Generic)
 
@@ -144,14 +144,14 @@ headerStateTip HeaderState{..} =
 
 headerStatePush :: forall blk.
                    SecurityParam
-                -> ChainState (BlockProtocol blk)
+                -> ConsensusState (BlockProtocol blk)
                 -> AnnTip blk
                 -> HeaderState blk
                 -> HeaderState blk
-headerStatePush (SecurityParam k) chainState newTip HeaderState{..} =
+headerStatePush (SecurityParam k) state newTip HeaderState{..} =
     case trim pushed of
-      Nothing                   -> HeaderState chainState pushed  headerStateAnchor
-      Just (newAnchor, trimmed) -> HeaderState chainState trimmed (At newAnchor)
+      Nothing                   -> HeaderState state pushed  headerStateAnchor
+      Just (newAnchor, trimmed) -> HeaderState state trimmed (At newAnchor)
   where
     pushed :: StrictSeq (AnnTip blk)
     pushed = headerStateTips :|> newTip
@@ -161,18 +161,20 @@ headerStatePush (SecurityParam k) chainState newTip HeaderState{..} =
         Just (newAnchor, trimmed)
     trim _otherwise = Nothing
 
-deriving instance (BlockSupportsProtocol blk, HasAnnTip blk) => Show               (HeaderState blk)
-deriving instance (BlockSupportsProtocol blk, HasAnnTip blk) => NoUnexpectedThunks (HeaderState blk)
+deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
+                => Show (HeaderState blk)
+deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
+                => NoUnexpectedThunks (HeaderState blk)
 deriving instance ( BlockSupportsProtocol blk
                   , HasAnnTip blk
-                  , Eq (ChainState (BlockProtocol blk))
+                  , Eq (ConsensusState (BlockProtocol blk))
                   ) => Eq (HeaderState blk)
 
-genesisHeaderState :: ChainState (BlockProtocol blk) -> HeaderState blk
+genesisHeaderState :: ConsensusState (BlockProtocol blk) -> HeaderState blk
 genesisHeaderState state = HeaderState state Seq.Empty Origin
 
-castHeaderState :: (   ChainState (BlockProtocol blk )
-                     ~ ChainState (BlockProtocol blk')
+castHeaderState :: (   ConsensusState (BlockProtocol blk )
+                     ~ ConsensusState (BlockProtocol blk')
                    ,   HeaderHash blk
                      ~ HeaderHash blk'
                    ,   TipInfo blk
@@ -180,9 +182,9 @@ castHeaderState :: (   ChainState (BlockProtocol blk )
                    )
                 => HeaderState blk -> HeaderState blk'
 castHeaderState HeaderState{..} = HeaderState{
-      headerStateChain  = headerStateChain
-    , headerStateTips   = castSeq castAnnTip $ headerStateTips
-    , headerStateAnchor = fmap    castAnnTip $ headerStateAnchor
+      headerStateConsensus = headerStateConsensus
+    , headerStateTips      = castSeq castAnnTip $ headerStateTips
+    , headerStateAnchor    = fmap    castAnnTip $ headerStateAnchor
     }
   where
     -- This is unfortunate. We're doing busy-work on a strict-sequence,
@@ -198,11 +200,14 @@ rewindHeaderState :: forall blk.
                   -> Point blk
                   -> HeaderState blk -> Maybe (HeaderState blk)
 rewindHeaderState cfg p HeaderState{..} = do
-    chainState' <- rewindChainState (configConsensus cfg) headerStateChain p
+    consensusState' <- rewindConsensusState
+                         (configConsensus cfg)
+                         headerStateConsensus
+                         p
     return $ HeaderState {
-        headerStateChain  = chainState'
-      , headerStateTips   = Seq.dropWhileR rolledBack headerStateTips
-      , headerStateAnchor = headerStateAnchor
+        headerStateConsensus = consensusState'
+      , headerStateTips      = Seq.dropWhileR rolledBack headerStateTips
+      , headerStateAnchor    = headerStateAnchor
       }
   where
     rolledBack :: AnnTip blk -> Bool
@@ -374,15 +379,15 @@ validateHeader :: (BlockSupportsProtocol blk, ValidateEnvelope blk)
 validateHeader cfg ledgerView hdr st = do
     withExcept HeaderEnvelopeError $
       validateEnvelope (configBlock cfg) (headerStateTip st) hdr
-    chainState' <- withExcept HeaderProtocolError $
-                     applyChainState
-                       (configConsensus cfg)
-                       ledgerView
-                       (validateView (configBlock cfg) hdr)
-                       (headerStateChain st)
+    consensusState' <- withExcept HeaderProtocolError $
+                         updateConsensusState
+                           (configConsensus cfg)
+                           ledgerView
+                           (validateView (configBlock cfg) hdr)
+                           (headerStateConsensus st)
     return $ headerStatePush
                (configSecurityParam cfg)
-               chainState'
+               consensusState'
                (getAnnTip hdr)
                st
 
@@ -412,28 +417,31 @@ decodeAnnTip decodeHash decodeInfo = do
     annTipInfo    <- decodeInfo
     return AnnTip{..}
 
-encodeHeaderState :: (ChainState (BlockProtocol blk) -> Encoding)
+encodeHeaderState :: (ConsensusState (BlockProtocol blk) -> Encoding)
                   -> (HeaderHash  blk -> Encoding)
                   -> (TipInfo     blk -> Encoding)
                   -> (HeaderState blk -> Encoding)
-encodeHeaderState encodeChainState encodeHash encodeInfo HeaderState{..} = mconcat [
+encodeHeaderState encodeConsensusState
+                  encodeHash
+                  encodeInfo
+                  HeaderState{..} = mconcat [
       encodeListLen 3
-    , encodeChainState headerStateChain
+    , encodeConsensusState headerStateConsensus
     , Util.CBOR.encodeSeq        encodeAnnTip' headerStateTips
     , Util.CBOR.encodeWithOrigin encodeAnnTip' headerStateAnchor
     ]
   where
     encodeAnnTip' = encodeAnnTip encodeHash encodeInfo
 
-decodeHeaderState :: (forall s. Decoder s (ChainState (BlockProtocol blk)))
+decodeHeaderState :: (forall s. Decoder s (ConsensusState (BlockProtocol blk)))
                   -> (forall s. Decoder s (HeaderHash  blk))
                   -> (forall s. Decoder s (TipInfo     blk))
                   -> (forall s. Decoder s (HeaderState blk))
-decodeHeaderState decodeChainState decodeHash decodeInfo = do
+decodeHeaderState decodeConsensusState decodeHash decodeInfo = do
     enforceSize "HeaderState" 3
-    headerStateChain  <- decodeChainState
-    headerStateTips   <- Util.CBOR.decodeSeq        decodeAnnTip'
-    headerStateAnchor <- Util.CBOR.decodeWithOrigin decodeAnnTip'
+    headerStateConsensus <- decodeConsensusState
+    headerStateTips      <- Util.CBOR.decodeSeq        decodeAnnTip'
+    headerStateAnchor    <- Util.CBOR.decodeWithOrigin decodeAnnTip'
     return HeaderState{..}
   where
     decodeAnnTip' = decodeAnnTip decodeHash decodeInfo

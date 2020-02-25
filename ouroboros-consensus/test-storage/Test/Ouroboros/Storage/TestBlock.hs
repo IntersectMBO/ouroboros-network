@@ -404,8 +404,8 @@ testInitExtLedger = ExtLedgerState {
     }
 
 -- | Trivial test configuration with a single core node
-singleNodeTestConfig :: NodeConfig (Bft BftMockCrypto)
-singleNodeTestConfig = BftNodeConfig {
+singleNodeTestConfig :: ConsensusConfig (Bft BftMockCrypto)
+singleNodeTestConfig = BftConfig {
       bftParams   = BftParams { bftSecurityParam = k
                               , bftNumNodes      = NumCoreNodes 1
                               }

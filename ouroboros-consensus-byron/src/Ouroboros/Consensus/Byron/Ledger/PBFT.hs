@@ -9,8 +9,8 @@
 module Ouroboros.Consensus.Byron.Ledger.PBFT (
     toPBftLedgerView
   , fromPBftLedgerView
-  , encodeByronChainState
-  , decodeByronChainState
+  , encodeByronConsensusState
+  , decodeByronConsensusState
   , mkByronContextDSIGN
   ) where
 
@@ -30,7 +30,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
-import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
+import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger.Block
@@ -86,9 +86,12 @@ toPBftLedgerView = PBftLedgerView . Delegation.unMap
 fromPBftLedgerView :: PBftLedgerView PBftByronCrypto -> Delegation.Map
 fromPBftLedgerView = Delegation.Map . pbftDelegates
 
-encodeByronChainState :: ChainState (BlockProtocol ByronBlock) -> Encoding
-encodeByronChainState = CS.encodePBftChainState
+encodeByronConsensusState
+  :: ConsensusState (BlockProtocol ByronBlock)
+  -> Encoding
+encodeByronConsensusState = S.encodePBftState
 
-decodeByronChainState :: SecurityParam
-                      -> Decoder s (ChainState (BlockProtocol ByronBlock))
-decodeByronChainState k = CS.decodePBftChainState k (pbftWindowSize k)
+decodeByronConsensusState
+  :: SecurityParam
+  -> Decoder s (ConsensusState (BlockProtocol ByronBlock))
+decodeByronConsensusState k = S.decodePBftState k (pbftWindowSize k)

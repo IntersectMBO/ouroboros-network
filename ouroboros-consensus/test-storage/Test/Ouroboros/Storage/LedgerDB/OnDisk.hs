@@ -222,11 +222,11 @@ data Cmd (t :: LedgerUnderTest) ss =
     -- chain.
     --
     -- NOTE: Since this is modelling /disk/ corruption, and it is the
-    -- responsibility of the 'ChainStateDB' to /notice/ disk corruption (by
+    -- responsibility of the 'ChainDB' to /notice/ disk corruption (by
     -- catching the appropriate exceptions), we assume that the ledger state
     -- will immediately be re-initialized after a 'Truncate' (which is precisely
-    -- what the 'ChainStateDB' would do, after first doing recovery on the
-    -- underlying 'ChainDB'). This is important because otherwise the model
+    -- what the 'ChainDB' would do, after first doing recovery on the
+    -- underlying 'LedgerDB'). This is important because otherwise the model
     -- would diverge from the real thing.
     --
     -- Since 'Drop' therefore implies a 'Restore', we return the new ledger.
@@ -516,7 +516,7 @@ data DbEnv m = forall fh. DbEnv {
 
 -- | Standalone ledger DB
 --
--- Under normal circumstances the ledger DB is maintained by the 'ChainStateDB',
+-- Under normal circumstances the ledger DB is maintained by the 'ChainDB',
 -- and supported by the 'ChainDB'. In order to test it stand-alone we need to
 -- mock these components.
 data StandaloneDB m t = DB {
@@ -531,7 +531,7 @@ data StandaloneDB m t = DB {
 
       -- | Current chain and corresponding ledger state
       --
-      -- We can think of this as mocking the ChainStateDB, which must keep
+      -- We can think of this as mocking the ChainDB, which must keep
       -- track of a current chain and keep the ledger DB in sync with it.
       --
       -- Invariant: all references @r@ here must be present in 'dbBlocks'.
@@ -671,9 +671,9 @@ runDB standalone@DB{..} cmd =
              Truncate -> Unit <$> truncateSnapshot hasFS ss)
           (\_ -> return $ Unit()) -- ignore any errors during corruption
     go hasFS (Drop n) = do
-        -- During recovery the ChainStateDB would ask the ChainDB to recover
+        -- During recovery the ChainDB would ask the ChainDB to recover
         -- and pick a new current chain; only once that is done would it
-        -- compute a new ledger state. During this process the ChainStateDB
+        -- compute a new ledger state. During this process the ChainDB
         -- would effectively be closed.
         atomically $ do
             (rs, _db) <- readTVar dbState

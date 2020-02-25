@@ -26,11 +26,11 @@ import           Ouroboros.Network.Block (HeaderHash, SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.PBFT.ChainState (EbbInfo (..),
-                     MaybeEbbInfo (..), PBftChainState)
-import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
-import           Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
+import           Ouroboros.Consensus.Protocol.PBFT.State (EbbInfo (..),
+                     MaybeEbbInfo (..), PBftState)
+import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
+import           Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
 import           Ouroboros.Consensus.Util (lastMaybe, repeatedly)
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -42,7 +42,7 @@ import           Test.Util.Split (spanLeft, splitAtJust)
 -------------------------------------------------------------------------------}
 
 tests :: TestTree
-tests = testGroup "PBftChainState" $
+tests = testGroup "PBftState" $
     [ testProperty "validGenerator"
                prop_validGenerator
     , testProperty "directABb"
@@ -90,7 +90,7 @@ tests = testGroup "PBftChainState" $
 -- (those in slots @> s1@) but still retain information about the subsequent
 -- EBBs in slots in the inclusive range from @s1@ to @s2@.
 --
--- NOTE: PBftChainState assumes @k >= 1@.
+-- NOTE: PBftState assumes @k >= 1@.
 --
 -- * 'testChainInputsA', 'testChainInputsB', and 'testChainInputsC':
 --
@@ -111,7 +111,7 @@ tests = testGroup "PBftChainState" $
 -- window arising pre-#1307 will then be filled. The segment A has an
 -- effectively arbitrary number of signed blocks.
 --
--- * 'testChainState':
+-- * 'TestPBftState':
 --
 -- The test properties themselves focus on the state @csABb@ defined by:
 --
@@ -124,7 +124,7 @@ tests = testGroup "PBftChainState" $
 -- rewinding back to the end of A, should be a representative sample of the
 -- space of chain states.
 --
--- * 'testChainOldState':
+-- * 'testOldPBftState':
 --
 -- We also test that the state analogous to @csABb@ that would have arisen
 -- before PR #1307 is supported as an input to the current code as expected.
@@ -137,10 +137,10 @@ tests = testGroup "PBftChainState" $
 --
 -- Since @csABb@ is fully representative of a realistic state, we will test an
 -- arbitrary rewind from it.
-data TestChainState = TestChainState {
-      testChainStateK        :: SecurityParam
-    , testChainStateN        :: CS.WindowSize
-    , testChainStateNumKeys  :: Int
+data TestPBftState = TestPBftState {
+      testPBftStateK         :: SecurityParam
+    , testPBftStateN         :: S.WindowSize
+    , testPBftStateNumKeys   :: Int
 
       -- | The segment A
     , testChainInputsA       :: Inputs PBftMockCrypto
@@ -156,11 +156,11 @@ data TestChainState = TestChainState {
     , testChainInputsC       :: Inputs PBftMockCrypto
 
       -- | @csABb@
-    , testChainState         :: PBftChainState PBftMockCrypto
+    , testPBftState          :: PBftState PBftMockCrypto
 
       -- | The @csABb@ we would have deserialised before #1307: this state does
       -- not include the @n@ pre-anchor signatures.
-    , testChainOldState      :: PBftChainState PBftMockCrypto
+    , testOldPBftState       :: PBftState PBftMockCrypto
 
       -- | The slot of some input within segment A
     , testChainRewindPoint   :: WithOrigin (SlotNo, HeaderHashBytes)
@@ -170,17 +170,17 @@ data TestChainState = TestChainState {
     }
   deriving (Show)
 
-instance Arbitrary TestChainState where
-  arbitrary = genTestChainState
+instance Arbitrary TestPBftState where
+  arbitrary = genTestPBftState
 
-genTestChainState :: Gen TestChainState
-genTestChainState = do
+genTestPBftState :: Gen TestPBftState
+genTestPBftState = do
     k       <- choose (1, 4)    -- security parameter
     n       <- choose (1, 10)   -- PBFT window size
     numKeys <- choose (1, 4)    -- number of core nodes
 
     let paramK = SecurityParam k
-        paramN = CS.WindowSize n
+        paramN = S.WindowSize n
         genKey = genMockKey numKeys
 
     -- Pick number of signed slots
@@ -229,7 +229,7 @@ genTestChainState = do
     let (mbPre, _) = splitAtSigner (numSignersAB .- k) $ inA <> inB
         anchor = case mbPre of
                    Nothing     -> Origin
-                   Just (_, x) -> At $ CS.pbftSignerSlotNo x
+                   Just (_, x) -> At $ S.pbftSignerSlotNo x
 
     let newABb = fromInputs paramK paramN anchor
                    (signatureInputs inps)
@@ -259,7 +259,7 @@ genTestChainState = do
         signedPoint = case mbAPrefix of
           Nothing     -> Origin
           Just (_, x) ->
-            At (CS.pbftSignerSlotNo x, headerHashBytesInput (InputSigner x))
+            At (S.pbftSignerSlotNo x, headerHashBytesInput (InputSigner x))
 
     -- Pick a point to rewind to
     --
@@ -275,12 +275,12 @@ genTestChainState = do
             inits (unInputs inSuffixA) `zip` tails (unInputs inSuffixA)
         ]
 
-    pure TestChainState {
-        testChainStateK        = paramK
-      , testChainStateN        = paramN
-      , testChainStateNumKeys  = numKeys
-      , testChainState         = newABb
-      , testChainOldState      = oldABb
+    pure TestPBftState {
+        testPBftStateK         = paramK
+      , testPBftStateN         = paramN
+      , testPBftStateNumKeys   = numKeys
+      , testPBftState          = newABb
+      , testOldPBftState       = oldABb
       , testChainInputsA       = inA
       , testChainInputsB       = inB
       , testChainInputsC       = inC
@@ -305,7 +305,7 @@ genMockKey numKeys = VerKeyMockDSIGN <$> choose (1, numKeys)
 generateInputs
   :: forall c.
      SecurityParam
-  -> CS.WindowSize
+  -> S.WindowSize
   -> Gen (PBftVerKeyHash c)
   -> Word64
   -> LatestInput c
@@ -340,7 +340,7 @@ generateInputs paramK paramN genKey =
           Just inp@InputEBB{}    -> slotInput inp
           Just inp@InputSigner{} -> succ $ slotInput inp
       key  <- genKey
-      pure $ InputSigner $ CS.PBftSigner slot key
+      pure $ InputSigner $ S.PBftSigner slot key
 
     -- remove EBBs that come too soon
     post :: Inputs c -> Inputs c
@@ -348,7 +348,7 @@ generateInputs paramK paramN genKey =
       where
         lim = n + k
           where
-            CS.WindowSize n = paramN
+            S.WindowSize  n = paramN
             SecurityParam k = paramK
 
         go2 numSigned = \case
@@ -381,24 +381,24 @@ data ClassifyLastA =
   | SignedLastA
   deriving (Show)
 
-classifyWindow :: TestChainState -> ClassifyWindow
-classifyWindow TestChainState{..}
-  | size inWindow == (0 :: Int)                       = WindowEmpty
-  | size inWindow <  CS.getWindowSize testChainStateN = WindowNotFull
-  | otherwise                                         = WindowFull
+classifyWindow :: TestPBftState -> ClassifyWindow
+classifyWindow TestPBftState{..}
+  | size inWindow == (0 :: Int)                     = WindowEmpty
+  | size inWindow <  S.getWindowSize testPBftStateN = WindowNotFull
+  | otherwise                                       = WindowFull
   where
-    CS.PBftChainState{..} = testChainState
+    S.PBftState{..} = testPBftState
 
-classifyRewind :: TestChainState -> ClassifyRewind
-classifyRewind TestChainState{..}
-  | size postAnchor == (0 :: Int)                   = RewindImpossible
-  | size postAnchor <  maxRollbacks testChainStateK = RewindLimited
-  | otherwise                                       = RewindMaximum
+classifyRewind :: TestPBftState -> ClassifyRewind
+classifyRewind TestPBftState{..}
+  | size postAnchor == (0 :: Int)                  = RewindImpossible
+  | size postAnchor <  maxRollbacks testPBftStateK = RewindLimited
+  | otherwise                                      = RewindMaximum
   where
-    CS.PBftChainState{..} = testChainState
+    S.PBftState{..} = testPBftState
 
-classifyLastA :: TestChainState -> ClassifyLastA
-classifyLastA TestChainState{..} =
+classifyLastA :: TestPBftState -> ClassifyLastA
+classifyLastA TestPBftState{..} =
   case unLatestInput $ toLastInput testChainInputsA of
     Nothing            -> OriginLastA
     Just InputEBB{}    -> EbbLastA
@@ -408,45 +408,45 @@ classifyLastA TestChainState{..} =
   Tests
 -------------------------------------------------------------------------------}
 
--- | Check that we are producing valid 'PBftChainState's
-prop_validGenerator :: TestChainState -> Property
-prop_validGenerator st@TestChainState{..} =
+-- | Check that we are producing valid 'PBftState's
+prop_validGenerator :: TestPBftState -> Property
+prop_validGenerator st@TestPBftState{..} =
     collect (classifyWindow st) $
     collect (classifyRewind st) $
     collect (classifyLastA  st) $
-    Right () === CS.invariant
-                   testChainStateK
-                   testChainStateN
-                   testChainState
+    Right () === S.invariant
+                   testPBftStateK
+                   testPBftStateN
+                   testPBftState
     .&&.
-    Right () === CS.invariant
-                   testChainStateK
-                   testChainStateN
-                   testChainOldState
+    Right () === S.invariant
+                   testPBftStateK
+                   testPBftStateN
+                   testOldPBftState
     .&&.
-    Seq.null (CS.preWindow testChainOldState)
+    Seq.null (S.preWindow testOldPBftState)
   where
-    CS.PBftChainState{..} = testChainState
+    S.PBftState{..} = testPBftState
 
 -- | Our direct calculation of @csABb@ matches the result of the corresponding
 -- appends and a rewind.
-prop_directABb :: TestChainState -> Property
-prop_directABb TestChainState{..} =
-    let k = testChainStateK
-        n = testChainStateN
-        state0 = CS.empty
+prop_directABb :: TestPBftState -> Property
+prop_directABb TestPBftState{..} =
+    let k = testPBftStateK
+        n = testPBftStateN
+        state0 = S.empty
         state1 = appendInputs k n
                    (testChainInputsA <> testChainInputsB)
                    state0
-        mbState2 = CS.rewind k n
+        mbState2 = S.rewind k n
                      (pointLatestInput $ toLastInput testChainInputsA)
                      state1
-    in Just testChainState === mbState2
+    in Just testPBftState === mbState2
 
 -- | 'appendInputs' realizes 'Inputs' as a monoid action on chain states.
-prop_appendIsMonoidAction :: TestChainState -> Property
-prop_appendIsMonoidAction TestChainState{..} =
-    let act = appendInputs testChainStateK testChainStateN
+prop_appendIsMonoidAction :: TestPBftState -> Property
+prop_appendIsMonoidAction TestPBftState{..} =
+    let act = appendInputs testPBftStateK testPBftStateN
         inA = testChainInputsA
         inB = testChainInputsB
 
@@ -455,75 +455,75 @@ prop_appendIsMonoidAction TestChainState{..} =
         a1 = act $     inA  <>      inB
         a2 =       act inA `fo` act inB
     in
-      a1 CS.empty === a2 CS.empty
+      a1 S.empty === a2 S.empty
       .&&.
-      act mempty CS.empty === CS.empty
+      act mempty S.empty === S.empty
 
 -- | Appending preserves the invariant.
-prop_appendPreservesInvariant :: TestChainState -> Property
-prop_appendPreservesInvariant TestChainState{..} =
+prop_appendPreservesInvariant :: TestPBftState -> Property
+prop_appendPreservesInvariant TestPBftState{..} =
     let state' = headInput testChainInputsC <&> \inp -> appendInput
-                   testChainStateK
-                   testChainStateN
+                   testPBftStateK
+                   testPBftStateN
                    inp
-                   testChainState
+                   testPBftState
     in (Just (Right ()) ===) $
-       CS.invariant testChainStateK testChainStateN <$> state'
+       S.invariant testPBftStateK testPBftStateN <$> state'
 
 -- | Rewinding either fails or preserves the invariant.
-prop_rewindPreservesInvariant :: TestChainState -> Property
-prop_rewindPreservesInvariant TestChainState{..} =
-    let rewound = CS.rewind
-                    testChainStateK
-                    testChainStateN
+prop_rewindPreservesInvariant :: TestPBftState -> Property
+prop_rewindPreservesInvariant TestPBftState{..} =
+    let rewound = S.rewind
+                    testPBftStateK
+                    testPBftStateN
                     testChainRewindPoint
-                    testChainState
+                    testPBftState
     in case rewound of
          Nothing     -> label "rollback too far in the past" True
          Just state' -> label "rollback succeeded" $
-           Right () === CS.invariant
-                          testChainStateK
-                          testChainStateN
+           Right () === S.invariant
+                          testPBftStateK
+                          testPBftStateN
                           state'
 
 -- | If we successfully rewind a chain state to before a segment of inputs and
 -- then reapply those inputs, we should get that original chain state back.
-prop_rewindReappendId :: TestChainState -> Property
-prop_rewindReappendId TestChainState{..} =
-    let rewound = CS.rewind
-                    testChainStateK
-                    testChainStateN
+prop_rewindReappendId :: TestPBftState -> Property
+prop_rewindReappendId TestPBftState{..} =
+    let rewound = S.rewind
+                    testPBftStateK
+                    testPBftStateN
                     testChainRewindPoint
-                    testChainState
+                    testPBftState
     in case rewound of
          Nothing     -> label "rollback too far in the past" True
          Just state' -> label "rollback succeeded" $
            counterexample ("Rewound: " <> show state') $
-           testChainState === appendInputs
-                                testChainStateK
-                                testChainStateN
+           testPBftState === appendInputs
+                                testPBftStateK
+                                testPBftStateN
                                 testChainRewoundInputs
                                 state'
 
 -- | 'prop_appendPreservesInvariant' holds for the old chain state too
-prop_appendOldStatePreservesInvariant :: TestChainState -> Property
-prop_appendOldStatePreservesInvariant TestChainState{..} =
+prop_appendOldStatePreservesInvariant :: TestPBftState -> Property
+prop_appendOldStatePreservesInvariant TestPBftState{..} =
     let state' = headInput testChainInputsC <&> \inp -> appendInput
-                   testChainStateK
-                   testChainStateN
+                   testPBftStateK
+                   testPBftStateN
                    inp
-                   testChainOldState
+                   testOldPBftState
     in (Just (Right ()) ===) $
-       CS.invariant testChainStateK testChainStateN <$> state'
+       S.invariant testPBftStateK testPBftStateN <$> state'
 
 -- | The old pre-#1307 state will have a 'CS.preWindow' of @k@ again once we
 -- add a sufficient number signed blocks (and any number of EBBs).
-prop_appendOldStateRestoresPreWindow :: TestChainState -> Property
-prop_appendOldStateRestoresPreWindow TestChainState{..} =
+prop_appendOldStateRestoresPreWindow :: TestPBftState -> Property
+prop_appendOldStateRestoresPreWindow TestPBftState{..} =
     let missing = fromIntegral
-                $ maxRollbacks       testChainStateK
-                + CS.getWindowSize   testChainStateN
-                - CS.countSignatures testChainOldState
+                $ maxRollbacks      testPBftStateK
+                + S.getWindowSize   testPBftStateN
+                - S.countSignatures testOldPBftState
         inps = pre' <> post'
           where
             (mbPre, post) = splitAtSigner missing testChainInputsC
@@ -536,31 +536,31 @@ prop_appendOldStateRestoresPreWindow TestChainState{..} =
             -- the immediately subsequent EBBs
             post' = Inputs $ map InputEBB $ fst $ spanEBBs post
         state' = appendInputs
-                   testChainStateK
-                   testChainStateN
+                   testPBftStateK
+                   testPBftStateN
                    inps
-                   testChainOldState
-    in Right () === CS.invariant
-                      testChainStateK
-                      testChainStateN
+                   testOldPBftState
+    in Right () === S.invariant
+                      testPBftStateK
+                      testPBftStateN
                       state'
        .&&.
-       size (CS.preWindow state') === maxRollbacks testChainStateK
+       size (S.preWindow state') === maxRollbacks testPBftStateK
 
 {-------------------------------------------------------------------------------
   Serialisation roundtrip
 -------------------------------------------------------------------------------}
 
 -- | We test the roundtrip using mock crypto
-prop_serialisation_roundtrip :: TestChainState -> Property
-prop_serialisation_roundtrip TestChainState{..} =
+prop_serialisation_roundtrip :: TestPBftState -> Property
+prop_serialisation_roundtrip TestPBftState{..} =
     roundtrip
-      (CS.encodePBftChainState)
-      (CS.decodePBftChainState testChainStateK testChainStateN)
-      testChainState
+      (S.encodePBftState)
+      (S.decodePBftState testPBftStateK testPBftStateN)
+      testPBftState
 
 {-------------------------------------------------------------------------------
-  ChainState "Inputs"
+  PBftState "Inputs"
 -------------------------------------------------------------------------------}
 
 data PBftEBB = PBftEBB
@@ -573,13 +573,13 @@ data PBftEBB = PBftEBB
 
 data Input c
   = InputEBB    !PBftEBB
-  | InputSigner !(CS.PBftSigner c)
+  | InputSigner !(S.PBftSigner c)
   deriving (Eq, Show)
 
 newtype Inputs c = Inputs {unInputs :: [Input c]}
   deriving (Eq, Monoid, Semigroup, Show)
 
-signatureInputs :: Inputs c -> [CS.PBftSigner c]
+signatureInputs :: Inputs c -> [S.PBftSigner c]
 signatureInputs (Inputs inps) = [ x | InputSigner x <- inps ]
 
 ebbInputs :: Inputs c -> [PBftEBB]
@@ -588,7 +588,7 @@ ebbInputs (Inputs inps) = [ x | InputEBB x <- inps ]
 slotInput :: Input c -> SlotNo
 slotInput = \case
   InputEBB x    -> pbftEbbSlotNo x
-  InputSigner x -> CS.pbftSignerSlotNo x
+  InputSigner x -> S.pbftSignerSlotNo x
 
 headInput :: Inputs c -> Maybe (Input c)
 headInput = Cardano.Prelude.head . unInputs
@@ -596,28 +596,28 @@ headInput = Cardano.Prelude.head . unInputs
 appendInput
   :: PBftCrypto c
   => SecurityParam
-  -> CS.WindowSize
+  -> S.WindowSize
   -> Input c
-  -> CS.PBftChainState c -> CS.PBftChainState c
+  -> S.PBftState c -> S.PBftState c
 appendInput k n inp = case inp of
   InputEBB{}         ->
-    CS.appendEBB k n (slotInput inp) (headerHashBytesInput inp)
-  InputSigner signer -> CS.append k n signer
+    S.appendEBB k n (slotInput inp) (headerHashBytesInput inp)
+  InputSigner signer -> S.append k n signer
 
 appendInputs
   :: PBftCrypto c
   => SecurityParam
-  -> CS.WindowSize
+  -> S.WindowSize
   -> Inputs c
-  -> CS.PBftChainState c -> CS.PBftChainState c
+  -> S.PBftState c -> S.PBftState c
 appendInputs k n = repeatedly (appendInput k n) . unInputs
 
 splitAtSigner
-  :: Word64 -> Inputs c -> (Maybe (Inputs c, CS.PBftSigner c), Inputs c)
+  :: Word64 -> Inputs c -> (Maybe (Inputs c, S.PBftSigner c), Inputs c)
 splitAtSigner n (Inputs inps) =
     coerce $ splitAtJust prjSigner n inps
   where
-    prjSigner :: Input c -> Maybe (CS.PBftSigner c)
+    prjSigner :: Input c -> Maybe (S.PBftSigner c)
     prjSigner = \case
       InputEBB{}    -> Nothing
       InputSigner x -> Just x
@@ -636,19 +636,19 @@ spanEBBs (Inputs inps0) =
       Nothing          -> mempty
       Just (inp, inps) -> Inputs $ inp : inps
 
--- | Wrapper around 'CS.fromList'
+-- | Wrapper around 'S.fromList'
 fromInputs
   :: PBftCrypto c
   => SecurityParam
-  -> CS.WindowSize
+  -> S.WindowSize
   -> WithOrigin SlotNo
-  -> [CS.PBftSigner c]
+  -> [S.PBftSigner c]
      -- ^ determines the window of signers
   -> [PBftEBB]
-     -- ^ determines 'CS.ebbs'
-  -> CS.PBftChainState c
+     -- ^ determines 'S.ebbs'
+  -> S.PBftState c
 fromInputs k n anchor signers ebbs0 =
-    CS.fromList k n (anchor, Seq.fromList signers, ebbs2)
+    S.fromList k n (anchor, Seq.fromList signers, ebbs2)
   where
     ebbs1 =
         [ mkEbbInfo slot mSlot
@@ -696,7 +696,7 @@ signedSlotLatestInput :: LatestInput c -> WithOrigin SlotNo
 signedSlotLatestInput (LatestInput inp) = case inp of
   Nothing              -> Origin
   Just (InputEBB x)    -> pbftEbbPrev x
-  Just (InputSigner x) -> At $ CS.pbftSignerSlotNo x
+  Just (InputSigner x) -> At $ S.pbftSignerSlotNo x
 
 {-------------------------------------------------------------------------------
   Auxiliary

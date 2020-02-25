@@ -54,7 +54,7 @@ main = do
     genesisConfig <- openGenesis clConfig clIsMainNet
     let epochSlots = Genesis.configEpochSlots genesisConfig
         epochInfo  = fixedSizeEpochInfo (coerce epochSlots)
-        cfg        = mkPBftNodeConfig genesisConfig
+        cfg        = mkByronTopLevelConfig genesisConfig
     withRegistry $ \registry ->
       withImmDB clImmDB cfg epochInfo registry $ \immDB -> do
         runAnalysis clAnalysis immDB epochInfo registry
@@ -235,11 +235,11 @@ openGenesis configFile onMainNet = do
     return genesisConfig
 
 {-------------------------------------------------------------------------------
-  PBFT NodeConfig
+  Top-level configuration
 -------------------------------------------------------------------------------}
 
-mkPBftNodeConfig :: Genesis.Config -> TopLevelConfig ByronBlock
-mkPBftNodeConfig genesisConfig = pInfoConfig $
+mkByronTopLevelConfig :: Genesis.Config -> TopLevelConfig ByronBlock
+mkByronTopLevelConfig genesisConfig = pInfoConfig $
     protocolInfoByron
       genesisConfig
       Nothing

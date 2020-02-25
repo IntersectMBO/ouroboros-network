@@ -372,7 +372,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     -- will first copy the blocks/headers to trim (from the end of the
     -- fragment) from the VolatileDB to the ImmutableDB.
   where
-    SecurityParam k = configSecurityParam cdbNodeConfig
+    SecurityParam k = configSecurityParam cdbTopLevelConfig
 
     p :: Point blk
     p = headerPoint hdr
@@ -412,7 +412,9 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
               return $ AF.fromOldestFirst curHead (hdr : hdrs)
 
         let candidateSuffixes = NE.nonEmpty
-              $ NE.filter (preferAnchoredCandidate cdbNodeConfig curChain . _suffix)
+              $ NE.filter ( preferAnchoredCandidate cdbTopLevelConfig curChain
+                          . _suffix
+                          )
               $ fmap (mkCandidateSuffix 0) candidates
         -- All candidates are longer than the current chain, so they will be
         -- preferred over it, /unless/ the block we just added is an EBB,
@@ -466,7 +468,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
                 -- The suffixes all fork off from the current chain within @k@
                 -- blocks, so it satisfies the precondition of
                 -- 'preferCandidate'.
-                filter (preferAnchoredCandidate cdbNodeConfig curChain . _suffix)
+                filter (preferAnchoredCandidate cdbTopLevelConfig curChain . _suffix)
               . mapMaybe (intersectCandidateSuffix curChain)
               $ NE.toList candidates
 
@@ -491,7 +493,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     chainSelection' = chainSelection
       cdbLgrDB
       (contramap (TraceAddBlockEvent . AddBlockValidation) cdbTracer)
-      cdbNodeConfig
+      cdbTopLevelConfig
       cdbInvalid
       blockCache
 
@@ -556,7 +558,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
         case AF.intersect curChain newChain of
           Just (curChainPrefix, _newChainPrefix, curChainSuffix, newChainSuffix)
             | fromIntegral (AF.length curChainSuffix) <= k
-            , preferAnchoredCandidate cdbNodeConfig curChain newChain
+            , preferAnchoredCandidate cdbTopLevelConfig curChain newChain
             -> do
               -- The current chain might still contain some old headers that
               -- have not yet been written to the ImmutableDB. We must make

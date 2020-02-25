@@ -44,10 +44,9 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Protocol.Abstract (ChainState,
-                     SecurityParam (..))
-import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
-import           Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
+import           Ouroboros.Consensus.Protocol.Abstract
+import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
+import           Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
 
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
                      HashInfo (..))
@@ -90,7 +89,7 @@ tests = testGroup "Byron"
       , testProperty "roundtrip Query"       prop_roundtrip_Query
       , testProperty "roundtrip Result"      prop_roundtrip_Result
       ]
-      -- TODO ChainState
+      -- TODO ConsensusState
       -- TODO LedgerState
 
   , testProperty "BinaryInfo sanity check"   prop_encodeByronBlockWithInfo
@@ -102,7 +101,7 @@ tests = testGroup "Byron"
   , testGroup "Golden tests"
       -- Note that for most Byron types, we simply wrap the en/decoders from
       -- cardano-ledger, which already has golden tests for them.
-      [ test_golden_ChainState
+      [ test_golden_ConsensusState
       , test_golden_LedgerState
       , test_golden_GenTxId
       , test_golden_UPIState
@@ -220,41 +219,41 @@ prop_byronHashInfo_hashSize h =
 -------------------------------------------------------------------------------}
 
 -- | Note that we must use the same value for the 'SecurityParam' as for the
--- 'CS.WindowSize', because 'decodeByronChainState' only takes the
--- 'SecurityParam' and uses it as the basis for the 'CS.WindowSize'.
+-- 'S.WindowSize', because 'decodeByronConsensusState' only takes the
+-- 'SecurityParam' and uses it as the basis for the 'S.WindowSize'.
 secParam :: SecurityParam
 secParam = SecurityParam 2
 
-windowSize :: CS.WindowSize
-windowSize = CS.WindowSize 2
+windowSize :: S.WindowSize
+windowSize = S.WindowSize 2
 
-exampleChainState :: ChainState (BlockProtocol ByronBlock)
-exampleChainState = withEBB
+exampleConsensusState :: ConsensusState (BlockProtocol ByronBlock)
+exampleConsensusState = withEBB
   where
-    signers = map (`CS.PBftSigner` CC.exampleKeyHash) [1..4]
+    signers = map (`S.PBftSigner` CC.exampleKeyHash) [1..4]
 
-    withoutEBB = CS.fromList
+    withoutEBB = S.fromList
       secParam
       windowSize
-      (At 2, Seq.fromList signers, CS.NothingEbbInfo)
+      (At 2, Seq.fromList signers, S.NothingEbbInfo)
 
     -- info about an arbitrary hypothetical EBB
     exampleEbbSlot            :: SlotNo
     exampleEbbHeaderHashBytes :: HeaderHashBytes
     exampleEbbSlot            = 6
     exampleEbbHeaderHashBytes = mkHeaderHashBytesForTestingOnly
-                                  (Lazy8.pack "test_golden_ChainState6")
+                                  (Lazy8.pack "test_golden_ConsensusState6")
 
-    withEBB = CS.appendEBB secParam windowSize
+    withEBB = S.appendEBB secParam windowSize
                 exampleEbbSlot exampleEbbHeaderHashBytes
                 withoutEBB
 
-test_golden_ChainState :: TestTree
-test_golden_ChainState = goldenTestCBOR
-    "ChainState"
-    encodeByronChainState
-    exampleChainState
-    "test/golden/cbor/byron/ChainState0"
+test_golden_ConsensusState :: TestTree
+test_golden_ConsensusState = goldenTestCBOR
+    "ConsensusState"
+    encodeByronConsensusState
+    exampleConsensusState
+    "test/golden/cbor/byron/ConsensusState0"
 
 test_golden_LedgerState :: TestTree
 test_golden_LedgerState = goldenTestCBOR

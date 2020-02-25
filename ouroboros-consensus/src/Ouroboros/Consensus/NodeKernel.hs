@@ -86,8 +86,8 @@ data NodeKernel m peer blk = NodeKernel {
       -- | The node's mempool
     , getMempool             :: Mempool m blk TicketNo
 
-      -- | The node's static configuration
-    , getNodeConfig          :: TopLevelConfig blk
+      -- | The node's top-level static configuration
+    , getTopLevelConfig      :: TopLevelConfig blk
 
       -- | The fetch client registry, used for the block fetch clients.
     , getFetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
@@ -209,7 +209,7 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
     return NodeKernel
       { getChainDB             = chainDB
       , getMempool             = mempool
-      , getNodeConfig          = cfg
+      , getTopLevelConfig      = cfg
       , getFetchClientRegistry = fetchClientRegistry
       , getNodeCandidates      = varCandidates
       , getTracers             = tracers
@@ -405,7 +405,7 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
                     (configConsensus cfg)
                     currentSlot
                     ledgerView
-                    (headerStateChain (headerState extLedger))
+                    (headerStateConsensus (headerState extLedger))
               case mIsLeader of
                 Just p  -> return p
                 Nothing -> do

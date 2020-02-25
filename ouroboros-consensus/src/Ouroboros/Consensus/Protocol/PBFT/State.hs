@@ -14,8 +14,8 @@
 -- | PBFT chain state
 --
 -- Intended for qualified import.
-module Ouroboros.Consensus.Protocol.PBFT.ChainState (
-    PBftChainState(..)
+module Ouroboros.Consensus.Protocol.PBFT.State (
+    PBftState(..)
   , WindowSize(..)
     -- * Construction
   , empty
@@ -35,8 +35,8 @@ module Ouroboros.Consensus.Protocol.PBFT.ChainState (
   , fromList
   , toList
     -- ** Serialization
-  , encodePBftChainState
-  , decodePBftChainState
+  , encodePBftState
+  , decodePBftState
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -62,8 +62,8 @@ import           Ouroboros.Network.Point (WithOrigin (..), withOriginFromMaybe,
                      withOriginToMaybe)
 
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
+import           Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.Versioned
 
@@ -71,7 +71,7 @@ import           Ouroboros.Consensus.Util.Versioned
   Types
 -------------------------------------------------------------------------------}
 
--- | PBFT chain state
+-- | PBFT state
 --
 -- For a window size of @n@ and a security parameter @k@, the PBFT chain state
 -- is a sequence of signatures over the last @k+n@ slots
@@ -113,7 +113,7 @@ import           Ouroboros.Consensus.Util.Versioned
 -- The performance of this code is not critical during normal node operation, as
 -- it will only be used when a new block comes in. However, it can become a
 -- bottleneck during syncing.
-data PBftChainState c = PBftChainState {
+data PBftState c = PBftState {
       -- | Signatures at or before the anchor
       --
       -- We should always have at least one signature (the anchor), unless the
@@ -166,7 +166,7 @@ data PBftChainState c = PBftChainState {
       -- See INVARIANTs on 'MaybeEbbInfo'.
       --
       -- INVARIANT For all @EbbInfo{eiSlot, eiPrevSlot)@ in @'ebbs' (cs ::
-      -- 'ChainState')@,
+      -- 'PBftState')@,
       --
       --  * @eiPrevSlot >= anchorSlot cs@ or @At eiSlot == anchorSlot cs@; see
       --    'pruneEBBsLT'
@@ -203,10 +203,10 @@ computeCounts inWindow =
                Map.empty
 
 invariant :: PBftCrypto c
-          => SecurityParam -> WindowSize -> PBftChainState c -> Either String ()
+          => SecurityParam -> WindowSize -> PBftState c -> Either String ()
 invariant (SecurityParam k)
           (WindowSize n)
-          st@PBftChainState{..}
+          st@PBftState{..}
         = runExcept $ do
     unless (size postAnchor <= k) $
       failure "Too many post-anchor signatures"
@@ -253,7 +253,7 @@ invariant (SecurityParam k)
       NothingEbbInfo          -> True
       JustEbbInfo EbbInfo{..} -> p eiSlot eiPrevSlot
 
--- | The 'PBftChainState' tests don't rely on this flag but check the
+-- | The 'PBftState' tests don't rely on this flag but check the
 -- invariant manually. This flag is here so that the invariant checks could be
 -- enabled while running other consensus tests, just as a sanity check.
 --
@@ -264,7 +264,7 @@ enableInvariant = False
 assertInvariant :: (HasCallStack, PBftCrypto c)
                 => SecurityParam
                 -> WindowSize
-                -> PBftChainState c -> PBftChainState c
+                -> PBftState c -> PBftState c
 assertInvariant k n st
   | enableInvariant =
       case invariant k n st of
@@ -281,14 +281,14 @@ data PBftSigner c = PBftSigner {
 
 -- | Window size
 --
--- See 'PBftChainState' itself for a detailed discussion on the window size
+-- See 'PBftState' itself for a detailed discussion on the window size
 -- versus the number of signatures.
 newtype WindowSize = WindowSize { getWindowSize :: Word64 }
   deriving newtype (Show, Eq, Ord, Enum, Num, Real, Integral)
 
-deriving instance PBftCrypto c => Show (PBftChainState c)
-deriving instance PBftCrypto c => Eq   (PBftChainState c)
-deriving instance PBftCrypto c => NoUnexpectedThunks (PBftChainState c)
+deriving instance PBftCrypto c => Show (PBftState c)
+deriving instance PBftCrypto c => Eq   (PBftState c)
+deriving instance PBftCrypto c => NoUnexpectedThunks (PBftState c)
 
 deriving instance PBftCrypto c => Show (PBftSigner c)
 deriving instance PBftCrypto c => Eq   (PBftSigner c)
@@ -301,21 +301,21 @@ deriving instance PBftCrypto c => NoUnexpectedThunks (PBftSigner c)
 -- | Total number of signed slots
 --
 -- This is in terms of /blocks/, not slots.
-countSignatures :: PBftChainState c -> Word64
-countSignatures PBftChainState{..} = size preWindow + size inWindow
+countSignatures :: PBftState c -> Word64
+countSignatures PBftState{..} = size preWindow + size inWindow
 
 -- | Number of signatures in the window
 --
 -- This will be equal to the specified window size, unless near genesis
-countInWindow :: PBftChainState c -> Word64
-countInWindow PBftChainState{..} = size inWindow
+countInWindow :: PBftState c -> Word64
+countInWindow PBftState{..} = size inWindow
 
 -- | The number of blocks signed by the specified genesis key
 --
 -- This only considers the signatures within the window, not in the pre-window;
--- see 'PBftChainState' for detailed discussion.
-countSignedBy :: PBftCrypto c => PBftChainState c -> PBftVerKeyHash c -> Word64
-countSignedBy PBftChainState{..} gk = Map.findWithDefault 0 gk counts
+-- see 'PBftState' for detailed discussion.
+countSignedBy :: PBftCrypto c => PBftState c -> PBftVerKeyHash c -> Word64
+countSignedBy PBftState{..} gk = Map.findWithDefault 0 gk counts
 
 -- | The last (most recent) signed slot in the window
 --
@@ -323,8 +323,8 @@ countSignedBy PBftChainState{..} gk = Map.findWithDefault 0 gk counts
 -- exactly at genesis only).
 --
 -- Unaffected by EBBs, since they're not signed.
-lastSignedSlot :: PBftChainState c -> WithOrigin SlotNo
-lastSignedSlot PBftChainState{..} =
+lastSignedSlot :: PBftState c -> WithOrigin SlotNo
+lastSignedSlot PBftState{..} =
     case inWindow of
       _ :|> signer -> At (pbftSignerSlotNo signer)
       _otherwise   -> Origin
@@ -335,8 +335,8 @@ lastSignedSlot PBftChainState{..} =
 -- exactly at genesis only).
 --
 -- Unaffected by EBBs, since they're not signed.
-anchorSlot :: PBftChainState c -> WithOrigin SlotNo
-anchorSlot PBftChainState{..} =
+anchorSlot :: PBftState c -> WithOrigin SlotNo
+anchorSlot PBftState{..} =
     case preAnchor of
       _ :|> signer -> At (pbftSignerSlotNo signer)
       _otherwise   -> Origin
@@ -348,8 +348,8 @@ anchorSlot PBftChainState{..} =
 -- | Empty PBFT chain state
 --
 -- In other words, the PBFT chain state corresponding to genesis.
-empty :: PBftChainState c
-empty = PBftChainState {
+empty :: PBftState c
+empty = PBftState {
       preAnchor  = Empty
     , postAnchor = Empty
     , preWindow  = Empty
@@ -365,11 +365,11 @@ append :: forall c. PBftCrypto c
        => SecurityParam
        -> WindowSize
        -> PBftSigner c
-       -> PBftChainState c -> PBftChainState c
-append k n signer@(PBftSigner _ gk) PBftChainState{..} =
+       -> PBftState c -> PBftState c
+append k n signer@(PBftSigner _ gk) PBftState{..} =
     assertInvariant k n $
     pruneEBBsLT $
-    PBftChainState {
+    PBftState {
         preAnchor  = preAnchor'
       , postAnchor = postAnchor'
       , preWindow  = preWindow'
@@ -399,8 +399,8 @@ append k n signer@(PBftSigner _ gk) PBftChainState{..} =
 
 -- | Rewind the state to the specified slot
 --
--- This matches the semantics of 'rewindChainState' in 'OuroborosTag', in that
--- this should be the state after the given point.
+-- This matches the semantics of 'rewindConsensusState' in 'OuroborosTag', in
+-- that this should be the state after the given point.
 --
 -- NOTE: It only makes sense to rewind to a slot containing a block that we
 -- have previously applied (the "genesis block" can be understood as having
@@ -419,8 +419,8 @@ rewind :: forall c. PBftCrypto c
        -> WindowSize
        -> WithOrigin (SlotNo, HeaderHashBytes)
           -- ^ the target \"point\"; see 'EbbInfo'
-       -> PBftChainState c -> Maybe (PBftChainState c)
-rewind k n p cs@PBftChainState{..} = case p of
+       -> PBftState c -> Maybe (PBftState c)
+rewind k n p cs@PBftState{..} = case p of
     Origin               -> go Origin
     At (slot, hashBytes) -> case ebbsLookup slot ebbs of
       Just EbbInfo{..}
@@ -434,8 +434,8 @@ rewind_ :: forall c. PBftCrypto c
        => SecurityParam
        -> WindowSize
        -> WithOrigin SlotNo
-       -> PBftChainState c -> Maybe (PBftChainState c)
-rewind_ k n mSlot PBftChainState{..} =
+       -> PBftState c -> Maybe (PBftState c)
+rewind_ k n mSlot PBftState{..} =
     case mSlot of
       At slot ->
         -- We scan from the right, since block to roll back to likely at end
@@ -484,8 +484,8 @@ rewind_ k n mSlot PBftChainState{..} =
     -- rare.
     go :: StrictSeq (PBftSigner c)
        -> StrictSeq (PBftSigner c)
-       -> PBftChainState c
-    go postAnchorDiscard postAnchorKeep = assertInvariant k n $ PBftChainState {
+       -> PBftState c
+    go postAnchorDiscard postAnchorKeep = assertInvariant k n $ PBftState {
           preAnchor  = preAnchor -- can't change by definition
         , postAnchor = postAnchorKeep
         , preWindow  = preWindow'
@@ -537,8 +537,8 @@ prune (SecurityParam n) (WindowSize k) (xs, ys) =
   Conversion
 -------------------------------------------------------------------------------}
 
-toList :: PBftChainState c -> (WithOrigin SlotNo, StrictSeq (PBftSigner c), MaybeEbbInfo)
-toList PBftChainState{..} = (
+toList :: PBftState c -> (WithOrigin SlotNo, StrictSeq (PBftSigner c), MaybeEbbInfo)
+toList PBftState{..} = (
       case preAnchor of
         Empty   -> Origin
         _ :|> x -> At (pbftSignerSlotNo x)
@@ -550,11 +550,11 @@ fromList :: PBftCrypto c
          => SecurityParam
          -> WindowSize
          -> (WithOrigin SlotNo, StrictSeq (PBftSigner c), MaybeEbbInfo)
-         -> PBftChainState c
+         -> PBftState c
 fromList k n (anchor, signers, ebbs) =
     assertInvariant k n $
     pruneEBBsLT $
-    PBftChainState {..}
+    PBftState {..}
   where
     inPreAnchor :: PBftSigner c -> Bool
     inPreAnchor (PBftSigner slot _) = At slot <= anchor
@@ -570,10 +570,9 @@ fromList k n (anchor, signers, ebbs) =
 serializationFormatVersion0 :: VersionNumber
 serializationFormatVersion0 = 0
 
-encodePBftChainState
-  :: Serialise (PBftVerKeyHash c)
-  => PBftChainState c -> Encoding
-encodePBftChainState st@PBftChainState{..} =
+encodePBftState :: Serialise (PBftVerKeyHash c)
+                => PBftState c -> Encoding
+encodePBftState st@PBftState{..} =
     encodeVersion serializationFormatVersion0 $ mconcat [
         Serialise.encodeListLen 3
       , encode (withOriginToMaybe anchor)
@@ -583,15 +582,15 @@ encodePBftChainState st@PBftChainState{..} =
   where
     (anchor, signers, ebbs') = toList st
 
-decodePBftChainState :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
-                     => SecurityParam
-                     -> WindowSize
-                     -> Decoder s (PBftChainState c)
-decodePBftChainState k n = decodeVersion
-    [(serializationFormatVersion0, Decode decodePBftChainState0)]
+decodePBftState :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
+                => SecurityParam
+                -> WindowSize
+                -> Decoder s (PBftState c)
+decodePBftState k n = decodeVersion
+    [(serializationFormatVersion0, Decode decodePBftState0)]
   where
-    decodePBftChainState0 = do
-      enforceSize "PBftChainState" 3
+    decodePBftState0 = do
+      enforceSize "PBftState" 3
       anchor  <- withOriginFromMaybe <$> decode
       signers <- decode
       ebbs'   <- decode
@@ -618,8 +617,8 @@ appendEBB :: forall c. (PBftCrypto c, HasCallStack)
           -> WindowSize
           -> SlotNo
           -> HeaderHashBytes
-          -> PBftChainState c -> PBftChainState c
-appendEBB k n newEbbSlot hashBytes cs@PBftChainState{..} =
+          -> PBftState c -> PBftState c
+appendEBB k n newEbbSlot hashBytes cs@PBftState{..} =
     assertInvariant k n $
     Exn.assert valid $
     cs{ebbs = JustEbbInfo EbbInfo
@@ -641,8 +640,8 @@ appendEBB k n newEbbSlot hashBytes cs@PBftChainState{..} =
 -- the anchor so that we can fail if we attempt to rewind to it -- if we forget
 -- about that EBB, then we won't be able to recognize its hash in the requested
 -- rewind point.
-pruneEBBsLT :: PBftChainState c -> PBftChainState c
-pruneEBBsLT cs@PBftChainState{..} =
+pruneEBBsLT :: PBftState c -> PBftState c
+pruneEBBsLT cs@PBftState{..} =
   cs{ ebbs = ebbsFilter ebbs $ \EbbInfo{..} ->
         eiPrevSlot >= anchorSlot cs ||
         At eiSlot == anchorSlot cs }
@@ -654,8 +653,8 @@ pruneEBBsLT cs@PBftChainState{..} =
 --
 -- Called by 'rewind', since 'rewind'ing to a slot should forget the EBBs it
 -- precedes.
-pruneEBBsGT :: WithOrigin SlotNo -> PBftChainState c -> PBftChainState c
-pruneEBBsGT mSlot cs@PBftChainState{..} =
+pruneEBBsGT :: WithOrigin SlotNo -> PBftState c -> PBftState c
+pruneEBBsGT mSlot cs@PBftState{..} =
   cs{ ebbs = ebbsFilter ebbs $ \EbbInfo{..} -> At eiSlot <= mSlot }
 
 -- | Info about the latest EBB, if there is one recent enough to be relevant to
@@ -671,8 +670,8 @@ data MaybeEbbInfo
 --
 -- The serialised bytes of the EBB's header hash and its latest previous signed
 -- slot. We use 'HeaderHashBytes' instead of the EBB's actual @HeaderHash@
--- because the 'ChainState' type family (which we instantiate as
--- 'PBftChainState') does not take a type argument that to which we can apply
+-- because the 'ConsensusState' type family (which we instantiate as
+-- 'PBftState') does not take a type argument that to which we can apply
 -- @HeaderHash@. This is a compromise.
 --
 -- INVARIANT @At 'eiSlot' > 'eiPrevSlot'@

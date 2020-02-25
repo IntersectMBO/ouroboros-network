@@ -357,7 +357,7 @@ testInitExtLedger = ExtLedgerState {
 -- | Trivial test configuration with a single core node
 singleNodeTestConfig :: TopLevelConfig TestBlock
 singleNodeTestConfig = TopLevelConfig {
-      configConsensus = BftNodeConfig {
+      configConsensus = BftConfig {
           bftParams   = BftParams { bftSecurityParam = k
                                   , bftNumNodes      = numCoreNodes
                                   }

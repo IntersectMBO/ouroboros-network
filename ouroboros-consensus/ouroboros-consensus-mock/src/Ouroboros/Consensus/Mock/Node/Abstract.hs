@@ -35,12 +35,15 @@ class MockProtocolSpecific c ext => RunMockBlock c ext where
            -> SimpleBlock' c ext ()
            -> m (SimpleBlock c ext)
 
-  mockProtocolMagicId  :: TopLevelConfig (SimpleBlock c ext)
-                       -> ProtocolMagicId
-  mockEncodeChainState :: TopLevelConfig (SimpleBlock c ext)
-                       -> ChainState (BlockProtocol (SimpleBlock c ext)) -> Encoding
-  mockDecodeChainState :: TopLevelConfig (SimpleBlock c ext)
-                       -> Decoder s (ChainState (BlockProtocol (SimpleBlock c ext)))
+  mockProtocolMagicId
+    :: TopLevelConfig (SimpleBlock c ext)
+    -> ProtocolMagicId
+  mockEncodeConsensusState
+    :: TopLevelConfig (SimpleBlock c ext)
+    -> ConsensusState (BlockProtocol (SimpleBlock c ext)) -> Encoding
+  mockDecodeConsensusState
+    :: TopLevelConfig (SimpleBlock c ext)
+    -> Decoder s (ConsensusState (BlockProtocol (SimpleBlock c ext)))
 
 -- | Construct protocol magic ID depending on where in the code this is called
 --

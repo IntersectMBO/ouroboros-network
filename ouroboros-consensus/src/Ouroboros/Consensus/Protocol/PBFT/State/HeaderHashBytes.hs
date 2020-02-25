@@ -6,8 +6,8 @@
 -- | A type in which each value is the byte serialisation of a header hash.
 --
 -- This is an implementation detail of
--- "Ouroboros.Consensus.Protocol.PBFT.ChainState".
-module Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes (
+-- "Ouroboros.Consensus.Protocol.PBFT.State".
+module Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes (
   HeaderHashBytes,
   headerHashBytes,
   -- * For testing

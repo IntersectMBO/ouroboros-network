@@ -13,7 +13,7 @@ module Ouroboros.Consensus.Protocol.ModChainSel (
     ChainSelection (..)
   , ModChainSel
     -- * Type family instances
-  , NodeConfig (..)
+  , ConsensusConfig (..)
   ) where
 
 import           Data.Proxy (Proxy (..))
@@ -29,33 +29,41 @@ class ConsensusProtocol p => ChainSelection p s where
   type family SelectView' p :: *
 
   preferCandidate'   :: proxy s
-                     -> NodeConfig p -> SelectView' p -> SelectView' p -> Bool
+                     -> ConsensusConfig p
+                     -> SelectView'     p
+                     -> SelectView'     p
+                     -> Bool
 
   compareCandidates' :: proxy s
-                     -> NodeConfig p -> SelectView' p -> SelectView' p -> Ordering
+                     -> ConsensusConfig p
+                     -> SelectView'     p
+                     -> SelectView'     p
+                     -> Ordering
 
 data ModChainSel p s
 
-newtype instance NodeConfig (ModChainSel p s) = McsNodeConfig (NodeConfig p)
+newtype instance ConsensusConfig (ModChainSel p s) = McsConsensusConfig {
+      unMcsConsensusConfig :: ConsensusConfig p
+    }
   deriving (Generic)
 
 instance (Typeable p, Typeable s, ChainSelection p s)
       => ConsensusProtocol (ModChainSel p s) where
-    type ChainState    (ModChainSel p s) = ChainState    p
-    type IsLeader      (ModChainSel p s) = IsLeader      p
-    type LedgerView    (ModChainSel p s) = LedgerView    p
-    type ValidationErr (ModChainSel p s) = ValidationErr p
-    type ValidateView  (ModChainSel p s) = ValidateView  p
-    type SelectView    (ModChainSel p s) = SelectView'   p
+    type ConsensusState (ModChainSel p s) = ConsensusState p
+    type IsLeader       (ModChainSel p s) = IsLeader       p
+    type LedgerView     (ModChainSel p s) = LedgerView     p
+    type ValidationErr  (ModChainSel p s) = ValidationErr  p
+    type ValidateView   (ModChainSel p s) = ValidateView   p
+    type SelectView     (ModChainSel p s) = SelectView'    p
 
-    checkIsLeader         (McsNodeConfig cfg) = checkIsLeader         cfg
-    applyChainState       (McsNodeConfig cfg) = applyChainState       cfg
-    rewindChainState      (McsNodeConfig cfg) = rewindChainState      cfg
-    protocolSecurityParam (McsNodeConfig cfg) = protocolSecurityParam cfg
+    checkIsLeader         (McsConsensusConfig cfg) = checkIsLeader         cfg
+    updateConsensusState  (McsConsensusConfig cfg) = updateConsensusState  cfg
+    rewindConsensusState  (McsConsensusConfig cfg) = rewindConsensusState  cfg
+    protocolSecurityParam (McsConsensusConfig cfg) = protocolSecurityParam cfg
 
-    preferCandidate   (McsNodeConfig cfg) = preferCandidate'   (Proxy :: Proxy s) cfg
-    compareCandidates (McsNodeConfig cfg) = compareCandidates' (Proxy :: Proxy s) cfg
+    preferCandidate   (McsConsensusConfig cfg) = preferCandidate'   (Proxy :: Proxy s) cfg
+    compareCandidates (McsConsensusConfig cfg) = compareCandidates' (Proxy :: Proxy s) cfg
 
 instance ConsensusProtocol p
-      => NoUnexpectedThunks (NodeConfig (ModChainSel p s))
+      => NoUnexpectedThunks (ConsensusConfig (ModChainSel p s))
   -- use generic instance

@@ -514,48 +514,48 @@ runThreadNetwork ThreadNetworkArgs
       invalidTracer addTracer
       nodeDBs = ChainDbArgs
         { -- Decoders
-          cdbDecodeHash       = nodeDecodeHeaderHash (Proxy @blk)
-        , cdbDecodeBlock      = nodeDecodeBlock       cfg
-        , cdbDecodeHeader     = nodeDecodeHeader      cfg SerialisedToDisk
-        , cdbDecodeLedger     = nodeDecodeLedgerState cfg
-        , cdbDecodeChainState = nodeDecodeChainState (Proxy @blk) cfg
-        , cdbDecodeTipInfo    = nodeDecodeTipInfo    (Proxy @blk)
+          cdbDecodeHash           = nodeDecodeHeaderHash     (Proxy @blk)
+        , cdbDecodeBlock          = nodeDecodeBlock          cfg
+        , cdbDecodeHeader         = nodeDecodeHeader         cfg SerialisedToDisk
+        , cdbDecodeLedger         = nodeDecodeLedgerState    cfg
+        , cdbDecodeConsensusState = nodeDecodeConsensusState (Proxy @blk) cfg
+        , cdbDecodeTipInfo        = nodeDecodeTipInfo        (Proxy @blk)
           -- Encoders
-        , cdbEncodeHash       = nodeEncodeHeaderHash (Proxy @blk)
-        , cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
-        , cdbEncodeHeader     = nodeEncodeHeader        cfg SerialisedToDisk
-        , cdbEncodeLedger     = nodeEncodeLedgerState   cfg
-        , cdbEncodeChainState = nodeEncodeChainState (Proxy @blk) cfg
-        , cdbEncodeTipInfo    = nodeEncodeTipInfo    (Proxy @blk)
+        , cdbEncodeHash           = nodeEncodeHeaderHash     (Proxy @blk)
+        , cdbEncodeBlock          = nodeEncodeBlockWithInfo  cfg
+        , cdbEncodeHeader         = nodeEncodeHeader         cfg SerialisedToDisk
+        , cdbEncodeLedger         = nodeEncodeLedgerState    cfg
+        , cdbEncodeConsensusState = nodeEncodeConsensusState (Proxy @blk) cfg
+        , cdbEncodeTipInfo        = nodeEncodeTipInfo        (Proxy @blk)
           -- Error handling
-        , cdbErrImmDb         = EH.monadCatch
-        , cdbErrVolDb         = EH.monadCatch
-        , cdbErrVolDbSTM      = EH.throwSTM
+        , cdbErrImmDb             = EH.monadCatch
+        , cdbErrVolDb             = EH.monadCatch
+        , cdbErrVolDbSTM          = EH.throwSTM
           -- HasFS instances
-        , cdbHasFSImmDb       = simHasFS EH.monadCatch (nodeDBsImm nodeDBs)
-        , cdbHasFSVolDb       = simHasFS EH.monadCatch (nodeDBsVol nodeDBs)
-        , cdbHasFSLgrDB       = simHasFS EH.monadCatch (nodeDBsLgr nodeDBs)
+        , cdbHasFSImmDb           = simHasFS EH.monadCatch (nodeDBsImm nodeDBs)
+        , cdbHasFSVolDb           = simHasFS EH.monadCatch (nodeDBsVol nodeDBs)
+        , cdbHasFSLgrDB           = simHasFS EH.monadCatch (nodeDBsLgr nodeDBs)
           -- Policy
-        , cdbImmValidation    = ImmDB.ValidateAllEpochs
-        , cdbVolValidation    = VolDB.ValidateAll
-        , cdbBlocksPerFile    = VolDB.mkBlocksPerFile 4
-        , cdbParamsLgrDB      = LgrDB.ledgerDbDefaultParams (configSecurityParam cfg)
-        , cdbDiskPolicy       = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
+        , cdbImmValidation        = ImmDB.ValidateAllEpochs
+        , cdbVolValidation        = VolDB.ValidateAll
+        , cdbBlocksPerFile        = VolDB.mkBlocksPerFile 4
+        , cdbParamsLgrDB          = LgrDB.ledgerDbDefaultParams (configSecurityParam cfg)
+        , cdbDiskPolicy           = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
           -- Integration
-        , cdbNodeConfig       = cfg
-        , cdbEpochInfo        = epochInfo
-        , cdbHashInfo         = nodeHashInfo (Proxy @blk)
-        , cdbIsEBB            = nodeIsEBB
-        , cdbCheckIntegrity   = nodeCheckIntegrity cfg
-        , cdbGenesis          = return initLedger
-        , cdbBlockchainTime   = btime
-        , cdbAddHdrEnv        = nodeAddHeaderEnvelope (Proxy @blk)
-        , cdbImmDbCacheConfig = Index.CacheConfig 2 60
+        , cdbTopLevelConfig       = cfg
+        , cdbEpochInfo            = epochInfo
+        , cdbHashInfo             = nodeHashInfo (Proxy @blk)
+        , cdbIsEBB                = nodeIsEBB
+        , cdbCheckIntegrity       = nodeCheckIntegrity cfg
+        , cdbGenesis              = return initLedger
+        , cdbBlockchainTime       = btime
+        , cdbAddHdrEnv            = nodeAddHeaderEnvelope (Proxy @blk)
+        , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
         -- Misc
-        , cdbTracer           = instrumentationTracer <> nullDebugTracer
-        , cdbTraceLedger      = nullDebugTracer
-        , cdbRegistry         = registry
-        , cdbGcDelay          = 0
+        , cdbTracer               = instrumentationTracer <> nullDebugTracer
+        , cdbTraceLedger          = nullDebugTracer
+        , cdbRegistry             = registry
+        , cdbGcDelay              = 0
         }
       where
         -- prop_general relies on this tracer
