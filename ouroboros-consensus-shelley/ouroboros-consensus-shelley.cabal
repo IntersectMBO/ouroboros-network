@@ -35,6 +35,7 @@ library
                        Ouroboros.Consensus.Shelley.Ledger.Ledger
                        Ouroboros.Consensus.Shelley.Ledger.Mempool
                        Ouroboros.Consensus.Shelley.Ledger.TPraos
+                       Ouroboros.Consensus.Shelley.Node
                        Ouroboros.Consensus.Shelley.Protocol
                        Ouroboros.Consensus.Shelley.Protocol.State
                        Ouroboros.Consensus.Shelley.Protocol.Crypto
