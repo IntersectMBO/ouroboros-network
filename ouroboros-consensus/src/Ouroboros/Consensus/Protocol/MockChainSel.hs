@@ -8,7 +8,6 @@ import           Data.Function (on)
 import           Data.List (sortBy)
 import           Data.Maybe (listToMaybe)
 
-import           Ouroboros.Network.Block (HasHeader (..))
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
@@ -30,7 +29,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -- somehow fail if the selected chain turns out to be invalid.)
 --
 -- Returns 'Nothing' if we stick with our current chain.
-selectChain :: forall p hdr l. (ConsensusProtocol p, HasHeader hdr)
+selectChain :: forall p hdr l. ConsensusProtocol p
             => (hdr -> SelectView p)
             -> NodeConfig p
             -> Chain hdr           -- ^ Our chain
@@ -65,7 +64,7 @@ selectChain view cfg ours candidates =
         go (Just a) (Just b) = compareCandidates cfg (view a) (view b)
 
 -- | Chain selection on unvalidated chains
-selectUnvalidatedChain :: forall p hdr. (ConsensusProtocol p, HasHeader hdr)
+selectUnvalidatedChain :: forall p hdr. ConsensusProtocol p
                        => (hdr -> SelectView p)
                        -> NodeConfig p
                        -> Chain hdr

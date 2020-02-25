@@ -349,16 +349,14 @@ deriving instance ( Eq (LedgerState m)
   Utilities for working with the extended ledger state
 -------------------------------------------------------------------------------}
 
-dualExtLedgerStateMain :: Bridge m a
-                       => ExtLedgerState (DualBlock m a)
+dualExtLedgerStateMain :: ExtLedgerState (DualBlock m a)
                        -> ExtLedgerState m
 dualExtLedgerStateMain ExtLedgerState{..} = ExtLedgerState{
       ledgerState = dualLedgerStateMain ledgerState
     , headerState = castHeaderState     headerState
     }
 
-dualExtValidationErrorMain :: Bridge m a
-                           => ExtValidationError (DualBlock m a)
+dualExtValidationErrorMain :: ExtValidationError (DualBlock m a)
                            -> ExtValidationError m
 dualExtValidationErrorMain = \case
     ExtValidationErrorLedger e -> ExtValidationErrorLedger (dualLedgerErrorMain e)

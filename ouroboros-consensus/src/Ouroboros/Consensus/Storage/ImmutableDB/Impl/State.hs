@@ -214,7 +214,7 @@ modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
           -- In case a user error, just restore the previous state
           ExitCaseSuccess (Left (UserError {}))       -> (DbOpen ost, return ())
 
-    mutation :: HasCallStack => OpenState m hash h -> m (r, OpenState m hash h)
+    mutation :: OpenState m hash h -> m (r, OpenState m hash h)
     mutation = runStateT (action hasFS)
 
 -- | Perform an action that accesses the internal state of an open database.
@@ -261,7 +261,7 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
       DbOpen ost -> cleanUp hasFS ost
       DbClosed   -> return ()
 
-    access :: HasCallStack => OpenState m hash h -> m r
+    access :: OpenState m hash h -> m r
     access = action hasFS
 
 cleanUp :: Monad m => HasFS m h -> OpenState m hash h -> m ()

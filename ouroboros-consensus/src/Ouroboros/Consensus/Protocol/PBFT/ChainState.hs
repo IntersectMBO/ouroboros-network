@@ -571,7 +571,7 @@ serializationFormatVersion0 :: VersionNumber
 serializationFormatVersion0 = 0
 
 encodePBftChainState
-  :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
+  :: Serialise (PBftVerKeyHash c)
   => PBftChainState c -> Encoding
 encodePBftChainState st@PBftChainState{..} =
     encodeVersion serializationFormatVersion0 $ mconcat [
@@ -583,7 +583,7 @@ encodePBftChainState st@PBftChainState{..} =
   where
     (anchor, signers, ebbs') = toList st
 
-decodePBftChainState :: (PBftCrypto c, Serialise (PBftVerKeyHash c), HasCallStack)
+decodePBftChainState :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
                      => SecurityParam
                      -> WindowSize
                      -> Decoder s (PBftChainState c)

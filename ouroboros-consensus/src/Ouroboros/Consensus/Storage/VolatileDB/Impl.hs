@@ -102,7 +102,6 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Typeable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -180,8 +179,6 @@ openDB :: ( HasCallStack
           , IOLike m
           , Ord                blockId
           , NoUnexpectedThunks blockId
-          , Typeable           blockId
-          , Show               blockId
           )
        => HasFS m h
        -> ErrorHandling VolatileDBError m
@@ -238,9 +235,7 @@ isOpenDBImpl VolatileDBEnv{..} = do
 -- because 'reOpenDB' will always append to the last created file.
 reOpenDBImpl :: ( HasCallStack
                 , IOLike m
-                , Ord      blockId
-                , Typeable blockId
-                , Show     blockId
+                , Ord blockId
                 )
              => VolatileDBEnv m blockId
              -> m ()
@@ -483,9 +478,7 @@ mkInternalStateDB :: forall m blockId e h.
                      ( HasCallStack
                      , MonadThrow m
                      , MonadCatch m
-                     , Ord      blockId
-                     , Typeable blockId
-                     , Show     blockId
+                     , Ord blockId
                      )
                   => HasFS m h
                   -> ErrorHandling VolatileDBError m
@@ -526,9 +519,7 @@ mkInternalState
   :: forall blockId m h e. (
        HasCallStack
      , MonadCatch m
-     , Ord      blockId
-     , Typeable blockId
-     , Show     blockId
+     , Ord blockId
      )
   => HasFS m h
   -> ErrorHandling VolatileDBError m
@@ -695,11 +686,7 @@ getterSTM fromSt VolatileDBEnv{..} = do
 --   the given list, or most often, the original input list.
 -- * In case of an error, the error and the offset to truncate to.
 addToReverseIndex
-  :: forall blockId e. (
-       Ord      blockId
-     , Typeable blockId
-     , Show     blockId
-     )
+  :: forall blockId e. Ord blockId
   => FsPath
   -> ReverseIndex blockId
   -> ParsedInfo blockId
