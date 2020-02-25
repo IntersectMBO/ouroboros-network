@@ -76,16 +76,23 @@ test-suite test
   other-modules:
                        Test.Consensus.Shelley.Ledger
                        Test.Consensus.Shelley.MockCrypto
+                       Test.ThreadNet.RealTPraos
+                       Test.ThreadNet.TxGen.Shelley
 
   build-depends:       base
                      , binary
                      , bytestring
                      , cardano-binary
+                     , cardano-crypto-class
+                     , cardano-crypto-wrapper
+                     , cardano-slotting
                      , cborg
                      , containers        >=0.5   && <0.7
+                     , cryptonite        >=0.25  && <0.26
                      , generic-random
                      , hedgehog-quickcheck
                      , QuickCheck
+                     , time
                      , tasty
                      , tasty-golden
                      , tasty-hunit
