@@ -245,23 +245,13 @@ instance UpdateLedger OddBlock where
     where
       tickedSt = applyChainTick cfg (blockSlot blk) st
 
-    -- let st'@LedgerState { phase } = tickedLedgerState
-    --                                 $ applyChainTick cfg (blockSlot blk) st
-    --   in case catMaybes $ fmap (checkTx st') oddBlockPayload of
-
-    --       [] -> pure $! st' { stCurrentSlot = blockSlot blk
-    --                         , stPrevHash    = BlockHash $ blockHash blk
-    --                         , phase         = bump oddBlockPayload phase
-    --                         }
-    --       xs -> throwError $ OddError
-    --                          { currentPhase = phase
-    --                          , errors       = xs
-    --                          }
-
-  reapplyLedgerBlock _cfg blk@OddBlock { oddBlockHeader, oddBlockPayload } st@LedgerState { phase }
+  reapplyLedgerBlock cfg blk@OddBlock { oddBlockHeader, oddBlockPayload } st@LedgerState { phase }
     = st { stLastApplied = blockPoint blk
-         , phase         = foldl (Prelude.flip updatePhase) phase oddBlockPayload
+         , phase         = foldl (Prelude.flip updatePhase) phase' oddBlockPayload
          }
+    where
+      phase' = changePhaseOnEpochBoundary cfg (blockSlot blk) phase
+
 
   ledgerTipPoint
     -- So here I realized that the ledger state needs a
@@ -437,7 +427,7 @@ checkPhase i (Increase j) =
 newtype Tx = Tx { unTx :: Int }
   deriving (Eq, Ord, Show, Generic)
   deriving anyclass (NoUnexpectedThunks)
-  deriving newtype (ToCBOR, FromCBOR)
+  deriving newtype (ToCBOR, FromCBOR, Num, Integral, Real, Enum)
 
 instance HasTxId (GenTx OddBlock) where
 

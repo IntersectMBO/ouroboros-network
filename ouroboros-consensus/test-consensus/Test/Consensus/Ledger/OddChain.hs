@@ -11,8 +11,9 @@
 module Test.Consensus.Ledger.OddChain (tests) where
 
 import           Control.Monad.Except (Except, runExcept)
-import           Test.QuickCheck (Property, counterexample, withMaxSuccess
+import           Test.QuickCheck (Property, counterexample, withMaxSuccess, label
                    , Gen, Arbitrary
+                   , classify
                    , arbitrary, shrink
                    , Positive (Positive)
                    , oneof, vectorOf, elements, suchThat
@@ -22,6 +23,7 @@ import           Test.Tasty (testGroup, TestTree)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Control.Arrow (second)
 import           Codec.Serialise (serialise, deserialise)
+import           Data.List (sort)
 
 import           Data.Word (Word64)
 import qualified Data.ByteString.Base16.Lazy as Base16
@@ -66,7 +68,7 @@ import           Ouroboros.Consensus.Block (getHeader)
 import qualified Cardano.Crypto.Hash.Class as Crypto.Hash
 import           Cardano.Crypto.Hash.Short (ShortHash)
 
-import           Ouroboros.Consensus.Ledger.Abstract (applyLedgerBlock
+import           Ouroboros.Consensus.Ledger.Abstract (applyLedgerBlock, reapplyLedgerBlock
                    , TickedLedgerState, tickedLedgerState
                    , applyChainTick
                    , LedgerConfig
@@ -91,6 +93,7 @@ tests = testGroup "Odd Chain"
   , testGroup "Ledger properties"
       [ testProperty "Mempool safety"  prop_mempool
       , testProperty "Header encoding" prop_block_header_encoding
+      , testProperty "Re-apply"        prop_reapply
       ]
   ]
 
@@ -238,18 +241,36 @@ prop_block_header_encoding blk
                            (Lazy.drop (fromIntegral headerOffset) byteString)
     headerDeserialisationResult = deserialiseFromBytes (const <$> fromCBOR) headerByteString
 
+prop_reapply
+  :: LedgerConfig OddBlock
+  -> OddBlock
+  -> LedgerState OddBlock
+  -> Property
+prop_reapply cfg blk st
+  = withMaxSuccess 10000
+  $ classify (null $ oddBlockPayload blk) "Empty payload"
+  $ case runExcept (applyLedgerBlock cfg blk st) of
+    Left err -> label "Invalid block" True
+    Right st' -> st' === reapplyLedgerBlock cfg blk st
+
 --------------------------------------------------------------------------------
 -- Arbitrary instances and generators
 --------------------------------------------------------------------------------
 
 instance Arbitrary OddBlock where
   arbitrary = do
-    payload <- arbitrary
+    -- To generate valid blocks we would need to have access to the ledger
+    -- state, and the tests will become a bit more complex ...
+    payload <- oneof [ arbitraryIncreasing
+                     , fmap reverse arbitraryIncreasing
+                     ]
     hdr     <- arbitraryHeader payload
     pure $! OddBlock
           { oddBlockHeader = hdr
           , oddBlockPayload = payload
           }
+    where
+      arbitraryIncreasing = fmap (fmap ((+1). (*2)) . sort) arbitrary
 
   shrink _ = [] -- TODO: define this properly. At least we should shrink the transactions.
 
@@ -310,8 +331,8 @@ instance Arbitrary (Crypto.Hash.Hash ShortHash Lazy.ByteString) where
   arbitrary = Crypto.Hash.hash <$> arbitrary
 
 instance Arbitrary Phase where
-  arbitrary = oneof [ Increase <$> arbitrary
-                    , Decrease <$> arbitrary
+  arbitrary = oneof [ Increase <$> oneof [pure (-1000), arbitrary]
+                    , Decrease <$> oneof [pure 1000   , arbitrary]
                     ]
 
 instance Arbitrary (LedgerState OddBlock) where
