@@ -34,6 +34,9 @@ import           Ouroboros.Consensus.Storage.Common
 -- default implementation all of these functions query and update an internal
 -- cache maintaining cumulative epoch sizes; for that reason, all of these
 -- functions live in a monad @m@.
+--
+-- TODO: This duplicates the definition in cardano-slotting?
+-- (Ideally the one from cardano-slotting would be removed.)
 data EpochInfo m = EpochInfo {
       -- | Return the size of the given epoch as a number of slots
       --

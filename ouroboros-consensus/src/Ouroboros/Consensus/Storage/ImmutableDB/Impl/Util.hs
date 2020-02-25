@@ -17,7 +17,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
   , parseDBFile
   , validateIteratorRange
   , onImmDbException
-  , epochSlotToTip
   , dbFilesOnDisk
   , removeFilesStartingFrom
   , runGet
@@ -39,7 +38,6 @@ import           Text.Read (readMaybe)
 import           Ouroboros.Consensus.Util (whenJust)
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo.API
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
@@ -47,7 +45,7 @@ import           Ouroboros.Consensus.Storage.Util.ErrorHandling
                      (ErrorHandling (..))
 import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
+import           Ouroboros.Consensus.Storage.ImmutableDB.ChunkSize
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 
 {------------------------------------------------------------------------------
@@ -131,33 +129,31 @@ parseDBFile s = case T.splitOn "." $ T.pack s of
 validateIteratorRange
   :: forall m hash. Monad m
   => ErrorHandling ImmutableDBError m
-  -> EpochInfo m
+  -> ChunkSize
   -> ImmTip
   -> Maybe (SlotNo, hash)  -- ^ range start (inclusive)
   -> Maybe (SlotNo, hash)  -- ^ range end (inclusive)
   -> m ()
-validateIteratorRange err epochInfo tip mbStart mbEnd = do
+validateIteratorRange err chunkSize tip mbStart mbEnd = do
     case (mbStart, mbEnd) of
       (Just (start, _), Just (end, _)) ->
         when (start > end) $
           throwUserError err $ InvalidIteratorRangeError start end
       _ -> return ()
 
-    whenJust mbStart $ \(start, _) -> do
-      isNewer <- isNewerThanTip start
-      when isNewer $
+    whenJust mbStart $ \(start, _) ->
+      when (isNewerThanTip start) $
         throwUserError err $ ReadFutureSlotError start tip
 
-    whenJust mbEnd $ \(end, _) -> do
-      isNewer <- isNewerThanTip end
-      when isNewer $
+    whenJust mbEnd $ \(end, _) ->
+      when (isNewerThanTip end) $
         throwUserError err $ ReadFutureSlotError end tip
   where
-    isNewerThanTip :: SlotNo -> m Bool
+    isNewerThanTip :: SlotNo -> Bool
     isNewerThanTip slot = case tip of
-      TipGen                -> return True
-      Tip (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
-      Tip (Block lastSlot)  -> return $ slot > lastSlot
+      TipGen                -> True
+      Tip (EBB   lastEpoch) -> slot > slotForEBB chunkSize lastEpoch
+      Tip (Block lastSlot)  -> slot > lastSlot
 
 -- | Execute some error handler when an 'ImmutableDBError' or an 'FsError' is
 -- thrown while executing an action.
@@ -169,12 +165,6 @@ onImmDbException :: Monad m
                  -> m a
 onImmDbException fsErr err onErr m =
     EH.onException fsErr (EH.onException err m onErr) onErr
-
--- | Convert an 'EpochSlot' to a 'Tip'
-epochSlotToTip :: Monad m => EpochInfo m -> EpochSlot -> m ImmTip
-epochSlotToTip _         (EpochSlot epoch 0) = return $ Tip (EBB epoch)
-epochSlotToTip epochInfo epochSlot           = Tip . Block <$>
-    epochInfoAbsolute epochInfo epochSlot
 
 -- | Go through all files, making three sets: the set of epoch files, primary
 -- index files, and secondary index files,, discarding all others.

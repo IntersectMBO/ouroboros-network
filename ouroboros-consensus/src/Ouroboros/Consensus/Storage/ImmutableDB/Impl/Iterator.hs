@@ -39,12 +39,12 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceKey,
                      ResourceRegistry, allocate, release, unsafeRelease)
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
+import           Ouroboros.Consensus.Storage.ImmutableDB.ChunkSize
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
@@ -134,7 +134,7 @@ streamImpl
                (Iterator hash m b))
 streamImpl dbEnv registry blockComponent mbStart mbEnd =
     withOpenState dbEnv $ \hasFS OpenState{..} -> runExceptT $ do
-      lift $ validateIteratorRange _dbErr _dbEpochInfo
+      lift $ validateIteratorRange _dbErr _dbChunkSize
         (forgetTipInfo <$> _currentTip) mbStart mbEnd
 
       case _currentTip of
@@ -156,8 +156,8 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
             -- information to do that.
             let WithHash _startHash startEpochSlot = start
             when (startEpochSlot > endEpochSlot) $ do
-              startSlot <- epochInfoAbsolute _dbEpochInfo startEpochSlot
-              endSlot   <- epochInfoAbsolute _dbEpochInfo endEpochSlot
+              let startSlot = epochInfoAbsolute _dbChunkSize startEpochSlot
+                  endSlot   = epochInfoAbsolute _dbChunkSize endEpochSlot
               throwUserError _dbErr $ InvalidIteratorRangeError startSlot endSlot
 
             let EpochSlot startEpoch startRelSlot = startEpochSlot
@@ -181,7 +181,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
               , itEndHash = endHash
               }
   where
-    ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo } = dbEnv
+    ImmutableDBEnv { _dbErr, _dbChunkSize, _dbHashInfo } = dbEnv
 
     -- | Fill in the end bound: if 'Nothing', use the current tip. Otherwise,
     -- check whether the bound exists in the database and return the
@@ -203,14 +203,14 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
       -- an EBB. Convert the 'SlotNo' to an 'EpochSlot' accordingly.
       Just end -> do
         (epochSlot, (entry, _blockSize), _secondaryOffset) <-
-          getSlotInfo _dbEpochInfo index end
+          getSlotInfo _dbChunkSize index end
         return (WithHash (Secondary.headerHash entry) epochSlot)
 
       -- No end bound given, use the current tip, but convert the 'BlockOrEBB'
       -- to an 'EpochSlot'.
       Nothing  -> lift $ forM (fromTipInfo currentTip) $ \case
-        EBB epoch      -> return (EpochSlot epoch 0)
-        Block lastSlot -> epochInfoBlockRelative _dbEpochInfo lastSlot
+        EBB epoch      -> return $ epochToChunkSlot epoch
+        Block lastSlot -> return $ epochInfoBlockRelative _dbChunkSize lastSlot
 
     -- | Fill in the start bound: if 'Nothing', use the first block in the
     -- database. Otherwise, check whether the bound exists in the database and
@@ -231,7 +231,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
       -- an EBB. Convert the 'SlotNo' to an 'EpochSlot' accordingly.
       Just start -> do
         (epochSlot, (entry, _blockSize), secondaryOffset) <-
-          getSlotInfo _dbEpochInfo index start
+          getSlotInfo _dbChunkSize index start
         return (secondaryOffset, WithHash (Secondary.headerHash entry) epochSlot)
 
       -- No start bound given, use the first block in the ImmutableDB as the
@@ -290,14 +290,14 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
 -- PRECONDITION: the database is not empty.
 getSlotInfo
   :: (HasCallStack, IOLike m, Eq hash)
-  => EpochInfo m
+  => ChunkSize
   -> Index m hash h
   -> (SlotNo, hash)
   -> ExceptT (WrongBoundError hash) m
              (EpochSlot, (Secondary.Entry hash, BlockSize), SecondaryOffset)
-getSlotInfo epochInfo index (slot, hash) = do
-    epochSlot@(EpochSlot epoch relSlot) <- lift $
-      epochInfoBlockRelative epochInfo slot
+getSlotInfo chunkSize index (slot, hash) = do
+    let epochSlot@(EpochSlot epoch relSlot) =
+          epochInfoBlockRelative chunkSize slot
     -- 'epochInfoBlockRelative' always assumes the given 'SlotNo' refers to a
     -- regular block and will return 1 as the relative slot number when given
     -- an EBB.
@@ -375,7 +375,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
           when step $ stepIterator curEpochInfo iteratorState
           return $ IteratorResult b
   where
-    ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo } = dbEnv
+    ImmutableDBEnv { _dbErr, _dbChunkSize, _dbHashInfo } = dbEnv
 
     getBlockComponent
       :: Handle h
@@ -388,7 +388,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
         GetSlot         -> case blockOrEBB of
           Block slot  -> return slot
           EBB  epoch' -> assert (epoch' == itEpoch) $
-            epochInfoFirst _dbEpochInfo epoch'
+                         return $ slotForEBB _dbChunkSize epoch'
         GetIsEBB        -> return $ case blockOrEBB of
           Block _ -> IsNotEBB
           EBB   _ -> IsEBB

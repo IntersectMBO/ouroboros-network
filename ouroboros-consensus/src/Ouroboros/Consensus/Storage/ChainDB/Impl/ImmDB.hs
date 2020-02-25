@@ -65,6 +65,7 @@ import           Control.Tracer (Tracer, nullTracer)
 import           Data.Bifunctor
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor (($>), (<&>))
+import           Data.Word
 import           GHC.Stack
 import           System.FilePath ((</>))
 
@@ -97,6 +98,7 @@ import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
                      HashInfo (..), ImmutableDB, TipInfo (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import           Ouroboros.Consensus.Storage.ImmutableDB.ChunkSize
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Parser as ImmDB
@@ -111,7 +113,7 @@ data ImmDB m blk = ImmDB {
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
     , encBlock  :: !(blk -> BinaryInfo Encoding)
-    , epochInfo :: !(EpochInfo m)
+    , chunkSize :: !ChunkSize
     , isEBB     :: !(Header blk -> Maybe EpochNo)
     , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     , err       :: !(ErrorHandling ImmDB.ImmutableDBError m)
@@ -150,7 +152,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immEncodeHash     :: HeaderHash blk -> Encoding
     , immEncodeBlock    :: blk -> BinaryInfo Encoding
     , immErr            :: ErrorHandling ImmDB.ImmutableDBError m
-    , immEpochInfo      :: EpochInfo m
+    , immChunkSize      :: ChunkSize
     , immHashInfo       :: HashInfo (HeaderHash blk)
     , immValidation     :: ImmDB.ValidationPolicy
     , immIsEBB          :: Header blk -> Maybe EpochNo
@@ -172,7 +174,6 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immDecodeHeader'
 -- * 'immEncodeHash'
 -- * 'immEncodeBlock'
--- * 'immEpochInfo'
 -- * 'immHashInfo'
 -- * 'immValidation'
 -- * 'immIsEBB'
@@ -180,6 +181,10 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immAddHdrEnv'
 -- * 'immRegistry'
 -- * 'immBlockchainTime'
+--
+-- This sets the chunk size to 21600, which is the number of slots in a Byron
+-- epoch. This can be overriden, but the requirements on 'ChunkSize' (and its
+-- relation to EBBs) /must/ be satisfied.
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
       immErr          = EH.exceptions
@@ -192,7 +197,7 @@ defaultArgs fp = ImmDbArgs{
     , immDecodeHeader   = error "no default for immDecodeHeader"
     , immEncodeHash     = error "no default for immEncodeHash"
     , immEncodeBlock    = error "no default for immEncodeBlock"
-    , immEpochInfo      = error "no default for immEpochInfo"
+    , immChunkSize      = ChunkSize 21600
     , immHashInfo       = error "no default for immHashInfo"
     , immValidation     = error "no default for immValidation"
     , immIsEBB          = error "no default for immIsEBB"
@@ -228,7 +233,7 @@ openDB ImmDbArgs{..} = do
       immRegistry
       immHasFS
       immErr
-      immEpochInfo
+      immChunkSize
       immHashInfo
       immValidation
       parser
@@ -240,7 +245,7 @@ openDB ImmDbArgs{..} = do
       , decHeader = immDecodeHeader
       , decBlock  = immDecodeBlock
       , encBlock  = immEncodeBlock
-      , epochInfo = immEpochInfo
+      , chunkSize = immChunkSize
       , isEBB     = immIsEBB
       , addHdrEnv = immAddHdrEnv
       , err       = immErr
@@ -256,12 +261,12 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> Header blk))
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> BinaryInfo Encoding)
-        -> EpochInfo m
+        -> ChunkSize
         -> (Header blk -> Maybe EpochNo)
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> ErrorHandling ImmDB.ImmutableDBError m
         -> ImmDB m blk
-mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv err = ImmDB {..}
+mkImmDB immDB decHeader decBlock encBlock chunkSize isEBB addHdrEnv err = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks

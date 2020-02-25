@@ -37,6 +37,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Layout (
   , maxRelativeSlot
     -- * Derived information from 'EpochInfo'
   , epochInfoBlockRelative
+  , epochToChunkSlot
   , epochInfoAbsolute
   ) where
 
@@ -48,7 +49,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
+import           Ouroboros.Consensus.Storage.ImmutableDB.ChunkSize
 
 {-------------------------------------------------------------------------------
   Working with relative slots
@@ -60,8 +61,10 @@ newtype RelativeSlot = RelativeSlot { unRelativeSlot :: Word64 }
   deriving newtype (Num, Enum, NoUnexpectedThunks)
 
 -- | The combination of an 'EpochNo' and a 'RelativeSlot' within the epoch.
+--
+-- TODO: Rename to 'ChunkSlot'
 data EpochSlot = EpochSlot
-  { _epoch        :: !EpochNo
+  { _epoch        :: !EpochNo -- TODO: Rename to '_chunk', make 'Word64'
   , _relativeSlot :: !RelativeSlot
   } deriving (Eq, Ord, Generic, NoUnexpectedThunks)
 
@@ -72,8 +75,8 @@ instance Show EpochSlot where
 --
 -- Relative slot 0 is reserved for the EBB and regular relative slots start at
 -- 0, so the last relative slot is equal to the epoch size.
-maxRelativeSlot :: EpochSize -> RelativeSlot
-maxRelativeSlot (EpochSize sz) = RelativeSlot sz
+maxRelativeSlot :: ChunkSize -> RelativeSlot
+maxRelativeSlot (ChunkSize sz) = RelativeSlot sz
 
 {-------------------------------------------------------------------------------
   Derived information from 'EpochInfo'
@@ -85,19 +88,27 @@ maxRelativeSlot (EpochSize sz) = RelativeSlot sz
 -- | Relative slot for a regular block
 --
 -- Should NOT be used for EBBs.
-epochInfoBlockRelative :: Monad m => EpochInfo m -> SlotNo -> m EpochSlot
-epochInfoBlockRelative epochInfo (SlotNo absSlot) = do
-    epoch        <- epochInfoEpoch epochInfo (SlotNo absSlot)
-    SlotNo first <- epochInfoFirst epochInfo epoch
-    return $ EpochSlot epoch (RelativeSlot (absSlot - first + 1))
+--
+-- TODO: Rename to 'slotToChunkSlot'
+epochInfoBlockRelative :: ChunkSize -> SlotNo -> EpochSlot
+epochInfoBlockRelative (ChunkSize sz) (SlotNo absSlot) =
+    let (chunk, relSlot) = absSlot `divMod` sz
+    in EpochSlot (EpochNo chunk) (RelativeSlot (relSlot + 1))
+
+-- | Relative slot for a boundary block
+epochToChunkSlot :: EpochNo -> EpochSlot
+epochToChunkSlot epoch = EpochSlot epoch 0
 
 -- | From relative to absolute slot
 --
 -- This can be used for EBBs and regular blocks, since they don't share a
 -- relative slot
-epochInfoAbsolute :: Monad m => EpochInfo m -> EpochSlot -> m SlotNo
-epochInfoAbsolute epochInfo (EpochSlot epoch (RelativeSlot relSlot)) = do
-    SlotNo first <- epochInfoFirst epochInfo epoch
+--
+-- TODO: Rename to 'slotFromChunkSlot'
+epochInfoAbsolute :: ChunkSize -> EpochSlot -> SlotNo
+epochInfoAbsolute (ChunkSize sz)
+                  (EpochSlot (EpochNo epoch) (RelativeSlot relSlot)) =
+    let first = sz * epoch in
     -- EBB and first block share the first slot
-    return $ SlotNo $ if relSlot == 0 then first
-                                      else first + relSlot - 1
+    SlotNo $ if relSlot == 0 then first
+                             else first + relSlot - 1

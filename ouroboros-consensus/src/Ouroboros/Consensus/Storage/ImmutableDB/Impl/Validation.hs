@@ -33,13 +33,13 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
+import           Ouroboros.Consensus.Storage.ImmutableDB.ChunkSize
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
                      (cachedIndex)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -61,7 +61,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
 data ValidateEnv m hash h e = ValidateEnv
   { hasFS       :: !(HasFS m h)
   , err         :: !(ErrorHandling ImmutableDBError m)
-  , epochInfo   :: !(EpochInfo m)
+  , chunkSize   :: !ChunkSize
   , hashInfo    :: !(HashInfo hash)
   , parser      :: !(EpochFileParser e m (BlockSummary hash) hash)
   , tracer      :: !(Tracer m (TraceEvent e hash))
@@ -125,7 +125,7 @@ validateAllEpochs
   -> EpochNo
      -- ^ Most recent epoch on disk
   -> m (EpochNo, ImmTipWithInfo hash)
-validateAllEpochs validateEnv@ValidateEnv { hasFS, err, epochInfo } lastEpoch =
+validateAllEpochs validateEnv@ValidateEnv { hasFS, err } lastEpoch =
     go (0, TipGen) 0 Origin
   where
     go
@@ -135,9 +135,9 @@ validateAllEpochs validateEnv@ValidateEnv { hasFS, err, epochInfo } lastEpoch =
                                          -- the previous epoch
       -> m (EpochNo, ImmTipWithInfo hash)
     go lastValid epoch prevHash = do
-      shouldBeFinalised <- if epoch == lastEpoch
-        then return ShouldNotBeFinalised
-        else ShouldBeFinalised <$> epochInfoSize epochInfo epoch
+      let shouldBeFinalised = if epoch == lastEpoch
+                                then ShouldNotBeFinalised
+                                else ShouldBeFinalised
       runExceptT
         (validateEpoch validateEnv shouldBeFinalised epoch (Just prevHash)) >>= \case
           Left  ()              -> cleanup lastValid epoch $> lastValid
@@ -213,7 +213,7 @@ validateMostRecentEpoch validateEnv@ValidateEnv { hasFS } = go
 -- of the epoch, the primary index should be padded with offsets to indicate
 -- that these slots are empty. See 'Primary.backfill'.
 data ShouldBeFinalised
-  = ShouldBeFinalised EpochSize
+  = ShouldBeFinalised
   | ShouldNotBeFinalised
   deriving (Show)
 
@@ -343,7 +343,7 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
       -- Read the primary index file, if it is missing, parsing fails, or it
       -- does not match the reconstructed primary index, overwrite it using
       -- the reconstructed index (truncate first).
-      primaryIndex            <- reconstructPrimaryIndex epochInfo hashInfo
+      primaryIndex            <- reconstructPrimaryIndex chunkSize hashInfo
         shouldBeFinalised (map Secondary.blockOrEBB entries)
       primaryIndexFileExists  <- doesFileExist primaryIndexFile
       primaryIndexFileMatches <- if primaryIndexFileExists
@@ -428,14 +428,14 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
 -- | Reconstruct a 'PrimaryIndex' based on a list of 'Secondary.Entry's.
 reconstructPrimaryIndex
   :: forall m hash. Monad m
-  => EpochInfo m
+  => ChunkSize
   -> HashInfo hash
   -> ShouldBeFinalised
   -> [BlockOrEBB]
   -> m PrimaryIndex
-reconstructPrimaryIndex epochInfo HashInfo { hashSize } shouldBeFinalised
+reconstructPrimaryIndex chunkSize HashInfo { hashSize } shouldBeFinalised
                         blockOrEBBs = do
-    relSlots <- mapM toRelativeSlot blockOrEBBs
+    let relSlots         = map toRelativeSlot blockOrEBBs
     let secondaryOffsets = 0 : go 0 0 relSlots
 
     -- This can only fail if the slot numbers of the entries are not
@@ -444,10 +444,10 @@ reconstructPrimaryIndex epochInfo HashInfo { hashSize } shouldBeFinalised
   where
     msg = "blocks have non-increasing slot numbers"
 
-    toRelativeSlot :: BlockOrEBB -> m RelativeSlot
-    toRelativeSlot (EBB _)      = return 0
-    toRelativeSlot (Block slot) = _relativeSlot <$>
-      epochInfoBlockRelative epochInfo slot
+    toRelativeSlot :: BlockOrEBB -> RelativeSlot
+    toRelativeSlot (EBB _)      = 0
+    toRelativeSlot (Block slot) = _relativeSlot $
+      epochInfoBlockRelative chunkSize slot
 
     go
       :: HasCallStack
@@ -457,9 +457,9 @@ reconstructPrimaryIndex epochInfo HashInfo { hashSize } shouldBeFinalised
       -> [SecondaryOffset]
     go nextExpectedRelSlot lastSecondaryOffset = \case
       [] -> case shouldBeFinalised of
-        ShouldNotBeFinalised        -> []
-        ShouldBeFinalised epochSize ->
-          Primary.backfillEpoch epochSize nextExpectedRelSlot lastSecondaryOffset
+        ShouldNotBeFinalised -> []
+        ShouldBeFinalised    ->
+          Primary.backfillEpoch chunkSize nextExpectedRelSlot lastSecondaryOffset
 
       relSlot:relSlots'
         | relSlot < nextExpectedRelSlot

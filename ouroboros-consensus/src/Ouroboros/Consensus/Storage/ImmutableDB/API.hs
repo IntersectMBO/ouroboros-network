@@ -14,14 +14,13 @@ module Ouroboros.Consensus.Storage.ImmutableDB.API
   , module Ouroboros.Consensus.Storage.ImmutableDB.Types
   ) where
 
+import           Data.ByteString.Builder (Builder)
+import           GHC.Generics (Generic)
+import           GHC.Stack (HasCallStack)
+
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      ThunkInfo (..))
 import           Cardano.Slotting.Block (BlockNo)
-
-import           Data.ByteString.Builder (Builder)
-
-import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
