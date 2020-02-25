@@ -537,7 +537,7 @@ closeRegistry rr = mask_ $ do
 
 -- | Helper for 'closeRegistry', 'releaseAll', and 'unsafeReleaseAll': release
 -- the resources allocated with the given 'ResourceId's.
-releaseResources :: (IOLike m, HasCallStack)
+releaseResources :: IOLike m
                  => ResourceRegistry m
                  -> Set ResourceId
                  -> (ResourceKey m -> m ())

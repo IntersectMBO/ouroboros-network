@@ -535,9 +535,7 @@ readerClose rdrId m
   Ledger Cursors
 -------------------------------------------------------------------------------}
 
-getLedgerCursor
-  :: forall blk. LedgerSupportsProtocol blk
-  => Model blk -> (LedgerCursorId, Model blk)
+getLedgerCursor :: Model blk -> (LedgerCursorId, Model blk)
 getLedgerCursor m@Model { ledgerCursors = lcs, currentLedger } =
     (lcId, m { ledgerCursors = Map.insert lcId currentLedger lcs })
   where

@@ -92,7 +92,7 @@ hGetExactlyAtCRC hasFS h n offset = do
     return (bs, crc)
 
 -- | Variation on 'hGetAllAt' that also computes a CRC
-hGetAllAtCRC :: forall m h. (HasCallStack, Monad m)
+hGetAllAtCRC :: forall m h. Monad m
              => HasFS m h
              -> Handle h
              -> AbsOffset -- ^ The offset at which to read.

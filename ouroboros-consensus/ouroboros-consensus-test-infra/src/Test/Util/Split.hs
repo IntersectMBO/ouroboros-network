@@ -9,8 +9,6 @@ module Test.Util.Split (
 
 import           Data.Bifunctor (first)
 import           Data.Word (Word64)
-import           GHC.Stack (HasCallStack)
-
 
 {-------------------------------------------------------------------------------
   spanLeft
@@ -21,8 +19,7 @@ import           GHC.Stack (HasCallStack)
 -- INVARIANT The output data is a segmentation of the given list.
 spanLeft
   :: forall x a b.
-     HasCallStack
-  => (x -> Either a b) -> [x] -> ([a], Maybe (b, [x]))
+     (x -> Either a b) -> [x] -> ([a], Maybe (b, [x]))
 spanLeft prj xs = (reverse acc, mbBxs)
   where
     (acc, mbBxs) = spanLeft' prj xs
@@ -30,8 +27,7 @@ spanLeft prj xs = (reverse acc, mbBxs)
 -- | As 'spanLeft', but the @[a]@ is reversed.
 spanLeft'
   :: forall x a b.
-     HasCallStack
-  => (x -> Either a b) -> [x] -> ([a], Maybe (b, [x]))
+     (x -> Either a b) -> [x] -> ([a], Maybe (b, [x]))
 spanLeft' prj = go []
   where
     go acc = \case
@@ -53,8 +49,7 @@ data Prj a b = Prj !a !b
 -- INVARIANT The output data is a segmentation of the given list.
 splitAtJust
   :: forall x b.
-     HasCallStack
-  => (x -> Maybe b) -> Word64 -> [x] -> (Maybe ([x], b), [x])
+     (x -> Maybe b) -> Word64 -> [x] -> (Maybe ([x], b), [x])
 splitAtJust prj = \n xs ->
   if 0 == n then (Nothing, xs)
   else case peel xs of

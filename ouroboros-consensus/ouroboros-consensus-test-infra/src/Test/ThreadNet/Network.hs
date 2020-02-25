@@ -90,6 +90,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
+import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
@@ -344,6 +345,8 @@ runThreadNetwork ThreadNetworkArgs
 
     mkTestOutput vertexInfos
   where
+    _ = keepRedundantConstraint (Proxy @(Show (LedgerView (BlockProtocol blk))))
+
     coreNodeIds :: [CoreNodeId]
     coreNodeIds = enumCoreNodes numCoreNodes
 
@@ -1059,7 +1062,6 @@ nullDebugTracer = nullTracer `asTypeOf` showTracing debugTracer
 nullDebugTracers ::
      ( Monad m
      , Show peer
-     , Show (LedgerView (BlockProtocol blk))
      , LedgerSupportsProtocol blk
      , TracingConstraints blk
      )
@@ -1073,7 +1075,6 @@ nullDebugProtocolTracers ::
      , TracingConstraints blk
      , Show peer
      , Show localPeer
-     , Show failure
      )
   => ProtocolTracers m peer localPeer blk failure
 nullDebugProtocolTracers =

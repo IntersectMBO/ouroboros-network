@@ -4,6 +4,7 @@
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeApplications          #-}
 
 module Test.ThreadNet.General (
     prop_general
@@ -55,6 +56,7 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
+import           Ouroboros.Consensus.Util.RedundantConstraints
 
 import           Ouroboros.Consensus.Storage.Common (EpochNo)
 
@@ -301,6 +303,8 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
       [ fileHandleLeakCheck nid nodeDBs
       | (nid, nodeDBs) <- Map.toList nodeOutputDBs ]
   where
+    _ = keepRedundantConstraint (Proxy @(Show (LedgerView (BlockProtocol blk))))
+
     prop_no_unexpected_BlockRejections =
         counterexample msg $
         Map.null blocks
