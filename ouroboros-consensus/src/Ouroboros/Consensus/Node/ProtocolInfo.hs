@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE PatternSynonyms #-}
 -- | ProtocolInfo
 module Ouroboros.Consensus.Node.ProtocolInfo (
     -- * ProtocolInfo
@@ -23,7 +24,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Cardano.Crypto.DSIGN
-import           Ouroboros.Network.Block (ChainHash(GenesisHash))
+import           Ouroboros.Network.Block (ChainHash(GenesisHash), pattern BlockPoint, pattern GenesisPoint)
 
 {-------------------------------------------------------------------------------
   Data required to run a protocol
@@ -77,8 +78,7 @@ protocolInfo (ProtocolOdd numCoreNodes nid securityParam slotLengths numSlotsPer
   , pInfoInitState  = () -- :: NodeState  (BlockProtocol b)
   , pInfoInitLedger = ExtLedgerState
                       { ledgerState = LedgerState
-                                      { stCurrentSlot = currentSlot
-                                      , stPrevHash = GenesisHash
+                                      { stLastApplied = GenesisPoint
                                       , phase = Increase 0
                                       }
                       , headerState = genesisHeaderState ()

@@ -1,4 +1,5 @@
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -40,17 +41,18 @@ import           Cardano.Crypto.DSIGN.Mock (mockSign, MockDSIGN
                    )
 import qualified Cardano.Crypto.Hash.Class as Cardano.Crypto
 
-import           Ouroboros.Network.Block (ChainHash (GenesisHash, BlockHash), HeaderHash)
+import           Ouroboros.Network.Block (ChainHash (GenesisHash, BlockHash), HeaderHash, pattern BlockPoint)
 import           Ouroboros.Consensus.Ledger.OddChain (Tx (Tx), SignedPart, GenTx (OddTx)
                    , Header (OddHeader), oddBlockSignedPart, oddBlockSignature
                    , OddBlock (OddBlock), oddBlockHeader, oddBlockPayload
-                   , mkSignedPart, errors
+                   , mkSignedPart, errors, stLastApplied
                    , Phase (Decrease, Increase)
-                   , LedgerState (LedgerState), stCurrentSlot, stPrevHash, phase
+                   , LedgerState (LedgerState), phase
                    , OddError
                    , OddTxError (NotOdd, OddBut)
                    , OutOfBoundError (NotDecreasing, NotIncreasing)
                    , LedgerConfig (OddConfig), slotsPerEpoch, cfgNodeStartTime
+                   , Hash
                    )
 
 import qualified Cardano.Crypto.Hash.Class as Crypto.Hash
@@ -246,16 +248,20 @@ instance Arbitrary (ChainHash OddBlock) where
   arbitrary = oneof [ pure GenesisHash
                     , BlockHash . Cardano.Crypto.UnsafeHash <$> arbitraryBSOfLength4
                     ]
-    where
-      -- Quick and dirty hack to get 4 bytes hashes. This shouldn't be done in
-      -- this way since it has an implicit coupling on the number of bytes used
-      -- by `ShortHash`.
-      arbitraryBSOfLength4 = do
-        str <- vectorOf 4 arbitrary
-        pure $! C.pack str
 
   shrink GenesisHash = []
   shrink _           = [GenesisHash] -- TODO: define properly
+
+-- Quick and dirty hack to get 4 bytes hashes. This shouldn't be done in
+-- this way since it has an implicit coupling on the number of bytes used
+-- by `ShortHash`.
+arbitraryBSOfLength4 ::  Gen Crypto.Hash.ByteString
+arbitraryBSOfLength4 = do
+  str <- vectorOf 4 arbitrary
+  pure $! C.pack str
+
+instance Arbitrary (Hash (Header OddBlock)) where
+  arbitrary = Cardano.Crypto.UnsafeHash <$> arbitraryBSOfLength4
 
 
 mkHeader :: SignedPart -> SignKeyDSIGN MockDSIGN -> Header OddBlock
@@ -279,8 +285,7 @@ instance Arbitrary (LedgerState OddBlock) where
     aHash  <- arbitrary
     aPhase <- arbitrary
     pure $! LedgerState
-           { stCurrentSlot = aSlot
-           , stPrevHash = aHash
+           { stLastApplied = BlockPoint aSlot aHash
            , phase = aPhase
            }
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -91,7 +92,8 @@ import           Ouroboros.Network.Block (BlockMeasure, BlockNo,
                      ChainHash (BlockHash, GenesisHash), HasHeader, HeaderHash,
                      Point (Point), SlotNo, StandardHash, blockHash,
                      blockInvariant, blockMeasure, blockNo, blockPrevHash,
-                     blockSlot, castHash, unSlotNo)
+                     blockSlot, castHash, unSlotNo, blockPoint,
+                     pointSlot, pointHash, pattern BlockPoint, encodePoint, decodePoint)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
 import           Ouroboros.Network.Magic (NetworkMagic (NetworkMagic))
 import qualified Ouroboros.Network.Point as Point
@@ -201,8 +203,7 @@ data OddError
 instance UpdateLedger OddBlock where
   data LedgerState OddBlock
     = LedgerState
-      { stCurrentSlot :: !SlotNo
-      , stPrevHash    :: !(ChainHash OddBlock)
+      { stLastApplied :: !(Point OddBlock)
       , phase         :: !Phase
       } deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
@@ -235,8 +236,7 @@ instance UpdateLedger OddBlock where
     = case foldTxs cfg tickedSt oddBlockPayload of
         ([]  , tickedSt') -> do
           let st' = tickedLedgerState tickedSt'
-          pure $! st' { stCurrentSlot = blockSlot blk
-                      , stPrevHash    = BlockHash $ blockHash blk
+          pure $! st' { stLastApplied = blockPoint blk
                       }
         (errs, _  ) -> throwError $ OddError
                                     { currentPhase = phase (tickedLedgerState tickedSt)
@@ -259,18 +259,14 @@ instance UpdateLedger OddBlock where
     --                          }
 
   reapplyLedgerBlock _cfg blk@OddBlock { oddBlockHeader, oddBlockPayload } st@LedgerState { phase }
-    = st { stPrevHash    = BlockHash $ blockHash blk
-         , stCurrentSlot = blockSlot blk -- QUESTION: Is this needed here?
+    = st { stLastApplied = blockPoint blk
          , phase         = foldl (Prelude.flip updatePhase) phase oddBlockPayload
          }
 
-  ledgerTipPoint LedgerState { stPrevHash, stCurrentSlot }
+  ledgerTipPoint
     -- So here I realized that the ledger state needs a
     -- the header hash of the last applied block.
-    = Point
-    $ case stPrevHash of
-        GenesisHash          -> Point.origin
-        BlockHash headerHash -> Point.block stCurrentSlot headerHash
+    = stLastApplied
 
 changePhaseOnEpochBoundary
   :: LedgerConfig OddBlock
@@ -490,7 +486,7 @@ instance RunNode OddBlock where
     let signedPart = mkSignedPart nodeVKey prevHash aBlockNo slotNo payload
         nodeVKey   = vkeysMap ! bftNodeId (extNodeConfigP cfg)
         vkeysMap   = bftVerKeys $ extNodeConfigP cfg
-        prevHash   = stPrevHash $ ledgerState $ extLedgerState
+        prevHash   = pointHash $ stLastApplied $ ledgerState $ extLedgerState
         payload    = fmap unOddTx txs
     oddSignature <- signDSIGN () signedPart (bftSignKey $ extNodeConfigP cfg)
     let
@@ -799,10 +795,9 @@ instance ToCBOR OddBlock where
     <> toCBOR aPayload
 
 instance ToCBOR (LedgerState OddBlock) where
-  toCBOR (LedgerState aCurrentSlot aHash aPhase)
-    =  encodeListLen 3
-    <> toCBOR aCurrentSlot
-    <> toCBOR aHash
+  toCBOR (LedgerState aPoint aPhase)
+    =  encodeListLen 2
+    <> toCBOR aPoint
     <> toCBOR aPhase
 
 instance ToCBOR Phase where
@@ -817,6 +812,9 @@ instance ToCBOR OddTxError where
 
 instance ToCBOR OutOfBoundError where
   toCBOR = encodeInt . fromEnum
+
+instance ToCBOR (Point OddBlock) where
+  toCBOR = encodePoint toCBOR
 
 --------------------------------------------------------------------------------
 -- FromCBOR instances
@@ -872,13 +870,11 @@ instance FromCBOR OddBlock where
 
 instance FromCBOR (LedgerState OddBlock) where
   fromCBOR = do
-    D.decodeListLenOf 3
-    !aSlot  <- fromCBOR
-    !aHash  <- fromCBOR
+    D.decodeListLenOf 2
+    !aPoint <- fromCBOR
     !aPhase <- fromCBOR
     pure $! LedgerState
-            { stCurrentSlot = aSlot
-            , stPrevHash    = aHash
+            { stLastApplied = aPoint
             , phase         = aPhase
             }
 
@@ -914,3 +910,6 @@ instance FromCBOR OutOfBoundError where
   fromCBOR = do
     !i <- D.decodeInt
     pure $! toEnum i
+
+instance FromCBOR (Point OddBlock) where
+  fromCBOR = decodePoint fromCBOR
