@@ -113,7 +113,13 @@ data BlockProduction m blk = BlockProduction {
       -- which only has the ability to produce random number and access to the
       -- 'NodeState'.
       produceBlock :: forall n. MonadRandom n
-                   => Update n (NodeState blk)
+                   => (forall a. m a -> n a)
+                   -- Lift actions into @n@
+                   --
+                   -- This allows block production to execute arbitrary side
+                   -- effects; this is primarily useful for tests.
+
+                   -> Update n (NodeState blk)
                    -> SlotNo             -- Current slot
                    -> BlockNo            -- Current block number
                    -> ExtLedgerState blk -- Current ledger state
@@ -394,7 +400,7 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
                  (At currentSlot) of
             Right ledgerView -> do
               mIsLeader :: Maybe (IsLeader (BlockProtocol blk)) <- lift $
-                runMonadRandom $
+                runMonadRandom $ \_lift' ->
                   checkIsLeader
                     (configConsensus cfg)
                     currentSlot
@@ -434,8 +440,9 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
                               (maxBlockBodySize ledger)
 
         -- Actually produce the block
-        newBlock <- lift $ runMonadRandom $
+        newBlock <- lift $ runMonadRandom $ \lift' ->
           produceBlock
+            lift'
             (updateFromTVar (castStrictTVar varState))
             currentSlot
             bcBlockNo

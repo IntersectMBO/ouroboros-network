@@ -86,13 +86,13 @@ runChaChaT = runStateT  . unChaChaT
 
 newtype RunMonadRandom m = RunMonadRandom
   { runMonadRandom :: forall a. MonadSTM m
-                   => (forall n. ( MonadRandom n
-                                 , MonadSTM    n
-                                 , STM         n ~ STM m
-                                 ) => n a)
+                   => (forall n. (MonadRandom n, MonadSTM n, STM m ~ STM n)
+                              => (forall x. m x -> n x)
+                              -- escape hatch, for testing
+                              -> n a)
                    -> m a
   }
 
 -- | Use the 'MonadRandom' instance for 'IO'.
 runMonadRandomIO :: RunMonadRandom IO
-runMonadRandomIO = RunMonadRandom id
+runMonadRandomIO = RunMonadRandom $ \f -> f id
