@@ -192,6 +192,11 @@ castHeaderState HeaderState{..} = HeaderState{
     castSeq :: (a -> b) -> StrictSeq a -> StrictSeq b
     castSeq f = Seq.fromList . map f . toList
 
+-- | Rewind the header state
+--
+-- This involves 'rewindChainState', and so inherits its PRECONDITION that the
+-- target point must have been previously applied.
+--
 rewindHeaderState :: forall blk.
                      ( BlockSupportsProtocol blk
                      , Serialise (HeaderHash blk)
@@ -210,8 +215,10 @@ rewindHeaderState cfg p HeaderState{..} = do
       , headerStateAnchor    = headerStateAnchor
       }
   where
+    -- the precondition ensures that @p@ is either in the old 'headerStateTips'
+    -- or the new 'headerStateTips' should indeed be empty
     rolledBack :: AnnTip blk -> Bool
-    rolledBack t = annTipPoint t > p
+    rolledBack t = annTipPoint t /= p
 
 {-------------------------------------------------------------------------------
   Validate header envelope
