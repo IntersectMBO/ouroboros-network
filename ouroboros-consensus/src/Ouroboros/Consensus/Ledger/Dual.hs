@@ -482,7 +482,7 @@ instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
   -- We don't need a pair of IDs, as long as we can unique ID the transaction
   newtype TxId (GenTx (DualBlock m a)) = DualGenTxId {
         dualGenTxIdMain :: GenTxId m
-      }
+      } deriving NoUnexpectedThunks via AllowThunk (TxId (GenTx (DualBlock m a)))
 
   txId = DualGenTxId . txId . dualGenTxMain
 

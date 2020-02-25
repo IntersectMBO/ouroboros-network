@@ -115,6 +115,7 @@ instance HasTxId (GenTx ByronBlock) where
     | ByronUpdateProposalId !Update.UpId
     | ByronUpdateVoteId     !Update.VoteId
     deriving (Eq, Ord)
+    deriving NoUnexpectedThunks via UseIsNormalForm (TxId (GenTx ByronBlock))
 
   txId (ByronTx             i _) = ByronTxId             i
   txId (ByronDlg            i _) = ByronDlgId            i

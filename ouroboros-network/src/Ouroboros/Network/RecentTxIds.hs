@@ -1,10 +1,5 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Ouroboros.Network.RecentTxIds
   ( RecentTxIds (..)
@@ -33,7 +28,8 @@ module Ouroboros.Network.RecentTxIds
   , TraceRecentTxIdsEvent (..)
   ) where
 
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
+import           Cardano.Prelude (NoUnexpectedThunks (..),
+                     allNoUnexpectedThunks)
 import           Prelude hiding (null)
 
 import           Control.Monad.Class.MonadTime (DiffTime, Time (..), diffTime)
@@ -49,7 +45,15 @@ import qualified Data.OrdPSQ as OrdPSQ
 -- the collection.
 newtype RecentTxIds txid = RecentTxIds (OrdPSQ txid Time ())
   deriving stock (Show)
-  deriving newtype (NoUnexpectedThunks)
+
+instance (NoUnexpectedThunks txid)
+      => NoUnexpectedThunks (RecentTxIds txid) where
+  showTypeOf _ = "RecentTxIds"
+  whnfNoUnexpectedThunks ctxt = allNoUnexpectedThunks
+                              . concatMap (\(txid, Time dt) ->
+                                [ noUnexpectedThunks ctxt txid
+                                , noUnexpectedThunks ctxt dt])
+                              . toList
 
 {-----------------------------------------------------------------------------
   Query
@@ -162,10 +166,3 @@ data TraceRecentTxIdsEvent txid
       -- ^ Transaction IDs, along with their expiration times, that have been
       -- expired from the 'RecentTxIds'.
   deriving Show
-
-{-----------------------------------------------------------------------------
-  Orphan instances
------------------------------------------------------------------------------}
-
-deriving via OnlyCheckIsWHNF "OrdPSQ" (OrdPSQ k p v)
-  instance NoUnexpectedThunks (OrdPSQ k p v)

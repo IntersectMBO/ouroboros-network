@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -73,7 +74,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Crypto.Hash
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks (..))
 
 import           Ouroboros.Network.Block
 
@@ -338,6 +339,7 @@ instance HasTxId (GenTx (SimpleBlock c ext)) where
     { unSimpleGenTxId :: Mock.TxId
     } deriving stock   (Generic)
       deriving newtype (Show, Eq, Ord, Serialise)
+      deriving NoUnexpectedThunks via AllowThunk (TxId (GenTx (SimpleBlock c ext)))
 
   txId = SimpleGenTxId . simpleGenTxId
 

@@ -56,6 +56,7 @@ class ( LedgerSupportsProtocol    blk
       , QueryLedger               blk
       , HasNetworkProtocolVersion blk
       , NoUnexpectedThunks (NodeState blk)
+      , NoUnexpectedThunks (GenTxId blk)
         -- TODO: Remove after reconsidering rewindConsensusState:
       , Serialise (HeaderHash blk)
       ) => RunNode blk where

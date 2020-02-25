@@ -364,7 +364,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
 -- | Construct an 'empty' 'RecentTxIds' and spawn a thread that periodically
 -- attempts to remove expired elements.
 openRecentTxIds
-    :: (Ord txid, IOLike m)
+    :: (Ord txid, NoUnexpectedThunks txid, IOLike m)
     => ResourceRegistry m
     -> RecentTxIds.ExpiryThreshold
     -> Tracer m (TraceRecentTxIdsEvent txid)
