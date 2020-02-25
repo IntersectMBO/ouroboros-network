@@ -11,22 +11,24 @@
 module Test.Consensus.Ledger.OddChain (tests) where
 
 import           Control.Monad.Except (Except, runExcept)
-import           Test.QuickCheck (Property, counterexample, (===), withMaxSuccess
+import           Test.QuickCheck (Property, counterexample, withMaxSuccess
                    , Gen, Arbitrary
                    , arbitrary, shrink
                    , Positive (Positive)
                    , oneof, vectorOf, elements, suchThat
+                   , (===), (.&&.)
                    )
 import           Test.Tasty (testGroup, TestTree)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Control.Arrow (second)
+import           Codec.Serialise (serialise, deserialise)
 
 import           Data.Word (Word64)
 import qualified Data.ByteString.Base16.Lazy as Base16
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import           Codec.CBOR.Read (deserialiseFromBytes)
+import           Codec.CBOR.Read (deserialiseFromBytes, DeserialiseFailure)
 import           Codec.CBOR.Write (toLazyByteString)
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString as ByteString
@@ -54,6 +56,12 @@ import           Ouroboros.Consensus.Ledger.OddChain (Tx (Tx), SignedPart, GenTx
                    , LedgerConfig (OddConfig), slotsPerEpoch, cfgNodeStartTime
                    , Hash
                    )
+import           Ouroboros.Storage.Common (BinaryInfo (BinaryInfo),
+                     binaryBlob, headerOffset,
+                     headerSize)
+import           Ouroboros.Consensus.Node.Run.Abstract (nodeEncodeBlockWithInfo)
+import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
+import           Ouroboros.Consensus.Block (getHeader)
 
 import qualified Cardano.Crypto.Hash.Class as Crypto.Hash
 import           Cardano.Crypto.Hash.Short (ShortHash)
@@ -62,6 +70,7 @@ import           Ouroboros.Consensus.Ledger.Abstract (applyLedgerBlock
                    , TickedLedgerState, tickedLedgerState
                    , applyChainTick
                    , LedgerConfig
+                   , BlockProtocol
                    )
 import           Ouroboros.Network.Block (blockSlot)
 import           Ouroboros.Consensus.Mempool.API (applyTx, GenTx)
@@ -80,7 +89,8 @@ tests = testGroup "Odd Chain"
       , testRoundtrip @OutOfBoundError        "Out of bound error"
       ]
   , testGroup "Ledger properties"
-      [ testProperty "Mempool safety" prop_mempool
+      [ testProperty "Mempool safety"  prop_mempool
+      , testProperty "Header encoding" prop_block_header_encoding
       ]
   ]
 
@@ -131,18 +141,25 @@ roundtrip' :: (Eq a, Show a)
            -> Property
 roundtrip' enc dec a
   = counterexample (show $ Base16.encode bs)
-  $ case deserialiseFromBytes dec bs of
-    Right (bs', a')
-      | Lazy.null bs'
-      -> a === a' bs
-      | otherwise
-      -> counterexample ("left-over bytes: " <> show bs') False
-    Left e
-      -> counterexample (show e) False
+  $ checkRoundTrip bs (deserialiseFromBytes dec bs) a
   where
     bs = toLazyByteString (enc a)
 
-
+checkRoundTrip
+  :: (Eq a, Show a)
+  => Lazy.ByteString
+  -> Either DeserialiseFailure (Lazy.ByteString, Lazy.ByteString -> a)
+  -> a
+  -> Property
+checkRoundTrip byteString deserialisationResult originalData =
+  case deserialisationResult of
+    Right (leftOverBytes, fa)
+      | Lazy.null leftOverBytes
+      -> originalData === fa byteString
+      | otherwise
+      -> counterexample ("left-over bytes: " <> show leftOverBytes) False
+    Left e
+      -> counterexample (show e) False
 --------------------------------------------------------------------------------
 -- Ledger properties
 --------------------------------------------------------------------------------
@@ -202,6 +219,24 @@ prop_mempool cfg blk@OddBlock { oddBlockPayload } st
       case runExcept $ applyTx cfg (OddTx tx) st' of
         Left err   -> (err: errs, st' )
         Right st'' -> (     errs, st'')
+
+-- | The implementation 'nodeEncodeBlockWithInfo' should correctly encode the
+-- block, and specify the header offset and size.
+prop_block_header_encoding
+  :: OddBlock
+  -> Property
+prop_block_header_encoding blk
+  =    withMaxSuccess 10000
+  $    checkRoundTrip byteString blockDeserialisationResult blk
+  .&&. checkRoundTrip headerByteString headerDeserialisationResult (getHeader blk)
+  where
+    BinaryInfo { binaryBlob, headerOffset, headerSize } = nodeEncodeBlockWithInfo undefined blk
+    byteString = toLazyByteString binaryBlob
+    blockDeserialisationResult = deserialiseFromBytes (const <$> fromCBOR) byteString
+    headerByteString = Lazy.take
+                           (fromIntegral headerSize)
+                           (Lazy.drop (fromIntegral headerOffset) byteString)
+    headerDeserialisationResult = deserialiseFromBytes (const <$> fromCBOR) headerByteString
 
 --------------------------------------------------------------------------------
 -- Arbitrary instances and generators
