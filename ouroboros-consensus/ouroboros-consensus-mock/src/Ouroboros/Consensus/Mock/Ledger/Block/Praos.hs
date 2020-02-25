@@ -137,9 +137,9 @@ instance ( SimpleCrypto c
     where
       SimpleHeader{..} = simpleHeader
 
-  mockProtocolMagicId  = const constructMockProtocolMagicId
-  mockEncodeChainState = const encode
-  mockDecodeChainState = const decode
+  mockProtocolMagicId      = const constructMockProtocolMagicId
+  mockEncodeConsensusState = const encode
+  mockDecodeConsensusState = const decode
 
 instance ( SimpleCrypto c
          , PraosCrypto c'

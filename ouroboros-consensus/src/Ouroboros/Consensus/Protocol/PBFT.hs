@@ -31,7 +31,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , pbftValidateRegular
   , pbftValidateBoundary
     -- * Type instances
-  , NodeConfig(..)
+  , ConsensusConfig(..)
     -- * Exported for testing
   , PBftValidationErr(..)
   ) where
@@ -61,11 +61,11 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.PBFT.ChainState (PBftChainState)
-import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
-import           Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
-                     (HeaderHashBytes, headerHashBytes)
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
+import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
+import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
+import           Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
+                     (HeaderHashBytes, headerHashBytes)
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -104,7 +104,7 @@ data PBftValidateView c =
 
      -- | Boundary block (EBB)
      --
-     -- EBBs are not signed but do affect the chainstate.
+     -- EBBs are not signed but do affect the consensus state.
    | PBftValidateBoundary SlotNo HeaderHashBytes
 
 -- | Convenience constructor for 'PBftValidateView' for regular blocks
@@ -238,7 +238,7 @@ data PBftIsLeaderOrNot c
   deriving (Generic, NoUnexpectedThunks)
 
 -- | (Static) node configuration
-data instance NodeConfig (PBft c) = PBftNodeConfig {
+data instance ConsensusConfig (PBft c) = PBftConfig {
       pbftParams   :: !PBftParams
     , pbftIsLeader :: !(PBftIsLeaderOrNot c)
     }
@@ -255,11 +255,11 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
   --   - The delegation map.
   type LedgerView     (PBft c) = PBftLedgerView c
   type IsLeader       (PBft c) = PBftIsLeader   c
-  type ChainState     (PBft c) = PBftChainState c
+  type ConsensusState (PBft c) = PBftState      c
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
-  checkIsLeader PBftNodeConfig{pbftIsLeader, pbftParams} (SlotNo n) _l _cs =
+  checkIsLeader PBftConfig{pbftIsLeader, pbftParams} (SlotNo n) _l _cs =
       case pbftIsLeader of
         PBftIsNotALeader                           -> return Nothing
 
@@ -273,10 +273,10 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
             PBftIsLeader{pbftCoreNodeId = CoreNodeId i} = credentials
             PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams
 
-  applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) toValidate chainState =
+  updateConsensusState cfg@PBftConfig{..} lv@(PBftLedgerView dms) toValidate state =
       case toValidate of
         PBftValidateBoundary slot hash ->
-          return $! appendEBB cfg params slot hash chainState
+          return $! appendEBB cfg params slot hash state
         PBftValidateRegular slot PBftFields{..} signed contextDSIGN -> do
           -- Check that the issuer signature verifies, and that it's a delegate of a
           -- genesis key, and that genesis key hasn't voted too many times.
@@ -291,24 +291,24 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
           -- FIXME confirm that non-strict inequality is ok in general.
           -- It's here because EBBs have the same slot as the first block of their
           -- epoch.
-          unless (At slot >= CS.lastSignedSlot chainState)
+          unless (At slot >= S.lastSignedSlot state)
             $ throwError PBftInvalidSlot
 
           case Bimap.lookupR (hashVerKey pbftIssuer) dms of
             Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey pbftIssuer) lv
             Just gk -> do
-              let chainState' = append cfg params (slot, gk) chainState
-              case exceedsThreshold params chainState' gk of
-                Nothing -> return $! chainState'
+              let state' = append cfg params (slot, gk) state
+              case exceedsThreshold params state' gk of
+                Nothing -> return $! state'
                 Just n  -> throwError $ PBftExceededSignThreshold gk n
     where
       params = pbftWindowParams cfg
 
-  rewindChainState cfg = flip (rewind cfg params)
+  rewindConsensusState cfg = flip (rewind cfg params)
     where
       params = pbftWindowParams cfg
 
-  compareCandidates PBftNodeConfig{..} (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
+  compareCandidates PBftConfig{..} (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
       -- Prefer the highest block number, as it is a proxy for chain length
       case lBlockNo `compare` rBlockNo of
         LT -> LT
@@ -324,21 +324,21 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
        score IsNotEBB = 0
 
 {-------------------------------------------------------------------------------
-  Internal: thin wrapper on top of 'PBftChainState'
+  Internal: thin wrapper on top of 'PBftState'
 -------------------------------------------------------------------------------}
 
 -- | Parameters for the window check
 data PBftWindowParams = PBftWindowParams {
       -- | Window size
-      windowSize :: CS.WindowSize
+      windowSize :: S.WindowSize
 
       -- | Threshold (maximum number of slots anyone is allowed to sign)
     , threshold  :: Word64
     }
 
 -- | Compute window check parameters from the node config
-pbftWindowParams :: NodeConfig (PBft c) -> PBftWindowParams
-pbftWindowParams PBftNodeConfig{..} = PBftWindowParams {
+pbftWindowParams :: ConsensusConfig (PBft c) -> PBftWindowParams
+pbftWindowParams PBftConfig{..} = PBftWindowParams {
       windowSize = winSize
     , threshold  = floor $ pbftSignatureThreshold * fromIntegral winSize
     }
@@ -349,51 +349,51 @@ pbftWindowParams PBftNodeConfig{..} = PBftWindowParams {
 -- | Window size used by PBFT
 --
 -- We set the window size to be equal to k.
-pbftWindowSize :: SecurityParam -> CS.WindowSize
-pbftWindowSize (SecurityParam k) = CS.WindowSize k
+pbftWindowSize :: SecurityParam -> S.WindowSize
+pbftWindowSize (SecurityParam k) = S.WindowSize k
 
 -- | Does the number of blocks signed by this key exceed the threshold?
 --
 -- Returns @Just@ the number of blocks signed if exceeded.
 exceedsThreshold :: PBftCrypto c
                  => PBftWindowParams
-                 -> PBftChainState c -> PBftVerKeyHash c -> Maybe Word64
+                 -> PBftState c -> PBftVerKeyHash c -> Maybe Word64
 exceedsThreshold PBftWindowParams{..} st gk =
     if numSigned > threshold
       then Just numSigned
       else Nothing
   where
-    numSigned = CS.countSignedBy st gk
+    numSigned = S.countSignedBy st gk
 
 append :: PBftCrypto c
-       => NodeConfig (PBft c)
+       => ConsensusConfig (PBft c)
        -> PBftWindowParams
        -> (SlotNo, PBftVerKeyHash c)
-       -> PBftChainState c -> PBftChainState c
-append PBftNodeConfig{..} PBftWindowParams{..} =
-    CS.append pbftSecurityParam windowSize . uncurry CS.PBftSigner
+       -> PBftState c -> PBftState c
+append PBftConfig{..} PBftWindowParams{..} =
+    S.append pbftSecurityParam windowSize . uncurry S.PBftSigner
   where
     PBftParams{..} = pbftParams
 
 appendEBB :: forall c. PBftCrypto c
-          => NodeConfig (PBft c)
+          => ConsensusConfig (PBft c)
           -> PBftWindowParams
           -> SlotNo
           -> HeaderHashBytes
-          -> PBftChainState c -> PBftChainState c
-appendEBB PBftNodeConfig{..} PBftWindowParams{..} =
-    CS.appendEBB pbftSecurityParam windowSize
+          -> PBftState c -> PBftState c
+appendEBB PBftConfig{..} PBftWindowParams{..} =
+    S.appendEBB pbftSecurityParam windowSize
   where
     PBftParams{..} = pbftParams
 
 rewind :: forall c hdr. (PBftCrypto c, Serialise (HeaderHash hdr))
-       => NodeConfig (PBft c)
+       => ConsensusConfig (PBft c)
        -> PBftWindowParams
        -> Point hdr
-       -> PBftChainState c
-       -> Maybe (PBftChainState c)
-rewind PBftNodeConfig{..} PBftWindowParams{..} p =
-    CS.rewind pbftSecurityParam windowSize p'
+       -> PBftState c
+       -> Maybe (PBftState c)
+rewind PBftConfig{..} PBftWindowParams{..} p =
+    S.rewind pbftSecurityParam windowSize p'
   where
     PBftParams{..} = pbftParams
     p' = case p of

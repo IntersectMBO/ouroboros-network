@@ -151,7 +151,7 @@ protocolHandlers
     -> NodeKernel m peer blk
     -> ProtocolHandlers m peer blk
 protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncPipelining}
-                 NodeKernel {getChainDB, getMempool, getNodeConfig} =
+                 NodeKernel {getChainDB, getMempool, getTopLevelConfig} =
     --TODO: bundle needed NodeArgs into the NodeKernel
     -- so we do not have to pass it separately
     --TODO: need to review the use of the peer id in the tracers.
@@ -161,7 +161,7 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncP
         chainSyncClient
           chainSyncPipelining
           (chainSyncClientTracer tracers)
-          getNodeConfig
+          getTopLevelConfig
           btime
           maxClockSkew
           (chainDbView getChainDB)

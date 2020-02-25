@@ -75,8 +75,8 @@ library
                        Ouroboros.Consensus.Protocol.MockChainSel
                        Ouroboros.Consensus.Protocol.ModChainSel
                        Ouroboros.Consensus.Protocol.PBFT
-                       Ouroboros.Consensus.Protocol.PBFT.ChainState
-                       Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
+                       Ouroboros.Consensus.Protocol.PBFT.State
+                       Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
                        Ouroboros.Consensus.Protocol.PBFT.Crypto
                        Ouroboros.Consensus.Protocol.Signed
                        Ouroboros.Consensus.TxSubmission

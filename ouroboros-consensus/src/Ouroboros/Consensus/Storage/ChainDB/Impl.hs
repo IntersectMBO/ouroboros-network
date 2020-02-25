@@ -109,13 +109,13 @@ openDBInternal args launchBgTasks = do
       volDB
       lgrDB
       tracer
-      (Args.cdbNodeConfig args)
+      (Args.cdbTopLevelConfig args)
       varInvalid
       curSlot
 
     let chain  = ChainSel.clChain  chainAndLedger
         ledger = ChainSel.clLedger chainAndLedger
-        cfg    = Args.cdbNodeConfig args
+        cfg    = Args.cdbTopLevelConfig args
 
     atomically $ LgrDB.setCurrent lgrDB ledger
     varChain           <- newTVarM chain
@@ -133,7 +133,7 @@ openDBInternal args launchBgTasks = do
                   , cdbChain           = varChain
                   , cdbIterators       = varIterators
                   , cdbReaders         = varReaders
-                  , cdbNodeConfig      = cfg
+                  , cdbTopLevelConfig  = cfg
                   , cdbInvalid         = varInvalid
                   , cdbNextIteratorKey = varNextIteratorKey
                   , cdbNextReaderKey   = varNextReaderKey

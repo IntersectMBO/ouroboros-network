@@ -10,7 +10,7 @@
 module Ouroboros.Consensus.Protocol.LeaderSchedule (
     LeaderSchedule (..)
   , WithLeaderSchedule
-  , NodeConfig (..)
+  , ConsensusConfig (..)
   ) where
 
 import           Data.Map.Strict (Map)
@@ -44,34 +44,34 @@ instance Condense LeaderSchedule where
 -- | Extension of protocol @p@ by a static leader schedule.
 data WithLeaderSchedule p
 
-data instance NodeConfig (WithLeaderSchedule p) = WLSNodeConfig
-  { lsNodeConfigSchedule :: !LeaderSchedule
-  , lsNodeConfigP        :: !(NodeConfig p)
-  , lsNodeConfigNodeId   :: !CoreNodeId
+data instance ConsensusConfig (WithLeaderSchedule p) = WLSConfig
+  { wlsConfigSchedule :: !LeaderSchedule
+  , wlsConfigP        :: !(ConsensusConfig p)
+  , wlsConfigNodeId   :: !CoreNodeId
   }
   deriving (Generic)
 
 instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
-  type ChainState    (WithLeaderSchedule p) = ()
-  type LedgerView    (WithLeaderSchedule p) = ()
-  type ValidationErr (WithLeaderSchedule p) = ()
-  type IsLeader      (WithLeaderSchedule p) = ()
-  type ValidateView  (WithLeaderSchedule p) = ()
-  type SelectView    (WithLeaderSchedule p) = SelectView p
+  type ConsensusState (WithLeaderSchedule p) = ()
+  type LedgerView     (WithLeaderSchedule p) = ()
+  type ValidationErr  (WithLeaderSchedule p) = ()
+  type IsLeader       (WithLeaderSchedule p) = ()
+  type ValidateView   (WithLeaderSchedule p) = ()
+  type SelectView     (WithLeaderSchedule p) = SelectView p
 
-  preferCandidate       WLSNodeConfig{..} = preferCandidate       lsNodeConfigP
-  compareCandidates     WLSNodeConfig{..} = compareCandidates     lsNodeConfigP
-  protocolSecurityParam WLSNodeConfig{..} = protocolSecurityParam lsNodeConfigP
+  preferCandidate       WLSConfig{..} = preferCandidate       wlsConfigP
+  compareCandidates     WLSConfig{..} = compareCandidates     wlsConfigP
+  protocolSecurityParam WLSConfig{..} = protocolSecurityParam wlsConfigP
 
-  checkIsLeader WLSNodeConfig{..} slot _ _ = return $
-    case Map.lookup slot $ getLeaderSchedule lsNodeConfigSchedule of
-        Nothing                              -> Nothing
+  checkIsLeader WLSConfig{..} slot _ _ = return $
+    case Map.lookup slot $ getLeaderSchedule wlsConfigSchedule of
+        Nothing                           -> Nothing
         Just nids
-            | lsNodeConfigNodeId `elem` nids -> Just ()
-            | otherwise                      -> Nothing
+            | wlsConfigNodeId `elem` nids -> Just ()
+            | otherwise                   -> Nothing
 
-  applyChainState _ _ _ _ = return ()
-  rewindChainState _ _ _  = Just ()
+  updateConsensusState _ _ _ _ = return ()
+  rewindConsensusState _ _ _  = Just ()
 
 instance ConsensusProtocol p
-      => NoUnexpectedThunks (NodeConfig (WithLeaderSchedule p))
+      => NoUnexpectedThunks (ConsensusConfig (WithLeaderSchedule p))

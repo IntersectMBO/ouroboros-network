@@ -85,7 +85,7 @@ instance SimpleCrypto c => MockProtocolSpecific c SimplePraosRuleExt where
 
 instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
   forgeExt cfg _updateState () SimpleBlock{..} = do
-      let ext = SimplePraosRuleExt $ lsNodeConfigNodeId (configConsensus cfg)
+      let ext = SimplePraosRuleExt $ wlsConfigNodeId (configConsensus cfg)
       return SimpleBlock {
           simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
         , simpleBody   = simpleBody
@@ -93,9 +93,9 @@ instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
     where
       SimpleHeader{..} = simpleHeader
 
-  mockProtocolMagicId  = const constructMockProtocolMagicId
-  mockEncodeChainState = const encode
-  mockDecodeChainState = const decode
+  mockProtocolMagicId      = const constructMockProtocolMagicId
+  mockEncodeConsensusState = const encode
+  mockDecodeConsensusState = const decode
 
 instance SimpleCrypto c
       => BlockSupportsProtocol (SimpleBlock c SimplePraosRuleExt) where

@@ -143,9 +143,9 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
 -- selection.
 --
 -- We also validate the headers of a candidate chain by advancing the
--- 'ChainState' with the headers, which returns an error when validation
+-- 'ConsensusState' with the headers, which returns an error when validation
 -- failed. Thus, in addition to the chain fragment of each candidate, we
--- also store a 'ChainState' corresponding to the head of the candidate
+-- also store a 'ConsensusState' corresponding to the head of the candidate
 -- chain.
 --
 -- We must keep the candidate chain synchronised with the corresponding

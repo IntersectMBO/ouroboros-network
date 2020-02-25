@@ -31,7 +31,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -- Returns 'Nothing' if we stick with our current chain.
 selectChain :: forall p hdr l. ConsensusProtocol p
             => (hdr -> SelectView p)
-            -> NodeConfig p
+            -> ConsensusConfig p
             -> Chain hdr           -- ^ Our chain
             -> [(Chain hdr, l)]    -- ^ Upstream chains
             -> Maybe (Chain hdr, l)
@@ -66,7 +66,7 @@ selectChain view cfg ours candidates =
 -- | Chain selection on unvalidated chains
 selectUnvalidatedChain :: forall p hdr. ConsensusProtocol p
                        => (hdr -> SelectView p)
-                       -> NodeConfig p
+                       -> ConsensusConfig p
                        -> Chain hdr
                        -> [Chain hdr]
                        -> Maybe (Chain hdr)

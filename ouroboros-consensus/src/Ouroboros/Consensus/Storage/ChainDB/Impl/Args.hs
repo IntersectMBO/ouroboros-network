@@ -51,67 +51,67 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
 
       -- Decoders
-      cdbDecodeHash       :: forall s. Decoder s (HeaderHash blk)
-    , cdbDecodeBlock      :: forall s. Decoder s (Lazy.ByteString -> blk)
-    , cdbDecodeHeader     :: forall s. Decoder s (Lazy.ByteString -> Header blk)
+      cdbDecodeHash           :: forall s. Decoder s (HeaderHash blk)
+    , cdbDecodeBlock          :: forall s. Decoder s (Lazy.ByteString -> blk)
+    , cdbDecodeHeader         :: forall s. Decoder s (Lazy.ByteString -> Header blk)
       -- ^ The given encoding will include the header envelope
       -- ('cdbAddHdrEnv').
-    , cdbDecodeLedger     :: forall s. Decoder s (LedgerState blk)
-    , cdbDecodeTipInfo    :: forall s. Decoder s (TipInfo blk)
-    , cdbDecodeChainState :: forall s. Decoder s (ChainState (BlockProtocol blk))
+    , cdbDecodeLedger         :: forall s. Decoder s (LedgerState blk)
+    , cdbDecodeTipInfo        :: forall s. Decoder s (TipInfo blk)
+    , cdbDecodeConsensusState :: forall s. Decoder s (ConsensusState (BlockProtocol blk))
 
       -- Encoders
-    , cdbEncodeHash       :: HeaderHash blk -> Encoding
-    , cdbEncodeBlock      :: blk -> BinaryInfo Encoding
-    , cdbEncodeHeader     :: Header blk -> Encoding
+    , cdbEncodeHash           :: HeaderHash blk -> Encoding
+    , cdbEncodeBlock          :: blk -> BinaryInfo Encoding
+    , cdbEncodeHeader         :: Header blk -> Encoding
       -- ^ The returned encoding must include the header envelope
       -- ('cdbAddHdrEnv').
       --
       -- This should be cheap, preferably \( O(1) \), as the Readers will
       -- often be encoding the in-memory headers. (It is cheap for Byron
       -- headers, as we store the serialisation in the annotation.)
-    , cdbEncodeLedger     :: LedgerState blk -> Encoding
-    , cdbEncodeTipInfo    :: TipInfo blk -> Encoding
-    , cdbEncodeChainState :: ChainState (BlockProtocol blk) -> Encoding
+    , cdbEncodeLedger         :: LedgerState blk -> Encoding
+    , cdbEncodeTipInfo        :: TipInfo blk -> Encoding
+    , cdbEncodeConsensusState :: ConsensusState (BlockProtocol blk) -> Encoding
 
       -- Error handling
-    , cdbErrImmDb         :: ErrorHandling ImmDB.ImmutableDBError m
-    , cdbErrVolDb         :: ErrorHandling VolDB.VolatileDBError m
-    , cdbErrVolDbSTM      :: ThrowCantCatch VolDB.VolatileDBError (STM m)
+    , cdbErrImmDb             :: ErrorHandling ImmDB.ImmutableDBError m
+    , cdbErrVolDb             :: ErrorHandling VolDB.VolatileDBError m
+    , cdbErrVolDbSTM          :: ThrowCantCatch VolDB.VolatileDBError (STM m)
 
       -- HasFS instances
-    , cdbHasFSImmDb       :: HasFS m h1
-    , cdbHasFSVolDb       :: HasFS m h2
-    , cdbHasFSLgrDB       :: HasFS m h3
+    , cdbHasFSImmDb           :: HasFS m h1
+    , cdbHasFSVolDb           :: HasFS m h2
+    , cdbHasFSLgrDB           :: HasFS m h3
 
       -- Policy
-    , cdbImmValidation    :: ImmDB.ValidationPolicy
-    , cdbVolValidation    :: VolDB.BlockValidationPolicy
-    , cdbBlocksPerFile    :: VolDB.BlocksPerFile
-    , cdbParamsLgrDB      :: LgrDB.LedgerDbParams
-    , cdbDiskPolicy       :: LgrDB.DiskPolicy
+    , cdbImmValidation        :: ImmDB.ValidationPolicy
+    , cdbVolValidation        :: VolDB.BlockValidationPolicy
+    , cdbBlocksPerFile        :: VolDB.BlocksPerFile
+    , cdbParamsLgrDB          :: LgrDB.LedgerDbParams
+    , cdbDiskPolicy           :: LgrDB.DiskPolicy
 
       -- Integration
-    , cdbNodeConfig       :: TopLevelConfig blk
-    , cdbEpochInfo        :: EpochInfo m
-    , cdbHashInfo         :: HashInfo (HeaderHash blk)
-    , cdbIsEBB            :: Header blk -> Maybe EpochNo
-    , cdbCheckIntegrity   :: blk -> Bool
-    , cdbGenesis          :: m (ExtLedgerState blk)
-    , cdbBlockchainTime   :: BlockchainTime m
-    , cdbAddHdrEnv        :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
+    , cdbTopLevelConfig       :: TopLevelConfig blk
+    , cdbEpochInfo            :: EpochInfo m
+    , cdbHashInfo             :: HashInfo (HeaderHash blk)
+    , cdbIsEBB                :: Header blk -> Maybe EpochNo
+    , cdbCheckIntegrity       :: blk -> Bool
+    , cdbGenesis              :: m (ExtLedgerState blk)
+    , cdbBlockchainTime       :: BlockchainTime m
+    , cdbAddHdrEnv            :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
       -- ^ The header envelope will only be added after extracting the binary
       -- header from the binary block. Note that we never have to remove an
       -- envelope.
       --
       -- The 'SizeInBytes' is the size of the block.
-    , cdbImmDbCacheConfig :: ImmDB.CacheConfig
+    , cdbImmDbCacheConfig     :: ImmDB.CacheConfig
 
       -- Misc
-    , cdbTracer           :: Tracer m (TraceEvent blk)
-    , cdbTraceLedger      :: Tracer m (LgrDB.LedgerDB blk)
-    , cdbRegistry         :: ResourceRegistry m
-    , cdbGcDelay          :: DiffTime
+    , cdbTracer               :: Tracer m (TraceEvent blk)
+    , cdbTraceLedger          :: Tracer m (LgrDB.LedgerDB blk)
+    , cdbRegistry             :: ResourceRegistry m
+    , cdbGcDelay              :: DiffTime
     }
 
 -- | Arguments specific to the ChainDB, not to the ImmutableDB, VolatileDB, or
@@ -204,21 +204,21 @@ fromChainDbArgs ChainDbArgs{..} = (
                                           Just _  -> IsEBB
         }
     , LgrDB.LgrDbArgs {
-          lgrNodeConfig       = cdbNodeConfig
-        , lgrHasFS            = cdbHasFSLgrDB
-        , lgrDecodeLedger     = cdbDecodeLedger
-        , lgrDecodeChainState = cdbDecodeChainState
-        , lgrDecodeHash       = cdbDecodeHash
-        , lgrDecodeTipInfo    = cdbDecodeTipInfo
-        , lgrEncodeLedger     = cdbEncodeLedger
-        , lgrEncodeChainState = cdbEncodeChainState
-        , lgrEncodeHash       = cdbEncodeHash
-        , lgrEncodeTipInfo    = cdbEncodeTipInfo
-        , lgrParams           = cdbParamsLgrDB
-        , lgrDiskPolicy       = cdbDiskPolicy
-        , lgrGenesis          = cdbGenesis
-        , lgrTracer           = contramap TraceLedgerEvent cdbTracer
-        , lgrTraceLedger      = cdbTraceLedger
+          lgrTopLevelConfig       = cdbTopLevelConfig
+        , lgrHasFS                = cdbHasFSLgrDB
+        , lgrDecodeLedger         = cdbDecodeLedger
+        , lgrDecodeConsensusState = cdbDecodeConsensusState
+        , lgrDecodeHash           = cdbDecodeHash
+        , lgrDecodeTipInfo        = cdbDecodeTipInfo
+        , lgrEncodeLedger         = cdbEncodeLedger
+        , lgrEncodeConsensusState = cdbEncodeConsensusState
+        , lgrEncodeHash           = cdbEncodeHash
+        , lgrEncodeTipInfo        = cdbEncodeTipInfo
+        , lgrParams               = cdbParamsLgrDB
+        , lgrDiskPolicy           = cdbDiskPolicy
+        , lgrGenesis              = cdbGenesis
+        , lgrTracer               = contramap TraceLedgerEvent cdbTracer
+        , lgrTraceLedger          = cdbTraceLedger
         }
     , ChainDbSpecificArgs {
           cdbsTracer          = cdbTracer
@@ -243,46 +243,46 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
               LgrDB.LgrDbArgs{..}
               ChainDbSpecificArgs{..} = ChainDbArgs{
       -- Decoders
-      cdbDecodeHash       = immDecodeHash
-    , cdbDecodeBlock      = immDecodeBlock
-    , cdbDecodeHeader     = immDecodeHeader
-    , cdbDecodeLedger     = lgrDecodeLedger
-    , cdbDecodeTipInfo    = lgrDecodeTipInfo
-    , cdbDecodeChainState = lgrDecodeChainState
+      cdbDecodeHash           = immDecodeHash
+    , cdbDecodeBlock          = immDecodeBlock
+    , cdbDecodeHeader         = immDecodeHeader
+    , cdbDecodeLedger         = lgrDecodeLedger
+    , cdbDecodeTipInfo        = lgrDecodeTipInfo
+    , cdbDecodeConsensusState = lgrDecodeConsensusState
       -- Encoders
-    , cdbEncodeHash       = immEncodeHash
-    , cdbEncodeBlock      = immEncodeBlock
-    , cdbEncodeHeader     = cdbsEncodeHeader
-    , cdbEncodeLedger     = lgrEncodeLedger
-    , cdbEncodeTipInfo    = lgrEncodeTipInfo
-    , cdbEncodeChainState = lgrEncodeChainState
+    , cdbEncodeHash           = immEncodeHash
+    , cdbEncodeBlock          = immEncodeBlock
+    , cdbEncodeHeader         = cdbsEncodeHeader
+    , cdbEncodeLedger         = lgrEncodeLedger
+    , cdbEncodeTipInfo        = lgrEncodeTipInfo
+    , cdbEncodeConsensusState = lgrEncodeConsensusState
       -- Error handling
-    , cdbErrImmDb         = immErr
-    , cdbErrVolDb         = volErr
-    , cdbErrVolDbSTM      = volErrSTM
+    , cdbErrImmDb             = immErr
+    , cdbErrVolDb             = volErr
+    , cdbErrVolDbSTM          = volErrSTM
       -- HasFS instances
-    , cdbHasFSImmDb       = immHasFS
-    , cdbHasFSVolDb       = volHasFS
-    , cdbHasFSLgrDB       = lgrHasFS
+    , cdbHasFSImmDb           = immHasFS
+    , cdbHasFSVolDb           = volHasFS
+    , cdbHasFSLgrDB           = lgrHasFS
       -- Policy
-    , cdbImmValidation    = immValidation
-    , cdbVolValidation    = volValidation
-    , cdbBlocksPerFile    = volBlocksPerFile
-    , cdbParamsLgrDB      = lgrParams
-    , cdbDiskPolicy       = lgrDiskPolicy
+    , cdbImmValidation        = immValidation
+    , cdbVolValidation        = volValidation
+    , cdbBlocksPerFile        = volBlocksPerFile
+    , cdbParamsLgrDB          = lgrParams
+    , cdbDiskPolicy           = lgrDiskPolicy
       -- Integration
-    , cdbNodeConfig       = lgrNodeConfig
-    , cdbEpochInfo        = immEpochInfo
-    , cdbHashInfo         = immHashInfo
-    , cdbIsEBB            = immIsEBB
-    , cdbCheckIntegrity   = immCheckIntegrity
-    , cdbGenesis          = lgrGenesis
-    , cdbBlockchainTime   = cdbsBlockchainTime
-    , cdbAddHdrEnv        = immAddHdrEnv
-    , cdbImmDbCacheConfig = immCacheConfig
+    , cdbTopLevelConfig       = lgrTopLevelConfig
+    , cdbEpochInfo            = immEpochInfo
+    , cdbHashInfo             = immHashInfo
+    , cdbIsEBB                = immIsEBB
+    , cdbCheckIntegrity       = immCheckIntegrity
+    , cdbGenesis              = lgrGenesis
+    , cdbBlockchainTime       = cdbsBlockchainTime
+    , cdbAddHdrEnv            = immAddHdrEnv
+    , cdbImmDbCacheConfig     = immCacheConfig
       -- Misc
-    , cdbTracer           = cdbsTracer
-    , cdbTraceLedger      = lgrTraceLedger
-    , cdbRegistry         = immRegistry
-    , cdbGcDelay          = cdbsGcDelay
+    , cdbTracer               = cdbsTracer
+    , cdbTraceLedger          = lgrTraceLedger
+    , cdbRegistry             = immRegistry
+    , cdbGcDelay              = cdbsGcDelay
     }

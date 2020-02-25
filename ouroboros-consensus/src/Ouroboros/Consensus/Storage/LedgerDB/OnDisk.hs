@@ -141,7 +141,7 @@ data InitLog r =
 -- we found on disk (the latter primarily for testing/monitoring purposes).
 --
 -- We do /not/ catch any exceptions thrown during streaming; should any be
--- thrown, it is the responsibility of the 'ChainStateDB' to catch these
+-- thrown, it is the responsibility of the 'ChainDB' to catch these
 -- and trigger (further) validation. We only discard snapshots if
 --
 -- * We cannot deserialise them, or

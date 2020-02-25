@@ -399,7 +399,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     nodeCfg :: CoreNodeId -> TopLevelConfig TestBlock
     nodeCfg coreNodeId = TopLevelConfig {
-        configConsensus = BftNodeConfig
+        configConsensus = BftConfig
           { bftParams   = BftParams
             { bftSecurityParam = securityParam
             , bftNumNodes      = numCoreNodes

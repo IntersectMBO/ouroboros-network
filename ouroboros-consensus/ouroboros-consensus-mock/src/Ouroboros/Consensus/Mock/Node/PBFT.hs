@@ -17,7 +17,7 @@ import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
-import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
+import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 
 protocolInfoMockPBFT :: PBftParams
                      -> SlotLengths
@@ -27,7 +27,7 @@ protocolInfoMockPBFT :: PBftParams
 protocolInfoMockPBFT params slotLengths nid =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = PBftNodeConfig {
+            configConsensus = PBftConfig {
                  pbftParams   = params
                , pbftIsLeader = PBftIsALeader PBftIsLeader {
                      pbftCoreNodeId = nid
@@ -40,7 +40,7 @@ protocolInfoMockPBFT params slotLengths nid =
           , configBlock  = SimpleBlockConfig slotLengths
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
-                                         (genesisHeaderState CS.empty)
+                                         (genesisHeaderState S.empty)
       , pInfoInitState  = ()
       }
   where

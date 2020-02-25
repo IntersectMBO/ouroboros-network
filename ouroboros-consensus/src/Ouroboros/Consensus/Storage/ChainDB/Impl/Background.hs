@@ -165,7 +165,7 @@ copyToImmDB CDB{..} = withCopyLock $ do
     -- Get the /possibly/ updated tip of the ImmDB
     ImmDB.getSlotNoAtTip cdbImmDB
   where
-    SecurityParam k = configSecurityParam cdbNodeConfig
+    SecurityParam k = configSecurityParam cdbTopLevelConfig
     trace = traceWith (contramap TraceCopyToImmDBEvent cdbTracer)
 
     -- | Remove the header corresponding to the given point from the beginning
@@ -230,7 +230,7 @@ copyAndSnapshotRunner
 copyAndSnapshotRunner cdb@CDB{..} gcSchedule =
     loop Nothing
   where
-    SecurityParam k      = configSecurityParam cdbNodeConfig
+    SecurityParam k      = configSecurityParam cdbTopLevelConfig
     LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy cdbLgrDB
 
     loop :: Maybe Time -> Word64 -> m Void

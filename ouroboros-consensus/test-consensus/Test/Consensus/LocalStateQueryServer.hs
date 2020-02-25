@@ -216,26 +216,26 @@ initLgrDB k chain = do
     genesisLedgerDB = LgrDB.ledgerDbFromGenesis params testInitExtLedger
 
     args = LgrDbArgs
-      { lgrNodeConfig       = cfg
-      , lgrHasFS            = error "lgrHasFS"
-      , lgrDecodeLedger     = error "lgrDecodeLedger"
-      , lgrDecodeChainState = error "lgrDecodeChainState"
-      , lgrDecodeHash       = error "lgrDecodeHash"
-      , lgrDecodeTipInfo    = error "lgrDecodeTipInfo"
-      , lgrEncodeLedger     = error "lgrEncodeLedger"
-      , lgrEncodeChainState = error "lgrEncodeChainState"
-      , lgrEncodeHash       = error "lgrEncodeHash"
-      , lgrEncodeTipInfo    = error "lgrEncodeTipInfo"
-      , lgrParams           = params
-      , lgrDiskPolicy       = error "lgrDiskPolicy"
-      , lgrGenesis          = return testInitExtLedger
-      , lgrTracer           = nullTracer
-      , lgrTraceLedger      = nullTracer
+      { lgrTopLevelConfig       = cfg
+      , lgrHasFS                = error "lgrHasFS"
+      , lgrDecodeLedger         = error "lgrDecodeLedger"
+      , lgrDecodeConsensusState = error "lgrDecodeConsensusState"
+      , lgrDecodeHash           = error "lgrDecodeHash"
+      , lgrDecodeTipInfo        = error "lgrDecodeTipInfo"
+      , lgrEncodeLedger         = error "lgrEncodeLedger"
+      , lgrEncodeConsensusState = error "lgrEncodeConsensusState"
+      , lgrEncodeHash           = error "lgrEncodeHash"
+      , lgrEncodeTipInfo        = error "lgrEncodeTipInfo"
+      , lgrParams               = params
+      , lgrDiskPolicy           = error "lgrDiskPolicy"
+      , lgrGenesis              = return testInitExtLedger
+      , lgrTracer               = nullTracer
+      , lgrTraceLedger          = nullTracer
       }
 
 testCfg :: SecurityParam -> TopLevelConfig TestBlock
 testCfg securityParam = TopLevelConfig {
-      configConsensus = BftNodeConfig
+      configConsensus = BftConfig
         { bftParams   = BftParams { bftSecurityParam = securityParam
                                   , bftNumNodes      = numCoreNodes
                                   }

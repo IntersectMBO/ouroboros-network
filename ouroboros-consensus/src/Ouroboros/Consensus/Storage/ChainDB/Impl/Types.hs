@@ -191,7 +191,7 @@ data ChainDbEnv m blk = CDB
     -- INVARIANT: the 'readerPoint' of each reader is 'withinFragmentBounds'
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
-  , cdbNodeConfig      :: !(TopLevelConfig blk)
+  , cdbTopLevelConfig  :: !(TopLevelConfig blk)
   , cdbInvalid         :: !(StrictTVar m (WithFingerprint (InvalidBlocks blk)))
     -- ^ See the docstring of 'InvalidBlocks'.
     --

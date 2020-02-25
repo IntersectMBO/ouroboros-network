@@ -74,7 +74,7 @@ getCurrentChain
 getCurrentChain CDB{..} =
     AF.anchorNewest k <$> readTVar cdbChain
   where
-    SecurityParam k = configSecurityParam cdbNodeConfig
+    SecurityParam k = configSecurityParam cdbTopLevelConfig
 
 getCurrentLedger :: IOLike m => ChainDbEnv m blk -> STM m (ExtLedgerState blk)
 getCurrentLedger CDB{..} = LgrDB.getCurrentState cdbLgrDB

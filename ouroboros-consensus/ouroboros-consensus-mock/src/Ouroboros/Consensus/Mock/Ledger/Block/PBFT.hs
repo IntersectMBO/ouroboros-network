@@ -36,7 +36,7 @@ import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.PBFT
-import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
+import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 
@@ -117,10 +117,10 @@ instance ( SimpleCrypto c
     where
       SimpleHeader{..} = simpleHeader
 
-  mockProtocolMagicId  = const constructMockProtocolMagicId
-  mockEncodeChainState = const CS.encodePBftChainState
-  mockDecodeChainState = \cfg -> let k = configSecurityParam cfg
-                                 in CS.decodePBftChainState k (pbftWindowSize k)
+  mockProtocolMagicId      = const constructMockProtocolMagicId
+  mockEncodeConsensusState = const S.encodePBftState
+  mockDecodeConsensusState = \cfg -> let k = configSecurityParam cfg
+                                     in S.decodePBftState k (pbftWindowSize k)
 
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
