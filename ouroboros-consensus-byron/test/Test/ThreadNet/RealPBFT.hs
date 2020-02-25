@@ -374,9 +374,9 @@ prop_simple_real_pbft_convergence produceEBBs k
   where
     testOutput =
         runTestNetwork testConfig TestConfigBlock
-            { forgeEBB = case produceEBBs of
+            { forgeEbbEnv = case produceEBBs of
                 NoEBBs      -> Nothing
-                ProduceEBBs -> Just Byron.forgeEBB
+                ProduceEBBs -> Just $ byronForgeEbbEnv k
             , nodeInfo = \nid ->
                 mkProtocolRealPBFT params nid genesisConfig genesisSecrets
             , rekeying = Just Rekeying
@@ -406,6 +406,14 @@ prop_simple_real_pbft_convergence produceEBBs k
     genesisConfig  :: Genesis.Config
     genesisSecrets :: Genesis.GeneratedSecrets
     (genesisConfig, genesisSecrets) = generateGenesisConfig params
+
+byronForgeEbbEnv :: SecurityParam -> ForgeEbbEnv ByronBlock
+byronForgeEbbEnv k = ForgeEbbEnv
+    { forgeEBB      = Byron.forgeEBB
+    , ebbSlotBefore = \(SlotNo s) ->
+        let denom = unEpochSlots $ kEpochSlots $ coerce k
+        in SlotNo $ denom * div s denom
+    }
 
 -- | Whether to produce EBBs in the tests or not
 --

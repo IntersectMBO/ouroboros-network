@@ -58,11 +58,11 @@ prop_simple_pbft_convergence
 
     testOutput =
         runTestNetwork testConfig TestConfigBlock
-            { forgeEBB = Nothing
-            , nodeInfo = protocolInfoMockPBFT
-                           params
-                           (singletonSlotLengths pbftSlotLength)
-            , rekeying = Nothing
+            { forgeEbbEnv = Nothing
+            , nodeInfo    = protocolInfoMockPBFT
+                              params
+                              (singletonSlotLengths pbftSlotLength)
+            , rekeying    = Nothing
             }
 
 pbftSlotLength :: SlotLength

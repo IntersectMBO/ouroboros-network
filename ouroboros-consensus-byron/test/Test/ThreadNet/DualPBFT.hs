@@ -107,13 +107,13 @@ setupSchedule setup@SetupDualPBft{..} = Just $
 setupTestOutput :: SetupDualPBft -> TestOutput DualByronBlock
 setupTestOutput SetupDualPBft{..} =
     runTestNetwork setupConfig $ TestConfigBlock {
-        forgeEBB = Nothing -- spec does not model EBBs
-      , rekeying = Nothing -- TODO
-      , nodeInfo = \coreNodeId ->
-                      protocolInfoDualByron
-                        setupGenesis
-                        setupParams
-                        (Just coreNodeId)
+        forgeEbbEnv = Nothing -- spec does not model EBBs
+      , rekeying    = Nothing -- TODO
+      , nodeInfo    = \coreNodeId ->
+          protocolInfoDualByron
+            setupGenesis
+            setupParams
+            (Just coreNodeId)
       }
 
 -- | Override 'TestConfig'

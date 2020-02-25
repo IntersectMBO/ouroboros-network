@@ -16,7 +16,7 @@
 -- | Setup network
 module Test.ThreadNet.Network (
     runThreadNetwork
-  , ForgeEBB
+  , ForgeEbbEnv (..)
   , RekeyM
   , ThreadNetworkArgs (..)
   , TracingConstraints
@@ -34,6 +34,7 @@ module Test.ThreadNet.Network (
 import           Codec.CBOR.Read (DeserialiseFailure)
 import qualified Control.Exception as Exn
 import           Control.Monad
+import qualified Control.Monad.Except as Exc
 import           Control.Tracer
 import           Crypto.Random (ChaChaDRG)
 import qualified Data.ByteString.Lazy as Lazy
@@ -53,7 +54,7 @@ import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
-import           Ouroboros.Network.Point (WithOrigin (..), fromWithOrigin)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -73,7 +74,6 @@ import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import qualified Ouroboros.Consensus.ChainSyncClient as CSClient
 import           Ouroboros.Consensus.ChainSyncServer (Tip)
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -96,7 +96,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
 import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo,
-                     epochInfoEpoch, epochInfoFirst, newEpochInfo)
+                     epochInfoEpoch, newEpochInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
@@ -116,12 +116,23 @@ import           Test.Util.Tracer
 
 -- | How to forge an EBB
 --
-type ForgeEBB blk =
-     TopLevelConfig blk
-  -> SlotNo          -- ^ EBB slot
-  -> BlockNo         -- ^ EBB block number (i.e. that of its predecessor)
-  -> ChainHash blk   -- ^ EBB predecessor's hash
-  -> blk
+data ForgeEbbEnv blk = ForgeEbbEnv
+  { forgeEBB ::
+         TopLevelConfig blk
+      -> SlotNo
+         -- EBB slot
+      -> BlockNo
+         -- EBB block number (i.e. that of its predecessor)
+      -> ChainHash blk
+         -- EBB predecessor's hash
+      -> blk
+  , ebbSlotBefore :: SlotNo -> SlotNo
+    -- ^ Given the slot of a proper block B, returns the slot of the latest
+    -- expected EBB that should precede B.
+    --
+    -- Note that this is pure, unlike 'EpochInfo', which would usually be used
+    -- for this.
+  }
 
 -- | How to rekey a node with a fresh operational key
 --
@@ -134,7 +145,7 @@ type RekeyM m blk =
 -- | Parameters for the test node net
 --
 data ThreadNetworkArgs m blk = ThreadNetworkArgs
-  { tnaForgeEBB     :: Maybe (ForgeEBB blk)
+  { tnaForgeEbbEnv  :: Maybe (ForgeEbbEnv blk)
   , tnaJoinPlan     :: NodeJoinPlan
   , tnaNodeInfo     :: CoreNodeId -> ProtocolInfo blk
   , tnaNumCoreNodes :: NumCoreNodes
@@ -215,7 +226,7 @@ runThreadNetwork :: forall m blk.
                     )
                  => ThreadNetworkArgs m blk -> m (TestOutput blk)
 runThreadNetwork ThreadNetworkArgs
-  { tnaForgeEBB       = mbForgeEBB
+  { tnaForgeEbbEnv    = mbForgeEbbEnv
   , tnaJoinPlan       = nodeJoinPlan
   , tnaNodeInfo       = mkProtocolInfo
   , tnaNumCoreNodes   = numCoreNodes
@@ -455,44 +466,6 @@ runThreadNetwork ThreadNetworkArgs
           testGenTxs numCoreNodes curSlotNo cfg ledger
         void $ addTxs mempool txs
 
-    forkEbbProducer :: HasCallStack
-                    => BlockchainTime m
-                    -> ResourceRegistry m
-                    -> StrictTVar m SlotNo
-                    -> TopLevelConfig blk
-                    -> ChainDB.ChainDB m blk
-                    -> EpochInfo m
-                    -> m ()
-    forkEbbProducer btime registry nextEbbSlotVar cfg chainDB epochInfo =
-        void $ forkLinkedThread registry $ go 0
-      where
-        go :: EpochNo -> m ()
-        go !epoch = do
-          -- The first slot in @epoch@
-          ebbSlotNo <- epochInfoFirst epochInfo epoch
-          atomically $ writeTVar nextEbbSlotVar ebbSlotNo
-
-          void $ blockUntilSlot btime ebbSlotNo
-
-          case mbForgeEBB of
-            Nothing       -> pure ()
-            Just forgeEBB -> do
-              (prevSlot, ebbBlockNo, prevHash) <- atomically $ do
-                p <- ChainDB.getTipPoint chainDB
-                let mSlot = pointSlot p
-                let k = SlotNo $ maxRollbacks $ configSecurityParam cfg
-                check $ case mSlot of
-                  Origin -> True
-                  At s   -> s >= (ebbSlotNo - min ebbSlotNo (2 * k))
-                bno <- ChainDB.getTipBlockNo chainDB
-                -- The EBB shares its BlockNo with its predecessor (if there is one)
-                pure (mSlot, fromWithOrigin (firstBlockNo (Proxy @blk)) bno, pointHash p)
-              when (prevSlot < At ebbSlotNo) $ do
-                let ebb = forgeEBB cfg ebbSlotNo ebbBlockNo prevHash
-                ChainDB.addBlock_ chainDB ebb
-
-          go (succ epoch)
-
     mkArgs :: BlockchainTime m
            -> ResourceRegistry m
            -> TopLevelConfig blk
@@ -580,12 +553,6 @@ runThreadNetwork ThreadNetworkArgs
     forkNode epochInfo varRNG btime registry pInfo nodeInfo txs0 = do
       let ProtocolInfo{..} = pInfo
 
-      let blockProduction :: BlockProduction m blk
-          blockProduction = BlockProduction {
-              produceBlock       = \_lift' -> nodeForgeBlock pInfoConfig
-            , runMonadRandomDict = runMonadRandomWithTVar varRNG
-            }
-
       let NodeInfo
             { nodeInfoEvents
             , nodeInfoDBs
@@ -605,22 +572,70 @@ runThreadNetwork ThreadNetworkArgs
       chainDB <- snd <$>
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
 
-      -- We have a thread (see below) that forges EBBs for tests that involve
-      -- them. This variable holds the slot of the next EBB to be forged.
-      --
-      -- Even if the test doesn't involve EBBs, that thread must advance this
-      -- variable in order to unblock the node's block production thread.
-      nextEbbSlotVar <- uncheckedNewTVarM 0
+      let blockProduction :: BlockProduction m blk
+          blockProduction = BlockProduction {
+              produceBlock       = \lift' upd currentSlot currentBno extLdgSt txs prf -> do
+                -- the typical behavior, which doesn't add a Just-In-Time EBB
+                let forgeWithoutEBB =
+                      nodeForgeBlock pInfoConfig upd
+                        currentSlot currentBno extLdgSt txs prf
+
+                case mbForgeEbbEnv of
+                  Nothing          -> forgeWithoutEBB
+                  Just forgeEbbEnv -> do
+                    let ebbSlot = ebbSlotBefore forgeEbbEnv currentSlot
+
+                    let p = ledgerTipPoint $ ledgerState extLdgSt
+                    let mSlot = pointSlot p
+                    if (At ebbSlot <= mSlot) then forgeWithoutEBB else do
+                      -- the EBB is needed
+                      --
+                      -- The EBB shares its BlockNo with its predecessor (if
+                      -- there is one)
+                      let ebbBno = case currentBno of
+                            -- We assume this invariant:
+                            --
+                            -- If forging of EBBs is enabled then the node
+                            -- initialization is responsible for producing any
+                            -- proper non-EBB blocks with block number 0.
+                            --
+                            -- So this case is unreachable.
+                            0 -> error "Error, only node initialization can forge non-EBB with block number 0."
+                            n -> pred n
+                      let ebb = forgeEBB forgeEbbEnv pInfoConfig
+                                  ebbSlot ebbBno (pointHash p)
+
+                      -- fail if the EBB is invalid
+                      let apply = applyExtLedgerState BlockNotPreviouslyApplied
+                      extLdgSt' <- case Exc.runExcept $ apply pInfoConfig ebb extLdgSt of
+                        Left e   -> Exn.throw $ JitEbbError e
+                        Right st -> pure st
+
+                      -- forge the block usings the ledger state that includes
+                      -- the EBB
+                      blk <- nodeForgeBlock pInfoConfig upd
+                        currentSlot currentBno extLdgSt' txs prf
+
+                      -- /if the new block is valid/, add the EBB to the
+                      -- ChainDB
+                      --
+                      -- If the new block is invalid, then adding the EBB would
+                      -- be premature in some scenarios.
+                      case Exc.runExcept $ apply pInfoConfig blk extLdgSt' of
+                        -- ASSUMPTION: If it's invalid with the EBB,
+                        -- it will be invalid without the EBB.
+                        Left{}  -> forgeWithoutEBB
+                        Right{} -> do
+                          -- TODO: We assume this succeeds; failure modes?
+                          void $ lift' $ ChainDB.addBlock chainDB ebb
+                          pure blk
+
+            , runMonadRandomDict = runMonadRandomWithTVar varRNG
+            }
 
       -- prop_general relies on these tracers
       let instrumentationTracers = nullTracers
-            { forgeTracer       = Tracer $ \case
-                TraceStartLeadershipCheck s -> do
-                  atomically $ do
-                    lim <- readTVar nextEbbSlotVar
-                    check $ s < lim
-                o                           -> do
-                  traceWith (nodeEventsForges nodeInfoEvents) o
+            { forgeTracer = nodeEventsForges nodeInfoEvents
             }
       let nodeArgs = NodeArgs
             { tracers             =
@@ -664,14 +679,6 @@ runThreadNetwork ThreadNetworkArgs
         (runMonadRandomWithTVar varRNG)
         (ChainDB.getCurrentLedger chainDB)
         mempool
-
-      forkEbbProducer
-        btime
-        registry
-        nextEbbSlotVar
-        pInfoConfig
-        chainDB
-        epochInfo
 
       return (nodeKernel, LimitedApp app)
 
@@ -1029,7 +1036,7 @@ mkTestOutput vertexInfos = do
               , nodeOutputNodeDBs    = nodeInfoDBs
               , nodeOutputForges     =
                   Map.fromList $
-                  [ (s, b) | TraceForgedBlock s b _ <- nodeEventsForges ]
+                  [ (s, b) | TraceForgedBlock s _ b _ <- nodeEventsForges ]
               , nodeOutputInvalids   = (:[]) <$> Map.fromList nodeEventsInvalids
               }
 
@@ -1181,3 +1188,12 @@ data MiniProtocolFatalException = MiniProtocolFatalException
   deriving (Show)
 
 instance Exception MiniProtocolFatalException
+
+-- | Our scheme for Just-In-Time EBBs makes some assumptions
+--
+data JitEbbError blk
+  = JitEbbError (ExtValidationError blk)
+    -- ^ we were unable to extend the ledger state with the JIT EBB
+  deriving (Show)
+
+instance LedgerSupportsProtocol blk => Exception (JitEbbError blk)

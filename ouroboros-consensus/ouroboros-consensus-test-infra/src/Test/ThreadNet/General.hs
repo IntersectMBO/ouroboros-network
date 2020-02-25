@@ -19,7 +19,7 @@ module Test.ThreadNet.General (
     -- * Block rejections
   , BlockRejection (..)
     -- * Re-exports
-  , ForgeEBB
+  , ForgeEbbEnv (..)
   , TestOutput (..)
   ) where
 
@@ -164,9 +164,9 @@ instance Arbitrary TestConfig where
 -------------------------------------------------------------------------------}
 
 data TestConfigBlock blk = TestConfigBlock
-  { forgeEBB :: Maybe (ForgeEBB blk)
-  , nodeInfo :: CoreNodeId -> ProtocolInfo blk
-  , rekeying :: Maybe (Rekeying blk)
+  { forgeEbbEnv :: Maybe (ForgeEbbEnv blk)
+  , nodeInfo    :: CoreNodeId -> ProtocolInfo blk
+  , rekeying    :: Maybe (Rekeying blk)
   }
 
 data Rekeying blk = forall opKey. Rekeying
@@ -208,10 +208,10 @@ runTestNetwork
     , slotLengths
     , initSeed
     }
-  TestConfigBlock{forgeEBB, nodeInfo, rekeying}
+  TestConfigBlock{forgeEbbEnv, nodeInfo, rekeying}
   = runSimOrThrow $ do
     let tna = ThreadNetworkArgs
-          { tnaForgeEBB       = forgeEBB
+          { tnaForgeEbbEnv    = forgeEbbEnv
           , tnaJoinPlan       = nodeJoinPlan
           , tnaNodeInfo       = nodeInfo
           , tnaNumCoreNodes   = numCoreNodes

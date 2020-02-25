@@ -98,14 +98,14 @@ prop_simple_leader_schedule_convergence
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork testConfig TestConfigBlock
-            { forgeEBB = Nothing
-            , nodeInfo = \nid -> protocolInfoPraosRule
-                                   numCoreNodes
-                                   nid
-                                   params
-                                   (singletonSlotLengths praosSlotLength)
-                                   schedule
-            , rekeying = Nothing
+            { forgeEbbEnv = Nothing
+            , nodeInfo    = \nid -> protocolInfoPraosRule
+                                      numCoreNodes
+                                      nid
+                                      params
+                                      (singletonSlotLengths praosSlotLength)
+                                      schedule
+            , rekeying    = Nothing
             }
 
 {-------------------------------------------------------------------------------

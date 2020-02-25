@@ -44,8 +44,8 @@ prop_simple_bft_convergence k
   where
     testOutput =
         runTestNetwork testConfig TestConfigBlock
-            { forgeEBB = Nothing
-            , nodeInfo = \nid ->
+            { forgeEbbEnv = Nothing
+            , nodeInfo    = \nid ->
                 protocolInfoBft numCoreNodes nid k slotLengths
-            , rekeying = Nothing
+            , rekeying    = Nothing
             }

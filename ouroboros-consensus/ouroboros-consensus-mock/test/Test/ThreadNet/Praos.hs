@@ -103,11 +103,11 @@ prop_simple_praos_convergence
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork testConfig TestConfigBlock
-            { forgeEBB = Nothing
-            , nodeInfo = \nid -> protocolInfoPraos
-                                   numCoreNodes
-                                   nid
-                                   params
-                                   (singletonSlotLengths praosSlotLength)
-            , rekeying = Nothing
+            { forgeEbbEnv = Nothing
+            , nodeInfo    = \nid -> protocolInfoPraos
+                                      numCoreNodes
+                                      nid
+                                      params
+                                      (singletonSlotLengths praosSlotLength)
+            , rekeying    = Nothing
             }
