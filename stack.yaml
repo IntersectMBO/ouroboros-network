@@ -56,6 +56,7 @@ extra-deps:
       - byron/semantics/executable-spec
       - shelley/chain-and-ledger/dependencies/non-integer
       - shelley/chain-and-ledger/executable-spec
+      - shelley/chain-and-ledger/executable-spec/test
 
   # Needed for `cardano-ledger-specs`
   - git: https://github.com/input-output-hk/goblins
