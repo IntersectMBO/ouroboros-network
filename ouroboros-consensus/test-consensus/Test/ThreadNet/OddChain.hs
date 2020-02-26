@@ -74,9 +74,8 @@ countOddTxs :: OddBlock -> Word64
 countOddTxs = fromIntegral . length . oddBlockPayload
 
 instance TxGen OddBlock where
-  testGenTx _numCoreNodes _slotNo _cfg _ledgerSt =
-    OddTx . Tx . fromIntegral <$> generateBetween (-100) 100
-
-    -- error "testGenTxs shouldn't call testGenTx"
-
---  testGenTxs _ _ _ _ = return []
+  testGenTx _numCoreNodes _slotNo _cfg ledgerSt
+    = fmap (OddTx . Tx . fromIntegral)
+    $ case phase ledgerSt of
+        Decrease i -> generateBetween (-1000)              (fromIntegral (i-1))
+        Increase i -> generateBetween (fromIntegral (i+1)) 1000

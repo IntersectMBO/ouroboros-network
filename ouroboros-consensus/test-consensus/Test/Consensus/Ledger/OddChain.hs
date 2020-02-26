@@ -261,8 +261,8 @@ instance Arbitrary OddBlock where
   arbitrary = do
     -- To generate valid blocks we would need to have access to the ledger
     -- state, and the tests will become a bit more complex ...
-    payload <- oneof [ arbitraryIncreasing
-                     , fmap reverse arbitraryIncreasing
+    payload <- oneof [ pure [1, 3, 5]
+                     , pure [5, 3, 1]
                      ]
     hdr     <- arbitraryHeader payload
     pure $! OddBlock
@@ -270,7 +270,6 @@ instance Arbitrary OddBlock where
           , oddBlockPayload = payload
           }
     where
-      arbitraryIncreasing = fmap (fmap ((+1). (*2)) . sort) arbitrary
 
   shrink _ = [] -- TODO: define this properly. At least we should shrink the transactions.
 
