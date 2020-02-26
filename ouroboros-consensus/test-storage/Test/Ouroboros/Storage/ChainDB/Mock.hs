@@ -119,7 +119,7 @@ openDB cfg initLedger btime = do
     void $ onSlotChange btime $ update_ . Model.advanceCurSlot cfg
 
     return ChainDB {
-        addBlock            = update_  . Model.addBlock cfg
+        addBlockAsync       = update   . Model.addBlockPromise cfg
       , getCurrentChain     = querySTM $ Model.lastK k getHeader
       , getCurrentLedger    = querySTM $ Model.currentLedger
       , getBlockComponent   = queryE  .: Model.getBlockComponentByPoint

@@ -23,6 +23,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , empty
   , addBlock
   , addBlocks
+  , addBlockPromise
     -- * Queries
   , currentChain
   , currentLedger
@@ -103,14 +104,15 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Util (repeatedly)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
+import           Ouroboros.Consensus.Util.IOLike (MonadSTM)
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
-import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
-                     ChainDB, ChainDbError (..), InvalidBlockReason (..),
-                     IteratorResult (..), LedgerCursorFailure (..),
-                     StreamFrom (..), StreamTo (..), UnknownRange (..),
-                     validBounds)
+import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
+                     BlockComponent (..), ChainDB, ChainDbError (..),
+                     InvalidBlockReason (..), IteratorResult (..),
+                     LedgerCursorFailure (..), StreamFrom (..), StreamTo (..),
+                     UnknownRange (..), validBounds)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (olderThanK)
 
 type IteratorId = Int
@@ -405,6 +407,22 @@ addBlocks :: (LedgerSupportsProtocol blk, ModelSupportsBlock blk)
           -> [blk]
           -> Model blk -> Model blk
 addBlocks cfg = repeatedly (addBlock cfg)
+
+-- | Wrapper around 'addBlock' that returns an 'AddBlockPromise'.
+addBlockPromise
+  :: forall m blk. (LedgerSupportsProtocol blk, ModelSupportsBlock blk, MonadSTM m)
+  => TopLevelConfig blk
+  -> blk
+  -> Model blk
+  -> (AddBlockPromise m blk, Model blk)
+addBlockPromise cfg blk m = (result, m')
+  where
+    m' = addBlock cfg blk m
+    result = AddBlockPromise
+      { blockProcessed          = return $ tipPoint m'
+        -- We currently cannot wait for future blocks
+      , chainSelectionPerformed = error "chainSelectionPerformed not supported"
+      }
 
 {-------------------------------------------------------------------------------
   Iterators
