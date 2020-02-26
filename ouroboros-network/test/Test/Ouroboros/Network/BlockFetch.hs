@@ -353,7 +353,7 @@ tracePropertyClientStateSanity es =
         == fromIntegral peerFetchBytesInFlight
 
      && case status of
-          PeerFetchStatusReady _ -> True
+          PeerFetchStatusReady{} -> True
           PeerFetchStatusBusy    -> True
           _                      -> False -- not used in this test
 
