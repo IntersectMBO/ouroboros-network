@@ -130,6 +130,7 @@ library
                        Ouroboros.Consensus.Storage.IO
                        Ouroboros.Consensus.Storage.ImmutableDB
                        Ouroboros.Consensus.Storage.ImmutableDB.API
+                       Ouroboros.Consensus.Storage.ImmutableDB.ChunkInfo
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache

@@ -20,7 +20,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
@@ -72,7 +71,7 @@ openTestDB registry hasFS err = fst <$> openDBInternal
     registry
     hasFS
     err
-    (fixedSizeEpochInfo fixedEpochSize)
+    (simpleChunkInfo $ unEpochSize fixedEpochSize)
     testHashInfo
     ValidateMostRecentEpoch
     parser
@@ -139,7 +138,7 @@ prop_reconstructPrimaryIndex primaryIndex =
     reconstructedPrimaryIndex === primaryIndex'
   where
     reconstructedPrimaryIndex = runIdentity $
-      reconstructPrimaryIndex epochInfo hashInfo ShouldNotBeFinalised
+      reconstructPrimaryIndex chunkInfo hashInfo ShouldNotBeFinalised
                               blockOrEBBs
 
     -- Remove empty trailing slots because we don't reconstruct them
@@ -154,10 +153,13 @@ prop_reconstructPrimaryIndex primaryIndex =
       [ if relSlot == 0 then EBB 0 else Block (coerce relSlot - 1)
       | relSlot <- Primary.filledSlots primaryIndex]
 
-    -- Use maxBound as epoch size so that we can easily map from SlotNo to
+    -- Use maxBound as chunk size so that we can easily map from SlotNo to
     -- RelativeSlot and vice versa.
-    epochInfo :: EpochInfo Identity
-    epochInfo = fixedSizeEpochInfo (EpochSize maxBound)
+    --
+    -- TODO: That translation is now easy for /any/ ChunkInfo, so we could
+    -- generalize this.
+    chunkInfo :: ChunkInfo
+    chunkInfo = simpleChunkInfo maxBound
 
     -- Only 'hashSize' is used. Note that 32 matches the hard-coded value in
     -- the 'PrimaryIndex' generator we use.

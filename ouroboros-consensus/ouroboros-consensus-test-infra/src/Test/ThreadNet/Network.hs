@@ -96,9 +96,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
-import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo,
-                     epochInfoEpoch, epochInfoFirst, newEpochInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import           Ouroboros.Consensus.Storage.ImmutableDB.ChunkInfo
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
@@ -291,9 +290,9 @@ runThreadNetwork ThreadNetworkArgs
 
       -- fork the per-vertex state variables, including the mock filesystem
       (nodeInfo, readNodeInfo) <- newNodeInfo
-      epochInfo <- do
-        let ProtocolInfo{pInfoConfig} = mkProtocolInfo coreNodeId
-        newEpochInfo $ nodeEpochSize (Proxy @blk) pInfoConfig
+      let chunkInfo =
+            let ProtocolInfo{pInfoConfig} = mkProtocolInfo coreNodeId
+            in nodeImmDbChunkInfo (Proxy @blk) pInfoConfig
 
       let myEdgeStatusVars =
             [ v
@@ -301,7 +300,7 @@ runThreadNetwork ThreadNetworkArgs
             , coreNodeId `elem` [n1, n2]
             ]
       forkVertex
-        epochInfo
+        chunkInfo
         varRNG
         sharedTestBtime
         sharedRegistry
@@ -354,7 +353,7 @@ runThreadNetwork ThreadNetworkArgs
     joinSlotOf = coreNodeIdJoinSlot nodeJoinPlan
 
     forkVertex
-      :: EpochInfo m
+      :: ChunkInfo
       -> StrictTVar m ChaChaDRG
       -> TestBlockchainTime m
       -> ResourceRegistry m
@@ -364,7 +363,7 @@ runThreadNetwork ThreadNetworkArgs
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
       -> m ()
     forkVertex
-      epochInfo
+      chunkInfo
       varRNG
       sharedTestBtime
       sharedRegistry
@@ -393,7 +392,7 @@ runThreadNetwork ThreadNetworkArgs
             -- the node is restarting because it just rekeyed
             (pInfo', txs0) <- case (nr, mbRekeyM) of
               (NodeRekey, Just rekeyM) -> do
-                eno <- epochInfoEpoch epochInfo s
+                eno <- epochInfoEpoch chunkInfo s
                 fmap maybeToList <$> rekeyM pInfo eno
               _                        -> pure (pInfo, [])
 
@@ -401,7 +400,7 @@ runThreadNetwork ThreadNetworkArgs
             -- (specifically not the communication threads running the Mini
             -- Protocols, like the ChainSync Client)
             (kernel, app) <- forkNode
-              epochInfo
+              chunkInfo
               varRNG
               nodeBtime
               nodeRegistry
@@ -465,15 +464,15 @@ runThreadNetwork ThreadNetworkArgs
                     -> StrictTVar m SlotNo
                     -> TopLevelConfig blk
                     -> ChainDB.ChainDB m blk
-                    -> EpochInfo m
+                    -> ChunkInfo
                     -> m ()
-    forkEbbProducer btime registry nextEbbSlotVar cfg chainDB epochInfo =
+    forkEbbProducer btime registry nextEbbSlotVar cfg chainDB chunkInfo =
         void $ forkLinkedThread registry $ go 0
       where
         go :: EpochNo -> m ()
         go !epoch = do
           -- The first slot in @epoch@
-          ebbSlotNo <- epochInfoFirst epochInfo epoch
+          ebbSlotNo <- epochInfoFirst chunkInfo epoch
           atomically $ writeTVar nextEbbSlotVar ebbSlotNo
 
           void $ blockUntilSlot btime ebbSlotNo
@@ -501,7 +500,7 @@ runThreadNetwork ThreadNetworkArgs
            -> ResourceRegistry m
            -> TopLevelConfig blk
            -> ExtLedgerState blk
-           -> EpochInfo m
+           -> ChunkInfo
            -> Tracer m (Point blk, ExtValidationError blk)
               -- ^ invalid block tracer
            -> Tracer m (Point blk, BlockNo)
@@ -510,7 +509,7 @@ runThreadNetwork ThreadNetworkArgs
            -> ChainDbArgs m blk
     mkArgs
       btime registry
-      cfg initLedger epochInfo
+      cfg initLedger chunkInfo
       invalidTracer addTracer
       nodeDBs = ChainDbArgs
         { -- Decoders
@@ -543,7 +542,7 @@ runThreadNetwork ThreadNetworkArgs
         , cdbDiskPolicy           = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
           -- Integration
         , cdbTopLevelConfig       = cfg
-        , cdbEpochInfo            = epochInfo
+        , cdbChunkInfo            = chunkInfo
         , cdbHashInfo             = nodeHashInfo (Proxy @blk)
         , cdbIsEBB                = nodeIsEBB
         , cdbCheckIntegrity       = nodeCheckIntegrity cfg
@@ -573,7 +572,7 @@ runThreadNetwork ThreadNetworkArgs
 
     forkNode
       :: HasCallStack
-      => EpochInfo m
+      => ChunkInfo
       -> StrictTVar m ChaChaDRG
       -> BlockchainTime m
       -> ResourceRegistry m
@@ -584,7 +583,7 @@ runThreadNetwork ThreadNetworkArgs
       -> m ( NodeKernel m NodeId blk
            , LimitedApp m NodeId blk
            )
-    forkNode epochInfo varRNG btime registry pInfo nodeInfo txs0 = do
+    forkNode chunkInfo varRNG btime registry pInfo nodeInfo txs0 = do
       let ProtocolInfo{..} = pInfo
 
       let blockProduction :: BlockProduction m blk
@@ -605,7 +604,7 @@ runThreadNetwork ThreadNetworkArgs
             traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno)
       let chainDbArgs = mkArgs
             btime registry
-            pInfoConfig pInfoInitLedger epochInfo
+            pInfoConfig pInfoInitLedger chunkInfo
             invalidTracer
             addTracer
             nodeInfoDBs
@@ -678,7 +677,7 @@ runThreadNetwork ThreadNetworkArgs
         nextEbbSlotVar
         pInfoConfig
         chainDB
-        epochInfo
+        chunkInfo
 
       return (nodeKernel, LimitedApp app)
 

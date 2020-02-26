@@ -31,7 +31,6 @@ import           Data.Coerce (Coercible, coerce)
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Functor.Classes (Eq1, Show1)
-import           Data.Functor.Identity
 import           Data.List (sortBy)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
@@ -39,7 +38,7 @@ import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, isNothing, listToMaybe)
 import           Data.Proxy (Proxy (..))
 import           Data.TreeDiff (Expr (App))
-import           Data.TreeDiff.Class (ToExpr (..))
+import           Data.TreeDiff.Class (ToExpr (..), defaultExprViaShow)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word16, Word32, Word64)
 import qualified Generics.SOP as SOP
@@ -71,7 +70,6 @@ import qualified Ouroboros.Network.Block as Block
 
 import           Ouroboros.Consensus.Storage.Common hiding (Tip (..))
 import qualified Ouroboros.Consensus.Storage.Common as C
-import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath)
 import           Ouroboros.Consensus.Storage.ImmutableDB hiding
@@ -1177,8 +1175,8 @@ instance ToExpr (DBModel Hash)
 instance ToExpr FsError where
   toExpr fsError = App (show fsError) []
 
-instance ToExpr (EpochInfo Identity) where
-  toExpr it = App "fixedSizeEpochInfo" [App (show (runIdentity $ epochInfoSize it 0)) []]
+instance ToExpr ChunkInfo where
+  toExpr = defaultExprViaShow
 
 instance ToExpr (Model m Concrete)
 
@@ -1246,7 +1244,7 @@ test cacheConfig cmds = do
         btime  = settableBlockchainTime varCurSlot
 
     (db, internal) <- QC.run $ openDBInternal registry hasFS
-      EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
+      EH.monadCatch (simpleChunkInfo $ unEpochSize fixedEpochSize) testHashInfo
       ValidateMostRecentEpoch parser tracer cacheConfig btime
 
     let env = ImmutableDBEnv

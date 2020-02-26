@@ -38,7 +38,6 @@ import           Cardano.Binary (ToCBOR (..))
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
-import           Control.Monad.Identity (runIdentity)
 import           Crypto.Random (MonadRandom)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -72,10 +71,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
-                     EpochSize (..))
-import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo (..),
-                     fixedSizeEpochInfo)
+import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
 
 {-------------------------------------------------------------------------------
   Fields required by Praos in the header
@@ -385,20 +381,18 @@ instance PraosCrypto c => NoUnexpectedThunks (ConsensusConfig (Praos c))
   -- use generic instance
 
 slotEpoch :: ConsensusConfig (Praos c) -> SlotNo -> EpochNo
-slotEpoch PraosConfig{..} s =
-    runIdentity $ epochInfoEpoch epochInfo s
+slotEpoch PraosConfig{..} (SlotNo s) =
+    EpochNo (s `mod` praosSlotsPerEpoch)
   where
-    epochInfo = fixedSizeEpochInfo (EpochSize praosSlotsPerEpoch)
     PraosParams{..} = praosParams
 
 blockInfoEpoch :: ConsensusConfig (Praos c) -> BlockInfo c -> EpochNo
 blockInfoEpoch l = slotEpoch l . biSlot
 
 epochFirst :: ConsensusConfig (Praos c) -> EpochNo -> SlotNo
-epochFirst PraosConfig{..} e =
-    runIdentity $ epochInfoFirst epochInfo e
+epochFirst PraosConfig{..} (EpochNo e) =
+    SlotNo $ e * praosSlotsPerEpoch
   where
-    epochInfo = fixedSizeEpochInfo (EpochSize praosSlotsPerEpoch)
     PraosParams{..} = praosParams
 
 infosSlice :: SlotNo -> SlotNo -> [BlockInfo c] -> [BlockInfo c]

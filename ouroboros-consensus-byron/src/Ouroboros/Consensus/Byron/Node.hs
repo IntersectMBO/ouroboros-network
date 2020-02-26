@@ -31,6 +31,7 @@ import           Control.Exception (Exception (..))
 import           Control.Monad.Except
 import           Data.Coerce (coerce)
 import           Data.Maybe
+import           Data.Word
 
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Byron.API as API
@@ -56,8 +57,8 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
-                     EpochSize (..))
+import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -191,9 +192,11 @@ instance RunNode ByronBlock where
                               $ bhdr
 
   -- The epoch size is fixed and can be derived from @k@ by the ledger
-  -- ('kEpochSlots').
-  nodeEpochSize             = \_proxy cfg _epochNo -> return
-                                . (coerce :: EpochSlots -> EpochSize)
+  -- ('kEpochSlots'). It is important that we set the chunk size of the imm
+  -- DB to be equal to the epoch size. See 'ChunkInfo' for details.
+  nodeImmDbChunkInfo         = \_proxy cfg ->
+                                  simpleChunkInfo
+                                . (coerce :: EpochSlots -> Word64)
                                 . kEpochSlots
                                 . Genesis.gdK
                                 . extractGenesisData

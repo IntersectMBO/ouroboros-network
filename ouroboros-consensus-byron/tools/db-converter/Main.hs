@@ -59,8 +59,6 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
-import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
-import           Ouroboros.Consensus.Storage.EpochInfo (fixedSizeEpochInfo)
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
@@ -198,11 +196,11 @@ validateChainDb dbDir genesisConfig onlyImmDB verbose =
       | otherwise = nullTracer
 
     epochSlots = CC.Genesis.configEpochSlots genesisConfig
-    epochInfo = fixedSizeEpochInfo . EpochSize . unEpochSlots $ epochSlots
+    chunkInfo  = ImmDB.simpleChunkInfo $ unEpochSlots epochSlots
 
     mkChainDbArgs registry btime =
       let args = Node.mkChainDbArgs tracer registry btime
-            (toFilePath dbDir) cfg initLedger epochInfo
+            (toFilePath dbDir) cfg initLedger chunkInfo
       in args {
           ChainDB.cdbImmValidation = ImmDB.ValidateAllEpochs
         }

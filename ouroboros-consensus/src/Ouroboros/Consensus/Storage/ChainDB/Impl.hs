@@ -83,7 +83,7 @@ openDBInternal
 openDBInternal args launchBgTasks = do
     immDB <- ImmDB.openDB argsImmDb
     immDbTipPoint <- ImmDB.getPointAtTip immDB
-    immDbTipEpoch <- Reopen.pointToEpoch (Args.cdbEpochInfo args) immDbTipPoint
+    immDbTipEpoch <- Reopen.pointToEpoch (Args.cdbChunkInfo args) immDbTipPoint
     traceWith tracer $ TraceOpenEvent $ OpenedImmDB
       { _immDbTip      = immDbTipPoint
       , _immDbTipEpoch = immDbTipEpoch
@@ -92,7 +92,7 @@ openDBInternal args launchBgTasks = do
     volDB   <- VolDB.openDB argsVolDb
     traceWith tracer $ TraceOpenEvent OpenedVolDB
     lgrReplayTracer <- LgrDB.decorateReplayTracer
-      (Args.cdbEpochInfo args)
+      (Args.cdbChunkInfo args)
       immDbTipPoint
       (contramap TraceLedgerReplayEvent tracer)
     (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
@@ -143,7 +143,7 @@ openDBInternal args launchBgTasks = do
                   , cdbRegistry        = Args.cdbRegistry args
                   , cdbGcDelay         = Args.cdbGcDelay args
                   , cdbKillBgThreads   = varKillBgThreads
-                  , cdbEpochInfo       = Args.cdbEpochInfo args
+                  , cdbChunkInfo       = Args.cdbChunkInfo args
                   , cdbIsEBB           = toIsEBB . isJust . Args.cdbIsEBB args
                   , cdbCheckIntegrity  = Args.cdbCheckIntegrity args
                   , cdbBlockchainTime  = Args.cdbBlockchainTime args

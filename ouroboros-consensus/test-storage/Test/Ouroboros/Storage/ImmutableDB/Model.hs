@@ -75,10 +75,10 @@ import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Network.Block (BlockNo, SlotNo (..))
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath, fsPathSplit)
 import           Ouroboros.Consensus.Storage.ImmutableDB.API (ImmutableDB,
                      IteratorResult (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB.ChunkInfo
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (parseDBFile,
                      validateIteratorRange)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
@@ -112,7 +112,7 @@ data InSlot hash =
 
 data DBModel hash = DBModel
   { dbmSlots        :: Map SlotNo (InSlot hash)
-  , dbmEpochInfo    :: EpochInfo Identity
+  , dbmChunkInfo    :: ChunkInfo
   , dbmIterators    :: Map IteratorId (IteratorModel hash)
   , dbmNextIterator :: IteratorId
   } deriving (Show, Generic)
@@ -121,7 +121,7 @@ initDBModel :: EpochSize -- ^ We assume fixed epoch size
             -> DBModel hash
 initDBModel epochSize = DBModel
   { dbmSlots        = Map.empty
-  , dbmEpochInfo    = fixedSizeEpochInfo epochSize
+  , dbmChunkInfo    = simpleChunkInfo (unEpochSize epochSize)
   , dbmIterators    = Map.empty
   , dbmNextIterator = 0
   }
@@ -275,13 +275,13 @@ slotForBlockOrEBB dbm (EBB  epoch) = epochNoToSlot dbm epoch
 slotForBlockOrEBB _   (Block slot) = slot
 
 slotToEpoch :: DBModel hash -> SlotNo -> EpochNo
-slotToEpoch DBModel {..} = runIdentity . epochInfoEpoch dbmEpochInfo
+slotToEpoch DBModel {..} = runIdentity . epochInfoEpoch dbmChunkInfo
 
 epochSlotToSlot :: DBModel hash -> EpochSlot -> SlotNo
-epochSlotToSlot DBModel {..} = runIdentity . epochInfoAbsolute dbmEpochInfo
+epochSlotToSlot DBModel {..} = runIdentity . epochInfoAbsolute dbmChunkInfo
 
 slotToEpochSlot :: DBModel hash -> SlotNo -> EpochSlot
-slotToEpochSlot DBModel {..} = runIdentity . epochInfoBlockRelative dbmEpochInfo
+slotToEpochSlot DBModel {..} = runIdentity . epochInfoBlockRelative dbmChunkInfo
 
 {------------------------------------------------------------------------------
   Helpers
@@ -292,7 +292,7 @@ throwUserError :: (MonadError ImmutableDBError m, HasCallStack)
 throwUserError e = throwError $ UserError e (popCallStack callStack)
 
 lookupEpochSize :: DBModel hash -> EpochNo -> EpochSize
-lookupEpochSize DBModel {..} = runIdentity . epochInfoSize dbmEpochInfo
+lookupEpochSize DBModel {..} = runIdentity . epochInfoSize dbmChunkInfo
 
 lookupBySlot :: HasCallStack => SlotNo -> [Maybe b] -> Maybe b
 lookupBySlot (SlotNo i) = go i
@@ -708,7 +708,7 @@ streamModel
             (Either (WrongBoundError hash)
                     (IteratorId, DBModel hash))
 streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
-    validateIteratorRange err (generalizeEpochInfo dbmEpochInfo)
+    validateIteratorRange err dbmChunkInfo
       (forgetTipInfo <$> dbmTip dbm) mbStart mbEnd
 
     -- The real implementation checks the end bound first, so we do the

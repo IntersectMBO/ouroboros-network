@@ -86,7 +86,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (hasFsErr),
                      createDirectoryIfMissing)
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError,
@@ -328,12 +327,12 @@ type TraceLedgerReplayEvent blk =
 
 decorateReplayTracer
   :: forall m blk. Monad m
-  => EpochInfo m
+  => ImmDB.ChunkInfo
   -> Point blk
      -- ^ Tip of the ImmutableDB
   -> Tracer m (TraceLedgerReplayEvent blk)
   -> m (Tracer m (TraceReplayEvent (Point blk) () (Point blk)))
-decorateReplayTracer epochInfo immDbTip tracer = do
+decorateReplayTracer chunkInfo immDbTip tracer = do
     (immDbTipEpoch, _) <- epochNoAndFirstSlot immDbTip
     return $ Tracer $ \ev -> do
       decoratedEv <- bitraverse
@@ -347,8 +346,8 @@ decorateReplayTracer epochInfo immDbTip tracer = do
     epochNoAndFirstSlot :: Point blk -> m (EpochNo, SlotNo)
     epochNoAndFirstSlot GenesisPoint          = return (0, 0)
     epochNoAndFirstSlot BlockPoint { atSlot } = do
-      epoch      <- epochInfoEpoch epochInfo atSlot
-      epochFirst <- epochInfoFirst epochInfo epoch
+      epoch      <- ImmDB.epochInfoEpoch chunkInfo atSlot
+      epochFirst <- ImmDB.epochInfoFirst chunkInfo epoch
       return (epoch, epochFirst)
 
 {-------------------------------------------------------------------------------

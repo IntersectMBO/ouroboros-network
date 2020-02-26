@@ -39,9 +39,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB hiding
                      (withImmDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
                      (withImmDB)
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
-                     EpochSize (..))
-import           Ouroboros.Consensus.Storage.EpochInfo
+import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmDB
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock, ByronHash)
@@ -53,11 +51,11 @@ main = do
     CmdLine{..}   <- getCmdLine
     genesisConfig <- openGenesis clConfig clIsMainNet
     let epochSlots = Genesis.configEpochSlots genesisConfig
-        epochInfo  = fixedSizeEpochInfo (coerce epochSlots)
+        chunkInfo  = simpleChunkInfo (coerce epochSlots)
         cfg        = mkByronTopLevelConfig genesisConfig
     withRegistry $ \registry ->
-      withImmDB clImmDB cfg epochInfo registry $ \immDB -> do
-        runAnalysis clAnalysis immDB epochInfo registry
+      withImmDB clImmDB cfg chunkInfo registry $ \immDB -> do
+        runAnalysis clAnalysis immDB chunkInfo registry
         putStrLn "Done"
 
 {-------------------------------------------------------------------------------
@@ -69,7 +67,7 @@ data AnalysisName =
   | CountTxOutputs
 
 type Analysis = ImmDB IO ByronBlock
-             -> EpochInfo IO
+             -> ChunkInfo
              -> ResourceRegistry IO
              -> IO ()
 
@@ -96,7 +94,7 @@ showSlotBlockNo immDB _epochInfo rr =
 -------------------------------------------------------------------------------}
 
 countTxOutputs :: Analysis
-countTxOutputs immDB epochInfo rr = do
+countTxOutputs immDB chunkInfo rr = do
     cumulative <- newIORef 0
     processAll immDB rr (go cumulative)
   where
@@ -111,7 +109,7 @@ countTxOutputs immDB epochInfo rr = do
     go' cumulative slotNo Chain.ABlock{..} = do
         countCum  <- atomicModifyIORef cumulative $ \c ->
                        let c' = c + count in (c', c')
-        epochSlot <- relativeSlotNo epochInfo slotNo
+        epochSlot <- relativeSlotNo chunkInfo slotNo
         putStrLn $ intercalate "\t" [
             show slotNo
           , show epochSlot
@@ -140,10 +138,10 @@ countTxOutputs immDB epochInfo rr = do
 --
 -- NOTE: Unlike 'epochInfoBlockRelative', which puts the EBB at relative slot 0,
 -- this puts the first real block at relative slot 0.
-relativeSlotNo :: Monad m => EpochInfo m -> SlotNo -> m (EpochNo, Word64)
-relativeSlotNo epochInfo (SlotNo absSlot) = do
-    epoch        <- epochInfoEpoch epochInfo (SlotNo absSlot)
-    SlotNo first <- epochInfoFirst epochInfo epoch
+relativeSlotNo :: Monad m => ChunkInfo -> SlotNo -> m (EpochNo, Word64)
+relativeSlotNo chunkInfo (SlotNo absSlot) = do
+    epoch        <- epochInfoEpoch chunkInfo (SlotNo absSlot)
+    SlotNo first <- epochInfoFirst chunkInfo epoch
     return (epoch, absSlot - first)
 
 {-------------------------------------------------------------------------------
@@ -253,11 +251,11 @@ mkByronTopLevelConfig genesisConfig = pInfoConfig $
 
 withImmDB :: FilePath
           -> TopLevelConfig ByronBlock
-          -> EpochInfo IO
+          -> ChunkInfo
           -> ResourceRegistry IO
           -> (ImmDB IO ByronBlock -> IO a)
           -> IO a
-withImmDB fp cfg epochInfo registry = ImmDB.withImmDB args
+withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
   where
     args :: ImmDbArgs IO ByronBlock
     args = (defaultArgs fp) {
@@ -266,7 +264,7 @@ withImmDB fp cfg epochInfo registry = ImmDB.withImmDB args
         , immDecodeHeader   = nodeDecodeHeader        cfg SerialisedToDisk
         , immEncodeHash     = nodeEncodeHeaderHash    (Proxy @ByronBlock)
         , immEncodeBlock    = nodeEncodeBlockWithInfo cfg
-        , immEpochInfo      = epochInfo
+        , immChunkInfo      = chunkInfo
         , immHashInfo       = nodeHashInfo            (Proxy @ByronBlock)
         , immValidation     = ValidateMostRecentEpoch
         , immIsEBB          = nodeIsEBB

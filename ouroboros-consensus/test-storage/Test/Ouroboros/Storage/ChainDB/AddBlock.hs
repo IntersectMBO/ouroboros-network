@@ -41,9 +41,9 @@ import           Ouroboros.Consensus.Storage.ChainDB (ChainDbArgs (..),
                      TraceAddBlockEvent (..), addBlock, toChain, withDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
-import           Ouroboros.Consensus.Storage.EpochInfo (fixedSizeEpochInfo)
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
-                     HashInfo (..), ValidationPolicy (ValidateAllEpochs))
+                     HashInfo (..), ValidationPolicy (ValidateAllEpochs),
+                     simpleChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (defaultDiskPolicy)
@@ -279,7 +279,7 @@ mkArgs cfg initLedger tracer registry hashInfo
 
       -- Integration
     , cdbTopLevelConfig       = cfg
-    , cdbEpochInfo            = fixedSizeEpochInfo fixedEpochSize
+    , cdbChunkInfo            = simpleChunkInfo $ unEpochSize fixedEpochSize
     , cdbHashInfo             = hashInfo
     , cdbIsEBB                = const Nothing
     , cdbCheckIntegrity       = const True
