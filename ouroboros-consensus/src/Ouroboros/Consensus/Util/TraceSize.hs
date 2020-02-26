@@ -17,7 +17,6 @@ import           Data.Word
 import           Ouroboros.Network.Block (Point (..), SlotNo (..))
 import           Ouroboros.Network.Point (Block (..), WithOrigin (..))
 
-import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 
@@ -39,7 +38,7 @@ traceSize (Tracer f) = Tracer $ \a -> do
 
 data LedgerDbSize blk = LedgerDbSize {
       -- | The tip of the ledger DB
-      ledgerDbTip       :: Tip (Point blk)
+      ledgerDbTip       :: WithOrigin (Point blk)
 
       -- | Size of the ledger at the tip of the DB
     , ledgerDbSizeTip   :: Either CountFailure Word64
@@ -70,7 +69,7 @@ traceLedgerDbSize p (Tracer f) = Tracer $ \(!db) -> do
             , ledgerDbSizeTotal = sizeTotal
             }
   where
-    shouldTrace :: Tip (Point blk) -> Bool
-    shouldTrace TipGen               = p 0
-    shouldTrace (Tip (Point Origin)) = p 0
-    shouldTrace (Tip (Point (At b))) = p (unSlotNo (blockPointSlot b))
+    shouldTrace :: WithOrigin (Point blk) -> Bool
+    shouldTrace Origin              = p 0
+    shouldTrace (At (Point Origin)) = p 0
+    shouldTrace (At (Point (At b))) = p (unSlotNo (blockPointSlot b))

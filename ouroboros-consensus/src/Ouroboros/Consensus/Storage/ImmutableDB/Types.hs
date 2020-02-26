@@ -60,17 +60,17 @@ data BlockOrEBB
   | EBB   !EpochNo
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
-type ImmTip = Tip BlockOrEBB
+type ImmTip = WithOrigin BlockOrEBB
 
 -- TODO let this replace 'ImmTip' and integrate @hash@ in 'BlockOrEBB'?
-type ImmTipWithHash hash = Tip (WithHash hash BlockOrEBB)
+type ImmTipWithHash hash = WithOrigin (WithHash hash BlockOrEBB)
 
 data WithHash hash a = WithHash
   { theHash    :: !hash
   , forgetHash :: !a
   } deriving (Eq, Show, Generic, NoUnexpectedThunks, Functor, Foldable, Traversable)
 
-type ImmTipWithInfo hash = Tip (TipInfo hash BlockOrEBB)
+type ImmTipWithInfo hash = WithOrigin (TipInfo hash BlockOrEBB)
 
 data TipInfo hash a = TipInfo
   { tipInfoHash    :: !hash

@@ -452,7 +452,7 @@ streamAPI :: forall m blk. (IOLike m, HasHeader blk)
 streamAPI immDB = StreamAPI streamAfter
   where
     streamAfter :: HasCallStack
-                => Tip (Point blk)
+                => WithOrigin (Point blk)
                 -> (Maybe (m (NextBlock (Point blk) blk)) -> m a)
                 -> m a
     streamAfter tip k = do

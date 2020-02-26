@@ -76,6 +76,7 @@ import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
@@ -342,7 +343,7 @@ ref (Val r _) = r
 -- | Summary of the chain at a particular point in time
 data ChainSummary l r = ChainSummary {
       -- | The tip of the chain
-      csTip    :: !(Tip r)
+      csTip    :: !(WithOrigin r)
 
       -- | Length of the chain
     , csLength :: !Word64
@@ -353,7 +354,7 @@ data ChainSummary l r = ChainSummary {
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 genesisChainSummary :: l -> ChainSummary l r
-genesisChainSummary l = ChainSummary TipGen 0 l
+genesisChainSummary l = ChainSummary Origin 0 l
 
 {-------------------------------------------------------------------------------
   LedgerDB proper
@@ -430,11 +431,11 @@ ledgerDbMaxRollback :: LedgerDB l r -> Word64
 ledgerDbMaxRollback LedgerDB{..} = fromIntegral (Seq.length ledgerDbBlocks)
 
 -- | Reference to the block at the tip of the chain
-ledgerDbTip :: LedgerDB l r -> Tip r
+ledgerDbTip :: LedgerDB l r -> WithOrigin r
 ledgerDbTip LedgerDB{..} =
     case ledgerDbBlocks of
       Empty    -> csTip ledgerDbAnchor
-      _ :|> cp -> Tip (cpBlock cp)
+      _ :|> cp -> At (cpBlock cp)
 
 -- | Have we seen at least @k@ blocks?
 ledgerDbIsSaturated :: LedgerDB l r -> Bool
@@ -496,7 +497,7 @@ data SwitchResult e l r :: Bool -> * where
 shiftAnchor :: forall r l. HasCallStack
             => StrictSeq (Checkpoint l r) -> ChainSummary l r -> ChainSummary l r
 shiftAnchor toRemove ChainSummary{..} = ChainSummary {
-      csTip    = Tip csTip'
+      csTip    = At csTip'
     , csLength = csLength + fromIntegral (Seq.length toRemove)
     , csLedger = csLedger'
     }
@@ -653,7 +654,7 @@ rollback cfg n db = rollbackTo cfg (\_anchor -> go) db
 -- This may have to re-apply blocks, and hence read from disk.
 ledgerDbPast :: forall m l r b e. (Monad m, Eq r)
              => LedgerDbConf m l r b e
-             -> Tip r
+             -> WithOrigin r
              -> LedgerDB l r -> m (Maybe l)
 ledgerDbPast cfg tip db
   | ledgerDbTip db == tip = return $ Just (ledgerDbCurrent db)
@@ -668,7 +669,7 @@ ledgerDbPast cfg tip db
           _otherwise                  -> Just blocks'
       where
         blocks' :: StrictSeq (Checkpoint l r)
-        blocks' = Seq.dropWhileR (\cp -> Tip (cpBlock cp) /= tip) blocks
+        blocks' = Seq.dropWhileR (\cp -> At (cpBlock cp) /= tip) blocks
 
 {-------------------------------------------------------------------------------
   Updates
@@ -758,7 +759,7 @@ ledgerDbPushMany' cfg bs = fromPushManyResult . ledgerDbPushMany cfg (map pureBl
 ledgerDbSwitch' :: PureLedgerDbConf l b -> Word64 -> [b] -> LedgerDB l b -> Maybe (LedgerDB l b)
 ledgerDbSwitch' cfg n bs = fromSwitchResult . ledgerDbSwitch cfg n (map pureBlock bs)
 
-ledgerDbPast' :: Eq b => PureLedgerDbConf l b -> Tip b -> LedgerDB l b -> Maybe l
+ledgerDbPast' :: Eq b => PureLedgerDbConf l b -> WithOrigin b -> LedgerDB l b -> Maybe l
 ledgerDbPast' cfg tip = runIdentity . ledgerDbPast cfg tip
 
 {-------------------------------------------------------------------------------

@@ -30,6 +30,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
                      allNoUnexpectedThunks, forceElemsToWHNF)
+import           Cardano.Slotting.Slot
 
 import           GHC.Stack (HasCallStack)
 
@@ -139,11 +140,11 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
           mbStart mbEnd
 
       case _currentTip of
-        TipGen ->
+        Origin ->
           -- If any of the two bounds were specified, 'validateIteratorRange'
           -- would have thrown a 'ReadFutureSlotError'.
           assert (isNothing mbStart && isNothing mbEnd) $ return mkEmptyIterator
-        Tip tip -> do
+        At tip -> do
           WithHash endHash endEpochSlot <- fillInEndBound   _index tip mbEnd
           (secondaryOffset, start)      <- fillInStartBound _index     mbStart
 

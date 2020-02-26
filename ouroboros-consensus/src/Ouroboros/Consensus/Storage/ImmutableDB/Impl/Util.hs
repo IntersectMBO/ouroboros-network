@@ -35,10 +35,11 @@ import qualified Data.Text as T
 import           GHC.Stack (HasCallStack, callStack)
 import           Text.Read (readMaybe)
 
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.EpochInfo.API
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
@@ -132,14 +133,14 @@ validateIteratorRange epochInfo tip mbStart mbEnd = runExceptT $ do
   where
     isNewerThanTip :: SlotNo -> m Bool
     isNewerThanTip slot = case tip of
-      TipGen                -> return True
-      Tip (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
-      Tip (Block lastSlot)  -> return $ slot > lastSlot
+      Origin               -> return True
+      At (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
+      At (Block lastSlot)  -> return $ slot > lastSlot
 
 -- | Convert an 'EpochSlot' to a 'Tip'
 epochSlotToTip :: Monad m => EpochInfo m -> EpochSlot -> m ImmTip
-epochSlotToTip _         (EpochSlot epoch 0) = return $ Tip (EBB epoch)
-epochSlotToTip epochInfo epochSlot           = Tip . Block <$>
+epochSlotToTip _         (EpochSlot epoch 0) = return $ At (EBB epoch)
+epochSlotToTip epochInfo epochSlot           = At . Block <$>
     epochInfoAbsolute epochInfo epochSlot
 
 -- | Go through all files, making three sets: the set of epoch files, primary

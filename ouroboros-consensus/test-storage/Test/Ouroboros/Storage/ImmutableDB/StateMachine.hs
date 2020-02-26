@@ -58,6 +58,8 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import qualified Cardano.Slotting.Slot as S
+
 import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB, getHeader)
 import           Ouroboros.Consensus.BlockchainTime.Mock
                      (settableBlockchainTime)
@@ -69,8 +71,7 @@ import           Ouroboros.Network.Block (BlockNo (..), HasHeader (..),
                      HeaderHash, SlotNo (..))
 import qualified Ouroboros.Network.Block as Block
 
-import           Ouroboros.Consensus.Storage.Common hiding (Tip (..))
-import qualified Ouroboros.Consensus.Storage.Common as C
+import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath)
@@ -568,7 +569,7 @@ generateCmd Model {..} = At <$> frequency
     epochSize' :: SlotNo
     epochSize' = SlotNo $ unEpochSize fixedEpochSize
 
-    empty = dbmTip dbModel == C.TipGen
+    empty = dbmTip dbModel == S.Origin
 
     noBlocks = all isNothing (dbmRegular dbModel)
 
@@ -1166,7 +1167,7 @@ instance ToExpr TestBody
 instance ToExpr TestBlock
 instance ToExpr ImmDB.BlockOrEBB
 instance (ToExpr a, ToExpr hash) => ToExpr (ImmDB.TipInfo hash a)
-instance ToExpr r => ToExpr (C.Tip r)
+instance ToExpr r => ToExpr (S.WithOrigin r)
 instance ToExpr b => ToExpr (BinaryInfo b)
 instance ToExpr hash => ToExpr (InSlot hash)
 instance ToExpr (DBModel Hash)
