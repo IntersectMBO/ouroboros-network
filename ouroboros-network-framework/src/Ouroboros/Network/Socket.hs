@@ -265,7 +265,7 @@ connectToNode' sn handshakeCodec versionDataCodec NetworkConnectTracers {nctMuxT
               handshakeCodec
               byteLimitsHandshake
               timeLimitsHandshake
-              (fromChannel (Mx.muxBearerAsChannel bearer handshakeProtocolNum Mx.ModeInitiator))
+              (fromChannel (Mx.muxBearerAsChannel bearer handshakeProtocolNum Mx.InitiatorDir))
               (handshakeClientPeer versionDataCodec versions))
     ts_end <- getMonotonicTime
     case app_e of
@@ -385,7 +385,7 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec versionDataCodec acc
                 handshakeCodec
                 byteLimitsHandshake
                 timeLimitsHandshake
-                (fromChannel (Mx.muxBearerAsChannel bearer handshakeProtocolNum Mx.ModeResponder))
+                (fromChannel (Mx.muxBearerAsChannel bearer handshakeProtocolNum Mx.ResponderDir))
                 (handshakeServerPeer versionDataCodec acceptVersion versions))
 
         case app_e of
