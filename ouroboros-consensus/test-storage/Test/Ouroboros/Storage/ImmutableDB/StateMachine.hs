@@ -810,7 +810,7 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
             -- Note that we might have created an iterator, make sure to close
             -- it as well
   where
-    tryDB = tryImmDB EH.monadCatch EH.monadCatch
+    tryDB = tryImmDB EH.monadCatch
 
     truncateAndReopen cmd its tipBefore = tryDB $ do
       -- Close all open iterators as we will perform truncation
@@ -1246,7 +1246,7 @@ test cacheConfig cmds = do
         btime  = settableBlockchainTime varCurSlot
 
     (db, internal) <- QC.run $ openDBInternal registry hasFS
-      EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
+      (fixedSizeEpochInfo fixedEpochSize) testHashInfo
       ValidateMostRecentEpoch parser tracer cacheConfig btime
 
     let env = ImmutableDBEnv

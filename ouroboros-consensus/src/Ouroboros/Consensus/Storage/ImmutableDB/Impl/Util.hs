@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveTraversable   #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -9,8 +10,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
   ( -- * Utilities
     Two (..)
   , renderFile
-  , handleUser
-  , handleUnexpected
   , throwUserError
   , throwUnexpectedError
   , tryImmDB
@@ -26,6 +25,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
   ) where
 
 import           Control.Monad (forM_, when)
+import           Control.Monad.Except (lift, runExceptT, throwError)
 import           Data.Binary.Get (Get)
 import qualified Data.Binary.Get as Get
 import qualified Data.ByteString.Lazy as Lazy
@@ -33,18 +33,18 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text as T
-import           GHC.Stack (HasCallStack, callStack, popCallStack)
+import           GHC.Stack (HasCallStack, callStack)
 import           Text.Read (readMaybe)
 
 import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.EpochInfo.API
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling
-                     (ErrorHandling (..))
+import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
@@ -64,27 +64,11 @@ renderFile fileType (EpochNo epoch) = fsPathFromList [name]
   where
     name = T.justifyRight 5 '0' (T.pack (show epoch)) <> "." <> fileType
 
-handleUser :: HasCallStack
-           => ErrorHandling ImmutableDBError m
-           -> ErrorHandling UserError        m
-handleUser = EH.embed (flip UserError (popCallStack callStack)) $ \case
-               UserError e _ -> Just e
-               _otherwise    -> Nothing
+throwUserError :: (MonadThrow m, HasCallStack) => UserError -> m a
+throwUserError e = throwM $ UserError e callStack
 
-handleUnexpected :: ErrorHandling ImmutableDBError m
-                 -> ErrorHandling UnexpectedError  m
-handleUnexpected = EH.embed UnexpectedError $ \case
-                     UnexpectedError e -> Just e
-                     _otherwise        -> Nothing
-
-throwUserError :: HasCallStack
-               => ErrorHandling ImmutableDBError m
-               -> UserError -> m a
-throwUserError = throwError . handleUser
-
-throwUnexpectedError :: ErrorHandling ImmutableDBError m
-                     -> UnexpectedError -> m a
-throwUnexpectedError = throwError . handleUnexpected
+throwUnexpectedError :: MonadThrow m => UnexpectedError -> m a
+throwUnexpectedError = throwM . UnexpectedError
 
 -- | Execute an action and catch the 'ImmutableDBError' and 'FsError' that can
 -- be thrown by it, and wrap the 'FsError' in an 'ImmutableDBError' using the
@@ -93,11 +77,10 @@ throwUnexpectedError = throwError . handleUnexpected
 -- This should be used whenever you want to run an action on the ImmutableDB
 -- and catch the 'ImmutableDBError' and the 'FsError' (wrapped in the former)
 -- it may thrown.
-tryImmDB :: Monad m
-         => ErrorHandling FsError          m
-         -> ErrorHandling ImmutableDBError m
+tryImmDB :: MonadCatch m
+         => ErrorHandling FsError m
          -> m a -> m (Either ImmutableDBError a)
-tryImmDB fsErr immDBErr = fmap squash . EH.try fsErr . EH.try immDBErr
+tryImmDB fsErr = fmap squash . EH.try fsErr . try
   where
     fromFS = UnexpectedError . FileSystemError
 
@@ -130,28 +113,27 @@ parseDBFile s = case T.splitOn "." $ T.pack s of
 -- See 'Ouroboros.Consensus.Storage.ImmutableDB.API.streamBinaryBlobs'.
 validateIteratorRange
   :: forall m hash. Monad m
-  => ErrorHandling ImmutableDBError m
-  -> EpochInfo m
+  => EpochInfo m
   -> ImmTip
   -> Maybe (SlotNo, hash)  -- ^ range start (inclusive)
   -> Maybe (SlotNo, hash)  -- ^ range end (inclusive)
-  -> m ()
-validateIteratorRange err epochInfo tip mbStart mbEnd = do
+  -> m (Either ImmutableDBError ())
+validateIteratorRange epochInfo tip mbStart mbEnd = runExceptT $ do
     case (mbStart, mbEnd) of
       (Just (start, _), Just (end, _)) ->
         when (start > end) $
-          throwUserError err $ InvalidIteratorRangeError start end
+          throwError $ UserError (InvalidIteratorRangeError start end) callStack
       _ -> return ()
 
     whenJust mbStart $ \(start, _) -> do
-      isNewer <- isNewerThanTip start
+      isNewer <- lift $ isNewerThanTip start
       when isNewer $
-        throwUserError err $ ReadFutureSlotError start tip
+        throwError $ UserError (ReadFutureSlotError start tip) callStack
 
     whenJust mbEnd $ \(end, _) -> do
-      isNewer <- isNewerThanTip end
+      isNewer <- lift $ isNewerThanTip end
       when isNewer $
-        throwUserError err $ ReadFutureSlotError end tip
+        throwError $ UserError (ReadFutureSlotError end tip) callStack
   where
     isNewerThanTip :: SlotNo -> m Bool
     isNewerThanTip slot = case tip of
@@ -159,16 +141,17 @@ validateIteratorRange err epochInfo tip mbStart mbEnd = do
       Tip (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
       Tip (Block lastSlot)  -> return $ slot > lastSlot
 
--- | Execute some error handler when an 'ImmutableDBError' or an 'FsError' is
--- thrown while executing an action.
-onImmDbException :: Monad m
+-- | Execute some error handler when an 'Exception' or an 'FsError' is thrown
+-- while executing an action.
+--
+-- TODO replace with 'onException'
+onImmDbException :: MonadCatch m
                  => ErrorHandling FsError m
-                 -> ErrorHandling ImmutableDBError m
                  -> m b  -- ^ What to do when an error is thrown
                  -> m a  -- ^ The action to execute
                  -> m a
-onImmDbException fsErr err onErr m =
-    EH.onException fsErr (EH.onException err m onErr) onErr
+onImmDbException fsErr onErr m =
+    onException (EH.onException fsErr m onErr) onErr
 
 -- | Convert an 'EpochSlot' to a 'Tip'
 epochSlotToTip :: Monad m => EpochInfo m -> EpochSlot -> m ImmTip
@@ -206,48 +189,45 @@ removeFilesStartingFrom HasFS { removeFile, listDirectory } epoch = do
 -- | Wrapper around 'Get.runGetOrFail' that throws an 'InvalidFileError' when
 -- it failed or when there was unconsumed input.
 runGet
-  :: (HasCallStack, Monad m)
-  => ErrorHandling ImmutableDBError m
-  -> FsPath
+  :: (HasCallStack, MonadThrow m)
+  => FsPath
   -> Get a
   -> Lazy.ByteString
   -> m a
-runGet err file get bl = case Get.runGetOrFail get bl of
+runGet file get bl = case Get.runGetOrFail get bl of
     Right (unconsumed, _, primary)
       | Lazy.null unconsumed
       -> return primary
       | otherwise
-      -> throwUnexpectedError err $ InvalidFileError file "left-over bytes" callStack
+      -> throwUnexpectedError $ InvalidFileError file "left-over bytes" callStack
     Left (_, _, msg)
-      -> throwUnexpectedError err $ InvalidFileError file msg callStack
+      -> throwUnexpectedError $ InvalidFileError file msg callStack
 
 -- | Same as 'runGet', but allows unconsumed input and returns it.
 runGetWithUnconsumed
-  :: (HasCallStack, Monad m)
-  => ErrorHandling ImmutableDBError m
-  -> FsPath
+  :: (HasCallStack, MonadThrow m)
+  => FsPath
   -> Get a
   -> Lazy.ByteString
   -> m (Lazy.ByteString, a)
-runGetWithUnconsumed err file get bl = case Get.runGetOrFail get bl of
+runGetWithUnconsumed file get bl = case Get.runGetOrFail get bl of
     Right (unconsumed, _, primary)
       -> return (unconsumed, primary)
     Left (_, _, msg)
-      -> throwUnexpectedError err $ InvalidFileError file msg callStack
+      -> throwUnexpectedError $ InvalidFileError file msg callStack
 
 -- | Check whether the given checksums match. If not, throw a
 -- 'ChecksumMismatchError'.
 checkChecksum
-  :: (HasCallStack, Monad m)
-  => ErrorHandling ImmutableDBError m
-  -> FsPath
+  :: (HasCallStack, MonadThrow m)
+  => FsPath
   -> BlockOrEBB
   -> CRC  -- ^ Expected checksum
   -> CRC  -- ^ Actual checksum
   -> m ()
-checkChecksum err epochFile blockOrEBB expected actual
+checkChecksum epochFile blockOrEBB expected actual
     | expected == actual
     = return ()
     | otherwise
-    = throwUnexpectedError err $
+    = throwUnexpectedError $
       ChecksumMismatchError blockOrEBB expected actual epochFile callStack

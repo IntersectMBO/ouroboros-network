@@ -416,7 +416,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     -- | Open a mock ImmutableDB and add the given chain of blocks
     openImmDB :: Chain TestBlock -> m (ImmDB m TestBlock)
     openImmDB chain = do
-        (_immDBModel, immDB) <- ImmDB.openDBMock EH.monadCatch epochSize
+        (_immDBModel, immDB) <- ImmDB.openDBMock epochSize
         forM_ (Chain.toOldestFirst chain) $ \block -> case isEBB (getHeader block) of
           Nothing -> ImmDB.appendBlock immDB
             (blockSlot block) (blockNo block) (blockHash block)
@@ -425,7 +425,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
             epoch (blockNo block) (blockHash block)
             (CBOR.toBuilder <$> encodeWithBinaryInfo block)
         return $ mkImmDB immDB (const <$> decode) (const <$> decode)
-          encodeWithBinaryInfo epochInfo isEBB addHdrEnv EH.monadCatch
+          encodeWithBinaryInfo epochInfo isEBB addHdrEnv
       where
         epochInfo = fixedSizeEpochInfo epochSize
         isEBB     = testHeaderEpochNoIfEBB epochSize

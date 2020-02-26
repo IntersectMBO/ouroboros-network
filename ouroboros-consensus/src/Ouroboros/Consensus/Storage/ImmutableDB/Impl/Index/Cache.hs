@@ -67,7 +67,6 @@ import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
                      Handle, OpenMode (ReadMode))
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex, SecondaryOffset)
@@ -80,8 +79,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
                      (RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types (HashInfo (..),
-                     ImmutableDBError, TraceCacheEvent (..),
-                     UnexpectedError (..), WithBlockSize (..))
+                     TraceCacheEvent (..), UnexpectedError (..),
+                     WithBlockSize (..))
 
 -- TODO property and/or q-s-m tests comparing with 'fileBackedIndex'
 
@@ -346,7 +345,6 @@ emptyCached currentEpoch currentEpochInfo = Cached
 -- | Environment used by functions operating on the cached index.
 data CacheEnv m hash h = CacheEnv
   { hasFS       :: HasFS m h
-  , err         :: ErrorHandling ImmutableDBError m
   , hashInfo    :: HashInfo hash
   , registry    :: ResourceRegistry m
   , tracer      :: Tracer m TraceCacheEvent
@@ -363,18 +361,17 @@ data CacheEnv m hash h = CacheEnv
 newEnv
   :: (HasCallStack, IOLike m, NoUnexpectedThunks hash)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> HashInfo hash
   -> ResourceRegistry m
   -> Tracer m TraceCacheEvent
   -> CacheConfig
   -> EpochNo  -- ^ Current epoch
   -> m (CacheEnv m hash h)
-newEnv hasFS err hashInfo registry tracer cacheConfig epoch = do
+newEnv hasFS hashInfo registry tracer cacheConfig epoch = do
     when (pastEpochsToCache == 0) $
       error "pastEpochsToCache must be > 0"
 
-    currentEpochInfo <- loadCurrentEpochInfo hasFS err hashInfo epoch
+    currentEpochInfo <- loadCurrentEpochInfo hasFS hashInfo epoch
     cacheVar <- newMVarWithInvariants $ emptyCached epoch currentEpochInfo
     bgThreadVar <- newMVar Nothing
     let cacheEnv = CacheEnv {..}
@@ -461,12 +458,11 @@ expireUnusedEpochs CacheEnv { cacheVar, cacheConfig, tracer } =
 readPrimaryIndex
   :: (HasCallStack, IOLike m)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> EpochNo
   -> m (PrimaryIndex, IsEBB)
      -- ^ The primary index and whether it starts with an EBB or not
-readPrimaryIndex hasFS err epoch = do
-    primaryIndex <- Primary.load hasFS err epoch
+readPrimaryIndex hasFS epoch = do
+    primaryIndex <- Primary.load hasFS epoch
     let firstIsEBB
           | Primary.containsSlot primaryIndex 0
           , Primary.isFilledSlot primaryIndex 0
@@ -478,14 +474,13 @@ readPrimaryIndex hasFS err epoch = do
 readSecondaryIndex
   :: (HasCallStack, IOLike m)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> HashInfo hash
   -> EpochNo
   -> IsEBB
   -> m [Entry hash]
-readSecondaryIndex hasFS@HasFS { hGetSize } err hashInfo epoch firstIsEBB = do
+readSecondaryIndex hasFS@HasFS { hGetSize } hashInfo epoch firstIsEBB = do
     !epochFileSize <- withFile hasFS epochFile ReadMode hGetSize
-    Secondary.readAllEntries hasFS err hashInfo secondaryOffset
+    Secondary.readAllEntries hasFS hashInfo secondaryOffset
       epoch stopCondition epochFileSize firstIsEBB
   where
     epochFile = renderFile "epoch" epoch
@@ -497,17 +492,16 @@ readSecondaryIndex hasFS@HasFS { hGetSize } err hashInfo epoch firstIsEBB = do
 loadCurrentEpochInfo
   :: (HasCallStack, IOLike m)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> HashInfo hash
   -> EpochNo
   -> m (CurrentEpochInfo hash)
-loadCurrentEpochInfo hasFS err hashInfo epoch = do
+loadCurrentEpochInfo hasFS hashInfo epoch = do
     -- We're assuming that when the primary index file exists, the secondary
     -- index file will also exist
     epochExists <- doesFileExist hasFS primaryIndexFile
     if epochExists then do
-      (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS err epoch
-      entries <- readSecondaryIndex hasFS err hashInfo epoch firstIsEBB
+      (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS epoch
+      entries <- readSecondaryIndex hasFS hashInfo epoch firstIsEBB
       return CurrentEpochInfo
         { currentEpochOffsets =
           -- TODO optimise this
@@ -522,13 +516,12 @@ loadCurrentEpochInfo hasFS err hashInfo epoch = do
 loadPastEpochInfo
   :: (HasCallStack, IOLike m)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> HashInfo hash
   -> EpochNo
   -> m (PastEpochInfo hash)
-loadPastEpochInfo hasFS err hashInfo epoch = do
-    (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS err epoch
-    entries <- readSecondaryIndex hasFS err hashInfo epoch firstIsEBB
+loadPastEpochInfo hasFS hashInfo epoch = do
+    (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS epoch
+    entries <- readSecondaryIndex hasFS hashInfo epoch firstIsEBB
     return PastEpochInfo
       { pastEpochOffsets = primaryIndex
       , pastEpochEntries = Vector.fromList $ forceElemsToWHNF entries
@@ -566,7 +559,7 @@ getEpochInfo cacheEnv epoch = do
       Just hit -> return hit
       Nothing  -> do
         -- Cache miss, load both entire indices for the epoch from disk.
-        pastEpochInfo <- loadPastEpochInfo hasFS err hashInfo epoch
+        pastEpochInfo <- loadPastEpochInfo hasFS hashInfo epoch
         -- Loading the epoch might have taken some time, so obtain the time
         -- again.
         lastUsed' <- LastUsed <$> getMonotonicTime
@@ -578,7 +571,7 @@ getEpochInfo cacheEnv epoch = do
           traceWith tracer $ TracePastEpochEvict evicted pastEpochsToCache
         return $ Right pastEpochInfo
   where
-    CacheEnv { hasFS, err, hashInfo, cacheVar, cacheConfig, tracer } = cacheEnv
+    CacheEnv { hasFS, hashInfo, cacheVar, cacheConfig, tracer } = cacheEnv
     CacheConfig { pastEpochsToCache } = cacheConfig
 
 {------------------------------------------------------------------------------
@@ -605,7 +598,7 @@ restart
   -> EpochNo  -- ^ The new current epoch
   -> m ()
 restart cacheEnv epoch = do
-    currentEpochInfo <- loadCurrentEpochInfo hasFS err hashInfo epoch
+    currentEpochInfo <- loadCurrentEpochInfo hasFS hashInfo epoch
     void $ swapMVar cacheVar $ emptyCached epoch currentEpochInfo
     mask_ $ modifyMVar_ bgThreadVar $ \mbBgThread ->
       case mbBgThread of
@@ -614,7 +607,7 @@ restart cacheEnv epoch = do
           !bgThread <- forkLinkedThread registry $ expireUnusedEpochs cacheEnv
           return $ Just bgThread
   where
-    CacheEnv { hasFS, err, hashInfo, registry, cacheVar, bgThreadVar } = cacheEnv
+    CacheEnv { hasFS, hashInfo, registry, cacheVar, bgThreadVar } = cacheEnv
 
 {------------------------------------------------------------------------------
   On the primary index
@@ -686,10 +679,10 @@ openPrimaryIndex cacheEnv epoch allowExisting = do
     lastUsed <- LastUsed <$> getMonotonicTime
     pHnd <- Primary.open hasFS epoch allowExisting
     -- Don't leak the handle in case of an exception
-    onImmDbException hasFsErr err (hClose pHnd) $ do
+    onImmDbException hasFsErr (hClose pHnd) $ do
       newCurrentEpochInfo <- case allowExisting of
         MustBeNew     -> return emptyCurrentEpochInfo
-        AllowExisting -> loadCurrentEpochInfo hasFS err hashInfo epoch
+        AllowExisting -> loadCurrentEpochInfo hasFS hashInfo epoch
       mbEvicted <- updateMVar cacheVar $
         evictIfNecessary pastEpochsToCache .
         openEpoch epoch lastUsed newCurrentEpochInfo
@@ -698,7 +691,7 @@ openPrimaryIndex cacheEnv epoch allowExisting = do
         traceWith tracer $ TracePastEpochEvict evicted pastEpochsToCache
       return pHnd
   where
-    CacheEnv { hasFS, err, hashInfo, cacheVar, cacheConfig, tracer } = cacheEnv
+    CacheEnv { hasFS, hashInfo, cacheVar, cacheConfig, tracer } = cacheEnv
     HasFS { hClose, hasFsErr } = hasFS
     CacheConfig { pastEpochsToCache } = cacheConfig
 
@@ -731,7 +724,7 @@ readEntries
   -> EpochNo
   -> t (IsEBB, SecondaryOffset)
   -> m (t (Secondary.Entry hash, BlockSize))
-readEntries cacheEnv@CacheEnv { err, hashInfo } epoch toRead =
+readEntries cacheEnv@CacheEnv { hashInfo } epoch toRead =
     getEpochInfo cacheEnv epoch >>= \case
       Left CurrentEpochInfo { currentEpochEntries } ->
         forM toRead $ \(_isEBB, secondaryOffset) ->
@@ -754,7 +747,7 @@ readEntries cacheEnv@CacheEnv { err, hashInfo } epoch toRead =
     -- We don't know which of the two things happened, but the former is more
     -- likely, so we mention that file in the error message.
     noEntry :: SecondaryOffset -> m a
-    noEntry secondaryOffset = throwUnexpectedError err $ InvalidFileError
+    noEntry secondaryOffset = throwUnexpectedError $ InvalidFileError
       (renderFile "secondary" epoch)
       ("no entry missing for " <> show secondaryOffset)
       callStack

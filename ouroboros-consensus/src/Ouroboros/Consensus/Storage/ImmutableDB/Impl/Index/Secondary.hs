@@ -44,15 +44,13 @@ import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling
-                     (ErrorHandling (..))
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (SecondaryOffset)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
                      runGet, runGetWithUnconsumed)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BlockOrEBB (..),
-                     HashInfo (..), ImmutableDBError (..), WithBlockSize (..))
+                     HashInfo (..), WithBlockSize (..))
 
 {------------------------------------------------------------------------------
   Types
@@ -153,14 +151,13 @@ data BlockSize
 readEntry
   :: forall m hash h. (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> HashInfo hash
   -> EpochNo
   -> IsEBB
   -> SecondaryOffset
   -> m (Entry hash, BlockSize)
-readEntry hasFS err hashInfo epoch isEBB slotOffset = runIdentity <$>
-    readEntries hasFS err hashInfo epoch (Identity (isEBB, slotOffset))
+readEntry hasFS hashInfo epoch isEBB slotOffset = runIdentity <$>
+    readEntries hasFS hashInfo epoch (Identity (isEBB, slotOffset))
 
 -- | Same as 'readEntry', but for multiple entries.
 --
@@ -170,12 +167,11 @@ readEntry hasFS err hashInfo epoch isEBB slotOffset = runIdentity <$>
 readEntries
   :: forall m hash h t. (HasCallStack, MonadThrow m, Traversable t)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> HashInfo hash
   -> EpochNo
   -> t (IsEBB, SecondaryOffset)
   -> m (t (Entry hash, BlockSize))
-readEntries hasFS err HashInfo { hashSize, getHash } epoch toRead =
+readEntries hasFS HashInfo { hashSize, getHash } epoch toRead =
     withFile hasFS secondaryIndexFile ReadMode $ \sHnd -> do
       -- TODO can we avoid this call to 'hGetSize'?
       size <- hGetSize sHnd
@@ -189,7 +185,7 @@ readEntries hasFS err HashInfo { hashSize, getHash } epoch toRead =
         if anotherEntryAfter then do
           (entry, nextBlockOffset) <-
             hGetExactlyAt hasFS sHnd (nbBytes + nbBlockOffsetBytes) offset >>=
-            runGet err secondaryIndexFile
+            runGet secondaryIndexFile
               ((,) <$> getEntry isEBB getHash <*> get)
           let blockSize = fromIntegral $
                 unBlockOffset nextBlockOffset -
@@ -197,7 +193,7 @@ readEntries hasFS err HashInfo { hashSize, getHash } epoch toRead =
           return (entry, BlockSize blockSize)
         else do
           entry <- hGetExactlyAt hasFS sHnd nbBytes offset >>=
-            runGet err secondaryIndexFile (getEntry isEBB getHash)
+            runGet secondaryIndexFile (getEntry isEBB getHash)
           return (entry, LastEntry)
   where
     secondaryIndexFile = renderFile "secondary" epoch
@@ -212,7 +208,6 @@ readEntries hasFS err HashInfo { hashSize, getHash } epoch toRead =
 readAllEntries
   :: forall m hash h. (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> HashInfo hash
   -> SecondaryOffset       -- ^ Start from this offset
   -> EpochNo
@@ -221,7 +216,7 @@ readAllEntries
                            -- the size of the last block.
   -> IsEBB                 -- ^ Is the first entry to read an EBB?
   -> m [WithBlockSize (Entry hash)]
-readAllEntries hasFS err HashInfo { getHash } secondaryOffset epoch stopAfter
+readAllEntries hasFS HashInfo { getHash } secondaryOffset epoch stopAfter
                epochFileSize = \isEBB ->
     withFile hasFS secondaryIndexFile ReadMode $ \sHnd -> do
       bl <- hGetAllAt hasFS sHnd (AbsOffset (fromIntegral secondaryOffset))
@@ -241,7 +236,7 @@ readAllEntries hasFS err HashInfo { getHash } secondaryOffset epoch stopAfter
       | Lazy.null bl = return $ reverse $
         (addBlockSize epochFileSize <$> mbPrevEntry) `consMaybe` acc
       | otherwise    = do
-        (remaining, entry) <- runGetWithUnconsumed err secondaryIndexFile
+        (remaining, entry) <- runGetWithUnconsumed secondaryIndexFile
           (getEntry isEBB getHash) bl
         let offsetAfterPrevBlock = unBlockOffset (blockOffset entry)
             acc' = (addBlockSize offsetAfterPrevBlock <$> mbPrevEntry)
@@ -258,7 +253,7 @@ readAllEntries hasFS err HashInfo { getHash } secondaryOffset epoch stopAfter
             -- next entry (unless the file is invalid) and definitely the
             -- next entry's block offset.
             (_, nextBlockOffset) <-
-              runGetWithUnconsumed err secondaryIndexFile get remaining
+              runGetWithUnconsumed secondaryIndexFile get remaining
             return $ reverse $ addBlockSize nextBlockOffset entry : acc'
 
         else

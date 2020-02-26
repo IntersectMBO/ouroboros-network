@@ -100,8 +100,6 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Parser as ImmDB
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 -- | Thin wrapper around the ImmutableDB (opaque type)
 data ImmDB m blk = ImmDB {
@@ -114,7 +112,6 @@ data ImmDB m blk = ImmDB {
     , epochInfo :: !(EpochInfo m)
     , isEBB     :: !(Header blk -> Maybe EpochNo)
     , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
-    , err       :: !(ErrorHandling ImmDB.ImmutableDBError m)
     }
 
 
@@ -129,7 +126,6 @@ instance NoUnexpectedThunks (ImmDB m blk) where
     , noUnexpectedThunks ctxt epochInfo
     , noUnexpectedThunks ctxt isEBB
     , noUnexpectedThunks ctxt addHdrEnv
-    , noUnexpectedThunks ctxt err
     ]
 
 -- | Short-hand for events traced by the ImmDB wrapper.
@@ -149,7 +145,6 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immDecodeHeader   :: forall s. Decoder s (Lazy.ByteString -> Header blk)
     , immEncodeHash     :: HeaderHash blk -> Encoding
     , immEncodeBlock    :: blk -> BinaryInfo Encoding
-    , immErr            :: ErrorHandling ImmDB.ImmutableDBError m
     , immEpochInfo      :: EpochInfo m
     , immHashInfo       :: HashInfo (HeaderHash blk)
     , immValidation     :: ImmDB.ValidationPolicy
@@ -182,9 +177,8 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immBlockchainTime'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
-      immErr          = EH.exceptions
-    , immHasFS        = ioHasFS $ MountPoint (fp </> "immutable")
-    , immCacheConfig  = cacheConfig
+      immHasFS          = ioHasFS $ MountPoint (fp </> "immutable")
+    , immCacheConfig    = cacheConfig
     , immTracer         = nullTracer
       -- Fields without a default
     , immDecodeHash     = error "no default for immDecodeHash"
@@ -227,7 +221,6 @@ openDB ImmDbArgs{..} = do
     (immDB, _internal) <- ImmDB.openDBInternal
       immRegistry
       immHasFS
-      immErr
       immEpochInfo
       immHashInfo
       immValidation
@@ -243,7 +236,6 @@ openDB ImmDbArgs{..} = do
       , epochInfo = immEpochInfo
       , isEBB     = immIsEBB
       , addHdrEnv = immAddHdrEnv
-      , err       = immErr
       }
   where
     parser = ImmDB.epochFileParser immHasFS immDecodeBlock (immIsEBB . getHeader)
@@ -259,9 +251,8 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> EpochInfo m
         -> (Header blk -> Maybe EpochNo)
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
-        -> ErrorHandling ImmDB.ImmutableDBError m
         -> ImmDB m blk
-mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv err = ImmDB {..}
+mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
@@ -600,7 +591,7 @@ streamAfterKnownBlock db registry blockComponent low = do
 -- disk failure and should therefore trigger recovery
 withDB :: forall m blk x. MonadCatch m
        => ImmDB m blk -> (ImmutableDB (HeaderHash blk) m -> m x) -> m x
-withDB ImmDB{..} k = EH.catchError err (k immDB) rethrow
+withDB ImmDB{..} k = catch (k immDB) rethrow
   where
     rethrow :: ImmDB.ImmutableDBError -> m x
     rethrow e = case wrap e of

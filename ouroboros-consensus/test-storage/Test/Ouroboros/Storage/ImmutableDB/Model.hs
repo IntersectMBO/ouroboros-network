@@ -83,8 +83,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (parseDBFile,
                      validateIteratorRange)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.TestBlock
 
@@ -708,8 +706,9 @@ streamModel
             (Either (WrongBoundError hash)
                     (IteratorId, DBModel hash))
 streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
-    validateIteratorRange err (generalizeEpochInfo dbmEpochInfo)
-      (forgetTipInfo <$> dbmTip dbm) mbStart mbEnd
+    liftLeft $ runIdentity $
+      validateIteratorRange dbmEpochInfo (forgetTipInfo <$> dbmTip dbm)
+        mbStart mbEnd
 
     -- The real implementation checks the end bound first, so we do the
     -- same to get the same errors
@@ -737,11 +736,6 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
     return (itId, dbm')
   where
     blobs = dbmBlobs dbm
-
-    err :: ErrorHandling
-             ImmutableDBError
-             (Either (Either ImmutableDBError (WrongBoundError hash)))
-    err = EH.embed Left (\case { Left e -> Just e ; Right _ -> Nothing }) EH.monadError
 
     liftLeft :: Either ImmutableDBError a
              -> Either (Either ImmutableDBError (WrongBoundError hash)) a

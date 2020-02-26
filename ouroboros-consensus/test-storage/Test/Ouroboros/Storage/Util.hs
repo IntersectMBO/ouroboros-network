@@ -165,11 +165,13 @@ apiEquivalenceFs = apiEquivalence tryFS prettyFsError sameError
 
 apiEquivalenceImmDB :: (HasCallStack, Eq a, Show a)
                     => (Either ImmutableDBError a -> Assertion)
-                    -> (forall h. HasFS IO h -> ErrorHandling ImmutableDBError IO -> IO a)
+                    -> (forall h. HasFS IO h -> IO a)
                     -> Assertion
-apiEquivalenceImmDB = apiEquivalence try prettyImmutableDBError sameImmutableDBError
+apiEquivalenceImmDB f g =
+    apiEquivalence try prettyImmutableDBError sameImmutableDBError f
+      (\hasFS _err -> g hasFS)
   where
-    try = tryImmDB EH.exceptions EH.exceptions
+    try = tryImmDB EH.exceptions
 
 tryAny :: IO a -> IO (Either SomeException a)
 tryAny = E.try

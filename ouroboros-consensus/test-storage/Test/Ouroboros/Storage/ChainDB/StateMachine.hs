@@ -1457,9 +1457,6 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbEncodeConsensusState = encode
     , cdbEncodeTipInfo        = encode
 
-      -- Error handling
-    , cdbErrImmDb             = EH.monadCatch
-
       -- HasFS instances
     , cdbHasFSImmDb           = simHasFS EH.monadCatch immDbFsVar
     , cdbHasFSVolDb           = simHasFS EH.monadCatch volDbFsVar

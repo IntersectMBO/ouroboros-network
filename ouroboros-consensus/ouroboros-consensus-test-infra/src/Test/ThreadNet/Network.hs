@@ -527,8 +527,6 @@ runThreadNetwork ThreadNetworkArgs
         , cdbEncodeLedger         = nodeEncodeLedgerState    cfg
         , cdbEncodeConsensusState = nodeEncodeConsensusState (Proxy @blk) cfg
         , cdbEncodeTipInfo        = nodeEncodeTipInfo        (Proxy @blk)
-          -- Error handling
-        , cdbErrImmDb             = EH.monadCatch
           -- HasFS instances
         , cdbHasFSImmDb           = simHasFS EH.monadCatch (nodeDBsImm nodeDBs)
         , cdbHasFSVolDb           = simHasFS EH.monadCatch (nodeDBsVol nodeDBs)

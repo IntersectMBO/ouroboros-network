@@ -27,7 +27,6 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
 
 -- | API for the 'ImmutableDB'.
 --
@@ -206,9 +205,6 @@ data ImmutableDB hash m = ImmutableDB
       -> Maybe (SlotNo, hash)
       -> m (Either (WrongBoundError hash)
                    (Iterator hash m b))
-
-    -- | Throw 'ImmutableDB' errors
-  , immutableDBErr :: ErrorHandling ImmutableDBError m
   }
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "ImmutableDB" (ImmutableDB hash m)
 

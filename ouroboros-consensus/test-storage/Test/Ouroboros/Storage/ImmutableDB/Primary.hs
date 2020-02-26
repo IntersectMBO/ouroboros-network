@@ -62,7 +62,7 @@ prop_write_load index = monadicIO $ run $ runFS prop
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
       Primary.write hasFS epoch index
-      index' <- Primary.load hasFS EH.exceptions epoch
+      index' <- Primary.load hasFS epoch
       return $ index === index'
 
 prop_open_appendOffsets_load :: PrimaryIndex -> Property
@@ -76,7 +76,7 @@ prop_open_appendOffsets_load index = monadicIO $ run $ runFS prop
       -- Don't write the first offset, which is always 0; it is written by
       -- 'Primary.open'.
       Primary.appendOffsets hasFS pHnd (drop 1 (Primary.toSecondaryOffsets index))
-      index' <- Primary.load hasFS EH.exceptions epoch
+      index' <- Primary.load hasFS epoch
       return $ index === index'
 
 prop_truncateToSlotFS_truncateToSlot :: PrimaryIndex -> RelativeSlot -> Property
@@ -89,7 +89,7 @@ prop_truncateToSlotFS_truncateToSlot index slot =
     prop hasFS = do
       Primary.write hasFS epoch index
       Primary.truncateToSlotFS hasFS epoch slot
-      index' <- Primary.load hasFS EH.exceptions epoch
+      index' <- Primary.load hasFS epoch
       return $ Primary.truncateToSlot slot index === index'
 
 prop_readFirstFilledSlot_load_firstFilledSlot :: PrimaryIndex -> Property
@@ -101,7 +101,7 @@ prop_readFirstFilledSlot_load_firstFilledSlot index =
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
       Primary.write hasFS epoch index
-      mbFirstFilledsLot <- Primary.readFirstFilledSlot hasFS EH.exceptions epoch
+      mbFirstFilledsLot <- Primary.readFirstFilledSlot hasFS epoch
       return $ mbFirstFilledsLot === Primary.firstFilledSlot index
 
 {------------------------------------------------------------------------------

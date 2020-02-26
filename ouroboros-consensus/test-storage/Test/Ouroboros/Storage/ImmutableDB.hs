@@ -23,7 +23,6 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
 
 import           Ouroboros.Consensus.Storage.ImmutableDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -66,12 +65,10 @@ type Hash = TestHeaderHash
 openTestDB :: (HasCallStack, IOLike m)
            => ResourceRegistry m
            -> HasFS m h
-           -> ErrorHandling ImmutableDBError m
            -> m (ImmutableDB Hash m)
-openTestDB registry hasFS err = fst <$> openDBInternal
+openTestDB registry hasFS = fst <$> openDBInternal
     registry
     hasFS
-    err
     (fixedSizeEpochInfo fixedEpochSize)
     testHashInfo
     ValidateMostRecentEpoch
@@ -88,11 +85,10 @@ openTestDB registry hasFS err = fst <$> openDBInternal
 -- Shorthand
 withTestDB :: (HasCallStack, IOLike m)
            => HasFS m h
-           -> ErrorHandling ImmutableDBError m
            -> (ImmutableDB Hash m -> m a)
            -> m a
-withTestDB hasFS err k = withRegistry $ \registry ->
-    bracket (openTestDB registry hasFS err) closeDB k
+withTestDB hasFS k = withRegistry $ \registry ->
+    bracket (openTestDB registry hasFS) closeDB k
 
 {------------------------------------------------------------------------------
   Equivalence tests between IO and MockFS
@@ -100,8 +96,8 @@ withTestDB hasFS err k = withRegistry $ \registry ->
 
 test_ReadFutureSlotErrorEquivalence :: HasCallStack => Assertion
 test_ReadFutureSlotErrorEquivalence =
-    apiEquivalenceImmDB (expectUserError isReadFutureSlotError) $ \hasFS err ->
-      withTestDB hasFS err $ \db -> do
+    apiEquivalenceImmDB (expectUserError isReadFutureSlotError) $ \hasFS ->
+      withTestDB hasFS $ \db -> do
         _ <- getBlockComponent db GetBlock 0
         return ()
   where
@@ -110,7 +106,7 @@ test_ReadFutureSlotErrorEquivalence =
 
 test_openDBEmptyIndexFilesEquivalence :: Assertion
 test_openDBEmptyIndexFilesEquivalence =
-    apiEquivalenceImmDB (expectImmDBResult (@?= TipGen)) $ \hasFS@HasFS{..} err -> do
+    apiEquivalenceImmDB (expectImmDBResult (@?= TipGen)) $ \hasFS@HasFS{..} -> do
       -- Create empty index files
       h1 <- hOpen (mkFsPath ["00000.epoch"]) (WriteMode MustBeNew)
       h2 <- hOpen (mkFsPath ["00000.primary"]) (WriteMode MustBeNew)
@@ -119,12 +115,12 @@ test_openDBEmptyIndexFilesEquivalence =
       hClose h2
       hClose h3
 
-      withTestDB hasFS err getTip
+      withTestDB hasFS getTip
 
 test_closeDBIdempotentEquivalence :: Assertion
 test_closeDBIdempotentEquivalence = withRegistry $ \registry ->
-    apiEquivalenceImmDB (expectImmDBResult (@?= ())) $ \hasFS err -> do
-      db <- openTestDB registry hasFS err
+    apiEquivalenceImmDB (expectImmDBResult (@?= ())) $ \hasFS -> do
+      db <- openTestDB registry hasFS
       closeDB db
       closeDB db
 

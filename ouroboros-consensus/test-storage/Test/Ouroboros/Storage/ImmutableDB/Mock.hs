@@ -3,7 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.Ouroboros.Storage.ImmutableDB.Mock (openDBMock) where
 
-import           Control.Monad (join, void)
+import           Control.Monad (void)
 import           Data.Bifunctor (first)
 import           Data.Tuple (swap)
 
@@ -12,16 +12,13 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.Common (BlockComponent, EpochSize)
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 
 openDBMock  :: forall m hash. (IOLike m, Eq hash, Show hash)
-            => ErrorHandling ImmutableDBError m
-            -> EpochSize
+            => EpochSize
             -> m (DBModel hash, ImmutableDB hash m)
-openDBMock err epochSize = do
+openDBMock epochSize = do
     dbVar <- uncheckedNewTVarM dbModel
     return (dbModel, immDB dbVar)
   where
@@ -39,7 +36,6 @@ openDBMock err epochSize = do
         , appendBlock            = updateE_ ...: appendBlockModel
         , appendEBB              = updateE_ ...: appendEBBModel
         , stream                 = updateEE ...: \_rr bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
-        , immutableDBErr         = err
         }
       where
         iterator :: BlockComponent (ImmutableDB hash m) b
@@ -59,27 +55,25 @@ openDBMock err epochSize = do
         update f = atomically $ updateTVar dbVar (swap . f)
 
         updateE_ :: (DBModel hash -> Either ImmutableDBError (DBModel hash)) -> m ()
-        updateE_ f = join $ atomically $
-          (f <$> readTVar dbVar) >>= \case
-            Left  e   -> return $ EH.throwError err e
-            Right db' -> do
-              writeTVar dbVar db'
-              return $ return ()
+        updateE_ f = atomically $ do
+          db <- readTVar dbVar
+          case f db of
+            Left  e   -> throwM e
+            Right db' -> writeTVar dbVar db'
 
         updateEE :: (DBModel hash -> Either ImmutableDBError (Either e (a, DBModel hash)))
                  -> m (Either e a)
-        updateEE f = join $ atomically $
-          (f <$> readTVar dbVar) >>= \case
-            Left  e                -> return $ EH.throwError err e
-            Right (Left e)         -> return $ return (Left e)
-            Right (Right (a, db')) -> do
-              writeTVar dbVar db'
-              return $ return (Right a)
+        updateEE f = atomically $ do
+          db <- readTVar dbVar
+          case f db of
+            Left  e                -> throwM e
+            Right (Left e)         -> return (Left e)
+            Right (Right (a, db')) -> writeTVar dbVar db' >> return (Right a)
 
         query :: (DBModel hash -> a) -> m a
         query f = fmap f $ atomically $ readTVar dbVar
 
         queryE :: (DBModel hash -> Either ImmutableDBError a) -> m a
         queryE f = query f >>= \case
-          Left  e -> EH.throwError err e
+          Left  e -> throwM e
           Right a -> return a
