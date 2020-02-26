@@ -170,7 +170,7 @@ modifyOpenState :: forall m hash r. (HasCallStack, IOLike m)
                 -> (forall h. HasFS m h -> StateT (OpenState m hash h) m r)
                 -> m r
 modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
-    (mr, ()) <- generalBracket open close (tryImmDB hasFsErr . mutation)
+    (mr, ()) <- generalBracket open close (tryImmDB . mutation)
     case mr of
       Left  e      -> throwM e
       Right (r, _) -> return r
@@ -224,7 +224,7 @@ withOpenState :: forall m hash r. (HasCallStack, IOLike m)
               -> (forall h. HasFS m h -> OpenState m hash h -> m r)
               -> m r
 withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
-    (mr, ()) <- generalBracket open (const close) (tryImmDB hasFsErr . access)
+    (mr, ()) <- generalBracket open (const close) (tryImmDB . access)
     case mr of
       Left  e -> throwM e
       Right r -> return r

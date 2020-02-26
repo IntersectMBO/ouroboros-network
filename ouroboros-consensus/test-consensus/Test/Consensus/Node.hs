@@ -19,7 +19,6 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (withRegistry)
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Tasty
 import           Test.Tasty.HUnit
@@ -59,7 +58,7 @@ fullPath = fsToFilePath
 runCheck :: Files -> (Either DbMarkerError (), Files)
 runCheck files = runSimOrThrow $ do
     fmap (second Mock.mockFiles) $
-      runSimFS EH.monadCatch Mock.empty { Mock.mockFiles = files } $ \hasFS ->
+      runSimFS Mock.empty { Mock.mockFiles = files } $ \hasFS ->
         checkDbMarker hasFS mountPoint expectedProtocolMagicId
 
 test_checkProtocolMagicId_match :: Assertion

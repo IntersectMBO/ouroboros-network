@@ -18,7 +18,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.Util (tryFS)
 
@@ -109,7 +108,7 @@ prop_readFirstFilledSlot_load_firstFilledSlot index =
 ------------------------------------------------------------------------------}
 
 runFS :: (HasFS IO HandleMock -> IO Property) -> IO Property
-runFS m = tryFS (Sim.runSimFS EH.exceptions Mock.empty m) >>= \case
+runFS m = tryFS (Sim.runSimFS Mock.empty m) >>= \case
     Left  e           -> fail (prettyFsError e)
     Right (p, mockFS) -> return $ counterexample (Mock.pretty mockFS) p
 

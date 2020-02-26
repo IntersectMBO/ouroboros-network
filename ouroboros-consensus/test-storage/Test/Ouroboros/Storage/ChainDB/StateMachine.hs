@@ -106,7 +106,6 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
                      (LedgerDbParams (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
 import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
@@ -1458,9 +1457,9 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbEncodeTipInfo        = encode
 
       -- HasFS instances
-    , cdbHasFSImmDb           = simHasFS EH.monadCatch immDbFsVar
-    , cdbHasFSVolDb           = simHasFS EH.monadCatch volDbFsVar
-    , cdbHasFSLgrDB           = simHasFS EH.monadCatch lgrDbFsVar
+    , cdbHasFSImmDb           = simHasFS immDbFsVar
+    , cdbHasFSVolDb           = simHasFS volDbFsVar
+    , cdbHasFSLgrDB           = simHasFS lgrDbFsVar
 
       -- Policy
     , cdbImmValidation        = ValidateAllEpochs

@@ -87,12 +87,11 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.EpochInfo
-import           Ouroboros.Consensus.Storage.FS.API (HasFS (hasFsErr),
+import           Ouroboros.Consensus.Storage.FS.API (HasFS,
                      createDirectoryIfMissing)
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError,
                      MountPoint (..), mkFsPath)
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Consensus.Storage.LedgerDB.Conf
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
@@ -284,7 +283,7 @@ initFromDisk :: forall blk m. (IOLike m, HasHeader blk, HasCallStack)
              -> Conf      m blk
              -> ImmDB     m blk
              -> m (LedgerDB blk, Word64)
-initFromDisk args@LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure args $ do
+initFromDisk LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure $ do
     (_initLog, db, replayed) <-
       LedgerDB.initLedgerDB
         replayTracer
@@ -378,7 +377,7 @@ currentPoint = ledgerTipPoint
              . LedgerDB.ledgerDbCurrent
 
 takeSnapshot :: IOLike m => LgrDB m blk -> m (DiskSnapshot, Point blk)
-takeSnapshot lgrDB@LgrDB{ args = args@LgrDbArgs{..} } = wrapFailure args $ do
+takeSnapshot lgrDB@LgrDB{ args = LgrDbArgs{..} } = wrapFailure $ do
     ledgerDB <- atomically $ getCurrent lgrDB
     second tipToPoint <$> LedgerDB.takeSnapshot
       lgrTracer
@@ -393,8 +392,8 @@ takeSnapshot lgrDB@LgrDB{ args = args@LgrDbArgs{..} } = wrapFailure args $ do
                               lgrEncodeHash
                               lgrEncodeTipInfo
 
-trimSnapshots :: MonadThrow m => LgrDB m blk -> m [DiskSnapshot]
-trimSnapshots LgrDB{ args = args@LgrDbArgs{..} } = wrapFailure args $
+trimSnapshots :: MonadCatch m => LgrDB m blk -> m [DiskSnapshot]
+trimSnapshots LgrDB{ args = LgrDbArgs{..} } = wrapFailure $
     LedgerDB.trimSnapshots lgrTracer lgrHasFS lgrDiskPolicy
 
 getDiskPolicy :: LgrDB m blk -> DiskPolicy
@@ -490,9 +489,8 @@ garbageCollectPrevApplied LgrDB{..} slotNo = modifyTVar varPrevApplied $
 
 -- | Wrap exceptions that may indicate disk failure in a 'ChainDbFailure'
 -- exception using the 'LgrDbFailure' constructor.
-wrapFailure :: forall m blk x. MonadThrow m => LgrDbArgs m blk -> m x -> m x
-wrapFailure LgrDbArgs{ lgrHasFS = hasFS } k =
-    EH.catchError (hasFsErr hasFS) k rethrow
+wrapFailure :: forall m x. MonadCatch m => m x -> m x
+wrapFailure k = catch k rethrow
   where
     rethrow :: FsError -> m x
     rethrow err = throwM $ LgrDbFailure err

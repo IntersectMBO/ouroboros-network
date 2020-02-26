@@ -51,6 +51,7 @@ module Test.Util.FS.Sim.MockFS (
   , mockFiles
   ) where
 
+import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Bifunctor
 import           Data.ByteString (ByteString)
@@ -70,8 +71,6 @@ import           GHC.Stack
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling
-                     (ErrorHandling (..))
 
 import           Test.Util.FS.Sim.FsTree (FsTree (..), FsTreeError (..))
 import qualified Test.Util.FS.Sim.FsTree as FS
@@ -140,7 +139,7 @@ data ClosedHandleState = ClosedHandle {
   deriving (Show, Generic, NoUnexpectedThunks)
 
 -- | Monads in which we can simulate the file system
-type CanSimFS m = (HasCallStack, MonadState MockFS m)
+type CanSimFS m = (HasCallStack, MonadState MockFS m, MonadError FsError m)
 
 empty :: MockFS
 empty = MockFS FS.empty M.empty (HandleMock 0)
@@ -187,10 +186,9 @@ numOpenHandles = length . openHandles
 -- We lift this out as a separate concept primarily for the benefit of tests.
 --
 -- See 'hSeek' for limitations.
-seekFilePtr :: Monad m
-            => ErrorHandling FsError m
-            -> MockFS -> Handle' -> SeekMode -> Int64 -> m FilePtr
-seekFilePtr err@ErrorHandling{..} MockFS{..} (Handle h _) seekMode o = do
+seekFilePtr :: MonadError FsError m
+            => MockFS -> Handle' -> SeekMode -> Int64 -> m FilePtr
+seekFilePtr MockFS{..} (Handle h _) seekMode o = do
     case mockHandles M.! h of
       HandleClosed ClosedHandle{..} ->
         throwError FsError {
@@ -202,7 +200,7 @@ seekFilePtr err@ErrorHandling{..} MockFS{..} (Handle h _) seekMode o = do
           , fsLimitation  = False
           }
       HandleOpen OpenHandle{..} -> do
-        file <- checkFsTree err $ FS.getFile openFilePath mockFiles
+        file <- checkFsTree $ FS.getFile openFilePath mockFiles
         let fsize = fromIntegral (BS.length file) :: Word64
         case (openPtr, seekMode, sign64 o) of
           (RW r w _cur, AbsoluteSeek, Positive o') -> do
@@ -260,9 +258,8 @@ seekFilePtr err@ErrorHandling{..} MockFS{..} (Handle h _) seekMode o = do
 
 -- | Modify the mock file system without a file handle
 modifyMockFS :: CanSimFS m
-             => ErrorHandling FsError m
-             -> (MockFS -> m (a, MockFS)) -> m a
-modifyMockFS ErrorHandling{..} f = do
+             => (MockFS -> m (a, MockFS)) -> m a
+modifyMockFS f = do
     st       <- get
     (a, st') <- f st
     put st'
@@ -270,20 +267,18 @@ modifyMockFS ErrorHandling{..} f = do
 
 -- | Access but do not modify the mock file system state without a file handle
 readMockFS :: CanSimFS m
-           => ErrorHandling FsError m
-           -> (Files -> m a) -> m a
-readMockFS err f = modifyMockFS err (\fs -> (, fs) <$> f (mockFiles fs))
+           => (Files -> m a) -> m a
+readMockFS f = modifyMockFS (\fs -> (, fs) <$> f (mockFiles fs))
 
 -- | Require a file handle and may modify the mock file system
 withHandleModify :: CanSimFS m
-                 => ErrorHandling FsError m
-                 -> Handle'
+                 => Handle'
                  -> (    MockFS
                       -> HandleState
                       -> m (a, (Files, HandleState))
                     )
                  -> m a
-withHandleModify ErrorHandling{..} (Handle h _) f = do
+withHandleModify (Handle h _) f = do
     st <- get
     case M.lookup h (mockHandles st) of
       Just hs -> do
@@ -297,28 +292,26 @@ withHandleModify ErrorHandling{..} (Handle h _) f = do
 
 -- | Require a file handle but do not modify the mock file system
 withHandleRead :: CanSimFS m
-               => ErrorHandling FsError m
-               -> Handle'
+               => Handle'
                -> (    MockFS
                     -> HandleState
                     -> m (a, HandleState)
                   )
                -> m a
-withHandleRead err h f =
-    withHandleModify err h $ \fs hs ->
+withHandleRead h f =
+    withHandleModify h $ \fs hs ->
       second (mockFiles fs, ) <$> f fs hs
 
 -- | Require an open file handle to modify the mock file system
 withOpenHandleModify :: CanSimFS m
-                     => ErrorHandling FsError m
-                     -> Handle'
+                     => Handle'
                      -> (    MockFS
                           -> OpenHandleState
                           -> m (a, (Files, OpenHandleState))
                         )
                      -> m a
-withOpenHandleModify err@ErrorHandling{..} h f =
-    withHandleModify err h $ \fs -> \case
+withOpenHandleModify h f =
+    withHandleModify h $ \fs -> \case
       HandleOpen hs ->
         second (second HandleOpen) <$> f fs hs
       HandleClosed ClosedHandle{..} ->
@@ -333,15 +326,14 @@ withOpenHandleModify err@ErrorHandling{..} h f =
 
 -- | Require an open file handle but do not modify the mock file system
 withOpenHandleRead :: CanSimFS m
-                   => ErrorHandling FsError m
-                   -> Handle'
+                   => Handle'
                    -> (    MockFS
                         -> OpenHandleState
                         -> m (a, OpenHandleState)
                       )
                    -> m a
-withOpenHandleRead err@ErrorHandling{..} h f =
-    withHandleRead err h $ \fs -> \case
+withOpenHandleRead h f =
+    withHandleRead h $ \fs -> \case
       HandleOpen hs ->
         second HandleOpen <$> f fs hs
       HandleClosed ClosedHandle{..} ->
@@ -365,10 +357,9 @@ dumpState = pretty <$> get
   Internal auxiliary
 -------------------------------------------------------------------------------}
 
-checkFsTree' :: (Monad m, HasCallStack)
-             => ErrorHandling FsError m
-             -> Either FsTreeError a -> m (Either FsPath a)
-checkFsTree' ErrorHandling{..} = go
+checkFsTree' :: (MonadError FsError m, HasCallStack)
+             => Either FsTreeError a -> m (Either FsPath a)
+checkFsTree' = go
   where
     go (Left (FsExpectedDir fp _)) =
         throwError FsError {
@@ -402,11 +393,10 @@ checkFsTree' ErrorHandling{..} = go
     go (Right a) =
         return (Right a)
 
-checkFsTree :: (Monad m, HasCallStack)
-            => ErrorHandling FsError m
-            -> Either FsTreeError a -> m a
-checkFsTree err@ErrorHandling{..} ma = do
-    ma' <- checkFsTree' err ma
+checkFsTree :: (MonadError FsError m, HasCallStack)
+            => Either FsTreeError a -> m a
+checkFsTree ma = do
+    ma' <- checkFsTree' ma
     case ma' of
       Left fp -> throwError FsError {
                      fsErrorType   = FsResourceDoesNotExist
@@ -418,10 +408,10 @@ checkFsTree err@ErrorHandling{..} ma = do
                    }
       Right a -> return a
 
-checkDoesNotExist :: (Monad m, HasCallStack)
-                  => ErrorHandling FsError m -> MockFS -> FsPath -> m ()
-checkDoesNotExist err@ErrorHandling{..} fs fp = do
-    exists <- fmap pathExists $ checkFsTree' err $ FS.index fp (mockFiles fs)
+checkDoesNotExist :: (MonadError FsError m, HasCallStack)
+                  => MockFS -> FsPath -> m ()
+checkDoesNotExist fs fp = do
+    exists <- fmap pathExists $ checkFsTree' $ FS.index fp (mockFiles fs)
     if exists
       then throwError FsError {
                fsErrorType   = FsResourceAlreadyExist
@@ -459,9 +449,9 @@ newHandle fs hs = (
 -- * We do not support more than one concurrent writer
 --   (we do however allow a writer and multiple concurrent readers)
 -- * We do not support create file on ReadMode.
-hOpen :: CanSimFS m => ErrorHandling FsError m -> FsPath -> OpenMode -> m Handle'
-hOpen err@ErrorHandling{..} fp openMode = do
-    dirExists <- doesDirectoryExist err fp
+hOpen :: CanSimFS m => FsPath -> OpenMode -> m Handle'
+hOpen fp openMode = do
+    dirExists <- doesDirectoryExist fp
     when dirExists $ throwError FsError {
         fsErrorType   = FsResourceInappropriateType
       , fsErrorPath   = fsToFsErrorPathUnmounted fp
@@ -470,7 +460,7 @@ hOpen err@ErrorHandling{..} fp openMode = do
       , fsErrorStack  = callStack
       , fsLimitation  = True
       }
-    modifyMockFS err $ \fs -> do
+    modifyMockFS $ \fs -> do
       let alreadyHasWriter =
             any (\hs -> openFilePath hs == fp && isWriteHandle hs) $
             openHandles fs
@@ -484,8 +474,8 @@ hOpen err@ErrorHandling{..} fp openMode = do
           , fsLimitation  = True
           }
       when (openMode == ReadMode) $ void $
-        checkFsTree err $ FS.getFile fp (mockFiles fs)
-      files' <- checkFsTree err $ FS.openFile fp ex (mockFiles fs)
+        checkFsTree $ FS.getFile fp (mockFiles fs)
+      files' <- checkFsTree $ FS.openFile fp ex (mockFiles fs)
       return $ newHandle (fs { mockFiles = files' })
                          (OpenHandle fp (filePtr openMode))
   where
@@ -499,8 +489,8 @@ hOpen err@ErrorHandling{..} fp openMode = do
     filePtr (AppendMode    _) = Append
 
 -- | Mock implementation of 'hClose'
-hClose :: CanSimFS m => ErrorHandling FsError m -> Handle' -> m ()
-hClose err h = withHandleRead err h $ \_fs -> \case
+hClose :: CanSimFS m => Handle' -> m ()
+hClose h = withHandleRead h $ \_fs -> \case
     HandleOpen hs ->
       return ((), HandleClosed (ClosedHandle (openFilePath hs)))
     HandleClosed hs ->
@@ -516,18 +506,18 @@ hClose err h = withHandleRead err h $ \_fs -> \case
 --   (this means that when using 'IO.SeekFromEnd', the only valid offset is 0)
 -- * We do /not/ return the new file offset
 hSeek :: CanSimFS m
-      => ErrorHandling FsError m -> Handle' -> SeekMode -> Int64 -> m ()
-hSeek err h seekMode o = withOpenHandleRead err h $ \fs hs -> do
-    openPtr' <- seekFilePtr err fs h seekMode o
+      => Handle' -> SeekMode -> Int64 -> m ()
+hSeek h seekMode o = withOpenHandleRead h $ \fs hs -> do
+    openPtr' <- seekFilePtr fs h seekMode o
     return ((), hs { openPtr = openPtr' })
 
 -- | Get bytes from handle
 --
 -- NOTE: Unlike real I/O, we disallow 'hGetSome' on a handle in append mode.
-hGetSome :: CanSimFS m => ErrorHandling FsError m -> Handle' -> Word64 -> m ByteString
-hGetSome err@ErrorHandling{..} h n =
-    withOpenHandleRead err h $ \fs hs@OpenHandle{..} -> do
-      file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
+hGetSome :: CanSimFS m => Handle' -> Word64 -> m ByteString
+hGetSome h n =
+    withOpenHandleRead h $ \fs hs@OpenHandle{..} -> do
+      file <- checkFsTree $ FS.getFile openFilePath (mockFiles fs)
       case openPtr of
         RW r w o -> do
           unless r $ throwError (errNoReadAccess openFilePath "write")
@@ -547,14 +537,13 @@ hGetSome err@ErrorHandling{..} h n =
 -- | Thread safe version of 'hGetSome', which doesn't modify or read the file
 -- offset.
 hGetSomeAt :: CanSimFS m
-           => ErrorHandling FsError m
-           -> Handle'
+           => Handle'
            -> Word64
            -> AbsOffset
            -> m ByteString
-hGetSomeAt err@ErrorHandling{..} h n o =
-  withOpenHandleRead err h $ \fs hs@OpenHandle{..} -> do
-      file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
+hGetSomeAt h n o =
+  withOpenHandleRead h $ \fs hs@OpenHandle{..} -> do
+      file <- checkFsTree $ FS.getFile openFilePath (mockFiles fs)
       let o' = unAbsOffset o
       let fsize = fromIntegral (BS.length file) :: Word64
       case openPtr  of
@@ -585,20 +574,20 @@ hGetSomeAt err@ErrorHandling{..} h n o =
       , fsLimitation  = True
       }
 
-hPutSome :: CanSimFS m => ErrorHandling FsError m -> Handle' -> ByteString -> m Word64
-hPutSome err@ErrorHandling{..} h toWrite =
-    withOpenHandleModify err h $ \fs hs@OpenHandle{..} -> do
+hPutSome :: CanSimFS m => Handle' -> ByteString -> m Word64
+hPutSome h toWrite =
+    withOpenHandleModify h $ \fs hs@OpenHandle{..} -> do
       case openPtr of
         RW r w o -> do
           unless w $ throwError (errReadOnly openFilePath)
-          file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
+          file <- checkFsTree $ FS.getFile openFilePath (mockFiles fs)
           let file' = replace o toWrite file
-          files' <- checkFsTree err $ FS.replace openFilePath file' (mockFiles fs)
+          files' <- checkFsTree $ FS.replace openFilePath file' (mockFiles fs)
           return (written, (files', hs { openPtr = RW r w (o + written) }))
         Append -> do
-          file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
+          file <- checkFsTree $ FS.getFile openFilePath (mockFiles fs)
           let file' = file <> toWrite
-          files' <- checkFsTree err $ FS.replace openFilePath file' (mockFiles fs)
+          files' <- checkFsTree $ FS.replace openFilePath file' (mockFiles fs)
           return (written, (files', hs))
   where
     written = toEnum $ BS.length toWrite
@@ -653,10 +642,10 @@ hPutSome err@ErrorHandling{..} h toWrite =
 --   on subsequent writes. This is however not behaviour we want to emulate.
 --   In append mode however the Posix file offset is not used (and we don't
 --   even record it at all), appends always happen at the end of the file.
-hTruncate :: CanSimFS m => ErrorHandling FsError m -> Handle' -> Word64 -> m ()
-hTruncate err@ErrorHandling{..} h sz =
-    withOpenHandleModify err h $ \fs hs@OpenHandle{..} -> do
-      file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
+hTruncate :: CanSimFS m => Handle' -> Word64 -> m ()
+hTruncate h sz =
+    withOpenHandleModify h $ \fs hs@OpenHandle{..} -> do
+      file <- checkFsTree $ FS.getFile openFilePath (mockFiles fs)
       ptr' <- case (sz > fromIntegral (BS.length file), openPtr) of
                 (True, _) ->
                   throwError FsError {
@@ -679,7 +668,7 @@ hTruncate err@ErrorHandling{..} h sz =
                 (False, Append) ->
                   return Append
       let file' = BS.take (fromIntegral sz) file
-      files' <- checkFsTree err $ FS.replace openFilePath file' (mockFiles fs)
+      files' <- checkFsTree $ FS.replace openFilePath file' (mockFiles fs)
       -- TODO: Don't replace the file pointer (not changed)
       return ((), (files', hs { openPtr = ptr' }))
 
@@ -687,29 +676,29 @@ hTruncate err@ErrorHandling{..} h sz =
 --
 -- NOTE: In the mock implementation this is thread safe, because there can be
 -- only one writer, so concurrent threads cannot change the size of the file.
-hGetSize :: CanSimFS m => ErrorHandling FsError m -> Handle' -> m Word64
-hGetSize err h =
-    withOpenHandleRead err h $ \fs hs@OpenHandle{..} -> do
-      file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
+hGetSize :: CanSimFS m => Handle' -> m Word64
+hGetSize h =
+    withOpenHandleRead h $ \fs hs@OpenHandle{..} -> do
+      file <- checkFsTree $ FS.getFile openFilePath (mockFiles fs)
       return (fromIntegral (BS.length file), hs)
 
 {-------------------------------------------------------------------------------
   Operations on directories
 -------------------------------------------------------------------------------}
 
-createDirectory :: CanSimFS m => ErrorHandling FsError m -> FsPath -> m ()
-createDirectory err dir = modifyMockFS err $ \fs -> do
-    checkDoesNotExist err fs dir
-    files' <- checkFsTree err $ FS.createDirIfMissing dir (mockFiles fs)
+createDirectory :: CanSimFS m => FsPath -> m ()
+createDirectory dir = modifyMockFS $ \fs -> do
+    checkDoesNotExist fs dir
+    files' <- checkFsTree $ FS.createDirIfMissing dir (mockFiles fs)
     return ((), fs { mockFiles = files' })
 
 createDirectoryIfMissing :: CanSimFS m
-                         => ErrorHandling FsError m -> Bool -> FsPath -> m ()
-createDirectoryIfMissing err@ErrorHandling{..} createParents dir = do
+                         => Bool -> FsPath -> m ()
+createDirectoryIfMissing createParents dir = do
     -- Although @createDirectoryIfMissing /a/b/c@ will fail ("inappropriate
     -- type") if @b@ is a file (not a directory), for some strange reason it
     -- throws "already exists" if @c@ is is a file
-    fileExists <- doesFileExist err dir
+    fileExists <- doesFileExist dir
     if fileExists then
       throwError FsError {
           fsErrorType   = FsResourceAlreadyExist
@@ -719,8 +708,8 @@ createDirectoryIfMissing err@ErrorHandling{..} createParents dir = do
         , fsErrorStack  = callStack
         , fsLimitation  = False
         }
-    else modifyMockFS err $ \fs -> do
-      files' <- checkFsTree err $ go createParents (mockFiles fs)
+    else modifyMockFS $ \fs -> do
+      files' <- checkFsTree $ go createParents (mockFiles fs)
       return ((), fs { mockFiles = files' })
   where
     go :: Bool -> Files -> Either FsTreeError Files
@@ -728,17 +717,17 @@ createDirectoryIfMissing err@ErrorHandling{..} createParents dir = do
     go False = FS.createDirIfMissing   dir
 
 listDirectory :: CanSimFS m
-              => ErrorHandling FsError m -> FsPath -> m (Set String)
-listDirectory err fp = readMockFS err $
+              => FsPath -> m (Set String)
+listDirectory fp = readMockFS $
       fmap (S.fromList . map Text.unpack . M.keys)
-    . checkFsTree err
+    . checkFsTree
     . FS.getDir fp
 
 -- | Check if directory exists
 --
 -- It seems real I/O maps what would be "inapproriate device" errors to False.
-doesDirectoryExist :: CanSimFS m => ErrorHandling FsError m -> FsPath -> m Bool
-doesDirectoryExist err fp = readMockFS err $ \fs ->
+doesDirectoryExist :: CanSimFS m => FsPath -> m Bool
+doesDirectoryExist fp = readMockFS $ \fs ->
     return $ case FS.getDir fp fs of
                Left  _ -> False
                Right _ -> True
@@ -746,8 +735,8 @@ doesDirectoryExist err fp = readMockFS err $ \fs ->
 -- | Check if file exists
 --
 -- See comments for 'doesDirectoryExist'.
-doesFileExist :: CanSimFS m => ErrorHandling FsError m -> FsPath -> m Bool
-doesFileExist err fp = readMockFS err $ \fs ->
+doesFileExist :: CanSimFS m => FsPath -> m Bool
+doesFileExist fp = readMockFS $ \fs ->
     return $ case FS.getFile fp fs of
                Left  _ -> False
                Right _ -> True
@@ -769,9 +758,9 @@ doesFileExist err fp = readMockFS err $ \fs ->
 -- theory it should throw a 'FsResourceInappropriateType' error. To avoid this
 -- mismatch during testing, we also consider removing the root folder a
 -- limitation of the mock file system.
-removeFile :: CanSimFS m => ErrorHandling FsError m -> FsPath -> m ()
-removeFile err@ErrorHandling{..} fp =
-    modifyMockFS err $ \fs -> case fsPathToList fp of
+removeFile :: CanSimFS m => FsPath -> m ()
+removeFile fp =
+    modifyMockFS $ \fs -> case fsPathToList fp of
       []
         -> throwError FsError {
                fsErrorType   = FsIllegalOperation
@@ -791,7 +780,7 @@ removeFile err@ErrorHandling{..} fp =
              , fsLimitation  = True
              }
       _ -> do
-        files' <- checkFsTree err $ FS.removeFile fp (mockFiles fs)
+        files' <- checkFsTree $ FS.removeFile fp (mockFiles fs)
         return ((), fs { mockFiles = files' })
 
 {-------------------------------------------------------------------------------

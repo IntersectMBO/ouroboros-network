@@ -86,7 +86,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
                      (epochFileParser)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -777,12 +776,12 @@ semantics :: ImmutableDBEnv h
 semantics env@ImmutableDBEnv {..} (At cmdErr) =
     At . fmap (reference . Opaque) . Resp <$> case opaque <$> cmdErr of
 
-      CmdErr Nothing       cmd its -> tryDB $
+      CmdErr Nothing       cmd its -> tryImmDB $
         run env (semanticsCorruption hasFS) its cmd
 
       CmdErr (Just errors) cmd its -> do
         tipBefore <- getTip db
-        res       <- withErrors varErrors errors $ tryDB $
+        res       <- withErrors varErrors errors $ tryImmDB $
           run env (semanticsCorruption hasFS) its cmd
         case res of
           -- If the command resulted in a 'UserError', we didn't even get the
@@ -810,9 +809,7 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
             -- Note that we might have created an iterator, make sure to close
             -- it as well
   where
-    tryDB = tryImmDB EH.monadCatch
-
-    truncateAndReopen cmd its tipBefore = tryDB $ do
+    truncateAndReopen cmd its tipBefore = tryImmDB $ do
       -- Close all open iterators as we will perform truncation
       mapM_ iteratorClose (unWithEq <$> its)
       -- Close the database in case no errors occurred and it wasn't
@@ -1240,7 +1237,7 @@ test cacheConfig cmds = do
     (tracer, getTrace) <- QC.run $ recordingTracerIORef
     registry           <- QC.run $ unsafeNewRegistry
 
-    let hasFS  = mkSimErrorHasFS EH.monadCatch fsVar varErrors
+    let hasFS  = mkSimErrorHasFS fsVar varErrors
         parser = epochFileParser hasFS (const <$> decode) isEBB
           getBinaryInfo testBlockIsValid
         btime  = settableBlockchainTime varCurSlot

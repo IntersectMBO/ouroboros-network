@@ -148,7 +148,7 @@ readEntry index epoch isEBB slotOffset = runIdentity <$>
 ------------------------------------------------------------------------------}
 
 fileBackedIndex
-  :: forall m hash h. MonadThrow m
+  :: forall m hash h. MonadCatch m
   => HasFS m h
   -> HashInfo hash
   -> Index m hash h

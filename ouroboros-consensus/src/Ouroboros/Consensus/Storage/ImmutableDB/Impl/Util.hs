@@ -15,7 +15,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
   , tryImmDB
   , parseDBFile
   , validateIteratorRange
-  , onImmDbException
   , epochSlotToTip
   , dbFilesOnDisk
   , removeFilesStartingFrom
@@ -44,8 +43,6 @@ import           Ouroboros.Consensus.Storage.EpochInfo.API
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
@@ -77,10 +74,8 @@ throwUnexpectedError = throwM . UnexpectedError
 -- This should be used whenever you want to run an action on the ImmutableDB
 -- and catch the 'ImmutableDBError' and the 'FsError' (wrapped in the former)
 -- it may thrown.
-tryImmDB :: MonadCatch m
-         => ErrorHandling FsError m
-         -> m a -> m (Either ImmutableDBError a)
-tryImmDB fsErr = fmap squash . EH.try fsErr . try
+tryImmDB :: MonadCatch m => m a -> m (Either ImmutableDBError a)
+tryImmDB = fmap squash . try . try
   where
     fromFS = UnexpectedError . FileSystemError
 
@@ -140,18 +135,6 @@ validateIteratorRange epochInfo tip mbStart mbEnd = runExceptT $ do
       TipGen                -> return True
       Tip (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
       Tip (Block lastSlot)  -> return $ slot > lastSlot
-
--- | Execute some error handler when an 'Exception' or an 'FsError' is thrown
--- while executing an action.
---
--- TODO replace with 'onException'
-onImmDbException :: MonadCatch m
-                 => ErrorHandling FsError m
-                 -> m b  -- ^ What to do when an error is thrown
-                 -> m a  -- ^ The action to execute
-                 -> m a
-onImmDbException fsErr onErr m =
-    onException (EH.onException fsErr m onErr) onErr
 
 -- | Convert an 'EpochSlot' to a 'Tip'
 epochSlotToTip :: Monad m => EpochInfo m -> EpochSlot -> m ImmTip

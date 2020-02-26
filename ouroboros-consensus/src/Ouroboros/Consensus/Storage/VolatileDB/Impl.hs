@@ -115,7 +115,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 import           Ouroboros.Consensus.Storage.VolatileDB.FileInfo (FileInfo)
 import qualified Ouroboros.Consensus.Storage.VolatileDB.FileInfo as FileInfo
@@ -212,7 +211,7 @@ closeDBImpl VolatileDBEnv{..} = do
     case mbInternalState of
       VolatileDbClosed -> traceWith _tracer DBAlreadyClosed
       VolatileDbOpen InternalState{..} ->
-        wrapFsError hasFsErr $ hClose _currentWriteHandle
+        wrapFsError $ hClose _currentWriteHandle
   where
     HasFS{..} = _dbHasFS
 
@@ -476,7 +475,7 @@ mkInternalStateDB :: forall m blockId e h.
                   -> BlocksPerFile
                   -> m (InternalState blockId h)
 mkInternalStateDB hasFS@HasFS{..} parser tracer maxBlocksPerFile =
-    wrapFsError hasFsErr $ do
+    wrapFsError $ do
       createDirectoryIfMissing True dbDir
       allFiles <- map toFsPath . Set.toList <$> listDirectory dbDir
       filesWithIds <- logInvalidFiles $ parseAllFds allFiles
@@ -517,7 +516,7 @@ mkInternalState
   -> [(FileId, FsPath)]
   -> m (InternalState blockId h)
 mkInternalState hasFS parser tracer maxBlocksPerFile files =
-    wrapFsError (hasFsErr hasFS) $ do
+    wrapFsError $ do
       (currentMap', currentRevMap', currentSuccMap') <-
         foldM validateFile (Index.empty, Map.empty, Map.empty) files
 
@@ -539,10 +538,9 @@ mkInternalState hasFS parser tracer maxBlocksPerFile files =
       currentWriteHandle <- hOpen hasFS currentWritePath (AppendMode AllowExisting)
       -- If 'hGetSize' fails, we should close the opened handle that didn't
       -- make it into the state, otherwise we'd leak it.
-      currentWriteOffset <-
-        EH.onException (hasFsErr hasFS)
-          (hGetSize hasFS currentWriteHandle)
-          (hClose   hasFS currentWriteHandle)
+      currentWriteOffset <- onException
+        (hGetSize hasFS currentWriteHandle)
+        (hClose   hasFS currentWriteHandle)
 
       return InternalState {
           _currentWriteHandle = currentWriteHandle
@@ -607,7 +605,7 @@ modifyState :: forall blockId m r. (HasCallStack, IOLike m)
                )
             -> m r
 modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
-    (mr, ()) <- generalBracket open close (tryVolDB hasFsErr . mutation)
+    (mr, ()) <- generalBracket open close (tryVolDB . mutation)
     case mr of
       Left  e      -> throwM e
       Right (_, r) -> return r
@@ -647,7 +645,7 @@ modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
     closeOpenHandle :: OpenOrClosed blockId h -> m ()
     closeOpenHandle VolatileDbClosed                    = return ()
     closeOpenHandle (VolatileDbOpen InternalState {..}) =
-      wrapFsError hasFsErr $ hClose _currentWriteHandle
+      wrapFsError $ hClose _currentWriteHandle
 
 -- | Gets part of the 'InternalState' in 'STM'.
 getterSTM :: forall m blockId a. IOLike m

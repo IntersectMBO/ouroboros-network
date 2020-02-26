@@ -67,7 +67,6 @@ import           Ouroboros.Consensus.Storage.Common (EpochNo, EpochSize)
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..),
                      AllowExisting (..), OpenMode (..), SeekMode (..))
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
                      runGet)
@@ -364,16 +363,16 @@ unfinalise hasFS epoch = do
 -- The file is opened with the given 'AllowExisting' value. When given
 -- 'MustBeNew', the version number is written to the file.
 open
-  :: (HasCallStack, Monad m)
+  :: (HasCallStack, MonadCatch m)
   => HasFS m h
   -> EpochNo
   -> AllowExisting
   -> m (Handle h)
-open hasFS@HasFS { hOpen, hClose, hasFsErr } epoch allowExisting = do
+open hasFS@HasFS { hOpen, hClose } epoch allowExisting = do
     -- TODO we rely on the fact that if the file exists, it already contains
     -- the version number and the first offset. What if that is not the case?
     pHnd <- hOpen primaryIndexFile (AppendMode allowExisting)
-    flip (EH.onException hasFsErr) (hClose pHnd) $ do
+    flip onException (hClose pHnd) $ do
       case allowExisting of
         AllowExisting -> return ()
         -- If the file is new, write the version number and the first offset,

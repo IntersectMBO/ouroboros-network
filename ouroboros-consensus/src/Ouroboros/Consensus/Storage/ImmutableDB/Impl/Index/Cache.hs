@@ -74,8 +74,8 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as P
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
                      (BlockSize (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
-import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
-                     (onImmDbException, renderFile, throwUnexpectedError)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
+                     throwUnexpectedError)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
                      (RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types (HashInfo (..),
@@ -679,7 +679,7 @@ openPrimaryIndex cacheEnv epoch allowExisting = do
     lastUsed <- LastUsed <$> getMonotonicTime
     pHnd <- Primary.open hasFS epoch allowExisting
     -- Don't leak the handle in case of an exception
-    onImmDbException hasFsErr (hClose pHnd) $ do
+    flip onException (hClose pHnd) $ do
       newCurrentEpochInfo <- case allowExisting of
         MustBeNew     -> return emptyCurrentEpochInfo
         AllowExisting -> loadCurrentEpochInfo hasFS hashInfo epoch
@@ -692,7 +692,7 @@ openPrimaryIndex cacheEnv epoch allowExisting = do
       return pHnd
   where
     CacheEnv { hasFS, hashInfo, cacheVar, cacheConfig, tracer } = cacheEnv
-    HasFS { hClose, hasFsErr } = hasFS
+    HasFS { hClose } = hasFS
     CacheConfig { pastEpochsToCache } = cacheConfig
 
 appendOffsets

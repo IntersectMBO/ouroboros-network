@@ -44,7 +44,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.EpochInfo (fixedSizeEpochInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
 import           Test.Util.Orphans.IOLike ()

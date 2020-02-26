@@ -17,7 +17,6 @@ import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import qualified Ouroboros.Consensus.Storage.FS.Handle as H
 import qualified Ouroboros.Consensus.Storage.IO as F
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 {-------------------------------------------------------------------------------
   I/O implementation of HasFS
@@ -66,7 +65,6 @@ ioHasFS mount = HasFS {
         Dir.createDirectoryIfMissing createParent (root fp)
     , removeFile = \fp -> rethrowFsError fp $
         Dir.removeFile (root fp)
-    , hasFsErr = EH.exceptions
     , mkFsErrorPath = fsToFsErrorPath mount
     }
   where

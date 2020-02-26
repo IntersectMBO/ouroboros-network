@@ -6,8 +6,7 @@
 module Test.Ouroboros.Storage.Util where
 -- TODO Move to Test.Util.Storage?
 
-import           Control.Exception (Exception, SomeException)
-import qualified Control.Exception as E
+import           Control.Exception (SomeException)
 
 import           System.Directory (getTemporaryDirectory)
 import           System.IO.Temp (withTempDirectory)
@@ -17,6 +16,7 @@ import           Test.Tasty.HUnit
 
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.Condense (Condense, condense)
+import           Ouroboros.Consensus.Util.IOLike (try)
 
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types
@@ -26,8 +26,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDBError (..),
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as Immutable
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (tryImmDB)
 import           Ouroboros.Consensus.Storage.IO (sameError)
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDBError)
 
 import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
@@ -38,13 +36,12 @@ import qualified Test.Util.FS.Sim.STM as Sim
  Handy combinators
 -------------------------------------------------------------------------------}
 
-withMockFS :: Exception e
-           => (forall x. IO x -> IO (Either e x))
+withMockFS :: (forall x. IO x -> IO (Either e x))
            -> (Either e (a, MockFS) -> Assertion)
-           -> (HasFS IO HandleMock -> ErrorHandling e IO -> IO a)
+           -> (HasFS IO HandleMock -> IO a)
            -> Assertion
 withMockFS tryE assertion sim = do
-    r <- tryE $ Sim.runSimFS EH.exceptions Mock.empty (flip sim EH.exceptions)
+    r <- tryE $ Sim.runSimFS Mock.empty sim
     assertion r
 
 expectError :: (HasCallStack, Show a)
@@ -117,18 +114,18 @@ expectVolDBResult = expectResult show
 
 -- | Given a \"script\", runs it over a simulated FS and over IO (using a
 -- temporary, throw-away folder) and compare the results.
-apiEquivalence :: (HasCallStack, Eq a, Show a, Exception e)
+apiEquivalence :: (HasCallStack, Eq a, Show a)
                => (forall x. IO x -> IO (Either e x))
                -> (e -> String)
                -> (e -> e -> Bool)
                -> (Either e a -> Assertion)
-               -> (forall h. HasFS IO h -> ErrorHandling e IO -> IO a)
+               -> (forall h. HasFS IO h -> IO a)
                -> Assertion
 apiEquivalence tryE prettyError sameErr resAssert m = do
     sysTmpDir <- getTemporaryDirectory
     withTempDirectory sysTmpDir "cardano." $ \tmpDir -> do
-        r1 <- tryE $ Sim.runSimFS EH.exceptions Mock.empty (flip m EH.exceptions)
-        r2 <- tryE $ m (ioHasFS (MountPoint tmpDir)) EH.exceptions
+        r1 <- tryE $ Sim.runSimFS Mock.empty m
+        r2 <- tryE $ m (ioHasFS (MountPoint tmpDir))
         case (r1, r2) of
           (Left e1, Left e2) -> do
             assertBool ("SimFS & IOFS didn't return the same error:" <>
@@ -159,7 +156,7 @@ apiEquivalence tryE prettyError sameErr resAssert m = do
 
 apiEquivalenceFs :: (HasCallStack, Eq a, Show a)
                  => (Either FsError a -> Assertion)
-                 -> (forall h. HasFS IO h -> ErrorHandling FsError IO -> IO a)
+                 -> (forall h. HasFS IO h -> IO a)
                  -> Assertion
 apiEquivalenceFs = apiEquivalence tryFS prettyFsError sameError
 
@@ -167,17 +164,14 @@ apiEquivalenceImmDB :: (HasCallStack, Eq a, Show a)
                     => (Either ImmutableDBError a -> Assertion)
                     -> (forall h. HasFS IO h -> IO a)
                     -> Assertion
-apiEquivalenceImmDB f g =
-    apiEquivalence try prettyImmutableDBError sameImmutableDBError f
-      (\hasFS _err -> g hasFS)
-  where
-    try = tryImmDB EH.exceptions
+apiEquivalenceImmDB =
+    apiEquivalence tryImmDB prettyImmutableDBError sameImmutableDBError
 
 tryAny :: IO a -> IO (Either SomeException a)
-tryAny = E.try
+tryAny = try
 
 tryFS :: IO a -> IO (Either FsError a)
-tryFS = E.try
+tryFS = try
 
 {-------------------------------------------------------------------------------
   QuickCheck auxiliary
