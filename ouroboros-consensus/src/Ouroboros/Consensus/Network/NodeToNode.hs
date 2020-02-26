@@ -455,7 +455,7 @@ initiator
   -> N.NodeToNodeVersion
   -> Apps m peer b b b a
   -> peer
-  -> OuroborosApplication 'InitiatorApp b m a Void
+  -> OuroborosApplication 'InitiatorMode b m a Void
 initiator miniProtocolParameters _version Apps {..} them =
     nodeToNodeProtocols
       miniProtocolParameters
@@ -477,7 +477,7 @@ responder
   -> N.NodeToNodeVersion
   -> Apps m peer b b b a
   -> peer
-  -> OuroborosApplication 'ResponderApp b m Void a
+  -> OuroborosApplication 'ResponderMode b m Void a
 responder miniProtocolParameters _version Apps {..} them =
     nodeToNodeProtocols
       miniProtocolParameters

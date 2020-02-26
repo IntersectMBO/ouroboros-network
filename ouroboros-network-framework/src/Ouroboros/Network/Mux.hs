@@ -4,7 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Mux
-  ( AppType (..)
+  ( MuxMode (..)
   , OuroborosApplication (..)
   , MiniProtocol (..)
   , MiniProtocolNum (..)
@@ -34,7 +34,7 @@ import           Network.TypedProtocol.Pipelined
 
 import qualified Network.Mux as Mux
 import           Network.Mux
-                   ( AppType(..), HasInitiator, HasResponder
+                   ( MuxMode(..), HasInitiator, HasResponder
                    , MiniProtocolNum, MiniProtocolLimits(..)
                    , MuxError(..), MuxErrorType(..) )
 
@@ -46,29 +46,29 @@ import           Ouroboros.Network.Driver
 -- |  Like 'MuxApplication' but using a 'MuxPeer' rather than a raw
 -- @Channel -> m a@ action.
 --
-newtype OuroborosApplication (appType :: AppType) bytes m a b =
-        OuroborosApplication [MiniProtocol appType bytes m a b]
+newtype OuroborosApplication (mode :: MuxMode) bytes m a b =
+        OuroborosApplication [MiniProtocol mode bytes m a b]
 
-data MiniProtocol (appType :: AppType) bytes m a b =
+data MiniProtocol (mode :: MuxMode) bytes m a b =
      MiniProtocol {
        miniProtocolNum    :: !MiniProtocolNum,
        miniProtocolLimits :: !MiniProtocolLimits,
-       miniProtocolRun    :: !(RunMiniProtocol appType bytes m a b)
+       miniProtocolRun    :: !(RunMiniProtocol mode bytes m a b)
      }
 
-data RunMiniProtocol (appType :: AppType) bytes m a b where
+data RunMiniProtocol (mode :: MuxMode) bytes m a b where
      InitiatorProtocolOnly
        :: MuxPeer bytes m a
-       -> RunMiniProtocol InitiatorApp bytes m a Void
+       -> RunMiniProtocol InitiatorMode bytes m a Void
 
      ResponderProtocolOnly
        :: MuxPeer bytes m b
-       -> RunMiniProtocol ResponderApp bytes m Void b
+       -> RunMiniProtocol ResponderMode bytes m Void b
 
      InitiatorAndResponderProtocol
        :: MuxPeer bytes m a
        -> MuxPeer bytes m b
-       -> RunMiniProtocol InitiatorAndResponderApp bytes m a b
+       -> RunMiniProtocol InitiatorResponderMode bytes m a b
 
 data MuxPeer bytes m a where
     MuxPeer :: Exception failure
@@ -89,8 +89,8 @@ data MuxPeer bytes m a where
            -> MuxPeer bytes m a
 
 toApplication :: (MonadCatch m, MonadAsync m)
-              => OuroborosApplication appType LBS.ByteString m a b
-              -> Mux.MuxApplication appType m a b
+              => OuroborosApplication mode LBS.ByteString m a b
+              -> Mux.MuxApplication mode m a b
 toApplication (OuroborosApplication ptcls) =
   Mux.MuxApplication
     [ Mux.MuxMiniProtocol {
@@ -101,10 +101,10 @@ toApplication (OuroborosApplication ptcls) =
     | ptcl <- ptcls ]
   where
 
-toMuxRunMiniProtocol :: forall appType m a b.
+toMuxRunMiniProtocol :: forall mode m a b.
                         (MonadCatch m, MonadAsync m)
-                     => RunMiniProtocol appType LBS.ByteString m a b
-                     -> Mux.RunMiniProtocol appType m a b
+                     => RunMiniProtocol mode LBS.ByteString m a b
+                     -> Mux.RunMiniProtocol mode m a b
 toMuxRunMiniProtocol (InitiatorProtocolOnly i) =
   Mux.InitiatorProtocolOnly (runMuxPeer i . fromChannel)
 toMuxRunMiniProtocol (ResponderProtocolOnly r) =

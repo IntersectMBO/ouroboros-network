@@ -13,7 +13,7 @@ module Network.Mux (
     , MuxBearer
 
     -- * Defining 'MuxApplication's
-    , AppType (..)
+    , MuxMode (..)
     , HasInitiator
     , HasResponder
     , MuxApplication (..)
@@ -95,7 +95,7 @@ import qualified Network.Mux.JobPool as JobPool
 -- 'Wanton'
 --
 muxStart
-    :: forall m appType a b.
+    :: forall m mode a b.
        ( MonadAsync m
        , MonadCatch m
        , MonadFork m
@@ -108,7 +108,7 @@ muxStart
        , Eq (Async m ())
        )
     => Tracer m MuxTrace
-    -> MuxApplication appType m a b
+    -> MuxApplication mode m a b
     -> MuxBearer m
     -> m ()
 muxStart tracer (MuxApplication ptcls) bearer = do
@@ -135,8 +135,8 @@ muxStart tracer (MuxApplication ptcls) bearer = do
       -- All the other jobs are shut down Upon completion of withJobPool.
       monitor tracer jobpool dispatchtbl respondertbl
   where
-    addProtocolQueues :: MuxMiniProtocol appType m a b
-                      -> m ( MuxMiniProtocol appType m a b
+    addProtocolQueues :: MuxMiniProtocol mode m a b
+                      -> m ( MuxMiniProtocol mode m a b
                            , StrictTVar m BL.ByteString
                            , StrictTVar m BL.ByteString
                            )
@@ -146,7 +146,7 @@ muxStart tracer (MuxApplication ptcls) bearer = do
         return (ptcl, initiatorQ, responderQ)
 
     -- Construct the array of TBQueues, one for each protocol id, and each mode
-    setupDispatchTable :: [( MuxMiniProtocol appType m a b
+    setupDispatchTable :: [( MuxMiniProtocol mode m a b
                            , StrictTVar m BL.ByteString
                            , StrictTVar m BL.ByteString
                            )]
@@ -192,21 +192,21 @@ muxStart tracer (MuxApplication ptcls) bearer = do
     miniProtocolInitiatorJob = miniProtocolJob selectInitiator InitiatorDir
     miniProtocolResponderJob = miniProtocolJob selectResponder ResponderDir
 
-    selectInitiator :: RunMiniProtocol appType m a b -> Maybe (Channel m -> m a)
+    selectInitiator :: RunMiniProtocol mode m a b -> Maybe (Channel m -> m a)
     selectInitiator (ResponderProtocolOnly                   _) = Nothing
     selectInitiator (InitiatorProtocolOnly         initiator)   = Just initiator
     selectInitiator (InitiatorAndResponderProtocol initiator _) = Just initiator
     
-    selectResponder :: RunMiniProtocol appType m a b -> Maybe (Channel m -> m b)
+    selectResponder :: RunMiniProtocol mode m a b -> Maybe (Channel m -> m b)
     selectResponder (ResponderProtocolOnly           responder) = Just responder
     selectResponder (InitiatorProtocolOnly         _)           = Nothing
     selectResponder (InitiatorAndResponderProtocol _ responder) = Just responder
 
     miniProtocolJob
-      :: (RunMiniProtocol appType m a b -> Maybe (Channel m -> m c))
+      :: (RunMiniProtocol mode m a b -> Maybe (Channel m -> m c))
       -> MiniProtocolDir
       -> EgressQueue m
-      -> MuxMiniProtocol appType m a b
+      -> MuxMiniProtocol mode m a b
       -> MiniProtocolIx
       -> StrictTVar m BL.ByteString
       -> StrictTVar m BL.ByteString

@@ -11,7 +11,7 @@ module Network.Mux.Types (
     , MiniProtocolNum (..)
     , MiniProtocolDir (..)
 
-    , AppType (..)
+    , MuxMode (..)
     , HasInitiator
     , HasResponder
     , MuxApplication (..)
@@ -88,20 +88,20 @@ data MiniProtocolLimits =
 --   a function that runs the mux layer on it.
 --
 
-data AppType where
-    InitiatorApp             :: AppType
-    ResponderApp             :: AppType
-    InitiatorAndResponderApp :: AppType
+data MuxMode where
+    InitiatorMode          :: MuxMode
+    ResponderMode          :: MuxMode
+    InitiatorResponderMode :: MuxMode
 
-type family HasInitiator (appType :: AppType) :: Bool where
-    HasInitiator InitiatorApp             = True
-    HasInitiator ResponderApp             = False
-    HasInitiator InitiatorAndResponderApp = True
+type family HasInitiator (mode :: MuxMode) :: Bool where
+    HasInitiator InitiatorMode          = True
+    HasInitiator ResponderMode          = False
+    HasInitiator InitiatorResponderMode = True
 
-type family HasResponder (appType :: AppType) :: Bool where
-    HasResponder InitiatorApp             = False
-    HasResponder ResponderApp             = True
-    HasResponder InitiatorAndResponderApp = True
+type family HasResponder (mode :: MuxMode) :: Bool where
+    HasResponder InitiatorMode          = False
+    HasResponder ResponderMode          = True
+    HasResponder InitiatorResponderMode = True
 
 -- | Application run by mux layer.
 --
@@ -116,36 +116,36 @@ type family HasResponder (appType :: AppType) :: Bool where
 --   serving downstream peers using server side of each protocol and getting
 --   updates from upstream peers using client side of each of the protocols.
 --
-newtype MuxApplication (appType :: AppType) m a b =
-        MuxApplication [MuxMiniProtocol appType m a b]
+newtype MuxApplication (mode :: MuxMode) m a b =
+        MuxApplication [MuxMiniProtocol mode m a b]
 
-data MuxMiniProtocol (appType :: AppType) m a b =
+data MuxMiniProtocol (mode :: MuxMode) m a b =
      MuxMiniProtocol {
        miniProtocolNum    :: !MiniProtocolNum,
        miniProtocolLimits :: !MiniProtocolLimits,
-       miniProtocolRun    :: !(RunMiniProtocol appType m a b)
+       miniProtocolRun    :: !(RunMiniProtocol mode m a b)
      }
 
-data RunMiniProtocol (appType :: AppType) m a b where
+data RunMiniProtocol (mode :: MuxMode) m a b where
   InitiatorProtocolOnly
     -- Initiator application; most simple application will be @'runPeer'@ or
     -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
     -- @ptcl@.  But it allows to handle resources if just application of
     -- @'runPeer'@ is not enough.  It will be run as @'InitiatorDir'@.
     :: (Channel m -> m a)
-    -> RunMiniProtocol InitiatorApp m a Void
+    -> RunMiniProtocol InitiatorMode m a Void
 
   ResponderProtocolOnly
     -- Responder application; similarly to the @'MuxInitiatorApplication'@ but it
     -- will be run using @'ResponderDir'@.
     :: (Channel m -> m b)
-    -> RunMiniProtocol ResponderApp m Void b
+    -> RunMiniProtocol ResponderMode m Void b
 
   InitiatorAndResponderProtocol
     -- Initiator and server applications.
     :: (Channel m -> m a)
     -> (Channel m -> m b)
-    -> RunMiniProtocol InitiatorAndResponderApp m a b
+    -> RunMiniProtocol InitiatorResponderMode m a b
 
 --
 -- Mux internal types

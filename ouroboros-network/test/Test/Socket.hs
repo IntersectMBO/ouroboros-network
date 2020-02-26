@@ -113,7 +113,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        initiatorApp :: OuroborosApplication InitiatorApp BL.ByteString IO () Void
+        initiatorApp :: OuroborosApplication InitiatorMode BL.ByteString IO () Void
         initiatorApp = testProtocols1 chainSyncInitator
 
         chainSyncInitator =
@@ -127,7 +127,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         server :: ChainSync.ChainSyncServer block (Tip block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
-        responderApp :: OuroborosApplication ResponderApp BL.ByteString IO Void ()
+        responderApp :: OuroborosApplication ResponderMode BL.ByteString IO Void ()
         responderApp = testProtocols1 chainSyncResponder
 
         chainSyncResponder =

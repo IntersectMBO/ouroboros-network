@@ -345,7 +345,7 @@ responder
   :: N.NodeToClientVersion
   -> Apps m peer b b b a
   -> peer
-  -> OuroborosApplication 'ResponderApp b m Void a
+  -> OuroborosApplication 'ResponderMode b m Void a
 responder version Apps {..} peer =
     nodeToClientProtocols
       NodeToClientProtocols {
