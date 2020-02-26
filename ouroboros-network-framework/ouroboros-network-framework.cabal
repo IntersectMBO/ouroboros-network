@@ -119,6 +119,10 @@ test-suite ouroboros-network-framework-tests
                      , tasty
                      , tasty-quickcheck
 
+  if os(windows)
+    build-depends:     Win32-network   <  0.2.0.0,
+                       Win32           >= 2.5.4.1 && <2.9
+
   default-language:    Haskell2010
   ghc-options:         -rtsopts
                        -Wall
@@ -143,5 +147,10 @@ executable demo-ping-pong
                        text,
                        typed-protocols,
                        typed-protocols-examples
+
+  if os(windows)
+    build-depends:     Win32-network   <  0.2.0.0,
+                       Win32           >= 2.5.4.1 && <2.9
+
   default-language:    Haskell2010
   ghc-options:         -Wall
