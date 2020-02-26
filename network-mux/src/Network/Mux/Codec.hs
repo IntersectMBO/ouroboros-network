@@ -33,12 +33,12 @@ encodeMuxSDU sdu =
   where
     enc = do
         Bin.putWord32be $ unRemoteClockModel $ msTimestamp sdu
-        Bin.putWord16be $ putNumAndMode (msNum sdu) (msMode sdu)
+        Bin.putWord16be $ putNumAndMode (msNum sdu) (msDir sdu)
         Bin.putWord16be $ fromIntegral $ BL.length $ msBlob sdu
 
-    putNumAndMode :: MiniProtocolNum -> MiniProtocolMode -> Word16
-    putNumAndMode (MiniProtocolNum n) ModeInitiator = n
-    putNumAndMode (MiniProtocolNum n) ModeResponder = n .|. 0x8000
+    putNumAndMode :: MiniProtocolNum -> MiniProtocolDir -> Word16
+    putNumAndMode (MiniProtocolNum n) InitiatorDir = n
+    putNumAndMode (MiniProtocolNum n) ResponderDir = n .|. 0x8000
 
 
 -- | Decode a 'MuSDU' header.  A left inverse of 'encodeMuxSDU'.
@@ -58,15 +58,15 @@ decodeMuxSDU buf =
         mhTimestamp <- RemoteClockModel <$> Bin.getWord32be
         a <- Bin.getWord16be
         mhLength <- Bin.getWord16be
-        let mhMode = getMode a
+        let mhDir  = getDir a
             mhNum  = MiniProtocolNum (a .&. 0x7fff)
         return $ MuxSDUHeader {
             mhTimestamp,
             mhNum,
-            mhMode,
+            mhDir,
             mhLength
           }
 
-    getMode mid =
-        if mid .&. 0x8000 == 0 then ModeInitiator
-                               else ModeResponder
+    getDir mid =
+        if mid .&. 0x8000 == 0 then InitiatorDir
+                               else ResponderDir

@@ -133,7 +133,7 @@ type EgressQueue m = TBQueue m (TranslocationServiceRequest m)
 --  responsible for the segmentation of concrete representation into
 --  appropriate SDU's for onward transmission.
 data TranslocationServiceRequest m =
-     TLSRDemand !MiniProtocolNum !MiniProtocolMode !(Wanton m)
+     TLSRDemand !MiniProtocolNum !MiniProtocolDir !(Wanton m)
 
 -- | A Wanton represent the concrete data to be translocated, note that the
 --  TVar becoming empty indicates -- that the last fragment of the data has
@@ -169,7 +169,7 @@ processSingleWanton :: MonadSTM m
                     => MuxState m
                     -> TimeoutFn m
                     -> MiniProtocolNum
-                    -> MiniProtocolMode
+                    -> MiniProtocolDir
                     -> Wanton m
                     -> m ()
 processSingleWanton MuxState{egressQueue, bearer} timeout mpc md wanton = do
@@ -192,7 +192,7 @@ processSingleWanton MuxState{egressQueue, bearer} timeout mpc md wanton = do
                 msHeader = MuxSDUHeader {
                     mhTimestamp = (RemoteClockModel 0),
                     mhNum       = mpc,
-                    mhMode      = md,
+                    mhDir       = md,
                     mhLength    = fromIntegral $ BL.length blob
                   },
                 msBlob = blob

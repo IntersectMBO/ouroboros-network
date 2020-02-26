@@ -10,7 +10,7 @@
 module Network.Mux.Types (
       MiniProtocolLimits (..)
     , MiniProtocolNum (..)
-    , MiniProtocolMode (..)
+    , MiniProtocolDir (..)
 
     , AppType (..)
     , HasInitiator
@@ -27,7 +27,7 @@ module Network.Mux.Types (
     , msTimestamp
     , setTimestamp
     , msNum
-    , msMode
+    , msDir
     , msLength
     , RemoteClockModel (..)
     , remoteClockPrecision
@@ -133,13 +133,13 @@ data RunMiniProtocol (appType :: AppType) m a b where
     -- Initiator application; most simple application will be @'runPeer'@ or
     -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
     -- @ptcl@.  But it allows to handle resources if just application of
-    -- @'runPeer'@ is not enough.  It will be run as @'ModeInitiator'@.
+    -- @'runPeer'@ is not enough.  It will be run as @'InitiatorDir'@.
     :: (Channel m -> m a)
     -> RunMiniProtocol InitiatorApp m a Void
 
   ResponderProtocolOnly
     -- Responder application; similarly to the @'MuxInitiatorApplication'@ but it
-    -- will be run using @'ModeResponder'@.
+    -- will be run using @'ResponderDir'@.
     :: (Channel m -> m b)
     -> RunMiniProtocol ResponderApp m Void b
 
@@ -157,14 +157,14 @@ data RunMiniProtocol (appType :: AppType) m a b where
 newtype MiniProtocolIx = MiniProtocolIx Int
   deriving (Eq, Ord, Num, Enum, Ix, Show)
 
-data MiniProtocolMode = ModeInitiator | ModeResponder
+data MiniProtocolDir = InitiatorDir | ResponderDir
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
 
 
 data MuxSDUHeader = MuxSDUHeader {
       mhTimestamp :: !RemoteClockModel
     , mhNum       :: !MiniProtocolNum
-    , mhMode      :: !MiniProtocolMode
+    , mhDir       :: !MiniProtocolDir
     , mhLength    :: !Word16
     }
 
@@ -184,8 +184,8 @@ setTimestamp sdu@MuxSDU { msHeader } mhTimestamp =
 msNum :: MuxSDU -> MiniProtocolNum
 msNum = mhNum . msHeader
 
-msMode :: MuxSDU -> MiniProtocolMode
-msMode = mhMode . msHeader
+msDir :: MuxSDU -> MiniProtocolDir
+msDir = mhDir . msHeader
 
 msLength :: MuxSDU -> Word16
 msLength = mhLength . msHeader
@@ -209,15 +209,15 @@ data MuxBearer m = MuxBearer {
 
 
 -- | A channel which wraps each message as an 'MuxSDU' using giving
--- 'MiniProtocolNum' and 'MiniProtocolMode'.
+-- 'MiniProtocolNum' and 'MiniProtocolDir'.
 --
 muxBearerAsChannel
   :: forall m. Functor m
   => MuxBearer m
   -> MiniProtocolNum
-  -> MiniProtocolMode
+  -> MiniProtocolDir
   -> Channel m
-muxBearerAsChannel bearer protocolNum mode =
+muxBearerAsChannel bearer ptclNum ptclDir =
       Channel {
         send = \blob -> void $ write bearer noTimeout (wrap blob),
         recv = Just . msBlob . fst <$> read bearer noTimeout
@@ -229,8 +229,8 @@ muxBearerAsChannel bearer protocolNum mode =
             -- it will be filled when the 'MuxSDU' is send by the 'bearer'
             msHeader = MuxSDUHeader {
                 mhTimestamp = RemoteClockModel 0,
-                mhNum       = protocolNum,
-                mhMode      = mode,
+                mhNum       = ptclNum,
+                mhDir       = ptclDir,
                 mhLength    = fromIntegral $ BL.length blob
               },
             msBlob = blob

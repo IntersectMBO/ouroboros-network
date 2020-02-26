@@ -34,9 +34,9 @@ import           Network.Mux.Trace
 import           Network.Mux.Types
 
 
-negMiniProtocolMode :: MiniProtocolMode -> MiniProtocolMode
-negMiniProtocolMode ModeInitiator = ModeResponder
-negMiniProtocolMode ModeResponder = ModeInitiator
+flipMiniProtocolDir :: MiniProtocolDir -> MiniProtocolDir
+flipMiniProtocolDir InitiatorDir = ResponderDir
+flipMiniProtocolDir ResponderDir = InitiatorDir
 
 -- $ingress
 -- = Ingress Path
@@ -95,7 +95,7 @@ data DemuxState m = DemuxState {
 data MiniProtocolDispatch m =
      MiniProtocolDispatch
        !(Array MiniProtocolNum (Maybe MiniProtocolIx))
-       !(Array (MiniProtocolIx, MiniProtocolMode)
+       !(Array (MiniProtocolIx, MiniProtocolDir)
                (MiniProtocolDispatchInfo m))
 
 data MiniProtocolDispatchInfo m =
@@ -114,12 +114,12 @@ demux DemuxState{dispatchTable, bearer} =
   withTimeoutSerial $ \timeout ->
   forever $ do
     (sdu, _) <- Network.Mux.Types.read bearer timeout
-    -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msMode sdu)
+    -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msDir sdu)
     --             (BL.length $ msBlob sdu)
     case lookupMiniProtocol dispatchTable (msNum sdu)
-                            -- Notice the mode reversal, ModeResponder is
-                            -- delivered to ModeInitiator and vice versa:
-                            (negMiniProtocolMode $ msMode sdu) of
+                            -- Notice the mode reversal, ResponderDir is
+                            -- delivered to InitiatorDir and vice versa:
+                            (flipMiniProtocolDir $ msDir sdu) of
       Nothing   -> throwM (MuxError MuxUnknownMiniProtocol
                           ("id = " ++ show (msNum sdu)) callStack)
       Just (MiniProtocolDispatchInfo q qMax) ->
@@ -129,12 +129,12 @@ demux DemuxState{dispatchTable, bearer} =
               then writeTVar q $ BL.append buf (msBlob sdu)
               else throwM $ MuxError MuxIngressQueueOverRun
                                 (printf "Ingress Queue overrun on %s %s"
-                                 (show $ msNum sdu) (show $ msMode sdu))
+                                 (show $ msNum sdu) (show $ msDir sdu))
                                 callStack
 
 lookupMiniProtocol :: MiniProtocolDispatch m
                    -> MiniProtocolNum
-                   -> MiniProtocolMode
+                   -> MiniProtocolDir
                    -> Maybe (MiniProtocolDispatchInfo m)
 lookupMiniProtocol (MiniProtocolDispatch codeTbl ptclTbl) code mode
   | inRange (bounds codeTbl) code

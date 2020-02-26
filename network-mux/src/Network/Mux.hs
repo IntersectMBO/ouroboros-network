@@ -21,7 +21,7 @@ module Network.Mux (
     , RunMiniProtocol (..)
     , MiniProtocolNum (..)
     , MiniProtocolLimits (..)
-    , MiniProtocolMode (..)
+    , MiniProtocolDir (..)
 
       -- * Errors
     , MuxError (..)
@@ -89,7 +89,7 @@ import           Network.Mux.Trace
 --
 -- * at any given time the 'tsrQueue' contains at most one
 --   'TranslocationServiceRequest' from a given mini-protocol of the given
---   'MiniProtocolMode', thus the queue contains at most @2 * |ptcl|@
+--   'MiniProtocolDir', thus the queue contains at most @2 * |ptcl|@
 --   translocation requests.
 -- * at any given time each @TranslocationServiceRequest@ contains a non-empty
 -- 'Wanton'
@@ -158,12 +158,12 @@ muxStart tracer (MuxApplication ptcls) bearer = do
               ++ [ (code, Just pix)
                  | (pix, (ptcl, _, _)) <- zip [0..] ptcls'
                  , let code = miniProtocolNum ptcl ])
-          (array ((minpix, ModeInitiator), (maxpix, ModeResponder))
+          (array ((minpix, InitiatorDir), (maxpix, ResponderDir))
                  [ ((pix, mode), MiniProtocolDispatchInfo q qMax)
                  | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls'
                  , let qMax = maximumIngressQueue (miniProtocolLimits ptcl)
-                 , (mode, q) <- [ (ModeInitiator, initQ)
-                                , (ModeResponder, respQ) ]
+                 , (mode, q) <- [ (InitiatorDir, initQ)
+                                , (ResponderDir, respQ) ]
                  ])
       where
         minpix = 0
@@ -189,8 +189,8 @@ muxStart tracer (MuxApplication ptcls) bearer = do
       JobPool.Job (demux DemuxState { dispatchTable = tbl, Ingress.bearer })
                   DemuxerException "demuxer"
 
-    miniProtocolInitiatorJob = miniProtocolJob selectInitiator ModeInitiator
-    miniProtocolResponderJob = miniProtocolJob selectResponder ModeResponder
+    miniProtocolInitiatorJob = miniProtocolJob selectInitiator InitiatorDir
+    miniProtocolResponderJob = miniProtocolJob selectResponder ResponderDir
 
     selectInitiator :: RunMiniProtocol appType m a b -> Maybe (Channel m -> m a)
     selectInitiator (ResponderProtocolOnly                   _) = Nothing
@@ -204,7 +204,7 @@ muxStart tracer (MuxApplication ptcls) bearer = do
 
     miniProtocolJob
       :: (RunMiniProtocol appType m a b -> Maybe (Channel m -> m c))
-      -> MiniProtocolMode
+      -> MiniProtocolDir
       -> EgressQueue m
       -> MuxMiniProtocol appType m a b
       -> MiniProtocolIx
@@ -232,8 +232,8 @@ muxStart tracer (MuxApplication ptcls) bearer = do
           mpsJobExit w
           return (MiniProtocolShutdown pnum pix pmode)
 
-        selectQueue ModeInitiator = initQ
-        selectQueue ModeResponder = respQ
+        selectQueue InitiatorDir = initQ
+        selectQueue ResponderDir = respQ
 
     -- The Wanton w is the SDUs that are queued but not yet sent for this job.
     -- Job threads will be prevented from exiting until all their SDUs have been
@@ -288,7 +288,7 @@ monitor tracer jobpool
         <|> (Right <$> foldr (<|>) retry
                          [ checkNonEmptyBuf dispatchInfo >> return ix
                          | ix <- Set.elems idleResponders
-                         , let dispatchInfo = dispatchtbl ! (ix, ModeResponder)
+                         , let dispatchInfo = dispatchtbl ! (ix, ResponderDir)
                          ])
 
       case result of
@@ -341,11 +341,11 @@ data MuxJobResult =
 
        -- | A mini-protocol thread terminated with a result.
        --
-       MiniProtocolShutdown MiniProtocolNum MiniProtocolIx MiniProtocolMode
+       MiniProtocolShutdown MiniProtocolNum MiniProtocolIx MiniProtocolDir
 
        -- | A mini-protocol thread terminated with an exception. We always
        -- respond by terminating the whole mux.
-     | MiniProtocolException MiniProtocolNum MiniProtocolIx MiniProtocolMode
+     | MiniProtocolException MiniProtocolNum MiniProtocolIx MiniProtocolDir
                              SomeException
 
        -- | Exception in the 'mux' thread. Always unexpected and fatal.
@@ -356,7 +356,7 @@ data MuxJobResult =
 
 
 -- | muxChannel creates a duplex channel for a specific 'MiniProtocolId' and
--- 'MiniProtocolMode'.
+-- 'MiniProtocolDir'.
 --
 muxChannel
     :: forall m.
@@ -368,7 +368,7 @@ muxChannel
     -> EgressQueue m
     -> Wanton m
     -> MiniProtocolNum
-    -> MiniProtocolMode
+    -> MiniProtocolDir
     -> StrictTVar m BL.ByteString
     -> Channel m
 muxChannel tracer tq want@(Wanton w) mc md q =
