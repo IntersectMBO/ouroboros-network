@@ -56,12 +56,10 @@ data VolatileDB blockId m = VolatileDB {
       -- Note that it is not required that the given block has been added to
       -- the VolatileDB.
     , getSuccessors     :: HasCallStack => STM m (WithOrigin blockId -> Set blockId)
-      -- | Return a function that returns the predecessor of the block with
-      -- the given @blockId@.
-      --
-      -- PRECONDITION: the block must be a member of the VolatileDB, you can
-      -- use 'getIsMember' to check this.
-    , getPredecessor    :: HasCallStack => STM m (blockId -> WithOrigin blockId)
+      -- | Return a function that returns the 'BlockInfo' of the block with
+      -- the given @blockId@ or 'Nothing' if the @blockId@ is not found in the
+      -- VolatileDB.
+    , getBlockInfo      :: HasCallStack => STM m (blockId -> Maybe (BlockInfo blockId))
       -- | Try to remove all blocks with a slot number less than the given
       -- one.
       --
@@ -119,7 +117,6 @@ data VolatileDB blockId m = VolatileDB {
       -- avoid issues with /EBBs/, which have the same slot number as the
       -- block after it.
     , garbageCollect    :: HasCallStack => SlotNo -> m ()
-    , getIsMember       :: HasCallStack => STM m (blockId -> Bool)
       -- | Return the highest slot number ever stored by the VolatileDB.
     , getMaxSlotNo      :: HasCallStack => STM m MaxSlotNo
 } deriving NoUnexpectedThunks via OnlyCheckIsWHNF "VolatileDB" (VolatileDB blockId m)

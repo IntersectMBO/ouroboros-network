@@ -16,9 +16,8 @@ module Test.Ouroboros.Storage.VolatileDB.Model
     , getBlockComponentModel
     , putBlockModel
     , garbageCollectModel
+    , getBlockInfoModel
     , getSuccessorsModel
-    , getPredecessorModel
-    , getIsMemberModel
     , getMaxSlotNoModel
       -- * Corruptions
     , runCorruptionsModel
@@ -317,21 +316,12 @@ getSuccessorsModel dbm = whenOpen dbm $ \predecessor ->
       Map.empty
       (getBlockToPredecessor dbm)
 
-getPredecessorModel
+getBlockInfoModel
   :: Ord blockId
   => DBModel blockId
-  -> Either VolatileDBError (blockId -> WithOrigin blockId)
-getPredecessorModel dbm = whenOpen dbm $ \blockId ->
-    fromMaybe (error msg) $ Map.lookup blockId $ getBlockToPredecessor dbm
-   where
-     msg = "precondition violated: block not member of the VolatileDB"
-
-getIsMemberModel
-  :: Ord blockId
-  => DBModel blockId
-  -> Either VolatileDBError (blockId -> Bool)
-getIsMemberModel dbm = whenOpen dbm $ \blockId ->
-    Map.member blockId (blockIndex dbm)
+  -> Either VolatileDBError (blockId -> Maybe (BlockInfo blockId))
+getBlockInfoModel dbm = whenOpen dbm $ \blockId ->
+    fst <$> Map.lookup blockId (blockIndex dbm)
 
 getMaxSlotNoModel
   :: DBModel blockId

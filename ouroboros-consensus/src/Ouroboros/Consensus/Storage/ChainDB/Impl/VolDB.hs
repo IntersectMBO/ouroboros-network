@@ -36,6 +36,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (
   , getKnownBlockComponent
   , getBlockComponent
     -- * Wrappers
+  , getBlockInfo
   , getIsMember
   , getPredecessor
   , getSuccessors
@@ -65,7 +66,7 @@ import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (mapMaybe)
+import           Data.Maybe (isJust, mapMaybe)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -227,12 +228,18 @@ mkVolDB volDB decHeader decBlock encBlock isEBB addHdrEnv err errSTM = VolDB {..
   Wrappers
 -------------------------------------------------------------------------------}
 
-getIsMember :: VolDB m blk -> STM m (HeaderHash blk -> Bool)
-getIsMember db = withSTM db VolDB.getIsMember
+getBlockInfo
+  :: VolDB m blk
+  -> STM m (HeaderHash blk -> Maybe (VolDB.BlockInfo (HeaderHash blk)))
+getBlockInfo db = withSTM db VolDB.getBlockInfo
 
-getPredecessor :: VolDB m blk
-               -> STM m (HeaderHash blk -> WithOrigin (HeaderHash blk))
-getPredecessor db = withSTM db VolDB.getPredecessor
+getIsMember :: Functor (STM m) => VolDB m blk -> STM m (HeaderHash blk -> Bool)
+getIsMember = fmap (isJust .) . getBlockInfo
+
+getPredecessor :: Functor (STM m)
+               => VolDB m blk
+               -> STM m (HeaderHash blk -> Maybe (WithOrigin (HeaderHash blk)))
+getPredecessor = fmap (fmap VolDB.bpreBid .) . getBlockInfo
 
 getSuccessors :: VolDB m blk
               -> STM m (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
@@ -299,9 +306,8 @@ isReachableSTM :: (IOLike m, HasHeader blk)
                                     -- the reachability of
                -> STM m (Maybe (NonEmpty (HeaderHash blk)))
 isReachableSTM volDB getI b = do
-    (predecessor, isMember, i) <- withSTM volDB $ \db ->
-      (,,) <$> VolDB.getPredecessor db <*> VolDB.getIsMember db <*> getI
-    return $ isReachable predecessor isMember i b
+    (predecessor, i) <- (,) <$> getPredecessor volDB <*> getI
+    return $ isReachable predecessor i b
 
 -- | Check whether the given point, corresponding to a block @B@, is reachable
 -- from the tip of the ImmutableDB (@I@) by chasing the predecessors.
@@ -313,13 +319,12 @@ isReachableSTM volDB getI b = do
 -- 'True' <=> for all transitive predecessors @B'@ of @B@ we have @B' ∈ V@ or
 -- @B' = I@.
 isReachable :: forall blk. (HasHeader blk, HasCallStack)
-            => (HeaderHash blk -> WithOrigin (HeaderHash blk))  -- ^ @getPredecessor@
-            -> (HeaderHash blk -> Bool)                         -- ^ @isMember@
+            => (HeaderHash blk -> Maybe (WithOrigin (HeaderHash blk)))
             -> Point blk                                        -- ^ @I@
             -> Point blk                                        -- ^ @B@
             -> Maybe (NonEmpty (HeaderHash blk))
-isReachable predecessor isMember i b =
-    case computePath predecessor isMember from to of
+isReachable predecessor i b =
+    case computePath predecessor from to of
       -- Bounds are not on the same fork
       Nothing   -> Nothing
       Just path -> case path of
@@ -348,32 +353,32 @@ isReachable predecessor isMember i b =
 -- See the documentation of 'Path'.
 computePath
   :: forall blk. HasHeader blk
-  => (HeaderHash blk -> WithOrigin (HeaderHash blk)) -- ^ @getPredecessor@
-  -> (HeaderHash blk -> Bool)                        -- ^ @isMember@
+  => (HeaderHash blk -> Maybe (WithOrigin (HeaderHash blk)))
+     -- Return the predecessor
   -> StreamFrom blk
   -> StreamTo   blk
   -> Maybe (Path blk)
-computePath predecessor isMember from to = case to of
+computePath predecessor from to = case to of
     StreamToInclusive GenesisPoint
       -> Nothing
     StreamToExclusive GenesisPoint
       -> Nothing
     StreamToInclusive (BlockPoint { withHash = end })
-      | isMember end     -> case from of
+      | Just prev <- predecessor end -> case from of
           -- Easier to handle this special case (@StreamFromInclusive start,
           -- StreamToInclusive end, start == end@) here:
           StreamFromInclusive (BlockPoint { withHash = start })
             | start == end -> return $ CompletelyInVolDB [end]
-          _                -> go [end] end
+          _                -> go [end] prev
       | otherwise        -> return $ NotInVolDB end
     StreamToExclusive (BlockPoint { withHash = end })
-      | isMember end     -> go [] end
-      | otherwise        -> return $ NotInVolDB end
+      | Just prev <- predecessor end -> go [] prev
+      | otherwise                    -> return $ NotInVolDB end
   where
-    -- Invariant: @isMember hash@ and @hash@ has been added to @acc@ (if
-    -- allowed by the bounds)
-    go :: [HeaderHash blk] -> HeaderHash blk -> Maybe (Path blk)
-    go acc hash = case predecessor hash of
+    -- | It only needs the predecessor @prev@ and not the actual hash, because
+    -- the hash is already added to @acc@ (if allowed by the bounds).
+    go :: [HeaderHash blk] -> WithOrigin (HeaderHash blk) -> Maybe (Path blk)
+    go acc prev = case prev of
       -- Found genesis
       Origin -> case from of
         StreamFromInclusive _
@@ -384,7 +389,7 @@ computePath predecessor isMember from to = case to of
           -> Nothing
 
       At predHash
-        | isMember predHash -> case from of
+        | Just prev' <- predecessor predHash -> case from of
           StreamFromInclusive pt
             | BlockHash predHash == Block.pointHash pt
             -> return $ CompletelyInVolDB (predHash : acc)
@@ -392,7 +397,7 @@ computePath predecessor isMember from to = case to of
             | BlockHash predHash == Block.pointHash pt
             -> return $ CompletelyInVolDB acc
           -- Bound not yet reached, invariants both ok!
-          _ -> go (predHash : acc) predHash
+          _ -> go (predHash : acc) prev'
         -- Predecessor not in the VolatileDB
         | StreamFromExclusive pt <- from
         , BlockHash predHash == Block.pointHash pt
@@ -411,9 +416,8 @@ computePathSTM
   -> StreamTo   blk
   -> STM m (Path blk)
 computePathSTM volDB from to = do
-    (predecessor, isMember) <- withSTM volDB $ \db ->
-      (,) <$> VolDB.getPredecessor db <*> VolDB.getIsMember db
-    case computePath predecessor isMember from to of
+    predecessor <- getPredecessor volDB
+    case computePath predecessor from to of
       Just path -> return path
       Nothing   -> throwM $ InvalidIteratorRange from to
 

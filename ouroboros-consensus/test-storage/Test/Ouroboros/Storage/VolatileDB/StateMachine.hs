@@ -26,7 +26,7 @@ import           Data.Functor.Classes
 import           Data.Kind (Type)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
-import           Data.Maybe (listToMaybe, mapMaybe)
+import           Data.Maybe (catMaybes, listToMaybe, mapMaybe)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -122,8 +122,7 @@ data Cmd
     | PutBlock TestBlock
     | GarbageCollect SlotNo
     | GetSuccessors [Predecessor]
-    | GetPredecessor [BlockId]
-    | GetIsMember [BlockId]
+    | GetBlockInfo [BlockId]
     | GetMaxSlotNo
     | Corruption Corruptions
     | DuplicateBlock FileId BlockId ByteString
@@ -140,9 +139,8 @@ data Success
     = Unit            ()
     | MbAllComponents (Maybe AllComponents)
     | Bool            Bool
-    | IsMember        [Bool]
     | Successors      [Set BlockId]
-    | Predecessor     [Predecessor]
+    | BlockInfos      [Maybe (BlockInfo BlockId)]
     | MaxSlot         MaxSlotNo
     deriving (Show, Eq)
 
@@ -238,8 +236,7 @@ runPure :: Cmd
 runPure = \case
     GetBlockComponent bid -> ok MbAllComponents            $ queryE   (getBlockComponentModel allComponents bid)
     GetSuccessors bids    -> ok (Successors  . (<$> bids)) $ queryE    getSuccessorsModel
-    GetPredecessor bids   -> ok (Predecessor . (<$> bids)) $ queryE    getPredecessorModel
-    GetIsMember bids      -> ok (IsMember    . (<$> bids)) $ queryE    getIsMemberModel
+    GetBlockInfo bids     -> ok (BlockInfos  . (<$> bids)) $ queryE    getBlockInfoModel
     GarbageCollect slot   -> ok Unit                       $ updateE_ (garbageCollectModel slot)
     IsOpen                -> ok Bool                       $ query     isOpenModel
     Close                 -> ok Unit                       $ update_   closeModel
@@ -304,7 +301,6 @@ transitionImpl model cmd _ = eventAfter $ lockstep model cmd
 preconditionImpl :: Model Symbolic -> At CmdErr Symbolic -> Logic
 preconditionImpl Model{..} (At (CmdErr cmd mbErrors)) =
     compatibleWithError .&& case cmd of
-      GetPredecessor bids -> forall bids (`elem` bidsInModel)
       Corruption cors ->
         forall (corruptionFiles cors) (`elem` getDBFiles dbModel)
 
@@ -317,9 +313,6 @@ preconditionImpl Model{..} (At (CmdErr cmd mbErrors)) =
         Just fileId' -> fileId .>= fileId'
       _ -> Top
   where
-    -- | All the 'BlockId' in the db.
-    bidsInModel :: [BlockId]
-    bidsInModel = blockIds dbModel
 
     -- | Corruption commands are not allowed to have errors.
     compatibleWithError :: Logic
@@ -355,8 +348,7 @@ generatorCmdImpl Model {..} = frequency
     , (if open dbModel then 1 else 5, return ReOpen)
     , (2, GetBlockComponent <$> genBlockId)
     , (2, GarbageCollect <$> genGCSlot)
-    , (2, GetIsMember <$> listOf genBlockId)
-    , (2, GetPredecessor <$> listOf genBlockId)
+    , (2, GetBlockInfo <$> listOf genBlockId)
     , (2, GetSuccessors <$> listOf genWithOriginBlockId)
     , (2, return GetMaxSlotNo)
 
@@ -479,8 +471,7 @@ shrinkerImpl m (At (CmdErr cmd mbErr)) = fmap At $
 
 shrinkCmd :: Model Symbolic -> Cmd -> [Cmd]
 shrinkCmd Model{..} cmd = case cmd of
-    GetIsMember    bids  -> GetIsMember    <$> shrinkList (const []) bids
-    GetPredecessor bids  -> GetPredecessor <$> shrinkList (const []) bids
+    GetBlockInfo   bids  -> GetBlockInfo   <$> shrinkList (const []) bids
     GetSuccessors  preds -> GetSuccessors  <$> shrinkList (const []) preds
     Corruption cors      -> Corruption <$> shrinkCorruptions cors
     _                    -> []
@@ -515,8 +506,7 @@ runDB VolatileDBEnv { db, hasFS } cmd = case cmd of
     GetBlockComponent bid -> MbAllComponents          <$> getBlockComponent db allComponents bid
     PutBlock b            -> Unit                     <$> putBlock db (testBlockToBlockInfo b) (testBlockToBuilder b)
     GetSuccessors  bids   -> Successors .  (<$> bids) <$> atomically (getSuccessors db)
-    GetPredecessor bids   -> Predecessor . (<$> bids) <$> atomically (getPredecessor db)
-    GetIsMember    bids   -> IsMember .    (<$> bids) <$> atomically (getIsMember db)
+    GetBlockInfo   bids   -> BlockInfos .  (<$> bids) <$> atomically (getBlockInfo db)
     GarbageCollect slot   -> Unit                     <$> garbageCollect db slot
     GetMaxSlotNo          -> MaxSlot                  <$> atomically (getMaxSlotNo db)
     IsOpen                -> Bool                     <$> isOpenDB db
@@ -554,14 +544,10 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
           (cmdName . eventCmd <$> events)
         $ tabulate "Error Tags"
           (tagSimulatedErrors events)
-        $ tabulate "IsMember: total number of True's"
+        $ tabulate "GetBlockInfo: total number of Just's"
           [groupIsMember $ isMemberTrue events]
-        $ tabulate "IsMember: at least one True"
-          [show $ isMemberTrue' events]
         $ tabulate "Successors"
           (tagGetSuccessors events)
-        $ tabulate "Predecessor"
-          (tagGetPredecessor events)
         $ prop
   where
     dbm = initDBModel maxBlocksPerFile
@@ -732,18 +718,9 @@ isMemberTrue events = sum $ count <$> events
   where
     count :: Event Symbolic -> Int
     count e = case eventMockResp e of
-      Resp (Left _)              -> 0
-      Resp (Right (IsMember ls)) -> length $ filter id ls
-      Resp (Right _)             -> 0
-
-isMemberTrue' :: [Event Symbolic] -> Int
-isMemberTrue' events = sum $ count <$> events
-  where
-    count :: Event Symbolic -> Int
-    count e = case eventMockResp e of
-        Resp (Left _)              -> 0
-        Resp (Right (IsMember ls)) -> if null ls then 0 else 1
-        Resp (Right _)             -> 0
+      Resp (Left _)                -> 0
+      Resp (Right (BlockInfos ls)) -> length $ catMaybes ls
+      Resp (Right _)               -> 0
 
 data Tag =
     -- | Request a block successfully
@@ -814,15 +791,6 @@ tagGetSuccessors = mapMaybe f
         (GetSuccessors _pid, Resp (Right (Successors st))) ->
             if all Set.null st then Just "Empty Successors"
             else Just "Non empty Successors"
-        _otherwise -> Nothing
-
-tagGetPredecessor :: [Event Symbolic] -> [String]
-tagGetPredecessor = mapMaybe f
-  where
-    f :: Event Symbolic -> Maybe String
-    f ev = case (getCmd ev, eventMockResp ev) of
-        (GetPredecessor _pid, Resp (Right (Predecessor _))) ->
-            Just "Predecessor"
         _otherwise -> Nothing
 
 execCmd :: Model Symbolic

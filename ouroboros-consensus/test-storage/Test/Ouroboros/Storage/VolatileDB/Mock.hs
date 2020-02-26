@@ -34,9 +34,8 @@ openDBMock err errSTM maxBlocksPerFile = do
         , getBlockComponent = queryE   .: getBlockComponentModel
         , putBlock          = updateE_ .: putBlockModel
         , garbageCollect    = updateE_  . garbageCollectModel
-        , getIsMember       = querySTME $ getIsMemberModel
         , getSuccessors     = querySTME $ getSuccessorsModel
-        , getPredecessor    = querySTME $ getPredecessorModel
+        , getBlockInfo      = querySTME $ getBlockInfoModel
         , getMaxSlotNo      = querySTME $ getMaxSlotNoModel
         }
       where
