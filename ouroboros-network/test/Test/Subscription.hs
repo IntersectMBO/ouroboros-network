@@ -77,7 +77,6 @@ instance ProtocolEnum TestProtocols1 where
   fromProtocolEnum ChainSyncPr = MiniProtocolNum 2
 
 instance MiniProtocolLimits TestProtocols1 where
-  maximumMessageSize ChainSyncPr  = defaultMiniProtocolLimit
   maximumIngressQueue ChainSyncPr = defaultMiniProtocolLimit
 
 -- |
@@ -90,7 +89,6 @@ instance ProtocolEnum TestProtocols2 where
   fromProtocolEnum ReqRespPr = MiniProtocolNum 4
 
 instance MiniProtocolLimits TestProtocols2 where
-  maximumMessageSize ReqRespPr  = defaultMiniProtocolLimit
   maximumIngressQueue ReqRespPr = defaultMiniProtocolLimit
 
 

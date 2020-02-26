@@ -40,6 +40,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
 
+import qualified Network.Mux               as Mx (muxStart)
 import qualified Network.Mux.Bearer.Queues as Mx
 import qualified Ouroboros.Network.Mux as Mx
 
@@ -63,7 +64,6 @@ data TestProtocols = ChainSyncPr
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.MiniProtocolLimits TestProtocols where
-    maximumMessageSize _  = 0xffff
     maximumIngressQueue _ = 0xffff
 
 instance Mx.ProtocolEnum TestProtocols where
@@ -126,8 +126,11 @@ demo chain0 updates delay = do
                         (encodeTip encode) (decodeTip decode))
                         producerPeer)
 
-    clientAsync <- async $ Mx.runMuxWithQueues activeTracer (Mx.toApplication consumerApp "consumer") client_w client_r sduLen Nothing
-    serverAsync <- async $ Mx.runMuxWithQueues activeTracer (Mx.toApplication producerApp "producer") server_w server_r sduLen Nothing
+    let clientBearer = Mx.queuesAsMuxBearer activeTracer client_w client_r sduLen
+        serverBearer = Mx.queuesAsMuxBearer activeTracer server_w server_r sduLen
+
+    clientAsync <- async $ Mx.muxStart activeTracer (Mx.toApplication consumerApp "consumer") clientBearer
+    serverAsync <- async $ Mx.muxStart activeTracer (Mx.toApplication producerApp "producer") serverBearer
 
     updateAid <- async $ sequence_
         [ do
@@ -140,12 +143,10 @@ demo chain0 updates delay = do
         ]
 
     wait updateAid
-    r <- waitBoth clientAsync serverAsync
-    case r of
-         (_, Just _) -> return $ property False
-         _           -> do
-           ret <- atomically $ takeTMVar done
-           return $ property ret
+    _ <- waitBoth clientAsync serverAsync
+    -- TODO: use new mechanism to collect mini-protocol result:
+    ret <- atomically $ takeTMVar done
+    return $ property ret
 
   where
     checkTip target consumerVar = atomically $ do

@@ -52,9 +52,6 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   | MuxInitiatorOnly
                   -- ^ thrown when data arrives on a responder channel when the
                   -- mux was set up as an 'InitiatorApp'.
-                  |  MuxTooLargeMessage
-                  -- ^ thrown by 'muxChannel' when violationg
-                  -- 'maximumMessageSize' byte limit.
                   | MuxIOException IOException
                   -- ^ 'IOException' thrown by 
                   deriving (Show, Eq)

@@ -147,7 +147,6 @@ instance ProtocolEnum DemoProtocol0 where
   fromProtocolEnum PingPong0 = MiniProtocolNum 2
 
 instance MiniProtocolLimits DemoProtocol0 where
-  maximumMessageSize _ = maxBound
   maximumIngressQueue _ = maxBound
 
 
@@ -242,7 +241,6 @@ instance ProtocolEnum DemoProtocol1 where
   fromProtocolEnum PingPong1' = MiniProtocolNum 3
 
 instance MiniProtocolLimits DemoProtocol1 where
-  maximumMessageSize _ = maxBound
   maximumIngressQueue _ = maxBound
 
 
@@ -346,7 +344,6 @@ instance ProtocolEnum DemoProtocol2 where
   fromProtocolEnum ChainSync2  = MiniProtocolNum 2
 
 instance MiniProtocolLimits DemoProtocol2 where
-  maximumMessageSize _ = maxBound
   maximumIngressQueue _ = maxBound
 
 
@@ -440,7 +437,6 @@ instance ProtocolEnum DemoProtocol3 where
   fromProtocolEnum BlockFetch3 = MiniProtocolNum 3
 
 instance MiniProtocolLimits DemoProtocol3 where
-  maximumMessageSize _ = maxBound
   maximumIngressQueue _ = maxBound
 
 
