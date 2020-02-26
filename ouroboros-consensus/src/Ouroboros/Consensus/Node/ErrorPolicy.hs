@@ -65,7 +65,6 @@ consensusErrorPolicy = ErrorPolicies {
           -- entirely, it will only be reopened after a node restart.
         , ErrorPolicy $ \(e :: ChainDbError) ->
             case e of
-              NoGenesisBlock{}       -> Just theyBuggyOrEvil
               ClosedDBError{}        -> Just shutdownNode
               ClosedReaderError{}    -> Just ourBug
               InvalidIteratorRange{} -> Just theyBuggyOrEvil

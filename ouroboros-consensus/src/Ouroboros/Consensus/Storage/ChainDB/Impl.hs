@@ -91,10 +91,10 @@ openDBInternal args launchBgTasks = do
 
     volDB   <- VolDB.openDB argsVolDb
     traceWith tracer $ TraceOpenEvent OpenedVolDB
-    lgrReplayTracer <- LgrDB.decorateReplayTracer
-      (Args.cdbEpochInfo args)
-      immDbTipPoint
-      (contramap TraceLedgerReplayEvent tracer)
+    let lgrReplayTracer =
+          LgrDB.decorateReplayTracer
+            immDbTipPoint
+            (contramap TraceLedgerReplayEvent tracer)
     (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
                             lgrReplayTracer
                             immDB

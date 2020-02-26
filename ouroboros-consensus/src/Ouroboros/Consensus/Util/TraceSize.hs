@@ -15,7 +15,9 @@ import           Control.Tracer
 import           Data.Word
 
 import           Ouroboros.Network.Block (Point (..), SlotNo (..))
-import           Ouroboros.Network.Point (Block (..), WithOrigin (..))
+import           Ouroboros.Network.Point (WithOrigin (..))
+
+import           Ouroboros.Consensus.Block
 
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
@@ -38,7 +40,7 @@ traceSize (Tracer f) = Tracer $ \a -> do
 
 data LedgerDbSize blk = LedgerDbSize {
       -- | The tip of the ledger DB
-      ledgerDbTip       :: WithOrigin (Point blk)
+      ledgerDbTip       :: Point blk
 
       -- | Size of the ledger at the tip of the DB
     , ledgerDbSizeTip   :: Either CountFailure Word64
@@ -55,7 +57,7 @@ data LedgerDbSize blk = LedgerDbSize {
 traceLedgerDbSize :: MonadIO m
                   => (Word64 -> Bool)
                   -> Tracer m (LedgerDbSize blk)
-                  -> Tracer m (LedgerDB l (Point blk))
+                  -> Tracer m (LedgerDB l (RealPoint blk))
 traceLedgerDbSize p (Tracer f) = Tracer $ \(!db) -> do
     let !ledger = LedgerDB.ledgerDbCurrent db
         !tip    = LedgerDB.ledgerDbTip db
@@ -64,12 +66,11 @@ traceLedgerDbSize p (Tracer f) = Tracer $ \(!db) -> do
       sizeTip   <- liftIO $ computeHeapSize ledger
       sizeTotal <- liftIO $ computeHeapSize db
       f $ LedgerDbSize {
-              ledgerDbTip       = tip
+              ledgerDbTip       = withOriginRealPointToPoint tip
             , ledgerDbSizeTip   = sizeTip
             , ledgerDbSizeTotal = sizeTotal
             }
   where
-    shouldTrace :: WithOrigin (Point blk) -> Bool
-    shouldTrace Origin              = p 0
-    shouldTrace (At (Point Origin)) = p 0
-    shouldTrace (At (Point (At b))) = p (unSlotNo (blockPointSlot b))
+    shouldTrace :: WithOrigin (RealPoint blk) -> Bool
+    shouldTrace Origin  = p 0
+    shouldTrace (At pt) = p (unSlotNo (realPointSlot pt))

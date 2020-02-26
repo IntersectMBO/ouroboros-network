@@ -33,13 +33,12 @@ import           Test.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
-                     pattern GenesisPoint, HasHeader, HeaderHash, Point,
-                     SlotNo (..), blockPoint)
+import           Ouroboros.Network.Block (BlockNo (..), HasHeader, HeaderHash,
+                     SlotNo (..))
 import qualified Ouroboros.Network.MockChain.Chain as MockChain
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (BlockProtocol)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
@@ -318,11 +317,10 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
             | (nid, no) <- Map.toList testOutputNodes
             , let NodeOutput{nodeOutputInvalids} = no
             ]
-        ok p nid err = case p of
+        ok (RealPoint s h) nid err =
           -- TODO The ExtValidationError data declaration imposes this case on
           -- us but should never exercise it.
-          GenesisPoint   -> False
-          BlockPoint s h -> expectedBlockRejection BlockRejection
+          expectedBlockRejection BlockRejection
             { brBlockHash = h
             , brBlockSlot = s
             , brReason    = err
@@ -356,7 +354,7 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
       where
         actuallyLead ::
              NodeId
-          -> Set (Point blk)
+          -> Set (RealPoint blk)
           -> SlotNo
           -> blk
           -> Maybe [CoreNodeId]
@@ -368,7 +366,7 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
             let j = nodeIdJoinSlot nodeJoinPlan nid
             guard $ j <= s
 
-            guard $ not $ Set.member (blockPoint b) invalids
+            guard $ not $ Set.member (blockRealPoint b) invalids
 
             pure [cid]
 
@@ -531,8 +529,7 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
     prop_no_unexpected_message_delays =
         conjoin $
         [ case p of
-              GenesisPoint            -> error "impossible"
-              BlockPoint sendSlot hsh ->
+              RealPoint sendSlot hsh ->
                   prop1 nid recvSlot sendSlot hsh bno
         | (nid, m)          <- Map.toList adds
         , (recvSlot, pbnos) <- Map.toList m

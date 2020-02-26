@@ -157,7 +157,7 @@ data InitLog r =
 -- obtained in this way will (hopefully) share much of their memory footprint
 -- with their predecessors.
 initLedgerDB :: forall m h l r b e. (IOLike m, HasCallStack)
-             => Tracer m (TraceReplayEvent r () r)
+             => Tracer m (TraceReplayEvent r ())
              -> Tracer m (TraceEvent r)
              -> HasFS m h
              -> (forall s. Decoder s l)
@@ -220,7 +220,7 @@ data InitFailure r =
 -- and an error is returned. This should not throw any errors itself (ignoring
 -- unexpected exceptions such as asynchronous exceptions, of course).
 initFromSnapshot :: forall m h l r b e. (IOLike m, HasCallStack)
-                 => Tracer m (TraceReplayEvent r () r)
+                 => Tracer m (TraceReplayEvent r ())
                  -> HasFS m h
                  -> (forall s. Decoder s l)
                  -> (forall s. Decoder s r)
@@ -238,7 +238,7 @@ initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
 initStartingWith :: forall m l r b e. (Monad m, HasCallStack)
-                 => Tracer m (TraceReplayEvent r () r)
+                 => Tracer m (TraceReplayEvent r ())
                  -> LedgerDbConf m l r b e
                  -> StreamAPI m r b
                  -> LedgerDB l r
@@ -251,7 +251,7 @@ initStartingWith tracer conf@LedgerDbConf{..} streamAPI initDb = do
   where
     push :: (r, b) -> (LedgerDB l r, Word64) -> m (LedgerDB l r, Word64)
     push (r, b) !(!db, !replayed) = do
-        traceWith tracer (ReplayedBlock r r ())
+        traceWith tracer (ReplayedBlock r ())
         (, replayed + 1) <$> ledgerDbReapply conf (Val r b) db
 
 {-------------------------------------------------------------------------------
@@ -381,13 +381,9 @@ data TraceEvent r
 -- process takes a while, we trace events to inform higher layers of our
 -- progress.
 --
--- The @blockInfo@ parameter is meant to be filled in by a higher layer,
--- i.e., the ChainDB, which has more information about a block, e.g., the
--- 'EpochNo' of the block.
---
--- The @replayTo@ parameter is also meant to be filled in by a higher layer,
+-- The @replayTo@ parameter is meant to be filled in by a higher layer,
 -- i.e., the ChainDB.
-data TraceReplayEvent r replayTo blockInfo
+data TraceReplayEvent r replayTo
   = ReplayFromGenesis replayTo
     -- ^ There were no LedgerDB snapshots on disk, so we're replaying all
     -- blocks starting from Genesis against the initial ledger.
@@ -400,14 +396,14 @@ data TraceReplayEvent r replayTo blockInfo
     --
     -- The @replayTo@ parameter corresponds to the block at the tip of the
     -- ImmutableDB, i.e., the last block to replay.
-  | ReplayedBlock r blockInfo replayTo
+  | ReplayedBlock r replayTo
     -- ^ We replayed the given block (reference) on the genesis snapshot
     -- during the initialisation of the LedgerDB.
     --
     -- The @blockInfo@ parameter corresponds replayed block and the @replayTo@
     -- parameter corresponds to the block at the tip of the ImmutableDB, i.e.,
     -- the last block to replay.
-  deriving (Generic, Eq, Show)
+  deriving (Generic, Eq, Show, Functor, Foldable, Traversable)
 
 TH.deriveBifunctor     ''TraceReplayEvent
 TH.deriveBifoldable    ''TraceReplayEvent

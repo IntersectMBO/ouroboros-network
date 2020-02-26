@@ -16,6 +16,8 @@ import           Data.Word
 import           Options.Applicative
 
 import           Cardano.Binary (unAnnotated)
+import           Cardano.Slotting.Slot
+
 import qualified Cardano.Chain.Block as Chain
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.Slotting (EpochSlots (..))
@@ -26,6 +28,7 @@ import qualified Cardano.Crypto as Crypto
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      genesisPoint)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.Mock (fixedBlockchainTime)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -156,10 +159,13 @@ processAll :: ImmDB IO ByronBlock
            -> IO ()
 processAll immDB rr callback = do
     tipPoint <- getPointAtTip immDB
-    Right itr <- stream immDB rr GetBlock
-      (StreamFromExclusive genesisPoint)
-      (StreamToInclusive tipPoint)
-    go itr
+    case pointToWithOriginRealPoint tipPoint of
+      Origin -> return ()
+      At tip -> do
+        Right itr <- stream immDB rr GetBlock
+          (StreamFromExclusive genesisPoint)
+          (StreamToInclusive tip)
+        go itr
   where
     go :: Iterator ByronHash IO (IO ByronBlock) -> IO ()
     go itr = do

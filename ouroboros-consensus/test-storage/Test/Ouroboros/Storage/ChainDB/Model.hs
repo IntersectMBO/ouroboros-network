@@ -189,19 +189,17 @@ hasBlock :: HasHeader blk => HeaderHash blk -> Model blk -> Bool
 hasBlock hash = isJust . getBlock hash
 
 getBlockByPoint :: HasHeader blk
-                => Point blk -> Model blk
-                -> Either ChainDbError (Maybe blk)
-getBlockByPoint pt = case Block.pointHash pt of
-    GenesisHash    -> const $ Left NoGenesisBlock
-    BlockHash hash -> Right . getBlock hash
+                => RealPoint blk -> Model blk
+                -> Maybe blk
+getBlockByPoint (RealPoint _ hash) = getBlock hash
 
 getBlockComponentByPoint
   :: forall m blk b. (ModelSupportsBlock blk, Monad m)
   => BlockComponent (ChainDB m blk) b
-  -> Point blk -> Model blk
-  -> Either ChainDbError (Maybe b)
-getBlockComponentByPoint blockComponent pt m =
-    fmap (`getBlockComponent` blockComponent) <$> getBlockByPoint pt m
+  -> RealPoint blk -> Model blk
+  -> Either ChainDbError (Maybe b) -- Just to satify the API
+getBlockComponentByPoint blockComponent pt m = Right $
+    (`getBlockComponent` blockComponent) <$> getBlockByPoint pt m
 
 hasBlockByPoint :: HasHeader blk
                 => Point blk -> Model blk -> Bool
@@ -610,7 +608,7 @@ data ValidationResult blk
   | InvalidChain
       (ExtValidationError blk)
       -- ^ The validation error of the invalid block.
-      (NonEmpty (Point blk))
+      (NonEmpty (RealPoint blk))
       -- ^ The point corresponding to the invalid block is the first in this
       -- list. The remaining elements in the list are the points after the
       -- invalid block.
@@ -636,7 +634,7 @@ validate cfg initLedger chain =
       []    -> ValidChain validPrefix ledger
       b:bs' -> case runExcept (applyExtLedgerState BlockNotPreviouslyApplied cfg b ledger) of
         Right ledger' -> go ledger' (validPrefix :> b) bs'
-        Left  e       -> InvalidChain e (fmap Block.blockPoint (b NE.:| bs'))
+        Left  e       -> InvalidChain e (fmap blockRealPoint (b NE.:| bs'))
                            validPrefix ledger
 
 chains :: forall blk. (HasHeader blk)
@@ -702,15 +700,14 @@ validChains cfg initLedger bs =
         , [(chain, ledger)]
         )
 
-    mkInvalid :: ExtValidationError blk -> NonEmpty (Point blk)
+    mkInvalid :: ExtValidationError blk -> NonEmpty (RealPoint blk)
               -> Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)
     mkInvalid e (pt NE.:| after) =
       uncurry Map.insert (fmap (ValidationError e,) (pointToHashAndSlot pt)) $
       Map.fromList $ map (fmap (InChainAfterInvalidBlock pt e,) .
                           pointToHashAndSlot) after
 
-    pointToHashAndSlot GenesisPoint    = error "genesis cannot be invalid"
-    pointToHashAndSlot BlockPoint {..} = (withHash, atSlot)
+    pointToHashAndSlot (RealPoint s h) = (h, s)
 
 -- Map (HeaderHash blk) blk maps a block's hash to the block itself
 successors :: forall blk. HasHeader blk
@@ -776,12 +773,12 @@ between (SecurityParam k) from to m = do
                   -> Either (UnknownRange blk) (AnchoredFragment blk)
     cutOffAfterTo frag = case to of
       StreamToInclusive p
-        | Just frag' <- fst <$> Fragment.splitAfterPoint frag p
+        | Just frag' <- fst <$> Fragment.splitAfterPoint frag (realPointToPoint p)
         -> return frag'
         | otherwise
         -> Left $ MissingBlock p
       StreamToExclusive p
-        | Just frag' <- fst <$> Fragment.splitAfterPoint frag p
+        | Just frag' <- fst <$> Fragment.splitAfterPoint frag (realPointToPoint p)
         -> return $ Fragment.dropNewest 1 frag'
         | otherwise
         -> Left $ MissingBlock p
@@ -793,15 +790,17 @@ between (SecurityParam k) from to m = do
                      -> Either (UnknownRange blk) (AnchoredFragment blk)
     cutOffBeforeFrom frag = case from of
       StreamFromInclusive p
-        | Just frag' <- snd <$> Fragment.splitBeforePoint frag p
+        | Just frag' <- snd <$> Fragment.splitBeforePoint frag (realPointToPoint p)
         -> return frag'
         | otherwise
         -> Left $ MissingBlock p
-      StreamFromExclusive p
+      StreamFromExclusive p@(BlockPoint s h)
         | Just frag' <- snd <$> Fragment.splitAfterPoint frag p
         -> return frag'
         | otherwise
-        -> Left $ MissingBlock p
+        -> Left $ MissingBlock (RealPoint s h)
+      StreamFromExclusive GenesisPoint
+        -> return frag
 
 -- | Is it possible that the given block is no longer in the ChainDB because
 -- the garbage collector has collected it?
@@ -830,10 +829,9 @@ garbageCollectable secParam m@Model{..} b =
 -- garbage-collected from the model too. Note that we cannot distinguish this
 -- case from a block that was never added to the model in the first place.
 garbageCollectablePoint :: forall blk. HasHeader blk
-                        => SecurityParam -> Model blk -> Point blk -> Bool
+                        => SecurityParam -> Model blk -> RealPoint blk -> Bool
 garbageCollectablePoint secParam m@Model{..} pt
-    | BlockHash hash <- Block.pointHash pt
-    , Just blk <- getBlock hash m
+    | Just blk <- getBlock (realPointHash pt) m
     = garbageCollectable secParam m blk
     | otherwise
     = True

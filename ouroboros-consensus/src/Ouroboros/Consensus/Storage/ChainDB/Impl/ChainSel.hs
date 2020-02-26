@@ -47,13 +47,11 @@ import           Cardano.Prelude (forceElemsToWHNF)
 import           Ouroboros.Network.AnchoredFragment (Anchor,
                      AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
-                     pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo, blockPoint, castHash, castPoint, pointHash)
+import           Ouroboros.Network.Block (BlockNo, HasHeader (..), HeaderHash,
+                     Point, SlotNo, castHash, castPoint, pointHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..),
-                     headerHash, headerPoint)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..))
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -228,31 +226,31 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
     -- ### Ignore
     if
       | olderThanK hdr (cdbIsEBB hdr) immBlockNo -> do
-        trace $ IgnoreBlockOlderThanK (blockPoint b)
+        trace $ IgnoreBlockOlderThanK (blockRealPoint b)
         deliverPromises curTip
 
       | isMember (blockHash b) -> do
-        trace $ IgnoreBlockAlreadyInVolDB (blockPoint b)
+        trace $ IgnoreBlockAlreadyInVolDB (blockRealPoint b)
         deliverPromises curTip
 
       | Just (InvalidBlockInfo reason _) <- Map.lookup (blockHash b) invalid -> do
-        trace $ IgnoreInvalidBlock (blockPoint b) reason
+        trace $ IgnoreInvalidBlock (blockRealPoint b) reason
         deliverPromises curTip
 
       -- ### Store but schedule chain selection
       | blockSlot b > curSlot -> do
         VolDB.putBlock cdbVolDB b
-        trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (cdbIsEBB hdr)
+        trace $ AddedBlockToVolDB (blockRealPoint b) (blockNo b) (cdbIsEBB hdr)
         atomically $ putTMVar varBlockProcessed curTip
         -- We'll fill in 'varChainSelectionPerformed' when the scheduled chain
         -- selection is performed.
-        trace $ BlockInTheFuture (blockPoint b) curSlot
+        trace $ BlockInTheFuture (blockRealPoint b) curSlot
         scheduleChainSelection curSlot (blockSlot b)
 
       -- The remaining cases
       | otherwise -> do
         VolDB.putBlock cdbVolDB b
-        trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (cdbIsEBB hdr)
+        trace $ AddedBlockToVolDB (blockRealPoint b) (blockNo b) (cdbIsEBB hdr)
         newTip <- chainSelectionForBlock cdb (BlockCache.singleton b) hdr
         deliverPromises newTip
   where
@@ -429,8 +427,8 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
   where
     SecurityParam k = configSecurityParam cdbTopLevelConfig
 
-    p :: Point blk
-    p = headerPoint hdr
+    p :: RealPoint blk
+    p = headerRealPoint hdr
 
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
@@ -446,7 +444,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
                       -> m (Point blk)
     addToCurrentChain succsOf curChainAndLedger@(ChainAndLedger curChain _)
                       curSlot = assert (AF.validExtension curChain hdr) $ do
-        let suffixesAfterB = VolDB.candidates succsOf p
+        let suffixesAfterB = VolDB.candidates succsOf (realPointToPoint p)
 
         -- Fragments that are anchored at @curHead@, i.e. suffixes of the
         -- current chain.
@@ -510,7 +508,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
                   -> m (Point blk)
     switchToAFork succsOf curChainAndLedger@(ChainAndLedger curChain _) hashes
                   curSlot = do
-        let suffixesAfterB = VolDB.candidates succsOf p
+        let suffixesAfterB = VolDB.candidates succsOf (realPointToPoint p)
             initCache      = Map.insert (headerHash hdr) hdr (cacheHeaders curChain)
         -- Fragments that are anchored at @i@.
         candidates <- flip evalStateT initCache $
@@ -889,11 +887,10 @@ validateCandidate lgrDB tracer cfg varInvalid blockCache
     -- PRECONDITON: the given point is on the candidate fragment.
     mkNewInvalidBlocks :: HasCallStack
                        => ExtValidationError blk
-                       -> Point blk
+                       -> RealPoint blk
                        -> InvalidBlocks blk
-    mkNewInvalidBlocks e pt = case pt of
-      GenesisPoint         -> error "cannot have validated genesis"
-      BlockPoint slot hash -> case AF.splitAfterPoint suffix pt of
+    mkNewInvalidBlocks e pt@(RealPoint slot hash) =
+      case AF.splitAfterPoint suffix (realPointToPoint pt) of
         Nothing           -> error "point not on fragment"
         Just (_, afterPt) ->
           Map.insert hash (InvalidBlockInfo (ValidationError e) slot) $
