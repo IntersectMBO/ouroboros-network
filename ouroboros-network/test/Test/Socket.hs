@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
@@ -12,9 +11,6 @@
 module Test.Socket (tests) where
 
 import qualified Data.ByteString.Lazy as BL
-#if defined(mingw32_HOST_OS)
-import qualified Data.ByteString as BS
-#endif
 
 import           Data.Int (Int64)
 import           Data.Time.Clock (UTCTime, getCurrentTime)

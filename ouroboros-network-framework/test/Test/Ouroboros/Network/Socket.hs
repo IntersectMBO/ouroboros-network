@@ -23,6 +23,7 @@ import           System.IO.Error
 #endif
 import qualified Network.Socket as Socket
 #if defined(mingw32_HOST_OS)
+import qualified Data.ByteString as BS
 import qualified System.Win32.Async as Win32.Async
 #else
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
