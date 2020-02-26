@@ -345,7 +345,7 @@ mkApps Tracers {..} Codecs {..} Handlers {..} =
 responder
   :: N.NodeToClientVersion
   -> Apps m (ConnectionId peer) b b b a
-  -> OuroborosApplication 'ResponderApp peer b m Void a
+  -> OuroborosApplication 'ResponderMode peer b m Void a
 responder version Apps {..} =
     nodeToClientProtocols
       (\peer -> NodeToClientProtocols {

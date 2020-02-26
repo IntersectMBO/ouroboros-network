@@ -437,8 +437,8 @@ waitOnAllClients clientVar clientTot = do
 
 -- Run applications continuation
 type RunMuxApplications
-    =  MuxApplication InitiatorApp IO () Void
-    -> MuxApplication ResponderApp IO Void ()
+    =  MuxApplication InitiatorMode IO () Void
+    -> MuxApplication ResponderMode IO Void ()
     -> IO ()
 
 
