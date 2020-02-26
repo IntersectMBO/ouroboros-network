@@ -67,14 +67,10 @@ import           Ouroboros.Consensus.Storage.Common (EpochNo, EpochSize)
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..),
                      AllowExisting (..), OpenMode (..), SeekMode (..))
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
                      runGet)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
-import           Ouroboros.Consensus.Storage.ImmutableDB.Types
-                     (ImmutableDBError (..))
 
 {------------------------------------------------------------------------------
   SecondaryOffset
@@ -167,12 +163,11 @@ slots (MkPrimaryIndex offsets) = fromIntegral $ V.length offsets - 1
 readOffset
   :: forall m h. (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> EpochNo
   -> RelativeSlot
   -> m (Maybe SecondaryOffset)
-readOffset hasFS err epoch slot = runIdentity <$>
-    readOffsets hasFS err epoch (Identity slot)
+readOffset hasFS epoch slot = runIdentity <$>
+    readOffsets hasFS epoch (Identity slot)
 
 -- | Same as 'readOffset', but for multiple offsets.
 --
@@ -181,13 +176,12 @@ readOffset hasFS err epoch slot = runIdentity <$>
 readOffsets
   :: forall m h t. (HasCallStack, MonadThrow m, Traversable t)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> EpochNo
   -> t RelativeSlot
   -> m (t (Maybe SecondaryOffset))
        -- ^ The offset in the secondary index file corresponding to the given
        -- slot. 'Nothing' when the slot is empty.
-readOffsets hasFS@HasFS { hGetSize } err epoch toRead =
+readOffsets hasFS@HasFS { hGetSize } epoch toRead =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd -> do
       size <- hGetSize pHnd
       forM toRead $ \(RelativeSlot slot) -> do
@@ -199,7 +193,7 @@ readOffsets hasFS@HasFS { hGetSize } err epoch toRead =
           return Nothing
         else do
           (secondaryOffset, nextSecondaryOffset) <-
-            runGet err primaryIndexFile get =<<
+            runGet primaryIndexFile get =<<
             hGetExactlyAt hasFS pHnd nbBytes offset
           return $ if nextSecondaryOffset - secondaryOffset > 0
             then Just secondaryOffset
@@ -219,10 +213,9 @@ readOffsets hasFS@HasFS { hGetSize } err epoch toRead =
 readFirstFilledSlot
   :: forall m h. (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> EpochNo
   -> m (Maybe RelativeSlot)
-readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } err epoch =
+readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } epoch =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd -> do
       hSeek pHnd AbsoluteSeek skip
       go pHnd 0
@@ -265,18 +258,17 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } err epoch =
               -> goGet (remaining - n) acc'
               | otherwise      -- All bytes read, 'Get' the offset
               -> assert (n == remaining) $ Just <$>
-                 runGet err primaryIndexFile getSecondaryOffset acc'
+                 runGet primaryIndexFile getSecondaryOffset acc'
 
 -- | Load a primary index file in memory.
 load
   :: forall m h. (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> EpochNo
   -> m PrimaryIndex
-load hasFS err epoch =
+load hasFS epoch =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd ->
-      hGetAll hasFS pHnd >>= runGet err primaryIndexFile get
+      hGetAll hasFS pHnd >>= runGet primaryIndexFile get
   where
     primaryIndexFile = renderFile "primary" epoch
 
@@ -357,12 +349,11 @@ truncateToSlotFS hasFS@HasFS { hTruncate, hGetSize } epoch (RelativeSlot slot) =
 unfinalise
   :: (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> EpochNo
   -> m ()
-unfinalise hasFS err epoch = do
+unfinalise hasFS epoch = do
     -- TODO optimise so that we only need to open the file once
-    primaryIndex <- load hasFS err epoch
+    primaryIndex <- load hasFS epoch
     case lastFilledSlot primaryIndex of
       Nothing   -> return ()
       Just slot -> truncateToSlotFS hasFS epoch slot
@@ -372,16 +363,16 @@ unfinalise hasFS err epoch = do
 -- The file is opened with the given 'AllowExisting' value. When given
 -- 'MustBeNew', the version number is written to the file.
 open
-  :: (HasCallStack, Monad m)
+  :: (HasCallStack, MonadCatch m)
   => HasFS m h
   -> EpochNo
   -> AllowExisting
   -> m (Handle h)
-open hasFS@HasFS { hOpen, hClose, hasFsErr } epoch allowExisting = do
+open hasFS@HasFS { hOpen, hClose } epoch allowExisting = do
     -- TODO we rely on the fact that if the file exists, it already contains
     -- the version number and the first offset. What if that is not the case?
     pHnd <- hOpen primaryIndexFile (AppendMode allowExisting)
-    flip (EH.onException hasFsErr) (hClose pHnd) $ do
+    flip onException (hClose pHnd) $ do
       case allowExisting of
         AllowExisting -> return ()
         -- If the file is new, write the version number and the first offset,

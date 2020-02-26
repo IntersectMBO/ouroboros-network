@@ -7,21 +7,15 @@ module Test.Util.FS.Sim.STM (
     , simHasFS
     ) where
 
-import           Control.Monad.Except
-import           Control.Monad.State
-import           Data.Proxy
-
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling
-                     (ErrorHandling (..))
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.Pure (PureSimFS, runPureSimFS)
 
 {------------------------------------------------------------------------------
   The simulation-related types
@@ -30,52 +24,46 @@ import qualified Test.Util.FS.Sim.MockFS as Mock
 --- | Runs a computation provided an initial 'MockFS', producing a
 --- result, the final state of the filesystem and a sequence of actions occurred
 --- in the filesystem.
-runSimFS :: MonadSTM m
-         => ErrorHandling FsError m
-         -> MockFS
+runSimFS :: (MonadSTM m, MonadThrow m)
+         => MockFS
          -> (HasFS m HandleMock -> m a)
          -> m (a, MockFS)
-runSimFS err fs act = do
+runSimFS fs act = do
     var <- newTVarM fs
-    a   <- act (simHasFS err var)
+    a   <- act (simHasFS var)
     fs' <- atomically (readTVar var)
     return (a, fs')
 
 -- | Equip @m@ with a @HasFs@ instance using the mock file system
-simHasFS :: forall m. MonadSTM m
-         => ErrorHandling FsError m
-         -> StrictTVar m MockFS
+simHasFS :: forall m. (MonadSTM m, MonadThrow m)
+         => StrictTVar m MockFS
          -> HasFS m HandleMock
-simHasFS err var = HasFS {
+simHasFS var = HasFS {
       dumpState                = sim     Mock.dumpState
-    , hOpen                    = sim  .: Mock.hOpen                    err'
-    , hClose                   = sim  .  Mock.hClose                   err'
-    , hSeek                    = sim ..: Mock.hSeek                    err'
-    , hGetSome                 = sim  .: Mock.hGetSome                 err'
-    , hGetSomeAt               = sim ..: Mock.hGetSomeAt               err'
-    , hPutSome                 = sim  .: Mock.hPutSome                 err'
-    , hTruncate                = sim  .: Mock.hTruncate                err'
-    , hGetSize                 = sim  .  Mock.hGetSize                 err'
-    , createDirectory          = sim  .  Mock.createDirectory          err'
-    , createDirectoryIfMissing = sim  .: Mock.createDirectoryIfMissing err'
-    , listDirectory            = sim  .  Mock.listDirectory            err'
-    , doesDirectoryExist       = sim  .  Mock.doesDirectoryExist       err'
-    , doesFileExist            = sim  .  Mock.doesFileExist            err'
-    , removeFile               = sim  .  Mock.removeFile               err'
-    , hasFsErr                 = err
+    , hOpen                    = sim  .: Mock.hOpen
+    , hClose                   = sim  .  Mock.hClose
+    , hSeek                    = sim ..: Mock.hSeek
+    , hGetSome                 = sim  .: Mock.hGetSome
+    , hGetSomeAt               = sim ..: Mock.hGetSomeAt
+    , hPutSome                 = sim  .: Mock.hPutSome
+    , hTruncate                = sim  .: Mock.hTruncate
+    , hGetSize                 = sim  .  Mock.hGetSize
+    , createDirectory          = sim  .  Mock.createDirectory
+    , createDirectoryIfMissing = sim  .: Mock.createDirectoryIfMissing
+    , listDirectory            = sim  .  Mock.listDirectory
+    , doesDirectoryExist       = sim  .  Mock.doesDirectoryExist
+    , doesFileExist            = sim  .  Mock.doesFileExist
+    , removeFile               = sim  .  Mock.removeFile
     , mkFsErrorPath            = fsToFsErrorPathUnmounted
     }
   where
-    sim :: StateT MockFS (Except FsError) a -> m a
+    sim :: PureSimFS a -> m a
     sim m = do
       eOrA <- atomically $ do
         st <- readTVar var
-        case runExcept (runStateT m st) of
+        case runPureSimFS m st of
           Left e -> return $ Left e
           Right (a, st') -> do
             writeTVar var st'
             return $ Right a
-      either (EH.throwError err) return eOrA
-
-    err' :: ErrorHandling FsError (StateT MockFS (Except FsError))
-    err' = EH.liftErrState (Proxy @MockFS) EH.exceptT
+      either throwM return eOrA

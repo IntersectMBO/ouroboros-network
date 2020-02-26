@@ -3,24 +3,17 @@
 
 module Test.Ouroboros.Storage.VolatileDB.Mock (openDBMock) where
 
-import           Control.Monad (join)
-
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling,
-                     ThrowCantCatch)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 
 import           Test.Ouroboros.Storage.VolatileDB.Model
 
 openDBMock  :: forall m blockId. (IOLike m, Ord blockId)
-            => ErrorHandling VolatileDBError m
-            -> ThrowCantCatch VolatileDBError (STM m)
-            -> BlocksPerFile
+            => BlocksPerFile
             -> m (DBModel blockId, VolatileDB blockId m)
-openDBMock err errSTM maxBlocksPerFile = do
+openDBMock maxBlocksPerFile = do
     dbVar <- uncheckedNewTVarM dbModel
     return (dbModel, db dbVar)
   where
@@ -44,23 +37,21 @@ openDBMock err errSTM maxBlocksPerFile = do
         update_ f = atomically $ modifyTVar dbVar f
 
         updateE_ :: (DBModel blockId -> Either VolatileDBError (DBModel blockId)) -> m ()
-        updateE_ f = join $ atomically $ do
+        updateE_ f = atomically $ do
           (f <$> readTVar dbVar) >>= \case
-            Left  e   -> return $ EH.throwError err e
-            Right db' -> do
-              writeTVar dbVar db'
-              return $ return ()
+            Left  e   -> throwM e
+            Right db' -> writeTVar dbVar db'
 
         query :: (DBModel blockId -> a) -> m a
         query f = fmap f $ atomically $ readTVar dbVar
 
         queryE :: (DBModel blockId -> Either VolatileDBError a) -> m a
         queryE f = query f >>= \case
-          Left  e -> EH.throwError err e
+          Left  e -> throwM e
           Right a -> return a
 
         querySTME :: (DBModel blockId -> Either VolatileDBError a) -> STM m a
         querySTME f =
           (f <$> readTVar dbVar) >>= \case
-            Left  e -> EH.throwError' errSTM e
+            Left  e -> throwM e
             Right a -> return a

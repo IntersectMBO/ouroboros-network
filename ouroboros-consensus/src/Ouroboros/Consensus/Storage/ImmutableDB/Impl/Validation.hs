@@ -36,8 +36,6 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
@@ -60,7 +58,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
 -- truncating them.
 data ValidateEnv m hash h e = ValidateEnv
   { hasFS       :: !(HasFS m h)
-  , err         :: !(ErrorHandling ImmutableDBError m)
   , epochInfo   :: !(EpochInfo m)
   , hashInfo    :: !(HashInfo hash)
   , parser      :: !(EpochFileParser e m (BlockSummary hash) hash)
@@ -79,16 +76,16 @@ validateAndReopen
   -> m (OpenState m hash h)
 validateAndReopen validateEnv valPol = do
     (epoch, tip) <- validate validateEnv valPol
-    index        <- cachedIndex hasFS err hashInfo registry cacheTracer cacheConfig epoch
+    index        <- cachedIndex hasFS hashInfo registry cacheTracer cacheConfig epoch
     case tip of
       TipGen -> assert (epoch == 0) $ do
         traceWith tracer NoValidLastLocation
-        mkOpenState registry hasFS err index epoch TipGen MustBeNew
+        mkOpenState registry hasFS index epoch TipGen MustBeNew
       _     -> do
         traceWith tracer $ ValidatedLastLocation epoch (forgetTipInfo <$> tip)
-        mkOpenState registry hasFS err index epoch tip    AllowExisting
+        mkOpenState registry hasFS index epoch tip    AllowExisting
   where
-    ValidateEnv { hasFS, err, hashInfo, tracer, registry, cacheConfig } = validateEnv
+    ValidateEnv { hasFS, hashInfo, tracer, registry, cacheConfig } = validateEnv
     cacheTracer = contramap TraceCacheEvent tracer
 
 -- | Execute the 'ValidationPolicy'.
@@ -125,7 +122,7 @@ validateAllEpochs
   -> EpochNo
      -- ^ Most recent epoch on disk
   -> m (EpochNo, ImmTipWithInfo hash)
-validateAllEpochs validateEnv@ValidateEnv { hasFS, err, epochInfo } lastEpoch =
+validateAllEpochs validateEnv@ValidateEnv { hasFS, epochInfo } lastEpoch =
     go (0, TipGen) 0 Origin
   where
     go
@@ -177,7 +174,7 @@ validateAllEpochs validateEnv@ValidateEnv { hasFS, err, epochInfo } lastEpoch =
       Tip _  -> do
         removeFilesStartingFrom hasFS (lastValidEpoch + 1)
         when (lastValidEpoch < lastValidatedEpoch) $
-          Primary.unfinalise hasFS err lastValidEpoch
+          Primary.unfinalise hasFS lastValidEpoch
 
 -- | Validate the given most recent epoch. If that epoch contains no valid
 -- block, try the epoch before it, and so on. Stop as soon as an epoch with a
@@ -280,11 +277,11 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
     -- Read the entries from the secondary index file, if it exists.
     secondaryIndexFileExists  <- lift $ doesFileExist secondaryIndexFile
     entriesFromSecondaryIndex <- lift $ if secondaryIndexFileExists
-      then EH.try errLoad
+      then tryJust isInvalidFileError
         -- Note the 'maxBound': it is used to calculate the block size for
         -- each entry, but we don't care about block sizes here, so we use
         -- some dummy value.
-        (Secondary.readAllEntries hasFS err hashInfo 0 epoch (const False)
+        (Secondary.readAllEntries hasFS hashInfo 0 epoch (const False)
            maxBound IsEBB) >>= \case
           Left _                -> do
             traceWith tracer $ InvalidSecondaryIndex epoch
@@ -347,8 +344,8 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
         shouldBeFinalised (map Secondary.blockOrEBB entries)
       primaryIndexFileExists  <- doesFileExist primaryIndexFile
       primaryIndexFileMatches <- if primaryIndexFileExists
-        then EH.try errLoad (Primary.load hasFS err epoch) >>= \case
-          Left _                     -> do
+        then tryJust isInvalidFileError (Primary.load hasFS epoch) >>= \case
+          Left ()                    -> do
             traceWith tracer $ InvalidPrimaryIndex epoch
             return False
           Right primaryIndexFromFile ->
@@ -374,13 +371,12 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
     summaryToTipInfo (BlockSummary entry blockNo) =
       TipInfo (Secondary.headerHash entry) (Secondary.blockOrEBB entry) blockNo
 
-    -- | Handle only 'InvalidFileError', which is the only error that can be
-    -- thrown while load a primary or a secondary index file
-    errLoad :: ErrorHandling UnexpectedError m
-    errLoad = EH.embed UnexpectedError
-      (\case
-        UnexpectedError (e@InvalidFileError {}) -> Just e
-        _ -> Nothing) err
+    -- | 'InvalidFileError' is the only error that can be thrown while loading
+    -- a primary or a secondary index file
+    isInvalidFileError :: ImmutableDBError -> Maybe ()
+    isInvalidFileError = \case
+      UnexpectedError (InvalidFileError {}) -> Just ()
+      _                                     -> Nothing
 
     -- | When reading the entries from the secondary index file, we need to
     -- pass in a value of type 'IsEBB' so we know whether the first entry

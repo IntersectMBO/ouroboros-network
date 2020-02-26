@@ -52,7 +52,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (HasFS, hPutAll, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Consensus.Storage.VolatileDB
 import           Ouroboros.Consensus.Storage.VolatileDB.Util
 
@@ -495,17 +494,15 @@ data VolatileDBEnv h = VolatileDBEnv
 semanticsImpl :: VolatileDBEnv h -> At CmdErr Concrete -> IO (At Resp Concrete)
 semanticsImpl env@VolatileDBEnv { db, varErrors }  (At (CmdErr cmd mbErrors)) =
     At . Resp <$> case mbErrors of
-      Nothing     -> try (runDB env cmd)
+      Nothing     -> tryVolDB (runDB env cmd)
       Just errors -> do
         _ <- withErrors varErrors errors $
-          tryDB (runDB env cmd)
+          tryVolDB (runDB env cmd)
         -- As all operations on the VolatileDB are idempotent, close
         -- (idempotent), reopen it, and run the command again.
         closeDB  db
         reOpenDB db
-        try (runDB env cmd)
-  where
-    tryDB = tryVolDB EH.monadCatch EH.monadCatch
+        tryVolDB (runDB env cmd)
 
 runDB :: HasCallStack
       => VolatileDBEnv h
@@ -580,13 +577,12 @@ test cmds = do
     varFs              <- run $ uncheckedNewTVarM Mock.empty
     (tracer, getTrace) <- run $ recordingTracerIORef
 
-    let hasFS  = mkSimErrorHasFS EH.monadCatch varFs varErrors
+    let hasFS  = mkSimErrorHasFS varFs varErrors
         parser = blockFileParser' hasFS testBlockIsEBB
           testBlockToBinaryInfo (const <$> decode) testBlockIsValid
           ValidateAll
 
-    db <- run $
-      openDB hasFS EH.monadCatch errSTM parser tracer maxBlocksPerFile
+    db <- run $ openDB hasFS parser tracer maxBlocksPerFile
 
     let env = VolatileDBEnv { varErrors, db, hasFS }
         sm' = sm env dbm
@@ -602,7 +598,6 @@ test cmds = do
     return (hist, res === Ok)
   where
     dbm = initDBModel maxBlocksPerFile
-    errSTM = EH.throwCantCatch EH.monadCatch
 
 maxBlocksPerFile :: BlocksPerFile
 maxBlocksPerFile = mkBlocksPerFile 3

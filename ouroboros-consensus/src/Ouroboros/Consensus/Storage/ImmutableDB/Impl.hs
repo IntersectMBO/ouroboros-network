@@ -119,8 +119,6 @@ import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types hiding (allowExisting)
 import           Ouroboros.Consensus.Storage.FS.CRC
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling
-                     (ErrorHandling (..))
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
@@ -171,7 +169,6 @@ withDB
      (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash)
   => ResourceRegistry m
   -> HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> EpochInfo m
   -> HashInfo hash
   -> ValidationPolicy
@@ -181,11 +178,11 @@ withDB
   -> BlockchainTime m
   -> (ImmutableDB hash m -> m a)
   -> m a
-withDB registry hasFS err epochInfo hashInfo valPol parser tracer cacheConfig btime =
+withDB registry hasFS epochInfo hashInfo valPol parser tracer cacheConfig btime =
     bracket open closeDB
   where
     open = fst <$>
-      openDBInternal registry hasFS err epochInfo hashInfo valPol parser tracer
+      openDBInternal registry hasFS epochInfo hashInfo valPol parser tracer
         cacheConfig btime
 
 {------------------------------------------------------------------------------
@@ -229,7 +226,6 @@ mkDBRecord dbEnv = ImmutableDB
     , appendBlock            = appendBlockImpl            dbEnv
     , appendEBB              = appendEBBImpl              dbEnv
     , stream                 = streamImpl                 dbEnv
-    , immutableDBErr         = _dbErr                     dbEnv
     }
 
 -- | For testing purposes:
@@ -242,7 +238,6 @@ openDBInternal
   => ResourceRegistry m  -- ^ The ImmutableDB will be in total control of
                          -- this, not to be used for other resources.
   -> HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> EpochInfo m
   -> HashInfo hash
   -> ValidationPolicy
@@ -251,12 +246,11 @@ openDBInternal
   -> Index.CacheConfig
   -> BlockchainTime m
   -> m (ImmutableDB hash m, Internal hash m)
-openDBInternal registry hasFS@HasFS{..} err epochInfo hashInfo valPol parser
+openDBInternal registry hasFS@HasFS{..} epochInfo hashInfo valPol parser
                tracer cacheConfig btime = do
     currentSlot <- atomically $ getCurrentSlot btime
     let validateEnv = ValidateEnv
           { hasFS
-          , err
           , epochInfo
           , hashInfo
           , parser
@@ -271,7 +265,6 @@ openDBInternal registry hasFS@HasFS{..} err epochInfo hashInfo valPol parser
 
     let dbEnv = ImmutableDBEnv
           { _dbHasFS           = hasFS
-          , _dbErr             = err
           , _dbInternalState   = stVar
           , _dbEpochFileParser = parser
           , _dbEpochInfo       = epochInfo
@@ -322,14 +315,13 @@ reopenImpl ImmutableDBEnv {..} valPol = bracketOnError
   -- an empty TMVar.
   (putMVar _dbInternalState) $ \case
       -- When still open,
-      DbOpen _ -> throwUserError _dbErr OpenDBError
+      DbOpen _ -> throwUserError OpenDBError
 
       -- Closed, so we can try to reopen
       DbClosed -> do
         currentSlot <- atomically $ getCurrentSlot _dbBlockchainTime
         let validateEnv = ValidateEnv
               { hasFS       = _dbHasFS
-              , err         = _dbErr
               , epochInfo   = _dbEpochInfo
               , hashInfo    = _dbHashInfo
               , parser      = _dbEpochFileParser
@@ -369,11 +361,11 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
         -- Reset the index, as it can contain stale information. Also restarts
         -- the background thread expiring unused past epochs.
         Index.restart _index newEpoch
-        mkOpenState _dbRegistry hasFS _dbErr _index newEpoch newTipWithHash
+        mkOpenState _dbRegistry hasFS _index newEpoch newTipWithHash
           allowExisting
       put ost
   where
-    ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo, _dbRegistry } = dbEnv
+    ImmutableDBEnv {  _dbEpochInfo, _dbHashInfo, _dbRegistry } = dbEnv
 
     -- | The current tip as a 'TipEpochSlot'
     blockOrEBBEpochSlot :: BlockOrEBB -> m EpochSlot
@@ -394,7 +386,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
 
         -- Retrieve the needed info from the primary index file and then
         -- truncate it.
-        primaryIndex <- Primary.load hasFS _dbErr epoch
+        primaryIndex <- Primary.load hasFS epoch
         Primary.truncateToSlotFS hasFS epoch relSlot
         let lastSecondaryOffset = Primary.offsetOfSlot primaryIndex relSlot
             isEBB | relSlot == 0 = IsEBB
@@ -402,7 +394,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
 
         -- Retrieve the needed info from the secondary index file and then
         -- truncate it.
-        (entry, blockSize) <- Secondary.readEntry hasFS _dbErr _dbHashInfo
+        (entry, blockSize) <- Secondary.readEntry hasFS _dbHashInfo
           epoch isEBB lastSecondaryOffset
         Secondary.truncateToEntry hasFS _dbHashInfo epoch lastSecondaryOffset
 
@@ -448,15 +440,15 @@ getBlockComponentImpl dbEnv blockComponent slot =
           return $ slot >= ebbSlot
 
       when inTheFuture $
-        throwUserError _dbErr $
+        throwUserError $
           ReadFutureSlotError slot (forgetTipInfo <$> _currentTip)
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
       epochSlot <- epochInfoBlockRelative _dbEpochInfo slot
-      getEpochSlot _dbHasFS _dbErr _dbEpochInfo _index curEpochInfo
+      getEpochSlot _dbHasFS _dbEpochInfo _index curEpochInfo
         blockComponent epochSlot
   where
-    ImmutableDBEnv { _dbEpochInfo, _dbErr } = dbEnv
+    ImmutableDBEnv { _dbEpochInfo } = dbEnv
 
 getEBBComponentImpl
   :: forall m hash b. (HasCallStack, IOLike m)
@@ -472,25 +464,24 @@ getEBBComponentImpl dbEnv blockComponent epoch =
             Tip (EBB _)   -> epoch > _currentEpoch
 
       when inTheFuture $
-        throwUserError _dbErr $ ReadFutureEBBError epoch _currentEpoch
+        throwUserError $ ReadFutureEBBError epoch _currentEpoch
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
-      getEpochSlot _dbHasFS _dbErr _dbEpochInfo _index curEpochInfo
+      getEpochSlot _dbHasFS _dbEpochInfo _index curEpochInfo
         blockComponent (EpochSlot epoch 0)
   where
-    ImmutableDBEnv { _dbEpochInfo, _dbErr } = dbEnv
+    ImmutableDBEnv { _dbEpochInfo } = dbEnv
 
 extractBlockComponent
   :: forall m h hash b. (HasCallStack, IOLike m)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> EpochInfo m
   -> EpochNo
   -> CurrentEpochInfo
   -> (Secondary.Entry hash, BlockSize)
   -> BlockComponent (ImmutableDB hash m) b
   -> m b
-extractBlockComponent hasFS err epochInfo epoch curEpochInfo (entry, blockSize) = \case
+extractBlockComponent hasFS epochInfo epoch curEpochInfo (entry, blockSize) = \case
     GetHash  -> return headerHash
     GetSlot  -> case blockOrEBB of
       Block slot  -> return slot
@@ -519,9 +510,9 @@ extractBlockComponent hasFS err epochInfo epoch curEpochInfo (entry, blockSize) 
     GetPure a -> return a
 
     GetApply f bc ->
-      extractBlockComponent hasFS err epochInfo epoch curEpochInfo
+      extractBlockComponent hasFS epochInfo epoch curEpochInfo
         (entry, blockSize) f <*>
-      extractBlockComponent hasFS err epochInfo epoch curEpochInfo
+      extractBlockComponent hasFS epochInfo epoch curEpochInfo
         (entry, blockSize) bc
 
     -- In case the requested epoch is the current epoch, we will be reading
@@ -564,7 +555,7 @@ extractBlockComponent hasFS err epochInfo epoch curEpochInfo (entry, blockSize) 
             -> hGetAllAtCRC     hasFS eHnd                     offset
           Secondary.BlockSize size
             -> hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
-      checkChecksum err epochFile blockOrEBB checksum checksum'
+      checkChecksum epochFile blockOrEBB checksum checksum'
       return bl
 
     GetRawHeader ->
@@ -606,7 +597,7 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
           return $ slot > ebbSlot
 
       when inTheFuture $
-        throwUserError _dbErr $ ReadFutureSlotError slot (forgetTipInfo <$> _currentTip)
+        throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> _currentTip)
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
 
@@ -617,10 +608,10 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
           return Nothing
         Right (EpochSlot epoch _, (entry, blockSize), _secondaryOffset) ->
           Just <$>
-            extractBlockComponent _dbHasFS _dbErr _dbEpochInfo epoch curEpochInfo
+            extractBlockComponent _dbHasFS _dbEpochInfo epoch curEpochInfo
               (entry, blockSize) blockComponent
   where
-    ImmutableDBEnv { _dbEpochInfo, _dbErr } = dbEnv
+    ImmutableDBEnv { _dbEpochInfo } = dbEnv
 
 -- | Get the block component corresponding to the given 'EpochSlot'.
 --
@@ -628,14 +619,13 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
 getEpochSlot
   :: forall m h hash b. (HasCallStack, IOLike m)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> EpochInfo m
   -> Index m hash h
   -> CurrentEpochInfo
   -> BlockComponent (ImmutableDB hash m) b
   -> EpochSlot
   -> m (Maybe b)
-getEpochSlot hasFS err epochInfo index curEpochInfo blockComponent epochSlot =
+getEpochSlot hasFS epochInfo index curEpochInfo blockComponent epochSlot =
     -- Check the primary index first
     Index.readOffset index epoch relativeSlot >>= \case
       -- Empty slot
@@ -646,7 +636,7 @@ getEpochSlot hasFS err epochInfo index curEpochInfo blockComponent epochSlot =
         -- TODO only read the hash in case of 'GetHash'?
         (entry, blockSize) <- Index.readEntry index epoch isEBB secondaryOffset
         Just <$>
-          extractBlockComponent hasFS err epochInfo epoch curEpochInfo
+          extractBlockComponent hasFS epochInfo epoch curEpochInfo
             (entry, blockSize) blockComponent
   where
     EpochSlot epoch relativeSlot = epochSlot
@@ -675,13 +665,13 @@ appendBlockImpl dbEnv slot blockNumber headerHash binaryInfo =
             TipGen                 -> False
 
       when inThePast $ lift $
-        throwUserError _dbErr $
+        throwUserError $
           AppendToSlotInThePastError slot (forgetTipInfo <$> _currentTip)
 
-      appendEpochSlot _dbRegistry _dbHasFS _dbErr _dbEpochInfo _index epochSlot
+      appendEpochSlot _dbRegistry _dbHasFS _dbEpochInfo _index epochSlot
         blockNumber (Block slot) headerHash binaryInfo
   where
-    ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbRegistry } = dbEnv
+    ImmutableDBEnv { _dbEpochInfo, _dbRegistry } = dbEnv
 
 appendEBBImpl
   :: forall m hash. (HasCallStack, IOLike m)
@@ -704,19 +694,18 @@ appendEBBImpl dbEnv epoch blockNumber headerHash binaryInfo =
             Tip (EBB _)   -> epoch <= _currentEpoch
             TipGen        -> False
 
-      when inThePast $ lift $ throwUserError _dbErr $
+      when inThePast $ lift $ throwUserError $
         AppendToEBBInThePastError epoch _currentEpoch
 
-      appendEpochSlot _dbRegistry _dbHasFS _dbErr _dbEpochInfo _index
+      appendEpochSlot _dbRegistry _dbHasFS _dbEpochInfo _index
         (EpochSlot epoch 0) blockNumber (EBB epoch) headerHash binaryInfo
   where
-    ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbRegistry } = dbEnv
+    ImmutableDBEnv { _dbEpochInfo, _dbRegistry } = dbEnv
 
 appendEpochSlot
   :: forall m h hash. (HasCallStack, IOLike m)
   => ResourceRegistry m
   -> HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> EpochInfo m
   -> Index m hash h
   -> EpochSlot  -- ^ The 'EpochSlot' of the new block or EBB
@@ -726,7 +715,7 @@ appendEpochSlot
   -> hash
   -> BinaryInfo Builder
   -> StateT (OpenState m hash h) m ()
-appendEpochSlot registry hasFS err epochInfo index epochSlot blockNumber blockOrEBB headerHash
+appendEpochSlot registry hasFS epochInfo index epochSlot blockNumber blockOrEBB headerHash
                 BinaryInfo { binaryBlob, headerOffset, headerSize } = do
     OpenState { _currentEpoch = initialEpoch } <- get
 
@@ -736,7 +725,7 @@ appendEpochSlot registry hasFS err epochInfo index epochSlot blockNumber blockOr
     when (epoch > initialEpoch) $ do
       let newEpochsToStart :: Int
           newEpochsToStart = fromIntegral . unEpochNo $ epoch - initialEpoch
-      replicateM_ newEpochsToStart (startNewEpoch registry hasFS err index epochInfo)
+      replicateM_ newEpochsToStart (startNewEpoch registry hasFS index epochInfo)
 
     -- We may have updated the state with 'startNewEpoch', so get the
     -- (possibly) updated state, but first remember the current epoch
@@ -794,11 +783,10 @@ startNewEpoch
   :: forall m h hash. (HasCallStack, IOLike m)
   => ResourceRegistry m
   -> HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> Index m hash h
   -> EpochInfo m
   -> StateT (OpenState m hash h) m ()
-startNewEpoch registry hasFS@HasFS{..} err index epochInfo = do
+startNewEpoch registry hasFS@HasFS{..} index epochInfo = do
     st@OpenState {..} <- get
 
     -- Find out the size of the current epoch, so we can pad the primary
@@ -831,7 +819,7 @@ startNewEpoch registry hasFS@HasFS{..} err index epochInfo = do
       Index.appendOffsets index _currentPrimaryHandle backfillOffsets
       `finally` cleanUp hasFS st
 
-    st' <- lift $ mkOpenState registry hasFS err index (succ _currentEpoch)
+    st' <- lift $ mkOpenState registry hasFS index (succ _currentEpoch)
       _currentTip MustBeNew
 
     put st'

@@ -69,7 +69,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Consensus.Storage.LedgerDB.Conf
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
@@ -665,11 +664,11 @@ runDB standalone@DB{..} cmd =
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
         return $ Restored (fromInitLog initLog, ledgerDbCurrent db)
     go hasFS (Corrupt c ss) =
-        EH.catchError (hasFsErr hasFS)
+        catch
           (case c of
              Delete   -> Unit <$> deleteSnapshot   hasFS ss
              Truncate -> Unit <$> truncateSnapshot hasFS ss)
-          (\_ -> return $ Unit()) -- ignore any errors during corruption
+          (\(_ :: FsError) -> return $ Unit()) -- ignore any errors during corruption
     go hasFS (Drop n) = do
         -- During recovery the ChainDB would ask the ChainDB to recover
         -- and pick a new current chain; only once that is done would it
@@ -982,7 +981,7 @@ propCmds :: LUT t
 propCmds lgrDbParams cmds = do
     fs <- QC.run $ uncheckedNewTVarM MockFS.empty
     let dbEnv :: DbEnv IO
-        dbEnv = DbEnv (simHasFS EH.exceptions fs) lgrDbParams
+        dbEnv = DbEnv (simHasFS fs) lgrDbParams
     db <- QC.run $ initStandaloneDB dbEnv
     let sm' = sm lgrDbParams db
     (hist, _model, res) <- runCommands sm' cmds

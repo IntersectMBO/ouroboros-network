@@ -146,7 +146,6 @@ library
                        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
-                       Ouroboros.Consensus.Storage.Util.ErrorHandling
                        Ouroboros.Consensus.Storage.VolatileDB
                        Ouroboros.Consensus.Storage.VolatileDB.API
                        Ouroboros.Consensus.Storage.VolatileDB.FileInfo
@@ -276,6 +275,7 @@ test-suite test-consensus
                        Test.Util.BlockchainTime
                        Test.Util.FS.Sim.FsTree
                        Test.Util.FS.Sim.MockFS
+                       Test.Util.FS.Sim.Pure
                        Test.Util.FS.Sim.STM
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike

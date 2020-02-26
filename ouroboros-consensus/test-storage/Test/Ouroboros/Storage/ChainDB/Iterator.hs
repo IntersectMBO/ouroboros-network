@@ -44,7 +44,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.EpochInfo (fixedSizeEpochInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
 import           Test.Util.Orphans.IOLike ()
@@ -387,13 +386,11 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     -- | Open a mock VolatileDB and add the given blocks
     openVolDB :: [TestBlock] -> m (VolDB m TestBlock)
     openVolDB blocks = do
-        (_volDBModel, volDB) <- VolDB.openDBMock EH.monadCatch EH.throwSTM
-          (VolDB.mkBlocksPerFile 1)
+        (_volDBModel, volDB) <- VolDB.openDBMock (VolDB.mkBlocksPerFile 1)
         forM_ blocks $ \block ->
           VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
         return $ mkVolDB volDB (const <$> decode) (const <$> decode)
           encodeWithBinaryInfo isEBB addHdrEnv
-          EH.monadCatch EH.throwSTM
       where
         isEBB = testBlockIsEBB
 
@@ -418,7 +415,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     -- | Open a mock ImmutableDB and add the given chain of blocks
     openImmDB :: Chain TestBlock -> m (ImmDB m TestBlock)
     openImmDB chain = do
-        (_immDBModel, immDB) <- ImmDB.openDBMock EH.monadCatch epochSize
+        (_immDBModel, immDB) <- ImmDB.openDBMock epochSize
         forM_ (Chain.toOldestFirst chain) $ \block -> case isEBB (getHeader block) of
           Nothing -> ImmDB.appendBlock immDB
             (blockSlot block) (blockNo block) (blockHash block)
@@ -427,7 +424,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
             epoch (blockNo block) (blockHash block)
             (CBOR.toBuilder <$> encodeWithBinaryInfo block)
         return $ mkImmDB immDB (const <$> decode) (const <$> decode)
-          encodeWithBinaryInfo epochInfo isEBB addHdrEnv EH.monadCatch
+          encodeWithBinaryInfo epochInfo isEBB addHdrEnv
       where
         epochInfo = fixedSizeEpochInfo epochSize
         isEBB     = testHeaderEpochNoIfEBB epochSize

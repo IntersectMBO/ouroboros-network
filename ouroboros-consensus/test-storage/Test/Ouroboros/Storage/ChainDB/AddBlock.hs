@@ -49,7 +49,6 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
                      (ledgerDbDefaultParams)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..), mkBlocksPerFile)
 
@@ -260,15 +259,10 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbEncodeConsensusState = encode
     , cdbEncodeTipInfo        = encode
 
-      -- Error handling
-    , cdbErrImmDb             = EH.monadCatch
-    , cdbErrVolDb             = EH.monadCatch
-    , cdbErrVolDbSTM          = EH.throwSTM
-
       -- HasFS instances
-    , cdbHasFSImmDb           = simHasFS EH.monadCatch immDbFsVar
-    , cdbHasFSVolDb           = simHasFS EH.monadCatch volDbFsVar
-    , cdbHasFSLgrDB           = simHasFS EH.monadCatch lgrDbFsVar
+    , cdbHasFSImmDb           = simHasFS immDbFsVar
+    , cdbHasFSVolDb           = simHasFS volDbFsVar
+    , cdbHasFSLgrDB           = simHasFS lgrDbFsVar
 
       -- Policy
     , cdbImmValidation        = ValidateAllEpochs

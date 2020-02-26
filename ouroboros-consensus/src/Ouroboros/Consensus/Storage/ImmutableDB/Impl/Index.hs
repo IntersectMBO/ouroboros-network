@@ -31,7 +31,6 @@ import           Ouroboros.Consensus.Storage.Common (EpochNo)
 import           Ouroboros.Consensus.Storage.FS.API (HasFS)
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting,
                      Handle)
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
                      (CacheConfig (..))
@@ -44,7 +43,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout (RelativeSlot)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types (HashInfo,
-                     ImmutableDBError, TraceCacheEvent, WithBlockSize (..))
+                     TraceCacheEvent, WithBlockSize (..))
 
 {------------------------------------------------------------------------------
   Index
@@ -149,20 +148,19 @@ readEntry index epoch isEBB slotOffset = runIdentity <$>
 ------------------------------------------------------------------------------}
 
 fileBackedIndex
-  :: forall m hash h. MonadThrow m
+  :: forall m hash h. MonadCatch m
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> HashInfo hash
   -> Index m hash h
-fileBackedIndex hasFS err hashInfo = Index
-    { readOffsets         = Primary.readOffsets         hasFS err
-    , readFirstFilledSlot = Primary.readFirstFilledSlot hasFS err
+fileBackedIndex hasFS hashInfo = Index
+    { readOffsets         = Primary.readOffsets         hasFS
+    , readFirstFilledSlot = Primary.readFirstFilledSlot hasFS
     , openPrimaryIndex    = Primary.open                hasFS
     , appendOffsets       = Primary.appendOffsets       hasFS
-    , readEntries         = Secondary.readEntries       hasFS err hashInfo
-    , readAllEntries      = Secondary.readAllEntries    hasFS err hashInfo
+    , readEntries         = Secondary.readEntries       hasFS hashInfo
+    , readAllEntries      = Secondary.readAllEntries    hasFS hashInfo
     , appendEntry         = \_epoch h (WithBlockSize _ entry) ->
-                            Secondary.appendEntry       hasFS     hashInfo h entry
+                            Secondary.appendEntry       hasFS hashInfo h entry
       -- Nothing to do
     , close               = return ()
     , restart             = \_newCurEpoch -> return ()
@@ -180,15 +178,14 @@ fileBackedIndex hasFS err hashInfo = Index
 cachedIndex
   :: forall m hash h. (IOLike m, NoUnexpectedThunks hash)
   => HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> HashInfo hash
   -> ResourceRegistry m
   -> Tracer m TraceCacheEvent
   -> CacheConfig
   -> EpochNo  -- ^ Current epoch
   -> m (Index m hash h)
-cachedIndex hasFS err hashInfo registry tracer cacheConfig epoch = do
-    cacheEnv <- Cache.newEnv hasFS err hashInfo registry tracer cacheConfig epoch
+cachedIndex hasFS hashInfo registry tracer cacheConfig epoch = do
+    cacheEnv <- Cache.newEnv hasFS hashInfo registry tracer cacheConfig epoch
     return Index
       { readOffsets         = Cache.readOffsets         cacheEnv
       , readFirstFilledSlot = Cache.readFirstFilledSlot cacheEnv

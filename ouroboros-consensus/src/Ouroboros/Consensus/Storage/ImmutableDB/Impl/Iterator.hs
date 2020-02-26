@@ -134,8 +134,9 @@ streamImpl
                (Iterator hash m b))
 streamImpl dbEnv registry blockComponent mbStart mbEnd =
     withOpenState dbEnv $ \hasFS OpenState{..} -> runExceptT $ do
-      lift $ validateIteratorRange _dbErr _dbEpochInfo
-        (forgetTipInfo <$> _currentTip) mbStart mbEnd
+      lift $ either throwM return =<<
+        validateIteratorRange _dbEpochInfo (forgetTipInfo <$> _currentTip)
+          mbStart mbEnd
 
       case _currentTip of
         TipGen ->
@@ -158,7 +159,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
             when (startEpochSlot > endEpochSlot) $ do
               startSlot <- epochInfoAbsolute _dbEpochInfo startEpochSlot
               endSlot   <- epochInfoAbsolute _dbEpochInfo endEpochSlot
-              throwUserError _dbErr $ InvalidIteratorRangeError startSlot endSlot
+              throwUserError $ InvalidIteratorRangeError startSlot endSlot
 
             let EpochSlot startEpoch startRelSlot = startEpochSlot
                 startIsEBB | startRelSlot == 0 = IsEBB
@@ -181,7 +182,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
               , itEndHash = endHash
               }
   where
-    ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo } = dbEnv
+    ImmutableDBEnv { _dbEpochInfo, _dbHashInfo } = dbEnv
 
     -- | Fill in the end bound: if 'Nothing', use the current tip. Otherwise,
     -- check whether the bound exists in the database and return the
@@ -375,7 +376,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
           when step $ stepIterator curEpochInfo iteratorState
           return $ IteratorResult b
   where
-    ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo } = dbEnv
+    ImmutableDBEnv { _dbEpochInfo, _dbHashInfo } = dbEnv
 
     getBlockComponent
       :: Handle h
@@ -421,7 +422,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
       -> m ByteString
     readNextBlock eHnd (WithBlockSize size entry) epoch = do
         (bl, checksum') <- hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
-        checkChecksum _dbErr epochFile blockOrEBB checksum checksum'
+        checkChecksum epochFile blockOrEBB checksum checksum'
         return bl
       where
         Secondary.Entry { blockOffset, checksum, blockOrEBB } = entry

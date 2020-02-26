@@ -27,14 +27,11 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo)
 import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling,
-                     ThrowCantCatch)
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
                      (BinaryInfo (..), HashInfo (..))
@@ -73,11 +70,6 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbEncodeLedger         :: LedgerState blk -> Encoding
     , cdbEncodeTipInfo        :: TipInfo blk -> Encoding
     , cdbEncodeConsensusState :: ConsensusState (BlockProtocol blk) -> Encoding
-
-      -- Error handling
-    , cdbErrImmDb             :: ErrorHandling ImmDB.ImmutableDBError m
-    , cdbErrVolDb             :: ErrorHandling VolDB.VolatileDBError m
-    , cdbErrVolDbSTM          :: ThrowCantCatch VolDB.VolatileDBError (STM m)
 
       -- HasFS instances
     , cdbHasFSImmDb           :: HasFS m h1
@@ -174,7 +166,6 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immDecodeHeader     = cdbDecodeHeader
         , immEncodeHash       = cdbEncodeHash
         , immEncodeBlock      = cdbEncodeBlock
-        , immErr              = cdbErrImmDb
         , immEpochInfo        = cdbEpochInfo
         , immHashInfo         = cdbHashInfo
         , immValidation       = cdbImmValidation
@@ -189,8 +180,6 @@ fromChainDbArgs ChainDbArgs{..} = (
         }
     , VolDB.VolDbArgs {
           volHasFS            = cdbHasFSVolDb
-        , volErr              = cdbErrVolDb
-        , volErrSTM           = cdbErrVolDbSTM
         , volCheckIntegrity   = cdbCheckIntegrity
         , volBlocksPerFile    = cdbBlocksPerFile
         , volDecodeHeader     = cdbDecodeHeader
@@ -256,10 +245,6 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbEncodeLedger         = lgrEncodeLedger
     , cdbEncodeTipInfo        = lgrEncodeTipInfo
     , cdbEncodeConsensusState = lgrEncodeConsensusState
-      -- Error handling
-    , cdbErrImmDb             = immErr
-    , cdbErrVolDb             = volErr
-    , cdbErrVolDbSTM          = volErrSTM
       -- HasFS instances
     , cdbHasFSImmDb           = immHasFS
     , cdbHasFSVolDb           = volHasFS

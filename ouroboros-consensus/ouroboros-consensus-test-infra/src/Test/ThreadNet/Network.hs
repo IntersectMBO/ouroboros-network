@@ -102,7 +102,6 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
 import           Test.ThreadNet.TxGen
@@ -527,14 +526,10 @@ runThreadNetwork ThreadNetworkArgs
         , cdbEncodeLedger         = nodeEncodeLedgerState    cfg
         , cdbEncodeConsensusState = nodeEncodeConsensusState (Proxy @blk) cfg
         , cdbEncodeTipInfo        = nodeEncodeTipInfo        (Proxy @blk)
-          -- Error handling
-        , cdbErrImmDb             = EH.monadCatch
-        , cdbErrVolDb             = EH.monadCatch
-        , cdbErrVolDbSTM          = EH.throwSTM
           -- HasFS instances
-        , cdbHasFSImmDb           = simHasFS EH.monadCatch (nodeDBsImm nodeDBs)
-        , cdbHasFSVolDb           = simHasFS EH.monadCatch (nodeDBsVol nodeDBs)
-        , cdbHasFSLgrDB           = simHasFS EH.monadCatch (nodeDBsLgr nodeDBs)
+        , cdbHasFSImmDb           = simHasFS (nodeDBsImm nodeDBs)
+        , cdbHasFSVolDb           = simHasFS (nodeDBsVol nodeDBs)
+        , cdbHasFSLgrDB           = simHasFS (nodeDBsLgr nodeDBs)
           -- Policy
         , cdbImmValidation        = ImmDB.ValidateAllEpochs
         , cdbVolValidation        = VolDB.ValidateAll
