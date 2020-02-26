@@ -529,8 +529,6 @@ runThreadNetwork ThreadNetworkArgs
         , cdbEncodeTipInfo        = nodeEncodeTipInfo        (Proxy @blk)
           -- Error handling
         , cdbErrImmDb             = EH.monadCatch
-        , cdbErrVolDb             = EH.monadCatch
-        , cdbErrVolDbSTM          = EH.throwSTM
           -- HasFS instances
         , cdbHasFSImmDb           = simHasFS EH.monadCatch (nodeDBsImm nodeDBs)
         , cdbHasFSVolDb           = simHasFS EH.monadCatch (nodeDBsVol nodeDBs)

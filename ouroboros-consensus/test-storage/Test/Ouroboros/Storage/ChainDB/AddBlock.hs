@@ -262,8 +262,6 @@ mkArgs cfg initLedger tracer registry hashInfo
 
       -- Error handling
     , cdbErrImmDb             = EH.monadCatch
-    , cdbErrVolDb             = EH.monadCatch
-    , cdbErrVolDbSTM          = EH.throwSTM
 
       -- HasFS instances
     , cdbHasFSImmDb           = simHasFS EH.monadCatch immDbFsVar

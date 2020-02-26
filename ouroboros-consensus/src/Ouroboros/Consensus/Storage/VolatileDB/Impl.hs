@@ -115,8 +115,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling
-                     (ErrorHandling (..), ThrowCantCatch (..))
 import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 import           Ouroboros.Consensus.Storage.VolatileDB.FileInfo (FileInfo)
@@ -131,8 +129,6 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Util
 
 data VolatileDBEnv m blockId = forall h e. VolatileDBEnv {
       _dbHasFS          :: !(HasFS m h)
-    , _dbErr            :: !(ErrorHandling VolatileDBError m)
-    , _dbErrSTM         :: !(ThrowCantCatch VolatileDBError (STM m))
     , _dbInternalState  :: !(StrictMVar m (OpenOrClosed blockId h))
     , _maxBlocksPerFile :: !BlocksPerFile
     , _parser           :: !(Parser e m blockId)
@@ -181,19 +177,15 @@ openDB :: ( HasCallStack
           , NoUnexpectedThunks blockId
           )
        => HasFS m h
-       -> ErrorHandling VolatileDBError m
-       -> ThrowCantCatch VolatileDBError (STM m)
        -> Parser e m blockId
        -> Tracer m (TraceEvent e blockId)
        -> BlocksPerFile
        -> m (VolatileDB blockId m)
-openDB hasFS err errSTM parser tracer maxBlocksPerFile = do
-    st    <- mkInternalStateDB hasFS err parser tracer maxBlocksPerFile
+openDB hasFS parser tracer maxBlocksPerFile = do
+    st    <- mkInternalStateDB hasFS parser tracer maxBlocksPerFile
     stVar <- newMVar $ VolatileDbOpen st
     let env = VolatileDBEnv {
             _dbHasFS          = hasFS
-          , _dbErr            = err
-          , _dbErrSTM         = errSTM
           , _dbInternalState  = stVar
           , _maxBlocksPerFile = maxBlocksPerFile
           , _parser           = parser
@@ -220,7 +212,7 @@ closeDBImpl VolatileDBEnv{..} = do
     case mbInternalState of
       VolatileDbClosed -> traceWith _tracer DBAlreadyClosed
       VolatileDbOpen InternalState{..} ->
-        wrapFsError hasFsErr _dbErr $ hClose _currentWriteHandle
+        wrapFsError hasFsErr $ hClose _currentWriteHandle
   where
     HasFS{..} = _dbHasFS
 
@@ -245,8 +237,7 @@ reOpenDBImpl VolatileDBEnv{..} =
         traceWith _tracer DBAlreadyOpen
         return (VolatileDbOpen st, ())
       VolatileDbClosed -> do
-        st <- mkInternalStateDB
-          _dbHasFS _dbErr _parser _tracer _maxBlocksPerFile
+        st <- mkInternalStateDB _dbHasFS  _parser _tracer _maxBlocksPerFile
         return (VolatileDbOpen st, ())
 
 getBlockComponentImpl
@@ -327,7 +318,7 @@ putBlockImpl env@VolatileDBEnv{..} blockInfo@BlockInfo { bbid, bslot, bpreBid } 
                           -> m (InternalState blockId h, ())
     updateStateAfterWrite hasFS@HasFS{..} st@InternalState{..} bytesWritten =
         if FileInfo.isFull _maxBlocksPerFile fileInfo'
-        then (,()) <$> nextFile hasFS _dbErr env st'
+        then (,()) <$> nextFile hasFS env st'
         else return (st', ())
       where
         fileInfo = fromMaybe
@@ -455,11 +446,10 @@ getMaxSlotNoImpl = getterSTM _currentMaxSlotNo
 -- This may throw an FsError.
 nextFile :: forall h m blockId. IOLike m
          => HasFS m h
-         -> ErrorHandling VolatileDBError m
          -> VolatileDBEnv m blockId
          -> InternalState blockId h
          -> m (InternalState blockId h)
-nextFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
+nextFile HasFS{..} VolatileDBEnv{..} st@InternalState{..} = do
     hClose _currentWriteHandle
     hndl <- hOpen file (AppendMode MustBeNew)
     return st {
@@ -481,17 +471,16 @@ mkInternalStateDB :: forall m blockId e h.
                      , Ord blockId
                      )
                   => HasFS m h
-                  -> ErrorHandling VolatileDBError m
                   -> Parser e m blockId
                   -> Tracer m (TraceEvent e blockId)
                   -> BlocksPerFile
                   -> m (InternalState blockId h)
-mkInternalStateDB hasFS@HasFS{..} err parser tracer maxBlocksPerFile =
-    wrapFsError hasFsErr err $ do
+mkInternalStateDB hasFS@HasFS{..} parser tracer maxBlocksPerFile =
+    wrapFsError hasFsErr $ do
       createDirectoryIfMissing True dbDir
       allFiles <- map toFsPath . Set.toList <$> listDirectory dbDir
       filesWithIds <- logInvalidFiles $ parseAllFds allFiles
-      mkInternalState hasFS err parser tracer maxBlocksPerFile filesWithIds
+      mkInternalState hasFS parser tracer maxBlocksPerFile filesWithIds
   where
     -- | Logs about any invalid 'FsPath' and returns the valid ones.
     logInvalidFiles :: ([(FileId, FsPath)], [FsPath]) -> m [(FileId, FsPath)]
@@ -522,14 +511,13 @@ mkInternalState
      , Ord blockId
      )
   => HasFS m h
-  -> ErrorHandling VolatileDBError m
   -> Parser e m blockId
   -> Tracer m (TraceEvent e blockId)
   -> BlocksPerFile
   -> [(FileId, FsPath)]
   -> m (InternalState blockId h)
-mkInternalState hasFS err parser tracer maxBlocksPerFile files =
-    wrapFsError (hasFsErr hasFS) err $ do
+mkInternalState hasFS parser tracer maxBlocksPerFile files =
+    wrapFsError (hasFsErr hasFS) $ do
       (currentMap', currentRevMap', currentSuccMap') <-
         foldM validateFile (Index.empty, Map.empty, Map.empty) files
 
@@ -619,12 +607,11 @@ modifyState :: forall blockId m r. (HasCallStack, IOLike m)
                )
             -> m r
 modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
-    (mr, ()) <- generalBracket open close (tryVolDB hasFsErr _dbErr . mutation)
+    (mr, ()) <- generalBracket open close (tryVolDB hasFsErr . mutation)
     case mr of
-      Left  e      -> throwError e
+      Left  e      -> throwM e
       Right (_, r) -> return r
   where
-    ErrorHandling{..} = _dbErr
     HasFS{..}         = hasFS
 
     open :: m (OpenOrClosed blockId h)
@@ -653,14 +640,14 @@ modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
 
     mutation :: OpenOrClosed blockId h
              -> m (InternalState blockId h, r)
-    mutation VolatileDbClosed          = throwError $ UserError ClosedDBError
+    mutation VolatileDbClosed          = throwM $ UserError ClosedDBError
     mutation (VolatileDbOpen oldState) = action hasFS oldState
 
     -- TODO what if this fails?
     closeOpenHandle :: OpenOrClosed blockId h -> m ()
     closeOpenHandle VolatileDbClosed                    = return ()
     closeOpenHandle (VolatileDbOpen InternalState {..}) =
-      wrapFsError hasFsErr _dbErr $ hClose _currentWriteHandle
+      wrapFsError hasFsErr $ hClose _currentWriteHandle
 
 -- | Gets part of the 'InternalState' in 'STM'.
 getterSTM :: forall m blockId a. IOLike m
@@ -670,7 +657,7 @@ getterSTM :: forall m blockId a. IOLike m
 getterSTM fromSt VolatileDBEnv{..} = do
     mSt <- readMVarSTM _dbInternalState
     case mSt of
-      VolatileDbClosed  -> EH.throwError' _dbErrSTM $ UserError ClosedDBError
+      VolatileDbClosed  -> throwM $ UserError ClosedDBError
       VolatileDbOpen st -> return $ fromSt st
 
 -- | For each block found in a parsed file, we insert its 'InternalBlockInfo'

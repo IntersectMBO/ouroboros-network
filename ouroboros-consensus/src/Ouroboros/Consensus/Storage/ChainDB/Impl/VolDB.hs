@@ -98,9 +98,6 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS,
 import           Ouroboros.Consensus.Storage.FS.API.Types (MountPoint (..),
                      mkFsPath)
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling,
-                     ThrowCantCatch)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..), BlocksPerFile, VolatileDB,
                      VolatileDBError)
@@ -120,8 +117,6 @@ data VolDB m blk = VolDB {
     , encBlock  :: blk -> BinaryInfo Encoding
     , isEBB     :: blk -> IsEBB
     , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
-    , err       :: ErrorHandling VolatileDBError m
-    , errSTM    :: ThrowCantCatch VolatileDBError (STM m)
     }
 
 -- Universal type; we can't use generics
@@ -134,8 +129,6 @@ instance NoUnexpectedThunks (VolDB m blk) where
     , noUnexpectedThunks ctxt encBlock
     , noUnexpectedThunks ctxt isEBB
     , noUnexpectedThunks ctxt addHdrEnv
-    , noUnexpectedThunks ctxt err
-    , noUnexpectedThunks ctxt errSTM
     ]
 
 -- | Short-hand for events traced by the VolDB wrapper.
@@ -148,8 +141,6 @@ type TraceEvent blk =
 
 data VolDbArgs m blk = forall h. VolDbArgs {
       volHasFS          :: HasFS m h
-    , volErr            :: ErrorHandling VolatileDBError m
-    , volErrSTM         :: ThrowCantCatch VolatileDBError (STM m)
     , volCheckIntegrity :: blk -> Bool
     , volBlocksPerFile  :: BlocksPerFile
     , volDecodeHeader   :: forall s. Decoder s (Lazy.ByteString -> Header blk)
@@ -175,9 +166,7 @@ data VolDbArgs m blk = forall h. VolDbArgs {
 -- * 'volValidation'
 defaultArgs :: FilePath -> VolDbArgs IO blk
 defaultArgs fp = VolDbArgs {
-      volErr            = EH.exceptions
-    , volErrSTM         = EH.throwSTM
-    , volHasFS          = ioHasFS $ MountPoint (fp </> "volatile")
+      volHasFS          = ioHasFS $ MountPoint (fp </> "volatile")
     , volTracer         = nullTracer
       -- Fields without a default
     , volCheckIntegrity = error "no default for volCheckIntegrity"
@@ -195,15 +184,11 @@ openDB args@VolDbArgs{..} = do
     createDirectoryIfMissing volHasFS True (mkFsPath [])
     volDB <- VolDB.openDB
                volHasFS
-               volErr
-               volErrSTM
                (blockFileParser args)
                volTracer
                volBlocksPerFile
     return VolDB
       { volDB     = volDB
-      , err       = volErr
-      , errSTM    = volErrSTM
       , decHeader = volDecodeHeader
       , decBlock  = volDecodeBlock
       , encBlock  = volEncodeBlock
@@ -218,10 +203,8 @@ mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (blk -> BinaryInfo Encoding)
         -> (blk -> IsEBB)
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
-        -> ErrorHandling VolatileDBError m
-        -> ThrowCantCatch VolatileDBError (STM m)
         -> VolDB m blk
-mkVolDB volDB decHeader decBlock encBlock isEBB addHdrEnv err errSTM = VolDB {..}
+mkVolDB volDB decHeader decBlock encBlock isEBB addHdrEnv = VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers
@@ -568,11 +551,11 @@ blockFileParser' hasFS isEBB encodeBlock decodeBlock isNotCorrupt validationPoli
 
 -- | Wrap calls to the VolatileDB and rethrow exceptions that may indicate
 -- disk failure and should therefore trigger recovery
-withDB :: forall m blk x. MonadThrow m
+withDB :: forall m blk x. MonadCatch m
        => VolDB m blk
        -> (VolatileDB (HeaderHash blk) m -> m x)
        -> m x
-withDB VolDB{..} k = EH.catchError err (k volDB) rethrow
+withDB VolDB{..} k = catch (k volDB) rethrow
   where
     rethrow :: VolatileDBError -> m x
     rethrow e = case wrap e of

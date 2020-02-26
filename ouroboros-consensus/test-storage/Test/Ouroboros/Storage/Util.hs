@@ -28,9 +28,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (tryImmDB)
 import           Ouroboros.Consensus.Storage.IO (sameError)
 import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
-import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDBError (..),
-                     sameVolatileDBError)
-import           Ouroboros.Consensus.Storage.VolatileDB.Util (tryVolDB)
+import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDBError)
 
 import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -172,14 +170,6 @@ apiEquivalenceImmDB :: (HasCallStack, Eq a, Show a)
 apiEquivalenceImmDB = apiEquivalence try prettyImmutableDBError sameImmutableDBError
   where
     try = tryImmDB EH.exceptions EH.exceptions
-
-apiEquivalenceVolDB :: (HasCallStack, Eq a, Show a)
-                    => (Either VolatileDBError a -> Assertion)
-                    -> (forall h. HasFS IO h -> ErrorHandling VolatileDBError IO -> IO a)
-                    -> Assertion
-apiEquivalenceVolDB = apiEquivalence try show sameVolatileDBError
-  where
-    try = tryVolDB EH.exceptions EH.exceptions
 
 tryAny :: IO a -> IO (Either SomeException a)
 tryAny = E.try

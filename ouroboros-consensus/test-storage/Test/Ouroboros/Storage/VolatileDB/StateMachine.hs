@@ -505,7 +505,7 @@ semanticsImpl env@VolatileDBEnv { db, varErrors }  (At (CmdErr cmd mbErrors)) =
         reOpenDB db
         try (runDB env cmd)
   where
-    tryDB = tryVolDB EH.monadCatch EH.monadCatch
+    tryDB = tryVolDB EH.monadCatch
 
 runDB :: HasCallStack
       => VolatileDBEnv h
@@ -585,8 +585,7 @@ test cmds = do
           testBlockToBinaryInfo (const <$> decode) testBlockIsValid
           ValidateAll
 
-    db <- run $
-      openDB hasFS EH.monadCatch errSTM parser tracer maxBlocksPerFile
+    db <- run $ openDB hasFS parser tracer maxBlocksPerFile
 
     let env = VolatileDBEnv { varErrors, db, hasFS }
         sm' = sm env dbm
@@ -602,7 +601,6 @@ test cmds = do
     return (hist, res === Ok)
   where
     dbm = initDBModel maxBlocksPerFile
-    errSTM = EH.throwCantCatch EH.monadCatch
 
 maxBlocksPerFile :: BlocksPerFile
 maxBlocksPerFile = mkBlocksPerFile 3

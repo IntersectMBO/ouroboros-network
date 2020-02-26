@@ -387,13 +387,11 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     -- | Open a mock VolatileDB and add the given blocks
     openVolDB :: [TestBlock] -> m (VolDB m TestBlock)
     openVolDB blocks = do
-        (_volDBModel, volDB) <- VolDB.openDBMock EH.monadCatch EH.throwSTM
-          (VolDB.mkBlocksPerFile 1)
+        (_volDBModel, volDB) <- VolDB.openDBMock (VolDB.mkBlocksPerFile 1)
         forM_ blocks $ \block ->
           VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
         return $ mkVolDB volDB (const <$> decode) (const <$> decode)
           encodeWithBinaryInfo isEBB addHdrEnv
-          EH.monadCatch EH.throwSTM
       where
         isEBB = testBlockIsEBB
 

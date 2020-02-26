@@ -37,6 +37,7 @@ import           Ouroboros.Consensus.Storage.Util.ErrorHandling
                      (ErrorHandling (..))
 import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Consensus.Storage.VolatileDB.Types
+import           Ouroboros.Consensus.Util.IOLike
 
 {------------------------------------------------------------------------------
   FileId utilities
@@ -84,12 +85,11 @@ fromEither err = \case
     Left e -> EH.throwError err e
     Right a -> return a
 
-wrapFsError :: Monad m
-            => ErrorHandling FsError         m
-            -> ErrorHandling VolatileDBError m
+wrapFsError :: MonadCatch m
+            => ErrorHandling FsError m
             -> m a -> m a
-wrapFsError fsErr volDBErr action =
-    tryVolDB fsErr volDBErr action >>= either (throwError volDBErr) return
+wrapFsError fsErr action =
+    tryVolDB fsErr action >>= either throwM return
 
 -- | Execute an action and catch the 'VolatileDBError' and 'FsError' that can
 -- be thrown by it, and wrap the 'FsError' in an 'VolatileDBError' using the
@@ -98,11 +98,11 @@ wrapFsError fsErr volDBErr action =
 -- This should be used whenever you want to run an action on the VolatileDB
 -- and catch the 'VolatileDBError' and the 'FsError' (wrapped in the former)
 -- it may thrown.
-tryVolDB :: forall m a. Monad m
-         => ErrorHandling FsError         m
-         -> ErrorHandling VolatileDBError m
-         -> m a -> m (Either VolatileDBError a)
-tryVolDB fsErr volDBErr = fmap squash . EH.try fsErr . EH.try volDBErr
+tryVolDB :: forall m a. MonadCatch m
+         => ErrorHandling FsError m
+         -> m a
+         -> m (Either VolatileDBError a)
+tryVolDB fsErr = fmap squash . EH.try fsErr . try
   where
     fromFS = UnexpectedError . FileSystemError
 
