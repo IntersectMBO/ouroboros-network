@@ -25,7 +25,6 @@ import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
 import           Data.List (dropWhileEnd)
-import           Data.Int
 import           Data.Tuple (swap)
 import           Data.Word
 import           Data.Void (Void)
@@ -89,7 +88,7 @@ defaultMiniProtocolLimits =
       maximumIngressQueue = defaultMiniProtocolLimit
     }
 
-defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit :: Int
 defaultMiniProtocolLimit = 3000000
 
 smallMiniProtocolLimits :: MiniProtocolLimits
@@ -98,7 +97,7 @@ smallMiniProtocolLimits =
       maximumIngressQueue = smallMiniProtocolLimit
     }
 
-smallMiniProtocolLimit :: Int64
+smallMiniProtocolLimit :: Int
 smallMiniProtocolLimit = 16*1024
 
 activeTracer :: forall m a. (MonadSay m, Show a) => Tracer m a
@@ -122,46 +121,46 @@ instance Show DummyPayload where
 -- |
 -- Generate a byte string of a given size.
 --
-genByteString :: Int64 -> Gen BL.ByteString
+genByteString :: Int -> Gen BL.ByteString
 genByteString size = do
     g0 <- return . SM.mkSMGen =<< chooseAny
     return $ BL.unfoldr gen (size, g0)
   where
-    gen :: (Int64, SM.SMGen) -> Maybe (Word8, (Int64, SM.SMGen))
+    gen :: (Int, SM.SMGen) -> Maybe (Word8, (Int, SM.SMGen))
     gen (!i, !g)
         | i <= 0    = Nothing
         | otherwise = Just (fromIntegral w64, (i - 1, g'))
       where
         !(w64, g') = SM.nextWord64 g
 
-prop_arbitrary_genByteString :: (NonNegative (Small Int64)) -> Property
+prop_arbitrary_genByteString :: (NonNegative (Small Int)) -> Property
 prop_arbitrary_genByteString (NonNegative (Small size)) = ioProperty $ do
   bs <- generate $ genByteString size
-  return $ size == BL.length bs
+  return $ fromIntegral size == BL.length bs
 
-genLargeByteString :: Int64 -> Int64 -> Gen BL.ByteString
+genLargeByteString :: Int -> Int -> Gen BL.ByteString
 genLargeByteString chunkSize  size | chunkSize < size = do
   chunk <- genByteString chunkSize
   return $ BL.concat $
         replicate (fromIntegral $ size `div` chunkSize) chunk
       ++
-        [BL.take (size `mod` chunkSize) chunk]
+        [BL.take (fromIntegral $ size `mod` chunkSize) chunk]
 genLargeByteString _chunkSize size = genByteString size
 
 -- |
--- Large Int64 values, but not too large, up to @1024*1024@.
+-- Large Int values, but not too large, up to @1024*1024@.
 --
-newtype LargeInt64 = LargeInt64 Int64
+newtype LargeInt = LargeInt Int
   deriving (Eq, Ord, Num, Show)
 
-instance Arbitrary LargeInt64 where
-    arbitrary = LargeInt64 <$> choose (1, 1024*1024)
-    shrink (LargeInt64 n) = map LargeInt64 $ shrink n
+instance Arbitrary LargeInt where
+    arbitrary = LargeInt <$> choose (1, 1024*1024)
+    shrink (LargeInt n) = map LargeInt $ shrink n
 
-prop_arbitrary_genLargeByteString :: NonNegative LargeInt64 -> Property
-prop_arbitrary_genLargeByteString (NonNegative (LargeInt64 size)) = ioProperty $ do
+prop_arbitrary_genLargeByteString :: NonNegative LargeInt -> Property
+prop_arbitrary_genLargeByteString (NonNegative (LargeInt size)) = ioProperty $ do
   bs <- generate $ genLargeByteString 1024 size
-  return $ size == BL.length bs
+  return $ fromIntegral size == BL.length bs
 
 instance Arbitrary DummyPayload where
     arbitrary = do
@@ -193,7 +192,7 @@ data InvalidSDU = InvalidSDU {
       isTimestamp  :: !RemoteClockModel
     , isIdAndMode  :: !Word16
     , isLength     :: !Word16
-    , isRealLength :: !Int64
+    , isRealLength :: !Int
     , isPattern    :: !Word8
     }
 
@@ -840,7 +839,9 @@ prop_demux_sdu a = do
         (client_w, said) <- plainServer serverApp
 
         setup state client_w
-        atomically $ writeTBQueue client_w $ BL.take (isRealLength badSdu) $ encodeInvalidMuxSDU badSdu
+        atomically $ writeTBQueue client_w $
+                       BL.take (fromIntegral (isRealLength badSdu))
+                               (encodeInvalidMuxSDU badSdu)
         -- Incase this is an SDU with a payload of 0 byte, we still ask the responder to wait for
         -- one byte so that we fail with an exception while parsing the header instead of risk
         -- having the responder succed after reading 0 bytes.

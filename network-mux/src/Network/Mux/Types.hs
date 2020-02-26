@@ -36,7 +36,6 @@ import           Prelude hiding (read)
 
 import           Data.Void (Void)
 import           Data.Functor (void)
-import           Data.Int
 import           Data.Ix (Ix (..))
 import           Data.Word
 import qualified Data.ByteString.Lazy as BL
@@ -74,7 +73,7 @@ data MiniProtocolLimits =
        -- | Limit on the maximum number of bytes that can be queued in the
        -- miniprotocol's ingress queue.
        --
-       maximumIngressQueue :: !Int64
+       maximumIngressQueue :: !Int
      }
 
 

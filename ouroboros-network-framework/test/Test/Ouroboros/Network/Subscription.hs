@@ -25,7 +25,6 @@ import           Control.Monad.IOSim (runSimStrictShutdown)
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (void)
-import           Data.Int
 import qualified Data.IP as IP
 import           Data.List as L
 import qualified Data.Map as M
@@ -66,7 +65,7 @@ import           Text.Printf
 import           Text.Show.Functions ()
 
 
-defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit :: Int
 defaultMiniProtocolLimit = 3000000
 
 testProtocols1 :: RunMiniProtocol appType bytes m a b

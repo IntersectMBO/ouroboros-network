@@ -96,7 +96,7 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 
 import qualified Data.ByteString.Lazy as BL
-import           Data.Int (Int64)
+import           Data.Int (Int)
 import           Data.Time.Clock (DiffTime)
 import           Data.Text (Text)
 import qualified Data.Text as T
@@ -241,7 +241,7 @@ nodeToNodeProtocols MiniProtocolParameters {
       }
     ]
   where
-    addSafetyMargin :: Int64 -> Int64
+    addSafetyMargin :: Int -> Int
     addSafetyMargin x = x + x `div` 10
 
     chainSyncProtocolLimits
