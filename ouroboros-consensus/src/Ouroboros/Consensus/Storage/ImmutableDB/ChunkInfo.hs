@@ -35,18 +35,13 @@ simpleChunkInfo = ChunkInfo . EI.fixedSizeEpochInfo . EpochSize
 {-------------------------------------------------------------------------------
   TODO: Temporary:
   Emulate the EpochInfo interface
-
-  TODO: Next step: make pure.
 -------------------------------------------------------------------------------}
 
-epochInfoSize :: Monad m => ChunkInfo -> EpochNo -> m EpochSize
-epochInfoSize (ChunkInfo ei) = hoist . EI.epochInfoSize ei
+epochInfoSize :: ChunkInfo -> EpochNo -> EpochSize
+epochInfoSize (ChunkInfo ei) = runIdentity . EI.epochInfoSize ei
 
-epochInfoFirst :: Monad m => ChunkInfo -> EpochNo -> m SlotNo
-epochInfoFirst (ChunkInfo ei) = hoist . EI.epochInfoFirst ei
+epochInfoFirst :: ChunkInfo -> EpochNo -> SlotNo
+epochInfoFirst (ChunkInfo ei) = runIdentity . EI.epochInfoFirst ei
 
-epochInfoEpoch :: Monad m => ChunkInfo -> SlotNo -> m EpochNo
-epochInfoEpoch (ChunkInfo ei) = hoist . EI.epochInfoEpoch ei
-
-hoist :: Monad m => Identity a -> m a
-hoist (Identity a) = return a
+epochInfoEpoch :: ChunkInfo -> SlotNo -> EpochNo
+epochInfoEpoch (ChunkInfo ei) = runIdentity . EI.epochInfoEpoch ei

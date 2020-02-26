@@ -56,8 +56,7 @@ import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except (runExcept)
 import           Control.Tracer
-import           Data.Bifunctor (second)
-import           Data.Bitraversable (bitraverse)
+import           Data.Bifunctor (bimap, second)
 import           Data.Foldable (foldl')
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -333,22 +332,22 @@ decorateReplayTracer
   -> Tracer m (TraceLedgerReplayEvent blk)
   -> m (Tracer m (TraceReplayEvent (Point blk) () (Point blk)))
 decorateReplayTracer chunkInfo immDbTip tracer = do
-    (immDbTipEpoch, _) <- epochNoAndFirstSlot immDbTip
+    let (immDbTipEpoch, _) = epochNoAndFirstSlot immDbTip
     return $ Tracer $ \ev -> do
-      decoratedEv <- bitraverse
-        -- Fill in @replayTo@
-        (const $ return (immDbTip, immDbTipEpoch))
-        -- Fill in @blockInfo@
-        epochNoAndFirstSlot
-        ev
+      let decoratedEv = bimap
+            -- Fill in @replayTo@
+            (const (immDbTip, immDbTipEpoch))
+            -- Fill in @blockInfo@
+            epochNoAndFirstSlot
+            ev
       traceWith tracer decoratedEv
   where
-    epochNoAndFirstSlot :: Point blk -> m (EpochNo, SlotNo)
-    epochNoAndFirstSlot GenesisPoint          = return (0, 0)
-    epochNoAndFirstSlot BlockPoint { atSlot } = do
-      epoch      <- ImmDB.epochInfoEpoch chunkInfo atSlot
-      epochFirst <- ImmDB.epochInfoFirst chunkInfo epoch
-      return (epoch, epochFirst)
+    epochNoAndFirstSlot :: Point blk -> (EpochNo, SlotNo)
+    epochNoAndFirstSlot GenesisPoint          = (0, 0)
+    epochNoAndFirstSlot BlockPoint { atSlot } =
+      let epoch      = ImmDB.epochInfoEpoch chunkInfo atSlot
+          epochFirst = ImmDB.epochInfoFirst chunkInfo epoch
+      in (epoch, epochFirst)
 
 {-------------------------------------------------------------------------------
   Wrappers

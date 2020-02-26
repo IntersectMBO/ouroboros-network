@@ -291,10 +291,10 @@ hasBlock db = \case
     BlockPoint { withHash = hash, atSlot = slot } ->
       withDB db $ \imm -> do
         immTip <- ImmDB.getTip imm
-        (slotNoAtTip, ebbAtTip) <- case forgetTipInfo <$> immTip of
-          TipGen                   -> return (Origin, Nothing)
-          Tip (ImmDB.EBB epochNo)  -> (, Just epochNo) . At  <$> epochInfoFirst (chunkInfo db) epochNo
-          Tip (ImmDB.Block slotNo) -> return (At slotNo, Nothing)
+        let (slotNoAtTip, ebbAtTip) = case forgetTipInfo <$> immTip of
+              TipGen                   -> (Origin, Nothing)
+              Tip (ImmDB.EBB epochNo)  -> (, Just epochNo) . At $ epochInfoFirst (chunkInfo db) epochNo
+              Tip (ImmDB.Block slotNo) -> (At slotNo, Nothing)
 
         case At slot `compare` slotNoAtTip of
           -- The request is greater than the tip, so we cannot have the block
@@ -311,8 +311,8 @@ hasBlock db = \case
             if hasRegularBlock then
               return True
             else do
-              epochNo <- epochInfoEpoch (chunkInfo db) slot
-              ebbSlot <- epochInfoFirst (chunkInfo db) epochNo
+              let epochNo = epochInfoEpoch (chunkInfo db) slot
+                  ebbSlot = epochInfoFirst (chunkInfo db) epochNo
               -- If it's a slot that can also contain an EBB, check if we have
               -- an EBB
               if slot == ebbSlot then
@@ -327,12 +327,12 @@ getTipInfo :: forall m blk.
            -> m (WithOrigin (SlotNo, HeaderHash blk, IsEBB, BlockNo))
 getTipInfo db = do
     immTip <- withDB db $ \imm -> ImmDB.getTip imm
-    case immTip of
-      TipGen -> return Origin
+    return $ case immTip of
+      TipGen -> Origin
       Tip (TipInfo hash (ImmDB.EBB epochNo) block) ->
-        At . (, hash, IsEBB, block) <$> epochInfoFirst (chunkInfo db) epochNo
+        At . (, hash, IsEBB, block) $ epochInfoFirst (chunkInfo db) epochNo
       Tip (TipInfo hash (ImmDB.Block slotNo) block) ->
-        return $ At (slotNo, hash, IsNotEBB, block)
+        At (slotNo, hash, IsNotEBB, block)
 
 getPointAtTip :: forall m blk.
                  (MonadCatch m, HasCallStack)

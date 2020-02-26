@@ -112,7 +112,7 @@ reopen (CDBHandle varState) launchBgTasks = do
 
         ImmDB.reopen cdbImmDB
         immDbTipPoint <- ImmDB.getPointAtTip cdbImmDB
-        immDbTipEpoch <- pointToEpoch cdbChunkInfo immDbTipPoint
+        let immDbTipEpoch = pointToEpoch cdbChunkInfo immDbTipPoint
         traceWith cdbTracer $ TraceOpenEvent $ OpenedImmDB
           { _immDbTip      = immDbTipPoint
           , _immDbTipEpoch = immDbTipEpoch
@@ -162,7 +162,7 @@ reopen (CDBHandle varState) launchBgTasks = do
   Auxiliary
 -------------------------------------------------------------------------------}
 
-pointToEpoch :: Monad m => ImmDB.ChunkInfo -> Point blk -> m EpochNo
+pointToEpoch :: ImmDB.ChunkInfo -> Point blk -> EpochNo
 pointToEpoch epochInfo = \case
-    GenesisPoint      -> return 0
+    GenesisPoint      -> 0
     BlockPoint slot _ -> ImmDB.epochInfoEpoch epochInfo slot

@@ -135,9 +135,10 @@ validateAllEpochs validateEnv@ValidateEnv { hasFS, err, chunkInfo } lastEpoch =
                                          -- the previous epoch
       -> m (EpochNo, ImmTipWithInfo hash)
     go lastValid epoch prevHash = do
-      shouldBeFinalised <- if epoch == lastEpoch
-        then return ShouldNotBeFinalised
-        else ShouldBeFinalised <$> epochInfoSize chunkInfo epoch
+      let shouldBeFinalised =
+            if epoch == lastEpoch
+              then ShouldNotBeFinalised
+              else ShouldBeFinalised $ epochInfoSize chunkInfo epoch
       runExceptT
         (validateEpoch validateEnv shouldBeFinalised epoch (Just prevHash)) >>= \case
           Left  ()              -> cleanup lastValid epoch $> lastValid
@@ -435,7 +436,7 @@ reconstructPrimaryIndex
   -> m PrimaryIndex
 reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
                         blockOrEBBs = do
-    relSlots <- mapM toRelativeSlot blockOrEBBs
+    let relSlots = map toRelativeSlot blockOrEBBs
     let secondaryOffsets = 0 : go 0 0 relSlots
 
     -- This can only fail if the slot numbers of the entries are not
@@ -444,9 +445,9 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
   where
     msg = "blocks have non-increasing slot numbers"
 
-    toRelativeSlot :: BlockOrEBB -> m RelativeSlot
-    toRelativeSlot (EBB _)      = return 0
-    toRelativeSlot (Block slot) = _relativeSlot <$>
+    toRelativeSlot :: BlockOrEBB -> RelativeSlot
+    toRelativeSlot (EBB _)      = 0
+    toRelativeSlot (Block slot) = _relativeSlot $
       epochInfoBlockRelative chunkInfo slot
 
     go

@@ -55,7 +55,6 @@ import           Data.ByteString.Builder (Builder, toLazyByteString)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function ((&))
-import           Data.Functor.Identity
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
@@ -275,13 +274,13 @@ slotForBlockOrEBB dbm (EBB  epoch) = epochNoToSlot dbm epoch
 slotForBlockOrEBB _   (Block slot) = slot
 
 slotToEpoch :: DBModel hash -> SlotNo -> EpochNo
-slotToEpoch DBModel {..} = runIdentity . epochInfoEpoch dbmChunkInfo
+slotToEpoch DBModel {..} = epochInfoEpoch dbmChunkInfo
 
 epochSlotToSlot :: DBModel hash -> EpochSlot -> SlotNo
-epochSlotToSlot DBModel {..} = runIdentity . epochInfoAbsolute dbmChunkInfo
+epochSlotToSlot DBModel {..} = epochInfoAbsolute dbmChunkInfo
 
 slotToEpochSlot :: DBModel hash -> SlotNo -> EpochSlot
-slotToEpochSlot DBModel {..} = runIdentity . epochInfoBlockRelative dbmChunkInfo
+slotToEpochSlot DBModel {..} = epochInfoBlockRelative dbmChunkInfo
 
 {------------------------------------------------------------------------------
   Helpers
@@ -292,7 +291,7 @@ throwUserError :: (MonadError ImmutableDBError m, HasCallStack)
 throwUserError e = throwError $ UserError e (popCallStack callStack)
 
 lookupEpochSize :: DBModel hash -> EpochNo -> EpochSize
-lookupEpochSize DBModel {..} = runIdentity . epochInfoSize dbmChunkInfo
+lookupEpochSize DBModel {..} = epochInfoSize dbmChunkInfo
 
 lookupBySlot :: HasCallStack => SlotNo -> [Maybe b] -> Maybe b
 lookupBySlot (SlotNo i) = go i

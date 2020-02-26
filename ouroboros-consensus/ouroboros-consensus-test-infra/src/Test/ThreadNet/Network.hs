@@ -392,7 +392,7 @@ runThreadNetwork ThreadNetworkArgs
             -- the node is restarting because it just rekeyed
             (pInfo', txs0) <- case (nr, mbRekeyM) of
               (NodeRekey, Just rekeyM) -> do
-                eno <- epochInfoEpoch chunkInfo s
+                let eno = epochInfoEpoch chunkInfo s
                 fmap maybeToList <$> rekeyM pInfo eno
               _                        -> pure (pInfo, [])
 
@@ -472,7 +472,7 @@ runThreadNetwork ThreadNetworkArgs
         go :: EpochNo -> m ()
         go !epoch = do
           -- The first slot in @epoch@
-          ebbSlotNo <- epochInfoFirst chunkInfo epoch
+          let ebbSlotNo = epochInfoFirst chunkInfo epoch
           atomically $ writeTVar nextEbbSlotVar ebbSlotNo
 
           void $ blockUntilSlot btime ebbSlotNo

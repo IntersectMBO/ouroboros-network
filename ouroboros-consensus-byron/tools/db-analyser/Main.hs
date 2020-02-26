@@ -109,7 +109,7 @@ countTxOutputs immDB chunkInfo rr = do
     go' cumulative slotNo Chain.ABlock{..} = do
         countCum  <- atomicModifyIORef cumulative $ \c ->
                        let c' = c + count in (c', c')
-        epochSlot <- relativeSlotNo chunkInfo slotNo
+        let epochSlot = relativeSlotNo chunkInfo slotNo
         putStrLn $ intercalate "\t" [
             show slotNo
           , show epochSlot
@@ -138,11 +138,11 @@ countTxOutputs immDB chunkInfo rr = do
 --
 -- NOTE: Unlike 'epochInfoBlockRelative', which puts the EBB at relative slot 0,
 -- this puts the first real block at relative slot 0.
-relativeSlotNo :: Monad m => ChunkInfo -> SlotNo -> m (EpochNo, Word64)
-relativeSlotNo chunkInfo (SlotNo absSlot) = do
-    epoch        <- epochInfoEpoch chunkInfo (SlotNo absSlot)
-    SlotNo first <- epochInfoFirst chunkInfo epoch
-    return (epoch, absSlot - first)
+relativeSlotNo :: ChunkInfo -> SlotNo -> (EpochNo, Word64)
+relativeSlotNo chunkInfo (SlotNo absSlot) =
+    let epoch        = epochInfoEpoch chunkInfo (SlotNo absSlot)
+        SlotNo first = epochInfoFirst chunkInfo epoch
+    in (epoch, absSlot - first)
 
 {-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the imm DB

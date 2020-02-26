@@ -144,20 +144,20 @@ validateIteratorRange err chunkInfo tip mbStart mbEnd = do
       _ -> return ()
 
     whenJust mbStart $ \(start, _) -> do
-      isNewer <- isNewerThanTip start
+      let isNewer = isNewerThanTip start
       when isNewer $
         throwUserError err $ ReadFutureSlotError start tip
 
     whenJust mbEnd $ \(end, _) -> do
-      isNewer <- isNewerThanTip end
+      let isNewer = isNewerThanTip end
       when isNewer $
         throwUserError err $ ReadFutureSlotError end tip
   where
-    isNewerThanTip :: SlotNo -> m Bool
+    isNewerThanTip :: SlotNo -> Bool
     isNewerThanTip slot = case tip of
-      TipGen                -> return True
-      Tip (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst chunkInfo lastEpoch
-      Tip (Block lastSlot)  -> return $ slot > lastSlot
+      TipGen                -> True
+      Tip (EBB   lastEpoch) -> slot > epochInfoFirst chunkInfo lastEpoch
+      Tip (Block lastSlot)  -> slot > lastSlot
 
 -- | Execute some error handler when an 'ImmutableDBError' or an 'FsError' is
 -- thrown while executing an action.
@@ -171,9 +171,9 @@ onImmDbException fsErr err onErr m =
     EH.onException fsErr (EH.onException err m onErr) onErr
 
 -- | Convert an 'EpochSlot' to a 'Tip'
-epochSlotToTip :: Monad m => ChunkInfo -> EpochSlot -> m ImmTip
-epochSlotToTip _         (EpochSlot epoch 0) = return $ Tip (EBB epoch)
-epochSlotToTip chunkInfo epochSlot           = Tip . Block <$>
+epochSlotToTip :: ChunkInfo -> EpochSlot -> ImmTip
+epochSlotToTip _         (EpochSlot epoch 0) = Tip (EBB epoch)
+epochSlotToTip chunkInfo epochSlot           = Tip . Block $
     epochInfoAbsolute chunkInfo epochSlot
 
 -- | Go through all files, making three sets: the set of epoch files, primary
