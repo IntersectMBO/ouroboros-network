@@ -26,7 +26,7 @@ import           Control.Monad (when, unless)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Exception (Exception(..), assert)
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.Protocol.TxSubmission.Client
 
@@ -69,7 +69,13 @@ data MempoolSnapshot txid tx idx =
        mempoolLookupTx   :: idx -> Maybe tx
      }
 
-data TraceTxSubmissionOutbound txid tx = TraceTxSubmissionOutbound --TODO
+data TraceTxSubmissionOutbound txid tx
+  = TraceTxSubmissionOutboundRecvMsgRequestTxs
+      [txid]
+      -- ^ The IDs of the transactions requested.
+  | TraceTxSubmissionOutboundSendMsgReplyTxs
+      [tx]
+      -- ^ The transactions to be sent in the response.
   deriving Show
 
 data TxSubmissionProtocolError =
@@ -112,7 +118,7 @@ txSubmissionOutbound
   -> Word16         -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionClient txid tx m void
-txSubmissionOutbound _tracer maxUnacked TxSubmissionMempoolReader{..} =
+txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} =
     TxSubmissionClient (pure (client Seq.empty Map.empty mempoolZeroIdx))
   where
     client :: StrictSeq txid -> Map txid idx -> idx -> ClientStIdle txid tx m void
@@ -203,6 +209,9 @@ txSubmissionOutbound _tracer maxUnacked TxSubmissionMempoolReader{..} =
         recvMsgRequestTxs :: [txid]
                           -> m (ClientStTxs txid tx m void)
         recvMsgRequestTxs txids = do
+          -- Trace the IDs of the transactions requested.
+          traceWith tracer (TraceTxSubmissionOutboundRecvMsgRequestTxs txids)
+
           MempoolSnapshot{mempoolLookupTx} <- atomically mempoolGetSnapshot
 
           let txidxs  = [ Map.lookup txid unackedMap | txid <- txids ]
@@ -217,5 +226,8 @@ txSubmissionOutbound _tracer maxUnacked TxSubmissionMempoolReader{..} =
           let txs          = catMaybes (map mempoolLookupTx txidxs')
               !unackedMap' = foldl' (flip Map.delete) unackedMap txids
               client'      = client unackedSeq unackedMap' lastIdx
+
+          -- Trace the transactions to be sent in the response.
+          traceWith tracer (TraceTxSubmissionOutboundSendMsgReplyTxs txs)
 
           return $ SendMsgReplyTxs txs client'
