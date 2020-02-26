@@ -69,6 +69,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
                      Handle, OpenMode (ReadMode))
 import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
 
+import           Ouroboros.Consensus.Storage.ImmutableDB.ChunkInfo
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex, SecondaryOffset)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -77,8 +78,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                      (onImmDbException, renderFile, throwUnexpectedError)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
-                     (RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types (HashInfo (..),
                      ImmutableDBError, TraceCacheEvent (..),
                      UnexpectedError (..), WithBlockSize (..))
@@ -468,8 +467,8 @@ readPrimaryIndex
 readPrimaryIndex hasFS err epoch = do
     primaryIndex <- Primary.load hasFS err epoch
     let firstIsEBB
-          | Primary.containsSlot primaryIndex 0
-          , Primary.isFilledSlot primaryIndex 0
+          | Primary.containsSlot primaryIndex relativeSlotForEBB
+          , Primary.isFilledSlot primaryIndex relativeSlotForEBB
           = IsEBB
           | otherwise
           = IsNotEBB
@@ -637,7 +636,7 @@ readOffsets cacheEnv epoch relSlots =
       :: StrictSeq SecondaryOffset
       -> RelativeSlot
       -> Maybe SecondaryOffset
-    getOffsetFromSecondaryOffsets offsets (RelativeSlot s) =
+    getOffsetFromSecondaryOffsets offsets (UnsafeRelativeSlot s) =
       case Seq.splitAt (fromIntegral s + 1) offsets of
         (_ Seq.:|> offset, offsetAfter Seq.:<| _)
           | offset /= offsetAfter
@@ -672,7 +671,7 @@ readFirstFilledSlot cacheEnv epoch =
     firstFilledSlotInSeq = fmap indexToRelativeSlot . Seq.findIndexL (/= 0)
       where
         indexToRelativeSlot :: Int -> RelativeSlot
-        indexToRelativeSlot = RelativeSlot . fromIntegral . pred
+        indexToRelativeSlot = UnsafeRelativeSlot . fromIntegral . pred
 
 -- | This is called when a new epoch is started, which means we need to update
 -- 'Cached' to reflect this.

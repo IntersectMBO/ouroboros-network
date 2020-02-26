@@ -52,8 +52,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
     -- TODO: Re-evaluate which of these are necessary
   , ChunkInfo
   , simpleChunkInfo
-  , epochInfoEpoch
-  , epochInfoFirst
     -- * Exported for testing purposes
   , openDB
   , mkImmDB
@@ -290,13 +288,18 @@ hasBlock db = \case
     GenesisPoint -> throwM NoGenesisBlock
     BlockPoint { withHash = hash, atSlot = slot } ->
       withDB db $ \imm -> do
-        immTip <- ImmDB.getTip imm
-        let (slotNoAtTip, ebbAtTip) = case forgetTipInfo <$> immTip of
-              TipGen                   -> (Origin, Nothing)
-              Tip (ImmDB.EBB epochNo)  -> (, Just epochNo) . At $ epochInfoFirst (chunkInfo db) epochNo
-              Tip (ImmDB.Block slotNo) -> (At slotNo, Nothing)
+        immTip <- fmap forgetTipInfo <$> ImmDB.getTip imm
 
-        case At slot `compare` slotNoAtTip of
+        let slotNoAtTip :: Tip SlotNo
+            slotNoAtTip = slotNoOfBlock (chunkInfo db) <$> immTip
+
+            ebbAtTip :: Maybe EpochNo
+            ebbAtTip = case immTip of
+                         TipGen                  -> Nothing
+                         Tip (ImmDB.EBB epochNo) -> Just epochNo
+                         Tip (ImmDB.Block _)     -> Nothing
+
+        case Tip slot `compare` slotNoAtTip of
           -- The request is greater than the tip, so we cannot have the block
           GT -> return False
           -- Same slot, but our tip is an EBB, so we cannot check if the
@@ -310,16 +313,13 @@ hasBlock db = \case
               ImmDB.getBlockComponent imm GetHash slot
             if hasRegularBlock then
               return True
-            else do
-              let epochNo = epochInfoEpoch (chunkInfo db) slot
-                  ebbSlot = epochInfoFirst (chunkInfo db) epochNo
+            else
               -- If it's a slot that can also contain an EBB, check if we have
               -- an EBB
-              if slot == ebbSlot then
-                (== Just hash) <$>
-                  ImmDB.getEBBComponent imm GetHash epochNo
-              else
-                return False
+              case slotMightBeEBB (chunkInfo db) slot of
+                Nothing      -> return False
+                Just epochNo -> (== Just hash) <$>
+                                   ImmDB.getEBBComponent imm GetHash epochNo
 
 getTipInfo :: forall m blk.
               (MonadCatch m, HasCallStack)
@@ -330,7 +330,7 @@ getTipInfo db = do
     return $ case immTip of
       TipGen -> Origin
       Tip (TipInfo hash (ImmDB.EBB epochNo) block) ->
-        At . (, hash, IsEBB, block) $ epochInfoFirst (chunkInfo db) epochNo
+        At (slotNoOfEBB (chunkInfo db) epochNo, hash, IsEBB, block)
       Tip (TipInfo hash (ImmDB.Block slotNo) block) ->
         At (slotNo, hash, IsNotEBB, block)
 

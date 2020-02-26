@@ -63,7 +63,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common (EpochNo, EpochSize)
+import           Ouroboros.Consensus.Storage.Common (EpochNo)
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..),
                      AllowExisting (..), OpenMode (..), SeekMode (..))
@@ -156,10 +156,9 @@ currentVersionNumber = 1
 
 -- | Return the number of slots in the primary index (the number of offsets - 1).
 --
--- Note that the primary index will typically contain a slot for the EBB, so
--- for an for an epoch with 10 regular slots, this will function will return
--- 11.
-slots :: PrimaryIndex -> EpochSize
+-- Note that this may be less than the chunk size, since the 'PrimaryIndex'
+-- may not be full.
+slots :: PrimaryIndex -> Word64
 slots (MkPrimaryIndex offsets) = fromIntegral $ V.length offsets - 1
 
 -- | Read the 'SecondaryOffset' corresponding to the given relative slot in
@@ -190,7 +189,7 @@ readOffsets
 readOffsets hasFS@HasFS { hGetSize } err epoch toRead =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd -> do
       size <- hGetSize pHnd
-      forM toRead $ \(RelativeSlot slot) -> do
+      forM toRead $ \(UnsafeRelativeSlot slot) -> do
         let offset = AbsOffset $
               fromIntegral (sizeOf currentVersionNumber) +
               slot * secondaryOffsetSize
@@ -238,13 +237,13 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } err epoch =
     -- to read one 4-byte offset. In the Shelley era, approximately one in ten
     -- slots is filled, so on average we need to read 5 4-byte offsets. The OS
     -- will buffer this anyway.
-    go :: Handle h -> RelativeSlot -> m (Maybe RelativeSlot)
+    go :: Handle h -> Word64 -> m (Maybe RelativeSlot)
     go pHnd slot = getNextOffset pHnd >>= \case
       -- Reached end of file, no filled slot
       Nothing -> return Nothing
       Just offset
-        | offset == 0 -> go pHnd (slot + 1)
-        | otherwise   -> return $ Just slot
+        | offset == 0 -> go pHnd (succ slot)
+        | otherwise   -> return $ Just (UnsafeRelativeSlot slot)
 
     -- | We don't know in advance if there are bytes left to read, so it could
     -- be that 'hGetSome' returns 0 bytes, in which case we reached EOF and
@@ -326,11 +325,12 @@ write hasFS@HasFS { hTruncate } epoch (MkPrimaryIndex offsets) =
 -- last slot (filled or not) in the primary index, unless the primary index
 -- didn't contain the 'RelativeSlot' in the first place.
 truncateToSlot :: RelativeSlot -> PrimaryIndex -> PrimaryIndex
-truncateToSlot slot primary@(MkPrimaryIndex offsets)
-    | lastSlot primary <= slot
+truncateToSlot relSlot@(UnsafeRelativeSlot slot)
+               primary@(MkPrimaryIndex offsets)
+    | lastSlot primary <= relSlot
     = primary
     | otherwise
-    = MkPrimaryIndex (V.take (fromIntegral (unRelativeSlot slot) + 2) offsets)
+    = MkPrimaryIndex $ V.take (fromIntegral slot + 2) offsets
 
 -- | On-disk variant of 'truncateToSlot'. The truncation is done without
 -- reading the primary index from disk.
@@ -340,7 +340,9 @@ truncateToSlotFS
   -> EpochNo
   -> RelativeSlot
   -> m ()
-truncateToSlotFS hasFS@HasFS { hTruncate, hGetSize } epoch (RelativeSlot slot) =
+truncateToSlotFS hasFS@HasFS { hTruncate, hGetSize }
+                 epoch
+                 (UnsafeRelativeSlot slot) =
     withFile hasFS primaryIndexFile (AppendMode AllowExisting) $ \pHnd -> do
       size <- hGetSize pHnd
       when (offset < size) $ hTruncate pHnd offset
@@ -412,11 +414,12 @@ lastOffset (MkPrimaryIndex offsets)
 
 -- | Return the last slot of the primary index (empty or not).
 lastSlot :: PrimaryIndex -> RelativeSlot
-lastSlot (MkPrimaryIndex offsets) = fromIntegral (V.length offsets - 2)
+lastSlot (MkPrimaryIndex offsets) =
+    UnsafeRelativeSlot $ fromIntegral (V.length offsets - 2)
 
 -- | Check whether the given slot is within the primary index.
 containsSlot :: PrimaryIndex -> RelativeSlot -> Bool
-containsSlot (MkPrimaryIndex offsets) (RelativeSlot slot) =
+containsSlot (MkPrimaryIndex offsets) (UnsafeRelativeSlot slot) =
   slot < fromIntegral (V.length offsets) - 1
 
 -- | Return the offset for the given slot.
@@ -424,7 +427,7 @@ containsSlot (MkPrimaryIndex offsets) (RelativeSlot slot) =
 -- Precondition: the given slot must be within the primary index
 -- ('containsSlot').
 offsetOfSlot :: HasCallStack => PrimaryIndex -> RelativeSlot -> SecondaryOffset
-offsetOfSlot (MkPrimaryIndex offsets) (RelativeSlot slot) =
+offsetOfSlot (MkPrimaryIndex offsets) (UnsafeRelativeSlot slot) =
   offsets ! fromIntegral slot
 
 -- | Return the size of the given slot according to the primary index.
@@ -432,7 +435,8 @@ offsetOfSlot (MkPrimaryIndex offsets) (RelativeSlot slot) =
 -- Precondition: the given slot must be within the primary index
 -- ('containsSlot').
 sizeOfSlot :: HasCallStack => PrimaryIndex -> RelativeSlot -> Word32
-sizeOfSlot (MkPrimaryIndex offsets) (RelativeSlot slot) = offsetAfter - offsetAt
+sizeOfSlot (MkPrimaryIndex offsets) (UnsafeRelativeSlot slot) =
+    offsetAfter - offsetAt
   where
     i           = fromIntegral slot
     offsetAt    = offsets ! i
@@ -460,17 +464,20 @@ isFilledSlot primary slot = sizeOfSlot primary slot /= 0
 --
 -- Return slot 4.
 nextFilledSlot :: PrimaryIndex -> RelativeSlot -> Maybe RelativeSlot
-nextFilledSlot (MkPrimaryIndex offsets) (RelativeSlot slot) =
+nextFilledSlot (MkPrimaryIndex offsets) (UnsafeRelativeSlot slot) =
     go (fromIntegral slot + 1)
   where
+    len :: Int
     len = V.length offsets
+
+    go :: Int -> Maybe RelativeSlot
     go i
       | i + 1 >= len
       = Nothing
       | offsets ! i == offsets ! (i + 1)
       = go (i + 1)
       | otherwise
-      = Just (fromIntegral i)
+      = Just (UnsafeRelativeSlot $ fromIntegral i)
 
 -- | Find the first filled (length > zero) slot in the primary index. If there
 -- is none, return 'Nothing'.
@@ -486,14 +493,17 @@ nextFilledSlot (MkPrimaryIndex offsets) (RelativeSlot slot) =
 firstFilledSlot :: PrimaryIndex -> Maybe RelativeSlot
 firstFilledSlot (MkPrimaryIndex offsets) = go 1
   where
+    len :: Int
     len = V.length offsets
+
+    go :: Int -> Maybe RelativeSlot
     go i
       | i >= len
       = Nothing
       | offsets ! i == 0
       = go (i + 1)
       | otherwise
-      = Just (fromIntegral (i - 1))
+      = Just (UnsafeRelativeSlot $ fromIntegral (i - 1))
 
 -- | Return a list of all the filled (length > zero) slots in the primary
 -- index.
@@ -507,13 +517,14 @@ filledSlots primary = go (firstFilledSlot primary)
 lastFilledSlot :: HasCallStack => PrimaryIndex -> Maybe RelativeSlot
 lastFilledSlot (MkPrimaryIndex offsets) = go (V.length offsets - 1)
   where
+    go :: Int -> Maybe RelativeSlot
     go i
       | i < 1
       = Nothing
       | offsets ! i == offsets ! (i - 1)
       = go (i - 1)
       | otherwise
-      = Just (fromIntegral i - 1)
+      = Just (UnsafeRelativeSlot $ fromIntegral i - 1)
 
 -- | Return the slots to backfill the primary index file with.
 --
@@ -558,7 +569,9 @@ backfill
   -> RelativeSlot     -- ^ The next expected slot to write to
   -> SecondaryOffset  -- ^ The last 'SecondaryOffset' written to
   -> [SecondaryOffset]
-backfill (RelativeSlot slot) (RelativeSlot nextExpected) offset =
+backfill (UnsafeRelativeSlot slot)
+         (UnsafeRelativeSlot nextExpected)
+         offset =
     replicate gap offset
   where
     gap = fromIntegral $ slot - nextExpected
@@ -573,7 +586,7 @@ backfillEpoch
   -> SecondaryOffset
   -> [SecondaryOffset]
 backfillEpoch epochSize nextExpected offset =
-    backfill (succ finalSlot) nextExpected offset
+    backfill (unsafeNextRelativeSlot finalSlot) nextExpected offset
   where
     finalSlot = maxRelativeSlot epochSize
 

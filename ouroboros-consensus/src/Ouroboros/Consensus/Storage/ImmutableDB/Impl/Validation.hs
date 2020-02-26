@@ -49,7 +49,6 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as P
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
                      (BlockSummary (..))
 
@@ -437,7 +436,7 @@ reconstructPrimaryIndex
 reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
                         blockOrEBBs = do
     let relSlots = map toRelativeSlot blockOrEBBs
-    let secondaryOffsets = 0 : go 0 0 relSlots
+    let secondaryOffsets = 0 : go minRelativeSlot 0 relSlots
 
     -- This can only fail if the slot numbers of the entries are not
     -- monotonically increasing.
@@ -446,9 +445,7 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
     msg = "blocks have non-increasing slot numbers"
 
     toRelativeSlot :: BlockOrEBB -> RelativeSlot
-    toRelativeSlot (EBB _)      = 0
-    toRelativeSlot (Block slot) = _relativeSlot $
-      epochInfoBlockRelative chunkInfo slot
+    toRelativeSlot = chunkSlot . chunkSlotForBlock chunkInfo
 
     go
       :: HasCallStack
@@ -471,4 +468,4 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
                secondaryOffset = lastSecondaryOffset
                                + Secondary.entrySize hashSize
            in backfilled ++ secondaryOffset :
-              go (succ relSlot) secondaryOffset relSlots'
+              go (unsafeNextRelativeSlot relSlot) secondaryOffset relSlots'

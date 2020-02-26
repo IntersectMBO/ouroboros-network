@@ -19,7 +19,7 @@
 --
 -- Within each 'EpochNo', the entries are numbered by 'RelativeSlot's. Each
 -- 'SlotNo' can be converted to a combination of an 'EpochNo' and a 'RelativeSlot'
--- (= 'EpochSlot') and vice versa. This conversion depends on the size of the
+-- (= 'ChunkSlot') and vice versa. This conversion depends on the size of the
 -- epochs: 'EpochSize'. This size will not be the same for each epoch. When
 -- opening the database, the user must give a function of type 'EpochNo -> m
 -- EpochSize' that will be used to find out (and cache using
@@ -95,7 +95,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl
 
 import           Prelude hiding (truncate)
 
-import           Control.Exception (assert)
 import           Control.Monad (replicateM_, when)
 import           Control.Monad.Except (runExceptT)
 import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
@@ -134,7 +133,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Iterator
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
                      (BlockSummary (..))
 
@@ -365,7 +363,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
         newTipWithHash <- truncateTo hasFS st newTipEpochSlot
         let (newEpoch, allowExisting) = case newTipEpochSlot of
               TipGen                  -> (0, MustBeNew)
-              Tip (EpochSlot epoch _) -> (epoch, AllowExisting)
+              Tip (ChunkSlot epoch _) -> (epoch, AllowExisting)
         -- Reset the index, as it can contain stale information. Also restarts
         -- the background thread expiring unused past epochs.
         Index.restart _index newEpoch
@@ -376,20 +374,18 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
     ImmutableDBEnv { _dbErr, _dbChunkInfo, _dbHashInfo, _dbRegistry } = dbEnv
 
     -- | The current tip as a 'TipEpochSlot'
-    blockOrEBBEpochSlot :: BlockOrEBB -> EpochSlot
-    blockOrEBBEpochSlot = \case
-      EBB  epoch -> EpochSlot epoch 0
-      Block slot -> epochInfoBlockRelative _dbChunkInfo slot
+    blockOrEBBEpochSlot :: BlockOrEBB -> ChunkSlot
+    blockOrEBBEpochSlot = chunkSlotForBlock _dbChunkInfo
 
     truncateTo
       :: HasFS m h
       -> OpenState m hash h
-      -> Tip EpochSlot
+      -> Tip ChunkSlot
       -> m (ImmTipWithInfo hash)
     truncateTo hasFS OpenState {} = \case
       TipGen                        ->
         removeFilesStartingFrom hasFS 0 $> TipGen
-      Tip (EpochSlot epoch relSlot) -> do
+      Tip (ChunkSlot epoch relSlot) -> do
         removeFilesStartingFrom hasFS (epoch + 1)
 
         -- Retrieve the needed info from the primary index file and then
@@ -397,8 +393,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
         primaryIndex <- Primary.load hasFS _dbErr epoch
         Primary.truncateToSlotFS hasFS epoch relSlot
         let lastSecondaryOffset = Primary.offsetOfSlot primaryIndex relSlot
-            isEBB | relSlot == 0 = IsEBB
-                  | otherwise    = IsNotEBB
+            isEBB = relativeSlotIsEBB relSlot
 
         -- Retrieve the needed info from the secondary index file and then
         -- truncate it.
@@ -443,16 +438,14 @@ getBlockComponentImpl dbEnv blockComponent slot =
             -- The slot (that's pointing to a regular block) corresponding to this
             -- EBB will be empty, as the EBB is the last thing in the database. So
             -- if @slot@ is equal to this slot, it is also referring to the future.
-            Tip (EBB lastEBBEpoch) ->
-              let ebbSlot = epochInfoAbsolute _dbChunkInfo (EpochSlot lastEBBEpoch 0)
-              in slot >= ebbSlot
+            Tip (EBB lastEBBEpoch) -> slot >= slotNoOfEBB _dbChunkInfo lastEBBEpoch
 
       when inTheFuture $
         throwUserError _dbErr $
           ReadFutureSlotError slot (forgetTipInfo <$> _currentTip)
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
-      let epochSlot    = epochInfoBlockRelative _dbChunkInfo slot
+      let epochSlot    = chunkSlotForRegularBlock _dbChunkInfo slot
       getEpochSlot _dbHasFS _dbErr _dbChunkInfo _index curEpochInfo
         blockComponent epochSlot
   where
@@ -476,7 +469,7 @@ getEBBComponentImpl dbEnv blockComponent epoch =
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
       getEpochSlot _dbHasFS _dbErr _dbChunkInfo _index curEpochInfo
-        blockComponent (EpochSlot epoch 0)
+        blockComponent (chunkSlotForBoundaryBlock epoch)
   where
     ImmutableDBEnv { _dbChunkInfo, _dbErr } = dbEnv
 
@@ -492,10 +485,7 @@ extractBlockComponent
   -> m b
 extractBlockComponent hasFS err chunkInfo epoch curEpochInfo (entry, blockSize) = \case
     GetHash  -> return headerHash
-    GetSlot  -> return $ case blockOrEBB of
-      Block slot  -> slot
-      EBB  epoch' -> assert (epoch' == epoch) $ epochInfoFirst chunkInfo epoch'
-
+    GetSlot  -> return $ slotNoOfBlock chunkInfo blockOrEBB
     GetIsEBB -> return $ case blockOrEBB of
       Block _ -> IsNotEBB
       EBB   _ -> IsEBB
@@ -599,11 +589,8 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
 
       let inTheFuture = case forgetTipInfo <$> _currentTip of
-            TipGen                 -> True
-            Tip (Block lastSlot)   -> slot > lastSlot
-            Tip (EBB lastEBBEpoch) ->
-              let ebbSlot = epochInfoFirst _dbChunkInfo lastEBBEpoch
-              in slot > ebbSlot
+            TipGen -> True
+            Tip b  -> slot > slotNoOfBlock _dbChunkInfo b
 
       when inTheFuture $
         throwUserError _dbErr $ ReadFutureSlotError slot (forgetTipInfo <$> _currentTip)
@@ -615,16 +602,16 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
       case errOrRes of
         Left _ ->
           return Nothing
-        Right (EpochSlot epoch _, (entry, blockSize), _secondaryOffset) ->
+        Right (ChunkSlot epoch _, (entry, blockSize), _secondaryOffset) ->
           Just <$>
             extractBlockComponent _dbHasFS _dbErr _dbChunkInfo epoch curEpochInfo
               (entry, blockSize) blockComponent
   where
     ImmutableDBEnv { _dbChunkInfo, _dbErr } = dbEnv
 
--- | Get the block component corresponding to the given 'EpochSlot'.
+-- | Get the block component corresponding to the given 'ChunkSlot'.
 --
--- Preconditions: the given 'EpochSlot' is in the past.
+-- Preconditions: the given 'ChunkSlot' is in the past.
 getEpochSlot
   :: forall m h hash b. (HasCallStack, IOLike m)
   => HasFS m h
@@ -633,7 +620,7 @@ getEpochSlot
   -> Index m hash h
   -> CurrentEpochInfo
   -> BlockComponent (ImmutableDB hash m) b
-  -> EpochSlot
+  -> ChunkSlot
   -> m (Maybe b)
 getEpochSlot hasFS err chunkInfo index curEpochInfo blockComponent epochSlot =
     -- Check the primary index first
@@ -649,9 +636,8 @@ getEpochSlot hasFS err chunkInfo index curEpochInfo blockComponent epochSlot =
           extractBlockComponent hasFS err chunkInfo epoch curEpochInfo
             (entry, blockSize) blockComponent
   where
-    EpochSlot epoch relativeSlot = epochSlot
-    isEBB | relativeSlot == 0    = IsEBB
-          | otherwise            = IsNotEBB
+    ChunkSlot epoch relativeSlot = epochSlot
+    isEBB = relativeSlotIsEBB relativeSlot
 
 appendBlockImpl
   :: forall m hash. (HasCallStack, IOLike m)
@@ -665,8 +651,8 @@ appendBlockImpl dbEnv slot blockNumber headerHash binaryInfo =
     modifyOpenState dbEnv $ \_dbHasFS@HasFS{..} -> do
       OpenState { _currentEpoch, _currentTip, _index } <- get
 
-      let epochSlot@(EpochSlot epoch _) =
-            epochInfoBlockRelative _dbChunkInfo slot
+      let epochSlot@(ChunkSlot epoch _) =
+            chunkSlotForRegularBlock _dbChunkInfo slot
 
       -- Check that we're not appending to the past
       let inThePast = case forgetTipInfo <$> _currentTip of
@@ -708,7 +694,7 @@ appendEBBImpl dbEnv epoch blockNumber headerHash binaryInfo =
         AppendToEBBInThePastError epoch _currentEpoch
 
       appendEpochSlot _dbRegistry _dbHasFS _dbErr _dbChunkInfo _index
-        (EpochSlot epoch 0) blockNumber (EBB epoch) headerHash binaryInfo
+        (chunkSlotForBoundaryBlock epoch) blockNumber (EBB epoch) headerHash binaryInfo
   where
     ImmutableDBEnv { _dbChunkInfo, _dbErr, _dbRegistry } = dbEnv
 
@@ -719,7 +705,7 @@ appendEpochSlot
   -> ErrorHandling ImmutableDBError m
   -> ChunkInfo
   -> Index m hash h
-  -> EpochSlot  -- ^ The 'EpochSlot' of the new block or EBB
+  -> ChunkSlot  -- ^ The 'ChunkSlot' of the new block or EBB
   -> BlockNo    -- ^ The block number of the new block
   -> BlockOrEBB -- ^ Corresponds to the new block, will be installed as the
                 -- new tip
@@ -744,17 +730,17 @@ appendEpochSlot registry hasFS err chunkInfo index epochSlot blockNumber blockOr
 
     -- Compute the next empty slot @m@, if we need to write to slot @n@, we
     -- will need to backfill @n - m@ slots.
-    let nextFreeRelSlot =
+    let nextFreeRelSlot :: RelativeSlot
+        nextFreeRelSlot =
           if epoch > initialEpoch
             -- If we had to start a new epoch, we start with slot 0. Note that
             -- in this case the _currentTip will refer to something in an epoch
             -- before _currentEpoch.
-            then 0
+            then minRelativeSlot
             else case forgetTipInfo <$> _currentTip of
-              TipGen               -> 0
-              Tip (EBB _ebb)       -> 1
-              Tip (Block lastSlot) -> succ . _relativeSlot $
-                epochInfoBlockRelative chunkInfo lastSlot
+              TipGen -> minRelativeSlot
+              Tip b  -> unsafeNextRelativeSlot . chunkSlot $
+                          chunkSlotForBlock chunkInfo b
 
     -- Append to the end of the epoch file.
     (blockSize, entrySize) <- lift $ do
@@ -788,7 +774,7 @@ appendEpochSlot registry hasFS err chunkInfo index epochSlot blockNumber blockOr
       , _currentTip             = Tip (TipInfo headerHash blockOrEBB blockNumber)
       }
   where
-    EpochSlot epoch relSlot = epochSlot
+    ChunkSlot epoch relSlot = epochSlot
 
 startNewEpoch
   :: forall m h hash. (HasCallStack, IOLike m)
@@ -812,16 +798,11 @@ startNewEpoch registry hasFS@HasFS{..} err index chunkInfo = do
     -- the current (empty) epoch is not the epoch containing the tip, we use
     -- relative slot 0 to calculate how much to pad.
     let nextFreeRelSlot = case forgetTipInfo <$> _currentTip of
-          TipGen                     -> 0
-          Tip (EBB epoch)
-            | epoch == _currentEpoch -> 1
-              -- The @_currentEpoch > epoch@: we're in an empty epoch and the tip
-              -- was an EBB of an older epoch. So the first relative slot of this
-              -- epoch is empty
-            | otherwise              -> 0
-          Tip (Block lastSlot)       ->
-            let EpochSlot epoch relSlot = epochInfoBlockRelative chunkInfo lastSlot
-            in if epoch == _currentEpoch then succ relSlot else 0
+          TipGen -> minRelativeSlot
+          Tip b  -> let ChunkSlot epoch relSlot = chunkSlotForBlock chunkInfo b
+                    in if epoch == _currentEpoch
+                         then unsafeNextRelativeSlot relSlot
+                         else minRelativeSlot
 
     let backfillOffsets = Primary.backfillEpoch chunkSize nextFreeRelSlot
           _currentSecondaryOffset

@@ -47,7 +47,6 @@ import           Ouroboros.Consensus.Storage.Util.ErrorHandling
 import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.ChunkInfo
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 
 {------------------------------------------------------------------------------
@@ -155,9 +154,8 @@ validateIteratorRange err chunkInfo tip mbStart mbEnd = do
   where
     isNewerThanTip :: SlotNo -> Bool
     isNewerThanTip slot = case tip of
-      TipGen                -> True
-      Tip (EBB   lastEpoch) -> slot > epochInfoFirst chunkInfo lastEpoch
-      Tip (Block lastSlot)  -> slot > lastSlot
+      TipGen -> True
+      Tip b  -> slot > slotNoOfBlock chunkInfo b
 
 -- | Execute some error handler when an 'ImmutableDBError' or an 'FsError' is
 -- thrown while executing an action.
@@ -171,10 +169,11 @@ onImmDbException fsErr err onErr m =
     EH.onException fsErr (EH.onException err m onErr) onErr
 
 -- | Convert an 'EpochSlot' to a 'Tip'
-epochSlotToTip :: ChunkInfo -> EpochSlot -> ImmTip
-epochSlotToTip _         (EpochSlot epoch 0) = Tip (EBB epoch)
-epochSlotToTip chunkInfo epochSlot           = Tip . Block $
-    epochInfoAbsolute chunkInfo epochSlot
+epochSlotToTip :: ChunkInfo -> ChunkSlot -> ImmTip
+epochSlotToTip chunkInfo chunkSlot = Tip $
+    case chunkSlotIsEBB chunkSlot of
+      Just epoch -> EBB epoch
+      Nothing    -> Block $ chunkSlotToSlotNo chunkInfo chunkSlot
 
 -- | Go through all files, making three sets: the set of epoch files, primary
 -- index files, and secondary index files,, discarding all others.

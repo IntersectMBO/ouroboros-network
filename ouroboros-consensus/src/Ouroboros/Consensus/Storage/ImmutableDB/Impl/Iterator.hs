@@ -18,14 +18,14 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Iterator
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (when)
 import           Control.Monad.Except
+import           Control.Monad (when)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (find)
 import           Data.Functor ((<&>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (isNothing)
+import           Data.Maybe (isJust, isNothing)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
@@ -54,7 +54,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 
 {------------------------------------------------------------------------------
   ImmutableDB Iterator Implementation
@@ -69,8 +68,8 @@ data IteratorHandle hash m = forall h. IteratorHandle
   , itState   :: !(StrictTVar m (IteratorStateOrExhausted hash m h))
     -- ^ The state of the iterator. If it is 'Nothing', the iterator is
     -- exhausted and/or closed.
-  , itEnd     :: !EpochSlot
-    -- ^ The end of the iterator: the last 'EpochSlot' it should return.
+  , itEnd     :: !ChunkSlot
+    -- ^ The end of the iterator: the last 'ChunkSlot' it should return.
   , itEndHash :: !hash
     -- ^ The @hash@ of the last block the iterator should return.
   }
@@ -156,20 +155,19 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
             -- information to do that.
             let WithHash _startHash startEpochSlot = start
             when (startEpochSlot > endEpochSlot) $ do
-              let startSlot = epochInfoAbsolute _dbChunkInfo startEpochSlot
-                  endSlot   = epochInfoAbsolute _dbChunkInfo endEpochSlot
+              let startSlot = chunkSlotToSlotNo _dbChunkInfo startEpochSlot
+                  endSlot   = chunkSlotToSlotNo _dbChunkInfo endEpochSlot
               throwUserError _dbErr $ InvalidIteratorRangeError startSlot endSlot
 
-            let EpochSlot startEpoch startRelSlot = startEpochSlot
-                startIsEBB | startRelSlot == 0 = IsEBB
-                           | otherwise         = IsNotEBB
+            let ChunkSlot startChunk startRelSlot = startEpochSlot
+                startIsEBB   = relativeSlotIsEBB startRelSlot
                 curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
 
             -- TODO avoid rereading the indices of the start epoch. We read
             -- from both the primary and secondary index in 'fillInStartBound'
 
             iteratorState <- iteratorStateForEpoch hasFS _index registry
-              curEpochInfo endHash startEpoch secondaryOffset startIsEBB
+              curEpochInfo endHash startChunk secondaryOffset startIsEBB
 
             varIteratorState <- newTVarM $ IteratorStateOpen iteratorState
 
@@ -185,7 +183,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
 
     -- | Fill in the end bound: if 'Nothing', use the current tip. Otherwise,
     -- check whether the bound exists in the database and return the
-    -- corresponding 'EpochSlot'.
+    -- corresponding 'ChunkSlot'.
     --
     -- PRECONDITION: the bound is in the past.
     --
@@ -195,26 +193,26 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
       => Index m hash h
       -> TipInfo hash BlockOrEBB   -- ^ Current tip
       -> Maybe (SlotNo, hash)      -- ^ End bound
-      -> ExceptT (WrongBoundError hash) m (WithHash hash EpochSlot)
+      -> ExceptT (WrongBoundError hash) m (WithHash hash ChunkSlot)
       -- ^ We can't return 'TipInfo' here because the secondary index does
       -- not give us block numbers
     fillInEndBound index currentTip = \case
       -- End bound given, check whether it corresponds to a regular block or
-      -- an EBB. Convert the 'SlotNo' to an 'EpochSlot' accordingly.
+      -- an EBB. Convert the 'SlotNo' to an 'ChunkSlot' accordingly.
       Just end -> do
         (epochSlot, (entry, _blockSize), _secondaryOffset) <-
           getSlotInfo _dbChunkInfo index end
         return (WithHash (Secondary.headerHash entry) epochSlot)
 
       -- No end bound given, use the current tip, but convert the 'BlockOrEBB'
-      -- to an 'EpochSlot'.
+      -- to an 'ChunkSlot'.
       Nothing  -> return $ flip fmap (fromTipInfo currentTip) $ \case
-        EBB epoch      -> EpochSlot epoch 0
-        Block lastSlot -> epochInfoBlockRelative _dbChunkInfo lastSlot
+        EBB epoch      -> chunkSlotForBoundaryBlock epoch
+        Block lastSlot -> chunkSlotForRegularBlock _dbChunkInfo lastSlot
 
     -- | Fill in the start bound: if 'Nothing', use the first block in the
     -- database. Otherwise, check whether the bound exists in the database and
-    -- return the corresponding 'EpochSlot' and 'SecondaryOffset'.
+    -- return the corresponding 'ChunkSlot' and 'SecondaryOffset'.
     --
     -- PRECONDITION: the bound is in the past.
     --
@@ -225,10 +223,10 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
       -> Maybe (SlotNo, hash)  -- ^ Start bound
       -> ExceptT (WrongBoundError hash)
                   m
-                  (SecondaryOffset, WithHash hash EpochSlot)
+                  (SecondaryOffset, WithHash hash ChunkSlot)
     fillInStartBound index = \case
       -- Start bound given, check whether it corresponds to a regular block or
-      -- an EBB. Convert the 'SlotNo' to an 'EpochSlot' accordingly.
+      -- an EBB. Convert the 'SlotNo' to an 'ChunkSlot' accordingly.
       Just start -> do
         (epochSlot, (entry, _blockSize), secondaryOffset) <-
           getSlotInfo _dbChunkInfo index start
@@ -253,9 +251,8 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
                   -- first filled slot in the primary index) always starts at
                   -- 0.
                   secondaryOffset = 0
-                  isEBB | relSlot == 0 = IsEBB
-                        | otherwise    = IsNotEBB
-                  epochSlot = EpochSlot epoch relSlot
+                  isEBB           = relativeSlotIsEBB relSlot
+                  epochSlot       = ChunkSlot epoch relSlot
 
     mkEmptyIterator :: Iterator hash m b
     mkEmptyIterator = Iterator
@@ -277,7 +274,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
 -- hash. If no such block exists, because the slot is empty or it contains a
 -- block and/or EBB with a different hash, return a 'WrongBoundError'.
 --
--- Return the 'EpochSlot' corresponding to the block or EBB, the corresponding
+-- Return the 'ChunkSlot' corresponding to the block or EBB, the corresponding
 -- entry (and 'BlockSize') from the secondary index file, and the
 -- 'SecondaryOffset' of that entry.
 --
@@ -294,21 +291,18 @@ getSlotInfo
   -> Index m hash h
   -> (SlotNo, hash)
   -> ExceptT (WrongBoundError hash) m
-             (EpochSlot, (Secondary.Entry hash, BlockSize), SecondaryOffset)
+             (ChunkSlot, (Secondary.Entry hash, BlockSize), SecondaryOffset)
 getSlotInfo chunkInfo index (slot, hash) = do
-    let epochSlot@(EpochSlot epoch relSlot) =
-          epochInfoBlockRelative chunkInfo slot
-    -- 'epochInfoBlockRelative' always assumes the given 'SlotNo' refers to a
-    -- regular block and will return 1 as the relative slot number when given
-    -- an EBB.
-    let couldBeEBB = relSlot == 1
+    let epochSlot@(ChunkSlot epoch relSlot) =
+          chunkSlotForRegularBlock chunkInfo slot
+    let couldBeEBB = isJust $ slotMightBeEBB chunkInfo slot
 
     -- Obtain the offsets in the secondary index file from the primary index
     -- file. The block /could/ still correspond to an EBB, a regular block or
     -- both. We will know which one it is when we can check the hashes from
     -- the secondary index file with the hash we have.
     toRead :: NonEmpty (IsEBB, SecondaryOffset) <- if couldBeEBB then
-        lift (Index.readOffsets index epoch (Two 0 1)) >>= \case
+        lift (Index.readOffsets index epoch (Two relativeSlotForEBB relSlot)) >>= \case
           Two Nothing Nothing                   ->
             throwError $ EmptySlotError slot
           Two (Just ebbOffset) (Just blkOffset) ->
@@ -342,7 +336,7 @@ getSlotInfo chunkInfo index (slot, hash) = do
     -- correspond to an EBB or a regular block.
     let epochSlot' = case Secondary.blockOrEBB entry of
           Block _ -> epochSlot
-          EBB   _ -> EpochSlot epoch 0
+          EBB   _ -> ChunkSlot epoch relativeSlotForEBB
     return (epochSlot', (entry, blockSize), secondaryOffset)
 
 iteratorNextImpl
@@ -385,10 +379,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
       -> m b'
     getBlockComponent itEpochHandle itEpoch entryWithBlockSize = \case
         GetHash         -> return headerHash
-        GetSlot         -> return $ case blockOrEBB of
-          Block slot  -> slot
-          EBB  epoch' -> assert (epoch' == itEpoch) $
-            epochInfoFirst _dbChunkInfo epoch'
+        GetSlot         -> return $ slotNoOfBlock _dbChunkInfo blockOrEBB
         GetIsEBB        -> return $ case blockOrEBB of
           Block _ -> IsNotEBB
           EBB   _ -> IsEBB
@@ -460,7 +451,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
           -- Release the resource, i.e., close the handle.
           release itEpochKey
           -- If this was the final epoch, close the iterator
-          if itEpoch >= _epoch itEnd then
+          if itEpoch >= chunkNo itEnd then
             iteratorCloseImpl it
 
           else
@@ -469,7 +460,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
 
     openNextEpoch
       :: CurrentEpochInfo
-      -> EpochSlot  -- ^ The end bound
+      -> ChunkSlot  -- ^ The end bound
       -> EpochNo    -- ^ The epoch to open
       -> m (IteratorState hash m h)
     openNextEpoch curEpochInfo end epoch =
@@ -489,8 +480,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
           -- 'secondaryOffset' will be 0, as the first entry in the secondary
           -- index file always starts at offset 0. The same is true for
           -- 'findFirstFilledSlot'.
-          let firstIsEBB | relSlot == 0 = IsEBB
-                         | otherwise    = IsNotEBB
+          let firstIsEBB      = relativeSlotIsEBB relSlot
               secondaryOffset = 0
 
           iteratorStateForEpoch hasFS index registry curEpochInfo itEndHash

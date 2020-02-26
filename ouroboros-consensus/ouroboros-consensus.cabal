@@ -136,7 +136,6 @@ library
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
-                       Ouroboros.Consensus.Storage.ImmutableDB.Layout
                        Ouroboros.Consensus.Storage.ImmutableDB.Parser
                        Ouroboros.Consensus.Storage.ImmutableDB.Types
                        Ouroboros.Consensus.Storage.LedgerDB.Conf
