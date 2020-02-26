@@ -290,8 +290,8 @@ throwUserError :: (MonadError ImmutableDBError m, HasCallStack)
                => UserError -> m a
 throwUserError e = throwError $ UserError e (popCallStack callStack)
 
-lookupEpochSize :: DBModel hash -> EpochNo -> EpochSize
-lookupEpochSize DBModel {..} = epochInfoSize dbmChunkInfo
+lookupChunkSize :: DBModel hash -> EpochNo -> EpochSize
+lookupChunkSize DBModel {..} = getChunkSize dbmChunkInfo
 
 lookupBySlot :: HasCallStack => SlotNo -> [Maybe b] -> Maybe b
 lookupBySlot (SlotNo i) = go i
@@ -309,9 +309,9 @@ rollBackToTip :: forall hash. Show hash
               => ImmTip -> DBModel hash -> DBModel hash
 rollBackToTip tip dbm@DBModel {..} = case tip of
     TipGen ->
-        (initDBModel firstEpochSize) { dbmNextIterator = dbmNextIterator }
+        (initDBModel firstChunkSize) { dbmNextIterator = dbmNextIterator }
       where
-        firstEpochSize = lookupEpochSize dbm 0
+        firstChunkSize = lookupChunkSize dbm 0
 
     Tip (EBB epoch) ->
         dbm { dbmSlots = Map.update deleteRegular (epochNoToSlot dbm epoch)

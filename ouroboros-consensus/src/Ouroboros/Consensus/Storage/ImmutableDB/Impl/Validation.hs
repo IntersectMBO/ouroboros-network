@@ -138,7 +138,7 @@ validateAllEpochs validateEnv@ValidateEnv { hasFS, err, chunkInfo } lastEpoch =
       let shouldBeFinalised =
             if epoch == lastEpoch
               then ShouldNotBeFinalised
-              else ShouldBeFinalised $ epochInfoSize chunkInfo epoch
+              else ShouldBeFinalised $ getChunkSize chunkInfo epoch
       runExceptT
         (validateEpoch validateEnv shouldBeFinalised epoch (Just prevHash)) >>= \case
           Left  ()              -> cleanup lastValid epoch $> lastValid
@@ -214,7 +214,7 @@ validateMostRecentEpoch validateEnv@ValidateEnv { hasFS } = go
 -- of the epoch, the primary index should be padded with offsets to indicate
 -- that these slots are empty. See 'Primary.backfill'.
 data ShouldBeFinalised
-  = ShouldBeFinalised EpochSize
+  = ShouldBeFinalised ChunkSize
   | ShouldNotBeFinalised
   deriving (Show)
 
@@ -459,8 +459,8 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
     go nextExpectedRelSlot lastSecondaryOffset = \case
       [] -> case shouldBeFinalised of
         ShouldNotBeFinalised        -> []
-        ShouldBeFinalised epochSize ->
-          Primary.backfillEpoch epochSize nextExpectedRelSlot lastSecondaryOffset
+        ShouldBeFinalised chunkSize ->
+          Primary.backfillEpoch chunkSize nextExpectedRelSlot lastSecondaryOffset
 
       relSlot:relSlots'
         | relSlot < nextExpectedRelSlot

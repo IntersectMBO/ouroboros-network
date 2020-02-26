@@ -801,9 +801,8 @@ startNewEpoch
 startNewEpoch registry hasFS@HasFS{..} err index chunkInfo = do
     st@OpenState {..} <- get
 
-    -- Find out the size of the current epoch, so we can pad the primary
-    -- index.
-    let epochSize = epochInfoSize chunkInfo _currentEpoch
+    -- Find out the size of the current chunk, so we can pad the primary index
+    let chunkSize = getChunkSize chunkInfo _currentEpoch
 
     -- We have to take care when starting multiple new epochs in a row. In the
     -- first call the tip will be in the current epoch, but in subsequent
@@ -824,7 +823,7 @@ startNewEpoch registry hasFS@HasFS{..} err index chunkInfo = do
             let EpochSlot epoch relSlot = epochInfoBlockRelative chunkInfo lastSlot
             in if epoch == _currentEpoch then succ relSlot else 0
 
-    let backfillOffsets = Primary.backfillEpoch epochSize nextFreeRelSlot
+    let backfillOffsets = Primary.backfillEpoch chunkSize nextFreeRelSlot
           _currentSecondaryOffset
 
     lift $
