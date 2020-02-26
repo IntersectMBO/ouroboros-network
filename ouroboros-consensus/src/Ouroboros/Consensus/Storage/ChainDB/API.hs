@@ -19,6 +19,10 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
     ChainDB(..)
   , getCurrentTip
   , getTipBlockNo
+    -- * Adding a block
+  , AddBlockPromise(..)
+  , addBlock
+  , addBlock_
     -- * Useful utilities
   , getBlock
   , streamBlocks
@@ -61,6 +65,7 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
 
 import qualified Codec.CBOR.Read as CBOR
 import           Control.Exception (Exception (..))
+import           Control.Monad (void)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -80,6 +85,7 @@ import           Ouroboros.Network.Point (WithOrigin)
 import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..))
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
@@ -125,9 +131,12 @@ data ChainDB m blk = ChainDB {
       -- part of the chain if there are other chains available that are
       -- preferred by the consensus algorithm (typically, longer chains).
       --
-      -- This function triggers chain selection (if necessary) and terminates
-      -- after chain selection is done.
-      addBlock           :: blk -> m ()
+      -- This function typically returns immediately, yielding a
+      -- 'AddBlockPromise' which can be used to wait for the result. You can
+      -- use 'addBlock' to add the block synchronously.
+      --
+      -- NOTE: back pressure can be applied when overloaded.
+      addBlockAsync      :: blk -> m (AddBlockPromise m blk)
 
       -- | Get the current chain fragment
       --
@@ -319,6 +328,55 @@ instance DB (ChainDB m blk) where
   type DBHeaderHash (ChainDB m blk) = HeaderHash blk
 
 {-------------------------------------------------------------------------------
+  Adding a block
+-------------------------------------------------------------------------------}
+
+data AddBlockPromise m blk = AddBlockPromise
+    { blockProcessed          :: STM m (Point blk)
+      -- ^ Use this 'STM' transaction to wait until the block has been
+      -- processed: the block has been written to disk and chain selection has
+      -- been performed for the block, /unless/ the block's slot is in the
+      -- future.
+      --
+      -- The ChainDB's tip after chain selection is returned. When this tip
+      -- doesn't match the added block, it doesn't necessarily mean the block
+      -- wasn't adopted. We might have adopted a longer chain of which the
+      -- added block is a part, but not the tip.
+      --
+      -- NOTE: A block can be ignored by the ChainDB, when it is too old,
+      -- already in the VolatileDB, or known to be invalid. In that case, we
+      -- also consider it processed and don't run chain selection for the
+      -- block. We deliver both promises at that point, using the current
+      -- chain's tip.
+      --
+      -- NOTE: When the block's slot is in the future, chain selection for the
+      -- block won't be performed until the block's slot becomes the current
+      -- slot, which might take some time. For that reason, this transaction
+      -- will not wait for chain selection of a block from a future slot. It
+      -- will return the current tip of the ChainDB after writing the block to
+      -- disk. See 'chainSelectionPerformed' in case you /do/ want to wait.
+    , chainSelectionPerformed :: STM m (Point blk)
+      -- ^ Variant of 'blockProcessed' that waits until chain selection has
+      -- been performed for the block, even when the block's slot is in the
+      -- future. This can block for a long time.
+      --
+      -- In case the block's slot was not in the future, this is equivalent to
+      -- 'blockProcessed'.
+    }
+
+-- | Add a block synchronously: wait until the block has been processed (see
+-- 'blockProcessed'). The new tip of the ChainDB is returned.
+addBlock :: IOLike m => ChainDB m blk -> blk -> m (Point blk)
+addBlock chainDB blk = do
+    promise <- addBlockAsync chainDB blk
+    atomically $ blockProcessed promise
+
+-- | Add a block synchronously. Variant of 'addBlock' that doesn't return the
+-- new tip of the ChainDB.
+addBlock_ :: IOLike m => ChainDB m blk -> blk -> m ()
+addBlock_  = void .: addBlock
+
+{-------------------------------------------------------------------------------
   Useful utilities
 -------------------------------------------------------------------------------}
 
@@ -396,13 +454,13 @@ toChain chainDB = withRegistry $ \registry ->
         IteratorBlockGCed _ ->
           error "block on the current chain was garbage-collected"
 
-fromChain :: forall m blk. Monad m
+fromChain :: forall m blk. IOLike m
           => m (ChainDB m blk)
           -> Chain blk
           -> m (ChainDB m blk)
 fromChain openDB chain = do
     chainDB <- openDB
-    mapM_ (addBlock chainDB) $ Chain.toOldestFirst chain
+    mapM_ (addBlock_ chainDB) $ Chain.toOldestFirst chain
     return chainDB
 
 {-------------------------------------------------------------------------------

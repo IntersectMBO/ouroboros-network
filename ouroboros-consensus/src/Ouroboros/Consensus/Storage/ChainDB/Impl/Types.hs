@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
@@ -5,6 +6,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -36,6 +38,13 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
     -- * Invalid blocks
   , InvalidBlocks
   , InvalidBlockInfo (..)
+    -- * Blocks to add
+  , BlocksToAdd
+  , BlockToAdd (..)
+  , newBlocksToAdd
+  , enqueueBlockToAdd
+  , getBlockToAdd
+  , FutureBlockToAdd (..)
     -- * Trace types
   , TraceEvent (..)
   , TraceAddBlockEvent (..)
@@ -53,15 +62,18 @@ import           Data.List.NonEmpty (NonEmpty)
 import           Data.Map.Strict (Map)
 import           Data.Time.Clock (DiffTime)
 import           Data.Typeable
+import           Data.Void (Void)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
+
+import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarM)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
-                     SlotNo)
+                     SlotNo, blockPoint)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (Header, IsEBB (..))
@@ -76,8 +88,9 @@ import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 import           Ouroboros.Consensus.Storage.Common (EpochNo)
 import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo)
 
-import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbError (..),
-                     InvalidBlockReason, StreamFrom, StreamTo, UnknownRange)
+import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
+                     ChainDbError (..), InvalidBlockReason, StreamFrom,
+                     StreamTo, UnknownRange)
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -219,12 +232,14 @@ data ChainDbEnv m blk = CDB
   , cdbIsEBB           :: !(Header blk -> IsEBB)
   , cdbCheckIntegrity  :: !(blk -> Bool)
   , cdbBlockchainTime  :: !(BlockchainTime m)
-  , cdbFutureBlocks    :: !(StrictTVar m (Map SlotNo (NonEmpty (Header blk))))
+  , cdbBlocksToAdd     :: !(BlocksToAdd m blk)
+    -- ^ Queue of blocks that still have to be added.
+  , cdbFutureBlocks    :: !(StrictTVar m (Map SlotNo (NonEmpty (FutureBlockToAdd m blk))))
     -- ^ Scheduled chain selections for blocks with a slot in the future.
     --
     -- When a block with slot @s@, which is > the current slot is added, we
-    -- add its header to the front of the list of headers stored under its
-    -- slot number. We prepend to the list, so the headers are in reverse
+    -- add a corresponding 'FutureBlockToAdd' to the front of the list stored
+    -- under its slot number. We prepend to the list, so they are in reverse
     -- order w.r.t. the order in which they were added.
     --
     -- INVARIANT: all slots in the map are > the current slot.
@@ -264,8 +279,12 @@ data Internal m blk = Internal
     -- ^ Write a new LedgerDB snapshot to disk and remove the oldest one(s).
   , intScheduledChainSelection :: SlotNo -> m ()
     -- ^ Run the scheduled chain selections for the given 'SlotNo'.
+  , intAddBlockRunner          :: m Void
+    -- ^ Start the loop that adds blocks to the ChainDB retrieved from the
+    -- queue populated by 'ChainDB.addBlock'. Execute this loop in a separate
+    -- thread.
   , intKillBgThreads           :: StrictTVar m (m ())
-      -- ^ A handle to kill the background threads.
+    -- ^ A handle to kill the background threads.
   }
 
 -- | Wrapper around 'intReopen_' to guarantee HasCallStack
@@ -381,6 +400,73 @@ data InvalidBlockInfo blk = InvalidBlockInfo
   } deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
+  Blocks to add
+-------------------------------------------------------------------------------}
+
+-- | FIFO queue used to add blocks asynchronously to the ChainDB. Blocks are
+-- read from this queue by a background thread, which processes the blocks
+-- synchronously.
+newtype BlocksToAdd m blk = BlocksToAdd (TBQueue m (BlockToAdd m blk))
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlocksToAdd" (BlocksToAdd m blk)
+
+-- | Entry in the 'BlocksToAdd' queue: a block together with the 'TMVar's used
+-- to implement 'AddBlockPromise'.
+data BlockToAdd m blk = BlockToAdd
+  { blockToAdd                 :: !blk
+  , varBlockProcessed          :: !(StrictTMVar m (Point blk))
+    -- ^ Used for the 'blockProcessed' field of 'AddBlockPromise'.
+  , varChainSelectionPerformed :: !(StrictTMVar m (Point blk))
+    -- ^ Used for the 'chainSelectionPerformed' field of 'AddBlockPromise'.
+  }
+
+-- | Create a new 'BlocksToAdd' with the given size.
+newBlocksToAdd :: IOLike m => Word -> m (BlocksToAdd m blk)
+newBlocksToAdd queueSize = BlocksToAdd <$>
+    atomically (newTBQueue (fromIntegral queueSize))
+
+-- | Add a block to the 'BlocksToAdd' queue. Can block when the queue is full.
+enqueueBlockToAdd
+  :: (IOLike m, HasHeader blk)
+  => Tracer m (TraceAddBlockEvent blk)
+  -> BlocksToAdd m blk
+  -> blk
+  -> m (AddBlockPromise m blk)
+enqueueBlockToAdd tracer (BlocksToAdd queue) blk = do
+    varBlockProcessed          <- newEmptyTMVarM
+    varChainSelectionPerformed <- newEmptyTMVarM
+    let !toAdd = BlockToAdd
+          { blockToAdd = blk
+          , varBlockProcessed
+          , varChainSelectionPerformed
+          }
+    queueSize <- atomically $ do
+      writeTBQueue  queue toAdd
+      lengthTBQueue queue
+    traceWith tracer $
+      AddedBlockToQueue (blockPoint blk) (fromIntegral queueSize)
+    return AddBlockPromise
+      { blockProcessed          = readTMVar varBlockProcessed
+      , chainSelectionPerformed = readTMVar varChainSelectionPerformed
+      }
+
+-- | Get the oldest block from the 'BlocksToAdd' queue. Can block when the
+-- queue is empty.
+getBlockToAdd :: IOLike m => BlocksToAdd m blk -> m (BlockToAdd m blk)
+getBlockToAdd (BlocksToAdd queue) = atomically $ readTBQueue queue
+
+data FutureBlockToAdd m blk = FutureBlockToAdd
+  { futureBlockHdr                   :: !(Header blk)
+  , varFutureChainSelectionPerformed :: !(StrictTMVar m (Point blk))
+  }
+
+-- No instance for 'StrictTMVar'; we can't use generics
+instance NoUnexpectedThunks (Header blk)
+      => NoUnexpectedThunks (FutureBlockToAdd m blk) where
+  showTypeOf _ = "FutureBlockToAdd"
+  whnfNoUnexpectedThunks ctxt (FutureBlockToAdd hdr _tmvar) =
+    noUnexpectedThunks ctxt hdr
+
+{-------------------------------------------------------------------------------
   Trace types
 -------------------------------------------------------------------------------}
 
@@ -448,6 +534,10 @@ data TraceAddBlockEvent blk
 
   | IgnoreInvalidBlock (Point blk) (InvalidBlockReason blk)
     -- ^ A block that is know to be invalid was ignored.
+
+  | AddedBlockToQueue (Point blk) Word
+    -- ^ The block was added to the queue and will be added to the ChainDB by
+    -- the background thread. The size of the queue is included.
 
   | BlockInTheFuture (Point blk) SlotNo
     -- ^ The block is from the future, i.e., its slot number is greater than

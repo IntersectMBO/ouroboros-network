@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE MultiWayIf           #-}
+{-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
@@ -13,7 +14,8 @@
 -- adding a block.
 module Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
   ( initialChainSelection
-  , addBlock
+  , addBlockAsync
+  , addBlockSync
   , chainSelectionForBlock
     -- * Type for in-sync chain and ledger
   , ChainAndLedger -- Opaque
@@ -62,8 +64,8 @@ import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
 
-import           Ouroboros.Consensus.Storage.ChainDB.API
-                     (InvalidBlockReason (..))
+import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
+                     InvalidBlockReason (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
                      (BlockCache)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
@@ -161,7 +163,38 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
         curChainAndLedger
         (fmap (mkCandidateSuffix 0) candidates)
 
--- | Add a block to the ChainDB.
+-- | Add a block to the ChainDB, /asynchronously/.
+--
+-- This adds a 'BlockToAdd' corresponding to the given block to the
+-- 'cdbBlocksToAdd' queue. The entries in that queue are processed using
+-- 'addBlockSync', see that function for more information.
+--
+-- When the queue is full, this function will still block.
+--
+-- An important advantage of this asynchronous approach over a synchronous
+-- approach is that it doesn't have the following disadvantage: when a thread
+-- adding a block to the ChainDB is killed, which can happen when
+-- disconnecting from the corresponding node, we might have written the block
+-- to disk, but not updated the corresponding in-memory state (e.g., that of
+-- the VolatileDB), leaving both out of sync.
+--
+-- With this asynchronous approach, threads adding blocks asynchronously can
+-- be killed without worries, the background thread processing the blocks
+-- synchronously won't be killed. Only when the whole ChainDB shuts down will
+-- that background thread get killed. But since there will be no more
+-- in-memory state, it can't get out of sync with the file system state. On
+-- the next startup, a correct in-memory state will be reconstructed from the
+-- file system state.
+addBlockAsync
+  :: forall m blk. (IOLike m, HasHeader blk)
+  => ChainDbEnv m blk
+  -> blk
+  -> m (AddBlockPromise m blk)
+addBlockAsync CDB { cdbTracer, cdbBlocksToAdd } =
+    enqueueBlockToAdd (contramap TraceAddBlockEvent cdbTracer) cdbBlocksToAdd
+
+-- | Add a block to the ChainDB, /synchronously/, called in the background
+-- thread. This is not meant to be called by the user.
 --
 -- This is the only operation that actually changes the ChainDB. It will store
 -- the block on disk and trigger chain selection, possibly switching to a
@@ -169,7 +202,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
 --
 -- When the slot of the block is > the current slot, a chain selection will be
 -- scheduled in the slot of the block.
-addBlock
+addBlockSync
   :: forall m blk.
      ( IOLike m
      , HasHeader blk
@@ -177,41 +210,52 @@ addBlock
      , HasCallStack
      )
   => ChainDbEnv m blk
-  -> blk
+  -> BlockToAdd m blk
   -> m ()
-addBlock cdb@CDB{..} b = do
+addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
     -- No need to be in the same STM transaction
     curSlot <- atomically $ getCurrentSlot cdbBlockchainTime
 
-    (isMember, invalid, immBlockNo) <- atomically $ (,,)
+    (isMember, invalid, curChain) <- atomically $ (,,)
       <$> VolDB.getIsMember               cdbVolDB
       <*> (forgetFingerprint <$> readTVar cdbInvalid)
-      <*> (AF.anchorBlockNo  <$> Query.getCurrentChain cdb)
+      <*> Query.getCurrentChain           cdb
+
+    let immBlockNo = AF.anchorBlockNo curChain
+        curTip     = castPoint (AF.headPoint curChain)
 
     -- We follow the steps from section "## Adding a block" in ChainDB.md
 
     -- ### Ignore
     if
-      | olderThanK hdr (cdbIsEBB hdr) immBlockNo ->
+      | olderThanK hdr (cdbIsEBB hdr) immBlockNo -> do
         trace $ IgnoreBlockOlderThanK (blockPoint b)
-      | isMember (blockHash b) ->
+        deliverPromises curTip
+
+      | isMember (blockHash b) -> do
         trace $ IgnoreBlockAlreadyInVolDB (blockPoint b)
-      | Just (InvalidBlockInfo reason _) <- Map.lookup (blockHash b) invalid ->
+        deliverPromises curTip
+
+      | Just (InvalidBlockInfo reason _) <- Map.lookup (blockHash b) invalid -> do
         trace $ IgnoreInvalidBlock (blockPoint b) reason
+        deliverPromises curTip
 
-      --- ### Store but schedule chain selection
+      -- ### Store but schedule chain selection
       | blockSlot b > curSlot -> do
-
         VolDB.putBlock cdbVolDB b
-        trace $ BlockInTheFuture (blockPoint b) curSlot
         trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (cdbIsEBB hdr)
+        atomically $ putTMVar varBlockProcessed curTip
+        -- We'll fill in 'varChainSelectionPerformed' when the scheduled chain
+        -- selection is performed.
+        trace $ BlockInTheFuture (blockPoint b) curSlot
         scheduleChainSelection curSlot (blockSlot b)
 
       -- The remaining cases
       | otherwise -> do
         VolDB.putBlock cdbVolDB b
         trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (cdbIsEBB hdr)
-        chainSelectionForBlock cdb (BlockCache.singleton b) hdr
+        newTip <- chainSelectionForBlock cdb (BlockCache.singleton b) hdr
+        deliverPromises newTip
   where
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
@@ -219,14 +263,22 @@ addBlock cdb@CDB{..} b = do
     hdr :: Header blk
     hdr = getHeader b
 
+    -- | Use the given 'Point' to fill in the 'TMVar's corresponding to the
+    -- block's 'AddBlockPromise'.
+    deliverPromises :: Point blk -> m ()
+    deliverPromises tip = atomically $ do
+      putTMVar varBlockProcessed          tip
+      putTMVar varChainSelectionPerformed tip
+
     scheduleChainSelection
       :: SlotNo  -- ^ Current slot number
       -> SlotNo  -- ^ Slot number of the block
       -> m ()
     scheduleChainSelection curSlot slot = do
       nbScheduled <- atomically $ updateTVar cdbFutureBlocks $ \futureBlocks ->
-        let futureBlocks' = Map.insertWith strictAppend slot
-              (forceElemsToWHNF (hdr NE.:| [])) futureBlocks
+        let futureBlockToAdd = FutureBlockToAdd hdr varChainSelectionPerformed
+            futureBlocks' = Map.insertWith strictAppend slot
+              (forceElemsToWHNF (futureBlockToAdd NE.:| [])) futureBlocks
             nbScheduled   = fromIntegral $ sum $ length <$> Map.elems futureBlocks
         in (futureBlocks', nbScheduled)
       trace $ ScheduledChainSelection (headerPoint hdr) curSlot nbScheduled
@@ -273,6 +325,8 @@ olderThanK hdr isEBB immBlockNo
 --
 -- PRECONDITION: the slot of the block <= the current (wall) slot
 --
+-- The new tip of the current chain is returned.
+--
 -- = Constructing candidate fragments
 --
 -- The VolatileDB keeps a \"successors\" map in memory, telling us the hashes
@@ -307,7 +361,7 @@ chainSelectionForBlock
   => ChainDbEnv m blk
   -> BlockCache blk
   -> Header blk
-  -> m ()
+  -> m (Point blk)
 chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     curSlot <- atomically $ getCurrentSlot cdbBlockchainTime
 
@@ -344,12 +398,14 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     if
       -- The chain might have grown since we added the block such that the
       -- block is older than @k@.
-      | olderThanK hdr (cdbIsEBB hdr) immBlockNo ->
+      | olderThanK hdr (cdbIsEBB hdr) immBlockNo -> do
         trace $ IgnoreBlockOlderThanK p
+        return tipPoint
 
       -- We might have validated the block in the meantime
-      | Just (InvalidBlockInfo reason _) <- Map.lookup (headerHash hdr) invalid ->
+      | Just (InvalidBlockInfo reason _) <- Map.lookup (headerHash hdr) invalid -> do
         trace $ IgnoreInvalidBlock p reason
+        return tipPoint
 
       -- The block @b@ fits onto the end of our current chain
       | pointHash tipPoint == castHash (blockPrevHash hdr) -> do
@@ -362,9 +418,10 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
         trace (TrySwitchToAFork p hashes)
         switchToAFork succsOf' curChainAndLedger hashes curSlot
 
-      | otherwise ->
+      | otherwise -> do
         -- ### Store but don't change the current chain
         trace (StoreButDontChange p)
+        return tipPoint
 
     -- Note that we may have extended the chain, but have not trimmed it to
     -- @k@ blocks/headers. That is the job of the background thread, which
@@ -387,7 +444,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
                          -- ^ The current chain and ledger
                       -> SlotNo
                          -- ^ The current slot
-                      -> m ()
+                      -> m (Point blk)
     addToCurrentChain succsOf curChainAndLedger@(ChainAndLedger curChain _)
                       curSlot = assert (AF.validExtension curChain hdr) $ do
         let suffixesAfterB = VolDB.candidates succsOf p
@@ -429,14 +486,15 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
         -- candidate will be a two-block (the EBB and the new block)
         -- extension of the current chain.
         case candidateSuffixes of
-          Nothing                 -> return ()
+          Nothing                 -> return curTip
           Just candidateSuffixes' ->
             chainSelection' curChainAndLedger candidateSuffixes' >>= \case
-              Nothing                -> return ()
+              Nothing                -> return curTip
               Just newChainAndLedger ->
                 trySwitchTo newChainAndLedger (AddedToCurrentChain p)
       where
         curHead = AF.headAnchor curChain
+        curTip  = castPoint $ AF.headPoint curChain
 
     -- | We have found a path of hashes to the new block through the
     -- VolatileDB. We try to extend this path by looking for forks that start
@@ -450,7 +508,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
                      -- ^ An uninterrupted path of hashes @(i,b]@.
                   -> SlotNo
                      -- ^ The current slot
-                  -> m ()
+                  -> m (Point blk)
     switchToAFork succsOf curChainAndLedger@(ChainAndLedger curChain _) hashes
                   curSlot = do
         let suffixesAfterB = VolDB.candidates succsOf p
@@ -473,15 +531,15 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
 
         case NE.nonEmpty candidateSuffixes of
           -- No candidates preferred over the current chain
-          Nothing                 -> return ()
+          Nothing                 -> return curTip
           Just candidateSuffixes' ->
             chainSelection' curChainAndLedger candidateSuffixes' >>= \case
-              Nothing                -> return ()
+              Nothing                -> return curTip
               Just newChainAndLedger ->
                 trySwitchTo newChainAndLedger (SwitchedToAFork p)
       where
         i = AF.castAnchor $ anchor curChain
-
+        curTip = castPoint $ AF.headPoint curChain
 
     -- | 'chainSelection' partially applied to the parameters from the
     -- 'ChainDbEnv'.
@@ -550,7 +608,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
          )
          -- ^ Given the previous chain and the new chain, return the event
          -- to trace when we switched to the new chain.
-      -> m ()
+      -> m (Point blk)
     trySwitchTo (ChainAndLedger newChain newLedger) mkTraceEvent = do
       (curChain, switched) <- atomically $ do
         curChain <- readTVar cdbChain
@@ -584,8 +642,10 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
       if switched then do
         trace $ mkTraceEvent curChain newChain
         traceWith cdbTraceLedger newLedger
+        return $ castPoint $ AF.headPoint newChain
       else do
         trace $ ChainChangedInBg curChain newChain
+        return $ castPoint $ AF.headPoint curChain
 
     -- | Build a cache from the headers in the fragment.
     cacheHeaders :: AnchoredFragment (Header blk)

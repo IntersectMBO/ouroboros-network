@@ -287,6 +287,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbTraceLedger          = nullTracer
     , cdbRegistry             = registry
     , cdbGcDelay              = 0
+    , cdbChainSelQueueSize    = 2
     }
   where
     addDummyBinaryInfo :: CBOR.Encoding -> BinaryInfo CBOR.Encoding

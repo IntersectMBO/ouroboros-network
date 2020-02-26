@@ -104,18 +104,24 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbTraceLedger          :: Tracer m (LgrDB.LedgerDB blk)
     , cdbRegistry             :: ResourceRegistry m
     , cdbGcDelay              :: DiffTime
+    , cdbChainSelQueueSize    :: Word
+      -- ^ Size of the queue used to store asynchronously added blocks. This
+      -- is the maximum number of blocks that could be kept in memory at the
+      -- same time when the background thread processing the blocks can't keep
+      -- up.
     }
 
 -- | Arguments specific to the ChainDB, not to the ImmutableDB, VolatileDB, or
 -- LedgerDB.
 data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
-      cdbsTracer         :: Tracer m (TraceEvent blk)
-    , cdbsRegistry       :: ResourceRegistry m
+      cdbsTracer            :: Tracer m (TraceEvent blk)
+    , cdbsRegistry          :: ResourceRegistry m
       -- ^ TODO: the ImmutableDB takes a 'ResourceRegistry' too, but we're
       -- using it for ChainDB-specific things. Revisit these arguments.
-    , cdbsGcDelay        :: DiffTime
-    , cdbsBlockchainTime :: BlockchainTime m
-    , cdbsEncodeHeader   :: Header blk -> Encoding
+    , cdbsGcDelay           :: DiffTime
+    , cdbsBlockchainTime    :: BlockchainTime m
+    , cdbsEncodeHeader      :: Header blk -> Encoding
+    , cdbsChainSelQueueSize :: Word
     }
 
 -- | Default arguments
@@ -128,12 +134,13 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
 -- * 'cdbsEncodeHeader'
 defaultSpecificArgs :: ChainDbSpecificArgs m blk
 defaultSpecificArgs = ChainDbSpecificArgs{
-      cdbsGcDelay        = oneHour
+      cdbsGcDelay           = oneHour
+    , cdbsChainSelQueueSize = 10
       -- Fields without a default
-    , cdbsTracer         = error "no default for cdbsTracer"
-    , cdbsRegistry       = error "no default for cdbsRegistry"
-    , cdbsBlockchainTime = error "no default for cdbsBlockchainTime"
-    , cdbsEncodeHeader   = error "no default for cdbsEncodeHeader"
+    , cdbsTracer          = error "no default for cdbsTracer"
+    , cdbsRegistry        = error "no default for cdbsRegistry"
+    , cdbsBlockchainTime  = error "no default for cdbsBlockchainTime"
+    , cdbsEncodeHeader    = error "no default for cdbsEncodeHeader"
     }
   where
     oneHour = secondsToDiffTime 60 * 60
@@ -210,11 +217,12 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrTraceLedger          = cdbTraceLedger
         }
     , ChainDbSpecificArgs {
-          cdbsTracer          = cdbTracer
-        , cdbsRegistry        = cdbRegistry
-        , cdbsGcDelay         = cdbGcDelay
-        , cdbsBlockchainTime  = cdbBlockchainTime
-        , cdbsEncodeHeader    = cdbEncodeHeader
+          cdbsTracer            = cdbTracer
+        , cdbsRegistry          = cdbRegistry
+        , cdbsGcDelay           = cdbGcDelay
+        , cdbsBlockchainTime    = cdbBlockchainTime
+        , cdbsEncodeHeader      = cdbEncodeHeader
+        , cdbsChainSelQueueSize = cdbChainSelQueueSize
         }
     )
 
@@ -270,4 +278,5 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbTraceLedger          = lgrTraceLedger
     , cdbRegistry             = immRegistry
     , cdbGcDelay              = cdbsGcDelay
+    , cdbChainSelQueueSize    = cdbsChainSelQueueSize
     }
