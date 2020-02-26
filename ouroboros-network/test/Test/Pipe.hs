@@ -16,7 +16,6 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
-import           Data.Int
 import           Data.Void (Void)
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
@@ -72,7 +71,7 @@ prop_pipe_demo :: TestBlockChainAndUpdates -> Property
 prop_pipe_demo (TestBlockChainAndUpdates chain updates) =
     ioProperty $ demo chain updates
 
-defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit :: Int
 defaultMiniProtocolLimit = 3000000
 
 -- | The bundle of mini-protocols in our demo protocol: only chain sync

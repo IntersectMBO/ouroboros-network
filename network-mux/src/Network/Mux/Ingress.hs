@@ -15,7 +15,6 @@ module Network.Mux.Ingress (
     , MiniProtocolDispatchInfo(..)
     ) where
 
-import           Data.Int
 import           Data.Array
 import           Control.Monad
 import qualified Data.ByteString.Lazy as BL
@@ -101,7 +100,7 @@ data MiniProtocolDispatch m =
 data MiniProtocolDispatchInfo m =
      MiniProtocolDispatchInfo
        !(StrictTVar m BL.ByteString)
-       !Int64
+       !Int
 
 
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from
@@ -125,7 +124,7 @@ demux DemuxState{dispatchTable, bearer} =
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
           buf <- readTVar q
-          if BL.length buf + BL.length (msBlob sdu) <= qMax
+          if BL.length buf + BL.length (msBlob sdu) <= fromIntegral qMax
               then writeTVar q $ BL.append buf (msBlob sdu)
               else throwM $ MuxError MuxIngressQueueOverRun
                                 (printf "Ingress Queue overrun on %s %s"

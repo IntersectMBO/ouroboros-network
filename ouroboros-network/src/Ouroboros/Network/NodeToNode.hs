@@ -96,7 +96,7 @@ import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
 
 import qualified Data.ByteString.Lazy as BL
-import           Data.Int (Int64)
+import           Data.Int (Int)
 import           Data.Time.Clock (DiffTime)
 import           Data.Void (Void)
 import           Data.Word
@@ -249,7 +249,7 @@ nodeToNodeProtocols MiniProtocolParameters {
           }
         ]
   where
-    addSafetyMargin :: Int64 -> Int64
+    addSafetyMargin :: Int -> Int
     addSafetyMargin x = x + x `div` 10
 
     chainSyncProtocolLimits

@@ -12,7 +12,6 @@
 module Test.Ouroboros.Network.Socket (tests) where
 
 import           Data.Functor ((<$))
-import           Data.Int (Int64)
 import           Data.Void (Void)
 import           Data.List (mapAccumL)
 import qualified Data.ByteString.Lazy as BL
@@ -105,7 +104,7 @@ activeMuxTracer :: Show a => Tracer IO a
 activeMuxTracer = nullTracer
 --activeMuxTracer = _verboseTracer -- Dump log messages to stdout.
 
-defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit :: Int
 defaultMiniProtocolLimit = 3000000
 
 -- |
