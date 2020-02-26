@@ -8,18 +8,12 @@ module Ouroboros.Consensus.Util.MonadSTM.NormalForm (
   , uncheckedNewTVarM
   , uncheckedNewMVar
   , uncheckedNewEmptyMVar
-    -- * Low-level API
-  , unsafeNoThunks
   ) where
 
-import qualified Data.Text as Text
 import           GHC.Stack
-import           System.IO.Unsafe (unsafePerformIO)
 
-import           Cardano.Prelude (ClosureTreeOptions (..),
-                     NoUnexpectedThunks (..), ThunkInfo (..),
-                     TraverseCyclicClosures (..), TreeDepth (..),
-                     buildAndRenderClosureTree)
+import           Cardano.Prelude (NoUnexpectedThunks (..),
+                     unsafeNoUnexpectedThunks)
 
 import           Control.Monad.Class.MonadSTM.Strict hiding (newEmptyTMVarM,
                      newTMVar, newTMVarM, newTVar, newTVarM,
@@ -37,48 +31,14 @@ import qualified Ouroboros.Consensus.Util.MonadSTM.StrictMVar as Strict
 
 newTVarM :: (MonadSTM m, HasCallStack, NoUnexpectedThunks a)
          => a -> m (StrictTVar m a)
-newTVarM = Strict.newTVarWithInvariantM unsafeNoThunks
+newTVarM = Strict.newTVarWithInvariantM unsafeNoUnexpectedThunks
 
 newMVar :: (MonadSTM m, HasCallStack, NoUnexpectedThunks a)
         => a -> m (StrictMVar m a)
-newMVar = Strict.newMVarWithInvariant unsafeNoThunks
+newMVar = Strict.newMVarWithInvariant unsafeNoUnexpectedThunks
 
 newEmptyMVar :: (MonadSTM m, NoUnexpectedThunks a) => a -> m (StrictMVar m a)
-newEmptyMVar = Strict.newEmptyMVarWithInvariant unsafeNoThunks
-
-{-------------------------------------------------------------------------------
-  Auxiliary: check for thunks
--------------------------------------------------------------------------------}
-
-unsafeNoThunks :: NoUnexpectedThunks a => a -> Maybe String
-unsafeNoThunks a = unsafePerformIO $ errorMessage =<< noUnexpectedThunks [] a
-  where
-    errorMessage :: ThunkInfo -> IO (Maybe String)
-    errorMessage NoUnexpectedThunks     = return Nothing
-    errorMessage (UnexpectedThunk info) = do
-        -- We render the tree /after/ checking; in a way, this is not correct,
-        -- because 'noUnexpectedThunks' might have forced some stuff. However,
-        -- computing the tree beforehand, even when there is no failure, would
-        -- be prohibitively expensive.
-        --
-        -- TODO rendering the tree has been disabled for now, as this loops
-        -- indefinitely, consuming gigabytes of memory, and prevents us from
-        -- printing a message about the thunk. Moreover, the thunk info is in
-        -- most cases a clearer indication of where the thunk is than the
-        -- /huge/ tree. Use the two commented-out lines below to include the
-        -- tree in the message.
-        --
-        -- tree <- Text.unpack <$> buildAndRenderClosureTree opts a
-        -- return $ Just $ show info ++ "\nTree:\n" ++ tree
-
-        let _mkTree = Text.unpack <$> buildAndRenderClosureTree opts a
-        return $ Just $ show info
-
-    opts :: ClosureTreeOptions
-    opts = ClosureTreeOptions {
-        ctoMaxDepth       = AnyDepth
-      , ctoCyclicClosures = NoTraverseCyclicClosures
-      }
+newEmptyMVar = Strict.newEmptyMVarWithInvariant unsafeNoUnexpectedThunks
 
 {-------------------------------------------------------------------------------
   Unchecked wrappers (where we don't check for thunks)
