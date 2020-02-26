@@ -18,12 +18,12 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
-import           Ouroboros.Consensus.Util
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 
-import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import           Ouroboros.Consensus.Util
 
 import           Ouroboros.Consensus.Storage.LedgerDB.Conf
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
@@ -149,10 +149,10 @@ prop_pastLedger setup@ChainSetup{..} =
     prefix :: [Block]
     prefix = take (fromIntegral csPrefixLen) csChain
 
-    tip :: Tip Block
+    tip :: WithOrigin Block
     tip = case prefix of
-            []         -> TipGen
-            _otherwise -> Tip (last prefix)
+            []         -> Origin
+            _otherwise -> At (last prefix)
 
     afterPrefix :: LedgerDB Ledger Block
     afterPrefix = ledgerDbPushMany' callbacks prefix csGenSnaps
@@ -224,10 +224,10 @@ prop_pastAfterSwitch setup@SwitchSetup{..} =
     prefix :: [Block]
     prefix = take (fromIntegral ssPrefixLen) ssChain
 
-    tip :: Tip Block
+    tip :: WithOrigin Block
     tip = case prefix of
-            []         -> TipGen
-            _otherwise -> Tip (last prefix)
+            []         -> Origin
+            _otherwise -> At (last prefix)
 
     afterPrefix :: LedgerDB Ledger Block
     afterPrefix = ledgerDbPushMany' callbacks prefix (csGenSnaps ssChainSetup)
@@ -447,8 +447,8 @@ instance Arbitrary (Trivial (ChainSummary Int Int)) where
                              <*> arbitrary
                              <*> arbitrary
 
-instance Arbitrary (Trivial (Tip Int)) where
+instance Arbitrary (Trivial (WithOrigin Int)) where
   arbitrary = fmap Trivial $ do
                 gen <- arbitrary
-                if gen then return TipGen
-                       else Tip <$> arbitrary
+                if gen then return Origin
+                       else At <$> arbitrary

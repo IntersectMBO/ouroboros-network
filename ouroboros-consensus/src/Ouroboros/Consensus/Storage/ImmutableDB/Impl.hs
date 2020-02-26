@@ -105,7 +105,8 @@ import           Data.ByteString.Builder (Builder)
 import           Data.Functor (($>), (<&>))
 import           GHC.Stack (HasCallStack)
 
-import           Cardano.Slotting.Block (BlockNo)
+import           Cardano.Slotting.Block
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime,
@@ -356,8 +357,8 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
         cleanUp hasFS st
         newTipWithHash <- truncateTo hasFS st newTipEpochSlot
         let (newEpoch, allowExisting) = case newTipEpochSlot of
-              TipGen                  -> (0, MustBeNew)
-              Tip (EpochSlot epoch _) -> (epoch, AllowExisting)
+              Origin                 -> (0, MustBeNew)
+              At (EpochSlot epoch _) -> (epoch, AllowExisting)
         -- Reset the index, as it can contain stale information. Also restarts
         -- the background thread expiring unused past epochs.
         Index.restart _index newEpoch
@@ -376,12 +377,12 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
     truncateTo
       :: HasFS m h
       -> OpenState m hash h
-      -> Tip EpochSlot
+      -> WithOrigin EpochSlot
       -> m (ImmTipWithInfo hash)
     truncateTo hasFS OpenState {} = \case
-      TipGen                        ->
-        removeFilesStartingFrom hasFS 0 $> TipGen
-      Tip (EpochSlot epoch relSlot) -> do
+      Origin                       ->
+        removeFilesStartingFrom hasFS 0 $> Origin
+      At (EpochSlot epoch relSlot) -> do
         removeFilesStartingFrom hasFS (epoch + 1)
 
         -- Retrieve the needed info from the primary index file and then
@@ -430,12 +431,12 @@ getBlockComponentImpl
 getBlockComponentImpl dbEnv blockComponent slot =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
       inTheFuture <- case forgetTipInfo <$> _currentTip of
-        TipGen                 -> return $ True
-        Tip (Block lastSlot')  -> return $ slot > lastSlot'
+        Origin                -> return $ True
+        At (Block lastSlot')  -> return $ slot > lastSlot'
         -- The slot (that's pointing to a regular block) corresponding to this
         -- EBB will be empty, as the EBB is the last thing in the database. So
         -- if @slot@ is equal to this slot, it is also referring to the future.
-        Tip (EBB lastEBBEpoch) -> do
+        At (EBB lastEBBEpoch) -> do
           ebbSlot <- epochInfoAbsolute _dbEpochInfo (EpochSlot lastEBBEpoch 0)
           return $ slot >= ebbSlot
 
@@ -459,9 +460,9 @@ getEBBComponentImpl
 getEBBComponentImpl dbEnv blockComponent epoch =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
       let inTheFuture = case forgetTipInfo <$> _currentTip of
-            TipGen        -> True
-            Tip (Block _) -> epoch > _currentEpoch
-            Tip (EBB _)   -> epoch > _currentEpoch
+            Origin       -> True
+            At (Block _) -> epoch > _currentEpoch
+            At (EBB _)   -> epoch > _currentEpoch
 
       when inTheFuture $
         throwUserError $ ReadFutureEBBError epoch _currentEpoch
@@ -590,9 +591,9 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
 
       inTheFuture <- case forgetTipInfo <$> _currentTip of
-        TipGen                 -> return True
-        Tip (Block lastSlot)   -> return $ slot > lastSlot
-        Tip (EBB lastEBBEpoch) -> do
+        Origin                -> return True
+        At (Block lastSlot)   -> return $ slot > lastSlot
+        At (EBB lastEBBEpoch) -> do
           ebbSlot <- epochInfoFirst _dbEpochInfo lastEBBEpoch
           return $ slot > ebbSlot
 
@@ -660,9 +661,9 @@ appendBlockImpl dbEnv slot blockNumber headerHash binaryInfo =
 
       -- Check that we're not appending to the past
       let inThePast = case forgetTipInfo <$> _currentTip of
-            Tip (Block lastSlot)   -> slot  <= lastSlot
-            Tip (EBB lastEBBEpoch) -> epoch <  lastEBBEpoch
-            TipGen                 -> False
+            At (Block lastSlot)   -> slot  <= lastSlot
+            At (EBB lastEBBEpoch) -> epoch <  lastEBBEpoch
+            Origin                -> False
 
       when inThePast $ lift $
         throwUserError $
@@ -689,10 +690,10 @@ appendEBBImpl dbEnv epoch blockNumber headerHash binaryInfo =
       let inThePast = case forgetTipInfo <$> _currentTip of
             -- There is already a block in this epoch, so the EBB can no
             -- longer be appended in this epoch
-            Tip (Block _) -> epoch <= _currentEpoch
+            At (Block _) -> epoch <= _currentEpoch
             -- There is already an EBB in this epoch
-            Tip (EBB _)   -> epoch <= _currentEpoch
-            TipGen        -> False
+            At (EBB _)   -> epoch <= _currentEpoch
+            Origin       -> False
 
       when inThePast $ lift $ throwUserError $
         AppendToEBBInThePastError epoch _currentEpoch
@@ -740,9 +741,9 @@ appendEpochSlot registry hasFS epochInfo index epochSlot blockNumber blockOrEBB 
           -- before _currentEpoch.
           then return 0
           else case forgetTipInfo <$> _currentTip of
-            TipGen               -> return 0
-            Tip (EBB _ebb)       -> return 1
-            Tip (Block lastSlot) -> succ . _relativeSlot <$>
+            Origin              -> return 0
+            At (EBB _ebb)       -> return 1
+            At (Block lastSlot) -> succ . _relativeSlot <$>
               epochInfoBlockRelative epochInfo lastSlot
 
     -- Append to the end of the epoch file.
@@ -774,7 +775,7 @@ appendEpochSlot registry hasFS epochInfo index epochSlot blockNumber blockOrEBB 
     modify $ \st -> st
       { _currentEpochOffset     = _currentEpochOffset + fromIntegral blockSize
       , _currentSecondaryOffset = _currentSecondaryOffset + entrySize
-      , _currentTip             = Tip (TipInfo headerHash blockOrEBB blockNumber)
+      , _currentTip             = At (TipInfo headerHash blockOrEBB blockNumber)
       }
   where
     EpochSlot epoch relSlot = epochSlot
@@ -801,14 +802,14 @@ startNewEpoch registry hasFS@HasFS{..} index epochInfo = do
     -- the current (empty) epoch is not the epoch containing the tip, we use
     -- relative slot 0 to calculate how much to pad.
     nextFreeRelSlot <- lift $ case forgetTipInfo <$> _currentTip of
-      TipGen                     -> return 0
-      Tip (EBB epoch)
+      Origin                     -> return 0
+      At (EBB epoch)
         | epoch == _currentEpoch -> return 1
           -- The @_currentEpoch > epoch@: we're in an empty epoch and the tip
           -- was an EBB of an older epoch. So the first relative slot of this
           -- epoch is empty
         | otherwise              -> return 0
-      Tip (Block lastSlot)       ->
+      At (Block lastSlot)        ->
         epochInfoBlockRelative epochInfo lastSlot <&> \(EpochSlot epoch relSlot) ->
           if epoch == _currentEpoch then succ relSlot else 0
 

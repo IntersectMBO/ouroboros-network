@@ -45,11 +45,12 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 import           Text.Read (readMaybe)
 
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      readIncremental)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
@@ -74,7 +75,7 @@ data NextBlock r b = NoMoreBlocks | NextBlock (r, b)
 data StreamAPI m r b = StreamAPI {
       -- | Start streaming after the specified block
       streamAfter :: forall a. HasCallStack
-        => Tip r
+        => WithOrigin r
         -- Reference to the block corresponding to the snapshot we found
         -- (or 'TipGen' if we didn't find any)
 
@@ -91,8 +92,8 @@ data StreamAPI m r b = StreamAPI {
 -- | Stream all blocks
 streamAll :: forall m r b e a. (Monad m, HasCallStack)
           => StreamAPI m r b
-          -> Tip r                -- ^ Starting point for streaming
-          -> (Tip r -> e)         -- ^ Error when tip not found
+          -> WithOrigin r         -- ^ Starting point for streaming
+          -> (WithOrigin r -> e)  -- ^ Error when tip not found
           -> a                    -- ^ Starting point when tip /is/ found
           -> ((r, b) -> a -> m a) -- ^ Update function for each block
           -> ExceptT e m a
@@ -124,7 +125,7 @@ data InitLog r =
     InitFromGenesis
 
     -- | Used a snapshot corresponding to the specified tip
-  | InitFromSnapshot DiskSnapshot (Tip r)
+  | InitFromSnapshot DiskSnapshot (WithOrigin r)
 
     -- | Initialization skipped a snapshot
     --
@@ -210,7 +211,7 @@ data InitFailure r =
     InitFailureRead ReadIncrementalErr
 
     -- | This snapshot is too recent (ahead of the tip of the chain)
-  | InitFailureTooRecent (Tip r)
+  | InitFailureTooRecent (WithOrigin r)
   deriving (Show, Eq, Generic)
 
 -- | Attempt to initialize the ledger DB from the given snapshot
@@ -227,7 +228,7 @@ initFromSnapshot :: forall m h l r b e. (IOLike m, HasCallStack)
                  -> LedgerDbConf m l r b e
                  -> StreamAPI m r b
                  -> DiskSnapshot
-                 -> ExceptT (InitFailure r) m (Tip r, LedgerDB l r, Word64)
+                 -> ExceptT (InitFailure r) m (WithOrigin r, LedgerDB l r, Word64)
 initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
     initSS <- withExceptT InitFailureRead $
                 readSnapshot hasFS decLedger decRef ss
@@ -274,7 +275,7 @@ takeSnapshot :: forall m l r h. MonadThrow m
              -> HasFS m h
              -> (l -> Encoding)
              -> (r -> Encoding)
-             -> LedgerDB l r -> m (DiskSnapshot, Tip r)
+             -> LedgerDB l r -> m (DiskSnapshot, WithOrigin r)
 takeSnapshot tracer hasFS encLedger encRef db = do
     ss <- nextAvailable <$> listSnapshots hasFS
     writeSnapshot hasFS encLedger encRef ss oldest
@@ -369,7 +370,7 @@ snapshotFromPath = fmap DiskSnapshot . readMaybe
 data TraceEvent r
   = InvalidSnapshot DiskSnapshot (InitFailure r)
     -- ^ An on disk snapshot was skipped because it was invalid.
-  | TookSnapshot DiskSnapshot (Tip r)
+  | TookSnapshot DiskSnapshot (WithOrigin r)
     -- ^ A snapshot was written to disk.
   | DeletedSnapshot DiskSnapshot
     -- ^ An old or invalid on-disk snapshot was deleted
@@ -393,7 +394,7 @@ data TraceReplayEvent r replayTo blockInfo
     --
     -- The @replayTo@ parameter corresponds to the block at the tip of the
     -- ImmutableDB, i.e., the last block to replay.
-  | ReplayFromSnapshot DiskSnapshot (Tip r) replayTo
+  | ReplayFromSnapshot DiskSnapshot (WithOrigin r) replayTo
     -- ^ There was a LedgerDB snapshot on disk corresponding to the given tip.
     -- We're replaying more recent blocks against it.
     --

@@ -277,9 +277,9 @@ hasBlock db = \case
       withDB db $ \imm -> do
         immTip <- ImmDB.getTip imm
         (slotNoAtTip, ebbAtTip) <- case forgetTipInfo <$> immTip of
-          TipGen                   -> return (Origin, Nothing)
-          Tip (ImmDB.EBB epochNo)  -> (, Just epochNo) . At  <$> epochInfoFirst epochNo
-          Tip (ImmDB.Block slotNo) -> return (At slotNo, Nothing)
+          Origin                  -> return (Origin, Nothing)
+          At (ImmDB.EBB epochNo)  -> (, Just epochNo) . At  <$> epochInfoFirst epochNo
+          At (ImmDB.Block slotNo) -> return (At slotNo, Nothing)
 
         case At slot `compare` slotNoAtTip of
           -- The request is greater than the tip, so we cannot have the block
@@ -315,10 +315,10 @@ getTipInfo :: forall m blk.
 getTipInfo db = do
     immTip <- withDB db $ \imm -> ImmDB.getTip imm
     case immTip of
-      TipGen -> return Origin
-      Tip (TipInfo hash (ImmDB.EBB epochNo) block) ->
+      Origin -> return Origin
+      At (TipInfo hash (ImmDB.EBB epochNo) block) ->
         At . (, hash, IsEBB, block) <$> epochInfoFirst epochNo
-      Tip (TipInfo hash (ImmDB.Block slotNo) block) ->
+      At (TipInfo hash (ImmDB.Block slotNo) block) ->
         return $ At (slotNo, hash, IsNotEBB, block)
   where
     EpochInfo{..} = epochInfo db

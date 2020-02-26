@@ -392,6 +392,7 @@ test-suite test-storage
                      , bytestring
                      , cardano-crypto-class
                      , cardano-prelude
+                     , cardano-slotting
                      , cborg
                      , containers
                      , contra-tracer

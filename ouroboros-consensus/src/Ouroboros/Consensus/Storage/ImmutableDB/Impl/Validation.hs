@@ -78,10 +78,10 @@ validateAndReopen validateEnv valPol = do
     (epoch, tip) <- validate validateEnv valPol
     index        <- cachedIndex hasFS hashInfo registry cacheTracer cacheConfig epoch
     case tip of
-      TipGen -> assert (epoch == 0) $ do
+      Origin -> assert (epoch == 0) $ do
         traceWith tracer NoValidLastLocation
-        mkOpenState registry hasFS index epoch TipGen MustBeNew
-      _     -> do
+        mkOpenState registry hasFS index epoch Origin MustBeNew
+      _      -> do
         traceWith tracer $ ValidatedLastLocation epoch (forgetTipInfo <$> tip)
         mkOpenState registry hasFS index epoch tip    AllowExisting
   where
@@ -102,7 +102,7 @@ validate validateEnv@ValidateEnv{ hasFS } valPol = do
         -- Remove left-over index files
         -- TODO calls listDirectory again
         removeFilesStartingFrom hasFS 0
-        return (0, TipGen)
+        return (0, Origin)
 
       Just lastEpochOnDisk -> case valPol of
         ValidateAllEpochs       ->
@@ -123,7 +123,7 @@ validateAllEpochs
      -- ^ Most recent epoch on disk
   -> m (EpochNo, ImmTipWithInfo hash)
 validateAllEpochs validateEnv@ValidateEnv { hasFS, epochInfo } lastEpoch =
-    go (0, TipGen) 0 Origin
+    go (0, Origin) 0 Origin
   where
     go
       :: (EpochNo, ImmTipWithInfo hash)  -- ^ The last valid epoch and tip
@@ -138,8 +138,8 @@ validateAllEpochs validateEnv@ValidateEnv { hasFS, epochInfo } lastEpoch =
       runExceptT
         (validateEpoch validateEnv shouldBeFinalised epoch (Just prevHash)) >>= \case
           Left  ()              -> cleanup lastValid epoch $> lastValid
-          Right Nothing         -> continueOrStop lastValid             epoch prevHash
-          Right (Just validBlk) -> continueOrStop (epoch, Tip validBlk) epoch prevHash'
+          Right Nothing         -> continueOrStop lastValid            epoch prevHash
+          Right (Just validBlk) -> continueOrStop (epoch, At validBlk) epoch prevHash'
             where
               prevHash' = At (tipInfoHash validBlk)
 
@@ -169,9 +169,9 @@ validateAllEpochs validateEnv@ValidateEnv { hasFS, epochInfo } lastEpoch =
                   -- empty
       -> m ()
     cleanup (lastValidEpoch, tip) lastValidatedEpoch = case tip of
-      TipGen ->
+      Origin ->
         removeFilesStartingFrom hasFS 0
-      Tip _  -> do
+      At _  -> do
         removeFilesStartingFrom hasFS (lastValidEpoch + 1)
         when (lastValidEpoch < lastValidatedEpoch) $
           Primary.unfinalise hasFS lastValidEpoch
@@ -194,7 +194,7 @@ validateMostRecentEpoch validateEnv@ValidateEnv { hasFS } = go
         Right (Just validBlk) -> do
             -- Found a valid block, we can stop now.
             removeFilesStartingFrom hasFS (epoch + 1)
-            return (epoch, Tip validBlk)
+            return (epoch, At validBlk)
         _  -- This epoch file is unusable: either the epoch is empty or
            -- everything after it should be truncated.
           | epoch > 0 -> go (epoch - 1)
@@ -202,7 +202,7 @@ validateMostRecentEpoch validateEnv@ValidateEnv { hasFS } = go
             -- Found no valid blocks on disk.
             -- TODO be more precise in which cases we need which cleanup.
             removeFilesStartingFrom hasFS 0
-            return (0, TipGen)
+            return (0, Origin)
 
 -- | Iff the epoch is the most recent epoch, it should not be finalised.
 --
