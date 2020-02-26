@@ -5,11 +5,10 @@
 {-# LANGUAGE TypeFamilies          #-}
 
 module Network.Mux.Egress (
-      mux
+      muxer
     -- $egress
     -- $servicingsSemantics
 
-    , MuxState(..)
     , EgressQueue
     , TranslocationServiceRequest (..)
     , Wanton (..)
@@ -114,17 +113,6 @@ import           Network.Mux.Timeout
 -- >                           ▼
 -- >                           ●
 
--- | Each peer's multiplexer has some state that provides both
--- de-multiplexing details (for despatch of incoming mesages to mini
--- protocols) and for dispatching incoming SDUs.  This is shared
--- between the muxIngress and the bearerIngress processes.
---
-data MuxState m = MuxState {
-       -- | Egress queue, shared by all miniprotocols
-       egressQueue :: EgressQueue m,
-       bearer      :: MuxBearer m
-     }
-
 type EgressQueue m = TBQueue m (TranslocationServiceRequest m)
 
 -- | A TranslocationServiceRequest is a demand for the translocation
@@ -145,7 +133,7 @@ newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
 -- shared FIFO that contains the items of work. This is processed so
 -- that each active demand gets a `maxSDU`s work of data processed
 -- each time it gets to the front of the queue
-mux
+muxer
     :: ( MonadAsync m
        , MonadFork m
        , MonadMask m
@@ -153,26 +141,28 @@ mux
        , MonadTimer m
        , MonadTime m
        )
-    => MuxState m
+    => EgressQueue m
+    -> MuxBearer m
     -> m void
-mux muxstate@MuxState{egressQueue} =
+muxer egressQueue bearer =
     withTimeoutSerial $ \timeout ->
     forever $ do
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
-      processSingleWanton muxstate timeout mpc md d
+      processSingleWanton egressQueue bearer timeout mpc md d
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
 -- ensures that any other items on the queue will get some service
 -- first.
 processSingleWanton :: MonadSTM m
-                    => MuxState m
+                    => EgressQueue m
+                    -> MuxBearer m
                     -> TimeoutFn m
                     -> MiniProtocolNum
                     -> MiniProtocolDir
                     -> Wanton m
                     -> m ()
-processSingleWanton MuxState{egressQueue, bearer} timeout mpc md wanton = do
+processSingleWanton egressQueue bearer timeout mpc md wanton = do
     blob <- atomically $ do
       -- extract next SDU
       d <- readTVar (want wanton)

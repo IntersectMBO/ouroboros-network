@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -7,12 +8,7 @@
 
 module Network.Mux.Ingress (
     -- $ingress
-      demux
-
-      -- Temporary, until things using it are moved here
-    , DemuxState(..)
-    , MiniProtocolDispatch(..)
-    , MiniProtocolDispatchInfo(..)
+      demuxer
     ) where
 
 import           Data.Array
@@ -86,11 +82,6 @@ flipMiniProtocolDir ResponderDir = InitiatorDir
 -- protocols) and for dispatching incoming SDUs.  This is shared
 -- between the muxIngress and the bearerIngress processes.
 --
-data DemuxState m = DemuxState {
-       dispatchTable :: MiniProtocolDispatch m,
-       bearer        :: MuxBearer m
-     }
-
 data MiniProtocolDispatch m =
      MiniProtocolDispatch
        !(Array MiniProtocolNum (Maybe MiniProtocolIx))
@@ -105,11 +96,16 @@ data MiniProtocolDispatchInfo m =
 
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from
 -- the underlying Mux Bearer and forwards it to the matching ingress queue.
-demux :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-          MonadTimer m, MonadTime m, HasCallStack)
-      => DemuxState m -> m void
-demux DemuxState{dispatchTable, bearer} =
-
+demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
+            MonadTimer m, MonadTime m, HasCallStack)
+      => [( MuxMiniProtocol mode m a b
+          , StrictTVar m BL.ByteString
+          , StrictTVar m BL.ByteString
+          )]
+      -> MuxBearer m
+      -> m void
+demuxer ptcls bearer =
+  let !dispatchTable = setupDispatchTable ptcls in
   withTimeoutSerial $ \timeout ->
   forever $ do
     (sdu, _) <- Network.Mux.Types.read bearer timeout
@@ -139,4 +135,33 @@ lookupMiniProtocol (MiniProtocolDispatch codeTbl ptclTbl) code mode
   | inRange (bounds codeTbl) code
   , Just mpid <- codeTbl ! code = Just (ptclTbl ! (mpid, mode))
   | otherwise                   = Nothing
+
+-- | Construct the array of TBQueues, one for each protocol id, and each mode.
+--
+setupDispatchTable :: [( MuxMiniProtocol mode m a b
+                       , StrictTVar m BL.ByteString
+                       , StrictTVar m BL.ByteString
+                       )]
+                   -> MiniProtocolDispatch m
+setupDispatchTable ptcls =
+    MiniProtocolDispatch
+      (array (mincode, maxcode) $
+             [ (code, Nothing)    | code <- [mincode..maxcode] ]
+          ++ [ (code, Just pix)
+             | (pix, (ptcl, _, _)) <- zip [0..] ptcls
+             , let code = miniProtocolNum ptcl ])
+      (array ((minpix, InitiatorDir), (maxpix, ResponderDir))
+             [ ((pix, mode), MiniProtocolDispatchInfo q qMax)
+             | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls
+             , let qMax = maximumIngressQueue (miniProtocolLimits ptcl)
+             , (mode, q) <- [ (InitiatorDir, initQ)
+                            , (ResponderDir, respQ) ]
+             ])
+  where
+    minpix = 0
+    maxpix = fromIntegral (length ptcls - 1)
+
+    codes   = [ miniProtocolNum ptcl | (ptcl, _, _) <- ptcls ]
+    mincode = minimum codes
+    maxcode = maximum codes
 
