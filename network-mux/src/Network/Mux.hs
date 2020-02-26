@@ -37,11 +37,7 @@ module Network.Mux (
 import           Data.Int (Int64)
 import           Data.Maybe (catMaybes)
 import qualified Data.ByteString.Lazy as BL
-import           Data.Array
-import qualified Data.Set as Set
-import           Data.Set (Set)
 
-import           Control.Applicative
 import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
@@ -113,18 +109,13 @@ muxStart
     -> m ()
 muxStart tracer (MuxApplication ptcls) bearer = do
     ptcls' <- mapM addProtocolQueues ptcls
-    let dispatchtbl = setupDispatchTable  ptcls'
     tq <- atomically $ newTBQueue 100
 
     let jobs = muxerJob tq
-             : demuxerJob dispatchtbl
+             : demuxerJob ptcls'
              : catMaybes [ miniProtocolInitiatorJob tq ptcl pix initQ respQ
                          | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
             ++ catMaybes [ miniProtocolResponderJob tq ptcl pix initQ respQ
-                         | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
-
-        respondertbl = setupResponderTable
-                         [ miniProtocolResponderJob tq ptcl pix initQ respQ
                          | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
 
     JobPool.withJobPool $ \jobpool -> do
@@ -133,7 +124,7 @@ muxStart tracer (MuxApplication ptcls) bearer = do
 
       -- Wait for the first job to terminate, successfully or otherwise.
       -- All the other jobs are shut down Upon completion of withJobPool.
-      monitor tracer jobpool dispatchtbl respondertbl
+      monitor tracer jobpool
   where
     addProtocolQueues :: MuxMiniProtocol mode m a b
                       -> m ( MuxMiniProtocol mode m a b
@@ -145,49 +136,11 @@ muxStart tracer (MuxApplication ptcls) bearer = do
         responderQ <- newTVarM BL.empty
         return (ptcl, initiatorQ, responderQ)
 
-    -- Construct the array of TBQueues, one for each protocol id, and each mode
-    setupDispatchTable :: [( MuxMiniProtocol mode m a b
-                           , StrictTVar m BL.ByteString
-                           , StrictTVar m BL.ByteString
-                           )]
-                       -> MiniProtocolDispatch m
-    setupDispatchTable ptcls' =
-        MiniProtocolDispatch
-          (array (mincode, maxcode) $
-                 [ (code, Nothing)    | code <- [mincode..maxcode] ]
-              ++ [ (code, Just pix)
-                 | (pix, (ptcl, _, _)) <- zip [0..] ptcls'
-                 , let code = miniProtocolNum ptcl ])
-          (array ((minpix, InitiatorDir), (maxpix, ResponderDir))
-                 [ ((pix, mode), MiniProtocolDispatchInfo q qMax)
-                 | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls'
-                 , let qMax = maximumIngressQueue (miniProtocolLimits ptcl)
-                 , (mode, q) <- [ (InitiatorDir, initQ)
-                                , (ResponderDir, respQ) ]
-                 ])
-      where
-        minpix = 0
-        maxpix = fromIntegral (length ptcls' - 1)
-
-        codes   = [ miniProtocolNum ptcl | (ptcl, _, _) <- ptcls' ]
-        mincode = minimum codes
-        maxcode = maximum codes
-
-    setupResponderTable :: [Maybe (JobPool.Job m MuxJobResult)]
-                        -> MiniProtocolResponders m
-    setupResponderTable jobs =
-        MiniProtocolResponders $ array (minpix, maxpix) (zip [0..] jobs)
-      where
-        minpix = 0
-        maxpix = fromIntegral (length jobs - 1)
-
     muxerJob tq =
-      JobPool.Job (mux MuxState { egressQueue   = tq,  Egress.bearer })
-                  MuxerException "muxer"
+      JobPool.Job (muxer tq bearer) MuxerException "muxer"
 
-    demuxerJob tbl =
-      JobPool.Job (demux DemuxState { dispatchTable = tbl, Ingress.bearer })
-                  DemuxerException "demuxer"
+    demuxerJob ptcls' =
+      JobPool.Job (demuxer ptcls' bearer) DemuxerException "demuxer"
 
     miniProtocolInitiatorJob = miniProtocolJob selectInitiator InitiatorDir
     miniProtocolResponderJob = miniProtocolJob selectResponder ResponderDir
@@ -246,10 +199,6 @@ muxStart tracer (MuxApplication ptcls) bearer = do
             buf <- readTVar w
             check (BL.null buf)
 
-newtype MiniProtocolResponders m =
-        MiniProtocolResponders
-          (Array MiniProtocolIx (Maybe (JobPool.Job m MuxJobResult)))
-
 -- | The monitoring loop does two jobs:
 --
 --  1. it waits for mini-protocol threads to terminate
@@ -259,46 +208,24 @@ newtype MiniProtocolResponders m =
 monitor :: forall m. (MonadSTM m, MonadAsync m, MonadMask m)
         => Tracer m MuxTrace
         -> JobPool.JobPool m MuxJobResult
-        -> MiniProtocolDispatch m
-        -> MiniProtocolResponders m
         -> m ()
-monitor tracer jobpool
-        (MiniProtocolDispatch _ dispatchtbl)
-        (MiniProtocolResponders respondertbl) =
-    go Set.empty
---  TODO: for the moment on-demand starting is disabled and all mini-protocol
---  threads are started eagerly. Doing this properly involves distinguishing
---  between on-demand and eager mini-protocols, but doing so independently of
---  whether overall we established the bearer as an initiator or as a responder.
---  The on-demand vs eager distinction can be derived from which peer(s) have
---  agency in the initial state of each mini-protocol.
---
---  go (Set.fromList . range . bounds $ respondertbl)
+monitor tracer jobpool =
+    go
   where
-    -- To do this second job it needs to keep track of which responder protocol
-    -- threads are running.
-    go :: Set MiniProtocolIx
-       -> m ()
-    go !idleResponders = do
+    go :: m ()
+    go = do
       result <- atomically $
             -- wait for a mini-protocol thread to terminate
-            (Left  <$> JobPool.collect jobpool)
-            -- or wait for data to arrive on the channels that do not yet have
-            -- responder threads running
-        <|> (Right <$> foldr (<|>) retry
-                         [ checkNonEmptyBuf dispatchInfo >> return ix
-                         | ix <- Set.elems idleResponders
-                         , let dispatchInfo = dispatchtbl ! (ix, ResponderDir)
-                         ])
+            JobPool.collect jobpool
 
       case result of
         -- For now we do not restart protocols, when any stop we terminate
         -- and the whole bundle will get cleaned up.
-        Left (MiniProtocolShutdown pnum _pix pmode) -> do
+        MiniProtocolShutdown pnum _pix pmode -> do
           traceWith tracer (MuxTraceState Dead)
           traceWith tracer (MuxTraceCleanExit pnum pmode)
 
-        Left (MiniProtocolException pnum _pix pmode e) -> do
+        MiniProtocolException pnum _pix pmode e -> do
           traceWith tracer (MuxTraceState Dead)
           traceWith tracer (MuxTraceExceptionExit pnum pmode e)
           throwM e
@@ -307,31 +234,12 @@ monitor tracer jobpool
         --TODO: decide if we should have exception wrappers here to identify
         -- the source of the failure, e.g. specific mini-protocol. If we're
         -- propagating exceptions, we don't need to log them.
-        Left (MuxerException   e) -> do
+        MuxerException e -> do
           traceWith tracer (MuxTraceState Dead)
           throwM e
-        Left (DemuxerException e) -> do
+        DemuxerException e -> do
           traceWith tracer (MuxTraceState Dead)
           throwM e
-
-        -- Data has arrived on a channel for a mini-protocol that do not yet
-        -- have a responder thread running. So we start it now.
-        Right ix | Just job <- respondertbl ! ix -> do
-         JobPool.forkJob jobpool job
-         go (Set.delete ix idleResponders)
-
-        Right _ix ->
-          --TODO: it would be cleaner to do this check in the demuxer.
-          throwM $ MuxError MuxInitiatorOnly
-                      ("Received data on a responder channel but this mux "
-                       ++ "instance is initiator only")
-                   callStack
-
-    checkNonEmptyBuf :: MiniProtocolDispatchInfo m -> STM m ()
-    checkNonEmptyBuf (MiniProtocolDispatchInfo q _) = do
-      buf <- readTVar q
-      check (not (BL.null buf))
-
 
 -- | The mux forks off a number of threads and its main thread waits and
 -- monitors them all. This type covers the different thread and their possible
