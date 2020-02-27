@@ -311,10 +311,9 @@ chainSelectionForBlock
 chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     curSlot <- atomically $ getCurrentSlot cdbBlockchainTime
 
-    (invalid, isMember, succsOf, predecessor, curChain, tipPoint, ledgerDB)
-      <- atomically $ (,,,,,,)
+    (invalid, succsOf, predecessor, curChain, tipPoint, ledgerDB)
+      <- atomically $ (,,,,,)
           <$> (forgetFingerprint <$> readTVar cdbInvalid)
-          <*> VolDB.getIsMember     cdbVolDB
           <*> VolDB.getSuccessors   cdbVolDB
           <*> VolDB.getPredecessor  cdbVolDB
           <*> Query.getCurrentChain cdb
@@ -335,12 +334,12 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
         i = castPoint $ AF.anchorPoint curChain
 
         -- Let these two functions ignore invalid blocks
-        isMember' = ignoreInvalid    cdb invalid isMember
-        succsOf'  = ignoreInvalidSuc cdb invalid succsOf
+        predecessor' = ignoreInvalid    cdb invalid predecessor
+        succsOf'     = ignoreInvalidSuc cdb invalid succsOf
 
     -- The preconditions
     assert (blockSlot hdr <= curSlot)  $ return ()
-    assert (isMember (headerHash hdr)) $ return ()
+    assert (isJust $ predecessor (headerHash hdr)) $ return ()
 
     if
       -- The chain might have grown since we added the block such that the
@@ -358,7 +357,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
         trace (TryAddToCurrentChain p)
         addToCurrentChain succsOf' curChainAndLedger curSlot
 
-      | Just hashes <- VolDB.isReachable predecessor isMember' i p -> do
+      | Just hashes <- VolDB.isReachable predecessor' i p -> do
         -- ### Switch to a fork
         trace (TrySwitchToAFork p hashes)
         switchToAFork succsOf' curChainAndLedger hashes curSlot
@@ -968,17 +967,16 @@ truncateInvalidCandidate isInvalid (CandidateSuffix rollback suffix)
 -------------------------------------------------------------------------------}
 
 
--- | Wrap an @isMember@ function so that it returns 'False' for invalid
--- blocks.
+-- | Wrap a @getter@ function so that it returns 'Nothing' for invalid blocks.
 ignoreInvalid
   :: HasHeader blk
   => proxy blk
   -> InvalidBlocks blk
-  -> (HeaderHash blk -> Bool)
-  -> (HeaderHash blk -> Bool)
-ignoreInvalid _ invalid isMember hash
-    | Map.member hash invalid = False
-    | otherwise               = isMember hash
+  -> (HeaderHash blk -> Maybe a)
+  -> (HeaderHash blk -> Maybe a)
+ignoreInvalid _ invalid getter hash
+    | Map.member hash invalid = Nothing
+    | otherwise               = getter hash
 
 -- | Wrap a @successors@ function so that invalid blocks are not returned as
 -- successors.

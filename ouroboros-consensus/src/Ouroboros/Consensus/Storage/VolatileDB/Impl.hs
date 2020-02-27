@@ -197,9 +197,8 @@ openDB hasFS parser tracer maxBlocksPerFile = do
       , getBlockComponent = getBlockComponentImpl env
       , putBlock          = putBlockImpl          env
       , garbageCollect    = garbageCollectImpl    env
-      , getIsMember       = getIsMemberImpl       env
       , getSuccessors     = getSuccessorsImpl     env
-      , getPredecessor    = getPredecessorImpl    env
+      , getBlockInfo      = getBlockInfoImpl      env
       , getMaxSlotNo      = getMaxSlotNoImpl      env
       }
 
@@ -413,24 +412,17 @@ tryCollectFile hasFS VolatileDBEnv{..} slot st (fileId, fileInfo)
         mapMaybe (\b -> (b,) . bpreBid . ibBlockInfo <$> Map.lookup b _currentRevMap) bids
     succMap'          = foldl' deleteMapSet _currentSuccMap deletedPairs
 
-getIsMemberImpl :: forall m blockId. (IOLike m, Ord blockId)
-                => VolatileDBEnv m blockId
-                -> STM m (blockId -> Bool)
-getIsMemberImpl = getterSTM $ \st bid -> Map.member bid (_currentRevMap st)
-
 getSuccessorsImpl :: forall m blockId. (IOLike m, Ord blockId)
                   => VolatileDBEnv m blockId
                   -> STM m (WithOrigin blockId -> Set blockId)
 getSuccessorsImpl = getterSTM $ \st blockId ->
     fromMaybe Set.empty (Map.lookup blockId (_currentSuccMap st))
 
-getPredecessorImpl :: forall m blockId. (IOLike m, Ord blockId, HasCallStack)
-                   => VolatileDBEnv m blockId
-                   -> STM m (blockId -> WithOrigin blockId)
-getPredecessorImpl = getterSTM $ \st blockId ->
-    maybe (error msg) (bpreBid . ibBlockInfo) (Map.lookup blockId (_currentRevMap st))
-  where
-    msg = "precondition violated: block not member of the VolatileDB"
+getBlockInfoImpl :: forall m blockId. (IOLike m, Ord blockId)
+                 => VolatileDBEnv m blockId
+                 -> STM m (blockId -> Maybe (BlockInfo blockId))
+getBlockInfoImpl = getterSTM $ \st blockId ->
+    ibBlockInfo <$> Map.lookup blockId (_currentRevMap st)
 
 getMaxSlotNoImpl :: forall m blockId. IOLike m
                  => VolatileDBEnv m blockId
