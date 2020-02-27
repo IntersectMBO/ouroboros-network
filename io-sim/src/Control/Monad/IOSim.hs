@@ -13,6 +13,7 @@
 module Control.Monad.IOSim (
   -- * Simulation monad
   SimM,
+  SimSTM,
   -- ** Run simulation
   runSim,
   runSimOrThrow,
@@ -140,6 +141,8 @@ data StmA s a where
   Retry        :: StmA s b
   OrElse       :: StmA s a -> StmA s a -> (a -> StmA s b) -> StmA s b
 
+-- Exported type
+type SimSTM = STM
 
 data MaskingState = Unmasked | MaskedInterruptible | MaskedUninterruptible
   deriving (Eq, Ord, Show)
