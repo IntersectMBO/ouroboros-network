@@ -209,7 +209,7 @@ instance RunNode ByronBlock where
     case tip of
       -- Chain is not empty
       BlockPoint {} -> return ()
-      GenesisPoint  -> ChainDB.addBlock chainDB genesisEBB
+      GenesisPoint  -> ChainDB.addBlock_ chainDB genesisEBB
         where
           genesisEBB = forgeEBB cfg (SlotNo 0) (BlockNo 0) GenesisHash
 

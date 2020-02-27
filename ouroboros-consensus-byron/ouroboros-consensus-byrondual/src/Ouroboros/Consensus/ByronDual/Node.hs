@@ -199,7 +199,7 @@ instance RunNode DualByronBlock where
       tip <- atomically $ ChainDB.getTipPoint chainDB
       case tip of
         BlockPoint {} -> return () -- Chain is not empty
-        GenesisPoint  -> ChainDB.addBlock chainDB genesisEBB
+        GenesisPoint  -> ChainDB.addBlock_ chainDB genesisEBB
           where
             genesisEBB :: DualByronBlock
             genesisEBB = DualBlock {

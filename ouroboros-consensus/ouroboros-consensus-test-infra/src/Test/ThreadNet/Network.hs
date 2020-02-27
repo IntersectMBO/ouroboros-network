@@ -492,7 +492,7 @@ runThreadNetwork ThreadNetworkArgs
                 pure (mSlot, fromWithOrigin (firstBlockNo (Proxy @blk)) bno, pointHash p)
               when (prevSlot < At ebbSlotNo) $ do
                 let ebb = forgeEBB cfg ebbSlotNo ebbBlockNo prevHash
-                ChainDB.addBlock chainDB ebb
+                ChainDB.addBlock_ chainDB ebb
 
           go (succ epoch)
 
@@ -551,6 +551,7 @@ runThreadNetwork ThreadNetworkArgs
         , cdbTraceLedger          = nullDebugTracer
         , cdbRegistry             = registry
         , cdbGcDelay              = 0
+        , cdbBlocksToAddSize      = 2
         }
       where
         -- prop_general relies on this tracer

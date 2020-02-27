@@ -26,7 +26,7 @@ import           Control.Monad.Trans.Maybe
 import           Data.Function (on)
 import           Data.Proxy
 
-import           Cardano.Prelude (NoUnexpectedThunks(..))
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -37,7 +37,8 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.IOLike (IOLike, StrictTVar, StrictMVar)
+import           Ouroboros.Consensus.Util.IOLike (IOLike,
+                     MonadSTMTxExtended (..), StrictMVar, StrictTVar)
 
 {-------------------------------------------------------------------------------
   Basic definitions
@@ -112,6 +113,9 @@ instance MonadSTMTx stm => MonadSTMTx (WithEarlyExit stm) where
   writeTBQueue    = lift .: writeTBQueue
   isEmptyTBQueue  = lift .  isEmptyTBQueue
   isFullTBQueue   = lift .  isFullTBQueue
+
+instance MonadSTMTxExtended stm => MonadSTMTxExtended (WithEarlyExit stm) where
+  lengthTBQueue   = lift .  lengthTBQueue
 
 instance MonadSTM m => MonadSTM (WithEarlyExit m) where
   type STM (WithEarlyExit m) = WithEarlyExit (STM m)

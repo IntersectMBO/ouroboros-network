@@ -304,8 +304,8 @@ run :: forall m blk. (IOLike m, HasHeader blk)
     ->    Cmd     blk (TestIterator m blk) (TestReader m blk)
     -> m (Success blk (TestIterator m blk) (TestReader m blk))
 run chainDB@ChainDB{..} internal registry varCurSlot varNextId = \case
-    AddBlock blk             -> Unit                <$> (advanceAndAdd (blockSlot blk) blk)
-    AddFutureBlock blk s     -> Unit                <$> (advanceAndAdd s               blk)
+    AddBlock blk             -> Point               <$> (advanceAndAdd (blockSlot blk) blk)
+    AddFutureBlock blk s     -> Point               <$> (advanceAndAdd s               blk)
     GetCurrentChain          -> Chain               <$> atomically getCurrentChain
     GetCurrentLedger         -> Ledger              <$> atomically getCurrentLedger
     GetPastLedger pt         -> MbLedger            <$> getPastLedger chainDB pt
@@ -343,7 +343,7 @@ run chainDB@ChainDB{..} internal registry varCurSlot varNextId = \case
         forM_ [prevCurSlot + 1..newCurSlot] $ \slot -> do
           atomically $ writeTVar varCurSlot slot
           intScheduledChainSelection internal slot
-      addBlock blk
+      addBlock chainDB blk
 
     giveWithEq :: a -> m (WithEq a)
     giveWithEq a =
@@ -460,8 +460,8 @@ runPure :: forall blk.
         -> DBModel         blk
         -> (Resp           blk IteratorId ReaderId, DBModel blk)
 runPure cfg = \case
-    AddBlock blk             -> ok  Unit                $ update_ (advanceAndAdd (blockSlot blk) blk)
-    AddFutureBlock blk s     -> ok  Unit                $ update_ (advanceAndAdd s               blk)
+    AddBlock blk             -> ok  Point               $ update  (advanceAndAdd (blockSlot blk) blk)
+    AddFutureBlock blk s     -> ok  Point               $ update  (advanceAndAdd s               blk)
     GetCurrentChain          -> ok  Chain               $ query   (Model.lastK k getHeader)
     GetCurrentLedger         -> ok  Ledger              $ query    Model.currentLedger
     GetPastLedger pt         -> ok  MbLedger            $ query   (Model.getPastLedger cfg pt)
@@ -486,8 +486,9 @@ runPure cfg = \case
   where
     k = configSecurityParam cfg
 
-    advanceAndAdd slot blk =
-      Model.addBlock cfg blk . Model.advanceCurSlot cfg slot
+    advanceAndAdd slot blk m = (Model.tipPoint m', m')
+      where
+        m' = Model.addBlock cfg blk $ Model.advanceCurSlot cfg slot m
 
     iter = either UnknownRange Iter
     mbGCedAllComponents = MbGCedAllComponents . MaybeGCedBlock False
@@ -1304,9 +1305,13 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
         <*> uncheckedNewTVarM Mock.empty
       let args = mkArgs testCfg testInitExtLedger tracer threadRegistry varCurSlot fsVars
       (db, internal)     <- QC.run $ openDBInternal args False
+      -- TODO use withAsync or registry
+      addBlockAsync      <- QC.run $ async $ intAddBlockRunner internal
+      QC.run $ link addBlockAsync
       let sm' = sm db internal iteratorRegistry varCurSlot varNextId genBlk testCfg testInitExtLedger
       (hist, model, res) <- runCommands sm' cmds
       (realChain, realChain', trace, fses, remainingCleanups) <- QC.run $ do
+        cancel addBlockAsync
         trace <- getTrace
         open <- atomically $ isOpen db
         unless open $ intReopen internal False
@@ -1489,6 +1494,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbTraceLedger          = nullTracer
     , cdbRegistry             = registry
     , cdbGcDelay              = 0
+    , cdbBlocksToAddSize      = 2
     }
 
 tests :: TestTree
