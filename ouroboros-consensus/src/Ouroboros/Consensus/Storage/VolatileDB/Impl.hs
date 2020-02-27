@@ -301,10 +301,10 @@ putBlockImpl :: forall m blockId. (IOLike m, Ord blockId)
 putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
              blockInfo@BlockInfo { bbid, bslot, bpreBid }
              builder =
-    modifyState env $ \hasFS st@InternalState {..} ->
+    modifyState_ env $ \hasFS st@InternalState {..} ->
       if Map.member bbid currentRevMap then do
         traceWith tracer $ BlockAlreadyHere bbid
-        return (st, ()) -- putting an existing block is a no-op.
+        return st -- putting an existing block is a no-op.
       else do
         bytesWritten <- hPut hasFS currentWriteHandle builder
         updateStateAfterWrite hasFS st bytesWritten
@@ -313,11 +313,11 @@ putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
                              HasFS m h
                           -> InternalState blockId h
                           -> Word64
-                          -> m (InternalState blockId h, ())
+                          -> m (InternalState blockId h)
     updateStateAfterWrite hasFS st@InternalState{..} bytesWritten =
         if FileInfo.isFull maxBlocksPerFile fileInfo'
-        then (,()) <$> nextFile hasFS st'
-        else return (st', ())
+        then nextFile hasFS st'
+        else return st'
       where
         fileInfo = fromMaybe
             (error $ "VolatileDB invariant violation:"
@@ -356,7 +356,7 @@ garbageCollectImpl :: forall m blockId. (IOLike m, Ord blockId)
                    -> SlotNo
                    -> m ()
 garbageCollectImpl env slot =
-    modifyState env $ \hasFS st -> do
+    modifyState_ env $ \hasFS st -> do
       st' <- foldM (tryCollectFile hasFS slot) st
               (sortOn fst $ Index.toList (currentMap st))
       -- Recompute the 'MaxSlotNo' based on the files left in the VolatileDB.
@@ -366,7 +366,7 @@ garbageCollectImpl env slot =
               currentMaxSlotNo = FileInfo.maxSlotInFiles
                 (Index.elems (currentMap st'))
             }
-      return (st'', ())
+      return st''
 
 -- | For the given file, we garbage collect it if possible and return the
 -- updated 'InternalState'.
@@ -584,6 +584,17 @@ mkInternalState hasFS parser tracer maxBlocksPerFile files =
       -- read with truncate.
       withFile hasFS file (AppendMode AllowExisting) $ \hndl ->
         hTruncate hasFS hndl offset
+
+modifyState_ :: forall blockId m. (HasCallStack, IOLike m)
+             => VolatileDBEnv m blockId
+             -> (forall h
+                .  HasFS m h
+                -> InternalState blockId h
+                -> m (InternalState blockId h)
+                )
+             -> m ()
+modifyState_ env action =
+    modifyState env (\hasFS -> fmap (,()) . action hasFS)
 
 -- | NOTE: This is safe in terms of throwing FsErrors.
 modifyState :: forall blockId m r. (HasCallStack, IOLike m)
