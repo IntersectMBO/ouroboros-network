@@ -1,41 +1,39 @@
-{-# LANGUAGE GADTs #-}
--- | ProtocolInfo
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module Ouroboros.Consensus.Node.ProtocolInfo (
-    -- * ProtocolInfo
-    module X
-    -- * Data required to run a protocol
-  , protocolInfo
+    NumCoreNodes(..)
+  , enumCoreNodes
+  , ProtocolInfo(..)
   ) where
 
-import           Ouroboros.Consensus.Ledger.Dual.Byron (protocolInfoDualByron)
-import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract as X
-import           Ouroboros.Consensus.Node.ProtocolInfo.Byron as X
-import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.BFT as X
-import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT as X
-import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos as X
-import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.PraosRule as X
-import           Ouroboros.Consensus.Protocol
+import           Data.Word
+
+import           Cardano.Prelude (NoUnexpectedThunks)
+
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Node.State
+import           Ouroboros.Consensus.NodeId
+
+{-------------------------------------------------------------------------------
+  Number of core nodes
+-------------------------------------------------------------------------------}
+
+newtype NumCoreNodes = NumCoreNodes Word64
+  deriving (Show, NoUnexpectedThunks)
+
+enumCoreNodes :: NumCoreNodes -> [CoreNodeId]
+enumCoreNodes (NumCoreNodes 0)        = []
+enumCoreNodes (NumCoreNodes numNodes) =
+    [ CoreNodeId n | n <- [0 .. numNodes - 1] ]
 
 {-------------------------------------------------------------------------------
   Data required to run a protocol
 -------------------------------------------------------------------------------}
 
--- | Data required to run the selected protocol
-protocolInfo :: Protocol blk -> ProtocolInfo blk
-protocolInfo (ProtocolMockBFT nodes nid params slotLengths) =
-    protocolInfoBft nodes nid params slotLengths
-
-protocolInfo (ProtocolMockPraos nodes nid params) =
-    protocolInfoPraos nodes nid params
-
-protocolInfo (ProtocolLeaderSchedule nodes nid params schedule) =
-    protocolInfoPraosRule nodes nid params schedule
-
-protocolInfo (ProtocolMockPBFT params nid) =
-    protocolInfoMockPBFT params nid
-
-protocolInfo (ProtocolRealPBFT gc mthr prv swv mplc) =
-    protocolInfoByron gc mthr prv swv mplc
-
-protocolInfo (ProtocolDualPBFT abstractEnv params mLeader) =
-    protocolInfoDualByron abstractEnv params mLeader
+-- | Data required to run the specified protocol.
+data ProtocolInfo b = ProtocolInfo {
+        pInfoConfig     :: TopLevelConfig b
+      , pInfoInitState  :: NodeState      b
+      , pInfoInitLedger :: ExtLedgerState b -- ^ Genesis ledger state
+      }

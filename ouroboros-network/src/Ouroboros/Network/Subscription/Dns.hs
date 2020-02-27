@@ -39,7 +39,6 @@ import           Text.Printf
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.Ip
 
-
 -- | Description of one DNS subscription target: a name to resolve and the
 -- number of addresses in that name to subscribe to.
 data DnsSubscriptionTarget = DnsSubscriptionTarget {

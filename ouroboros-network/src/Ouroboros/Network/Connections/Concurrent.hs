@@ -215,9 +215,9 @@ concurrent withResource k = do
     :: ThreadId m
     -> MVar m (State m connectionId handle)
     -> connectionId
-    -> Resource provenance m resource
+    -> Resource provenance err resource m
     -> request provenance
-    -> m (Types.Decision provenance (Reject reject) (Accept handle))
+    -> m (Either err (Types.Decision provenance (Reject reject) (Accept handle) resource m))
   includeOne tid stateVar connId resource request = mask $ \restore -> modifyMVar' stateVar $ \state ->
     case Map.lookup connId (connectionMap state) of
       Nothing   -> case resource of
@@ -232,16 +232,16 @@ concurrent withResource k = do
         -- be run in a thread and registered here. In this case, the caller
         -- must _not_ close the resource; we will ensure that happens when the
         -- handler ends (exceptionally or normally).
-        Existing res closeResource -> do
-          outcome <- restore (withResource Incoming connId res request)
+        Existing acquiredRes -> do
+          outcome <- restore (withResource Incoming connId (resourceHandle acquiredRes) request)
           case outcome of
-            Reject reason -> pure (state, Types.Rejected (DomainSpecific reason))
+            Reject reason -> pure (state, Right (Types.Rejected (DomainSpecific reason) acquiredRes))
             Accept mkhandler -> do
               -- If there was no exception, we are now responsible for closing
               -- the resource. That's done in a finally after the handler's
               -- action.
               rec let cleanup = do
-                        closeResource
+                        closeResource acquiredRes
                         modifyMVar_ stateVar $ \state' ->
                           let !state'' = removeConnection connId state'
                           in  pure state''
@@ -253,44 +253,53 @@ concurrent withResource k = do
                     , connectionHandle = handle handler
                     }
                   !state' = insertConnection connId conn state
-              pure (state', Types.Accepted (Accepted (connectionHandle conn)))
+              pure (state', Right (Types.Accepted (Accepted (connectionHandle conn))))
         -- Caller indicates how to make a new resource. Similar story for the
         -- above Existing case, except that we create the resource first and
         -- ensure that it gets closed no matter what.
-        New acquire release -> do
-          -- If acquiring the resource fails, we just re-throw the exception.
-          -- Thus `include`ing a new resource is just like bracketing the
-          -- acquire and release: any exception in acquire will be re-thrown.
-          res <- restore acquire
-          outcome <- restore (withResource Outgoing connId res request)
-                       `onException`
-                       release res
-          case outcome of
-            Reject reason -> do
-              release res
-              pure (state, Types.Rejected (DomainSpecific reason))
-            Accept mkhandler -> do
-              -- Just like for existing connections, the resource will be closed
-              -- when the handler's action finishes.
-              rec let cleanup = do
-                        release res
-                        modifyMVar_ stateVar $ \state' ->
-                          let !state'' = removeConnection connId state'
-                          in  pure state''
-                  handler <- mkhandler thread
-                  thread <- asyncWithUnmask $ \unmask ->
-                    (unmask (action handler) `finally` cleanup) `catch` rethrow tid
-              let conn = Connection
-                    { connectionThread = thread
-                    , connectionHandle = handle handler
-                    }
-                  !state' = insertConnection connId conn state
-              pure (state', Types.Accepted (Accepted (connectionHandle conn)))
+        New mkRes -> do
+          resOrError <- restore mkRes
+          case resOrError of 
+            -- Failure to acquire is expressed purely, rather than by an
+            -- exception. If acquiring the resource throws an exception, the
+            -- caller will get it, and can choose to act accordingly.
+            Left err -> pure (state, Left err)
+            -- The resource was acquired. Now we use it run the withResource
+            -- continuation, but take care to ensure the resource is closed
+            -- where it ought to be: if an exception happens. If there's no
+            -- exception but we reject, we do not close it, instead returning
+            -- it to the caller.
+            Right acquiredRes -> do
+              outcome <- restore (withResource Outgoing connId (resourceHandle acquiredRes) request)
+                           `onException`
+                           closeResource acquiredRes
+              case outcome of
+                Reject reason ->
+                  pure (state, Right (Types.Rejected (DomainSpecific reason) acquiredRes))
+                Accept mkhandler -> do
+                  -- Just like for existing connections, the resource will be closed
+                  -- when the handler's action finishes.
+                  rec let cleanup = do
+                            closeResource acquiredRes
+                            modifyMVar_ stateVar $ \state' ->
+                              let !state'' = removeConnection connId state'
+                              in  pure state''
+                      handler <- mkhandler thread
+                      thread <- asyncWithUnmask $ \unmask ->
+                        (unmask (action handler) `finally` cleanup) `catch` rethrow tid
+                  let conn = Connection
+                        { connectionThread = thread
+                        , connectionHandle = handle handler
+                        }
+                      !state' = insertConnection connId conn state
+                  pure (state', Right (Types.Accepted (Accepted (connectionHandle conn))))
       Just numConn -> case resource of
         -- Do not call _close; the caller is responsible for that, and knows
         -- it because we give `Rejected`.
-        Existing _resource _close   -> pure (state, Types.Rejected Duplicate)
-        New      _acquire  _release -> pure (state, Types.Accepted (Accepted h))
+        Existing r -> pure (state, Right (Types.Rejected Duplicate r))
+        -- Do not run the connection handler anew, simply give the handle to
+        -- it.
+        New      _ -> pure (state, Right (Types.Accepted (Accepted h)))
           where
           h = connectionHandle (connection numConn)
 

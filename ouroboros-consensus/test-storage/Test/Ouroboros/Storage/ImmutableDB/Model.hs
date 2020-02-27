@@ -74,17 +74,17 @@ import           Ouroboros.Consensus.Util.RedundantConstraints
 
 import           Ouroboros.Network.Block (BlockNo, SlotNo (..))
 
-import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.EpochInfo
-import           Ouroboros.Storage.FS.API.Types (FsPath, fsPathSplit)
-import           Ouroboros.Storage.ImmutableDB.API (ImmutableDB,
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.EpochInfo
+import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath, fsPathSplit)
+import           Ouroboros.Consensus.Storage.ImmutableDB.API (ImmutableDB,
                      IteratorResult (..))
-import           Ouroboros.Storage.ImmutableDB.Impl.Util (parseDBFile,
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (parseDBFile,
                      validateIteratorRange)
-import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.ImmutableDB.Types
-import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
+import           Ouroboros.Consensus.Storage.ImmutableDB.Types
+import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.TestBlock
 

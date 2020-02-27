@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -19,7 +20,6 @@ import           Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad
-import           Control.Tracer
 import qualified Data.Binary.Put as Bin
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
@@ -28,9 +28,10 @@ import           Data.List (dropWhileEnd)
 import           Data.Int
 import           Data.Tuple (swap)
 import           Data.Word
+import           Data.Void (Void)
 import           Test.QuickCheck
 import           Test.QuickCheck.Gen
-import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
 import qualified System.Random.SplitMix as SM
@@ -43,7 +44,16 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimStrictShutdown)
-import           Control.Tracer (nullTracer)
+import           Control.Tracer (Tracer (..), contramap, nullTracer, showTracing)
+
+#if defined(mingw32_HOST_OS)
+import qualified System.Win32.NamedPipes as Win32.NamedPipes
+import qualified System.Win32.File       as Win32.File
+import qualified System.Win32.Async      as Win32.Async
+#else
+import           System.IO (hClose)
+import           System.Process (createPipe)
+#endif
 
 import           Test.Mux.ReqResp
 
@@ -52,18 +62,22 @@ import qualified Network.Mux.Codec as Mx
 import qualified Network.Mux.Channel as Mx
 import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Bearer.Queues as Mx
+import qualified Network.Mux.Bearer.Pipe as Mx
 
 tests :: TestTree
 tests =
   testGroup "Mux"
-  [ testProperty "mux send receive"     prop_mux_snd_recv
-  , testProperty "2 miniprotocols"      prop_mux_2_minis
-  , testProperty "starvation"           prop_mux_starvation
-  , testProperty "demuxing (Sim)"       prop_demux_sdu_sim
-  , testProperty "demuxing (IO)"        prop_demux_sdu_io
+  [ testProperty "mux send receive"      prop_mux_snd_recv
+  , testProperty "1 miniprotocol Queue"  (withMaxSuccess 50 prop_mux_1_mini_Queue)
+  , testProperty "2 miniprotocols Queue" (withMaxSuccess 50 prop_mux_2_minis_Queue)
+  , testProperty "1 miniprotocol Pipe"   (withMaxSuccess 50 prop_mux_1_mini_Pipe)
+  , testProperty "2 miniprotocols Pipe"  (withMaxSuccess 50 prop_mux_2_minis_Pipe)
+  , testProperty "starvation"            prop_mux_starvation
+  , testProperty "demuxing (Sim)"        prop_demux_sdu_sim
+  , testProperty "demuxing (IO)"         prop_demux_sdu_io
   , testGroup "Generators"
-    [ testProperty "genByteString"      prop_arbitrary_genByteString
-    , testProperty "genLargeByteString" prop_arbitrary_genLargeByteString
+    [ testProperty "genByteString"       prop_arbitrary_genByteString
+    , testProperty "genLargeByteString"  prop_arbitrary_genLargeByteString
     ]
   ]
 
@@ -416,21 +430,162 @@ waitOnAllClients clientVar clientTot = do
             c <- readTVar clientVar
             unless (c == clientTot) retry
 
+--
+-- Running with queues and pipes
+--
+
+-- Run applications continuation
+type RunMuxApplications a
+    =  Mx.MuxApplication Mx.InitiatorApp IO () Void 
+    -> Mx.MuxApplication Mx.ResponderApp IO Void ()
+    -> ((Maybe SomeException, Maybe SomeException) -> IO a)
+    -> IO a
+
+
+runWithQueues :: RunMuxApplications a
+runWithQueues initApp respApp k = do
+    let sduLen = 14000
+    client_w <- atomically $ newTBQueue 10
+    client_r <- atomically $ newTBQueue 10
+    let server_w = client_r
+        server_r = client_w
+    respAsync <- async $ do
+               Mx.runMuxWithQueues
+                 (Mx.WithMuxBearer "server" `contramap` nullTracer)
+                 respApp server_w server_r sduLen Nothing
+    initAsync <- async $ do
+               Mx.runMuxWithQueues
+                 (Mx.WithMuxBearer "client" `contramap` nullTracer)
+                 initApp client_w client_r sduLen Nothing
+
+    waitBoth respAsync initAsync
+      >>= k
+
+
+runWithPipe :: RunMuxApplications a
+runWithPipe initApp respApp k =
+#if defined(mingw32_HOST_OS)
+    Win32.Async.withIOManager $ \iocp -> do
+      let pipeName = "\\\\.\\pipe\\mux-test-pipe"
+      bracket
+        (Win32.NamedPipes.createNamedPipe
+          pipeName
+          (Win32.NamedPipes.pIPE_ACCESS_DUPLEX .|. Win32.File.fILE_FLAG_OVERLAPPED)
+          (Win32.NamedPipes.pIPE_TYPE_BYTE .|. Win32.NamedPipes.pIPE_READMODE_BYTE)
+          Win32.NamedPipes.pIPE_UNLIMITED_INSTANCES
+          512
+          512
+          0
+          Nothing)
+       Win32.File.closeHandle
+       $ \hSrv -> do
+         bracket (Win32.File.createFile
+                   pipeName
+                   (Win32.File.gENERIC_READ .|. Win32.File.gENERIC_WRITE)
+                   Win32.File.fILE_SHARE_NONE
+                   Nothing
+                   Win32.File.oPEN_EXISTING
+                   Win32.File.fILE_FLAG_OVERLAPPED
+                   Nothing)
+                Win32.File.closeHandle
+          $ \hCli -> do
+             Win32.Async.associateWithIOCompletionPort (Left hSrv) iocp
+             Win32.Async.associateWithIOCompletionPort (Left hCli) iocp
+             initAsync <- async $ do
+                let clientChannel = Mx.pipeChannelFromNamedPipe hCli
+                res <- try $ Mx.runMuxWithPipes
+                              (Mx.WithMuxBearer "client" `contramap` showTracing nullTracer)
+                              initApp clientChannel
+                pure $ either Just (const Nothing) res
+
+             respAsync <- async $ do
+                Win32.Async.connectNamedPipe hSrv
+                let serverChannel = Mx.pipeChannelFromNamedPipe hSrv
+                res <- try $ Mx.runMuxWithPipes
+                              (Mx.WithMuxBearer "server"`contramap` showTracing nullTracer)
+                              respApp serverChannel
+                pure $ either Just (const Nothing) res
+
+             waitBoth respAsync initAsync
+                >>= k
+#else
+    bracket
+      ((,) <$> createPipe <*> createPipe)
+      (\((rCli, wCli), (rSrv, wSrv)) -> do
+        hClose rCli
+        hClose wCli
+        hClose rSrv
+        hClose wSrv)
+      $ \ ((rCli, wCli), (rSrv, wSrv)) -> do
+        initAsync <- async $ do
+            let clientChannel = Mx.pipeChannelFromHandles rCli wSrv
+            res <- try $
+                Mx.runMuxWithPipes
+                  (Mx.WithMuxBearer "client" `contramap` showTracing nullTracer)
+                  initApp clientChannel
+            pure $ either Just (const Nothing) res
+        respAsync <- async $ do
+            let serverChannel = Mx.pipeChannelFromHandles rSrv wCli
+            res <- try $
+                Mx.runMuxWithPipes
+                  (Mx.WithMuxBearer "server"`contramap` showTracing nullTracer)
+                  respApp serverChannel
+            pure $ either Just (const Nothing) res
+
+        waitBoth respAsync initAsync
+          >>= k
+#endif
+
 -- | Verify that it is possible to run two miniprotocols over the same bearer.
 -- Makes sure that messages are delivered to the correct miniprotocol in order.
 --
-prop_mux_2_minis :: DummyTrace
-                 -> DummyTrace
-                 -> Property
-prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
-    let sduLen = 14000
+test_mux_1_mini :: RunMuxApplications Bool
+                -> DummyTrace
+                -> IO Bool
+test_mux_1_mini run msgTrace = do
 
-    client_w <- atomically $ newTBQueue 10
-    client_r <- atomically $ newTBQueue 10
+    endMpsVar <- atomically $ newTVar 2
+
+    (verify, client_mp, server_mp) <-
+        setupMiniReqRsp (return ()) endMpsVar msgTrace
+
+    let clientApp = Mx.MuxApplication
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly client_mp
+                        }
+                      ]
+        serverApp = Mx.MuxApplication
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly server_mp
+                        }
+                      ]
+
+    run clientApp serverApp
+      $ \r -> case r of
+               (Just _, _) -> return False
+               (_, Just _) -> return False
+               _           -> verify
+
+prop_mux_1_mini_Queue :: DummyTrace -> Property
+prop_mux_1_mini_Queue = ioProperty . test_mux_1_mini runWithQueues
+
+prop_mux_1_mini_Pipe :: DummyTrace -> Property
+prop_mux_1_mini_Pipe = ioProperty . test_mux_1_mini runWithPipe
+
+-- | Verify that it is possible to run two miniprotocols over the same bearer.
+-- Makes sure that messages are delivered to the correct miniprotocol in order.
+--
+test_mux_2_minis
+    :: RunMuxApplications Bool
+    -> DummyTrace
+    -> DummyTrace
+    -> IO Bool
+test_mux_2_minis run msgTrace0 msgTrace1 = do
     endMpsVar <- atomically $ newTVar 4 -- Two initiators and two responders.
-
-    let server_w = client_r
-        server_r = client_w
 
     (verify_0, client_mp0, server_mp0) <-
         setupMiniReqRsp (return ()) endMpsVar msgTrace0
@@ -463,23 +618,26 @@ prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
                         }
                       ]
 
-    clientAsync <- async $ Mx.runMuxWithQueues
-                             (contramap (Mx.WithMuxBearer "client") activeTracer)
-                             clientApp client_w client_r sduLen Nothing
-    serverAsync <- async $ Mx.runMuxWithQueues
-                             (contramap (Mx.WithMuxBearer "server") activeTracer)
-                             serverApp server_w server_r sduLen Nothing
+    run clientApp serverApp
+       $ \r -> case r of
+               (Just _, _) -> return False
+               (_, Just _) -> return False
+               _           -> do
+                   res0 <- verify_0
+                   res1 <- verify_1
 
+                   return $ res0 && res1
 
-    r <- waitBoth clientAsync serverAsync
-    case r of
-         (Just _, _) -> return $ property False
-         (_, Just _) -> return $ property False
-         _           -> do
-             res0 <- verify_0
-             res1 <- verify_1
+prop_mux_2_minis_Queue :: DummyTrace
+                       -> DummyTrace
+                       -> Property
+prop_mux_2_minis_Queue a b = ioProperty $ test_mux_2_minis runWithQueues a b
 
-             return $ property $ res0 .&&. res1
+prop_mux_2_minis_Pipe :: DummyTrace
+                      -> DummyTrace
+                      -> Property
+prop_mux_2_minis_Pipe a b = ioProperty $ test_mux_2_minis runWithPipe a b
+
 
 -- | Attempt to verify that capacity is diveded fairly between two active
 -- miniprotocols.  Two initiators send a request over two different
@@ -759,7 +917,7 @@ prop_demux_sdu a = do
             blob = toLazyByteString $ Mx.encodeControlMsg msg
             pkt = Mx.MuxSDU (Mx.RemoteClockModel 0) Mx.Muxcontrol Mx.ModeInitiator
                             (fromIntegral $ BL.length blob) blob
-        atomically $ writeTBQueue q $ Mx.encodeMuxSDU (pkt :: Mx.MuxSDU TestProtocols1)
+        atomically $ writeTBQueue q $ Mx.encodeMuxSDU (pkt :: Mx.MuxSDU)
         return () -}
     setup _ _ = return ()
 

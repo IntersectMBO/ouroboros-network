@@ -35,7 +35,7 @@ import           Data.Time.Clock (DiffTime)
 import qualified Network.Socket as Socket
 import           Text.Printf
 
-import           Ouroboros.Network.Connections.Socket.Types
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.Worker
 
@@ -58,28 +58,28 @@ data IPSubscriptionTarget = IPSubscriptionTarget {
 ipSubscriptionTargets
   :: [Socket.SockAddr]
   -> LocalAddresses
-  -> Maybe (NonEmpty ConnectionId)
+  -> Maybe (NonEmpty (ConnectionId Socket.SockAddr))
 ipSubscriptionTargets addrs localAddrs = NE.nonEmpty connIds
   where
-  connIds :: [ConnectionId]
+  connIds :: [ConnectionId Socket.SockAddr]
   connIds = mapMaybe (matchWithLocalAddress localAddrs) addrs
 
 data LocalAddresses = LocalAddresses {
     -- | Local IPv4 address to use, Nothing indicates don't use IPv4
-    laIpv4 :: Maybe (SockAddr IPv4)
+    laIpv4 :: Maybe Socket.SockAddr
     -- | Local IPv6 address to use, Nothing indicates don't use IPv6
-  , laIpv6 :: Maybe (SockAddr IPv6)
+  , laIpv6 :: Maybe Socket.SockAddr
     -- | Local Unix address to use, Nothing indicates don't use Unix sockets
-  , laUnix :: Maybe (SockAddr Unix)
+  , laUnix :: Maybe Socket.SockAddr
   } deriving (Eq, Show)
 
 -- | If there is a local address matching the socket family, give a ConnectionId
 -- where the local address is the first component (bind address).
-matchWithLocalAddress :: LocalAddresses -> Socket.SockAddr -> Maybe ConnectionId
-matchWithLocalAddress laddrs sockAddr = withSockType sockAddr $ \it -> case it of
-  SockAddrIPv4 _ _     -> fmap (`makeConnectionId` it) (laIpv4 laddrs)
-  SockAddrIPv6 _ _ _ _ -> fmap (`makeConnectionId` it) (laIpv6 laddrs)
-  SockAddrUnix _       -> fmap (`makeConnectionId` it) (laUnix laddrs)
+matchWithLocalAddress :: LocalAddresses -> Socket.SockAddr -> Maybe (ConnectionId Socket.SockAddr)
+matchWithLocalAddress laddrs sockAddr = case sockAddr of
+  Socket.SockAddrInet  _ _     -> fmap (`ConnectionId` sockAddr) (laIpv4 laddrs)
+  Socket.SockAddrInet6 _ _ _ _ -> fmap (`ConnectionId` sockAddr) (laIpv6 laddrs)
+  Socket.SockAddrUnix  _       -> fmap (`ConnectionId` sockAddr) (laUnix laddrs)
 
 -- | 'ipSubscriptionWorker' and 'dnsSubscriptionWorker' parameters
 --

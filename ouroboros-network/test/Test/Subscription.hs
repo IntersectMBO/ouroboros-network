@@ -50,19 +50,18 @@ import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Examples   as ReqResp
 
-import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq, cborTermVersionDataCodec)
-import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
+import           Ouroboros.Network.Protocol.Handshake.Type (cborTermVersionDataCodec)
+import           Ouroboros.Network.Protocol.Handshake.Version (acceptableVersion, simpleSingletonVersions)
 
 
 import           Ouroboros.Network.Connections.Types (Initiated, LocalOnlyRequest (..))
 import qualified Ouroboros.Network.Connections.Concurrent as Connections (concurrent)
 import qualified Ouroboros.Network.Connections.Concurrent as Concurrent
-import           Ouroboros.Network.Connections.Socket.Types hiding (ConnectionId)
-import qualified Ouroboros.Network.Connections.Socket.Types as Connections
-import qualified Ouroboros.Network.Connections.Socket.Client as Socket (client)
+import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode
+import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket as Socket
 import           Ouroboros.Network.Subscription
 import           Ouroboros.Network.Subscription.Dns
@@ -351,13 +350,6 @@ prop_resolv lr =  do
 resolutionDelay :: DiffTime
 resolutionDelay = 0.05 -- 50ms delay
 
-sockAddrFamily
-    :: Socket.SockAddr
-    -> Socket.Family
-sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
-sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
-sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
-
 prop_resolv_sim :: LookupResult -> Property
 prop_resolv_sim lr =
     case runSimStrictShutdown $ prop_resolv lr of
@@ -369,7 +361,7 @@ _prop_resolv_io lr = ioProperty $ prop_resolv lr
 
 prop_sub_io :: LookupResultIO
             -> Property
-prop_sub_io lr = ioProperty $ do
+prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
     let serverIdsv4 = case lrioIpv4Result lr of
                            Left  _ -> []
                            Right r -> zip (repeat Socket.AF_INET) r
@@ -407,14 +399,10 @@ prop_sub_io lr = ioProperty $ do
 
     serverPortMap <- atomically $ readTVar serverPortMapVar
 
-    let localAddresses = case someSockType (Socket.addrAddress ipv4Client) of
-          Some addr4@(SockAddrIPv4 _ _) -> case someSockType (Socket.addrAddress ipv6Client) of
-            Some addr6@(SockAddrIPv6 _ _ _ _) -> LocalAddresses
-              (Just addr4)
-              (Just addr6)
-              Nothing
-            _ -> error "unexpected address family"
-          _ -> error "unexpected address family"
+    let localAddresses = LocalAddresses
+          (Just (Socket.addrAddress ipv4Client))
+          (Just (Socket.addrAddress ipv6Client))
+          Nothing
 
     let subThread = Connections.concurrent (initiatorCallback clientCountVar) $ \connections -> do
           let resolver = mockResolverIO serverPortMap lr
@@ -428,6 +416,7 @@ prop_sub_io lr = ioProperty $ do
             Just connIds -> Subscription.worker
               activeTracer
               activeTracer
+              nullErrorPolicies
               connIds
               -- Valency 1 guarantees ordering. Using lrioValency lr does not.
               -- Higher valency does _not_ guarantee the subscriptions go
@@ -435,8 +424,9 @@ prop_sub_io lr = ioProperty $ do
               -- FIXME
               1
               minConnectionAttemptDelay
-              (\connId -> Socket.client connId LocalOnlyRequest)
+              (socketSnocket iocp)
               connections
+              LocalOnlyRequest
 
     -- FIXME
     -- The reason why this fails is that the new DNS subscription target thing
@@ -475,7 +465,7 @@ prop_sub_io lr = ioProperty $ do
     initiatorCallback
         :: StrictTVar IO Int
         -> Initiated provenance
-        -> Connections.ConnectionId
+        -> ConnectionId Socket.SockAddr
         -> Socket.Socket
         -> LocalOnlyRequest provenance
         -> IO (Concurrent.Decision IO provenance reject (ConnectionHandle IO))
@@ -520,8 +510,9 @@ prop_send_recv
     -> [Int]
     -> Socket.Family
     -> Property
-prop_send_recv f xs first = ioProperty $ do
+prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
 
+    let first = Socket.AF_INET6
     let lr = LookupResultIO (Right [0]) (Right [0]) 1
         serverPortMap = M.fromList [((Socket.AF_INET, 0), 6062), ((Socket.AF_INET6, 0), 6062)]
 
@@ -534,21 +525,19 @@ prop_send_recv f xs first = ioProperty $ do
     initiatorAddr4:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     initiatorAddr6:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
 
-    let localAddresses = case someSockType (Socket.addrAddress initiatorAddr4) of
-          Some addr4@(SockAddrIPv4 _ _) -> case someSockType (Socket.addrAddress initiatorAddr6) of
-            Some addr6@(SockAddrIPv6 _ _ _ _) -> LocalAddresses
-              (Just addr4)
-              (Just addr6)
-              Nothing
-            _ -> error "unexpected address family"
-          _ -> error "unexpected address family"
+    let localAddresses = LocalAddresses
+          (Just (Socket.addrAddress initiatorAddr4))
+          (Just (Socket.addrAddress initiatorAddr6))
+          Nothing
 
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
     siblingVar <- newTVarM 2
 
+    let sn = socketSnocket iocp
+
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void ()
+        responderApp :: OuroborosApplication ResponderApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString Void ()
         responderApp = OuroborosResponderApplication $
           \_peerid ReqRespPr channel -> do
             r <- runPeer (tagTrace "Responder" activeTracer)
@@ -559,7 +548,7 @@ prop_send_recv f xs first = ioProperty $ do
             waitSiblingSub siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
+        initiatorApp :: OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
         initiatorApp = OuroborosInitiatorApplication $
           \_peerid ReqRespPr channel -> do
             r <- runPeer (tagTrace "Initiator" activeTracer)
@@ -572,22 +561,24 @@ prop_send_recv f xs first = ioProperty $ do
         connectionRequest
           :: forall provenance .
              LocalOnlyRequest provenance
-          -> ConnectionData TestProtocols2 NodeToNodeVersion provenance
+          -> ConnectionData TestProtocols2 NodeToNodeVersion provenance Socket.SockAddr
         connectionRequest LocalOnlyRequest = ConnectionDataLocal
           nullNetworkConnectTracers
+          nullErrorPolicies
           cborTermVersionDataCodec
           (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
           (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
 
     withDummyServer faultyAddress $
       withServerNode
+        sn
         nullNetworkServerTracers
-        (someSockType (Socket.addrAddress responderAddr))
+        (Socket.addrAddress responderAddr)
         cborTermVersionDataCodec
-        (\(DictVersion _) -> acceptEq)
+        (\(DictVersion _) -> acceptableVersion)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         nullErrorPolicies $ \_ _ -> do
-          let subThread = Socket.withConnections connectionRequest $ \connections -> do
+          let subThread = Socket.withConnections sn connectionRequest $ \connections -> do
                 let resolver = mockResolverIO serverPortMap lr
                 addrs <- dnsResolve activeTracer resolver "shelley-0.iohk.example"
                 case ipSubscriptionTargets addrs localAddresses of
@@ -596,11 +587,13 @@ prop_send_recv f xs first = ioProperty $ do
                     Subscription.worker
                       activeTracer
                       activeTracer
+                      nullErrorPolicies
                       connIds
                       1 -- valency
                       minConnectionAttemptDelay
-                      (\connId -> Socket.client connId LocalOnlyRequest)
+                      sn
                       connections
+                      LocalOnlyRequest
           withAsync subThread $ \workerThread -> do
             link workerThread
             atomically (waitSiblingSTM siblingVar)
@@ -609,8 +602,9 @@ prop_send_recv f xs first = ioProperty $ do
     return (res == mapAccumL f 0 xs)
 
   where
-    -- FIXME what is this testing? Why put up a "dummy server"? To test that
-    -- the client connects to the proper address family?
+    withDummyServer :: Socket.AddrInfo
+                    -> IO a
+                    -> IO a
     withDummyServer addr k =
         bracket
             (Socket.socket (Socket.addrFamily addr) Socket.Stream Socket.defaultProtocol)
@@ -640,7 +634,7 @@ prop_send_recv_init_and_rsp
     :: (Int -> Int -> (Int, Int))
     -> [Int]
     -> Property
-prop_send_recv_init_and_rsp f xs = ioProperty $ do
+prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
 
     responderAddr4A:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     responderAddr4B:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
@@ -657,11 +651,13 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     rrcfgB <- newReqRspCfg "B" siblingVar
 
     a_aid <- async $ startPassiveServer
+      iocp
       responderAddr4A
       addrAVar
       rrcfgA
 
     b_aid <- async $ startActiveServer
+      iocp
       responderAddr4B
       addrBVar
       addrAVar
@@ -672,7 +668,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
 
   where
 
-    appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp ConnectionId TestProtocols2 IO BL.ByteString () ()
+    appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString () ()
     appX ReqRspCfg {rrcTag, rrcServerVar, rrcClientVar, rrcSiblingVar} = OuroborosInitiatorAndResponderApplication
             -- Initiator
             (\_peerid ReqRespPr channel -> do
@@ -696,12 +692,18 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
              waitSiblingSub rrcSiblingVar
             )
 
-    startPassiveServer responderAddr localAddrVar rrcfg = withServerNode
+
+    startPassiveServer iocp responderAddr localAddrVar rrcfg = withServerNode
+        (socketSnocket iocp)
         nullNetworkServerTracers
-        (someSockType (Socket.addrAddress responderAddr))
+        (Socket.addrAddress responderAddr)
         cborTermVersionDataCodec
-        (\(DictVersion _) -> acceptEq)
-        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
+        (\(DictVersion _) -> acceptableVersion)
+        (simpleSingletonVersions
+          NodeToNodeV_1
+          (NodeToNodeVersionData $ NetworkMagic 0)
+          (DictVersion nodeToNodeCodecCBORTerm)
+          ((appX rrcfg)))
         nullErrorPolicies
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
@@ -710,46 +712,46 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
           waitSibling (rrcSiblingVar rrcfg)
           return r
 
-    startActiveServer responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
+    startActiveServer iocp responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
+        (socketSnocket iocp)
         nullNetworkServerTracers
-        (someSockType (Socket.addrAddress responderAddr))
+        (Socket.addrAddress responderAddr)
         cborTermVersionDataCodec
-        (\(DictVersion _) -> acceptEq)
+        (\(DictVersion _) -> acceptableVersion)
         ((simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
         nullErrorPolicies
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
           remoteAddr <- atomically $ takeTMVar remoteAddrVar
-          let connectionId :: Connections.ConnectionId
-              connectionId = case someSockType localAddr of
-                Some laddr -> case matchSockType laddr remoteAddr of
-                  Just raddr -> makeConnectionId laddr raddr
-                  Nothing -> error "unexpected address family"
+          let connectionId :: ConnectionId Socket.SockAddr
+              connectionId = ConnectionId localAddr remoteAddr
 
               connectionRequest
                 :: forall provenance .
                    LocalOnlyRequest provenance
-                -> ConnectionData TestProtocols2 NodeToNodeVersion provenance
+                -> ConnectionData TestProtocols2 NodeToNodeVersion provenance Socket.SockAddr
               connectionRequest LocalOnlyRequest = ConnectionDataLocal
                 nullNetworkConnectTracers
+                nullErrorPolicies
                 cborTermVersionDataCodec
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
                   (DictVersion nodeToNodeCodecCBORTerm) $ appX rrcfg)
 
-              subThread = Socket.withConnections connectionRequest $ \connections ->
+              subThread = Socket.withConnections (socketSnocket iocp) connectionRequest $ \connections ->
                 Subscription.worker
                   activeTracer
                   activeTracer
+                  nullErrorPolicies
                   (connectionId NE.:| [])
                   1 -- valency
                   minConnectionAttemptDelay
-                  (\connId -> Socket.client connId LocalOnlyRequest)
+                  (socketSnocket iocp)
                   connections
+                  LocalOnlyRequest
           withAsync subThread $ \workerThread -> do
             link workerThread
             atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
                              <*> takeTMVar (rrcClientVar rrcfg)
-
 
 waitSiblingSub :: StrictTVar IO Int -> IO ()
 waitSiblingSub cntVar = do
@@ -779,7 +781,7 @@ local-data: "shelley-1.iohk.example. IN AAAA ::1"
 local-data: "shelley-0.iohk.example. IN AAAA ::1"
 -}
 _demo :: Property
-_demo = ioProperty $ do
+_demo = ioProperty $ withIOManager $ \iocp -> do
     server:_ <- Socket.getAddrInfo Nothing (Just "192.168.1.100") (Just "6062")
     server':_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6062")
     server6:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6062")
@@ -787,34 +789,29 @@ _demo = ioProperty $ do
     client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     client6:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
 
+    spawnServer iocp server 10000
+    spawnServer iocp server' 10000
+    spawnServer iocp server6 100
+    spawnServer iocp server6' 45
 
-    spawnServer server 10000
-    spawnServer server' 10000
-    spawnServer server6 100
-    spawnServer server6' 45
-
-    let localAddresses :: LocalAddresses
-        localAddresses = case someSockType (Socket.addrAddress client) of
-          Some client'@(SockAddrIPv4 _ _) -> case someSockType (Socket.addrAddress client6) of
-            Some client6'@(SockAddrIPv6 _ _ _ _) -> LocalAddresses
-              (Just client')
-              (Just client6')
-              Nothing
-            _ -> error "unexpected address family"
-          _ -> error "unexpected address family"
+    let localAddresses = LocalAddresses
+          (Just (Socket.addrAddress client))
+          (Just (Socket.addrAddress client6))
+          Nothing
 
         connectionRequest
           :: forall provenance .
              LocalOnlyRequest provenance
-          -> ConnectionData TestProtocols1 NodeToNodeVersion provenance
+          -> ConnectionData TestProtocols1 NodeToNodeVersion provenance Socket.SockAddr
         connectionRequest LocalOnlyRequest = ConnectionDataLocal
           nullNetworkConnectTracers
+          nullErrorPolicies
           cborTermVersionDataCodec
           (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
           (DictVersion nodeToNodeCodecCBORTerm) appReq)
 
 
-    Socket.withConnections connectionRequest $ \connections -> do
+    Socket.withConnections (socketSnocket iocp) connectionRequest $ \connections -> do
       mkResolverIO 6064 $ \resolver -> do
         addrs <- dnsResolve activeTracer resolver "shelley-0.iohk.example"
         case ipSubscriptionTargets addrs localAddresses of
@@ -823,29 +820,35 @@ _demo = ioProperty $ do
             let subWorker = Subscription.worker
                   activeTracer
                   activeTracer
+                  nullErrorPolicies
                   connIds
                   1 -- valency
                   minConnectionAttemptDelay
-                  (\connId -> Socket.client connId LocalOnlyRequest)
+                  (socketSnocket iocp)
                   connections
+                  LocalOnlyRequest
             withAsync subWorker $ \_subThread -> do
               (threadDelay 130 :: IO ())
               -- bring the servers back again
-              spawnServer server6 10000
-              spawnServer server6' 10000
+              spawnServer iocp server6 10000
+              spawnServer iocp server6' 10000
               (threadDelay 1000 :: IO ())
               return ()
 
   where
 
-    spawnServer addr delay =
+    spawnServer iocp addr delay =
         void $ async $ withServerNode
+            (socketSnocket iocp)
             nullNetworkServerTracers
-            (someSockType (Socket.addrAddress addr))
+            (Socket.addrAddress addr)
             cborTermVersionDataCodec
-            (\(DictVersion _) -> acceptEq)
-            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
-                (DictVersion nodeToNodeCodecCBORTerm) appRsp)
+            (\(DictVersion _) -> acceptableVersion)
+            (simpleSingletonVersions
+                NodeToNodeV_1
+                (NodeToNodeVersionData $ NetworkMagic 0)
+                (DictVersion nodeToNodeCodecCBORTerm)
+                (appRsp))
             nullErrorPolicies
             (\_ _ -> (threadDelay delay :: IO ()))
 

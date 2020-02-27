@@ -1,6 +1,7 @@
 module Ouroboros.Network.Tracers
-  ( NetworkIPSubscriptionTracers (..)
-  , nullNetworkIPSubscriptionTracers
+  ( NetworkSubscriptionTracers (..)
+  , NetworkIPSubscriptionTracers
+  , nullNetworkSubscriptionTracers
   , NetworkDNSSubscriptionTracers (..)
   , nullNetworkDNSSubscriptionTracers
   ) where
@@ -8,7 +9,6 @@ module Ouroboros.Network.Tracers
 import           Control.Tracer (Tracer, nullTracer)
 import qualified Codec.CBOR.Term as CBOR
 
-import           Network.Socket (SockAddr)
 import           Network.Mux.Trace
 
 import           Network.TypedProtocol.Driver (TraceSendRecv)
@@ -21,46 +21,48 @@ import           Ouroboros.Network.Subscription.Dns
 
 -- | IP subscription tracers.
 --
-data NetworkIPSubscriptionTracers ptcl vNumber = NetworkIPSubscriptionTracers {
-      nistMuxTracer          :: Tracer IO (WithMuxBearer ConnectionId MuxTrace),
+data NetworkSubscriptionTracers withIPList addr ptcl vNumber = NetworkSubscriptionTracers {
+      nsMuxTracer          :: Tracer IO (WithMuxBearer (ConnectionId addr) MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nistHandshakeTracer    :: Tracer IO (WithMuxBearer ConnectionId
+      nsHandshakeTracer    :: Tracer IO (WithMuxBearer (ConnectionId addr)
                                             (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
-      nistErrorPolicyTracer  :: Tracer IO (WithAddr SockAddr ErrorPolicyTrace),
+      nsErrorPolicyTracer  :: Tracer IO (WithAddr addr ErrorPolicyTrace),
       -- ^ error policy tracer; must not be 'nullTracer', otherwise all the
       -- exceptions which are not matched by any error policy will be caught
       -- and not logged or rethrown.
-      nistSubscriptionTracer :: Tracer IO (WithIPList (SubscriptionTrace SockAddr))
+      nsSubscriptionTracer :: Tracer IO (withIPList (SubscriptionTrace addr))
       -- ^ subscription tracers; it is infrequent it should not be 'nullTracer'
       -- by default.
     }
 
-nullNetworkIPSubscriptionTracers :: NetworkIPSubscriptionTracers ptcl vNumber
-nullNetworkIPSubscriptionTracers = NetworkIPSubscriptionTracers {
-      nistMuxTracer          = nullTracer,
-      nistHandshakeTracer    = nullTracer,
-      nistErrorPolicyTracer  = nullTracer,
-      nistSubscriptionTracer = nullTracer
+type NetworkIPSubscriptionTracers addr ptcl vNumber = NetworkSubscriptionTracers WithIPList addr ptcl vNumber
+
+nullNetworkSubscriptionTracers :: NetworkSubscriptionTracers withIPList addr ptcl vNumber
+nullNetworkSubscriptionTracers = NetworkSubscriptionTracers {
+      nsMuxTracer          = nullTracer,
+      nsHandshakeTracer    = nullTracer,
+      nsErrorPolicyTracer  = nullTracer,
+      nsSubscriptionTracer = nullTracer
     }
 
 -- | DNS subscription tracers.
 --
-data NetworkDNSSubscriptionTracers ptcl vNumber peerid = NetworkDNSSubscriptionTracers {
-      ndstMuxTracer          :: Tracer IO (WithMuxBearer peerid MuxTrace),
+data NetworkDNSSubscriptionTracers ptcl vNumber addr = NetworkDNSSubscriptionTracers {
+      ndstMuxTracer          :: Tracer IO (WithMuxBearer (ConnectionId addr) MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      ndstHandshakeTracer    :: Tracer IO (WithMuxBearer peerid
+      ndstHandshakeTracer    :: Tracer IO (WithMuxBearer (ConnectionId addr)
                                             (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
-      ndstErrorPolicyTracer  :: Tracer IO (WithAddr SockAddr ErrorPolicyTrace),
+      ndstErrorPolicyTracer  :: Tracer IO (WithAddr addr ErrorPolicyTrace),
       -- ^ error policy tracer; must not be 'nullTracer', otherwise all the
       -- exceptions which are not matched by any error policy will be caught
       -- and not logged or rethrown.
-      ndstSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace SockAddr)),
+      ndstSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace addr)),
       -- ^ subscription tracer; it is infrequent it should not be 'nullTracer'
       -- by default.
       ndstDnsTracer          :: Tracer IO (WithDomainName DnsTrace)

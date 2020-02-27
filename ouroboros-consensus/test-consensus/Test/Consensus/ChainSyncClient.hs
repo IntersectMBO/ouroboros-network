@@ -52,8 +52,9 @@ import           Cardano.Crypto.DSIGN.Mock
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.ChainSyncClient
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended hiding (ledgerState)
-import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
@@ -396,20 +397,26 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     slotLengths :: SlotLengths
     slotLengths = singletonSlotLengths $ slotLengthFromSec 20
 
-    nodeCfg :: CoreNodeId -> NodeConfig (Bft BftMockCrypto)
-    nodeCfg coreNodeId = BftNodeConfig
-      { bftParams   = BftParams
-        { bftSecurityParam = securityParam
-        , bftNumNodes      = NumCoreNodes 2
-        , bftSlotLengths   = slotLengths
-        }
-      , bftNodeId   = fromCoreNodeId coreNodeId
-      , bftSignKey  = SignKeyMockDSIGN 0
-      , bftVerKeys  = Map.fromList
-                      [ (CoreId (CoreNodeId 0), VerKeyMockDSIGN 0)
-                      , (CoreId (CoreNodeId 1), VerKeyMockDSIGN 1)
-                      ]
+    nodeCfg :: CoreNodeId -> TopLevelConfig TestBlock
+    nodeCfg coreNodeId = TopLevelConfig {
+        configConsensus = BftNodeConfig
+          { bftParams   = BftParams
+            { bftSecurityParam = securityParam
+            , bftNumNodes      = numCoreNodes
+            }
+          , bftNodeId   = fromCoreNodeId coreNodeId
+          , bftSignKey  = SignKeyMockDSIGN 0
+          , bftVerKeys  = Map.fromList
+                          [ (CoreId (CoreNodeId 0), VerKeyMockDSIGN 0)
+                          , (CoreId (CoreNodeId 1), VerKeyMockDSIGN 1)
+                          ]
+          }
+      , configLedger = LedgerConfig
+      , configBlock  = TestBlockConfig slotLengths numCoreNodes
       }
+
+    numCoreNodes :: NumCoreNodes
+    numCoreNodes = NumCoreNodes 2
 
     -- | Take the last slot at which a client or server update is planned, or
     -- the slot at which syncing starts, and add one to it
@@ -431,7 +438,7 @@ getAddBlock :: ChainUpdate -> Maybe TestBlock
 getAddBlock (AddBlock b)    = Just b
 getAddBlock (SwitchFork {}) = Nothing
 
-updateClientState :: NodeConfig (Bft BftMockCrypto)
+updateClientState :: TopLevelConfig TestBlock
                   -> Chain TestBlock
                   -> ExtLedgerState TestBlock
                   -> [ChainUpdate]

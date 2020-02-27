@@ -3,6 +3,7 @@
 {-# LANGUAGE RankNTypes     #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE GADTs          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Diffusion
   ( DiffusionTracers (..)
@@ -19,7 +20,7 @@ module Ouroboros.Network.Diffusion
   where
 
 import qualified Control.Concurrent.Async as Async
-import           Control.Exception (IOException)
+import           Control.Exception (IOException, SomeException, fromException)
 import           Control.Tracer (Tracer, traceWith)
 import qualified Codec.CBOR.Term as CBOR
 import           Data.Functor (void)
@@ -32,18 +33,19 @@ import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (AddrInfo)
 import qualified Network.Socket as Socket
 
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Connections.Types (Connections,
                    Provenance (..))
 import           Ouroboros.Network.Connections.Concurrent as Concurrent
-import           Ouroboros.Network.Connections.Socket.Types (SockAddr (..),
-                   withSockType)
-import qualified Ouroboros.Network.Connections.Socket.Types as Connections
-import           Ouroboros.Network.Connections.Socket.Client as Socket (client)
-import           Ouroboros.Network.Connections.Socket.Server as Server (acceptLoopOn)
+import           Ouroboros.Network.Connections.Socket.Server as Server (acceptLoop, withSocket)
+import           Ouroboros.Network.Snocket (LocalAddress, SocketSnocket, LocalSnocket, LocalFD)
+import qualified Ouroboros.Network.Snocket as Snocket
+
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import           Ouroboros.Network.Protocol.Handshake.Version
 
 import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToClient ( NodeToClientProtocols (..)
                                                 , NodeToClientVersion (..)
@@ -53,8 +55,7 @@ import           Ouroboros.Network.NodeToNode ( NodeToNodeProtocols (..)
                                               , NodeToNodeVersion (..)
                                               )
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
-import           Ouroboros.Network.Socket ( ConnectionId (..)
-                                          , ConnectionHandle
+import           Ouroboros.Network.Socket ( ConnectionHandle
                                           , NetworkServerTracers (..)
                                           , NetworkConnectTracers (..)
                                           , SomeVersionedApplication (..)
@@ -64,23 +65,24 @@ import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
 
 data DiffusionTracers = DiffusionTracers {
-      dtIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+      dtIpSubscriptionTracer   :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
        -- ^ IP subscription tracer
-    , dtDnsSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
+    , dtDnsSubscriptionTracer  :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
       -- ^ DNS subscription tracer
-    , dtDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
+    , dtDnsResolverTracer      :: Tracer IO (WithDomainName DnsTrace)
       -- ^ DNS resolver tracer
-    , dtMuxTracer             :: Tracer IO (WithMuxBearer ConnectionId MuxTrace)
+    , dtMuxTracer              :: Tracer IO (WithMuxBearer (ConnectionId Socket.SockAddr) MuxTrace)
       -- ^ Mux tracer
-    , dtMuxLocalTracer        :: Tracer IO (WithMuxBearer ConnectionId MuxTrace)
+    , dtMuxLocalTracer         :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace)
       -- ^ Mux tracer for local clients
-    , dtHandshakeTracer       :: Tracer IO (WithMuxBearer ConnectionId
+    , dtHandshakeTracer        :: Tracer IO (WithMuxBearer (ConnectionId Socket.SockAddr)
                                              (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term)))
       -- ^ Handshake protocol tracer
-    , dtHandshakeLocalTracer  :: Tracer IO (WithMuxBearer ConnectionId
+    , dtHandshakeLocalTracer   :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress)
                                              (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term)))
       -- ^ Handshake protocol tracer for local clients
-    , dtErrorPolicyTracer     :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+    , dtErrorPolicyTracer      :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+    , dtLocalErrorPolicyTracer :: Tracer IO (WithAddr LocalAddress    ErrorPolicyTrace)
     }
 
 
@@ -89,7 +91,7 @@ data DiffusionTracers = DiffusionTracers {
 data DiffusionArguments = DiffusionArguments {
       daAddresses    :: [AddrInfo]
       -- ^ diffusion addresses
-    , daLocalAddress :: AddrInfo
+    , daLocalAddress :: FilePath
       -- ^ address for local clients
     , daIpProducers  :: IPSubscriptionTarget
       -- ^ ip subscription addresses
@@ -104,7 +106,7 @@ data DiffusionApplications = DiffusionApplications {
                                        DictVersion
                                        (OuroborosApplication
                                          'ResponderApp
-                                         ConnectionId
+                                         (ConnectionId Socket.SockAddr)
                                          NodeToNodeProtocols
                                          IO
                                          ByteString
@@ -117,7 +119,7 @@ data DiffusionApplications = DiffusionApplications {
                                        DictVersion 
                                        (OuroborosApplication
                                          'InitiatorApp
-                                         ConnectionId
+                                         (ConnectionId Socket.SockAddr)
                                          NodeToNodeProtocols
                                          IO
                                          ByteString
@@ -129,7 +131,7 @@ data DiffusionApplications = DiffusionApplications {
                                        DictVersion
                                        (OuroborosApplication
                                           'ResponderApp
-                                          ConnectionId
+                                          (ConnectionId LocalAddress)
                                           NodeToClientProtocols
                                           IO
                                           ByteString
@@ -137,10 +139,8 @@ data DiffusionApplications = DiffusionApplications {
                                           ())
       -- ^ NodeToClient responder applicaton (server role)
 
-    , daErrorPolicies :: ErrorPolicies Socket.SockAddr ()
+    , daErrorPolicies :: ErrorPolicies
       -- ^ error policies
-      --
-      -- TODO: one cannot use `forall a. ErrorPolicies SockAddr a`
     }
 
 -- | The local server only accepts incoming requests (from clients in the
@@ -167,16 +167,27 @@ runDataDiffusion tracers
                                     , daIpProducers
                                     , daDnsProducers
                                     }
-                 applications@DiffusionApplications { daErrorPolicies } = do
+                 applications@DiffusionApplications { daErrorPolicies } =
+    withIOManager $ \iocp -> do
 
-    -- Define how to fulfill node-to-client and node-to-node connection
-    -- requests. The GADTs `LocalRequest` and `Request` describe all of the
-    -- possibilities. In particular, the node-to-client protocol is restricted
-    -- to responder only, i.e. this node will never try to initiate a
-    -- node-to-client protocol.
-    let localConnectionRequest
+    let -- snocket for remote communication.
+        snocket :: SocketSnocket
+        snocket = Snocket.socketSnocket iocp
+
+        -- snocket for local clients connected using Unix socket or named pipe.
+        -- we currently don't support remotely connected local clients.  If we
+        -- need to we can add another adress for local clients.
+        localSnocket :: LocalSnocket
+        localSnocket = Snocket.localSnocket iocp daLocalAddress
+
+        -- Define how to fulfill node-to-client and node-to-node connection
+        -- requests. The GADTs `LocalRequest` and `Request` describe all of the
+        -- possibilities. In particular, the node-to-client protocol is restricted
+        -- to responder only, i.e. this node will never try to initiate a
+        -- node-to-client protocol.
+        localConnectionRequest
           :: LocalRequest provenance
-          -> SomeVersionedApplication NodeToClientProtocols NodeToClientVersion DictVersion provenance
+          -> SomeVersionedApplication NodeToClientProtocols NodeToClientVersion DictVersion LocalAddress provenance
         localConnectionRequest ClientConnection = SomeVersionedResponderApp
           (NetworkServerTracers
             dtMuxLocalTracer
@@ -189,7 +200,7 @@ runDataDiffusion tracers
         -- the `daInitiatorApplication`. The types leave little room for error.
         connectionRequest
           :: Request provenance
-          -> SomeVersionedApplication NodeToNodeProtocols NodeToNodeVersion DictVersion provenance
+          -> SomeVersionedApplication NodeToNodeProtocols NodeToNodeVersion DictVersion Socket.SockAddr provenance
         connectionRequest PeerConnection = SomeVersionedResponderApp
           (NetworkServerTracers
             dtMuxTracer
@@ -205,42 +216,45 @@ runDataDiffusion tracers
           (NetworkConnectTracers dtMuxTracer dtHandshakeTracer)
           (daInitiatorApplication applications)
 
-        -- How to make requests for the accept loops for the local and remote
-        -- server.
-        localClassifyRequest :: SockAddr sockType -> LocalRequest Remote
-        localClassifyRequest _ = ClientConnection
+        localAcceptException :: LocalAddress -> SomeException -> IO ()
+        localAcceptException a e = case fromException e of
+          Just (e' :: IOException) ->
+            traceWith (WithAddr a `contramap` dtLocalErrorPolicyTracer) $
+              ErrorPolicyAcceptException e'
+          Nothing -> pure ()
 
-        classifyRequest :: SockAddr sockType -> Request Remote
-        classifyRequest _ = PeerConnection
-
-        acceptException :: Socket.SockAddr -> IOException -> IO ()
-        acceptException a e = do
-          traceWith (WithAddr a `contramap` dtErrorPolicyTracer) $ ErrorPolicyAcceptException e
+        acceptException :: Socket.SockAddr -> SomeException -> IO ()
+        acceptException a e = case fromException e of
+          Just (e' :: IOException) ->
+            traceWith (WithAddr a `contramap` dtErrorPolicyTracer) $
+              ErrorPolicyAcceptException e'
+          Nothing -> pure ()
 
         -- How to run a local server: take the `daLocalAddress` and run an
-        -- accept loop on it against the node-to-client connetions (yet to
-        -- be constructed).
+        -- accept loop on it against the node-to-client connetions.
         runLocalServer
-          :: Connections Connections.ConnectionId Socket.Socket LocalRequest accept reject IO
+          :: Connections (ConnectionId LocalAddress) LocalFD LocalRequest accept reject IO
           -> IO Void
-        runLocalServer n2cConnections = withSockType addr $ \addr' ->
-          Server.acceptLoopOn addr' localClassifyRequest (acceptException addr)
-            n2cConnections
+        runLocalServer n2cConnections = Server.withSocket localSnocket addr $
+          \boundAddr socket -> Server.acceptLoop localSnocket n2cConnections
+            boundAddr ClientConnection (localAcceptException boundAddr)
+            (Snocket.accept snocket socket)
           where
-          addr = Socket.addrAddress daLocalAddress
+            addr = Snocket.localAddressFromPath daLocalAddress
 
         -- A node-to-node server will be run against a common connections
-        -- manager (yet to be constructed) but on potentially many different
-        -- bind addresses. This function will be mapped over the `daAddresses`.
+        -- manager but on potentially many different bind addresses.
+        -- This function will be mapped over the `daAddresses`.
         runServer
-          :: Connections Connections.ConnectionId Socket.Socket Request accept reject IO
+          :: Connections (ConnectionId Socket.SockAddr) Socket.Socket Request accept reject IO
           -> AddrInfo
           -> IO Void
-        runServer n2nConnections addrInfo = withSockType addr $ \addr' ->
-          Server.acceptLoopOn addr' classifyRequest (acceptException addr)
-            n2nConnections
+        runServer n2nConnections addrInfo = Server.withSocket snocket addr $
+          \boundAddr socket -> Server.acceptLoop snocket n2nConnections
+            boundAddr PeerConnection (acceptException boundAddr)
+            (Snocket.accept snocket socket)
           where
-          addr = Socket.addrAddress addrInfo
+            addr = Socket.addrAddress addrInfo
 
     -- Get 2 connection managers: one for node-to-client (n2c) and one for
     -- node-to-node (n2n).
@@ -251,8 +265,8 @@ runDataDiffusion tracers
     -- these, an exception in a handler will therefore bring down the whole
     -- node. This is apparently what we want, and `ErrorPolicies` is used to
     -- determine precisely when that should happen.
-    NodeToClient.withConnections localErrorPolicy localConnectionRequest $ \n2cConnections ->
-      NodeToNode.withConnections errorPolicy      connectionRequest      $ \n2nConnections -> do
+    NodeToClient.withConnections localErrorPolicy localSnocket localConnectionRequest $ \n2cConnections ->
+      NodeToNode.withConnections errorPolicy      snocket      connectionRequest      $ \n2nConnections -> do
         -- Run every thread concurrently such that an exception from any of
         -- them will kill the others and be re-thrown here.
         -- The application terminates when they are all done.
@@ -260,15 +274,14 @@ runDataDiffusion tracers
             threads = fmap Async.Concurrently $ mconcat
               [ [ void (runLocalServer n2cConnections) ]
               , ( void . runServer n2nConnections) <$> daAddresses
-              , [ void (runIpSubscriptionWorker n2nConnections) ]
-              , ( void . runDnsSubscriptionWorker n2nConnections) <$> daDnsProducers
+              , [ void (runIpSubscriptionWorker snocket n2nConnections) ]
+              , ( void . runDnsSubscriptionWorker snocket n2nConnections) <$> daDnsProducers
               ]
         -- mconcat'ing the `Concurrently ()`s runs them concurrently.
         _ <- Async.runConcurrently (mconcat threads)
         pure ()
 
   where
-
     DiffusionTracers { dtIpSubscriptionTracer
                      , dtDnsSubscriptionTracer
                      , dtDnsResolverTracer
@@ -277,6 +290,7 @@ runDataDiffusion tracers
                      , dtHandshakeTracer
                      , dtHandshakeLocalTracer
                      , dtErrorPolicyTracer
+                     , dtLocalErrorPolicyTracer
                      } = tracers
 
     initiatorLocalAddresses :: LocalAddresses
@@ -289,24 +303,25 @@ runDataDiffusion tracers
           -- applications instead of a 'MuxInitiatorAndResponderApplication'.
           -- This means we don't utilise full duplex connection.
           if any (\ai -> Socket.addrFamily ai == Socket.AF_INET) daAddresses
-            then Just (SockAddrIPv4 0 0)
+            then Just (Socket.SockAddrInet 0 0)
             else Nothing
       , laIpv6 =
           -- IPv6 address
           if any (\ai -> Socket.addrFamily ai == Socket.AF_INET6) daAddresses
-            then Just (SockAddrIPv6 0 0 (0, 0, 0, 0) 0)
+            then Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0)
             else Nothing
       , laUnix = Nothing
       }
 
-    errorPolicy, localErrorPolicy :: ErrorPolicies Socket.SockAddr ()
+    errorPolicy, localErrorPolicy :: ErrorPolicies
     errorPolicy = NodeToNode.remoteNetworkErrorPolicy <> daErrorPolicies
     localErrorPolicy  = NodeToNode.localNetworkErrorPolicy <> daErrorPolicies
 
     runIpSubscriptionWorker
-      :: Connections Connections.ConnectionId Socket.Socket Request (Concurrent.Reject reject) (Concurrent.Accept (ConnectionHandle IO))  IO
+      :: SocketSnocket
+      -> Connections (ConnectionId Socket.SockAddr) Socket.Socket Request (Concurrent.Reject reject) (Concurrent.Accept (ConnectionHandle IO))  IO
       -> IO ()
-    runIpSubscriptionWorker connections =
+    runIpSubscriptionWorker sn connections =
       case ipSubscriptionTargets (ispIps daIpProducers) initiatorLocalAddresses of
         -- There were no addresses in the config (ispIps) which have an
         -- address in initiatorLocalAddresses of the same family.
@@ -318,17 +333,19 @@ runDataDiffusion tracers
           connIds
           (ispValency daIpProducers)
           ipRetryDelay
-          (\connId -> Socket.client connId IpSubscriptionConnection)
+          sn
           connections
+          IpSubscriptionConnection
 
     -- FIXME probably not ideal that we make a resolver `mkResolverIO` for
     -- each DNS target. Should make one (not have it take a port) and use it
     -- for all of the tagets.
     runDnsSubscriptionWorker
-      :: Connections Connections.ConnectionId Socket.Socket Request (Concurrent.Reject reject) (Concurrent.Accept (ConnectionHandle IO))  IO
+      :: SocketSnocket
+      -> Connections (ConnectionId Socket.SockAddr) Socket.Socket Request (Concurrent.Reject reject) (Concurrent.Accept (ConnectionHandle IO))  IO
       -> DnsSubscriptionTarget
       -> IO ()
-    runDnsSubscriptionWorker connections target = mkResolverIO (dstPort target) $ \resolver -> do
+    runDnsSubscriptionWorker sn connections target = mkResolverIO (dstPort target) $ \resolver -> do
       addrs <- dnsResolve
         (contramap (WithDomainName (dstDomain target)) dtDnsResolverTracer)
         resolver
@@ -342,5 +359,6 @@ runDataDiffusion tracers
           connIds
           (dstValency target)
           ipRetryDelay
-          (\connId -> Socket.client connId DnsSubscriptionConnection)
+          sn
           connections
+          DnsSubscriptionConnection

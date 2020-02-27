@@ -11,9 +11,9 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
-import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.EpochInfo.CumulEpochSizes
-import           Ouroboros.Storage.ImmutableDB.Layout
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.EpochInfo.CumulEpochSizes
+import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 
 import           Test.Util.Orphans.Arbitrary (genLimitedEpochSize,
                      genSmallEpochNo)

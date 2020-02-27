@@ -30,7 +30,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -- somehow fail if the selected chain turns out to be invalid.)
 --
 -- Returns 'Nothing' if we stick with our current chain.
-selectChain :: forall p hdr l. (OuroborosTag p, HasHeader hdr)
+selectChain :: forall p hdr l. (ConsensusProtocol p, HasHeader hdr)
             => (hdr -> SelectView p)
             -> NodeConfig p
             -> Chain hdr           -- ^ Our chain
@@ -65,7 +65,7 @@ selectChain view cfg ours candidates =
         go (Just a) (Just b) = compareCandidates cfg (view a) (view b)
 
 -- | Chain selection on unvalidated chains
-selectUnvalidatedChain :: forall p hdr. (OuroborosTag p, HasHeader hdr)
+selectUnvalidatedChain :: forall p hdr. (ConsensusProtocol p, HasHeader hdr)
                        => (hdr -> SelectView p)
                        -> NodeConfig p
                        -> Chain hdr

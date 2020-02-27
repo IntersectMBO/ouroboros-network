@@ -109,6 +109,10 @@ instance Serialise VersionNumber where
 data Data_0 = C0 | C1 | C2
   deriving (Eq, Show, Typeable, Generic)
 
+instance Acceptable Data_0 where
+  acceptableVersion l r | l == r = Accept
+                        | otherwise =  Refuse $ T.pack ""
+
 data0CodecCBORTerm :: CodecCBORTerm Text Data_0
 data0CodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
     where
@@ -136,6 +140,10 @@ instance CoArbitrary Data_0 where
 data Data_1 = Data_1 Bool
   deriving (Eq, Show, Typeable, Generic)
 
+instance Acceptable Data_1 where
+  acceptableVersion l r | l == r = Accept
+                        | otherwise =  Refuse $ T.pack ""
+
 data1CodecCBORTerm :: CodecCBORTerm Text Data_1
 data1CodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
     where
@@ -155,6 +163,10 @@ instance CoArbitrary Data_1
 --
 data Data_2 = Data_2 Word Word
   deriving (Eq, Show, Typeable, Generic)
+
+instance Acceptable Data_2 where
+  acceptableVersion l r | l == r = Accept
+                        | otherwise =  Refuse $ T.pack ""
 
 data2CodecCBORTerm :: CodecCBORTerm Text Data_2
 data2CodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
@@ -324,7 +336,7 @@ prop_arbitrary_ArbitraryVersions (ArbitraryVersions (Versions vs) (Versions vs')
 
     property True
   where
-    intersection = vs `Map.intersection` vs' 
+    intersection = vs `Map.intersection` vs'
     intersect    = not (Map.null intersection)
 
     knownVersionNumbers = Map.keys vs'
@@ -335,7 +347,7 @@ prop_connect :: ArbitraryVersions -> Property
 prop_connect (ArbitraryVersions clientVersions serverVersions) =
   let (serverRes, clientRes) = pureHandshake
         (\(DictVersion _) -> Dict)
-        (\(DictVersion _) -> (==))
+        (\(DictVersion _) vData vData' -> acceptableVersion vData vData' == Accept)
         serverVersions
         clientVersions
   in case runSimOrThrow
@@ -345,7 +357,7 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
                 clientVersions)
               (handshakeServerPeer
                 cborTermVersionDataCodec
-                (\(DictVersion _) vData vData' -> bool (Refuse $ T.pack "refused") Accept $ vData == vData')
+                (\(DictVersion _) -> acceptableVersion)
                 serverVersions)) of
       (clientRes', serverRes', TerminalStates TokDone TokDone) ->
            maybe False id clientRes === either (const False) id clientRes'
@@ -368,7 +380,7 @@ prop_channel :: ( MonadAsync m
 prop_channel createChannels clientVersions serverVersions =
   let (serverRes, clientRes) = pureHandshake
         (\(DictVersion _) -> Dict)
-        (\(DictVersion _) -> (==))
+        (\(DictVersion _) vData vData' -> acceptableVersion vData vData' == Accept)
         serverVersions
         clientVersions
   in do
@@ -380,9 +392,9 @@ prop_channel createChannels clientVersions serverVersions =
           clientVersions)
         (handshakeServerPeer
           cborTermVersionDataCodec
-          (\(DictVersion _) vData vData' -> bool (Refuse $ T.pack "") Accept $ vData == vData')
+          (\(DictVersion _) -> acceptableVersion)
           serverVersions)
-    return $ 
+    return $
            maybe False id clientRes === either (const False) id clientRes'
       .&&.
            maybe False id serverRes === either (const False) id serverRes'

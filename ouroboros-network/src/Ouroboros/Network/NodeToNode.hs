@@ -28,8 +28,9 @@ module Ouroboros.Network.NodeToNode (
   -- * Subscription Workers
   -- ** IP subscriptin worker
   , IPSubscriptionTarget (..)
-  , NetworkIPSubscriptionTracers (..)
-  , nullNetworkIPSubscriptionTracers
+  , NetworkIPSubscriptionTracers
+  , NetworkSubscriptionTracers (..)
+  , nullNetworkSubscriptionTracers
   , SubscriptionParams (..)
   , IPSubscriptionParams
 
@@ -41,6 +42,7 @@ module Ouroboros.Network.NodeToNode (
 
   -- * Re-exports
   , ConnectionId (..)
+  , RemoteConnectionId
   , DecoderFailureOrTooMuchInput
   , Handshake
   , LocalAddresses (..)
@@ -78,20 +80,19 @@ import           Network.Mux hiding (MiniProtocolLimits(..))
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
-import qualified Ouroboros.Network.Connections.Socket.Types as Connections (ConnectionId)
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Connections.Types (Connections)
 import qualified Ouroboros.Network.Connections.Concurrent as Connection
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
+import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
+import qualified Ouroboros.Network.Protocol.Handshake.Version as V
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
-import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
-import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
+import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket hiding (withConnections)
 import qualified Ouroboros.Network.Socket as Socket (withConnections)
-import           Ouroboros.Network.Tracers
 import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams, SubscriptionParams (..))
 import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
                                                    , LocalAddresses (..)
@@ -102,7 +103,9 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , DnsTrace (..)
                                                     , WithDomainName (..)
                                                     )
-
+import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
+import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
+import           Ouroboros.Network.Tracers
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
 -- make up the overall node-to-node protocol.
@@ -119,13 +122,18 @@ data NodeToNodeProtocols = ChainSyncWithHeadersPtcl
 
 -- | These are the actual wire format protocol numbers.
 --
--- The application specific protocol numbers start from 2 because of the two
--- mux built-in protocols.
+-- The application specific protocol numbers start from 2.  The
+-- @'MiniProtocolNum' 0@ is reserved for the 'Handshake' protocol, while
+-- @'MiniProtocolNum' 1@ is reserved for DeltaQ messages.
+-- 'Handshake' protocol is not included in 'NodeToNodeProtocols' as it runs
+-- before mux is started but it reusing 'MuxBearer' to send and receive
+-- messages.  Only when the handshake protocol suceedes, we will know which
+-- protocols to run / multiplex. 
 --
--- These are chosen to not overlap with the node to client protocol numbers.
--- This is not essential for correctness, but is helpful to allow a single
--- shared implementation of tools that can analyse both protocols, e.g.
--- wireshark plugins.
+-- These are chosen to not overlap with the node to client protocol numbers (and
+-- the handshake protocol number).  This is not essential for correctness, but
+-- is helpful to allow a single shared implementation of tools that can analyse
+-- both protocols, e.g.  wireshark plugins.
 --
 instance ProtocolEnum NodeToNodeProtocols where
   fromProtocolEnum ChainSyncWithHeadersPtcl = MiniProtocolNum 2
@@ -157,6 +165,11 @@ newtype NodeToNodeVersionData = NodeToNodeVersionData
   { networkMagic :: NetworkMagic }
   deriving (Eq, Show, Typeable)
 
+instance Acceptable NodeToNodeVersionData where
+    acceptableVersion local remote | local == remote = V.Accept
+                                   | otherwise =  Refuse $ T.pack $ "version data mismatch: " ++ show local
+                                                    ++ " /= " ++ show remote
+
 nodeToNodeCodecCBORTerm :: CodecCBORTerm Text NodeToNodeVersionData
 nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
     where
@@ -174,29 +187,31 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- `cborTermVersionDataCodec` and `acceptEq` to determine when to accept a
 -- version.
 withConnections
-  :: forall request t.
-     ErrorPolicies Socket.SockAddr ()
+  :: forall request fd addr t.
+     ( Ord addr )
+  => ErrorPolicies
+  -> Snocket IO fd addr
   -> (forall provenance . request provenance -> SomeVersionedApplication
-       NodeToNodeProtocols NodeToNodeVersion DictVersion provenance)
-  -> (Connections Connections.ConnectionId Socket.Socket request
+       NodeToNodeProtocols NodeToNodeVersion DictVersion addr provenance)
+  -> (Connections (ConnectionId addr) fd request
        (Connection.Reject RejectConnection)
        (Connection.Accept (ConnectionHandle IO))
        IO -> IO t)
   -> IO t
-withConnections errorPolicies mkApp =
-  Socket.withConnections mkConnectionData
+withConnections errorPolicies sn mkApp =
+  Socket.withConnections sn mkConnectionData
   where
   -- Must give a type signature. Trying to do this in-line will confuse the
   -- type checker.
   mkConnectionData
     :: request provenance
-    -> ConnectionData NodeToNodeProtocols NodeToNodeVersion provenance
+    -> ConnectionData NodeToNodeProtocols NodeToNodeVersion provenance addr
   mkConnectionData request = case mkApp request of
     SomeVersionedResponderApp serverTracers versions -> ConnectionDataRemote
       serverTracers
       errorPolicies
       cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptEq)
+      (\(DictVersion _) -> acceptableVersion)
       versions
     SomeVersionedInitiatorApp connectTracers versions -> ConnectionDataLocal
       connectTracers
@@ -207,7 +222,7 @@ withConnections errorPolicies mkApp =
 -- | A minimal error policy for remote peers, which only handles exceptions
 -- raised by `ouroboros-network`.
 --
-remoteNetworkErrorPolicy :: ErrorPolicies Socket.SockAddr a
+remoteNetworkErrorPolicy :: ErrorPolicies
 remoteNetworkErrorPolicy = ErrorPolicies {
       epAppErrorPolicies = [
           -- Handshake client protocol error: we either did not recognise received
@@ -274,9 +289,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
       epConErrorPolicies = [
           ErrorPolicy $ \(_ :: IOException) -> Just $
             SuspendConsumer shortDelay
-        ],
-
-      epReturnCallback = \_ _ _ -> ourBug
+        ]
     }
   where
     theyBuggyOrEvil :: SuspendDecision DiffTime
@@ -284,9 +297,6 @@ remoteNetworkErrorPolicy = ErrorPolicies {
 
     misconfiguredPeer :: SuspendDecision DiffTime
     misconfiguredPeer = SuspendConsumer defaultDelay
-
-    ourBug :: SuspendDecision DiffTime
-    ourBug = Throw
 
     defaultDelay :: DiffTime
     defaultDelay = 200 -- seconds
@@ -302,7 +312,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
 -- killed and not penalised by this policy.  This allows to restart the local
 -- client without a delay.
 --
-localNetworkErrorPolicy :: ErrorPolicies Socket.SockAddr a
+localNetworkErrorPolicy :: ErrorPolicies
 localNetworkErrorPolicy = ErrorPolicies {
       epAppErrorPolicies = [
           -- exception thrown by `runDecoderWithByteLimit`
@@ -321,10 +331,7 @@ localNetworkErrorPolicy = ErrorPolicies {
         ],
 
       -- The node never connects to a local client
-      epConErrorPolicies = [],
-
-      epReturnCallback = \_ _ _ -> ourBug
+      epConErrorPolicies = []
     }
-  where
-    ourBug :: SuspendDecision DiffTime
-    ourBug = Throw
+
+type RemoteConnectionId = ConnectionId Socket.SockAddr

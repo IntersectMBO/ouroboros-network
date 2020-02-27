@@ -137,20 +137,19 @@ evalErrorPolicies e =
 -- | List of error policies for exception handling and a policy for handing
 -- application return values.
 --
-data ErrorPolicies addr a = ErrorPolicies {
+data ErrorPolicies = ErrorPolicies {
     -- | Application Error Policies
     epAppErrorPolicies  :: [ErrorPolicy]
     -- | `connect` Error Policies
   , epConErrorPolicies  :: [ErrorPolicy]
-  , epReturnCallback :: Time -> addr -> a -> SuspendDecision DiffTime
   }
 
-nullErrorPolicies :: ErrorPolicies addr a
-nullErrorPolicies = ErrorPolicies [] [] (\_ _ _ -> Throw)
+nullErrorPolicies :: ErrorPolicies
+nullErrorPolicies = ErrorPolicies [] []
 
-instance Semigroup (ErrorPolicies addr a) where
-    ErrorPolicies aep cep fn <> ErrorPolicies aep' cep' fn'
-      = ErrorPolicies (aep <> aep') (cep <> cep') (fn <> fn')
+instance Semigroup ErrorPolicies where
+    ErrorPolicies aep cep <> ErrorPolicies aep' cep' 
+      = ErrorPolicies (aep <> aep') (cep <> cep')
 
 -- | Sum type which distinguishes between connection and application
 -- exception traces.

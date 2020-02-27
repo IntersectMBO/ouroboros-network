@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Node
   , IPSubscriptionTarget (..)
   , DnsSubscriptionTarget (..)
   , ConnectionId (..)
+  , RemoteConnectionId
     -- * Internal helpers
   , openChainDB
   , mkChainDbArgs
@@ -35,7 +36,6 @@ module Ouroboros.Consensus.Node
 import           Codec.Serialise (DeserialiseFailure)
 import           Control.Monad (when)
 import           Control.Tracer (Tracer)
-import           Crypto.Random
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (secondsToDiffTime)
@@ -43,41 +43,45 @@ import           Data.Time.Clock (secondsToDiffTime)
 import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (DictVersion (..),
-                     NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
+                     LocalConnectionId, NodeToClientVersionData (..),
+                     nodeToClientCodecCBORTerm)
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersionData (..),
-                     nodeToNodeCodecCBORTerm)
+                     RemoteConnectionId, nodeToNodeCodecCBORTerm)
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
-import           Ouroboros.Network.Socket (ConnectionId)
 
-import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Recovery
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.NodeNetwork
-import           Ouroboros.Consensus.Protocol hiding (Protocol)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.ChainDB (ChainDB, ChainDbArgs)
-import qualified Ouroboros.Storage.ChainDB as ChainDB
-import           Ouroboros.Storage.EpochInfo (EpochInfo, newEpochInfo)
-import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.IO (ioHasFS)
-import           Ouroboros.Storage.ImmutableDB (ValidationPolicy (..))
-import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
-import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
-import           Ouroboros.Storage.VolatileDB (BlockValidationPolicy (..),
-                     mkBlocksPerFile)
+import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo, newEpochInfo)
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
+import           Ouroboros.Consensus.Storage.ImmutableDB (ValidationPolicy (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                     (defaultDiskPolicy)
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                     (ledgerDbDefaultParams)
+import           Ouroboros.Consensus.Storage.VolatileDB
+                     (BlockValidationPolicy (..), mkBlocksPerFile)
 
 -- | Whether the node produces blocks or not.
 data IsProducer
@@ -94,8 +98,8 @@ data IsProducer
 run
   :: forall blk.
      RunNode blk
-  => Tracers IO ConnectionId blk          -- ^ Consensus tracers
-  -> ProtocolTracers IO ConnectionId blk DeserialiseFailure
+  => Tracers IO RemoteConnectionId  blk   -- ^ Consensus tracers
+  -> ProtocolTracers IO RemoteConnectionId LocalConnectionId blk DeserialiseFailure
      -- ^ Protocol tracers
   -> Tracer IO (ChainDB.TraceEvent blk)   -- ^ ChainDB tracer
   -> DiffusionTracers                     -- ^ Diffusion tracers
@@ -106,9 +110,9 @@ run
   -> IsProducer
   -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
       -- ^ Customise the 'ChainDbArgs'
-  -> (NodeArgs IO ConnectionId blk -> NodeArgs IO ConnectionId blk)
+  -> (NodeArgs IO RemoteConnectionId blk -> NodeArgs IO RemoteConnectionId blk)
       -- ^ Customise the 'NodeArgs'
-  -> (ResourceRegistry IO -> NodeKernel IO ConnectionId blk -> IO ())
+  -> (ResourceRegistry IO -> NodeKernel IO RemoteConnectionId blk -> IO ())
      -- ^ Called on the 'NodeKernel' after creating it, but before the network
      -- layer is initialised.
   -> IO ()
@@ -153,7 +157,7 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
       -- On a clean shutdown, create a marker in the database folder so that
       -- next time we start up, we know we don't have to validate the whole
       -- database.
-      createMarkerOnCleanShutdown hasFS $ do
+      createMarkerOnCleanShutdown (Proxy @blk) hasFS $ do
 
         (_, chainDB) <- allocate registry
           (\_ -> openChainDB
@@ -163,13 +167,12 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
 
         let nodeArgs = customiseNodeArgs $ mkNodeArgs
               registry
-              cfg
-              initState
-              tracers
-              btime
-              chainDB
-              isProducer
-
+                cfg
+                initState
+                tracers
+                btime
+                chainDB
+                isProducer
         nodeKernel <- initNodeKernel nodeArgs
         onNodeKernel registry nodeKernel
 
@@ -189,17 +192,17 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
       , pInfoInitState  = initState
       } = pInfo
 
-    slotLengths = protocolSlotLengths cfg
+    slotLengths = knownSlotLengths (configBlock cfg)
 
     nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = networkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = networkMagic }
 
     mkNetworkApps
-      :: NodeArgs   IO ConnectionId blk
-      -> NodeKernel IO ConnectionId blk
+      :: NodeArgs   IO RemoteConnectionId blk
+      -> NodeKernel IO RemoteConnectionId blk
       -> NetworkProtocolVersion blk
       -> NetworkApplication
-           IO ConnectionId
+           IO RemoteConnectionId LocalConnectionId
            ByteString ByteString ByteString ByteString ByteString ByteString
            ()
     mkNetworkApps nodeArgs nodeKernel version = consensusNetworkApps
@@ -211,20 +214,20 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
     mkDiffusionApplications
       :: (   NetworkProtocolVersion blk
           -> NetworkApplication
-               IO ConnectionId
-               ByteString ByteString ByteString ByteString ByteString ByteString
-               ()
+              IO RemoteConnectionId LocalConnectionId
+              ByteString ByteString ByteString ByteString ByteString ByteString
+              ()
          )
       -> DiffusionApplications
     mkDiffusionApplications networkApps = DiffusionApplications
-     { daResponderApplication = combineVersions [
-           simpleSingletonVersions
-             (nodeToNodeProtocolVersion (Proxy @blk) version)
-             nodeToNodeVersionData
-             (DictVersion nodeToNodeCodecCBORTerm)
-             (responderNetworkApplication $ networkApps version)
-         | version <- supportedNetworkProtocolVersions (Proxy @blk)
-         ]
+      { daResponderApplication = combineVersions [
+      simpleSingletonVersions
+    (nodeToNodeProtocolVersion (Proxy @blk) version)
+    nodeToNodeVersionData
+    (DictVersion nodeToNodeCodecCBORTerm)
+    (responderNetworkApplication $ networkApps version)
+      | version <- supportedNetworkProtocolVersions (Proxy @blk)
+      ]
      , daInitiatorApplication = combineVersions [
            simpleSingletonVersions
              (nodeToNodeProtocolVersion (Proxy @blk) version)
@@ -254,7 +257,7 @@ openChainDB
   -> BlockchainTime IO
   -> FilePath
      -- ^ Database path
-  -> NodeConfig (BlockProtocol blk)
+  -> TopLevelConfig blk
   -> ExtLedgerState blk
      -- ^ Initial ledger
   -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
@@ -274,7 +277,7 @@ mkChainDbArgs
   -> BlockchainTime IO
   -> FilePath
      -- ^ Database path
-  -> NodeConfig (BlockProtocol blk)
+  -> TopLevelConfig blk
   -> ExtLedgerState blk
      -- ^ Initial ledger
   -> EpochInfo IO
@@ -311,18 +314,18 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger
     , ChainDB.cdbBlockchainTime   = btime
     }
   where
-    secParam = protocolSecurityParam cfg
+    secParam = configSecurityParam cfg
 
 mkNodeArgs
   :: forall blk. RunNode blk
   => ResourceRegistry IO
-  -> NodeConfig (BlockProtocol blk)
-  -> NodeState  (BlockProtocol blk)
-  -> Tracers IO ConnectionId blk
+  -> TopLevelConfig blk
+  -> NodeState blk
+  -> Tracers IO RemoteConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
   -> IsProducer
-  -> NodeArgs IO ConnectionId blk
+  -> NodeArgs IO RemoteConnectionId blk
 mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     { tracers
     , registry
@@ -344,6 +347,6 @@ mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     blockProduction = case isProducer of
       IsNotProducer -> Nothing
       IsProducer    -> Just BlockProduction
-                         { produceDRG   = drgNew
-                         , produceBlock = nodeForgeBlock cfg
+                         { produceBlock       = nodeForgeBlock cfg
+                         , runMonadRandomDict = runMonadRandomIO
                          }

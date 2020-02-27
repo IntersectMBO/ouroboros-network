@@ -29,28 +29,29 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
 import           Ouroboros.Consensus.BlockchainTime.Mock
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (chunks)
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.ChainDB (ChainDbArgs (..),
+import           Ouroboros.Consensus.Storage.ChainDB (ChainDbArgs (..),
                      TraceAddBlockEvent (..), addBlock, toChain, withDB)
-import qualified Ouroboros.Storage.ChainDB as ChainDB
-import           Ouroboros.Storage.Common (EpochSize (..))
-import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
-import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..),
-                     ValidationPolicy (ValidateAllEpochs))
-import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
-import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
-import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-import           Ouroboros.Storage.VolatileDB (BlockValidationPolicy (..),
-                     mkBlocksPerFile)
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
+import           Ouroboros.Consensus.Storage.EpochInfo (fixedSizeEpochInfo)
+import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
+                     HashInfo (..), ValidationPolicy (ValidateAllEpochs))
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                     (defaultDiskPolicy)
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                     (ledgerDbDefaultParams)
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Consensus.Storage.VolatileDB
+                     (BlockValidationPolicy (..), mkBlocksPerFile)
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -148,7 +149,7 @@ prop_addBlock_multiple_threads bpt =
         (Chain.toAnchoredFragment (getHeader <$> chain1))
         (Chain.toAnchoredFragment (getHeader <$> chain2)) == EQ
 
-    cfg :: NodeConfig (BlockProtocol TestBlock)
+    cfg :: TopLevelConfig TestBlock
     cfg = singleNodeTestConfig
 
     initLedger :: ExtLedgerState TestBlock
@@ -233,7 +234,7 @@ fixedEpochSize :: EpochSize
 fixedEpochSize = 10
 
 mkArgs :: IOLike m
-       => NodeConfig (BlockProtocol TestBlock)
+       => TopLevelConfig TestBlock
        -> ExtLedgerState TestBlock
        -> Tracer m (ChainDB.TraceEvent TestBlock)
        -> ResourceRegistry m
@@ -273,8 +274,8 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbImmValidation    = ValidateAllEpochs
     , cdbVolValidation    = ValidateAll
     , cdbBlocksPerFile    = mkBlocksPerFile 4
-    , cdbParamsLgrDB      = ledgerDbDefaultParams (protocolSecurityParam cfg)
-    , cdbDiskPolicy       = defaultDiskPolicy (protocolSecurityParam cfg)
+    , cdbParamsLgrDB      = ledgerDbDefaultParams (configSecurityParam cfg)
+    , cdbDiskPolicy       = defaultDiskPolicy (configSecurityParam cfg)
 
       -- Integration
     , cdbNodeConfig       = cfg

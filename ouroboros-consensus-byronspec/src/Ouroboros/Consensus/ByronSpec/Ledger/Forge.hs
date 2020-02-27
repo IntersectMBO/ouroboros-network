@@ -1,0 +1,57 @@
+{-# LANGUAGE RecordWildCards #-}
+
+module Ouroboros.Consensus.ByronSpec.Ledger.Forge (
+    forgeByronSpecBlock
+  ) where
+
+import qualified Cardano.Spec.Chain.STS.Block as Spec
+import qualified Ledger.Core as Spec
+import qualified Ledger.Update as Spec
+
+import           Ouroboros.Network.Block
+
+import           Ouroboros.Consensus.Ledger.Abstract
+
+import           Ouroboros.Consensus.ByronSpec.Ledger.Accessors
+import           Ouroboros.Consensus.ByronSpec.Ledger.Block
+import           Ouroboros.Consensus.ByronSpec.Ledger.Conversions
+import qualified Ouroboros.Consensus.ByronSpec.Ledger.GenTx as GenTx
+import           Ouroboros.Consensus.ByronSpec.Ledger.Ledger
+import           Ouroboros.Consensus.ByronSpec.Ledger.Mempool
+import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
+
+{-------------------------------------------------------------------------------
+  Forging
+-------------------------------------------------------------------------------}
+
+forgeByronSpecBlock :: SlotNo
+                    -> BlockNo
+                    -> LedgerState ByronSpecBlock
+                    -> [GenTx ByronSpecBlock]
+                    -> Spec.VKey
+                    -> ByronSpecBlock
+forgeByronSpecBlock curSlotNo curBlockNo ByronSpecLedgerState{..} txs vkey =
+    ByronSpecBlock {
+        byronSpecBlock     = block
+      , byronSpecBlockNo   = curBlockNo
+      , byronSpecBlockHash = Spec.bhHash $ Spec._bHeader block
+      }
+  where
+    (ds, ts, us, vs) = GenTx.partition (map unByronSpecGenTx txs)
+
+    -- TODO: Don't take protocol version from ledger state
+    -- <https://github.com/input-output-hk/ouroboros-network/issues/1495>
+    block :: Spec.Block
+    block = Spec.mkBlock
+              (getChainStateHash byronSpecLedgerState)
+              (toByronSpecSlotNo curSlotNo)
+              vkey
+              (Spec.protocolVersion $
+                getChainStateUPIState byronSpecLedgerState)
+              ds
+              (case us of
+                 []  -> Nothing
+                 [u] -> Just u
+                 _   -> error "forgeByronSpecBlock: multiple update proposals")
+              vs
+              ts

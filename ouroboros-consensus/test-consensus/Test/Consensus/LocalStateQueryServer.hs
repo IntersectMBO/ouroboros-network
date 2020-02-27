@@ -27,29 +27,26 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Server
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (AcquireFailure (..))
 
-import           Ouroboros.Consensus.Block (BlockProtocol, getHeader)
-import           Ouroboros.Consensus.BlockchainTime.SlotLength
-                     (slotLengthFromSec)
-import           Ouroboros.Consensus.BlockchainTime.SlotLengths
-                     (singletonSlotLengths)
+import           Ouroboros.Consensus.Block (getHeader)
+import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.LocalStateQueryServer
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig,
-                     SecurityParam (..))
+import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 
-import qualified Ouroboros.Storage.ChainDB.Impl.BlockCache as BlockCache
-import qualified Ouroboros.Storage.ChainDB.Impl.LedgerCursor as LedgerCursor
-import           Ouroboros.Storage.ChainDB.Impl.LgrDB (LedgerDbParams (..),
-                     LgrDB, LgrDbArgs (..), mkLgrDB)
-import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
-import           Ouroboros.Storage.LedgerDB.Conf (LedgerDbConf (..))
-import qualified Ouroboros.Storage.LedgerDB.InMemory as LgrDB
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor as LedgerCursor
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
+                     (LedgerDbParams (..), LgrDB, LgrDbArgs (..), mkLgrDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
+import           Ouroboros.Consensus.Storage.LedgerDB.Conf (LedgerDbConf (..))
+import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
                      (ledgerDbFromGenesis)
 
 import           Test.QuickCheck hiding (Result)
@@ -236,18 +233,25 @@ initLgrDB k chain = do
       , lgrTraceLedger      = nullTracer
       }
 
-testCfg :: SecurityParam -> NodeConfig (BlockProtocol TestBlock)
-testCfg securityParam = BftNodeConfig
-    { bftParams   = BftParams { bftSecurityParam = securityParam
-                              , bftNumNodes      = NumCoreNodes 1
-                              , bftSlotLengths   = singletonSlotLengths $
-                                                     slotLengthFromSec 20
-                              }
-    , bftNodeId   = CoreId (CoreNodeId 0)
-    , bftSignKey  = SignKeyMockDSIGN 0
-    , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
+testCfg :: SecurityParam -> TopLevelConfig TestBlock
+testCfg securityParam = TopLevelConfig {
+      configConsensus = BftNodeConfig
+        { bftParams   = BftParams { bftSecurityParam = securityParam
+                                  , bftNumNodes      = numCoreNodes
+                                  }
+        , bftNodeId   = CoreId (CoreNodeId 0)
+        , bftSignKey  = SignKeyMockDSIGN 0
+        , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
+        }
+    , configLedger = LedgerConfig
+    , configBlock  = TestBlockConfig slotLengths numCoreNodes
     }
+  where
+    slotLengths :: SlotLengths
+    slotLengths = singletonSlotLengths $ slotLengthFromSec 20
 
+    numCoreNodes :: NumCoreNodes
+    numCoreNodes = NumCoreNodes 1
 
 {-------------------------------------------------------------------------------
   Orphans

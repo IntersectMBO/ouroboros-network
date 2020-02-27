@@ -19,10 +19,12 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 
-import           Ouroboros.Storage.ChainDB.API (StreamFrom (..), StreamTo (..))
+import           Ouroboros.Consensus.Storage.ChainDB.API (StreamFrom (..),
+                     StreamTo (..))
 
 import           Test.Util.TestBlock
 
@@ -53,7 +55,7 @@ prop_getBlock_addBlock bt p =
   where
     (newBlock:initBlocks) = permute p $ treeToBlocks bt
     model = addBlocks initBlocks
-    secParam = protocolSecurityParam singleNodeTestConfig
+    secParam = configSecurityParam singleNodeTestConfig
 
 prop_getChain_addChain :: BlockChain -> Property
 prop_getChain_addChain bc =
@@ -78,7 +80,7 @@ prop_alwaysPickPreferredChain bt p =
 
     curFragment = Chain.toAnchoredFragment (getHeader <$> current)
 
-    SecurityParam k = protocolSecurityParam singleNodeTestConfig
+    SecurityParam k = configSecurityParam singleNodeTestConfig
 
     preferCandidate' candidate =
         AF.preferAnchoredCandidate singleNodeTestConfig curFragment candFragment &&
@@ -96,7 +98,7 @@ prop_between_currentChain bt =
     model    = addBlocks blocks
     from     = StreamFromExclusive genesisPoint
     to       = StreamToInclusive $ M.tipPoint model
-    secParam = protocolSecurityParam singleNodeTestConfig
+    secParam = configSecurityParam singleNodeTestConfig
 
 {-------------------------------------------------------------------------------
   Orphan instances

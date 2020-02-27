@@ -15,14 +15,14 @@ import           Ouroboros.Network.Block (ChainUpdate)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util ((...:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
-import           Ouroboros.Storage.ChainDB.API
+import           Ouroboros.Consensus.Storage.ChainDB.API
 
 import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
                      LedgerCursorId, Model, ModelSupportsBlock, ReaderId)
@@ -30,10 +30,10 @@ import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 
 openDB :: forall m blk. (
             IOLike m
-          , ProtocolLedgerView blk
+          , LedgerSupportsProtocol blk
           , ModelSupportsBlock blk
           )
-       => NodeConfig (BlockProtocol blk)
+       => TopLevelConfig blk
        -> ExtLedgerState blk
        -> BlockchainTime m
        -> m (ChainDB m blk)
@@ -136,4 +136,4 @@ openDB cfg initLedger btime = do
       , isOpen              = Model.isOpen <$> readTVar db
       }
   where
-    k = protocolSecurityParam cfg
+    k = configSecurityParam cfg

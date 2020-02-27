@@ -25,6 +25,8 @@ import           Control.Monad.Class.MonadTime (Time (..))
 
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
+import           Cardano.Crypto.DSIGN.Class
+import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
 import           Cardano.Crypto.Hash (Hash)
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      allNoUnexpectedThunks, noUnexpectedThunksInKeysAndValues)
@@ -71,6 +73,10 @@ instance MonadRandom m => MonadRandom (IdentityT m) where
 -------------------------------------------------------------------------------}
 
 instance Serialise (Hash h a) where
+
+instance Serialise (VerKeyDSIGN MockDSIGN) where
+  encode = encodeVerKeyDSIGN
+  decode = decodeVerKeyDSIGN
 
 {-------------------------------------------------------------------------------
   NoUnexpectedThunks

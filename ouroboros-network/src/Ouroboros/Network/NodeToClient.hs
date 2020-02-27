@@ -23,16 +23,22 @@ module Ouroboros.Network.NodeToClient (
 
   , withConnections
 
-  , NetworkIPSubscriptionTracers (..)
-  , IPSubscriptionParams
-  , SubscriptionParams (..)
+  , NetworkSubscriptionTracers (..)
 
   -- * Re-exported clients
   , chainSyncClientNull
   , localTxSubmissionClientNull
 
+  -- * Re-exported network interface
+  , AssociateWithIOCP
+  , withIOManager
+  , LocalSnocket
+  , localSnocket
+  , LocalAddress
+
   -- * Re-exports
   , ConnectionId (..)
+  , LocalConnectionId
   , ErrorPolicies (..)
   , networkErrorPolicies
   , nullErrorPolicies
@@ -44,7 +50,6 @@ module Ouroboros.Network.NodeToClient (
   , DecoderFailureOrTooMuchInput
   , Handshake
   , LocalAddresses (..)
-  , IPSubscriptionTarget (..)
   , SubscriptionTrace (..)
   ) where
 
@@ -58,13 +63,12 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
-import qualified Network.Socket as Socket
 
 import           Network.Mux hiding (MiniProtocolLimits(..))
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
-import qualified Ouroboros.Network.Connections.Socket.Types as Connections (ConnectionId)
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Connections.Types (Connections)
 import qualified Ouroboros.Network.Connections.Concurrent as Connection
 import           Ouroboros.Network.Magic
@@ -74,15 +78,16 @@ import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
 import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
-import           Ouroboros.Network.Socket hiding (withConnections)
-import qualified Ouroboros.Network.Socket as Socket (withConnections)
 
-import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams, SubscriptionParams (..))
-import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
-                                                   , LocalAddresses (..)
+import           Ouroboros.Network.Subscription.Ip ( LocalAddresses (..)
                                                    , SubscriptionTrace (..)
                                                    )
+import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
+import qualified Ouroboros.Network.Protocol.Handshake.Version as V
+import           Ouroboros.Network.Snocket
+import           Ouroboros.Network.Socket hiding (withConnections)
+import qualified Ouroboros.Network.Socket as Socket (withConnections)
+import           Ouroboros.Network.IOManager
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
 -- make up the overall node-to-client protocol.
@@ -127,6 +132,11 @@ newtype NodeToClientVersionData = NodeToClientVersionData
   { networkMagic :: NetworkMagic }
   deriving (Eq, Show, Typeable)
 
+instance Acceptable NodeToClientVersionData where
+    acceptableVersion local remote | local == remote = V.Accept
+                                   | otherwise =  Refuse $ T.pack $ "version data mismatch: " ++ show local
+                                                    ++ " /= " ++ show remote
+
 nodeToClientCodecCBORTerm :: CodecCBORTerm Text NodeToClientVersionData
 nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
     where
@@ -142,25 +152,27 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- | `Ouroboros.Network.Socket.withConnections` but with the protocol types
 -- specialized.
 withConnections
-  :: forall request t.
-     ErrorPolicies Socket.SockAddr ()
-  -> (forall provenance . request provenance -> SomeVersionedApplication NodeToClientProtocols NodeToClientVersion DictVersion provenance)
-  -> (Connections Connections.ConnectionId Socket.Socket request (Connection.Reject RejectConnection) (Connection.Accept (ConnectionHandle IO)) IO -> IO t)
+  :: forall request fd addr t.
+     ( Ord addr )
+  => ErrorPolicies
+  -> Snocket IO fd addr
+  -> (forall provenance . request provenance -> SomeVersionedApplication NodeToClientProtocols NodeToClientVersion DictVersion addr provenance)
+  -> (Connections (ConnectionId addr) fd request (Connection.Reject RejectConnection) (Connection.Accept (ConnectionHandle IO)) IO -> IO t)
   -> IO t
-withConnections errorPolicies mkApp =
-  Socket.withConnections mkConnectionData
+withConnections errorPolicies sn mkApp =
+  Socket.withConnections sn mkConnectionData
   where
   -- Must give a type signature. Trying to do this in-line will confuse the
   -- type checker.
   mkConnectionData
     :: request provenance
-    -> ConnectionData NodeToClientProtocols NodeToClientVersion provenance
+    -> ConnectionData NodeToClientProtocols NodeToClientVersion provenance addr
   mkConnectionData request = case mkApp request of
     SomeVersionedResponderApp serverTracers versions -> ConnectionDataRemote
       serverTracers
       errorPolicies
       cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptEq)
+      (\(DictVersion _) -> acceptableVersion)
       versions
     SomeVersionedInitiatorApp connectTracers versions -> ConnectionDataLocal
       connectTracers
@@ -181,7 +193,7 @@ withConnections errorPolicies mkApp =
 --
 -- If a trusted node sends us a wrong data or 
 --
-networkErrorPolicies :: ErrorPolicies Socket.SockAddr a
+networkErrorPolicies :: ErrorPolicies
 networkErrorPolicies = ErrorPolicies
     { epAppErrorPolicies = [
         -- Handshake client protocol error: we either did not recognise received
@@ -226,7 +238,6 @@ networkErrorPolicies = ErrorPolicies
         ErrorPolicy $ \(_ :: IOException) -> Just $
           SuspendPeer shortDelay shortDelay
       ]
-    , epReturnCallback = \_ _ _ -> ourBug
     }
   where
     ourBug :: SuspendDecision DiffTime
@@ -234,3 +245,5 @@ networkErrorPolicies = ErrorPolicies
 
     shortDelay :: DiffTime
     shortDelay = 20 -- seconds
+
+type LocalConnectionId = ConnectionId LocalAddress

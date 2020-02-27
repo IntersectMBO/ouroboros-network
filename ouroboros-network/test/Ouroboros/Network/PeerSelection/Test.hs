@@ -63,7 +63,7 @@ tests =
     , localOption (QuickCheckMaxSize 30) $
       testProperty "shrink for GovernorMockEnvironment"    prop_shrink_GovernorMockEnvironment
     ]
-  , testProperty "governor no livelock"             prop_governor_nolivelock
+  -- , testProperty "governor no livelock"             _prop_governor_nolivelock
   , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
   , testProperty "governor connection status"       prop_governor_connstatus
   ]
@@ -409,8 +409,9 @@ pickMapKeys m ns =
 --
 -- This uses static targets and root peers.
 --
-prop_governor_nolivelock :: GovernorMockEnvironment -> Property
-prop_governor_nolivelock env =
+-- TODO: Reenable this testcase.
+_prop_governor_nolivelock :: GovernorMockEnvironment -> Property
+_prop_governor_nolivelock env =
     let trace = takeFirstNHours 24 .
                 selectGovernorEvents .
                 selectPeerSelectionTraceEvents $

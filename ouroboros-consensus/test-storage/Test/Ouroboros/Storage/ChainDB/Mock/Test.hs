@@ -19,8 +19,8 @@ import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.ChainDB.API (ChainDB)
-import qualified Ouroboros.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock

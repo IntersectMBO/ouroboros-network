@@ -14,26 +14,14 @@
 
 module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocol
-    OuroborosTag(..)
+    ConsensusProtocol(..)
   , NodeConfig
   , SecurityParam(..)
-    -- * State monad for Ouroboros state
-  , HasNodeState
-  , HasNodeState_(..)
-  , NodeStateT
-  , NodeStateT_ -- opaque
-  , nodeStateT
-  , runNodeStateT
-  , evalNodeStateT
-  , runNodeState
-  , evalNodeState
   ) where
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
-import           Control.Monad.State
 import           Crypto.Random (MonadRandom (..))
-import           Data.Functor.Identity
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
@@ -44,14 +32,11 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point,
                      SlotNo (..))
 
-import           Ouroboros.Consensus.BlockchainTime.SlotLengths
-import           Ouroboros.Consensus.Util.Random
-
 -- | Static node configuration
 --
--- Every method in the 'OuroborosTag' class takes the node configuration as a
--- parameter, so having this as a data family rather than a type family resolves
--- most ambiguity.
+-- Every method in the 'ConsensusProtocol' class takes the node configuration as
+-- a parameter, so having this as a data family rather than a type family
+-- resolves most ambiguity.
 --
 -- Defined out of the class so that protocols can define this type without
 -- having to define the entire protocol at the same time (or indeed in the same
@@ -67,13 +52,9 @@ class ( Show (ChainState    p)
       , Eq   (ValidationErr p)
       , NoUnexpectedThunks (NodeConfig    p)
       , NoUnexpectedThunks (ChainState    p)
-      , NoUnexpectedThunks (NodeState     p)
       , NoUnexpectedThunks (ValidationErr p)
       , Typeable p -- so that p can appear in exceptions
-      ) => OuroborosTag p where
-
-  -- | State of the node required to run the protocol
-  type family NodeState p :: *
+      ) => ConsensusProtocol p where
 
   -- | Blockchain dependent protocol-specific state
   type family ChainState p :: *
@@ -161,7 +142,7 @@ class ( Show (ChainState    p)
   compareCandidates :: NodeConfig p -> SelectView p -> SelectView p -> Ordering
 
   -- | Check if a node is the leader
-  checkIsLeader :: (HasNodeState p m, MonadRandom m)
+  checkIsLeader :: MonadRandom m
                 => NodeConfig p
                 -> SlotNo
                 -> LedgerView p
@@ -178,9 +159,6 @@ class ( Show (ChainState    p)
 
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: NodeConfig p -> SecurityParam
-
-  -- | The slot lengths (across all hard forks)
-  protocolSlotLengths :: NodeConfig p -> SlotLengths
 
   -- | We require that it's possible to reverse the chain state up to @k@
   -- blocks.
@@ -241,52 +219,3 @@ class ( Show (ChainState    p)
 -- the number of /slots/.
 newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
-
-{-------------------------------------------------------------------------------
-  State monad
--------------------------------------------------------------------------------}
-
-type HasNodeState p = HasNodeState_ (NodeState p)
-
--- | State monad for the Ouroboros specific state
---
--- We introduce this so that we can have both MonadState and OuroborosState
--- in a monad stack.
-class Monad m => HasNodeState_ s m | m -> s where
-  getNodeState :: m s
-  putNodeState :: s -> m ()
-
-instance HasNodeState_ s m => HasNodeState_ s (ChaChaT m) where
-  getNodeState = lift $ getNodeState
-  putNodeState = lift . putNodeState
-
-{-------------------------------------------------------------------------------
-  Monad transformer introducing 'HasNodeState_'
--------------------------------------------------------------------------------}
-
-newtype NodeStateT_ s m a = NodeStateT { unNodeStateT :: StateT s m a }
-  deriving (Functor, Applicative, Monad, MonadTrans)
-
-type NodeStateT p = NodeStateT_ (NodeState p)
-
-nodeStateT :: (s -> m (a, s)) -> NodeStateT_ s m a
-nodeStateT = NodeStateT . StateT
-
-runNodeStateT :: NodeStateT_ s m a -> s -> m (a, s)
-runNodeStateT = runStateT . unNodeStateT
-
-evalNodeStateT :: Monad m => NodeStateT_ s m a -> s -> m a
-evalNodeStateT act = fmap fst . runNodeStateT act
-
-runNodeState :: (forall m. Monad m => NodeStateT_ s m a) -> s -> (a, s)
-runNodeState act = runIdentity . runNodeStateT act
-
-evalNodeState :: (forall m. Monad m => NodeStateT_ s m a) -> s -> a
-evalNodeState act = fst . runNodeState act
-
-instance Monad m => HasNodeState_ s (NodeStateT_ s m) where
-  getNodeState = NodeStateT $ get
-  putNodeState = NodeStateT . put
-
-instance MonadRandom m => MonadRandom (NodeStateT_ s m) where
-  getRandomBytes = lift . getRandomBytes

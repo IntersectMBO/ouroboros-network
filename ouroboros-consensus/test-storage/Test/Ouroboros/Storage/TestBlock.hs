@@ -50,7 +50,9 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
@@ -58,11 +60,12 @@ import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
-import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
-import           Ouroboros.Storage.FS.API (HasFS (..), hGetExactly, hPutAll,
-                     hSeek, withFile)
-import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.ImmutableDB.Types (BinaryInfo (..),
+import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
+                     EpochSize (..))
+import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
+                     hPutAll, hSeek, withFile)
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BinaryInfo (..),
                      HashInfo (..))
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -151,6 +154,16 @@ instance HasHeader (Header TestBlock) where
   blockNo        =            thBlockNo  . unTestHeader
   blockInvariant = const True
 
+data instance BlockConfig TestBlock = TestBlockConfig {
+      testBlockSlotLengths :: SlotLengths
+
+      -- | Number of core nodes
+      --
+      -- We need this in order to compute the 'ValidateView', which must
+      -- conjure up a validation key out of thin air
+    , testBlockNumCoreNodes :: NumCoreNodes
+    }
+  deriving (Generic, NoUnexpectedThunks)
 
 instance Condense TestBlock where
   condense = show -- TODO
@@ -293,11 +306,11 @@ type instance Signed (Header TestBlock) = ()
 instance SignedHeader (Header TestBlock) where
   headerSigned _ = ()
 
-instance SupportedBlock TestBlock where
-  validateView BftNodeConfig{ bftParams = BftParams{..} } =
+instance BlockSupportsProtocol TestBlock where
+  validateView TestBlockConfig{..} =
       bftValidateView bftFields
     where
-      NumCoreNodes numCore = bftNumNodes
+      NumCoreNodes numCore = testBlockNumCoreNodes
 
       bftFields :: Header TestBlock -> BftFields BftMockCrypto ()
       bftFields hdr = BftFields {
@@ -330,7 +343,10 @@ instance UpdateLedger TestBlock where
     deriving anyclass (Serialise, NoUnexpectedThunks)
 
   data LedgerConfig TestBlock = LedgerConfig
-  type LedgerError  TestBlock = TestBlockError
+    deriving stock    (Generic)
+    deriving anyclass (NoUnexpectedThunks)
+
+  type LedgerError TestBlock = TestBlockError
 
   applyChainTick _ = TickedLedgerState
 
@@ -353,10 +369,14 @@ instance HasAnnTip TestBlock where
 instance ValidateEnvelope TestBlock where
   -- Use defaults
 
-instance ProtocolLedgerView TestBlock where
-  ledgerConfigView _ = LedgerConfig
-  protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Right ()
+instance LedgerSupportsProtocol TestBlock where
+  protocolLedgerView _ _ =
+      ()
+  anachronisticProtocolLedgerView _ _ _ =
+      Right ()
+
+instance LedgerDerivedInfo TestBlock where
+  knownSlotLengths = testBlockSlotLengths
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint GenesisHash
@@ -372,8 +392,6 @@ singleNodeTestConfig :: NodeConfig (Bft BftMockCrypto)
 singleNodeTestConfig = BftNodeConfig {
       bftParams   = BftParams { bftSecurityParam = k
                               , bftNumNodes      = NumCoreNodes 1
-                              , bftSlotLengths   = singletonSlotLengths $
-                                                     slotLengthFromSec 20
                               }
     , bftNodeId   = CoreId (CoreNodeId 0)
     , bftSignKey  = SignKeyMockDSIGN 0

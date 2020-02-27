@@ -29,8 +29,7 @@ import           Ouroboros.Consensus.BlockFetchServer
 import           Ouroboros.Consensus.ChainSyncClient (InvalidBlockReason,
                      TraceChainSyncClientEvent)
 import           Ouroboros.Consensus.ChainSyncServer (TraceChainSyncServerEvent)
-import           Ouroboros.Consensus.Ledger.Abstract (AnachronyFailure,
-                     ProtocolLedgerView)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTx, GenTxId,
                      MempoolSize, TraceEventMempool)
 import           Ouroboros.Consensus.TxSubmission
@@ -100,7 +99,7 @@ showTracers :: ( Show blk
                , Show (ApplyTxErr blk)
                , Show (Header blk)
                , Show peer
-               , ProtocolLedgerView blk
+               , LedgerSupportsProtocol blk
                )
             => Tracer m String -> Tracers m peer blk
 showTracers tr = Tracers

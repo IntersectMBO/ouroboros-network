@@ -69,20 +69,24 @@ import           Ouroboros.Network.Block (BlockNo (..), HasHeader (..),
                      HeaderHash, SlotNo (..))
 import qualified Ouroboros.Network.Block as Block
 
-import           Ouroboros.Storage.Common hiding (Tip (..))
-import qualified Ouroboros.Storage.Common as C
-import           Ouroboros.Storage.EpochInfo
-import           Ouroboros.Storage.FS.API (HasFS (..))
-import           Ouroboros.Storage.FS.API.Types (FsError (..), FsPath)
-import           Ouroboros.Storage.ImmutableDB hiding (BlockOrEBB (..))
-import qualified Ouroboros.Storage.ImmutableDB as ImmDB
-import qualified Ouroboros.Storage.ImmutableDB.Impl as ImmDB (Internal (..))
-import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
+import           Ouroboros.Consensus.Storage.Common hiding (Tip (..))
+import qualified Ouroboros.Consensus.Storage.Common as C
+import           Ouroboros.Consensus.Storage.EpochInfo
+import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
+import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath)
+import           Ouroboros.Consensus.Storage.ImmutableDB hiding
+                     (BlockOrEBB (..))
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl as ImmDB
+                     (Internal (..))
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
-import           Ouroboros.Storage.ImmutableDB.Impl.Util (renderFile, tryImmDB)
-import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.ImmutableDB.Parser (epochFileParser)
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
+                     tryImmDB)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
+import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
+                     (epochFileParser)
+import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
 import qualified Test.Util.FS.Sim.MockFS as Mock

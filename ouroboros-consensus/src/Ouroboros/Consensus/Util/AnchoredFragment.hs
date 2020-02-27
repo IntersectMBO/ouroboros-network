@@ -21,6 +21,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader, blockPoint)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Protocol.Abstract
 
 {-------------------------------------------------------------------------------
@@ -147,8 +148,8 @@ forksAtMostKBlocks k ours theirs = case ours `AF.intersect` theirs of
 -- fragment or the candidate fragment is empty, we can decide whether or not
 -- the candidate is preferred using only the "always extend" rule: we never
 -- need the header that corresponds to the anchor point.
-preferAnchoredCandidate :: forall blk. SupportedBlock blk
-                        => NodeConfig (BlockProtocol blk)
+preferAnchoredCandidate :: forall blk. BlockSupportsProtocol blk
+                        => TopLevelConfig blk
                         -> AnchoredFragment (Header blk)      -- ^ Our chain
                         -> AnchoredFragment (Header blk)      -- ^ Candidate
                         -> Bool
@@ -162,7 +163,10 @@ preferAnchoredCandidate cfg ours theirs =
         blockPoint theirTip /= AF.anchorToPoint ourAnchor
       (_ :> ourTip, _ :> theirTip) ->
         -- Case 4
-        preferCandidate cfg (selectView cfg ourTip) (selectView cfg theirTip)
+        preferCandidate
+          (configConsensus cfg)
+          (selectView (configBlock cfg) ourTip)
+          (selectView (configBlock cfg) theirTip)
 
 -- | Lift 'compareCandidates' to 'AnchoredFragment'
 --
@@ -171,14 +175,17 @@ preferAnchoredCandidate cfg ours theirs =
 -- Implementation note: since the empty fragment is never preferred over our
 -- chain, this is trivial. See discussion in 'preferAnchoredCandidate' for
 -- details.
-compareAnchoredCandidates :: (SupportedBlock blk, HasCallStack)
-                          => NodeConfig (BlockProtocol blk)
+compareAnchoredCandidates :: (BlockSupportsProtocol blk, HasCallStack)
+                          => TopLevelConfig blk
                           -> AnchoredFragment (Header blk)
                           -> AnchoredFragment (Header blk)
                           -> Ordering
 compareAnchoredCandidates cfg ours theirs =
     case (ours, theirs) of
       (_ :> ourTip, _ :> theirTip) ->
-        compareCandidates cfg (selectView cfg ourTip) (selectView cfg theirTip)
+        compareCandidates
+          (configConsensus cfg)
+          (selectView (configBlock cfg) ourTip)
+          (selectView (configBlock cfg) theirTip)
       _otherwise ->
         error "compareAnchoredCandidates: precondition violated"

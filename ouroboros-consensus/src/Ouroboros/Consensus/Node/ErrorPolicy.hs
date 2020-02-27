@@ -8,35 +8,27 @@ import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
 
 import           Ouroboros.Network.ErrorPolicy
 
-import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure)
-import           Ouroboros.Storage.FS.API.Types (FsError)
-import           Ouroboros.Storage.ImmutableDB.Types (ImmutableDBError)
-import           Ouroboros.Storage.VolatileDB.Types (VolatileDBError)
+import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Types
+                     (ImmutableDBError)
+import           Ouroboros.Consensus.Storage.VolatileDB.Types (VolatileDBError)
 
 import           Ouroboros.Consensus.BlockFetchServer
                      (BlockFetchServerException)
 import           Ouroboros.Consensus.ChainSyncClient
                      (ChainSyncClientException (..))
 import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
-import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
-                     (PBftLeaderCredentialsError)
 import           Ouroboros.Consensus.Util.ResourceRegistry
                      (RegistryClosedException, ResourceRegistryThreadException)
 
-consensusErrorPolicy :: ErrorPolicies addr ()
+consensusErrorPolicy :: ErrorPolicies
 consensusErrorPolicy = ErrorPolicies {
       -- Exception raised during connect
       --
       -- This is entirely a network-side concern.
       epConErrorPolicies = []
-
-      -- What to do when the protocol exits cleanly
-      --
-      -- This never happens (we always throw an exception), so this function
-      -- should never be called; if for some reason it /does/, we make it
-      -- throw an exception.
-    , epReturnCallback = \_time _addr () -> ourBug
 
       -- Exception raised during interaction with the peer
       --
@@ -67,9 +59,6 @@ consensusErrorPolicy = ErrorPolicies {
         , ErrorPolicy $ \(_ :: VolatileDBError)  -> Just shutdownNode
         , ErrorPolicy $ \(_ :: FsError)          -> Just shutdownNode
         , ErrorPolicy $ \(_ :: ImmutableDBError) -> Just shutdownNode
-
-          -- Node configuration failure
-        , ErrorPolicy $ \(_ :: PBftLeaderCredentialsError) -> Just shutdownNode
 
           -- Some chain DB errors are indicative of a bug in our code, others
           -- indicate an invalid request from the peer. If the DB is closed

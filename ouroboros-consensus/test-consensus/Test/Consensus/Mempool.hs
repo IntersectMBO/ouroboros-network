@@ -39,9 +39,9 @@ import           Ouroboros.Network.Block (pattern BlockPoint, HeaderHash,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Mock hiding (TxId)
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
+import           Ouroboros.Consensus.Mock.Ledger hiding (TxId)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM,
@@ -637,7 +637,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
     classify (not (null testInitialTxs)) "non-empty Mempool" $
     runSimOrThrow setUpAndRun
   where
-    cfg = SimpleLedgerConfig
+    cfg = SimpleLedgerConfig ()
 
     setUpAndRun :: forall m. IOLike m => m Property
     setUpAndRun = do
@@ -705,7 +705,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
                          -> Property
     checkMempoolValidity ledgerState MempoolSnapshot { snapshotTxs } =
         case runExcept $ repeatedlyM
-               (applyTx SimpleLedgerConfig)
+               (applyTx (SimpleLedgerConfig ()))
                txs
                (notReallyTicked ledgerState) of
           Right _ -> property True

@@ -19,10 +19,10 @@ import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader (..),
                      HeaderHash, Point (..), Serialised, Tip (..), castPoint)
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
-import           Ouroboros.Storage.ChainDB.API (ChainDB, Reader,
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB, Reader,
                      SerialisedWithPoint (..), getSerialisedBlockWithPoint,
                      getSerialisedHeaderWithPoint)
-import qualified Ouroboros.Storage.ChainDB.API as ChainDB
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike

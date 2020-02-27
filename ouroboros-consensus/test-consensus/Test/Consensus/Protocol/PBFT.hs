@@ -6,8 +6,6 @@
 
 module Test.Consensus.Protocol.PBFT (
     tests
-    -- * Used in the roundtrip tests
-  , TestChainState(..)
   ) where
 
 import qualified Control.Exception as Exn
@@ -34,7 +32,9 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Util (lastMaybe, repeatedly)
+import           Ouroboros.Consensus.Util.Orphans ()
 
+import           Test.Util.Roundtrip (roundtrip)
 import           Test.Util.Split (spanLeft, splitAtJust)
 
 {-------------------------------------------------------------------------------
@@ -59,6 +59,8 @@ tests = testGroup "PBftChainState" $
                prop_appendOldStatePreservesInvariant
     , testProperty "appendOldStateRestoresPreWindow"
                prop_appendOldStateRestoresPreWindow
+    , testProperty "serialisation roundtrip"
+               prop_serialisation_roundtrip
     ]
 
 {-------------------------------------------------------------------------------
@@ -544,6 +546,18 @@ prop_appendOldStateRestoresPreWindow TestChainState{..} =
                       state'
        .&&.
        size (CS.preWindow state') === maxRollbacks testChainStateK
+
+{-------------------------------------------------------------------------------
+  Serialisation roundtrip
+-------------------------------------------------------------------------------}
+
+-- | We test the roundtrip using mock crypto
+prop_serialisation_roundtrip :: TestChainState -> Property
+prop_serialisation_roundtrip TestChainState{..} =
+    roundtrip
+      (CS.encodePBftChainState)
+      (CS.decodePBftChainState testChainStateK testChainStateN)
+      testChainState
 
 {-------------------------------------------------------------------------------
   ChainState "Inputs"

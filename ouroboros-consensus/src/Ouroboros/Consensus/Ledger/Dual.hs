@@ -21,14 +21,15 @@ module Ouroboros.Consensus.Ledger.Dual (
     -- * Pair types
   , DualBlock(..)
   , DualHeader
-  , DualBlockProtocol
   , DualLedgerError(..)
   , DualGenTxErr(..)
     -- * Lifted functions
   , dualExtLedgerStateMain
   , dualExtValidationErrorMain
+  , dualTopLevelConfigMain
     -- * Type class family instances
   , Header(..)
+  , BlockConfig(..)
   , LedgerState(..)
   , LedgerConfig(..)
   , GenTx(..)
@@ -63,14 +64,17 @@ import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block
 
-import           Ouroboros.Storage.Common
+import           Ouroboros.Consensus.Storage.Common
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.Protocol.ExtConfig
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
+import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -124,22 +128,41 @@ type DualHeader m a = Header (DualBlock m a)
 deriving instance Show (Header m) => Show (DualHeader m a)
 
 {-------------------------------------------------------------------------------
+  Config
+-------------------------------------------------------------------------------}
+
+data instance BlockConfig (DualBlock m a) = DualBlockConfig {
+      dualBlockConfigMain :: BlockConfig m
+    , dualBlockConfigAux  :: BlockConfig a
+    }
+  deriving NoUnexpectedThunks via AllowThunk (BlockConfig (DualBlock m a))
+
+-- | This is only used for block production
+dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
+dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
+      configConsensus =                      configConsensus
+    , configLedger    = dualLedgerConfigMain configLedger
+    , configBlock     = dualBlockConfigMain  configBlock
+    }
+
+{-------------------------------------------------------------------------------
   Bridge two ledgers
 -------------------------------------------------------------------------------}
 
 -- | Bridge the two ledgers
 class (
         -- Requirements on the main block
-        HasHeader          m
-      , GetHeader          m
-      , HasHeader (Header  m)
-      , ProtocolLedgerView m
-      , ApplyTx            m
-      , HasTxId (GenTx     m)
-      , Show (ApplyTxErr   m)
+        HasHeader              m
+      , GetHeader              m
+      , HasHeader     (Header  m)
+      , LedgerSupportsProtocol m
+      , LedgerDerivedInfo      m
+      , ApplyTx                m
+      , HasTxId (GenTx         m)
+      , Show (ApplyTxErr       m)
 
         -- Requirements on the auxiliary block
-        -- No 'ProtocolLedgerView' for @a@!
+        -- No 'LedgerSupportsProtocol' for @a@!
       , Typeable         a
       , UpdateLedger     a
       , ApplyTx          a
@@ -196,12 +219,12 @@ instance Bridge m a => HasHeader (DualHeader m a) where
   Protocol
 -------------------------------------------------------------------------------}
 
-type DualBlockProtocol m a = ExtConfig (BlockProtocol m) (LedgerConfig a)
-type instance BlockProtocol (DualBlock m a) = DualBlockProtocol m a
+type instance NodeState     (DualBlock m a) = NodeState     m
+type instance BlockProtocol (DualBlock m a) = BlockProtocol m
 
-instance Bridge m a => SupportedBlock (DualBlock m a) where
-  validateView cfg = validateView (extNodeConfigP cfg) . dualHeaderMain
-  selectView   cfg = selectView   (extNodeConfigP cfg) . dualHeaderMain
+instance Bridge m a => BlockSupportsProtocol (DualBlock m a) where
+  validateView cfg = validateView (dualBlockConfigMain cfg) . dualHeaderMain
+  selectView   cfg = selectView   (dualBlockConfigMain cfg) . dualHeaderMain
 
 {-------------------------------------------------------------------------------
   Ledger errors
@@ -246,6 +269,7 @@ instance Bridge m a => UpdateLedger (DualBlock m a) where
         dualLedgerConfigMain :: LedgerConfig m
       , dualLedgerConfigAux  :: LedgerConfig a
       }
+    deriving NoUnexpectedThunks via AllowThunk (LedgerConfig (DualBlock m a))
 
   type LedgerError (DualBlock m a) = DualLedgerError m a
 
@@ -341,10 +365,10 @@ dualExtValidationErrorMain = \case
     ExtValidationErrorHeader e -> ExtValidationErrorHeader (castHeaderError     e)
 
 {-------------------------------------------------------------------------------
-  ProtocolLedgerView
+  LedgerSupportsProtocol
 
   These definitions are asymmetric because the auxiliary block is not involved
-  in the consensus protocol, and has no 'ProtocolLedgerView' instance.
+  in the consensus protocol, and has no 'LedgerSupportsProtocol' instance.
 -------------------------------------------------------------------------------}
 
 instance Bridge m a => HasAnnTip (DualBlock m a) where
@@ -354,28 +378,27 @@ instance Bridge m a => HasAnnTip (DualBlock m a) where
 instance Bridge m a => ValidateEnvelope (DualBlock m a) where
   validateEnvelope cfg t =
         withExcept castHeaderEnvelopeError
-      . validateEnvelope (extNodeConfigP cfg) (castAnnTip <$> t)
+      . validateEnvelope (dualBlockConfigMain cfg) (castAnnTip <$> t)
       . dualHeaderMain
 
   firstBlockNo          _ = firstBlockNo          (Proxy @m)
   minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @m)
 
-instance Bridge m a => ProtocolLedgerView (DualBlock m a) where
-  ledgerConfigView cfg = DualLedgerConfig {
-        dualLedgerConfigMain = ledgerConfigView $ extNodeConfigP cfg
-      , dualLedgerConfigAux  = extNodeConfig cfg
-      }
-
+instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
   protocolLedgerView cfg state =
       protocolLedgerView
-        (extNodeConfigP      cfg)
-        (dualLedgerStateMain state)
+        (dualLedgerConfigMain cfg)
+        (dualLedgerStateMain  state)
 
   anachronisticProtocolLedgerView cfg state =
       anachronisticProtocolLedgerView
-        (extNodeConfigP      cfg)
-        (dualLedgerStateMain state)
+        (dualLedgerConfigMain cfg)
+        (dualLedgerStateMain  state)
 
+instance Bridge m a => LedgerDerivedInfo (DualBlock m a) where
+  knownSlotLengths cfg =
+      knownSlotLengths
+        (dualBlockConfigMain cfg)
 
 {-------------------------------------------------------------------------------
   Querying the ledger
@@ -554,16 +577,16 @@ decodeDualBlock :: (Bridge m a, Serialise a)
                 -> Decoder s (Lazy.ByteString -> DualBlock m a)
 decodeDualBlock decodeMain = do
     enforceSize "DualBlock" 3
-    dualByronBlock
+    dualBlock
       <$> decodeMain
       <*> decode
       <*> decode
   where
-    dualByronBlock :: (Lazy.ByteString -> m)
-                   -> Maybe a
-                   -> BridgeBlock m a
-                   -> (Lazy.ByteString -> DualBlock m a)
-    dualByronBlock conc abst bridge bs = DualBlock (conc bs) abst bridge
+    dualBlock :: (Lazy.ByteString -> m)
+              -> Maybe a
+              -> BridgeBlock m a
+              -> (Lazy.ByteString -> DualBlock m a)
+    dualBlock conc abst bridge bs = DualBlock (conc bs) abst bridge
 
 encodeDualHeader :: (Header m -> Encoding)
                  -> Header (DualBlock m a) -> Encoding
@@ -572,11 +595,11 @@ encodeDualHeader encodeMain DualHeader{..} = encodeMain dualHeaderMain
 decodeDualHeader :: Decoder s (Lazy.ByteString -> Header m)
                  -> Decoder s (Lazy.ByteString -> Header (DualBlock m a))
 decodeDualHeader decodeMain =
-    dualByronHeader <$> decodeMain
+    dualHeader <$> decodeMain
   where
-    dualByronHeader :: (Lazy.ByteString -> Header m)
-                    -> (Lazy.ByteString -> Header (DualBlock m a))
-    dualByronHeader conc bs = DualHeader (conc bs)
+    dualHeader :: (Lazy.ByteString -> Header m)
+               -> (Lazy.ByteString -> Header (DualBlock m a))
+    dualHeader conc bs = DualHeader (conc bs)
 
 encodeDualGenTx :: (Bridge m a, Serialise (GenTx a))
                 => (GenTx m -> Encoding)

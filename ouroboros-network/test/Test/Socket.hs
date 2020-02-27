@@ -21,13 +21,21 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
+#if defined(mingw32_HOST_OS)
+import qualified Data.ByteString as BS
+#endif
+
 import           Data.Functor ((<$))
 import           Data.Int (Int64)
 import           Data.List (mapAccumL)
 import           Data.Time.Clock (UTCTime, getCurrentTime)
 import           Data.Void (Void)
 import qualified Network.Socket as Socket
+#if defined(mingw32_HOST_OS)
+import qualified System.Win32.Async as Win32.Async
+#else
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
+#endif
 #ifndef mingw32_HOST_OS
 import           System.Directory (removeFile)
 import           System.IO.Error
@@ -48,10 +56,11 @@ import qualified Network.Mux as Mx hiding (MiniProtocolLimits (..))
 import qualified Network.Mux.Bearer.Socket as Mx
 import           Ouroboros.Network.Mux as Mx
 
+import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
 
 import           Ouroboros.Network.Block (Tip, decodeTip, encodeTip)
-import           Ouroboros.Network.Connections.Socket.Types hiding (ConnectionId)
+import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -61,10 +70,10 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
-import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq,
-                     cborTermVersionDataCodec)
+import           Ouroboros.Network.Protocol.Handshake.Type
+                     (cborTermVersionDataCodec)
 import           Ouroboros.Network.Protocol.Handshake.Version
-                     (simpleSingletonVersions)
+                     (acceptableVersion, simpleSingletonVersions)
 import           Ouroboros.Network.Testing.Serialise
 
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
@@ -102,7 +111,7 @@ tests =
   , after AllFinish LAST_IP_TEST $
     testProperty "socket close during receive"           prop_socket_recv_close
   , after AllFinish "socket close during receive" $
-    testProperty "socket client connection failure"      prop_socket_client_connect_error
+    testProperty "socket client connection failure"      (withMaxSuccess 25 prop_socket_client_connect_error)
   , after AllFinish "socket client connection failure" $
     testProperty "socket sync demo"                      prop_socket_demo
   ]
@@ -155,7 +164,7 @@ prop_socket_send_recv_ipv4
 prop_socket_send_recv_ipv4 f xs = ioProperty $ do
     server:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
     client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
-    prop_socket_send_recv client server f xs
+    prop_socket_send_recv (Socket.addrAddress client) (Socket.addrAddress server) f xs
 
 
 #ifdef OUROBOROS_NETWORK_IPV6
@@ -183,7 +192,8 @@ prop_socket_send_recv_unix request response = ioProperty $ do
                          (Socket.SockAddrUnix serverName) Nothing
         clientAddr = Socket.AddrInfo [] Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
                          (Socket.SockAddrUnix clientName) Nothing
-    r <- prop_socket_send_recv clientAddr serverAddr request response
+    r <- prop_socket_send_recv (Socket.addrAddress clientAddr) (Socket.addrAddress serverAddr)
+                               request response
     cleanUp serverName
     cleanUp clientName
     return $ r
@@ -197,12 +207,12 @@ prop_socket_send_recv_unix request response = ioProperty $ do
 -- | Verify that an initiator and a responder can send and receive messages from each other
 -- over a TCP socket. Large DummyPayloads will be split into smaller segments and the
 -- testcases will verify that they are correctly reassembled into the original message.
-prop_socket_send_recv :: Socket.AddrInfo
-                      -> Socket.AddrInfo
+prop_socket_send_recv :: Socket.SockAddr
+                      -> Socket.SockAddr
                       -> (Int -> Int -> (Int, Int))
                       -> [Int]
                       -> IO Bool
-prop_socket_send_recv initiatorAddr responderAddr f xs = do
+prop_socket_send_recv initiatorAddr responderAddr f xs = withIOManager $ \iocp -> do
 
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
@@ -213,8 +223,10 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
      -}
     siblingVar <- newTVarM 2
 
+    let snocket = socketSnocket iocp
+
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication Mx.ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void ()
+        responderApp :: OuroborosApplication Mx.ResponderApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString Void ()
         responderApp = OuroborosResponderApplication $
           \_peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
@@ -225,7 +237,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
             waitSibling siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
+        initiatorApp :: OuroborosApplication Mx.InitiatorApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
         initiatorApp = OuroborosInitiatorApplication $
           \_peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
@@ -235,34 +247,32 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
             atomically $ putTMVar cv r
             waitSibling siblingVar
 
-    withSockType (Socket.addrAddress initiatorAddr) $ \iaddr -> do
-      let raddr = case matchSockType iaddr (Socket.addrAddress responderAddr) of
-            Nothing -> error "network address families did not match"
-            Just raddr' -> raddr'
-      res <-
-        withServerNode
-          networkTracers
-          (Some raddr)
-          cborTermVersionDataCodec
-          (\(DictVersion _) -> acceptEq)
-          (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-          nullErrorPolicies
-          $ \_ _ -> do
-            connectToNode
-              cborTermVersionDataCodec
-              (NetworkConnectTracers activeMuxTracer nullTracer)
-              (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
-              iaddr
-              raddr
-            atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
+    res <-
+      withServerNode
+        snocket
+        networkTracers
+        responderAddr
+        cborTermVersionDataCodec
+        (\(DictVersion _) -> acceptableVersion)
+        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
+        nullErrorPolicies
+        $ \_ _ -> do
+          connectToNode
+            snocket
+            cborTermVersionDataCodec
+            (NetworkConnectTracers activeMuxTracer nullTracer)
+            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
+            initiatorAddr
+            responderAddr
+          atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
-      return (res == mapAccumL f 0 xs)
+    return (res == mapAccumL f 0 xs)
 
   where
     networkTracers = NetworkServerTracers {
         nstMuxTracer         = activeMuxTracer,
         nstHandshakeTracer   = nullTracer,
-        nstErrorPolicyTracer = nullTracer
+        nstErrorPolicyTracer = showTracing stdoutTracer
       }
 
 
@@ -279,7 +289,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
 prop_socket_recv_close :: (Int -> Int -> (Int, Int))
                        -> [Int]
                        -> Property
-prop_socket_recv_close f _ = ioProperty $ do
+prop_socket_recv_close f _ = ioProperty $ withIOManager $ \iocp -> do
 
     sv   <- newEmptyTMVarM
 
@@ -292,9 +302,12 @@ prop_socket_recv_close f _ = ioProperty $ do
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
 
+    let snocket :: SocketSnocket
+        snocket = rawSocketSnocket iocp
+
     bracket
-      (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
-      Socket.close
+      (open snocket (SocketFamily Socket.AF_INET))
+      (close snocket)
       $ \sd -> do
         -- bind the socket
         muxAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
@@ -303,21 +316,26 @@ prop_socket_recv_close f _ = ioProperty $ do
         Socket.listen sd 1
 
         withAsync
-           -- accept a connection and start mux on it
-          (bracket
-             (Socket.accept sd)
-             (\(sd',_) -> Socket.close sd') $ \(sd',_) -> do
-               let bearer = Mx.socketAsMuxBearer nullTracer sd'
-               Mx.traceMuxBearerState nullTracer Mx.Connected
-               Mx.muxStart nullTracer (toApplication app ()) bearer
+          (
+              -- accept a connection and start mux on it
+              bracket
+                (runAccept $ accept snocket sd)
+                (\(AcceptOk sd' _, _) -> Socket.close sd')
+                $ \(AcceptOk sd' _, _) -> do
+                  let bearer = Mx.socketAsMuxBearer nullTracer sd'
+                  Mx.muxStart nullTracer (toApplication app ()) bearer
           )
           $ \muxAsync -> do
 
           -- connect to muxAddress
-          sd' <- Socket.socket (Socket.addrFamily muxAddress) Socket.Stream Socket.defaultProtocol
-          Socket.connect sd' (Socket.addrAddress muxAddress)
+          sd' <- openToConnect snocket (Socket.addrAddress muxAddress)
+          _ <- connect snocket sd' (Socket.addrAddress muxAddress)
 
+#if defined(mingw32_HOST_OS)
+          Win32.Async.sendAll sd' $ BS.singleton 0xa
+#else
           Socket.sendAll sd' $ BL.singleton 0xa
+#endif
           Socket.close sd'
 
           res <- waitCatch muxAsync
@@ -332,13 +350,15 @@ prop_socket_recv_close f _ = ioProperty $ do
 prop_socket_client_connect_error :: (Int -> Int -> (Int, Int))
                                  -> [Int]
                                  -> Property
-prop_socket_client_connect_error _ xs = ioProperty $ do
+prop_socket_client_connect_error _ xs = ioProperty $ withIOManager $ \iocp -> do
     serverAddr:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
     clientAddr:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
 
     cv <- newEmptyTMVarM
 
-    let app :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
+    let snocket = socketSnocket iocp
+
+    let app :: OuroborosApplication Mx.InitiatorApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
         app = OuroborosInitiatorApplication $
                 \_peerid ReqRespPr channel -> do
                   _ <- runPeer nullTracer
@@ -348,30 +368,33 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
                                   :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO [Int])
                   atomically $ putTMVar cv ()
 
-    withSockType (Socket.addrAddress serverAddr) $ \saddr -> do
-      let caddr = case matchSockType saddr (Socket.addrAddress clientAddr) of
-            Nothing -> error "network address families did not match"
-            Just caddr' -> caddr'
+    let saddr = Socket.addrAddress serverAddr
+    let caddr = Socket.addrAddress clientAddr
+    (res :: Either IOException Bool)
+      <- try $ False <$ connectToNode
+        snocket
+        cborTermVersionDataCodec
+        nullNetworkConnectTracers
+        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+        caddr
+        saddr
 
-      (res :: Either IOException Bool)
-        <- try $ False <$ connectToNode
-          cborTermVersionDataCodec
-          nullNetworkConnectTracers
-          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-          caddr
-          saddr
-
-      -- XXX Disregarding the exact exception type
-      pure $ either (const True) id res
+    -- XXX Disregarding the exact exception type
+    pure $ either (const True) id res
 
 
 demo :: forall block .
         ( Chain.HasHeader block, Serialise (Chain.HeaderHash block)
         , Serialise block, Eq block, Show block )
      => Chain block -> [ChainUpdate block block] -> IO Bool
-demo chain0 updates = do
-    producerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
-    consumerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+demo chain0 updates = withIOManager $ \iocp -> do
+    producerAddressInfo:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    consumerAddressInfo:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+
+    let snocket = socketSnocket iocp
+
+    let producerAddress = Socket.addrAddress producerAddressInfo
+        consumerAddress = Socket.addrAddress consumerAddressInfo
 
     producerVar <- newTVarM (CPS.initChainProducerState chain0)
     consumerVar <- newTVarM chain0
@@ -380,7 +403,7 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        initiatorApp :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols1 IO BL.ByteString () Void
+        initiatorApp :: OuroborosApplication Mx.InitiatorApp (ConnectionId Socket.SockAddr) TestProtocols1 IO BL.ByteString () Void
         initiatorApp = simpleInitiatorApplication $
           \ChainSyncPr ->
               MuxPeer nullTracer
@@ -392,7 +415,7 @@ demo chain0 updates = do
         server :: ChainSync.ChainSyncServer block (Tip block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
-        responderApp :: OuroborosApplication Mx.ResponderApp ConnectionId TestProtocols1 IO BL.ByteString Void ()
+        responderApp :: OuroborosApplication Mx.ResponderApp (ConnectionId Socket.SockAddr) TestProtocols1 IO BL.ByteString Void ()
         responderApp = simpleResponderApplication $
           \ChainSyncPr ->
             MuxPeer nullTracer
@@ -403,37 +426,35 @@ demo chain0 updates = do
                                                   encode             decode
                                                   (encodeTip encode) (decodeTip decode)
 
-    withSockType (Socket.addrAddress producerAddress) $ \paddr -> do
-      let caddr = case matchSockType paddr (Socket.addrAddress consumerAddress) of
-            Nothing -> error "network address families did not match"
-            Just caddr' -> caddr'
-      withServerNode
-        nullNetworkServerTracers
-        (Some paddr)
-        cborTermVersionDataCodec
-        (\(DictVersion _) -> acceptEq)
-        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-        nullErrorPolicies
-        $ \_ _ -> do
-        withAsync
-          (connectToNode
-            cborTermVersionDataCodec
-            nullNetworkConnectTracers
-            (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
-            caddr
-            paddr)
-          $ \ _connAsync -> do
-            void $ fork $ sequence_
-                [ do
-                    threadDelay 10e-4 -- just to provide interest
-                    atomically $ do
-                      p <- readTVar producerVar
-                      let Just p' = CPS.applyChainUpdate update p
-                      writeTVar producerVar p'
-                | update <- updates
-                ]
+    withServerNode
+      snocket
+      nullNetworkServerTracers
+      producerAddress
+      cborTermVersionDataCodec
+      (\(DictVersion _) -> acceptableVersion)
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
+      nullErrorPolicies
+      $ \_ _ -> do
+      withAsync
+        (connectToNode
+          snocket
+          cborTermVersionDataCodec
+          nullNetworkConnectTracers
+          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
+          consumerAddress
+          producerAddress)
+        $ \ _connAsync -> do
+          void $ fork $ sequence_
+              [ do
+                  threadDelay 10e-4 -- just to provide interest
+                  atomically $ do
+                    p <- readTVar producerVar
+                    let Just p' = CPS.applyChainUpdate update p
+                    writeTVar producerVar p'
+              | update <- updates
+              ]
 
-            atomically $ takeTMVar done
+          atomically $ takeTMVar done
 
   where
     checkTip target consumerVar = atomically $ do

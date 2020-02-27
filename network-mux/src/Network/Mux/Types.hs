@@ -18,7 +18,7 @@ module Network.Mux.Types (
 
     , MiniProtocolIx
     , MuxBearer (..)
-    , muxBearerAsControlChannel
+    , muxBearerAsChannel
     , MuxSDU (..)
     , RemoteClockModel (..)
     , remoteClockPrecision
@@ -55,9 +55,6 @@ remoteClockPrecision = 1e-6
 -- and some old ones retired. So we use a dedicated class for this rather than
 -- reusing 'Enum'. This also covers unrecognised protocol numbers on the
 -- decoding side.
---
--- Note: the values @0@ and @1@ are reserved for 'Muxcontrol' and 'DeltaQ'
--- messages.
 --
 newtype MiniProtocolNum = MiniProtocolNum Word16
   deriving (Eq, Ord, Enum, Ix, Show)
@@ -185,14 +182,15 @@ data MuxBearer m = MuxBearer {
     }
 
 
--- | A channel which wraps each message as an 'MuxSDU', each sdu is send as
--- 'Mx.Muxcontrol'.
+-- | A channel which wraps each message as an 'MuxSDU' using giving
+-- 'MiniProtocolNum' and 'MiniProtocolMode'.
 --
-muxBearerAsControlChannel
+muxBearerAsChannel
   :: MuxBearer IO
+  -> MiniProtocolNum
   -> MiniProtocolMode
   -> Channel IO
-muxBearerAsControlChannel bearer mode =
+muxBearerAsChannel bearer protocolNum mode =
       Channel {
         send = \blob -> void $ write bearer (wrap blob),
         recv = Just . msBlob . fst <$> read bearer
@@ -203,7 +201,7 @@ muxBearerAsControlChannel bearer mode =
       wrap blob = MuxSDU {
             -- it will be filled when the 'MuxSDU' is send by the 'bearer'
             msTimestamp = RemoteClockModel 0,
-            msNum  = MiniProtocolNum 0,
+            msNum  = protocolNum,
             msMode = mode,
             msLength = fromIntegral $ BL.length blob,
             msBlob = blob

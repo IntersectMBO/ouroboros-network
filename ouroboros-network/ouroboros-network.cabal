@@ -54,13 +54,14 @@ library
                        Ouroboros.Network.BlockFetch.State
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.Channel
+                       Ouroboros.Network.ConnectionId
                        Ouroboros.Network.Connections.Concurrent
                        Ouroboros.Network.Connections.Socket.Client
                        Ouroboros.Network.Connections.Socket.Server
-                       Ouroboros.Network.Connections.Socket.Types
                        Ouroboros.Network.Connections.Types
                        Ouroboros.Network.Connections.Util
                        Ouroboros.Network.DeltaQ
+                       Ouroboros.Network.IOManager
                        Ouroboros.Network.Magic
                        Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.Mux
@@ -76,6 +77,7 @@ library
                        Ouroboros.Network.PeerSelection.Governor
                        Ouroboros.Network.Server.Version.CBOR
                        Ouroboros.Network.Server.Version.Protocol
+                       Ouroboros.Network.Snocket
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Subscription
                        Ouroboros.Network.Subscription.Ip
@@ -163,6 +165,10 @@ library
                        serialise         >=0.2 && <0.3,
                        stm               >=2.4 && <2.6,
                        time              >=1.6 && <1.10
+
+  if os(windows)
+    build-depends:     Win32-network                 <0.2.0.0,
+                       Win32           >= 2.5.4.1 && <2.9
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -278,6 +284,14 @@ test-suite test-network
                        ouroboros-network,
                        ouroboros-protocol-tests
 
+  if os(windows)
+    build-depends:     Win32-network                 <0.2.0.0,
+                       Win32           >= 2.5.4.1 && <2.9
+
+  if os(windows)
+    build-depends:     Win32-network                 <0.2.0.0,
+                       Win32           >= 2.5.4.1 && <2.9
+
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
@@ -291,6 +305,8 @@ test-suite test-cddl
   main-is:             Main.hs
   if flag(cddl)
     buildable: True
+  else
+    buildable: False
   default-language:    Haskell2010
   build-depends:       base,
                        bytestring,
@@ -343,8 +359,10 @@ executable demo-chain-sync
                        typed-protocols-examples
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -threaded
 
 executable demo-connections
+    buildable: False
     hs-source-dirs: demo
     main-is:        connections.hs
     build-depends:  base,

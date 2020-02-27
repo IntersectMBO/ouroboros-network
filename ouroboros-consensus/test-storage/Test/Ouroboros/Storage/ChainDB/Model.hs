@@ -96,8 +96,9 @@ import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Util (repeatedly)
@@ -105,12 +106,12 @@ import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
-import           Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB,
-                     ChainDbError (..), InvalidBlockReason (..),
+import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
+                     ChainDB, ChainDbError (..), InvalidBlockReason (..),
                      IteratorResult (..), LedgerCursorFailure (..),
                      StreamFrom (..), StreamTo (..), UnknownRange (..),
                      validBounds)
-import           Ouroboros.Storage.ChainDB.Impl.ChainSel (olderThanK)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (olderThanK)
 
 type IteratorId = Int
 
@@ -144,10 +145,10 @@ data Model blk = Model {
   deriving (Generic)
 
 deriving instance
-  ( OuroborosTag (BlockProtocol blk)
-  , ProtocolLedgerView          blk
-  , Block.StandardHash          blk
-  , Show                        blk
+  ( ConsensusProtocol (BlockProtocol blk)
+  , LedgerSupportsProtocol           blk
+  , Block.StandardHash               blk
+  , Show                             blk
   ) => Show (Model blk)
 
 -- [MaxSlotNo and future blocks]
@@ -256,8 +257,8 @@ immutableSlotNo (SecurityParam k) =
 -- that specific range depends currently on the ledger DB's in-memory
 -- representation. Right now we return 'Nothing' only if requesting a 'Point'
 -- that doesn't lie on the current chain
-getPastLedger :: forall blk. ProtocolLedgerView blk
-              => NodeConfig (BlockProtocol blk)
+getPastLedger :: forall blk. LedgerSupportsProtocol blk
+              => TopLevelConfig blk
               -> Point blk -> Model blk -> Maybe (ExtLedgerState blk)
 getPastLedger cfg p m@Model{..} =
     case prefix of
@@ -305,8 +306,8 @@ empty initLedger = Model {
 -- Besides updating the 'currentSlot', future blocks are also added to the
 -- model.
 advanceCurSlot
-  :: forall blk. (ProtocolLedgerView blk, ModelSupportsBlock blk)
-  => NodeConfig (BlockProtocol blk)
+  :: forall blk. (LedgerSupportsProtocol blk, ModelSupportsBlock blk)
+  => TopLevelConfig blk
   -> SlotNo  -- ^ The new current slot
   -> Model blk -> Model blk
 advanceCurSlot cfg curSlot m =
@@ -327,8 +328,8 @@ advanceCurSlot cfg curSlot m =
     advance :: SlotNo -> Model blk -> Model blk
     advance slot m' = m' { currentSlot = slot `max` currentSlot m' }
 
-addBlock :: forall blk. (ProtocolLedgerView blk, ModelSupportsBlock blk)
-         => NodeConfig (BlockProtocol blk)
+addBlock :: forall blk. (LedgerSupportsProtocol blk, ModelSupportsBlock blk)
+         => TopLevelConfig blk
          -> blk
          -> Model blk -> Model blk
 addBlock cfg blk m
@@ -359,7 +360,7 @@ addBlock cfg blk m
     , isOpen        = True
     }
   where
-    secParam = protocolSecurityParam cfg
+    secParam = configSecurityParam cfg
 
     immBlockNo = immutableBlockNo secParam m
 
@@ -387,15 +388,20 @@ addBlock cfg blk m
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk
     (newChain, newLedger) =
-      fromMaybe (currentChain m, currentLedger m) $
-      selectChain (selectView cfg . getHeader) cfg (currentChain m) $
-      filter
-        (Fragment.forksAtMostKBlocks (maxRollbacks secParam) currentChainFrag .
-         Chain.toAnchoredFragment . fst)
-        candidates
+        fromMaybe (currentChain m, currentLedger m)
+      . selectChain
+          (selectView (configBlock cfg) . getHeader)
+          (configConsensus cfg)
+          (currentChain m)
+      . filter
+          ( Fragment.forksAtMostKBlocks (maxRollbacks secParam) currentChainFrag
+          . Chain.toAnchoredFragment
+          . fst
+          )
+      $ candidates
 
-addBlocks :: (ProtocolLedgerView blk, ModelSupportsBlock blk)
-          => NodeConfig (BlockProtocol blk)
+addBlocks :: (LedgerSupportsProtocol blk, ModelSupportsBlock blk)
+          => TopLevelConfig blk
           -> [blk]
           -> Model blk -> Model blk
 addBlocks cfg = repeatedly (addBlock cfg)
@@ -530,7 +536,7 @@ readerClose rdrId m
 -------------------------------------------------------------------------------}
 
 getLedgerCursor
-  :: forall blk. ProtocolLedgerView blk
+  :: forall blk. LedgerSupportsProtocol blk
   => Model blk -> (LedgerCursorId, Model blk)
 getLedgerCursor m@Model { ledgerCursors = lcs, currentLedger } =
     (lcId, m { ledgerCursors = Map.insert lcId currentLedger lcs })
@@ -546,8 +552,8 @@ ledgerCursorState lcId m
     = error $ "unknown ledgerCursor: " <> show lcId
 
 ledgerCursorMove
-  :: forall blk. ProtocolLedgerView blk
-  => NodeConfig (BlockProtocol blk)
+  :: forall blk. LedgerSupportsProtocol blk
+  => TopLevelConfig blk
   -> LedgerCursorId
   -> Point blk
   -> Model blk
@@ -555,7 +561,7 @@ ledgerCursorMove
 ledgerCursorMove cfg lcId pt m@Model { ledgerCursors = lcs }
     | Just ledgerState <- getPastLedger cfg pt m
     = (Right ledgerState, m { ledgerCursors = Map.insert lcId ledgerState lcs })
-    | pointSlot pt < immutableSlotNo (protocolSecurityParam cfg) m
+    | pointSlot pt < immutableSlotNo (configSecurityParam cfg) m
     = (Left PointTooOld, m)
     | otherwise
     = (Left PointNotOnChain, m)
@@ -598,8 +604,8 @@ data ValidationResult blk
       -- ^ The ledger state corresponding to the tip of the valid prefix of
       -- the chain.
 
-validate :: forall blk. ProtocolLedgerView blk
-         => NodeConfig (BlockProtocol blk)
+validate :: forall blk. LedgerSupportsProtocol blk
+         => TopLevelConfig blk
          -> ExtLedgerState blk
          -> Chain blk
          -> ValidationResult blk
@@ -638,8 +644,8 @@ chains bs = go Chain.Genesis
     fwd :: Map (ChainHash blk) (Map (HeaderHash blk) blk)
     fwd = successors (Map.elems bs)
 
-validChains :: forall blk. ProtocolLedgerView blk
-            => NodeConfig (BlockProtocol blk)
+validChains :: forall blk. LedgerSupportsProtocol blk
+            => TopLevelConfig blk
             -> ExtLedgerState blk
             -> Map (HeaderHash blk) blk
             -> ( Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)

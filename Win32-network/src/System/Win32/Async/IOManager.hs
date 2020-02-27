@@ -34,6 +34,7 @@ import System.Win32.Async.ErrCode
 -- <https://docs.microsoft.com/en-us/windows/win32/fileio/createiocompletionport>
 --
 newtype IOCompletionPort = IOCompletionPort HANDLE
+  deriving Show
 
 closeIOCompletionPort :: IOCompletionPort -> IO ()
 closeIOCompletionPort (IOCompletionPort iocp) = Win32.closeHandle iocp
@@ -55,6 +56,9 @@ createIOCompletionPort concurrentThreads
 foreign import ccall unsafe "windows.h CreateIoCompletionPort"
     c_CreateIoCompletionPort :: HANDLE -> HANDLE -> Ptr () -> DWORD -> IO HANDLE
 
+-- | Associate with I/O completion port.  This can be used multiple times on
+-- a file descriptor.
+--
 associateWithIOCompletionPort :: Either HANDLE Socket
                               -> IOCompletionPort
                               -> IO ()
