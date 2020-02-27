@@ -1,4 +1,6 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -19,10 +21,15 @@ import           Data.Sequence.Strict (StrictSeq)
 import qualified Data.Sequence.Strict as Seq
 import qualified Data.Set as Set
 import           Data.Word (Word16)
+import           GHC.Generics (Generic)
+
+import           Cardano.Prelude (NoUnexpectedThunks (..),
+                     unsafeNoUnexpectedThunks)
 
 import           Control.Exception (assert)
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict (checkInvariant)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer)
 
@@ -133,7 +140,11 @@ data ServerState txid tx = ServerState {
        --
        numTxsToAcknowledge    :: Word16
      }
-  deriving Show
+  deriving (Show, Generic)
+
+instance ( NoUnexpectedThunks txid
+         , NoUnexpectedThunks tx
+         ) => NoUnexpectedThunks (ServerState txid tx)
 
 initialServerState :: ServerState txid tx
 initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
@@ -141,14 +152,21 @@ initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
 
 txSubmissionInbound
   :: forall txid tx idx m.
-     (Ord txid, Ord idx, MonadSTM m, MonadThrow m)
+     ( Ord txid
+     , Ord idx
+     , NoUnexpectedThunks txid
+     , NoUnexpectedThunks tx
+     , MonadSTM m
+     , MonadThrow m
+     )
   => Tracer m (TraceTxSubmissionInbound txid tx)
   -> Word16         -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m
   -> TxSubmissionServerPipelined txid tx m ()
 txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
-    TxSubmissionServerPipelined (serverIdle Zero initialServerState)
+    TxSubmissionServerPipelined $
+      continueWithStateM (serverIdle Zero) initialServerState
   where
     -- TODO #1656: replace these fixed limits by policies based on
     -- TxSizeInBytes and delta-Q and the bandwidth/delay product.
@@ -171,7 +189,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
         -- There are no replies in flight, but we do know some more txs we can
         -- ask for, so lets ask for them and more txids.
       | canRequestMoreTxs st
-      = pure $ serverReqTxs Zero st
+      = pure $ continueWithState (serverReqTxs Zero) st
 
         -- There's no replies in flight, and we have no more txs we can ask for
         -- so the only remaining thing to do is to ask for more txids. Since
@@ -187,7 +205,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
           (numTxsToAcknowledge st)
           numTxIdsToRequest
           ()                -- Our result if the client terminates the protocol
-          ( handleReply Zero st {
+          ( collectAndContinueWithState (handleReply Zero) st {
               numTxsToAcknowledge    = 0,
               requestedTxIdsInFlight = numTxIdsToRequest
             }
@@ -209,15 +227,15 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
         --
       | canRequestMoreTxs st
       = pure $ CollectPipelined
-          (Just (serverReqTxs (Succ n) st))
-          (handleReply n st)
+          (Just (continueWithState (serverReqTxs (Succ n)) st))
+          (collectAndContinueWithState (handleReply n) st)
 
         -- In this case there is nothing else to do so we block until we
         -- collect a reply.
       | otherwise
       = pure $ CollectPipelined
           Nothing
-          (handleReply n st)
+          (collectAndContinueWithState (handleReply n) st)
 
     canRequestMoreTxs :: ServerState k tx -> Bool
     canRequestMoreTxs st =
@@ -251,7 +269,9 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
         availableTxids         = availableTxids st <> txidsMap
       }
       mpSnapshot <- atomically mempoolGetSnapshot
-      serverIdle n (acknowledgeTxIdsInMempool st' mpSnapshot)
+      continueWithStateM
+        (serverIdle n)
+        (acknowledgeTxIdsInMempool st' mpSnapshot)
 
     handleReply n st (CollectTxs txids txs) = do
 
@@ -302,7 +322,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
 
       _ <- mempoolAddTxs txsReady
 
-      serverIdle n st {
+      continueWithStateM (serverIdle n) st {
         bufferedTxs         = bufferedTxs'',
         unacknowledgedTxIds = unacknowledgedTxIds',
         numTxsToAcknowledge = numTxsToAcknowledge st
@@ -365,7 +385,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
     serverReqTxs n st =
         SendMsgRequestTxsPipelined
           (Map.keys txsToRequest)
-          (serverReqTxIds (Succ n) st {
+          (continueWithStateM (serverReqTxIds (Succ n)) st {
              availableTxids = availableTxids'
            })
       where
@@ -390,14 +410,14 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
       = pure $ SendMsgRequestTxIdsPipelined
           (numTxsToAcknowledge st)
           numTxIdsToRequest
-          (serverIdle (Succ n) st {
+          (continueWithStateM (serverIdle (Succ n)) st {
                 requestedTxIdsInFlight = requestedTxIdsInFlight st
                                        + numTxIdsToRequest,
                 numTxsToAcknowledge    = 0
               })
 
       | otherwise
-      = serverIdle n st
+      = continueWithStateM (serverIdle n) st
       where
         -- This definition is justified by the fact that the
         -- 'numTxsToAcknowledge' are not included in the 'unacknowledgedTxIds'.
@@ -406,3 +426,32 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
                   - fromIntegral (Seq.length (unacknowledgedTxIds st))
                   - requestedTxIdsInFlight st)
           `min` maxTxIdsToRequest
+
+-- | After checking that there are no unexpected thunks in the provided state,
+-- pass it to the provided function.
+--
+-- See 'checkInvariant' and 'unsafeNoUnexpectedThunks'.
+continueWithState :: NoUnexpectedThunks s
+                  => (s -> ServerStIdle n txid tx m ())
+                  -> s
+                  -> ServerStIdle n txid tx m ()
+continueWithState f !st = checkInvariant (unsafeNoUnexpectedThunks st) (f st)
+
+-- | A variant of 'continueWithState' to be more easily utilized with
+-- 'serverIdle' and 'serverReqTxIds'.
+continueWithStateM :: NoUnexpectedThunks s
+                   => (s -> m (ServerStIdle n txid tx m ()))
+                   -> s
+                   -> m (ServerStIdle n txid tx m ())
+continueWithStateM f !st = checkInvariant (unsafeNoUnexpectedThunks st) (f st)
+
+-- | A variant of 'continueWithState' to be more easily utilized with
+-- 'handleReply'.
+collectAndContinueWithState :: NoUnexpectedThunks s
+                            => (s -> Collect txid tx
+                                  -> m (ServerStIdle n txid tx m ()))
+                            -> s
+                            -> Collect txid tx
+                            -> m (ServerStIdle n txid tx m ())
+collectAndContinueWithState f !st c =
+    checkInvariant (unsafeNoUnexpectedThunks st) (f st c)
