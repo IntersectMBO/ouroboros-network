@@ -9,7 +9,7 @@
 -- overall node to client protocol, as a collection of mini-protocols.
 --
 module Ouroboros.Network.NodeToClient (
-    NodeToClientProtocols(..)
+    nodeToClientProtocols
   , NodeToClientVersion (..)
   , NodeToClientVersionData (..)
   , DictVersion (..)
@@ -78,16 +78,13 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
-import           Codec.SerialiseTerm
 
-import           Network.Mux hiding (MiniProtocolLimits(..))
-import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
-import           Network.TypedProtocol.Driver (TraceSendRecv (..))
-
+import           Ouroboros.Network.Driver (TraceSendRecv(..))
+import           Ouroboros.Network.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Tracers
-import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
 import           Ouroboros.Network.Protocol.Handshake.Type
@@ -101,28 +98,41 @@ import           Ouroboros.Network.Subscription.Ip (SubscriptionTrace (..))
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.IOManager
 
--- | An index type used with the mux to enumerate all the mini-protocols that
+-- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-client protocol.
 --
-data NodeToClientProtocols = ChainSyncWithBlocksPtcl
-                           | LocalTxSubmissionPtcl
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
--- | These are the actual wire format protocol numbers.
+-- This function specifies the wire format protocol numbers.
 --
--- These are chosen to not overlap with the node to node protocol numbers.
+-- They are chosen to not overlap with the node to node protocol numbers.
 -- This is not essential for correctness, but is helpful to allow a single
 -- shared implementation of tools that can analyse both protocols, e.g.
 -- wireshark plugins.
 --
-instance ProtocolEnum NodeToClientProtocols where
-  fromProtocolEnum ChainSyncWithBlocksPtcl = MiniProtocolNum 5
-  fromProtocolEnum LocalTxSubmissionPtcl   = MiniProtocolNum 6
+nodeToClientProtocols
+  :: RunMiniProtocol appType bytes m a b -- ^ localChainSync
+  -> RunMiniProtocol appType bytes m a b -- ^ localTxSubmission
+  -> OuroborosApplication appType bytes m a b
+nodeToClientProtocols localChainSync localTxSubmission =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 5,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = localChainSync
+      }
+    , MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 6,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = localTxSubmission
+      }
+    ]
 
-instance MiniProtocolLimits NodeToClientProtocols where
   -- TODO: provide sensible limits
   -- https://github.com/input-output-hk/ouroboros-network/issues/575
-  maximumIngressQueue _ = 0xffffffff
+maximumMiniProtocolLimits :: MiniProtocolLimits
+maximumMiniProtocolLimits =
+    MiniProtocolLimits {
+      maximumIngressQueue = 0xffffffff
+    }
 
 -- | Enumeration of node to client protocol versions.
 --
@@ -167,10 +177,11 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 connectTo
   :: LocalSnocket
   -- ^ callback constructed by 'Ouroboros.Network.IOManager.withIOManager'
-  -> NetworkConnectTracers LocalAddress NodeToClientProtocols NodeToClientVersion
+  -> NetworkConnectTracers LocalAddress NodeToClientVersion
   -> Versions NodeToClientVersion
               DictVersion
-              (OuroborosApplication InitiatorApp (ConnectionId LocalAddress) NodeToClientProtocols IO BL.ByteString a b)
+              (ConnectionId LocalAddress ->
+                 OuroborosApplication InitiatorApp BL.ByteString IO a b)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
@@ -190,11 +201,12 @@ connectTo snocket tracers versions path =
 --
 connectTo_V1
   :: LocalSnocket
-  -> NetworkConnectTracers LocalAddress NodeToClientProtocols NodeToClientVersion
+  -> NetworkConnectTracers LocalAddress NodeToClientVersion
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> (OuroborosApplication InitiatorApp (ConnectionId LocalAddress) NodeToClientProtocols IO BL.ByteString a b)
+  -> (ConnectionId LocalAddress ->
+        OuroborosApplication InitiatorApp BL.ByteString IO a b)
   -- ^ 'OuroborosInitiatorApplication' which is run on an established connection
   -- using a multiplexer after the initial handshake protocol suceeds.
   -> FilePath
@@ -221,11 +233,12 @@ withServer
   :: ( HasResponder appType ~ True
      )
   => LocalSnocket
-  -> NetworkServerTracers LocalAddress NodeToClientProtocols NodeToClientVersion
+  -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
   -> LocalAddress
   -> Versions NodeToClientVersion DictVersion
-              (OuroborosApplication appType (ConnectionId LocalAddress) NodeToClientProtocols IO BL.ByteString a b)
+              (ConnectionId LocalAddress ->
+                 OuroborosApplication appType BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState addr versions errPolicies =
@@ -236,7 +249,7 @@ withServer sn tracers networkState addr versions errPolicies =
     addr
     cborTermVersionDataCodec
     (\(DictVersion _) -> acceptableVersion)
-    (SomeResponderApplication <$> versions)
+    (fmap (SomeResponderApplication .) versions)
     errPolicies
     (\_ async -> Async.wait async)
 
@@ -249,13 +262,14 @@ withServer_V1
   :: ( HasResponder appType ~ True
      )
   => LocalSnocket
-  -> NetworkServerTracers LocalAddress NodeToClientProtocols NodeToClientVersion
+  -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
   -> LocalAddress
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> (OuroborosApplication appType (ConnectionId LocalAddress) NodeToClientProtocols IO BL.ByteString a b)
+  -> (ConnectionId LocalAddress ->
+        OuroborosApplication appType BL.ByteString IO a b)
   -- ^ applications which has the reponder side, i.e.
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
@@ -271,7 +285,7 @@ withServer_V1 sn tracers networkState addr versionData application =
         application)
 
 type NetworkClientSubcriptionTracers
-    = NetworkSubscriptionTracers Identity LocalAddress NodeToClientProtocols NodeToClientVersion
+    = NetworkSubscriptionTracers Identity LocalAddress NodeToClientVersion
 
 
 -- | 'ncSubscriptionWorker' which starts given application versions on each
@@ -288,11 +302,10 @@ ncSubscriptionWorker
     -> Versions
         NodeToClientVersion
         DictVersion
-        (OuroborosApplication
-          appType
-          (ConnectionId LocalAddress)
-          NodeToClientProtocols
-          IO BL.ByteString x y)
+        (ConnectionId LocalAddress ->
+           OuroborosApplication
+             appType
+             BL.ByteString IO x y)
     -> IO Void
 ncSubscriptionWorker
   sn
@@ -324,15 +337,14 @@ ncSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => LocalSnocket
-    -> NetworkSubscriptionTracers Identity LocalAddress NodeToClientProtocols NodeToClientVersion
+    -> NetworkClientSubcriptionTracers
     -> NetworkMutableState LocalAddress
     -> ClientSubscriptionParams ()
     -> NodeToClientVersionData
-    -> (OuroborosApplication
-          appType
-          (ConnectionId LocalAddress)
-          NodeToClientProtocols
-          IO BL.ByteString x y)
+    -> (ConnectionId LocalAddress ->
+          OuroborosApplication
+            appType
+            BL.ByteString IO x y)
     -> IO Void
 ncSubscriptionWorker_V1
   sn

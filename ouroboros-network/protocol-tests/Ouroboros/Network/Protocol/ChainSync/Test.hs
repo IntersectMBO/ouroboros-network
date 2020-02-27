@@ -24,12 +24,11 @@ import           Control.Tracer (nullTracer)
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs (connect, connectPipelined)
 
 import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Codec
+import           Ouroboros.Network.Driver
 
 import           Ouroboros.Network.Block (Serialised (..), StandardHash,
                      Tip (..), castPoint, decodeTip, encodeTip, legacyTip,

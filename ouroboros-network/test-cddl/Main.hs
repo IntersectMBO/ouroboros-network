@@ -26,12 +26,13 @@ import qualified Codec.Serialise.Class as Serialise
 import Codec.CBOR.Decoding as CBOR (Decoder, decodeBytes ,decodeListLenOf, decodeWord)
 import Codec.CBOR.Encoding (encodeBytes, encodeListLen, encodeWord)
 import Codec.CBOR.Term as CBOR
-import Codec.CBOR.Read
+import Codec.CBOR.Read (deserialiseFromBytes)
 import Codec.CBOR.Write (toLazyByteString)
 
 import Ouroboros.Network.Block (HeaderHash, Point, Tip, encodeTip, decodeTip, wrapCBORinCBOR, unwrapCBORinCBOR)
 import Ouroboros.Network.Testing.ConcreteBlock (BlockHeader (..), Block)
 
+import Ouroboros.Network.Codec
 import Ouroboros.Network.Protocol.ChainSync.Type as CS
 import Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSync)
 import Ouroboros.Network.Protocol.ChainSync.Test ()
@@ -48,12 +49,6 @@ import Ouroboros.Network.Protocol.LocalTxSubmission.Codec (codecLocalTxSubmissio
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type as LocalTxSubmission
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test as LocalTxSubmission (Tx, Reject)
 
-
-import Network.TypedProtocol.Codec
-import Network.TypedProtocol.ReqResp.Codec.CBOR (codecReqResp)
-import Network.TypedProtocol.ReqResp.Type as ReqResp
-import Network.TypedProtocol.PingPong.Type as PingPong
-import Network.TypedProtocol.PingPong.Codec.CBOR (codecPingPong)
 
 -- These files must be in place:
 specFile :: FilePath
@@ -75,20 +70,17 @@ tests =
 -- These tests call the CDDL-tool to parse an arbitray message.
 -- The parser of the CDDL-tool is slow (exponential runtime & space).
     testProperty "encode ChainSync"             prop_specCS
-  , testProperty "encode Request-Response"      prop_specReqResp
   , testProperty "encode BlockFetch"            prop_specBF
   , testProperty "encode TxSubmission"          prop_specTxSubmission
   , testProperty "encode Handshake"             prop_specHandshake
-  , testProperty "encode PingPong"              prop_specPingPong
   , testProperty "encode local Tx submission"   prop_specLocalTxSubmission
   -- Test the parsers with CDDL-generated messages.
   , testProperty "generate and decode" $ ioProperty $ generateAndDecode 100 specFile
   ]
 
 -- The concrete/monomorphic types used for the test.
-type MonoCodec x = Codec x Codec.CBOR.Read.DeserialiseFailure IO ByteString
+type MonoCodec x = Codec x DeserialiseFailure IO ByteString
 type CS = ChainSync BlockHeader (Tip BlockHeader)
-type RR = ReqResp DummyBytes DummyBytes
 type BF = BlockFetch Block
 type HS = Handshake VersionNumber CBOR.Term
 type TS = TxSubmission TxId Tx
@@ -113,12 +105,6 @@ codecLT = codecLocalTxSubmission Serialise.encode Serialise.decode Serialise.enc
 
 prop_specCS :: AnyMessageAndAgency CS -> Property
 prop_specCS = prop_CDDLSpec (0, codecCS)
-
-prop_specReqResp :: AnyMessageAndAgency RR -> Property
-prop_specReqResp = prop_CDDLSpec (1, codecReqResp)
-
-prop_specPingPong :: AnyMessageAndAgency PingPong -> Property
-prop_specPingPong = prop_CDDLSpec (2, codecPingPong)
 
 prop_specBF :: AnyMessageAndAgency BF -> Property
 prop_specBF = prop_CDDLSpec (3, codecBF)
@@ -215,8 +201,7 @@ decodeTopTerm input
 decodeMsg :: (Word, ByteString) -> IO ()
 decodeMsg (tag, input) = case tag of
     0 -> tryParsers ["chainSync"]             chainSyncParsers
-    1 -> tryParsers ["reqResp"]               reqRespParsers
-    2 -> tryParsers ["pingPong"]              pingPongParsers
+    -- 1 & 2 were used for ReqResp and PingPong
     3 -> tryParsers ["blockFetch"]            blockFetchParsers
     4 -> tryParsers ["txSubmission"]          txSubmissionParsers
     5 -> tryParsers ["handshake"]             handshakeParsers
@@ -230,7 +215,7 @@ decodeMsg (tag, input) = case tag of
         -- This isn't ideal but it's better than nothing. In case they all
         -- fail, error messages for each are given in order.
         tryParsers :: [String] -> [IO (Maybe String)] -> IO ()
-        tryParsers traces [] = error $ intercalate "\n" (reverse ("parse failed: " : traces))
+        tryParsers traces [] = error $ intercalate "\n" (reverse (show (BSL.unpack input) : "parse failed: " : traces))
         tryParsers traces (h:t) = h >>= \case
             Nothing  -> return ()
             Just errorMsg -> tryParsers (errorMsg : traces) t
@@ -264,18 +249,6 @@ decodeMsg (tag, input) = case tag of
             , runCS (ServerAgency CS.TokIntersect)
             ]
 
-        runReqResp = run (codecReqResp :: MonoCodec RR)
-        reqRespParsers = [
-              runReqResp (ClientAgency ReqResp.TokIdle)
-            , runReqResp (ServerAgency ReqResp.TokBusy)
-            ]
-
-        runPingPong = run (codecPingPong :: MonoCodec PingPong)
-        pingPongParsers = [
-              runPingPong (ClientAgency PingPong.TokIdle)
-            , runPingPong (ServerAgency PingPong.TokBusy)
-            ]
-
         runBlockFetch = run codecBF
 
         blockFetchParsers = [
@@ -304,35 +277,3 @@ decodeMsg (tag, input) = case tag of
             , runLT (ServerAgency LocalTxSubmission.TokBusy)
             ]
 
-
-instance (Arbitrary req, Arbitrary resp) => Arbitrary (AnyMessageAndAgency (ReqResp req resp)) where
-  arbitrary = oneof
-    [ AnyMessageAndAgency (ClientAgency ReqResp.TokIdle) . MsgReq  <$> arbitrary
-    , AnyMessageAndAgency (ServerAgency ReqResp.TokBusy) . MsgResp <$> arbitrary
-    , pure $ AnyMessageAndAgency (ClientAgency ReqResp.TokIdle) ReqResp.MsgDone
-    ]
-
-instance (Show req, Show resp) => Show (AnyMessageAndAgency (ReqResp req resp)) where
-  show (AnyMessageAndAgency _ msg) = show msg
-
-instance (Eq req, Eq resp) => Eq (AnyMessage (ReqResp req resp)) where
-  AnyMessage (MsgReq r1)  == AnyMessage (MsgReq r2)  = r1 == r2
-  AnyMessage (MsgResp r1) == AnyMessage (MsgResp r2) = r1 == r2
-  AnyMessage ReqResp.MsgDone      == AnyMessage ReqResp.MsgDone      = True
-  _                               == _                               = False
-
-instance Arbitrary (AnyMessageAndAgency PingPong) where
-  arbitrary = elements
-    [ AnyMessageAndAgency (ClientAgency PingPong.TokIdle) MsgPing
-    , AnyMessageAndAgency (ServerAgency PingPong.TokBusy) MsgPong
-    , AnyMessageAndAgency (ClientAgency PingPong.TokIdle) PingPong.MsgDone
-    ]
-
-instance Eq (AnyMessage PingPong) where
-  AnyMessage MsgPing == AnyMessage MsgPing = True
-  AnyMessage MsgPong == AnyMessage MsgPong = True
-  AnyMessage PingPong.MsgDone == AnyMessage PingPong.MsgDone = True
-  _                  ==                  _ = False
-
-instance Show (AnyMessageAndAgency PingPong) where
-  show (AnyMessageAndAgency _ msg) = show msg

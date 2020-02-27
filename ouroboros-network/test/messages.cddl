@@ -3,44 +3,11 @@
 
 allMessages
     = [0, chainSyncMessage]
-    / [1, reqRespMessage]
-    / [2, pingPongMessage]
+    ; deleted ping pong and req/resp
     / [3, blockFetchMessage]
     / [4, txSubmissionMessage]
     / [5, handshakeMessage]
     / [6, localTxSubmissionMessage]
-
-; The Request Response Protocol and the PingPing protocol
-; are uses as examples and for testing.
-
-; Request Response Protocol :
-; reference implementation of the codec in
-; typed-protocols/src/Network/TypedProtocol/ReqResp/Codec.hs
-
-reqRespMessage
-    = msgRequest
-    / msgResponse
-    / reqRespMsgDone
-
-msgRequest     = [0, requestData]
-msgResponse    = [1, responseData]
-reqRespMsgDone = [2]
-
-requestData  = bytes .cbor any
-responseData = bytes .cbor any
-
-; Ping-Pong Protocol
-; reference implementation of the codec in
-; typed-protocols/src/Network/TypedProtocol/PingPong/Codec.hs
-
-pingPongMessage
-    = msgPing
-    / msgPong
-    / pingPongMsgDone
-
-msgPing = 0
-msgPong = 1
-pingPongMsgDone = 2
 
 ; ChainSync Protocol
 ; reference implementation of the codec in :

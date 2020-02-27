@@ -23,7 +23,6 @@ import           Data.Functor (void)
 import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
 
-import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (SockAddr, AddrInfo)
 import qualified Network.Socket as Socket
@@ -34,16 +33,13 @@ import qualified Ouroboros.Network.Snocket as Snocket
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import           Ouroboros.Network.Protocol.Handshake.Version
 
+import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToClient ( NodeToClientProtocols (..)
-                                                , NodeToClientVersion (..)
-                                                )
+import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..) )
 import qualified Ouroboros.Network.NodeToClient as NodeToClient
-import           Ouroboros.Network.NodeToNode ( NodeToNodeProtocols (..)
-                                              , NodeToNodeVersion (..)
-                                              )
+import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
 import           Ouroboros.Network.Socket ( ConnectionId (..)
                                           , NetworkMutableState
@@ -96,39 +92,28 @@ data DiffusionApplications = DiffusionApplications {
       daResponderApplication      :: Versions
                                        NodeToNodeVersion
                                        DictVersion
-                                       (OuroborosApplication
-                                         'ResponderApp
-                                         (ConnectionId SockAddr)
-                                         NodeToNodeProtocols
-                                         IO
-                                         ByteString
-                                         Void
-                                         ())
+                                       (ConnectionId SockAddr ->
+                                          OuroborosApplication
+                                            ResponderApp
+                                            ByteString IO Void ())
       -- ^ NodeToNode reposnder application (server role)
 
     , daInitiatorApplication      :: Versions
                                        NodeToNodeVersion
                                        DictVersion 
-                                       (OuroborosApplication
-                                         'InitiatorApp
-                                         (ConnectionId SockAddr)
-                                         NodeToNodeProtocols
-                                         IO
-                                         ByteString
-                                         () Void)
+                                       (ConnectionId SockAddr ->
+                                          OuroborosApplication
+                                            InitiatorApp
+                                            ByteString IO () Void)
       -- ^ NodeToNode initiator application (client role)
 
     , daLocalResponderApplication :: Versions
                                        NodeToClientVersion
                                        DictVersion
-                                       (OuroborosApplication
-                                          'ResponderApp
-                                          (ConnectionId LocalAddress)
-                                          NodeToClientProtocols
-                                          IO
-                                          ByteString
-                                          Void
-                                          ())
+                                       (ConnectionId SockAddr ->
+                                          OuroborosApplication
+                                            ResponderApp
+                                            ByteString IO Void ())
       -- ^ NodeToClient responder applicaton (server role)
 
     , daErrorPolicies :: ErrorPolicies

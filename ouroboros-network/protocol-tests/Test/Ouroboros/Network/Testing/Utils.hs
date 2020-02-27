@@ -6,7 +6,7 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Codec.CBOR.Read      as CBOR
 import qualified Codec.CBOR.Term      as CBOR
 
-import           Network.TypedProtocol.Codec
+import           Ouroboros.Network.Codec
 
 -- | Generate all 2-splits of a string.
 splits2 :: LBS.ByteString -> [[LBS.ByteString]]

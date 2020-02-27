@@ -10,7 +10,7 @@
 
 -- | Drivers for running 'Peer's.
 --
-module Network.TypedProtocol.Driver.Limits (
+module Ouroboros.Network.Driver.Limits (
 
   -- * Limits
   ProtocolSizeLimits(..),
@@ -36,13 +36,13 @@ import Control.Monad.Class.MonadTime
 import Control.Monad.Class.MonadTimer
 import Control.Tracer (Tracer (..), traceWith)
 
-import Network.TypedProtocol.Driver.General
-import Network.TypedProtocol.Driver.Simple (TraceSendRecv(..))
-
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
-import Network.TypedProtocol.Channel
-import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Driver
+
+import Ouroboros.Network.Codec
+import Ouroboros.Network.Channel
+import Ouroboros.Network.Driver.Simple (TraceSendRecv(..))
 
 
 data ProtocolSizeLimits ps bytes = ProtocolSizeLimits {

@@ -2,8 +2,11 @@ module Main (main) where
 
 import           Test.Tasty
 
-import qualified Network.TypedProtocol.PingPong.Codec.Tests as PingPong
-import qualified Network.TypedProtocol.ReqResp.Codec.Tests as ReqResp
+import qualified Test.Network.TypedProtocol.PingPong.Codec as PingPong
+import qualified Test.Network.TypedProtocol.ReqResp.Codec as ReqResp
+import qualified Test.Ouroboros.Network.Driver as Driver
+import qualified Test.Ouroboros.Network.Socket as Socket
+import qualified Test.Ouroboros.Network.Subscription as Subscription
 
 main :: IO ()
 main = defaultMain tests
@@ -13,6 +16,9 @@ tests =
   testGroup "typed-protocols"
   [ PingPong.tests
   , ReqResp.tests
+  , Driver.tests
+  , Socket.tests
+  , Subscription.tests
   ]
 
 

@@ -4,10 +4,10 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Ouroboros.Network.Protocol.Handshake.Version
   ( Versions (..)
-  , simpleSingletonVersions
   , Application (..)
   , Version (..)
   , Sigma (..)
@@ -15,15 +15,25 @@ module Ouroboros.Network.Protocol.Handshake.Version
   , Acceptable (..)
   , Dict (..)
   , DictVersion (..)
+  , CodecCBORTerm (..)
   , pickVersions
   , VersionMismatch (..)
+
+  -- * Simple or no versioning
+  , simpleSingletonVersions
+  , unversionedProtocol
   ) where
 
 import Data.Map (Map)
 import Data.Text (Text)
+import qualified Data.Text as T
 import qualified Data.Map as Map
 import Data.Typeable ((:~:)(Refl), Typeable, eqT)
-import Codec.SerialiseTerm
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Term as CBOR
+import Codec.Serialise (Serialise(..))
+
 
 -- Description of versions.
 --
@@ -58,19 +68,6 @@ instance Functor (Versions vNum extra) where
     fmap f (Versions vs) = Versions $ Map.map fmapSigma vs
       where
         fmapSigma (Sigma t (Version (Application app) extra)) = Sigma t (Version (Application $ \x y -> f (app x y)) extra)
-
--- | Singleton smart constructor for @'Versions'@.
---
-simpleSingletonVersions
-  :: vNum
-  -> vData
-  -> extra vData
-  -> r
-  -> Versions vNum extra r
-simpleSingletonVersions vNum vData extra r =
-  Versions
-    $ Map.singleton vNum
-        (Sigma vData (Version (Application $ \_ _ -> r) extra))
 
 data Sigma f where
   Sigma :: !t -> !(f t) -> Sigma f
@@ -111,6 +108,11 @@ data DictVersion vData where
                     )
                  => CodecCBORTerm Text vData
                  -> DictVersion vData
+
+data CodecCBORTerm fail a = CodecCBORTerm
+  { encodeTerm :: a -> CBOR.Term
+  , decodeTerm :: CBOR.Term -> Either fail a
+  }
 
 -- | Pick the version with the highest version number (by `Ord vNum`) common
 -- in both maps.
@@ -176,3 +178,59 @@ exVersions = Versions $ Map.fromList
   , (1, Sigma (Magic 42) exVersion2)
   ]
 -}
+
+--
+-- Simple version negotation
+--
+
+-- | Singleton smart constructor for 'Versions'.
+--
+simpleSingletonVersions
+  :: vNum
+  -> vData
+  -> extra vData
+  -> r
+  -> Versions vNum extra r
+simpleSingletonVersions vNum vData extra r =
+  Versions
+    $ Map.singleton vNum
+        (Sigma vData (Version (Application $ \_ _ -> r) extra))
+
+-- | Version negotiation for an unversioned protocol. Only use this for
+-- tests and demos where proper versioning is excessive.
+--
+data UnversionedProtocol = UnversionedProtocol
+  deriving (Eq, Ord, Enum, Show)
+
+instance Serialise UnversionedProtocol where
+    encode UnversionedProtocol = CBOR.encodeWord 1
+    decode = do
+      tag <- CBOR.decodeWord
+      case tag of
+        1 -> return UnversionedProtocol
+        _ -> fail "decode UnversionedProtocol: expected version 1"
+
+data UnversionedProtocolData = UnversionedProtocolData
+  deriving (Eq, Show)
+
+instance Acceptable UnversionedProtocolData where
+  acceptableVersion UnversionedProtocolData
+                    UnversionedProtocolData = Accept
+
+unversionedProtocolDataCodec :: CodecCBORTerm Text UnversionedProtocolData
+unversionedProtocolDataCodec = CodecCBORTerm {encodeTerm, decodeTerm}
+    where
+      encodeTerm :: UnversionedProtocolData -> CBOR.Term
+      encodeTerm UnversionedProtocolData = CBOR.TNull
+
+      decodeTerm :: CBOR.Term -> Either Text UnversionedProtocolData
+      decodeTerm CBOR.TNull = Right UnversionedProtocolData
+      decodeTerm t          = Left $ T.pack $ "unexpected term: " ++ show t
+
+-- | Make a 'Versions' for an unversioned protocol. Only use this for
+-- tests and demos where proper versioning is excessive.
+--
+unversionedProtocol :: app -> Versions UnversionedProtocol DictVersion app
+unversionedProtocol =
+    simpleSingletonVersions UnversionedProtocol UnversionedProtocolData
+                            (DictVersion unversionedProtocolDataCodec)

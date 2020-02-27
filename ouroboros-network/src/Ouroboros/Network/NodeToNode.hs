@@ -10,7 +10,7 @@
 -- overall node to node protocol, as a collection of mini-protocols.
 --
 module Ouroboros.Network.NodeToNode (
-    NodeToNodeProtocols(..)
+    nodeToNodeProtocols
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
   , DictVersion (..)
@@ -86,16 +86,13 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
-import           Codec.SerialiseTerm
 import qualified Network.Socket as Socket
 
-import           Network.Mux hiding (MiniProtocolLimits(..))
-import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
-import           Network.TypedProtocol.Driver (TraceSendRecv (..))
-
+import           Ouroboros.Network.Driver (TraceSendRecv(..))
+import           Ouroboros.Network.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import qualified Ouroboros.Network.Protocol.Handshake.Version as V
@@ -120,20 +117,10 @@ import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.Snocket
 
 
--- | An index type used with the mux to enumerate all the mini-protocols that
+-- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-node protocol.
 --
-data NodeToNodeProtocols = ChainSyncWithHeadersPtcl
-                         | BlockFetchPtcl
-                         | TxSubmissionPtcl
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
--- These protocol numbers end up in the wire format so it is vital that they
--- are stable, even as they are upgraded. So we use custom Enum instances here.
--- This allows us to retire old versions and add new, which may leave some
--- holes in the numbering space.
-
--- | These are the actual wire format protocol numbers.
+-- This function specifies the wire format protocol numbers.
 --
 -- The application specific protocol numbers start from 2.  The
 -- @'MiniProtocolNum' 0@ is reserved for the 'Handshake' protocol, while
@@ -148,15 +135,39 @@ data NodeToNodeProtocols = ChainSyncWithHeadersPtcl
 -- is helpful to allow a single shared implementation of tools that can analyse
 -- both protocols, e.g.  wireshark plugins.
 --
-instance ProtocolEnum NodeToNodeProtocols where
-  fromProtocolEnum ChainSyncWithHeadersPtcl = MiniProtocolNum 2
-  fromProtocolEnum BlockFetchPtcl           = MiniProtocolNum 3
-  fromProtocolEnum TxSubmissionPtcl         = MiniProtocolNum 4
+nodeToNodeProtocols
+  :: RunMiniProtocol appType bytes m a b -- ^ chainSync
+  -> RunMiniProtocol appType bytes m a b -- ^ blockFetch
+  -> RunMiniProtocol appType bytes m a b -- ^ txSubmission
+  -> OuroborosApplication appType bytes m a b
+nodeToNodeProtocols chainSync
+                    blockFetch
+                    txSubmission =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = chainSync
+      }
+    , MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 3,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = blockFetch
+      }
+    , MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 4,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = txSubmission
+      }
+    ]
 
-instance MiniProtocolLimits NodeToNodeProtocols where
   -- TODO: provide sensible limits
   -- https://github.com/input-output-hk/ouroboros-network/issues/575
-  maximumIngressQueue _ = 0xffffffff
+maximumMiniProtocolLimits :: MiniProtocolLimits
+maximumMiniProtocolLimits =
+    MiniProtocolLimits {
+      maximumIngressQueue = 0xffffffff
+    }
 
 -- | Enumeration of node to node protocol versions.
 --
@@ -199,10 +210,11 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 --
 connectTo
   :: Snocket IO Socket.Socket Socket.SockAddr
-  -> NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+  -> NetworkConnectTracers Socket.SockAddr NodeToNodeVersion
   -> Versions NodeToNodeVersion
               DictVersion
-              (OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
+              (ConnectionId Socket.SockAddr ->
+                 OuroborosApplication InitiatorApp BL.ByteString IO a b)
   -> Maybe Socket.SockAddr
   -> Socket.SockAddr
   -> IO ()
@@ -214,9 +226,10 @@ connectTo sn =
 --
 connectTo_V1
   :: SocketSnocket
-  -> NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+  -> NetworkConnectTracers Socket.SockAddr NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> (OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
+  -> (ConnectionId Socket.SockAddr ->
+        OuroborosApplication InitiatorApp BL.ByteString IO a b)
   -> Maybe Socket.SockAddr
   -> Socket.SockAddr
   -> IO ()
@@ -243,10 +256,12 @@ connectTo_V1 sn tracers versionData application localAddr remoteAddr =
 withServer
   :: ( HasResponder appType ~ True )
   => SocketSnocket
-  -> NetworkServerTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+  -> NetworkServerTracers Socket.SockAddr NodeToNodeVersion
   -> NetworkMutableState Socket.SockAddr
   -> Socket.SockAddr
-  -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
+  -> Versions NodeToNodeVersion DictVersion
+              (ConnectionId Socket.SockAddr ->
+                 OuroborosApplication appType BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState addr versions errPolicies =
@@ -257,7 +272,7 @@ withServer sn tracers networkState addr versions errPolicies =
     addr
     cborTermVersionDataCodec
     (\(DictVersion _) -> acceptableVersion)
-    (SomeResponderApplication <$> versions)
+    (fmap (SomeResponderApplication .) versions)
     errPolicies
     (\_ async -> Async.wait async)
 
@@ -267,11 +282,12 @@ withServer sn tracers networkState addr versions errPolicies =
 withServer_V1
   :: ( HasResponder appType ~ True )
   => SocketSnocket
-  -> NetworkServerTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+  -> NetworkServerTracers Socket.SockAddr NodeToNodeVersion
   -> NetworkMutableState Socket.SockAddr
   -> Socket.SockAddr
   -> NodeToNodeVersionData
-  -> (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString x y)
+  -> (ConnectionId Socket.SockAddr ->
+        OuroborosApplication appType BL.ByteString IO x y)
   -> ErrorPolicies
   -> IO Void
 withServer_V1 sn tracers networkState addr versionData application =
@@ -291,17 +307,14 @@ ipSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => SocketSnocket
-    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeVersion
     -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> Versions
         NodeToNodeVersion
         DictVersion
-        (OuroborosApplication
-          appType
-          (ConnectionId Socket.SockAddr)
-          NodeToNodeProtocols
-          IO BL.ByteString x y)
+        (ConnectionId Socket.SockAddr ->
+           OuroborosApplication appType BL.ByteString IO x y)
     -> IO Void
 ipSubscriptionWorker
   sn
@@ -333,15 +346,12 @@ ipSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => SocketSnocket
-    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
+    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeVersion
     -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> NodeToNodeVersionData
-    -> (OuroborosApplication
-          appType
-          (ConnectionId Socket.SockAddr)
-          NodeToNodeProtocols
-          IO BL.ByteString x y)
+    -> (ConnectionId Socket.SockAddr ->
+          OuroborosApplication appType BL.ByteString IO x y)
     -> IO Void
 ipSubscriptionWorker_V1
   sn
@@ -369,17 +379,14 @@ dnsSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => SocketSnocket
-    -> NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion Socket.SockAddr
+    -> NetworkDNSSubscriptionTracers NodeToNodeVersion Socket.SockAddr
     -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> Versions
         NodeToNodeVersion
         DictVersion
-        (OuroborosApplication
-          appType
-          (ConnectionId Socket.SockAddr)
-          NodeToNodeProtocols
-          IO BL.ByteString x y)
+        (ConnectionId Socket.SockAddr ->
+           OuroborosApplication appType BL.ByteString IO x y)
     -> IO Void
 dnsSubscriptionWorker
   sn
@@ -413,15 +420,12 @@ dnsSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => SocketSnocket
-    -> NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion Socket.SockAddr
+    -> NetworkDNSSubscriptionTracers NodeToNodeVersion Socket.SockAddr
     -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> NodeToNodeVersionData
-    -> (OuroborosApplication
-          appType
-          (ConnectionId Socket.SockAddr)
-          NodeToNodeProtocols
-          IO BL.ByteString x y)
+    -> (ConnectionId Socket.SockAddr ->
+          OuroborosApplication appType BL.ByteString IO x y)
     -> IO Void
 dnsSubscriptionWorker_V1
   sn
