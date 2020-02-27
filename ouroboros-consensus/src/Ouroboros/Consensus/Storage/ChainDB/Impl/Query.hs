@@ -25,11 +25,13 @@ import           Control.Monad (join)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable
 
+import           Cardano.Slotting.Slot (WithOrigin (..))
+
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,
-                     MaxSlotNo, Point, StandardHash, castPoint, genesisPoint,
-                     maxSlotNoFromWithOrigin, pointHash, pointSlot)
+                     MaxSlotNo, Point, StandardHash, castPoint,
+                     maxSlotNoFromWithOrigin, pointHash)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -39,8 +41,7 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
-                     ChainDB, ChainDbError (..), ChainDbFailure (..),
-                     InvalidBlockReason)
+                     ChainDB, ChainDbFailure (..), InvalidBlockReason)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
@@ -85,9 +86,9 @@ getTipBlock
   -> m (Maybe blk)
 getTipBlock cdb@CDB{..} = do
     tipPoint <- atomically $ getTipPoint cdb
-    if tipPoint == genesisPoint
-      then return Nothing
-      else Just <$> getAnyKnownBlock cdbImmDB cdbVolDB tipPoint
+    case pointToWithOriginRealPoint tipPoint of
+      Origin -> return Nothing
+      At p   -> Just <$> getAnyKnownBlock cdbImmDB cdbVolDB p
 
 getTipHeader
   :: forall m blk.
@@ -100,20 +101,19 @@ getTipHeader
 getTipHeader CDB{..} = do
     anchorOrHdr <- AF.head <$> atomically (readTVar cdbChain)
     case anchorOrHdr of
-      Right hdr
-        -> return $ Just hdr
-      Left anchor
-        | AF.anchorIsGenesis anchor
-        -> return Nothing
-        | otherwise
-          -- In this case, the fragment is empty but the anchor point is not
-          -- genesis. It must be that the VolatileDB got emptied and that our
-          -- current tip is now the tip of the ImmutableDB.
+      Right hdr   -> return $ Just hdr
+      Left anchor ->
+        case pointToWithOriginRealPoint (castPoint (AF.anchorToPoint anchor)) of
+          Origin -> return Nothing
+          At p   ->
+            -- In this case, the fragment is empty but the anchor point is not
+            -- genesis. It must be that the VolatileDB got emptied and that our
+            -- current tip is now the tip of the ImmutableDB.
 
-          -- Note that we can't use 'getBlockAtTip' because a block might have
-          -- been appended to the ImmutableDB since we obtained 'anchorOrHdr'.
-        -> fmap Just . anchorMustBeThere =<<
-           ImmDB.getBlockComponentWithPoint cdbImmDB GetHeader (castPoint (AF.anchorToPoint anchor))
+            -- Note that we can't use 'getBlockAtTip' because a block might have
+            -- been appended to the ImmutableDB since we obtained 'anchorOrHdr'.
+            fmap Just . anchorMustBeThere =<<
+              ImmDB.getBlockComponentWithPoint cdbImmDB GetHeader p
   where
     anchorMustBeThere :: Maybe a -> a
     anchorMustBeThere Nothing  = error "block at tip of ImmutableDB missing"
@@ -129,7 +129,7 @@ getBlockComponent
   :: forall m blk b. (MonadCatch m , HasHeader blk)
   => ChainDbEnv m blk
   -> BlockComponent (ChainDB m blk) b
-  -> Point blk -> m (Maybe b)
+  -> RealPoint blk -> m (Maybe b)
 getBlockComponent CDB{..} = getAnyBlockComponent cdbImmDB cdbVolDB
 
 getIsFetched
@@ -181,7 +181,7 @@ getAnyKnownBlock
   :: forall m blk. (MonadCatch m, HasHeader blk)
   => ImmDB m blk
   -> VolDB m blk
-  -> Point blk
+  -> RealPoint blk
   -> m blk
 getAnyKnownBlock immDB volDB = join . getAnyKnownBlockComponent immDB volDB GetBlock
 
@@ -193,7 +193,7 @@ getAnyKnownBlockComponent
   => ImmDB m blk
   -> VolDB m blk
   -> BlockComponent (ChainDB m blk) b
-  -> Point blk
+  -> RealPoint blk
   -> m b
 getAnyKnownBlockComponent immDB volDB blockComponent p = do
     mBlock <- mustExist p <$> getAnyBlockComponent immDB volDB blockComponent p
@@ -210,39 +210,38 @@ getAnyBlockComponent
   => ImmDB m blk
   -> VolDB m blk
   -> BlockComponent (ChainDB m blk) b
-  -> Point blk
+  -> RealPoint blk
   -> m (Maybe b)
-getAnyBlockComponent immDB volDB blockComponent p =
-    case pointHash p of
-      GenesisHash    -> throwM NoGenesisBlock
-      BlockHash hash -> do
-        -- Note: to determine whether a block is in the ImmutableDB, we can
-        -- look at the slot of its tip, which we'll call @immTipSlot@. If the
-        -- slot of the requested point > @immTipSlot@, then the block will not
-        -- be in the ImmutableDB but in the VolatileDB. However, there is a
-        -- race condition here: if between the time we got @immTipSlot@ and
-        -- the time we look up the block in the VolatileDB the block was moved
-        -- from the VolatileDB to the ImmutableDB, and it was deleted from the
-        -- VolatileDB, we won't find the block, even though it is in the
-        -- ChainDB.
-        --
-        -- Therefore, we first query the VolatileDB and if the block is not in
-        -- it, then we can get @immTipSlot@ and compare it to the slot of the
-        -- requested point. If the slot <= @immTipSlot@ it /must/ be in the
-        -- ImmutableDB (no race condition here).
-        mbVolB <- VolDB.getBlockComponent volDB blockComponent hash
-        case mbVolB of
-          Just b -> return $ Just b
-          Nothing    -> do
-            -- ImmDB will throw an exception if we ask for a block past the tip
-            immTipSlot <- ImmDB.getSlotNoAtTip immDB
-            if pointSlot p > immTipSlot
-              -- It's not supposed to be in the ImmutableDB and the VolatileDB
-              -- didn't contain it, so return 'Nothing'.
-              then return Nothing
-              else ImmDB.getBlockComponentWithPoint immDB blockComponent p
+getAnyBlockComponent immDB volDB blockComponent p = do
+    -- Note: to determine whether a block is in the ImmutableDB, we can
+    -- look at the slot of its tip, which we'll call @immTipSlot@. If the
+    -- slot of the requested point > @immTipSlot@, then the block will not
+    -- be in the ImmutableDB but in the VolatileDB. However, there is a
+    -- race condition here: if between the time we got @immTipSlot@ and
+    -- the time we look up the block in the VolatileDB the block was moved
+    -- from the VolatileDB to the ImmutableDB, and it was deleted from the
+    -- VolatileDB, we won't find the block, even though it is in the
+    -- ChainDB.
+    --
+    -- Therefore, we first query the VolatileDB and if the block is not in
+    -- it, then we can get @immTipSlot@ and compare it to the slot of the
+    -- requested point. If the slot <= @immTipSlot@ it /must/ be in the
+    -- ImmutableDB (no race condition here).
+    mbVolB <- VolDB.getBlockComponent volDB blockComponent hash
+    case mbVolB of
+      Just b -> return $ Just b
+      Nothing    -> do
+        -- ImmDB will throw an exception if we ask for a block past the tip
+        immTipSlot <- ImmDB.getSlotNoAtTip immDB
+        if At (realPointSlot p) > immTipSlot
+          -- It's not supposed to be in the ImmutableDB and the VolatileDB
+          -- didn't contain it, so return 'Nothing'.
+          then return Nothing
+          else ImmDB.getBlockComponentWithPoint immDB blockComponent p
+  where
+    hash = realPointHash p
 
 mustExist :: (Typeable blk, StandardHash blk)
-          => Point blk -> Maybe b -> Either ChainDbFailure b
+          => RealPoint blk -> Maybe b -> Either ChainDbFailure b
 mustExist p Nothing  = Left  $ ChainDbMissingBlock p
 mustExist _ (Just b) = Right $ b

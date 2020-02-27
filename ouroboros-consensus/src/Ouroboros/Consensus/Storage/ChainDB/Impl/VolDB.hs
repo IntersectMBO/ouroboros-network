@@ -80,12 +80,11 @@ import           Cardano.Prelude (Word64, allNoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader (..), HeaderHash,
-                     MaxSlotNo, Point, SlotNo, StandardHash, pointHash,
-                     withHash)
+                     MaxSlotNo, Point, SlotNo, StandardHash, pointHash)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (Header, IsEBB)
+import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -285,7 +284,7 @@ candidates succsOf b = mapMaybe NE.nonEmpty $ go (fromChainHash (pointHash b))
 isReachableSTM :: (IOLike m, HasHeader blk)
                => VolDB m blk
                -> STM m (Point blk) -- ^ The tip of the ImmutableDB (@I@).
-               -> Point blk         -- ^ The point of the block (@B@) to check
+               -> RealPoint blk     -- ^ The point of the block (@B@) to check
                                     -- the reachability of
                -> STM m (Maybe (NonEmpty (HeaderHash blk)))
 isReachableSTM volDB getI b = do
@@ -304,7 +303,7 @@ isReachableSTM volDB getI b = do
 isReachable :: forall blk. (HasHeader blk, HasCallStack)
             => (HeaderHash blk -> Maybe (WithOrigin (HeaderHash blk)))
             -> Point blk                                        -- ^ @I@
-            -> Point blk                                        -- ^ @B@
+            -> RealPoint blk                                    -- ^ @B@
             -> Maybe (NonEmpty (HeaderHash blk))
 isReachable predecessor i b =
     case computePath predecessor from to of
@@ -342,19 +341,15 @@ computePath
   -> StreamTo   blk
   -> Maybe (Path blk)
 computePath predecessor from to = case to of
-    StreamToInclusive GenesisPoint
-      -> Nothing
-    StreamToExclusive GenesisPoint
-      -> Nothing
-    StreamToInclusive (BlockPoint { withHash = end })
+    StreamToInclusive (RealPoint _ end)
       | Just prev <- predecessor end -> case from of
           -- Easier to handle this special case (@StreamFromInclusive start,
           -- StreamToInclusive end, start == end@) here:
-          StreamFromInclusive (BlockPoint { withHash = start })
+          StreamFromInclusive (RealPoint _ start)
             | start == end -> return $ CompletelyInVolDB [end]
           _                -> go [end] prev
       | otherwise        -> return $ NotInVolDB end
-    StreamToExclusive (BlockPoint { withHash = end })
+    StreamToExclusive (RealPoint _ end)
       | Just prev <- predecessor end -> go [] prev
       | otherwise                    -> return $ NotInVolDB end
   where
@@ -374,7 +369,7 @@ computePath predecessor from to = case to of
       At predHash
         | Just prev' <- predecessor predHash -> case from of
           StreamFromInclusive pt
-            | BlockHash predHash == Block.pointHash pt
+            | predHash == realPointHash pt
             -> return $ CompletelyInVolDB (predHash : acc)
           StreamFromExclusive pt
             | BlockHash predHash == Block.pointHash pt

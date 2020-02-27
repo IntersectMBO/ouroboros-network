@@ -22,12 +22,12 @@ import qualified Data.Map.Strict as Map
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
-                     HeaderHash, blockPoint)
+                     HeaderHash)
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -128,8 +128,8 @@ prop_773_bug = prop_general_test
       { immutable = Chain.fromOldestFirst [a, b, c, d]
       , volatile  = [c, d]
       }
-    (StreamFromInclusive (blockPoint a))
-    (StreamToInclusive   (blockPoint c))
+    (StreamFromInclusive (blockRealPoint a))
+    (StreamToInclusive   (blockRealPoint c))
     (Right (map Right [a, b, c]))
 
 -- | Requested stream = A -> E
@@ -144,8 +144,8 @@ prop_773_working = prop_general_test
       { immutable = Chain.fromOldestFirst [a, b, c, d]
       , volatile  = [c, d, e]
       }
-    (StreamFromInclusive (blockPoint a))
-    (StreamToInclusive   (blockPoint e))
+    (StreamFromInclusive (blockRealPoint a))
+    (StreamToInclusive   (blockRealPoint e))
     (Right (map Right [a, b, c, d, e]))
 
 -- | Requested stream = B' -> B' where EBB, B, and B' are all blocks in the
@@ -160,9 +160,9 @@ prop_1435_case1 = prop_general_test
       { immutable = Chain.fromOldestFirst [ebb, b]
       , volatile  = []
       }
-    (StreamFromInclusive (blockPoint b'))
-    (StreamToInclusive   (blockPoint b'))
-    (Left (ForkTooOld (StreamFromInclusive (blockPoint b'))))
+    (StreamFromInclusive (blockRealPoint b'))
+    (StreamToInclusive   (blockRealPoint b'))
+    (Left (ForkTooOld (StreamFromInclusive (blockRealPoint b'))))
   where
     ebb = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
     b   = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
@@ -180,9 +180,9 @@ prop_1435_case2 = prop_general_test
       { immutable = Chain.fromOldestFirst [ebb, b]
       , volatile  = []
       }
-    (StreamFromInclusive (blockPoint ebb'))
-    (StreamToInclusive   (blockPoint ebb'))
-    (Left (ForkTooOld (StreamFromInclusive (blockPoint ebb'))))
+    (StreamFromInclusive (blockRealPoint ebb'))
+    (StreamToInclusive   (blockRealPoint ebb'))
+    (Left (ForkTooOld (StreamFromInclusive (blockRealPoint ebb'))))
   where
     ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
     b    = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
@@ -200,8 +200,8 @@ prop_1435_case3 = prop_general_test
       { immutable = Chain.fromOldestFirst [ebb, b]
       , volatile  = []
       }
-    (StreamFromInclusive (blockPoint ebb))
-    (StreamToInclusive   (blockPoint ebb))
+    (StreamFromInclusive (blockRealPoint ebb))
+    (StreamToInclusive   (blockRealPoint ebb))
     (Right (map Right [ebb]))
   where
     ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
@@ -219,8 +219,8 @@ prop_1435_case4 = prop_general_test
       { immutable = Chain.fromOldestFirst [ebb]
       , volatile  = [b]
       }
-    (StreamFromInclusive (blockPoint ebb))
-    (StreamToInclusive   (blockPoint ebb))
+    (StreamFromInclusive (blockRealPoint ebb))
+    (StreamToInclusive   (blockRealPoint ebb))
     (Right (map Right [ebb]))
   where
     ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
@@ -238,9 +238,9 @@ prop_1435_case5 = prop_general_test
       { immutable = Chain.fromOldestFirst [ebb]
       , volatile  = []
       }
-    (StreamFromInclusive (blockPoint b'))
-    (StreamToInclusive   (blockPoint b'))
-    (Left (ForkTooOld (StreamFromInclusive (blockPoint b'))))
+    (StreamFromInclusive (blockRealPoint b'))
+    (StreamToInclusive   (blockRealPoint b'))
+    (Left (ForkTooOld (StreamFromInclusive (blockRealPoint b'))))
   where
     ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
     b'   = mkNextBlock ebb 0 TestBody { tbForkNo = 1, tbIsValid = True }
@@ -257,9 +257,9 @@ prop_1435_case6 = prop_general_test
       { immutable = Chain.fromOldestFirst [ebb]
       , volatile  = []
       }
-    (StreamFromInclusive (blockPoint ebb'))
-    (StreamToInclusive   (blockPoint ebb'))
-    (Left (ForkTooOld (StreamFromInclusive (blockPoint ebb'))))
+    (StreamFromInclusive (blockRealPoint ebb'))
+    (StreamToInclusive   (blockRealPoint ebb'))
+    (Left (ForkTooOld (StreamFromInclusive (blockRealPoint ebb'))))
   where
     ebb  = firstEBB TestBody { tbForkNo = 0, tbIsValid = True }
     ebb' = firstEBB TestBody { tbForkNo = 1, tbIsValid = True }

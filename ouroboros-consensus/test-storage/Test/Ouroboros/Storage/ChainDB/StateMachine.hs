@@ -137,8 +137,8 @@ data Cmd blk it rdr
   | GetTipBlock
   | GetTipHeader
   | GetTipPoint
-  | GetBlockComponent     (Point blk)
-  | GetGCedBlockComponent (Point blk)
+  | GetBlockComponent     (RealPoint blk)
+  | GetGCedBlockComponent (RealPoint blk)
     -- ^ Only for blocks that may have been garbage collected.
   | GetMaxSlotNo
   | Stream                (StreamFrom blk) (StreamTo blk)
@@ -731,25 +731,30 @@ generator genBlock m@Model {..} = At <$> frequency
     readers :: [Reference (Opaque (TestReader m blk)) Symbolic]
     readers = RE.keys knownReaders
 
-    genRandomPoint :: Gen (Point blk)
-    genRandomPoint = Block.blockPoint <$> genBlock m
+    genRandomPoint :: Gen (RealPoint blk)
+    genRandomPoint = blockRealPoint <$> genBlock m
 
-    pointsInDB :: [Point blk]
-    pointsInDB = Block.blockPoint <$> Map.elems (Model.blocks dbModel)
+    pointsInDB :: [RealPoint blk]
+    pointsInDB = blockRealPoint <$> Map.elems (Model.blocks dbModel)
 
     empty :: Bool
     empty = null pointsInDB
 
+    genRealPoint :: Gen (RealPoint blk)
+    genRealPoint = frequency
+      [ (2, genRandomPoint)
+      , (if empty then 0 else 7, elements pointsInDB)
+      ]
+
     genPoint :: Gen (Point blk)
     genPoint = frequency
       [ (1, return Block.genesisPoint)
-      , (2, genRandomPoint)
-      , (if empty then 0 else 7, elements pointsInDB)
+      , (9, realPointToPoint <$> genRealPoint)
       ]
 
     genGetBlockComponent :: Gen (Cmd blk it rdr)
     genGetBlockComponent = do
-      pt <- genPoint
+      pt <- genRealPoint
       return $ if Model.garbageCollectablePoint secParam dbModel pt
         then GetGCedBlockComponent pt
         else GetBlockComponent     pt
@@ -787,13 +792,20 @@ generator genBlock m@Model {..} = At <$> frequency
 
     genRandomBounds :: Gen (StreamFrom blk, StreamTo blk)
     genRandomBounds = (,)
-      <$> (genFromInEx <*> genPoint)
-      <*> (genToInEx   <*> genPoint)
+      <$> (do inEx <- genFromInEx
+              case inEx of
+                Left  inc -> inc <$> genRealPoint
+                Right exc -> exc <$> genPoint)
+      <*> (genToInEx <*> genRealPoint)
 
-    genFromInEx :: Gen (Point blk -> StreamFrom blk)
-    genFromInEx = elements [StreamFromInclusive, StreamFromExclusive]
+    genFromInEx :: Gen (Either (RealPoint blk -> StreamFrom blk)
+                               (Point     blk -> StreamFrom blk))
+    genFromInEx = elements [Left StreamFromInclusive, Right StreamFromExclusive]
 
-    genToInEx :: Gen (Point blk -> StreamTo blk)
+    genFromInEx' :: Gen (RealPoint blk -> StreamFrom blk)
+    genFromInEx' = either id (. realPointToPoint) <$> genFromInEx
+
+    genToInEx :: Gen (RealPoint blk -> StreamTo blk)
     genToInEx = elements [StreamToInclusive, StreamToExclusive]
 
     -- Generate bounds that correspond to existing blocks in the DB. Make sure
@@ -802,10 +814,10 @@ generator genBlock m@Model {..} = At <$> frequency
     genExistingBounds :: Gen (StreamFrom blk, StreamTo blk)
     genExistingBounds = do
       start <- elements pointsInDB
-      end   <- elements pointsInDB `suchThat` ((>= Block.pointSlot start) .
-                                               Block.pointSlot)
-      (,) <$> (genFromInEx <*> return start)
-          <*> (genToInEx   <*> return end)
+      end   <- elements pointsInDB `suchThat` ((>= realPointSlot start) .
+                                               realPointSlot)
+      (,) <$> (genFromInEx' <*> return start)
+          <*> (genToInEx    <*> return end)
 
     genIteratorClose = IteratorClose <$> elements iterators
     genIteratorNext  = do
@@ -890,7 +902,7 @@ precondition Model {..} (At cmd) =
                                  blockSlot blk .> s
      _                        -> Top
   where
-    garbageCollectable :: Point blk -> Logic
+    garbageCollectable :: RealPoint blk -> Logic
     garbageCollectable =
       Boolean . Model.garbageCollectablePoint secParam dbModel
 
@@ -1051,6 +1063,7 @@ deriving instance ToExpr blk  => ToExpr (Point.WithOrigin blk)
 deriving instance ToExpr hash => ToExpr (Point.Block SlotNo hash)
 deriving instance ToExpr (HeaderHash blk) => ToExpr (ChainHash blk)
 deriving instance ToExpr (HeaderHash blk) => ToExpr (Point blk)
+deriving instance ToExpr (HeaderHash blk) => ToExpr (RealPoint blk)
 deriving instance ToExpr (HeaderHash blk) => ToExpr (ReaderState blk)
 deriving instance ToExpr blk => ToExpr (Chain blk)
 deriving instance ( ToExpr blk
@@ -1121,8 +1134,8 @@ deriving instance SOP.Generic         (TraceIteratorEvent blk)
 deriving instance SOP.HasDatatypeInfo (TraceIteratorEvent blk)
 deriving instance SOP.Generic         (LedgerDB.TraceEvent r)
 deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceEvent r)
-deriving instance SOP.Generic         (LedgerDB.TraceReplayEvent r replayTo blockInfo)
-deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceReplayEvent r replayTo blockInfo)
+deriving instance SOP.Generic         (LedgerDB.TraceReplayEvent r replayTo)
+deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceReplayEvent r replayTo)
 deriving instance SOP.Generic         (ImmDB.TraceEvent e hash)
 deriving instance SOP.HasDatatypeInfo (ImmDB.TraceEvent e hash)
 deriving instance SOP.Generic         (VolDB.TraceEvent e hash)
@@ -1392,7 +1405,7 @@ prop_trace trace = invalidBlockNeverValidatedAgain
         counterexample "An invalid block is validated twice" $
         invalidPoint =/= invalidPoint'
 
-    invalidBlock :: TraceEvent blk -> Maybe (Point blk)
+    invalidBlock :: TraceEvent blk -> Maybe (RealPoint blk)
     invalidBlock = \case
         TraceAddBlockEvent (AddBlockValidation ev)         -> extract ev
         TraceInitChainSelEvent (InitChainSelValidation ev) -> extract ev

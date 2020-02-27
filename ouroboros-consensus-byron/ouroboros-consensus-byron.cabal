@@ -162,6 +162,7 @@ executable db-analyser
                      , cardano-binary
                      , cardano-crypto-wrapper
                      , cardano-ledger
+                     , cardano-slotting
                      , mtl
                      , optparse-applicative
 

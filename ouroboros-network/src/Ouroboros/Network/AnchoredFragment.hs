@@ -207,11 +207,6 @@ anchorToBlockNo AnchorGenesis    = Origin
 anchorToBlockNo (Anchor _s _h b) = At b
 
 -- | Extract the 'SlotNo' from the anchor
---
--- NOTE: When the 'Anchor' is 'AnchorGenesis', this returns 'Origin'.
--- It does /not/ return 'genesisSlotNo', which is badly named, and is instead
--- the block number of the first block on the chain
--- (i.e., 'genesisPoint' and 'genesisSlotNo' don't go hand in hand!)
 anchorToSlotNo :: Anchor block -> WithOrigin SlotNo
 anchorToSlotNo AnchorGenesis    = Origin
 anchorToSlotNo (Anchor s _h _b) = At s

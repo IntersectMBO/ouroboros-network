@@ -73,10 +73,10 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
-                     SlotNo, blockPoint)
+                     SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Block (Header, IsEBB (..))
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
@@ -443,7 +443,7 @@ addBlockToAdd tracer (BlocksToAdd queue) blk = do
       writeTBQueue  queue toAdd
       lengthTBQueue queue
     traceWith tracer $
-      AddedBlockToQueue (blockPoint blk) (fromIntegral queueSize)
+      AddedBlockToQueue (blockRealPoint blk) (fromIntegral queueSize)
     return AddBlockPromise
       { blockProcessed          = readTMVar varBlockProcessed
       , chainSelectionPerformed = readTMVar varChainSelectionPerformed
@@ -472,17 +472,17 @@ instance NoUnexpectedThunks (Header blk)
 
 -- | Trace type for the various events of the ChainDB.
 data TraceEvent blk
-  = TraceAddBlockEvent     (TraceAddBlockEvent     blk)
-  | TraceReaderEvent       (TraceReaderEvent       blk)
-  | TraceCopyToImmDBEvent  (TraceCopyToImmDBEvent  blk)
-  | TraceGCEvent           (TraceGCEvent           blk)
-  | TraceInitChainSelEvent (TraceInitChainSelEvent blk)
-  | TraceOpenEvent         (TraceOpenEvent         blk)
-  | TraceIteratorEvent     (TraceIteratorEvent     blk)
-  | TraceLedgerEvent       (LgrDB.TraceEvent (Point blk))
+  = TraceAddBlockEvent     (TraceAddBlockEvent           blk)
+  | TraceReaderEvent       (TraceReaderEvent             blk)
+  | TraceCopyToImmDBEvent  (TraceCopyToImmDBEvent        blk)
+  | TraceGCEvent           (TraceGCEvent                 blk)
+  | TraceInitChainSelEvent (TraceInitChainSelEvent       blk)
+  | TraceOpenEvent         (TraceOpenEvent               blk)
+  | TraceIteratorEvent     (TraceIteratorEvent           blk)
+  | TraceLedgerEvent       (LgrDB.TraceEvent (RealPoint  blk))
   | TraceLedgerReplayEvent (LgrDB.TraceLedgerReplayEvent blk)
-  | TraceImmDBEvent        (ImmDB.TraceEvent       blk)
-  | TraceVolDBEvent        (VolDB.TraceEvent       blk)
+  | TraceImmDBEvent        (ImmDB.TraceEvent             blk)
+  | TraceVolDBEvent        (VolDB.TraceEvent             blk)
   deriving (Generic)
 
 deriving instance
@@ -525,41 +525,41 @@ data TraceOpenEvent blk
 
 -- | Trace type for the various events that occur when adding a block.
 data TraceAddBlockEvent blk
-  = IgnoreBlockOlderThanK (Point blk)
+  = IgnoreBlockOlderThanK (RealPoint blk)
     -- ^ A block with a 'BlockNo' more than @k@ back than the current tip was
     -- ignored.
 
-  | IgnoreBlockAlreadyInVolDB (Point blk)
+  | IgnoreBlockAlreadyInVolDB (RealPoint blk)
     -- ^ A block that is already in the Volatile DB was ignored.
 
-  | IgnoreInvalidBlock (Point blk) (InvalidBlockReason blk)
+  | IgnoreInvalidBlock (RealPoint blk) (InvalidBlockReason blk)
     -- ^ A block that is know to be invalid was ignored.
 
-  | AddedBlockToQueue (Point blk) Word
+  | AddedBlockToQueue (RealPoint blk) Word
     -- ^ The block was added to the queue and will be added to the ChainDB by
     -- the background thread. The size of the queue is included.
 
-  | BlockInTheFuture (Point blk) SlotNo
+  | BlockInTheFuture (RealPoint blk) SlotNo
     -- ^ The block is from the future, i.e., its slot number is greater than
     -- the current slot (the second argument).
 
-  | AddedBlockToVolDB    !(Point blk) !BlockNo !IsEBB
+  | AddedBlockToVolDB (RealPoint blk) BlockNo IsEBB
     -- ^ A block was added to the Volatile DB
 
-  | TryAddToCurrentChain (Point blk)
+  | TryAddToCurrentChain (RealPoint blk)
     -- ^ The block fits onto the current chain, we'll try to use it to extend
     -- our chain.
 
-  | TrySwitchToAFork     (Point blk) (NonEmpty (HeaderHash blk))
+  | TrySwitchToAFork (RealPoint blk) (NonEmpty (HeaderHash blk))
     -- ^ The block fits onto some fork, we'll try to switch to that fork (if
     -- it is preferable to our chain).
 
-  | StoreButDontChange   (Point blk)
+  | StoreButDontChange (RealPoint blk)
     -- ^ The block doesn't fit onto any other block, so we store it and ignore
     -- it.
 
   | AddedToCurrentChain
-      (Point blk)
+      (RealPoint blk)
       (AnchoredFragment (Header blk))
       (AnchoredFragment (Header blk))
     -- ^ The new block (the 'Point') fits onto the current chain (first
@@ -573,7 +573,7 @@ data TraceAddBlockEvent blk
     -- as the new chain.
 
   | SwitchedToAFork
-      (Point blk)
+      (RealPoint blk)
       (AnchoredFragment (Header blk))
       (AnchoredFragment (Header blk))
     -- ^ The new block (the 'Point') fits onto some fork and we have switched
@@ -616,7 +616,7 @@ deriving instance
 data TraceValidationEvent blk
   = InvalidBlock
     { _validationErr :: ExtValidationError blk
-    , _invalidPoint  :: Point blk
+    , _invalidPoint  :: RealPoint blk
     }
     -- ^ A point was found to be invalid.
 

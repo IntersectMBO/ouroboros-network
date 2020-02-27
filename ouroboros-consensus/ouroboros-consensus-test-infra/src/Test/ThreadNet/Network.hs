@@ -501,9 +501,9 @@ runThreadNetwork ThreadNetworkArgs
            -> TopLevelConfig blk
            -> ExtLedgerState blk
            -> EpochInfo m
-           -> Tracer m (Point blk, ExtValidationError blk)
+           -> Tracer m (RealPoint blk, ExtValidationError blk)
               -- ^ invalid block tracer
-           -> Tracer m (Point blk, BlockNo)
+           -> Tracer m (RealPoint blk, BlockNo)
               -- ^ added block tracer
            -> NodeDBs (StrictTVar m MockFS)
            -> ChainDbArgs m blk
@@ -929,11 +929,11 @@ data NodeInfo blk db ev = NodeInfo
 -- The @ev@ type parameter is instantiated by this module at types for
 -- 'Tracer's and lists: actions for accumulating and lists as accumulations.
 data NodeEvents blk ev = NodeEvents
-  { nodeEventsAdds        :: ev (SlotNo, Point blk, BlockNo)
+  { nodeEventsAdds        :: ev (SlotNo, RealPoint blk, BlockNo)
     -- ^ every 'AddedBlockToVolDB' excluding EBBs
   , nodeEventsForges      :: ev (TraceForgeEvent blk (GenTx blk))
     -- ^ every 'TraceForgeEvent'
-  , nodeEventsInvalids    :: ev (Point blk, ExtValidationError blk)
+  , nodeEventsInvalids    :: ev (RealPoint blk, ExtValidationError blk)
     -- ^ the point of every 'ChainDB.InvalidBlock' event
   , nodeEventsTipBlockNos :: ev (SlotNo, WithOrigin BlockNo)
     -- ^ 'ChainDB.getTipBlockNo' for each node at the onset of each slot
@@ -989,11 +989,11 @@ newNodeInfo = do
 -------------------------------------------------------------------------------}
 
 data NodeOutput blk = NodeOutput
-  { nodeOutputAdds       :: Map SlotNo (Set (Point blk, BlockNo))
+  { nodeOutputAdds       :: Map SlotNo (Set (RealPoint blk, BlockNo))
   , nodeOutputFinalChain :: Chain blk
   , nodeOutputNodeDBs    :: NodeDBs MockFS
   , nodeOutputForges     :: Map SlotNo blk
-  , nodeOutputInvalids   :: Map (Point blk) [ExtValidationError blk]
+  , nodeOutputInvalids   :: Map (RealPoint blk) [ExtValidationError blk]
   }
 
 data TestOutput blk = TestOutput

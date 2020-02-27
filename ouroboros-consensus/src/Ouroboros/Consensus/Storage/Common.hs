@@ -1,12 +1,9 @@
-{-# LANGUAGE DeriveAnyClass    #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE RankNTypes        #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE DeriveFunctor  #-}
+{-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE GADTs          #-}
+{-# LANGUAGE LambdaCase     #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies   #-}
 
 module Ouroboros.Consensus.Storage.Common (
     -- * Epochs
@@ -14,11 +11,6 @@ module Ouroboros.Consensus.Storage.Common (
   , EpochSize(..)
     -- * Indexing
   , tipIsGenesis
-  , tipToPoint
-  , tipFromPoint
-    -- * Serialisation
-  , encodeTip
-  , decodeTip
     -- * BinaryInfo
   , BinaryInfo (..)
   , extractHeader
@@ -30,22 +22,16 @@ module Ouroboros.Consensus.Storage.Common (
   , SizeInBytes
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Word
 import           GHC.Generics
 
-import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..))
+import           Cardano.Slotting.Slot
 
-import           Ouroboros.Network.Block (Point (..), SlotNo, genesisPoint)
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
-import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (IsEBB)
-import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
-                     encodeWithOrigin)
+import           Ouroboros.Consensus.Block
 
 {-------------------------------------------------------------------------------
   Indexing
@@ -54,30 +40,6 @@ import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
 tipIsGenesis :: WithOrigin r -> Bool
 tipIsGenesis Origin = True
 tipIsGenesis (At _) = False
-
-tipToPoint :: WithOrigin (Point blk) -> Point blk
-tipToPoint Origin = genesisPoint
-tipToPoint (At p) = p
-
--- | Tip from a point
---
--- NOTE: We really shouldn't instantate 'WithOrigin' with 'Point'; see
--- <https://github.com/input-output-hk/ouroboros-network/issues/1155>
-tipFromPoint :: Point blk -> WithOrigin (Point blk)
-tipFromPoint (Point Origin) = Origin
-tipFromPoint p              = At p
-
-{-------------------------------------------------------------------------------
-  Serialization
--------------------------------------------------------------------------------}
-
-encodeTip :: (r            -> Encoding)
-          -> (WithOrigin r -> Encoding)
-encodeTip = encodeWithOrigin
-
-decodeTip :: (forall s. Decoder s             r)
-          -> (forall s. Decoder s (WithOrigin r))
-decodeTip = decodeWithOrigin
 
 {-------------------------------------------------------------------------------
   BinaryInfo

@@ -34,6 +34,7 @@ library
                        Ouroboros.Consensus.Block
                        Ouroboros.Consensus.Block.Abstract
                        Ouroboros.Consensus.Block.EBB
+                       Ouroboros.Consensus.Block.RealPoint
                        Ouroboros.Consensus.Block.SupportsProtocol
                        Ouroboros.Consensus.BlockFetchServer
                        Ouroboros.Consensus.BlockchainTime

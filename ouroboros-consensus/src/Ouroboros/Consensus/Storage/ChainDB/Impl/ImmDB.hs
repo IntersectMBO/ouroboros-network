@@ -72,12 +72,12 @@ import           Cardano.Prelude (allNoUnexpectedThunks)
 import           Cardano.Slotting.Block (BlockNo)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
+import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo, atSlot, pointHash, pointSlot, withHash)
+                     SlotNo, atSlot, pointSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..))
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -269,42 +269,40 @@ mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv = ImmDB {..}
 hasBlock
   :: (MonadCatch m, HasHeader blk, HasCallStack)
   => ImmDB m blk
-  -> Point blk
+  -> RealPoint blk
   -> m Bool
-hasBlock db = \case
-    GenesisPoint -> throwM NoGenesisBlock
-    BlockPoint { withHash = hash, atSlot = slot } ->
-      withDB db $ \imm -> do
-        immTip <- ImmDB.getTip imm
-        (slotNoAtTip, ebbAtTip) <- case forgetTipInfo <$> immTip of
-          Origin                  -> return (Origin, Nothing)
-          At (ImmDB.EBB epochNo)  -> (, Just epochNo) . At  <$> epochInfoFirst epochNo
-          At (ImmDB.Block slotNo) -> return (At slotNo, Nothing)
+hasBlock db (RealPoint slot hash) =
+    withDB db $ \imm -> do
+      immTip <- ImmDB.getTip imm
+      (slotNoAtTip, ebbAtTip) <- case forgetTipInfo <$> immTip of
+        Origin                  -> return (Origin, Nothing)
+        At (ImmDB.EBB epochNo)  -> (, Just epochNo) . At  <$> epochInfoFirst epochNo
+        At (ImmDB.Block slotNo) -> return (At slotNo, Nothing)
 
-        case At slot `compare` slotNoAtTip of
-          -- The request is greater than the tip, so we cannot have the block
-          GT -> return False
-          -- Same slot, but our tip is an EBB, so we cannot check if the
-          -- regular block in that slot exists, because that's in the future.
-          EQ | Just epochNo <- ebbAtTip
-             -> (== Just hash) <$> ImmDB.getEBBComponent imm GetHash epochNo
-          -- Slot in the past or equal to the tip, but the tip is a regular
-          -- block.
-          _ -> do
-            hasRegularBlock <- (== Just hash) <$>
-              ImmDB.getBlockComponent imm GetHash slot
-            if hasRegularBlock then
-              return True
-            else do
-              epochNo <- epochInfoEpoch slot
-              ebbSlot <- epochInfoFirst epochNo
-              -- If it's a slot that can also contain an EBB, check if we have
-              -- an EBB
-              if slot == ebbSlot then
-                (== Just hash) <$>
-                  ImmDB.getEBBComponent imm GetHash epochNo
-              else
-                return False
+      case At slot `compare` slotNoAtTip of
+        -- The request is greater than the tip, so we cannot have the block
+        GT -> return False
+        -- Same slot, but our tip is an EBB, so we cannot check if the
+        -- regular block in that slot exists, because that's in the future.
+        EQ | Just epochNo <- ebbAtTip
+           -> (== Just hash) <$> ImmDB.getEBBComponent imm GetHash epochNo
+        -- Slot in the past or equal to the tip, but the tip is a regular
+        -- block.
+        _ -> do
+          hasRegularBlock <- (== Just hash) <$>
+            ImmDB.getBlockComponent imm GetHash slot
+          if hasRegularBlock then
+            return True
+          else do
+            epochNo <- epochInfoEpoch slot
+            ebbSlot <- epochInfoFirst epochNo
+            -- If it's a slot that can also contain an EBB, check if we have
+            -- an EBB
+            if slot == ebbSlot then
+              (== Just hash) <$>
+                ImmDB.getEBBComponent imm GetHash epochNo
+            else
+              return False
   where
     EpochInfo{..} = epochInfo db
 
@@ -377,11 +375,10 @@ getBlockComponentWithPoint
   :: forall m blk b. (MonadCatch m, HasHeader blk, HasCallStack)
   => ImmDB m blk
   -> BlockComponent (ChainDB m blk) b
-  -> Point blk
+  -> RealPoint blk
   -> m (Maybe b)
-getBlockComponentWithPoint db blockComponent = \case
-    GenesisPoint -> throwM NoGenesisBlock
-    BlockPoint { withHash = hash, atSlot = slot } -> withDB db $ \imm ->
+getBlockComponentWithPoint db blockComponent (RealPoint slot hash) =
+    withDB db $ \imm ->
       ImmDB.getBlockOrEBBComponent imm blockComponent' slot hash
   where
     blockComponent' = translateToRawDB (parse db) (addHdrEnv db) blockComponent
@@ -452,31 +449,25 @@ stream db registry blockComponent from to = runExceptT $ do
     slotNoAtTip <- lift $ getSlotNoAtTip db
 
     end <- case to of
-      StreamToExclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
-        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock pt
+      StreamToExclusive pt@(RealPoint slot hash) -> do
+        when (At slot > slotNoAtTip) $ throwError $ MissingBlock pt
         return $ Just (slot, hash)
-      StreamToExclusive GenesisPoint ->
-        throwM NoGenesisBlock
-      StreamToInclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
-        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock pt
+      StreamToInclusive pt@(RealPoint slot hash) -> do
+        when (At slot > slotNoAtTip) $ throwError $ MissingBlock pt
         return $ Just (slot, hash)
-      StreamToInclusive GenesisPoint ->
-        throwM NoGenesisBlock
 
     case from of
       StreamFromExclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
-        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock pt
+        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock (RealPoint slot hash)
         it <- openStream (Just (slot, hash)) end
         -- Skip the first block, as the bound is exclusive
         void $ lift $ iteratorNext db it
         return it
       StreamFromExclusive    GenesisPoint ->
         openStream Nothing end
-      StreamFromInclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
-        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock pt
+      StreamFromInclusive pt@(RealPoint slot hash) -> do
+        when (At slot > slotNoAtTip) $ throwError $ MissingBlock pt
         openStream (Just (slot, hash)) end
-      StreamFromInclusive GenesisPoint ->
-        throwM NoGenesisBlock
   where
     openStream
       :: Maybe (SlotNo, HeaderHash blk)
@@ -494,10 +485,10 @@ stream db registry blockComponent from to = runExceptT $ do
         toUnknownRange e
           | Just (startSlot, startHash) <- start
           , wrongBoundErrorSlotNo e == startSlot
-          = MissingBlock (BlockPoint startSlot startHash)
+          = MissingBlock (RealPoint startSlot startHash)
           | Just (endSlot, endHash) <- end
           , wrongBoundErrorSlotNo e == endSlot
-          = MissingBlock (BlockPoint endSlot endHash)
+          = MissingBlock (RealPoint endSlot endHash)
           | otherwise
           = error "WrongBoundError for a different bound than we gave"
 
@@ -526,7 +517,7 @@ stream db registry blockComponent from to = runExceptT $ do
                 -> return $ Just next
           }
         where
-          isEnd hash = pointHash pt == BlockHash hash
+          isEnd hash = realPointHash pt == hash
           ignoreExclusiveBound = \case
             ImmDB.IteratorResult (hash, _)
               | isEnd hash

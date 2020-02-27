@@ -2,6 +2,7 @@
 {-# LANGUAGE EmptyDataDeriving         #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeApplications          #-}
@@ -18,13 +19,14 @@ module Ouroboros.Consensus.BlockFetchServer
 import           Control.Tracer (Tracer)
 import           Data.Typeable (Typeable)
 
-import           Ouroboros.Network.Block (HeaderHash, Serialised (..),
-                     StandardHash, castPoint)
+import           Ouroboros.Network.Block (pattern BlockPoint, HeaderHash,
+                     Serialised (..), StandardHash)
 import           Ouroboros.Network.Protocol.BlockFetch.Server
                      (BlockFetchBlockSender (..), BlockFetchSendBlocks (..),
                      BlockFetchServer (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
@@ -49,6 +51,13 @@ data BlockFetchServerException =
       forall blk. (Typeable blk, StandardHash blk) =>
         BlockGCed (HeaderHash blk)
 
+      -- | Thrown when requesting the genesis block from the database
+      --
+      -- Although the genesis block has a hash and a point associated with it,
+      -- it does not actually exist other than as a concept; we cannot read and
+      -- return it.
+    | NoGenesisBlock
+
 deriving instance Show BlockFetchServerException
 
 instance Exception BlockFetchServerException
@@ -69,17 +78,27 @@ blockFetchServer
 blockFetchServer _tracer chainDB registry = senderSide
   where
     senderSide :: BlockFetchServer (Serialised blk) m ()
-    senderSide = BlockFetchServer receiveReq ()
+    senderSide = BlockFetchServer receiveReq' ()
 
-    receiveReq :: ChainRange (Serialised blk)
+    receiveReq' :: ChainRange (Serialised blk)
+                -> m (BlockFetchBlockSender (Serialised blk) m ())
+    receiveReq' (ChainRange start end) =
+      case (start, end) of
+        (BlockPoint s h, BlockPoint s' h') ->
+          receiveReq (RealPoint s h) (RealPoint s' h')
+        _otherwise ->
+          throwM NoGenesisBlock
+
+    receiveReq :: RealPoint blk
+               -> RealPoint blk
                -> m (BlockFetchBlockSender (Serialised blk) m ())
-    receiveReq (ChainRange start end) = do
+    receiveReq start end = do
       errIt <- ChainDB.stream
         chainDB
         registry
         getSerialisedBlockWithPoint
-        (ChainDB.StreamFromInclusive (castPoint start))
-        (ChainDB.StreamToInclusive   (castPoint end))
+        (ChainDB.StreamFromInclusive start)
+        (ChainDB.StreamToInclusive   end)
       return $ case errIt of
         -- The range is not in the ChainDB or it forks off more than @k@
         -- blocks back.

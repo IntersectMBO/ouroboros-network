@@ -80,8 +80,9 @@ import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
+                     encodeWithOrigin)
 
-import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.LedgerDB.Conf
 
 {-------------------------------------------------------------------------------
@@ -806,7 +807,7 @@ encodeChainSummary :: (l -> Encoding)
                    -> ChainSummary l r -> Encoding
 encodeChainSummary encodeLedger encodeRef ChainSummary{..} = mconcat [
       Enc.encodeListLen 3
-    , encodeTip encodeRef csTip
+    , encodeWithOrigin encodeRef csTip
     , Enc.encodeWord64 csLength
     , encodeLedger csLedger
     ]
@@ -816,7 +817,7 @@ decodeChainSummary :: (forall s. Decoder s l)
                    -> forall s. Decoder s (ChainSummary l r)
 decodeChainSummary decodeLedger decodeRef = do
     Dec.decodeListLenOf 3
-    csTip    <- decodeTip decodeRef
+    csTip    <- decodeWithOrigin decodeRef
     csLength <- Dec.decodeWord64
     csLedger <- decodeLedger
     return ChainSummary{..}

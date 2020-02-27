@@ -72,6 +72,7 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.Slot (WithOrigin (..))
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -80,9 +81,8 @@ import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      HeaderHash, MaxSlotNo, Point, Serialised (..), SlotNo,
                      StandardHash, atSlot, genesisPoint)
 import qualified Ouroboros.Network.Block as Network
-import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..))
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util ((.:))
@@ -196,7 +196,7 @@ data ChainDB m blk = ChainDB {
       -- | Get the given component(s) of the block at the specified point. If
       -- there is no block at the given point, 'Nothing' is returned.
     , getBlockComponent  :: forall b. BlockComponent (ChainDB m blk) b
-                         -> Point blk -> m (Maybe b)
+                         -> RealPoint blk -> m (Maybe b)
 
       -- | Return membership check function for recent blocks
       --
@@ -378,7 +378,7 @@ addBlock_  = void .: addBlock
 -- BlockComponent.
 
 -- | Get block at the specified point (if it exists).
-getBlock :: Monad m => ChainDB m blk -> Point blk -> m (Maybe blk)
+getBlock :: Monad m => ChainDB m blk -> RealPoint blk -> m (Maybe blk)
 getBlock ChainDB { getBlockComponent } pt =
     sequence =<< getBlockComponent GetBlock pt
 
@@ -466,13 +466,13 @@ fromChain openDB chain = do
 -- Hint: use @'StreamFromExclusive' 'genesisPoint'@ to start streaming from
 -- Genesis.
 data StreamFrom blk =
-    StreamFromInclusive !(Point blk)
-  | StreamFromExclusive !(Point blk)
+    StreamFromInclusive !(RealPoint blk)
+  | StreamFromExclusive !(Point     blk)
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 data StreamTo blk =
-    StreamToInclusive !(Point blk)
-  | StreamToExclusive !(Point blk)
+    StreamToInclusive !(RealPoint blk)
+  | StreamToExclusive !(RealPoint blk)
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 data Iterator m blk b = Iterator {
@@ -512,7 +512,7 @@ deriving instance (Show blk, Show b, Show (HeaderHash blk))
 
 data UnknownRange blk =
     -- | The block at the given point was not found in the ChainDB.
-    MissingBlock (Point blk)
+    MissingBlock (RealPoint blk)
     -- | The requested range forks off too far in the past, i.e. it doesn't
     -- fit on the tip of the ImmutableDB.
   | ForkTooOld (StreamFrom blk)
@@ -530,24 +530,15 @@ data UnknownRange blk =
 validBounds :: StreamFrom blk -> StreamTo blk -> Bool
 validBounds from to = case from of
 
-  StreamFromInclusive GenesisPoint -> False
+  StreamFromExclusive GenesisPoint -> True
 
-  StreamFromExclusive GenesisPoint -> case to of
-    StreamToInclusive GenesisPoint -> False
-    StreamToExclusive GenesisPoint -> False
-    _                              -> True
-
-  StreamFromInclusive (BlockPoint { atSlot = sfrom }) -> case to of
-    StreamToInclusive GenesisPoint                  -> False
-    StreamToExclusive GenesisPoint                  -> False
-    StreamToInclusive (BlockPoint { atSlot = sto }) -> sfrom <= sto
-    StreamToExclusive (BlockPoint { atSlot = sto }) -> sfrom <  sto
+  StreamFromInclusive (RealPoint sfrom _) -> case to of
+    StreamToInclusive (RealPoint sto _) -> sfrom <= sto
+    StreamToExclusive (RealPoint sto _) -> sfrom <  sto
 
   StreamFromExclusive (BlockPoint { atSlot = sfrom }) -> case to of
-    StreamToInclusive GenesisPoint                  -> False
-    StreamToExclusive GenesisPoint                  -> False
-    StreamToInclusive (BlockPoint { atSlot = sto }) -> sfrom <  sto
-    StreamToExclusive (BlockPoint { atSlot = sto }) -> sfrom <  sto
+    StreamToInclusive (RealPoint sto _) -> sfrom <  sto
+    StreamToExclusive (RealPoint sto _) -> sfrom <  sto
 
 -- | Stream all blocks from the current chain.
 --
@@ -568,14 +559,14 @@ streamAll :: (IOLike m, StandardHash blk)
           -> m (Maybe (Iterator m blk blk))
 streamAll chainDB registry = do
     tip <- atomically $ getTipPoint chainDB
-    if tip == genesisPoint
-      then return Nothing
-      else do
+    case pointToWithOriginRealPoint tip of
+      Origin  -> return Nothing
+      At tip' -> do
         errIt <- streamBlocks
                    chainDB
                    registry
                    (StreamFromExclusive genesisPoint)
-                   (StreamToInclusive tip)
+                   (StreamToInclusive tip')
         case errIt of
           -- TODO this is theoretically possible if the current chain has
           -- changed significantly between getting the tip and asking for the
@@ -636,7 +627,7 @@ getPastLedger chainDB pt = do
 data InvalidBlockReason blk
   = ValidationError !(ExtValidationError blk)
     -- ^ The ledger found the block to be invalid with the following reason.
-  | InChainAfterInvalidBlock !(Point blk) !(ExtValidationError blk)
+  | InChainAfterInvalidBlock !(RealPoint blk) !(ExtValidationError blk)
     -- ^ The block occurs in a chain after block that was found to be invalid
     -- by the ledger. The point and reason corresponding to the original
     -- invalid block are stored.
@@ -801,7 +792,7 @@ data ChainDbFailure =
     --
     -- Thrown when we are not sure in which DB the block /should/ have been.
   | forall blk. (Typeable blk, StandardHash blk) =>
-      ChainDbMissingBlock (Point blk)
+      ChainDbMissingBlock (RealPoint blk)
   deriving (Typeable)
 
 deriving instance Show ChainDbFailure
@@ -895,7 +886,7 @@ instance Eq ChainDbFailure where
   LgrDbFailure a1 == LgrDbFailure a2 = sameFsError a1 a2
   LgrDbFailure {} == _               = False
 
-  ChainDbMissingBlock (a1 :: Point blk) == ChainDbMissingBlock (a2 :: Point blk') =
+  ChainDbMissingBlock (a1 :: RealPoint blk) == ChainDbMissingBlock (a2 :: RealPoint blk') =
     case eqT @blk @blk' of
       Nothing   -> False
       Just Refl -> a1 == a2
@@ -909,19 +900,12 @@ instance Eq ChainDbFailure where
 --
 -- Thrown upon incorrect use: invalid input.
 data ChainDbError =
-    -- | Thrown when requesting the genesis block from the database
-    --
-    -- Although the genesis block has a hash and a point associated with it,
-    -- it does not actually exist other than as a concept; we cannot read and
-    -- return it.
-    NoGenesisBlock
-
     -- | The ChainDB is closed.
     --
     -- This will be thrown when performing any operation on the ChainDB except
     -- for 'isOpen' and 'closeDB'. The 'CallStack' of the operation on the
     -- ChainDB is included in the error.
-  | ClosedDBError CallStack
+    ClosedDBError CallStack
 
     -- | The reader is closed.
     --
@@ -942,9 +926,6 @@ data ChainDbError =
 deriving instance Show ChainDbError
 
 instance Eq ChainDbError where
-  NoGenesisBlock == NoGenesisBlock = True
-  NoGenesisBlock == _              = False
-
   ClosedDBError _ == ClosedDBError _ = True
   ClosedDBError _ == _               = False
 
@@ -967,8 +948,6 @@ instance Exception ChainDbError where
       "The database was used after it was closed because it encountered an unrecoverable error"
 
     -- The user won't see the exceptions below, they are not fatal.
-    NoGenesisBlock {} ->
-      "The non-existing genesis block was requested"
     ClosedReaderError {} ->
       "The block/header reader was used after it was closed"
     InvalidIteratorRange {} ->
