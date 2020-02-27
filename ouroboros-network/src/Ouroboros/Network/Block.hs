@@ -128,7 +128,7 @@ class ( Eq        (HeaderHash b)
       , NoUnexpectedThunks (HeaderHash b)
       ) => StandardHash b
 
-data ChainHash b = GenesisHash | BlockHash (HeaderHash b)
+data ChainHash b = GenesisHash | BlockHash !(HeaderHash b)
   deriving (Generic)
 
 deriving instance StandardHash block => Eq   (ChainHash block)
