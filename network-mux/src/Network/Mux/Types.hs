@@ -18,6 +18,7 @@ module Network.Mux.Types (
     , MuxMiniProtocol (..)
     , RunMiniProtocol (..)
 
+    , IngressQueue
     , MiniProtocolIx
     , MuxBearer (..)
     , muxBearerAsChannel
@@ -41,6 +42,7 @@ import           Data.Word
 import qualified Data.ByteString.Lazy as BL
 
 import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
 
 import           Network.Mux.Channel (Channel(..))
 import           Network.Mux.Timeout (TimeoutFn)
@@ -150,6 +152,8 @@ data RunMiniProtocol (mode :: MuxMode) m a b where
 --
 -- Mux internal types
 --
+
+type IngressQueue m = StrictTVar m BL.ByteString
 
 -- | The index of a protocol in a MuxApplication, used for array indicies
 newtype MiniProtocolIx = MiniProtocolIx Int
