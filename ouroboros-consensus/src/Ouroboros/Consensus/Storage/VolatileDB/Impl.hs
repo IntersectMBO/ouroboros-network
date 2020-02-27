@@ -433,7 +433,7 @@ getSuccessorsImpl :: forall m blockId. (IOLike m, Ord blockId)
 getSuccessorsImpl = getterSTM $ \st blockId ->
     fromMaybe Set.empty (Map.lookup blockId (_currentSuccMap st))
 
-getBlockInfoImpl :: forall m blockId. (IOLike m, Ord blockId, HasCallStack)
+getBlockInfoImpl :: forall m blockId. (IOLike m, Ord blockId)
                  => VolatileDBEnv m blockId
                  -> STM m (blockId -> Maybe (BlockInfo blockId))
 getBlockInfoImpl = getterSTM $ \st blockId ->
