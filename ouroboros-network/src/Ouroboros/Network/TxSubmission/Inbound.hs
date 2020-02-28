@@ -87,20 +87,20 @@ data ServerState txid tx = ServerState {
        -- which have not yet been replied to. We need to track this it keep
        -- our requests within the limit on the number of unacknowledged txids.
        --
-       requestedTxIdsInFlight :: Word16,
+       requestedTxIdsInFlight :: !Word16,
 
        -- | Those transactions (by their identifier) that the client has told
        -- us about, and which we have not yet acknowledged. This is kept in
        -- the order in which the client gave them to us. This is the same order
        -- in which we submit them to the mempool (or for this example, the final
        -- result order). It is also the order we acknowledge in.
-       unacknowledgedTxIds    :: StrictSeq txid,
+       unacknowledgedTxIds    :: !(StrictSeq txid),
 
        -- | Those transactions (by their identifier) that we can request. These
        -- are a subset of the 'unacknowledgedTxIds' that we have not yet
        -- requested. This is not ordered to illustrate the fact that we can
        -- request txs out of order. We also remember the size.
-       availableTxids         :: Map txid TxSizeInBytes,
+       availableTxids         :: !(Map txid TxSizeInBytes),
 
        -- | Transactions we have successfully downloaded but have not yet added
        -- to the mempool or acknowledged. This needed because we can request
@@ -132,13 +132,13 @@ data ServerState txid tx = ServerState {
        --   the 'bufferedTxs' such that those transactions are acknowledged,
        --   but never actually requested.
        --
-       bufferedTxs            :: Map txid (Maybe tx),
+       bufferedTxs            :: !(Map txid (Maybe tx)),
 
        -- | The number of transactions we can acknowledge on our next request
        -- for more transactions. The number here have already been removed from
        -- 'unacknowledgedTxIds'.
        --
-       numTxsToAcknowledge    :: Word16
+       numTxsToAcknowledge    :: !Word16
      }
   deriving (Show, Generic)
 
