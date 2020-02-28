@@ -838,11 +838,10 @@ validateCandidate lgrDB tracer cfg varInvalid blockCache
                   (ChainAndLedger curChain curLedger) candSuffix =
     LgrDB.validate lgrDB curLedger blockCache rollback newBlocks >>= \case
       LgrDB.MaximumRollbackExceeded supported _ -> do
-        trace $ CandidateExceedsRollback {
-            _supportedRollback = supported
-          , _candidateRollback = _rollback candSuffix
-          , _candidate         = _suffix   candSuffix
-          }
+        trace $ CandidateExceedsRollback
+          supported
+          (_rollback candSuffix)
+          (_suffix   candSuffix)
         return Nothing
       LgrDB.RollbackSuccessful (LgrDB.InvalidBlock e pt ledger') -> do
         let lastValid  = castPoint $ LgrDB.currentPoint ledger'
