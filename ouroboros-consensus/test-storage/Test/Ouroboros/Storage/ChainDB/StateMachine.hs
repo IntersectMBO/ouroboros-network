@@ -1572,19 +1572,19 @@ _runCmds chunkInfo cmds = withRegistry $ \registry -> do
                  IO
                  (Resp Blk IteratorId ReaderId)
     go db internal resourceRegistry varCurSlot varNextId cmd = do
-      RunCmdState { _knownIters, _knownReaders} <- get
+      RunCmdState { rcsKnownIters, rcsKnownReaders} <- get
       let cmd' = At $
-            bimap (revLookup _knownIters) (revLookup _knownReaders) cmd
+            bimap (revLookup rcsKnownIters) (revLookup rcsKnownReaders) cmd
       resp <- lift $ unAt <$> semantics db internal resourceRegistry varCurSlot varNextId cmd'
       newIters <- RE.fromList <$>
        mapM (\rdr -> (rdr, ) <$> newIteratorId) (iters resp)
       newReaders <- RE.fromList <$>
         mapM (\rdr -> (rdr, ) <$> newReaderId) (rdrs  resp)
-      let knownIters'   = _knownIters   `RE.union` newIters
-          knownReaders' = _knownReaders `RE.union` newReaders
+      let knownIters'   = rcsKnownIters   `RE.union` newIters
+          knownReaders' = rcsKnownReaders `RE.union` newReaders
           resp'      = bimap (knownIters' RE.!) (knownReaders' RE.!) resp
       modify $ \s ->
-        s { _knownIters = knownIters', _knownReaders = knownReaders' }
+        s { rcsKnownIters = knownIters', rcsKnownReaders = knownReaders' }
       return resp'
 
     revLookup :: Eq a => RefEnv k a r -> a -> Reference k r
@@ -1592,27 +1592,27 @@ _runCmds chunkInfo cmds = withRegistry $ \registry -> do
 
     newIteratorId :: forall m. Monad m => StateT RunCmdState m IteratorId
     newIteratorId = do
-      s@RunCmdState { _nextIteratorId } <- get
-      put (s { _nextIteratorId = succ _nextIteratorId })
-      return _nextIteratorId
+      s@RunCmdState { rcsNextIteratorId } <- get
+      put (s { rcsNextIteratorId = succ rcsNextIteratorId })
+      return rcsNextIteratorId
 
     newReaderId :: forall m. Monad m => StateT RunCmdState m ReaderId
     newReaderId = do
-      s@RunCmdState { _nextReaderId } <- get
-      put (s { _nextReaderId = succ _nextReaderId })
-      return _nextReaderId
+      s@RunCmdState { rcsNextReaderId } <- get
+      put (s { rcsNextReaderId = succ rcsNextReaderId })
+      return rcsNextReaderId
 
 data RunCmdState = RunCmdState
-  { _knownIters     :: KnownIters   Blk IO Concrete
-  , _knownReaders   :: KnownReaders Blk IO Concrete
-  , _nextIteratorId :: IteratorId
-  , _nextReaderId   :: ReaderId
+  { rcsKnownIters     :: KnownIters   Blk IO Concrete
+  , rcsKnownReaders   :: KnownReaders Blk IO Concrete
+  , rcsNextIteratorId :: IteratorId
+  , rcsNextReaderId   :: ReaderId
   }
 
 emptyRunCmdState :: RunCmdState
 emptyRunCmdState = RunCmdState
-  { _knownIters     = RE.empty
-  , _knownReaders   = RE.empty
-  , _nextIteratorId = 0
-  , _nextReaderId   = 0
+  { rcsKnownIters     = RE.empty
+  , rcsKnownReaders   = RE.empty
+  , rcsNextIteratorId = 0
+  , rcsNextReaderId   = 0
   }
