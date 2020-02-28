@@ -174,7 +174,7 @@ nodeToNodeProtocols NodeToNodeProtocols {
       }
     , MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 3,
-        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolLimits = blockFetchProtocolLimits,
         miniProtocolRun    = blockFetchProtocol
       }
     , MiniProtocol {
@@ -249,6 +249,31 @@ nodeToNodeProtocols NodeToNodeProtocols {
           --
           maximumIngressQueue = 236_280
         }
+
+    blockFetchProtocolLimits = MiniProtocolLimits {
+        -- block-fetch client can pipeline at most `10` blocks.  This is
+        -- currently hard coded in
+        -- 'Ouroboros.Network.BlockFetch.blockFetchLogic' (where
+        -- @maxInFlightReqsPerPeer = 10@ is specified).  In the future the
+        -- block fetch client will count bytes rather than blocks.  By far
+        -- the largest (and the only pipelined message) in 'block-fetch'
+        -- protocol is 'MsgBlock'.  We put a hard limit of 2Mb on each block.
+        --
+        -- * size of 'MsgBlock'
+        --   ```
+        --       1               -- encodeListLen 2
+        --     + 1               -- encodeWord 4
+        --     + 2 * 1024 * 1024 -- block size limit
+        --     = 2_097_154
+        --   ```
+        --
+        -- So the overall limit is `10 * 2_097_154 = 20_971_540` (i.e. aroudn
+        -- '20Mb'), we add 10% safety margin:
+        --
+        maximumIngressQueue = 23_068_694
+      }
+
+
 
   -- TODO: provide sensible limits
   -- https://github.com/input-output-hk/ouroboros-network/issues/575
