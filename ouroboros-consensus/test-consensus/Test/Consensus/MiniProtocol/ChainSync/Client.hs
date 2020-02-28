@@ -104,15 +104,15 @@ prop_chainSync ChainSyncClientSetup {..} =
     -- it, but not the other way around: we don't check whether a situation
     -- has occured where an exception should have been thrown, but wasn't.
     case mbEx of
-      Just (ForkTooDeep { _intersection = intersection })     ->
+      Just (ForkTooDeep intersection _ _)     ->
         label "ForkTooDeep" $
         counterexample ("ForkTooDeep intersection: " <> ppPoint intersection) $
         not (withinFragmentBounds intersection clientFragment)
-      Just (InvalidRollBack { _newPoint = intersection }) ->
+      Just (InvalidRollBack intersection _ _) ->
         label "InvalidRollBack" $
         counterexample ("InvalidRollBack intersection: " <> ppPoint intersection) $
         not (withinFragmentBounds intersection synchedFragment)
-      Just (NoMoreIntersection {_ourTip = Our ourTip, _theirTip = Their theirTip}) ->
+      Just (NoMoreIntersection (Our ourTip) (Their theirTip)) ->
         label "NoMoreIntersection" $
         counterexample ("NoMoreIntersection ourHead: " <> ppPoint (getTipPoint ourTip) <>
                         ", theirHead: " <> ppPoint (getTipPoint theirTip)) $
