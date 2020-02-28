@@ -157,13 +157,13 @@ instance HasHeader (Header TestBlock) where
   blockInvariant = const True
 
 data instance BlockConfig TestBlock = TestBlockConfig {
-      testBlockSlotLengths :: SlotLengths
+      testBlockSlotLengths :: !SlotLengths
 
       -- | Number of core nodes
       --
       -- We need this in order to compute the 'ValidateView', which must
       -- conjure up a validation key out of thin air
-    , testBlockNumCoreNodes :: NumCoreNodes
+    , testBlockNumCoreNodes :: !NumCoreNodes
     }
   deriving (Generic, NoUnexpectedThunks)
 

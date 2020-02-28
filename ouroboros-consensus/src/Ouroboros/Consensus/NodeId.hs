@@ -24,8 +24,8 @@ import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
 -- TODO: It is not at all clear that this makes any sense anymore. The network
 -- layer does not use or provide node ids (it uses addresses).
-data NodeId = CoreId CoreNodeId
-            | RelayId Word64
+data NodeId = CoreId !CoreNodeId
+            | RelayId !Word64
   deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks)
 
 instance Condense NodeId where

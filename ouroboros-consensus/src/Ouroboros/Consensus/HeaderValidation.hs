@@ -322,10 +322,10 @@ class HasAnnTip blk => ValidateEnvelope blk where
 -- | Invalid header
 data HeaderError blk =
     -- | Invalid consensus protocol fields
-    HeaderProtocolError (ValidationErr (BlockProtocol blk))
+    HeaderProtocolError !(ValidationErr (BlockProtocol blk))
 
     -- | Failed to validate the envelope
-  | HeaderEnvelopeError (HeaderEnvelopeError blk)
+  | HeaderEnvelopeError !(HeaderEnvelopeError blk)
   deriving (Generic)
 
 deriving instance BlockSupportsProtocol blk => Eq                 (HeaderError blk)
