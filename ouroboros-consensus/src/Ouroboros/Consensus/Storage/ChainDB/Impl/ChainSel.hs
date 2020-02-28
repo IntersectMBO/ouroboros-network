@@ -466,7 +466,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
 
         let candidateSuffixes = NE.nonEmpty
               $ NE.filter ( preferAnchoredCandidate cdbTopLevelConfig curChain
-                          . _suffix
+                          . csSuffix
                           )
               $ fmap (mkCandidateSuffix 0) candidates
         -- All candidates are longer than the current chain, so they will be
@@ -522,7 +522,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
                 -- The suffixes all fork off from the current chain within @k@
                 -- blocks, so it satisfies the precondition of
                 -- 'preferCandidate'.
-                filter (preferAnchoredCandidate cdbTopLevelConfig curChain . _suffix)
+                filter (preferAnchoredCandidate cdbTopLevelConfig curChain . csSuffix)
               . mapMaybe (intersectCandidateSuffix curChain)
               $ NE.toList candidates
 
@@ -727,13 +727,13 @@ chainSelection
      -- chain.
 chainSelection lgrDB tracer cfg varInvalid blockCache
                curChainAndLedger@(ChainAndLedger curChain _) candidates =
-  assert (all (preferAnchoredCandidate cfg curChain . _suffix) candidates) $
+  assert (all (preferAnchoredCandidate cfg curChain . csSuffix) candidates) $
   assert (all (isJust . fitCandidateSuffixOn curChain) candidates) $
     go (sortCandidates (NE.toList candidates))
   where
     sortCandidates :: [CandidateSuffix blk] -> [CandidateSuffix blk]
     sortCandidates =
-      sortBy (flip (compareAnchoredCandidates cfg) `on` _suffix)
+      sortBy (flip (compareAnchoredCandidates cfg) `on` csSuffix)
 
     validate :: ChainAndLedger  blk  -- ^ Current chain and ledger
              -> CandidateSuffix blk  -- ^ Candidate fragment
@@ -784,7 +784,7 @@ chainSelection lgrDB tracer cfg varInvalid blockCache
     truncateInvalidCandidates cands = do
       isInvalid <- flip Map.member . forgetFingerprint <$>
         atomically (readTVar varInvalid)
-      return $ filter (preferAnchoredCandidate cfg curChain . _suffix)
+      return $ filter (preferAnchoredCandidate cfg curChain . csSuffix)
              $ mapMaybe (truncateInvalidCandidate isInvalid) cands
 
     -- [Ouroboros]
@@ -840,8 +840,8 @@ validateCandidate lgrDB tracer cfg varInvalid blockCache
       LgrDB.MaximumRollbackExceeded supported _ -> do
         trace $ CandidateExceedsRollback
           supported
-          (_rollback candSuffix)
-          (_suffix   candSuffix)
+          (csRollback candSuffix)
+          (csSuffix   candSuffix)
         return Nothing
       LgrDB.RollbackSuccessful (LgrDB.InvalidBlock e pt ledger') -> do
         let lastValid  = castPoint $ LgrDB.currentPoint ledger'
@@ -856,13 +856,13 @@ validateCandidate lgrDB tracer cfg varInvalid blockCache
         -- whether it is preferred over the current chain.
         if preferAnchoredCandidate cfg curChain candidate'
           then do
-            trace (ValidCandidate (_suffix candSuffix))
+            trace (ValidCandidate (csSuffix candSuffix))
             return $ Just $ mkChainAndLedger candidate' ledger'
           else do
-            trace (InvalidCandidate (_suffix candSuffix))
+            trace (InvalidCandidate (csSuffix candSuffix))
             return Nothing
       LgrDB.RollbackSuccessful (LgrDB.ValidBlocks ledger') -> do
-        trace (ValidCandidate (_suffix candSuffix))
+        trace (ValidCandidate (csSuffix candSuffix))
         return $ Just $ mkChainAndLedger candidate ledger'
   where
     trace = traceWith tracer
@@ -927,9 +927,9 @@ mkChainAndLedger c l =
 --
 -- INVARIANT: the length of the suffix must always be >= the rollback
 data CandidateSuffix blk = CandidateSuffix
-  { _rollback :: !Word64
+  { csRollback :: !Word64
     -- ^ The number of headers to roll back the current chain
-  , _suffix   :: !(AnchoredFragment (Header blk))
+  , csSuffix   :: !(AnchoredFragment (Header blk))
     -- ^ The new headers to add after rolling back the current chain.
   }
 
@@ -962,10 +962,10 @@ fitCandidateSuffixOn curChain (CandidateSuffix rollback suffix) =
 -- | Roll back the candidate suffix to the given point.
 --
 -- PRECONDITION: the given point must correspond to one of the new headers of
--- the candidate suffix ('_suffix').
+-- the candidate suffix ('csSuffix').
 --
 -- PRECONDITION: the length of the suffix rolled back to the given point must
--- be >= the rollback ('_rollback').
+-- be >= the rollback ('csRollback').
 rollbackCandidateSuffix :: (HasHeader (Header blk), HasCallStack)
                         => Point           blk
                         -> CandidateSuffix blk
