@@ -144,9 +144,9 @@ newtype Corruption = MkCorruption { getCorruptions :: Corruptions }
 -- simulate file system errors thrown at the 'HasFS' level. When 'Nothing', no
 -- errors will be thrown.
 data CmdErr it = CmdErr
-  { _cmdErr   :: Maybe Errors
-  , _cmd      :: Cmd it
-  , _cmdIters :: [it]
+  { cmdErr   :: Maybe Errors
+  , cmd      :: Cmd it
+  , cmdIters :: [it]
     -- ^ A list of all open iterators. For some commands, e.g., corrupting the
     -- database or simulating errors, we need to close and reopen the
     -- database, which almost always requires truncation of the database.
@@ -425,7 +425,7 @@ eventCmdErr :: ImmDBEvent m r -> At CmdErr m r
 eventCmdErr = eventCmd
 
 eventCmdNoErr :: ImmDBEvent m r -> At Cmd m r
-eventCmdNoErr = At . _cmd . unAt . eventCmdErr
+eventCmdNoErr = At . cmd . unAt . eventCmdErr
 
 eventMockCmd :: Eq1 r => ImmDBEvent m r -> Cmd IteratorId
 eventMockCmd ev@Event {..} = toMock eventBefore (eventCmdNoErr ev)
@@ -460,15 +460,15 @@ lockstep model@Model {..} cmdErr (At resp) = Event
 -- | Generate a 'CmdErr'
 generator :: Model m Symbolic -> Gen (At CmdErr m Symbolic)
 generator m@Model {..} = do
-    _cmd    <- unAt <$> generateCmd m
-    _cmdErr <- if errorFor _cmd
+    cmd    <- unAt <$> generateCmd m
+    cmdErr <- if errorFor cmd
        then frequency
           -- We want to make some progress
           [ (4, return Nothing)
           , (1, Just <$> arbitrary)
           ]
        else return Nothing
-    let _cmdIters = RE.keys knownIters
+    let cmdIters = RE.keys knownIters
     return $ At CmdErr {..}
   where
     -- Don't simulate an error during corruption, because we don't want an
@@ -732,7 +732,7 @@ mock model cmdErr = At <$> traverse (const genSym) resp
     (resp, _dbm) = step model cmdErr
 
 precondition :: Model m Symbolic -> At CmdErr m Symbolic -> Logic
-precondition Model {..} (At (CmdErr { _cmd = cmd })) =
+precondition Model {..} (At (CmdErr { cmd })) =
    forall (iters cmd) (`member` RE.keys knownIters) .&&
     case cmd of
       AppendBlock    _ _ b -> fitsOnTip b
@@ -980,7 +980,7 @@ failedUserError f = failed $ \ev e -> case e of
 simulatedError :: (ImmDBEvent m Symbolic -> Either Tag (EventPred m))
                -> EventPred m
 simulatedError f = predicate $ \ev ->
-    case (_cmdErr (unAt (eventCmdErr ev)), getResp (eventMockResp ev)) of
+    case (cmdErr (unAt (eventCmdErr ev)), getResp (eventMockResp ev)) of
       (Just _, Right _) -> f ev
       _                 -> Right $ simulatedError f
 
@@ -1126,7 +1126,7 @@ instance CommandNames (At Cmd m) where
     constrNames (Proxy @(Cmd (IterRef m r)))
 
 instance CommandNames (At CmdErr m) where
-  cmdName (At (CmdErr { _cmd = cmd }) ) = constrName cmd
+  cmdName (At (CmdErr { cmd }) ) = constrName cmd
   cmdNames (_ :: Proxy (At CmdErr m r)) =
     constrNames (Proxy @(Cmd (IterRef m r)))
 
