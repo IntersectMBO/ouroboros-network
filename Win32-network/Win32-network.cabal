@@ -28,8 +28,10 @@ library
                        System.Win32.Async.ErrCode
                        System.Win32.Async.IOManager
                        System.Win32.Async.Internal
+                       System.Win32.Async.WSABuf
                        System.Win32.Async.Socket
                        System.Win32.Async.Socket.ByteString
+                       System.Win32.Async.Socket.ByteString.Lazy
     c-sources:         cbits/Win32Async.c
                        cbits/Win32Socket.c
     build-depends:     base              >= 4.5  && < 4.13,

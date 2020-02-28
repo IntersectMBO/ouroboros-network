@@ -21,6 +21,7 @@ module System.Win32.NamedPipes (
     pIPE_ACCESS_DUPLEX,
     pIPE_ACCESS_INBOUND,
     pIPE_ACCESS_OUTBOUND,
+    fILE_FLAG_OVERLAPPED,
     PipeMode,
     pIPE_TYPE_BYTE,
     pIPE_TYPE_MESSAGE,
@@ -103,6 +104,20 @@ pIPE_UNLIMITED_INSTANCES = #const PIPE_UNLIMITED_INSTANCES
 --
 -- For full details see
 -- <https://docs.microsoft.com/en-us/windows/desktop/api/winbase/nf-winbase-createnamedpipea>
+--
+-- To create a named pipe which can be associate with IO completion port on
+-- needs to pass 'fILE_FLAG_OVERLAPPED' to 'OpenMode' argument,
+-- e.g.
+--
+-- >  Win32.createNamedPipe pipeName
+-- >                        (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+-- >                        (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+-- >                        pIPE_UNLIMITED_INSTANCES
+-- >                        512
+-- >                        512
+-- >                        0
+-- >                        Nothing
+--
 --
 createNamedPipe :: String   -- ^ pipe name of form @\.\pipe\{pipename}@
                 -> OpenMode

@@ -40,7 +40,7 @@ import           System.Process (createPipe)
 import           System.IO (hClose)
 #endif
 
-import           Ouroboros.Network.Block (decodeTip, encodeTip)
+import           Ouroboros.Network.Block (encodeTip, decodeTip)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS

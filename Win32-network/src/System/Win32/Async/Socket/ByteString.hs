@@ -20,8 +20,10 @@ import           Network.Socket (Socket)
 import           System.Win32.Async.Socket
 
 
--- | Send a 'ByteString' over a socket, which must be in a connected state.
--- Returns number of bytes sent.
+-- | Send a 'ByteString' over a socket, which must be in a connected state, and
+-- must be associated with an IO completion port via
+-- 'System.Win32.Async.IOManager.associateWithIOCompletionProt'.  Returns number
+-- of bytes sent.
 --
 send :: Socket
      -> ByteString
@@ -42,6 +44,11 @@ sendAll sock bs = do
       $ sendAll sock (BS.drop sent bs)
 
 
+-- | Recv a 'ByteString' from a socket, which must be in a connected state, and
+-- must be associated with an IO completion port via
+-- 'System.Win32.Async.IOManager.associateWithIOCompletionProt'.  It may return
+-- less bytes than requested.
+--
 recv :: Socket
      -> Int
      -> IO ByteString

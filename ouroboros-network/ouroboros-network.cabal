@@ -261,10 +261,6 @@ test-suite test-network
     build-depends:     Win32-network                 <0.2.0.0,
                        Win32           >= 2.5.4.1 && <2.9
 
-  if os(windows)
-    build-depends:     Win32-network                 <0.2.0.0,
-                       Win32           >= 2.5.4.1 && <2.9
-
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
