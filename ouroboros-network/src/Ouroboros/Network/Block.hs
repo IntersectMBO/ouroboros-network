@@ -5,6 +5,8 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE NumDecimals                #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -40,6 +42,7 @@ module Ouroboros.Network.Block (
   , legacyTip
   , toLegacyTip
   , encodeTip
+  , encodedTipSize
   , decodeTip
   , ChainUpdate(..)
   , MaxSlotNo (..)
@@ -51,6 +54,7 @@ module Ouroboros.Network.Block (
   , genesisPoint
     -- * Serialisation
   , encodePoint
+  , encodedPointSize
   , encodeChainHash
   , decodePoint
   , decodeChainHash
@@ -72,8 +76,18 @@ import           Codec.Serialise (Serialise (..))
 import           Control.Monad (when)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured)
+import           Data.Proxy (Proxy)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
+
+-- TODO: it should be exported from 'Cardano.Prelude'
+import           Control.Tracer (contramap)
+
+import           Cardano.Binary ( Size
+                                , Case (..)
+                                , szCases
+                                , szGreedy
+                                )
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Block
@@ -249,6 +263,18 @@ encodeTip encodeHeaderHash tip = mconcat
   where
     (tipPoint, tipBlockNo) = toLegacyTip tip
 
+-- TODO: add a test, which should compare with 'encodedTip', including various
+-- instantiations of 'blk', e.g. 'ByronBlock, etc.  Thus this test should live
+-- in 'ourobors-consensus'.
+encodedTipSize :: (Proxy (HeaderHash blk) -> Size)
+               -> (Proxy (Tip        blk) -> Size)
+encodedTipSize encodedHeaderHashSize tipProxy =
+    1
+  + encodedPointSize encodedHeaderHashSize (fst . toLegacyTip <$> tipProxy)
+  -- TODO: remove 'unBlockNo' when 'BlockNo' 'ToCBOR' instance will implement
+  -- 'encodedSizeExpr', also include a test in `cardano-ledger`.
+  + szGreedy (unBlockNo . snd . toLegacyTip <$> tipProxy)
+
 decodeTip :: (forall s. Decoder s (HeaderHash blk))
           -> (forall s. Decoder s (Tip        blk))
 decodeTip decodeHeaderHash = do
@@ -337,6 +363,12 @@ decodeChainHash decodeHash = do
       1 -> BlockHash <$> decodeHash
       _ -> fail "decodeChainHash: invalid tag"
 
+-- TODO: remove 'unSlotNo', add a test.  This should be moved to
+-- 'cardano-consensus' where similar tests exists (and all the infrastructure
+-- to run them is in place).
+encodedSlotNoSize :: Proxy SlotNo -> Size
+encodedSlotNoSize = szGreedy . fmap unSlotNo
+
 encodePoint :: (HeaderHash block -> Encoding)
             -> (Point      block -> Encoding)
 encodePoint encodeHash (Point pt) = case pt of
@@ -345,6 +377,23 @@ encodePoint encodeHash (Point pt) = case pt of
            Enc.encodeListLen 2
         <> encode     (Point.blockPointSlot blk)
         <> encodeHash (Point.blockPointHash blk)
+
+-- TODO: add a test (see 'encodedTipSize')
+encodedPointSize :: (Proxy (HeaderHash block) -> Size)
+                 -> (Proxy (Point      block) -> Size)
+encodedPointSize encodedHeaderHashSize pointProxy =
+    1
+    + szCases
+        [ Case "Origin" 1
+        , Case "At" $
+              1
+            + encodedSlotNoSize
+                (Point.blockPointSlot <$> blockProxy)
+            + encodedHeaderHashSize
+                (Point.blockPointHash <$> blockProxy)
+        ]
+  where
+    blockProxy = At `contramap` (getPoint <$> pointProxy)
 
 decodePoint :: (forall s. Decoder s (HeaderHash block))
             -> (forall s. Decoder s (Point      block))
