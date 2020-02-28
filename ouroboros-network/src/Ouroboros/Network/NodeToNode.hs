@@ -13,6 +13,7 @@
 module Ouroboros.Network.NodeToNode (
     nodeToNodeProtocols
   , NodeToNodeProtocols (..)
+  , MiniProtocolParameters (..)
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
   , DictVersion (..)
@@ -80,11 +81,13 @@ module Ouroboros.Network.NodeToNode (
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
+import           Data.Int (Int64)
 import           Data.Time.Clock (DiffTime)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
+import           Data.Word
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
@@ -140,6 +143,29 @@ data NodeToNodeProtocols appType bytes m a b = NodeToNodeProtocols {
   }
 
 
+data MiniProtocolParameters = MiniProtocolParameters {
+      chainSyncPipelineingHighMark :: !Word32,
+      -- ^ high threshold for pipelining (we will never exceed that many
+      -- messages pipelined).
+
+      chainSyncPipelineingLowMark  :: !Word32,
+      -- ^ low threshold: if we hit the 'chainSyncPipelineingHighMark' we will
+      -- listen for responses until there are at most
+      -- 'chainSyncPipelineingLowMark' pipelined message
+      --
+      -- Must be smaller than 'chainSyncPipelineingHighMark'.
+      --
+      -- Note: 'chainSyncPipelineingLowMark' and 'chainSyncPipelineingLowMark'
+      -- are passed to 'pipelineDecisionLowHighMark'.
+
+      blockFetchPipelineingMax     :: !Word,
+      -- ^ maximal number of pipelined messages in 'block-fetch' mini-protocol.
+
+      txSubmissionMaxUnacked       :: !Word16
+      -- ^ maximal number of unacked tx (pipelineing is bounded by twice this
+      -- number)
+    }
+
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-node protocol.
 --
@@ -151,7 +177,7 @@ data NodeToNodeProtocols appType bytes m a b = NodeToNodeProtocols {
 -- 'Handshake' protocol is not included in 'NodeToNodeProtocols' as it runs
 -- before mux is started but it reusing 'MuxBearer' to send and receive
 -- messages.  Only when the handshake protocol suceedes, we will know which
--- protocols to run / multiplex. 
+-- protocols to run / multiplex.
 --
 -- These are chosen to not overlap with the node to client protocol numbers (and
 -- the handshake protocol number).  This is not essential for correctness, but
@@ -159,9 +185,15 @@ data NodeToNodeProtocols appType bytes m a b = NodeToNodeProtocols {
 -- both protocols, e.g.  wireshark plugins.
 --
 nodeToNodeProtocols
-  :: NodeToNodeProtocols appType bytes m a b
+  :: MiniProtocolParameters
+  -> NodeToNodeProtocols appType bytes m a b
   -> OuroborosApplication appType bytes m a b
-nodeToNodeProtocols NodeToNodeProtocols {
+nodeToNodeProtocols MiniProtocolParameters {
+                        chainSyncPipelineingHighMark,
+                        blockFetchPipelineingMax,
+                        txSubmissionMaxUnacked
+                      }
+                    NodeToNodeProtocols {
                         chainSyncProtocol,
                         blockFetchProtocol,
                         txSubmissionProtocol
@@ -179,12 +211,18 @@ nodeToNodeProtocols NodeToNodeProtocols {
       }
     , MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 4,
-        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolLimits = txSubmissionProtocolLimits,
         miniProtocolRun    = txSubmissionProtocol
       }
     ]
   where
-    chainSyncProtocolLimits :: MiniProtocolLimits
+    addSafetyMargin :: Int64 -> Int64
+    addSafetyMargin x = x + x `div` 10
+
+    chainSyncProtocolLimits
+      , blockFetchProtocolLimits
+      , txSubmissionProtocolLimits :: MiniProtocolLimits
+
     chainSyncProtocolLimits =
       MiniProtocolLimits {
           -- chain sync has two potentially large messages:
@@ -243,16 +281,19 @@ nodeToNodeProtocols NodeToNodeProtocols {
           --   = 716
           --   ```
           --
-          -- Since chain sync can pipeline up to 300 of 'MsgRollForward'
-          -- messages the maximal queue size can be @300 * 716 = 214_800@.  We
-          -- add 10% to that for safety.
+          -- Since chain sync can pipeline up to 'chainSyncPipelineingHighMark' of 'MsgRollForward'
+          -- messages the maximal queue size can be
+          -- @chainSyncPipelineingHighMark * 716@.  The current value of
+          -- 'chainSyncPipelineingHighMark' is '300' thus the upper bound is
+          -- `214.8Kb`)  We add 10% to that for safety.
           --
-          maximumIngressQueue = 236_280
+          maximumIngressQueue = addSafetyMargin $
+            fromIntegral chainSyncPipelineingHighMark * 716
         }
 
     blockFetchProtocolLimits = MiniProtocolLimits {
-        -- block-fetch client can pipeline at most `10` blocks.  This is
-        -- currently hard coded in
+        -- block-fetch client can pipeline at most 'blockFetchPipelineingMax'
+        -- blocks (currently '10').  This is currently hard coded in
         -- 'Ouroboros.Network.BlockFetch.blockFetchLogic' (where
         -- @maxInFlightReqsPerPeer = 10@ is specified).  In the future the
         -- block fetch client will count bytes rather than blocks.  By far
@@ -270,18 +311,76 @@ nodeToNodeProtocols NodeToNodeProtocols {
         -- So the overall limit is `10 * 2_097_154 = 20_971_540` (i.e. aroudn
         -- '20Mb'), we add 10% safety margin:
         --
-        maximumIngressQueue = 23_068_694
+        maximumIngressQueue = addSafetyMargin $
+          fromIntegral blockFetchPipelineingMax * 2_097_154
       }
 
+    txSubmissionProtocolLimits = MiniProtocolLimits {
+          -- tx-submission server can pipeline both 'MsgRequestTxIds' and
+          -- 'MsgRequestTx'. This means that there can be many
+          -- 'MsgReplyTxIds', 'MsgReplyTxs' messages in an inbound queue (their
+          -- sizes are strictly greater than the corresponding request
+          -- messages).
+          --
+          -- Each 'MsgRequestTx' can contain at max @maxTxIdsToRequest = 3@
+          -- (defined in -- 'Ouroboros.Network.TxSubmission.Inbound.txSubmissionInbound')
+          --
+          -- Each 'MsgRequestTx' can request at max @maxTxToRequest = 2@
+          -- (defined in -- 'Ouroboros.Network.TxSubmission.Inbound.txSubmissionInbound')
+          --
+          -- The 'txSubmissionInBound' server can at most put `100`
+          -- unacknowledged transactions.  It also pipelines both 'MsgRequestTx`
+          -- and `MsgRequestTx` in turn. This means that the inbound queue can
+          -- have at most `100` `MsgRequestTxIds` and `MsgRequestTx` which will
+          -- contain a single `TxId` / `Tx`.
+          --
+          -- TODO: the unacknowledged transactions are configured in `NodeArgs`,
+          -- and we should take this parameter as an input for this computation.
+          --
+          -- The upper bound of size of a single transaction is 64k, while the
+          -- size of `TxId` is `34` bytes (`type TxId = Hash Tx`).
+          --
+          -- Ingress side of `txSubmissinInbound`
+          --
+          -- * 'MsgReplyTxs' carrying a single `TxId`:
+          -- ```
+          --    1  -- encodeListLen 2
+          --  + 1  -- encodeWord 1
+          --  + 1  -- encodeListLenIndef
+          --  + 1  -- encodeListLen 2
+          --  + 34 -- encode 'TxId'
+          --  + 5  -- encodeWord32 (size of tx)
+          --  + 1  -- encodeBreak
+          --  = 44
+          -- ```
+          -- * 'MsgReplyTx' carrying a single 'Tx':
+          -- ```
+          --    1      -- encodeListLen 2
+          --  + 1      -- encodeWord 3
+          --  + 1      -- encodeListLenIndef
+          --  + 65_536 -- 64kb transaction
+          --  + 1      -- encodeBreak
+          --  = 65_540
+          -- ```
+          --
+          -- On the ingress side of 'txSubmissionOutbound' we can have at most
+          -- `MaxUnacked' 'MsgRequestTxsIds' and the same ammount of
+          -- 'MsgRequsetTx' containing a single 'TxId'.  The size of
+          -- 'MsgRequestTxsIds' is much smaller that 'MsgReplyTx', and the size
+          -- of `MsgReqeustTx` with a single 'TxId' is smaller than
+          -- 'MsgReplyTxIds' which contains a single 'TxId' (it just contains
+          -- the 'TxId' without the size of 'Tx' in bytes).  So the ingress
+          -- queue of 'txSubmissionOutbound' is bounded by the ingress side of
+          -- the 'txSubmissionInbound'
+          --
+          -- Currently the value of 'txSubmissionMaxUnacked' is '100', for
+          -- which the upper bound is `100 * (44 + 65_540) = 6_558_400`, we add
+          -- 10% as a safety margin.
+          --
+          maximumIngressQueue = addSafetyMargin $
+              fromIntegral txSubmissionMaxUnacked * (44 + 65_540)
+        }
 
-
-  -- TODO: provide sensible limits
-  -- https://github.com/input-output-hk/ouroboros-network/issues/575
-maximumMiniProtocolLimits :: MiniProtocolLimits
-maximumMiniProtocolLimits =
-    MiniProtocolLimits {
-      maximumIngressQueue = 0xffffffff
-    }
 
 -- | Enumeration of node to node protocol versions.
 --
