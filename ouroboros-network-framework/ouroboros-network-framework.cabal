@@ -19,6 +19,11 @@ maintainer:          alex@well-typed.com, duncan@well-typed.com, marcin.szamotul
 build-type:          Simple
 extra-source-files:  CHANGELOG.md
 
+flag tags
+  Description: Enable ghc-tags-plugin to generate tags file
+  Manual: True
+  Default: False
+
 library
   exposed-modules:     Ouroboros.Network.Codec
                        Ouroboros.Network.Channel
@@ -78,6 +83,9 @@ library
     build-depends:     Win32-network   <  0.2.0.0,
                        Win32           >= 2.5.4.1 && <2.9
 
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
+
   hs-source-dirs:      src
   default-language:    Haskell2010
 
@@ -121,6 +129,8 @@ test-suite ouroboros-network-framework-tests
   if os(windows)
     build-depends:     Win32-network   <  0.2.0.0,
                        Win32           >= 2.5.4.1 && <2.9
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
 
   default-language:    Haskell2010
   ghc-options:         -rtsopts
@@ -151,6 +161,8 @@ executable demo-ping-pong
   if os(windows)
     build-depends:     Win32-network   <  0.2.0.0,
                        Win32           >= 2.5.4.1 && <2.9
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
 
   default-language:    Haskell2010
   ghc-options:         -Wall

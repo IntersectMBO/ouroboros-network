@@ -17,6 +17,11 @@ source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
 
+flag tags
+  Description: Enable ghc-tags-plugin to generate tags file
+  Manual: True
+  Default: False
+
 library
   hs-source-dirs:      src
 
@@ -50,6 +55,9 @@ library
 
                      , ouroboros-network
                      , ouroboros-consensus
+
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
 
   default-language:    Haskell2010
   ghc-options:         -Wall

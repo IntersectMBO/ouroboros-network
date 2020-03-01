@@ -9,6 +9,11 @@ build-type:          Simple
 extra-source-files:  README.md
 cabal-version:       >=1.20
 
+flag tags
+  Description: Enable ghc-tags-plugin to generate tags file
+  Manual: True
+  Default: False
+
 Library
   exposed-modules:      Network.NTP.Client
                         Network.NTP.Packet
@@ -22,6 +27,9 @@ Library
                       , network         >= 3.1 && <3.2
                       , stm             >=2.4 && <2.6
                       , time            >=1.6 && <1.10
+
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
 
   hs-source-dirs:       src
   default-language:     Haskell2010
@@ -38,6 +46,10 @@ test-suite test-ntp-client
                       , tasty
                       , tasty-quickcheck
                       , ntp-client
+
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
+
   default-language:   Haskell2010
   ghc-options:        -Wall
 
@@ -48,5 +60,9 @@ executable demo-ntp-client
                       , base            >=4.9 && <4.13
                       , contra-tracer   >=0.1 && <0.2
                       , ntp-client
+
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
+
   default-language:   Haskell2010
   ghc-options:        -Wall

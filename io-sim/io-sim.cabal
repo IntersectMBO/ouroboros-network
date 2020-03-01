@@ -18,6 +18,11 @@ flag asserts
   manual:      False
   default:     False
 
+flag tags
+  Description: Enable ghc-tags-plugin to generate tags file
+  Manual: True
+  Default: False
+
 source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
@@ -45,6 +50,9 @@ library
                        psqueues          >=0.2 && <0.3,
                        time              >=1.6 && <1.10
 
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
+
   ghc-options:         -Wall
   if flag(asserts)
      ghc-options:      -fno-ignore-asserts
@@ -65,6 +73,9 @@ test-suite test-sim
                        tasty,
                        tasty-quickcheck,
                        time
+
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
 
   ghc-options:         -Wall
                        -fno-ignore-asserts

@@ -28,6 +28,11 @@ flag asserts
   manual:      False
   default:     False
 
+flag tags
+  Description: Enable ghc-tags-plugin to generate tags file
+  Manual: True
+  Default: False
+
 library
   hs-source-dirs:      src
 
@@ -59,6 +64,10 @@ library
                        mtl   >=2.2 && <2.3,
                        stm   >=2.4 && <2.6,
                        time  >=1.6 && <1.10
+
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
+
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
 

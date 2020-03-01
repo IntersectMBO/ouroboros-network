@@ -17,6 +17,11 @@ source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
 
+flag tags
+  Description: Enable ghc-tags-plugin to generate tags file
+  Manual: True
+  Default: False
+
 library
   hs-source-dirs:      src
 
@@ -54,6 +59,9 @@ library
                        cborg             >=0.2.1 && <0.3,
                        serialise         >=0.2 && <0.3,
                        QuickCheck
+
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors

@@ -24,6 +24,11 @@ Flag ipv6
   -- Default to False since travis lacks IPv6 support
   Default: False
 
+flag tags
+  Description: Enable ghc-tags-plugin to generate tags file
+  Manual: True
+  Default: False
+
 library
   build-depends:       base            >=4.9 && <4.13,
                        io-sim-classes  >=0.1 && <0.2,
@@ -42,6 +47,9 @@ library
   if os(windows)
     build-depends:     Win32           >= 2.5.4.1 && <2.9,
                        Win32-network   >=0.1 && <0.2
+
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -114,6 +122,10 @@ test-suite test-network-mux
   if os(windows)
     build-depends:     Win32           >= 2.5.4.1 && <2.9,
                        Win32-network   >=0.1 && <0.2
+
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
+
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
@@ -139,6 +151,10 @@ executable mux-demo
                        serialise,
                        Win32,
                        Win32-network
+
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
+
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -threaded

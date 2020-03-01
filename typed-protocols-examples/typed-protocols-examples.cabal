@@ -17,6 +17,11 @@ build-type:          Simple
 
 cabal-version:       >=1.10
 
+flag tags
+  Description: Enable ghc-tags-plugin to generate tags file
+  Manual: True
+  Default: False
+
 library
   exposed-modules:   Network.TypedProtocol.Channel
                    , Network.TypedProtocol.Codec
@@ -49,6 +54,9 @@ library
                      time,
                      typed-protocols
 
+  if flag(tags)
+    build-depends:   ghc-tags-plugin
+
   hs-source-dirs:    src
   default-language:  Haskell2010
   ghc-options:       -Wall
@@ -71,6 +79,10 @@ test-suite typed-protocols-tests
                    , tasty
                    , tasty-quickcheck
                    , time
+
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
+
   default-language:  Haskell2010
   ghc-options:       -rtsopts
                      -Wall

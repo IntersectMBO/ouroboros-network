@@ -22,6 +22,11 @@ flag asserts
   manual:      False
   default:     False
 
+flag tags
+  Description: Enable ghc-tags-plugin to generate tags file
+  Manual: True
+  Default: False
+
 library
   hs-source-dirs:      src
 
@@ -64,6 +69,9 @@ library
 
                      , ouroboros-network
                      , ouroboros-consensus
+
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
 
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -122,6 +130,9 @@ test-suite test
                      , hedgehog
                      , serialise
 
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
+
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wredundant-constraints
@@ -151,6 +162,9 @@ executable db-converter
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
 
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
+
    default-language:   Haskell2010
    ghc-options:        -Wall
                        -Wredundant-constraints
@@ -169,6 +183,9 @@ executable db-analyser
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
                      , ouroboros-network
+
+  if flag(tags)
+    build-depends:     ghc-tags-plugin
 
   default-language:    Haskell2010
   ghc-options:         -Wall
