@@ -113,10 +113,10 @@ muxStart tracer (MuxApplication ptcls) bearer = do
 
     let jobs = muxerJob tq
              : demuxerJob ptcls'
-             : catMaybes [ miniProtocolInitiatorJob tq ptcl pix initQ respQ
-                         | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
-            ++ catMaybes [ miniProtocolResponderJob tq ptcl pix initQ respQ
-                         | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls' ]
+             : catMaybes [ miniProtocolInitiatorJob tq ptcl initQ respQ
+                         | (ptcl, initQ, respQ) <- ptcls' ]
+            ++ catMaybes [ miniProtocolResponderJob tq ptcl initQ respQ
+                         | (ptcl, initQ, respQ) <- ptcls' ]
 
     JobPool.withJobPool $ \jobpool -> do
       mapM_ (JobPool.forkJob jobpool) jobs
@@ -160,7 +160,6 @@ muxStart tracer (MuxApplication ptcls) bearer = do
       -> MiniProtocolDir
       -> EgressQueue m
       -> MuxMiniProtocol mode m a b
-      -> MiniProtocolIx
       -> IngressQueue m
       -> IngressQueue m
       -> Maybe (JobPool.Job m MuxJobResult)
@@ -169,12 +168,12 @@ muxStart tracer (MuxApplication ptcls) bearer = do
                       miniProtocolNum    = pnum,
                       miniProtocolRun    = prunner
                     }
-                    pix initQ respQ =
+                    initQ respQ =
         job <$> selectRunner prunner
       where
         job run = JobPool.Job (jobAction run)
-                              (MiniProtocolException pnum pix pmode)
-                              ((show pix) ++ "." ++ (show pmode))
+                              (MiniProtocolException pnum pmode)
+                              (show pnum ++ "." ++ show pmode)
 
         jobAction run = do
           w       <- newTVarM BL.empty
@@ -183,7 +182,7 @@ muxStart tracer (MuxApplication ptcls) bearer = do
                                 (selectQueue pmode)
           _result <- run chan
           mpsJobExit w
-          return (MiniProtocolShutdown pnum pix pmode)
+          return (MiniProtocolShutdown pnum pmode)
 
         selectQueue InitiatorDir = initQ
         selectQueue ResponderDir = respQ
@@ -221,11 +220,11 @@ monitor tracer jobpool =
       case result of
         -- For now we do not restart protocols, when any stop we terminate
         -- and the whole bundle will get cleaned up.
-        MiniProtocolShutdown pnum _pix pmode -> do
+        MiniProtocolShutdown pnum pmode -> do
           traceWith tracer (MuxTraceState Dead)
           traceWith tracer (MuxTraceCleanExit pnum pmode)
 
-        MiniProtocolException pnum _pix pmode e -> do
+        MiniProtocolException pnum pmode e -> do
           traceWith tracer (MuxTraceState Dead)
           traceWith tracer (MuxTraceExceptionExit pnum pmode e)
           throwM e
@@ -249,12 +248,11 @@ data MuxJobResult =
 
        -- | A mini-protocol thread terminated with a result.
        --
-       MiniProtocolShutdown MiniProtocolNum MiniProtocolIx MiniProtocolDir
+       MiniProtocolShutdown MiniProtocolNum MiniProtocolDir
 
        -- | A mini-protocol thread terminated with an exception. We always
        -- respond by terminating the whole mux.
-     | MiniProtocolException MiniProtocolNum MiniProtocolIx MiniProtocolDir
-                             SomeException
+     | MiniProtocolException MiniProtocolNum MiniProtocolDir SomeException
 
        -- | Exception in the 'mux' thread. Always unexpected and fatal.
      | MuxerException   SomeException
