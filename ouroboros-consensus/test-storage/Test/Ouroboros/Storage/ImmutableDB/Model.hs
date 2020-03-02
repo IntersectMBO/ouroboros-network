@@ -629,7 +629,7 @@ getBlockOrEBBComponentModel blockComponent slot hash dbm = do
       throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> dbmTip dbm)
 
     let (epoch, couldBeEBB) = case slotToEpochSlot dbm slot of
-          EpochSlot e relSlot -> (e, relSlot == succ firstRelativeSlot)
+          EpochSlot e relSlot -> (e, relSlot == nextRelativeSlot firstRelativeSlot)
 
     -- The chain can be too short if there's an EBB at the tip
     return $ case lookupBySlotMaybe slot of
@@ -756,7 +756,7 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
     checkBound
       :: (SlotNo, hash) -> Either (WrongBoundError hash) EpochSlot
     checkBound (slotNo, hash) = case slotToEpochSlot dbm slotNo of
-      EpochSlot epoch relSlot | relSlot == succ firstRelativeSlot ->
+      EpochSlot epoch relSlot | relSlot == nextRelativeSlot firstRelativeSlot ->
         case (Map.lookup (EpochSlot epoch firstRelativeSlot , slotNo) blobs,
               Map.lookup (EpochSlot epoch relSlot           , slotNo) blobs) of
           (Nothing, Nothing)

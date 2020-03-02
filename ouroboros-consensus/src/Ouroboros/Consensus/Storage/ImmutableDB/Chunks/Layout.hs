@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
   , relativeSlotIsEBB
   , nthRelativeSlot
   , firstRelativeSlot
+  , nextRelativeSlot
   ) where
 
 import           Data.Word
@@ -31,7 +32,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 -- TODO: This should be opaque.
 newtype RelativeSlot = RelativeSlot { unRelativeSlot :: Word64 }
   deriving stock   (Eq, Ord, Show, Generic)
-  deriving newtype (Enum, NoUnexpectedThunks)
+  deriving newtype (NoUnexpectedThunks)
 
 -- | The last relative slot within a chunk of the given size
 --
@@ -55,3 +56,10 @@ nthRelativeSlot = RelativeSlot . fromIntegral
 -- NOTE: @relativeSlotIsEBB firstRelativeSlot@
 firstRelativeSlot :: RelativeSlot
 firstRelativeSlot = RelativeSlot 0
+
+-- | Next relative slot
+--
+-- TODO: We should record the ChunkSize along with the RelativeSlot, so that
+-- we can do a bounds check here.
+nextRelativeSlot :: RelativeSlot -> RelativeSlot
+nextRelativeSlot (RelativeSlot s) = RelativeSlot (succ s)

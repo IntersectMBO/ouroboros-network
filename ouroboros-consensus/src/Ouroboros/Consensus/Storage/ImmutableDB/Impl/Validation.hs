@@ -468,4 +468,4 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
                secondaryOffset = lastSecondaryOffset
                                + Secondary.entrySize hashSize
            in backfilled ++ secondaryOffset :
-              go (succ relSlot) secondaryOffset relSlots'
+              go (nextRelativeSlot relSlot) secondaryOffset relSlots'

@@ -739,7 +739,7 @@ appendEpochSlot registry hasFS chunkInfo index epochSlot blockNumber blockOrEBB 
             then firstRelativeSlot
             else case forgetTipInfo <$> _currentTip of
               Origin -> firstRelativeSlot
-              At b   -> succ $ case b of
+              At b   -> nextRelativeSlot $ case b of
                 EBB   _ebb     -> firstRelativeSlot
                 Block lastSlot -> _relativeSlot $
                                     epochInfoBlockRelative chunkInfo lastSlot
@@ -802,14 +802,14 @@ startNewEpoch registry hasFS@HasFS{..} index chunkInfo = do
     let nextFreeRelSlot = case forgetTipInfo <$> _currentTip of
           Origin                     -> firstRelativeSlot
           At (EBB epoch)
-            | epoch == _currentEpoch -> succ firstRelativeSlot
+            | epoch == _currentEpoch -> nextRelativeSlot firstRelativeSlot
               -- The @_currentEpoch > epoch@: we're in an empty epoch and the tip
               -- was an EBB of an older epoch. So the first relative slot of this
               -- epoch is empty
             | otherwise              -> firstRelativeSlot
           At (Block lastSlot)        ->
             let EpochSlot epoch relSlot = epochInfoBlockRelative chunkInfo lastSlot
-            in if epoch == _currentEpoch then succ relSlot else firstRelativeSlot
+            in if epoch == _currentEpoch then nextRelativeSlot relSlot else firstRelativeSlot
 
     let backfillOffsets = Primary.backfillEpoch epochSize nextFreeRelSlot
           _currentSecondaryOffset

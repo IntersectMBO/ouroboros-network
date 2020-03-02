@@ -237,7 +237,7 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } epoch =
       -- Reached end of file, no filled slot
       Nothing -> return Nothing
       Just offset
-        | offset == 0 -> go pHnd (succ slot)
+        | offset == 0 -> go pHnd (nextRelativeSlot slot)
         | otherwise   -> return $ Just slot
 
     -- | We don't know in advance if there are bytes left to read, so it could
@@ -572,7 +572,7 @@ backfillEpoch
   -> SecondaryOffset
   -> [SecondaryOffset]
 backfillEpoch chunkSize nextExpected offset =
-    backfill (succ finalSlot) nextExpected offset
+    backfill (nextRelativeSlot finalSlot) nextExpected offset
   where
     finalSlot = maxRelativeSlot chunkSize
 
