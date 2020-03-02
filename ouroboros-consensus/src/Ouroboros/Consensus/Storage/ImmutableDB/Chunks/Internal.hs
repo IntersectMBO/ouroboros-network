@@ -12,13 +12,12 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal (
   , epochInfoEpoch
   ) where
 
-import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot
 import           GHC.Generics (Generic)
 
-import           Ouroboros.Consensus.Storage.EpochInfo.API (EpochInfo)
-import qualified Ouroboros.Consensus.Storage.EpochInfo.API as EI
-import           Ouroboros.Consensus.Storage.EpochInfo.Impl
+import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.EpochInfo (EpochInfo)
+import qualified Cardano.Slotting.EpochInfo as EI
+import           Cardano.Slotting.Slot
 
 -- TODO: Temporary definition
 data ChunkInfo m = WrapEpochInfo {
@@ -36,7 +35,7 @@ instance Show (ChunkInfo m) where
 --
 -- TODO: This should not use 'EpochSize'.
 simpleChunkInfo :: Monad m => EpochSize -> ChunkInfo m
-simpleChunkInfo sz = WrapEpochInfo sz $ fixedSizeEpochInfo sz
+simpleChunkInfo sz = WrapEpochInfo sz $ EI.fixedSizeEpochInfo sz
 
 {-------------------------------------------------------------------------------
   TODO: Temporary: emulate the EpochInfo interface

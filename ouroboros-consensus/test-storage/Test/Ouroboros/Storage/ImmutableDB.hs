@@ -36,7 +36,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
                      (epochFileParser)
 
-import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CumulEpochSizes
 import qualified Test.Ouroboros.Storage.ImmutableDB.Primary as Primary
 import qualified Test.Ouroboros.Storage.ImmutableDB.StateMachine as StateMachine
 import           Test.Ouroboros.Storage.TestBlock
@@ -54,7 +53,6 @@ tests = testGroup "ImmutableDB"
     , testProperty "reconstructPrimaryIndex"         prop_reconstructPrimaryIndex
     , Primary.tests
     , StateMachine.tests
-    , CumulEpochSizes.tests
     ]
 
 fixedEpochSize :: EpochSize

@@ -118,10 +118,6 @@ library
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                        Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
                        Ouroboros.Consensus.Storage.Common
-                       Ouroboros.Consensus.Storage.EpochInfo
-                       Ouroboros.Consensus.Storage.EpochInfo.API
-                       Ouroboros.Consensus.Storage.EpochInfo.CumulEpochSizes
-                       Ouroboros.Consensus.Storage.EpochInfo.Impl
                        Ouroboros.Consensus.Storage.FS.API
                        Ouroboros.Consensus.Storage.FS.API.Types
                        Ouroboros.Consensus.Storage.FS.CRC
@@ -357,7 +353,6 @@ test-suite test-storage
                        Test.Ouroboros.Storage.FS
                        Test.Ouroboros.Storage.FS.StateMachine
                        Test.Ouroboros.Storage.ImmutableDB
-                       Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes
                        Test.Ouroboros.Storage.ImmutableDB.Mock
                        Test.Ouroboros.Storage.ImmutableDB.Model
                        Test.Ouroboros.Storage.ImmutableDB.Primary
