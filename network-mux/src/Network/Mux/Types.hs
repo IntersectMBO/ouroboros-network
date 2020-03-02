@@ -27,6 +27,7 @@ module Network.Mux.Types (
     , MiniProtocolDir (..)
     , protocolDirEnum
     , MiniProtocolState (..)
+    , MiniProtocolStatus (..)
     , MuxBearer (..)
     , muxBearerAsChannel
     , MuxSDU (..)
@@ -193,8 +194,12 @@ protocolDirEnum ResponderDirection     = ResponderDir
 
 data MiniProtocolState mode m = MiniProtocolState {
        miniProtocolInfo         :: MiniProtocolInfo mode,
-       miniProtocolIngressQueue :: IngressQueue m
+       miniProtocolIngressQueue :: IngressQueue m,
+       miniProtocolStatusVar    :: StrictTVar m MiniProtocolStatus
      }
+
+data MiniProtocolStatus = StatusIdle | StatusRunning
+  deriving Eq
 
 data MuxSDUHeader = MuxSDUHeader {
       mhTimestamp :: !RemoteClockModel

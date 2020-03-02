@@ -155,9 +155,11 @@ mkMiniProtocolState :: MonadSTM m
                     -> m (MiniProtocolState mode m)
 mkMiniProtocolState miniProtocolInfo = do
     miniProtocolIngressQueue <- newTVarM BL.empty
+    miniProtocolStatusVar    <- newTVarM StatusIdle
     return MiniProtocolState {
        miniProtocolInfo,
-       miniProtocolIngressQueue
+       miniProtocolIngressQueue,
+       miniProtocolStatusVar
      }
 
 
@@ -244,7 +246,8 @@ miniProtocolJob tracer egressQueue
                       miniProtocolNum,
                       miniProtocolDir
                     },
-                  miniProtocolIngressQueue
+                  miniProtocolIngressQueue,
+                  miniProtocolStatusVar
                 }
                 (MiniProtocolAction protocolAction completionVar) =
     JobPool.Job jobAction
@@ -259,6 +262,7 @@ miniProtocolJob tracer egressQueue
       result  <- protocolAction chan
       mpsJobExit w
       atomically $ do
+        writeTVar miniProtocolStatusVar StatusIdle
         putTMVar completionVar result
       return (MiniProtocolShutdown miniProtocolNum miniProtocolDirEnum)
 
@@ -458,10 +462,19 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue }
                 ptclNum ptclDir protocolAction
 
     -- Ensure the mini-protocol is known and get the status var
-  | Just ptclState
+  | Just ptclState@MiniProtocolState{miniProtocolStatusVar}
       <- Map.lookup (ptclNum, ptclDir') muxMiniProtocols
 
   = atomically $ do
+
+      -- Make sure no thread is currently running, and update the status to
+      -- indicate a thread is running (or ready to start on demand)
+      status <- readTVar miniProtocolStatusVar
+      unless (status == StatusIdle) $
+        fail $ "runMiniProtocol: protocol thread already running for "
+            ++ show ptclNum ++ " " ++ show ptclDir'
+      let !status' = StatusRunning
+      writeTVar miniProtocolStatusVar status'
 
       -- Tell the mux control to start the thread
       completionVar <- newEmptyTMVar
