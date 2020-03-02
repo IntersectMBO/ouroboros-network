@@ -183,9 +183,14 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
 
     serverIdle :: forall (n :: N).
                   Nat n
-               -> ServerState txid tx
-               -> m (ServerStIdle n txid tx m ())
-    serverIdle Zero st
+               -> StatefulM (ServerState txid tx) n txid tx m
+    serverIdle n = StatefulM (serverIdle' n)
+
+    serverIdle' :: forall (n :: N).
+                   Nat n
+                -> ServerState txid tx
+                -> m (ServerStIdle n txid tx m ())
+    serverIdle' Zero st
         -- There are no replies in flight, but we do know some more txs we can
         -- ask for, so lets ask for them and more txids.
       | canRequestMoreTxs st
@@ -212,7 +217,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
           . CollectTxIds numTxIdsToRequest
           . NonEmpty.toList)
 
-    serverIdle (Succ n) st
+    serverIdle' (Succ n) st
         -- We have replies in flight and we should eagerly collect them if
         -- available, but there are transactions to request too so we should
         -- not block waiting for replies.
@@ -243,10 +248,15 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
 
     handleReply :: forall (n :: N).
                    Nat n
-                -> ServerState txid tx
-                -> Collect txid tx
-                -> m (ServerStIdle n txid tx m ())
-    handleReply n st (CollectTxIds reqNo txids) = do
+                -> StatefulCollect (ServerState txid tx) n txid tx m
+    handleReply n = StatefulCollect (handleReply' n)
+
+    handleReply' :: forall (n :: N).
+                    Nat n
+                 -> ServerState txid tx
+                 -> Collect txid tx
+                 -> m (ServerStIdle n txid tx m ())
+    handleReply' n st (CollectTxIds reqNo txids) = do
 
       -- Check they didn't send more than we asked for. We don't need to check
       -- for a minimum: the blocking case checks for non-zero elsewhere, and
@@ -273,7 +283,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
         (serverIdle n)
         (acknowledgeTxIdsInMempool st' mpSnapshot)
 
-    handleReply n st (CollectTxs txids txs) = do
+    handleReply' n st (CollectTxs txids txs) = do
 
       -- To start with we have to verify that the txs they have sent us do
       -- correspond to the txs we asked for. This is slightly complicated by
@@ -380,9 +390,14 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
 
     serverReqTxs :: forall (n :: N).
                     Nat n
-                 -> ServerState txid tx
-                 -> ServerStIdle n txid tx m ()
-    serverReqTxs n st =
+                 -> Stateful (ServerState txid tx) n txid tx m
+    serverReqTxs n = Stateful (serverReqTxs' n)
+
+    serverReqTxs' :: forall (n :: N).
+                     Nat n
+                  -> ServerState txid tx
+                  -> ServerStIdle n txid tx m ()
+    serverReqTxs' n st =
         SendMsgRequestTxsPipelined
           (Map.keys txsToRequest)
           (continueWithStateM (serverReqTxIds (Succ n)) st {
@@ -403,9 +418,14 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
 
     serverReqTxIds :: forall (n :: N).
                       Nat n
-                   -> ServerState txid tx
-                   -> m (ServerStIdle n txid tx m ())
-    serverReqTxIds n st
+                   -> StatefulM (ServerState txid tx) n txid tx m
+    serverReqTxIds n = StatefulM (serverReqTxIds' n)
+
+    serverReqTxIds' :: forall (n :: N).
+                       Nat n
+                    -> ServerState txid tx
+                    -> m (ServerStIdle n txid tx m ())
+    serverReqTxIds' n st
       | numTxIdsToRequest > 0
       = pure $ SendMsgRequestTxIdsPipelined
           (numTxsToAcknowledge st)
@@ -427,31 +447,40 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
                   - requestedTxIdsInFlight st)
           `min` maxTxIdsToRequest
 
+newtype Stateful s n txid tx m = Stateful (s -> ServerStIdle n txid tx m ())
+
+newtype StatefulM s n txid tx m
+  = StatefulM (s -> m (ServerStIdle n txid tx m ()))
+
+newtype StatefulCollect s n txid tx m
+  = StatefulCollect (s -> Collect txid tx -> m (ServerStIdle n txid tx m ()))
+
 -- | After checking that there are no unexpected thunks in the provided state,
 -- pass it to the provided function.
 --
 -- See 'checkInvariant' and 'unsafeNoUnexpectedThunks'.
 continueWithState :: NoUnexpectedThunks s
-                  => (s -> ServerStIdle n txid tx m ())
+                  => Stateful s n txid tx m
                   -> s
                   -> ServerStIdle n txid tx m ()
-continueWithState f !st = checkInvariant (unsafeNoUnexpectedThunks st) (f st)
+continueWithState (Stateful f) !st =
+    checkInvariant (unsafeNoUnexpectedThunks st) (f st)
 
 -- | A variant of 'continueWithState' to be more easily utilized with
 -- 'serverIdle' and 'serverReqTxIds'.
 continueWithStateM :: NoUnexpectedThunks s
-                   => (s -> m (ServerStIdle n txid tx m ()))
+                   => StatefulM s n txid tx m
                    -> s
                    -> m (ServerStIdle n txid tx m ())
-continueWithStateM f !st = checkInvariant (unsafeNoUnexpectedThunks st) (f st)
+continueWithStateM (StatefulM f) !st =
+    checkInvariant (unsafeNoUnexpectedThunks st) (f st)
 
 -- | A variant of 'continueWithState' to be more easily utilized with
 -- 'handleReply'.
 collectAndContinueWithState :: NoUnexpectedThunks s
-                            => (s -> Collect txid tx
-                                  -> m (ServerStIdle n txid tx m ()))
+                            => StatefulCollect s n txid tx m
                             -> s
                             -> Collect txid tx
                             -> m (ServerStIdle n txid tx m ())
-collectAndContinueWithState f !st c =
+collectAndContinueWithState (StatefulCollect f) !st c =
     checkInvariant (unsafeNoUnexpectedThunks st) (f st c)
