@@ -26,7 +26,7 @@ import           Control.Monad.Class.MonadTimer hiding (timeout)
 
 import           Network.Mux.Timeout
 import           Network.Mux.Trace
-import           Network.Mux.Types
+import           Network.Mux.Types hiding (MuxMiniProtocol(..))
 
 
 flipMiniProtocolDir :: MiniProtocolDir -> MiniProtocolDir
@@ -92,16 +92,14 @@ data MiniProtocolDispatchInfo m =
      MiniProtocolDispatchInfo
        !(IngressQueue m)
        !Int
+   | MiniProtocolDirUnused
 
 
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from
 -- the underlying Mux Bearer and forwards it to the matching ingress queue.
 demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
             MonadTimer m, MonadTime m, HasCallStack)
-      => [( MuxMiniProtocol mode m a b
-          , IngressQueue m
-          , IngressQueue m
-          )]
+      => [MiniProtocolState mode m]
       -> MuxBearer m
       -> m void
 demuxer ptcls bearer =
@@ -116,6 +114,9 @@ demuxer ptcls bearer =
                             -- delivered to InitiatorDir and vice versa:
                             (flipMiniProtocolDir $ msDir sdu) of
       Nothing   -> throwM (MuxError MuxUnknownMiniProtocol
+                          ("id = " ++ show (msNum sdu)) callStack)
+      Just MiniProtocolDirUnused ->
+                   throwM (MuxError MuxInitiatorOnly
                           ("id = " ++ show (msNum sdu)) callStack)
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
@@ -136,32 +137,37 @@ lookupMiniProtocol (MiniProtocolDispatch codeTbl ptclTbl) code mode
   , Just mpid <- codeTbl ! code = Just (ptclTbl ! (mpid, mode))
   | otherwise                   = Nothing
 
--- | Construct the array of TBQueues, one for each protocol id, and each mode.
---
-setupDispatchTable :: [( MuxMiniProtocol mode m a b
-                       , IngressQueue m
-                       , IngressQueue m
-                       )]
-                   -> MiniProtocolDispatch m
+-- Construct the array of TBQueues, one for each protocol id, and each mode
+setupDispatchTable :: [MiniProtocolState mode m] -> MiniProtocolDispatch m
 setupDispatchTable ptcls =
     MiniProtocolDispatch
       (array (mincode, maxcode) $
              [ (code, Nothing)    | code <- [mincode..maxcode] ]
           ++ [ (code, Just pix)
-             | (pix, (ptcl, _, _)) <- zip [0..] ptcls
-             , let code = miniProtocolNum ptcl ])
-      (array ((minpix, InitiatorDir), (maxpix, ResponderDir))
-             [ ((pix, mode), MiniProtocolDispatchInfo q qMax)
-             | (pix, (ptcl, initQ, respQ)) <- zip [0..] ptcls
-             , let qMax = maximumIngressQueue (miniProtocolLimits ptcl)
-             , (mode, q) <- [ (InitiatorDir, initQ)
-                            , (ResponderDir, respQ) ]
+             | (pix, ptcl) <- zip [0..] ptcls
+             , let code = miniProtocolNum (miniProtocolInfo ptcl) ])
+      (array ((minpix, InitiatorDir), (maxpix, ResponderDir)) $
+             [ ((pix, dir), MiniProtocolDirUnused)
+             | (pix, dir) <- range ((minpix, InitiatorDir),
+                                    (maxpix, ResponderDir)) ]
+          ++ [ ((pix, dir), MiniProtocolDispatchInfo q qMax)
+             | (pix, ptcl) <- zip [0..] ptcls
+             , let MiniProtocolState {
+                     miniProtocolIngressQueue = q,
+                     miniProtocolInfo =
+                       MiniProtocolInfo {
+                         miniProtocolDir,
+                         miniProtocolLimits
+                       }
+                   }    = ptcl
+                   qMax = maximumIngressQueue miniProtocolLimits
+                   dir  = protocolDirEnum miniProtocolDir
              ])
   where
     minpix = 0
     maxpix = fromIntegral (length ptcls - 1)
 
-    codes   = [ miniProtocolNum ptcl | (ptcl, _, _) <- ptcls ]
+    codes   = map (miniProtocolNum . miniProtocolInfo) ptcls
     mincode = minimum codes
     maxcode = maximum codes
 

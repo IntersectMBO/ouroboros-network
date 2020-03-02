@@ -61,7 +61,7 @@ import           Test.Mux.ReqResp
 import           Network.Mux
 import           Network.Mux.Codec
 import           Network.Mux.Channel
-import           Network.Mux.Types
+import           Network.Mux.Types (MuxSDU(..), MuxSDUHeader(..), RemoteClockModel(..))
 import           Network.Mux.Bearer.Queues
 import           Network.Mux.Bearer.Pipe
 

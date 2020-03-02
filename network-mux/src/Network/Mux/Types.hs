@@ -6,11 +6,14 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE DuplicateRecordFields      #-}
 
 module Network.Mux.Types (
-      MiniProtocolLimits (..)
+      MiniProtocolBundle (..)
+    , MiniProtocolInfo (..)
     , MiniProtocolNum (..)
-    , MiniProtocolDir (..)
+    , MiniProtocolDirection (..)
+    , MiniProtocolLimits (..)
 
     , MuxMode (..)
     , HasInitiator
@@ -21,6 +24,9 @@ module Network.Mux.Types (
 
     , IngressQueue
     , MiniProtocolIx
+    , MiniProtocolDir (..)
+    , protocolDirEnum
+    , MiniProtocolState (..)
     , MuxBearer (..)
     , muxBearerAsChannel
     , MuxSDU (..)
@@ -150,6 +156,22 @@ data RunMiniProtocol (mode :: MuxMode) m a b where
     -> (Channel m -> m b)
     -> RunMiniProtocol InitiatorResponderMode m a b
 
+newtype MiniProtocolBundle (mode :: MuxMode) =
+        MiniProtocolBundle [MiniProtocolInfo mode]
+
+data MiniProtocolInfo (mode :: MuxMode) =
+     MiniProtocolInfo {
+       miniProtocolNum    :: !MiniProtocolNum,
+       miniProtocolDir    :: !(MiniProtocolDirection mode),
+       miniProtocolLimits :: !MiniProtocolLimits
+     }
+
+data MiniProtocolDirection (mode :: MuxMode) where
+    InitiatorDirectionOnly :: MiniProtocolDirection InitiatorMode
+    ResponderDirectionOnly :: MiniProtocolDirection ResponderMode
+    InitiatorDirection     :: MiniProtocolDirection InitiatorResponderMode
+    ResponderDirection     :: MiniProtocolDirection InitiatorResponderMode
+
 --
 -- Mux internal types
 --
@@ -163,6 +185,16 @@ newtype MiniProtocolIx = MiniProtocolIx Int
 data MiniProtocolDir = InitiatorDir | ResponderDir
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
 
+protocolDirEnum :: MiniProtocolDirection mode -> MiniProtocolDir
+protocolDirEnum InitiatorDirectionOnly = InitiatorDir
+protocolDirEnum ResponderDirectionOnly = ResponderDir
+protocolDirEnum InitiatorDirection     = InitiatorDir
+protocolDirEnum ResponderDirection     = ResponderDir
+
+data MiniProtocolState mode m = MiniProtocolState {
+       miniProtocolInfo         :: MiniProtocolInfo mode,
+       miniProtocolIngressQueue :: IngressQueue m
+     }
 
 data MuxSDUHeader = MuxSDUHeader {
       mhTimestamp :: !RemoteClockModel
