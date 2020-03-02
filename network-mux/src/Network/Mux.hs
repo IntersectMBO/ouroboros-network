@@ -127,7 +127,7 @@ data Mux (mode :: MuxMode) m =
      Mux {
        muxMiniProtocols   :: !(Map (MiniProtocolNum, MiniProtocolDir)
                                    (MiniProtocolState mode m)),
-       muxControlCmdQueue :: !(TQueue m (ControlCmd m))
+       muxControlCmdQueue :: !(TQueue m (ControlCmd mode m))
      }
 
 newMux :: MonadSTM m  => MiniProtocolBundle mode -> m (Mux mode m)
@@ -230,26 +230,37 @@ runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue} bearer = do
                   DemuxerException "demuxer"
 
 miniProtocolJob
-  :: forall m c.
+  :: forall mode m.
      (MonadSTM m, MonadThrow m)
   => Tracer m MuxTrace
-  -> MiniProtocolNum
-  -> MiniProtocolDir
-  -> (Channel m -> m c)
   -> EgressQueue m
-  -> IngressQueue m
+  -> MiniProtocolState mode m
+  -> MiniProtocolAction m
   -> JobPool.Job m MuxJobResult
-miniProtocolJob tracer pnum pmode run tq inq =
-    JobPool.Job jobAction (MiniProtocolException pnum pmode)
-                          (show pnum ++ "." ++ show pmode)
+miniProtocolJob tracer egressQueue
+                MiniProtocolState {
+                  miniProtocolInfo =
+                    MiniProtocolInfo {
+                      miniProtocolNum,
+                      miniProtocolDir
+                    },
+                  miniProtocolIngressQueue
+                }
+                (MiniProtocolAction protocolAction _completionVar) =
+    JobPool.Job jobAction
+                (MiniProtocolException miniProtocolNum miniProtocolDirEnum)
+                (show miniProtocolNum ++ "." ++ show miniProtocolDirEnum)
   where
     jobAction = do
       w       <- newTVarM BL.empty
-      let chan = muxChannel tracer tq (Wanton w)
-                            pnum pmode inq
-      _result <- run chan
+      let chan = muxChannel tracer egressQueue (Wanton w)
+                           miniProtocolNum miniProtocolDirEnum
+                           miniProtocolIngressQueue
+      _ <- protocolAction chan
       mpsJobExit w
-      return (MiniProtocolShutdown pnum pmode)
+      return (MiniProtocolShutdown miniProtocolNum miniProtocolDirEnum)
+
+    miniProtocolDirEnum = protocolDirEnum miniProtocolDir
 
     -- The Wanton w is the SDUs that are queued but not yet sent for this job.
     -- Job threads will be prevented from exiting until all their SDUs have been
@@ -262,12 +273,10 @@ miniProtocolJob tracer pnum pmode run tq inq =
             buf <- readTVar w
             check (BL.null buf)
 
-data ControlCmd m =
+data ControlCmd mode m =
      CmdStartProtocolThread
-       MiniProtocolNum
-       MiniProtocolDir
-       (IngressQueue m)
-       (MiniProtocolAction m)
+       !(MiniProtocolState mode m)
+       !(MiniProtocolAction m)
 
 data MiniProtocolAction m where
      MiniProtocolAction :: (Channel m -> m a)     -- ^ Action
@@ -280,11 +289,11 @@ data MiniProtocolAction m where
 --  2. it starts responder protocol threads on demand when the first
 --     incoming message arrives.
 --
-monitor :: forall m. (MonadSTM m, MonadAsync m, MonadMask m)
+monitor :: forall mode m. (MonadSTM m, MonadAsync m, MonadMask m)
         => Tracer m MuxTrace
         -> JobPool.JobPool m MuxJobResult
         -> EgressQueue m
-        -> TQueue m (ControlCmd m)
+        -> TQueue m (ControlCmd mode m)
         -> m ()
 monitor tracer jobpool egressQueue cmdQueue =
     go
@@ -322,23 +331,18 @@ monitor tracer jobpool egressQueue cmdQueue =
           throwM e
 
         EventControlCmd (CmdStartProtocolThread
-                           ptclNum
-                           ptclDir
-                           queue
-                           (MiniProtocolAction action _completionVar)) -> do
+                           ptclState ptclAction) -> do
           JobPool.forkJob jobpool $
             miniProtocolJob
               tracer
-              ptclNum
-              ptclDir
-              action
               egressQueue
-              queue
+              ptclState
+              ptclAction
           go
 
-data MonitorEvent m =
+data MonitorEvent mode m =
      EventJobResult  MuxJobResult
-   | EventControlCmd (ControlCmd m)
+   | EventControlCmd (ControlCmd mode m)
 
 -- | The mux forks off a number of threads and its main thread waits and
 -- monitors them all. This type covers the different thread and their possible
@@ -451,8 +455,8 @@ runMiniProtocol :: forall mode m a.
 runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue }
                 ptclNum ptclDir protocolAction
 
-    -- Ensure the mini-protocol is known
-  | Just MiniProtocolState{miniProtocolIngressQueue}
+    -- Ensure the mini-protocol is known and get the status var
+  | Just ptclState
       <- Map.lookup (ptclNum, ptclDir') muxMiniProtocols
 
   = atomically $ do
@@ -461,9 +465,7 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue }
       completionVar <- newEmptyTMVar
       writeTQueue muxControlCmdQueue $
         CmdStartProtocolThread
-          ptclNum
-          ptclDir'
-          miniProtocolIngressQueue
+          ptclState
           (MiniProtocolAction protocolAction completionVar)
 
       let completionAction = readTMVar completionVar
