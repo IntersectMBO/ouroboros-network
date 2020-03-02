@@ -78,7 +78,7 @@ dbIsOpen (DbOpen _) = True
 
 -- | Internal state when the database is open.
 data OpenState m hash h = OpenState
-    { _currentEpoch           :: !EpochNo
+    { _currentEpoch           :: !EpochNo -- TODO: Should be _currentChunk
       -- ^ The current 'EpochNo' the immutable store is writing to.
     , _currentEpochOffset     :: !BlockOffset
       -- ^ The offset at which the next block will be written in the current

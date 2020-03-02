@@ -346,17 +346,17 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
   -- directly.
   modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
     st@OpenState {..} <- get
-    let currentTipEpochSlot = (blockOrEBBEpochSlot . forgetTipInfo) <$> _currentTip
-    let newTipEpochSlot     = (blockOrEBBEpochSlot . forgetTipInfo) <$> newTip
+    let currentTipChunkSlot = (chunkSlotFor . forgetTipInfo) <$> _currentTip
+        newTipChunkSlot     = (chunkSlotFor . forgetTipInfo) <$> newTip
 
-    when (newTipEpochSlot < currentTipEpochSlot) $ do
+    when (newTipChunkSlot < currentTipChunkSlot) $ do
       !ost <- lift $ do
         traceWith _dbTracer $ DeletingAfter newTip
         -- Release the open handles, as we might have to remove files that are
         -- currently opened.
         cleanUp hasFS st
-        newTipWithHash <- truncateTo hasFS st newTipEpochSlot
-        let (newEpoch, allowExisting) = case newTipEpochSlot of
+        newTipWithHash <- truncateTo hasFS st newTipChunkSlot
+        let (newEpoch, allowExisting) = case newTipChunkSlot of
               Origin                 -> (0, MustBeNew)
               At (ChunkSlot epoch _) -> (epoch, AllowExisting)
         -- Reset the index, as it can contain stale information. Also restarts
@@ -369,10 +369,8 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
     ImmutableDBEnv {  _dbChunkInfo, _dbHashInfo, _dbRegistry } = dbEnv
 
     -- | The current tip as a 'TipEpochSlot'
-    blockOrEBBEpochSlot :: BlockOrEBB -> ChunkSlot
-    blockOrEBBEpochSlot = \case
-      EBB  epoch -> ChunkSlot epoch firstRelativeSlot
-      Block slot -> epochInfoBlockRelative _dbChunkInfo slot
+    chunkSlotFor :: BlockOrEBB -> ChunkSlot
+    chunkSlotFor = chunkSlotForBlockOrEBB _dbChunkInfo
 
     truncateTo
       :: HasFS m h
@@ -443,9 +441,9 @@ getBlockComponentImpl dbEnv blockComponent slot =
           ReadFutureSlotError slot (forgetTipInfo <$> _currentTip)
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
-      let epochSlot = epochInfoBlockRelative _dbChunkInfo slot
+          chunkSlot    = chunkSlotForRegularBlock _dbChunkInfo slot
       getEpochSlot _dbHasFS _dbChunkInfo _index curEpochInfo
-        blockComponent epochSlot
+        blockComponent chunkSlot
   where
     ImmutableDBEnv { _dbChunkInfo } = dbEnv
 
@@ -652,8 +650,8 @@ appendBlockImpl dbEnv slot blockNumber headerHash binaryInfo =
     modifyOpenState dbEnv $ \_dbHasFS@HasFS{..} -> do
       OpenState { _currentEpoch, _currentTip, _index } <- get
 
-      let epochSlot@(ChunkSlot epoch _) =
-            epochInfoBlockRelative _dbChunkInfo slot
+      let chunkSlot@(ChunkSlot epoch _) =
+            chunkSlotForRegularBlock _dbChunkInfo slot
 
       -- Check that we're not appending to the past
       let inThePast = case forgetTipInfo <$> _currentTip of
@@ -665,7 +663,7 @@ appendBlockImpl dbEnv slot blockNumber headerHash binaryInfo =
         throwUserError $
           AppendToSlotInThePastError slot (forgetTipInfo <$> _currentTip)
 
-      appendEpochSlot _dbRegistry _dbHasFS _dbChunkInfo _index epochSlot
+      appendEpochSlot _dbRegistry _dbHasFS _dbChunkInfo _index chunkSlot
         blockNumber (Block slot) headerHash binaryInfo
   where
     ImmutableDBEnv { _dbChunkInfo, _dbRegistry } = dbEnv
@@ -738,10 +736,8 @@ appendEpochSlot registry hasFS chunkInfo index epochSlot blockNumber blockOrEBB 
             then firstRelativeSlot
             else case forgetTipInfo <$> _currentTip of
               Origin -> firstRelativeSlot
-              At b   -> nextRelativeSlot $ case b of
-                EBB   _ebb     -> firstRelativeSlot
-                Block lastSlot -> chunkRelative $
-                                    epochInfoBlockRelative chunkInfo lastSlot
+              At b   -> nextRelativeSlot . chunkRelative $
+                          chunkSlotForBlockOrEBB chunkInfo b
 
     -- Append to the end of the epoch file.
     (blockSize, entrySize) <- lift $ do
@@ -799,16 +795,12 @@ startNewEpoch registry hasFS@HasFS{..} index chunkInfo = do
     -- the current (empty) epoch is not the epoch containing the tip, we use
     -- relative slot 0 to calculate how much to pad.
     let nextFreeRelSlot = case forgetTipInfo <$> _currentTip of
-          Origin                     -> firstRelativeSlot
-          At (EBB epoch)
-            | epoch == _currentEpoch -> nextRelativeSlot firstRelativeSlot
-              -- The @_currentEpoch > epoch@: we're in an empty epoch and the tip
-              -- was an EBB of an older epoch. So the first relative slot of this
-              -- epoch is empty
-            | otherwise              -> firstRelativeSlot
-          At (Block lastSlot)        ->
-            let ChunkSlot epoch relSlot = epochInfoBlockRelative chunkInfo lastSlot
-            in if epoch == _currentEpoch then nextRelativeSlot relSlot else firstRelativeSlot
+          Origin -> firstRelativeSlot
+          At b   ->
+            let ChunkSlot chunk relSlot = chunkSlotForBlockOrEBB chunkInfo b
+            in if chunk == _currentEpoch
+                 then nextRelativeSlot relSlot
+                 else firstRelativeSlot
 
     let backfillOffsets = Primary.backfillEpoch epochSize nextFreeRelSlot
           _currentSecondaryOffset

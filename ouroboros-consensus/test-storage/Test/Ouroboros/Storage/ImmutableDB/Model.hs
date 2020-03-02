@@ -224,7 +224,7 @@ dbmBlobs dbm = repeatedly insert (Map.toList $ dbmSlots dbm) Map.empty
                                  . insertEBB     slot ebb
 
     insertRegular slot (info, xs) =
-        Map.insert (slotToEpochSlot dbm slot, slot)
+        Map.insert (slotToChunkSlot dbm slot, slot)
                    (Right (tipInfoHash info, xs))
 
     insertEBB slot (info, xs) =
@@ -282,8 +282,8 @@ slotToEpoch DBModel {..} = epochInfoEpoch dbmChunkInfo
 epochSlotToSlot :: DBModel hash -> ChunkSlot -> SlotNo
 epochSlotToSlot DBModel {..} = epochInfoAbsolute dbmChunkInfo
 
-slotToEpochSlot :: DBModel hash -> SlotNo -> ChunkSlot
-slotToEpochSlot DBModel {..} = epochInfoBlockRelative dbmChunkInfo
+slotToChunkSlot :: DBModel hash -> SlotNo -> ChunkSlot
+slotToChunkSlot DBModel {..} = chunkSlotForRegularBlock dbmChunkInfo
 
 {------------------------------------------------------------------------------
   Helpers
@@ -524,7 +524,7 @@ reopenInThePastModel curSlot dbm = (dbmTip dbm', dbm')
   where
     tipsInThePast :: [ChunkSlot]
     tipsInThePast =
-      [ slotToEpochSlot dbm slot
+      [ slotToChunkSlot dbm slot
       | tip <- properTips dbm
       , let slot = slotForBlockOrEBB dbm (forgetTipInfo tip)
       , slot <= curSlot
@@ -627,7 +627,7 @@ getBlockOrEBBComponentModel blockComponent slot hash dbm = do
     when inTheFuture $
       throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> dbmTip dbm)
 
-    let (epoch, couldBeEBB) = case slotToEpochSlot dbm slot of
+    let (epoch, couldBeEBB) = case slotToChunkSlot dbm slot of
           ChunkSlot e relSlot -> (e, relSlot == nextRelativeSlot firstRelativeSlot)
 
     -- The chain can be too short if there's an EBB at the tip
@@ -754,7 +754,7 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
 
     checkBound
       :: (SlotNo, hash) -> Either (WrongBoundError hash) ChunkSlot
-    checkBound (slotNo, hash) = case slotToEpochSlot dbm slotNo of
+    checkBound (slotNo, hash) = case slotToChunkSlot dbm slotNo of
       ChunkSlot epoch relSlot | relSlot == nextRelativeSlot firstRelativeSlot ->
         case (Map.lookup (ChunkSlot epoch firstRelativeSlot , slotNo) blobs,
               Map.lookup (ChunkSlot epoch relSlot           , slotNo) blobs) of

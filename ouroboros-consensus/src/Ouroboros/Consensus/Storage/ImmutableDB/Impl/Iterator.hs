@@ -209,9 +209,8 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
 
       -- No end bound given, use the current tip, but convert the 'BlockOrEBB'
       -- to an 'ChunkSlot'.
-      Nothing  -> return $ flip fmap (fromTipInfo currentTip) $ \case
-        EBB epoch      -> ChunkSlot epoch firstRelativeSlot
-        Block lastSlot -> epochInfoBlockRelative _dbChunkInfo lastSlot
+      Nothing ->
+        return $ chunkSlotForBlockOrEBB _dbChunkInfo <$> fromTipInfo currentTip
 
     -- | Fill in the start bound: if 'Nothing', use the first block in the
     -- database. Otherwise, check whether the bound exists in the database and
@@ -296,19 +295,21 @@ getSlotInfo
   -> ExceptT (WrongBoundError hash) m
              (ChunkSlot, (Secondary.Entry hash, BlockSize), SecondaryOffset)
 getSlotInfo epochInfo index (slot, hash) = do
-    let epochSlot@(ChunkSlot epoch relSlot) =
-          epochInfoBlockRelative epochInfo slot
-    -- 'epochInfoBlockRelative' always assumes the given 'SlotNo' refers to a
-    -- regular block and will return 1 as the relative slot number when given
-    -- an EBB.
-    let couldBeEBB = relSlot == RelativeSlot 1
+    -- TODO: This variable should be renamed to chunkInfo.
+    let (mIfBoundary, ifRegular) = chunkSlotForUnknownBlock epochInfo slot
+    let chunk = assert (maybe True (\ifBoundary -> chunkIndex ifBoundary
+                                                == chunkIndex ifRegular) mIfBoundary) $
+                  chunkIndex ifRegular
 
     -- Obtain the offsets in the secondary index file from the primary index
     -- file. The block /could/ still correspond to an EBB, a regular block or
     -- both. We will know which one it is when we can check the hashes from
     -- the secondary index file with the hash we have.
-    toRead :: NonEmpty (IsEBB, SecondaryOffset) <- if couldBeEBB then
-        lift (Index.readOffsets index epoch (Two firstRelativeSlot relSlot)) >>= \case
+    toRead :: NonEmpty (IsEBB, SecondaryOffset) <- case mIfBoundary of
+      Just ifBoundary -> do
+        offsets <- lift $ Index.readOffsets index chunk
+                            (chunkRelative <$> Two ifBoundary ifRegular)
+        case offsets of
           Two Nothing Nothing                   ->
             throwError $ EmptySlotError slot
           Two (Just ebbOffset) (Just blkOffset) ->
@@ -317,15 +318,16 @@ getSlotInfo epochInfo index (slot, hash) = do
             return ((IsEBB, ebbOffset) NE.:| [])
           Two Nothing (Just blkOffset)          ->
             return ((IsNotEBB, blkOffset) NE.:| [])
-      else
-        lift (Index.readOffset index epoch relSlot) >>= \case
+      Nothing -> do
+        offset <- lift $ Index.readOffset index chunk (chunkRelative ifRegular)
+        case offset of
           Nothing        ->
             throwError $ EmptySlotError slot
           Just blkOffset ->
             return ((IsNotEBB, blkOffset) NE.:| [])
 
     entriesWithBlockSizes :: NonEmpty (Secondary.Entry hash, BlockSize) <- lift $
-      Index.readEntries index epoch toRead
+      Index.readEntries index chunk toRead
 
     -- Return the entry from the secondary index file that matches the
     -- expected hash.
@@ -340,10 +342,10 @@ getSlotInfo epochInfo index (slot, hash) = do
 
     -- Use the secondary index entry to determine whether the slot + hash
     -- correspond to an EBB or a regular block.
-    let epochSlot' = case Secondary.blockOrEBB entry of
-          Block _ -> epochSlot
-          EBB   _ -> ChunkSlot epoch firstRelativeSlot
-    return (epochSlot', (entry, blockSize), secondaryOffset)
+    let chunkSlot = case (mIfBoundary, Secondary.blockOrEBB entry) of
+                      (Just ifBoundary, EBB _) -> ifBoundary
+                      _otherwise               -> ifRegular
+    return (chunkSlot, (entry, blockSize), secondaryOffset)
 
 iteratorNextImpl
   :: forall m hash b. (IOLike m, Eq hash)

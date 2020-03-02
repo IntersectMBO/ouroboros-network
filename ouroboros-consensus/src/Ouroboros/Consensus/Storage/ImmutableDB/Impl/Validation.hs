@@ -442,9 +442,7 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
     msg = "blocks have non-increasing slot numbers"
 
     toRelativeSlot :: BlockOrEBB -> RelativeSlot
-    toRelativeSlot (EBB _)      = firstRelativeSlot
-    toRelativeSlot (Block slot) = chunkRelative $
-      epochInfoBlockRelative chunkInfo slot
+    toRelativeSlot = chunkRelative . chunkSlotForBlockOrEBB chunkInfo
 
     go
       :: HasCallStack

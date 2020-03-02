@@ -2,6 +2,8 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE RecordWildCards            #-}
 
 -- | Layout of individual chunks on disk
 --
@@ -17,7 +19,10 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
   , nextRelativeSlot
     -- * Slots within a chunk
   , ChunkSlot(..)
-  , epochInfoBlockRelative
+  , chunkSlotForUnknownBlock
+  , chunkSlotForRegularBlock
+  , chunkSlotForBoundaryBlock
+  , chunkSlotForBlockOrEBB
   , epochInfoAbsolute
   ) where
 
@@ -29,6 +34,7 @@ import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Block.EBB
 -- import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BlockOrEBB (..))
 
 -- Most types in the Chunks interface are opaque in the public API, since their
 -- interpretation is subject to layout decisions. In this module we /make/ those
@@ -91,14 +97,37 @@ data ChunkSlot = ChunkSlot
 instance Show ChunkSlot where
   show (ChunkSlot (EpochNo e) (RelativeSlot s)) = show (e, s)
 
--- | Relative slot for a regular block
+-- | Chunk slot for an unknown block
 --
--- Should NOT be used for EBBs.
-epochInfoBlockRelative :: ChunkInfo -> SlotNo -> ChunkSlot
-epochInfoBlockRelative chunkInfo (SlotNo absSlot) =
-    let epoch        = epochInfoEpoch chunkInfo (SlotNo absSlot)
-        SlotNo first = epochInfoFirst chunkInfo epoch
-    in ChunkSlot epoch (RelativeSlot (absSlot - first + 1))
+-- This returns /two/ 'ChunkSlot's: one in case the block could be an EBB,
+-- and one in case the block is a regular block.
+chunkSlotForUnknownBlock :: ChunkInfo -> SlotNo -> (Maybe ChunkSlot, ChunkSlot)
+chunkSlotForUnknownBlock ci slot = (
+      if chunkRelative ifRegular == RelativeSlot 1
+        then Just $ chunkSlotForBoundaryBlock (chunkIndex ifRegular)
+        else Nothing
+    , ifRegular
+    )
+  where
+    ifRegular = chunkSlotForRegularBlock ci slot
+
+-- | Chunk slot for a regular block (i.e., not an EBB)
+chunkSlotForRegularBlock :: ChunkInfo -> SlotNo -> ChunkSlot
+chunkSlotForRegularBlock ci (SlotNo absSlot) = ChunkSlot{..}
+  where
+    chunkIndex    = epochInfoEpoch ci (SlotNo absSlot)
+    SlotNo first  = epochInfoFirst ci chunkIndex
+    chunkRelative = RelativeSlot (absSlot - first + 1)
+
+-- | Chunk slot for EBB
+chunkSlotForBoundaryBlock :: EpochNo -> ChunkSlot
+chunkSlotForBoundaryBlock e = ChunkSlot e firstRelativeSlot
+
+-- | Chunk slot for 'BlockOrEBB'
+chunkSlotForBlockOrEBB :: ChunkInfo -> BlockOrEBB -> ChunkSlot
+chunkSlotForBlockOrEBB ci = \case
+    Block slot  -> chunkSlotForRegularBlock ci slot
+    EBB   epoch -> chunkSlotForBoundaryBlock epoch
 
 -- | From relative to absolute slot
 --
