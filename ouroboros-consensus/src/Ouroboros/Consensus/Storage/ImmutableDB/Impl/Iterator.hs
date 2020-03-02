@@ -294,9 +294,8 @@ getSlotInfo
   -> (SlotNo, hash)
   -> ExceptT (WrongBoundError hash) m
              (ChunkSlot, (Secondary.Entry hash, BlockSize), SecondaryOffset)
-getSlotInfo epochInfo index (slot, hash) = do
-    -- TODO: This variable should be renamed to chunkInfo.
-    let (mIfBoundary, ifRegular) = chunkSlotForUnknownBlock epochInfo slot
+getSlotInfo chunkInfo index (slot, hash) = do
+    let (mIfBoundary, ifRegular) = chunkSlotForUnknownBlock chunkInfo slot
     let chunk = assert (maybe True (\ifBoundary -> chunkIndex ifBoundary
                                                 == chunkIndex ifRegular) mIfBoundary) $
                   chunkIndex ifRegular

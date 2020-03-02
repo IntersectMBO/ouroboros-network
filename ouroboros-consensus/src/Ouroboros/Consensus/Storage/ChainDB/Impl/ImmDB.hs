@@ -112,7 +112,7 @@ data ImmDB m blk = ImmDB {
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
     , encBlock  :: !(blk -> BinaryInfo Encoding)
-    , epochInfo :: !ChunkInfo
+    , chunkInfo :: !ChunkInfo
     , isEBB     :: !(Header blk -> Maybe EpochNo)
     , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     }
@@ -126,7 +126,7 @@ instance NoUnexpectedThunks (ImmDB m blk) where
     , noUnexpectedThunks ctxt decHeader
     , noUnexpectedThunks ctxt decBlock
     , noUnexpectedThunks ctxt encBlock
-    , noUnexpectedThunks ctxt epochInfo
+    , noUnexpectedThunks ctxt chunkInfo
     , noUnexpectedThunks ctxt isEBB
     , noUnexpectedThunks ctxt addHdrEnv
     ]
@@ -236,7 +236,7 @@ openDB ImmDbArgs{..} = do
       , decHeader = immDecodeHeader
       , decBlock  = immDecodeBlock
       , encBlock  = immEncodeBlock
-      , epochInfo = immChunkInfo
+      , chunkInfo = immChunkInfo
       , isEBB     = immIsEBB
       , addHdrEnv = immAddHdrEnv
       }
@@ -255,7 +255,7 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (Header blk -> Maybe EpochNo)
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> ImmDB m blk
-mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv = ImmDB {..}
+mkImmDB immDB decHeader decBlock encBlock chunkInfo isEBB addHdrEnv = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
@@ -279,7 +279,7 @@ hasBlock db (RealPoint slot hash) =
       immTip <- ImmDB.getTip imm
       let (slotNoAtTip, ebbAtTip) = case forgetTipInfo <$> immTip of
             Origin                  -> (Origin, Nothing)
-            At (ImmDB.EBB epochNo)  -> (At (epochInfoFirst (epochInfo db) epochNo), Just epochNo)
+            At (ImmDB.EBB epochNo)  -> (At (epochInfoFirst (chunkInfo db) epochNo), Just epochNo)
             At (ImmDB.Block slotNo) -> (At slotNo, Nothing)
 
       case At slot `compare` slotNoAtTip of
@@ -297,8 +297,8 @@ hasBlock db (RealPoint slot hash) =
           if hasRegularBlock then
             return True
           else do
-            let epochNo = epochInfoEpoch (epochInfo db) slot
-                ebbSlot = epochInfoFirst (epochInfo db) epochNo
+            let epochNo = epochInfoEpoch (chunkInfo db) slot
+                ebbSlot = epochInfoFirst (chunkInfo db) epochNo
             -- If it's a slot that can also contain an EBB, check if we have
             -- an EBB
             if slot == ebbSlot then
@@ -316,7 +316,7 @@ getTipInfo db = do
     return $ case immTip of
       Origin -> Origin
       At (TipInfo hash (ImmDB.EBB epochNo) block) ->
-        At (epochInfoFirst (epochInfo db) epochNo, hash, IsEBB, block)
+        At (epochInfoFirst (chunkInfo db) epochNo, hash, IsEBB, block)
       At (TipInfo hash (ImmDB.Block slotNo) block) ->
         At (slotNo, hash, IsNotEBB, block)
 
