@@ -20,6 +20,7 @@ module Network.Mux.Types (
     , MuxApplication (..)
     , MuxMiniProtocol (..)
     , RunMiniProtocol (..)
+    , StartOnDemandOrEagerly (..)
 
     , IngressQueue
     , MiniProtocolIx
@@ -172,6 +173,9 @@ data MiniProtocolDirection (mode :: MuxMode) where
     InitiatorDirection     :: MiniProtocolDirection InitiatorResponderMode
     ResponderDirection     :: MiniProtocolDirection InitiatorResponderMode
 
+data StartOnDemandOrEagerly = StartOnDemand | StartEagerly
+  deriving Eq
+
 --
 -- Mux internal types
 --
@@ -197,7 +201,7 @@ data MiniProtocolState mode m = MiniProtocolState {
        miniProtocolStatusVar    :: StrictTVar m MiniProtocolStatus
      }
 
-data MiniProtocolStatus = StatusIdle | StatusRunning
+data MiniProtocolStatus = StatusIdle | StatusStartOnDemand | StatusRunning
   deriving Eq
 
 data MuxSDUHeader = MuxSDUHeader {

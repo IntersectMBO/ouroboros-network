@@ -86,6 +86,7 @@ muxStart tracer muxapp bearer = do
           mux
           miniProtocolNum
           ptclDir
+          StartEagerly
           action
       | let MuxApplication ptcls = muxapp
       , MuxMiniProtocol{miniProtocolNum, miniProtocolRun} <- ptcls
@@ -289,6 +290,7 @@ miniProtocolJob tracer egressQueue
 
 data ControlCmd mode m =
      CmdStartProtocolThread
+       !StartOnDemandOrEagerly
        !(MiniProtocolState mode m)
        !(MiniProtocolAction m)
    | CmdShutdown
@@ -311,16 +313,25 @@ monitor :: forall mode m. (MonadSTM m, MonadAsync m, MonadMask m)
         -> TQueue m (ControlCmd mode m)
         -> m ()
 monitor tracer jobpool egressQueue cmdQueue =
-    go
+    go Map.empty
   where
-    go :: m ()
-    go = do
+    go :: Map (MiniProtocolNum, MiniProtocolDir)
+              (MiniProtocolState mode m, MiniProtocolAction m)
+       -> m ()
+    go !ptclsStartOnDemand = do
       result <- atomically $
             -- wait for a mini-protocol thread to terminate
             (EventJobResult <$> JobPool.collect jobpool)
 
             -- wait for a new control command
         <|> (EventControlCmd <$> readTQueue cmdQueue)
+
+            -- or wait for data to arrive on the channels that do not yet have
+            -- responder threads running
+        <|> foldr (<|>) retry
+              [ checkNonEmptyQueue (miniProtocolIngressQueue ptclState) >>
+                return (EventStartOnDemand ptclState ptclAction)
+              | (ptclState, ptclAction) <- Map.elems ptclsStartOnDemand ]
 
       case result of
         -- For now we do not restart protocols, when any stop we terminate
@@ -346,21 +357,64 @@ monitor tracer jobpool egressQueue cmdQueue =
           throwM e
 
         EventControlCmd (CmdStartProtocolThread
-                           ptclState ptclAction) -> do
+                           StartEagerly ptclState ptclAction) -> do
           JobPool.forkJob jobpool $
             miniProtocolJob
               tracer
               egressQueue
               ptclState
               ptclAction
-          go
+          go ptclsStartOnDemand
+
+        EventControlCmd (CmdStartProtocolThread
+                           StartOnDemand ptclState ptclAction) -> do
+          let ptclsStartOnDemand' = Map.insert (protocolKey ptclState)
+                                               (ptclState, ptclAction)
+                                               ptclsStartOnDemand
+          go ptclsStartOnDemand'
 
         EventControlCmd CmdShutdown ->
           return ()
 
+        -- Data has arrived on a channel for a mini-protocol for which we have
+        -- and on-demand start protocol thread. So we start it now.
+        EventStartOnDemand ptclState@MiniProtocolState {
+                             miniProtocolInfo = MiniProtocolInfo {
+                               miniProtocolNum,
+                               miniProtocolDir
+                             },
+                             miniProtocolStatusVar
+                           }
+                           ptclAction -> do
+          atomically $ writeTVar miniProtocolStatusVar StatusRunning
+          JobPool.forkJob jobpool $
+            miniProtocolJob
+              tracer
+              egressQueue
+              ptclState
+              ptclAction
+          go (Map.delete (miniProtocolNum, miniProtocolDirEnum) ptclsStartOnDemand)
+          where
+            miniProtocolDirEnum = protocolDirEnum miniProtocolDir
+
+    checkNonEmptyQueue :: IngressQueue m -> STM m ()
+    checkNonEmptyQueue q = do
+      buf <- readTVar q
+      check (not (BL.null buf))
+
+    protocolKey MiniProtocolState {
+                  miniProtocolInfo = MiniProtocolInfo {
+                    miniProtocolNum,
+                    miniProtocolDir
+                  }
+                } =
+      (miniProtocolNum, protocolDirEnum miniProtocolDir)
+
 data MonitorEvent mode m =
      EventJobResult  MuxJobResult
    | EventControlCmd (ControlCmd mode m)
+   | EventStartOnDemand (MiniProtocolState mode m)
+                        (MiniProtocolAction m)
 
 -- | The mux forks off a number of threads and its main thread waits and
 -- monitors them all. This type covers the different thread and their possible
@@ -450,6 +504,15 @@ traceMuxBearerState tracer state =
 -- | Arrange to run a protocol thread (for a particular 'MiniProtocolNum' and
 -- 'MiniProtocolDirection') to interact on this protocol's 'Channel'.
 --
+-- The protocol thread can either be started eagerly or on-demand:
+--
+-- * With 'StartEagerly', the thread is started promptly. This is appropriate
+--   for mini-protocols where the opening message may be sent by this thread.
+--
+-- * With 'StartOnDemand', the thread is not started until the first data is
+--   received for this mini-protocol. This is appropriate for mini-protocols
+--   where the opening message is sent by the remote peer.
+--
 -- The result is a STM action to block and wait on the protocol completion.
 -- It is safe to call this completion action multiple times: it will always
 -- return the same result once the protocol thread completes.
@@ -468,10 +531,11 @@ runMiniProtocol :: forall mode m a.
                 => Mux mode m
                 -> MiniProtocolNum
                 -> MiniProtocolDirection mode
+                -> StartOnDemandOrEagerly
                 -> (Channel m -> m a)
                 -> m (STM m a)
 runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue }
-                ptclNum ptclDir protocolAction
+                ptclNum ptclDir startMode protocolAction
 
     -- Ensure the mini-protocol is known and get the status var
   | Just ptclState@MiniProtocolState{miniProtocolStatusVar}
@@ -485,13 +549,16 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue }
       unless (status == StatusIdle) $
         fail $ "runMiniProtocol: protocol thread already running for "
             ++ show ptclNum ++ " " ++ show ptclDir'
-      let !status' = StatusRunning
+      let !status' = case startMode of
+                       StartOnDemand -> StatusStartOnDemand
+                       StartEagerly  -> StatusRunning
       writeTVar miniProtocolStatusVar status'
 
       -- Tell the mux control to start the thread
       completionVar <- newEmptyTMVar
       writeTQueue muxControlCmdQueue $
         CmdStartProtocolThread
+          startMode
           ptclState
           (MiniProtocolAction protocolAction completionVar)
 
