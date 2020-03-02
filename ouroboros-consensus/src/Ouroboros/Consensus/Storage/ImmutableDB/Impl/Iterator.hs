@@ -386,10 +386,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
       -> m b'
     getBlockComponent itEpochHandle itEpoch entryWithBlockSize = \case
         GetHash         -> return headerHash
-        GetSlot         -> return $ case blockOrEBB of
-          Block slot  -> slot
-          EBB  epoch' -> assert (epoch' == itEpoch) $
-            epochInfoFirst _dbChunkInfo epoch'
+        GetSlot         -> return $ slotNoOfBlockOrEBB _dbChunkInfo blockOrEBB
         GetIsEBB        -> return $ case blockOrEBB of
           Block _ -> IsNotEBB
           EBB   _ -> IsEBB

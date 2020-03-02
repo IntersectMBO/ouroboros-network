@@ -12,7 +12,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Reopen
   , closeDB
   , reopen
     -- * Auxiliary
-  , pointToEpoch
+  , chunkIndexOfPoint
   ) where
 
 import           Control.Monad (when)
@@ -112,7 +112,7 @@ reopen (CDBHandle varState) launchBgTasks = do
 
         ImmDB.reopen cdbImmDB
         immDbTipPoint <- ImmDB.getPointAtTip cdbImmDB
-        let immDbTipEpoch = pointToEpoch cdbChunkInfo immDbTipPoint
+        let immDbTipEpoch = chunkIndexOfPoint cdbChunkInfo immDbTipPoint
         traceWith cdbTracer $ TraceOpenEvent $ OpenedImmDB
           { _immDbTip      = immDbTipPoint
           , _immDbTipEpoch = immDbTipEpoch
@@ -162,9 +162,10 @@ reopen (CDBHandle varState) launchBgTasks = do
   Auxiliary
 -------------------------------------------------------------------------------}
 
--- TODO: This should compute a /chunk/, not an epoch?
--- TODO: This shouldn't really live here, but in the ImmDB wrapper?
-pointToEpoch :: ImmDB.ChunkInfo -> Point blk -> EpochNo
-pointToEpoch chunkInfo = \case
-    GenesisPoint      -> 0
-    BlockPoint slot _ -> ImmDB.epochInfoEpoch chunkInfo slot
+-- | Lift 'chunkIndexOfSlot' to 'Point'
+--
+-- Returns 'firstChunkIndex' in case of 'GenesisPoint'.
+chunkIndexOfPoint :: ImmDB.ChunkInfo -> Point blk -> EpochNo
+chunkIndexOfPoint chunkInfo = \case
+    GenesisPoint      -> ImmDB.firstChunkIndex
+    BlockPoint slot _ -> ImmDB.chunkIndexOfSlot chunkInfo slot

@@ -178,7 +178,7 @@ dbmCurrentEpoch :: DBModel hash -> EpochNo
 dbmCurrentEpoch dbm =
     case forgetTipInfo <$> dbmTip dbm of
       Origin          -> EpochNo 0
-      At (Block slot) -> slotToEpoch dbm slot
+      At (Block slot) -> slotToChunkIndex dbm slot
       At (EBB epoch') -> epoch'
 
 -- | The chain containing the regular blocks /only/
@@ -276,8 +276,8 @@ slotForBlockOrEBB :: DBModel hash -> BlockOrEBB -> SlotNo
 slotForBlockOrEBB dbm (EBB  epoch) = epochNoToSlot dbm epoch
 slotForBlockOrEBB _   (Block slot) = slot
 
-slotToEpoch :: DBModel hash -> SlotNo -> EpochNo
-slotToEpoch DBModel {..} = epochInfoEpoch dbmChunkInfo
+slotToChunkIndex :: DBModel hash -> SlotNo -> EpochNo
+slotToChunkIndex DBModel {..} = chunkIndexOfSlot dbmChunkInfo
 
 epochSlotToSlot :: DBModel hash -> ChunkSlot -> SlotNo
 epochSlotToSlot DBModel {..} = chunkSlotToSlot dbmChunkInfo
@@ -371,7 +371,7 @@ blobsInEpoch dbm epoch =
     mapMaybe snd                 $
     takeWhile ((== epoch) . fst) $
     dropWhile ((/= epoch) . fst) $
-    zip (map (slotToEpoch dbm . SlotNo) [0..]) (dbmRegular dbm)
+    zip (map (slotToChunkIndex dbm . SlotNo) [0..]) (dbmRegular dbm)
   where
     mbEBBBlob = binaryBlob . snd <$> Map.lookup epoch (dbmEBBs dbm)
 

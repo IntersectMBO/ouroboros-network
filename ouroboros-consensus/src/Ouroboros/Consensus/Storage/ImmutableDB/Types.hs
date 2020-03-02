@@ -15,6 +15,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Types
   , fromTipInfo
   , TipInfo (..)
   , BlockOrEBB (..)
+  , isBlockOrEBB
   , HashInfo (..)
   , BinaryInfo (..)
   , EpochFileParser (..)
@@ -46,10 +47,10 @@ import           Streaming (Of, Stream)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
                      UseIsNormalFormNamed (..))
+import           Cardano.Slotting.Block
+import           Cardano.Slotting.Slot
 
-import           Ouroboros.Network.Block (BlockNo, SlotNo (..))
-import           Ouroboros.Network.Point (WithOrigin)
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, FsPath,
                      prettyFsError, sameFsError)
@@ -59,6 +60,10 @@ data BlockOrEBB
   = Block !SlotNo
   | EBB   !EpochNo
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
+isBlockOrEBB :: BlockOrEBB -> IsEBB
+isBlockOrEBB (Block _) = IsNotEBB
+isBlockOrEBB (EBB   _) = IsEBB
 
 type ImmTip = WithOrigin BlockOrEBB
 

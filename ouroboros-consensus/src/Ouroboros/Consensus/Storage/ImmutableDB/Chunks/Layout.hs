@@ -17,6 +17,9 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
   , nthRelativeSlot
   , firstRelativeSlot
   , nextRelativeSlot
+    -- * Chunks
+  , chunkIndexOfSlot
+  , firstChunkIndex
     -- * Slots within a chunk
   , ChunkSlot(..)
     -- ** Translation /to/ 'ChunkSlot'
@@ -29,12 +32,17 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
   , chunkSlotToBlockOrEBB
     -- ** Support for EBBs
   , slotNoOfEBB
+  , slotMightBeEBB
+  , slotNoOfBlockOrEBB
   ) where
 
+import           Control.Monad
+import           Data.Functor.Identity
 import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+import qualified Cardano.Slotting.EpochInfo as EI
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Block.EBB
@@ -88,6 +96,16 @@ nextRelativeSlot :: RelativeSlot -> RelativeSlot
 nextRelativeSlot (RelativeSlot s) = RelativeSlot (succ s)
 
 {-------------------------------------------------------------------------------
+  Chucks
+-------------------------------------------------------------------------------}
+
+chunkIndexOfSlot :: ChunkInfo -> SlotNo -> EpochNo
+chunkIndexOfSlot = epochInfoEpoch
+
+firstChunkIndex :: EpochNo
+firstChunkIndex = EpochNo 0
+
+{-------------------------------------------------------------------------------
   Slot within an epoch
 
   TODO: These should all be renamed.
@@ -112,9 +130,7 @@ instance Show ChunkSlot where
 -- and one in case the block is a regular block.
 chunkSlotForUnknownBlock :: ChunkInfo -> SlotNo -> (Maybe ChunkSlot, ChunkSlot)
 chunkSlotForUnknownBlock ci slot = (
-      if chunkRelative ifRegular == RelativeSlot 1
-        then Just $ chunkSlotForBoundaryBlock (chunkIndex ifRegular)
-        else Nothing
+      chunkSlotForBoundaryBlock <$> slotMightBeEBB ci slot
     , ifRegular
     )
   where
@@ -165,3 +181,26 @@ chunkSlotToBlockOrEBB chunkInfo epochSlot@(ChunkSlot epoch relSlot) =
 
 slotNoOfEBB :: ChunkInfo -> EpochNo -> SlotNo
 slotNoOfEBB ci = chunkSlotToSlot ci . chunkSlotForBoundaryBlock
+
+slotMightBeEBB :: ChunkInfo -> SlotNo -> Maybe EpochNo
+slotMightBeEBB ci slot = do
+    guard $ chunkRelative ifRegular == RelativeSlot 1
+    return $ chunkIndex ifRegular
+  where
+    ifRegular = chunkSlotForRegularBlock ci slot
+
+slotNoOfBlockOrEBB :: ChunkInfo -> BlockOrEBB -> SlotNo
+slotNoOfBlockOrEBB _  (Block slot)  = slot
+slotNoOfBlockOrEBB ci (EBB   epoch) = slotNoOfEBB ci epoch
+
+{-------------------------------------------------------------------------------
+  TODO: Temporary: emulate the EpochInfo interface
+
+  These are not exported.
+-------------------------------------------------------------------------------}
+
+epochInfoFirst :: ChunkInfo -> EpochNo -> SlotNo
+epochInfoFirst ci = runIdentity . EI.epochInfoFirst (unwrapEpochInfo ci)
+
+epochInfoEpoch :: ChunkInfo -> SlotNo -> EpochNo
+epochInfoEpoch ci = runIdentity . EI.epochInfoEpoch (unwrapEpochInfo ci)

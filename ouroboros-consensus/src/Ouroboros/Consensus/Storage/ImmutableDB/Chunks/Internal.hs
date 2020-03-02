@@ -9,9 +9,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal (
     -- * Queries
   , ChunkSize(..)
   , getChunkSize
-    -- * Emulation of the EpochInfo interface
-  , epochInfoFirst
-  , epochInfoEpoch
   ) where
 
 import           Data.Functor.Identity
@@ -58,17 +55,4 @@ newtype ChunkSize = ChunkSize Word64
   deriving newtype (Show)
 
 getChunkSize :: ChunkInfo -> EpochNo -> ChunkSize
-getChunkSize ci = ChunkSize . unEpochSize . epochInfoSize ci
-
-{-------------------------------------------------------------------------------
-  TODO: Temporary: emulate the EpochInfo interface
--------------------------------------------------------------------------------}
-
-epochInfoSize :: ChunkInfo -> EpochNo -> EpochSize
-epochInfoSize ci = runIdentity . EI.epochInfoSize (unwrapEpochInfo ci)
-
-epochInfoFirst :: ChunkInfo -> EpochNo -> SlotNo
-epochInfoFirst ci = runIdentity . EI.epochInfoFirst (unwrapEpochInfo ci)
-
-epochInfoEpoch :: ChunkInfo -> SlotNo -> EpochNo
-epochInfoEpoch ci = runIdentity . EI.epochInfoEpoch (unwrapEpochInfo ci)
+getChunkSize ci = ChunkSize . unEpochSize . runIdentity . EI.epochInfoSize (unwrapEpochInfo ci)

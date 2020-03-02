@@ -47,10 +47,11 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
   , ImmDB.ImmutableDBError
   , ImmDB.BinaryInfo (..)
   , ImmDB.HashInfo (..)
-  , ChunkInfo
   , Index.CacheConfig (..)
-    -- * TODO: Temporary re-exports. Reconsider
-  , epochInfoEpoch
+    -- * Re-exports of aspects of 'ChunkInfo'
+  , ChunkInfo
+  , firstChunkIndex
+  , chunkIndexOfSlot
     -- * Exported for testing purposes
   , openDB
   , mkImmDB
@@ -100,6 +101,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
                      HashInfo (..), ImmutableDB, TipInfo (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Parser as ImmDB
@@ -277,10 +279,15 @@ hasBlock
 hasBlock db (RealPoint slot hash) =
     withDB db $ \imm -> do
       immTip <- ImmDB.getTip imm
-      let (slotNoAtTip, ebbAtTip) = case forgetTipInfo <$> immTip of
-            Origin                  -> (Origin, Nothing)
-            At (ImmDB.EBB epochNo)  -> (At (epochInfoFirst (chunkInfo db) epochNo), Just epochNo)
-            At (ImmDB.Block slotNo) -> (At slotNo, Nothing)
+
+      let slotNoAtTip :: WithOrigin SlotNo
+          slotNoAtTip = slotNoOfBlockOrEBB (chunkInfo db) . forgetTipInfo <$>
+                          immTip
+
+          ebbAtTip :: Maybe EpochNo
+          ebbAtTip = case forgetTipInfo <$> immTip of
+                       At (ImmDB.EBB epochNo) -> Just epochNo
+                       _otherwise             -> Nothing
 
       case At slot `compare` slotNoAtTip of
         -- The request is greater than the tip, so we cannot have the block
@@ -296,29 +303,26 @@ hasBlock db (RealPoint slot hash) =
             ImmDB.getBlockComponent imm GetHash slot
           if hasRegularBlock then
             return True
-          else do
-            let epochNo = epochInfoEpoch (chunkInfo db) slot
-                ebbSlot = epochInfoFirst (chunkInfo db) epochNo
-            -- If it's a slot that can also contain an EBB, check if we have
-            -- an EBB
-            if slot == ebbSlot then
-              (== Just hash) <$>
-                ImmDB.getEBBComponent imm GetHash epochNo
-            else
-              return False
+          -- If it's a slot that can contain an EBB, check if we have an EBB
+          else case slotMightBeEBB (chunkInfo db) slot of
+            Nothing      -> return False
+            Just epochNo -> (== Just hash) <$>
+                              ImmDB.getEBBComponent imm GetHash epochNo
 
 getTipInfo :: forall m blk.
               (MonadCatch m, HasCallStack)
            => ImmDB m blk
            -> m (WithOrigin (SlotNo, HeaderHash blk, IsEBB, BlockNo))
-getTipInfo db = do
-    immTip <- withDB db $ \imm -> ImmDB.getTip imm
-    return $ case immTip of
-      Origin -> Origin
-      At (TipInfo hash (ImmDB.EBB epochNo) block) ->
-        At (epochInfoFirst (chunkInfo db) epochNo, hash, IsEBB, block)
-      At (TipInfo hash (ImmDB.Block slotNo) block) ->
-        At (slotNo, hash, IsNotEBB, block)
+getTipInfo db = withDB db $ \imm -> fmap conv <$> ImmDB.getTip imm
+  where
+    conv :: TipInfo (HeaderHash blk) ImmDB.BlockOrEBB
+         -> (SlotNo, HeaderHash blk, IsEBB, BlockNo)
+    conv (TipInfo hash blockOrEBB tipBlockNo) = (
+          slotNoOfBlockOrEBB (chunkInfo db) blockOrEBB
+        , hash
+        , ImmDB.isBlockOrEBB blockOrEBB
+        , tipBlockNo
+        )
 
 getPointAtTip :: forall m blk.
                  (MonadCatch m, HasCallStack)

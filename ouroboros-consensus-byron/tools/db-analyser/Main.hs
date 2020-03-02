@@ -12,6 +12,7 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS (length)
 import           Data.Coerce
 import           Data.Foldable (asum)
+import           Data.Functor.Identity
 import           Data.IORef
 import           Data.List (foldl', intercalate)
 import           Data.Proxy (Proxy (..))
@@ -20,6 +21,7 @@ import           GHC.Natural (Natural)
 import           Options.Applicative
 
 import           Cardano.Binary (unAnnotated)
+import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot
 
 import qualified Cardano.Chain.Block as Chain
@@ -48,9 +50,9 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
                      (withImmDB)
 import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
                      EpochSize (..))
-import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo,
-                     epochInfoFirst, simpleChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmDB
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+                     (simpleChunkInfo)
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock, ByronHash)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
@@ -61,11 +63,12 @@ main = do
     CmdLine{..}   <- getCmdLine
     genesisConfig <- openGenesis clConfig clIsMainNet
     let epochSlots = Genesis.configEpochSlots genesisConfig
-        chunkInfo  = simpleChunkInfo (coerce epochSlots)
+        epochInfo  = fixedSizeEpochInfo (coerce epochSlots)
+        chunkInfo  = simpleChunkInfo    (coerce epochSlots)
         cfg        = mkByronTopLevelConfig genesisConfig
     withRegistry $ \registry ->
       withImmDB clImmDB cfg chunkInfo registry $ \immDB -> do
-        runAnalysis clAnalysis immDB chunkInfo registry
+        runAnalysis clAnalysis immDB epochInfo registry
         putStrLn "Done"
 
 {-------------------------------------------------------------------------------
@@ -79,7 +82,7 @@ data AnalysisName =
   | ShowBlockTxsSize
 
 type Analysis = ImmDB IO ByronBlock
-             -> ChunkInfo
+             -> EpochInfo Identity
              -> ResourceRegistry IO
              -> IO ()
 
@@ -108,7 +111,7 @@ showSlotBlockNo immDB _epochInfo rr =
 -------------------------------------------------------------------------------}
 
 countTxOutputs :: Analysis
-countTxOutputs immDB chunkInfo rr = do
+countTxOutputs immDB epochInfo rr = do
     cumulative <- newIORef 0
     processAll immDB rr (go cumulative)
   where
@@ -123,7 +126,7 @@ countTxOutputs immDB chunkInfo rr = do
     go' cumulative slotNo Chain.ABlock{..} = do
         countCum  <- atomicModifyIORef cumulative $ \c ->
                        let c' = c + count in (c', c')
-        let epochSlot = relativeSlotNo chunkInfo slotNo
+        let epochSlot = relativeSlotNo epochInfo slotNo
         putStrLn $ intercalate "\t" [
             show slotNo
           , show epochSlot
@@ -150,13 +153,15 @@ countTxOutputs immDB chunkInfo rr = do
 
 -- | Convert 'SlotNo' to relative 'EpochSlot'
 --
--- NOTE: Unlike 'epochInfoBlockRelative', which puts the EBB at relative slot 0,
--- this puts the first real block at relative slot 0.
-relativeSlotNo :: ChunkInfo -> SlotNo -> (EpochNo, Word64)
-relativeSlotNo chunkInfo (SlotNo absSlot) =
-    let epoch        = epochInfoEpoch chunkInfo (SlotNo absSlot)
-        SlotNo first = epochInfoFirst chunkInfo epoch
-    in (epoch, absSlot - first)
+-- We use this only to produce more informative output: "this is the @x@'th
+-- block within this epoch", similar to what the explorer reports. We don't
+-- output EBBs at all, so we place the first real block in an epoch at relative
+-- slot 0 (unlike the imm DB, which puts it at relative slot 1 within a chunk).
+relativeSlotNo :: EpochInfo Identity -> SlotNo -> (EpochNo, Word64)
+relativeSlotNo chunkInfo (SlotNo absSlot) = runIdentity $ do
+    epoch        <- epochInfoEpoch chunkInfo (SlotNo absSlot)
+    SlotNo first <- epochInfoFirst chunkInfo epoch
+    return $ (epoch, absSlot - first)
 
 {-------------------------------------------------------------------------------
   Analysis: show the block header size in bytes for all blocks

@@ -95,7 +95,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl
 
 import           Prelude hiding (truncate)
 
-import           Control.Exception (assert)
 import           Control.Monad (replicateM_, when)
 import           Control.Monad.Except (runExceptT)
 import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
@@ -479,10 +478,7 @@ extractBlockComponent
   -> m b
 extractBlockComponent hasFS chunkInfo epoch curEpochInfo (entry, blockSize) = \case
     GetHash  -> return headerHash
-    GetSlot  -> return $ case blockOrEBB of
-      Block slot  -> slot
-      EBB  epoch' -> assert (epoch' == epoch) $ epochInfoFirst chunkInfo epoch'
-
+    GetSlot  -> return $ slotNoOfBlockOrEBB chunkInfo blockOrEBB
     GetIsEBB -> return $ case blockOrEBB of
       Block _ -> IsNotEBB
       EBB   _ -> IsEBB
@@ -586,10 +582,8 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
 
       let inTheFuture = case forgetTipInfo <$> _currentTip of
-            Origin                -> True
-            At (Block lastSlot)   -> slot > lastSlot
-            At (EBB lastEBBEpoch) ->
-              slot > epochInfoFirst _dbChunkInfo lastEBBEpoch
+            Origin -> True
+            At b   -> slot > slotNoOfBlockOrEBB _dbChunkInfo b
 
       when inTheFuture $
         throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> _currentTip)

@@ -133,9 +133,8 @@ validateIteratorRange chunkInfo tip mbStart mbEnd = runExceptT $ do
   where
     isNewerThanTip :: SlotNo -> Bool
     isNewerThanTip slot = case tip of
-      Origin               -> True
-      At (EBB   lastEpoch) -> slot > epochInfoFirst chunkInfo lastEpoch
-      At (Block lastSlot)  -> slot > lastSlot
+      Origin -> True
+      At b   -> slot > slotNoOfBlockOrEBB chunkInfo b
 
 -- | Convert an 'ChunkSlot' to a 'Tip'
 epochSlotToTip :: ChunkInfo -> ChunkSlot -> ImmTip
