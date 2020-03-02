@@ -70,8 +70,8 @@ data IteratorHandle hash m = forall h. IteratorHandle
   , itState   :: !(StrictTVar m (IteratorStateOrExhausted hash m h))
     -- ^ The state of the iterator. If it is 'Nothing', the iterator is
     -- exhausted and/or closed.
-  , itEnd     :: !EpochSlot
-    -- ^ The end of the iterator: the last 'EpochSlot' it should return.
+  , itEnd     :: !ChunkSlot
+    -- ^ The end of the iterator: the last 'ChunkSlot' it should return.
   , itEndHash :: !hash
     -- ^ The @hash@ of the last block the iterator should return.
   }
@@ -96,7 +96,7 @@ instance ( forall a. NoUnexpectedThunks (StrictTVar m a)
         ]
 
 data IteratorState hash m h = IteratorState
-  { itEpoch        :: !EpochNo
+  { itEpoch        :: !EpochNo -- TODO: This should be a ChunkNo
     -- ^ The current epoch the iterator is streaming from.
   , itEpochHandle  :: !(Handle h)
     -- ^ A handle to the epoch file corresponding with 'itEpoch'.
@@ -162,7 +162,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
                   endSlot   = epochInfoAbsolute _dbChunkInfo endEpochSlot
               throwUserError $ InvalidIteratorRangeError startSlot endSlot
 
-            let EpochSlot startEpoch startRelSlot = startEpochSlot
+            let ChunkSlot startEpoch startRelSlot = startEpochSlot
                 startIsEBB   = relativeSlotIsEBB startRelSlot
                 curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
 
@@ -186,7 +186,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
 
     -- | Fill in the end bound: if 'Nothing', use the current tip. Otherwise,
     -- check whether the bound exists in the database and return the
-    -- corresponding 'EpochSlot'.
+    -- corresponding 'ChunkSlot'.
     --
     -- PRECONDITION: the bound is in the past.
     --
@@ -196,26 +196,26 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
       => Index m hash h
       -> TipInfo hash BlockOrEBB   -- ^ Current tip
       -> Maybe (SlotNo, hash)      -- ^ End bound
-      -> ExceptT (WrongBoundError hash) m (WithHash hash EpochSlot)
+      -> ExceptT (WrongBoundError hash) m (WithHash hash ChunkSlot)
       -- ^ We can't return 'TipInfo' here because the secondary index does
       -- not give us block numbers
     fillInEndBound index currentTip = \case
       -- End bound given, check whether it corresponds to a regular block or
-      -- an EBB. Convert the 'SlotNo' to an 'EpochSlot' accordingly.
+      -- an EBB. Convert the 'SlotNo' to an 'ChunkSlot' accordingly.
       Just end -> do
         (epochSlot, (entry, _blockSize), _secondaryOffset) <-
           getSlotInfo _dbChunkInfo index end
         return (WithHash (Secondary.headerHash entry) epochSlot)
 
       -- No end bound given, use the current tip, but convert the 'BlockOrEBB'
-      -- to an 'EpochSlot'.
+      -- to an 'ChunkSlot'.
       Nothing  -> return $ flip fmap (fromTipInfo currentTip) $ \case
-        EBB epoch      -> EpochSlot epoch firstRelativeSlot
+        EBB epoch      -> ChunkSlot epoch firstRelativeSlot
         Block lastSlot -> epochInfoBlockRelative _dbChunkInfo lastSlot
 
     -- | Fill in the start bound: if 'Nothing', use the first block in the
     -- database. Otherwise, check whether the bound exists in the database and
-    -- return the corresponding 'EpochSlot' and 'SecondaryOffset'.
+    -- return the corresponding 'ChunkSlot' and 'SecondaryOffset'.
     --
     -- PRECONDITION: the bound is in the past.
     --
@@ -226,10 +226,10 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
       -> Maybe (SlotNo, hash)  -- ^ Start bound
       -> ExceptT (WrongBoundError hash)
                   m
-                  (SecondaryOffset, WithHash hash EpochSlot)
+                  (SecondaryOffset, WithHash hash ChunkSlot)
     fillInStartBound index = \case
       -- Start bound given, check whether it corresponds to a regular block or
-      -- an EBB. Convert the 'SlotNo' to an 'EpochSlot' accordingly.
+      -- an EBB. Convert the 'SlotNo' to an 'ChunkSlot' accordingly.
       Just start -> do
         (epochSlot, (entry, _blockSize), secondaryOffset) <-
           getSlotInfo _dbChunkInfo index start
@@ -255,7 +255,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
                   -- 0.
                   secondaryOffset = 0
                   isEBB           = relativeSlotIsEBB relSlot
-                  epochSlot       = EpochSlot epoch relSlot
+                  epochSlot       = ChunkSlot epoch relSlot
 
     mkEmptyIterator :: Iterator hash m b
     mkEmptyIterator = Iterator
@@ -277,7 +277,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
 -- hash. If no such block exists, because the slot is empty or it contains a
 -- block and/or EBB with a different hash, return a 'WrongBoundError'.
 --
--- Return the 'EpochSlot' corresponding to the block or EBB, the corresponding
+-- Return the 'ChunkSlot' corresponding to the block or EBB, the corresponding
 -- entry (and 'BlockSize') from the secondary index file, and the
 -- 'SecondaryOffset' of that entry.
 --
@@ -294,9 +294,9 @@ getSlotInfo
   -> Index m hash h
   -> (SlotNo, hash)
   -> ExceptT (WrongBoundError hash) m
-             (EpochSlot, (Secondary.Entry hash, BlockSize), SecondaryOffset)
+             (ChunkSlot, (Secondary.Entry hash, BlockSize), SecondaryOffset)
 getSlotInfo epochInfo index (slot, hash) = do
-    let epochSlot@(EpochSlot epoch relSlot) =
+    let epochSlot@(ChunkSlot epoch relSlot) =
           epochInfoBlockRelative epochInfo slot
     -- 'epochInfoBlockRelative' always assumes the given 'SlotNo' refers to a
     -- regular block and will return 1 as the relative slot number when given
@@ -342,7 +342,7 @@ getSlotInfo epochInfo index (slot, hash) = do
     -- correspond to an EBB or a regular block.
     let epochSlot' = case Secondary.blockOrEBB entry of
           Block _ -> epochSlot
-          EBB   _ -> EpochSlot epoch firstRelativeSlot
+          EBB   _ -> ChunkSlot epoch firstRelativeSlot
     return (epochSlot', (entry, blockSize), secondaryOffset)
 
 iteratorNextImpl
@@ -460,7 +460,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
           -- Release the resource, i.e., close the handle.
           release itEpochKey
           -- If this was the final epoch, close the iterator
-          if itEpoch >= _epoch itEnd then
+          if itEpoch >= chunkIndex itEnd then
             iteratorCloseImpl it
 
           else
@@ -469,7 +469,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
 
     openNextEpoch
       :: CurrentEpochInfo
-      -> EpochSlot  -- ^ The end bound
+      -> ChunkSlot  -- ^ The end bound
       -> EpochNo    -- ^ The epoch to open
       -> m (IteratorState hash m h)
     openNextEpoch curEpochInfo end epoch =

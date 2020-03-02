@@ -19,7 +19,7 @@
 --
 -- Within each 'EpochNo', the entries are numbered by 'RelativeSlot's. Each
 -- 'SlotNo' can be converted to a combination of an 'EpochNo' and a 'RelativeSlot'
--- (= 'EpochSlot') and vice versa. This conversion depends on the size of the
+-- (= 'ChunkSlot') and vice versa. This conversion depends on the size of the
 -- epochs: 'EpochSize'. This size will not be the same for each epoch. When
 -- opening the database, the user must give a function of type 'EpochNo -> m
 -- EpochSize' that will be used to find out (and cache using
@@ -358,7 +358,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
         newTipWithHash <- truncateTo hasFS st newTipEpochSlot
         let (newEpoch, allowExisting) = case newTipEpochSlot of
               Origin                 -> (0, MustBeNew)
-              At (EpochSlot epoch _) -> (epoch, AllowExisting)
+              At (ChunkSlot epoch _) -> (epoch, AllowExisting)
         -- Reset the index, as it can contain stale information. Also restarts
         -- the background thread expiring unused past epochs.
         Index.restart _index newEpoch
@@ -369,20 +369,20 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
     ImmutableDBEnv {  _dbChunkInfo, _dbHashInfo, _dbRegistry } = dbEnv
 
     -- | The current tip as a 'TipEpochSlot'
-    blockOrEBBEpochSlot :: BlockOrEBB -> EpochSlot
+    blockOrEBBEpochSlot :: BlockOrEBB -> ChunkSlot
     blockOrEBBEpochSlot = \case
-      EBB  epoch -> EpochSlot epoch firstRelativeSlot
+      EBB  epoch -> ChunkSlot epoch firstRelativeSlot
       Block slot -> epochInfoBlockRelative _dbChunkInfo slot
 
     truncateTo
       :: HasFS m h
       -> OpenState m hash h
-      -> WithOrigin EpochSlot
+      -> WithOrigin ChunkSlot
       -> m (ImmTipWithInfo hash)
     truncateTo hasFS OpenState {} = \case
       Origin                       ->
         removeFilesStartingFrom hasFS 0 $> Origin
-      At (EpochSlot epoch relSlot) -> do
+      At (ChunkSlot epoch relSlot) -> do
         removeFilesStartingFrom hasFS (epoch + 1)
 
         -- Retrieve the needed info from the primary index file and then
@@ -436,7 +436,7 @@ getBlockComponentImpl dbEnv blockComponent slot =
             -- EBB will be empty, as the EBB is the last thing in the database. So
             -- if @slot@ is equal to this slot, it is also referring to the future.
             At (EBB lastEBBEpoch) ->
-              slot >= epochInfoAbsolute _dbChunkInfo (EpochSlot lastEBBEpoch firstRelativeSlot)
+              slot >= epochInfoAbsolute _dbChunkInfo (ChunkSlot lastEBBEpoch firstRelativeSlot)
 
       when inTheFuture $
         throwUserError $
@@ -467,7 +467,7 @@ getEBBComponentImpl dbEnv blockComponent epoch =
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
       getEpochSlot _dbHasFS _dbChunkInfo _index curEpochInfo
-        blockComponent (EpochSlot epoch firstRelativeSlot)
+        blockComponent (ChunkSlot epoch firstRelativeSlot)
   where
     ImmutableDBEnv { _dbChunkInfo } = dbEnv
 
@@ -604,16 +604,16 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
       case errOrRes of
         Left _ ->
           return Nothing
-        Right (EpochSlot epoch _, (entry, blockSize), _secondaryOffset) ->
+        Right (ChunkSlot epoch _, (entry, blockSize), _secondaryOffset) ->
           Just <$>
             extractBlockComponent _dbHasFS _dbChunkInfo epoch curEpochInfo
               (entry, blockSize) blockComponent
   where
     ImmutableDBEnv { _dbChunkInfo } = dbEnv
 
--- | Get the block component corresponding to the given 'EpochSlot'.
+-- | Get the block component corresponding to the given 'ChunkSlot'.
 --
--- Preconditions: the given 'EpochSlot' is in the past.
+-- Preconditions: the given 'ChunkSlot' is in the past.
 getEpochSlot
   :: forall m h hash b. (HasCallStack, IOLike m)
   => HasFS m h
@@ -621,7 +621,7 @@ getEpochSlot
   -> Index m hash h
   -> CurrentEpochInfo
   -> BlockComponent (ImmutableDB hash m) b
-  -> EpochSlot
+  -> ChunkSlot
   -> m (Maybe b)
 getEpochSlot hasFS chunkInfo index curEpochInfo blockComponent epochSlot =
     -- Check the primary index first
@@ -637,7 +637,7 @@ getEpochSlot hasFS chunkInfo index curEpochInfo blockComponent epochSlot =
           extractBlockComponent hasFS chunkInfo epoch curEpochInfo
             (entry, blockSize) blockComponent
   where
-    EpochSlot epoch relativeSlot = epochSlot
+    ChunkSlot epoch relativeSlot = epochSlot
     isEBB = relativeSlotIsEBB relativeSlot
 
 appendBlockImpl
@@ -652,7 +652,7 @@ appendBlockImpl dbEnv slot blockNumber headerHash binaryInfo =
     modifyOpenState dbEnv $ \_dbHasFS@HasFS{..} -> do
       OpenState { _currentEpoch, _currentTip, _index } <- get
 
-      let epochSlot@(EpochSlot epoch _) =
+      let epochSlot@(ChunkSlot epoch _) =
             epochInfoBlockRelative _dbChunkInfo slot
 
       -- Check that we're not appending to the past
@@ -695,7 +695,7 @@ appendEBBImpl dbEnv epoch blockNumber headerHash binaryInfo =
         AppendToEBBInThePastError epoch _currentEpoch
 
       appendEpochSlot _dbRegistry _dbHasFS _dbChunkInfo _index
-        (EpochSlot epoch firstRelativeSlot) blockNumber (EBB epoch) headerHash binaryInfo
+        (ChunkSlot epoch firstRelativeSlot) blockNumber (EBB epoch) headerHash binaryInfo
   where
     ImmutableDBEnv { _dbChunkInfo, _dbRegistry } = dbEnv
 
@@ -705,7 +705,7 @@ appendEpochSlot
   -> HasFS m h
   -> ChunkInfo
   -> Index m hash h
-  -> EpochSlot  -- ^ The 'EpochSlot' of the new block or EBB
+  -> ChunkSlot  -- ^ The 'ChunkSlot' of the new block or EBB
   -> BlockNo    -- ^ The block number of the new block
   -> BlockOrEBB -- ^ Corresponds to the new block, will be installed as the
                 -- new tip
@@ -740,7 +740,7 @@ appendEpochSlot registry hasFS chunkInfo index epochSlot blockNumber blockOrEBB 
               Origin -> firstRelativeSlot
               At b   -> nextRelativeSlot $ case b of
                 EBB   _ebb     -> firstRelativeSlot
-                Block lastSlot -> _relativeSlot $
+                Block lastSlot -> chunkRelative $
                                     epochInfoBlockRelative chunkInfo lastSlot
 
     -- Append to the end of the epoch file.
@@ -775,7 +775,7 @@ appendEpochSlot registry hasFS chunkInfo index epochSlot blockNumber blockOrEBB 
       , _currentTip             = At (TipInfo headerHash blockOrEBB blockNumber)
       }
   where
-    EpochSlot epoch relSlot = epochSlot
+    ChunkSlot epoch relSlot = epochSlot
 
 startNewEpoch
   :: forall m h hash. (HasCallStack, IOLike m)
@@ -807,7 +807,7 @@ startNewEpoch registry hasFS@HasFS{..} index chunkInfo = do
               -- epoch is empty
             | otherwise              -> firstRelativeSlot
           At (Block lastSlot)        ->
-            let EpochSlot epoch relSlot = epochInfoBlockRelative chunkInfo lastSlot
+            let ChunkSlot epoch relSlot = epochInfoBlockRelative chunkInfo lastSlot
             in if epoch == _currentEpoch then nextRelativeSlot relSlot else firstRelativeSlot
 
     let backfillOffsets = Primary.backfillEpoch epochSize nextFreeRelSlot

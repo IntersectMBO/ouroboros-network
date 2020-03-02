@@ -211,7 +211,7 @@ dbmRegular = expand (SlotNo 0) . Map.toList . dbmSlots
 --
 -- 'Left' values denote EBBs.
 dbmBlobs :: DBModel hash
-         -> Map (EpochSlot, SlotNo)
+         -> Map (ChunkSlot, SlotNo)
                 (Either (hash, BinaryInfo ByteString)
                         (hash, BinaryInfo ByteString))
 dbmBlobs dbm = repeatedly insert (Map.toList $ dbmSlots dbm) Map.empty
@@ -266,8 +266,8 @@ type IterRes hash = (Either EpochNo SlotNo, hash, BinaryInfo ByteString)
   Slot conversions
 -------------------------------------------------------------------------------}
 
-epochNoToEpochSlot :: EpochNo -> EpochSlot
-epochNoToEpochSlot = (`EpochSlot` firstRelativeSlot)
+epochNoToEpochSlot :: EpochNo -> ChunkSlot
+epochNoToEpochSlot = (`ChunkSlot` firstRelativeSlot)
 
 epochNoToSlot :: DBModel hash -> EpochNo -> SlotNo
 epochNoToSlot dbm = epochSlotToSlot dbm . epochNoToEpochSlot
@@ -279,10 +279,10 @@ slotForBlockOrEBB _   (Block slot) = slot
 slotToEpoch :: DBModel hash -> SlotNo -> EpochNo
 slotToEpoch DBModel {..} = epochInfoEpoch dbmChunkInfo
 
-epochSlotToSlot :: DBModel hash -> EpochSlot -> SlotNo
+epochSlotToSlot :: DBModel hash -> ChunkSlot -> SlotNo
 epochSlotToSlot DBModel {..} = epochInfoAbsolute dbmChunkInfo
 
-slotToEpochSlot :: DBModel hash -> SlotNo -> EpochSlot
+slotToEpochSlot :: DBModel hash -> SlotNo -> ChunkSlot
 slotToEpochSlot DBModel {..} = epochInfoBlockRelative dbmChunkInfo
 
 {------------------------------------------------------------------------------
@@ -331,23 +331,23 @@ rollBackToTip tip dbm@DBModel {..} = case tip of
   where
     _ = keepRedundantConstraint (Proxy @(Show hash))
 
--- | Return the filled 'EpochSlot's of the given 'EpochNo' stored in the model.
-epochSlotsInEpoch :: DBModel hash -> EpochNo -> [EpochSlot]
+-- | Return the filled 'ChunkSlot's of the given 'EpochNo' stored in the model.
+epochSlotsInEpoch :: DBModel hash -> EpochNo -> [ChunkSlot]
 epochSlotsInEpoch dbm epoch =
-    filter ((== epoch) . _epoch) $
+    filter ((== epoch) . chunkIndex) $
     map (fst . fst) $
     Map.toAscList $ dbmBlobs dbm
 
--- | Return the filled 'EpochSlot's (including EBBs) before, in, and after the
+-- | Return the filled 'ChunkSlot's (including EBBs) before, in, and after the
 -- given 'EpochNo'.
 filledEpochSlots :: DBModel hash
                  -> EpochNo
-                 -> ([EpochSlot], [EpochSlot], [EpochSlot])
+                 -> ([ChunkSlot], [ChunkSlot], [ChunkSlot])
 filledEpochSlots dbm epoch = (lt, eq, gt)
   where
     increasingEpochSlots = map (fst . fst) $ Map.toAscList $ dbmBlobs dbm
-    (lt, geq) = span ((< epoch)      . _epoch) increasingEpochSlots
-    (eq, gt)  = span ((< succ epoch) . _epoch) geq
+    (lt, geq) = span ((< epoch)      . chunkIndex) increasingEpochSlots
+    (eq, gt)  = span ((< succ epoch) . chunkIndex) geq
 
 properTips :: DBModel hash -> [TipInfo hash BlockOrEBB]
 properTips = concatMap go . Map.elems . dbmSlots
@@ -406,8 +406,8 @@ data RollBackPoint
     -- ^ No roll back needed.
   | RollBackToGenesis
     -- ^ Roll back to genesis, removing all slots.
-  | RollBackToEpochSlot EpochSlot
-    -- ^ Roll back to the 'EpochSlot', keeping it as the last relative slot.
+  | RollBackToEpochSlot ChunkSlot
+    -- ^ Roll back to the 'ChunkSlot', keeping it as the last relative slot.
   deriving (Eq, Show, Generic)
 
 -- | The earlier 'RollBackPoint' < the later 'RollBackPoint'.
@@ -427,7 +427,7 @@ rollBack rbp dbm = case rbp of
       dbm
     RollBackToGenesis ->
       rollBackToTip Origin dbm
-    RollBackToEpochSlot epochSlot@(EpochSlot epoch relSlot) ->
+    RollBackToEpochSlot epochSlot@(ChunkSlot epoch relSlot) ->
       case relativeSlotIsEBB relSlot of
         IsEBB    -> rollBackToTip (At (EBB epoch))  dbm
         IsNotEBB -> rollBackToTip (At (Block slot)) dbm
@@ -464,11 +464,11 @@ findEpochRollBackPoint validBytes epoch dbm
 
     epochSlots = epochSlotsInEpoch dbm epoch
 
-    mbLastValidEpochSlot :: Maybe EpochSlot
+    mbLastValidEpochSlot :: Maybe ChunkSlot
     mbLastValidEpochSlot = go 0 Nothing (zip epochSlots blobs)
       where
-        go :: Word64 -> Maybe EpochSlot -> [(EpochSlot, ByteString)]
-           -> Maybe EpochSlot
+        go :: Word64 -> Maybe ChunkSlot -> [(ChunkSlot, ByteString)]
+           -> Maybe ChunkSlot
         go curOffset lastValid = \case
           [] -> lastValid
           (epochSlot, blob):rest
@@ -522,7 +522,7 @@ reopenInThePastModel :: forall hash. Show hash
                      -> (ImmTipWithInfo hash, DBModel hash)
 reopenInThePastModel curSlot dbm = (dbmTip dbm', dbm')
   where
-    tipsInThePast :: [EpochSlot]
+    tipsInThePast :: [ChunkSlot]
     tipsInThePast =
       [ slotToEpochSlot dbm slot
       | tip <- properTips dbm
@@ -628,7 +628,7 @@ getBlockOrEBBComponentModel blockComponent slot hash dbm = do
       throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> dbmTip dbm)
 
     let (epoch, couldBeEBB) = case slotToEpochSlot dbm slot of
-          EpochSlot e relSlot -> (e, relSlot == nextRelativeSlot firstRelativeSlot)
+          ChunkSlot e relSlot -> (e, relSlot == nextRelativeSlot firstRelativeSlot)
 
     -- The chain can be too short if there's an EBB at the tip
     return $ case lookupBySlotMaybe slot of
@@ -720,7 +720,7 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
     -- 'validateIteratorRange', which doesn't know about hashes, can't
     -- detect that streaming from the regular block to the EBB in the same
     -- slot is invalid, as the EBB comes before the regular block. Here,
-    -- we do know about the hashes and 'EpochSlot's.
+    -- we do know about the hashes and 'ChunkSlot's.
     case (mbStart', mbEnd') of
       (Just start, Just end)
         | start > end
@@ -753,19 +753,19 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
     swizzle (Right a)        = Right (Right a)
 
     checkBound
-      :: (SlotNo, hash) -> Either (WrongBoundError hash) EpochSlot
+      :: (SlotNo, hash) -> Either (WrongBoundError hash) ChunkSlot
     checkBound (slotNo, hash) = case slotToEpochSlot dbm slotNo of
-      EpochSlot epoch relSlot | relSlot == nextRelativeSlot firstRelativeSlot ->
-        case (Map.lookup (EpochSlot epoch firstRelativeSlot , slotNo) blobs,
-              Map.lookup (EpochSlot epoch relSlot           , slotNo) blobs) of
+      ChunkSlot epoch relSlot | relSlot == nextRelativeSlot firstRelativeSlot ->
+        case (Map.lookup (ChunkSlot epoch firstRelativeSlot , slotNo) blobs,
+              Map.lookup (ChunkSlot epoch relSlot           , slotNo) blobs) of
           (Nothing, Nothing)
             -> Left $ EmptySlotError slotNo
           (Just res1, _)
             | either fst fst res1 == hash
-            -> return $ EpochSlot epoch firstRelativeSlot
+            -> return $ ChunkSlot epoch firstRelativeSlot
           (_, Just res2)
             | either fst fst res2 == hash
-            -> return $ EpochSlot epoch relSlot
+            -> return $ ChunkSlot epoch relSlot
           (mbRes1, mbRes2)
             -> Left $ WrongHashError slotNo hash $ NE.fromList $
                map (either fst fst) $ catMaybes [mbRes1, mbRes2]
@@ -779,7 +779,7 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
               hash' = either fst fst res
 
     iteratorResults
-      :: Maybe EpochSlot -> Maybe EpochSlot
+      :: Maybe ChunkSlot -> Maybe ChunkSlot
       -> [IterRes hash]
     iteratorResults mbStart' mbEnd' =
         blobs
@@ -790,26 +790,26 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
       & map snd
 
     toIterRes
-      :: ((EpochSlot, SlotNo),
+      :: ((ChunkSlot, SlotNo),
           Either (hash, BinaryInfo ByteString)
                  (hash, BinaryInfo ByteString))
-      -> ((EpochSlot, SlotNo), IterRes hash)
-    toIterRes (k@(EpochSlot epoch _, slot), v) = case v of
+      -> ((ChunkSlot, SlotNo), IterRes hash)
+    toIterRes (k@(ChunkSlot epoch _, slot), v) = case v of
       Left  (hash, bi) -> (k, (Left epoch, hash, bi))
       Right (hash, bi) -> (k, (Right slot, hash, bi))
 
     dropUntilStart
-      :: Maybe EpochSlot
-      -> [((EpochSlot, SlotNo), a)]
-      -> [((EpochSlot, SlotNo), a)]
+      :: Maybe ChunkSlot
+      -> [((ChunkSlot, SlotNo), a)]
+      -> [((ChunkSlot, SlotNo), a)]
     dropUntilStart = \case
         Nothing    -> id
         Just start -> dropWhile ((< start) . fst . fst)
 
     takeUntilEnd
-      :: Maybe EpochSlot
-      -> [((EpochSlot, SlotNo), a)]
-      -> [((EpochSlot, SlotNo), a)]
+      :: Maybe ChunkSlot
+      -> [((ChunkSlot, SlotNo), a)]
+      -> [((ChunkSlot, SlotNo), a)]
     takeUntilEnd = \case
         Nothing  -> id
         Just end -> takeWhile ((<= end) . fst . fst)

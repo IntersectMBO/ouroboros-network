@@ -99,8 +99,8 @@ genSmallEpochNo :: Gen EpochNo
 genSmallEpochNo =
     EpochNo <$> choose (0, 10000)
 
-instance Arbitrary EpochSlot where
-  arbitrary = EpochSlot <$> arbitrary <*> arbitrary
+instance Arbitrary ChunkSlot where
+  arbitrary = ChunkSlot <$> arbitrary <*> arbitrary
   shrink    = genericShrink
 
 instance Arbitrary ClockSkew where

@@ -138,9 +138,9 @@ validateIteratorRange chunkInfo tip mbStart mbEnd = runExceptT $ do
       At (EBB   lastEpoch) -> slot > epochInfoFirst chunkInfo lastEpoch
       At (Block lastSlot)  -> slot > lastSlot
 
--- | Convert an 'EpochSlot' to a 'Tip'
-epochSlotToTip :: ChunkInfo -> EpochSlot -> ImmTip
-epochSlotToTip chunkInfo epochSlot@(EpochSlot epoch relSlot) = At $
+-- | Convert an 'ChunkSlot' to a 'Tip'
+epochSlotToTip :: ChunkInfo -> ChunkSlot -> ImmTip
+epochSlotToTip chunkInfo epochSlot@(ChunkSlot epoch relSlot) = At $
     case relativeSlotIsEBB relSlot of
       IsEBB    -> EBB epoch
       IsNotEBB -> Block $ epochInfoAbsolute chunkInfo epochSlot

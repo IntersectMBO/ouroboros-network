@@ -1122,7 +1122,7 @@ instance ToExpr SlotNo where
 
 instance ToExpr EpochNo
 instance ToExpr EpochSize
-instance ToExpr EpochSlot
+instance ToExpr ChunkSlot
 instance ToExpr RelativeSlot
 instance ToExpr BlockNo
 instance (ToExpr a, ToExpr b, ToExpr c, ToExpr d, ToExpr e, ToExpr f, ToExpr g,

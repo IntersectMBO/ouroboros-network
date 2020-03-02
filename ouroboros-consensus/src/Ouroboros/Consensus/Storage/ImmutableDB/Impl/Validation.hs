@@ -443,7 +443,7 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
 
     toRelativeSlot :: BlockOrEBB -> RelativeSlot
     toRelativeSlot (EBB _)      = firstRelativeSlot
-    toRelativeSlot (Block slot) = _relativeSlot $
+    toRelativeSlot (Block slot) = chunkRelative $
       epochInfoBlockRelative chunkInfo slot
 
     go

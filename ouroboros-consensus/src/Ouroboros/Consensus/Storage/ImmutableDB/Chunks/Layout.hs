@@ -16,7 +16,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
   , firstRelativeSlot
   , nextRelativeSlot
     -- * Slots within a chunk
-  , EpochSlot(..)
+  , ChunkSlot(..)
   , epochInfoBlockRelative
   , epochInfoAbsolute
   ) where
@@ -82,30 +82,30 @@ nextRelativeSlot (RelativeSlot s) = RelativeSlot (succ s)
   TODO: These should all be renamed.
 -------------------------------------------------------------------------------}
 
--- | The combination of an 'EpochNo' and a 'RelativeSlot' within the epoch.
-data EpochSlot = EpochSlot
-  { _epoch        :: !EpochNo
-  , _relativeSlot :: !RelativeSlot
+-- | Uniquely identity a block within the immutable DB
+data ChunkSlot = ChunkSlot
+  { chunkIndex    :: !EpochNo
+  , chunkRelative :: !RelativeSlot
   } deriving (Eq, Ord, Generic, NoUnexpectedThunks)
 
-instance Show EpochSlot where
-  show (EpochSlot (EpochNo e) (RelativeSlot s)) = show (e, s)
+instance Show ChunkSlot where
+  show (ChunkSlot (EpochNo e) (RelativeSlot s)) = show (e, s)
 
 -- | Relative slot for a regular block
 --
 -- Should NOT be used for EBBs.
-epochInfoBlockRelative :: ChunkInfo -> SlotNo -> EpochSlot
+epochInfoBlockRelative :: ChunkInfo -> SlotNo -> ChunkSlot
 epochInfoBlockRelative chunkInfo (SlotNo absSlot) =
     let epoch        = epochInfoEpoch chunkInfo (SlotNo absSlot)
         SlotNo first = epochInfoFirst chunkInfo epoch
-    in EpochSlot epoch (RelativeSlot (absSlot - first + 1))
+    in ChunkSlot epoch (RelativeSlot (absSlot - first + 1))
 
 -- | From relative to absolute slot
 --
 -- This can be used for EBBs and regular blocks, since they don't share a
 -- relative slot
-epochInfoAbsolute :: ChunkInfo -> EpochSlot -> SlotNo
-epochInfoAbsolute chunkInfo (EpochSlot epoch (RelativeSlot relSlot)) =
+epochInfoAbsolute :: ChunkInfo -> ChunkSlot -> SlotNo
+epochInfoAbsolute chunkInfo (ChunkSlot epoch (RelativeSlot relSlot)) =
     let SlotNo first = epochInfoFirst chunkInfo epoch
     -- EBB and first block share the first slot
     in SlotNo $ if relSlot == 0 then first
