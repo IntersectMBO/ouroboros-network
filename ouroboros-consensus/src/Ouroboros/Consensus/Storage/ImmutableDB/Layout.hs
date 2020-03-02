@@ -85,19 +85,19 @@ maxRelativeSlot (EpochSize sz) = RelativeSlot sz
 -- | Relative slot for a regular block
 --
 -- Should NOT be used for EBBs.
-epochInfoBlockRelative :: Monad m => ChunkInfo m -> SlotNo -> m EpochSlot
-epochInfoBlockRelative chunkInfo (SlotNo absSlot) = do
-    epoch        <- epochInfoEpoch chunkInfo (SlotNo absSlot)
-    SlotNo first <- epochInfoFirst chunkInfo epoch
-    return $ EpochSlot epoch (RelativeSlot (absSlot - first + 1))
+epochInfoBlockRelative :: ChunkInfo -> SlotNo -> EpochSlot
+epochInfoBlockRelative chunkInfo (SlotNo absSlot) =
+    let epoch        = epochInfoEpoch chunkInfo (SlotNo absSlot)
+        SlotNo first = epochInfoFirst chunkInfo epoch
+    in EpochSlot epoch (RelativeSlot (absSlot - first + 1))
 
 -- | From relative to absolute slot
 --
 -- This can be used for EBBs and regular blocks, since they don't share a
 -- relative slot
-epochInfoAbsolute :: Monad m => ChunkInfo m -> EpochSlot -> m SlotNo
-epochInfoAbsolute chunkInfo (EpochSlot epoch (RelativeSlot relSlot)) = do
-    SlotNo first <- epochInfoFirst chunkInfo epoch
+epochInfoAbsolute :: ChunkInfo -> EpochSlot -> SlotNo
+epochInfoAbsolute chunkInfo (EpochSlot epoch (RelativeSlot relSlot)) =
+    let SlotNo first = epochInfoFirst chunkInfo epoch
     -- EBB and first block share the first slot
-    return $ SlotNo $ if relSlot == 0 then first
-                                      else first + relSlot - 1
+    in SlotNo $ if relSlot == 0 then first
+                                else first + relSlot - 1

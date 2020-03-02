@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal (
   , epochInfoEpoch
   ) where
 
+import           Data.Functor.Identity
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -20,32 +21,32 @@ import qualified Cardano.Slotting.EpochInfo as EI
 import           Cardano.Slotting.Slot
 
 -- TODO: Temporary definition
-data ChunkInfo m = WrapEpochInfo {
+data ChunkInfo = WrapEpochInfo {
       getSimpleChunkInfo :: EpochSize
-    , unwrapEpochInfo    :: EpochInfo m
+    , unwrapEpochInfo    :: EpochInfo Identity
     }
   deriving stock (Generic)
   deriving anyclass (NoUnexpectedThunks)
 
 -- TODO: Temporary definition
-instance Show (ChunkInfo m) where
+instance Show ChunkInfo where
   show ci = "(simpleChunkInfo " ++ show (getSimpleChunkInfo ci) ++ ")"
 
 -- | Simple chunk config with a single chunk size
 --
 -- TODO: This should not use 'EpochSize'.
-simpleChunkInfo :: Monad m => EpochSize -> ChunkInfo m
+simpleChunkInfo :: EpochSize -> ChunkInfo
 simpleChunkInfo sz = WrapEpochInfo sz $ EI.fixedSizeEpochInfo sz
 
 {-------------------------------------------------------------------------------
   TODO: Temporary: emulate the EpochInfo interface
 -------------------------------------------------------------------------------}
 
-epochInfoSize :: ChunkInfo m -> EpochNo -> m EpochSize
-epochInfoSize = EI.epochInfoSize . unwrapEpochInfo
+epochInfoSize :: ChunkInfo -> EpochNo -> EpochSize
+epochInfoSize ci = runIdentity . EI.epochInfoSize (unwrapEpochInfo ci)
 
-epochInfoFirst :: ChunkInfo m -> EpochNo -> m SlotNo
-epochInfoFirst = EI.epochInfoFirst . unwrapEpochInfo
+epochInfoFirst :: ChunkInfo -> EpochNo -> SlotNo
+epochInfoFirst ci = runIdentity . EI.epochInfoFirst (unwrapEpochInfo ci)
 
-epochInfoEpoch :: ChunkInfo m -> SlotNo -> m EpochNo
-epochInfoEpoch = EI.epochInfoEpoch . unwrapEpochInfo
+epochInfoEpoch :: ChunkInfo -> SlotNo -> EpochNo
+epochInfoEpoch ci = runIdentity . EI.epochInfoEpoch (unwrapEpochInfo ci)

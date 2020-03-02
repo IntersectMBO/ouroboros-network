@@ -59,7 +59,7 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
     , _dbInternalState   :: !(StrictMVar m (InternalState m hash h))
     , _dbEpochFileParser :: !(EpochFileParser e m (BlockSummary hash) hash)
-    , _dbChunkInfo       :: !(ChunkInfo m)
+    , _dbChunkInfo       :: !ChunkInfo
     , _dbHashInfo        :: !(HashInfo hash)
     , _dbTracer          :: !(Tracer m (TraceEvent e hash))
     , _dbRegistry        :: !(ResourceRegistry m)

@@ -84,7 +84,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
 
       -- Integration
     , cdbTopLevelConfig       :: TopLevelConfig blk
-    , cdbChunkInfo            :: ChunkInfo m
+    , cdbChunkInfo            :: ChunkInfo
     , cdbHashInfo             :: HashInfo (HeaderHash blk)
     , cdbIsEBB                :: Header blk -> Maybe EpochNo
     , cdbCheckIntegrity       :: blk -> Bool

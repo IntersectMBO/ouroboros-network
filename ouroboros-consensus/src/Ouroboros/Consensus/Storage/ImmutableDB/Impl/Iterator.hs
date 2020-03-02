@@ -158,8 +158,8 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
             -- information to do that.
             let WithHash _startHash startEpochSlot = start
             when (startEpochSlot > endEpochSlot) $ do
-              startSlot <- epochInfoAbsolute _dbChunkInfo startEpochSlot
-              endSlot   <- epochInfoAbsolute _dbChunkInfo endEpochSlot
+              let startSlot = epochInfoAbsolute _dbChunkInfo startEpochSlot
+                  endSlot   = epochInfoAbsolute _dbChunkInfo endEpochSlot
               throwUserError $ InvalidIteratorRangeError startSlot endSlot
 
             let EpochSlot startEpoch startRelSlot = startEpochSlot
@@ -210,8 +210,8 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
 
       -- No end bound given, use the current tip, but convert the 'BlockOrEBB'
       -- to an 'EpochSlot'.
-      Nothing  -> lift $ forM (fromTipInfo currentTip) $ \case
-        EBB epoch      -> return (EpochSlot epoch 0)
+      Nothing  -> return $ flip fmap (fromTipInfo currentTip) $ \case
+        EBB epoch      -> EpochSlot epoch 0
         Block lastSlot -> epochInfoBlockRelative _dbChunkInfo lastSlot
 
     -- | Fill in the start bound: if 'Nothing', use the first block in the
@@ -292,14 +292,14 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
 -- PRECONDITION: the database is not empty.
 getSlotInfo
   :: (HasCallStack, IOLike m, Eq hash)
-  => ChunkInfo m
+  => ChunkInfo
   -> Index m hash h
   -> (SlotNo, hash)
   -> ExceptT (WrongBoundError hash) m
              (EpochSlot, (Secondary.Entry hash, BlockSize), SecondaryOffset)
 getSlotInfo epochInfo index (slot, hash) = do
-    epochSlot@(EpochSlot epoch relSlot) <- lift $
-      epochInfoBlockRelative epochInfo slot
+    let epochSlot@(EpochSlot epoch relSlot) =
+          epochInfoBlockRelative epochInfo slot
     -- 'epochInfoBlockRelative' always assumes the given 'SlotNo' refers to a
     -- regular block and will return 1 as the relative slot number when given
     -- an EBB.
@@ -387,8 +387,8 @@ iteratorNextImpl dbEnv it@IteratorHandle
       -> m b'
     getBlockComponent itEpochHandle itEpoch entryWithBlockSize = \case
         GetHash         -> return headerHash
-        GetSlot         -> case blockOrEBB of
-          Block slot  -> return slot
+        GetSlot         -> return $ case blockOrEBB of
+          Block slot  -> slot
           EBB  epoch' -> assert (epoch' == itEpoch) $
             epochInfoFirst _dbChunkInfo epoch'
         GetIsEBB        -> return $ case blockOrEBB of

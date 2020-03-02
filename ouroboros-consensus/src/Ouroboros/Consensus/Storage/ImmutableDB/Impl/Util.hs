@@ -24,7 +24,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
   ) where
 
 import           Control.Monad (forM_, when)
-import           Control.Monad.Except (lift, runExceptT, throwError)
+import           Control.Monad.Except (runExceptT, throwError)
 import           Data.Binary.Get (Get)
 import qualified Data.Binary.Get as Get
 import qualified Data.ByteString.Lazy as Lazy
@@ -109,7 +109,7 @@ parseDBFile s = case T.splitOn "." $ T.pack s of
 -- See 'Ouroboros.Consensus.Storage.ImmutableDB.API.streamBinaryBlobs'.
 validateIteratorRange
   :: forall m hash. Monad m
-  => ChunkInfo m
+  => ChunkInfo
   -> ImmTip
   -> Maybe (SlotNo, hash)  -- ^ range start (inclusive)
   -> Maybe (SlotNo, hash)  -- ^ range end (inclusive)
@@ -122,25 +122,25 @@ validateIteratorRange chunkInfo tip mbStart mbEnd = runExceptT $ do
       _ -> return ()
 
     whenJust mbStart $ \(start, _) -> do
-      isNewer <- lift $ isNewerThanTip start
+      let isNewer = isNewerThanTip start
       when isNewer $
         throwError $ UserError (ReadFutureSlotError start tip) callStack
 
     whenJust mbEnd $ \(end, _) -> do
-      isNewer <- lift $ isNewerThanTip end
+      let isNewer = isNewerThanTip end
       when isNewer $
         throwError $ UserError (ReadFutureSlotError end tip) callStack
   where
-    isNewerThanTip :: SlotNo -> m Bool
+    isNewerThanTip :: SlotNo -> Bool
     isNewerThanTip slot = case tip of
-      Origin               -> return True
-      At (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst chunkInfo lastEpoch
-      At (Block lastSlot)  -> return $ slot > lastSlot
+      Origin               -> True
+      At (EBB   lastEpoch) -> slot > epochInfoFirst chunkInfo lastEpoch
+      At (Block lastSlot)  -> slot > lastSlot
 
 -- | Convert an 'EpochSlot' to a 'Tip'
-epochSlotToTip :: Monad m => ChunkInfo m -> EpochSlot -> m ImmTip
-epochSlotToTip _         (EpochSlot epoch 0) = return $ At (EBB epoch)
-epochSlotToTip chunkInfo epochSlot           = At . Block <$>
+epochSlotToTip :: ChunkInfo -> EpochSlot -> ImmTip
+epochSlotToTip _         (EpochSlot epoch 0) = At (EBB epoch)
+epochSlotToTip chunkInfo epochSlot           = At . Block $
     epochInfoAbsolute chunkInfo epochSlot
 
 -- | Go through all files, making three sets: the set of epoch files, primary

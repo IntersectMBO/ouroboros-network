@@ -227,7 +227,7 @@ data ChainDbEnv m blk = CDB
     -- ImmutableDB and garbage collecting it from the VolatileDB
   , cdbKillBgThreads   :: !(StrictTVar m (m ()))
     -- ^ A handle to kill the background threads.
-  , cdbChunkInfo       :: !(ImmDB.ChunkInfo m)
+  , cdbChunkInfo       :: !ImmDB.ChunkInfo
   , cdbIsEBB           :: !(Header blk -> IsEBB)
   , cdbCheckIntegrity  :: !(blk -> Bool)
   , cdbBlockchainTime  :: !(BlockchainTime m)

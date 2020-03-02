@@ -282,7 +282,7 @@ mkChainDbArgs
   -> TopLevelConfig blk
   -> ExtLedgerState blk
      -- ^ Initial ledger
-  -> ChunkInfo IO
+  -> ChunkInfo
   -> ChainDbArgs IO blk
 mkChainDbArgs tracer registry btime dbPath cfg initLedger
               chunkInfo = (ChainDB.defaultArgs dbPath)

@@ -73,10 +73,9 @@ class ( LedgerSupportsProtocol    blk
   nodeBlockFetchSize      :: Header blk -> SizeInBytes
   nodeIsEBB               :: Header blk -> Maybe EpochNo
 
-  nodeImmDbChunkInfo      :: Monad m
-                          => Proxy blk
+  nodeImmDbChunkInfo      :: Proxy blk
                           -> TopLevelConfig blk
-                          -> ChunkInfo m
+                          -> ChunkInfo
   nodeStartTime           :: Proxy blk
                           -> TopLevelConfig blk
                           -> SystemStart

@@ -151,7 +151,7 @@ prop_reconstructPrimaryIndex primaryIndex =
 
     -- Use maxBound as epoch size so that we can easily map from SlotNo to
     -- RelativeSlot and vice versa.
-    chunkInfo :: ChunkInfo Identity
+    chunkInfo :: ChunkInfo
     chunkInfo = simpleChunkInfo (EpochSize maxBound)
 
     -- Only 'hashSize' is used. Note that 32 matches the hard-coded value in

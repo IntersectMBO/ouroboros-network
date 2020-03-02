@@ -58,7 +58,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
 -- truncating them.
 data ValidateEnv m hash h e = ValidateEnv
   { hasFS       :: !(HasFS m h)
-  , chunkInfo   :: !(ChunkInfo m)
+  , chunkInfo   :: !ChunkInfo
   , hashInfo    :: !(HashInfo hash)
   , parser      :: !(EpochFileParser e m (BlockSummary hash) hash)
   , tracer      :: !(Tracer m (TraceEvent e hash))
@@ -132,9 +132,10 @@ validateAllEpochs validateEnv@ValidateEnv { hasFS, chunkInfo } lastEpoch =
                                          -- the previous epoch
       -> m (EpochNo, ImmTipWithInfo hash)
     go lastValid epoch prevHash = do
-      shouldBeFinalised <- if epoch == lastEpoch
-        then return ShouldNotBeFinalised
-        else ShouldBeFinalised <$> epochInfoSize chunkInfo epoch
+      let shouldBeFinalised =
+            if epoch == lastEpoch
+              then ShouldNotBeFinalised
+              else ShouldBeFinalised $ epochInfoSize chunkInfo epoch
       runExceptT
         (validateEpoch validateEnv shouldBeFinalised epoch (Just prevHash)) >>= \case
           Left  ()              -> cleanup lastValid epoch $> lastValid
@@ -424,14 +425,14 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
 -- | Reconstruct a 'PrimaryIndex' based on a list of 'Secondary.Entry's.
 reconstructPrimaryIndex
   :: forall m hash. Monad m
-  => ChunkInfo m
+  => ChunkInfo
   -> HashInfo hash
   -> ShouldBeFinalised
   -> [BlockOrEBB]
   -> m PrimaryIndex
 reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
                         blockOrEBBs = do
-    relSlots <- mapM toRelativeSlot blockOrEBBs
+    let relSlots = map toRelativeSlot blockOrEBBs
     let secondaryOffsets = 0 : go 0 0 relSlots
 
     -- This can only fail if the slot numbers of the entries are not
@@ -440,9 +441,9 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
   where
     msg = "blocks have non-increasing slot numbers"
 
-    toRelativeSlot :: BlockOrEBB -> m RelativeSlot
-    toRelativeSlot (EBB _)      = return 0
-    toRelativeSlot (Block slot) = _relativeSlot <$>
+    toRelativeSlot :: BlockOrEBB -> RelativeSlot
+    toRelativeSlot (EBB _)      = 0
+    toRelativeSlot (Block slot) = _relativeSlot $
       epochInfoBlockRelative chunkInfo slot
 
     go

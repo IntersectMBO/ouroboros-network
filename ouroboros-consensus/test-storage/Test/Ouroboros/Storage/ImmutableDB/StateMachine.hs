@@ -31,7 +31,6 @@ import           Data.Coerce (Coercible, coerce)
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Functor.Classes (Eq1, Show1)
-import           Data.Functor.Identity
 import           Data.List (sortBy)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
@@ -1152,7 +1151,7 @@ instance ToExpr (DBModel Hash)
 instance ToExpr FsError where
   toExpr fsError = App (show fsError) []
 
-instance ToExpr (ChunkInfo Identity) where
+instance ToExpr ChunkInfo where
   toExpr = defaultExprViaShow
 
 instance ToExpr (Model m Concrete)
