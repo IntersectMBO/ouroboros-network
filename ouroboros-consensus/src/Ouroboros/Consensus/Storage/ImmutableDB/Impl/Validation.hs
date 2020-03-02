@@ -135,7 +135,7 @@ validateAllEpochs validateEnv@ValidateEnv { hasFS, chunkInfo } lastEpoch =
       let shouldBeFinalised =
             if epoch == lastEpoch
               then ShouldNotBeFinalised
-              else ShouldBeFinalised $ epochInfoSize chunkInfo epoch
+              else ShouldBeFinalised $ getChunkSize chunkInfo epoch
       runExceptT
         (validateEpoch validateEnv shouldBeFinalised epoch (Just prevHash)) >>= \case
           Left  ()              -> cleanup lastValid epoch $> lastValid

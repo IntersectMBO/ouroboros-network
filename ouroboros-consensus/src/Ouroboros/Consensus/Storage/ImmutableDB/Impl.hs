@@ -790,7 +790,7 @@ startNewEpoch registry hasFS@HasFS{..} index chunkInfo = do
 
     -- Find out the size of the current epoch, so we can pad the primary
     -- index.
-    let epochSize = epochInfoSize chunkInfo _currentEpoch
+    let epochSize = getChunkSize chunkInfo _currentEpoch
 
     -- We have to take care when starting multiple new epochs in a row. In the
     -- first call the tip will be in the current epoch, but in subsequent

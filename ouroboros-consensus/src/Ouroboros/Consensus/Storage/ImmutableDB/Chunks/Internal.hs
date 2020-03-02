@@ -6,8 +6,9 @@
 module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal (
     ChunkInfo(..)
   , simpleChunkInfo
+    -- * Queries
+  , getChunkSize
     -- * Emulation of the EpochInfo interface
-  , epochInfoSize
   , epochInfoFirst
   , epochInfoEpoch
   ) where
@@ -37,6 +38,16 @@ instance Show ChunkInfo where
 -- TODO: This should not use 'EpochSize'.
 simpleChunkInfo :: EpochSize -> ChunkInfo
 simpleChunkInfo sz = WrapEpochInfo sz $ EI.fixedSizeEpochInfo sz
+
+{-------------------------------------------------------------------------------
+  Queries
+
+  TODO: EpochNo here should be replaced by ChunkNo
+-------------------------------------------------------------------------------}
+
+-- TODO: EpochSize should become ChunkSize
+getChunkSize :: ChunkInfo -> EpochNo -> EpochSize
+getChunkSize = epochInfoSize
 
 {-------------------------------------------------------------------------------
   TODO: Temporary: emulate the EpochInfo interface

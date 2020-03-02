@@ -6,5 +6,5 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks (
 --
 -- In particular, keep 'ChunkConfig' itself opaque.
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal as X
-                     (ChunkInfo, epochInfoEpoch, epochInfoFirst, epochInfoSize,
+                     (ChunkInfo, epochInfoEpoch, epochInfoFirst, getChunkSize,
                      simpleChunkInfo)
