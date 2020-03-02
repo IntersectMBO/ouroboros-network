@@ -433,8 +433,7 @@ getBlockComponentImpl dbEnv blockComponent slot =
             -- The slot (that's pointing to a regular block) corresponding to this
             -- EBB will be empty, as the EBB is the last thing in the database. So
             -- if @slot@ is equal to this slot, it is also referring to the future.
-            At (EBB lastEBBEpoch) ->
-              slot >= epochInfoAbsolute _dbChunkInfo (ChunkSlot lastEBBEpoch firstRelativeSlot)
+            At (EBB lastEBBEpoch) -> slot >= slotNoOfEBB _dbChunkInfo lastEBBEpoch
 
       when inTheFuture $
         throwUserError $

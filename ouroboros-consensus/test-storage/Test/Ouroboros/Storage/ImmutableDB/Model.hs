@@ -280,7 +280,7 @@ slotToEpoch :: DBModel hash -> SlotNo -> EpochNo
 slotToEpoch DBModel {..} = epochInfoEpoch dbmChunkInfo
 
 epochSlotToSlot :: DBModel hash -> ChunkSlot -> SlotNo
-epochSlotToSlot DBModel {..} = epochInfoAbsolute dbmChunkInfo
+epochSlotToSlot DBModel {..} = chunkSlotToSlot dbmChunkInfo
 
 slotToChunkSlot :: DBModel hash -> SlotNo -> ChunkSlot
 slotToChunkSlot DBModel {..} = chunkSlotForRegularBlock dbmChunkInfo

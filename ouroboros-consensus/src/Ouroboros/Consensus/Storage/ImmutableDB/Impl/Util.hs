@@ -37,7 +37,6 @@ import           Text.Read (readMaybe)
 
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -140,10 +139,7 @@ validateIteratorRange chunkInfo tip mbStart mbEnd = runExceptT $ do
 
 -- | Convert an 'ChunkSlot' to a 'Tip'
 epochSlotToTip :: ChunkInfo -> ChunkSlot -> ImmTip
-epochSlotToTip chunkInfo epochSlot@(ChunkSlot epoch relSlot) = At $
-    case relativeSlotIsEBB relSlot of
-      IsEBB    -> EBB epoch
-      IsNotEBB -> Block $ epochInfoAbsolute chunkInfo epochSlot
+epochSlotToTip chunkInfo = At . chunkSlotToBlockOrEBB chunkInfo
 
 -- | Go through all files, making three sets: the set of epoch files, primary
 -- index files, and secondary index files,, discarding all others.

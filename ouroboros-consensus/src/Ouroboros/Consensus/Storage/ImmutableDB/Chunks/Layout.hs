@@ -19,11 +19,16 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
   , nextRelativeSlot
     -- * Slots within a chunk
   , ChunkSlot(..)
+    -- ** Translation /to/ 'ChunkSlot'
   , chunkSlotForUnknownBlock
   , chunkSlotForRegularBlock
   , chunkSlotForBoundaryBlock
   , chunkSlotForBlockOrEBB
-  , epochInfoAbsolute
+    -- ** Translation /from/ 'ChunkSlot'
+  , chunkSlotToSlot
+  , chunkSlotToBlockOrEBB
+    -- ** Support for EBBs
+  , slotNoOfEBB
   ) where
 
 import           Data.Word
@@ -97,6 +102,10 @@ data ChunkSlot = ChunkSlot
 instance Show ChunkSlot where
   show (ChunkSlot (EpochNo e) (RelativeSlot s)) = show (e, s)
 
+{-------------------------------------------------------------------------------
+  Translation /to/ 'ChunkSlot'
+-------------------------------------------------------------------------------}
+
 -- | Chunk slot for an unknown block
 --
 -- This returns /two/ 'ChunkSlot's: one in case the block could be an EBB,
@@ -129,13 +138,30 @@ chunkSlotForBlockOrEBB ci = \case
     Block slot  -> chunkSlotForRegularBlock ci slot
     EBB   epoch -> chunkSlotForBoundaryBlock epoch
 
+{-------------------------------------------------------------------------------
+  Translation /from/ 'ChunkSlot'
+-------------------------------------------------------------------------------}
+
 -- | From relative to absolute slot
 --
 -- This can be used for EBBs and regular blocks, since they don't share a
--- relative slot
-epochInfoAbsolute :: ChunkInfo -> ChunkSlot -> SlotNo
-epochInfoAbsolute chunkInfo (ChunkSlot epoch (RelativeSlot relSlot)) =
+-- relative slot.
+chunkSlotToSlot :: ChunkInfo -> ChunkSlot -> SlotNo
+chunkSlotToSlot chunkInfo (ChunkSlot epoch (RelativeSlot relSlot)) =
     let SlotNo first = epochInfoFirst chunkInfo epoch
     -- EBB and first block share the first slot
     in SlotNo $ if relSlot == 0 then first
                                 else first + relSlot - 1
+
+chunkSlotToBlockOrEBB :: ChunkInfo -> ChunkSlot -> BlockOrEBB
+chunkSlotToBlockOrEBB chunkInfo epochSlot@(ChunkSlot epoch relSlot) =
+    case relativeSlotIsEBB relSlot of
+      IsEBB    -> EBB epoch
+      IsNotEBB -> Block $ chunkSlotToSlot chunkInfo epochSlot
+
+{-------------------------------------------------------------------------------
+  Support for EBBs
+-------------------------------------------------------------------------------}
+
+slotNoOfEBB :: ChunkInfo -> EpochNo -> SlotNo
+slotNoOfEBB ci = chunkSlotToSlot ci . chunkSlotForBoundaryBlock

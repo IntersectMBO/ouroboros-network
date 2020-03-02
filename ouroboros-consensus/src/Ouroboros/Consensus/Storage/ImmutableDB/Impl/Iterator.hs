@@ -158,8 +158,8 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
             -- information to do that.
             let WithHash _startHash startEpochSlot = start
             when (startEpochSlot > endEpochSlot) $ do
-              let startSlot = epochInfoAbsolute _dbChunkInfo startEpochSlot
-                  endSlot   = epochInfoAbsolute _dbChunkInfo endEpochSlot
+              let startSlot = chunkSlotToSlot _dbChunkInfo startEpochSlot
+                  endSlot   = chunkSlotToSlot _dbChunkInfo endEpochSlot
               throwUserError $ InvalidIteratorRangeError startSlot endSlot
 
             let ChunkSlot startEpoch startRelSlot = startEpochSlot
