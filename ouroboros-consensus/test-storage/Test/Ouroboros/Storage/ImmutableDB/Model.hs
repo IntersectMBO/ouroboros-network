@@ -81,6 +81,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath, fsPathSplit)
 import           Ouroboros.Consensus.Storage.ImmutableDB.API (ImmutableDB,
                      IteratorResult (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (parseDBFile,
                      validateIteratorRange)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
@@ -267,7 +268,7 @@ type IterRes hash = (Either EpochNo SlotNo, hash, BinaryInfo ByteString)
 -------------------------------------------------------------------------------}
 
 epochNoToEpochSlot :: EpochNo -> EpochSlot
-epochNoToEpochSlot = (`EpochSlot` 0)
+epochNoToEpochSlot = (`EpochSlot` firstRelativeSlot)
 
 epochNoToSlot :: DBModel hash -> EpochNo -> SlotNo
 epochNoToSlot dbm = epochSlotToSlot dbm . epochNoToEpochSlot
@@ -423,12 +424,16 @@ instance Ord RollBackPoint where
 
 rollBack :: Show hash => RollBackPoint -> DBModel hash -> DBModel hash
 rollBack rbp dbm = case rbp of
-    DontRollBack                            ->                                 dbm
-    RollBackToGenesis                       -> rollBackToTip Origin            dbm
-    RollBackToEpochSlot (EpochSlot epoch 0) -> rollBackToTip (At (EBB epoch))  dbm
-    RollBackToEpochSlot epochSlot           -> rollBackToTip (At (Block slot)) dbm
-      where
-        slot = epochSlotToSlot dbm epochSlot
+    DontRollBack ->
+      dbm
+    RollBackToGenesis ->
+      rollBackToTip Origin dbm
+    RollBackToEpochSlot epochSlot@(EpochSlot epoch relSlot) ->
+      case relativeSlotIsEBB relSlot of
+        IsEBB    -> rollBackToTip (At (EBB epoch))  dbm
+        IsNotEBB -> rollBackToTip (At (Block slot)) dbm
+        where
+          slot = epochSlotToSlot dbm epochSlot
 
 findCorruptionRollBackPoint :: FileCorruption -> FsPath -> DBModel hash
                             -> RollBackPoint
@@ -624,8 +629,7 @@ getBlockOrEBBComponentModel blockComponent slot hash dbm = do
       throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> dbmTip dbm)
 
     let (epoch, couldBeEBB) = case slotToEpochSlot dbm slot of
-          EpochSlot e 1 -> (e, True)
-          EpochSlot e _ -> (e, False)
+          EpochSlot e relSlot -> (e, relSlot == succ firstRelativeSlot)
 
     -- The chain can be too short if there's an EBB at the tip
     return $ case lookupBySlotMaybe slot of
@@ -752,17 +756,17 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
     checkBound
       :: (SlotNo, hash) -> Either (WrongBoundError hash) EpochSlot
     checkBound (slotNo, hash) = case slotToEpochSlot dbm slotNo of
-      EpochSlot epoch 1 ->
-        case (Map.lookup (EpochSlot epoch 0, slotNo) blobs,
-              Map.lookup (EpochSlot epoch 1, slotNo) blobs) of
+      EpochSlot epoch relSlot | relSlot == succ firstRelativeSlot ->
+        case (Map.lookup (EpochSlot epoch firstRelativeSlot , slotNo) blobs,
+              Map.lookup (EpochSlot epoch relSlot           , slotNo) blobs) of
           (Nothing, Nothing)
             -> Left $ EmptySlotError slotNo
           (Just res1, _)
             | either fst fst res1 == hash
-            -> return $ EpochSlot epoch 0
+            -> return $ EpochSlot epoch firstRelativeSlot
           (_, Just res2)
             | either fst fst res2 == hash
-            -> return $ EpochSlot epoch 1
+            -> return $ EpochSlot epoch relSlot
           (mbRes1, mbRes2)
             -> Left $ WrongHashError slotNo hash $ NE.fromList $
                map (either fst fst) $ catMaybes [mbRes1, mbRes2]

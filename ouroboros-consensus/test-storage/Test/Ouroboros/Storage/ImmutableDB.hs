@@ -146,7 +146,7 @@ prop_reconstructPrimaryIndex primaryIndex =
 
     blockOrEBBs :: [BlockOrEBB]
     blockOrEBBs =
-      [ if relSlot == 0 then EBB 0 else Block (coerce relSlot - 1)
+      [ if relSlot == firstRelativeSlot then EBB 0 else Block (coerce relSlot - 1)
       | relSlot <- Primary.filledSlots primaryIndex]
 
     -- Use maxBound as epoch size so that we can easily map from SlotNo to

@@ -69,7 +69,6 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
                      Handle, OpenMode (ReadMode))
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
-                     (RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex, SecondaryOffset)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -464,8 +463,8 @@ readPrimaryIndex
 readPrimaryIndex hasFS epoch = do
     primaryIndex <- Primary.load hasFS epoch
     let firstIsEBB
-          | Primary.containsSlot primaryIndex 0
-          , Primary.isFilledSlot primaryIndex 0
+          | Primary.containsSlot primaryIndex firstRelativeSlot
+          , Primary.isFilledSlot primaryIndex firstRelativeSlot
           = IsEBB
           | otherwise
           = IsNotEBB

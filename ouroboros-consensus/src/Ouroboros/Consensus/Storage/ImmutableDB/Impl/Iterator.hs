@@ -46,6 +46,7 @@ import           Ouroboros.Consensus.Storage.FS.CRC
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
@@ -163,8 +164,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
               throwUserError $ InvalidIteratorRangeError startSlot endSlot
 
             let EpochSlot startEpoch startRelSlot = startEpochSlot
-                startIsEBB | startRelSlot == 0 = IsEBB
-                           | otherwise         = IsNotEBB
+                startIsEBB   = relativeSlotIsEBB startRelSlot
                 curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
 
             -- TODO avoid rereading the indices of the start epoch. We read
@@ -211,7 +211,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
       -- No end bound given, use the current tip, but convert the 'BlockOrEBB'
       -- to an 'EpochSlot'.
       Nothing  -> return $ flip fmap (fromTipInfo currentTip) $ \case
-        EBB epoch      -> EpochSlot epoch 0
+        EBB epoch      -> EpochSlot epoch firstRelativeSlot
         Block lastSlot -> epochInfoBlockRelative _dbChunkInfo lastSlot
 
     -- | Fill in the start bound: if 'Nothing', use the first block in the
@@ -255,9 +255,8 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
                   -- first filled slot in the primary index) always starts at
                   -- 0.
                   secondaryOffset = 0
-                  isEBB | relSlot == 0 = IsEBB
-                        | otherwise    = IsNotEBB
-                  epochSlot = EpochSlot epoch relSlot
+                  isEBB           = relativeSlotIsEBB relSlot
+                  epochSlot       = EpochSlot epoch relSlot
 
     mkEmptyIterator :: Iterator hash m b
     mkEmptyIterator = Iterator
@@ -303,14 +302,14 @@ getSlotInfo epochInfo index (slot, hash) = do
     -- 'epochInfoBlockRelative' always assumes the given 'SlotNo' refers to a
     -- regular block and will return 1 as the relative slot number when given
     -- an EBB.
-    let couldBeEBB = relSlot == 1
+    let couldBeEBB = relSlot == RelativeSlot 1
 
     -- Obtain the offsets in the secondary index file from the primary index
     -- file. The block /could/ still correspond to an EBB, a regular block or
     -- both. We will know which one it is when we can check the hashes from
     -- the secondary index file with the hash we have.
     toRead :: NonEmpty (IsEBB, SecondaryOffset) <- if couldBeEBB then
-        lift (Index.readOffsets index epoch (Two 0 1)) >>= \case
+        lift (Index.readOffsets index epoch (Two firstRelativeSlot relSlot)) >>= \case
           Two Nothing Nothing                   ->
             throwError $ EmptySlotError slot
           Two (Just ebbOffset) (Just blkOffset) ->
@@ -344,7 +343,7 @@ getSlotInfo epochInfo index (slot, hash) = do
     -- correspond to an EBB or a regular block.
     let epochSlot' = case Secondary.blockOrEBB entry of
           Block _ -> epochSlot
-          EBB   _ -> EpochSlot epoch 0
+          EBB   _ -> EpochSlot epoch firstRelativeSlot
     return (epochSlot', (entry, blockSize), secondaryOffset)
 
 iteratorNextImpl
@@ -491,8 +490,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
           -- 'secondaryOffset' will be 0, as the first entry in the secondary
           -- index file always starts at offset 0. The same is true for
           -- 'findFirstFilledSlot'.
-          let firstIsEBB | relSlot == 0 = IsEBB
-                         | otherwise    = IsNotEBB
+          let firstIsEBB      = relativeSlotIsEBB relSlot
               secondaryOffset = 0
 
           iteratorStateForEpoch hasFS index registry curEpochInfo itEndHash

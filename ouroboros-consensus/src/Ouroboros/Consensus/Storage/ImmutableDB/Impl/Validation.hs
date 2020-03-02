@@ -434,7 +434,7 @@ reconstructPrimaryIndex
 reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
                         blockOrEBBs = do
     let relSlots = map toRelativeSlot blockOrEBBs
-    let secondaryOffsets = 0 : go 0 0 relSlots
+    let secondaryOffsets = 0 : go firstRelativeSlot 0 relSlots
 
     -- This can only fail if the slot numbers of the entries are not
     -- monotonically increasing.
@@ -443,7 +443,7 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
     msg = "blocks have non-increasing slot numbers"
 
     toRelativeSlot :: BlockOrEBB -> RelativeSlot
-    toRelativeSlot (EBB _)      = 0
+    toRelativeSlot (EBB _)      = firstRelativeSlot
     toRelativeSlot (Block slot) = _relativeSlot $
       epochInfoBlockRelative chunkInfo slot
 

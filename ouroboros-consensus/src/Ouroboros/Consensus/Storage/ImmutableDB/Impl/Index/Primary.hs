@@ -219,7 +219,7 @@ readFirstFilledSlot
 readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } epoch =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd -> do
       hSeek pHnd AbsoluteSeek skip
-      go pHnd 0
+      go pHnd firstRelativeSlot
   where
     primaryIndexFile = renderFile "primary" epoch
 
@@ -237,7 +237,7 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } epoch =
       -- Reached end of file, no filled slot
       Nothing -> return Nothing
       Just offset
-        | offset == 0 -> go pHnd (slot + 1)
+        | offset == 0 -> go pHnd (succ slot)
         | otherwise   -> return $ Just slot
 
     -- | We don't know in advance if there are bytes left to read, so it could
@@ -404,7 +404,7 @@ lastOffset (MkPrimaryIndex offsets)
 
 -- | Return the last slot of the primary index (empty or not).
 lastSlot :: PrimaryIndex -> RelativeSlot
-lastSlot (MkPrimaryIndex offsets) = fromIntegral (V.length offsets - 2)
+lastSlot (MkPrimaryIndex offsets) = nthRelativeSlot (V.length offsets - 2)
 
 -- | Check whether the given slot is within the primary index.
 containsSlot :: PrimaryIndex -> RelativeSlot -> Bool
@@ -455,14 +455,17 @@ nextFilledSlot :: PrimaryIndex -> RelativeSlot -> Maybe RelativeSlot
 nextFilledSlot (MkPrimaryIndex offsets) (RelativeSlot slot) =
     go (fromIntegral slot + 1)
   where
+    len :: Int
     len = V.length offsets
+
+    go :: Int -> Maybe RelativeSlot
     go i
       | i + 1 >= len
       = Nothing
       | offsets ! i == offsets ! (i + 1)
       = go (i + 1)
       | otherwise
-      = Just (fromIntegral i)
+      = Just (nthRelativeSlot i)
 
 -- | Find the first filled (length > zero) slot in the primary index. If there
 -- is none, return 'Nothing'.
@@ -478,14 +481,17 @@ nextFilledSlot (MkPrimaryIndex offsets) (RelativeSlot slot) =
 firstFilledSlot :: PrimaryIndex -> Maybe RelativeSlot
 firstFilledSlot (MkPrimaryIndex offsets) = go 1
   where
+    len :: Int
     len = V.length offsets
+
+    go :: Int -> Maybe RelativeSlot
     go i
       | i >= len
       = Nothing
       | offsets ! i == 0
       = go (i + 1)
       | otherwise
-      = Just (fromIntegral (i - 1))
+      = Just (nthRelativeSlot (i - 1))
 
 -- | Return a list of all the filled (length > zero) slots in the primary
 -- index.
@@ -499,13 +505,14 @@ filledSlots primary = go (firstFilledSlot primary)
 lastFilledSlot :: HasCallStack => PrimaryIndex -> Maybe RelativeSlot
 lastFilledSlot (MkPrimaryIndex offsets) = go (V.length offsets - 1)
   where
+    go :: Int -> Maybe RelativeSlot
     go i
       | i < 1
       = Nothing
       | offsets ! i == offsets ! (i - 1)
       = go (i - 1)
       | otherwise
-      = Just (fromIntegral i - 1)
+      = Just (nthRelativeSlot (i - 1))
 
 -- | Return the slots to backfill the primary index file with.
 --
