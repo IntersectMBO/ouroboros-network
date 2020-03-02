@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -7,25 +8,36 @@
 -- This module is not re-exported from the public Chunks API, since it's only
 -- relevant internally in the immutable DB.
 module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
+    -- * Relative slots
     RelativeSlot(..) -- TODO: Opaque
   , maxRelativeSlot
   , relativeSlotIsEBB
   , nthRelativeSlot
   , firstRelativeSlot
   , nextRelativeSlot
+    -- * Slots within a chunk
+  , EpochSlot(..)
+  , epochInfoBlockRelative
+  , epochInfoAbsolute
   ) where
 
 import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Block.EBB
+-- import           Ouroboros.Consensus.Storage.Common
 
 -- Most types in the Chunks interface are opaque in the public API, since their
 -- interpretation is subject to layout decisions. In this module we /make/ those
 -- layout decisions, however, and so here we need access to the internal types.
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+
+{-------------------------------------------------------------------------------
+  Relative slots
+-------------------------------------------------------------------------------}
 
 -- | A /relative/ slot within a chunk
 --
@@ -63,3 +75,38 @@ firstRelativeSlot = RelativeSlot 0
 -- we can do a bounds check here.
 nextRelativeSlot :: RelativeSlot -> RelativeSlot
 nextRelativeSlot (RelativeSlot s) = RelativeSlot (succ s)
+
+{-------------------------------------------------------------------------------
+  Slot within an epoch
+
+  TODO: These should all be renamed.
+-------------------------------------------------------------------------------}
+
+-- | The combination of an 'EpochNo' and a 'RelativeSlot' within the epoch.
+data EpochSlot = EpochSlot
+  { _epoch        :: !EpochNo
+  , _relativeSlot :: !RelativeSlot
+  } deriving (Eq, Ord, Generic, NoUnexpectedThunks)
+
+instance Show EpochSlot where
+  show (EpochSlot (EpochNo e) (RelativeSlot s)) = show (e, s)
+
+-- | Relative slot for a regular block
+--
+-- Should NOT be used for EBBs.
+epochInfoBlockRelative :: ChunkInfo -> SlotNo -> EpochSlot
+epochInfoBlockRelative chunkInfo (SlotNo absSlot) =
+    let epoch        = epochInfoEpoch chunkInfo (SlotNo absSlot)
+        SlotNo first = epochInfoFirst chunkInfo epoch
+    in EpochSlot epoch (RelativeSlot (absSlot - first + 1))
+
+-- | From relative to absolute slot
+--
+-- This can be used for EBBs and regular blocks, since they don't share a
+-- relative slot
+epochInfoAbsolute :: ChunkInfo -> EpochSlot -> SlotNo
+epochInfoAbsolute chunkInfo (EpochSlot epoch (RelativeSlot relSlot)) =
+    let SlotNo first = epochInfoFirst chunkInfo epoch
+    -- EBB and first block share the first slot
+    in SlotNo $ if relSlot == 0 then first
+                                else first + relSlot - 1

@@ -28,7 +28,6 @@ import           Ouroboros.Consensus.Util.Random (Seed (..))
 import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
                      EpochSize (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 
 
 minNumCoreNodes :: Word64
