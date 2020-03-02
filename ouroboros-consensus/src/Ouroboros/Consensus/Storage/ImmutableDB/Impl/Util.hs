@@ -40,11 +40,11 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.EpochInfo.API
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
 
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 
@@ -109,12 +109,12 @@ parseDBFile s = case T.splitOn "." $ T.pack s of
 -- See 'Ouroboros.Consensus.Storage.ImmutableDB.API.streamBinaryBlobs'.
 validateIteratorRange
   :: forall m hash. Monad m
-  => EpochInfo m
+  => ChunkInfo m
   -> ImmTip
   -> Maybe (SlotNo, hash)  -- ^ range start (inclusive)
   -> Maybe (SlotNo, hash)  -- ^ range end (inclusive)
   -> m (Either ImmutableDBError ())
-validateIteratorRange epochInfo tip mbStart mbEnd = runExceptT $ do
+validateIteratorRange chunkInfo tip mbStart mbEnd = runExceptT $ do
     case (mbStart, mbEnd) of
       (Just (start, _), Just (end, _)) ->
         when (start > end) $
@@ -134,14 +134,14 @@ validateIteratorRange epochInfo tip mbStart mbEnd = runExceptT $ do
     isNewerThanTip :: SlotNo -> m Bool
     isNewerThanTip slot = case tip of
       Origin               -> return True
-      At (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
+      At (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst chunkInfo lastEpoch
       At (Block lastSlot)  -> return $ slot > lastSlot
 
 -- | Convert an 'EpochSlot' to a 'Tip'
-epochSlotToTip :: Monad m => EpochInfo m -> EpochSlot -> m ImmTip
+epochSlotToTip :: Monad m => ChunkInfo m -> EpochSlot -> m ImmTip
 epochSlotToTip _         (EpochSlot epoch 0) = return $ At (EBB epoch)
-epochSlotToTip epochInfo epochSlot           = At . Block <$>
-    epochInfoAbsolute epochInfo epochSlot
+epochSlotToTip chunkInfo epochSlot           = At . Block <$>
+    epochInfoAbsolute chunkInfo epochSlot
 
 -- | Go through all files, making three sets: the set of epoch files, primary
 -- index files, and secondary index files,, discarding all others.

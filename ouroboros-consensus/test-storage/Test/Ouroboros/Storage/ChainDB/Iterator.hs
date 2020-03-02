@@ -42,7 +42,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                      (IteratorKey (..), TraceIteratorEvent (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo (fixedSizeEpochInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
@@ -424,9 +423,9 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
             epoch (blockNo block) (blockHash block)
             (CBOR.toBuilder <$> encodeWithBinaryInfo block)
         return $ mkImmDB immDB (const <$> decode) (const <$> decode)
-          encodeWithBinaryInfo epochInfo isEBB addHdrEnv
+          encodeWithBinaryInfo chunkInfo isEBB addHdrEnv
       where
-        epochInfo = fixedSizeEpochInfo epochSize
+        chunkInfo = ImmDB.simpleChunkInfo epochSize
         isEBB     = testHeaderEpochNoIfEBB epochSize
 
 encodeWithBinaryInfo :: TestBlock -> BinaryInfo Encoding

@@ -35,7 +35,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Layout (
     RelativeSlot(..)
   , EpochSlot(..)
   , maxRelativeSlot
-    -- * Derived information from 'EpochInfo'
+    -- * Derived information from 'ChunkInfo'
   , epochInfoBlockRelative
   , epochInfoAbsolute
   ) where
@@ -48,7 +48,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 
 {-------------------------------------------------------------------------------
   Working with relative slots
@@ -76,28 +76,28 @@ maxRelativeSlot :: EpochSize -> RelativeSlot
 maxRelativeSlot (EpochSize sz) = RelativeSlot sz
 
 {-------------------------------------------------------------------------------
-  Derived information from 'EpochInfo'
+  Derived information from 'ChunkInfo'
 
-  These functions are defined here rather than in 'EpochInfo' since they
+  These functions are defined here rather than in 'ChunkInfo' since they
   hardcode assumptions about the internal layout in the immutable DB.
 -------------------------------------------------------------------------------}
 
 -- | Relative slot for a regular block
 --
 -- Should NOT be used for EBBs.
-epochInfoBlockRelative :: Monad m => EpochInfo m -> SlotNo -> m EpochSlot
-epochInfoBlockRelative epochInfo (SlotNo absSlot) = do
-    epoch        <- epochInfoEpoch epochInfo (SlotNo absSlot)
-    SlotNo first <- epochInfoFirst epochInfo epoch
+epochInfoBlockRelative :: Monad m => ChunkInfo m -> SlotNo -> m EpochSlot
+epochInfoBlockRelative chunkInfo (SlotNo absSlot) = do
+    epoch        <- epochInfoEpoch chunkInfo (SlotNo absSlot)
+    SlotNo first <- epochInfoFirst chunkInfo epoch
     return $ EpochSlot epoch (RelativeSlot (absSlot - first + 1))
 
 -- | From relative to absolute slot
 --
 -- This can be used for EBBs and regular blocks, since they don't share a
 -- relative slot
-epochInfoAbsolute :: Monad m => EpochInfo m -> EpochSlot -> m SlotNo
-epochInfoAbsolute epochInfo (EpochSlot epoch (RelativeSlot relSlot)) = do
-    SlotNo first <- epochInfoFirst epochInfo epoch
+epochInfoAbsolute :: Monad m => ChunkInfo m -> EpochSlot -> m SlotNo
+epochInfoAbsolute chunkInfo (EpochSlot epoch (RelativeSlot relSlot)) = do
+    SlotNo first <- epochInfoFirst chunkInfo epoch
     -- EBB and first block share the first slot
     return $ SlotNo $ if relSlot == 0 then first
                                       else first + relSlot - 1

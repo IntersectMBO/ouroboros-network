@@ -22,7 +22,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
@@ -71,7 +70,7 @@ openTestDB :: (HasCallStack, IOLike m)
 openTestDB registry hasFS = fst <$> openDBInternal
     registry
     hasFS
-    (fixedSizeEpochInfo fixedEpochSize)
+    (simpleChunkInfo fixedEpochSize)
     testHashInfo
     ValidateMostRecentEpoch
     parser
@@ -137,7 +136,7 @@ prop_reconstructPrimaryIndex primaryIndex =
     reconstructedPrimaryIndex === primaryIndex'
   where
     reconstructedPrimaryIndex = runIdentity $
-      reconstructPrimaryIndex epochInfo hashInfo ShouldNotBeFinalised
+      reconstructPrimaryIndex chunkInfo hashInfo ShouldNotBeFinalised
                               blockOrEBBs
 
     -- Remove empty trailing slots because we don't reconstruct them
@@ -154,8 +153,8 @@ prop_reconstructPrimaryIndex primaryIndex =
 
     -- Use maxBound as epoch size so that we can easily map from SlotNo to
     -- RelativeSlot and vice versa.
-    epochInfo :: EpochInfo Identity
-    epochInfo = fixedSizeEpochInfo (EpochSize maxBound)
+    chunkInfo :: ChunkInfo Identity
+    chunkInfo = simpleChunkInfo (EpochSize maxBound)
 
     -- Only 'hashSize' is used. Note that 32 matches the hard-coded value in
     -- the 'PrimaryIndex' generator we use.

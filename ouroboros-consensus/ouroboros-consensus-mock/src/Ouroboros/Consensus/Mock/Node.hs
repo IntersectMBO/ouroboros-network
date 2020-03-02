@@ -28,6 +28,7 @@ import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
 import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 
 {-------------------------------------------------------------------------------
   RunNode instance for the mock ledger
@@ -50,7 +51,7 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeBlockMatchesHeader    = matchesSimpleHeader
   nodeBlockFetchSize        = fromIntegral . simpleBlockSize . simpleHeaderStd
   nodeIsEBB                 = const Nothing
-  nodeEpochSize             = \_ cfg _ -> return $
+  nodeImmDbChunkInfo        = \_ cfg -> simpleChunkInfo $
     EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
   nodeStartTime             = \_ _ -> SystemStart dummyDate
     where

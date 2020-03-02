@@ -30,11 +30,10 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo)
 import           Ouroboros.Consensus.Storage.FS.API
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
-                     (BinaryInfo (..), HashInfo (..))
+                     (BinaryInfo (..), ChunkInfo, HashInfo (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
@@ -85,7 +84,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
 
       -- Integration
     , cdbTopLevelConfig       :: TopLevelConfig blk
-    , cdbEpochInfo            :: EpochInfo m
+    , cdbChunkInfo            :: ChunkInfo m
     , cdbHashInfo             :: HashInfo (HeaderHash blk)
     , cdbIsEBB                :: Header blk -> Maybe EpochNo
     , cdbCheckIntegrity       :: blk -> Bool
@@ -173,7 +172,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immDecodeHeader     = cdbDecodeHeader
         , immEncodeHash       = cdbEncodeHash
         , immEncodeBlock      = cdbEncodeBlock
-        , immEpochInfo        = cdbEpochInfo
+        , immChunkInfo        = cdbChunkInfo
         , immHashInfo         = cdbHashInfo
         , immValidation       = cdbImmValidation
         , immIsEBB            = cdbIsEBB
@@ -265,7 +264,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbDiskPolicy           = lgrDiskPolicy
       -- Integration
     , cdbTopLevelConfig       = lgrTopLevelConfig
-    , cdbEpochInfo            = immEpochInfo
+    , cdbChunkInfo            = immChunkInfo
     , cdbHashInfo             = immHashInfo
     , cdbIsEBB                = immIsEBB
     , cdbCheckIntegrity       = immCheckIntegrity

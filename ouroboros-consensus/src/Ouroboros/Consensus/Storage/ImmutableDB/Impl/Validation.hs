@@ -33,11 +33,11 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
                      (cachedIndex)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -58,7 +58,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
 -- truncating them.
 data ValidateEnv m hash h e = ValidateEnv
   { hasFS       :: !(HasFS m h)
-  , epochInfo   :: !(EpochInfo m)
+  , chunkInfo   :: !(ChunkInfo m)
   , hashInfo    :: !(HashInfo hash)
   , parser      :: !(EpochFileParser e m (BlockSummary hash) hash)
   , tracer      :: !(Tracer m (TraceEvent e hash))
@@ -122,7 +122,7 @@ validateAllEpochs
   -> EpochNo
      -- ^ Most recent epoch on disk
   -> m (EpochNo, ImmTipWithInfo hash)
-validateAllEpochs validateEnv@ValidateEnv { hasFS, epochInfo } lastEpoch =
+validateAllEpochs validateEnv@ValidateEnv { hasFS, chunkInfo } lastEpoch =
     go (0, Origin) 0 Origin
   where
     go
@@ -134,7 +134,7 @@ validateAllEpochs validateEnv@ValidateEnv { hasFS, epochInfo } lastEpoch =
     go lastValid epoch prevHash = do
       shouldBeFinalised <- if epoch == lastEpoch
         then return ShouldNotBeFinalised
-        else ShouldBeFinalised <$> epochInfoSize epochInfo epoch
+        else ShouldBeFinalised <$> epochInfoSize chunkInfo epoch
       runExceptT
         (validateEpoch validateEnv shouldBeFinalised epoch (Just prevHash)) >>= \case
           Left  ()              -> cleanup lastValid epoch $> lastValid
@@ -340,7 +340,7 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
       -- Read the primary index file, if it is missing, parsing fails, or it
       -- does not match the reconstructed primary index, overwrite it using
       -- the reconstructed index (truncate first).
-      primaryIndex            <- reconstructPrimaryIndex epochInfo hashInfo
+      primaryIndex            <- reconstructPrimaryIndex chunkInfo hashInfo
         shouldBeFinalised (map Secondary.blockOrEBB entries)
       primaryIndexFileExists  <- doesFileExist primaryIndexFile
       primaryIndexFileMatches <- if primaryIndexFileExists
@@ -424,12 +424,12 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
 -- | Reconstruct a 'PrimaryIndex' based on a list of 'Secondary.Entry's.
 reconstructPrimaryIndex
   :: forall m hash. Monad m
-  => EpochInfo m
+  => ChunkInfo m
   -> HashInfo hash
   -> ShouldBeFinalised
   -> [BlockOrEBB]
   -> m PrimaryIndex
-reconstructPrimaryIndex epochInfo HashInfo { hashSize } shouldBeFinalised
+reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
                         blockOrEBBs = do
     relSlots <- mapM toRelativeSlot blockOrEBBs
     let secondaryOffsets = 0 : go 0 0 relSlots
@@ -443,7 +443,7 @@ reconstructPrimaryIndex epochInfo HashInfo { hashSize } shouldBeFinalised
     toRelativeSlot :: BlockOrEBB -> m RelativeSlot
     toRelativeSlot (EBB _)      = return 0
     toRelativeSlot (Block slot) = _relativeSlot <$>
-      epochInfoBlockRelative epochInfo slot
+      epochInfoBlockRelative chunkInfo slot
 
     go
       :: HasCallStack

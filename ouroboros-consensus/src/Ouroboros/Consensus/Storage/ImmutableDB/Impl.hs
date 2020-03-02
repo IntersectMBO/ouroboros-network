@@ -116,12 +116,12 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types hiding (allowExisting)
 import           Ouroboros.Consensus.Storage.FS.CRC
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -170,7 +170,7 @@ withDB
      (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash)
   => ResourceRegistry m
   -> HasFS m h
-  -> EpochInfo m
+  -> ChunkInfo m
   -> HashInfo hash
   -> ValidationPolicy
   -> EpochFileParser e m (BlockSummary hash) hash
@@ -179,11 +179,11 @@ withDB
   -> BlockchainTime m
   -> (ImmutableDB hash m -> m a)
   -> m a
-withDB registry hasFS epochInfo hashInfo valPol parser tracer cacheConfig btime =
+withDB registry hasFS chunkInfo hashInfo valPol parser tracer cacheConfig btime =
     bracket open closeDB
   where
     open = fst <$>
-      openDBInternal registry hasFS epochInfo hashInfo valPol parser tracer
+      openDBInternal registry hasFS chunkInfo hashInfo valPol parser tracer
         cacheConfig btime
 
 {------------------------------------------------------------------------------
@@ -239,7 +239,7 @@ openDBInternal
   => ResourceRegistry m  -- ^ The ImmutableDB will be in total control of
                          -- this, not to be used for other resources.
   -> HasFS m h
-  -> EpochInfo m
+  -> ChunkInfo m
   -> HashInfo hash
   -> ValidationPolicy
   -> EpochFileParser e m (BlockSummary hash) hash
@@ -247,12 +247,12 @@ openDBInternal
   -> Index.CacheConfig
   -> BlockchainTime m
   -> m (ImmutableDB hash m, Internal hash m)
-openDBInternal registry hasFS@HasFS{..} epochInfo hashInfo valPol parser
+openDBInternal registry hasFS@HasFS{..} chunkInfo hashInfo valPol parser
                tracer cacheConfig btime = do
     currentSlot <- atomically $ getCurrentSlot btime
     let validateEnv = ValidateEnv
           { hasFS
-          , epochInfo
+          , chunkInfo
           , hashInfo
           , parser
           , tracer
@@ -268,7 +268,7 @@ openDBInternal registry hasFS@HasFS{..} epochInfo hashInfo valPol parser
           { _dbHasFS           = hasFS
           , _dbInternalState   = stVar
           , _dbEpochFileParser = parser
-          , _dbEpochInfo       = epochInfo
+          , _dbChunkInfo       = chunkInfo
           , _dbHashInfo        = hashInfo
           , _dbTracer          = tracer
           , _dbRegistry        = registry
@@ -323,7 +323,7 @@ reopenImpl ImmutableDBEnv {..} valPol = bracketOnError
         currentSlot <- atomically $ getCurrentSlot _dbBlockchainTime
         let validateEnv = ValidateEnv
               { hasFS       = _dbHasFS
-              , epochInfo   = _dbEpochInfo
+              , chunkInfo   = _dbChunkInfo
               , hashInfo    = _dbHashInfo
               , parser      = _dbEpochFileParser
               , tracer      = _dbTracer
@@ -366,13 +366,13 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
           allowExisting
       put ost
   where
-    ImmutableDBEnv {  _dbEpochInfo, _dbHashInfo, _dbRegistry } = dbEnv
+    ImmutableDBEnv {  _dbChunkInfo, _dbHashInfo, _dbRegistry } = dbEnv
 
     -- | The current tip as a 'TipEpochSlot'
     blockOrEBBEpochSlot :: BlockOrEBB -> m EpochSlot
     blockOrEBBEpochSlot = \case
       EBB  epoch -> return (EpochSlot epoch 0)
-      Block slot -> epochInfoBlockRelative _dbEpochInfo slot
+      Block slot -> epochInfoBlockRelative _dbChunkInfo slot
 
     truncateTo
       :: HasFS m h
@@ -437,7 +437,7 @@ getBlockComponentImpl dbEnv blockComponent slot =
         -- EBB will be empty, as the EBB is the last thing in the database. So
         -- if @slot@ is equal to this slot, it is also referring to the future.
         At (EBB lastEBBEpoch) -> do
-          ebbSlot <- epochInfoAbsolute _dbEpochInfo (EpochSlot lastEBBEpoch 0)
+          ebbSlot <- epochInfoAbsolute _dbChunkInfo (EpochSlot lastEBBEpoch 0)
           return $ slot >= ebbSlot
 
       when inTheFuture $
@@ -445,11 +445,11 @@ getBlockComponentImpl dbEnv blockComponent slot =
           ReadFutureSlotError slot (forgetTipInfo <$> _currentTip)
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
-      epochSlot <- epochInfoBlockRelative _dbEpochInfo slot
-      getEpochSlot _dbHasFS _dbEpochInfo _index curEpochInfo
+      epochSlot <- epochInfoBlockRelative _dbChunkInfo slot
+      getEpochSlot _dbHasFS _dbChunkInfo _index curEpochInfo
         blockComponent epochSlot
   where
-    ImmutableDBEnv { _dbEpochInfo } = dbEnv
+    ImmutableDBEnv { _dbChunkInfo } = dbEnv
 
 getEBBComponentImpl
   :: forall m hash b. (HasCallStack, IOLike m)
@@ -468,25 +468,25 @@ getEBBComponentImpl dbEnv blockComponent epoch =
         throwUserError $ ReadFutureEBBError epoch _currentEpoch
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
-      getEpochSlot _dbHasFS _dbEpochInfo _index curEpochInfo
+      getEpochSlot _dbHasFS _dbChunkInfo _index curEpochInfo
         blockComponent (EpochSlot epoch 0)
   where
-    ImmutableDBEnv { _dbEpochInfo } = dbEnv
+    ImmutableDBEnv { _dbChunkInfo } = dbEnv
 
 extractBlockComponent
   :: forall m h hash b. (HasCallStack, IOLike m)
   => HasFS m h
-  -> EpochInfo m
+  -> ChunkInfo m
   -> EpochNo
   -> CurrentEpochInfo
   -> (Secondary.Entry hash, BlockSize)
   -> BlockComponent (ImmutableDB hash m) b
   -> m b
-extractBlockComponent hasFS epochInfo epoch curEpochInfo (entry, blockSize) = \case
+extractBlockComponent hasFS chunkInfo epoch curEpochInfo (entry, blockSize) = \case
     GetHash  -> return headerHash
     GetSlot  -> case blockOrEBB of
       Block slot  -> return slot
-      EBB  epoch' -> assert (epoch' == epoch) $ epochInfoFirst epochInfo epoch'
+      EBB  epoch' -> assert (epoch' == epoch) $ epochInfoFirst chunkInfo epoch'
 
     GetIsEBB -> return $ case blockOrEBB of
       Block _ -> IsNotEBB
@@ -511,9 +511,9 @@ extractBlockComponent hasFS epochInfo epoch curEpochInfo (entry, blockSize) = \c
     GetPure a -> return a
 
     GetApply f bc ->
-      extractBlockComponent hasFS epochInfo epoch curEpochInfo
+      extractBlockComponent hasFS chunkInfo epoch curEpochInfo
         (entry, blockSize) f <*>
-      extractBlockComponent hasFS epochInfo epoch curEpochInfo
+      extractBlockComponent hasFS chunkInfo epoch curEpochInfo
         (entry, blockSize) bc
 
     -- In case the requested epoch is the current epoch, we will be reading
@@ -594,7 +594,7 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
         Origin                -> return True
         At (Block lastSlot)   -> return $ slot > lastSlot
         At (EBB lastEBBEpoch) -> do
-          ebbSlot <- epochInfoFirst _dbEpochInfo lastEBBEpoch
+          ebbSlot <- epochInfoFirst _dbChunkInfo lastEBBEpoch
           return $ slot > ebbSlot
 
       when inTheFuture $
@@ -603,16 +603,16 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
 
       errOrRes <- runExceptT $
-        getSlotInfo _dbEpochInfo _index (slot, hash)
+        getSlotInfo _dbChunkInfo _index (slot, hash)
       case errOrRes of
         Left _ ->
           return Nothing
         Right (EpochSlot epoch _, (entry, blockSize), _secondaryOffset) ->
           Just <$>
-            extractBlockComponent _dbHasFS _dbEpochInfo epoch curEpochInfo
+            extractBlockComponent _dbHasFS _dbChunkInfo epoch curEpochInfo
               (entry, blockSize) blockComponent
   where
-    ImmutableDBEnv { _dbEpochInfo } = dbEnv
+    ImmutableDBEnv { _dbChunkInfo } = dbEnv
 
 -- | Get the block component corresponding to the given 'EpochSlot'.
 --
@@ -620,13 +620,13 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
 getEpochSlot
   :: forall m h hash b. (HasCallStack, IOLike m)
   => HasFS m h
-  -> EpochInfo m
+  -> ChunkInfo m
   -> Index m hash h
   -> CurrentEpochInfo
   -> BlockComponent (ImmutableDB hash m) b
   -> EpochSlot
   -> m (Maybe b)
-getEpochSlot hasFS epochInfo index curEpochInfo blockComponent epochSlot =
+getEpochSlot hasFS chunkInfo index curEpochInfo blockComponent epochSlot =
     -- Check the primary index first
     Index.readOffset index epoch relativeSlot >>= \case
       -- Empty slot
@@ -637,7 +637,7 @@ getEpochSlot hasFS epochInfo index curEpochInfo blockComponent epochSlot =
         -- TODO only read the hash in case of 'GetHash'?
         (entry, blockSize) <- Index.readEntry index epoch isEBB secondaryOffset
         Just <$>
-          extractBlockComponent hasFS epochInfo epoch curEpochInfo
+          extractBlockComponent hasFS chunkInfo epoch curEpochInfo
             (entry, blockSize) blockComponent
   where
     EpochSlot epoch relativeSlot = epochSlot
@@ -657,7 +657,7 @@ appendBlockImpl dbEnv slot blockNumber headerHash binaryInfo =
       OpenState { _currentEpoch, _currentTip, _index } <- get
 
       epochSlot@(EpochSlot epoch _) <- lift $
-        epochInfoBlockRelative _dbEpochInfo slot
+        epochInfoBlockRelative _dbChunkInfo slot
 
       -- Check that we're not appending to the past
       let inThePast = case forgetTipInfo <$> _currentTip of
@@ -669,10 +669,10 @@ appendBlockImpl dbEnv slot blockNumber headerHash binaryInfo =
         throwUserError $
           AppendToSlotInThePastError slot (forgetTipInfo <$> _currentTip)
 
-      appendEpochSlot _dbRegistry _dbHasFS _dbEpochInfo _index epochSlot
+      appendEpochSlot _dbRegistry _dbHasFS _dbChunkInfo _index epochSlot
         blockNumber (Block slot) headerHash binaryInfo
   where
-    ImmutableDBEnv { _dbEpochInfo, _dbRegistry } = dbEnv
+    ImmutableDBEnv { _dbChunkInfo, _dbRegistry } = dbEnv
 
 appendEBBImpl
   :: forall m hash. (HasCallStack, IOLike m)
@@ -698,16 +698,16 @@ appendEBBImpl dbEnv epoch blockNumber headerHash binaryInfo =
       when inThePast $ lift $ throwUserError $
         AppendToEBBInThePastError epoch _currentEpoch
 
-      appendEpochSlot _dbRegistry _dbHasFS _dbEpochInfo _index
+      appendEpochSlot _dbRegistry _dbHasFS _dbChunkInfo _index
         (EpochSlot epoch 0) blockNumber (EBB epoch) headerHash binaryInfo
   where
-    ImmutableDBEnv { _dbEpochInfo, _dbRegistry } = dbEnv
+    ImmutableDBEnv { _dbChunkInfo, _dbRegistry } = dbEnv
 
 appendEpochSlot
   :: forall m h hash. (HasCallStack, IOLike m)
   => ResourceRegistry m
   -> HasFS m h
-  -> EpochInfo m
+  -> ChunkInfo m
   -> Index m hash h
   -> EpochSlot  -- ^ The 'EpochSlot' of the new block or EBB
   -> BlockNo    -- ^ The block number of the new block
@@ -716,7 +716,7 @@ appendEpochSlot
   -> hash
   -> BinaryInfo Builder
   -> StateT (OpenState m hash h) m ()
-appendEpochSlot registry hasFS epochInfo index epochSlot blockNumber blockOrEBB headerHash
+appendEpochSlot registry hasFS chunkInfo index epochSlot blockNumber blockOrEBB headerHash
                 BinaryInfo { binaryBlob, headerOffset, headerSize } = do
     OpenState { _currentEpoch = initialEpoch } <- get
 
@@ -726,7 +726,7 @@ appendEpochSlot registry hasFS epochInfo index epochSlot blockNumber blockOrEBB 
     when (epoch > initialEpoch) $ do
       let newEpochsToStart :: Int
           newEpochsToStart = fromIntegral . unEpochNo $ epoch - initialEpoch
-      replicateM_ newEpochsToStart (startNewEpoch registry hasFS index epochInfo)
+      replicateM_ newEpochsToStart (startNewEpoch registry hasFS index chunkInfo)
 
     -- We may have updated the state with 'startNewEpoch', so get the
     -- (possibly) updated state, but first remember the current epoch
@@ -744,7 +744,7 @@ appendEpochSlot registry hasFS epochInfo index epochSlot blockNumber blockOrEBB 
             Origin              -> return 0
             At (EBB _ebb)       -> return 1
             At (Block lastSlot) -> succ . _relativeSlot <$>
-              epochInfoBlockRelative epochInfo lastSlot
+              epochInfoBlockRelative chunkInfo lastSlot
 
     -- Append to the end of the epoch file.
     (blockSize, entrySize) <- lift $ do
@@ -785,14 +785,14 @@ startNewEpoch
   => ResourceRegistry m
   -> HasFS m h
   -> Index m hash h
-  -> EpochInfo m
+  -> ChunkInfo m
   -> StateT (OpenState m hash h) m ()
-startNewEpoch registry hasFS@HasFS{..} index epochInfo = do
+startNewEpoch registry hasFS@HasFS{..} index chunkInfo = do
     st@OpenState {..} <- get
 
     -- Find out the size of the current epoch, so we can pad the primary
     -- index.
-    epochSize <- lift $ epochInfoSize epochInfo _currentEpoch
+    epochSize <- lift $ epochInfoSize chunkInfo _currentEpoch
 
     -- We have to take care when starting multiple new epochs in a row. In the
     -- first call the tip will be in the current epoch, but in subsequent
@@ -810,7 +810,7 @@ startNewEpoch registry hasFS@HasFS{..} index epochInfo = do
           -- epoch is empty
         | otherwise              -> return 0
       At (Block lastSlot)        ->
-        epochInfoBlockRelative epochInfo lastSlot <&> \(EpochSlot epoch relSlot) ->
+        epochInfoBlockRelative chunkInfo lastSlot <&> \(EpochSlot epoch relSlot) ->
           if epoch == _currentEpoch then succ relSlot else 0
 
     let backfillOffsets = Primary.backfillEpoch epochSize nextFreeRelSlot

@@ -38,7 +38,7 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, isNothing, listToMaybe)
 import           Data.Proxy (Proxy (..))
-import           Data.TreeDiff (Expr (App))
+import           Data.TreeDiff (Expr (App), defaultExprViaShow)
 import           Data.TreeDiff.Class (ToExpr (..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word16, Word32, Word64)
@@ -71,7 +71,6 @@ import           Ouroboros.Network.Block (BlockNo (..), HasHeader (..),
 import qualified Ouroboros.Network.Block as Block
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath)
 import           Ouroboros.Consensus.Storage.ImmutableDB hiding
@@ -1153,8 +1152,8 @@ instance ToExpr (DBModel Hash)
 instance ToExpr FsError where
   toExpr fsError = App (show fsError) []
 
-instance ToExpr (EpochInfo Identity) where
-  toExpr it = App "fixedSizeEpochInfo" [App (show (runIdentity $ epochInfoSize it 0)) []]
+instance ToExpr (ChunkInfo Identity) where
+  toExpr = defaultExprViaShow
 
 instance ToExpr (Model m Concrete)
 
@@ -1203,9 +1202,8 @@ test cacheConfig cmds = do
         btime  = settableBlockchainTime varCurSlot
 
     withRegistry $ \registry -> do
-
       bracket
-        (openDBInternal registry hasFS (fixedSizeEpochInfo fixedEpochSize)
+        (openDBInternal registry hasFS (simpleChunkInfo fixedEpochSize)
            testHashInfo ValidateMostRecentEpoch parser tracer cacheConfig btime)
         (closeDB . fst) $ \(db, internal) -> do
 

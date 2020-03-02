@@ -58,6 +58,7 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
                      EpochSize (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -192,7 +193,8 @@ instance RunNode ByronBlock where
 
   -- The epoch size is fixed and can be derived from @k@ by the ledger
   -- ('kEpochSlots').
-  nodeEpochSize             = \_proxy cfg _epochNo -> return
+  nodeImmDbChunkInfo        = \_proxy cfg ->
+                                  simpleChunkInfo
                                 . (coerce :: EpochSlots -> EpochSize)
                                 . kEpochSlots
                                 . Genesis.gdK

@@ -98,9 +98,8 @@ import           Ouroboros.Consensus.Storage.ChainDB hiding
                      (TraceReaderEvent (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
-import           Ouroboros.Consensus.Storage.EpochInfo (fixedSizeEpochInfo)
 import           Ouroboros.Consensus.Storage.ImmutableDB
-                     (ValidationPolicy (ValidateAllEpochs))
+                     (ValidationPolicy (ValidateAllEpochs), simpleChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
@@ -1489,7 +1488,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
 
       -- Integration
     , cdbTopLevelConfig       = cfg
-    , cdbEpochInfo            = fixedSizeEpochInfo fixedEpochSize
+    , cdbChunkInfo            = simpleChunkInfo fixedEpochSize
     , cdbHashInfo             = testHashInfo
     , cdbIsEBB                = testHeaderEpochNoIfEBB fixedEpochSize
     , cdbCheckIntegrity       = testBlockIsValid

@@ -31,8 +31,6 @@ import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.Common (EpochNo)
-import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo,
-                     epochInfoEpoch)
 
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Background as Background
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
@@ -114,7 +112,7 @@ reopen (CDBHandle varState) launchBgTasks = do
 
         ImmDB.reopen cdbImmDB
         immDbTipPoint <- ImmDB.getPointAtTip cdbImmDB
-        immDbTipEpoch <- pointToEpoch cdbEpochInfo immDbTipPoint
+        immDbTipEpoch <- pointToEpoch cdbChunkInfo immDbTipPoint
         traceWith cdbTracer $ TraceOpenEvent $ OpenedImmDB
           { _immDbTip      = immDbTipPoint
           , _immDbTipEpoch = immDbTipEpoch
@@ -164,7 +162,9 @@ reopen (CDBHandle varState) launchBgTasks = do
   Auxiliary
 -------------------------------------------------------------------------------}
 
-pointToEpoch :: Monad m => EpochInfo m -> Point blk -> m EpochNo
-pointToEpoch epochInfo = \case
+-- TODO: This should compute a /chunk/, not an epoch?
+-- TODO: This shouldn't really live here, but in the ImmDB wrapper?
+pointToEpoch :: Monad m => ImmDB.ChunkInfo m -> Point blk -> m EpochNo
+pointToEpoch chunkInfo = \case
     GenesisPoint      -> return 0
-    BlockPoint slot _ -> epochInfoEpoch epochInfo slot
+    BlockPoint slot _ -> ImmDB.epochInfoEpoch chunkInfo slot

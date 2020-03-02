@@ -73,10 +73,10 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
-import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo, newEpochInfo)
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
-import           Ouroboros.Consensus.Storage.ImmutableDB (ValidationPolicy (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo,
+                     ValidationPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
@@ -264,12 +264,13 @@ openChainDB
   -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
       -- ^ Customise the 'ChainDbArgs'
   -> IO (ChainDB IO blk)
-openChainDB tracer registry btime dbPath cfg initLedger customiseArgs = do
-    epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) cfg
-    let args = customiseArgs $
-          mkChainDbArgs tracer registry btime dbPath cfg initLedger
-          epochInfo
+openChainDB tracer registry btime dbPath cfg initLedger customiseArgs =
     ChainDB.openDB args
+  where
+    args :: ChainDbArgs IO blk
+    args = customiseArgs $
+             mkChainDbArgs tracer registry btime dbPath cfg initLedger
+             (nodeImmDbChunkInfo (Proxy @blk) cfg)
 
 mkChainDbArgs
   :: forall blk. RunNode blk
@@ -281,10 +282,10 @@ mkChainDbArgs
   -> TopLevelConfig blk
   -> ExtLedgerState blk
      -- ^ Initial ledger
-  -> EpochInfo IO
+  -> ChunkInfo IO
   -> ChainDbArgs IO blk
 mkChainDbArgs tracer registry btime dbPath cfg initLedger
-              epochInfo = (ChainDB.defaultArgs dbPath)
+              chunkInfo = (ChainDB.defaultArgs dbPath)
     { ChainDB.cdbBlocksPerFile        = mkBlocksPerFile 1000
     , ChainDB.cdbDecodeBlock          = nodeDecodeBlock          cfg
     , ChainDB.cdbDecodeHeader         = nodeDecodeHeader         cfg SerialisedToDisk
@@ -298,7 +299,7 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger
     , ChainDB.cdbEncodeHash           = nodeEncodeHeaderHash     (Proxy @blk)
     , ChainDB.cdbEncodeLedger         = nodeEncodeLedgerState    cfg
     , ChainDB.cdbEncodeTipInfo        = nodeEncodeTipInfo        (Proxy @blk)
-    , ChainDB.cdbEpochInfo            = epochInfo
+    , ChainDB.cdbChunkInfo            = chunkInfo
     , ChainDB.cdbHashInfo             = nodeHashInfo             (Proxy @blk)
     , ChainDB.cdbGenesis              = return initLedger
     , ChainDB.cdbAddHdrEnv            = nodeAddHeaderEnvelope    (Proxy @blk)

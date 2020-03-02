@@ -47,7 +47,10 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
   , ImmDB.ImmutableDBError
   , ImmDB.BinaryInfo (..)
   , ImmDB.HashInfo (..)
+  , ChunkInfo
   , Index.CacheConfig (..)
+    -- * TODO: Temporary re-exports. Reconsider
+  , epochInfoEpoch
     -- * Exported for testing purposes
   , openDB
   , mkImmDB
@@ -88,7 +91,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.API hiding (ChainDB (..),
                      Iterator (..), closeDB)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockComponent
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo (..))
 import           Ouroboros.Consensus.Storage.FS.API (HasFS,
                      createDirectoryIfMissing)
 import           Ouroboros.Consensus.Storage.FS.API.Types (MountPoint (..),
@@ -97,6 +99,7 @@ import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
                      HashInfo (..), ImmutableDB, TipInfo (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Parser as ImmDB
@@ -109,7 +112,7 @@ data ImmDB m blk = ImmDB {
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
     , encBlock  :: !(blk -> BinaryInfo Encoding)
-    , epochInfo :: !(EpochInfo m)
+    , epochInfo :: !(ChunkInfo m)
     , isEBB     :: !(Header blk -> Maybe EpochNo)
     , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     }
@@ -145,7 +148,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immDecodeHeader   :: forall s. Decoder s (Lazy.ByteString -> Header blk)
     , immEncodeHash     :: HeaderHash blk -> Encoding
     , immEncodeBlock    :: blk -> BinaryInfo Encoding
-    , immEpochInfo      :: EpochInfo m
+    , immChunkInfo      :: ChunkInfo m
     , immHashInfo       :: HashInfo (HeaderHash blk)
     , immValidation     :: ImmDB.ValidationPolicy
     , immIsEBB          :: Header blk -> Maybe EpochNo
@@ -167,7 +170,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immDecodeHeader'
 -- * 'immEncodeHash'
 -- * 'immEncodeBlock'
--- * 'immEpochInfo'
+-- * 'immChunkInfo'
 -- * 'immHashInfo'
 -- * 'immValidation'
 -- * 'immIsEBB'
@@ -186,7 +189,7 @@ defaultArgs fp = ImmDbArgs{
     , immDecodeHeader   = error "no default for immDecodeHeader"
     , immEncodeHash     = error "no default for immEncodeHash"
     , immEncodeBlock    = error "no default for immEncodeBlock"
-    , immEpochInfo      = error "no default for immEpochInfo"
+    , immChunkInfo      = error "no default for immChunkInfo"
     , immHashInfo       = error "no default for immHashInfo"
     , immValidation     = error "no default for immValidation"
     , immIsEBB          = error "no default for immIsEBB"
@@ -221,7 +224,7 @@ openDB ImmDbArgs{..} = do
     (immDB, _internal) <- ImmDB.openDBInternal
       immRegistry
       immHasFS
-      immEpochInfo
+      immChunkInfo
       immHashInfo
       immValidation
       parser
@@ -233,7 +236,7 @@ openDB ImmDbArgs{..} = do
       , decHeader = immDecodeHeader
       , decBlock  = immDecodeBlock
       , encBlock  = immEncodeBlock
-      , epochInfo = immEpochInfo
+      , epochInfo = immChunkInfo
       , isEBB     = immIsEBB
       , addHdrEnv = immAddHdrEnv
       }
@@ -248,7 +251,7 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> Header blk))
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> BinaryInfo Encoding)
-        -> EpochInfo m
+        -> ChunkInfo m
         -> (Header blk -> Maybe EpochNo)
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> ImmDB m blk
@@ -276,7 +279,7 @@ hasBlock db (RealPoint slot hash) =
       immTip <- ImmDB.getTip imm
       (slotNoAtTip, ebbAtTip) <- case forgetTipInfo <$> immTip of
         Origin                  -> return (Origin, Nothing)
-        At (ImmDB.EBB epochNo)  -> (, Just epochNo) . At  <$> epochInfoFirst epochNo
+        At (ImmDB.EBB epochNo)  -> (, Just epochNo) . At  <$> epochInfoFirst (epochInfo db) epochNo
         At (ImmDB.Block slotNo) -> return (At slotNo, Nothing)
 
       case At slot `compare` slotNoAtTip of
@@ -294,8 +297,8 @@ hasBlock db (RealPoint slot hash) =
           if hasRegularBlock then
             return True
           else do
-            epochNo <- epochInfoEpoch slot
-            ebbSlot <- epochInfoFirst epochNo
+            epochNo <- epochInfoEpoch (epochInfo db) slot
+            ebbSlot <- epochInfoFirst (epochInfo db) epochNo
             -- If it's a slot that can also contain an EBB, check if we have
             -- an EBB
             if slot == ebbSlot then
@@ -303,8 +306,6 @@ hasBlock db (RealPoint slot hash) =
                 ImmDB.getEBBComponent imm GetHash epochNo
             else
               return False
-  where
-    EpochInfo{..} = epochInfo db
 
 getTipInfo :: forall m blk.
               (MonadCatch m, HasCallStack)
@@ -315,11 +316,9 @@ getTipInfo db = do
     case immTip of
       Origin -> return Origin
       At (TipInfo hash (ImmDB.EBB epochNo) block) ->
-        At . (, hash, IsEBB, block) <$> epochInfoFirst epochNo
+        At . (, hash, IsEBB, block) <$> epochInfoFirst (epochInfo db) epochNo
       At (TipInfo hash (ImmDB.Block slotNo) block) ->
         return $ At (slotNo, hash, IsNotEBB, block)
-  where
-    EpochInfo{..} = epochInfo db
 
 getPointAtTip :: forall m blk.
                  (MonadCatch m, HasCallStack)
@@ -401,7 +400,6 @@ appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB (getHeader b) of
     hash    = blockHash b
     slotNo  = blockSlot b
     blockNr = blockNo   b
-    EpochInfo{..} = epochInfo
 
 {-------------------------------------------------------------------------------
   Streaming
