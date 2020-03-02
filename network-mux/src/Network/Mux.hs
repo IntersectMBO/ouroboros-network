@@ -81,21 +81,16 @@ muxStart
 muxStart tracer muxapp bearer = do
     mux <- newMux (toMiniProtocolBundle muxapp)
 
-    atomically $
-      sequence_
-        [ do completionVar <- newEmptyTMVar
-             writeTQueue (muxControlCmdQueue mux) $
-               CmdStartProtocolThread
-                 miniProtocolNum
-                 ptclDir
-                 miniProtocolIngressQueue
-                 (MiniProtocolAction action completionVar)
-        | let MuxApplication ptcls = muxapp
-        , MuxMiniProtocol{miniProtocolNum, miniProtocolRun} <- ptcls
-        , (ptclDir, action) <- selectRunner miniProtocolRun
-        , let MiniProtocolState{miniProtocolIngressQueue} =
-                muxMiniProtocols mux Map.! (miniProtocolNum, ptclDir)
-        ]
+    sequence_
+      [ runMiniProtocol
+          mux
+          miniProtocolNum
+          ptclDir
+          action
+      | let MuxApplication ptcls = muxapp
+      , MuxMiniProtocol{miniProtocolNum, miniProtocolRun} <- ptcls
+      , (ptclDir, action) <- selectRunner miniProtocolRun
+      ]
 
     runMux tracer mux bearer
   where
@@ -119,14 +114,14 @@ muxStart tracer muxapp bearer = do
         ]
 
     selectRunner :: RunMiniProtocol mode m a b
-                 -> [(MiniProtocolDir, Channel m -> m ())]
+                 -> [(MiniProtocolDirection mode, Channel m -> m ())]
     selectRunner (InitiatorProtocolOnly initiator) =
-      [(InitiatorDir, void . initiator)]
+      [(InitiatorDirectionOnly, void . initiator)]
     selectRunner (ResponderProtocolOnly responder) =
-      [(ResponderDir, void . responder)]
+      [(ResponderDirectionOnly, void . responder)]
     selectRunner (InitiatorAndResponderProtocol initiator responder) =
-      [(InitiatorDir, void . initiator)
-      ,(ResponderDir, void . responder)]
+      [(InitiatorDirection, void . initiator)
+      ,(ResponderDirection, void . responder)]
 
 data Mux (mode :: MuxMode) m =
      Mux {
@@ -425,3 +420,60 @@ muxChannel tracer tq want@(Wanton w) mc md q =
 traceMuxBearerState :: Tracer m MuxTrace -> MuxBearerState -> m ()
 traceMuxBearerState tracer state =
     traceWith tracer (MuxTraceState state)
+
+--
+-- Starting mini-protocol threads
+--
+
+-- | Arrange to run a protocol thread (for a particular 'MiniProtocolNum' and
+-- 'MiniProtocolDirection') to interact on this protocol's 'Channel'.
+--
+-- The result is a STM action to block and wait on the protocol completion.
+-- It is safe to call this completion action multiple times: it will always
+-- return the same result once the protocol thread completes.
+--
+-- It is an error to start a new protocol thread while one is still running,
+-- for the same 'MiniProtocolNum' and 'MiniProtocolDirection'. This can easily be
+-- avoided by using the STM completion action to wait for the previous one to
+-- finish.
+--
+-- It is safe to ask to start a protocol thread before 'runMux'. In this case
+-- the protocol thread will not actually start until 'runMux' is called,
+-- irrespective of the 'StartOnDemandOrEagerly' value.
+--
+runMiniProtocol :: forall mode m a.
+                   (MonadSTM m, MonadThrow (STM m))
+                => Mux mode m
+                -> MiniProtocolNum
+                -> MiniProtocolDirection mode
+                -> (Channel m -> m a)
+                -> m (STM m a)
+runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue }
+                ptclNum ptclDir protocolAction
+
+    -- Ensure the mini-protocol is known
+  | Just MiniProtocolState{miniProtocolIngressQueue}
+      <- Map.lookup (ptclNum, ptclDir') muxMiniProtocols
+
+  = atomically $ do
+
+      -- Tell the mux control to start the thread
+      completionVar <- newEmptyTMVar
+      writeTQueue muxControlCmdQueue $
+        CmdStartProtocolThread
+          ptclNum
+          ptclDir'
+          miniProtocolIngressQueue
+          (MiniProtocolAction protocolAction completionVar)
+
+      let completionAction = readTMVar completionVar
+      return completionAction
+
+    -- It is a programmer error to get the wrong protocol, but this is also
+    -- very easy to avoid.
+  | otherwise
+  = error $ "runMiniProtocol: no such protocol num and mode in this mux: "
+         ++ show ptclNum ++ " " ++ show ptclDir'
+  where
+    ptclDir' = protocolDirEnum ptclDir
+
