@@ -22,6 +22,7 @@ library
   exposed-modules:
                        Test.ThreadNet.General
                        Test.ThreadNet.Network
+                       Test.ThreadNet.Ref.PBFT
                        Test.ThreadNet.TxGen
                        Test.ThreadNet.Util
                        Test.ThreadNet.Util.Expectations
@@ -37,6 +38,7 @@ library
                        Test.Util.FS.Sim.MockFS
                        Test.Util.FS.Sim.Pure
                        Test.Util.FS.Sim.STM
+                       Test.Util.InvertedMap
                        Test.Util.MockChain
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike

@@ -93,19 +93,21 @@ prop_simple_leader_schedule_convergence
       praosSecurityParam
       testConfig
       (Just schedule)
+      Nothing
       (const False)
+      0
       testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork testConfig TestConfigBlock
-            { forgeEBB = Nothing
-            , nodeInfo = \nid -> protocolInfoPraosRule
-                                   numCoreNodes
-                                   nid
-                                   params
-                                   (singletonSlotLengths praosSlotLength)
-                                   schedule
-            , rekeying = Nothing
+            { forgeEbbEnv = Nothing
+            , nodeInfo    = \nid -> protocolInfoPraosRule
+                                      numCoreNodes
+                                      nid
+                                      params
+                                      (singletonSlotLengths praosSlotLength)
+                                      schedule
+            , rekeying    = Nothing
             }
 
 {-------------------------------------------------------------------------------

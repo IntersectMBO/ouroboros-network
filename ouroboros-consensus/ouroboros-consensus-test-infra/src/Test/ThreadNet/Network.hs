@@ -16,7 +16,7 @@
 -- | Setup network
 module Test.ThreadNet.Network (
     runThreadNetwork
-  , ForgeEBB
+  , ForgeEbbEnv (..)
   , RekeyM
   , ThreadNetworkArgs (..)
   , TracingConstraints
@@ -34,6 +34,7 @@ module Test.ThreadNet.Network (
 import           Codec.CBOR.Read (DeserialiseFailure)
 import qualified Control.Exception as Exn
 import           Control.Monad
+import qualified Control.Monad.Except as Exc
 import           Control.Tracer
 import           Crypto.Random (ChaChaDRG)
 import qualified Data.ByteString.Lazy as Lazy
@@ -41,7 +42,7 @@ import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (isNothing, maybeToList)
+import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -53,7 +54,7 @@ import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
-import           Ouroboros.Network.Point (WithOrigin (..), fromWithOrigin)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -73,7 +74,6 @@ import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import qualified Ouroboros.Consensus.ChainSyncClient as CSClient
 import           Ouroboros.Consensus.ChainSyncServer (Tip)
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -91,12 +91,13 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.STM
 
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
 import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo,
-                     epochInfoEpoch, epochInfoFirst, newEpochInfo)
+                     epochInfoEpoch, newEpochInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
@@ -116,25 +117,39 @@ import           Test.Util.Tracer
 
 -- | How to forge an EBB
 --
-type ForgeEBB blk =
-     TopLevelConfig blk
-  -> SlotNo          -- ^ EBB slot
-  -> BlockNo         -- ^ EBB block number (i.e. that of its predecessor)
-  -> ChainHash blk   -- ^ EBB predecessor's hash
-  -> blk
+data ForgeEbbEnv blk = ForgeEbbEnv
+  { forgeEBB ::
+         TopLevelConfig blk
+      -> SlotNo
+         -- EBB slot
+      -> BlockNo
+         -- EBB block number (i.e. that of its predecessor)
+      -> ChainHash blk
+         -- EBB predecessor's hash
+      -> blk
+  , ebbSlotBefore :: SlotNo -> SlotNo
+    -- ^ Given the slot of a proper block B, returns the slot of the latest
+    -- expected EBB that should precede B.
+    --
+    -- Note that this is pure, unlike 'EpochInfo', which would usually be used
+    -- for this.
+  }
 
 -- | How to rekey a node with a fresh operational key
 --
 type RekeyM m blk =
-     ProtocolInfo blk
-  -> EpochNo
+     CoreNodeId
+  -> ProtocolInfo blk
+  -> SlotNo
+     -- ^ The slot in which the node is rekeying
+  -> (SlotNo -> m EpochNo)
   -> m (ProtocolInfo blk, Maybe (GenTx blk))
      -- ^ resulting config and any corresponding delegation certificate transaction
 
 -- | Parameters for the test node net
 --
 data ThreadNetworkArgs m blk = ThreadNetworkArgs
-  { tnaForgeEBB     :: Maybe (ForgeEBB blk)
+  { tnaForgeEbbEnv  :: Maybe (ForgeEbbEnv blk)
   , tnaJoinPlan     :: NodeJoinPlan
   , tnaNodeInfo     :: CoreNodeId -> ProtocolInfo blk
   , tnaNumCoreNodes :: NumCoreNodes
@@ -215,7 +230,7 @@ runThreadNetwork :: forall m blk.
                     )
                  => ThreadNetworkArgs m blk -> m (TestOutput blk)
 runThreadNetwork ThreadNetworkArgs
-  { tnaForgeEBB       = mbForgeEBB
+  { tnaForgeEbbEnv    = mbForgeEbbEnv
   , tnaJoinPlan       = nodeJoinPlan
   , tnaNodeInfo       = mkProtocolInfo
   , tnaNumCoreNodes   = numCoreNodes
@@ -382,17 +397,14 @@ runThreadNetwork ThreadNetworkArgs
         loop s pInfo nr rs = do
           -- a registry solely for the resources of this specific node instance
           (again, finalChain) <- withRegistry $ \nodeRegistry -> do
-            nodeTestBtime <- cloneTestBlockchainTime
-              sharedTestBtime
-              nodeRegistry
-            let nodeBtime = testBlockchainTime nodeTestBtime
+            let nodeTestBtime = testBlockchainTimeClone sharedTestBtime nodeRegistry
+                nodeBtime     = testBlockchainTime nodeTestBtime
 
             -- change the node's key and prepare a delegation transaction if
             -- the node is restarting because it just rekeyed
             (pInfo', txs0) <- case (nr, mbRekeyM) of
               (NodeRekey, Just rekeyM) -> do
-                eno <- epochInfoEpoch epochInfo s
-                fmap maybeToList <$> rekeyM pInfo eno
+                fmap maybeToList <$> rekeyM coreNodeId pInfo s (epochInfoEpoch epochInfo)
               _                        -> pure (pInfo, [])
 
             -- allocate the node's internal state and fork its internal threads
@@ -428,17 +440,40 @@ runThreadNetwork ThreadNetworkArgs
             forM_ edgeStatusVars $ \edgeStatusVar -> atomically $ do
               readTVar edgeStatusVar >>= check . (== EDown)
 
-            -- close the ChainDB
+            -- assuming nothing else is changing it, read the final chain
             let chainDB = getChainDB kernel
             finalChain <- ChainDB.toChain chainDB
 
-            pure (again, finalChain)
+            pure (again, finalChain)   -- end of the node's withRegistry
 
           atomically $ writeTVar vertexStatusVar $ VDown finalChain
 
           case again of
             Nothing                     -> pure ()
             Just (s', pInfo', nr', rs') -> loop s' pInfo' nr' rs'
+
+    -- | Persistently attempt to add the given transactions to the mempool
+    -- every time the ledger slot changes, even if successful!
+    --
+    -- If we add the transaction and then the mempools discards it for some
+    -- reason, this thread will add it again.
+    --
+    forkTxs0
+      :: HasCallStack
+      => ResourceRegistry m
+      -> STM m (WithOrigin SlotNo)
+      -- ^ How to get the slot of the current ledger state
+      -> Mempool m blk TicketNo
+      -> [GenTx blk]
+         -- ^ valid transactions the node should immediately propagate
+      -> m ()
+    forkTxs0 registry get mempool txs0 =
+      void $ forkLinkedThread registry $ do
+        let loop mbSlot = do
+              _ <- addTxs mempool txs0
+              (mbSlot', _) <- atomically $ blockUntilChanged id mbSlot get
+              loop mbSlot'
+        loop Origin
 
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
@@ -456,44 +491,6 @@ runThreadNetwork ThreadNetworkArgs
         txs    <- runMonadRandom runMonadRandomDict $ \_lift' ->
           testGenTxs numCoreNodes curSlotNo cfg ledger
         void $ addTxs mempool txs
-
-    forkEbbProducer :: HasCallStack
-                    => BlockchainTime m
-                    -> ResourceRegistry m
-                    -> StrictTVar m SlotNo
-                    -> TopLevelConfig blk
-                    -> ChainDB.ChainDB m blk
-                    -> EpochInfo m
-                    -> m ()
-    forkEbbProducer btime registry nextEbbSlotVar cfg chainDB epochInfo =
-        void $ forkLinkedThread registry $ go 0
-      where
-        go :: EpochNo -> m ()
-        go !epoch = do
-          -- The first slot in @epoch@
-          ebbSlotNo <- epochInfoFirst epochInfo epoch
-          atomically $ writeTVar nextEbbSlotVar ebbSlotNo
-
-          void $ blockUntilSlot btime ebbSlotNo
-
-          case mbForgeEBB of
-            Nothing       -> pure ()
-            Just forgeEBB -> do
-              (prevSlot, ebbBlockNo, prevHash) <- atomically $ do
-                p <- ChainDB.getTipPoint chainDB
-                let mSlot = pointSlot p
-                let k = SlotNo $ maxRollbacks $ configSecurityParam cfg
-                check $ case mSlot of
-                  Origin -> True
-                  At s   -> s >= (ebbSlotNo - min ebbSlotNo (2 * k))
-                bno <- ChainDB.getTipBlockNo chainDB
-                -- The EBB shares its BlockNo with its predecessor (if there is one)
-                pure (mSlot, fromWithOrigin (firstBlockNo (Proxy @blk)) bno, pointHash p)
-              when (prevSlot < At ebbSlotNo) $ do
-                let ebb = forgeEBB cfg ebbSlotNo ebbBlockNo prevHash
-                ChainDB.addBlock_ chainDB ebb
-
-          go (succ epoch)
 
     mkArgs :: BlockchainTime m
            -> ResourceRegistry m
@@ -582,12 +579,6 @@ runThreadNetwork ThreadNetworkArgs
     forkNode epochInfo varRNG btime registry pInfo nodeInfo txs0 = do
       let ProtocolInfo{..} = pInfo
 
-      let blockProduction :: BlockProduction m blk
-          blockProduction = BlockProduction {
-              produceBlock       = \_lift' -> nodeForgeBlock pInfoConfig
-            , runMonadRandomDict = runMonadRandomWithTVar varRNG
-            }
-
       let NodeInfo
             { nodeInfoEvents
             , nodeInfoDBs
@@ -607,22 +598,70 @@ runThreadNetwork ThreadNetworkArgs
       chainDB <- snd <$>
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
 
-      -- We have a thread (see below) that forges EBBs for tests that involve
-      -- them. This variable holds the slot of the next EBB to be forged.
-      --
-      -- Even if the test doesn't involve EBBs, that thread must advance this
-      -- variable in order to unblock the node's block production thread.
-      nextEbbSlotVar <- uncheckedNewTVarM 0
+      let blockProduction :: BlockProduction m blk
+          blockProduction = BlockProduction {
+              produceBlock       = \lift' upd currentSlot currentBno extLdgSt txs prf -> do
+                -- the typical behavior, which doesn't add a Just-In-Time EBB
+                let forgeWithoutEBB =
+                      nodeForgeBlock pInfoConfig upd
+                        currentSlot currentBno extLdgSt txs prf
+
+                case mbForgeEbbEnv of
+                  Nothing          -> forgeWithoutEBB
+                  Just forgeEbbEnv -> do
+                    let ebbSlot = ebbSlotBefore forgeEbbEnv currentSlot
+
+                    let p = ledgerTipPoint $ ledgerState extLdgSt
+                    let mSlot = pointSlot p
+                    if (At ebbSlot <= mSlot) then forgeWithoutEBB else do
+                      -- the EBB is needed
+                      --
+                      -- The EBB shares its BlockNo with its predecessor (if
+                      -- there is one)
+                      let ebbBno = case currentBno of
+                            -- We assume this invariant:
+                            --
+                            -- If forging of EBBs is enabled then the node
+                            -- initialization is responsible for producing any
+                            -- proper non-EBB blocks with block number 0.
+                            --
+                            -- So this case is unreachable.
+                            0 -> error "Error, only node initialization can forge non-EBB with block number 0."
+                            n -> pred n
+                      let ebb = forgeEBB forgeEbbEnv pInfoConfig
+                                  ebbSlot ebbBno (pointHash p)
+
+                      -- fail if the EBB is invalid
+                      let apply = applyExtLedgerState BlockNotPreviouslyApplied
+                      extLdgSt' <- case Exc.runExcept $ apply pInfoConfig ebb extLdgSt of
+                        Left e   -> Exn.throw $ JitEbbError e
+                        Right st -> pure st
+
+                      -- forge the block usings the ledger state that includes
+                      -- the EBB
+                      blk <- nodeForgeBlock pInfoConfig upd
+                        currentSlot currentBno extLdgSt' txs prf
+
+                      -- /if the new block is valid/, add the EBB to the
+                      -- ChainDB
+                      --
+                      -- If the new block is invalid, then adding the EBB would
+                      -- be premature in some scenarios.
+                      case Exc.runExcept $ apply pInfoConfig blk extLdgSt' of
+                        -- ASSUMPTION: If it's invalid with the EBB,
+                        -- it will be invalid without the EBB.
+                        Left{}  -> forgeWithoutEBB
+                        Right{} -> do
+                          -- TODO: We assume this succeeds; failure modes?
+                          void $ lift' $ ChainDB.addBlock chainDB ebb
+                          pure blk
+
+            , runMonadRandomDict = runMonadRandomWithTVar varRNG
+            }
 
       -- prop_general relies on these tracers
       let instrumentationTracers = nullTracers
-            { forgeTracer       = Tracer $ \case
-                TraceStartLeadershipCheck s -> do
-                  atomically $ do
-                    lim <- readTVar nextEbbSlotVar
-                    check $ s < lim
-                o                           -> do
-                  traceWith (nodeEventsForges nodeInfoEvents) o
+            { forgeTracer = nodeEventsForges nodeInfoEvents
             }
       let nodeArgs = NodeArgs
             { tracers             =
@@ -646,6 +685,7 @@ runThreadNetwork ThreadNetworkArgs
             }
 
       nodeKernel <- initNodeKernel nodeArgs
+      let mempool = getMempool nodeKernel
       let app = consensusNetworkApps
                   nodeKernel
                   -- these tracers report every message sent/received by this
@@ -654,10 +694,26 @@ runThreadNetwork ThreadNetworkArgs
                   (customProtocolCodecs pInfoConfig)
                   (protocolHandlers nodeArgs nodeKernel)
 
-      let mempool = getMempool nodeKernel
-      addTxs mempool txs0 >>= \x ->
-        if length txs0 == length x && all (isNothing . snd) x then pure () else
-        fail $ "initial transactions were not valid" ++ show x
+      -- In practice, a robust wallet/user can persistently add a transaction
+      -- until it appears on the chain. This thread adds robustness for the
+      -- @txs0@ argument, which in practice contains delegation certificates
+      -- that the node operator would very insistently add.
+      --
+      -- It's necessary here because under some circumstances a transaction in
+      -- the mempool can be \"lost\" due to no fault of its own. If a dlg cert
+      -- is lost, a node that rekeyed can never lead again.
+      --
+      -- The thread might also have to block until enough of the chain is
+      -- synced that the transaction is valid.
+      --
+      -- TODO Is there a risk that this will block because the 'forkTxProducer'
+      -- fills up the mempool too quickly?
+      forkTxs0
+        registry
+        ((ledgerTipSlot . ledgerState) <$> ChainDB.getCurrentLedger chainDB)
+        mempool
+        txs0
+
       forkTxProducer
         btime
         pInfoConfig
@@ -666,14 +722,6 @@ runThreadNetwork ThreadNetworkArgs
         (runMonadRandomWithTVar varRNG)
         (ChainDB.getCurrentLedger chainDB)
         mempool
-
-      forkEbbProducer
-        btime
-        registry
-        nextEbbSlotVar
-        pInfoConfig
-        chainDB
-        epochInfo
 
       return (nodeKernel, LimitedApp app)
 
@@ -1031,7 +1079,7 @@ mkTestOutput vertexInfos = do
               , nodeOutputNodeDBs    = nodeInfoDBs
               , nodeOutputForges     =
                   Map.fromList $
-                  [ (s, b) | TraceForgedBlock s b _ <- nodeEventsForges ]
+                  [ (s, b) | TraceForgedBlock s _ b _ <- nodeEventsForges ]
               , nodeOutputInvalids   = (:[]) <$> Map.fromList nodeEventsInvalids
               }
 
@@ -1183,3 +1231,12 @@ data MiniProtocolFatalException = MiniProtocolFatalException
   deriving (Show)
 
 instance Exception MiniProtocolFatalException
+
+-- | Our scheme for Just-In-Time EBBs makes some assumptions
+--
+data JitEbbError blk
+  = JitEbbError (ExtValidationError blk)
+    -- ^ we were unable to extend the ledger state with the JIT EBB
+  deriving (Show)
+
+instance LedgerSupportsProtocol blk => Exception (JitEbbError blk)

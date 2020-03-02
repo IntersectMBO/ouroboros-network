@@ -98,16 +98,18 @@ prop_simple_praos_convergence
       praosSecurityParam
       testConfig
       Nothing
+      Nothing
       (const False)
+      0
       testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork testConfig TestConfigBlock
-            { forgeEBB = Nothing
-            , nodeInfo = \nid -> protocolInfoPraos
-                                   numCoreNodes
-                                   nid
-                                   params
-                                   (singletonSlotLengths praosSlotLength)
-            , rekeying = Nothing
+            { forgeEbbEnv = Nothing
+            , nodeInfo    = \nid -> protocolInfoPraos
+                                      numCoreNodes
+                                      nid
+                                      params
+                                      (singletonSlotLengths praosSlotLength)
+            , rekeying    = Nothing
             }

@@ -4,29 +4,51 @@ module Test.ThreadNet.BFT (
     tests
   ) where
 
+import qualified Data.Map as Map
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Cardano.Slotting.Slot (SlotNo (..))
+
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node ()
 import           Ouroboros.Consensus.Mock.Node.BFT
+import           Ouroboros.Consensus.NodeId
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.Random (Seed (..))
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.TxGen.Mock ()
 import           Test.ThreadNet.Util
+import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeRestarts
+import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
 
 tests :: TestTree
-tests = testGroup "BFT" [
-      testProperty "simple convergence" $
-        prop_simple_bft_convergence k
+tests = testGroup "BFT"
+    [ testProperty "delayed message corner case" $
+        once $
+        let ncn = NumCoreNodes 2 in
+        prop_simple_bft_convergence (SecurityParam 3) TestConfig
+          { numCoreNodes = ncn
+          , numSlots = NumSlots 3
+          , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 1})])
+          , nodeRestarts = noRestarts
+          , nodeTopology = meshNodeTopology ncn
+          , slotLengths = singletonSlotLengths (slotLengthFromSec 1)
+          , initSeed = Seed {getSeed = (12659702313441544615,9326820694273232011,15820857683988100572,2201554969601311572,4716411940989238571)}
+          }
+    ,
+      testProperty "simple convergence" $ \tc ->
+        forAll (SecurityParam <$> elements [2 .. 10]) $ \k ->
+        prop_simple_bft_convergence k tc
     ]
-  where
-    k = SecurityParam 5
 
 prop_simple_bft_convergence :: SecurityParam
                             -> TestConfig
@@ -39,13 +61,15 @@ prop_simple_bft_convergence k
         k
         testConfig
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
+        Nothing
         (const False)
+        0
         testOutput
   where
     testOutput =
         runTestNetwork testConfig TestConfigBlock
-            { forgeEBB = Nothing
-            , nodeInfo = \nid ->
+            { forgeEbbEnv = Nothing
+            , nodeInfo    = \nid ->
                 protocolInfoBft numCoreNodes nid k slotLengths
-            , rekeying = Nothing
+            , rekeying    = Nothing
             }

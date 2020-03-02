@@ -29,8 +29,8 @@ data NodeId = CoreId !CoreNodeId
   deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks)
 
 instance Condense NodeId where
-  condense (CoreId  i) = "c" ++ show i
-  condense (RelayId i) = "r" ++ show i
+  condense (CoreId (CoreNodeId i)) = "c" ++ show i
+  condense (RelayId            i ) = "r" ++ show i
 
 -- | Core node ID
 newtype CoreNodeId = CoreNodeId Word64

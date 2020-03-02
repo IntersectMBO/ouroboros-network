@@ -14,7 +14,6 @@ module Ouroboros.Consensus.BlockchainTime.Mock (
   , TestClock(..)
   , TestBlockchainTime(..)
   , newTestBlockchainTime
-  , cloneTestBlockchainTime
   , countSlotLengthChanges
   ) where
 
@@ -74,8 +73,10 @@ data TestClock =
   deriving (Eq, Generic, NoUnexpectedThunks)
 
 data TestBlockchainTime m = TestBlockchainTime
-  { testBlockchainTime     :: BlockchainTime m
-  , testBlockchainTimeDone :: m ()
+  { testBlockchainTimeClone :: ResourceRegistry m -> TestBlockchainTime m
+    -- ^ Create a synchronized clone that uses a different 'ResourceRegistry'
+  , testBlockchainTime      :: BlockchainTime m
+  , testBlockchainTimeDone  :: m ()
     -- ^ Blocks until the end of the final requested slot.
   }
 
@@ -104,24 +105,7 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
 
     void $ forkLinkedThread registry $ loop slotVar doneVar
 
-    let get :: STM m SlotNo
-        get = blockUntilJust $
-                (\case
-                    Initializing -> Nothing
-                    Running slot -> Just slot)
-            <$> readTVar slotVar
-
-        btime :: BlockchainTime m
-        btime = BlockchainTime {
-            getCurrentSlot = get
-          , onSlotChange_  = fmap cancelThread .
-              onEachChange registry Running (Just Initializing) get
-          }
-
-    return $ TestBlockchainTime
-      { testBlockchainTime = btime
-      , testBlockchainTimeDone = readMVar doneVar
-      }
+    return $ clone slotVar doneVar registry
   where
     loop :: StrictTVar m TestClock -> StrictMVar m () -> m ()
     loop slotVar doneVar = go slotLens numSlots
@@ -137,29 +121,31 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
             threadDelay (nominalDelay delay)
             go ls' (n - 1)
 
--- | Create a synchronized clone that uses a different 'ResourceRegistry'
-cloneTestBlockchainTime
-    :: forall m. (IOLike m, HasCallStack)
-    => TestBlockchainTime m
-    -> ResourceRegistry m
-    -> m (TestBlockchainTime m)
-cloneTestBlockchainTime testBtime registry = do
-    s <- atomically get
+    clone
+      :: StrictTVar m TestClock
+      -> StrictMVar m ()
+      -> ResourceRegistry m
+      -> TestBlockchainTime m
+    clone slotVar doneVar registry' =
+        TestBlockchainTime
+          { testBlockchainTimeClone = clone slotVar doneVar
+          , testBlockchainTime      = btime
+          , testBlockchainTimeDone  = readMVar doneVar
+          }
+      where
+        get :: STM m SlotNo
+        get = blockUntilJust $
+                (\case
+                    Initializing -> Nothing
+                    Running slot -> Just slot)
+            <$> readTVar slotVar
 
-    let btime' :: BlockchainTime m
-        btime' = BlockchainTime {
+        btime :: BlockchainTime m
+        btime = BlockchainTime {
             getCurrentSlot = get
           , onSlotChange_  = fmap cancelThread .
-              onEachChange registry Running (Just (Running s)) get
+              onEachChange registry' Running (Just Initializing) get
           }
-
-    return $ TestBlockchainTime
-      { testBlockchainTime     = btime'
-      , testBlockchainTimeDone
-      }
-  where
-    TestBlockchainTime{testBlockchainTime, testBlockchainTimeDone} = testBtime
-    BlockchainTime{getCurrentSlot = get} = testBlockchainTime
 
 -- | Number of slot length changes if running for the specified number of slots
 countSlotLengthChanges :: NumSlots -> SlotLengths -> Word64
