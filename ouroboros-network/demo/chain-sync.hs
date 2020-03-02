@@ -34,7 +34,6 @@ import           System.IO
 import           System.Random
 import           System.Random.SplitMix
 
-import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as CBOR
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -51,15 +50,8 @@ import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Testing.ConcreteBlock
 
-import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Driver
-import           Network.TypedProtocol.Pipelined
-
-import           Network.TypedProtocol.PingPong.Client as PingPong
-import           Network.TypedProtocol.PingPong.Codec.CBOR
-import           Network.TypedProtocol.PingPong.Server as PingPong
-
+import           Ouroboros.Network.Codec
+import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 
@@ -81,17 +73,6 @@ main = do
     args <- getArgs
     let restArgs = drop 2 args
     case args of
-      "pingpong":"client":[]           -> clientPingPong False
-      "pingpong":"client-pipelined":[] -> clientPingPong True
-      "pingpong":"server":[] -> do
-        rmIfExists defaultLocalSocketAddrPath
-        void serverPingPong
-
-      "pingpong2":"client":[] -> clientPingPong2
-      "pingpong2":"server":[] -> do
-        rmIfExists defaultLocalSocketAddrPath
-        void serverPingPong2
-
       "chainsync":"client":_  ->
         case restArgs of
           []        -> clientChainSync [defaultLocalSocketAddrPath]
@@ -118,7 +99,7 @@ main = do
 
 usage :: IO ()
 usage = do
-    hPutStrLn stderr "usage: demo-chain-sync [pingpong|pingpong2|chainsync|blockfetch] {client|server} [addr]"
+    hPutStrLn stderr "usage: demo-chain-sync [chainsync|blockfetch] {client|server} [addr]"
     exitFailure
 
 defaultLocalSocketAddrPath :: FilePath
@@ -136,212 +117,30 @@ rmIfExists path = do
   b <- doesFileExist path
   when b (removeFile path)
 
---
--- Ping pong demo
---
-
-data DemoProtocol0 = PingPong0
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance ProtocolEnum DemoProtocol0 where
-  fromProtocolEnum PingPong0 = MiniProtocolNum 2
-
-instance MiniProtocolLimits DemoProtocol0 where
-  maximumMessageSize _ = maxBound
-  maximumIngressQueue _ = maxBound
-
-
-clientPingPong :: Bool -> IO ()
-clientPingPong pipelined = withIOManager $ \iocp -> do
-    connectToNode
-      (localSnocket iocp defaultLocalSocketAddrPath)
-      cborTermVersionDataCodec
-      nullNetworkConnectTracers
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-      (localAddressFromPath "")
-      defaultLocalSocketAddr
-  where
-    app :: OuroborosApplication InitiatorApp
-                                LocalConnectionId
-                                DemoProtocol0
-                                IO LBS.ByteString () Void
-    app = simpleInitiatorApplication protocols
-
-    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols PingPong0 | pipelined =
-      MuxPeerPipelined
-        (contramap show stdoutTracer)
-        codecPingPong
-        (pingPongClientPeerPipelined (pingPongClientPipelinedMax 5))
-
-    protocols PingPong0 =
-      MuxPeer
-        (contramap show stdoutTracer)
-        codecPingPong
-        (pingPongClientPeer (pingPongClientCount 5))
-
-
-pingPongClientCount :: Applicative m => Int -> PingPongClient m ()
-pingPongClientCount 0 = PingPong.SendMsgDone ()
-pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
-
-serverPingPong :: IO Void
-serverPingPong = withIOManager $ \iocp -> do
-    withServerNode
-      (localSnocket iocp defaultLocalSocketAddrPath)
-      nullNetworkServerTracers
-      (localAddressFromPath defaultLocalSocketAddrPath)
-      cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptableVersion)
-      (simpleSingletonVersions
-        (0::Int)
-        (NodeToNodeVersionData $ NetworkMagic 0)
-        (DictVersion nodeToNodeCodecCBORTerm)
-        (app))
-      nullErrorPolicies
-      $ \_ serverAsync ->
-        wait serverAsync   -- block until async exception
-  where
-    app :: OuroborosApplication ResponderApp
-                                LocalConnectionId
-                                DemoProtocol0
-                                IO LBS.ByteString Void ()
-    app = simpleResponderApplication protocols
-
-    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols PingPong0 =
-      MuxPeer
-        (contramap show stdoutTracer)
-        codecPingPong
-        (pingPongServerPeer pingPongServerStandard)
-
-pingPongServerStandard
-  :: Applicative m
-  => PingPongServer m ()
-pingPongServerStandard =
-    PingPongServer {
-      recvMsgPing = pure pingPongServerStandard,
-      recvMsgDone = ()
+-- TODO: provide sensible limits
+-- https://github.com/input-output-hk/ouroboros-network/issues/575
+maximumMiniProtocolLimits :: MiniProtocolLimits
+maximumMiniProtocolLimits =
+    MiniProtocolLimits {
+      maximumIngressQueue = maxBound
     }
-
-
---
--- Ping pong demo2
---
-
-data DemoProtocol1 = PingPong1 | PingPong1'
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance ProtocolEnum DemoProtocol1 where
-  fromProtocolEnum PingPong1  = MiniProtocolNum 2
-  fromProtocolEnum PingPong1' = MiniProtocolNum 3
-
-instance MiniProtocolLimits DemoProtocol1 where
-  maximumMessageSize _ = maxBound
-  maximumIngressQueue _ = maxBound
-
-
-clientPingPong2 :: IO ()
-clientPingPong2 = withIOManager $ \iocp -> do
-    connectToNode
-      (localSnocket iocp defaultLocalSocketAddrPath)
-      cborTermVersionDataCodec
-      nullNetworkConnectTracers
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-      (localAddressFromPath "")
-      defaultLocalSocketAddr
-  where
-    app :: OuroborosApplication InitiatorApp
-                                LocalConnectionId
-                                DemoProtocol1
-                                IO LBS.ByteString () Void
-    app = simpleInitiatorApplication protocols
-
-    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols PingPong1 =
-      MuxPeer
-        (contramap (show . (,) (1 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongClientPeer (pingPongClientCount 5))
-
-    protocols PingPong1' =
-      MuxPeer
-        (contramap (show . (,) (2 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongClientPeer (pingPongClientCount 5))
-
-pingPongClientPipelinedMax
-  :: forall m. Monad m
-  => Int
-  -> PingPongClientPipelined m ()
-pingPongClientPipelinedMax c =
-    PingPongClientPipelined (go [] Zero 0)
-  where
-    go :: [Either Int Int] -> Nat o -> Int
-       -> PingPongSender o Int m ()
-    go acc o        n | n < c
-                      = SendMsgPingPipelined
-                          (return n)
-                          (go (Left n : acc) (Succ o) (succ n))
-    go _    Zero     _ = SendMsgDonePipelined ()
-    go acc (Succ o) n = CollectPipelined
-                          Nothing
-                          (\n' -> go (Right n' : acc) o n)
-
-serverPingPong2 :: IO Void
-serverPingPong2 = withIOManager $ \iocp -> do
-    withServerNode
-      (localSnocket iocp defaultLocalSocketAddrPath)
-      nullNetworkServerTracers
-      (localAddressFromPath defaultLocalSocketAddrPath)
-      cborTermVersionDataCodec
-      (\(DictVersion _) -> acceptableVersion)
-      (simpleSingletonVersions
-        (0::Int)
-        (NodeToNodeVersionData $ NetworkMagic 0)
-        (DictVersion nodeToNodeCodecCBORTerm)
-        (app))
-      nullErrorPolicies
-      $ \_ serverAsync ->
-        wait serverAsync   -- block until async exception
-  where
-    app :: OuroborosApplication ResponderApp
-                                LocalConnectionId
-                                DemoProtocol1
-                                IO LBS.ByteString Void ()
-    app = simpleResponderApplication protocols
-
-    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols PingPong1 =
-      MuxPeer
-        (contramap (show . (,) (1 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongServerPeer pingPongServerStandard)
-
-    protocols PingPong1' =
-      MuxPeer
-        (contramap (show . (,) (2 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongServerPeer pingPongServerStandard)
 
 
 --
 -- Chain sync demo
 --
 
-data DemoProtocol2 = ChainSync2
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance ProtocolEnum DemoProtocol2 where
-  fromProtocolEnum ChainSync2  = MiniProtocolNum 2
-
-instance MiniProtocolLimits DemoProtocol2 where
-  maximumMessageSize _ = maxBound
-  maximumIngressQueue _ = maxBound
+demoProtocol2
+  :: RunMiniProtocol appType bytes m a b -- ^ chainSync
+  -> OuroborosApplication appType bytes m a b
+demoProtocol2 chainSync =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = chainSync
+      }
+    ]
 
 
 clientChainSync :: [FilePath] -> IO ()
@@ -351,19 +150,19 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
         (localSnocket iocp sockPath)
         cborTermVersionDataCodec
         nullNetworkConnectTracers
-        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+        (simpleSingletonVersions
+           (0::Int)
+           (NodeToNodeVersionData $ NetworkMagic 0)
+           (DictVersion nodeToNodeCodecCBORTerm)
+           (\_peerid -> app))
         (localAddressFromPath "")
         (localAddressFromPath sockPath)
   where
-    app :: OuroborosApplication InitiatorApp
-                                LocalConnectionId
-                                DemoProtocol2
-                                IO LBS.ByteString () Void
-    app = simpleInitiatorApplication protocols
+    app :: OuroborosApplication InitiatorApp LBS.ByteString IO () Void
+    app = demoProtocol2 chainSync
 
-    protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols ChainSync2 =
+    chainSync =
+      InitiatorProtocolOnly $
       MuxPeer
         (contramap show stdoutTracer)
          codecChainSync
@@ -382,22 +181,18 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
         (0::Int)
         (NodeToNodeVersionData $ NetworkMagic 0)
         (DictVersion nodeToNodeCodecCBORTerm)
-        (app))
+        (\_peerid -> SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     prng = mkSMGen 0
 
-    app :: OuroborosApplication ResponderApp
-                                LocalConnectionId
-                                DemoProtocol2
-                                IO LBS.ByteString Void ()
-    app = simpleResponderApplication protocols
+    app :: OuroborosApplication ResponderApp LBS.ByteString IO Void ()
+    app = demoProtocol2 chainSync
 
-    protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols ChainSync2 =
+    chainSync =
+      ResponderProtocolOnly $
       MuxPeer
         (contramap show stdoutTracer)
          codecChainSync
@@ -422,16 +217,23 @@ codecChainSync =
 -- Block fetch demo
 --
 
-data DemoProtocol3 = BlockFetch3 | ChainSync3
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance ProtocolEnum DemoProtocol3 where
-  fromProtocolEnum ChainSync3  = MiniProtocolNum 2
-  fromProtocolEnum BlockFetch3 = MiniProtocolNum 3
-
-instance MiniProtocolLimits DemoProtocol3 where
-  maximumMessageSize _ = maxBound
-  maximumIngressQueue _ = maxBound
+demoProtocol3
+  :: RunMiniProtocol appType bytes m a b -- ^ chainSync
+  -> RunMiniProtocol appType bytes m a b -- ^ blockFetch
+  -> OuroborosApplication appType bytes m a b
+demoProtocol3 chainSync blockFetch =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = chainSync
+      }
+    , MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 3,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = blockFetch
+      }
+    ]
 
 
 clientBlockFetch :: [FilePath] -> IO ()
@@ -442,17 +244,15 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
     candidateChainsVar <- newTVarIO Map.empty
     currentChainVar    <- newTVarIO genesisChainFragment
 
-    let app :: OuroborosApplication InitiatorApp
-                                    LocalConnectionId
-                                    DemoProtocol3
-                                    IO LBS.ByteString () Void
-        app = OuroborosInitiatorApplication protocols
+    let app :: LocalConnectionId
+            -> OuroborosApplication InitiatorApp LBS.ByteString IO () Void
+        app peerid = demoProtocol3 (chainSync peerid) (blockFetch peerid)
 
-        protocols :: LocalConnectionId
-                  -> DemoProtocol3
-                  -> Channel IO LBS.ByteString
-                  -> IO ()
-        protocols peerid ChainSync3 channel =
+        chainSync peerid =
+          InitiatorProtocolOnly $
+          -- TODO: this currently needs MuxPeerRaw because of the resource
+          -- bracket
+          MuxPeerRaw $ \channel ->
           bracket register unregister $ \chainVar ->
           runPeer
             nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
@@ -470,7 +270,11 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                              modifyTVar' candidateChainsVar
                                          (Map.delete peerid)
 
-        protocols peerid BlockFetch3 channel =
+        blockFetch peerid =
+          InitiatorProtocolOnly $
+          -- TODO: this currently needs MuxPeerRaw because of the resource
+          -- bracket
+          MuxPeerRaw $ \channel ->
           bracketFetchClient registry peerid $ \clientCtx ->
             runPipelinedPeer
               nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
@@ -543,7 +347,11 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                           (localSnocket iocp defaultLocalSocketAddrPath)
                           cborTermVersionDataCodec
                           nullNetworkConnectTracers
-                          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+                          (simpleSingletonVersions
+                            (0 :: Int)
+                            (NodeToNodeVersionData (NetworkMagic 0))
+                            (DictVersion nodeToNodeCodecCBORTerm)
+                            app)
                           (localAddressFromPath "")
                           (localAddressFromPath sockAddr)
                     | sockAddr <- sockAddrs ]
@@ -587,28 +395,25 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
         (0::Int)
         (NodeToNodeVersionData $ NetworkMagic 0)
         (DictVersion nodeToNodeCodecCBORTerm)
-        (app))
+        (\_peerid -> SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     prng = mkSMGen 0
 
-    app :: OuroborosApplication ResponderApp
-                                LocalConnectionId
-                                DemoProtocol3
-                                IO LBS.ByteString Void ()
-    app = simpleResponderApplication protocols
+    app :: OuroborosApplication ResponderApp LBS.ByteString IO Void ()
+    app = demoProtocol3 chainSync blockFetch
 
-    protocols :: DemoProtocol3 -> MuxPeer DeserialiseFailure
-                                          IO LBS.ByteString ()
-    protocols ChainSync3 =
+    chainSync =
+      ResponderProtocolOnly $
       MuxPeer
         (contramap show stdoutTracer)
          codecChainSync
         (ChainSync.chainSyncServerPeer (chainSyncServer prng))
 
-    protocols BlockFetch3 =
+    blockFetch =
+      ResponderProtocolOnly $
       MuxPeer
         (contramap show stdoutTracer)
          codecBlockFetch

@@ -17,9 +17,9 @@ import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | The top-level node configuration
 data TopLevelConfig blk = TopLevelConfig {
-      configConsensus :: !(NodeConfig (BlockProtocol blk))
-    , configLedger    :: !(LedgerConfig              blk)
-    , configBlock     :: !(BlockConfig               blk)
+      configConsensus :: !(ConsensusConfig (BlockProtocol blk))
+    , configLedger    :: !(LedgerConfig                   blk)
+    , configBlock     :: !(BlockConfig                    blk)
     }
   deriving (Generic)
 

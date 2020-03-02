@@ -56,7 +56,7 @@ class ( LedgerSupportsProtocol    blk
       , QueryLedger               blk
       , HasNetworkProtocolVersion blk
       , NoUnexpectedThunks (NodeState blk)
-        -- TODO: Remove after reconsidering rewindChainState:
+        -- TODO: Remove after reconsidering rewindConsensusState:
       , Serialise (HeaderHash blk)
       ) => RunNode blk where
   nodeForgeBlock          :: MonadRandom m
@@ -109,8 +109,8 @@ class ( LedgerSupportsProtocol    blk
   -- This does not check the validity of the contents of the block, e.g.,
   -- whether the transactions are valid w.r.t. the ledger, or whether it's
   -- sent by a malicious node.
-  nodeCheckIntegrity      :: TopLevelConfig blk
-                          -> blk -> Bool
+  nodeCheckIntegrity :: TopLevelConfig blk
+                     -> blk -> Bool
 
   -- | When extracting the bytes corresponding to header from a serialised
   -- block, it may be necessary to add an envelope to it to obtain a
@@ -130,10 +130,10 @@ class ( LedgerSupportsProtocol    blk
   --
   -- This function can be used to, for example, create the genesis EBB in case
   -- the chain(DB) is empty.
-  nodeInitChainDB         :: IOLike m
-                          => TopLevelConfig blk
-                          -> ChainDB m blk
-                          -> m ()
+  nodeInitChainDB :: IOLike m
+                  => TopLevelConfig blk
+                  -> ChainDB m blk
+                  -> m ()
   nodeInitChainDB _ _ = return ()
 
   -- | This function is called to give a more precise reason why some
@@ -152,43 +152,43 @@ class ( LedgerSupportsProtocol    blk
   --
   -- In case you have no exceptions to handle specially, return 'Nothing'.
   -- This is what the default implementation does.
-  nodeToExitReason        :: Proxy blk -> SomeException -> Maybe ExitReason
+  nodeToExitReason :: Proxy blk -> SomeException -> Maybe ExitReason
   nodeToExitReason _ _ = Nothing
 
   -- Encoders
-  nodeEncodeBlockWithInfo :: TopLevelConfig blk -> blk -> BinaryInfo Encoding
-  nodeEncodeBlock         :: TopLevelConfig blk -> blk -> Encoding
-  nodeEncodeBlock cfg blk =  binaryBlob $ nodeEncodeBlockWithInfo cfg blk
-  nodeEncodeHeader        :: TopLevelConfig blk
-                          -> SerialisationVersion (NetworkProtocolVersion blk)
-                          -> Header blk -> Encoding
-  nodeEncodeWrappedHeader :: TopLevelConfig blk
-                          -> NetworkProtocolVersion blk
-                          -> Serialised (Header blk) -> Encoding
-  nodeEncodeGenTx         :: GenTx  blk -> Encoding
-  nodeEncodeGenTxId       :: GenTxId blk -> Encoding
-  nodeEncodeHeaderHash    :: Proxy blk -> HeaderHash blk -> Encoding
-  nodeEncodeLedgerState   :: TopLevelConfig blk -> LedgerState blk -> Encoding
-  nodeEncodeChainState    :: Proxy blk -> TopLevelConfig blk -> ChainState (BlockProtocol blk) -> Encoding
-  nodeEncodeApplyTxError  :: Proxy blk -> ApplyTxErr blk -> Encoding
-  nodeEncodeTipInfo       :: Proxy blk -> TipInfo blk -> Encoding
-  nodeEncodeQuery         :: Query blk result -> Encoding
-  nodeEncodeResult        :: Query blk result -> result -> Encoding
+  nodeEncodeBlockWithInfo  :: TopLevelConfig blk -> blk -> BinaryInfo Encoding
+  nodeEncodeBlock          :: TopLevelConfig blk -> blk -> Encoding
+  nodeEncodeBlock cfg blk = binaryBlob $ nodeEncodeBlockWithInfo cfg blk
+  nodeEncodeHeader         :: TopLevelConfig blk
+                           -> SerialisationVersion (NetworkProtocolVersion blk)
+                           -> Header blk -> Encoding
+  nodeEncodeWrappedHeader  :: TopLevelConfig blk
+                           -> NetworkProtocolVersion blk
+                           -> Serialised (Header blk) -> Encoding
+  nodeEncodeGenTx          :: GenTx  blk -> Encoding
+  nodeEncodeGenTxId        :: GenTxId blk -> Encoding
+  nodeEncodeHeaderHash     :: Proxy blk -> HeaderHash blk -> Encoding
+  nodeEncodeLedgerState    :: TopLevelConfig blk -> LedgerState blk -> Encoding
+  nodeEncodeConsensusState :: Proxy blk -> TopLevelConfig blk -> ConsensusState (BlockProtocol blk) -> Encoding
+  nodeEncodeApplyTxError   :: Proxy blk -> ApplyTxErr blk -> Encoding
+  nodeEncodeTipInfo        :: Proxy blk -> TipInfo blk -> Encoding
+  nodeEncodeQuery          :: Query blk result -> Encoding
+  nodeEncodeResult         :: Query blk result -> result -> Encoding
 
   -- Decoders
-  nodeDecodeHeader        :: forall s. TopLevelConfig blk
-                          -> SerialisationVersion (NetworkProtocolVersion blk)
-                          -> Decoder s (Lazy.ByteString -> Header blk)
-  nodeDecodeWrappedHeader :: forall s. TopLevelConfig blk
-                          -> NetworkProtocolVersion blk
-                          -> Decoder s (Serialised (Header blk))
-  nodeDecodeBlock         :: forall s. TopLevelConfig blk -> Decoder s (Lazy.ByteString -> blk)
-  nodeDecodeGenTx         :: forall s. Decoder s (GenTx blk)
-  nodeDecodeGenTxId       :: forall s. Decoder s (GenTxId blk)
-  nodeDecodeHeaderHash    :: forall s. Proxy blk -> Decoder s (HeaderHash blk)
-  nodeDecodeLedgerState   :: forall s. TopLevelConfig blk -> Decoder s (LedgerState blk)
-  nodeDecodeChainState    :: forall s. Proxy blk -> TopLevelConfig blk -> Decoder s (ChainState (BlockProtocol blk))
-  nodeDecodeApplyTxError  :: forall s. Proxy blk -> Decoder s (ApplyTxErr blk)
-  nodeDecodeTipInfo       :: forall s. Proxy blk -> Decoder s (TipInfo blk)
-  nodeDecodeQuery         :: forall s. Decoder s (Some (Query blk))
-  nodeDecodeResult        :: Query blk result -> forall s. Decoder s result
+  nodeDecodeHeader         :: forall s. TopLevelConfig blk
+                           -> SerialisationVersion (NetworkProtocolVersion blk)
+                           -> Decoder s (Lazy.ByteString -> Header blk)
+  nodeDecodeWrappedHeader  :: forall s. TopLevelConfig blk
+                           -> NetworkProtocolVersion blk
+                           -> Decoder s (Serialised (Header blk))
+  nodeDecodeBlock          :: forall s. TopLevelConfig blk -> Decoder s (Lazy.ByteString -> blk)
+  nodeDecodeGenTx          :: forall s. Decoder s (GenTx blk)
+  nodeDecodeGenTxId        :: forall s. Decoder s (GenTxId blk)
+  nodeDecodeHeaderHash     :: forall s. Proxy blk -> Decoder s (HeaderHash blk)
+  nodeDecodeLedgerState    :: forall s. TopLevelConfig blk -> Decoder s (LedgerState blk)
+  nodeDecodeConsensusState :: forall s. Proxy blk -> TopLevelConfig blk -> Decoder s (ConsensusState (BlockProtocol blk))
+  nodeDecodeApplyTxError   :: forall s. Proxy blk -> Decoder s (ApplyTxErr blk)
+  nodeDecodeTipInfo        :: forall s. Proxy blk -> Decoder s (TipInfo blk)
+  nodeDecodeQuery          :: forall s. Decoder s (Some (Query blk))
+  nodeDecodeResult         :: Query blk result -> forall s. Decoder s result

@@ -31,8 +31,7 @@ import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
                      genesisPoint, pointHash, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (GetHeader (..), headerHash,
-                     headerPoint)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
@@ -313,7 +312,7 @@ instructionHelper registry varReader blockComponent encodeHeader fromMaybeSTM CD
         -- disk (or memory).
         getBlockComponent :: forall c. BlockComponent (ChainDB m blk) c -> m c
         getBlockComponent bc =
-          Query.getAnyKnownBlockComponent cdbImmDB cdbVolDB bc (headerPoint hdr)
+          Query.getAnyKnownBlockComponent cdbImmDB cdbVolDB bc (headerRealPoint hdr)
 
     next
       :: ImmDB.Iterator (HeaderHash blk) m (Point blk, b)
@@ -443,9 +442,9 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
 
         | otherwise
         -> do
-          inImmDB <- if pt == genesisPoint
-            then return True -- Genesis is always "in" the ImmutableDB
-            else ImmDB.hasBlock cdbImmDB pt
+          inImmDB <- case pointToWithOriginRealPoint pt of
+            Origin -> return True -- Genesis is always "in" the ImmutableDB
+            At pt' -> ImmDB.hasBlock cdbImmDB pt'
           if inImmDB
             then do
               immIt <- ImmDB.streamAfterKnownBlock cdbImmDB registry

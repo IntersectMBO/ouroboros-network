@@ -242,13 +242,13 @@ instance Condense (ChainHash TestBlock) where
   condense (BlockHash h) = show h
 
 data instance BlockConfig TestBlock = TestBlockConfig {
-      testBlockSlotLengths :: SlotLengths
+      testBlockSlotLengths :: !SlotLengths
 
       -- | Number of core nodes
       --
       -- We need this in order to compute the 'ValidateView', which must
       -- conjure up a validation key out of thin air
-    , testBlockNumCoreNodes :: NumCoreNodes
+    , testBlockNumCoreNodes :: !NumCoreNodes
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -357,7 +357,7 @@ testInitExtLedger = ExtLedgerState {
 -- | Trivial test configuration with a single core node
 singleNodeTestConfig :: TopLevelConfig TestBlock
 singleNodeTestConfig = TopLevelConfig {
-      configConsensus = BftNodeConfig {
+      configConsensus = BftConfig {
           bftParams   = BftParams { bftSecurityParam = k
                                   , bftNumNodes      = numCoreNodes
                                   }

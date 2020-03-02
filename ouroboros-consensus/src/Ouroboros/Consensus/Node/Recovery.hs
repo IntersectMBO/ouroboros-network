@@ -43,8 +43,7 @@ createMarkerOnCleanShutdown proxy mp = onExceptionIf
 
 -- | Return 'True' when 'cleanShutdownMarkerFile' exists.
 hasCleanShutdownMarker
-  :: IOLike m
-  => HasFS m h
+  :: HasFS m h
   -> m Bool
 hasCleanShutdownMarker hasFS =
     doesFileExist hasFS cleanShutdownMarkerFile
@@ -66,8 +65,7 @@ createCleanShutdownMarker hasFS = do
 --
 -- Will throw an 'FsResourceDoesNotExist' error when it does not exist.
 removeCleanShutdownMarker
-  :: IOLike m
-  => HasFS m h
+  :: HasFS m h
   -> m ()
 removeCleanShutdownMarker hasFS =
     removeFile hasFS cleanShutdownMarkerFile

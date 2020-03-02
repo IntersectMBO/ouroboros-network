@@ -30,7 +30,7 @@ protocolInfoPraos :: NumCoreNodes
 protocolInfoPraos numCoreNodes nid params slotLengths =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = PraosNodeConfig {
+            configConsensus = PraosConfig {
                 praosParams       = params
               , praosNodeId       = CoreId nid
               , praosSignKeyVRF   = signKeyVRF nid

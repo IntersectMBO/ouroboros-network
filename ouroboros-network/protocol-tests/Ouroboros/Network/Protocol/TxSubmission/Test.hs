@@ -31,12 +31,13 @@ import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as Serialise (encode, decode)
 
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Codec hiding (prop_codec)
 import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Driver
+import           Ouroboros.Network.Driver.Simple
+                   (runConnectedPeersPipelined)
 
 import           Ouroboros.Network.Protocol.TxSubmission.Client
 import           Ouroboros.Network.Protocol.TxSubmission.Codec

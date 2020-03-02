@@ -29,6 +29,8 @@ import           Foreign.Storable (Storable)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
+import           Control.Monad.Class.MonadThrow
+
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Storage.FS.API
@@ -78,7 +80,7 @@ hPutCRC :: forall m h. (HasCallStack, Monad m)
 hPutCRC hasFS g = hPutAllCRC hasFS g . BS.toLazyByteString
 
 -- | Variation on 'hGetExactlyAt' that also computes a CRC
-hGetExactlyAtCRC :: forall m h. (HasCallStack, Monad m)
+hGetExactlyAtCRC :: forall m h. (HasCallStack, MonadThrow m)
                  => HasFS m h
                  -> Handle h
                  -> Word64    -- ^ The number of bytes to read.
@@ -92,7 +94,7 @@ hGetExactlyAtCRC hasFS h n offset = do
     return (bs, crc)
 
 -- | Variation on 'hGetAllAt' that also computes a CRC
-hGetAllAtCRC :: forall m h. (HasCallStack, Monad m)
+hGetAllAtCRC :: forall m h. Monad m
              => HasFS m h
              -> Handle h
              -> AbsOffset -- ^ The offset at which to read.

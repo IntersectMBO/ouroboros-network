@@ -72,12 +72,12 @@ import           Cardano.Prelude (allNoUnexpectedThunks)
 import           Cardano.Slotting.Block (BlockNo)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
+import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo, atSlot, pointHash, pointSlot, withHash)
+                     SlotNo, atSlot, pointSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..))
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -100,8 +100,6 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Parser as ImmDB
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 -- | Thin wrapper around the ImmutableDB (opaque type)
 data ImmDB m blk = ImmDB {
@@ -114,7 +112,6 @@ data ImmDB m blk = ImmDB {
     , epochInfo :: !(EpochInfo m)
     , isEBB     :: !(Header blk -> Maybe EpochNo)
     , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
-    , err       :: !(ErrorHandling ImmDB.ImmutableDBError m)
     }
 
 
@@ -129,7 +126,6 @@ instance NoUnexpectedThunks (ImmDB m blk) where
     , noUnexpectedThunks ctxt epochInfo
     , noUnexpectedThunks ctxt isEBB
     , noUnexpectedThunks ctxt addHdrEnv
-    , noUnexpectedThunks ctxt err
     ]
 
 -- | Short-hand for events traced by the ImmDB wrapper.
@@ -149,7 +145,6 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immDecodeHeader   :: forall s. Decoder s (Lazy.ByteString -> Header blk)
     , immEncodeHash     :: HeaderHash blk -> Encoding
     , immEncodeBlock    :: blk -> BinaryInfo Encoding
-    , immErr            :: ErrorHandling ImmDB.ImmutableDBError m
     , immEpochInfo      :: EpochInfo m
     , immHashInfo       :: HashInfo (HeaderHash blk)
     , immValidation     :: ImmDB.ValidationPolicy
@@ -182,9 +177,8 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immBlockchainTime'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
-      immErr          = EH.exceptions
-    , immHasFS        = ioHasFS $ MountPoint (fp </> "immutable")
-    , immCacheConfig  = cacheConfig
+      immHasFS          = ioHasFS $ MountPoint (fp </> "immutable")
+    , immCacheConfig    = cacheConfig
     , immTracer         = nullTracer
       -- Fields without a default
     , immDecodeHash     = error "no default for immDecodeHash"
@@ -227,7 +221,6 @@ openDB ImmDbArgs{..} = do
     (immDB, _internal) <- ImmDB.openDBInternal
       immRegistry
       immHasFS
-      immErr
       immEpochInfo
       immHashInfo
       immValidation
@@ -243,7 +236,6 @@ openDB ImmDbArgs{..} = do
       , epochInfo = immEpochInfo
       , isEBB     = immIsEBB
       , addHdrEnv = immAddHdrEnv
-      , err       = immErr
       }
   where
     parser = ImmDB.epochFileParser immHasFS immDecodeBlock (immIsEBB . getHeader)
@@ -259,9 +251,8 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> EpochInfo m
         -> (Header blk -> Maybe EpochNo)
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
-        -> ErrorHandling ImmDB.ImmutableDBError m
         -> ImmDB m blk
-mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv err = ImmDB {..}
+mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
@@ -278,42 +269,40 @@ mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv err = ImmDB 
 hasBlock
   :: (MonadCatch m, HasHeader blk, HasCallStack)
   => ImmDB m blk
-  -> Point blk
+  -> RealPoint blk
   -> m Bool
-hasBlock db = \case
-    GenesisPoint -> throwM NoGenesisBlock
-    BlockPoint { withHash = hash, atSlot = slot } ->
-      withDB db $ \imm -> do
-        immTip <- ImmDB.getTip imm
-        (slotNoAtTip, ebbAtTip) <- case forgetTipInfo <$> immTip of
-          TipGen                   -> return (Origin, Nothing)
-          Tip (ImmDB.EBB epochNo)  -> (, Just epochNo) . At  <$> epochInfoFirst epochNo
-          Tip (ImmDB.Block slotNo) -> return (At slotNo, Nothing)
+hasBlock db (RealPoint slot hash) =
+    withDB db $ \imm -> do
+      immTip <- ImmDB.getTip imm
+      (slotNoAtTip, ebbAtTip) <- case forgetTipInfo <$> immTip of
+        Origin                  -> return (Origin, Nothing)
+        At (ImmDB.EBB epochNo)  -> (, Just epochNo) . At  <$> epochInfoFirst epochNo
+        At (ImmDB.Block slotNo) -> return (At slotNo, Nothing)
 
-        case At slot `compare` slotNoAtTip of
-          -- The request is greater than the tip, so we cannot have the block
-          GT -> return False
-          -- Same slot, but our tip is an EBB, so we cannot check if the
-          -- regular block in that slot exists, because that's in the future.
-          EQ | Just epochNo <- ebbAtTip
-             -> (== Just hash) <$> ImmDB.getEBBComponent imm GetHash epochNo
-          -- Slot in the past or equal to the tip, but the tip is a regular
-          -- block.
-          _ -> do
-            hasRegularBlock <- (== Just hash) <$>
-              ImmDB.getBlockComponent imm GetHash slot
-            if hasRegularBlock then
-              return True
-            else do
-              epochNo <- epochInfoEpoch slot
-              ebbSlot <- epochInfoFirst epochNo
-              -- If it's a slot that can also contain an EBB, check if we have
-              -- an EBB
-              if slot == ebbSlot then
-                (== Just hash) <$>
-                  ImmDB.getEBBComponent imm GetHash epochNo
-              else
-                return False
+      case At slot `compare` slotNoAtTip of
+        -- The request is greater than the tip, so we cannot have the block
+        GT -> return False
+        -- Same slot, but our tip is an EBB, so we cannot check if the
+        -- regular block in that slot exists, because that's in the future.
+        EQ | Just epochNo <- ebbAtTip
+           -> (== Just hash) <$> ImmDB.getEBBComponent imm GetHash epochNo
+        -- Slot in the past or equal to the tip, but the tip is a regular
+        -- block.
+        _ -> do
+          hasRegularBlock <- (== Just hash) <$>
+            ImmDB.getBlockComponent imm GetHash slot
+          if hasRegularBlock then
+            return True
+          else do
+            epochNo <- epochInfoEpoch slot
+            ebbSlot <- epochInfoFirst epochNo
+            -- If it's a slot that can also contain an EBB, check if we have
+            -- an EBB
+            if slot == ebbSlot then
+              (== Just hash) <$>
+                ImmDB.getEBBComponent imm GetHash epochNo
+            else
+              return False
   where
     EpochInfo{..} = epochInfo db
 
@@ -324,10 +313,10 @@ getTipInfo :: forall m blk.
 getTipInfo db = do
     immTip <- withDB db $ \imm -> ImmDB.getTip imm
     case immTip of
-      TipGen -> return Origin
-      Tip (TipInfo hash (ImmDB.EBB epochNo) block) ->
+      Origin -> return Origin
+      At (TipInfo hash (ImmDB.EBB epochNo) block) ->
         At . (, hash, IsEBB, block) <$> epochInfoFirst epochNo
-      Tip (TipInfo hash (ImmDB.Block slotNo) block) ->
+      At (TipInfo hash (ImmDB.Block slotNo) block) ->
         return $ At (slotNo, hash, IsNotEBB, block)
   where
     EpochInfo{..} = epochInfo db
@@ -386,11 +375,10 @@ getBlockComponentWithPoint
   :: forall m blk b. (MonadCatch m, HasHeader blk, HasCallStack)
   => ImmDB m blk
   -> BlockComponent (ChainDB m blk) b
-  -> Point blk
+  -> RealPoint blk
   -> m (Maybe b)
-getBlockComponentWithPoint db blockComponent = \case
-    GenesisPoint -> throwM NoGenesisBlock
-    BlockPoint { withHash = hash, atSlot = slot } -> withDB db $ \imm ->
+getBlockComponentWithPoint db blockComponent (RealPoint slot hash) =
+    withDB db $ \imm ->
       ImmDB.getBlockOrEBBComponent imm blockComponent' slot hash
   where
     blockComponent' = translateToRawDB (parse db) (addHdrEnv db) blockComponent
@@ -461,31 +449,25 @@ stream db registry blockComponent from to = runExceptT $ do
     slotNoAtTip <- lift $ getSlotNoAtTip db
 
     end <- case to of
-      StreamToExclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
-        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock pt
+      StreamToExclusive pt@(RealPoint slot hash) -> do
+        when (At slot > slotNoAtTip) $ throwError $ MissingBlock pt
         return $ Just (slot, hash)
-      StreamToExclusive GenesisPoint ->
-        throwM NoGenesisBlock
-      StreamToInclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
-        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock pt
+      StreamToInclusive pt@(RealPoint slot hash) -> do
+        when (At slot > slotNoAtTip) $ throwError $ MissingBlock pt
         return $ Just (slot, hash)
-      StreamToInclusive GenesisPoint ->
-        throwM NoGenesisBlock
 
     case from of
       StreamFromExclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
-        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock pt
+        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock (RealPoint slot hash)
         it <- openStream (Just (slot, hash)) end
         -- Skip the first block, as the bound is exclusive
         void $ lift $ iteratorNext db it
         return it
       StreamFromExclusive    GenesisPoint ->
         openStream Nothing end
-      StreamFromInclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
-        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock pt
+      StreamFromInclusive pt@(RealPoint slot hash) -> do
+        when (At slot > slotNoAtTip) $ throwError $ MissingBlock pt
         openStream (Just (slot, hash)) end
-      StreamFromInclusive GenesisPoint ->
-        throwM NoGenesisBlock
   where
     openStream
       :: Maybe (SlotNo, HeaderHash blk)
@@ -503,10 +485,10 @@ stream db registry blockComponent from to = runExceptT $ do
         toUnknownRange e
           | Just (startSlot, startHash) <- start
           , wrongBoundErrorSlotNo e == startSlot
-          = MissingBlock (BlockPoint startSlot startHash)
+          = MissingBlock (RealPoint startSlot startHash)
           | Just (endSlot, endHash) <- end
           , wrongBoundErrorSlotNo e == endSlot
-          = MissingBlock (BlockPoint endSlot endHash)
+          = MissingBlock (RealPoint endSlot endHash)
           | otherwise
           = error "WrongBoundError for a different bound than we gave"
 
@@ -535,7 +517,7 @@ stream db registry blockComponent from to = runExceptT $ do
                 -> return $ Just next
           }
         where
-          isEnd hash = pointHash pt == BlockHash hash
+          isEnd hash = realPointHash pt == hash
           ignoreExclusiveBound = \case
             ImmDB.IteratorResult (hash, _)
               | isEnd hash
@@ -600,7 +582,7 @@ streamAfterKnownBlock db registry blockComponent low = do
 -- disk failure and should therefore trigger recovery
 withDB :: forall m blk x. MonadCatch m
        => ImmDB m blk -> (ImmutableDB (HeaderHash blk) m -> m x) -> m x
-withDB ImmDB{..} k = EH.catchError err (k immDB) rethrow
+withDB ImmDB{..} k = catch (k immDB) rethrow
   where
     rethrow :: ImmDB.ImmutableDBError -> m x
     rethrow e = case wrap e of

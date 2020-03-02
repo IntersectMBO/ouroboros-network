@@ -53,12 +53,10 @@ import           Test.QuickCheck (Arbitrary (..), Gen)
 import qualified Test.QuickCheck as QC
 
 import           Ouroboros.Consensus.Util (whenJust)
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike hiding (handle)
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling
-                     (ErrorHandling (..))
 
 import           Test.Util.Blob
 import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
@@ -427,70 +425,67 @@ instance Arbitrary Errors where
 -- | Introduce possibility of errors
 --
 -- TODO: Lenses would be nice for the setters
-mkSimErrorHasFS :: forall m. MonadSTM m
-                => ErrorHandling FsError m
-                -> StrictTVar m MockFS
+mkSimErrorHasFS :: forall m. (MonadSTM m, MonadThrow m)
+                => StrictTVar m MockFS
                 -> StrictTVar m Errors
                 -> HasFS m HandleMock
-mkSimErrorHasFS err fsVar errorsVar =
-    case Sim.simHasFS err fsVar of
+mkSimErrorHasFS fsVar errorsVar =
+    case Sim.simHasFS fsVar of
       HasFS{..} -> HasFS{
           dumpState =
-            withErr err errorsVar (mkFsPath ["<dumpState>"]) dumpState "dumpState"
+            withErr errorsVar (mkFsPath ["<dumpState>"]) dumpState "dumpState"
               _dumpState (\e es -> es { _dumpState = e })
         , hOpen      = \p m ->
-            withErr err errorsVar p (hOpen p m) "hOpen"
+            withErr errorsVar p (hOpen p m) "hOpen"
             _hOpen (\e es -> es { _hOpen = e })
         , hClose     = \h ->
-            withErr' err errorsVar h (hClose h) "hClose"
+            withErr' errorsVar h (hClose h) "hClose"
             _hClose (\e es -> es { _hClose = e })
         , hSeek      = \h m n ->
-            withErr' err errorsVar h (hSeek h m n) "hSeek"
+            withErr' errorsVar h (hSeek h m n) "hSeek"
             _hSeek (\e es -> es { _hSeek = e })
-        , hGetSome   = hGetSome' err errorsVar hGetSome
-        , hGetSomeAt = hGetSomeAt' err errorsVar hGetSomeAt
-        , hPutSome   = hPutSome' err errorsVar hPutSome
+        , hGetSome   = hGetSome' errorsVar hGetSome
+        , hGetSomeAt = hGetSomeAt' errorsVar hGetSomeAt
+        , hPutSome   = hPutSome' errorsVar hPutSome
         , hTruncate  = \h w ->
-            withErr' err errorsVar h (hTruncate h w) "hTruncate"
+            withErr' errorsVar h (hTruncate h w) "hTruncate"
             _hTruncate (\e es -> es { _hTruncate = e })
         , hGetSize   =  \h ->
-            withErr' err errorsVar h (hGetSize h) "hGetSize"
+            withErr' errorsVar h (hGetSize h) "hGetSize"
             _hGetSize (\e es -> es { _hGetSize = e })
 
         , createDirectory          = \p ->
-            withErr err errorsVar p (createDirectory p) "createDirectory"
+            withErr errorsVar p (createDirectory p) "createDirectory"
             _createDirectory (\e es -> es { _createDirectory = e })
         , createDirectoryIfMissing = \b p ->
-            withErr err errorsVar p (createDirectoryIfMissing b p) "createDirectoryIfMissing"
+            withErr errorsVar p (createDirectoryIfMissing b p) "createDirectoryIfMissing"
             _createDirectoryIfMissing (\e es -> es { _createDirectoryIfMissing = e })
         , listDirectory            = \p ->
-            withErr err errorsVar p (listDirectory p) "listDirectory"
+            withErr errorsVar p (listDirectory p) "listDirectory"
             _listDirectory (\e es -> es { _listDirectory = e })
         , doesDirectoryExist       = \p ->
-            withErr err errorsVar p (doesDirectoryExist p) "doesDirectoryExist"
+            withErr errorsVar p (doesDirectoryExist p) "doesDirectoryExist"
             _doesDirectoryExist (\e es -> es { _doesDirectoryExist = e })
         , doesFileExist            = \p ->
-            withErr err errorsVar p (doesFileExist p) "doesFileExist"
+            withErr errorsVar p (doesFileExist p) "doesFileExist"
             _doesFileExist (\e es -> es { _doesFileExist = e })
         , removeFile               = \p ->
-            withErr err errorsVar p (removeFile p) "removeFile"
+            withErr errorsVar p (removeFile p) "removeFile"
             _removeFile (\e es -> es { _removeFile = e })
-        , hasFsErr = err
         , mkFsErrorPath = fsToFsErrorPathUnmounted
         }
 
 -- | Runs a computation provided an 'Errors' and an initial
 -- 'MockFS', producing a result and the final state of the filesystem.
-runSimErrorFS :: MonadSTM m
-              => ErrorHandling FsError m
-              -> MockFS
+runSimErrorFS :: (MonadSTM m, MonadThrow m)
+              => MockFS
               -> Errors
               -> (StrictTVar m Errors -> HasFS m HandleMock -> m a)
               -> m (a, MockFS)
-runSimErrorFS err mockFS errors action = do
+runSimErrorFS mockFS errors action = do
     fsVar     <- uncheckedNewTVarM mockFS
     errorsVar <- uncheckedNewTVarM errors
-    a         <- action errorsVar $ mkSimErrorHasFS err fsVar errorsVar
+    a         <- action errorsVar $ mkSimErrorHasFS fsVar errorsVar
     fs'       <- atomically $ readTVar fsVar
     return (a, fs')
 
@@ -528,20 +523,19 @@ next errorsVar getter setter = do
 
 -- | Execute an action or throw an error, depending on the corresponding
 -- 'ErrorStream' (see 'nextError').
-withErr :: (MonadSTM m, HasCallStack)
-        => ErrorHandling FsError m
-        -> StrictTVar m Errors
+withErr :: (MonadSTM m, MonadThrow m, HasCallStack)
+        => StrictTVar m Errors
         -> FsPath     -- ^ The path for the error, if thrown
         -> m a        -- ^ Action in case no error is thrown
         -> String     -- ^ Extra message for in the 'fsErrorString'
         -> (Errors -> ErrorStream)           -- ^ @getter@
         -> (ErrorStream -> Errors -> Errors) -- ^ @setter@
         -> m a
-withErr ErrorHandling {..} errorsVar path action msg getter setter = do
+withErr errorsVar path action msg getter setter = do
     mbErr <- next errorsVar getter setter
     case mbErr of
       Nothing      -> action
-      Just errType -> throwError FsError
+      Just errType -> throwM FsError
         { fsErrorType   = errType
         , fsErrorPath   = fsToFsErrorPathUnmounted path
         , fsErrorString = "simulated error: " <> msg
@@ -553,30 +547,28 @@ withErr ErrorHandling {..} errorsVar path action msg getter setter = do
 -- | Variant of 'withErr' that works with 'Handle's.
 --
 -- The path of the handle is retrieved from the 'MockFS' using 'handleFsPath'.
-withErr' :: (MonadSTM m, HasCallStack)
-         => ErrorHandling FsError m
-         -> StrictTVar m Errors
+withErr' :: (MonadSTM m, MonadThrow m, HasCallStack)
+         => StrictTVar m Errors
          -> Handle HandleMock   -- ^ The path for the error, if thrown
          -> m a        -- ^ Action in case no error is thrown
          -> String     -- ^ Extra message for in the 'fsErrorString'
          -> (Errors -> ErrorStream)           -- ^ @getter@
          -> (ErrorStream -> Errors -> Errors) -- ^ @setter@
          -> m a
-withErr' err errorsVar handle action msg getter setter =
-    withErr err errorsVar (handlePath handle) action msg getter setter
+withErr' errorsVar handle action msg getter setter =
+    withErr errorsVar (handlePath handle) action msg getter setter
 
 -- | Execute the wrapped 'hGetSome', throw an error, or simulate a partial
 -- read, depending on the corresponding 'ErrorStreamGetSome' (see
 -- 'nextError').
-hGetSome'  :: (MonadSTM m, HasCallStack)
-           => ErrorHandling FsError m
-           -> StrictTVar m Errors
+hGetSome'  :: (MonadSTM m, MonadThrow m, HasCallStack)
+           => StrictTVar m Errors
            -> (Handle HandleMock -> Word64 -> m BS.ByteString)  -- ^ Wrapped 'hGetSome'
            -> Handle HandleMock -> Word64 -> m BS.ByteString
-hGetSome' ErrorHandling{..} errorsVar hGetSomeWrapped handle n =
+hGetSome' errorsVar hGetSomeWrapped handle n =
     next errorsVar _hGetSome (\e es -> es { _hGetSome = e }) >>= \case
       Nothing             -> hGetSomeWrapped handle n
-      Just (Left errType) -> throwError FsError
+      Just (Left errType) -> throwM FsError
         { fsErrorType   = errType
         , fsErrorPath   = fsToFsErrorPathUnmounted $ handlePath handle
         , fsErrorString = "simulated error: hGetSome"
@@ -588,15 +580,14 @@ hGetSome' ErrorHandling{..} errorsVar hGetSomeWrapped handle n =
         hGetSomeWrapped handle (hGetSomePartial partial n)
 
 -- | In the thread safe version of 'hGetSome', we simulate exactly the same errors.
-hGetSomeAt' :: (MonadSTM m, HasCallStack)
-            => ErrorHandling FsError m
-            -> StrictTVar m Errors
+hGetSomeAt' :: (MonadSTM m, MonadThrow m, HasCallStack)
+            => StrictTVar m Errors
             -> (Handle HandleMock -> Word64 -> AbsOffset -> m BS.ByteString)  -- ^ Wrapped 'hGetSomeAt'
             -> Handle HandleMock -> Word64 -> AbsOffset -> m BS.ByteString
-hGetSomeAt' ErrorHandling{..} errorsVar hGetSomeAtWrapped handle n offset =
+hGetSomeAt' errorsVar hGetSomeAtWrapped handle n offset =
     next errorsVar _hGetSomeAt (\e es -> es { _hGetSomeAt = e }) >>= \case
       Nothing             -> hGetSomeAtWrapped handle n offset
-      Just (Left errType) -> throwError FsError
+      Just (Left errType) -> throwM FsError
         { fsErrorType   = errType
         , fsErrorPath   = fsToFsErrorPathUnmounted $ handlePath handle
         , fsErrorString = "simulated error: hGetSomeAt"
@@ -610,18 +601,17 @@ hGetSomeAt' ErrorHandling{..} errorsVar hGetSomeAtWrapped handle n offset =
 -- | Execute the wrapped 'hPutSome', throw an error and apply possible
 -- corruption to the blob to write, or simulate a partial write, depending on
 -- the corresponding 'ErrorStreamPutSome' (see 'nextError').
-hPutSome' :: (MonadSTM m, HasCallStack)
-          => ErrorHandling FsError m
-          -> StrictTVar m Errors
+hPutSome' :: (MonadSTM m, MonadThrow m, HasCallStack)
+          => StrictTVar m Errors
           -> (Handle HandleMock -> BS.ByteString -> m Word64)  -- ^ Wrapped 'hPutSome'
           -> Handle HandleMock -> BS.ByteString -> m Word64
-hPutSome' ErrorHandling{..} errorsVar hPutSomeWrapped handle bs =
+hPutSome' errorsVar hPutSomeWrapped handle bs =
     next errorsVar _hPutSome (\e es -> es { _hPutSome = e }) >>= \case
       Nothing                       -> hPutSomeWrapped handle bs
       Just (Left (errType, mbCorr)) -> do
         whenJust mbCorr $ \corr ->
           void $ hPutSomeWrapped handle (corrupt bs corr)
-        throwError FsError
+        throwM FsError
           { fsErrorType   = errType
           , fsErrorPath   = fsToFsErrorPathUnmounted $ handlePath handle
           , fsErrorString = "simulated error: hPutSome" <> case mbCorr of

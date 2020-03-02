@@ -35,10 +35,10 @@ import           Cardano.Slotting.Block (BlockNo)
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader, HeaderHash, Point,
-                     SlotNo, StandardHash, atSlot, pointHash, withHash)
+                     SlotNo, StandardHash, pointHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (IsEBB (..))
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
@@ -244,7 +244,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
   where
     trace = traceWith itTracer
 
-    endPoint :: Point blk
+    endPoint :: RealPoint blk
     endPoint = case to of
       StreamToInclusive pt -> pt
       StreamToExclusive pt -> pt
@@ -257,11 +257,11 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
     start = lift (ImmDB.getTipInfo itImmDB) >>= \case
       Origin                                       -> findPathInVolDB
       At (tipSlot, tipHash, tipIsEBB, _tipBlockNo) ->
-        case atSlot endPoint `compare` tipSlot of
+        case realPointSlot endPoint `compare` tipSlot of
           -- The end point is < the tip of the ImmutableDB
           LT -> streamFromImmDB
 
-          EQ | withHash endPoint == tipHash
+          EQ | realPointHash endPoint == tipHash
                 -- The end point == the tip of the ImmutableDB
              -> streamFromImmDB
 
@@ -362,45 +362,48 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
                    -> ExceptT (UnknownRange blk) m (Iterator m blk b)
     streamFromBoth predHash hashes = do
         lift $ trace $ StreamFromBoth from to hashes
-        lift (toPoint <$> ImmDB.getTipInfo itImmDB) >>= \case
-          -- The ImmutableDB is empty
-          GenesisPoint -> throwError $ ForkTooOld from
-          -- The incomplete path fits onto the tip of the ImmutableDB.
-          pt@BlockPoint { withHash = tipHash }
-            | tipHash == predHash
-            -> case NE.nonEmpty hashes of
-                 Just hashes' -> startStream pt hashes'
-                 -- The path is actually empty, but the exclusive upper bound
-                 -- was in the VolatileDB. Since there's nothing to stream,
-                 -- just return an empty iterator.
-                 Nothing      -> lift emptyIterator
-            -- The incomplete path doesn't fit onto the tip of the ImmutableDB.
-            -- Note that since we have constructed the incomplete path through
-            -- the VolatileDB, blocks might have moved from the VolatileDB to
-            -- the ImmutableDB so that the tip of the ImmutableDB has changed.
-            -- Either the path used to fit onto the tip but the tip has changed,
-            -- or the path simply never fitted onto the tip.
-            | otherwise  -> case dropWhile (/= tipHash) hashes of
-              -- The current tip is not in the path, this means that the path
-              -- never fitted onto the tip of the ImmutableDB. We refuse this
-              -- stream.
-              []                    -> throwError $ ForkTooOld from
-              -- The current tip is in the path, with some hashes after it, this
-              -- means that some blocks in our path have moved from the
-              -- VolatileDB to the ImmutableDB. We can shift the switchover
-              -- point to the current tip.
-              _tipHash:hash:hashes' -> startStream pt (hash NE.:| hashes')
-              -- The current tip is the end of the path, this means we can
-              -- actually stream everything from just the ImmutableDB. It
-              -- could be that the exclusive end bound was not part of the
-              -- ImmutableDB, so stream to the current tip of the ImmutableDB
-              -- (inclusive) to avoid trying to stream (exclusive) to a block
-              -- that's not in the ImmutableDB.
-              [_tipHash]            -> streamFromImmDBHelper (StreamToInclusive pt)
+        lift (toPoint <$> ImmDB.getTipInfo itImmDB) >>= \tip ->
+          case pointToWithOriginRealPoint tip of
+            -- The ImmutableDB is empty
+            Origin -> throwError $ ForkTooOld from
+            -- The incomplete path fits onto the tip of the ImmutableDB.
+            At pt@(RealPoint _ tipHash)
+              | tipHash == predHash
+              -> case NE.nonEmpty hashes of
+                   Just hashes' -> startStream pt hashes'
+                   -- The path is actually empty, but the exclusive upper bound
+                   -- was in the VolatileDB. Since there's nothing to stream,
+                   -- just return an empty iterator.
+                   Nothing      -> lift emptyIterator
+              -- The incomplete path doesn't fit onto the tip of the ImmutableDB.
+              -- Note that since we have constructed the incomplete path through
+              -- the VolatileDB, blocks might have moved from the VolatileDB to
+              -- the ImmutableDB so that the tip of the ImmutableDB has changed.
+              -- Either the path used to fit onto the tip but the tip has changed,
+              -- or the path simply never fitted onto the tip.
+              | otherwise  -> case dropWhile (/= tipHash) hashes of
+                -- The current tip is not in the path, this means that the path
+                -- never fitted onto the tip of the ImmutableDB. We refuse this
+                -- stream.
+                []                    -> throwError $ ForkTooOld from
+                -- The current tip is in the path, with some hashes after it, this
+                -- means that some blocks in our path have moved from the
+                -- VolatileDB to the ImmutableDB. We can shift the switchover
+                -- point to the current tip.
+                _tipHash:hash:hashes' -> startStream pt (hash NE.:| hashes')
+                -- The current tip is the end of the path, this means we can
+                -- actually stream everything from just the ImmutableDB. It
+                -- could be that the exclusive end bound was not part of the
+                -- ImmutableDB, so stream to the current tip of the ImmutableDB
+                -- (inclusive) to avoid trying to stream (exclusive) to a block
+                -- that's not in the ImmutableDB.
+                [_tipHash]            -> streamFromImmDBHelper (StreamToInclusive pt)
       where
-        startStream pt hashes' = do
-          let immEnd = SwitchToVolDBFrom (StreamToInclusive pt) hashes'
-          immTip <- lift $ ImmDB.getPointAtTip itImmDB
+        startStream :: RealPoint blk -- ^ Tip of the imm DB
+                    -> NonEmpty (HeaderHash blk)
+                    -> ExceptT (UnknownRange blk) m (Iterator m blk b)
+        startStream immTip hashes' = do
+          let immEnd = SwitchToVolDBFrom (StreamToInclusive immTip) hashes'
           immIt <- ExceptT $
             ImmDB.stream itImmDB registry ((,) <$> getPoint <*> blockComponent)
               from (StreamToInclusive immTip)
@@ -600,14 +603,27 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
             -- have been garbage-collected, which means that its slot was
             -- older than the slot of the tip of the ImmutableDB.
             immTip <- ImmDB.getPointAtTip itImmDB
-            ImmDB.stream itImmDB registry ((,) <$> getPoint <*> blockComponent)
-               continueFrom (StreamToInclusive immTip) >>= \case
-                -- The block was not found in the ImmutableDB, it must have been
-                -- garbage-collected
-                Left   _    -> do
-                  trace $ BlockGCedFromVolDB hash
-                  return $ IteratorBlockGCed hash
-                Right immIt -> nextInImmDBRetry Nothing immIt (hash NE.:| hashes)
+            case pointToWithOriginRealPoint immTip of
+              Origin ->
+                -- The block was in the volatile DB, but isn't anymore. This can
+                -- only happen due to GC. It's not guaranteed that GC will have
+                -- moved /that/ block to the imm DB (so it might have just
+                -- disappeared altogether), /but/ after GC the imm DB cannot be
+                -- empty (because GC will only be triggered after some newly
+                -- immutable blocks have been copied to the imm DB).
+                error "nextInVolDB: impossible"
+              At tip ->
+                ImmDB.stream itImmDB registry
+                  ((,) <$> getPoint <*> blockComponent)
+                  continueFrom
+                  (StreamToInclusive tip) >>= \case
+                    -- The block was not found in the ImmutableDB, it must have
+                    -- been garbage-collected
+                    Left  _ -> do
+                      trace $ BlockGCedFromVolDB hash
+                      return $ IteratorBlockGCed hash
+                    Right immIt ->
+                      nextInImmDBRetry Nothing immIt (hash NE.:| hashes)
 
         -- Block is there
         Just (pt, b) | Just hashes' <- NE.nonEmpty hashes -> do

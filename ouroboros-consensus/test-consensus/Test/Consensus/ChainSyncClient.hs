@@ -26,9 +26,8 @@ import           Test.Tasty.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Driver
-
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Driver
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block hiding (ChainUpdate (..))
@@ -399,7 +398,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     nodeCfg :: CoreNodeId -> TopLevelConfig TestBlock
     nodeCfg coreNodeId = TopLevelConfig {
-        configConsensus = BftNodeConfig
+        configConsensus = BftConfig
           { bftParams   = BftParams
             { bftSecurityParam = securityParam
             , bftNumNodes      = numCoreNodes

@@ -44,6 +44,7 @@ module Control.Monad.Class.MonadSTM
   , writeTBQueueDefault
   , isEmptyTBQueueDefault
   , isFullTBQueueDefault
+  , lengthTBQueueDefault
   ) where
 
 import           Prelude hiding (read)
@@ -423,3 +424,19 @@ isFullTBQueueDefault (TBQueue rsize _read wsize _write _size) = do
          if (r > 0)
             then return False
             else return True
+
+-- 'lengthTBQueue' was added in stm-2.5.0.0, but since we support older
+-- versions of stm, we don't include it as a method in the type class. If we
+-- were to conditionally (@MIN_VERSION_stm(2,5,0)@) include the method in the
+-- type class, the IO simulator would have to conditionally include the
+-- method, requiring a dependency on the @stm@ package, which would be
+-- strange.
+--
+-- Nevertheless, we already provide a default implementation. Downstream
+-- packages that don't mind having a >= 2.5 constraint on stm can use this to
+-- implement 'lengthTBQueue' for the IO simulator.
+lengthTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> STM m Natural
+lengthTBQueueDefault (TBQueue rsize _read wsize _write size) = do
+  r <- readTVar rsize
+  w <- readTVar wsize
+  return $! size - r - w

@@ -54,7 +54,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.PBFT
-import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
+import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
                      EpochSize (..))
@@ -132,7 +132,7 @@ protocolInfoByron :: Genesis.Config
 protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = PBftNodeConfig {
+            configConsensus = PBftConfig {
                 pbftParams    = byronPBftParams genesisConfig mSigThresh
               , pbftIsLeader  = case mLeader of
                                   Nothing   -> PBftIsNotALeader
@@ -143,7 +143,7 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = initByronLedgerState genesisConfig Nothing
-          , headerState = genesisHeaderState CS.empty
+          , headerState = genesisHeaderState S.empty
           }
       , pInfoInitState  = ()
       }
@@ -209,7 +209,7 @@ instance RunNode ByronBlock where
     case tip of
       -- Chain is not empty
       BlockPoint {} -> return ()
-      GenesisPoint  -> ChainDB.addBlock chainDB genesisEBB
+      GenesisPoint  -> ChainDB.addBlock_ chainDB genesisEBB
         where
           genesisEBB = forgeEBB cfg (SlotNo 0) (BlockNo 0) GenesisHash
 
@@ -243,7 +243,7 @@ instance RunNode ByronBlock where
   nodeEncodeGenTxId         = encodeByronGenTxId
   nodeEncodeHeaderHash      = const encodeByronHeaderHash
   nodeEncodeLedgerState     = const encodeByronLedgerState
-  nodeEncodeChainState      = \_proxy _cfg -> encodeByronChainState
+  nodeEncodeConsensusState  = \_proxy _cfg -> encodeByronConsensusState
   nodeEncodeApplyTxError    = const encodeByronApplyTxError
   nodeEncodeTipInfo         = const encode
   nodeEncodeQuery           = encodeByronQuery
@@ -256,9 +256,9 @@ instance RunNode ByronBlock where
   nodeDecodeGenTxId         = decodeByronGenTxId
   nodeDecodeHeaderHash      = const decodeByronHeaderHash
   nodeDecodeLedgerState     = const decodeByronLedgerState
-  nodeDecodeChainState      = \_proxy cfg ->
+  nodeDecodeConsensusState  = \_proxy cfg ->
                                  let k = configSecurityParam cfg
-                                 in decodeByronChainState k
+                                 in decodeByronConsensusState k
   nodeDecodeApplyTxError    = const decodeByronApplyTxError
   nodeDecodeTipInfo         = const decode
   nodeDecodeQuery           = decodeByronQuery

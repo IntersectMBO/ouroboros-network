@@ -208,7 +208,7 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
     mkNetworkApps nodeArgs nodeKernel version = consensusNetworkApps
       nodeKernel
       protocolTracers
-      (protocolCodecs (getNodeConfig nodeKernel) version)
+      (protocolCodecs (getTopLevelConfig nodeKernel) version)
       (protocolHandlers nodeArgs nodeKernel)
 
     mkDiffusionApplications
@@ -284,34 +284,34 @@ mkChainDbArgs
   -> ChainDbArgs IO blk
 mkChainDbArgs tracer registry btime dbPath cfg initLedger
               epochInfo = (ChainDB.defaultArgs dbPath)
-    { ChainDB.cdbBlocksPerFile    = mkBlocksPerFile 1000
-    , ChainDB.cdbDecodeBlock      = nodeDecodeBlock         cfg
-    , ChainDB.cdbDecodeHeader     = nodeDecodeHeader        cfg SerialisedToDisk
-    , ChainDB.cdbDecodeChainState = nodeDecodeChainState    (Proxy @blk) cfg
-    , ChainDB.cdbDecodeHash       = nodeDecodeHeaderHash    (Proxy @blk)
-    , ChainDB.cdbDecodeLedger     = nodeDecodeLedgerState   cfg
-    , ChainDB.cdbDecodeTipInfo    = nodeDecodeTipInfo       (Proxy @blk)
-    , ChainDB.cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
-    , ChainDB.cdbEncodeHeader     = nodeEncodeHeader        cfg SerialisedToDisk
-    , ChainDB.cdbEncodeChainState = nodeEncodeChainState    (Proxy @blk) cfg
-    , ChainDB.cdbEncodeHash       = nodeEncodeHeaderHash    (Proxy @blk)
-    , ChainDB.cdbEncodeLedger     = nodeEncodeLedgerState   cfg
-    , ChainDB.cdbEncodeTipInfo    = nodeEncodeTipInfo       (Proxy @blk)
-    , ChainDB.cdbEpochInfo        = epochInfo
-    , ChainDB.cdbHashInfo         = nodeHashInfo            (Proxy @blk)
-    , ChainDB.cdbGenesis          = return initLedger
-    , ChainDB.cdbAddHdrEnv        = nodeAddHeaderEnvelope   (Proxy @blk)
-    , ChainDB.cdbDiskPolicy       = defaultDiskPolicy secParam
-    , ChainDB.cdbIsEBB            = nodeIsEBB
-    , ChainDB.cdbCheckIntegrity   = nodeCheckIntegrity      cfg
-    , ChainDB.cdbParamsLgrDB      = ledgerDbDefaultParams secParam
-    , ChainDB.cdbNodeConfig       = cfg
-    , ChainDB.cdbRegistry         = registry
-    , ChainDB.cdbTracer           = tracer
-    , ChainDB.cdbImmValidation    = ValidateMostRecentEpoch
-    , ChainDB.cdbVolValidation    = NoValidation
-    , ChainDB.cdbGcDelay          = secondsToDiffTime 10
-    , ChainDB.cdbBlockchainTime   = btime
+    { ChainDB.cdbBlocksPerFile        = mkBlocksPerFile 1000
+    , ChainDB.cdbDecodeBlock          = nodeDecodeBlock          cfg
+    , ChainDB.cdbDecodeHeader         = nodeDecodeHeader         cfg SerialisedToDisk
+    , ChainDB.cdbDecodeConsensusState = nodeDecodeConsensusState (Proxy @blk) cfg
+    , ChainDB.cdbDecodeHash           = nodeDecodeHeaderHash     (Proxy @blk)
+    , ChainDB.cdbDecodeLedger         = nodeDecodeLedgerState    cfg
+    , ChainDB.cdbDecodeTipInfo        = nodeDecodeTipInfo        (Proxy @blk)
+    , ChainDB.cdbEncodeBlock          = nodeEncodeBlockWithInfo  cfg
+    , ChainDB.cdbEncodeHeader         = nodeEncodeHeader         cfg SerialisedToDisk
+    , ChainDB.cdbEncodeConsensusState = nodeEncodeConsensusState (Proxy @blk) cfg
+    , ChainDB.cdbEncodeHash           = nodeEncodeHeaderHash     (Proxy @blk)
+    , ChainDB.cdbEncodeLedger         = nodeEncodeLedgerState    cfg
+    , ChainDB.cdbEncodeTipInfo        = nodeEncodeTipInfo        (Proxy @blk)
+    , ChainDB.cdbEpochInfo            = epochInfo
+    , ChainDB.cdbHashInfo             = nodeHashInfo             (Proxy @blk)
+    , ChainDB.cdbGenesis              = return initLedger
+    , ChainDB.cdbAddHdrEnv            = nodeAddHeaderEnvelope    (Proxy @blk)
+    , ChainDB.cdbDiskPolicy           = defaultDiskPolicy secParam
+    , ChainDB.cdbIsEBB                = nodeIsEBB
+    , ChainDB.cdbCheckIntegrity       = nodeCheckIntegrity       cfg
+    , ChainDB.cdbParamsLgrDB          = ledgerDbDefaultParams secParam
+    , ChainDB.cdbTopLevelConfig       = cfg
+    , ChainDB.cdbRegistry             = registry
+    , ChainDB.cdbTracer               = tracer
+    , ChainDB.cdbImmValidation        = ValidateMostRecentEpoch
+    , ChainDB.cdbVolValidation        = NoValidation
+    , ChainDB.cdbGcDelay              = secondsToDiffTime 10
+    , ChainDB.cdbBlockchainTime       = btime
     }
   where
     secParam = configSecurityParam cfg
@@ -347,6 +347,6 @@ mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     blockProduction = case isProducer of
       IsNotProducer -> Nothing
       IsProducer    -> Just BlockProduction
-                         { produceBlock       = nodeForgeBlock cfg
+                         { produceBlock       = \_lift' -> nodeForgeBlock cfg
                          , runMonadRandomDict = runMonadRandomIO
                          }

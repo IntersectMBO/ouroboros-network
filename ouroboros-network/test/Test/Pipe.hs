@@ -25,6 +25,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Tracer
 
+import qualified Network.Mux             as Mx (muxStart)
 import qualified Network.Mux.Bearer.Pipe as Mx
 import           Ouroboros.Network.Mux
 
@@ -39,7 +40,7 @@ import           System.Process (createPipe)
 import           System.IO (hClose)
 #endif
 
-import           Ouroboros.Network.Block (decodeTip, encodeTip)
+import           Ouroboros.Network.Block (encodeTip, decodeTip)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
@@ -72,16 +73,20 @@ prop_pipe_demo (TestBlockChainAndUpdates chain updates) =
 defaultMiniProtocolLimit :: Int64
 defaultMiniProtocolLimit = 3000000
 
--- | The enumeration of all mini-protocols in our demo protocol.
-data DemoProtocols = ChainSync
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance ProtocolEnum DemoProtocols where
-  fromProtocolEnum ChainSync = MiniProtocolNum 2
-
-instance MiniProtocolLimits DemoProtocols where
-  maximumMessageSize ChainSync  = defaultMiniProtocolLimit
-  maximumIngressQueue ChainSync = defaultMiniProtocolLimit
+-- | The bundle of mini-protocols in our demo protocol: only chain sync
+--
+demoProtocols :: RunMiniProtocol appType bytes m a b
+              -> OuroborosApplication appType bytes m a b
+demoProtocols chainSync =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolLimits = MiniProtocolLimits {
+                               maximumIngressQueue = defaultMiniProtocolLimit
+                             },
+        miniProtocolRun    = chainSync
+      }
+    ]
 
 -- | A demonstration that we can run the simple chain consumer protocol
 -- over a pipe with full message serialisation, framing etc.
@@ -144,9 +149,11 @@ demo chain0 updates = do
         let Just expectedChain = Chain.applyChainUpdates updates chain0
             target = Chain.headPoint expectedChain
 
-            consumerApp :: OuroborosApplication InitiatorApp String DemoProtocols IO BL.ByteString () Void
-            consumerApp = simpleInitiatorApplication $
-              \ChainSync ->
+            consumerApp :: OuroborosApplication InitiatorApp BL.ByteString IO () Void
+            consumerApp = demoProtocols chainSyncInitator
+
+            chainSyncInitator =
+              InitiatorProtocolOnly $
                 MuxPeer nullTracer
                         (ChainSync.codecChainSync encode             decode
                                                   encode             decode
@@ -158,17 +165,22 @@ demo chain0 updates = do
             server :: ChainSyncServer block (Tip block) IO ()
             server = ChainSync.chainSyncServerExample () producerVar
 
-            producerApp ::OuroborosApplication ResponderApp String DemoProtocols IO BL.ByteString Void ()
-            producerApp = simpleResponderApplication $
-              \ChainSync ->
+            producerApp ::OuroborosApplication ResponderApp BL.ByteString IO Void ()
+            producerApp = demoProtocols chainSyncResponder
+
+            chainSyncResponder =
+              ResponderProtocolOnly $
                 MuxPeer nullTracer
                         (ChainSync.codecChainSync encode             decode
                                                   encode             decode
                                                   (encodeTip encode) (decodeTip decode))
                         (ChainSync.chainSyncServerPeer server)
 
-        _ <- async $ Mx.runMuxWithPipes activeTracer (toApplication producerApp "producer") chan1
-        _ <- async $ Mx.runMuxWithPipes activeTracer (toApplication consumerApp "consumer") chan2
+        let clientBearer = Mx.pipeAsMuxBearer activeTracer chan1
+            serverBearer = Mx.pipeAsMuxBearer activeTracer chan2
+
+        _ <- async $ Mx.muxStart activeTracer (toApplication producerApp) clientBearer
+        _ <- async $ Mx.muxStart activeTracer (toApplication consumerApp) serverBearer
 
         void $ fork $ sequence_
             [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest
@@ -179,6 +191,7 @@ demo chain0 updates = do
                  | update <- updates
             ]
 
+        -- TODO: use new mechanism to collect mini-protocol result:
         atomically $ takeTMVar done
 
   where

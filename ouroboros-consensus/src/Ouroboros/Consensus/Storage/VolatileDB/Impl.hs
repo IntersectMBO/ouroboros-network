@@ -91,13 +91,6 @@
 module Ouroboros.Consensus.Storage.VolatileDB.Impl
     ( -- * Opening a database
       openDB
-      -- * tests only
-    , VolatileDBEnv(..)
-    , InternalState(..)
-    , OpenOrClosed(..)
-    , filePath
-    , modifyState
-    , openDBFull
     ) where
 
 import           Control.Monad
@@ -109,7 +102,6 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Typeable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -123,9 +115,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling
-                     (ErrorHandling (..), ThrowCantCatch (..))
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 import           Ouroboros.Consensus.Storage.VolatileDB.FileInfo (FileInfo)
 import qualified Ouroboros.Consensus.Storage.VolatileDB.FileInfo as FileInfo
@@ -139,8 +128,6 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Util
 
 data VolatileDBEnv m blockId = forall h e. VolatileDBEnv {
       _dbHasFS          :: !(HasFS m h)
-    , _dbErr            :: !(ErrorHandling VolatileDBError m)
-    , _dbErrSTM         :: !(ThrowCantCatch VolatileDBError (STM m))
     , _dbInternalState  :: !(StrictMVar m (OpenOrClosed blockId h))
     , _maxBlocksPerFile :: !BlocksPerFile
     , _parser           :: !(Parser e m blockId)
@@ -165,8 +152,6 @@ data InternalState blockId h = InternalState {
       -- ^ The 'FileId' of the same file.
     , _currentWriteOffset :: !Word64
       -- ^ The offset of the same file.
-    , _nextNewFileId      :: !FileId
-      -- ^ The next file name Id.
     , _currentMap         :: !(Index blockId)
       -- ^ The contents of each file.
     , _currentRevMap      :: !(ReverseIndex blockId)
@@ -174,7 +159,10 @@ data InternalState blockId h = InternalState {
     , _currentSuccMap     :: !(SuccessorsIndex blockId)
       -- ^ The successors for each block.
     , _currentMaxSlotNo   :: !MaxSlotNo
-      -- ^ Highest ever stored SlotNo.
+      -- ^ Highest stored SlotNo.
+      --
+      -- INVARIANT: this is the cached value of:
+      -- > FileInfo.maxSlotInFiles (Index.elems (_currentMap st))
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -186,73 +174,32 @@ openDB :: ( HasCallStack
           , IOLike m
           , Ord                blockId
           , NoUnexpectedThunks blockId
-          , Typeable           blockId
-          , Show               blockId
           )
        => HasFS m h
-       -> ErrorHandling VolatileDBError m
-       -> ThrowCantCatch VolatileDBError (STM m)
        -> Parser e m blockId
        -> Tracer m (TraceEvent e blockId)
        -> BlocksPerFile
        -> m (VolatileDB blockId m)
-openDB h e e' p t m = fst <$> openDBFull h e e' p t m
-
-openDBFull :: ( HasCallStack
-              , IOLike m
-              , Ord                blockId
-              , NoUnexpectedThunks blockId
-              , Typeable           blockId
-              , Show               blockId
-              )
-           => HasFS m h
-           -> ErrorHandling VolatileDBError m
-           -> ThrowCantCatch VolatileDBError (STM m)
-           -> Parser e m blockId
-           -> Tracer m (TraceEvent e blockId)
-           -> BlocksPerFile
-           -> m (VolatileDB blockId m, VolatileDBEnv m blockId)
-openDBFull hasFS err errSTM parser tracer maxBlocksPerFile = do
-    env <- openDBImpl hasFS err errSTM parser tracer maxBlocksPerFile
-    return $ (, env) VolatileDB {
+openDB hasFS parser tracer maxBlocksPerFile = do
+    st    <- mkInternalStateDB hasFS parser tracer maxBlocksPerFile
+    stVar <- newMVar $ VolatileDbOpen st
+    let env = VolatileDBEnv {
+            _dbHasFS          = hasFS
+          , _dbInternalState  = stVar
+          , _maxBlocksPerFile = maxBlocksPerFile
+          , _parser           = parser
+          , _tracer           = tracer
+          }
+    return VolatileDB {
         closeDB           = closeDBImpl           env
       , isOpenDB          = isOpenDBImpl          env
       , reOpenDB          = reOpenDBImpl          env
       , getBlockComponent = getBlockComponentImpl env
       , putBlock          = putBlockImpl          env
       , garbageCollect    = garbageCollectImpl    env
-      , getIsMember       = getIsMemberImpl       env
-      , getBlockIds       = getBlockIdsImpl       env
       , getSuccessors     = getSuccessorsImpl     env
-      , getPredecessor    = getPredecessorImpl    env
+      , getBlockInfo      = getBlockInfoImpl      env
       , getMaxSlotNo      = getMaxSlotNoImpl      env
-      }
-
-openDBImpl :: ( HasCallStack
-              , IOLike m
-              , Ord                blockId
-              , NoUnexpectedThunks blockId
-              , Typeable           blockId
-              , Show               blockId
-              )
-           => HasFS m h
-           -> ErrorHandling VolatileDBError m
-           -> ThrowCantCatch VolatileDBError (STM m)
-           -> Parser e m blockId
-           -> Tracer m (TraceEvent e blockId)
-           -> BlocksPerFile
-           -> m (VolatileDBEnv m blockId)
-openDBImpl hasFS@HasFS{..} err errSTM parser tracer maxBlocksPerFile = do
-    st    <- mkInternalStateDB hasFS err parser tracer maxBlocksPerFile
-    stVar <- newMVar $ VolatileDbOpen st
-    return VolatileDBEnv {
-        _dbHasFS          = hasFS
-      , _dbErr            = err
-      , _dbErrSTM         = errSTM
-      , _dbInternalState  = stVar
-      , _maxBlocksPerFile = maxBlocksPerFile
-      , _parser           = parser
-      , _tracer           = tracer
       }
 
 closeDBImpl :: IOLike m
@@ -263,7 +210,7 @@ closeDBImpl VolatileDBEnv{..} = do
     case mbInternalState of
       VolatileDbClosed -> traceWith _tracer DBAlreadyClosed
       VolatileDbOpen InternalState{..} ->
-        wrapFsError hasFsErr _dbErr $ hClose _currentWriteHandle
+        wrapFsError $ hClose _currentWriteHandle
   where
     HasFS{..} = _dbHasFS
 
@@ -278,9 +225,7 @@ isOpenDBImpl VolatileDBEnv{..} = do
 -- because 'reOpenDB' will always append to the last created file.
 reOpenDBImpl :: ( HasCallStack
                 , IOLike m
-                , Ord      blockId
-                , Typeable blockId
-                , Show     blockId
+                , Ord blockId
                 )
              => VolatileDBEnv m blockId
              -> m ()
@@ -290,8 +235,7 @@ reOpenDBImpl VolatileDBEnv{..} =
         traceWith _tracer DBAlreadyOpen
         return (VolatileDbOpen st, ())
       VolatileDbClosed -> do
-        st <- mkInternalStateDB
-          _dbHasFS _dbErr _parser _tracer _maxBlocksPerFile
+        st <- mkInternalStateDB _dbHasFS  _parser _tracer _maxBlocksPerFile
         return (VolatileDbOpen st, ())
 
 getBlockComponentImpl
@@ -372,7 +316,7 @@ putBlockImpl env@VolatileDBEnv{..} blockInfo@BlockInfo { bbid, bslot, bpreBid } 
                           -> m (InternalState blockId h, ())
     updateStateAfterWrite hasFS@HasFS{..} st@InternalState{..} bytesWritten =
         if FileInfo.isFull _maxBlocksPerFile fileInfo'
-        then (,()) <$> nextFile hasFS _dbErr env st'
+        then (,()) <$> nextFile hasFS env st'
         else return (st', ())
       where
         fileInfo = fromMaybe
@@ -415,14 +359,26 @@ garbageCollectImpl env@VolatileDBEnv{..} slot =
     modifyState env $ \hasFS st -> do
       st' <- foldM (tryCollectFile hasFS env slot) st
               (sortOn fst $ Index.toList (_currentMap st))
-      return (st', ())
+      -- Recompute the 'MaxSlotNo' based on the files left in the VolatileDB.
+      -- This value can never go down, except to 'NoMaxSlotNo' (when we GC
+      -- everything), because a GC can only delete blocks < a slot.
+      let st'' = st' {
+              _currentMaxSlotNo = FileInfo.maxSlotInFiles
+                (Index.elems (_currentMap st'))
+            }
+      return (st'', ())
 
--- | For the given file, we check if it should be garbage collected and
--- return the updated InternalState.
+-- | For the given file, we garbage collect it if possible and return the
+-- updated 'InternalState'.
 --
--- Important note here is that, every call should leave the fs in a
--- consistent state, without depending on other calls. This is achieved
--- so far, since fs calls are reduced to removeFile and truncate 0.
+-- NOTE: the current file is never garbage collected.
+--
+-- Important to note here is that, every call should leave the file system in
+-- a consistent state, without depending on other calls. We achieve this by
+-- only needed a single system call: 'removeFile'.
+--
+-- NOTE: the returned 'InternalState' is inconsistent in the follow respect:
+-- the cached '_currentMaxSlotNo' hasn't been updated yet.
 --
 -- This may throw an FsError.
 tryCollectFile :: forall m h blockId
@@ -433,51 +389,28 @@ tryCollectFile :: forall m h blockId
                -> InternalState blockId h
                -> (FileId, FileInfo blockId)
                -> m (InternalState blockId h)
-tryCollectFile hasFS env@VolatileDBEnv{..} slot st (fileId, fileInfo) =
-    if  | not canGC     -> return st
-        | not isCurrent -> do
-            removeFile hasFS $ filePath fileId
-            return st {
-                _currentMap     = Index.delete fileId _currentMap
-              , _currentRevMap  = currentRevMap'
-              , _currentSuccMap = succMap'
-              }
-        | isCurrentNew  -> return st
-        | otherwise     -> do
-            -- We reach this case if we have to garbage collect the current file
-            -- we are appending blocks to. For this to happen, a garbage
-            -- collection would have to be triggered for a slot which is bigger
-            -- than any recently inserted blocks.
-            --
-            -- 'reOpenFile' technically truncates the file to 0 offset, so any
-            -- concurrent readers may fail. This may become an issue after:
-            -- <https://github.com/input-output-hk/ouroboros-network/issues/767>
-            traceWith _tracer $ TruncateCurrentFile _currentWritePath
-            st' <- reOpenFile hasFS _dbErr env st
-            return st' {
-                _currentRevMap  = currentRevMap'
-              , _currentSuccMap = succMap'
-              }
+tryCollectFile hasFS VolatileDBEnv{..} slot st (fileId, fileInfo)
+    | FileInfo.canGC fileInfo slot && not isCurrent
+      -- We don't GC the current file. This is unlikely to happen in practice
+      -- anyway, and it makes things simpler.
+    = do
+      removeFile hasFS $ filePath fileId
+      return st {
+          _currentMap     = Index.delete fileId _currentMap
+        , _currentRevMap  = currentRevMap'
+        , _currentSuccMap = succMap'
+        }
+
+    | otherwise
+    = return st
   where
     InternalState{..} = st
-    canGC             = FileInfo.canGC fileInfo slot
     isCurrent         = fileId == _currentWriteId
-    isCurrentNew      = _currentWriteOffset == 0
     bids              = FileInfo.blockIds fileInfo
     currentRevMap'    = Map.withoutKeys _currentRevMap (Set.fromList bids)
     deletedPairs      =
         mapMaybe (\b -> (b,) . bpreBid . ibBlockInfo <$> Map.lookup b _currentRevMap) bids
     succMap'          = foldl' deleteMapSet _currentSuccMap deletedPairs
-
-getIsMemberImpl :: forall m blockId. (IOLike m, Ord blockId)
-                => VolatileDBEnv m blockId
-                -> STM m (blockId -> Bool)
-getIsMemberImpl = getterSTM $ \st bid -> Map.member bid (_currentRevMap st)
-
-getBlockIdsImpl :: forall m blockId. (IOLike m)
-                => VolatileDBEnv m blockId
-                -> m [blockId]
-getBlockIdsImpl = getter $ Map.keys . _currentRevMap
 
 getSuccessorsImpl :: forall m blockId. (IOLike m, Ord blockId)
                   => VolatileDBEnv m blockId
@@ -485,13 +418,11 @@ getSuccessorsImpl :: forall m blockId. (IOLike m, Ord blockId)
 getSuccessorsImpl = getterSTM $ \st blockId ->
     fromMaybe Set.empty (Map.lookup blockId (_currentSuccMap st))
 
-getPredecessorImpl :: forall m blockId. (IOLike m, Ord blockId, HasCallStack)
-                   => VolatileDBEnv m blockId
-                   -> STM m (blockId -> WithOrigin blockId)
-getPredecessorImpl = getterSTM $ \st blockId ->
-    maybe (error msg) (bpreBid . ibBlockInfo) (Map.lookup blockId (_currentRevMap st))
-  where
-    msg = "precondition violated: block not member of the VolatileDB"
+getBlockInfoImpl :: forall m blockId. (IOLike m, Ord blockId)
+                 => VolatileDBEnv m blockId
+                 -> STM m (blockId -> Maybe (BlockInfo blockId))
+getBlockInfoImpl = getterSTM $ \st blockId ->
+    ibBlockInfo <$> Map.lookup blockId (_currentRevMap st)
 
 getMaxSlotNoImpl :: forall m blockId. IOLike m
                  => VolatileDBEnv m blockId
@@ -506,64 +437,41 @@ getMaxSlotNoImpl = getterSTM _currentMaxSlotNo
 -- This may throw an FsError.
 nextFile :: forall h m blockId. IOLike m
          => HasFS m h
-         -> ErrorHandling VolatileDBError m
          -> VolatileDBEnv m blockId
          -> InternalState blockId h
          -> m (InternalState blockId h)
-nextFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
+nextFile HasFS{..} VolatileDBEnv{..} st@InternalState{..} = do
     hClose _currentWriteHandle
     hndl <- hOpen file (AppendMode MustBeNew)
     return st {
         _currentWriteHandle = hndl
       , _currentWritePath   = file
-      , _currentWriteId     = _nextNewFileId
+      , _currentWriteId     = currentWriteId'
       , _currentWriteOffset = 0
-      , _currentMap         = Index.insert _nextNewFileId FileInfo.empty
+      , _currentMap         = Index.insert currentWriteId' FileInfo.empty
                                 _currentMap
-      , _nextNewFileId      = _nextNewFileId + 1
       }
   where
-    file = filePath _nextNewFileId
-
--- | Truncates a file to 0 and update its state accordingly.
--- This may throw an FsError.
-reOpenFile :: forall m h blockId
-           .  (MonadThrow m)
-           => HasFS m h
-           -> ErrorHandling VolatileDBError m
-           -> VolatileDBEnv m blockId
-           -> InternalState blockId h
-           -> m (InternalState blockId h)
-reOpenFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
-    -- The manual for truncate states that it does not affect offset.
-    -- However the file is open on Append Only, so it should automatically go
-    -- to the end before each write.
-   hTruncate _currentWriteHandle 0
-   return st {
-        _currentMap = Index.insert _currentWriteId FileInfo.empty _currentMap
-      , _currentWriteOffset = 0
-      }
+    currentWriteId' = _currentWriteId + 1
+    file = filePath currentWriteId'
 
 mkInternalStateDB :: forall m blockId e h.
                      ( HasCallStack
                      , MonadThrow m
                      , MonadCatch m
-                     , Ord      blockId
-                     , Typeable blockId
-                     , Show     blockId
+                     , Ord blockId
                      )
                   => HasFS m h
-                  -> ErrorHandling VolatileDBError m
                   -> Parser e m blockId
                   -> Tracer m (TraceEvent e blockId)
                   -> BlocksPerFile
                   -> m (InternalState blockId h)
-mkInternalStateDB hasFS@HasFS{..} err parser tracer maxBlocksPerFile =
-    wrapFsError hasFsErr err $ do
+mkInternalStateDB hasFS@HasFS{..} parser tracer maxBlocksPerFile =
+    wrapFsError $ do
       createDirectoryIfMissing True dbDir
       allFiles <- map toFsPath . Set.toList <$> listDirectory dbDir
       filesWithIds <- logInvalidFiles $ parseAllFds allFiles
-      mkInternalState hasFS err parser tracer maxBlocksPerFile filesWithIds
+      mkInternalState hasFS parser tracer maxBlocksPerFile filesWithIds
   where
     -- | Logs about any invalid 'FsPath' and returns the valid ones.
     logInvalidFiles :: ([(FileId, FsPath)], [FsPath]) -> m [(FileId, FsPath)]
@@ -591,19 +499,16 @@ mkInternalState
   :: forall blockId m h e. (
        HasCallStack
      , MonadCatch m
-     , Ord      blockId
-     , Typeable blockId
-     , Show     blockId
+     , Ord blockId
      )
   => HasFS m h
-  -> ErrorHandling VolatileDBError m
   -> Parser e m blockId
   -> Tracer m (TraceEvent e blockId)
   -> BlocksPerFile
   -> [(FileId, FsPath)]
   -> m (InternalState blockId h)
-mkInternalState hasFS err parser tracer maxBlocksPerFile files =
-    wrapFsError (hasFsErr hasFS) err $ do
+mkInternalState hasFS parser tracer maxBlocksPerFile files =
+    wrapFsError $ do
       (currentMap', currentRevMap', currentSuccMap') <-
         foldM validateFile (Index.empty, Map.empty, Map.empty) files
 
@@ -621,22 +526,19 @@ mkInternalState hasFS err parser tracer maxBlocksPerFile files =
               -> (lastWriteId, currentMap')
 
       let currentWritePath = filePath currentWriteId
-          nextNewFileId    = currentWriteId + 1
 
       currentWriteHandle <- hOpen hasFS currentWritePath (AppendMode AllowExisting)
       -- If 'hGetSize' fails, we should close the opened handle that didn't
       -- make it into the state, otherwise we'd leak it.
-      currentWriteOffset <-
-        EH.onException (hasFsErr hasFS)
-          (hGetSize hasFS currentWriteHandle)
-          (hClose   hasFS currentWriteHandle)
+      currentWriteOffset <- onException
+        (hGetSize hasFS currentWriteHandle)
+        (hClose   hasFS currentWriteHandle)
 
       return InternalState {
           _currentWriteHandle = currentWriteHandle
         , _currentWritePath   = currentWritePath
         , _currentWriteId     = currentWriteId
         , _currentWriteOffset = currentWriteOffset
-        , _nextNewFileId      = nextNewFileId
         , _currentMap         = currentMap''
         , _currentRevMap      = currentRevMap'
         , _currentSuccMap     = currentSuccMap'
@@ -695,12 +597,11 @@ modifyState :: forall blockId m r. (HasCallStack, IOLike m)
                )
             -> m r
 modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
-    (mr, ()) <- generalBracket open close (tryVolDB hasFsErr _dbErr . mutation)
+    (mr, ()) <- generalBracket open close (tryVolDB . mutation)
     case mr of
-      Left  e      -> throwError e
+      Left  e      -> throwM e
       Right (_, r) -> return r
   where
-    ErrorHandling{..} = _dbErr
     HasFS{..}         = hasFS
 
     open :: m (OpenOrClosed blockId h)
@@ -729,25 +630,14 @@ modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
 
     mutation :: OpenOrClosed blockId h
              -> m (InternalState blockId h, r)
-    mutation VolatileDbClosed          = throwError $ UserError ClosedDBError
+    mutation VolatileDbClosed          = throwM $ UserError ClosedDBError
     mutation (VolatileDbOpen oldState) = action hasFS oldState
 
     -- TODO what if this fails?
     closeOpenHandle :: OpenOrClosed blockId h -> m ()
     closeOpenHandle VolatileDbClosed                    = return ()
     closeOpenHandle (VolatileDbOpen InternalState {..}) =
-      wrapFsError hasFsErr _dbErr $ hClose _currentWriteHandle
-
--- | Gets part of the 'InternalState', without modifying it.
-getter :: IOLike m
-       => (forall h. InternalState blockId h -> a)
-       -> VolatileDBEnv m blockId
-       -> m a
-getter fromSt VolatileDBEnv{..} = do
-    mSt <- readMVar _dbInternalState
-    case mSt of
-      VolatileDbClosed  -> EH.throwError _dbErr $ UserError ClosedDBError
-      VolatileDbOpen st -> return $ fromSt st
+      wrapFsError $ hClose _currentWriteHandle
 
 -- | Gets part of the 'InternalState' in 'STM'.
 getterSTM :: forall m blockId a. IOLike m
@@ -757,7 +647,7 @@ getterSTM :: forall m blockId a. IOLike m
 getterSTM fromSt VolatileDBEnv{..} = do
     mSt <- readMVarSTM _dbInternalState
     case mSt of
-      VolatileDbClosed  -> EH.throwError' _dbErrSTM $ UserError ClosedDBError
+      VolatileDbClosed  -> throwM $ UserError ClosedDBError
       VolatileDbOpen st -> return $ fromSt st
 
 -- | For each block found in a parsed file, we insert its 'InternalBlockInfo'
@@ -773,11 +663,7 @@ getterSTM fromSt VolatileDBEnv{..} = do
 --   the given list, or most often, the original input list.
 -- * In case of an error, the error and the offset to truncate to.
 addToReverseIndex
-  :: forall blockId e. (
-       Ord      blockId
-     , Typeable blockId
-     , Show     blockId
-     )
+  :: forall blockId e. Ord blockId
   => FsPath
   -> ReverseIndex blockId
   -> ParsedInfo blockId

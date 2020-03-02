@@ -86,8 +86,8 @@ data NodeKernel m peer blk = NodeKernel {
       -- | The node's mempool
     , getMempool             :: Mempool m blk TicketNo
 
-      -- | The node's static configuration
-    , getNodeConfig          :: TopLevelConfig blk
+      -- | The node's top-level static configuration
+    , getTopLevelConfig      :: TopLevelConfig blk
 
       -- | The fetch client registry, used for the block fetch clients.
     , getFetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
@@ -113,7 +113,13 @@ data BlockProduction m blk = BlockProduction {
       -- which only has the ability to produce random number and access to the
       -- 'NodeState'.
       produceBlock :: forall n. MonadRandom n
-                   => Update n (NodeState blk)
+                   => (forall a. m a -> n a)
+                   -- Lift actions into @n@
+                   --
+                   -- This allows block production to execute arbitrary side
+                   -- effects; this is primarily useful for tests.
+
+                   -> Update n (NodeState blk)
                    -> SlotNo             -- Current slot
                    -> BlockNo            -- Current block number
                    -> ExtLedgerState blk -- Current ledger state
@@ -203,7 +209,7 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
     return NodeKernel
       { getChainDB             = chainDB
       , getMempool             = mempool
-      , getNodeConfig          = cfg
+      , getTopLevelConfig      = cfg
       , getFetchClientRegistry = fetchClientRegistry
       , getNodeCandidates      = varCandidates
       , getTracers             = tracers
@@ -325,8 +331,10 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
     readFetchedBlocks :: STM m (Point blk -> Bool)
     readFetchedBlocks = ChainDB.getIsFetched chainDB
 
+    -- Asynchronous: doesn't wait until the block has been written to disk or
+    -- processed.
     addFetchedBlock :: Point blk -> blk -> m ()
-    addFetchedBlock _pt = ChainDB.addBlock chainDB
+    addFetchedBlock _pt = void . ChainDB.addBlockAsync chainDB
 
     readFetchedMaxSlotNo :: STM m MaxSlotNo
     readFetchedMaxSlotNo = ChainDB.getMaxSlotNo chainDB
@@ -394,12 +402,12 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
                  (At currentSlot) of
             Right ledgerView -> do
               mIsLeader :: Maybe (IsLeader (BlockProtocol blk)) <- lift $
-                runMonadRandom $
+                runMonadRandom $ \_lift' ->
                   checkIsLeader
                     (configConsensus cfg)
                     currentSlot
                     ledgerView
-                    (headerStateChain (headerState extLedger))
+                    (headerStateConsensus (headerState extLedger))
               case mIsLeader of
                 Just p  -> return p
                 Nothing -> do
@@ -434,8 +442,9 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
                               (maxBlockBodySize ledger)
 
         -- Actually produce the block
-        newBlock <- lift $ runMonadRandom $
+        newBlock <- lift $ runMonadRandom $ \lift' ->
           produceBlock
+            lift'
             (updateFromTVar (castStrictTVar varState))
             currentSlot
             bcBlockNo
@@ -448,17 +457,11 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
                   (snapshotMempoolSize mempoolSnapshot)
 
         -- Add the block to the chain DB
-        lift $ ChainDB.addBlock chainDB newBlock
+        result <- lift $ ChainDB.addBlockAsync chainDB newBlock
+        -- Block until we have performed chain selection for the block
+        curTip <- lift $ atomically $ ChainDB.chainSelectionPerformed result
 
         -- Check whether we adopted our block
-        --
-        -- addBlock is synchronous, so when it returns the block we produced
-        -- will have been considered and possibly (probably) adopted
-        --
-        -- TODO: This is wrong. Additional blocks may have been added to the
-        -- chain since.
-        -- <https://github.com/input-output-hk/ouroboros-network/issues/1463>
-        curTip <- lift $ atomically $ ChainDB.getTipPoint chainDB
         when (curTip /= blockPoint newBlock) $ do
           isInvalid <- lift $ atomically $
             ($ blockHash newBlock) . forgetFingerprint <$>

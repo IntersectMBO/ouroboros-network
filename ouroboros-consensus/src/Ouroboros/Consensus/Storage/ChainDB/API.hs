@@ -19,6 +19,10 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
     ChainDB(..)
   , getCurrentTip
   , getTipBlockNo
+    -- * Adding a block
+  , AddBlockPromise(..)
+  , addBlock
+  , addBlock_
     -- * Useful utilities
   , getBlock
   , streamBlocks
@@ -61,12 +65,14 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
 
 import qualified Codec.CBOR.Read as CBOR
 import           Control.Exception (Exception (..))
+import           Control.Monad (void)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.Slot (WithOrigin (..))
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -75,11 +81,11 @@ import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      HeaderHash, MaxSlotNo, Point, Serialised (..), SlotNo,
                      StandardHash, atSlot, genesisPoint)
 import qualified Ouroboros.Network.Block as Network
-import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..))
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
@@ -125,9 +131,12 @@ data ChainDB m blk = ChainDB {
       -- part of the chain if there are other chains available that are
       -- preferred by the consensus algorithm (typically, longer chains).
       --
-      -- This function triggers chain selection (if necessary) and terminates
-      -- after chain selection is done.
-      addBlock           :: blk -> m ()
+      -- This function typically returns immediately, yielding a
+      -- 'AddBlockPromise' which can be used to wait for the result. You can
+      -- use 'addBlock' to add the block synchronously.
+      --
+      -- NOTE: back pressure can be applied when overloaded.
+      addBlockAsync      :: blk -> m (AddBlockPromise m blk)
 
       -- | Get the current chain fragment
       --
@@ -187,7 +196,7 @@ data ChainDB m blk = ChainDB {
       -- | Get the given component(s) of the block at the specified point. If
       -- there is no block at the given point, 'Nothing' is returned.
     , getBlockComponent  :: forall b. BlockComponent (ChainDB m blk) b
-                         -> Point blk -> m (Maybe b)
+                         -> RealPoint blk -> m (Maybe b)
 
       -- | Return membership check function for recent blocks
       --
@@ -319,6 +328,49 @@ instance DB (ChainDB m blk) where
   type DBHeaderHash (ChainDB m blk) = HeaderHash blk
 
 {-------------------------------------------------------------------------------
+  Adding a block
+-------------------------------------------------------------------------------}
+
+data AddBlockPromise m blk = AddBlockPromise
+    { blockProcessed          :: STM m (Point blk)
+      -- ^ Use this 'STM' transaction to wait until the block has been
+      -- processed: the block has been written to disk and chain selection has
+      -- been performed for the block, /unless/ the block's slot is in the
+      -- future.
+      --
+      -- The ChainDB's tip after chain selection is returned. When this tip
+      -- doesn't match the added block, it doesn't necessarily mean the block
+      -- wasn't adopted. We might have adopted a longer chain of which the
+      -- added block is a part, but not the tip.
+      --
+      -- NOTE: When the block's slot is in the future, chain selection for the
+      -- block won't be performed until the block's slot becomes the current
+      -- slot, which might take some time. For that reason, this transaction
+      -- will not wait for chain selection of a block from a future slot. It
+      -- will return the current tip of the ChainDB after writing the block to
+      -- disk. See 'chainSelectionPerformed' in case you /do/ want to wait.
+    , chainSelectionPerformed :: STM m (Point blk)
+      -- ^ Variant of 'blockProcessed' that waits until chain selection has
+      -- been performed for the block, even when the block's slot is in the
+      -- future. This can block for a long time.
+      --
+      -- In case the block's slot was not in the future, this is equivalent to
+      -- 'blockProcessed'.
+    }
+
+-- | Add a block synchronously: wait until the block has been processed (see
+-- 'blockProcessed'). The new tip of the ChainDB is returned.
+addBlock :: IOLike m => ChainDB m blk -> blk -> m (Point blk)
+addBlock chainDB blk = do
+    promise <- addBlockAsync chainDB blk
+    atomically $ blockProcessed promise
+
+-- | Add a block synchronously. Variant of 'addBlock' that doesn't return the
+-- new tip of the ChainDB.
+addBlock_ :: IOLike m => ChainDB m blk -> blk -> m ()
+addBlock_  = void .: addBlock
+
+{-------------------------------------------------------------------------------
   Useful utilities
 -------------------------------------------------------------------------------}
 
@@ -326,7 +378,7 @@ instance DB (ChainDB m blk) where
 -- BlockComponent.
 
 -- | Get block at the specified point (if it exists).
-getBlock :: Monad m => ChainDB m blk -> Point blk -> m (Maybe blk)
+getBlock :: Monad m => ChainDB m blk -> RealPoint blk -> m (Maybe blk)
 getBlock ChainDB { getBlockComponent } pt =
     sequence =<< getBlockComponent GetBlock pt
 
@@ -396,13 +448,13 @@ toChain chainDB = withRegistry $ \registry ->
         IteratorBlockGCed _ ->
           error "block on the current chain was garbage-collected"
 
-fromChain :: forall m blk. Monad m
+fromChain :: forall m blk. IOLike m
           => m (ChainDB m blk)
           -> Chain blk
           -> m (ChainDB m blk)
 fromChain openDB chain = do
     chainDB <- openDB
-    mapM_ (addBlock chainDB) $ Chain.toOldestFirst chain
+    mapM_ (addBlock_ chainDB) $ Chain.toOldestFirst chain
     return chainDB
 
 {-------------------------------------------------------------------------------
@@ -414,13 +466,13 @@ fromChain openDB chain = do
 -- Hint: use @'StreamFromExclusive' 'genesisPoint'@ to start streaming from
 -- Genesis.
 data StreamFrom blk =
-    StreamFromInclusive !(Point blk)
-  | StreamFromExclusive !(Point blk)
+    StreamFromInclusive !(RealPoint blk)
+  | StreamFromExclusive !(Point     blk)
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 data StreamTo blk =
-    StreamToInclusive !(Point blk)
-  | StreamToExclusive !(Point blk)
+    StreamToInclusive !(RealPoint blk)
+  | StreamToExclusive !(RealPoint blk)
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 data Iterator m blk b = Iterator {
@@ -460,7 +512,7 @@ deriving instance (Show blk, Show b, Show (HeaderHash blk))
 
 data UnknownRange blk =
     -- | The block at the given point was not found in the ChainDB.
-    MissingBlock (Point blk)
+    MissingBlock (RealPoint blk)
     -- | The requested range forks off too far in the past, i.e. it doesn't
     -- fit on the tip of the ImmutableDB.
   | ForkTooOld (StreamFrom blk)
@@ -478,24 +530,15 @@ data UnknownRange blk =
 validBounds :: StreamFrom blk -> StreamTo blk -> Bool
 validBounds from to = case from of
 
-  StreamFromInclusive GenesisPoint -> False
+  StreamFromExclusive GenesisPoint -> True
 
-  StreamFromExclusive GenesisPoint -> case to of
-    StreamToInclusive GenesisPoint -> False
-    StreamToExclusive GenesisPoint -> False
-    _                              -> True
-
-  StreamFromInclusive (BlockPoint { atSlot = sfrom }) -> case to of
-    StreamToInclusive GenesisPoint                  -> False
-    StreamToExclusive GenesisPoint                  -> False
-    StreamToInclusive (BlockPoint { atSlot = sto }) -> sfrom <= sto
-    StreamToExclusive (BlockPoint { atSlot = sto }) -> sfrom <  sto
+  StreamFromInclusive (RealPoint sfrom _) -> case to of
+    StreamToInclusive (RealPoint sto _) -> sfrom <= sto
+    StreamToExclusive (RealPoint sto _) -> sfrom <  sto
 
   StreamFromExclusive (BlockPoint { atSlot = sfrom }) -> case to of
-    StreamToInclusive GenesisPoint                  -> False
-    StreamToExclusive GenesisPoint                  -> False
-    StreamToInclusive (BlockPoint { atSlot = sto }) -> sfrom <  sto
-    StreamToExclusive (BlockPoint { atSlot = sto }) -> sfrom <  sto
+    StreamToInclusive (RealPoint sto _) -> sfrom <  sto
+    StreamToExclusive (RealPoint sto _) -> sfrom <  sto
 
 -- | Stream all blocks from the current chain.
 --
@@ -516,14 +559,14 @@ streamAll :: (IOLike m, StandardHash blk)
           -> m (Maybe (Iterator m blk blk))
 streamAll chainDB registry = do
     tip <- atomically $ getTipPoint chainDB
-    if tip == genesisPoint
-      then return Nothing
-      else do
+    case pointToWithOriginRealPoint tip of
+      Origin  -> return Nothing
+      At tip' -> do
         errIt <- streamBlocks
                    chainDB
                    registry
                    (StreamFromExclusive genesisPoint)
-                   (StreamToInclusive tip)
+                   (StreamToInclusive tip')
         case errIt of
           -- TODO this is theoretically possible if the current chain has
           -- changed significantly between getting the tip and asking for the
@@ -584,7 +627,7 @@ getPastLedger chainDB pt = do
 data InvalidBlockReason blk
   = ValidationError !(ExtValidationError blk)
     -- ^ The ledger found the block to be invalid with the following reason.
-  | InChainAfterInvalidBlock !(Point blk) !(ExtValidationError blk)
+  | InChainAfterInvalidBlock !(RealPoint blk) !(ExtValidationError blk)
     -- ^ The block occurs in a chain after block that was found to be invalid
     -- by the ledger. The point and reason corresponding to the original
     -- invalid block are stored.
@@ -749,7 +792,7 @@ data ChainDbFailure =
     --
     -- Thrown when we are not sure in which DB the block /should/ have been.
   | forall blk. (Typeable blk, StandardHash blk) =>
-      ChainDbMissingBlock (Point blk)
+      ChainDbMissingBlock (RealPoint blk)
   deriving (Typeable)
 
 deriving instance Show ChainDbFailure
@@ -843,7 +886,7 @@ instance Eq ChainDbFailure where
   LgrDbFailure a1 == LgrDbFailure a2 = sameFsError a1 a2
   LgrDbFailure {} == _               = False
 
-  ChainDbMissingBlock (a1 :: Point blk) == ChainDbMissingBlock (a2 :: Point blk') =
+  ChainDbMissingBlock (a1 :: RealPoint blk) == ChainDbMissingBlock (a2 :: RealPoint blk') =
     case eqT @blk @blk' of
       Nothing   -> False
       Just Refl -> a1 == a2
@@ -857,19 +900,12 @@ instance Eq ChainDbFailure where
 --
 -- Thrown upon incorrect use: invalid input.
 data ChainDbError =
-    -- | Thrown when requesting the genesis block from the database
-    --
-    -- Although the genesis block has a hash and a point associated with it,
-    -- it does not actually exist other than as a concept; we cannot read and
-    -- return it.
-    NoGenesisBlock
-
     -- | The ChainDB is closed.
     --
     -- This will be thrown when performing any operation on the ChainDB except
     -- for 'isOpen' and 'closeDB'. The 'CallStack' of the operation on the
     -- ChainDB is included in the error.
-  | ClosedDBError CallStack
+    ClosedDBError CallStack
 
     -- | The reader is closed.
     --
@@ -890,9 +926,6 @@ data ChainDbError =
 deriving instance Show ChainDbError
 
 instance Eq ChainDbError where
-  NoGenesisBlock == NoGenesisBlock = True
-  NoGenesisBlock == _              = False
-
   ClosedDBError _ == ClosedDBError _ = True
   ClosedDBError _ == _               = False
 
@@ -915,8 +948,6 @@ instance Exception ChainDbError where
       "The database was used after it was closed because it encountered an unrecoverable error"
 
     -- The user won't see the exceptions below, they are not fatal.
-    NoGenesisBlock {} ->
-      "The non-existing genesis block was requested"
     ClosedReaderError {} ->
       "The block/header reader was used after it was closed"
     InvalidIteratorRange {} ->

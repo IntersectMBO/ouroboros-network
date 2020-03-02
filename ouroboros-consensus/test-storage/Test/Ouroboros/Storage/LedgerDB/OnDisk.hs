@@ -35,6 +35,7 @@ import qualified Codec.Serialise as S
 import           Control.Monad.Except (Except, runExcept, throwError)
 import           Control.Monad.State (StateT (..))
 import qualified Control.Monad.State as State
+import           Control.Tracer (nullTracer)
 import           Data.Bifunctor (first)
 import           Data.Foldable (toList)
 import           Data.Functor.Classes
@@ -49,8 +50,6 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           System.Random (getStdRandom, randomR)
 
-import           Control.Tracer (nullTracer)
-
 import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck as QC
 import qualified Test.QuickCheck.Monadic as QC
@@ -61,15 +60,16 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Cardano.Slotting.Slot (WithOrigin)
+import qualified Cardano.Slotting.Slot as S
+
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Consensus.Storage.LedgerDB.Conf
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
@@ -150,7 +150,7 @@ type LedgerDB'       t = LedgerDB       (LedgerSt t) (BlockRef t)
 type StreamAPI'    m t = StreamAPI    m              (BlockRef t) (BlockVal t)
 type NextBlock'      t = NextBlock                   (BlockRef t) (BlockVal t)
 type BlockInfo'      t = (Apply 'False,     RefOrVal (BlockRef t) (BlockVal t))
-type Tip'            t = Tip                         (BlockRef t)
+type Tip'            t = WithOrigin                  (BlockRef t)
 
 {-------------------------------------------------------------------------------
   Simple instantiation of LUT
@@ -222,11 +222,11 @@ data Cmd (t :: LedgerUnderTest) ss =
     -- chain.
     --
     -- NOTE: Since this is modelling /disk/ corruption, and it is the
-    -- responsibility of the 'ChainStateDB' to /notice/ disk corruption (by
+    -- responsibility of the 'ChainDB' to /notice/ disk corruption (by
     -- catching the appropriate exceptions), we assume that the ledger state
     -- will immediately be re-initialized after a 'Truncate' (which is precisely
-    -- what the 'ChainStateDB' would do, after first doing recovery on the
-    -- underlying 'ChainDB'). This is important because otherwise the model
+    -- what the 'ChainDB' would do, after first doing recovery on the
+    -- underlying 'LedgerDB'). This is important because otherwise the model
     -- would diverge from the real thing.
     --
     -- Since 'Drop' therefore implies a 'Restore', we return the new ledger.
@@ -311,7 +311,7 @@ data SnapState = SnapOk | SnapCorrupted Corruption
   deriving (Show, Eq, Generic, ToExpr)
 
 mockInit :: LedgerDbParams -> Mock t
-mockInit = Mock [] Map.empty TipGen 1
+mockInit = Mock [] Map.empty S.Origin 1
 
 mockCurrent :: LUT t => Mock t -> LedgerSt t
 mockCurrent Mock{..} =
@@ -381,10 +381,10 @@ mockInitLog Mock{..} = go (Map.toDescList mockSnaps)
           (SnapCorrupted Truncate, _) ->
             -- If it's truncated, it will skip it
             MockReadFailure snap $ go snaps
-          (SnapOk, TipGen) ->
+          (SnapOk, S.Origin) ->
             -- Took Snapshot at genesis: definitely useable
             MockFromSnapshot snap mr
-          (SnapOk, Tip r) ->
+          (SnapOk, S.At r) ->
             if onChain r
               then MockFromSnapshot snap mr
               else MockTooRecent    snap mr $ go snaps
@@ -396,8 +396,8 @@ applyMockLog :: forall t. MockInitLog t MockSnap -> Mock t -> Mock t
 applyMockLog = go
   where
     go :: MockInitLog t MockSnap -> Mock t -> Mock t
-    go  MockFromGenesis             mock = mock { mockRestore = TipGen }
-    go (MockFromSnapshot _  tip)    mock = mock { mockRestore = tip    }
+    go  MockFromGenesis             mock = mock { mockRestore = S.Origin }
+    go (MockFromSnapshot _  tip)    mock = mock { mockRestore = tip      }
     go (MockReadFailure  ss   log') mock = go log' $ deleteSnap ss mock
     go (MockTooRecent    ss _ log') mock = go log' $ deleteSnap ss mock
 
@@ -406,8 +406,8 @@ applyMockLog = go
           mockSnaps = Map.alter setIsDeleted ss (mockSnaps mock)
         }
 
-    setIsDeleted :: Maybe (Tip (BlockRef t), SnapState)
-                 -> Maybe (Tip (BlockRef t), SnapState)
+    setIsDeleted :: Maybe (WithOrigin (BlockRef t), SnapState)
+                 -> Maybe (WithOrigin (BlockRef t), SnapState)
     setIsDeleted Nothing         = error "setIsDeleted: impossible"
     setIsDeleted (Just (tip, _)) = Just (tip, SnapCorrupted Delete)
 
@@ -420,9 +420,9 @@ mockMaxRollback Mock{..} = go mockLedger
   where
     go :: MockLedger t -> Word64
     go ((b, _l):bs)
-      | Tip (blockRef b) == mockRestore = 0
-      | otherwise                       = 1 + go bs
-    go []                               = 0
+      | S.At (blockRef b) == mockRestore = 0
+      | otherwise                        = 1 + go bs
+    go []                                = 0
 
 {-------------------------------------------------------------------------------
   Interpreter
@@ -449,11 +449,11 @@ runMock = first Resp .: go
                }
         )
       where
-        blocksAfterAnchor :: Tip (BlockRef t)
+        blocksAfterAnchor :: WithOrigin (BlockRef t)
                           -> [(BlockVal t, LedgerSt t)] -- old to new
                           -> [(BlockVal t, LedgerSt t)]
-        blocksAfterAnchor TipGen  = id
-        blocksAfterAnchor (Tip r) = tail . dropWhile ((/= r) . blockRef . fst)
+        blocksAfterAnchor S.Origin = id
+        blocksAfterAnchor (S.At r) = tail . dropWhile ((/= r) . blockRef . fst)
 
         -- The snapshot that the real implementation will write to disk
         --
@@ -468,7 +468,7 @@ runMock = first Resp .: go
           | n == 0    = mockRestore mock
           | otherwise = case drop (n - 1) blocks of
                           []       -> error "snapped: impossible"
-                          (b, _):_ -> Tip (blockRef b)
+                          (b, _):_ -> S.At (blockRef b)
           where
             blocks = blocksAfterAnchor (mockRestore mock) (reverse (mockLedger mock))
             n      = ledgerDbCountToPrune (mockParams mock) (length blocks)
@@ -516,7 +516,7 @@ data DbEnv m = forall fh. DbEnv {
 
 -- | Standalone ledger DB
 --
--- Under normal circumstances the ledger DB is maintained by the 'ChainStateDB',
+-- Under normal circumstances the ledger DB is maintained by the 'ChainDB',
 -- and supported by the 'ChainDB'. In order to test it stand-alone we need to
 -- mock these components.
 data StandaloneDB m t = DB {
@@ -531,7 +531,7 @@ data StandaloneDB m t = DB {
 
       -- | Current chain and corresponding ledger state
       --
-      -- We can think of this as mocking the ChainStateDB, which must keep
+      -- We can think of this as mocking the ChainDB, which must keep
       -- track of a current chain and keep the ledger DB in sync with it.
       --
       -- Invariant: all references @r@ here must be present in 'dbBlocks'.
@@ -591,15 +591,15 @@ dbStreamAPI DB{..} = StreamAPI {..}
 
     -- Ignore requests to start streaming from blocks not on the current chain
     unknownBlock :: Tip' t -> [BlockRef t] -> Bool
-    unknownBlock TipGen  _  = False
-    unknownBlock (Tip r) rs = r `L.notElem` rs
+    unknownBlock S.Origin _  = False
+    unknownBlock (S.At r) rs = r `L.notElem` rs
 
     -- Blocks to stream
     --
     -- Precondition: tip must be on the current chain
     blocksToStream :: Tip' t -> [BlockRef t] -> [BlockRef t]
-    blocksToStream TipGen  = id
-    blocksToStream (Tip r) = tail . dropWhile (/= r)
+    blocksToStream S.Origin = id
+    blocksToStream (S.At r) = tail . dropWhile (/= r)
 
     getNext :: StrictTVar m [BlockRef t] -> m (NextBlock' t)
     getNext toStream = do
@@ -665,15 +665,15 @@ runDB standalone@DB{..} cmd =
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
         return $ Restored (fromInitLog initLog, ledgerDbCurrent db)
     go hasFS (Corrupt c ss) =
-        EH.catchError (hasFsErr hasFS)
+        catch
           (case c of
              Delete   -> Unit <$> deleteSnapshot   hasFS ss
              Truncate -> Unit <$> truncateSnapshot hasFS ss)
-          (\_ -> return $ Unit()) -- ignore any errors during corruption
+          (\(_ :: FsError) -> return $ Unit()) -- ignore any errors during corruption
     go hasFS (Drop n) = do
-        -- During recovery the ChainStateDB would ask the ChainDB to recover
+        -- During recovery the ChainDB would ask the ChainDB to recover
         -- and pick a new current chain; only once that is done would it
-        -- compute a new ledger state. During this process the ChainStateDB
+        -- compute a new ledger state. During this process the ChainDB
         -- would effectively be closed.
         atomically $ do
             (rs, _db) <- readTVar dbState
@@ -901,7 +901,7 @@ instance Traversable t => Rank2.Traversable (At t) where
       lift f (QSM.Reference x) = QSM.Reference <$> f x
 
 instance LUT t => ToExpr (Model t Concrete)
-instance ToExpr a => ToExpr (Tip a)
+instance ToExpr a => ToExpr (WithOrigin a)
 instance ToExpr SecurityParam
 instance ToExpr LedgerDbParams
 
@@ -982,7 +982,7 @@ propCmds :: LUT t
 propCmds lgrDbParams cmds = do
     fs <- QC.run $ uncheckedNewTVarM MockFS.empty
     let dbEnv :: DbEnv IO
-        dbEnv = DbEnv (simHasFS EH.exceptions fs) lgrDbParams
+        dbEnv = DbEnv (simHasFS fs) lgrDbParams
     db <- QC.run $ initStandaloneDB dbEnv
     let sm' = sm lgrDbParams db
     (hist, _model, res) <- runCommands sm' cmds

@@ -58,6 +58,8 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import qualified Cardano.Slotting.Slot as S
+
 import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB, getHeader)
 import           Ouroboros.Consensus.BlockchainTime.Mock
                      (settableBlockchainTime)
@@ -69,8 +71,7 @@ import           Ouroboros.Network.Block (BlockNo (..), HasHeader (..),
                      HeaderHash, SlotNo (..))
 import qualified Ouroboros.Network.Block as Block
 
-import           Ouroboros.Consensus.Storage.Common hiding (Tip (..))
-import qualified Ouroboros.Consensus.Storage.Common as C
+import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath)
@@ -86,7 +87,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
                      (epochFileParser)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -569,7 +569,7 @@ generateCmd Model {..} = At <$> frequency
     epochSize' :: SlotNo
     epochSize' = SlotNo $ unEpochSize fixedEpochSize
 
-    empty = dbmTip dbModel == C.TipGen
+    empty = dbmTip dbModel == S.Origin
 
     noBlocks = all isNothing (dbmRegular dbModel)
 
@@ -730,13 +730,13 @@ precondition Model {..} (At (CmdErr { _cmd = cmd })) =
       AppendEBB      _ _ b -> fitsOnTip b
       DeleteAfter tip      -> tip `elem` NE.toList (tips dbModel)
       Corruption corr ->
-        forall (corruptionFiles corr) (`elem` getDBFiles dbModel)
+        forall
+          (corruptionFiles (getCorruptions corr))
+          (`elem` getDBFiles dbModel)
       ReopenInThePast _ curSlot ->
         0 .<= curSlot .&& curSlot .<= lastSlot
       _ -> Top
   where
-    corruptionFiles (MkCorruption corrs) = map snd $ NE.toList corrs
-
     fitsOnTip :: TestBlock -> Logic
     fitsOnTip b = case dbmTipBlock dbModel of
       Nothing    -> blockPrevHash b .== Block.GenesisHash
@@ -777,12 +777,12 @@ semantics :: ImmutableDBEnv h
 semantics env@ImmutableDBEnv {..} (At cmdErr) =
     At . fmap (reference . Opaque) . Resp <$> case opaque <$> cmdErr of
 
-      CmdErr Nothing       cmd its -> tryDB $
+      CmdErr Nothing       cmd its -> tryImmDB $
         run env (semanticsCorruption hasFS) its cmd
 
       CmdErr (Just errors) cmd its -> do
         tipBefore <- getTip db
-        res       <- withErrors varErrors errors $ tryDB $
+        res       <- withErrors varErrors errors $ tryImmDB $
           run env (semanticsCorruption hasFS) its cmd
         case res of
           -- If the command resulted in a 'UserError', we didn't even get the
@@ -810,9 +810,7 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
             -- Note that we might have created an iterator, make sure to close
             -- it as well
   where
-    tryDB = tryImmDB EH.monadCatch EH.monadCatch
-
-    truncateAndReopen cmd its tipBefore = tryDB $ do
+    truncateAndReopen cmd its tipBefore = tryImmDB $ do
       -- Close all open iterators as we will perform truncation
       mapM_ iteratorClose (unWithEq <$> its)
       -- Close the database in case no errors occurred and it wasn't
@@ -1169,7 +1167,7 @@ instance ToExpr TestBody
 instance ToExpr TestBlock
 instance ToExpr ImmDB.BlockOrEBB
 instance (ToExpr a, ToExpr hash) => ToExpr (ImmDB.TipInfo hash a)
-instance ToExpr r => ToExpr (C.Tip r)
+instance ToExpr r => ToExpr (S.WithOrigin r)
 instance ToExpr b => ToExpr (BinaryInfo b)
 instance ToExpr hash => ToExpr (InSlot hash)
 instance ToExpr (DBModel Hash)
@@ -1240,13 +1238,13 @@ test cacheConfig cmds = do
     (tracer, getTrace) <- QC.run $ recordingTracerIORef
     registry           <- QC.run $ unsafeNewRegistry
 
-    let hasFS  = mkSimErrorHasFS EH.monadCatch fsVar varErrors
+    let hasFS  = mkSimErrorHasFS fsVar varErrors
         parser = epochFileParser hasFS (const <$> decode) isEBB
           getBinaryInfo testBlockIsValid
         btime  = settableBlockchainTime varCurSlot
 
     (db, internal) <- QC.run $ openDBInternal registry hasFS
-      EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
+      (fixedSizeEpochInfo fixedEpochSize) testHashInfo
       ValidateMostRecentEpoch parser tracer cacheConfig btime
 
     let env = ImmutableDBEnv

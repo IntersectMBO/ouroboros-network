@@ -11,7 +11,7 @@
 -- overall node to node protocol, as a collection of mini-protocols.
 --
 module Ouroboros.Network.NodeToNode (
-    NodeToNodeProtocols(..)
+    nodeToNodeProtocols
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
   , DictVersion (..)
@@ -73,19 +73,16 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
-import           Codec.SerialiseTerm
 import qualified Network.Socket as Socket
-
-import           Network.Mux hiding (MiniProtocolLimits(..))
-import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
-import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Connections.Types (Connections)
 import qualified Ouroboros.Network.Connections.Concurrent as Connection
+import           Ouroboros.Network.Driver (TraceSendRecv(..))
+import           Ouroboros.Network.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import qualified Ouroboros.Network.Protocol.Handshake.Version as V
@@ -107,20 +104,10 @@ import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 import           Ouroboros.Network.Tracers
 
--- | An index type used with the mux to enumerate all the mini-protocols that
+-- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-node protocol.
 --
-data NodeToNodeProtocols = ChainSyncWithHeadersPtcl
-                         | BlockFetchPtcl
-                         | TxSubmissionPtcl
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
--- These protocol numbers end up in the wire format so it is vital that they
--- are stable, even as they are upgraded. So we use custom Enum instances here.
--- This allows us to retire old versions and add new, which may leave some
--- holes in the numbering space.
-
--- | These are the actual wire format protocol numbers.
+-- This function specifies the wire format protocol numbers.
 --
 -- The application specific protocol numbers start from 2.  The
 -- @'MiniProtocolNum' 0@ is reserved for the 'Handshake' protocol, while
@@ -135,16 +122,39 @@ data NodeToNodeProtocols = ChainSyncWithHeadersPtcl
 -- is helpful to allow a single shared implementation of tools that can analyse
 -- both protocols, e.g.  wireshark plugins.
 --
-instance ProtocolEnum NodeToNodeProtocols where
-  fromProtocolEnum ChainSyncWithHeadersPtcl = MiniProtocolNum 2
-  fromProtocolEnum BlockFetchPtcl           = MiniProtocolNum 3
-  fromProtocolEnum TxSubmissionPtcl         = MiniProtocolNum 4
+nodeToNodeProtocols
+  :: RunMiniProtocol appType bytes m a b -- ^ chainSync
+  -> RunMiniProtocol appType bytes m a b -- ^ blockFetch
+  -> RunMiniProtocol appType bytes m a b -- ^ txSubmission
+  -> OuroborosApplication appType bytes m a b
+nodeToNodeProtocols chainSync
+                    blockFetch
+                    txSubmission =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = chainSync
+      }
+    , MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 3,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = blockFetch
+      }
+    , MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 4,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = txSubmission
+      }
+    ]
 
-instance MiniProtocolLimits NodeToNodeProtocols where
   -- TODO: provide sensible limits
   -- https://github.com/input-output-hk/ouroboros-network/issues/575
-  maximumMessageSize  _ = 0xffffffff
-  maximumIngressQueue _ = 0xffffffff
+maximumMiniProtocolLimits :: MiniProtocolLimits
+maximumMiniProtocolLimits =
+    MiniProtocolLimits {
+      maximumIngressQueue = 0xffffffff
+    }
 
 -- | Enumeration of node to node protocol versions.
 --
@@ -192,7 +202,7 @@ withConnections
   => ErrorPolicies
   -> Snocket IO fd addr
   -> (forall provenance . request provenance -> SomeVersionedApplication
-       NodeToNodeProtocols NodeToNodeVersion DictVersion addr provenance)
+       NodeToNodeVersion DictVersion addr provenance)
   -> (Connections (ConnectionId addr) fd request
        (Connection.Reject RejectConnection)
        (Connection.Accept (ConnectionHandle IO))
@@ -205,7 +215,7 @@ withConnections errorPolicies sn mkApp =
   -- type checker.
   mkConnectionData
     :: request provenance
-    -> ConnectionData NodeToNodeProtocols NodeToNodeVersion provenance addr
+    -> ConnectionData NodeToNodeVersion provenance addr
   mkConnectionData request = case mkApp request of
     SomeVersionedResponderApp serverTracers versions -> ConnectionDataRemote
       serverTracers
@@ -255,7 +265,6 @@ remoteNetworkErrorPolicy = ErrorPolicies {
                         MuxDecodeError          -> Just theyBuggyOrEvil
                         MuxIngressQueueOverRun  -> Just theyBuggyOrEvil
                         MuxInitiatorOnly        -> Just theyBuggyOrEvil
-                        MuxTooLargeMessage      -> Just theyBuggyOrEvil
 
                         -- in case of bearer closed / or IOException we suspend
                         -- the peer for a short time

@@ -48,10 +48,9 @@ import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           GHC.Stack
 
-import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
-
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import           Ouroboros.Network.Point (WithOrigin (..), fromWithOrigin)
@@ -90,6 +89,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
+import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
@@ -101,7 +101,6 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
 import           Test.ThreadNet.TxGen
@@ -344,6 +343,8 @@ runThreadNetwork ThreadNetworkArgs
 
     mkTestOutput vertexInfos
   where
+    _ = keepRedundantConstraint (Proxy @(Show (LedgerView (BlockProtocol blk))))
+
     coreNodeIds :: [CoreNodeId]
     coreNodeIds = enumCoreNodes numCoreNodes
 
@@ -452,7 +453,7 @@ runThreadNetwork ThreadNetworkArgs
     forkTxProducer btime cfg runMonadRandomDict getExtLedger mempool =
       void $ onSlotChange btime $ \curSlotNo -> do
         ledger <- atomically $ ledgerState <$> getExtLedger
-        txs    <- runMonadRandom runMonadRandomDict $
+        txs    <- runMonadRandom runMonadRandomDict $ \_lift' ->
           testGenTxs numCoreNodes curSlotNo cfg ledger
         void $ addTxs mempool txs
 
@@ -490,7 +491,7 @@ runThreadNetwork ThreadNetworkArgs
                 pure (mSlot, fromWithOrigin (firstBlockNo (Proxy @blk)) bno, pointHash p)
               when (prevSlot < At ebbSlotNo) $ do
                 let ebb = forgeEBB cfg ebbSlotNo ebbBlockNo prevHash
-                ChainDB.addBlock chainDB ebb
+                ChainDB.addBlock_ chainDB ebb
 
           go (succ epoch)
 
@@ -499,9 +500,9 @@ runThreadNetwork ThreadNetworkArgs
            -> TopLevelConfig blk
            -> ExtLedgerState blk
            -> EpochInfo m
-           -> Tracer m (Point blk, ExtValidationError blk)
+           -> Tracer m (RealPoint blk, ExtValidationError blk)
               -- ^ invalid block tracer
-           -> Tracer m (Point blk, BlockNo)
+           -> Tracer m (RealPoint blk, BlockNo)
               -- ^ added block tracer
            -> NodeDBs (StrictTVar m MockFS)
            -> ChainDbArgs m blk
@@ -511,48 +512,45 @@ runThreadNetwork ThreadNetworkArgs
       invalidTracer addTracer
       nodeDBs = ChainDbArgs
         { -- Decoders
-          cdbDecodeHash       = nodeDecodeHeaderHash (Proxy @blk)
-        , cdbDecodeBlock      = nodeDecodeBlock       cfg
-        , cdbDecodeHeader     = nodeDecodeHeader      cfg SerialisedToDisk
-        , cdbDecodeLedger     = nodeDecodeLedgerState cfg
-        , cdbDecodeChainState = nodeDecodeChainState (Proxy @blk) cfg
-        , cdbDecodeTipInfo    = nodeDecodeTipInfo    (Proxy @blk)
+          cdbDecodeHash           = nodeDecodeHeaderHash     (Proxy @blk)
+        , cdbDecodeBlock          = nodeDecodeBlock          cfg
+        , cdbDecodeHeader         = nodeDecodeHeader         cfg SerialisedToDisk
+        , cdbDecodeLedger         = nodeDecodeLedgerState    cfg
+        , cdbDecodeConsensusState = nodeDecodeConsensusState (Proxy @blk) cfg
+        , cdbDecodeTipInfo        = nodeDecodeTipInfo        (Proxy @blk)
           -- Encoders
-        , cdbEncodeHash       = nodeEncodeHeaderHash (Proxy @blk)
-        , cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
-        , cdbEncodeHeader     = nodeEncodeHeader        cfg SerialisedToDisk
-        , cdbEncodeLedger     = nodeEncodeLedgerState   cfg
-        , cdbEncodeChainState = nodeEncodeChainState (Proxy @blk) cfg
-        , cdbEncodeTipInfo    = nodeEncodeTipInfo    (Proxy @blk)
-          -- Error handling
-        , cdbErrImmDb         = EH.monadCatch
-        , cdbErrVolDb         = EH.monadCatch
-        , cdbErrVolDbSTM      = EH.throwSTM
+        , cdbEncodeHash           = nodeEncodeHeaderHash     (Proxy @blk)
+        , cdbEncodeBlock          = nodeEncodeBlockWithInfo  cfg
+        , cdbEncodeHeader         = nodeEncodeHeader         cfg SerialisedToDisk
+        , cdbEncodeLedger         = nodeEncodeLedgerState    cfg
+        , cdbEncodeConsensusState = nodeEncodeConsensusState (Proxy @blk) cfg
+        , cdbEncodeTipInfo        = nodeEncodeTipInfo        (Proxy @blk)
           -- HasFS instances
-        , cdbHasFSImmDb       = simHasFS EH.monadCatch (nodeDBsImm nodeDBs)
-        , cdbHasFSVolDb       = simHasFS EH.monadCatch (nodeDBsVol nodeDBs)
-        , cdbHasFSLgrDB       = simHasFS EH.monadCatch (nodeDBsLgr nodeDBs)
+        , cdbHasFSImmDb           = simHasFS (nodeDBsImm nodeDBs)
+        , cdbHasFSVolDb           = simHasFS (nodeDBsVol nodeDBs)
+        , cdbHasFSLgrDB           = simHasFS (nodeDBsLgr nodeDBs)
           -- Policy
-        , cdbImmValidation    = ImmDB.ValidateAllEpochs
-        , cdbVolValidation    = VolDB.ValidateAll
-        , cdbBlocksPerFile    = VolDB.mkBlocksPerFile 4
-        , cdbParamsLgrDB      = LgrDB.ledgerDbDefaultParams (configSecurityParam cfg)
-        , cdbDiskPolicy       = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
+        , cdbImmValidation        = ImmDB.ValidateAllEpochs
+        , cdbVolValidation        = VolDB.ValidateAll
+        , cdbBlocksPerFile        = VolDB.mkBlocksPerFile 4
+        , cdbParamsLgrDB          = LgrDB.ledgerDbDefaultParams (configSecurityParam cfg)
+        , cdbDiskPolicy           = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
           -- Integration
-        , cdbNodeConfig       = cfg
-        , cdbEpochInfo        = epochInfo
-        , cdbHashInfo         = nodeHashInfo (Proxy @blk)
-        , cdbIsEBB            = nodeIsEBB
-        , cdbCheckIntegrity   = nodeCheckIntegrity cfg
-        , cdbGenesis          = return initLedger
-        , cdbBlockchainTime   = btime
-        , cdbAddHdrEnv        = nodeAddHeaderEnvelope (Proxy @blk)
-        , cdbImmDbCacheConfig = Index.CacheConfig 2 60
+        , cdbTopLevelConfig       = cfg
+        , cdbEpochInfo            = epochInfo
+        , cdbHashInfo             = nodeHashInfo (Proxy @blk)
+        , cdbIsEBB                = nodeIsEBB
+        , cdbCheckIntegrity       = nodeCheckIntegrity cfg
+        , cdbGenesis              = return initLedger
+        , cdbBlockchainTime       = btime
+        , cdbAddHdrEnv            = nodeAddHeaderEnvelope (Proxy @blk)
+        , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
         -- Misc
-        , cdbTracer           = instrumentationTracer <> nullDebugTracer
-        , cdbTraceLedger      = nullDebugTracer
-        , cdbRegistry         = registry
-        , cdbGcDelay          = 0
+        , cdbTracer               = instrumentationTracer <> nullDebugTracer
+        , cdbTraceLedger          = nullDebugTracer
+        , cdbRegistry             = registry
+        , cdbGcDelay              = 0
+        , cdbBlocksToAddSize      = 2
         }
       where
         -- prop_general relies on this tracer
@@ -586,7 +584,7 @@ runThreadNetwork ThreadNetworkArgs
 
       let blockProduction :: BlockProduction m blk
           blockProduction = BlockProduction {
-              produceBlock       = nodeForgeBlock pInfoConfig
+              produceBlock       = \_lift' -> nodeForgeBlock pInfoConfig
             , runMonadRandomDict = runMonadRandomWithTVar varRNG
             }
 
@@ -930,11 +928,11 @@ data NodeInfo blk db ev = NodeInfo
 -- The @ev@ type parameter is instantiated by this module at types for
 -- 'Tracer's and lists: actions for accumulating and lists as accumulations.
 data NodeEvents blk ev = NodeEvents
-  { nodeEventsAdds        :: ev (SlotNo, Point blk, BlockNo)
+  { nodeEventsAdds        :: ev (SlotNo, RealPoint blk, BlockNo)
     -- ^ every 'AddedBlockToVolDB' excluding EBBs
   , nodeEventsForges      :: ev (TraceForgeEvent blk (GenTx blk))
     -- ^ every 'TraceForgeEvent'
-  , nodeEventsInvalids    :: ev (Point blk, ExtValidationError blk)
+  , nodeEventsInvalids    :: ev (RealPoint blk, ExtValidationError blk)
     -- ^ the point of every 'ChainDB.InvalidBlock' event
   , nodeEventsTipBlockNos :: ev (SlotNo, WithOrigin BlockNo)
     -- ^ 'ChainDB.getTipBlockNo' for each node at the onset of each slot
@@ -990,11 +988,11 @@ newNodeInfo = do
 -------------------------------------------------------------------------------}
 
 data NodeOutput blk = NodeOutput
-  { nodeOutputAdds       :: Map SlotNo (Set (Point blk, BlockNo))
+  { nodeOutputAdds       :: Map SlotNo (Set (RealPoint blk, BlockNo))
   , nodeOutputFinalChain :: Chain blk
   , nodeOutputNodeDBs    :: NodeDBs MockFS
   , nodeOutputForges     :: Map SlotNo blk
-  , nodeOutputInvalids   :: Map (Point blk) [ExtValidationError blk]
+  , nodeOutputInvalids   :: Map (RealPoint blk) [ExtValidationError blk]
   }
 
 data TestOutput blk = TestOutput
@@ -1059,7 +1057,6 @@ nullDebugTracer = nullTracer `asTypeOf` showTracing debugTracer
 nullDebugTracers ::
      ( Monad m
      , Show peer
-     , Show (LedgerView (BlockProtocol blk))
      , LedgerSupportsProtocol blk
      , TracingConstraints blk
      )
@@ -1073,7 +1070,6 @@ nullDebugProtocolTracers ::
      , TracingConstraints blk
      , Show peer
      , Show localPeer
-     , Show failure
      )
   => ProtocolTracers m peer localPeer blk failure
 nullDebugProtocolTracers =

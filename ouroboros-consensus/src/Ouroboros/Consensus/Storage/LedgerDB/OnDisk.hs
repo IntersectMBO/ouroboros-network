@@ -45,11 +45,12 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 import           Text.Read (readMaybe)
 
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      readIncremental)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
@@ -74,7 +75,7 @@ data NextBlock r b = NoMoreBlocks | NextBlock (r, b)
 data StreamAPI m r b = StreamAPI {
       -- | Start streaming after the specified block
       streamAfter :: forall a. HasCallStack
-        => Tip r
+        => WithOrigin r
         -- Reference to the block corresponding to the snapshot we found
         -- (or 'TipGen' if we didn't find any)
 
@@ -91,8 +92,8 @@ data StreamAPI m r b = StreamAPI {
 -- | Stream all blocks
 streamAll :: forall m r b e a. (Monad m, HasCallStack)
           => StreamAPI m r b
-          -> Tip r                -- ^ Starting point for streaming
-          -> (Tip r -> e)         -- ^ Error when tip not found
+          -> WithOrigin r         -- ^ Starting point for streaming
+          -> (WithOrigin r -> e)  -- ^ Error when tip not found
           -> a                    -- ^ Starting point when tip /is/ found
           -> ((r, b) -> a -> m a) -- ^ Update function for each block
           -> ExceptT e m a
@@ -124,7 +125,7 @@ data InitLog r =
     InitFromGenesis
 
     -- | Used a snapshot corresponding to the specified tip
-  | InitFromSnapshot DiskSnapshot (Tip r)
+  | InitFromSnapshot DiskSnapshot (WithOrigin r)
 
     -- | Initialization skipped a snapshot
     --
@@ -141,7 +142,7 @@ data InitLog r =
 -- we found on disk (the latter primarily for testing/monitoring purposes).
 --
 -- We do /not/ catch any exceptions thrown during streaming; should any be
--- thrown, it is the responsibility of the 'ChainStateDB' to catch these
+-- thrown, it is the responsibility of the 'ChainDB' to catch these
 -- and trigger (further) validation. We only discard snapshots if
 --
 -- * We cannot deserialise them, or
@@ -156,7 +157,7 @@ data InitLog r =
 -- obtained in this way will (hopefully) share much of their memory footprint
 -- with their predecessors.
 initLedgerDB :: forall m h l r b e. (IOLike m, HasCallStack)
-             => Tracer m (TraceReplayEvent r () r)
+             => Tracer m (TraceReplayEvent r ())
              -> Tracer m (TraceEvent r)
              -> HasFS m h
              -> (forall s. Decoder s l)
@@ -210,7 +211,7 @@ data InitFailure r =
     InitFailureRead ReadIncrementalErr
 
     -- | This snapshot is too recent (ahead of the tip of the chain)
-  | InitFailureTooRecent (Tip r)
+  | InitFailureTooRecent (WithOrigin r)
   deriving (Show, Eq, Generic)
 
 -- | Attempt to initialize the ledger DB from the given snapshot
@@ -219,7 +220,7 @@ data InitFailure r =
 -- and an error is returned. This should not throw any errors itself (ignoring
 -- unexpected exceptions such as asynchronous exceptions, of course).
 initFromSnapshot :: forall m h l r b e. (IOLike m, HasCallStack)
-                 => Tracer m (TraceReplayEvent r () r)
+                 => Tracer m (TraceReplayEvent r ())
                  -> HasFS m h
                  -> (forall s. Decoder s l)
                  -> (forall s. Decoder s r)
@@ -227,7 +228,7 @@ initFromSnapshot :: forall m h l r b e. (IOLike m, HasCallStack)
                  -> LedgerDbConf m l r b e
                  -> StreamAPI m r b
                  -> DiskSnapshot
-                 -> ExceptT (InitFailure r) m (Tip r, LedgerDB l r, Word64)
+                 -> ExceptT (InitFailure r) m (WithOrigin r, LedgerDB l r, Word64)
 initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
     initSS <- withExceptT InitFailureRead $
                 readSnapshot hasFS decLedger decRef ss
@@ -237,7 +238,7 @@ initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
 initStartingWith :: forall m l r b e. (Monad m, HasCallStack)
-                 => Tracer m (TraceReplayEvent r () r)
+                 => Tracer m (TraceReplayEvent r ())
                  -> LedgerDbConf m l r b e
                  -> StreamAPI m r b
                  -> LedgerDB l r
@@ -250,7 +251,7 @@ initStartingWith tracer conf@LedgerDbConf{..} streamAPI initDb = do
   where
     push :: (r, b) -> (LedgerDB l r, Word64) -> m (LedgerDB l r, Word64)
     push (r, b) !(!db, !replayed) = do
-        traceWith tracer (ReplayedBlock r r ())
+        traceWith tracer (ReplayedBlock r ())
         (, replayed + 1) <$> ledgerDbReapply conf (Val r b) db
 
 {-------------------------------------------------------------------------------
@@ -274,7 +275,7 @@ takeSnapshot :: forall m l r h. MonadThrow m
              -> HasFS m h
              -> (l -> Encoding)
              -> (r -> Encoding)
-             -> LedgerDB l r -> m (DiskSnapshot, Tip r)
+             -> LedgerDB l r -> m (DiskSnapshot, WithOrigin r)
 takeSnapshot tracer hasFS encLedger encRef db = do
     ss <- nextAvailable <$> listSnapshots hasFS
     writeSnapshot hasFS encLedger encRef ss oldest
@@ -369,7 +370,7 @@ snapshotFromPath = fmap DiskSnapshot . readMaybe
 data TraceEvent r
   = InvalidSnapshot DiskSnapshot (InitFailure r)
     -- ^ An on disk snapshot was skipped because it was invalid.
-  | TookSnapshot DiskSnapshot (Tip r)
+  | TookSnapshot DiskSnapshot (WithOrigin r)
     -- ^ A snapshot was written to disk.
   | DeletedSnapshot DiskSnapshot
     -- ^ An old or invalid on-disk snapshot was deleted
@@ -380,33 +381,29 @@ data TraceEvent r
 -- process takes a while, we trace events to inform higher layers of our
 -- progress.
 --
--- The @blockInfo@ parameter is meant to be filled in by a higher layer,
--- i.e., the ChainDB, which has more information about a block, e.g., the
--- 'EpochNo' of the block.
---
--- The @replayTo@ parameter is also meant to be filled in by a higher layer,
+-- The @replayTo@ parameter is meant to be filled in by a higher layer,
 -- i.e., the ChainDB.
-data TraceReplayEvent r replayTo blockInfo
+data TraceReplayEvent r replayTo
   = ReplayFromGenesis replayTo
     -- ^ There were no LedgerDB snapshots on disk, so we're replaying all
     -- blocks starting from Genesis against the initial ledger.
     --
     -- The @replayTo@ parameter corresponds to the block at the tip of the
     -- ImmutableDB, i.e., the last block to replay.
-  | ReplayFromSnapshot DiskSnapshot (Tip r) replayTo
+  | ReplayFromSnapshot DiskSnapshot (WithOrigin r) replayTo
     -- ^ There was a LedgerDB snapshot on disk corresponding to the given tip.
     -- We're replaying more recent blocks against it.
     --
     -- The @replayTo@ parameter corresponds to the block at the tip of the
     -- ImmutableDB, i.e., the last block to replay.
-  | ReplayedBlock r blockInfo replayTo
+  | ReplayedBlock r replayTo
     -- ^ We replayed the given block (reference) on the genesis snapshot
     -- during the initialisation of the LedgerDB.
     --
     -- The @blockInfo@ parameter corresponds replayed block and the @replayTo@
     -- parameter corresponds to the block at the tip of the ImmutableDB, i.e.,
     -- the last block to replay.
-  deriving (Generic, Eq, Show)
+  deriving (Generic, Eq, Show, Functor, Foldable, Traversable)
 
 TH.deriveBifunctor     ''TraceReplayEvent
 TH.deriveBifoldable    ''TraceReplayEvent

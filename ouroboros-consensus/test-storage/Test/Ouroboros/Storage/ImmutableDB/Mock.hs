@@ -12,16 +12,13 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.Common (BlockComponent, EpochSize)
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 
 openDBMock  :: forall m hash. (IOLike m, Eq hash, Show hash)
-            => ErrorHandling ImmutableDBError m
-            -> EpochSize
+            => EpochSize
             -> m (DBModel hash, ImmutableDB hash m)
-openDBMock err epochSize = do
+openDBMock epochSize = do
     dbVar <- uncheckedNewTVarM dbModel
     return (dbModel, immDB dbVar)
   where
@@ -39,7 +36,6 @@ openDBMock err epochSize = do
         , appendBlock            = updateE_ ...: appendBlockModel
         , appendEBB              = updateE_ ...: appendEBBModel
         , stream                 = updateEE ...: \_rr bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
-        , immutableDBErr         = err
         }
       where
         iterator :: BlockComponent (ImmutableDB hash m) b
@@ -79,5 +75,5 @@ openDBMock err epochSize = do
 
         queryE :: (DBModel hash -> Either ImmutableDBError a) -> m a
         queryE f = query f >>= \case
-          Left  e -> EH.throwError err e
+          Left  e -> throwM e
           Right a -> return a

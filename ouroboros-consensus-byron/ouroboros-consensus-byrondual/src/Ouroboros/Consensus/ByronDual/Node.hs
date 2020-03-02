@@ -46,7 +46,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
-import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
+import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -73,7 +73,7 @@ protocolInfoDualByron :: ByronSpecGenesis
 protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            configConsensus = PBftNodeConfig {
+            configConsensus = PBftConfig {
                 pbftParams    = params
               , pbftIsLeader  = case mLeader of
                                   Nothing  -> PBftIsNotALeader
@@ -96,7 +96,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
                , dualLedgerStateAux    = initAbstractState
                , dualLedgerStateBridge = initBridge
                }
-           , headerState = genesisHeaderState CS.empty
+           , headerState = genesisHeaderState S.empty
            }
       }
   where
@@ -199,7 +199,7 @@ instance RunNode DualByronBlock where
       tip <- atomically $ ChainDB.getTipPoint chainDB
       case tip of
         BlockPoint {} -> return () -- Chain is not empty
-        GenesisPoint  -> ChainDB.addBlock chainDB genesisEBB
+        GenesisPoint  -> ChainDB.addBlock_ chainDB genesisEBB
           where
             genesisEBB :: DualByronBlock
             genesisEBB = DualBlock {
@@ -250,32 +250,32 @@ instance RunNode DualByronBlock where
   nodeToExitReason      = \_ -> nodeToExitReason pb
 
   -- Encoders
-  nodeEncodeBlockWithInfo = const $ encodeDualBlockWithInfo encodeByronBlockWithInfo
-  nodeEncodeHeader        = \cfg version -> nodeEncodeHeader        (dualTopLevelConfigMain cfg) version . dualHeaderMain
-  nodeEncodeWrappedHeader = \cfg version -> nodeEncodeWrappedHeader (dualTopLevelConfigMain cfg) version . dualWrappedMain
-  nodeEncodeLedgerState   = const $ encodeDualLedgerState   encodeByronLedgerState
-  nodeEncodeApplyTxError  = const $ encodeDualGenTxErr      encodeByronApplyTxError
-  nodeEncodeHeaderHash    = const $ encodeByronHeaderHash
-  nodeEncodeGenTx         = encodeDualGenTx   encodeByronGenTx
-  nodeEncodeGenTxId       = encodeDualGenTxId encodeByronGenTxId
-  nodeEncodeChainState    = \_proxy _cfg -> encodeByronChainState
-  nodeEncodeQuery         = \case {}
-  nodeEncodeResult        = \case {}
+  nodeEncodeBlockWithInfo  = const $ encodeDualBlockWithInfo encodeByronBlockWithInfo
+  nodeEncodeHeader         = \cfg version -> nodeEncodeHeader        (dualTopLevelConfigMain cfg) version . dualHeaderMain
+  nodeEncodeWrappedHeader  = \cfg version -> nodeEncodeWrappedHeader (dualTopLevelConfigMain cfg) version . dualWrappedMain
+  nodeEncodeLedgerState    = const $ encodeDualLedgerState   encodeByronLedgerState
+  nodeEncodeApplyTxError   = const $ encodeDualGenTxErr      encodeByronApplyTxError
+  nodeEncodeHeaderHash     = const $ encodeByronHeaderHash
+  nodeEncodeGenTx          = encodeDualGenTx   encodeByronGenTx
+  nodeEncodeGenTxId        = encodeDualGenTxId encodeByronGenTxId
+  nodeEncodeConsensusState = \_proxy _cfg -> encodeByronConsensusState
+  nodeEncodeQuery          = \case {}
+  nodeEncodeResult         = \case {}
 
   -- Decoders
-  nodeDecodeBlock         = decodeDualBlock  . decodeByronBlock   . extractEpochSlots
-  nodeDecodeHeader        = \cfg -> fmap (DualHeader .) . nodeDecodeHeader        (dualTopLevelConfigMain cfg)
-  nodeDecodeWrappedHeader = \cfg -> fmap rewrapMain     . nodeDecodeWrappedHeader (dualTopLevelConfigMain cfg)
-  nodeDecodeGenTx         = decodeDualGenTx   decodeByronGenTx
-  nodeDecodeGenTxId       = decodeDualGenTxId decodeByronGenTxId
-  nodeDecodeHeaderHash    = const $ decodeByronHeaderHash
-  nodeDecodeLedgerState   = const $ decodeDualLedgerState decodeByronLedgerState
-  nodeDecodeApplyTxError  = const $ decodeDualGenTxErr    decodeByronApplyTxError
-  nodeDecodeChainState    = \_proxy cfg ->
-                               let k = configSecurityParam cfg
-                               in decodeByronChainState k
-  nodeDecodeQuery         = error "DualByron.nodeDecodeQuery"
-  nodeDecodeResult        = \case {}
+  nodeDecodeBlock          = decodeDualBlock  . decodeByronBlock   . extractEpochSlots
+  nodeDecodeHeader         = \cfg -> fmap (DualHeader .) . nodeDecodeHeader        (dualTopLevelConfigMain cfg)
+  nodeDecodeWrappedHeader  = \cfg -> fmap rewrapMain     . nodeDecodeWrappedHeader (dualTopLevelConfigMain cfg)
+  nodeDecodeGenTx          = decodeDualGenTx   decodeByronGenTx
+  nodeDecodeGenTxId        = decodeDualGenTxId decodeByronGenTxId
+  nodeDecodeHeaderHash     = const $ decodeByronHeaderHash
+  nodeDecodeLedgerState    = const $ decodeDualLedgerState decodeByronLedgerState
+  nodeDecodeApplyTxError   = const $ decodeDualGenTxErr    decodeByronApplyTxError
+  nodeDecodeConsensusState = \_proxy cfg ->
+                                let k = configSecurityParam cfg
+                                in decodeByronConsensusState k
+  nodeDecodeQuery          = error "DualByron.nodeDecodeQuery"
+  nodeDecodeResult         = \case {}
 
 extractEpochSlots :: TopLevelConfig DualByronBlock -> EpochSlots
 extractEpochSlots = Byron.extractEpochSlots . dualTopLevelConfigMain

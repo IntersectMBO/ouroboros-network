@@ -23,6 +23,7 @@ import           Data.List hiding (inits)
 import           Data.Maybe (catMaybes)
 import           Data.Semigroup (Semigroup (..))
 import           Data.Tuple (swap)
+import           Data.Time (DiffTime)
 import           GHC.Generics (Generic)
 
 import           Control.Monad.Class.MonadFork
@@ -32,13 +33,11 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Driver
 
-import           Network.Mux.Time
-
+import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
+import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Block
 
 -- TODO Should this be impored here

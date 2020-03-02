@@ -339,7 +339,7 @@ implSyncWithLedger mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} = do
       traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
     return snapshot
 
-implGetSnapshot :: (IOLike m, ApplyTx blk)
+implGetSnapshot :: IOLike m
                 => MempoolEnv m blk
                 -> STM m (MempoolSnapshot blk TicketNo)
 implGetSnapshot MempoolEnv{mpEnvStateVar} =
@@ -370,7 +370,7 @@ implGetCapacity = pure . mpEnvCapacity
 
 -- | \( O(1) \). Return the number of transactions in the Mempool paired with
 -- their total size in bytes.
-getMempoolSize :: (IOLike m, ApplyTx blk)
+getMempoolSize :: IOLike m
                => MempoolEnv m blk
                -> STM m MempoolSize
 getMempoolSize MempoolEnv{mpEnvStateVar} =
@@ -380,8 +380,7 @@ getMempoolSize MempoolEnv{mpEnvStateVar} =
   MempoolSnapshot Implementation
 -------------------------------------------------------------------------------}
 
-implSnapshotFromIS :: ApplyTx blk
-                   => InternalState blk -> MempoolSnapshot blk TicketNo
+implSnapshotFromIS :: InternalState blk -> MempoolSnapshot blk TicketNo
 implSnapshotFromIS is = MempoolSnapshot {
       snapshotTxs         = implSnapshotGetTxs         is
     , snapshotTxsAfter    = implSnapshotGetTxsAfter    is
@@ -411,8 +410,7 @@ implSnapshotGetTx :: InternalState blk
                   -> Maybe (GenTx blk)
 implSnapshotGetTx IS{isTxs} tn = isTxs `TxSeq.lookupByTicketNo` tn
 
-implSnapshotGetMempoolSize :: ApplyTx blk
-                           => InternalState blk
+implSnapshotGetMempoolSize :: InternalState blk
                            -> MempoolSize
 implSnapshotGetMempoolSize = TxSeq.toMempoolSize . isTxs
 

@@ -27,7 +27,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Server
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (AcquireFailure (..))
 
-import           Ouroboros.Consensus.Block (getHeader)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -43,7 +43,8 @@ import           Ouroboros.Consensus.Util.IOLike
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor as LedgerCursor
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
-                     (LedgerDbParams (..), LgrDB, LgrDbArgs (..), mkLgrDB)
+                     (LedgerDbParams (..), LgrDB, LgrDBConf, LgrDbArgs (..),
+                     mkLgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.LedgerDB.Conf (LedgerDbConf (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
@@ -189,9 +190,9 @@ initLgrDB k chain = do
           atomically $ LgrDB.setCurrent lgrDB ledgerDB'
           return lgrDB
   where
-    blockMapping :: Map (Point TestBlock) TestBlock
+    blockMapping :: Map (RealPoint TestBlock) TestBlock
     blockMapping = Map.fromList
-      [(blockPoint b, b) | b <- Chain.toOldestFirst chain]
+      [(blockRealPoint b, b) | b <- Chain.toOldestFirst chain]
 
     params :: LedgerDbParams
     params = LedgerDbParams
@@ -201,6 +202,7 @@ initLgrDB k chain = do
 
     cfg = testCfg k
 
+    conf :: LgrDBConf m TestBlock
     conf = LedgerDbConf
       { ldbConfGenesis = return testInitExtLedger
       , ldbConfApply   = runExcept .:
@@ -216,26 +218,26 @@ initLgrDB k chain = do
     genesisLedgerDB = LgrDB.ledgerDbFromGenesis params testInitExtLedger
 
     args = LgrDbArgs
-      { lgrNodeConfig       = cfg
-      , lgrHasFS            = error "lgrHasFS"
-      , lgrDecodeLedger     = error "lgrDecodeLedger"
-      , lgrDecodeChainState = error "lgrDecodeChainState"
-      , lgrDecodeHash       = error "lgrDecodeHash"
-      , lgrDecodeTipInfo    = error "lgrDecodeTipInfo"
-      , lgrEncodeLedger     = error "lgrEncodeLedger"
-      , lgrEncodeChainState = error "lgrEncodeChainState"
-      , lgrEncodeHash       = error "lgrEncodeHash"
-      , lgrEncodeTipInfo    = error "lgrEncodeTipInfo"
-      , lgrParams           = params
-      , lgrDiskPolicy       = error "lgrDiskPolicy"
-      , lgrGenesis          = return testInitExtLedger
-      , lgrTracer           = nullTracer
-      , lgrTraceLedger      = nullTracer
+      { lgrTopLevelConfig       = cfg
+      , lgrHasFS                = error "lgrHasFS"
+      , lgrDecodeLedger         = error "lgrDecodeLedger"
+      , lgrDecodeConsensusState = error "lgrDecodeConsensusState"
+      , lgrDecodeHash           = error "lgrDecodeHash"
+      , lgrDecodeTipInfo        = error "lgrDecodeTipInfo"
+      , lgrEncodeLedger         = error "lgrEncodeLedger"
+      , lgrEncodeConsensusState = error "lgrEncodeConsensusState"
+      , lgrEncodeHash           = error "lgrEncodeHash"
+      , lgrEncodeTipInfo        = error "lgrEncodeTipInfo"
+      , lgrParams               = params
+      , lgrDiskPolicy           = error "lgrDiskPolicy"
+      , lgrGenesis              = return testInitExtLedger
+      , lgrTracer               = nullTracer
+      , lgrTraceLedger          = nullTracer
       }
 
 testCfg :: SecurityParam -> TopLevelConfig TestBlock
 testCfg securityParam = TopLevelConfig {
-      configConsensus = BftNodeConfig
+      configConsensus = BftConfig
         { bftParams   = BftParams { bftSecurityParam = securityParam
                                   , bftNumNodes      = numCoreNodes
                                   }

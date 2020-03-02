@@ -30,8 +30,8 @@ import qualified System.Win32.Types as Win32
 import qualified System.Win32.File  as Win32 (closeHandle)
 import System.Win32.Async.ErrCode
 
--- | New type wrapper which holds 'HANDLE' of the I/O completion port.
--- <https://docs.microsoft.com/en-us/windows/win32/fileio/createiocompletionport>
+-- | New type wrapper which holds 'HANDLE' of an [I/O completion
+-- port](https://docs.microsoft.com/en-us/windows/win32/fileio/createiocompletionport).
 --
 newtype IOCompletionPort = IOCompletionPort HANDLE
   deriving Show
@@ -39,7 +39,7 @@ newtype IOCompletionPort = IOCompletionPort HANDLE
 closeIOCompletionPort :: IOCompletionPort -> IO ()
 closeIOCompletionPort (IOCompletionPort iocp) = Win32.closeHandle iocp
 
--- | Windows documentation:
+-- | [msdn documentation](https://docs.microsoft.com/en-us/windows/win32/fileio/createiocompletionport)
 --
 createIOCompletionPort
     :: DWORD  -- ^ number of concurrent threads
@@ -57,7 +57,9 @@ foreign import ccall unsafe "windows.h CreateIoCompletionPort"
     c_CreateIoCompletionPort :: HANDLE -> HANDLE -> Ptr () -> DWORD -> IO HANDLE
 
 -- | Associate with I/O completion port.  This can be used multiple times on
--- a file descriptor.
+-- a file descriptor.  A 'HANDLE' must be opend with
+-- 'System.Win32.fILE_FLAG_OVERLAPPED' flag for this call to succeed; 'Socket's
+-- do not require special initialisation.
 --
 associateWithIOCompletionPort :: Either HANDLE Socket
                               -> IOCompletionPort

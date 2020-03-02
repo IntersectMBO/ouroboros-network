@@ -49,7 +49,6 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
                      (ledgerDbDefaultParams)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..), mkBlocksPerFile)
 
@@ -245,54 +244,50 @@ mkArgs :: IOLike m
 mkArgs cfg initLedger tracer registry hashInfo
        (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
     { -- Decoders
-      cdbDecodeHash       = decode
-    , cdbDecodeBlock      = const <$> decode
-    , cdbDecodeHeader     = const <$> decode
-    , cdbDecodeLedger     = decode
-    , cdbDecodeChainState = decode
-    , cdbDecodeTipInfo    = decode
+      cdbDecodeHash           = decode
+    , cdbDecodeBlock          = const <$> decode
+    , cdbDecodeHeader         = const <$> decode
+    , cdbDecodeLedger         = decode
+    , cdbDecodeConsensusState = decode
+    , cdbDecodeTipInfo        = decode
 
       -- Encoders
-    , cdbEncodeHash       = encode
-    , cdbEncodeBlock      = addDummyBinaryInfo . encode
-    , cdbEncodeHeader     = encode
-    , cdbEncodeLedger     = encode
-    , cdbEncodeChainState = encode
-    , cdbEncodeTipInfo    = encode
-
-      -- Error handling
-    , cdbErrImmDb         = EH.monadCatch
-    , cdbErrVolDb         = EH.monadCatch
-    , cdbErrVolDbSTM      = EH.throwSTM
+    , cdbEncodeHash           = encode
+    , cdbEncodeBlock          = addDummyBinaryInfo . encode
+    , cdbEncodeHeader         = encode
+    , cdbEncodeLedger         = encode
+    , cdbEncodeConsensusState = encode
+    , cdbEncodeTipInfo        = encode
 
       -- HasFS instances
-    , cdbHasFSImmDb       = simHasFS EH.monadCatch immDbFsVar
-    , cdbHasFSVolDb       = simHasFS EH.monadCatch volDbFsVar
-    , cdbHasFSLgrDB       = simHasFS EH.monadCatch lgrDbFsVar
+    , cdbHasFSImmDb           = simHasFS immDbFsVar
+    , cdbHasFSVolDb           = simHasFS volDbFsVar
+    , cdbHasFSLgrDB           = simHasFS lgrDbFsVar
 
       -- Policy
-    , cdbImmValidation    = ValidateAllEpochs
-    , cdbVolValidation    = ValidateAll
-    , cdbBlocksPerFile    = mkBlocksPerFile 4
-    , cdbParamsLgrDB      = ledgerDbDefaultParams (configSecurityParam cfg)
-    , cdbDiskPolicy       = defaultDiskPolicy (configSecurityParam cfg)
+    , cdbImmValidation        = ValidateAllEpochs
+    , cdbVolValidation        = ValidateAll
+    , cdbBlocksPerFile        = mkBlocksPerFile 4
+    , cdbParamsLgrDB          = ledgerDbDefaultParams (configSecurityParam cfg)
+    , cdbDiskPolicy           = defaultDiskPolicy (configSecurityParam cfg)
 
       -- Integration
-    , cdbNodeConfig       = cfg
-    , cdbEpochInfo        = fixedSizeEpochInfo fixedEpochSize
-    , cdbHashInfo         = hashInfo
-    , cdbIsEBB            = const Nothing
-    , cdbCheckIntegrity   = const True
-    , cdbBlockchainTime   = fixedBlockchainTime maxBound
-    , cdbGenesis          = return initLedger
-    , cdbAddHdrEnv        = \_ _ -> id
-    , cdbImmDbCacheConfig = Index.CacheConfig 2 60
+    , cdbTopLevelConfig       = cfg
+    , cdbEpochInfo            = fixedSizeEpochInfo fixedEpochSize
+    , cdbHashInfo             = hashInfo
+    , cdbIsEBB                = const Nothing
+    , cdbCheckIntegrity       = const True
+    , cdbBlockchainTime       = fixedBlockchainTime maxBound
+    , cdbGenesis              = return initLedger
+    , cdbAddHdrEnv            = \_ _ -> id
+    , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
 
     -- Misc
-    , cdbTracer           = tracer
-    , cdbTraceLedger      = nullTracer
-    , cdbRegistry         = registry
-    , cdbGcDelay          = 0
+    , cdbTracer               = tracer
+    , cdbTraceLedger          = nullTracer
+    , cdbRegistry             = registry
+    , cdbGcDelay              = 0
+    , cdbBlocksToAddSize      = 2
     }
   where
     addDummyBinaryInfo :: CBOR.Encoding -> BinaryInfo CBOR.Encoding

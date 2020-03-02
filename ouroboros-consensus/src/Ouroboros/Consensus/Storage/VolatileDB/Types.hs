@@ -43,6 +43,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 
 -- | The maximum number of blocks to store per file.
 newtype BlocksPerFile = BlocksPerFile { unBlocksPerFile :: Word32 }
+    deriving (Generic, Show)
 
 -- | Create a 'BlocksPerFile'.
 --
@@ -158,7 +159,7 @@ data BlockInfo blockId = BlockInfo {
     , bisEBB        :: !IsEBB
     , bheaderOffset :: !Word16
     , bheaderSize   :: !Word16
-    } deriving (Show, Generic, NoUnexpectedThunks)
+    } deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 -- | The internal information the db keeps for each block.
 data InternalBlockInfo blockId = InternalBlockInfo {

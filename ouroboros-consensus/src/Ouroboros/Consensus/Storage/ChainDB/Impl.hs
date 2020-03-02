@@ -91,10 +91,10 @@ openDBInternal args launchBgTasks = do
 
     volDB   <- VolDB.openDB argsVolDb
     traceWith tracer $ TraceOpenEvent OpenedVolDB
-    lgrReplayTracer <- LgrDB.decorateReplayTracer
-      (Args.cdbEpochInfo args)
-      immDbTipPoint
-      (contramap TraceLedgerReplayEvent tracer)
+    let lgrReplayTracer =
+          LgrDB.decorateReplayTracer
+            immDbTipPoint
+            (contramap TraceLedgerReplayEvent tracer)
     (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
                             lgrReplayTracer
                             immDB
@@ -109,13 +109,13 @@ openDBInternal args launchBgTasks = do
       volDB
       lgrDB
       tracer
-      (Args.cdbNodeConfig args)
+      (Args.cdbTopLevelConfig args)
       varInvalid
       curSlot
 
     let chain  = ChainSel.clChain  chainAndLedger
         ledger = ChainSel.clLedger chainAndLedger
-        cfg    = Args.cdbNodeConfig args
+        cfg    = Args.cdbTopLevelConfig args
 
     atomically $ LgrDB.setCurrent lgrDB ledger
     varChain           <- newTVarM chain
@@ -126,6 +126,7 @@ openDBInternal args launchBgTasks = do
     varCopyLock        <- newMVar  ()
     varKillBgThreads   <- newTVarM $ return ()
     varFutureBlocks    <- newTVarM Map.empty
+    blocksToAdd        <- newBlocksToAdd (Args.cdbBlocksToAddSize args)
 
     let env = CDB { cdbImmDB           = immDB
                   , cdbVolDB           = volDB
@@ -133,7 +134,7 @@ openDBInternal args launchBgTasks = do
                   , cdbChain           = varChain
                   , cdbIterators       = varIterators
                   , cdbReaders         = varReaders
-                  , cdbNodeConfig      = cfg
+                  , cdbTopLevelConfig  = cfg
                   , cdbInvalid         = varInvalid
                   , cdbNextIteratorKey = varNextIteratorKey
                   , cdbNextReaderKey   = varNextReaderKey
@@ -147,11 +148,12 @@ openDBInternal args launchBgTasks = do
                   , cdbIsEBB           = toIsEBB . isJust . Args.cdbIsEBB args
                   , cdbCheckIntegrity  = Args.cdbCheckIntegrity args
                   , cdbBlockchainTime  = Args.cdbBlockchainTime args
+                  , cdbBlocksToAdd     = blocksToAdd
                   , cdbFutureBlocks    = varFutureBlocks
                   }
     h <- fmap CDBHandle $ newTVarM $ ChainDbOpen env
     let chainDB = ChainDB
-          { addBlock           = getEnv1    h ChainSel.addBlock
+          { addBlockAsync      = getEnv1    h ChainSel.addBlockAsync
           , getCurrentChain    = getEnvSTM  h Query.getCurrentChain
           , getCurrentLedger   = getEnvSTM  h Query.getCurrentLedger
           , getTipBlock        = getEnv     h Query.getTipBlock
@@ -176,6 +178,7 @@ openDBInternal args launchBgTasks = do
           , intGarbageCollect          = getEnv1 h Background.garbageCollect
           , intUpdateLedgerSnapshots   = getEnv  h Background.updateLedgerSnapshots
           , intScheduledChainSelection = getEnv1 h Background.scheduledChainSelection
+          , intAddBlockRunner          = getEnv  h Background.addBlockRunner
           , intKillBgThreads           = varKillBgThreads
           }
 

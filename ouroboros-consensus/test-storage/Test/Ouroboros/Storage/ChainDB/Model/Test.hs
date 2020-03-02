@@ -1,6 +1,7 @@
 {-# LANGUAGE DerivingStrategies    #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 
@@ -9,12 +10,14 @@ module Test.Ouroboros.Storage.ChainDB.Model.Test (
     tests
   ) where
 
+import           GHC.Stack
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader (..), genesisPoint)
+import           Ouroboros.Network.Block (pattern BlockPoint,
+                     pattern GenesisPoint, HasHeader (..), Point, genesisPoint)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (..))
 
@@ -97,8 +100,13 @@ prop_between_currentChain bt =
     blocks   = treeToBlocks bt
     model    = addBlocks blocks
     from     = StreamFromExclusive genesisPoint
-    to       = StreamToInclusive $ M.tipPoint model
+    to       = StreamToInclusive $ cantBeGenesis (M.tipPoint model)
     secParam = configSecurityParam singleNodeTestConfig
+
+-- | Workaround when we know the DB can't be empty, but the types don't
+cantBeGenesis :: HasCallStack => Point blk -> RealPoint blk
+cantBeGenesis GenesisPoint     = error "cantBeGenesis: what did I tell you!?"
+cantBeGenesis (BlockPoint s h) = RealPoint s h
 
 {-------------------------------------------------------------------------------
   Orphan instances

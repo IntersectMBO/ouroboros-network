@@ -53,7 +53,7 @@ data LedgerDbConf m l r b e = LedgerDbConf {
       --
       -- NOTE: The ledger DB will only ask the 'ChainDB' for blocks it knows
       -- must exist. If the 'ChainDB' is unable to fulfill the request, data
-      -- corruption must have happened and the 'ChainStateDB' should trigger
+      -- corruption must have happened and the 'ChainDB' should trigger
       -- validation mode.
     , ldbConfResolve :: r -> m b
     }

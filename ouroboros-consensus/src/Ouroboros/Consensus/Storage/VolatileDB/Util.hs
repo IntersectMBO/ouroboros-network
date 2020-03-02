@@ -4,13 +4,11 @@
 module Ouroboros.Consensus.Storage.VolatileDB.Util
     ( -- * FileId utilities
       parseFd
-    , unsafeParseFd
     , parseAllFds
     , filePath
     , findLastFd
 
       -- * Exception handling
-    , fromEither
     , wrapFsError
     , tryVolDB
 
@@ -23,7 +21,6 @@ import           Control.Monad
 import           Data.Bifunctor (first)
 import           Data.List (sortOn)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
@@ -35,10 +32,8 @@ import           Ouroboros.Network.Point (WithOrigin)
 import           Ouroboros.Consensus.Util (lastMaybe)
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling
-                     (ErrorHandling (..))
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Consensus.Storage.VolatileDB.Types
+import           Ouroboros.Consensus.Util.IOLike
 
 {------------------------------------------------------------------------------
   FileId utilities
@@ -74,29 +69,12 @@ findLastFd = first (fmap fst . lastMaybe) . parseAllFds
 filePath :: FileId -> FsPath
 filePath fd = mkFsPath ["blocks-" ++ show fd ++ ".dat"]
 
-unsafeParseFd :: FsPath -> FileId
-unsafeParseFd file = fromMaybe
-    (error $ "Could not parse filename " <> show file)
-    (parseFd file)
-
 {------------------------------------------------------------------------------
   Exception handling
 ------------------------------------------------------------------------------}
 
-fromEither :: Monad m
-           => ErrorHandling e m
-           -> Either e a
-           -> m a
-fromEither err = \case
-    Left e -> EH.throwError err e
-    Right a -> return a
-
-wrapFsError :: Monad m
-            => ErrorHandling FsError         m
-            -> ErrorHandling VolatileDBError m
-            -> m a -> m a
-wrapFsError fsErr volDBErr action =
-    tryVolDB fsErr volDBErr action >>= either (throwError volDBErr) return
+wrapFsError :: MonadCatch m => m a -> m a
+wrapFsError action = tryVolDB action >>= either throwM return
 
 -- | Execute an action and catch the 'VolatileDBError' and 'FsError' that can
 -- be thrown by it, and wrap the 'FsError' in an 'VolatileDBError' using the
@@ -105,11 +83,10 @@ wrapFsError fsErr volDBErr action =
 -- This should be used whenever you want to run an action on the VolatileDB
 -- and catch the 'VolatileDBError' and the 'FsError' (wrapped in the former)
 -- it may thrown.
-tryVolDB :: forall m a. Monad m
-         => ErrorHandling FsError         m
-         -> ErrorHandling VolatileDBError m
-         -> m a -> m (Either VolatileDBError a)
-tryVolDB fsErr volDBErr = fmap squash . EH.try fsErr . EH.try volDBErr
+tryVolDB :: forall m a. MonadCatch m
+         => m a
+         -> m (Either VolatileDBError a)
+tryVolDB = fmap squash . try . try
   where
     fromFS = UnexpectedError . FileSystemError
 

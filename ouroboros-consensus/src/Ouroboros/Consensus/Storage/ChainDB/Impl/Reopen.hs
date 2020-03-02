@@ -127,10 +127,10 @@ reopen (CDBHandle varState) launchBgTasks = do
         VolDB.reopen cdbVolDB
         traceWith cdbTracer $ TraceOpenEvent OpenedVolDB
 
-        lgrReplayTracer <- LgrDB.decorateReplayTracer
-          cdbEpochInfo
-          immDbTipPoint
-          (contramap TraceLedgerReplayEvent cdbTracer)
+        let lgrReplayTracer =
+              LgrDB.decorateReplayTracer
+                immDbTipPoint
+                (contramap TraceLedgerReplayEvent cdbTracer)
         replayed <- LgrDB.reopen cdbLgrDB cdbImmDB lgrReplayTracer
         traceWith cdbTracer $ TraceOpenEvent OpenedLgrDB
 
@@ -140,7 +140,7 @@ reopen (CDBHandle varState) launchBgTasks = do
            cdbVolDB
            cdbLgrDB
            cdbTracer
-           cdbNodeConfig
+           cdbTopLevelConfig
            cdbInvalid
            curSlot
 

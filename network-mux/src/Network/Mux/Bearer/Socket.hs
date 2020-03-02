@@ -21,8 +21,7 @@ import qualified Network.Socket as Socket
 #if !defined(mingw32_HOST_OS)
 import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 #else
-import           Data.Foldable (traverse_)
-import qualified System.Win32.Async as Win32.Async
+import qualified System.Win32.Async.Socket.ByteString.Lazy as Win32.Async
 #endif
 
 import qualified Network.Mux as Mx
@@ -36,9 +35,10 @@ import qualified Network.Mux.Time as Mx
 -- |
 -- Create @'MuxBearer'@ from a socket.
 --
--- On Windows 'System.Win32.Async` operations are used to read and write.  This
--- means that the socket must be associated with the I/O completion port with
--- 'System.Win32.Async.associateWithIOCompletionPort'.
+-- On Windows 'System.Win32.Async` operations are used to read and write from
+-- a socket.  This means that the socket must be associated with the I/O
+-- completion port with
+-- 'System.Win32.Async.IOManager.associateWithIOCompletionPort'.
 --
 -- Note: 'IOException's thrown by 'sendAll' and 'recv' are wrapped in
 -- 'MuxError'.
@@ -74,7 +74,7 @@ socketAsMuxBearer tracer sd =
       recvLen' waitingOnNxtHeader l bufs = do
           traceWith tracer $ Mx.MuxTraceRecvStart $ fromIntegral l
 #if defined(mingw32_HOST_OS)
-          buf <- BL.fromStrict <$> Win32.Async.recv sd (fromIntegral l)
+          buf <- Win32.Async.recv sd (fromIntegral l)
 #else
           buf <- Socket.recv sd l
 #endif
@@ -102,8 +102,7 @@ socketAsMuxBearer tracer sd =
               buf  = Mx.encodeMuxSDU sdu'
           traceWith tracer $ Mx.MuxTraceSendStart sdu'
 #if defined(mingw32_HOST_OS)
-          -- TODO: issue #1430: vectored I/O on Windows
-          traverse_ (Win32.Async.sendAll sd) (BL.toChunks buf)
+          Win32.Async.sendAll sd buf
 #else
           Socket.sendAll sd buf
 #endif

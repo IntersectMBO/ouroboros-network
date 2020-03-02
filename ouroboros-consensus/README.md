@@ -33,5 +33,5 @@ Related packages:
   This is used to run the Byron protocol tests in lockstep with the spec to
   detect any discrepancies.
 
-* `../ouroboros-consensus/cardano`: the consensus instantiated to the ledgers
+* `../ouroboros-consensus-cardano`: the consensus instantiated to the ledgers
   the `cardano-node` currently supports.

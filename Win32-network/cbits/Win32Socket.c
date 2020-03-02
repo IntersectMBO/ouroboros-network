@@ -11,7 +11,7 @@ typedef struct _WSA_PER_IO_DATA {
 } WSA_PER_IO_DATA;
 
 DllExport
-void HsSendBuf(SOCKET s, CHAR *buf, ULONG len, HsStablePtr userData)
+void HsSendBuf(SOCKET s, WSABUF *lpBuffers, DWORD dwBufferCount, HsStablePtr userData)
 {
   int res;
   WSA_PER_IO_DATA *perIoDataPtr;
@@ -26,11 +26,7 @@ void HsSendBuf(SOCKET s, CHAR *buf, ULONG len, HsStablePtr userData)
   perIoDataPtr->WSAOverlapped.OffsetHigh = 0;
   perIoDataPtr->UserData = userData;
 
-  WSABUF wsaBuf;
-  wsaBuf.len = len;
-  wsaBuf.buf = buf;
-
-  res = WSASend(s, &wsaBuf, 1, NULL, 0, &(perIoDataPtr->WSAOverlapped), NULL);
+  res = WSASend(s, lpBuffers, dwBufferCount, NULL, 0, &(perIoDataPtr->WSAOverlapped), NULL);
   if (!res) {
     DWORD error;
     error = WSAGetLastError();

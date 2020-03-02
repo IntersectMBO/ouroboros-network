@@ -1,55 +1,56 @@
-{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Ouroboros.Storage.VolatileDB.Mock (openDBMock) where
 
-import           Control.Monad.State (StateT)
-
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.STM
 
-import           Ouroboros.Consensus.Storage.Common (castBlockComponent)
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ThrowCantCatch)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 
 import           Test.Ouroboros.Storage.VolatileDB.Model
 
-openDBMock  :: forall m blockId. IOLike m
-            => (Ord blockId)
-            => ThrowCantCatch VolatileDBError (STM m)
-            -> Int
+openDBMock  :: forall m blockId. (IOLike m, Ord blockId)
+            => BlocksPerFile
             -> m (DBModel blockId, VolatileDB blockId m)
-openDBMock err maxNumPerFile = do
+openDBMock maxBlocksPerFile = do
     dbVar <- uncheckedNewTVarM dbModel
     return (dbModel, db dbVar)
   where
-    dbModel = initDBModel maxNumPerFile
+    dbModel = initDBModel maxBlocksPerFile
 
     db :: StrictTVar m (DBModel blockId) -> VolatileDB blockId m
     db dbVar = VolatileDB {
-          closeDB           = wrapModel' dbVar  $  closeModel
-        , isOpenDB          = wrapModel' dbVar  $  isOpenModel
-        , reOpenDB          = wrapModel' dbVar  $  reOpenModel
-        , getBlockComponent = wrapModel' dbVar .: (getBlockComponentModel err' . castBlockComponent)
-        , putBlock          = wrapModel' dbVar .:  putBlockModel          err'
-        , garbageCollect    = wrapModel' dbVar  .  garbageCollectModel    err'
-        , getIsMember       = wrapModel  dbVar  $  getIsMemberModel       err'
-        , getBlockIds       = wrapModel' dbVar  $  getBlockIdsModel       err'
-        , getSuccessors     = wrapModel  dbVar  $  getSuccessorsModel     err'
-        , getPredecessor    = wrapModel  dbVar  $  getPredecessorModel    err'
-        , getMaxSlotNo      = wrapModel  dbVar  $  getMaxSlotNoModel      err'
+          closeDB           = update_   $ closeModel
+        , isOpenDB          = query     $ isOpenModel
+        , reOpenDB          = update_   $ reOpenModel
+        , getBlockComponent = queryE   .: getBlockComponentModel
+        , putBlock          = updateE_ .: putBlockModel
+        , garbageCollect    = updateE_  . garbageCollectModel
+        , getSuccessors     = querySTME $ getSuccessorsModel
+        , getBlockInfo      = querySTME $ getBlockInfoModel
+        , getMaxSlotNo      = querySTME $ getMaxSlotNoModel
         }
+      where
+        update_ :: (DBModel blockId -> DBModel blockId) -> m ()
+        update_ f = atomically $ modifyTVar dbVar f
 
-    err' :: ThrowCantCatch VolatileDBError
-                           (StateT (DBModel blockId) (STM m))
-    err' = EH.liftThrowT err
+        updateE_ :: (DBModel blockId -> Either VolatileDBError (DBModel blockId)) -> m ()
+        updateE_ f = atomically $ do
+          (f <$> readTVar dbVar) >>= \case
+            Left  e   -> throwM e
+            Right db' -> writeTVar dbVar db'
 
-    wrapModel' :: StrictTVar m (DBModel blockId)
-               -> StateT (DBModel blockId) (STM m) a -> m a
-    wrapModel' dbVar = atomically . wrapModel dbVar
+        query :: (DBModel blockId -> a) -> m a
+        query f = fmap f $ atomically $ readTVar dbVar
 
-    wrapModel :: StrictTVar m (DBModel blockId)
-              -> StateT (DBModel blockId) (STM m) a -> STM m a
-    wrapModel dbVar = runSim (simStateT dbVar $ simId)
+        queryE :: (DBModel blockId -> Either VolatileDBError a) -> m a
+        queryE f = query f >>= \case
+          Left  e -> throwM e
+          Right a -> return a
+
+        querySTME :: (DBModel blockId -> Either VolatileDBError a) -> STM m a
+        querySTME f =
+          (f <$> readTVar dbVar) >>= \case
+            Left  e -> throwM e
+            Right a -> return a

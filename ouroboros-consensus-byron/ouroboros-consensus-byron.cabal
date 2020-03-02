@@ -67,6 +67,7 @@ library
 
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -Wredundant-constraints
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
 
@@ -123,6 +124,7 @@ test-suite test
 
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -Wredundant-constraints
                        -threaded
                        -rtsopts
 
@@ -151,6 +153,7 @@ executable db-converter
 
    default-language:   Haskell2010
    ghc-options:        -Wall
+                       -Wredundant-constraints
 
 executable db-analyser
   hs-source-dirs:      tools/db-analyser
@@ -159,6 +162,7 @@ executable db-analyser
                      , cardano-binary
                      , cardano-crypto-wrapper
                      , cardano-ledger
+                     , cardano-slotting
                      , mtl
                      , optparse-applicative
 
@@ -168,3 +172,4 @@ executable db-analyser
 
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -Wredundant-constraints

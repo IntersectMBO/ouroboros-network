@@ -70,8 +70,9 @@ deriving instance LedgerSupportsProtocol blk => Eq   (ExtValidationError blk)
 instance LedgerSupportsProtocol blk => NoUnexpectedThunks (ExtLedgerState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(ExtLedgerState blk))
 
-deriving instance (LedgerSupportsProtocol blk, Eq (ChainState (BlockProtocol blk)))
-               => Eq (ExtLedgerState blk)
+deriving instance ( LedgerSupportsProtocol blk
+                  , Eq (ConsensusState (BlockProtocol blk))
+                  ) => Eq (ExtLedgerState blk)
 
 data BlockPreviouslyApplied =
     BlockPreviouslyApplied
@@ -139,12 +140,12 @@ foldExtLedgerState prevApplied = repeatedlyM . (applyExtLedgerState prevApplied)
 -------------------------------------------------------------------------------}
 
 encodeExtLedgerState :: (LedgerState   blk -> Encoding)
-                     -> (ChainState (BlockProtocol blk) -> Encoding)
+                     -> (ConsensusState (BlockProtocol blk) -> Encoding)
                      -> (HeaderHash    blk -> Encoding)
                      -> (TipInfo       blk -> Encoding)
                      -> ExtLedgerState blk -> Encoding
 encodeExtLedgerState encodeLedgerState
-                     encodeChainState
+                     encodeConsensusState
                      encodeHash
                      encodeInfo
                      ExtLedgerState{..} = mconcat [
@@ -153,17 +154,17 @@ encodeExtLedgerState encodeLedgerState
     ]
   where
     encodeHeaderState' = encodeHeaderState
-                           encodeChainState
+                           encodeConsensusState
                            encodeHash
                            encodeInfo
 
 decodeExtLedgerState :: (forall s. Decoder s (LedgerState    blk))
-                     -> (forall s. Decoder s (ChainState (BlockProtocol blk)))
+                     -> (forall s. Decoder s (ConsensusState (BlockProtocol blk)))
                      -> (forall s. Decoder s (HeaderHash     blk))
                      -> (forall s. Decoder s (TipInfo        blk))
                      -> (forall s. Decoder s (ExtLedgerState blk))
 decodeExtLedgerState decodeLedgerState
-                     decodeChainState
+                     decodeConsensusState
                      decodeHash
                      decodeInfo = do
     ledgerState <- decodeLedgerState
@@ -171,6 +172,6 @@ decodeExtLedgerState decodeLedgerState
     return ExtLedgerState{..}
   where
     decodeHeaderState' = decodeHeaderState
-                           decodeChainState
+                           decodeConsensusState
                            decodeHash
                            decodeInfo

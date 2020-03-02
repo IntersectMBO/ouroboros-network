@@ -3,7 +3,6 @@
 
 module Network.Mux.Bearer.Queues
   ( queuesAsMuxBearer
-  , runMuxWithQueues
   ) where
 
 import qualified Data.ByteString.Lazy as BL
@@ -12,7 +11,6 @@ import           Data.Word (Word16)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
@@ -34,9 +32,8 @@ queuesAsMuxBearer
   -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
   -> Word16
-  -> Maybe (TBQueue m (Mx.MiniProtocolNum, Mx.MiniProtocolMode, Time))
   -> MuxBearer m
-queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
+queuesAsMuxBearer tracer writeQueue readQueue sduSize = do
       Mx.MuxBearer {
         Mx.read    = readMux,
         Mx.write   = writeMux,
@@ -54,13 +51,7 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
                   traceWith tracer $ Mx.MuxTraceRecvHeaderEnd header
                   traceWith tracer $ Mx.MuxTraceRecvPayloadStart $ fromIntegral $ BL.length payload
                   ts <- getMonotonicTime
-                  traceWith tracer (Mx.MuxTraceRecvDeltaQObservation header ts)
-                  case traceQueue of
-                        Just q  -> atomically $ do
-                            full <- isFullTBQueue q
-                            if full then return ()
-                                    else writeTBQueue q (Mx.msNum header, Mx.msMode header, ts)
-                        Nothing -> return ()
+                  traceWith tracer $ Mx.MuxTraceRecvDeltaQObservation header ts
                   traceWith tracer $ Mx.MuxTraceRecvPayloadEnd payload
                   return (header {Mx.msBlob = payload}, ts)
 
@@ -75,27 +66,3 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
           traceWith tracer $ Mx.MuxTraceSendEnd
           return ts
 
-runMuxWithQueues
-  :: ( MonadAsync m
-     , MonadCatch m
-     , MonadMask m
-     , MonadSTM m
-     , MonadThrow m
-     , MonadThrow (STM m)
-     , MonadTime m
-     , MonadTimer m
-     , Eq  (Async m ())
-     )
-  => Tracer m Mx.MuxTrace
-  -> Mx.MuxApplication appType m a b
-  -> TBQueue m BL.ByteString
-  -> TBQueue m BL.ByteString
-  -> Word16
-  -> Maybe (TBQueue m (Mx.MiniProtocolNum, Mx.MiniProtocolMode, Time))
-  -> m (Maybe SomeException)
-runMuxWithQueues muxTracer app wq rq mtu trace = do
-    let bearer    = queuesAsMuxBearer muxTracer wq rq mtu trace
-    res_e <- try $ Mx.muxStart muxTracer app bearer
-    case res_e of
-         Left  e -> return (Just e)
-         Right _ -> return Nothing

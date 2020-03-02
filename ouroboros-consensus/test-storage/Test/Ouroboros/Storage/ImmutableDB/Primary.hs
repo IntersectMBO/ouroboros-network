@@ -18,7 +18,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.Util (tryFS)
 
@@ -62,7 +61,7 @@ prop_write_load index = monadicIO $ run $ runFS prop
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
       Primary.write hasFS epoch index
-      index' <- Primary.load hasFS EH.exceptions epoch
+      index' <- Primary.load hasFS epoch
       return $ index === index'
 
 prop_open_appendOffsets_load :: PrimaryIndex -> Property
@@ -76,7 +75,7 @@ prop_open_appendOffsets_load index = monadicIO $ run $ runFS prop
       -- Don't write the first offset, which is always 0; it is written by
       -- 'Primary.open'.
       Primary.appendOffsets hasFS pHnd (drop 1 (Primary.toSecondaryOffsets index))
-      index' <- Primary.load hasFS EH.exceptions epoch
+      index' <- Primary.load hasFS epoch
       return $ index === index'
 
 prop_truncateToSlotFS_truncateToSlot :: PrimaryIndex -> RelativeSlot -> Property
@@ -89,7 +88,7 @@ prop_truncateToSlotFS_truncateToSlot index slot =
     prop hasFS = do
       Primary.write hasFS epoch index
       Primary.truncateToSlotFS hasFS epoch slot
-      index' <- Primary.load hasFS EH.exceptions epoch
+      index' <- Primary.load hasFS epoch
       return $ Primary.truncateToSlot slot index === index'
 
 prop_readFirstFilledSlot_load_firstFilledSlot :: PrimaryIndex -> Property
@@ -101,7 +100,7 @@ prop_readFirstFilledSlot_load_firstFilledSlot index =
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
       Primary.write hasFS epoch index
-      mbFirstFilledsLot <- Primary.readFirstFilledSlot hasFS EH.exceptions epoch
+      mbFirstFilledsLot <- Primary.readFirstFilledSlot hasFS epoch
       return $ mbFirstFilledsLot === Primary.firstFilledSlot index
 
 {------------------------------------------------------------------------------
@@ -109,7 +108,7 @@ prop_readFirstFilledSlot_load_firstFilledSlot index =
 ------------------------------------------------------------------------------}
 
 runFS :: (HasFS IO HandleMock -> IO Property) -> IO Property
-runFS m = tryFS (Sim.runSimFS EH.exceptions Mock.empty m) >>= \case
+runFS m = tryFS (Sim.runSimFS Mock.empty m) >>= \case
     Left  e           -> fail (prettyFsError e)
     Right (p, mockFS) -> return $ counterexample (Mock.pretty mockFS) p
 

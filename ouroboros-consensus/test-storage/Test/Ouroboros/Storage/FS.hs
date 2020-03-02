@@ -24,5 +24,5 @@ tests tmpDir = testGroup "HasFS"
 -- | A unit test example.
 _test_example :: Assertion
 _test_example =
-  apiEquivalenceFs (expectFsResult (@?= ())) $ \HasFS{..} _err ->
+  apiEquivalenceFs (expectFsResult (@?= ())) $ \HasFS{..} ->
     return ()

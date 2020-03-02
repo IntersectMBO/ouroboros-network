@@ -28,7 +28,6 @@ import           Data.Functor.Contravariant (contramap)
 import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
 
-import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (AddrInfo)
 import qualified Network.Socket as Socket
@@ -44,20 +43,18 @@ import qualified Ouroboros.Network.Snocket as Snocket
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import           Ouroboros.Network.Protocol.Handshake.Version
 
+import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToClient ( NodeToClientProtocols (..)
-                                                , NodeToClientVersion (..)
-                                                )
+import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..) )
 import qualified Ouroboros.Network.NodeToClient as NodeToClient
-import           Ouroboros.Network.NodeToNode ( NodeToNodeProtocols (..)
-                                              , NodeToNodeVersion (..)
-                                              )
+import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
 import           Ouroboros.Network.Socket ( ConnectionHandle
                                           , NetworkServerTracers (..)
                                           , NetworkConnectTracers (..)
+                                          , SomeResponderApplication (..)
                                           , SomeVersionedApplication (..)
                                           )
 import qualified Ouroboros.Network.Subscription as Subscription (worker)
@@ -104,39 +101,28 @@ data DiffusionApplications = DiffusionApplications {
       daResponderApplication      :: Versions
                                        NodeToNodeVersion
                                        DictVersion
-                                       (OuroborosApplication
-                                         'ResponderApp
-                                         (ConnectionId Socket.SockAddr)
-                                         NodeToNodeProtocols
-                                         IO
-                                         ByteString
-                                         Void
-                                         ())
+                                       (ConnectionId Socket.SockAddr ->
+                                          OuroborosApplication
+                                            ResponderApp
+                                            ByteString IO Void ())
       -- ^ NodeToNode reposnder application (server role)
 
     , daInitiatorApplication      :: Versions
                                        NodeToNodeVersion
                                        DictVersion 
-                                       (OuroborosApplication
-                                         'InitiatorApp
-                                         (ConnectionId Socket.SockAddr)
-                                         NodeToNodeProtocols
-                                         IO
-                                         ByteString
-                                         () Void)
+                                       (ConnectionId Socket.SockAddr ->
+                                          OuroborosApplication
+                                            InitiatorApp
+                                            ByteString IO () Void)
       -- ^ NodeToNode initiator application (client role)
 
     , daLocalResponderApplication :: Versions
                                        NodeToClientVersion
                                        DictVersion
-                                       (OuroborosApplication
-                                          'ResponderApp
-                                          (ConnectionId LocalAddress)
-                                          NodeToClientProtocols
-                                          IO
-                                          ByteString
-                                          Void
-                                          ())
+                                       (ConnectionId Socket.SockAddr ->
+                                          OuroborosApplication
+                                            ResponderApp
+                                            ByteString IO Void ())
       -- ^ NodeToClient responder applicaton (server role)
 
     , daErrorPolicies :: ErrorPolicies
@@ -187,26 +173,26 @@ runDataDiffusion tracers
         -- node-to-client protocol.
         localConnectionRequest
           :: LocalRequest provenance
-          -> SomeVersionedApplication NodeToClientProtocols NodeToClientVersion DictVersion LocalAddress provenance
+          -> SomeVersionedApplication NodeToClientVersion DictVersion LocalAddress provenance
         localConnectionRequest ClientConnection = SomeVersionedResponderApp
           (NetworkServerTracers
             dtMuxLocalTracer
             dtHandshakeLocalTracer
             dtErrorPolicyTracer)
-          (daLocalResponderApplication applications)
+          ((fmap . fmap) SomeResponderApplication (daLocalResponderApplication applications))
 
         -- Note-to-node connections request: for a PeerConnection we do the
         -- responder app `daResponderApplication`, and for the others we choose
         -- the `daInitiatorApplication`. The types leave little room for error.
         connectionRequest
           :: Request provenance
-          -> SomeVersionedApplication NodeToNodeProtocols NodeToNodeVersion DictVersion Socket.SockAddr provenance
+          -> SomeVersionedApplication NodeToNodeVersion DictVersion Socket.SockAddr provenance
         connectionRequest PeerConnection = SomeVersionedResponderApp
           (NetworkServerTracers
             dtMuxTracer
             dtHandshakeTracer
             dtErrorPolicyTracer)
-          (daResponderApplication applications)
+          ((fmap . fmap) SomeResponderApplication (daResponderApplication applications))
         -- IP or DNS subscription requests are locally-initiated (requests
         -- from subscribers to _us_ are `PeerConnection` above.
         connectionRequest IpSubscriptionConnection  = SomeVersionedInitiatorApp

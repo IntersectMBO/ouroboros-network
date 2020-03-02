@@ -39,8 +39,6 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling
-                     (ErrorHandling (..))
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -59,7 +57,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 -- | The environment used by the immutable database.
 data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
-    , _dbErr             :: !(ErrorHandling ImmutableDBError m)
     , _dbInternalState   :: !(StrictMVar m (InternalState m hash h))
     , _dbEpochFileParser :: !(EpochFileParser e m (BlockSummary hash) hash)
     , _dbEpochInfo       :: !(EpochInfo m)
@@ -111,13 +108,12 @@ mkOpenState
   :: forall m hash h. (HasCallStack, IOLike m)
   => ResourceRegistry m
   -> HasFS m h
-  -> ErrorHandling ImmutableDBError m
   -> Index m hash h
   -> EpochNo
   -> ImmTipWithInfo hash
   -> AllowExisting
   -> m (OpenState m hash h)
-mkOpenState registry HasFS{..} _err index epoch tip existing = do
+mkOpenState registry HasFS{..} index epoch tip existing = do
     eHnd <- allocateHandle $ hOpen (renderFile "epoch" epoch)     appendMode
     pHnd <- allocateHandle $ Index.openPrimaryIndex index epoch existing
     sHnd <- allocateHandle $ hOpen (renderFile "secondary" epoch) appendMode
@@ -154,7 +150,7 @@ getOpenState :: (HasCallStack, IOLike m)
 getOpenState ImmutableDBEnv {..} = do
     internalState <- readMVar _dbInternalState
     case internalState of
-       DbClosed         -> throwUserError _dbErr ClosedDBError
+       DbClosed         -> throwUserError  ClosedDBError
        DbOpen openState -> return (SomePair _dbHasFS openState)
 
 -- | Modify the internal state of an open database.
@@ -174,13 +170,12 @@ modifyOpenState :: forall m hash r. (HasCallStack, IOLike m)
                 -> (forall h. HasFS m h -> StateT (OpenState m hash h) m r)
                 -> m r
 modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
-    (mr, ()) <- generalBracket open close (tryImmDB hasFsErr _dbErr . mutation)
+    (mr, ()) <- generalBracket open close (tryImmDB . mutation)
     case mr of
-      Left  e      -> throwError e
+      Left  e      -> throwM e
       Right (r, _) -> return r
   where
     HasFS{..}         = hasFS
-    ErrorHandling{..} = _dbErr
 
     -- We use @m (Either e a)@ instead of @EitherT e m a@ for 'generalBracket'
     -- so that 'close' knows which error is thrown (@Either e (s, r)@ vs. @(s,
@@ -192,7 +187,7 @@ modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
       DbOpen ost -> return ost
       DbClosed   -> do
         putMVar _dbInternalState DbClosed
-        throwUserError _dbErr ClosedDBError
+        throwUserError ClosedDBError
 
     close :: OpenState m hash h
           -> ExitCase (Either ImmutableDBError (r, OpenState m hash h))
@@ -214,7 +209,7 @@ modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
           -- In case a user error, just restore the previous state
           ExitCaseSuccess (Left (UserError {}))       -> (DbOpen ost, return ())
 
-    mutation :: HasCallStack => OpenState m hash h -> m (r, OpenState m hash h)
+    mutation :: OpenState m hash h -> m (r, OpenState m hash h)
     mutation = runStateT (action hasFS)
 
 -- | Perform an action that accesses the internal state of an open database.
@@ -229,18 +224,17 @@ withOpenState :: forall m hash r. (HasCallStack, IOLike m)
               -> (forall h. HasFS m h -> OpenState m hash h -> m r)
               -> m r
 withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
-    (mr, ()) <- generalBracket open (const close) (tryImmDB hasFsErr _dbErr . access)
+    (mr, ()) <- generalBracket open (const close) (tryImmDB . access)
     case mr of
-      Left  e -> throwError e
+      Left  e -> throwM e
       Right r -> return r
   where
     HasFS{..}         = hasFS
-    ErrorHandling{..} = _dbErr
 
     open :: m (OpenState m hash h)
     open = readMVar _dbInternalState >>= \case
       DbOpen ost -> return ost
-      DbClosed   -> throwUserError _dbErr ClosedDBError
+      DbClosed   -> throwUserError ClosedDBError
 
     -- close doesn't take the state that @open@ returned, because the state
     -- may have been updated by someone else since we got it (remember we're
@@ -261,7 +255,7 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
       DbOpen ost -> cleanUp hasFS ost
       DbClosed   -> return ()
 
-    access :: HasCallStack => OpenState m hash h -> m r
+    access :: OpenState m hash h -> m r
     access = action hasFS
 
 cleanUp :: Monad m => HasFS m h -> OpenState m hash h -> m ()

@@ -23,7 +23,7 @@ module Ouroboros.Consensus.Protocol.BFT (
   , BftValidateView(..)
   , bftValidateView
     -- * Type instances
-  , NodeConfig(..)
+  , ConsensusConfig(..)
   ) where
 
 import           Cardano.Crypto.DSIGN.Class
@@ -80,10 +80,10 @@ forgeBftFields :: ( MonadRandom m
                   , BftCrypto c
                   , Signable (BftDSIGN c) toSign
                   )
-               => NodeConfig (Bft c)
+               => ConsensusConfig (Bft c)
                -> toSign
                -> m (BftFields c toSign)
-forgeBftFields BftNodeConfig{..} toSign = do
+forgeBftFields BftConfig{..} toSign = do
       signature <- signedDSIGN () toSign bftSignKey
       return $ BftFields {
           bftSignature = signature
@@ -117,7 +117,7 @@ data BftParams = BftParams {
   deriving (Generic, NoUnexpectedThunks)
 
 -- | (Static) node configuration
-data instance NodeConfig (Bft c) = BftNodeConfig {
+data instance ConsensusConfig (Bft c) = BftConfig {
       bftParams  :: !BftParams
     , bftNodeId  :: !NodeId
     , bftSignKey :: !(SignKeyDSIGN (BftDSIGN c))
@@ -126,15 +126,15 @@ data instance NodeConfig (Bft c) = BftNodeConfig {
   deriving (Generic)
 
 instance BftCrypto c => ConsensusProtocol (Bft c) where
-  type ValidationErr (Bft c) = BftValidationErr
-  type ValidateView  (Bft c) = BftValidateView c
-  type LedgerView    (Bft c) = ()
-  type IsLeader      (Bft c) = ()
-  type ChainState    (Bft c) = ()
+  type ValidationErr  (Bft c) = BftValidationErr
+  type ValidateView   (Bft c) = BftValidateView c
+  type LedgerView     (Bft c) = ()
+  type IsLeader       (Bft c) = ()
+  type ConsensusState (Bft c) = ()
 
   protocolSecurityParam = bftSecurityParam . bftParams
 
-  checkIsLeader BftNodeConfig{..} (SlotNo n) _l _cs = do
+  checkIsLeader BftConfig{..} (SlotNo n) _l _cs = do
       return $ case bftNodeId of
                  RelayId _ ->
                    -- Relays are never leaders
@@ -147,10 +147,10 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
       BftParams{..}  = bftParams
       NumCoreNodes numCoreNodes = bftNumNodes
 
-  applyChainState BftNodeConfig{..}
-                  _l
-                  (BftValidateView (SlotNo n) BftFields{..} signed)
-                  _cs =
+  updateConsensusState BftConfig{..}
+                       _l
+                       (BftValidateView (SlotNo n) BftFields{..} signed)
+                       _cs =
       -- TODO: Should deal with unknown node IDs
       case verifySignedDSIGN
              ()
@@ -164,9 +164,9 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
       expectedLeader = CoreId . CoreNodeId $ fromIntegral (n `mod` numCoreNodes)
       NumCoreNodes numCoreNodes = bftNumNodes
 
-  rewindChainState _ _ _ = Just ()
+  rewindConsensusState _ _ _ = Just ()
 
-instance BftCrypto c => NoUnexpectedThunks (NodeConfig (Bft c))
+instance BftCrypto c => NoUnexpectedThunks (ConsensusConfig (Bft c))
   -- use generic instance
 
 {-------------------------------------------------------------------------------

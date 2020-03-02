@@ -9,7 +9,7 @@
 -- overall node to client protocol, as a collection of mini-protocols.
 --
 module Ouroboros.Network.NodeToClient (
-    NodeToClientProtocols(..)
+    nodeToClientProtocols
   , NodeToClientVersion (..)
   , NodeToClientVersionData (..)
   , DictVersion (..)
@@ -62,19 +62,16 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
-import           Codec.SerialiseTerm
-
-import           Network.Mux hiding (MiniProtocolLimits(..))
-import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
-import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Connections.Types (Connections)
 import qualified Ouroboros.Network.Connections.Concurrent as Connection
+import           Ouroboros.Network.Driver (TraceSendRecv(..))
+import           Ouroboros.Network.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Tracers
-import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
 import           Ouroboros.Network.Protocol.Handshake.Type
@@ -89,29 +86,41 @@ import           Ouroboros.Network.Socket hiding (withConnections)
 import qualified Ouroboros.Network.Socket as Socket (withConnections)
 import           Ouroboros.Network.IOManager
 
--- | An index type used with the mux to enumerate all the mini-protocols that
+-- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-client protocol.
 --
-data NodeToClientProtocols = ChainSyncWithBlocksPtcl
-                           | LocalTxSubmissionPtcl
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
--- | These are the actual wire format protocol numbers.
+-- This function specifies the wire format protocol numbers.
 --
--- These are chosen to not overlap with the node to node protocol numbers.
+-- They are chosen to not overlap with the node to node protocol numbers.
 -- This is not essential for correctness, but is helpful to allow a single
 -- shared implementation of tools that can analyse both protocols, e.g.
 -- wireshark plugins.
 --
-instance ProtocolEnum NodeToClientProtocols where
-  fromProtocolEnum ChainSyncWithBlocksPtcl = MiniProtocolNum 5
-  fromProtocolEnum LocalTxSubmissionPtcl   = MiniProtocolNum 6
+nodeToClientProtocols
+  :: RunMiniProtocol appType bytes m a b -- ^ localChainSync
+  -> RunMiniProtocol appType bytes m a b -- ^ localTxSubmission
+  -> OuroborosApplication appType bytes m a b
+nodeToClientProtocols localChainSync localTxSubmission =
+    OuroborosApplication [
+      MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 5,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = localChainSync
+      }
+    , MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 6,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = localTxSubmission
+      }
+    ]
 
-instance MiniProtocolLimits NodeToClientProtocols where
   -- TODO: provide sensible limits
   -- https://github.com/input-output-hk/ouroboros-network/issues/575
-  maximumMessageSize  _ = 0xffffffff
-  maximumIngressQueue _ = 0xffffffff
+maximumMiniProtocolLimits :: MiniProtocolLimits
+maximumMiniProtocolLimits =
+    MiniProtocolLimits {
+      maximumIngressQueue = 0xffffffff
+    }
 
 -- | Enumeration of node to client protocol versions.
 --
@@ -156,7 +165,7 @@ withConnections
      ( Ord addr )
   => ErrorPolicies
   -> Snocket IO fd addr
-  -> (forall provenance . request provenance -> SomeVersionedApplication NodeToClientProtocols NodeToClientVersion DictVersion addr provenance)
+  -> (forall provenance . request provenance -> SomeVersionedApplication NodeToClientVersion DictVersion addr provenance)
   -> (Connections (ConnectionId addr) fd request (Connection.Reject RejectConnection) (Connection.Accept (ConnectionHandle IO)) IO -> IO t)
   -> IO t
 withConnections errorPolicies sn mkApp =
@@ -166,7 +175,7 @@ withConnections errorPolicies sn mkApp =
   -- type checker.
   mkConnectionData
     :: request provenance
-    -> ConnectionData NodeToClientProtocols NodeToClientVersion provenance addr
+    -> ConnectionData NodeToClientVersion provenance addr
   mkConnectionData request = case mkApp request of
     SomeVersionedResponderApp serverTracers versions -> ConnectionDataRemote
       serverTracers
@@ -221,7 +230,6 @@ networkErrorPolicies = ErrorPolicies
                       MuxDecodeError          -> Just ourBug
                       MuxIngressQueueOverRun  -> Just ourBug
                       MuxInitiatorOnly        -> Just ourBug
-                      MuxTooLargeMessage      -> Just ourBug
 
                       -- in case of bearer closed / or IOException we suspend
                       -- the peer for a short time

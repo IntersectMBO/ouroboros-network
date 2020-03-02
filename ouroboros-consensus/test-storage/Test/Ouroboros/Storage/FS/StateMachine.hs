@@ -24,7 +24,6 @@ module Test.Ouroboros.Storage.FS.StateMachine (
 
 import qualified Control.Exception as E
 import           Control.Monad
-import           Control.Monad.Except (runExcept)
 import           Control.Monad.IO.Class (liftIO)
 import           Data.Bifoldable
 import           Data.Bifunctor
@@ -67,7 +66,6 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.IO
 import qualified Ouroboros.Consensus.Storage.IO as F
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.Condense
@@ -267,7 +265,7 @@ instance (Eq fp, Eq h) => Eq (Resp fp h) where
 runPure :: Cmd FsPath (Handle HandleMock)
         -> MockFS -> (Resp FsPath (Handle HandleMock), MockFS)
 runPure cmd mockFS =
-    aux $ runExcept $ runPureSimFS (run (pureHasFS EH.exceptT) cmd) mockFS
+    aux $ runPureSimFS (run pureHasFS cmd) mockFS
   where
     aux :: Either FsError (Success FsPath (Handle HandleMock), MockFS)
         -> (Resp FsPath (Handle HandleMock), MockFS)

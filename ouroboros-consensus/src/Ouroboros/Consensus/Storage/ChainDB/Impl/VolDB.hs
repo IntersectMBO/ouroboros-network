@@ -36,6 +36,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (
   , getKnownBlockComponent
   , getBlockComponent
     -- * Wrappers
+  , getBlockInfo
   , getIsMember
   , getPredecessor
   , getSuccessors
@@ -65,7 +66,7 @@ import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (mapMaybe)
+import           Data.Maybe (isJust, mapMaybe)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -79,12 +80,11 @@ import           Cardano.Prelude (Word64, allNoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader (..), HeaderHash,
-                     MaxSlotNo, Point, SlotNo, StandardHash, pointHash,
-                     withHash)
+                     MaxSlotNo, Point, SlotNo, StandardHash, pointHash)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (Header, IsEBB)
+import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -98,9 +98,6 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS,
 import           Ouroboros.Consensus.Storage.FS.API.Types (MountPoint (..),
                      mkFsPath)
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling,
-                     ThrowCantCatch)
-import qualified Ouroboros.Consensus.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..), BlocksPerFile, VolatileDB,
                      VolatileDBError)
@@ -120,8 +117,6 @@ data VolDB m blk = VolDB {
     , encBlock  :: blk -> BinaryInfo Encoding
     , isEBB     :: blk -> IsEBB
     , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
-    , err       :: ErrorHandling VolatileDBError m
-    , errSTM    :: ThrowCantCatch VolatileDBError (STM m)
     }
 
 -- Universal type; we can't use generics
@@ -134,8 +129,6 @@ instance NoUnexpectedThunks (VolDB m blk) where
     , noUnexpectedThunks ctxt encBlock
     , noUnexpectedThunks ctxt isEBB
     , noUnexpectedThunks ctxt addHdrEnv
-    , noUnexpectedThunks ctxt err
-    , noUnexpectedThunks ctxt errSTM
     ]
 
 -- | Short-hand for events traced by the VolDB wrapper.
@@ -148,8 +141,6 @@ type TraceEvent blk =
 
 data VolDbArgs m blk = forall h. VolDbArgs {
       volHasFS          :: HasFS m h
-    , volErr            :: ErrorHandling VolatileDBError m
-    , volErrSTM         :: ThrowCantCatch VolatileDBError (STM m)
     , volCheckIntegrity :: blk -> Bool
     , volBlocksPerFile  :: BlocksPerFile
     , volDecodeHeader   :: forall s. Decoder s (Lazy.ByteString -> Header blk)
@@ -175,9 +166,7 @@ data VolDbArgs m blk = forall h. VolDbArgs {
 -- * 'volValidation'
 defaultArgs :: FilePath -> VolDbArgs IO blk
 defaultArgs fp = VolDbArgs {
-      volErr            = EH.exceptions
-    , volErrSTM         = EH.throwSTM
-    , volHasFS          = ioHasFS $ MountPoint (fp </> "volatile")
+      volHasFS          = ioHasFS $ MountPoint (fp </> "volatile")
     , volTracer         = nullTracer
       -- Fields without a default
     , volCheckIntegrity = error "no default for volCheckIntegrity"
@@ -195,15 +184,11 @@ openDB args@VolDbArgs{..} = do
     createDirectoryIfMissing volHasFS True (mkFsPath [])
     volDB <- VolDB.openDB
                volHasFS
-               volErr
-               volErrSTM
                (blockFileParser args)
                volTracer
                volBlocksPerFile
     return VolDB
       { volDB     = volDB
-      , err       = volErr
-      , errSTM    = volErrSTM
       , decHeader = volDecodeHeader
       , decBlock  = volDecodeBlock
       , encBlock  = volEncodeBlock
@@ -218,21 +203,25 @@ mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (blk -> BinaryInfo Encoding)
         -> (blk -> IsEBB)
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
-        -> ErrorHandling VolatileDBError m
-        -> ThrowCantCatch VolatileDBError (STM m)
         -> VolDB m blk
-mkVolDB volDB decHeader decBlock encBlock isEBB addHdrEnv err errSTM = VolDB {..}
+mkVolDB volDB decHeader decBlock encBlock isEBB addHdrEnv = VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers
 -------------------------------------------------------------------------------}
 
-getIsMember :: VolDB m blk -> STM m (HeaderHash blk -> Bool)
-getIsMember db = withSTM db VolDB.getIsMember
+getBlockInfo
+  :: VolDB m blk
+  -> STM m (HeaderHash blk -> Maybe (VolDB.BlockInfo (HeaderHash blk)))
+getBlockInfo db = withSTM db VolDB.getBlockInfo
 
-getPredecessor :: VolDB m blk
-               -> STM m (HeaderHash blk -> WithOrigin (HeaderHash blk))
-getPredecessor db = withSTM db VolDB.getPredecessor
+getIsMember :: Functor (STM m) => VolDB m blk -> STM m (HeaderHash blk -> Bool)
+getIsMember = fmap (isJust .) . getBlockInfo
+
+getPredecessor :: Functor (STM m)
+               => VolDB m blk
+               -> STM m (HeaderHash blk -> Maybe (WithOrigin (HeaderHash blk)))
+getPredecessor = fmap (fmap VolDB.bpreBid .) . getBlockInfo
 
 getSuccessors :: VolDB m blk
               -> STM m (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
@@ -295,13 +284,12 @@ candidates succsOf b = mapMaybe NE.nonEmpty $ go (fromChainHash (pointHash b))
 isReachableSTM :: (IOLike m, HasHeader blk)
                => VolDB m blk
                -> STM m (Point blk) -- ^ The tip of the ImmutableDB (@I@).
-               -> Point blk         -- ^ The point of the block (@B@) to check
+               -> RealPoint blk     -- ^ The point of the block (@B@) to check
                                     -- the reachability of
                -> STM m (Maybe (NonEmpty (HeaderHash blk)))
 isReachableSTM volDB getI b = do
-    (predecessor, isMember, i) <- withSTM volDB $ \db ->
-      (,,) <$> VolDB.getPredecessor db <*> VolDB.getIsMember db <*> getI
-    return $ isReachable predecessor isMember i b
+    (predecessor, i) <- (,) <$> getPredecessor volDB <*> getI
+    return $ isReachable predecessor i b
 
 -- | Check whether the given point, corresponding to a block @B@, is reachable
 -- from the tip of the ImmutableDB (@I@) by chasing the predecessors.
@@ -313,13 +301,12 @@ isReachableSTM volDB getI b = do
 -- 'True' <=> for all transitive predecessors @B'@ of @B@ we have @B' ∈ V@ or
 -- @B' = I@.
 isReachable :: forall blk. (HasHeader blk, HasCallStack)
-            => (HeaderHash blk -> WithOrigin (HeaderHash blk))  -- ^ @getPredecessor@
-            -> (HeaderHash blk -> Bool)                         -- ^ @isMember@
+            => (HeaderHash blk -> Maybe (WithOrigin (HeaderHash blk)))
             -> Point blk                                        -- ^ @I@
-            -> Point blk                                        -- ^ @B@
+            -> RealPoint blk                                    -- ^ @B@
             -> Maybe (NonEmpty (HeaderHash blk))
-isReachable predecessor isMember i b =
-    case computePath predecessor isMember from to of
+isReachable predecessor i b =
+    case computePath predecessor from to of
       -- Bounds are not on the same fork
       Nothing   -> Nothing
       Just path -> case path of
@@ -348,32 +335,28 @@ isReachable predecessor isMember i b =
 -- See the documentation of 'Path'.
 computePath
   :: forall blk. HasHeader blk
-  => (HeaderHash blk -> WithOrigin (HeaderHash blk)) -- ^ @getPredecessor@
-  -> (HeaderHash blk -> Bool)                        -- ^ @isMember@
+  => (HeaderHash blk -> Maybe (WithOrigin (HeaderHash blk)))
+     -- Return the predecessor
   -> StreamFrom blk
   -> StreamTo   blk
   -> Maybe (Path blk)
-computePath predecessor isMember from to = case to of
-    StreamToInclusive GenesisPoint
-      -> Nothing
-    StreamToExclusive GenesisPoint
-      -> Nothing
-    StreamToInclusive (BlockPoint { withHash = end })
-      | isMember end     -> case from of
+computePath predecessor from to = case to of
+    StreamToInclusive (RealPoint _ end)
+      | Just prev <- predecessor end -> case from of
           -- Easier to handle this special case (@StreamFromInclusive start,
           -- StreamToInclusive end, start == end@) here:
-          StreamFromInclusive (BlockPoint { withHash = start })
+          StreamFromInclusive (RealPoint _ start)
             | start == end -> return $ CompletelyInVolDB [end]
-          _                -> go [end] end
+          _                -> go [end] prev
       | otherwise        -> return $ NotInVolDB end
-    StreamToExclusive (BlockPoint { withHash = end })
-      | isMember end     -> go [] end
-      | otherwise        -> return $ NotInVolDB end
+    StreamToExclusive (RealPoint _ end)
+      | Just prev <- predecessor end -> go [] prev
+      | otherwise                    -> return $ NotInVolDB end
   where
-    -- Invariant: @isMember hash@ and @hash@ has been added to @acc@ (if
-    -- allowed by the bounds)
-    go :: [HeaderHash blk] -> HeaderHash blk -> Maybe (Path blk)
-    go acc hash = case predecessor hash of
+    -- | It only needs the predecessor @prev@ and not the actual hash, because
+    -- the hash is already added to @acc@ (if allowed by the bounds).
+    go :: [HeaderHash blk] -> WithOrigin (HeaderHash blk) -> Maybe (Path blk)
+    go acc prev = case prev of
       -- Found genesis
       Origin -> case from of
         StreamFromInclusive _
@@ -384,15 +367,15 @@ computePath predecessor isMember from to = case to of
           -> Nothing
 
       At predHash
-        | isMember predHash -> case from of
+        | Just prev' <- predecessor predHash -> case from of
           StreamFromInclusive pt
-            | BlockHash predHash == Block.pointHash pt
+            | predHash == realPointHash pt
             -> return $ CompletelyInVolDB (predHash : acc)
           StreamFromExclusive pt
             | BlockHash predHash == Block.pointHash pt
             -> return $ CompletelyInVolDB acc
           -- Bound not yet reached, invariants both ok!
-          _ -> go (predHash : acc) predHash
+          _ -> go (predHash : acc) prev'
         -- Predecessor not in the VolatileDB
         | StreamFromExclusive pt <- from
         , BlockHash predHash == Block.pointHash pt
@@ -411,9 +394,8 @@ computePathSTM
   -> StreamTo   blk
   -> STM m (Path blk)
 computePathSTM volDB from to = do
-    (predecessor, isMember) <- withSTM volDB $ \db ->
-      (,) <$> VolDB.getPredecessor db <*> VolDB.getIsMember db
-    case computePath predecessor isMember from to of
+    predecessor <- getPredecessor volDB
+    case computePath predecessor from to of
       Just path -> return path
       Nothing   -> throwM $ InvalidIteratorRange from to
 
@@ -568,11 +550,11 @@ blockFileParser' hasFS isEBB encodeBlock decodeBlock isNotCorrupt validationPoli
 
 -- | Wrap calls to the VolatileDB and rethrow exceptions that may indicate
 -- disk failure and should therefore trigger recovery
-withDB :: forall m blk x. MonadThrow m
+withDB :: forall m blk x. MonadCatch m
        => VolDB m blk
        -> (VolatileDB (HeaderHash blk) m -> m x)
        -> m x
-withDB VolDB{..} k = EH.catchError err (k volDB) rethrow
+withDB VolDB{..} k = catch (k volDB) rethrow
   where
     rethrow :: VolatileDBError -> m x
     rethrow e = case wrap e of

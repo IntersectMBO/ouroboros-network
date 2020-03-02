@@ -34,8 +34,6 @@ import           Control.Monad.Class.MonadThrow
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.Util.ErrorHandling (ErrorHandling,
-                     throwError)
 
 {------------------------------------------------------------------------------
  Typeclass which abstracts over the filesystem
@@ -131,9 +129,6 @@ data HasFS m h = HasFS {
     -- | Remove the file (which must exist)
   , removeFile               :: HasCallStack => FsPath -> m ()
 
-    -- | Error handling
-  , hasFsErr                 :: ErrorHandling FsError m
-
     -- | Useful for better error reporting
   , mkFsErrorPath            :: FsPath -> FsErrorPath
   }
@@ -145,7 +140,7 @@ withFile HasFS{..} fp openMode = bracket (hOpen fp openMode) hClose
 
 -- | Makes sure it reads all requested bytes.
 -- If eof is found before all bytes are read, it throws an exception.
-hGetExactly :: forall m h. (HasCallStack, Monad m)
+hGetExactly :: forall m h. (HasCallStack, MonadThrow m)
             => HasFS m h
             -> Handle h
             -> Word64
@@ -158,7 +153,7 @@ hGetExactly hasFS h n = go n []
       | otherwise           = do
         bs <- hGetSome hasFS h remainingBytes
         if BS.null bs then
-          throwError (hasFsErr hasFS) FsError {
+          throwM FsError {
               fsErrorType   = FsReachedEOF
             , fsErrorPath   = mkFsErrorPath hasFS $ handlePath h
             , fsErrorString = "hGetExactly found eof before reading " ++ show n ++ " bytes"
@@ -171,7 +166,7 @@ hGetExactly hasFS h n = go n []
 
 -- | Like 'hGetExactly', but is thread safe since it does not change or depend
 -- on the file offset. @pread@ syscall is used internally.
-hGetExactlyAt :: forall m h. (HasCallStack, Monad m)
+hGetExactlyAt :: forall m h. (HasCallStack, MonadThrow m)
               => HasFS m h
               -> Handle h
               -> Word64    -- ^ The number of bytes to read.
@@ -186,7 +181,7 @@ hGetExactlyAt hasFS h n offset = go n offset []
         bs <- hGetSomeAt hasFS h remainingBytes currentOffset
         let readBytes = BS.length bs
         if BS.null bs then
-          throwError (hasFsErr hasFS) FsError {
+          throwM FsError {
               fsErrorType   = FsReachedEOF
             , fsErrorPath   = mkFsErrorPath hasFS $ handlePath h
             , fsErrorString = "hGetExactlyAt found eof before reading " ++ show n ++ " bytes"

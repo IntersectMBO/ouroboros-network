@@ -40,7 +40,6 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Array
 import qualified Data.Set as Set
 import           Data.Set (Set)
-import           Text.Printf
 
 import           Control.Applicative
 import           Control.Monad
@@ -210,7 +209,6 @@ muxStart tracer (MuxApplication ptcls) bearer = do
     miniProtocolJob selectRunner pmode cnt tq
                     MuxMiniProtocol {
                       miniProtocolNum    = pnum,
-                      miniProtocolLimits = plimits,
                       miniProtocolRun    = prunner
                     }
                     pix initQ respQ =
@@ -226,7 +224,6 @@ muxStart tracer (MuxApplication ptcls) bearer = do
           return (MiniProtocolShutdown pnum pix pmode)
 
         mkChannel = muxChannel tracer tq pnum pmode
-                               (maximumMessageSize plimits)
                                (selectQueue pmode) cnt
 
         selectQueue ModeInitiator = initQ
@@ -365,11 +362,10 @@ muxChannel
     -> EgressQueue m
     -> MiniProtocolNum
     -> MiniProtocolMode
-    -> Int64
     -> StrictTVar m BL.ByteString
     -> StrictTVar m Int
     -> m (Channel m)
-muxChannel tracer tq mc md msgMax q cnt = do
+muxChannel tracer tq mc md q cnt = do
     w <- newTVarM BL.empty
     return $ Channel { send = send (Wanton w)
                      , recv}
@@ -384,14 +380,6 @@ muxChannel tracer tq mc md msgMax q cnt = do
     send want@(Wanton w) encoding = do
         -- We send CBOR encoded messages by encoding them into by ByteString
         -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
-        -- This check is dependant on the good will of the sender and a receiver can't
-        -- assume that it will never receive messages larger than maximumMessageSize.
-        --say $ printf "send mid %s mode %s" (show mid) (show md)
-        when (BL.length encoding > msgMax) $
-            throwM $ MuxError MuxTooLargeMessage
-                (printf "Attempting to send a message of size %d on %s %s" (BL.length encoding)
-                        (show mc) (show md))
-                callStack
 
         traceWith tracer $ MuxTraceChannelSendStart mc encoding
 

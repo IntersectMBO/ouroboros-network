@@ -31,7 +31,7 @@ import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 
 --TODO: could re-export some of the trace types from more convenient places:
-import           Network.TypedProtocol.Driver (TraceSendRecv)
+import           Ouroboros.Network.Driver (TraceSendRecv)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
 import           Ouroboros.Network.Block
@@ -353,7 +353,7 @@ tracePropertyClientStateSanity es =
         == fromIntegral peerFetchBytesInFlight
 
      && case status of
-          PeerFetchStatusReady _ -> True
+          PeerFetchStatusReady{} -> True
           PeerFetchStatusBusy    -> True
           _                      -> False -- not used in this test
 
