@@ -162,6 +162,14 @@ mkMiniProtocolState miniProtocolInfo = do
        miniProtocolStatusVar
      }
 
+-- | Shut down the mux. This will cause 'runMux' to return. It does not
+-- wait for any protocol threads to finish, so you should do that first if
+-- necessary.
+--
+stopMux :: MonadSTM m  => Mux mode m -> m ()
+stopMux Mux{muxControlCmdQueue} =
+    atomically $ writeTQueue muxControlCmdQueue CmdShutdown
+
 
 -- | muxStart starts a mux bearer for the specified protocols corresponding to
 -- one of the provided Versions.
@@ -283,6 +291,7 @@ data ControlCmd mode m =
      CmdStartProtocolThread
        !(MiniProtocolState mode m)
        !(MiniProtocolAction m)
+   | CmdShutdown
 
 data MiniProtocolAction m where
      MiniProtocolAction :: (Channel m -> m a)     -- ^ Action
@@ -345,6 +354,9 @@ monitor tracer jobpool egressQueue cmdQueue =
               ptclState
               ptclAction
           go
+
+        EventControlCmd CmdShutdown ->
+          return ()
 
 data MonitorEvent mode m =
      EventJobResult  MuxJobResult
