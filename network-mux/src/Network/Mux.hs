@@ -5,8 +5,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE GADTSyntax          #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE DuplicateRecordFields     #-}
 
 module Network.Mux (
       muxStart
@@ -38,6 +41,8 @@ module Network.Mux (
 
 import           Data.Int (Int64)
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.Map.Strict as Map
+import           Data.Map (Map)
 
 import           Control.Applicative
 import           Control.Monad
@@ -56,6 +61,109 @@ import           Network.Mux.Ingress as Ingress
 import           Network.Mux.Types
 import           Network.Mux.Trace
 import qualified Network.Mux.JobPool as JobPool
+
+
+muxStart
+    :: forall m mode a b.
+       ( MonadAsync m
+       , MonadCatch m
+       , MonadFork m
+       , MonadSTM m
+       , MonadThrow (STM m)
+       , MonadTime  m
+       , MonadTimer m
+       , MonadMask m
+       )
+    => Tracer m MuxTrace
+    -> MuxApplication mode m a b
+    -> MuxBearer m
+    -> m ()
+muxStart tracer muxapp bearer = do
+    mux <- newMux (toMiniProtocolBundle muxapp)
+
+    atomically $
+      sequence_
+        [ do completionVar <- newEmptyTMVar
+             writeTQueue (muxControlCmdQueue mux) $
+               CmdStartProtocolThread
+                 miniProtocolNum
+                 ptclDir
+                 miniProtocolIngressQueue
+                 (MiniProtocolAction action completionVar)
+        | let MuxApplication ptcls = muxapp
+        , MuxMiniProtocol{miniProtocolNum, miniProtocolRun} <- ptcls
+        , (ptclDir, action) <- selectRunner miniProtocolRun
+        , let MiniProtocolState{miniProtocolIngressQueue} =
+                muxMiniProtocols mux Map.! (miniProtocolNum, ptclDir)
+        ]
+
+    runMux tracer mux bearer
+  where
+    toMiniProtocolBundle :: MuxApplication mode m a b -> MiniProtocolBundle mode
+    toMiniProtocolBundle (MuxApplication ptcls) =
+      MiniProtocolBundle
+        [ MiniProtocolInfo {
+            miniProtocolNum,
+            miniProtocolDir,
+            miniProtocolLimits
+          }
+        | MuxMiniProtocol {
+            miniProtocolNum,
+            miniProtocolLimits,
+            miniProtocolRun
+          } <- ptcls
+        , miniProtocolDir <- case miniProtocolRun of
+            InitiatorProtocolOnly{} -> [InitiatorDirectionOnly]
+            ResponderProtocolOnly{} -> [ResponderDirectionOnly]
+            InitiatorAndResponderProtocol{} -> [InitiatorDirection, ResponderDirection]
+        ]
+
+    selectRunner :: RunMiniProtocol mode m a b
+                 -> [(MiniProtocolDir, Channel m -> m ())]
+    selectRunner (InitiatorProtocolOnly initiator) =
+      [(InitiatorDir, void . initiator)]
+    selectRunner (ResponderProtocolOnly responder) =
+      [(ResponderDir, void . responder)]
+    selectRunner (InitiatorAndResponderProtocol initiator responder) =
+      [(InitiatorDir, void . initiator)
+      ,(ResponderDir, void . responder)]
+
+data Mux (mode :: MuxMode) m =
+     Mux {
+       muxMiniProtocols   :: !(Map (MiniProtocolNum, MiniProtocolDir)
+                                   (MiniProtocolState mode m)),
+       muxControlCmdQueue :: !(TQueue m (ControlCmd m))
+     }
+
+newMux :: MonadSTM m  => MiniProtocolBundle mode -> m (Mux mode m)
+newMux (MiniProtocolBundle ptcls) = do
+    muxMiniProtocols   <- mkMiniProtocolStateMap ptcls
+    muxControlCmdQueue <- atomically newTQueue
+    return Mux {
+      muxMiniProtocols,
+      muxControlCmdQueue
+    }
+
+mkMiniProtocolStateMap :: MonadSTM m
+                       => [MiniProtocolInfo mode]
+                       -> m (Map (MiniProtocolNum, MiniProtocolDir)
+                                 (MiniProtocolState mode m))
+mkMiniProtocolStateMap ptcls =
+    Map.fromList <$>
+    sequence
+      [ do state <- mkMiniProtocolState ptcl
+           return ((miniProtocolNum, protocolDirEnum miniProtocolDir), state)
+      | ptcl@MiniProtocolInfo {miniProtocolNum, miniProtocolDir} <- ptcls ]
+
+mkMiniProtocolState :: MonadSTM m
+                    => MiniProtocolInfo mode
+                    -> m (MiniProtocolState mode m)
+mkMiniProtocolState miniProtocolInfo = do
+    miniProtocolIngressQueue <- newTVarM BL.empty
+    return MiniProtocolState {
+       miniProtocolInfo,
+       miniProtocolIngressQueue
+     }
 
 
 -- | muxStart starts a mux bearer for the specified protocols corresponding to
@@ -92,77 +200,39 @@ import qualified Network.Mux.JobPool as JobPool
 -- * at any given time each @TranslocationServiceRequest@ contains a non-empty
 -- 'Wanton'
 --
-muxStart
-    :: forall m mode a b.
-       ( MonadAsync m
-       , MonadCatch m
-       , MonadFork m
-       , MonadSTM m
-       , MonadThrow (STM m)
-       , MonadTime  m
-       , MonadTimer m
-       , MonadMask m
-       )
-    => Tracer m MuxTrace
-    -> MuxApplication mode m a b
-    -> MuxBearer m
-    -> m ()
-muxStart tracer (MuxApplication ptcls) bearer = do
-    ptcls' <- mapM addProtocolQueues ptcls
-    tq <- atomically $ newTBQueue 100
-    cmdQueue <- atomically newTQueue
-
-    atomically $
-      sequence_
-        [ do completionVar <- newEmptyTMVar
-             writeTQueue cmdQueue $
-               CmdStartProtocolThread
-                 ptclNum
-                 ptclDir
-                 queue
-                 (MiniProtocolAction action completionVar)
-        | (ptcl, initQ, respQ) <- ptcls'
-        , let ptclNum = miniProtocolNum ptcl
-        , (ptclDir, action, queue) <- selectRunner (miniProtocolRun ptcl)
-                                                   initQ respQ
-        ]
+runMux :: forall m mode.
+          ( MonadAsync m
+          , MonadCatch m
+          , MonadFork m
+          , MonadSTM m
+          , MonadThrow (STM m)
+          , MonadTime  m
+          , MonadTimer m
+          , MonadMask m
+          )
+       => Tracer m MuxTrace
+       -> Mux mode m
+       -> MuxBearer m
+       -> m ()
+runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue} bearer = do
+    egressQueue <- atomically $ newTBQueue 100
 
     JobPool.withJobPool $ \jobpool -> do
-      JobPool.forkJob jobpool (muxerJob tq)
-      JobPool.forkJob jobpool (demuxerJob ptcls')
+      JobPool.forkJob jobpool (muxerJob egressQueue)
+      JobPool.forkJob jobpool demuxerJob
       traceWith tracer (MuxTraceState Mature)
 
       -- Wait for the first job to terminate, successfully or otherwise.
       -- All the other jobs are shut down Upon completion of withJobPool.
-      monitor tracer jobpool tq cmdQueue
+      monitor tracer jobpool egressQueue muxControlCmdQueue
   where
-    addProtocolQueues :: MuxMiniProtocol mode m a b
-                      -> m ( MuxMiniProtocol mode m a b
-                           , IngressQueue m
-                           , IngressQueue m
-                           )
-    addProtocolQueues ptcl = do
-        initiatorQ <- newTVarM BL.empty
-        responderQ <- newTVarM BL.empty
-        return (ptcl, initiatorQ, responderQ)
+    muxerJob egressQueue =
+      JobPool.Job (muxer egressQueue bearer)
+                  MuxerException "muxer"
 
-    muxerJob tq =
-      JobPool.Job (muxer tq bearer) MuxerException "muxer"
-
-    demuxerJob ptcls' =
-      JobPool.Job (demuxer ptcls' bearer) DemuxerException "demuxer"
-
-    selectRunner :: RunMiniProtocol mode m a b
-                 -> IngressQueue m
-                 -> IngressQueue m
-                 -> [(MiniProtocolDir, Channel m -> m (), IngressQueue m)]
-    selectRunner (InitiatorProtocolOnly initiator) initQ _ =
-      [(InitiatorDir, void . initiator, initQ)]
-    selectRunner (ResponderProtocolOnly responder) _ respQ =
-      [(ResponderDir, void . responder, respQ)]
-    selectRunner (InitiatorAndResponderProtocol initiator responder) initQ respQ =
-      [(InitiatorDir, void . initiator, initQ)
-      ,(ResponderDir, void . responder, respQ)]
+    demuxerJob =
+      JobPool.Job (demuxer (Map.elems muxMiniProtocols) bearer)
+                  DemuxerException "demuxer"
 
 miniProtocolJob
   :: forall m c.
