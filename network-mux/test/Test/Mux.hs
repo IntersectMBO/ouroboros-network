@@ -101,7 +101,7 @@ smallMiniProtocolLimit = 16*1024
 
 activeTracer :: forall m a. (MonadSay m, Show a) => Tracer m a
 activeTracer = nullTracer
---activeTracer = showTracing sayTracer
+--activeTracer = showTracing _sayTracer
 
 _sayTracer :: MonadSay m => Tracer m String
 _sayTracer = Tracer say
@@ -835,7 +835,10 @@ prop_demux_sdu a = do
 
         setup state client_w
         atomically $ writeTBQueue client_w $ BL.take (isRealLength badSdu) $ encodeInvalidMuxSDU badSdu
-        atomically $ putTMVar stopVar $ BL.replicate (fromIntegral $ isLength badSdu) 0xa
+        -- Incase this is an SDU with a payload of 0 byte, we still ask the responder to wait for
+        -- one byte so that we fail with an exception while parsing the header instead of risk
+        -- having the responder succed after reading 0 bytes.
+        atomically $ putTMVar stopVar $ BL.replicate (max (fromIntegral $ isLength badSdu) 1) 0xa
 
         res <- wait said
         case res of
