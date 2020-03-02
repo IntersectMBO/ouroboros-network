@@ -68,6 +68,8 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
                      Handle, OpenMode (ReadMode))
 
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
+                     (RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex, SecondaryOffset)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -76,8 +78,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
                      throwUnexpectedError)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
-                     (RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types (HashInfo (..),
                      TraceCacheEvent (..), UnexpectedError (..),
                      WithBlockSize (..))

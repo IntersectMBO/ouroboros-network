@@ -13,11 +13,11 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex, SecondaryOffset)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 
 import           Test.Ouroboros.Storage.Util (tryFS)
 

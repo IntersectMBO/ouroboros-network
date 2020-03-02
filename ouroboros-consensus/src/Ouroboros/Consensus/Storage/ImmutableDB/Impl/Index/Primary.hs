@@ -68,9 +68,10 @@ import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..),
                      AllowExisting (..), OpenMode (..), SeekMode (..))
 
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
                      runGet)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 
 {------------------------------------------------------------------------------
   SecondaryOffset
@@ -559,14 +560,14 @@ backfill (RelativeSlot slot) (RelativeSlot nextExpected) offset =
 --
 -- See 'backfill' for more details.
 backfillEpoch
-  :: EpochSize
+  :: ChunkSize
   -> RelativeSlot
   -> SecondaryOffset
   -> [SecondaryOffset]
-backfillEpoch epochSize nextExpected offset =
+backfillEpoch chunkSize nextExpected offset =
     backfill (succ finalSlot) nextExpected offset
   where
-    finalSlot = maxRelativeSlot epochSize
+    finalSlot = maxRelativeSlot chunkSize
 
 {------------------------------------------------------------------------------
   Helper for debugging

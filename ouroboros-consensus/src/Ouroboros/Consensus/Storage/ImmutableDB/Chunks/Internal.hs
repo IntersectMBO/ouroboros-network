@@ -7,6 +7,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal (
     ChunkInfo(..)
   , simpleChunkInfo
     -- * Queries
+  , ChunkSize(..)
   , getChunkSize
     -- * Emulation of the EpochInfo interface
   , epochInfoFirst
@@ -14,6 +15,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal (
   ) where
 
 import           Data.Functor.Identity
+import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -35,7 +37,9 @@ instance Show ChunkInfo where
 
 -- | Simple chunk config with a single chunk size
 --
--- TODO: This should not use 'EpochSize'.
+-- This intentionally takes 'EpochSize' (number of slots) rather than
+-- 'ChunkSize': the translation from 'EpochSize' to 'ChunkSize' (number of
+-- available entries in a chunk) should not be done by client code.
 simpleChunkInfo :: EpochSize -> ChunkInfo
 simpleChunkInfo sz = WrapEpochInfo sz $ EI.fixedSizeEpochInfo sz
 
@@ -45,9 +49,16 @@ simpleChunkInfo sz = WrapEpochInfo sz $ EI.fixedSizeEpochInfo sz
   TODO: EpochNo here should be replaced by ChunkNo
 -------------------------------------------------------------------------------}
 
--- TODO: EpochSize should become ChunkSize
-getChunkSize :: ChunkInfo -> EpochNo -> EpochSize
-getChunkSize = epochInfoSize
+-- | Size of a chunk
+--
+-- 'ChunkSize' is an opaque type in the public API, as its interpretation is
+-- confusing: a chunk of @ChunkSize n@ can actually contain @n + 1@ blocks:
+-- @n@ regular blocks and one EBB.
+newtype ChunkSize = ChunkSize Word64
+  deriving newtype (Show)
+
+getChunkSize :: ChunkInfo -> EpochNo -> ChunkSize
+getChunkSize ci = ChunkSize . unEpochSize . epochInfoSize ci
 
 {-------------------------------------------------------------------------------
   TODO: Temporary: emulate the EpochInfo interface

@@ -113,15 +113,17 @@ data InSlot hash =
 data DBModel hash = DBModel
   { dbmSlots        :: Map SlotNo (InSlot hash)
   , dbmChunkInfo    :: ChunkInfo
+  , dbmEpochSize    :: EpochSize -- ^ Used to initialize 'dbmChunkInfo'
   , dbmIterators    :: Map IteratorId (IteratorModel hash)
   , dbmNextIterator :: IteratorId
   } deriving (Show, Generic)
 
-initDBModel :: EpochSize -- ^ We assume fixed epoch size
+initDBModel :: EpochSize -- ^ We assume fixed chunk size
             -> DBModel hash
 initDBModel epochSize = DBModel
   { dbmSlots        = Map.empty
   , dbmChunkInfo    = simpleChunkInfo epochSize
+  , dbmEpochSize    = epochSize
   , dbmIterators    = Map.empty
   , dbmNextIterator = 0
   }
@@ -291,9 +293,6 @@ throwUserError :: (MonadError ImmutableDBError m, HasCallStack)
                => UserError -> m a
 throwUserError e = throwError $ UserError e (popCallStack callStack)
 
-lookupChunkSize :: DBModel hash -> EpochNo -> EpochSize
-lookupChunkSize DBModel {..} = getChunkSize dbmChunkInfo
-
 lookupBySlot :: HasCallStack => SlotNo -> [Maybe b] -> Maybe b
 lookupBySlot (SlotNo i) = go i
   where
@@ -310,9 +309,7 @@ rollBackToTip :: forall hash. Show hash
               => ImmTip -> DBModel hash -> DBModel hash
 rollBackToTip tip dbm@DBModel {..} = case tip of
     Origin ->
-        (initDBModel firstChunkSize) { dbmNextIterator = dbmNextIterator }
-      where
-        firstChunkSize = lookupChunkSize dbm 0
+        (initDBModel dbmEpochSize) { dbmNextIterator = dbmNextIterator }
 
     At (EBB epoch) ->
         dbm { dbmSlots = Map.update deleteRegular (epochNoToSlot dbm epoch)

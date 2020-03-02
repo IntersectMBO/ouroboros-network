@@ -32,15 +32,12 @@
 
 module Ouroboros.Consensus.Storage.ImmutableDB.Layout (
     -- * Working with relative slots
-    RelativeSlot(..)
-  , EpochSlot(..)
-  , maxRelativeSlot
+    EpochSlot(..)
     -- * Derived information from 'ChunkInfo'
   , epochInfoBlockRelative
   , epochInfoAbsolute
   ) where
 
-import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -50,14 +47,12 @@ import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 
+-- TODO: Immutable.Layout will eventually be obsoleted by Chunks.Layout
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
+
 {-------------------------------------------------------------------------------
   Working with relative slots
 -------------------------------------------------------------------------------}
-
--- | A /relative/ slot within an 'EpochNo'.
-newtype RelativeSlot = RelativeSlot { unRelativeSlot :: Word64 }
-  deriving stock   (Eq, Ord, Show, Generic)
-  deriving newtype (Num, Enum, NoUnexpectedThunks)
 
 -- | The combination of an 'EpochNo' and a 'RelativeSlot' within the epoch.
 data EpochSlot = EpochSlot
@@ -67,13 +62,6 @@ data EpochSlot = EpochSlot
 
 instance Show EpochSlot where
   show (EpochSlot (EpochNo e) (RelativeSlot s)) = show (e, s)
-
--- | Return the last relative slot within the given epoch size.
---
--- Relative slot 0 is reserved for the EBB and regular relative slots start at
--- 0, so the last relative slot is equal to the epoch size.
-maxRelativeSlot :: EpochSize -> RelativeSlot
-maxRelativeSlot (EpochSize sz) = RelativeSlot sz
 
 {-------------------------------------------------------------------------------
   Derived information from 'ChunkInfo'

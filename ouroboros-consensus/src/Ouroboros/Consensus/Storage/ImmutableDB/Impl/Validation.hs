@@ -38,6 +38,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
                      (cachedIndex)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -211,7 +212,7 @@ validateMostRecentEpoch validateEnv@ValidateEnv { hasFS } = go
 -- of the epoch, the primary index should be padded with offsets to indicate
 -- that these slots are empty. See 'Primary.backfill'.
 data ShouldBeFinalised
-  = ShouldBeFinalised EpochSize
+  = ShouldBeFinalised ChunkSize
   | ShouldNotBeFinalised
   deriving (Show)
 
@@ -455,8 +456,8 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
     go nextExpectedRelSlot lastSecondaryOffset = \case
       [] -> case shouldBeFinalised of
         ShouldNotBeFinalised        -> []
-        ShouldBeFinalised epochSize ->
-          Primary.backfillEpoch epochSize nextExpectedRelSlot lastSecondaryOffset
+        ShouldBeFinalised chunkSize ->
+          Primary.backfillEpoch chunkSize nextExpectedRelSlot lastSecondaryOffset
 
       relSlot:relSlots'
         | relSlot < nextExpectedRelSlot

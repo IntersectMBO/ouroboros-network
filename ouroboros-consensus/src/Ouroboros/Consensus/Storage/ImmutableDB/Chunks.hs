@@ -4,7 +4,10 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks (
 
 -- Only export public API from the Internal module
 --
--- In particular, keep 'ChunkConfig' itself opaque.
+-- In particular, the following types will remain opaque:
+--
+-- * 'ChunkInfo'
+-- * 'ChunkSize'
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal as X
-                     (ChunkInfo, epochInfoEpoch, epochInfoFirst, getChunkSize,
-                     simpleChunkInfo)
+                     (ChunkInfo, ChunkSize, epochInfoEpoch, epochInfoFirst,
+                     getChunkSize, simpleChunkInfo)

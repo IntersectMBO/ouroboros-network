@@ -75,6 +75,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath)
 import           Ouroboros.Consensus.Storage.ImmutableDB hiding
                      (BlockOrEBB (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl as ImmDB
                      (Internal (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index

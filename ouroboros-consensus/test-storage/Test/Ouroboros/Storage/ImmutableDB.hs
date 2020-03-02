@@ -26,13 +26,13 @@ import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.ImmutableDB
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
                      (ShouldBeFinalised (..), reconstructPrimaryIndex)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
                      (epochFileParser)
 
