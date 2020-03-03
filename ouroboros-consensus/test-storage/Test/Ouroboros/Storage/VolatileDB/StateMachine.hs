@@ -200,27 +200,31 @@ newtype Model (r :: Type -> Type) = Model {
   deriving (Generic, Show)
 
 -- | An event records the model before and after a command along with the
--- command itself, and a mocked version of the response.
+-- command itself, and the response.
 data Event r = Event {
-      eventBefore   :: Model     r
-    , eventCmd      :: At CmdErr r
-    , eventAfter    :: Model     r
-    , eventMockResp :: Resp
+      eventBefore :: Model     r
+    , eventCmd    :: At CmdErr r
+    , eventAfter  :: Model     r
+    , eventResp   :: At Resp   r
     }
   deriving (Show)
+
+eventMockResp :: Event r -> Resp
+eventMockResp Event{..} = toMock eventAfter eventResp
 
 lockstep :: forall r.
             Model     r
          -> At CmdErr r
+         -> At Resp   r
          -> Event     r
-lockstep model cmdErr = Event {
-      eventBefore   = model
-    , eventCmd      = cmdErr
-    , eventAfter    = model'
-    , eventMockResp = mockResp
+lockstep model cmdErr resp = Event {
+      eventBefore = model
+    , eventCmd    = cmdErr
+    , eventAfter  = model'
+    , eventResp   = resp
     }
   where
-    (mockResp, dbModel') = step model cmdErr
+    (_mockResp, dbModel') = step model cmdErr
     model' = Model dbModel'
 
 -- | Key property of the model is that we can go from real to mock responses.
@@ -296,7 +300,7 @@ initModelImpl :: DBModel BlockId -> Model r
 initModelImpl = Model
 
 transitionImpl :: Model r -> At CmdErr r -> At Resp r -> Model r
-transitionImpl model cmd _ = eventAfter $ lockstep model cmd
+transitionImpl model cmd = eventAfter . lockstep model cmd
 
 preconditionImpl :: Model Symbolic -> At CmdErr Symbolic -> Logic
 preconditionImpl Model{..} (At (CmdErr cmd mbErrors)) =
@@ -337,7 +341,7 @@ postconditionImpl :: Model Concrete
 postconditionImpl model cmdErr resp =
     toMock (eventAfter ev) resp .== eventMockResp ev
   where
-    ev = lockstep model cmdErr
+    ev = lockstep model cmdErr resp
 
 generatorCmdImpl :: Model Symbolic -> Gen Cmd
 generatorCmdImpl Model {..} = frequency
@@ -791,7 +795,7 @@ tagGetSuccessors = mapMaybe f
 execCmd :: Model Symbolic
         -> Command (At CmdErr) (At Resp)
         -> Event Symbolic
-execCmd model (Command cmdErr _resp _vars) = lockstep model cmdErr
+execCmd model (Command cmdErr resp _vars) = lockstep model cmdErr resp
 
 execCmds :: Model Symbolic -> Commands (At CmdErr) (At Resp) -> [Event Symbolic]
 execCmds model (Commands cs) = go model cs
