@@ -184,160 +184,150 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
     serverIdle :: forall (n :: N).
                   Nat n
                -> StatefulM (ServerState txid tx) n txid tx m
-    serverIdle n = StatefulM (serverIdle' n)
+    serverIdle n = StatefulM $ \st -> case n of
+        Zero -> if canRequestMoreTxs st
+          then
+            -- There are no replies in flight, but we do know some more txs we
+            -- can ask for, so lets ask for them and more txids.
+            pure $ continueWithState (serverReqTxs Zero) st
 
-    serverIdle' :: forall (n :: N).
-                   Nat n
-                -> ServerState txid tx
-                -> m (ServerStIdle n txid tx m ())
-    serverIdle' Zero st
-        -- There are no replies in flight, but we do know some more txs we can
-        -- ask for, so lets ask for them and more txids.
-      | canRequestMoreTxs st
-      = pure $ continueWithState (serverReqTxs Zero) st
+          else do
+            -- There's no replies in flight, and we have no more txs we can
+            -- ask for so the only remaining thing to do is to ask for more
+            -- txids. Since this is the only thing to do now, we make this a
+            -- blocking call.
+            let numTxIdsToRequest = maxTxIdsToRequest `min` maxUnacked
+            assert (requestedTxIdsInFlight st == 0
+                  && Seq.null (unacknowledgedTxIds st)
+                  && Map.null (availableTxids st)
+                  && Map.null (bufferedTxs st)) $
+              pure $
+              SendMsgRequestTxIdsBlocking
+                (numTxsToAcknowledge st)
+                numTxIdsToRequest
+                ()        -- Our result if the client terminates the protocol
+                ( collectAndContinueWithState (handleReply Zero) st {
+                    numTxsToAcknowledge    = 0,
+                    requestedTxIdsInFlight = numTxIdsToRequest
+                  }
+                . CollectTxIds numTxIdsToRequest
+                . NonEmpty.toList)
 
-        -- There's no replies in flight, and we have no more txs we can ask for
-        -- so the only remaining thing to do is to ask for more txids. Since
-        -- this is the only thing to do now, we make this a blocking call.
-      | otherwise
-      , let numTxIdsToRequest = maxTxIdsToRequest `min` maxUnacked
-      = assert (requestedTxIdsInFlight st == 0
-             && Seq.null (unacknowledgedTxIds st)
-             && Map.null (availableTxids st)
-             && Map.null (bufferedTxs st)) $
-        pure $
-        SendMsgRequestTxIdsBlocking
-          (numTxsToAcknowledge st)
-          numTxIdsToRequest
-          ()                -- Our result if the client terminates the protocol
-          ( collectAndContinueWithState (handleReply Zero) st {
-              numTxsToAcknowledge    = 0,
-              requestedTxIdsInFlight = numTxIdsToRequest
-            }
-          . CollectTxIds numTxIdsToRequest
-          . NonEmpty.toList)
+        Succ n' -> if canRequestMoreTxs st
+          then
+            -- We have replies in flight and we should eagerly collect them if
+            -- available, but there are transactions to request too so we
+            -- should not block waiting for replies.
+            --
+            -- Having requested more transactions, we opportunistically ask
+            -- for more txids in a non-blocking way. This is how we pipeline
+            -- asking for both txs and txids.
+            --
+            -- It's important not to pipeline more requests for txids when we
+            -- have no txs to ask for, since (with no other guard) this will
+            -- put us into a busy-polling loop.
+            --
+            pure $ CollectPipelined
+              (Just (continueWithState (serverReqTxs (Succ n')) st))
+              (collectAndContinueWithState (handleReply n') st)
 
-    serverIdle' (Succ n) st
-        -- We have replies in flight and we should eagerly collect them if
-        -- available, but there are transactions to request too so we should
-        -- not block waiting for replies.
-        --
-        -- Having requested more transactions, we opportunistically ask for
-        -- more txids in a non-blocking way. This is how we pipeline asking for
-        -- both txs and txids.
-        --
-        -- It's important not to pipeline more requests for txids when we have
-        -- no txs to ask for, since (with no other guard) this will put us into
-        -- a busy-polling loop.
-        --
-      | canRequestMoreTxs st
-      = pure $ CollectPipelined
-          (Just (continueWithState (serverReqTxs (Succ n)) st))
-          (collectAndContinueWithState (handleReply n) st)
-
-        -- In this case there is nothing else to do so we block until we
-        -- collect a reply.
-      | otherwise
-      = pure $ CollectPipelined
-          Nothing
-          (collectAndContinueWithState (handleReply n) st)
-
-    canRequestMoreTxs :: ServerState k tx -> Bool
-    canRequestMoreTxs st =
-        not (Map.null (availableTxids st))
+          else
+            -- In this case there is nothing else to do so we block until we
+            -- collect a reply.
+            pure $ CollectPipelined
+              Nothing
+              (collectAndContinueWithState (handleReply n') st)
+      where
+        canRequestMoreTxs :: ServerState k tx -> Bool
+        canRequestMoreTxs st =
+            not (Map.null (availableTxids st))
 
     handleReply :: forall (n :: N).
                    Nat n
                 -> StatefulCollect (ServerState txid tx) n txid tx m
-    handleReply n = StatefulCollect (handleReply' n)
+    handleReply n = StatefulCollect $ \st collect -> case collect of
+      CollectTxIds reqNo txids -> do
+        -- Check they didn't send more than we asked for. We don't need to
+        -- check for a minimum: the blocking case checks for non-zero
+        -- elsewhere, and for the non-blocking case it is quite normal for
+        -- them to send us none.
+        let txidsSeq = Seq.fromList (map fst txids)
+            txidsMap = Map.fromList txids
 
-    handleReply' :: forall (n :: N).
-                    Nat n
-                 -> ServerState txid tx
-                 -> Collect txid tx
-                 -> m (ServerStIdle n txid tx m ())
-    handleReply' n st (CollectTxIds reqNo txids) = do
+        unless (Seq.length txidsSeq <= fromIntegral reqNo) $
+          throwM ProtocolErrorTxIdsNotRequested
 
-      -- Check they didn't send more than we asked for. We don't need to check
-      -- for a minimum: the blocking case checks for non-zero elsewhere, and
-      -- for the non-blocking case it is quite normal for them to send us none.
-      let txidsSeq = Seq.fromList (map fst txids)
-          txidsMap = Map.fromList txids
+        -- Upon receiving a batch of new txids we extend our available set,
+        -- and extended the unacknowledged sequence.
+        --
+        -- We also pre-emptively acknowledge those txids that are already in
+        -- the mempool. This prevents us from requesting their corresponding
+        -- transactions again in the future.
+        let st' = st {
+          requestedTxIdsInFlight = requestedTxIdsInFlight st - reqNo,
+          unacknowledgedTxIds    = unacknowledgedTxIds st <> txidsSeq,
+          availableTxids         = availableTxids st <> txidsMap
+        }
+        mpSnapshot <- atomically mempoolGetSnapshot
+        continueWithStateM
+          (serverIdle n)
+          (acknowledgeTxIdsInMempool st' mpSnapshot)
 
-      unless (Seq.length txidsSeq <= fromIntegral reqNo) $
-        throwM ProtocolErrorTxIdsNotRequested
+      CollectTxs txids txs -> do
+        -- To start with we have to verify that the txs they have sent us do
+        -- correspond to the txs we asked for. This is slightly complicated by
+        -- the fact that in general we get a subset of the txs that we asked
+        -- for. We should never get a tx we did not ask for. We take a strict
+        -- approach to this and check it.
+        --
+        let txsMap :: Map txid tx
+            txsMap = Map.fromList [ (txId tx, tx) | tx <- txs ]
 
-      -- Upon receiving a batch of new txids we extend our available set,
-      -- and extended the unacknowledged sequence.
-      --
-      -- We also pre-emptively acknowledge those txids that are already in the
-      -- mempool. This prevents us from requesting their corresponding
-      -- transactions again in the future.
-      let st' = st {
-        requestedTxIdsInFlight = requestedTxIdsInFlight st - reqNo,
-        unacknowledgedTxIds    = unacknowledgedTxIds st <> txidsSeq,
-        availableTxids         = availableTxids st <> txidsMap
-      }
-      mpSnapshot <- atomically mempoolGetSnapshot
-      continueWithStateM
-        (serverIdle n)
-        (acknowledgeTxIdsInMempool st' mpSnapshot)
+            txidsReceived  = Map.keysSet txsMap
+            txidsRequested = Set.fromList txids
 
-    handleReply' n st (CollectTxs txids txs) = do
+        unless (txidsReceived `Set.isSubsetOf` txidsRequested) $
+          throwM ProtocolErrorTxNotRequested
 
-      -- To start with we have to verify that the txs they have sent us do
-      -- correspond to the txs we asked for. This is slightly complicated by
-      -- the fact that in general we get a subset of the txs that we asked for.
-      -- We should never get a tx we did not ask for. We take a strict approch
-      -- to this and check it.
-      --
-      let txsMap :: Map txid tx
-          txsMap = Map.fromList [ (txId tx, tx) | tx <- txs ]
+            -- We can match up all the txids we requested, with those we
+            -- received.
+        let txIdsRequestedWithTxsReceived :: Map txid (Maybe tx)
+            txIdsRequestedWithTxsReceived =
+                Map.map Just txsMap
+             <> Map.fromSet (const Nothing) txidsRequested
 
-          txidsReceived  = Map.keysSet txsMap
-          txidsRequested = Set.fromList txids
+            -- We still have to acknowledge the txids we were given. This
+            -- combined with the fact that we request txs out of order means
+            -- our bufferedTxs has to track all the txids we asked for, even
+            -- though not all have replies.
+            bufferedTxs' = bufferedTxs st <> txIdsRequestedWithTxsReceived
 
-      unless (txidsReceived `Set.isSubsetOf` txidsRequested) $
-        throwM ProtocolErrorTxNotRequested
+            -- We have to update the unacknowledgedTxIds here eagerly and not
+            -- delay it to serverReqTxs, otherwise we could end up blocking in
+            -- serverIdle on more pipelined results rather than being able to
+            -- move on.
 
-          -- We can match up all the txids we requested, with those we received.
-      let txIdsRequestedWithTxsReceived :: Map txid (Maybe tx)
-          txIdsRequestedWithTxsReceived =
-              Map.map Just txsMap
-           <> Map.fromSet (const Nothing) txidsRequested
+            -- Check if having received more txs we can now confirm any (in
+            -- strict order in the unacknowledgedTxIds sequence).
+            (acknowledgedTxIds, unacknowledgedTxIds') =
+              Seq.spanl (`Map.member` bufferedTxs') (unacknowledgedTxIds st)
 
-          -- We still have to acknowledge the txids we were given. This
-          -- combined with the fact that we request txs out of order means our
-          -- bufferedTxs has to track all the txids we asked for, even though
-          -- not all have replies.
-          bufferedTxs' = bufferedTxs st <> txIdsRequestedWithTxsReceived
+            -- If so we can submit the acknowledged txs to our local mempool
+            txsReady = foldr (\txid r -> maybe r (:r) (bufferedTxs' Map.! txid))
+                             [] acknowledgedTxIds
 
-          -- We have to update the unacknowledgedTxIds here eagerly and not
-          -- delay it to serverReqTxs, otherwise we could end up blocking in
-          -- serverIdle on more pipelined results rather than being able to
-          -- move on.
+            -- And remove acknowledged txs from our buffer
+            bufferedTxs'' = foldl' (flip Map.delete)
+                                   bufferedTxs' acknowledgedTxIds
 
-          -- Check if having received more txs we can now confirm any (in
-          -- strict order in the unacknowledgedTxIds sequence).
-          (acknowledgedTxIds, unacknowledgedTxIds') =
-            Seq.spanl (`Map.member` bufferedTxs') (unacknowledgedTxIds st)
+        _ <- mempoolAddTxs txsReady
 
-          -- If so we can submit the acknowledged txs to our local mempool
-          txsReady = foldr (\txid r -> maybe r (:r) (bufferedTxs' Map.! txid))
-                           [] acknowledgedTxIds
-
-          -- And remove acknowledged txs from our buffer
-          bufferedTxs'' = foldl' (flip Map.delete)
-                                 bufferedTxs' acknowledgedTxIds
-
-      _ <- mempoolAddTxs txsReady
-
-      continueWithStateM (serverIdle n) st {
-        bufferedTxs         = bufferedTxs'',
-        unacknowledgedTxIds = unacknowledgedTxIds',
-        numTxsToAcknowledge = numTxsToAcknowledge st
-                            + fromIntegral (Seq.length acknowledgedTxIds)
-      }
+        continueWithStateM (serverIdle n) st {
+          bufferedTxs         = bufferedTxs'',
+          unacknowledgedTxIds = unacknowledgedTxIds',
+          numTxsToAcknowledge = numTxsToAcknowledge st
+                              + fromIntegral (Seq.length acknowledgedTxIds)
+        }
 
     -- Pre-emptively acknowledge those of the available transaction IDs that
     -- are already in the mempool and return the updated 'ServerState'.
@@ -391,19 +381,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
     serverReqTxs :: forall (n :: N).
                     Nat n
                  -> Stateful (ServerState txid tx) n txid tx m
-    serverReqTxs n = Stateful (serverReqTxs' n)
-
-    serverReqTxs' :: forall (n :: N).
-                     Nat n
-                  -> ServerState txid tx
-                  -> ServerStIdle n txid tx m ()
-    serverReqTxs' n st =
-        SendMsgRequestTxsPipelined
-          (Map.keys txsToRequest)
-          (continueWithStateM (serverReqTxIds (Succ n)) st {
-             availableTxids = availableTxids'
-           })
-      where
+    serverReqTxs n = Stateful $ \st -> do
         -- TODO: This implementation is deliberately naive, we pick in an
         -- arbitrary order and up to a fixed limit. This is to illustrate
         -- that we can request txs out of order. In the final version we will
@@ -413,21 +391,30 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
         -- amount in flight and delta-Q to estimate when we're in danger of
         -- becomming idle, and need to request stalled txs.
         --
-        (txsToRequest, availableTxids') =
-          Map.splitAt (fromIntegral maxTxToRequest) (availableTxids st)
+        let (txsToRequest, availableTxids') =
+              Map.splitAt (fromIntegral maxTxToRequest) (availableTxids st)
+
+        SendMsgRequestTxsPipelined
+          (Map.keys txsToRequest)
+          (continueWithStateM (serverReqTxIds (Succ n)) st {
+             availableTxids = availableTxids'
+           })
 
     serverReqTxIds :: forall (n :: N).
                       Nat n
                    -> StatefulM (ServerState txid tx) n txid tx m
-    serverReqTxIds n = StatefulM (serverReqTxIds' n)
+    serverReqTxIds n = StatefulM $ \st -> do
+          -- This definition is justified by the fact that the
+          -- 'numTxsToAcknowledge' are not included in the
+          -- 'unacknowledgedTxIds'.
+      let numTxIdsToRequest =
+                  (maxUnacked
+                    - fromIntegral (Seq.length (unacknowledgedTxIds st))
+                    - requestedTxIdsInFlight st)
+            `min` maxTxIdsToRequest
 
-    serverReqTxIds' :: forall (n :: N).
-                       Nat n
-                    -> ServerState txid tx
-                    -> m (ServerStIdle n txid tx m ())
-    serverReqTxIds' n st
-      | numTxIdsToRequest > 0
-      = pure $ SendMsgRequestTxIdsPipelined
+      if numTxIdsToRequest > 0
+        then pure $ SendMsgRequestTxIdsPipelined
           (numTxsToAcknowledge st)
           numTxIdsToRequest
           (continueWithStateM (serverIdle (Succ n)) st {
@@ -435,17 +422,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
                                        + numTxIdsToRequest,
                 numTxsToAcknowledge    = 0
               })
-
-      | otherwise
-      = continueWithStateM (serverIdle n) st
-      where
-        -- This definition is justified by the fact that the
-        -- 'numTxsToAcknowledge' are not included in the 'unacknowledgedTxIds'.
-        numTxIdsToRequest =
-                (maxUnacked
-                  - fromIntegral (Seq.length (unacknowledgedTxIds st))
-                  - requestedTxIdsInFlight st)
-          `min` maxTxIdsToRequest
+        else continueWithStateM (serverIdle n) st
 
 newtype Stateful s n txid tx m = Stateful (s -> ServerStIdle n txid tx m ())
 
