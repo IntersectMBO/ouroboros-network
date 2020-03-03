@@ -134,9 +134,11 @@ pickOne (x:xs) = ([], x, xs)
 
 -- | Mark the last element of the list as 'Right'
 markLast :: [a] -> [Either a a]
-markLast [] = []
-markLast xs = let (y:ys) = reverse xs
-              in reverse $ Right y : map Left ys
+markLast = go
+  where
+    go []     = []
+    go [x]    = [Right x]
+    go (x:xs) = Left x : go xs
 
 lastMaybe :: [a] -> Maybe a
 lastMaybe []     = Nothing

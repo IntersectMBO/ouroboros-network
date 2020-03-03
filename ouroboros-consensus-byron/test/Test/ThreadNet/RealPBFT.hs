@@ -510,7 +510,7 @@ expectedBlockRejection
     -- the node lead but rejected its own block. This is the only case we
     -- expect. (Rejecting its own block also prevents the node from propagating
     -- that block.)
-    ownBlock = fromIntegral i == mod (unSlotNo s) (fromIntegral nn)
+    ownBlock = i == mod (unSlotNo s) nn
 expectedBlockRejection _ _ _ _ = False
 
 -- | If we rekey in slot rekeySlot, it is in general possible that the leader
@@ -535,7 +535,7 @@ latestPossibleDlgMaturation
   :: SecurityParam -> NumCoreNodes -> SlotNo -> SlotNo
 latestPossibleDlgMaturation
   (SecurityParam k) (NumCoreNodes n) (SlotNo rekeySlot) =
-    SlotNo $ rekeySlot + fromIntegral n + 2 * k
+    SlotNo $ rekeySlot + n + 2 * k
 
 prop_simple_real_pbft_convergence :: ProduceEBBs
                                   -> SecurityParam
@@ -677,7 +677,7 @@ hasAllEBBs k (NumSlots t) produceEBBs (nid, c) =
       ProduceEBBs -> coerce [0 .. hi]
         where
           hi :: Word64
-          hi = if t < 1 then 0 else fromIntegral (t - 1) `div` denom
+          hi = if t < 1 then 0 else (t - 1) `div` denom
           denom = unEpochSlots $ kEpochSlots $ coerce k
 
     actual   = mapMaybe (nodeIsEBB . getHeader) $ Chain.toOldestFirst c

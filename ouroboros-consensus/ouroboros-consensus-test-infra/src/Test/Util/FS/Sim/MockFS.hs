@@ -628,7 +628,7 @@ hPutSome h toWrite =
     snip :: Int -> Int -> ByteString -> (ByteString, ByteString)
     snip n m bs = (a, c)
       where
-        (a, bc) = BS.splitAt (fromIntegral n) bs
+        (a, bc) = BS.splitAt n bs
         c       = BS.drop m bc
 
 -- | Truncate a file

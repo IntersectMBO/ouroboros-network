@@ -11,11 +11,11 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
-{-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans -Wno-partial-fields #-}
 {-
   Database conversion tool.
 -}
-module Main where
+module Main (main) where
 
 import           Control.Exception (Exception, throwIO)
 import           Control.Monad.Except (liftIO, runExceptT)
@@ -71,34 +71,31 @@ instance ParseField UTCTime
 instance ParseFields UTCTime
 
 instance ParseRecord UTCTime where
-
   parseRecord = fmap getOnly parseRecord
 
 instance ParseField (Hash CB.Raw) where
-
   readField = Options.eitherReader (first Text.unpack . decodeAbstractHash . Text.pack)
 
 instance ParseFields (Hash CB.Raw)
 
 instance ParseRecord (Hash CB.Raw) where
-
   parseRecord = fmap getOnly parseRecord
 
 data Args w
   = Convert
-      { epochDir :: w ::: FilePath <?> "Path to the directory containing old epoch files"
-      , dbDir :: w ::: FilePath <?> "Path to the new database directory"
-      , epochSlots :: w ::: Word64 <?> "Slots per epoch"
-      }
+    { epochDir             :: w ::: FilePath      <?> "Path to the directory containing old epoch files"
+    , dbDir                :: w ::: FilePath      <?> "Path to the new database directory"
+    , epochSlots           :: w ::: Word64        <?> "Slots per epoch"
+    }
   | Validate
-      { dbDir :: w ::: FilePath <?> "Path to the new database directory"
-      , configFile :: w ::: FilePath <?> "Configuration file (e.g. mainnet-genesis.json)"
-      , systemStart :: w ::: Maybe UTCTime <?> "System start time"
-      , requiresNetworkMagic :: w ::: Bool <?> "Expecto patronum?"
-      , genesisHash :: w ::: Hash CB.Raw <?> "Expected genesis hash"
-      , verbose :: w ::: Bool <?> "Enable verbose logging"
-      , onlyImmDB :: w ::: Bool <?> "Validate only the immutable DB (e.g. do not do ledger validation)"
-      }
+    { dbDir                :: w ::: FilePath      <?> "Path to the new database directory"
+    , configFile           :: w ::: FilePath      <?> "Configuration file (e.g. mainnet-genesis.json)"
+    , systemStart          :: w ::: Maybe UTCTime <?> "System start time"
+    , requiresNetworkMagic :: w ::: Bool          <?> "Expecto patronum?"
+    , genesisHash          :: w ::: Hash CB.Raw   <?> "Expected genesis hash"
+    , verbose              :: w ::: Bool          <?> "Enable verbose logging"
+    , onlyImmDB            :: w ::: Bool          <?> "Validate only the immutable DB (e.g. do not do ledger validation)"
+    }
   deriving (Generic)
 
 instance ParseRecord (Args Wrapped)
@@ -147,17 +144,20 @@ convertEpochFile
   -> Path Abs File -- ^ Input
   -> Path Abs Dir -- ^ Ouput directory
   -> IO (Either CC.ParseError ())
-convertEpochFile es inFile outDir =
-  let inStream = CC.parseEpochFileWithBoundary es (toFilePath inFile)
-      dbDir = outDir </> [reldir|immutable|]
-      encode = CB.serializeEncoding' . Byron.encodeByronBlock . Byron.mkByronBlock es
-   in do
-        createDirIfMissing True dbDir
-        -- Old filename format is XXXXX.dat, new is XXXXX.epoch
-        outFileName <- parseRelFile (toFilePath (filename inFile))
-        outFile <- (dbDir </> outFileName) -<.> "epoch"
-        IO.withFile (toFilePath outFile) IO.WriteMode $ \h ->
-          runResourceT $ runExceptT $ S.mapM_ (liftIO . BS.hPut h) . S.map encode $ inStream
+convertEpochFile es inFile outDir = do
+    createDirIfMissing True dbDir
+    -- Old filename format is XXXXX.dat, new is XXXXX.epoch
+    outFileName <- parseRelFile (toFilePath (filename inFile))
+    outFile <- (dbDir </> outFileName) -<.> "epoch"
+    IO.withFile (toFilePath outFile) IO.WriteMode $ \h ->
+      runResourceT $ runExceptT $ S.mapM_ (liftIO . BS.hPut h) . S.map encode $ inStream
+  where
+    inStream = CC.parseEpochFileWithBoundary es (toFilePath inFile)
+    dbDir = outDir </> [reldir|immutable|]
+    encode =
+        CB.serializeEncoding'
+      . Byron.encodeByronBlock
+      . Byron.mkByronBlock es
 
 validateChainDb
   :: Path Abs Dir -- ^ DB directory

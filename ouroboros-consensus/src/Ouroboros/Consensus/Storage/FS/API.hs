@@ -238,7 +238,7 @@ hPutAllStrict hasFS h = go 0
     go !written bs = do
       n <- hPutSome hasFS h bs
       let bs'      = BS.drop (fromIntegral n) bs
-          written' = written + fromIntegral n
+          written' = written + n
       if BS.null bs'
         then return written'
         else go written' bs'
