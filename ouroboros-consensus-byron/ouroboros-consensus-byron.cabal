@@ -159,6 +159,7 @@ executable db-analyser
   hs-source-dirs:      tools/db-analyser
   main-is:             Main.hs
   build-depends:       base
+                     , bytestring
                      , cardano-binary
                      , cardano-crypto-wrapper
                      , cardano-ledger

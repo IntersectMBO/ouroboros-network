@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE RecordWildCards   #-}
@@ -7,12 +8,15 @@
 module Main (main) where
 
 import           Control.Monad.Except
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString as BS (length)
 import           Data.Coerce
 import           Data.Foldable (asum)
 import           Data.IORef
 import           Data.List (foldl', intercalate)
 import           Data.Proxy (Proxy (..))
 import           Data.Word
+import           GHC.Natural (Natural)
 import           Options.Applicative
 
 import           Cardano.Binary (unAnnotated)
@@ -70,6 +74,8 @@ main = do
 data AnalysisName =
     ShowSlotBlockNo
   | CountTxOutputs
+  | ShowBlockHeaderSize
+  | ShowBlockTxsSize
 
 type Analysis = ImmDB IO ByronBlock
              -> EpochInfo IO
@@ -77,8 +83,10 @@ type Analysis = ImmDB IO ByronBlock
              -> IO ()
 
 runAnalysis :: AnalysisName -> Analysis
-runAnalysis ShowSlotBlockNo = showSlotBlockNo
-runAnalysis CountTxOutputs  = countTxOutputs
+runAnalysis ShowSlotBlockNo     = showSlotBlockNo
+runAnalysis CountTxOutputs      = countTxOutputs
+runAnalysis ShowBlockHeaderSize = showBlockHeaderSize
+runAnalysis ShowBlockTxsSize    = showBlockTxsSize
 
 {-------------------------------------------------------------------------------
   Analysis: show block and slot number for all blocks
@@ -150,6 +158,72 @@ relativeSlotNo epochInfo (SlotNo absSlot) = do
     return (epoch, absSlot - first)
 
 {-------------------------------------------------------------------------------
+  Analysis: show the block header size in bytes for all blocks
+-------------------------------------------------------------------------------}
+
+showBlockHeaderSize :: Analysis
+showBlockHeaderSize immDB epochInfo rr = do
+    maxBlockHeaderSizeRef <- newIORef 0
+    processAll immDB rr (go maxBlockHeaderSizeRef)
+    maxBlockHeaderSize <- readIORef maxBlockHeaderSizeRef
+    putStrLn ("Maximum encountered block header size = " <> show maxBlockHeaderSize)
+  where
+    go :: IORef Natural -> ByronBlock -> IO ()
+    go maxBlockHeaderSizeRef blk =
+        case blk of
+          Byron.ByronBlock (Chain.ABOBBlock regularBlk) _ _ -> do
+            let blockHdrSz = Chain.headerLength (Chain.blockHeader regularBlk)
+                slotNo = blockSlot blk
+            void $ modifyIORef' maxBlockHeaderSizeRef (max blockHdrSz)
+            epochSlot <- relativeSlotNo epochInfo slotNo
+            putStrLn $ intercalate "\t" [
+                show slotNo
+              , show epochSlot
+              , "Block header size = " <> show blockHdrSz
+              ]
+          _otherwise ->
+            return () -- Skip EBBs
+
+{-------------------------------------------------------------------------------
+  Analysis: show the total transaction sizes in bytes per block
+-------------------------------------------------------------------------------}
+
+showBlockTxsSize :: Analysis
+showBlockTxsSize immDB epochInfo rr = processAll immDB rr processUnlessEBB
+  where
+    processUnlessEBB :: ByronBlock -> IO ()
+    processUnlessEBB blk =
+        case blk of
+          Byron.ByronBlock (Chain.ABOBBlock regularBlk) _ _ ->
+            process (blockSlot blk) regularBlk
+          _otherwise ->
+            return () -- Skip EBBs
+
+    process :: SlotNo -> Chain.ABlock ByteString -> IO ()
+    process slotNo block = do
+        epochSlot <- relativeSlotNo epochInfo slotNo
+        putStrLn $ intercalate "\t" [
+            show slotNo
+          , show epochSlot
+          , "Num txs in block = " <> show numBlockTxs
+          , "Total size of txs in block = " <> show blockTxsSize
+          ]
+      where
+        Chain.ABlock{ blockBody } = block
+        Chain.ABody{ bodyTxPayload } = blockBody
+        Chain.ATxPayload{ aUnTxPayload = blockTxAuxs } = bodyTxPayload
+
+        txsSerializedLength :: [Chain.ATxAux ByteString] -> Int
+        txsSerializedLength txs = foldl' (+) 0 $
+          map (BS.length . Chain.aTaAnnotation) txs
+
+        numBlockTxs :: Int
+        numBlockTxs = length blockTxAuxs
+
+        blockTxsSize :: Int
+        blockTxsSize = txsSerializedLength blockTxAuxs
+
+{-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the imm DB
 -------------------------------------------------------------------------------}
 
@@ -212,6 +286,14 @@ parseAnalysis = asum [
     , flag' CountTxOutputs $ mconcat [
           long "count-tx-outputs"
         , help "Show number of transaction outputs per block"
+        ]
+    , flag' ShowBlockHeaderSize $ mconcat [
+          long "show-block-header-size"
+        , help "Show the header sizes of all blocks"
+        ]
+    , flag' ShowBlockTxsSize $ mconcat [
+          long "show-block-txs-size"
+        , help "Show the total transaction sizes per block"
         ]
     ]
 
