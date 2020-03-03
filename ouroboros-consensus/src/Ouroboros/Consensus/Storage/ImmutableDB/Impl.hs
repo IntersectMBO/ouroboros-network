@@ -121,6 +121,8 @@ import           Ouroboros.Consensus.Storage.FS.CRC
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (unsafeEpochNoToChunkNo)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -154,8 +156,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
 -- See 'ValidationPolicy' for more details on the different validation
 -- policies.
 --
--- An 'EpochFileParser' must be passed in order to reconstruct indices from
--- epoch files. The 'Word' that the 'EpochFileParser' must return for each
+-- An 'ChunkFileParser' must be passed in order to reconstruct indices from
+-- epoch files. The 'Word' that the 'ChunkFileParser' must return for each
 -- 'SlotNo' is the size (in bytes) occupied by the (non-empty) block
 -- corresponding to the 'SlotNo'. The only reason we need to know the size of
 -- the blocks is to compute the offset of the end of the last block, so we can
@@ -172,7 +174,7 @@ withDB
   -> ChunkInfo
   -> HashInfo hash
   -> ValidationPolicy
-  -> EpochFileParser e m (BlockSummary hash) hash
+  -> ChunkFileParser e m (BlockSummary hash) hash
   -> Tracer m (TraceEvent e hash)
   -> Index.CacheConfig
   -> BlockchainTime m
@@ -241,7 +243,7 @@ openDBInternal
   -> ChunkInfo
   -> HashInfo hash
   -> ValidationPolicy
-  -> EpochFileParser e m (BlockSummary hash) hash
+  -> ChunkFileParser e m (BlockSummary hash) hash
   -> Tracer m (TraceEvent e hash)
   -> Index.CacheConfig
   -> BlockchainTime m
@@ -266,7 +268,7 @@ openDBInternal registry hasFS@HasFS{..} chunkInfo hashInfo valPol parser
     let dbEnv = ImmutableDBEnv
           { _dbHasFS           = hasFS
           , _dbInternalState   = stVar
-          , _dbEpochFileParser = parser
+          , _dbChunkFileParser = parser
           , _dbChunkInfo       = chunkInfo
           , _dbHashInfo        = hashInfo
           , _dbTracer          = tracer
@@ -324,7 +326,7 @@ reopenImpl ImmutableDBEnv {..} valPol = bracketOnError
               { hasFS       = _dbHasFS
               , chunkInfo   = _dbChunkInfo
               , hashInfo    = _dbHashInfo
-              , parser      = _dbEpochFileParser
+              , parser      = _dbChunkFileParser
               , tracer      = _dbTracer
               , registry    = _dbRegistry
               , cacheConfig = _dbCacheConfig
@@ -356,8 +358,8 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
         cleanUp hasFS st
         newTipWithHash <- truncateTo hasFS st newTipChunkSlot
         let (newEpoch, allowExisting) = case newTipChunkSlot of
-              Origin                 -> (0, MustBeNew)
-              At (ChunkSlot epoch _) -> (epoch, AllowExisting)
+              Origin                 -> (firstChunkNo, MustBeNew)
+              At (ChunkSlot chunk _) -> (chunk, AllowExisting)
         -- Reset the index, as it can contain stale information. Also restarts
         -- the background thread expiring unused past epochs.
         Index.restart _index newEpoch
@@ -378,33 +380,33 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
       -> m (ImmTipWithInfo hash)
     truncateTo hasFS OpenState {} = \case
       Origin                       ->
-        removeFilesStartingFrom hasFS 0 $> Origin
-      At (ChunkSlot epoch relSlot) -> do
-        removeFilesStartingFrom hasFS (epoch + 1)
+        removeFilesStartingFrom hasFS firstChunkNo $> Origin
+      At (ChunkSlot chunk relSlot) -> do
+        removeFilesStartingFrom hasFS (nextChunkNo chunk)
 
         -- Retrieve the needed info from the primary index file and then
         -- truncate it.
-        primaryIndex <- Primary.load hasFS epoch
-        Primary.truncateToSlotFS hasFS epoch relSlot
+        primaryIndex <- Primary.load hasFS chunk
+        Primary.truncateToSlotFS hasFS chunk relSlot
         let lastSecondaryOffset = Primary.offsetOfSlot primaryIndex relSlot
             isEBB               = relativeSlotIsEBB relSlot
 
         -- Retrieve the needed info from the secondary index file and then
         -- truncate it.
         (entry, blockSize) <- Secondary.readEntry hasFS _dbHashInfo
-          epoch isEBB lastSecondaryOffset
-        Secondary.truncateToEntry hasFS _dbHashInfo epoch lastSecondaryOffset
+          chunk isEBB lastSecondaryOffset
+        Secondary.truncateToEntry hasFS _dbHashInfo chunk lastSecondaryOffset
 
-        -- Truncate the epoch file.
+        -- Truncate the chunk file.
         case blockSize of
-          -- The block is the last block in the epoch file, so no need to
+          -- The block is the last block in the chunk file, so no need to
           -- truncate
           Secondary.LastEntry      -> return ()
           Secondary.BlockSize size ->
               withFile hasFS epochFile (AppendMode AllowExisting) $ \eHnd ->
                 hTruncate hasFS eHnd offset
             where
-              epochFile = renderFile "epoch" epoch
+              epochFile = renderFile "epoch" chunk
               offset    = unBlockOffset (Secondary.blockOffset entry)
                         + fromIntegral size
 
@@ -438,7 +440,7 @@ getBlockComponentImpl dbEnv blockComponent slot =
         throwUserError $
           ReadFutureSlotError slot (forgetTipInfo <$> _currentTip)
 
-      let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
+      let curEpochInfo = CurrentChunkInfo _currentChunk _currentChunkOffset
           chunkSlot    = chunkSlotForRegularBlock _dbChunkInfo slot
       getEpochSlot _dbHasFS _dbChunkInfo _index curEpochInfo
         blockComponent chunkSlot
@@ -453,17 +455,18 @@ getEBBComponentImpl
   -> m (Maybe b)
 getEBBComponentImpl dbEnv blockComponent epoch =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
-      let inTheFuture = case forgetTipInfo <$> _currentTip of
+      let chunk       = unsafeEpochNoToChunkNo epoch
+          inTheFuture = case forgetTipInfo <$> _currentTip of
             Origin       -> True
-            At (Block _) -> epoch > _currentEpoch
-            At (EBB _)   -> epoch > _currentEpoch
+            At (Block _) -> chunk > _currentChunk
+            At (EBB _)   -> chunk > _currentChunk
 
       when inTheFuture $
-        throwUserError $ ReadFutureEBBError epoch _currentEpoch
+        throwUserError $ ReadFutureEBBError epoch _currentChunk
 
-      let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
+      let curEpochInfo = CurrentChunkInfo _currentChunk _currentChunkOffset
       getEpochSlot _dbHasFS _dbChunkInfo _index curEpochInfo
-        blockComponent (UnsafeChunkSlot epoch firstRelativeSlot)
+        blockComponent (UnsafeChunkSlot chunk firstRelativeSlot)
   where
     ImmutableDBEnv { _dbChunkInfo } = dbEnv
 
@@ -471,12 +474,13 @@ extractBlockComponent
   :: forall m h hash b. (HasCallStack, IOLike m)
   => HasFS m h
   -> ChunkInfo
-  -> EpochNo
-  -> CurrentEpochInfo
+  -> ChunkNo
+  -- ^ Most recent chunk file (used to determine size of final block)
+  -> CurrentChunkInfo
   -> (Secondary.Entry hash, BlockSize)
   -> BlockComponent (ImmutableDB hash m) b
   -> m b
-extractBlockComponent hasFS chunkInfo epoch curEpochInfo (entry, blockSize) = \case
+extractBlockComponent hasFS chunkInfo chunk curEpochInfo (entry, blockSize) = \case
     GetHash  -> return headerHash
     GetSlot  -> return $ slotNoOfBlockOrEBB chunkInfo blockOrEBB
     GetIsEBB -> return $ case blockOrEBB of
@@ -488,7 +492,7 @@ extractBlockComponent hasFS chunkInfo epoch curEpochInfo (entry, blockSize) = \c
         -> return size
       -- See the 'GetBlock' case for more info about 'Secondary.LastEntry'.
       Secondary.LastEntry
-        | epoch == curEpoch
+        | chunk == curChunk
         -> return $ fromIntegral $ curEpochOffset - blockOffset
         | otherwise
         -> do
@@ -502,9 +506,9 @@ extractBlockComponent hasFS chunkInfo epoch curEpochInfo (entry, blockSize) = \c
     GetPure a -> return a
 
     GetApply f bc ->
-      extractBlockComponent hasFS chunkInfo epoch curEpochInfo
+      extractBlockComponent hasFS chunkInfo chunk curEpochInfo
         (entry, blockSize) f <*>
-      extractBlockComponent hasFS chunkInfo epoch curEpochInfo
+      extractBlockComponent hasFS chunkInfo chunk curEpochInfo
         (entry, blockSize) bc
 
     -- In case the requested epoch is the current epoch, we will be reading
@@ -523,7 +527,7 @@ extractBlockComponent hasFS chunkInfo epoch curEpochInfo (entry, blockSize) = \c
           -- It is the last entry in the file, so we don't know the size
           -- of the block.
           Secondary.LastEntry
-            | epoch == curEpoch
+            | chunk == curChunk
               -- Even though it was the last block in the secondary
               -- index file (and thus in the epoch file) when we read
               -- the secondary index file, it is possible that more
@@ -568,8 +572,8 @@ extractBlockComponent hasFS chunkInfo epoch curEpochInfo (entry, blockSize) = \c
       { blockOffset, headerOffset, headerSize, headerHash, checksum
       , blockOrEBB
       } = entry
-    CurrentEpochInfo curEpoch curEpochOffset = curEpochInfo
-    epochFile = renderFile "epoch" epoch
+    CurrentChunkInfo curChunk curEpochOffset = curEpochInfo
+    epochFile = renderFile "epoch" chunk
 
 getBlockOrEBBComponentImpl
   :: forall m hash b. (HasCallStack, IOLike m, Eq hash)
@@ -588,7 +592,7 @@ getBlockOrEBBComponentImpl dbEnv blockComponent slot hash =
       when inTheFuture $
         throwUserError $ ReadFutureSlotError slot (forgetTipInfo <$> _currentTip)
 
-      let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
+      let curEpochInfo = CurrentChunkInfo _currentChunk _currentChunkOffset
 
       errOrRes <- runExceptT $
         getSlotInfo _dbChunkInfo _index (slot, hash)
@@ -610,11 +614,11 @@ getEpochSlot
   => HasFS m h
   -> ChunkInfo
   -> Index m hash h
-  -> CurrentEpochInfo
+  -> CurrentChunkInfo
   -> BlockComponent (ImmutableDB hash m) b
   -> ChunkSlot
   -> m (Maybe b)
-getEpochSlot hasFS chunkInfo index curEpochInfo blockComponent epochSlot =
+getEpochSlot hasFS chunkInfo index curEpochInfo blockComponent chunkSlot =
     -- Check the primary index first
     Index.readOffset index epoch relativeSlot >>= \case
       -- Empty slot
@@ -628,7 +632,7 @@ getEpochSlot hasFS chunkInfo index curEpochInfo blockComponent epochSlot =
           extractBlockComponent hasFS chunkInfo epoch curEpochInfo
             (entry, blockSize) blockComponent
   where
-    ChunkSlot epoch relativeSlot = epochSlot
+    ChunkSlot epoch relativeSlot = chunkSlot
     isEBB = relativeSlotIsEBB relativeSlot
 
 appendBlockImpl
@@ -641,15 +645,15 @@ appendBlockImpl
   -> m ()
 appendBlockImpl dbEnv slot blockNumber headerHash binaryInfo =
     modifyOpenState dbEnv $ \_dbHasFS@HasFS{..} -> do
-      OpenState { _currentEpoch, _currentTip, _index } <- get
+      OpenState { _currentChunk, _currentTip, _index } <- get
 
-      let chunkSlot@(ChunkSlot epoch _) =
+      let chunkSlot@(ChunkSlot chunk _) =
             chunkSlotForRegularBlock _dbChunkInfo slot
 
       -- Check that we're not appending to the past
       let inThePast = case forgetTipInfo <$> _currentTip of
             At (Block lastSlot)   -> slot  <= lastSlot
-            At (EBB lastEBBEpoch) -> epoch <  lastEBBEpoch
+            At (EBB lastEBBEpoch) -> chunk <  unsafeEpochNoToChunkNo lastEBBEpoch
             Origin                -> False
 
       when inThePast $ lift $
@@ -671,22 +675,23 @@ appendEBBImpl
   -> m ()
 appendEBBImpl dbEnv epoch blockNumber headerHash binaryInfo =
     modifyOpenState dbEnv $ \_dbHasFS@HasFS{..} -> do
-      OpenState { _currentEpoch, _currentTip, _index } <- get
+      OpenState { _currentChunk, _currentTip, _index } <- get
 
       -- Check that we're not appending to the past
-      let inThePast = case forgetTipInfo <$> _currentTip of
+      let chunk     = unsafeEpochNoToChunkNo epoch
+          inThePast = case forgetTipInfo <$> _currentTip of
             -- There is already a block in this epoch, so the EBB can no
             -- longer be appended in this epoch
-            At (Block _) -> epoch <= _currentEpoch
+            At (Block _) -> chunk <= _currentChunk
             -- There is already an EBB in this epoch
-            At (EBB _)   -> epoch <= _currentEpoch
+            At (EBB _)   -> chunk <= _currentChunk
             Origin       -> False
 
       when inThePast $ lift $ throwUserError $
-        AppendToEBBInThePastError epoch _currentEpoch
+        AppendToEBBInThePastError epoch _currentChunk
 
       appendEpochSlot _dbRegistry _dbHasFS _dbChunkInfo _index
-        (UnsafeChunkSlot epoch firstRelativeSlot) blockNumber (EBB epoch)
+        (UnsafeChunkSlot chunk firstRelativeSlot) blockNumber (EBB epoch)
         headerHash binaryInfo
   where
     ImmutableDBEnv { _dbChunkInfo, _dbRegistry } = dbEnv
@@ -704,51 +709,51 @@ appendEpochSlot
   -> hash
   -> BinaryInfo Builder
   -> StateT (OpenState m hash h) m ()
-appendEpochSlot registry hasFS chunkInfo index epochSlot blockNumber blockOrEBB headerHash
+appendEpochSlot registry hasFS chunkInfo index chunkSlot blockNumber blockOrEBB headerHash
                 BinaryInfo { binaryBlob, headerOffset, headerSize } = do
-    OpenState { _currentEpoch = initialEpoch } <- get
+    OpenState { _currentChunk = initialChunk } <- get
 
     -- If the slot is in an epoch > the current one, we have to finalise the
     -- current one and start a new epoch file, possibly skipping some
     -- epochs.
-    when (epoch > initialEpoch) $ do
+    when (chunk > initialChunk) $ do
       let newEpochsToStart :: Int
-          newEpochsToStart = fromIntegral . unEpochNo $ epoch - initialEpoch
+          newEpochsToStart = fromIntegral $ countChunks chunk initialChunk
       replicateM_ newEpochsToStart (startNewEpoch registry hasFS index chunkInfo)
 
     -- We may have updated the state with 'startNewEpoch', so get the
-    -- (possibly) updated state, but first remember the current epoch
+    -- (possibly) updated state, but first remember the current chunk
     OpenState {..} <- get
 
     -- Compute the next empty slot @m@, if we need to write to slot @n@, we
     -- will need to backfill @n - m@ slots.
     let nextFreeRelSlot =
-          if epoch > initialEpoch
-            -- If we had to start a new epoch, we start with slot 0. Note that
-            -- in this case the _currentTip will refer to something in an epoch
-            -- before _currentEpoch.
+          if chunk > initialChunk
+            -- If we had to start a new chunk, we start with slot 0. Note that
+            -- in this case the _currentTip will refer to something in an chunk
+            -- before _currentChunk.
             then firstRelativeSlot
             else case forgetTipInfo <$> _currentTip of
               Origin -> firstRelativeSlot
               At b   -> nextRelativeSlot . chunkRelative $
                           chunkSlotForBlockOrEBB chunkInfo b
 
-    -- Append to the end of the epoch file.
+    -- Append to the end of the chunk file.
     (blockSize, entrySize) <- lift $ do
 
-        -- Write to the epoch file
-        (blockSize, crc) <- hPutCRC hasFS _currentEpochHandle binaryBlob
+        -- Write to the chunk file
+        (blockSize, crc) <- hPutCRC hasFS _currentChunkHandle binaryBlob
 
         -- Write to the secondary index file
         let entry = Secondary.Entry
-              { blockOffset  = _currentEpochOffset
+              { blockOffset  = _currentChunkOffset
               , headerOffset = HeaderOffset headerOffset
               , headerSize   = HeaderSize headerSize
               , checksum     = crc
               , headerHash   = headerHash
               , blockOrEBB   = blockOrEBB
               }
-        entrySize <- fromIntegral <$> Index.appendEntry index epoch
+        entrySize <- fromIntegral <$> Index.appendEntry index chunk
           _currentSecondaryHandle (WithBlockSize (fromIntegral blockSize) entry)
 
         -- Write to the primary index file
@@ -760,12 +765,12 @@ appendEpochSlot registry hasFS chunkInfo index epochSlot blockNumber blockOrEBB 
         return (blockSize, entrySize)
 
     modify $ \st -> st
-      { _currentEpochOffset     = _currentEpochOffset + fromIntegral blockSize
+      { _currentChunkOffset     = _currentChunkOffset + fromIntegral blockSize
       , _currentSecondaryOffset = _currentSecondaryOffset + entrySize
       , _currentTip             = At (TipInfo headerHash blockOrEBB blockNumber)
       }
   where
-    ChunkSlot epoch relSlot = epochSlot
+    ChunkSlot chunk relSlot = chunkSlot
 
 startNewEpoch
   :: forall m h hash. (HasCallStack, IOLike m)
@@ -777,14 +782,14 @@ startNewEpoch
 startNewEpoch registry hasFS@HasFS{..} index chunkInfo = do
     st@OpenState {..} <- get
 
-    -- Find out the size of the current epoch, so we can pad the primary
+    -- Find out the size of the current chunk, so we can pad the primary
     -- index.
-    let epochSize = getChunkSize chunkInfo _currentEpoch
+    let epochSize = getChunkSize chunkInfo _currentChunk
 
     -- We have to take care when starting multiple new epochs in a row. In the
     -- first call the tip will be in the current epoch, but in subsequent
     -- calls, the tip will still be in an epoch in the past, not the
-    -- '_currentEpoch'. In that case, we can't use the relative slot of the
+    -- '_currentChunk'. In that case, we can't use the relative slot of the
     -- tip, since it will point to a relative slot in a past epoch. So when
     -- the current (empty) epoch is not the epoch containing the tip, we use
     -- relative slot 0 to calculate how much to pad.
@@ -792,7 +797,7 @@ startNewEpoch registry hasFS@HasFS{..} index chunkInfo = do
           Origin -> firstRelativeSlot
           At b   ->
             let ChunkSlot chunk relSlot = chunkSlotForBlockOrEBB chunkInfo b
-            in if chunk == _currentEpoch
+            in if chunk == _currentChunk
                  then nextRelativeSlot relSlot
                  else firstRelativeSlot
 
@@ -803,7 +808,7 @@ startNewEpoch registry hasFS@HasFS{..} index chunkInfo = do
       Index.appendOffsets index _currentPrimaryHandle backfillOffsets
       `finally` cleanUp hasFS st
 
-    st' <- lift $ mkOpenState registry hasFS index (succ _currentEpoch)
+    st' <- lift $ mkOpenState registry hasFS index (nextChunkNo _currentChunk)
       _currentTip MustBeNew
 
     put st'

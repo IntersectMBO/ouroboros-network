@@ -7,6 +7,7 @@
 
 module Ouroboros.Consensus.Storage.Common (
     -- * Epochs
+    -- TODO: Remove. Consensus does not depend on epochs anymore!
     EpochNo(..)
   , EpochSize(..)
     -- * Indexing

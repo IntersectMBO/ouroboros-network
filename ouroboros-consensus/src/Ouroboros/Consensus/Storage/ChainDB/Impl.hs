@@ -83,10 +83,10 @@ openDBInternal
 openDBInternal args launchBgTasks = do
     immDB <- ImmDB.openDB argsImmDb
     immDbTipPoint <- ImmDB.getPointAtTip immDB
-    let immDbTipEpoch = Reopen.chunkIndexOfPoint (Args.cdbChunkInfo args) immDbTipPoint
+    let immDbTipChunk = Reopen.chunkIndexOfPoint (Args.cdbChunkInfo args) immDbTipPoint
     traceWith tracer $ TraceOpenEvent $ OpenedImmDB
       { _immDbTip      = immDbTipPoint
-      , _immDbTipEpoch = immDbTipEpoch
+      , _immDbTipChunk = immDbTipChunk
       }
 
     volDB   <- VolDB.openDB argsVolDb

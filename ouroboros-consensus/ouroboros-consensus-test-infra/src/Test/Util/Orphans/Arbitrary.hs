@@ -28,7 +28,7 @@ import           Ouroboros.Consensus.Util.Random (Seed (..))
 import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
                      EpochSize (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
-                     (RelativeSlot (..))
+                     (ChunkNo (..), RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 
 minNumCoreNodes :: Word64
@@ -99,6 +99,10 @@ genLimitedEpochSize =
 genSmallEpochNo :: Gen EpochNo
 genSmallEpochNo =
     EpochNo <$> choose (0, 10000)
+
+instance Arbitrary ChunkNo where
+  arbitrary = ChunkNo <$> arbitrary
+  shrink    = genericShrink
 
 instance Arbitrary ChunkSlot where
   arbitrary = UnsafeChunkSlot <$> arbitrary <*> arbitrary

@@ -527,7 +527,7 @@ runThreadNetwork ThreadNetworkArgs
         , cdbHasFSVolDb           = simHasFS (nodeDBsVol nodeDBs)
         , cdbHasFSLgrDB           = simHasFS (nodeDBsLgr nodeDBs)
           -- Policy
-        , cdbImmValidation        = ImmDB.ValidateAllEpochs
+        , cdbImmValidation        = ImmDB.ValidateAllChunks
         , cdbVolValidation        = VolDB.ValidateAll
         , cdbBlocksPerFile        = VolDB.mkBlocksPerFile 4
         , cdbParamsLgrDB          = LgrDB.ledgerDbDefaultParams (configSecurityParam cfg)

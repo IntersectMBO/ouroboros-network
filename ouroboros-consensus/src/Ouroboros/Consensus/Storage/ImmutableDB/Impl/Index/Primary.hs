@@ -63,7 +63,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common (EpochNo, EpochSize)
+import           Ouroboros.Consensus.Storage.Common (EpochSize)
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..),
                      AllowExisting (..), OpenMode (..), SeekMode (..))
@@ -165,11 +165,11 @@ slots (MkPrimaryIndex offsets) = fromIntegral $ V.length offsets - 1
 readOffset
   :: forall m h. (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> EpochNo
+  -> ChunkNo
   -> RelativeSlot
   -> m (Maybe SecondaryOffset)
-readOffset hasFS epoch slot = runIdentity <$>
-    readOffsets hasFS epoch (Identity slot)
+readOffset hasFS chunk slot = runIdentity <$>
+    readOffsets hasFS chunk (Identity slot)
 
 -- | Same as 'readOffset', but for multiple offsets.
 --
@@ -178,12 +178,12 @@ readOffset hasFS epoch slot = runIdentity <$>
 readOffsets
   :: forall m h t. (HasCallStack, MonadThrow m, Traversable t)
   => HasFS m h
-  -> EpochNo
+  -> ChunkNo
   -> t RelativeSlot
   -> m (t (Maybe SecondaryOffset))
        -- ^ The offset in the secondary index file corresponding to the given
        -- slot. 'Nothing' when the slot is empty.
-readOffsets hasFS@HasFS { hGetSize } epoch toRead =
+readOffsets hasFS@HasFS { hGetSize } chunk toRead =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd -> do
       size <- hGetSize pHnd
       forM toRead $ \(RelativeSlot slot) -> do
@@ -201,7 +201,7 @@ readOffsets hasFS@HasFS { hGetSize } epoch toRead =
             then Just secondaryOffset
             else Nothing
   where
-    primaryIndexFile = renderFile "primary" epoch
+    primaryIndexFile = renderFile "primary" chunk
     nbBytes          = secondaryOffsetSize * 2
 
     get :: Get (SecondaryOffset, SecondaryOffset)
@@ -215,14 +215,14 @@ readOffsets hasFS@HasFS { hGetSize } epoch toRead =
 readFirstFilledSlot
   :: forall m h. (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> EpochNo
+  -> ChunkNo
   -> m (Maybe RelativeSlot)
-readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } epoch =
+readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunk =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd -> do
       hSeek pHnd AbsoluteSeek skip
       go pHnd firstRelativeSlot
   where
-    primaryIndexFile = renderFile "primary" epoch
+    primaryIndexFile = renderFile "primary" chunk
 
     -- | Skip the version number and the first offset, which is always 0.
     skip = fromIntegral (sizeOf currentVersionNumber)
@@ -266,13 +266,13 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } epoch =
 load
   :: forall m h. (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> EpochNo
+  -> ChunkNo
   -> m PrimaryIndex
-load hasFS epoch =
+load hasFS chunk =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd ->
       hGetAll hasFS pHnd >>= runGet primaryIndexFile get
   where
-    primaryIndexFile = renderFile "primary" epoch
+    primaryIndexFile = renderFile "primary" chunk
 
     -- TODO incremental?
     get :: Get PrimaryIndex
@@ -300,10 +300,10 @@ load hasFS epoch =
 write
   :: (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> EpochNo
+  -> ChunkNo
   -> PrimaryIndex
   -> m ()
-write hasFS@HasFS { hTruncate } epoch (MkPrimaryIndex offsets) =
+write hasFS@HasFS { hTruncate } chunk (MkPrimaryIndex offsets) =
     withFile hasFS primaryIndexFile (AppendMode AllowExisting) $ \pHnd -> do
       -- NOTE: open it in AppendMode and truncate it first, otherwise we might
       -- just overwrite part of the data stored in the index file.
@@ -314,7 +314,7 @@ write hasFS@HasFS { hTruncate } epoch (MkPrimaryIndex offsets) =
         -- Hopefully the intermediary list is fused away
         foldMap putSecondaryOffset (V.toList offsets)
   where
-    primaryIndexFile = renderFile "primary" epoch
+    primaryIndexFile = renderFile "primary" chunk
 
 -- | Truncate the primary index so that the given 'RelativeSlot'. will be the
 -- last slot (filled or not) in the primary index, unless the primary index
@@ -331,15 +331,15 @@ truncateToSlot slot primary@(MkPrimaryIndex offsets)
 truncateToSlotFS
   :: (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> EpochNo
+  -> ChunkNo
   -> RelativeSlot
   -> m ()
-truncateToSlotFS hasFS@HasFS { hTruncate, hGetSize } epoch (RelativeSlot slot) =
+truncateToSlotFS hasFS@HasFS { hTruncate, hGetSize } chunk (RelativeSlot slot) =
     withFile hasFS primaryIndexFile (AppendMode AllowExisting) $ \pHnd -> do
       size <- hGetSize pHnd
       when (offset < size) $ hTruncate pHnd offset
   where
-    primaryIndexFile = renderFile "primary" epoch
+    primaryIndexFile = renderFile "primary" chunk
     offset           = fromIntegral (sizeOf currentVersionNumber)
                      + (slot + 2) * secondaryOffsetSize
 
@@ -351,26 +351,26 @@ truncateToSlotFS hasFS@HasFS { hTruncate, hGetSize } epoch (RelativeSlot slot) =
 unfinalise
   :: (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> EpochNo
+  -> ChunkNo
   -> m ()
-unfinalise hasFS epoch = do
+unfinalise hasFS chunk = do
     -- TODO optimise so that we only need to open the file once
-    primaryIndex <- load hasFS epoch
+    primaryIndex <- load hasFS chunk
     case lastFilledSlot primaryIndex of
       Nothing   -> return ()
-      Just slot -> truncateToSlotFS hasFS epoch slot
+      Just slot -> truncateToSlotFS hasFS chunk slot
 
--- | Open a primary index file for the given epoch and return a handle to it.
+-- | Open a primary index file for the given chunk and return a handle to it.
 --
 -- The file is opened with the given 'AllowExisting' value. When given
 -- 'MustBeNew', the version number is written to the file.
 open
   :: (HasCallStack, MonadCatch m)
   => HasFS m h
-  -> EpochNo
+  -> ChunkNo
   -> AllowExisting
   -> m (Handle h)
-open hasFS@HasFS { hOpen, hClose } epoch allowExisting = do
+open hasFS@HasFS { hOpen, hClose } chunk allowExisting = do
     -- TODO we rely on the fact that if the file exists, it already contains
     -- the version number and the first offset. What if that is not the case?
     pHnd <- hOpen primaryIndexFile (AppendMode allowExisting)
@@ -384,7 +384,7 @@ open hasFS@HasFS { hOpen, hClose } epoch allowExisting = do
           putSecondaryOffset 0
       return pHnd
   where
-    primaryIndexFile = renderFile "primary" epoch
+    primaryIndexFile = renderFile "primary" chunk
 
 -- | Append the given 'SecondaryOffset' to the end of the file (passed as a
 -- handle).

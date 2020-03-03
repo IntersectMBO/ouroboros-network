@@ -45,6 +45,8 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (ChunkNo (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 
@@ -57,8 +59,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 data Two a = Two a a
   deriving (Functor, Foldable, Traversable)
 
-renderFile :: Text -> EpochNo -> FsPath
-renderFile fileType (EpochNo epoch) = fsPathFromList [name]
+renderFile :: Text -> ChunkNo -> FsPath
+renderFile fileType (ChunkNo epoch) = fsPathFromList [name]
   where
     name = T.justifyRight 5 '0' (T.pack (show epoch)) <> "." <> fileType
 
@@ -91,9 +93,9 @@ tryImmDB = fmap squash . try . try
 -- Just ("epoch", 1)
 -- > parseDBFile "00012.primary"
 -- Just ("primary", 12)
-parseDBFile :: String -> Maybe (String, EpochNo)
+parseDBFile :: String -> Maybe (String, ChunkNo)
 parseDBFile s = case T.splitOn "." $ T.pack s of
-    [n, ext] -> (T.unpack ext,) . EpochNo <$> readMaybe (T.unpack n)
+    [n, ext] -> (T.unpack ext,) . ChunkNo <$> readMaybe (T.unpack n)
     _        -> Nothing
 
 -- | Check whether the given iterator range is valid.
@@ -140,9 +142,9 @@ validateIteratorRange chunkInfo tip mbStart mbEnd = runExceptT $ do
 epochSlotToTip :: ChunkInfo -> ChunkSlot -> ImmTip
 epochSlotToTip chunkInfo = At . chunkSlotToBlockOrEBB chunkInfo
 
--- | Go through all files, making three sets: the set of epoch files, primary
+-- | Go through all files, making three sets: the set of chunk files, primary
 -- index files, and secondary index files,, discarding all others.
-dbFilesOnDisk :: Set String -> (Set EpochNo, Set EpochNo, Set EpochNo)
+dbFilesOnDisk :: Set String -> (Set ChunkNo, Set ChunkNo, Set ChunkNo)
 dbFilesOnDisk = foldr categorise mempty
   where
     categorise file fs@(epoch, primary, secondary) =
@@ -152,19 +154,19 @@ dbFilesOnDisk = foldr categorise mempty
         Just ("secondary", n) -> (epoch, primary, Set.insert n secondary)
         _                     -> fs
 
--- | Remove all epoch and index starting from the given epoch (included).
+-- | Remove all chunk and index starting from the given chunk (included).
 removeFilesStartingFrom :: (HasCallStack, Monad m)
                         => HasFS m h
-                        -> EpochNo
+                        -> ChunkNo
                         -> m ()
-removeFilesStartingFrom HasFS { removeFile, listDirectory } epoch = do
+removeFilesStartingFrom HasFS { removeFile, listDirectory } chunk = do
     filesInDBFolder <- listDirectory (mkFsPath [])
-    let (epochFiles, primaryFiles, secondaryFiles) = dbFilesOnDisk filesInDBFolder
-    forM_ (takeWhile (>= epoch) (Set.toDescList epochFiles)) $ \e ->
+    let (chunkFiles, primaryFiles, secondaryFiles) = dbFilesOnDisk filesInDBFolder
+    forM_ (takeWhile (>= chunk) (Set.toDescList chunkFiles)) $ \e ->
       removeFile (renderFile "epoch" e)
-    forM_ (takeWhile (>= epoch) (Set.toDescList primaryFiles)) $ \i ->
+    forM_ (takeWhile (>= chunk) (Set.toDescList primaryFiles)) $ \i ->
       removeFile (renderFile "primary" i)
-    forM_ (takeWhile (>= epoch) (Set.toDescList secondaryFiles)) $ \i ->
+    forM_ (takeWhile (>= chunk) (Set.toDescList secondaryFiles)) $ \i ->
       removeFile (renderFile "secondary" i)
 
 -- | Wrapper around 'Get.runGetOrFail' that throws an 'InvalidFileError' when

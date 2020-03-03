@@ -151,7 +151,7 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
               -- the 'ChainDB.cdbImmValidation' and the
               -- 'ChainDB.cdbVolValidation' fields.
             = (customiseChainDbArgs args)
-              { ChainDB.cdbImmValidation = ValidateAllEpochs
+              { ChainDB.cdbImmValidation = ValidateAllChunks
               , ChainDB.cdbVolValidation = ValidateAll
               }
 
@@ -310,7 +310,7 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger
     , ChainDB.cdbTopLevelConfig       = cfg
     , ChainDB.cdbRegistry             = registry
     , ChainDB.cdbTracer               = tracer
-    , ChainDB.cdbImmValidation        = ValidateMostRecentEpoch
+    , ChainDB.cdbImmValidation        = ValidateMostRecentChunk
     , ChainDB.cdbVolValidation        = NoValidation
     , ChainDB.cdbGcDelay              = secondsToDiffTime 10
     , ChainDB.cdbBlockchainTime       = btime

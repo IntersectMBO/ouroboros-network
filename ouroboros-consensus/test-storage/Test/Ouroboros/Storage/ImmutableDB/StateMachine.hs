@@ -75,6 +75,8 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath)
 import           Ouroboros.Consensus.Storage.ImmutableDB hiding
                      (BlockOrEBB (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (unsafeChunkNoToEpochNo)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl as ImmDB
                      (Internal (..))
@@ -83,7 +85,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
                      tryImmDB)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
-                     (epochFileParser)
+                     (chunkFileParser)
 
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -556,7 +558,7 @@ generateCmd Model {..} = At <$> frequency
   where
     DBModel {..} = dbModel
 
-    currentEpoch = dbmCurrentEpoch dbModel
+    currentEpoch = unsafeChunkNoToEpochNo $ dbmCurrentChunk dbModel
 
     lastSlot :: SlotNo
     lastSlot = fromIntegral $ length (dbmRegular dbModel)
@@ -579,7 +581,8 @@ generateCmd Model {..} = At <$> frequency
 
     genGetEBB :: Gen EpochNo
     genGetEBB = frequency
-      [ (if noEBBs then 0 else 5, elements $ Map.keys (dbmEBBs dbModel))
+      [ (if noEBBs then 0 else 5,
+           elements $ map unsafeChunkNoToEpochNo $ Map.keys (dbmEBBs dbModel))
       , (1, chooseEpoch (0, 5))
       ]
 
@@ -633,7 +636,7 @@ generateCmd Model {..} = At <$> frequency
 
     dbFiles = getDBFiles dbModel
 
-    genValPol = elements [ValidateMostRecentEpoch, ValidateAllEpochs]
+    genValPol = elements [ValidateMostRecentChunk, ValidateAllChunks]
 
     genTip :: Gen (ImmTipWithInfo Hash)
     genTip = elements $ NE.toList $ tips dbModel
@@ -643,7 +646,7 @@ generateCmd Model {..} = At <$> frequency
 getDBFiles :: DBModel Hash -> [FsPath]
 getDBFiles dbm =
     [ renderFile fileType epoch
-    | epoch <- [0..dbmCurrentEpoch dbm]
+    | epoch <- chunksBetween firstChunkNo (dbmCurrentChunk dbm)
     , fileType <- ["epoch", "primary", "secondary"]
     ]
 
@@ -814,7 +817,7 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
       closeDB db
       -- Release any handles that weren't closed because of a simulated error.
       releaseAll registry
-      reopen db ValidateAllEpochs
+      reopen db ValidateAllChunks
       deleteAfter internal tipBefore
       -- If the cmd deleted things, we must do it here to have a deterministic
       -- outcome and to stay in sync with the model. If no error was thrown,
@@ -834,7 +837,7 @@ semanticsCorruption :: MonadCatch m
 semanticsCorruption hasFS db _internal (MkCorruption corrs) = do
     closeDB db
     forM_ corrs $ \(corr, file) -> corruptFile hasFS corr file
-    reopen db ValidateAllEpochs
+    reopen db ValidateAllChunks
     Tip <$> getTip db
 
 -- | The state machine proper
@@ -1122,6 +1125,7 @@ instance ToExpr SlotNo where
 
 instance ToExpr EpochNo
 instance ToExpr EpochSize
+instance ToExpr ChunkNo
 instance ToExpr ChunkSlot
 instance ToExpr RelativeSlot
 instance ToExpr BlockNo
@@ -1196,14 +1200,14 @@ test cacheConfig cmds = do
     (tracer, getTrace) <- recordingTracerIORef
 
     let hasFS  = mkSimErrorHasFS fsVar varErrors
-        parser = epochFileParser hasFS (const <$> decode) isEBB
+        parser = chunkFileParser hasFS (const <$> decode) isEBB
           getBinaryInfo testBlockIsValid
         btime  = settableBlockchainTime varCurSlot
 
     withRegistry $ \registry -> do
       bracket
         (openDBInternal registry hasFS (simpleChunkInfo fixedEpochSize)
-           testHashInfo ValidateMostRecentEpoch parser tracer cacheConfig btime)
+           testHashInfo ValidateMostRecentChunk parser tracer cacheConfig btime)
         (closeDB . fst) $ \(db, internal) -> do
 
         let env = ImmutableDBEnv
@@ -1223,7 +1227,7 @@ test cacheConfig cmds = do
         case res of
           Ok -> do
             closeDB db
-            reopen db ValidateAllEpochs
+            reopen db ValidateAllChunks
             validation <- validate model db
             dbTip <- getTip db
 
@@ -1275,7 +1279,7 @@ unusedEnv = error "ImmutableDBEnv used during command generation"
 
 instance Arbitrary Index.CacheConfig where
   arbitrary = do
-    pastEpochsToCache <- frequency
+    pastChunksToCache <- frequency
       -- Pick small values so that we exercise cache eviction
       [ (1, return 1)
       , (1, return 2)

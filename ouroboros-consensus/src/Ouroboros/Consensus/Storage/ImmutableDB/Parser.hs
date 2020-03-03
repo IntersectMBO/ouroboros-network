@@ -7,14 +7,14 @@
 {-# LANGUAGE TupleSections            #-}
 -- | The ImmutableDB doesn't care about the serialisation format, but in
 -- practice we use CBOR. If we were to change the serialisation format, we
--- would have to write a new 'EpochFileParser' implementation, but the rest of
+-- would have to write a new 'ChunkFileParser' implementation, but the rest of
 -- the ImmutableDB would be unaffected.
 module Ouroboros.Consensus.Storage.ImmutableDB.Parser
-  ( -- * EpochFileParser
+  ( -- * ChunkFileParser
     EpochFileError (..)
   , BlockSummary(..)
-  , epochFileParser
-  , epochFileParser'
+  , chunkFileParser
+  , chunkFileParser'
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -43,7 +43,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 
 {-------------------------------------------------------------------------------
-  EpochFileParser
+  ChunkFileParser
 -------------------------------------------------------------------------------}
 
 data EpochFileError hash =
@@ -73,7 +73,7 @@ data BlockSummary hash = BlockSummary {
     , summaryBlockNo :: !BlockNo
     }
 
-epochFileParser'
+chunkFileParser'
   :: forall m blk hash h. (IOLike m, Eq hash)
   => (blk -> SlotNo)
   -> (blk -> BlockNo)
@@ -85,14 +85,14 @@ epochFileParser'
   -> (blk -> BinaryInfo ())
   -> (blk -> Bool)             -- ^ Check integrity of the block. 'False' =
                                -- corrupt.
-  -> EpochFileParser
+  -> ChunkFileParser
        (EpochFileError hash)
        m
        (BlockSummary hash)
        hash
-epochFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEBB
+chunkFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEBB
                  getBinaryInfo isNotCorrupt =
-    EpochFileParser $ \fsPath currentSlotNo expectedChecksums k ->
+    ChunkFileParser $ \fsPath currentSlotNo expectedChecksums k ->
       Util.CBOR.withStreamIncrementalOffsets hasFS decoder fsPath
         ( k
         . checkIfHashesLineUp
@@ -210,8 +210,8 @@ epochFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEB
               err = EpochErrHashMismatch (At hashOfPrevBlock) prevHash
               offset = Secondary.unBlockOffset $ Secondary.blockOffset entry
 
--- | A version of 'epochFileParser'' for blocks that implement 'HasHeader'.
-epochFileParser
+-- | A version of 'chunkFileParser'' for blocks that implement 'HasHeader'.
+chunkFileParser
   :: forall m blk h. (IOLike m, HasHeader blk)
   => HasFS m h
   -> (forall s. Decoder s (BL.ByteString -> blk))
@@ -219,13 +219,13 @@ epochFileParser
   -> (blk -> BinaryInfo ())
   -> (blk -> Bool)           -- ^ Check integrity of the block. 'False' =
                              -- corrupt.
-  -> EpochFileParser
+  -> ChunkFileParser
        (EpochFileError (HeaderHash blk))
        m
        (BlockSummary (HeaderHash blk))
        (HeaderHash blk)
-epochFileParser =
-    epochFileParser' blockSlot blockNo blockHash (convertPrevHash . blockPrevHash)
+chunkFileParser =
+    chunkFileParser' blockSlot blockNo blockHash (convertPrevHash . blockPrevHash)
   where
     convertPrevHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
     convertPrevHash GenesisHash   = Origin

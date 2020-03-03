@@ -17,7 +17,6 @@ import           Control.Exception (assert)
 import           Control.Monad (unless, when)
 import           Control.Monad.Except (ExceptT, lift, runExceptT, throwError)
 import           Control.Tracer (Tracer, contramap, traceWith)
-import           Data.Coerce (coerce)
 import           Data.Functor (($>))
 import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
@@ -32,12 +31,13 @@ import           Ouroboros.Consensus.Util (lastMaybe, whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
-import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (unChunkNo, unsafeEpochNoToChunkNo)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
                      (cachedIndex)
@@ -60,7 +60,7 @@ data ValidateEnv m hash h e = ValidateEnv
   { hasFS       :: !(HasFS m h)
   , chunkInfo   :: !ChunkInfo
   , hashInfo    :: !(HashInfo hash)
-  , parser      :: !(EpochFileParser e m (BlockSummary hash) hash)
+  , parser      :: !(ChunkFileParser e m (BlockSummary hash) hash)
   , tracer      :: !(Tracer m (TraceEvent e hash))
   , registry    :: !(ResourceRegistry m)
   , cacheConfig :: !Index.CacheConfig
@@ -75,15 +75,15 @@ validateAndReopen
   -> ValidationPolicy
   -> m (OpenState m hash h)
 validateAndReopen validateEnv valPol = do
-    (epoch, tip) <- validate validateEnv valPol
-    index        <- cachedIndex hasFS hashInfo registry cacheTracer cacheConfig epoch
+    (chunk, tip) <- validate validateEnv valPol
+    index        <- cachedIndex hasFS hashInfo registry cacheTracer cacheConfig chunk
     case tip of
-      Origin -> assert (epoch == 0) $ do
+      Origin -> assert (chunk == firstChunkNo) $ do
         traceWith tracer NoValidLastLocation
-        mkOpenState registry hasFS index epoch Origin MustBeNew
+        mkOpenState registry hasFS index chunk Origin MustBeNew
       _      -> do
-        traceWith tracer $ ValidatedLastLocation epoch (forgetTipInfo <$> tip)
-        mkOpenState registry hasFS index epoch tip    AllowExisting
+        traceWith tracer $ ValidatedLastLocation chunk (forgetTipInfo <$> tip)
+        mkOpenState registry hasFS index chunk tip    AllowExisting
   where
     ValidateEnv { hasFS, hashInfo, tracer, registry, cacheConfig } = validateEnv
     cacheTracer = contramap TraceCacheEvent tracer
@@ -93,54 +93,54 @@ validate
   :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
   => ValidateEnv m hash h e
   -> ValidationPolicy
-  -> m (EpochNo, ImmTipWithInfo hash)
+  -> m (ChunkNo, ImmTipWithInfo hash)
 validate validateEnv@ValidateEnv{ hasFS } valPol = do
     filesInDBFolder <- listDirectory (mkFsPath [])
-    let (epochFiles, _, _) = dbFilesOnDisk filesInDBFolder
-    case Set.lookupMax epochFiles of
+    let (chunkFiles, _, _) = dbFilesOnDisk filesInDBFolder
+    case Set.lookupMax chunkFiles of
       Nothing              -> do
         -- Remove left-over index files
         -- TODO calls listDirectory again
-        removeFilesStartingFrom hasFS 0
-        return (0, Origin)
+        removeFilesStartingFrom hasFS firstChunkNo
+        return (firstChunkNo, Origin)
 
-      Just lastEpochOnDisk -> case valPol of
-        ValidateAllEpochs       ->
-          validateAllEpochs       validateEnv lastEpochOnDisk
-        ValidateMostRecentEpoch ->
-          validateMostRecentEpoch validateEnv lastEpochOnDisk
+      Just lastChunkOnDisk -> case valPol of
+        ValidateAllChunks       ->
+          validateAllChunks       validateEnv lastChunkOnDisk
+        ValidateMostRecentChunk ->
+          validateMostRecentChunk validateEnv lastChunkOnDisk
   where
     HasFS { listDirectory } = hasFS
 
--- | Validate epochs from oldest to newest, stop after the most recent epoch
+-- | Validate epochs from oldest to newest, stop after the most recent chunk
 -- on disk. During this validation, keep track of the last valid block we
--- encountered. If at the end, that block is not in the last epoch on disk,
--- remove the epoch and index files after that epoch.
-validateAllEpochs
+-- encountered. If at the end, that block is not in the last chunk on disk,
+-- remove the chunk and index files after that chunk.
+validateAllChunks
   :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
   => ValidateEnv m hash h e
-  -> EpochNo
-     -- ^ Most recent epoch on disk
-  -> m (EpochNo, ImmTipWithInfo hash)
-validateAllEpochs validateEnv@ValidateEnv { hasFS, chunkInfo } lastEpoch =
-    go (0, Origin) 0 Origin
+  -> ChunkNo
+     -- ^ Most recent chunk on disk
+  -> m (ChunkNo, ImmTipWithInfo hash)
+validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
+    go (firstChunkNo, Origin) firstChunkNo Origin
   where
     go
-      :: (EpochNo, ImmTipWithInfo hash)  -- ^ The last valid epoch and tip
-      -> EpochNo                         -- ^ The epoch to validate now
+      :: (ChunkNo, ImmTipWithInfo hash)  -- ^ The last valid chunk and tip
+      -> ChunkNo                         -- ^ The chunk to validate now
       -> WithOrigin hash                 -- ^ The hash of the last block of
-                                         -- the previous epoch
-      -> m (EpochNo, ImmTipWithInfo hash)
-    go lastValid epoch prevHash = do
+                                         -- the previous chunk
+      -> m (ChunkNo, ImmTipWithInfo hash)
+    go lastValid chunk prevHash = do
       let shouldBeFinalised =
-            if epoch == lastEpoch
+            if chunk == lastChunk
               then ShouldNotBeFinalised
-              else ShouldBeFinalised $ getChunkSize chunkInfo epoch
+              else ShouldBeFinalised $ getChunkSize chunkInfo chunk
       runExceptT
-        (validateEpoch validateEnv shouldBeFinalised epoch (Just prevHash)) >>= \case
-          Left  ()              -> cleanup lastValid epoch $> lastValid
-          Right Nothing         -> continueOrStop lastValid            epoch prevHash
-          Right (Just validBlk) -> continueOrStop (epoch, At validBlk) epoch prevHash'
+        (validateChunk validateEnv shouldBeFinalised chunk (Just prevHash)) >>= \case
+          Left  ()              -> cleanup lastValid chunk $> lastValid
+          Right Nothing         -> continueOrStop lastValid            chunk prevHash
+          Right (Just validBlk) -> continueOrStop (chunk, At validBlk) chunk prevHash'
             where
               prevHash' = At (tipInfoHash validBlk)
 
@@ -149,66 +149,66 @@ validateAllEpochs validateEnv@ValidateEnv { hasFS, chunkInfo } lastEpoch =
     -- epoch in which we found the last valid block. Return that epoch and the
     -- tip corresponding to that block.
     continueOrStop
-      :: (EpochNo, ImmTipWithInfo hash)
-      -> EpochNo         -- ^ The epoch just validated
-      -> WithOrigin hash -- ^ The hash of the last block of the previous epoch
-      -> m (EpochNo, ImmTipWithInfo hash)
-    continueOrStop lastValid epoch prevHash
-      | epoch < lastEpoch
-      = go lastValid (epoch + 1) prevHash
+      :: (ChunkNo, ImmTipWithInfo hash)
+      -> ChunkNo         -- ^ The chunk just validated
+      -> WithOrigin hash -- ^ The hash of the last block of the previous chunk
+      -> m (ChunkNo, ImmTipWithInfo hash)
+    continueOrStop lastValid chunk prevHash
+      | chunk < lastChunk
+      = go lastValid (nextChunkNo chunk) prevHash
       | otherwise
-      = assert (epoch == lastEpoch) $ do
-        -- Cleanup is only needed when the final epoch was empty, yet valid.
-        cleanup lastValid epoch
+      = assert (chunk == lastChunk) $ do
+        -- Cleanup is only needed when the final chunk was empty, yet valid.
+        cleanup lastValid chunk
         return lastValid
 
     -- | Remove left over files from epochs newer than the last epoch
     -- containing a valid file. Also unfinalise it if necessary.
     cleanup
-      :: (EpochNo, ImmTipWithInfo hash)  -- ^ The last valid epoch and tip
-      -> EpochNo  -- ^ The last validated epoch, could have been invalid or
+      :: (ChunkNo, ImmTipWithInfo hash)  -- ^ The last valid chunk and tip
+      -> ChunkNo  -- ^ The last validated chunk, could have been invalid or
                   -- empty
       -> m ()
-    cleanup (lastValidEpoch, tip) lastValidatedEpoch = case tip of
+    cleanup (lastValidChunk, tip) lastValidatedEpoch = case tip of
       Origin ->
-        removeFilesStartingFrom hasFS 0
+        removeFilesStartingFrom hasFS firstChunkNo
       At _  -> do
-        removeFilesStartingFrom hasFS (lastValidEpoch + 1)
-        when (lastValidEpoch < lastValidatedEpoch) $
-          Primary.unfinalise hasFS lastValidEpoch
+        removeFilesStartingFrom hasFS (nextChunkNo lastValidChunk)
+        when (lastValidChunk < lastValidatedEpoch) $
+          Primary.unfinalise hasFS lastValidChunk
 
--- | Validate the given most recent epoch. If that epoch contains no valid
--- block, try the epoch before it, and so on. Stop as soon as an epoch with a
--- valid block is found, returning that epoch and the tip corresponding to
--- that block. If no valid blocks are found, epoch 0 and 'TipGen' is returned.
-validateMostRecentEpoch
+-- | Validate the given most recent chunk. If that chunk contains no valid
+-- block, try the chunk before it, and so on. Stop as soon as an chunk with a
+-- valid block is found, returning that chunk and the tip corresponding to
+-- that block. If no valid blocks are found, chunk 0 and 'TipGen' is returned.
+validateMostRecentChunk
   :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
   => ValidateEnv m hash h e
-  -> EpochNo
-     -- ^ Most recent epoch on disk, the epoch to validate
-  -> m (EpochNo, ImmTipWithInfo hash)
-validateMostRecentEpoch validateEnv@ValidateEnv { hasFS } = go
+  -> ChunkNo
+     -- ^ Most recent chunk on disk, the chunk to validate
+  -> m (ChunkNo, ImmTipWithInfo hash)
+validateMostRecentChunk validateEnv@ValidateEnv { hasFS } = go
   where
-    go :: EpochNo -> m (EpochNo, ImmTipWithInfo hash)
-    go epoch = runExceptT
-      (validateEpoch validateEnv ShouldNotBeFinalised epoch Nothing) >>= \case
+    go :: ChunkNo -> m (ChunkNo, ImmTipWithInfo hash)
+    go chunk = runExceptT
+      (validateChunk validateEnv ShouldNotBeFinalised chunk Nothing) >>= \case
         Right (Just validBlk) -> do
             -- Found a valid block, we can stop now.
-            removeFilesStartingFrom hasFS (epoch + 1)
-            return (epoch, At validBlk)
-        _  -- This epoch file is unusable: either the epoch is empty or
+            removeFilesStartingFrom hasFS (nextChunkNo chunk)
+            return (chunk, At validBlk)
+        _  -- This chunk file is unusable: either the chunk is empty or
            -- everything after it should be truncated.
-          | epoch > 0 -> go (epoch - 1)
+          | Just chunk' <- prevChunkNo chunk -> go chunk'
           | otherwise -> do
             -- Found no valid blocks on disk.
             -- TODO be more precise in which cases we need which cleanup.
-            removeFilesStartingFrom hasFS 0
-            return (0, Origin)
+            removeFilesStartingFrom hasFS firstChunkNo
+            return (firstChunkNo, Origin)
 
--- | Iff the epoch is the most recent epoch, it should not be finalised.
+-- | Iff the chunk is the most recent chunk, it should not be finalised.
 --
 -- With finalising, we mean: if there are one or more empty slots at the end
--- of the epoch, the primary index should be padded with offsets to indicate
+-- of the chunk, the primary index should be padded with offsets to indicate
 -- that these slots are empty. See 'Primary.backfill'.
 data ShouldBeFinalised
   = ShouldBeFinalised ChunkSize
@@ -249,11 +249,11 @@ data ShouldBeFinalised
 -- * All but the most recent epoch in the database should be finalised, i.e.
 --   padded to the size of the epoch.
 --
-validateEpoch
+validateChunk
   :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
   => ValidateEnv m hash h e
   -> ShouldBeFinalised
-  -> EpochNo
+  -> ChunkNo
   -> Maybe (WithOrigin hash)
      -- ^ The hash of the last block of the previous epoch. 'Nothing' if
      -- unknown. When this is the first epoch, it should be 'Just Origin'.
@@ -268,11 +268,11 @@ validateEpoch
      -- Note that when an invalid block is detected, we don't throw, but we
      -- truncate the epoch file. When validating the epoch file after it, we
      -- would notice it doesn't fit anymore, and then throw.
-validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
-    trace $ ValidatingEpoch epoch
-    epochFileExists <- lift $ doesFileExist epochFile
-    unless epochFileExists $ do
-      trace $ MissingEpochFile epoch
+validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
+    trace $ ValidatingChunk chunk
+    chunkFileExists <- lift $ doesFileExist chunkFile
+    unless chunkFileExists $ do
+      trace $ MissingChunkFile chunk
       throwError ()
 
     -- Read the entries from the secondary index file, if it exists.
@@ -282,23 +282,23 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
         -- Note the 'maxBound': it is used to calculate the block size for
         -- each entry, but we don't care about block sizes here, so we use
         -- some dummy value.
-        (Secondary.readAllEntries hasFS hashInfo 0 epoch (const False)
+        (Secondary.readAllEntries hasFS hashInfo 0 chunk (const False)
            maxBound IsEBB) >>= \case
           Left _                -> do
-            traceWith tracer $ InvalidSecondaryIndex epoch
+            traceWith tracer $ InvalidSecondaryIndex chunk
             return []
           Right entriesFromFile ->
             return $ fixupEBB (map withoutBlockSize entriesFromFile)
       else do
-        traceWith tracer $ MissingSecondaryIndex epoch
+        traceWith tracer $ MissingSecondaryIndex chunk
         return []
 
-    -- Parse the epoch file using the checksums from the secondary index file
+    -- Parse the chunk file using the checksums from the secondary index file
     -- as input. If the checksums match, the parser doesn't have to do the
     -- expensive integrity check of a block.
     let expectedChecksums = map Secondary.checksum entriesFromSecondaryIndex
     (entriesWithPrevHashes, mbErr) <- lift $
-        runEpochFileParser parser epochFile currentSlot expectedChecksums $ \stream ->
+        runChunkFileParser parser chunkFile currentSlot expectedChecksums $ \stream ->
           (\(es :> mbErr) -> (es, mbErr)) <$> S.toList stream
 
     -- Check whether the first block of this epoch fits onto the last block of
@@ -311,7 +311,7 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
           -- the hash of the last block of the previous epoch. There must be a
           -- gap. This epoch should be truncated.
         -> do
-          trace $ EpochFileDoesntFit expectedPrevHash actualPrevHash
+          trace $ ChunkFileDoesntFit expectedPrevHash actualPrevHash
           throwError ()
       _ -> return ()
 
@@ -322,19 +322,19 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
       -- deserialisation error may be due to some extra random bytes that
       -- shouldn't have been there in the first place.
       whenJust mbErr $ \(parseErr, endOfLastValidBlock) -> do
-        traceWith tracer $ InvalidEpochFile epoch parseErr
-        withFile hasFS epochFile (AppendMode AllowExisting) $ \eHnd ->
+        traceWith tracer $ InvalidChunkFile chunk parseErr
+        withFile hasFS chunkFile (AppendMode AllowExisting) $ \eHnd ->
           hTruncate eHnd endOfLastValidBlock
 
       -- If the secondary index file is missing, parsing it failed, or it does
-      -- not match the entries from the epoch file, overwrite it using those
+      -- not match the entries from the chunk file, overwrite it using those
       -- (truncate first).
       let summary = map fst entriesWithPrevHashes
           entries = map summaryEntry summary
       when (entriesFromSecondaryIndex /= entries ||
             not secondaryIndexFileExists) $ do
-        traceWith tracer $ RewriteSecondaryIndex epoch
-        Secondary.writeAllEntries hasFS hashInfo epoch entries
+        traceWith tracer $ RewriteSecondaryIndex chunk
+        Secondary.writeAllEntries hasFS hashInfo chunk entries
 
       -- Reconstruct the primary index from the 'Secondary.Entry's.
       --
@@ -345,24 +345,24 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
         shouldBeFinalised (map Secondary.blockOrEBB entries)
       primaryIndexFileExists  <- doesFileExist primaryIndexFile
       primaryIndexFileMatches <- if primaryIndexFileExists
-        then tryJust isInvalidFileError (Primary.load hasFS epoch) >>= \case
+        then tryJust isInvalidFileError (Primary.load hasFS chunk) >>= \case
           Left ()                    -> do
-            traceWith tracer $ InvalidPrimaryIndex epoch
+            traceWith tracer $ InvalidPrimaryIndex chunk
             return False
           Right primaryIndexFromFile ->
             return $ primaryIndexFromFile == primaryIndex
         else do
-          traceWith tracer $ MissingPrimaryIndex epoch
+          traceWith tracer $ MissingPrimaryIndex chunk
           return False
       unless primaryIndexFileMatches $ do
-        traceWith tracer $ RewritePrimaryIndex epoch
-        Primary.write hasFS epoch primaryIndex
+        traceWith tracer $ RewritePrimaryIndex chunk
+        Primary.write hasFS chunk primaryIndex
 
       return $ summaryToTipInfo <$> lastMaybe summary
   where
-    epochFile          = renderFile "epoch"     epoch
-    primaryIndexFile   = renderFile "primary"   epoch
-    secondaryIndexFile = renderFile "secondary" epoch
+    chunkFile          = renderFile "epoch"     chunk
+    primaryIndexFile   = renderFile "primary"   chunk
+    secondaryIndexFile = renderFile "secondary" chunk
 
     HasFS { hTruncate, doesFileExist } = hasFS
 
@@ -418,8 +418,9 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
     fixupEBB :: [Secondary.Entry hash] -> [Secondary.Entry hash]
     fixupEBB = \case
       entry@Secondary.Entry { blockOrEBB = EBB epoch' }:rest
-        | epoch' /= epoch
-        -> entry { Secondary.blockOrEBB = Block (coerce epoch') }:rest
+        | let chunk' = unsafeEpochNoToChunkNo epoch'
+        , chunk' /= chunk
+        -> entry { Secondary.blockOrEBB = Block (SlotNo (unChunkNo chunk')) }:rest
       entries -> entries
 
 -- | Reconstruct a 'PrimaryIndex' based on a list of 'Secondary.Entry's.

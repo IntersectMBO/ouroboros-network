@@ -50,13 +50,14 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
   , Index.CacheConfig (..)
     -- * Re-exports of aspects of 'ChunkInfo'
   , ChunkInfo
-  , firstChunkIndex
   , chunkIndexOfSlot
+  , ChunkNo
+  , firstChunkNo
     -- * Exported for testing purposes
   , openDB
   , mkImmDB
     -- * Exported for utilities
-  , ImmDB.epochFileParser
+  , ImmDB.chunkFileParser
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -209,7 +210,7 @@ defaultArgs fp = ImmDbArgs{
     -- that clients are requesting blocks from, we would constantly evict and
     -- reparse indices, causing a much higher CPU load.
     cacheConfig = Index.CacheConfig
-      { pastEpochsToCache = 250
+      { pastChunksToCache = 250
       , expireUnusedAfter = 5 * 60 -- Expire after 1 minute
       }
 
@@ -243,7 +244,7 @@ openDB ImmDbArgs{..} = do
       , addHdrEnv = immAddHdrEnv
       }
   where
-    parser = ImmDB.epochFileParser immHasFS immDecodeBlock (immIsEBB . getHeader)
+    parser = ImmDB.chunkFileParser immHasFS immDecodeBlock (immIsEBB . getHeader)
       -- TODO a more efficient to accomplish this?
       (void . immEncodeBlock) immCheckIntegrity
 
@@ -633,7 +634,7 @@ closeDB db = withDB db ImmDB.closeDB
 
 reopen :: (MonadCatch m, HasCallStack) => ImmDB m blk -> m ()
 reopen db = withDB db $ \imm ->
-    ImmDB.reopen imm ImmDB.ValidateMostRecentEpoch
+    ImmDB.reopen imm ImmDB.ValidateMostRecentChunk
 
 -- These wrappers ensure that we correctly rethrow exceptions using 'withDB'.
 

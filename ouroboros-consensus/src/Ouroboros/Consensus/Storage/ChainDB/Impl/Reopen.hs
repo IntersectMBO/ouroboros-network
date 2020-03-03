@@ -30,8 +30,6 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common (EpochNo)
-
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Background as Background
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -112,10 +110,10 @@ reopen (CDBHandle varState) launchBgTasks = do
 
         ImmDB.reopen cdbImmDB
         immDbTipPoint <- ImmDB.getPointAtTip cdbImmDB
-        let immDbTipEpoch = chunkIndexOfPoint cdbChunkInfo immDbTipPoint
+        let immDbTipChunk = chunkIndexOfPoint cdbChunkInfo immDbTipPoint
         traceWith cdbTracer $ TraceOpenEvent $ OpenedImmDB
           { _immDbTip      = immDbTipPoint
-          , _immDbTipEpoch = immDbTipEpoch
+          , _immDbTipChunk = immDbTipChunk
           }
 
         -- Note that we must reopen the VolatileDB before the LedgerDB, as the
@@ -164,8 +162,8 @@ reopen (CDBHandle varState) launchBgTasks = do
 
 -- | Lift 'chunkIndexOfSlot' to 'Point'
 --
--- Returns 'firstChunkIndex' in case of 'GenesisPoint'.
-chunkIndexOfPoint :: ImmDB.ChunkInfo -> Point blk -> EpochNo
+-- Returns 'firstChunkNo' in case of 'GenesisPoint'.
+chunkIndexOfPoint :: ImmDB.ChunkInfo -> Point blk -> ImmDB.ChunkNo
 chunkIndexOfPoint chunkInfo = \case
-    GenesisPoint      -> ImmDB.firstChunkIndex
+    GenesisPoint      -> ImmDB.firstChunkNo
     BlockPoint slot _ -> ImmDB.chunkIndexOfSlot chunkInfo slot

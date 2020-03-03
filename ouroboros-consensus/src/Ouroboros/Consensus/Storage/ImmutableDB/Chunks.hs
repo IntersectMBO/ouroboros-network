@@ -8,5 +8,8 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks (
 --
 -- * 'ChunkInfo'
 -- * 'ChunkSize'
+-- * 'ChunkNo'
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal as X
-                     (ChunkInfo, ChunkSize, getChunkSize, simpleChunkInfo)
+                     (ChunkInfo, ChunkNo, ChunkSize, chunksBetween,
+                     countChunks, firstChunkNo, getChunkSize, nextChunkNo,
+                     prevChunkNo, simpleChunkInfo)

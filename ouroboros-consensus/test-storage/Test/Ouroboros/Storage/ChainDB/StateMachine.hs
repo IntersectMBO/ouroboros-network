@@ -99,7 +99,7 @@ import           Ouroboros.Consensus.Storage.ChainDB hiding
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB
-                     (ValidationPolicy (ValidateAllEpochs), simpleChunkInfo)
+                     (ValidationPolicy (ValidateAllChunks), simpleChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
@@ -1475,7 +1475,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbHasFSLgrDB           = simHasFS lgrDbFsVar
 
       -- Policy
-    , cdbImmValidation        = ValidateAllEpochs
+    , cdbImmValidation        = ValidateAllChunks
     , cdbVolValidation        = VolDB.ValidateAll
     , cdbBlocksPerFile        = VolDB.mkBlocksPerFile 4
     , cdbParamsLgrDB          = LedgerDbParams {

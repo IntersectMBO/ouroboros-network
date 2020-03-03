@@ -12,6 +12,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
@@ -56,51 +57,51 @@ prop_filledSlots_isFilledSlot idx = conjoin
 prop_write_load :: PrimaryIndex -> Property
 prop_write_load index = monadicIO $ run $ runFS prop
   where
-    epoch = 0
+    chunk = firstChunkNo
 
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
-      Primary.write hasFS epoch index
-      index' <- Primary.load hasFS epoch
+      Primary.write hasFS chunk index
+      index' <- Primary.load hasFS chunk
       return $ index === index'
 
 prop_open_appendOffsets_load :: PrimaryIndex -> Property
 prop_open_appendOffsets_load index = monadicIO $ run $ runFS prop
   where
-    epoch = 0
+    chunk = firstChunkNo
 
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
-      pHnd <- Primary.open hasFS epoch MustBeNew
+      pHnd <- Primary.open hasFS chunk MustBeNew
       -- Don't write the first offset, which is always 0; it is written by
       -- 'Primary.open'.
       Primary.appendOffsets hasFS pHnd (drop 1 (Primary.toSecondaryOffsets index))
-      index' <- Primary.load hasFS epoch
+      index' <- Primary.load hasFS chunk
       return $ index === index'
 
 prop_truncateToSlotFS_truncateToSlot :: PrimaryIndex -> RelativeSlot -> Property
 prop_truncateToSlotFS_truncateToSlot index slot =
     monadicIO $ run $ runFS prop
   where
-    epoch = 0
+    chunk = firstChunkNo
 
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
-      Primary.write hasFS epoch index
-      Primary.truncateToSlotFS hasFS epoch slot
-      index' <- Primary.load hasFS epoch
+      Primary.write hasFS chunk index
+      Primary.truncateToSlotFS hasFS chunk slot
+      index' <- Primary.load hasFS chunk
       return $ Primary.truncateToSlot slot index === index'
 
 prop_readFirstFilledSlot_load_firstFilledSlot :: PrimaryIndex -> Property
 prop_readFirstFilledSlot_load_firstFilledSlot index =
     monadicIO $ run $ runFS prop
   where
-    epoch = 0
+    chunk = firstChunkNo
 
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
-      Primary.write hasFS epoch index
-      mbFirstFilledsLot <- Primary.readFirstFilledSlot hasFS epoch
+      Primary.write hasFS chunk index
+      mbFirstFilledsLot <- Primary.readFirstFilledSlot hasFS chunk
       return $ mbFirstFilledsLot === Primary.firstFilledSlot index
 
 {------------------------------------------------------------------------------

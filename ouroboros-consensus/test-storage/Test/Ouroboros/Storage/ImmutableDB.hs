@@ -34,7 +34,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as P
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
                      (ShouldBeFinalised (..), reconstructPrimaryIndex)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
-                     (epochFileParser)
+                     (chunkFileParser)
 
 import qualified Test.Ouroboros.Storage.ImmutableDB.Primary as Primary
 import qualified Test.Ouroboros.Storage.ImmutableDB.StateMachine as StateMachine
@@ -70,13 +70,13 @@ openTestDB registry hasFS = fst <$> openDBInternal
     hasFS
     (simpleChunkInfo fixedEpochSize)
     testHashInfo
-    ValidateMostRecentEpoch
+    ValidateMostRecentChunk
     parser
     nullTracer
     (Index.CacheConfig 2 60)
     (fixedBlockchainTime maxBound)
   where
-    parser = epochFileParser hasFS (const <$> S.decode) isEBB getBinaryInfo
+    parser = chunkFileParser hasFS (const <$> S.decode) isEBB getBinaryInfo
       testBlockIsValid
     isEBB  = testHeaderEpochNoIfEBB fixedEpochSize . getHeader
     getBinaryInfo = void . testBlockToBinaryInfo

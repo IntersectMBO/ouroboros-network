@@ -18,7 +18,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Types
   , isBlockOrEBB
   , HashInfo (..)
   , BinaryInfo (..)
-  , EpochFileParser (..)
+  , ChunkFileParser (..)
   , ValidationPolicy (..)
   , WrongBoundError (..)
   , ImmutableDBError (..)
@@ -55,6 +55,8 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, FsPath,
                      prettyFsError, sameFsError)
 import           Ouroboros.Consensus.Storage.FS.CRC (CRC)
+
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 
 data BlockOrEBB
   = Block !SlotNo
@@ -100,9 +102,9 @@ data HashInfo hash = HashInfo
   , putHash  :: !(hash -> Put)
   }
 
--- | Parse the contents of an epoch file.
+-- | Parse the contents of an chunk file.
 --
--- The parsing may include validation of the contents of the epoch file.
+-- The parsing may include validation of the contents of the chunk file.
 --
 -- @entry@ will be instantiated with @(Secondary.Entry hash)@, i.e. an entry
 -- from the secondary index corresponding to a block. To avoid cyclic
@@ -111,7 +113,7 @@ data HashInfo hash = HashInfo
 -- The parser should validate that each entry fits onto the previous one, i.e.
 -- that the hashes line up.
 --
--- We assume the output of 'EpochFileParser' to be correct, we will not
+-- We assume the output of 'ChunkFileParser' to be correct, we will not
 -- validate it.
 --
 -- An error may be returned in the form of @'Maybe' (e, 'Word64')@. The
@@ -122,8 +124,8 @@ data HashInfo hash = HashInfo
 -- entries have been parsed successfully, in which case we still want these
 -- valid entries, but also want to know about the error so we can truncate the
 -- file to get rid of the unparseable data.
-newtype EpochFileParser e m entry hash = EpochFileParser
-  { runEpochFileParser
+newtype ChunkFileParser e m entry hash = ChunkFileParser
+  { runChunkFileParser
       :: forall r.
          FsPath
       -> SlotNo
@@ -155,24 +157,24 @@ newtype EpochFileParser e m entry hash = EpochFileParser
 --
 -- The recovery policy dictates which on-disk files /open/ should validate.
 data ValidationPolicy
-  = ValidateMostRecentEpoch
-    -- ^ /open/ will validate the epoch and index files of the most recent
-    -- epoch stored on disk.
+  = ValidateMostRecentChunk
+    -- ^ /open/ will validate the chunk and index files of the most recent
+    -- chunk stored on disk.
     --
-    -- Prior epoch and index files are ignored, even their presence will not
+    -- Prior chunk and index files are ignored, even their presence will not
     -- be checked.
     --
     -- /open/ will throw a 'MissingFileError' or an 'InvalidFileError' in case
-    -- of a missing or invalid epoch file, or an invalid index file.
+    -- of a missing or invalid chunk file, or an invalid index file.
     --
     -- Because not all files are validated, subsequent operations on the
     -- database after /open/ may result in unexpected errors.
-  | ValidateAllEpochs
-    -- ^ /open/ will validate the epoch and index files of all epochs starting
-    -- from the first one up to the last epoch stored on disk.
+  | ValidateAllChunks
+    -- ^ /open/ will validate the chunk and index files of all chunks starting
+    -- from the first one up to the last chunk stored on disk.
     --
     -- /open/ will throw a 'MissingFileError' or an 'InvalidFileError' in case
-    -- of a missing or invalid epoch file, or an invalid index file.
+    -- of a missing or invalid chunk file, or an invalid index file.
   deriving (Show, Eq, Generic)
 
 -- | Returned by 'streamBlocks' and 'streamHeaders' when a bound is wrong.
@@ -228,21 +230,21 @@ data UserError
   = AppendToSlotInThePastError SlotNo ImmTip
     -- ^ When trying to append a new binary blob, the input slot was in the
     -- past, i.e. before or equal to the tip of the database.
-  | AppendToEBBInThePastError EpochNo EpochNo
+  | AppendToEBBInThePastError EpochNo ChunkNo
     -- ^ When trying to append a new EBB, the input epoch was in the past,
     -- i.e. less than the current epoch or blobs have already been appended to
     -- the current epoch.
     --
     -- The first parameter is the input epoch and the second parameter is the
-    -- current epoch.
+    -- current chunk.
   | ReadFutureSlotError SlotNo ImmTip
     -- ^ When trying to read a slot, the slot was not yet occupied, because
     -- it's too far in the future, i.e. it is after the tip of the database.
-  | ReadFutureEBBError EpochNo EpochNo
+  | ReadFutureEBBError EpochNo ChunkNo
     -- ^ When trying to read an EBB, the requested epoch was in the future.
     --
     -- The first parameter is the requested epoch and the second parameter is
-    -- the current epoch.
+    -- the current chunk.
   | InvalidIteratorRangeError SlotNo SlotNo
     -- ^ When the chosen iterator range was invalid, i.e. the @start@ (first
     -- parameter) came after the @end@ (second parameter).
@@ -334,20 +336,20 @@ prettyUnexpectedError = \case
 
 data TraceEvent e hash
     = NoValidLastLocation
-    | ValidatedLastLocation EpochNo ImmTip
+    | ValidatedLastLocation ChunkNo ImmTip
       -- Validation of previous DB
-    | ValidatingEpoch  EpochNo
-    | MissingEpochFile EpochNo
-    | InvalidEpochFile EpochNo e
-    | EpochFileDoesntFit (WithOrigin hash) (WithOrigin hash)
+    | ValidatingChunk  ChunkNo
+    | MissingChunkFile ChunkNo
+    | InvalidChunkFile ChunkNo e
+    | ChunkFileDoesntFit (WithOrigin hash) (WithOrigin hash)
       -- ^ The hash of the last block in the previous epoch doesn't match the
       -- previous hash of the first block in the current epoch
-    | MissingPrimaryIndex   EpochNo
-    | MissingSecondaryIndex EpochNo
-    | InvalidPrimaryIndex   EpochNo
-    | InvalidSecondaryIndex EpochNo
-    | RewritePrimaryIndex   EpochNo
-    | RewriteSecondaryIndex EpochNo
+    | MissingPrimaryIndex   ChunkNo
+    | MissingSecondaryIndex ChunkNo
+    | InvalidPrimaryIndex   ChunkNo
+    | InvalidSecondaryIndex ChunkNo
+    | RewritePrimaryIndex   ChunkNo
+    | RewriteSecondaryIndex ChunkNo
       -- Delete after
     | DeletingAfter (ImmTipWithInfo hash)
       -- Closing the DB
@@ -357,17 +359,17 @@ data TraceEvent e hash
     | TraceCacheEvent !TraceCacheEvent
   deriving (Eq, Generic, Show)
 
--- | The argument with type 'Word32' is the number of past epoch currently in
+-- | The argument with type 'Word32' is the number of past chunk currently in
 -- the cache.
 data TraceCacheEvent
-    = TraceCurrentEpochHit   !EpochNo   !Word32
-    | TracePastEpochHit      !EpochNo   !Word32
-    | TracePastEpochMiss     !EpochNo   !Word32
-    | TracePastEpochEvict    !EpochNo   !Word32
-      -- ^ The least recently used past epoch was evicted because the cache
+    = TraceCurrentChunkHit   !ChunkNo   !Word32
+    | TracePastChunkHit      !ChunkNo   !Word32
+    | TracePastChunkMiss     !ChunkNo   !Word32
+    | TracePastChunkEvict    !ChunkNo   !Word32
+      -- ^ The least recently used past chunk was evicted because the cache
       -- was full.
-    | TracePastEpochsExpired ![EpochNo] !Word32
-      -- ^ Past epochs were expired from the cache because they haven't been
+    | TracePastChunksExpired ![ChunkNo] !Word32
+      -- ^ Past chunks were expired from the cache because they haven't been
       -- used for a while.
   deriving (Eq, Generic, Show)
 
