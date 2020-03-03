@@ -84,7 +84,6 @@ library
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.AnchoredFragment
                        Ouroboros.Consensus.Util.CBOR
-                       Ouroboros.Consensus.Util.Classify
                        Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.EarlyExit
                        Ouroboros.Consensus.Util.HList
