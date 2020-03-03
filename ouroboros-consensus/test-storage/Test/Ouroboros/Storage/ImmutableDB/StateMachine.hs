@@ -865,9 +865,9 @@ sm env dbm = StateMachine
 
 validate :: forall m. IOLike m
          => Model m Concrete -> ImmutableDB Hash m
-         -> QC.PropertyM m Property
+         -> m Property
 validate Model {..} realDB = do
-    dbContents <- QC.run $ getDBContents realDB
+    dbContents <- getDBContents realDB
     -- This message is clearer than the one produced by (===)
     let msg = "Mismatch between database (" <> show dbContents <>
               ") and model (" <> show modelContents <> ")"
@@ -1220,7 +1220,7 @@ showLabelledExamples = showLabelledExamples' Nothing 1000 (const True) $
 
 prop_sequential :: Index.CacheConfig -> Property
 prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
-    (hist, prop) <- test cacheConfig cmds
+    (hist, prop) <- QC.run $ test cacheConfig cmds
     prettyCommands smUnused hist
       $ tabulate "Tags" (map show $ tag (execCmds (QSM.initModel smUnused) cmds))
       $ prop
@@ -1230,53 +1230,56 @@ prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.mona
 
 test :: Index.CacheConfig
      -> QSM.Commands (At CmdErr IO) (At Resp IO)
-     -> QC.PropertyM IO (QSM.History (At CmdErr IO) (At Resp IO), Property)
+     -> IO (QSM.History (At CmdErr IO) (At Resp IO), Property)
 test cacheConfig cmds = do
-    fsVar              <- QC.run $ uncheckedNewTVarM Mock.empty
-    varErrors          <- QC.run $ uncheckedNewTVarM mempty
-    varNextId          <- QC.run $ uncheckedNewTVarM 0
-    varCurSlot         <- QC.run $ uncheckedNewTVarM maxBound
-    (tracer, getTrace) <- QC.run $ recordingTracerIORef
-    registry           <- QC.run $ unsafeNewRegistry
+    fsVar              <- uncheckedNewTVarM Mock.empty
+    varErrors          <- uncheckedNewTVarM mempty
+    varNextId          <- uncheckedNewTVarM 0
+    varCurSlot         <- uncheckedNewTVarM maxBound
+    (tracer, getTrace) <- recordingTracerIORef
 
     let hasFS  = mkSimErrorHasFS fsVar varErrors
         parser = epochFileParser hasFS (const <$> decode) isEBB
           getBinaryInfo testBlockIsValid
         btime  = settableBlockchainTime varCurSlot
 
-    (db, internal) <- QC.run $ openDBInternal registry hasFS
-      (fixedSizeEpochInfo fixedEpochSize) testHashInfo
-      ValidateMostRecentEpoch parser tracer cacheConfig btime
+    withRegistry $ \registry -> do
 
-    let env = ImmutableDBEnv
-          { varErrors, varNextId, varCurSlot, registry, hasFS, db, internal }
-        sm' = sm env dbm
+      bracket
+        (openDBInternal registry hasFS (fixedSizeEpochInfo fixedEpochSize)
+           testHashInfo ValidateMostRecentEpoch parser tracer cacheConfig btime)
+        (closeDB . fst) $ \(db, internal) -> do
 
-    (hist, model, res) <- runCommands sm' cmds
+        let env = ImmutableDBEnv
+              { varErrors, varNextId, varCurSlot, registry, hasFS, db, internal }
+            sm' = sm env dbm
 
-    trace <- QC.run $ getTrace
-    fs    <- QC.run $ atomically $ readTVar fsVar
+        (hist, model, res) <- QSM.runCommands' sm' cmds
 
-    QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
-    QC.monitor $ counterexample ("FS: " <> Mock.pretty fs)
+        trace <- getTrace
+        fs    <- atomically $ readTVar fsVar
 
-    let prop = res === Ok .&&. openHandlesProp fs model
+        let prop =
+              counterexample ("Trace: " <> unlines (map show trace)) $
+              counterexample ("FS: " <> Mock.pretty fs)              $
+              res === Ok .&&. openHandlesProp fs model
 
-    case res of
-      Ok -> do
-        QC.run $ closeDB db >> reopen db ValidateAllEpochs
-        validation <- validate model db
-        dbTip <- QC.run $ getTip db <* closeDB db <* closeRegistry registry
+        case res of
+          Ok -> do
+            closeDB db
+            reopen db ValidateAllEpochs
+            validation <- validate model db
+            dbTip <- getTip db
 
-        let modelTip = dbmTip $ dbModel model
-        QC.monitor $ counterexample ("dbTip:    " <> show dbTip)
-        QC.monitor $ counterexample ("modelTip: " <> show modelTip)
+            let modelTip = dbmTip $ dbModel model
+                prop' =
+                  counterexample ("dbTip:    " <> show dbTip)    $
+                  counterexample ("modelTip: " <> show modelTip) $
+                  prop .&&. dbTip === modelTip .&&. validation
+            return (hist, prop')
 
-        return (hist, prop .&&. dbTip === modelTip .&&. validation)
-      -- If something went wrong, don't try to reopen the database
-      _ -> do
-        QC.run $ closeRegistry registry
-        return (hist, prop)
+          -- If something went wrong, don't try to reopen the database
+          _ -> return (hist, prop)
   where
     dbm = mkDBModel
     isEBB = testHeaderEpochNoIfEBB fixedEpochSize . getHeader

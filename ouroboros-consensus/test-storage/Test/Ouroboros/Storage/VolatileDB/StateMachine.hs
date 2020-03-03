@@ -533,7 +533,7 @@ mockImpl model cmdErr = At <$> return mockResp
 
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
-    (hist, prop) <- test cmds
+    (hist, prop) <- run $ test cmds
     let events = execCmds (initModel smUnused) cmds
     prettyCommands smUnused hist
         $ tabulate "Tags"
@@ -558,31 +558,30 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
       | otherwise = ">=100"
 
 test :: Commands (At CmdErr) (At Resp)
-     -> PropertyM IO (History (At CmdErr) (At Resp), Property)
+     -> IO (History (At CmdErr) (At Resp), Property)
 test cmds = do
-    varErrors          <- run $ uncheckedNewTVarM mempty
-    varFs              <- run $ uncheckedNewTVarM Mock.empty
-    (tracer, getTrace) <- run $ recordingTracerIORef
+    varErrors          <- uncheckedNewTVarM mempty
+    varFs              <- uncheckedNewTVarM Mock.empty
+    (tracer, getTrace) <- recordingTracerIORef
 
     let hasFS  = mkSimErrorHasFS varFs varErrors
         parser = blockFileParser' hasFS testBlockIsEBB
           testBlockToBinaryInfo (const <$> decode) testBlockIsValid
           ValidateAll
 
-    db <- run $ openDB hasFS parser tracer maxBlocksPerFile
+    withDB (openDB hasFS parser tracer maxBlocksPerFile) $ \db -> do
+      let env = VolatileDBEnv { varErrors, db, hasFS }
+          sm' = sm env dbm
+      (hist, _model, res) <- QSM.runCommands' sm' cmds
 
-    let env = VolatileDBEnv { varErrors, db, hasFS }
-        sm' = sm env dbm
-    (hist, _model, res) <- runCommands sm' cmds
+      trace <- getTrace
+      fs    <- atomically $ readTVar varFs
 
-    trace <- run $ getTrace
-    fs    <- run $ atomically $ readTVar varFs
-
-    monitor $ counterexample ("Trace: " <> unlines (map show trace))
-    monitor $ counterexample ("FS: " <> Mock.pretty fs)
-
-    run $ closeDB db
-    return (hist, res === Ok)
+      let prop =
+            counterexample ("Trace: " <> unlines (map show trace)) $
+            counterexample ("FS: " <> Mock.pretty fs)              $
+            res === Ok
+      return (hist, prop)
   where
     dbm = initDBModel maxBlocksPerFile
 

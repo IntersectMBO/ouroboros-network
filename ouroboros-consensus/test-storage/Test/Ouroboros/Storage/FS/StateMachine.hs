@@ -24,7 +24,6 @@ module Test.Ouroboros.Storage.FS.StateMachine (
 
 import qualified Control.Exception as E
 import           Control.Monad
-import           Control.Monad.IO.Class (liftIO)
 import           Data.Bifoldable
 import           Data.Bifunctor
 import qualified Data.Bifunctor.TH as TH
@@ -45,14 +44,13 @@ import           Data.Word (Word64)
 import qualified Generics.SOP as SOP
 import           GHC.Generics
 import           GHC.Stack
-import           System.Directory (removeDirectoryRecursive)
-import           System.IO.Temp (createTempDirectory)
+import           System.IO.Temp (withTempDirectory)
 import           System.Random (getStdRandom, randomR)
 import           Text.Read (readMaybe)
 import           Text.Show.Pretty (ppShow)
 
 import           Test.QuickCheck
-import           Test.QuickCheck.Monadic (monadicIO)
+import qualified Test.QuickCheck.Monadic as QC
 import           Test.QuickCheck.Random (mkQCGen)
 import           Test.StateMachine (Concrete, Symbolic)
 import qualified Test.StateMachine as QSM
@@ -1333,19 +1331,20 @@ showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
 
 prop_sequential :: FilePath -> Property
 prop_sequential tmpDir =
-    QSM.forAllCommands (sm mountUnused) Nothing $ \cmds -> monadicIO $ do
-      tstTmpDir <- liftIO $ createTempDirectory tmpDir "HasFS"
-      let mount = MountPoint tstTmpDir
-          sm'   = sm mount
+    QSM.forAllCommands (sm mountUnused) Nothing $ \cmds -> QC.monadicIO $ do
+      (tstTmpDir, hist, res) <- QC.run $
+        withTempDirectory tmpDir "HasFS" $ \tstTmpDir -> do
+          let mount = MountPoint tstTmpDir
+              sm'   = sm mount
 
-      (hist, model, res) <- QSM.runCommands sm' cmds
+          (hist, model, res) <- QSM.runCommands' sm' cmds
 
-      -- | Close all open handles and delete the temp directory
-      liftIO $ do
-        forM_ (RE.keys (knownHandles model)) $ F.close . handleRaw . QSM.concrete
-        removeDirectoryRecursive tstTmpDir
+          -- Close all open handles
+          forM_ (RE.keys (knownHandles model)) $ F.close . handleRaw . QSM.concrete
 
-      QSM.prettyCommands sm' hist
+          return (tstTmpDir, hist, res)
+
+      QSM.prettyCommands (sm mountUnused) hist
         $ tabulate "Tags" (map show $ tag (execCmds cmds))
         $ counterexample ("Mount point: " ++ tstTmpDir)
         $ res === QSM.Ok
