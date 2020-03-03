@@ -244,7 +244,7 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
              (localResponderNetworkApplication $ networkApps version)
          | version <- supportedNetworkProtocolVersions (Proxy @blk)
          ]
-     , daErrorPolicies = consensusErrorPolicy
+     , daErrorPolicies = consensusErrorPolicy (Proxy @blk)
      }
 
     combineVersions :: Semigroup a => [a] -> a

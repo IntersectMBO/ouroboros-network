@@ -78,8 +78,8 @@ exceptionRequiresRecovery blkProxy e = case reason of
     _                  -> False
   where
     reason
-      | Just nodeReason <- nodeToExitReason blkProxy e
-      = nodeReason
+      | Just fatalReason <- nodeExceptionIsFatal blkProxy e
+      = fatalReason
       | otherwise
       = toExitReason e
 
