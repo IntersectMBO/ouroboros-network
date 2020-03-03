@@ -229,7 +229,7 @@ instance RunNode ByronBlock where
   nodeHashInfo              = const byronHashInfo
   nodeCheckIntegrity        = verifyBlockIntegrity . configBlock
   nodeAddHeaderEnvelope     = const byronAddHeaderEnvelope
-  nodeToExitReason _ e
+  nodeExceptionIsFatal _ e
     | Just (_ :: DropEncodedSizeException) <- fromException e
     = Just DatabaseCorruption
     | otherwise
