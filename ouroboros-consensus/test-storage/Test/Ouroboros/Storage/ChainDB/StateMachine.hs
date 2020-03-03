@@ -115,12 +115,12 @@ import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
                      ModelSupportsBlock, ReaderId)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.TestBlock
-import           Test.Ouroboros.Storage.Util ((=:=))
 
 import           Test.Util.ChunkInfo
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
+import           Test.Util.QuickCheck ((=:=))
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP

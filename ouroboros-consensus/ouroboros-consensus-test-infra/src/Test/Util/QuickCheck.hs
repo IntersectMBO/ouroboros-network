@@ -5,9 +5,15 @@ module Test.Util.QuickCheck (
   , ge
     -- * Improved variants
   , elements
+  , (=:=)
+    -- * Convenience
+  , collects
   ) where
 
 import           GHC.Stack (HasCallStack)
+
+import           Ouroboros.Consensus.Util (repeatedly)
+import           Ouroboros.Consensus.Util.Condense (Condense, condense)
 
 import           Test.QuickCheck hiding (elements)
 import qualified Test.QuickCheck as QC
@@ -38,3 +44,20 @@ x `lt` y = counterexample (show x ++ " >= " ++ show y) $ x < y
 elements :: HasCallStack => [a] -> Gen a
 elements [] = error "Test.Util.QuickCheck.elements used with empty list"
 elements xs = QC.elements xs
+
+-- | Like '===', but uses 'Condense' instead of 'Show' when it fails.
+infix 4 =:=
+(=:=) :: (Eq a, Condense a) => a -> a -> Property
+x =:= y =
+    counterexample (condense x ++ interpret res ++ condense y) res
+  where
+    res = x == y
+    interpret True  = " == "
+    interpret False = " /= "
+
+{-------------------------------------------------------------------------------
+  Convenience
+-------------------------------------------------------------------------------}
+
+collects :: Show a => [a] -> Property -> Property
+collects = repeatedly collect

@@ -3,19 +3,25 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-module Test.Ouroboros.Storage.Util where
--- TODO Move to Test.Util.Storage?
-
-import           Control.Exception (SomeException)
+module Test.Ouroboros.Storage.Util
+  ( -- * Handy combinators
+    withMockFS
+  , expectFsError
+  , expectUserError
+  , expectUnexpectedError
+  , expectFsResult
+  , expectImmDBResult
+  , expectVolDBResult
+  , apiEquivalenceFs
+  , apiEquivalenceImmDB
+  , tryFS
+  ) where
 
 import           System.Directory (getTemporaryDirectory)
 import           System.IO.Temp (withTempDirectory)
 
-import           Test.QuickCheck (Property, collect, counterexample)
 import           Test.Tasty.HUnit
 
-import           Ouroboros.Consensus.Util (repeatedly)
-import           Ouroboros.Consensus.Util.Condense (Condense, condense)
 import           Ouroboros.Consensus.Util.IOLike (try)
 
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
@@ -167,25 +173,5 @@ apiEquivalenceImmDB :: (HasCallStack, Eq a, Show a)
 apiEquivalenceImmDB =
     apiEquivalence tryImmDB prettyImmutableDBError sameImmutableDBError
 
-tryAny :: IO a -> IO (Either SomeException a)
-tryAny = try
-
 tryFS :: IO a -> IO (Either FsError a)
 tryFS = try
-
-{-------------------------------------------------------------------------------
-  QuickCheck auxiliary
--------------------------------------------------------------------------------}
-
-collects :: Show a => [a] -> Property -> Property
-collects = repeatedly collect
-
--- | Like '===', but uses 'Condense' instead of 'Show' when it fails.
-infix 4 =:=
-(=:=) :: (Eq a, Condense a) => a -> a -> Property
-x =:= y =
-    counterexample (condense x ++ interpret res ++ condense y) res
-  where
-    res = x == y
-    interpret True  = " == "
-    interpret False = " /= "
