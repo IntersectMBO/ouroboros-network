@@ -420,12 +420,12 @@ deriving instance Rank2.Foldable    (At Resp m)
 -------------------------------------------------------------------------------}
 
 -- | An event records the model before and after a command along with the
--- command itself, and a mocked version of the response.
+-- command itself, and the response.
 data Event m r = Event
-  { eventBefore   :: Model     m r
-  , eventCmdErr   :: At CmdErr m r
-  , eventAfter    :: Model     m r
-  , eventMockResp :: Resp IteratorId
+  { eventBefore :: Model     m r
+  , eventCmdErr :: At CmdErr m r
+  , eventAfter  :: Model     m r
+  , eventResp   :: At Resp   m r
   } deriving (Show)
 
 eventCmd :: Event m r -> At Cmd m r
@@ -434,6 +434,8 @@ eventCmd = At . _cmd . unAt . eventCmdErr
 eventMockCmd :: Eq1 r => Event m r -> Cmd IteratorId
 eventMockCmd ev@Event {..} = toMock eventBefore (eventCmd ev)
 
+eventMockResp :: Eq1 r => Event m r -> Resp IteratorId
+eventMockResp Event {..} = toMock eventAfter eventResp
 
 -- | Construct an event
 lockstep :: (Show1 r, Eq1 r)
@@ -445,7 +447,7 @@ lockstep model@Model {..} cmdErr (At resp) = Event
     { eventBefore   = model
     , eventCmdErr   = cmdErr
     , eventAfter    = model'
-    , eventMockResp = mockResp
+    , eventResp     = At resp
     }
   where
     (mockResp, dbModel') = step model cmdErr
