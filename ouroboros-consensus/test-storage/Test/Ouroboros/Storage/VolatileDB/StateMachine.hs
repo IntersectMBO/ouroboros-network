@@ -35,8 +35,6 @@ import           Data.Word
 import qualified Generics.SOP as SOP
 import           GHC.Generics
 import           GHC.Stack
-import           System.Random (getStdRandom, randomR)
-import           Text.Show.Pretty (ppShow)
 
 import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
                      MaxSlotNo (..), SlotNo (..), blockHash)
@@ -44,7 +42,6 @@ import           Ouroboros.Network.Point (WithOrigin)
 import qualified Ouroboros.Network.Point as WithOrigin
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
-import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
@@ -57,9 +54,10 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Util
 
 import           Test.QuickCheck
 import           Test.QuickCheck.Monadic
-import           Test.QuickCheck.Random (mkQCGen)
 import           Test.StateMachine hiding (showLabelledExamples,
                      showLabelledExamples')
+import           Test.StateMachine.Labelling
+import qualified Test.StateMachine.Labelling as QSM
 import qualified Test.StateMachine.Sequential as QSM
 import           Test.StateMachine.Types
 import qualified Test.StateMachine.Types.Rank2 as Rank2
@@ -72,7 +70,6 @@ import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
 
 import           Test.Ouroboros.Storage.TestBlock
-import           Test.Ouroboros.Storage.Util
 import           Test.Ouroboros.Storage.VolatileDB.Model
 
 
@@ -201,22 +198,16 @@ newtype Model (r :: Type -> Type) = Model {
 
 -- | An event records the model before and after a command along with the
 -- command itself, and the response.
-data Event r = Event {
-      eventBefore :: Model     r
-    , eventCmd    :: At CmdErr r
-    , eventAfter  :: Model     r
-    , eventResp   :: At Resp   r
-    }
-  deriving (Show)
+type VolDBEvent = Event Model (At CmdErr) (At Resp)
 
-eventMockResp :: Event r -> Resp
+eventMockResp :: VolDBEvent r -> Resp
 eventMockResp Event{..} = toMock eventAfter eventResp
 
 lockstep :: forall r.
-            Model     r
-         -> At CmdErr r
-         -> At Resp   r
-         -> Event     r
+            Model      r
+         -> At CmdErr  r
+         -> At Resp    r
+         -> VolDBEvent r
 lockstep model cmdErr resp = Event {
       eventBefore = model
     , eventCmd    = cmdErr
@@ -538,7 +529,7 @@ mockImpl model cmdErr = At <$> return mockResp
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
     (hist, prop) <- run $ test cmds
-    let events = execCmds (initModel smUnused) cmds
+    let events = execCmds smUnused cmds
     prettyCommands smUnused hist
         $ tabulate "Tags"
           (map show $ tag events)
@@ -605,24 +596,24 @@ tests = testGroup "VolatileDB q-s-m" [
 -------------------------------------------------------------------------------}
 
 -- | Predicate on events
-type EventPred = C.Predicate (Event Symbolic) Tag
+type EventPred = Predicate (VolDBEvent Symbolic) Tag
 
 -- | Convenience combinator for creating classifiers for successful commands
-successful :: (    Event Symbolic
+successful :: (    VolDBEvent Symbolic
                 -> Success
                 -> Either Tag EventPred
               )
            -> EventPred
-successful f = C.predicate $ \ev -> case (eventMockResp ev, eventCmd ev) of
+successful f = predicate $ \ev -> case (eventMockResp ev, eventCmd ev) of
     (Resp (Right ok), At (CmdErr _ Nothing)) -> f ev ok
     _                                        -> Right $ successful f
 
 -- | Tag commands
 --
 -- Tagging works on symbolic events, so that we can tag without doing real IO.
-tag :: [Event Symbolic] -> [Tag]
+tag :: [VolDBEvent Symbolic] -> [Tag]
 tag [] = [TagEmpty]
-tag ls = C.classify
+tag ls = QSM.classify
     [ tagGetBlockComponentNothing
     , tagGetJust $ Left TagGetJust
     , tagGetReOpenGet
@@ -699,7 +690,7 @@ tag ls = C.classify
           = False
 
     tagIsClosedError :: EventPred
-    tagIsClosedError = C.predicate $ \ev -> case eventMockResp ev of
+    tagIsClosedError = predicate $ \ev -> case eventMockResp ev of
       Resp (Left (UserError ClosedDBError)) -> Left TagClosedError
       _                                     -> Right tagIsClosedError
 
@@ -709,13 +700,13 @@ tag ls = C.classify
                             Left TagGarbageCollectThenReOpen
       _                -> Right $ tagGarbageCollectThenReOpen
 
-getCmd :: Event r -> Cmd
+getCmd :: VolDBEvent r -> Cmd
 getCmd ev = cmd $ unAt (eventCmd ev)
 
-isMemberTrue :: [Event Symbolic] -> Int
+isMemberTrue :: [VolDBEvent Symbolic] -> Int
 isMemberTrue events = sum $ count <$> events
   where
-    count :: Event Symbolic -> Int
+    count :: VolDBEvent Symbolic -> Int
     count e = case eventMockResp e of
       Resp (Left _)                -> 0
       Resp (Right (BlockInfos ls)) -> length $ catMaybes ls
@@ -774,57 +765,36 @@ data Tag =
 
     deriving Show
 
-tagSimulatedErrors :: [Event Symbolic] -> [String]
+tagSimulatedErrors :: [VolDBEvent Symbolic] -> [String]
 tagSimulatedErrors events = fmap tagError events
   where
-    tagError :: Event Symbolic -> String
+    tagError :: VolDBEvent Symbolic -> String
     tagError ev = case eventCmd ev of
       At (CmdErr _ Nothing) -> "NoError"
       At (CmdErr cmd _)     -> cmdName (At cmd) <> " Error"
 
-tagGetSuccessors :: [Event Symbolic] -> [String]
+tagGetSuccessors :: [VolDBEvent Symbolic] -> [String]
 tagGetSuccessors = mapMaybe f
   where
-    f :: Event Symbolic -> Maybe String
+    f :: VolDBEvent Symbolic -> Maybe String
     f ev = case (getCmd ev, eventMockResp ev) of
         (GetSuccessors _pid, Resp (Right (Successors st))) ->
             if all Set.null st then Just "Empty Successors"
             else Just "Non empty Successors"
         _otherwise -> Nothing
 
-execCmd :: Model Symbolic
-        -> Command (At CmdErr) (At Resp)
-        -> Event Symbolic
-execCmd model (Command cmdErr resp _vars) = lockstep model cmdErr resp
-
-execCmds :: Model Symbolic -> Commands (At CmdErr) (At Resp) -> [Event Symbolic]
-execCmds model (Commands cs) = go model cs
-  where
-    go :: Model Symbolic -> [Command (At CmdErr) (At Resp)] -> [Event Symbolic]
-    go _ []        = []
-    go m (c : css) = let ev = execCmd m c in ev : go (eventAfter ev) css
-
 showLabelledExamples :: IO ()
-showLabelledExamples = showLabelledExamples' Nothing 1000
+showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
 
 showLabelledExamples' :: Maybe Int
                       -- ^ Seed
                       -> Int
                       -- ^ Number of tests to run to find examples
+                      -> (Tag -> Bool)
+                      -- ^ Tag filter (can be @const True@)
                       -> IO ()
-showLabelledExamples' mReplay numTests = do
-    replaySeed <- case mReplay of
-        Nothing   -> getStdRandom (randomR (1,999999))
-        Just seed -> return seed
-
-    labelledExamplesWith (stdArgs { replay     = Just (mkQCGen replaySeed, 0)
-                                  , maxSuccess = numTests
-                                  }) $
-        forAllShrinkShow (QSM.generateCommands smUnused Nothing)
-                         (QSM.shrinkCommands   smUnused)
-                         ppShow $ \cmds ->
-            collects (tag . execCmds (initModel smUnused) $ cmds) $
-                property True
+showLabelledExamples' mReplay numTests focus =
+    QSM.showLabelledExamples' smUnused mReplay numTests tag focus
   where
     dbm      = initDBModel maxBlocksPerFile
     smUnused = sm unusedEnv dbm
