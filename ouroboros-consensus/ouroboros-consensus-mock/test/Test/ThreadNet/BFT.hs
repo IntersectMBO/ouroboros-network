@@ -9,15 +9,15 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Cardano.Slotting.Slot (SlotNo (..))
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node ()
 import           Ouroboros.Consensus.Mock.Node.BFT
-import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Random (Seed (..))
 
@@ -67,9 +67,14 @@ prop_simple_bft_convergence k
         testOutput
   where
     testOutput =
-        runTestNetwork testConfig TestConfigBlock
+        runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = Nothing
             , nodeInfo    = \nid ->
                 protocolInfoBft numCoreNodes nid k slotLengths
             , rekeying    = Nothing
             }
+
+    -- The mock ledger doesn't really care, and neither does BFT.
+    -- We stick with the common @k * 10@ size for now.
+    epochSize :: EpochSize
+    epochSize = EpochSize (maxRollbacks k * 10)

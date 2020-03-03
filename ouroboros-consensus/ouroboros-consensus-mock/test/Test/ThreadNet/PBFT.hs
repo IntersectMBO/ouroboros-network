@@ -11,6 +11,8 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Network.Block (SlotNo (..), blockSlot)
 import           Ouroboros.Network.MockChain.Chain (foldChain)
 
@@ -93,13 +95,18 @@ prop_simple_pbft_convergence
     params = PBftParams k numCoreNodes sigThd
 
     testOutput =
-        runTestNetwork testConfig TestConfigBlock
+        runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = Nothing
             , nodeInfo    = protocolInfoMockPBFT
                               params
                               (singletonSlotLengths pbftSlotLength)
             , rekeying    = Nothing
             }
+
+    -- The mock ledger doesn't really care, and neither does BFT.
+    -- We stick with the common @k * 10@ size for now.
+    epochSize :: EpochSize
+    epochSize = EpochSize (maxRollbacks k * 10)
 
     refResult :: Ref.Result
     refResult = Ref.simulate params nodeJoinPlan numSlots

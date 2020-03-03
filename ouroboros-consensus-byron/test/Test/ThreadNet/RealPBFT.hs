@@ -31,6 +31,8 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -53,8 +55,8 @@ import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
 
 import qualified Cardano.Binary
-import qualified Cardano.Chain.Common as Common
 import qualified Cardano.Chain.Block as Block
+import qualified Cardano.Chain.Common as Common
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
@@ -67,6 +69,7 @@ import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
+import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Node
 import           Ouroboros.Consensus.Byron.Protocol
 
@@ -578,7 +581,7 @@ prop_simple_real_pbft_convergence produceEBBs k
     conjoin (map (hasAllEBBs k numSlots produceEBBs) finalChains)
   where
     testOutput =
-        runTestNetwork testConfig TestConfigBlock
+        runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = case produceEBBs of
                 NoEBBs      -> Nothing
                 ProduceEBBs -> Just $ byronForgeEbbEnv k
@@ -614,6 +617,10 @@ prop_simple_real_pbft_convergence produceEBBs k
                   sequence $ let ms = Crypto.genKeyDSIGN Stream.:< ms in ms
               }
             }
+
+    -- Byron has a hard-coded relation between k and the size of an epoch
+    epochSize :: EpochSize
+    epochSize = fromByronEpochSlots $ kEpochSlots (toByronBlockCount k)
 
     -- NOTE: If a node is rekeying, then the 'Ref.Outcome' case will include
     -- some 'Ref.Nominal' outcomes that should actually be 'Ref.Unable'.

@@ -25,6 +25,9 @@ import           Test.QuickCheck.Hedgehog (hedgehog)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Cardano.Slotting.Slot
+
+import qualified Cardano.Chain.ProtocolConstants as Impl
 import qualified Cardano.Chain.UTxO as Impl
 
 import qualified Cardano.Spec.Chain.STS.Rule.Chain as Spec
@@ -47,6 +50,7 @@ import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Ledger.Conversions
 
 import           Ouroboros.Consensus.ByronSpec.Ledger
 import qualified Ouroboros.Consensus.ByronSpec.Ledger.Genesis as Genesis
@@ -128,6 +132,12 @@ data SetupDualPBft = SetupDualPBft {
 setupSecurityParam :: SetupDualPBft -> SecurityParam
 setupSecurityParam = pbftSecurityParam . setupParams
 
+setupEpochSize :: SetupDualPBft -> EpochSize
+setupEpochSize setup =
+    fromByronEpochSlots $ Impl.kEpochSlots (toByronBlockCount k)
+  where
+    k = setupSecurityParam setup
+
 setupNumSlots :: SetupDualPBft -> NumSlots
 setupNumSlots = numSlots . setupConfig
 
@@ -138,8 +148,8 @@ setupSchedule setup@SetupDualPBft{..} = Just $
       (setupNumSlots setup)
 
 setupTestOutput :: SetupDualPBft -> TestOutput DualByronBlock
-setupTestOutput SetupDualPBft{..} =
-    runTestNetwork setupConfig $ TestConfigBlock {
+setupTestOutput setup@SetupDualPBft{..} =
+    runTestNetwork setupConfig (setupEpochSize setup) $ TestConfigBlock {
         forgeEbbEnv = Nothing -- spec does not model EBBs
       , rekeying    = Nothing -- TODO
       , nodeInfo    = \coreNodeId ->

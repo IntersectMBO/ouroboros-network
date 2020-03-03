@@ -10,6 +10,8 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Mock.Ledger
@@ -104,7 +106,7 @@ prop_simple_praos_convergence
       testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
-        runTestNetwork testConfig TestConfigBlock
+        runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = Nothing
             , nodeInfo    = \nid -> protocolInfoPraos
                                       numCoreNodes
@@ -113,3 +115,8 @@ prop_simple_praos_convergence
                                       (singletonSlotLengths praosSlotLength)
             , rekeying    = Nothing
             }
+
+    -- TODO: Right now mock Praos has an explicit epoch size in its parameters
+    -- This will make it unuseable in a hard fork context.
+    epochSize :: EpochSize
+    epochSize = EpochSize $ praosSlotsPerEpoch params
