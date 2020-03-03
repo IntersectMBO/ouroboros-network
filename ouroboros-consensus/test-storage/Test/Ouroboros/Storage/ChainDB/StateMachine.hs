@@ -633,15 +633,18 @@ instance Bitraversable (t blk) => Rank2.Traversable (At t blk m) where
 -------------------------------------------------------------------------------}
 
 -- | An event records the model before and after a command along with the
--- command itself, and a mocked version of the response.
+-- command itself, and the response.
 data Event blk m r = Event
-  { eventBefore   :: Model  blk m r
-  , eventCmd      :: At Cmd blk m r
-  , eventAfter    :: Model  blk m r
-  , eventMockResp :: Resp   blk     IteratorId ReaderId
+  { eventBefore :: Model   blk m r
+  , eventCmd    :: At Cmd  blk m r
+  , eventAfter  :: Model   blk m r
+  , eventResp   :: At Resp blk m r
   }
 
 deriving instance (TestConstraints blk, Show1 r) => Show (Event blk m r)
+
+eventMockResp :: Eq1 r => Event blk m r -> Resp blk IteratorId ReaderId
+eventMockResp Event{..} = toMock eventAfter eventResp
 
 -- | Construct an event
 lockstep :: (TestConstraints blk, Eq1 r, Show1 r)
@@ -650,10 +653,10 @@ lockstep :: (TestConstraints blk, Eq1 r, Show1 r)
          -> At Resp   blk m r
          -> Event     blk m r
 lockstep model@Model {..} cmd (At resp) = Event
-    { eventBefore   = model
-    , eventCmd      = cmd
-    , eventAfter    = model'
-    , eventMockResp = mockResp
+    { eventBefore = model
+    , eventCmd    = cmd
+    , eventAfter  = model'
+    , eventResp   = At resp
     }
   where
     (mockResp, dbModel') = step model cmd
