@@ -748,14 +748,16 @@ step m cmd = runMock (toMock m cmd) (modelMock m)
 -------------------------------------------------------------------------------}
 
 data Event t r = Event {
-      eventBefore   :: Model t    r
-    , eventCmd      :: Cmd   t :@ r
-    , eventResp     :: Resp  t :@ r
-    , eventAfter    :: Model t    r
-    , eventMockResp :: Resp  t MockSnap
+      eventBefore :: Model t    r
+    , eventCmd    :: Cmd   t :@ r
+    , eventResp   :: Resp  t :@ r
+    , eventAfter  :: Model t    r
     }
 
 deriving instance (LUT t, Show1 r) => Show (Event t r)
+
+eventMockResp :: Eq1 r => Event t r -> Resp t MockSnap
+eventMockResp Event{..} = toMock eventAfter eventResp
 
 lockstep :: (Eq1 r, LUT t)
          => Model t    r
@@ -767,7 +769,6 @@ lockstep m@(Model _ hs) cmd (At resp) = Event {
     , eventCmd      = cmd
     , eventResp     = At resp
     , eventAfter    = Model mock' (hs' <> hs) -- new references override old!
-    , eventMockResp = resp'
     }
   where
     (resp', mock') = step m cmd
