@@ -366,7 +366,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                       (contramap show stdoutTracer) -- state tracer
                       blockFetchPolicy
                       registry
-                      (BlockFetchConfiguration 1 1)
+                      (BlockFetchConfiguration 1 1 10)
                  >> return ()
 
     chainAsync <- async (chainSelection Map.empty)
