@@ -48,6 +48,8 @@ import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           GHC.Stack
 
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
@@ -96,7 +98,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
 import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo,
-                     epochInfoEpoch)
+                     epochInfoEpoch, fixedSizeEpochInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
@@ -158,8 +160,8 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
   , tnaRestarts     :: NodeRestarts
   , tnaSlotLengths  :: SlotLengths
   , tnaTopology     :: NodeTopology
-  , tnaEpochInfo    :: EpochInfo m
-    -- ^ Epoch sizes
+  , tnaEpochSize    :: EpochSize
+    -- ^ Epoch size
     --
     -- The ThreadNet tests need to know epoch boundaries in order to know when
     -- to insert EBBs, when delegation certificates become active, etc. (This
@@ -248,7 +250,7 @@ runThreadNetwork ThreadNetworkArgs
   , tnaRestarts       = nodeRestarts
   , tnaSlotLengths    = slotLengths
   , tnaTopology       = nodeTopology
-  , tnaEpochInfo      = epochInfo
+  , tnaEpochSize      = epochSize
   } = withRegistry $ \sharedRegistry -> do
     -- This shared registry is used for 'newTestBlockchainTime' and the
     -- network communication threads. Each node will create its own registry
@@ -364,6 +366,9 @@ runThreadNetwork ThreadNetworkArgs
     mkTestOutput vertexInfos
   where
     _ = keepRedundantConstraint (Proxy @(Show (LedgerView (BlockProtocol blk))))
+
+    epochInfo :: EpochInfo m
+    epochInfo = fixedSizeEpochInfo epochSize
 
     coreNodeIds :: [CoreNodeId]
     coreNodeIds = enumCoreNodes numCoreNodes

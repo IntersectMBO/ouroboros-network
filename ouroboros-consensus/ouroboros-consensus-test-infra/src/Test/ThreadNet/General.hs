@@ -58,7 +58,6 @@ import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
 
 import           Test.ThreadNet.Network
 import           Test.ThreadNet.TxGen
@@ -230,7 +229,7 @@ runTestNetwork
           , tnaRestarts       = nodeRestarts
           , tnaSlotLengths    = slotLengths
           , tnaTopology       = nodeTopology
-          , tnaEpochInfo      = fixedSizeEpochInfo epochSize
+          , tnaEpochSize      = epochSize
           }
 
     case rekeying of
