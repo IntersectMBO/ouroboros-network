@@ -15,6 +15,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types
                      (ImmutableDBError)
 import           Ouroboros.Consensus.Storage.VolatileDB.Types (VolatileDBError)
 
+import           Ouroboros.Consensus.BlockchainTime.WallClock
+                     (SystemClockMovedBackException)
 import           Ouroboros.Consensus.BlockFetchServer
                      (BlockFetchServerException)
 import           Ouroboros.Consensus.ChainSyncClient
@@ -59,6 +61,14 @@ consensusErrorPolicy = ErrorPolicies {
         , ErrorPolicy $ \(_ :: VolatileDBError)  -> Just shutdownNode
         , ErrorPolicy $ \(_ :: FsError)          -> Just shutdownNode
         , ErrorPolicy $ \(_ :: ImmutableDBError) -> Just shutdownNode
+
+          -- When the system clock moved back, we have to restart the node,
+          -- because the ImmutableDB validation might have to truncate some
+          -- blocks from the future. Note that a full validation is not
+          -- required, as the default validation (most recent epoch) will keep
+          -- on truncating epochs until a block that is not from the future is
+          -- found.
+        , ErrorPolicy $ \(_ :: SystemClockMovedBackException) -> Just shutdownNode
 
           -- Some chain DB errors are indicative of a bug in our code, others
           -- indicate an invalid request from the peer. If the DB is closed
