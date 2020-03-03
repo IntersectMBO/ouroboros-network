@@ -2,7 +2,6 @@
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE ViewPatterns        #-}
 
 -- | A reference simulator of the PBFT protocol under \"ideal circumstances\"
 --
@@ -139,7 +138,7 @@ count a bs = length [ () | b <- toList bs, a == b ]
 prune :: Int -> Seq a -> (Seq a, Seq a)
 prune lim x = Seq.splitAt excess x
   where
-    excess = Seq.length x - fromIntegral lim
+    excess = Seq.length x - lim
 
 -- | Record the latest outcome in the state
 --
@@ -579,13 +578,13 @@ definitelyEnoughBlocks params = \case
 
     tick :: Outcome -> Word64
     tick Nominal = 0
-    tick _           = 1
+    tick _       = 1
 
     go :: Word64 -> [(Word64, Word64)] -> Bool
     go badCount exens
       | badCount > k = False
       | otherwise    = case exens of
-          []                   -> True
+          []                     -> True
           (exit, enter) : exens' -> go (badCount - exit + enter) exens'
 
 {-------------------------------------------------------------------------------
@@ -594,7 +593,7 @@ definitelyEnoughBlocks params = \case
 
 mkLeaderOf :: PBftParams -> SlotNo -> CoreNodeId
 mkLeaderOf params (SlotNo s) =
-    CoreNodeId $ fromIntegral $ s `mod` n
+    CoreNodeId $ s `mod` n
   where
     PBftParams{pbftNumNodes} = params
     NumCoreNodes n           = pbftNumNodes

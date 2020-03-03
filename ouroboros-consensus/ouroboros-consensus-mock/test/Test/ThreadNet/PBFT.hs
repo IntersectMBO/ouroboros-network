@@ -166,5 +166,5 @@ expectedBlockRejection (NumCoreNodes nn) BlockRejection
     -- the node lead but rejected its own block. This is the only case we
     -- expect. (Rejecting its own block also prevents the node from propagating
     -- that block.)
-    ownBlock = fromIntegral i == mod s (fromIntegral nn)
+    ownBlock = i == mod s nn
 expectedBlockRejection _ _ = False

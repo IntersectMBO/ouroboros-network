@@ -236,7 +236,14 @@ library
                      , unix-bytestring
 
   ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
                        -Wredundant-constraints
+                       -Wmissing-export-lists
+
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
     cpp-options:       -DENABLE_ASSERTIONS
@@ -333,7 +340,13 @@ test-suite test-consensus
 
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
                        -Wredundant-constraints
+                       -Wmissing-export-lists
                        -fno-ignore-asserts
                        -threaded
                        -rtsopts
@@ -428,5 +441,11 @@ test-suite test-storage
 
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
                        -Wredundant-constraints
+                       -Wmissing-export-lists
                        -fno-ignore-asserts

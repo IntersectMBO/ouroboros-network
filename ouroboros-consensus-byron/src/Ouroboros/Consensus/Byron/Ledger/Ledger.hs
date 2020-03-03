@@ -121,7 +121,10 @@ initByronLedgerState genesis mUtxo = ByronLedgerState {
     }
   where
     initState :: CC.ChainValidationState
-    Right initState = runExcept $ CC.initialChainValidationState genesis
+    initState = case runExcept $ CC.initialChainValidationState genesis of
+      Right st -> st
+      Left e   -> error $
+        "could not create initial ChainValidationState: " <> show e
 
     override :: Maybe CC.UTxO
              -> CC.ChainValidationState -> CC.ChainValidationState

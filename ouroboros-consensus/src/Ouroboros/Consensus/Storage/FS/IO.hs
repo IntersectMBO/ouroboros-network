@@ -43,9 +43,9 @@ ioHasFS mount = HasFS {
     , hSeek = \(Handle h fp) mode o -> rethrowFsError fp $
         F.seek h mode o
     , hGetSome = \(Handle h fp) n -> rethrowFsError fp $
-        F.read h (fromIntegral n)
+        F.read h n
     , hGetSomeAt = \(Handle h fp) n o -> rethrowFsError fp $
-        F.pread h (fromIntegral n) (unAbsOffset o)
+        F.pread h n (unAbsOffset o)
     , hTruncate = \(Handle h fp) sz -> rethrowFsError fp $
         F.truncate h sz
     , hGetSize = \(Handle h fp) -> rethrowFsError fp $

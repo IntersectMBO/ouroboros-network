@@ -2,7 +2,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
-module Ouroboros.Consensus.Protocol.MockChainSel where
+module Ouroboros.Consensus.Protocol.MockChainSel
+  ( selectChain
+  , selectUnvalidatedChain
+  ) where
 
 import           Data.Function (on)
 import           Data.List (sortBy)

@@ -457,7 +457,7 @@ genValidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
         ins     = Set.fromList $ map fst assets
 
     -- At most spent half of someone's fortune
-    amount <- fromIntegral <$> choose (1, fortune `div` 2)
+    amount <- choose (1, fortune `div` 2)
     let outRecipient = (recipient, amount)
         outs
           | amount == fortune

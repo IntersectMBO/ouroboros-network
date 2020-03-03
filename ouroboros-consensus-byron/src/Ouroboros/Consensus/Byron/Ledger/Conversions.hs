@@ -46,7 +46,7 @@ fromByronBlockNo :: CC.ChainDifficulty -> BlockNo
 fromByronBlockNo = coerce
 
 fromByronBlockCount :: CC.BlockCount -> SecurityParam
-fromByronBlockCount (CC.BlockCount k) = SecurityParam (fromIntegral k)
+fromByronBlockCount (CC.BlockCount k) = SecurityParam k
 
 fromByronEpochSlots :: CC.EpochSlots -> EpochSize
 fromByronEpochSlots (CC.EpochSlots n) = EpochSize n
@@ -59,7 +59,7 @@ toByronSlotNo :: SlotNo -> CC.SlotNumber
 toByronSlotNo = coerce
 
 toByronBlockCount :: SecurityParam -> CC.BlockCount
-toByronBlockCount (SecurityParam k) = CC.BlockCount (fromIntegral k)
+toByronBlockCount (SecurityParam k) = CC.BlockCount k
 
 {-------------------------------------------------------------------------------
   Extract info from genesis

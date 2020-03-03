@@ -13,6 +13,7 @@ module Test.Ouroboros.Storage.LedgerDB.InMemory (
     tests
   ) where
 
+import           Data.Maybe (fromJust)
 import           Data.Word
 import           Test.QuickCheck
 import           Test.Tasty
@@ -327,7 +328,7 @@ mkRollbackSetup ssChainSetup ssNumRollback ssNumNew ssPrefixLen =
                          take (fromIntegral (csNumBlocks - ssNumRollback)) csChain
                        , ssNewBlocks
                        ]
-    Just ssSwitched  = ledgerDbSwitch' callbacks ssNumRollback ssNewBlocks csPushed
+    ssSwitched  = fromJust $ ledgerDbSwitch' callbacks ssNumRollback ssNewBlocks csPushed
 
 instance Arbitrary ChainSetup where
   arbitrary = do

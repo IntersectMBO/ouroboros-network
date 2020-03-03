@@ -108,7 +108,7 @@ truncateNodeTopology (NodeTopology m) (NumCoreNodes n') =
 
 truncateNodeRestarts :: NodeRestarts -> NumSlots -> NodeRestarts
 truncateNodeRestarts (NodeRestarts m) (NumSlots t) =
-    NodeRestarts $ Map.filterWithKey (\(SlotNo s) _ -> s < fromIntegral t) m
+    NodeRestarts $ Map.filterWithKey (\(SlotNo s) _ -> s < t) m
 
 instance Arbitrary TestConfig where
   arbitrary = do
