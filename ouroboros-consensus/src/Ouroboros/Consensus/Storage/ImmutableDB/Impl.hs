@@ -463,7 +463,7 @@ getEBBComponentImpl dbEnv blockComponent epoch =
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
       getEpochSlot _dbHasFS _dbChunkInfo _index curEpochInfo
-        blockComponent (ChunkSlot epoch firstRelativeSlot)
+        blockComponent (UnsafeChunkSlot epoch firstRelativeSlot)
   where
     ImmutableDBEnv { _dbChunkInfo } = dbEnv
 
@@ -686,7 +686,8 @@ appendEBBImpl dbEnv epoch blockNumber headerHash binaryInfo =
         AppendToEBBInThePastError epoch _currentEpoch
 
       appendEpochSlot _dbRegistry _dbHasFS _dbChunkInfo _index
-        (ChunkSlot epoch firstRelativeSlot) blockNumber (EBB epoch) headerHash binaryInfo
+        (UnsafeChunkSlot epoch firstRelativeSlot) blockNumber (EBB epoch)
+        headerHash binaryInfo
   where
     ImmutableDBEnv { _dbChunkInfo, _dbRegistry } = dbEnv
 

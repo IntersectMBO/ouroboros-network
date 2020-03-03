@@ -254,7 +254,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
                   -- 0.
                   secondaryOffset = 0
                   isEBB           = relativeSlotIsEBB relSlot
-                  epochSlot       = ChunkSlot epoch relSlot
+                  epochSlot       = UnsafeChunkSlot epoch relSlot
 
     mkEmptyIterator :: Iterator hash m b
     mkEmptyIterator = Iterator

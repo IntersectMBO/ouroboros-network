@@ -267,7 +267,7 @@ type IterRes hash = (Either EpochNo SlotNo, hash, BinaryInfo ByteString)
 -------------------------------------------------------------------------------}
 
 epochNoToEpochSlot :: EpochNo -> ChunkSlot
-epochNoToEpochSlot = (`ChunkSlot` firstRelativeSlot)
+epochNoToEpochSlot = (`UnsafeChunkSlot` firstRelativeSlot)
 
 epochNoToSlot :: DBModel hash -> EpochNo -> SlotNo
 epochNoToSlot dbm = epochSlotToSlot dbm . epochNoToEpochSlot
@@ -756,16 +756,16 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
       :: (SlotNo, hash) -> Either (WrongBoundError hash) ChunkSlot
     checkBound (slotNo, hash) = case slotToChunkSlot dbm slotNo of
       ChunkSlot epoch relSlot | relSlot == nextRelativeSlot firstRelativeSlot ->
-        case (Map.lookup (ChunkSlot epoch firstRelativeSlot , slotNo) blobs,
-              Map.lookup (ChunkSlot epoch relSlot           , slotNo) blobs) of
+        case (Map.lookup (UnsafeChunkSlot epoch firstRelativeSlot , slotNo) blobs,
+              Map.lookup (UnsafeChunkSlot epoch relSlot           , slotNo) blobs) of
           (Nothing, Nothing)
             -> Left $ EmptySlotError slotNo
           (Just res1, _)
             | either fst fst res1 == hash
-            -> return $ ChunkSlot epoch firstRelativeSlot
+            -> return $ UnsafeChunkSlot epoch firstRelativeSlot
           (_, Just res2)
             | either fst fst res2 == hash
-            -> return $ ChunkSlot epoch relSlot
+            -> return $ UnsafeChunkSlot epoch relSlot
           (mbRes1, mbRes2)
             -> Left $ WrongHashError slotNo hash $ NE.fromList $
                map (either fst fst) $ catMaybes [mbRes1, mbRes2]

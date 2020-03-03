@@ -31,7 +31,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 
-
 minNumCoreNodes :: Word64
 minNumCoreNodes = 2
 
@@ -102,7 +101,7 @@ genSmallEpochNo =
     EpochNo <$> choose (0, 10000)
 
 instance Arbitrary ChunkSlot where
-  arbitrary = ChunkSlot <$> arbitrary <*> arbitrary
+  arbitrary = UnsafeChunkSlot <$> arbitrary <*> arbitrary
   shrink    = genericShrink
 
 instance Arbitrary ClockSkew where

@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RecordWildCards            #-}
 
 -- | Layout of individual chunks on disk
@@ -22,6 +23,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
   , firstChunkIndex
     -- * Slots within a chunk
   , ChunkSlot(..)
+  , pattern ChunkSlot
     -- ** Translation /to/ 'ChunkSlot'
   , chunkSlotForUnknownBlock
   , chunkSlotForRegularBlock
@@ -104,10 +106,17 @@ firstChunkIndex = EpochNo 0
 -------------------------------------------------------------------------------}
 
 -- | Uniquely identity a block within the immutable DB
-data ChunkSlot = ChunkSlot
+--
+-- Constructor marked as 'Unsafe'; construction should normally happen inside
+-- this module only (though see the 'ChunkSlot' pattern synonym).
+data ChunkSlot = UnsafeChunkSlot
   { chunkIndex    :: !EpochNo
   , chunkRelative :: !RelativeSlot
   } deriving (Eq, Ord, Generic, NoUnexpectedThunks)
+
+{-# COMPLETE ChunkSlot #-}
+pattern ChunkSlot :: EpochNo -> RelativeSlot -> ChunkSlot
+pattern ChunkSlot index relative <- UnsafeChunkSlot index relative
 
 instance Show ChunkSlot where
   show (ChunkSlot (EpochNo e) (RelativeSlot s)) = show (e, s)
@@ -130,7 +139,7 @@ chunkSlotForUnknownBlock ci slot = (
 
 -- | Chunk slot for a regular block (i.e., not an EBB)
 chunkSlotForRegularBlock :: ChunkInfo -> SlotNo -> ChunkSlot
-chunkSlotForRegularBlock ci (SlotNo absSlot) = ChunkSlot{..}
+chunkSlotForRegularBlock ci (SlotNo absSlot) = UnsafeChunkSlot{..}
   where
     chunkIndex    = epochInfoEpoch ci (SlotNo absSlot)
     SlotNo first  = epochInfoFirst ci chunkIndex
@@ -138,7 +147,7 @@ chunkSlotForRegularBlock ci (SlotNo absSlot) = ChunkSlot{..}
 
 -- | Chunk slot for EBB
 chunkSlotForBoundaryBlock :: EpochNo -> ChunkSlot
-chunkSlotForBoundaryBlock e = ChunkSlot e firstRelativeSlot
+chunkSlotForBoundaryBlock e = UnsafeChunkSlot e firstRelativeSlot
 
 -- | Chunk slot for 'BlockOrEBB'
 chunkSlotForBlockOrEBB :: ChunkInfo -> BlockOrEBB -> ChunkSlot
