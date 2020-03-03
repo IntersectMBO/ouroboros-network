@@ -68,6 +68,7 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
                      Handle, OpenMode (ReadMode))
 
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex, SecondaryOffset)

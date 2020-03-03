@@ -69,6 +69,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..),
                      AllowExisting (..), OpenMode (..), SeekMode (..))
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
                      runGet)

@@ -9,6 +9,8 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal (
     -- * Queries
   , ChunkSize(..)
   , getChunkSize
+    -- * Layout
+  , RelativeSlot(..)
   ) where
 
 import           Data.Functor.Identity
@@ -56,3 +58,17 @@ newtype ChunkSize = ChunkSize Word64
 
 getChunkSize :: ChunkInfo -> EpochNo -> ChunkSize
 getChunkSize ci = ChunkSize . unEpochSize . runIdentity . EI.epochInfoSize (unwrapEpochInfo ci)
+
+{-------------------------------------------------------------------------------
+  Layout
+
+  These are defined in the @Internal@ module so that most code can safely
+  import from "Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout" without
+  worrying that it's making assumptions that it shouldn't. All bets are off for
+  modules that import "Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal".
+-------------------------------------------------------------------------------}
+
+-- | A /relative/ slot within a chunk
+newtype RelativeSlot = RelativeSlot { unRelativeSlot :: Word64 }
+  deriving stock   (Eq, Ord, Show, Generic)
+  deriving newtype (NoUnexpectedThunks)

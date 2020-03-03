@@ -2,7 +2,6 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Ouroboros.Storage.ImmutableDB.Primary (tests) where
 
-import           Data.Coerce (coerce)
 import           Data.Functor ((<&>))
 
 import           Test.QuickCheck
@@ -13,7 +12,8 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex, SecondaryOffset)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -50,8 +50,8 @@ prop_filledSlots_isFilledSlot idx = conjoin
   where
     slots :: [RelativeSlot]
     slots | totalSlots == 0 = []
-          | otherwise       = map coerce [0..totalSlots-1]
-    totalSlots = Primary.slots idx
+          | otherwise       = map RelativeSlot [0..totalSlots-1]
+    totalSlots = unEpochSize $ Primary.slots idx
 
 prop_write_load :: PrimaryIndex -> Property
 prop_write_load index = monadicIO $ run $ runFS prop

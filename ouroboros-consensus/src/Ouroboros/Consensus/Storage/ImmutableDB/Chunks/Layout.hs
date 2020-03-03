@@ -11,7 +11,7 @@
 -- relevant internally in the immutable DB.
 module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
     -- * Relative slots
-    RelativeSlot(..) -- TODO: Opaque
+    RelativeSlot -- Opaque
   , maxRelativeSlot
   , relativeSlotIsEBB
   , nthRelativeSlot
@@ -38,7 +38,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
 
 import           Control.Monad
 import           Data.Functor.Identity
-import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -57,13 +56,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 {-------------------------------------------------------------------------------
   Relative slots
 -------------------------------------------------------------------------------}
-
--- | A /relative/ slot within a chunk
---
--- TODO: This should be opaque.
-newtype RelativeSlot = RelativeSlot { unRelativeSlot :: Word64 }
-  deriving stock   (Eq, Ord, Show, Generic)
-  deriving newtype (NoUnexpectedThunks)
 
 -- | The last relative slot within a chunk of the given size
 --

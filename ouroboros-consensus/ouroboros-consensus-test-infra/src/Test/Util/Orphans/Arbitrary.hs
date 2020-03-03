@@ -27,6 +27,8 @@ import           Ouroboros.Consensus.Util.Random (Seed (..))
 
 import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
                      EpochSize (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 
 

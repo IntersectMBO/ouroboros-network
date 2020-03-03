@@ -5,7 +5,6 @@ import qualified Codec.Serialise as S
 import           Control.Monad (void)
 import           Control.Tracer (nullTracer)
 import           Data.Binary (get, put)
-import           Data.Coerce (coerce)
 import           Data.Functor.Identity (Identity (..))
 import           Data.Maybe (fromJust)
 
@@ -26,7 +25,8 @@ import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.ImmutableDB
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (RelativeSlot (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex)
@@ -146,8 +146,9 @@ prop_reconstructPrimaryIndex primaryIndex =
 
     blockOrEBBs :: [BlockOrEBB]
     blockOrEBBs =
-      [ if relSlot == firstRelativeSlot then EBB 0 else Block (coerce relSlot - 1)
-      | relSlot <- Primary.filledSlots primaryIndex]
+      [ if relSlot == 0 then EBB 0 else Block (SlotNo (relSlot - 1))
+      | RelativeSlot relSlot <- Primary.filledSlots primaryIndex
+      ]
 
     -- Use maxBound as epoch size so that we can easily map from SlotNo to
     -- RelativeSlot and vice versa.
