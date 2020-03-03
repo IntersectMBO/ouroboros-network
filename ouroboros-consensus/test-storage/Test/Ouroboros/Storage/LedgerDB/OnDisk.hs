@@ -54,7 +54,7 @@ import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck as QC
 import qualified Test.QuickCheck.Monadic as QC
 import qualified Test.QuickCheck.Random as QC
-import           Test.StateMachine
+import           Test.StateMachine hiding (showLabelledExamples)
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
@@ -934,7 +934,7 @@ postcondition m cmd r = toMock (eventAfter e) r .== eventMockResp e
 
 precondition :: LUT t => Model t Symbolic -> Cmd t :@ Symbolic -> Logic
 precondition (Model mock hs) (At c) =
-        forall (toList c) (`elem` map fst hs)
+        forall (toList c) (`member` map fst hs)
     .&& validCmd c
   where
     -- Maximum rollback might decrease if shrinking removed blocks
@@ -961,10 +961,10 @@ sm lgrDbParams db = StateMachine {
     , postcondition = postcondition
     , invariant     = Nothing
     , generator     = generator lgrDbParams
-    , distribution  = Nothing
     , shrinker      = shrinker
     , semantics     = semantics db
     , mock          = symbolicResp
+    , cleanup       = noCleanup
     }
 
 prop_sequential :: LUT t => Proxy t -> LedgerDbParams -> QC.Property

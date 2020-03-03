@@ -654,7 +654,7 @@ mock model cmd = At <$> bitraverse (const QSM.genSym) (const QSM.genSym) resp
 
 precondition :: Model Symbolic -> Cmd :@ Symbolic -> QSM.Logic
 precondition m@Model{..} (At cmd) =
-            QSM.forall (handles cmd) (`QSM.elem` RE.keys knownHandles)
+            QSM.forall (handles cmd) (`QSM.member` RE.keys knownHandles)
     QSM.:&& QSM.Boolean (Mock.numOpenHandles mockFS < maxNumOpenHandles)
     QSM.:&& QSM.Not (knownLimitation m (At cmd))
   where
@@ -697,8 +697,8 @@ sm mount = QSM.StateMachine {
              , shrinker      = shrinker
              , semantics     = semantics mount
              , mock          = mock
+             , cleanup       = QSM.noCleanup
              , invariant     = Nothing
-             , distribution  = Nothing
              }
 
 {-------------------------------------------------------------------------------

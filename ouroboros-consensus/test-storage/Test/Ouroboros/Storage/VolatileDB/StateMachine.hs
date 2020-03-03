@@ -58,8 +58,9 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Util
 import           Test.QuickCheck
 import           Test.QuickCheck.Monadic
 import           Test.QuickCheck.Random (mkQCGen)
-import           Test.StateMachine
-import           Test.StateMachine.Sequential
+import           Test.StateMachine hiding (showLabelledExamples,
+                     showLabelledExamples')
+import qualified Test.StateMachine.Sequential as QSM
 import           Test.StateMachine.Types
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
@@ -288,7 +289,7 @@ sm env dbm = StateMachine {
     , semantics     = semanticsImpl env
     , mock          = mockImpl
     , invariant     = Nothing
-    , distribution  = Nothing
+    , cleanup       = noCleanup
     }
 
 initModelImpl :: DBModel BlockId -> Model r
@@ -301,7 +302,7 @@ preconditionImpl :: Model Symbolic -> At CmdErr Symbolic -> Logic
 preconditionImpl Model{..} (At (CmdErr cmd mbErrors)) =
     compatibleWithError .&& case cmd of
       Corruption cors ->
-        forall (corruptionFiles cors) (`elem` getDBFiles dbModel)
+        forall (corruptionFiles cors) (`member` getDBFiles dbModel)
 
       -- When duplicating a block by appending it to some other file, make
       -- sure that both the file and the block exists, and that we're adding
@@ -816,8 +817,8 @@ showLabelledExamples' mReplay numTests = do
     labelledExamplesWith (stdArgs { replay     = Just (mkQCGen replaySeed, 0)
                                   , maxSuccess = numTests
                                   }) $
-        forAllShrinkShow (generateCommands smUnused Nothing)
-                         (shrinkCommands   smUnused)
+        forAllShrinkShow (QSM.generateCommands smUnused Nothing)
+                         (QSM.shrinkCommands   smUnused)
                          ppShow $ \cmds ->
             collects (tag . execCmds (initModel smUnused) $ cmds) $
                 property True
