@@ -95,6 +95,7 @@ test-suite test
                      , cardano-ledger
                      , cardano-ledger-test
                      , cardano-prelude
+                     , cardano-slotting
                      , cborg
                      , containers
                      , cryptonite

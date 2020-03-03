@@ -57,7 +57,8 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
-import           Ouroboros.Consensus.Storage.Common (EpochNo)
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.EpochInfo
 
 import           Test.ThreadNet.Network
 import           Test.ThreadNet.TxGen
@@ -200,6 +201,9 @@ runTestNetwork ::
      , Show (LedgerView (BlockProtocol blk))
      )
   => TestConfig
+  -> EpochSize
+  -- ^ Temporary: until we start testing the hard fork combinator, we just
+  -- support a single 'EpochSize'. See also comments for 'tnaEpochInfo'.
   -> TestConfigBlock blk
   -> TestOutput blk
 runTestNetwork
@@ -212,6 +216,7 @@ runTestNetwork
     , slotLengths
     , initSeed
     }
+  epochSize
   TestConfigBlock{forgeEbbEnv, nodeInfo, rekeying}
   = runSimOrThrow $ do
     let tna = ThreadNetworkArgs
@@ -225,6 +230,7 @@ runTestNetwork
           , tnaRestarts       = nodeRestarts
           , tnaSlotLengths    = slotLengths
           , tnaTopology       = nodeTopology
+          , tnaEpochInfo      = fixedSizeEpochInfo epochSize
           }
 
     case rekeying of

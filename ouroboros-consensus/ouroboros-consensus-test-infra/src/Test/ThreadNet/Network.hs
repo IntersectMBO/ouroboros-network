@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveAnyClass       #-}
@@ -49,10 +48,10 @@ import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           GHC.Stack
 
+import           Ouroboros.Network.Block
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
-import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
@@ -97,7 +96,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
 import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo,
-                     epochInfoEpoch, newEpochInfo)
+                     epochInfoEpoch)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
@@ -159,6 +158,15 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
   , tnaRestarts     :: NodeRestarts
   , tnaSlotLengths  :: SlotLengths
   , tnaTopology     :: NodeTopology
+  , tnaEpochInfo    :: EpochInfo m
+    -- ^ Epoch sizes
+    --
+    -- The ThreadNet tests need to know epoch boundaries in order to know when
+    -- to insert EBBs, when delegation certificates become active, etc. (This
+    -- is therefore not related to the /chunking/ of the immutable DB.)
+    --
+    -- This is temporary: once we have proper support for the hard fork
+    -- combinator, 'EpochInfo' must be /derived/ from the current ledger state.
   }
 
 {-------------------------------------------------------------------------------
@@ -240,6 +248,7 @@ runThreadNetwork ThreadNetworkArgs
   , tnaRestarts       = nodeRestarts
   , tnaSlotLengths    = slotLengths
   , tnaTopology       = nodeTopology
+  , tnaEpochInfo      = epochInfo
   } = withRegistry $ \sharedRegistry -> do
     -- This shared registry is used for 'newTestBlockchainTime' and the
     -- network communication threads. Each node will create its own registry
@@ -304,9 +313,6 @@ runThreadNetwork ThreadNetworkArgs
 
       -- fork the per-vertex state variables, including the mock filesystem
       (nodeInfo, readNodeInfo) <- newNodeInfo
-      epochInfo <- do
-        let ProtocolInfo{pInfoConfig} = mkProtocolInfo coreNodeId
-        newEpochInfo $ nodeEpochSize (Proxy @blk) pInfoConfig
 
       let myEdgeStatusVars =
             [ v
@@ -314,7 +320,6 @@ runThreadNetwork ThreadNetworkArgs
             , coreNodeId `elem` [n1, n2]
             ]
       forkVertex
-        epochInfo
         varRNG
         sharedTestBtime
         sharedRegistry
@@ -367,8 +372,7 @@ runThreadNetwork ThreadNetworkArgs
     joinSlotOf = coreNodeIdJoinSlot nodeJoinPlan
 
     forkVertex
-      :: EpochInfo m
-      -> StrictTVar m ChaChaDRG
+      :: StrictTVar m ChaChaDRG
       -> TestBlockchainTime m
       -> ResourceRegistry m
       -> CoreNodeId
@@ -377,7 +381,6 @@ runThreadNetwork ThreadNetworkArgs
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
       -> m ()
     forkVertex
-      epochInfo
       varRNG
       sharedTestBtime
       sharedRegistry
@@ -411,7 +414,6 @@ runThreadNetwork ThreadNetworkArgs
             -- (specifically not the communication threads running the Mini
             -- Protocols, like the ChainSync Client)
             (kernel, app) <- forkNode
-              epochInfo
               varRNG
               nodeBtime
               nodeRegistry
@@ -496,7 +498,6 @@ runThreadNetwork ThreadNetworkArgs
            -> ResourceRegistry m
            -> TopLevelConfig blk
            -> ExtLedgerState blk
-           -> EpochInfo m
            -> Tracer m (RealPoint blk, ExtValidationError blk)
               -- ^ invalid block tracer
            -> Tracer m (RealPoint blk, BlockNo)
@@ -505,7 +506,7 @@ runThreadNetwork ThreadNetworkArgs
            -> ChainDbArgs m blk
     mkArgs
       btime registry
-      cfg initLedger epochInfo
+      cfg initLedger
       invalidTracer addTracer
       nodeDBs = ChainDbArgs
         { -- Decoders
@@ -565,8 +566,7 @@ runThreadNetwork ThreadNetworkArgs
 
     forkNode
       :: HasCallStack
-      => EpochInfo m
-      -> StrictTVar m ChaChaDRG
+      => StrictTVar m ChaChaDRG
       -> BlockchainTime m
       -> ResourceRegistry m
       -> ProtocolInfo blk
@@ -576,7 +576,7 @@ runThreadNetwork ThreadNetworkArgs
       -> m ( NodeKernel m NodeId blk
            , LimitedApp m NodeId blk
            )
-    forkNode epochInfo varRNG btime registry pInfo nodeInfo txs0 = do
+    forkNode varRNG btime registry pInfo nodeInfo txs0 = do
       let ProtocolInfo{..} = pInfo
 
       let NodeInfo
@@ -591,7 +591,7 @@ runThreadNetwork ThreadNetworkArgs
             traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno)
       let chainDbArgs = mkArgs
             btime registry
-            pInfoConfig pInfoInitLedger epochInfo
+            pInfoConfig pInfoInitLedger
             invalidTracer
             addTracer
             nodeInfoDBs

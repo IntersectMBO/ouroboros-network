@@ -4,8 +4,10 @@ module Ouroboros.Consensus.Byron.Ledger.Conversions (
   , fromByronSlotNo
   , fromByronBlockNo
   , fromByronBlockCount
+  , fromByronEpochSlots
     -- * From @ouroboros-consensus@ to @cardano-ledger@
   , toByronSlotNo
+  , toByronBlockCount
     -- * Extract info from the genesis config
   , genesisSecurityParam
   , genesisNumCoreNodes
@@ -14,12 +16,15 @@ module Ouroboros.Consensus.Byron.Ledger.Conversions (
 import           Data.Coerce
 import qualified Data.Set as Set
 
+import           Cardano.Slotting.Block
+import           Cardano.Slotting.Slot
+
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Slotting as CC
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (ChainHash (..), HeaderHash)
 
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -43,12 +48,18 @@ fromByronBlockNo = coerce
 fromByronBlockCount :: CC.BlockCount -> SecurityParam
 fromByronBlockCount (CC.BlockCount k) = SecurityParam (fromIntegral k)
 
+fromByronEpochSlots :: CC.EpochSlots -> EpochSize
+fromByronEpochSlots (CC.EpochSlots n) = EpochSize n
+
 {-------------------------------------------------------------------------------
   From @ouroboros-consensus@ to @cardano-ledger@
 -------------------------------------------------------------------------------}
 
 toByronSlotNo :: SlotNo -> CC.SlotNumber
 toByronSlotNo = coerce
+
+toByronBlockCount :: SecurityParam -> CC.BlockCount
+toByronBlockCount (SecurityParam k) = CC.BlockCount (fromIntegral k)
 
 {-------------------------------------------------------------------------------
   Extract info from genesis

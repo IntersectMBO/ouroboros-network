@@ -13,6 +13,8 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
@@ -99,7 +101,7 @@ prop_simple_leader_schedule_convergence
       testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
-        runTestNetwork testConfig TestConfigBlock
+        runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = Nothing
             , nodeInfo    = \nid -> protocolInfoPraosRule
                                       numCoreNodes
@@ -109,6 +111,11 @@ prop_simple_leader_schedule_convergence
                                       schedule
             , rekeying    = Nothing
             }
+
+    -- I don't think this value actually matters if we override the leader
+    -- schedule
+    epochSize :: EpochSize
+    epochSize = EpochSize $ praosSlotsPerEpoch params
 
 {-------------------------------------------------------------------------------
   Dependent generation and shrinking of leader schedules
