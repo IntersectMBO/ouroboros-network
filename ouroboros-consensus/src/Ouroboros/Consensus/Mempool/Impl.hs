@@ -244,7 +244,7 @@ implTryAddTxs
   :: forall m blk. (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
   => MempoolEnv m blk
   -> [GenTx blk]
-  -> m ( [(GenTx blk, Maybe (ApplyTxErr blk))]
+  -> m ( [(GenTx blk, MempoolAddTxResult blk)]
          -- Transactions that were added or rejected. A prefix of the input
          -- list.
        , [GenTx blk]
@@ -296,7 +296,7 @@ implTryAddTxs mpEnv = go []
                   firstTx
                   (isMempoolSize is)
                   (isMempoolSize is')
-                go ((firstTx, Nothing):acc) toAdd'
+                go ((firstTx, MempoolTxAdded):acc) toAdd'
             Just (_, err) ->
               assert (isNothing (vrNewValid vr))  $
               assert (length (vrInvalid vr) == 1) $ do
@@ -304,7 +304,7 @@ implTryAddTxs mpEnv = go []
                   firstTx
                   err
                   (isMempoolSize is)
-                go ((firstTx, Just err):acc) toAdd'
+                go ((firstTx, MempoolTxRejected (TxApplicationError err)):acc) toAdd'
 
 implRemoveTxs
   :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)

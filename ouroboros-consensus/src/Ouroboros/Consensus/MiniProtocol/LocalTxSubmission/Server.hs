@@ -32,9 +32,12 @@ localTxSubmissionServer tracer mempool =
         traceWith tracer $ TraceReceivedTx tx
         res <- addTxs mempool [tx]
         case res of
-          [(_tx, mbErr)] -> return (mbErr, server)
+          [(_tx, addTxRes)] -> case addTxRes of
+            MempoolTxAdded             -> return (Nothing, server)
+            MempoolTxAlreadyInMempool  -> return (Nothing, server)
+            MempoolTxRejected addTxErr -> return (Just addTxErr, server)
           -- The output list of addTxs has the same length as the input list.
-          _              -> error "addTxs: unexpected result"
+          _                 -> error "addTxs: unexpected result"
 
     , recvMsgDone = ()
     }

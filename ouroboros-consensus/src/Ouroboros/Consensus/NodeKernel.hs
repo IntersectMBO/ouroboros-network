@@ -27,7 +27,7 @@ module Ouroboros.Consensus.NodeKernel (
 
 import           Control.Monad
 import           Data.Map.Strict (Map)
-import           Data.Maybe (isJust, isNothing)
+import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Word (Word16, Word32)
 
@@ -625,6 +625,6 @@ getMempoolWriter
 getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
     { Inbound.txId          = txId
     , mempoolAddTxs = \txs ->
-        map (txId . fst) . filter (isNothing . snd) <$>
+        map (txId . fst) . filter (isTxAddedOrAlreadyInMempool . snd) <$>
         addTxs mempool txs
     }
