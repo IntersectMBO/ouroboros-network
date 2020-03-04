@@ -183,10 +183,18 @@ cachedIndex
   -> ResourceRegistry m
   -> Tracer m TraceCacheEvent
   -> CacheConfig
+  -> ChunkInfo
   -> ChunkNo  -- ^ Current chunk
   -> m (Index m hash h)
-cachedIndex hasFS hashInfo registry tracer cacheConfig chunk = do
-    cacheEnv <- Cache.newEnv hasFS hashInfo registry tracer cacheConfig chunk
+cachedIndex hasFS hashInfo registry tracer cacheConfig chunkInfo chunk = do
+    cacheEnv <- Cache.newEnv
+                  hasFS
+                  hashInfo
+                  registry
+                  tracer
+                  cacheConfig
+                  chunkInfo
+                  chunk
     return Index
       { readOffsets         = Cache.readOffsets         cacheEnv
       , readFirstFilledSlot = Cache.readFirstFilledSlot cacheEnv

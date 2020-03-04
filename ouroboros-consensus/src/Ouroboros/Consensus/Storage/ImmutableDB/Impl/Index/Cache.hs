@@ -14,7 +14,7 @@
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
   ( -- * Environment
-    CacheEnv
+    CacheEnv(..) -- TODO: Temporary. Make opaque.
   , newEnv
   , CacheConfig (..)
   , checkInvariants
@@ -345,6 +345,7 @@ data CacheEnv m hash h = CacheEnv
   , cacheConfig :: CacheConfig
   , bgThreadVar :: StrictMVar m (Maybe (Thread m Void))
     -- ^ Nothing if no thread running
+  , chunkInfo   :: ChunkInfo
   }
 
 -- | Creates a new 'CacheEnv' and launches a background thread that expires
@@ -358,9 +359,10 @@ newEnv
   -> ResourceRegistry m
   -> Tracer m TraceCacheEvent
   -> CacheConfig
+  -> ChunkInfo
   -> ChunkNo  -- ^ Current chunk
   -> m (CacheEnv m hash h)
-newEnv hasFS hashInfo registry tracer cacheConfig chunk = do
+newEnv hasFS hashInfo registry tracer cacheConfig chunkInfo chunk = do
     when (pastChunksToCache == 0) $
       error "pastChunksToCache must be > 0"
 

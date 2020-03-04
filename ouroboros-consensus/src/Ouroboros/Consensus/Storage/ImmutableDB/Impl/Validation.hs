@@ -76,7 +76,14 @@ validateAndReopen
   -> m (OpenState m hash h)
 validateAndReopen validateEnv valPol = do
     (chunk, tip) <- validate validateEnv valPol
-    index        <- cachedIndex hasFS hashInfo registry cacheTracer cacheConfig chunk
+    index        <- cachedIndex
+                      hasFS
+                      hashInfo
+                      registry
+                      cacheTracer
+                      cacheConfig
+                      chunkInfo
+                      chunk
     case tip of
       Origin -> assert (chunk == firstChunkNo) $ do
         traceWith tracer NoValidLastLocation
@@ -85,7 +92,13 @@ validateAndReopen validateEnv valPol = do
         traceWith tracer $ ValidatedLastLocation chunk (forgetTipInfo <$> tip)
         mkOpenState registry hasFS index chunk tip    AllowExisting
   where
-    ValidateEnv { hasFS, hashInfo, tracer, registry, cacheConfig } = validateEnv
+    ValidateEnv { hasFS
+                , hashInfo
+                , tracer
+                , registry
+                , cacheConfig
+                , chunkInfo
+                } = validateEnv
     cacheTracer = contramap TraceCacheEvent tracer
 
 -- | Execute the 'ValidationPolicy'.
