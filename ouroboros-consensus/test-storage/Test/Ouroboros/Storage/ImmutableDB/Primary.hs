@@ -9,7 +9,6 @@ import           Test.QuickCheck.Monadic (monadicIO, run)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
@@ -52,7 +51,7 @@ prop_filledSlots_isFilledSlot idx = conjoin
     slots :: [RelativeSlot]
     slots | totalSlots == 0 = []
           | otherwise       = map RelativeSlot [0..totalSlots-1]
-    totalSlots = unEpochSize $ Primary.slots idx
+    totalSlots = Primary.slots idx
 
 prop_write_load :: PrimaryIndex -> Property
 prop_write_load index = monadicIO $ run $ runFS prop

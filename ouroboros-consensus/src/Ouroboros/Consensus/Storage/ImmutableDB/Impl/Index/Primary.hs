@@ -63,7 +63,6 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common (EpochSize)
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..),
                      AllowExisting (..), OpenMode (..), SeekMode (..))
@@ -152,12 +151,8 @@ toSecondaryOffsets = V.toList . getOffsets
 currentVersionNumber :: Word8
 currentVersionNumber = 1
 
--- | Return the number of slots in the primary index (the number of offsets - 1).
---
--- Note that the primary index will typically contain a slot for the EBB, so
--- for an for an epoch with 10 regular slots, this will function will return
--- 11.
-slots :: PrimaryIndex -> EpochSize
+-- | Count the number of (filled or unfilled) slots currently in the index
+slots :: PrimaryIndex -> Word64
 slots (MkPrimaryIndex offsets) = fromIntegral $ V.length offsets - 1
 
 -- | Read the 'SecondaryOffset' corresponding to the given relative slot in
