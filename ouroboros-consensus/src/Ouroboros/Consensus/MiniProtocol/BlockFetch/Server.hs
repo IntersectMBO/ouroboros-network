@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE UndecidableInstances      #-}
-module Ouroboros.Consensus.BlockFetchServer
+module Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
   ( blockFetchServer
     -- * Trace events
   , TraceBlockFetchServerEvent

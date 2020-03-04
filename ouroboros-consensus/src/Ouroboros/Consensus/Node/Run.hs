@@ -136,11 +136,17 @@ class ( LedgerSupportsProtocol    blk
                   -> m ()
   nodeInitChainDB _ _ = return ()
 
-  -- | This function is called to give a more precise reason why some
-  -- exception that will shut down the node was thrown. See
-  -- 'Ouroboros.Consensus.Node.Exit' for more details.
+  -- | This function is called to determine whether a thrown exception is
+  -- fatal and should shut down the node or not. If fatal, it should return a
+  -- precise reason why. See 'Ouroboros.Consensus.Node.Exit' for more details.
   --
   -- One only has to handle exceptions specific to this @blk@.
+  --
+  -- Return 'Nothing' for exceptions not related to @blk@, they will be
+  -- classified by the existing error policy.
+  --
+  -- Also return 'Nothing' for exceptions /related/ to @blk@ that are /not
+  -- fatal/, they will fall through to the default policy.
   --
   -- NOTE: this is not about header/block/transaction validation errors, etc.
   -- These will not shut down the node and are handled already.
@@ -152,8 +158,8 @@ class ( LedgerSupportsProtocol    blk
   --
   -- In case you have no exceptions to handle specially, return 'Nothing'.
   -- This is what the default implementation does.
-  nodeToExitReason :: Proxy blk -> SomeException -> Maybe ExitReason
-  nodeToExitReason _ _ = Nothing
+  nodeExceptionIsFatal :: Proxy blk -> SomeException -> Maybe ExitReason
+  nodeExceptionIsFatal _ _ = Nothing
 
   -- Encoders
   nodeEncodeBlockWithInfo  :: TopLevelConfig blk -> blk -> BinaryInfo Encoding

@@ -32,10 +32,10 @@ module Ouroboros.Consensus.NodeNetwork (
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad (void)
+import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
-import           Control.Tracer
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import           Ouroboros.Network.Block
@@ -71,18 +71,18 @@ import           Ouroboros.Network.TxSubmission.Outbound
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.BlockFetchServer
-import           Ouroboros.Consensus.ChainSyncClient
-import           Ouroboros.Consensus.ChainSyncServer
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.LocalStateQueryServer
 import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.NodeKernel
+import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
+import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
+import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
-import           Ouroboros.Consensus.TxSubmission
+import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry

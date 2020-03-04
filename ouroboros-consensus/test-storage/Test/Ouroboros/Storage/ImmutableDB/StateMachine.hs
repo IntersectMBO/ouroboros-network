@@ -45,13 +45,13 @@ import           Data.Word (Word16, Word32, Word64)
 import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic, Generic1)
 import           GHC.Stack (HasCallStack)
-import           System.Random (getStdRandom, randomR)
-import           Text.Show.Pretty (ppShow)
 
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QC
-import           Test.QuickCheck.Random (mkQCGen)
-import           Test.StateMachine
+import           Test.StateMachine hiding (showLabelledExamples,
+                     showLabelledExamples')
+import           Test.StateMachine.Labelling
+import qualified Test.StateMachine.Labelling as QSM
 import qualified Test.StateMachine.Sequential as QSM
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
@@ -63,7 +63,6 @@ import qualified Cardano.Slotting.Slot as S
 import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB, getHeader)
 import           Ouroboros.Consensus.BlockchainTime.Mock
                      (settableBlockchainTime)
-import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -99,7 +98,6 @@ import           Test.Util.WithEq
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 import           Test.Ouroboros.Storage.TestBlock
-import           Test.Ouroboros.Storage.Util (collects)
 
 {-------------------------------------------------------------------------------
   Abstract model
@@ -419,32 +417,32 @@ deriving instance Rank2.Foldable    (At Resp m)
 -------------------------------------------------------------------------------}
 
 -- | An event records the model before and after a command along with the
--- command itself, and a mocked version of the response.
-data Event m r = Event
-  { eventBefore   :: Model     m r
-  , eventCmdErr   :: At CmdErr m r
-  , eventAfter    :: Model     m r
-  , eventMockResp :: Resp IteratorId
-  } deriving (Show)
+-- command itself, and the response.
+type ImmDBEvent m = Event (Model m) (At CmdErr m) (At Resp m)
 
-eventCmd :: Event m r -> At Cmd m r
-eventCmd = At . _cmd . unAt . eventCmdErr
+eventCmdErr :: ImmDBEvent m r -> At CmdErr m r
+eventCmdErr = eventCmd
 
-eventMockCmd :: Eq1 r => Event m r -> Cmd IteratorId
-eventMockCmd ev@Event {..} = toMock eventBefore (eventCmd ev)
+eventCmdNoErr :: ImmDBEvent m r -> At Cmd m r
+eventCmdNoErr = At . _cmd . unAt . eventCmdErr
 
+eventMockCmd :: Eq1 r => ImmDBEvent m r -> Cmd IteratorId
+eventMockCmd ev@Event {..} = toMock eventBefore (eventCmdNoErr ev)
+
+eventMockResp :: Eq1 r => ImmDBEvent m r -> Resp IteratorId
+eventMockResp Event {..} = toMock eventAfter eventResp
 
 -- | Construct an event
 lockstep :: (Show1 r, Eq1 r)
-         => Model     m r
-         -> At CmdErr m r
-         -> At Resp   m r
-         -> Event     m r
+         => Model      m r
+         -> At CmdErr  m r
+         -> At Resp    m r
+         -> ImmDBEvent m r
 lockstep model@Model {..} cmdErr (At resp) = Event
-    { eventBefore   = model
-    , eventCmdErr   = cmdErr
-    , eventAfter    = model'
-    , eventMockResp = mockResp
+    { eventBefore = model
+    , eventCmd    = cmdErr
+    , eventAfter  = model'
+    , eventResp   = At resp
     }
   where
     (mockResp, dbModel') = step model cmdErr
@@ -724,15 +722,15 @@ mock model cmdErr = At <$> traverse (const genSym) resp
 
 precondition :: Model m Symbolic -> At CmdErr m Symbolic -> Logic
 precondition Model {..} (At (CmdErr { _cmd = cmd })) =
-   forall (iters cmd) (`elem` RE.keys knownIters) .&&
+   forall (iters cmd) (`member` RE.keys knownIters) .&&
     case cmd of
       AppendBlock    _ _ b -> fitsOnTip b
       AppendEBB      _ _ b -> fitsOnTip b
-      DeleteAfter tip      -> tip `elem` NE.toList (tips dbModel)
+      DeleteAfter tip      -> tip `member` NE.toList (tips dbModel)
       Corruption corr ->
         forall
           (corruptionFiles (getCorruptions corr))
-          (`elem` getDBFiles dbModel)
+          (`member` getDBFiles dbModel)
       ReopenInThePast _ curSlot ->
         0 .<= curSlot .&& curSlot .<= lastSlot
       _ -> Top
@@ -855,7 +853,7 @@ sm env dbm = StateMachine
   , semantics     = semantics env
   , mock          = mock
   , invariant     = Nothing
-  , distribution  = Nothing
+  , cleanup       = noCleanup
   }
 
 {-------------------------------------------------------------------------------
@@ -864,9 +862,9 @@ sm env dbm = StateMachine
 
 validate :: forall m. IOLike m
          => Model m Concrete -> ImmutableDB Hash m
-         -> QC.PropertyM m Property
+         -> m Property
 validate Model {..} realDB = do
-    dbContents <- QC.run $ getDBContents realDB
+    dbContents <- getDBContents realDB
     -- This message is clearer than the one produced by (===)
     let msg = "Mismatch between database (" <> show dbContents <>
               ") and model (" <> show modelContents <> ")"
@@ -933,31 +931,31 @@ data Tag
 
 
 -- | Predicate on events
-type EventPred m = C.Predicate (Event m Symbolic) Tag
+type EventPred m = Predicate (ImmDBEvent m Symbolic) Tag
 
 -- | Convenience combinator for creating classifiers for successful commands
-successful :: (    Event m Symbolic
+successful :: (    ImmDBEvent m Symbolic
                 -> Success IteratorId
                 -> Either Tag (EventPred m)
               )
            -> EventPred m
-successful f = C.predicate $ \ev -> case eventMockResp ev of
+successful f = predicate $ \ev -> case eventMockResp ev of
     Resp (Left  _ ) -> Right $ successful f
     Resp (Right ok) -> f ev ok
 
 -- | Convenience combinator for creating classifiers for failed commands
-failed :: (    Event m Symbolic
+failed :: (    ImmDBEvent m Symbolic
             -> ImmutableDBError
             -> Either Tag (EventPred m)
           )
        -> EventPred m
-failed f = C.predicate $ \ev -> case eventMockResp ev of
+failed f = predicate $ \ev -> case eventMockResp ev of
     Resp (Left  e) -> f ev e
     Resp (Right _) -> Right $ failed f
 
 -- | Convenience combinator for creating classifiers for commands failed with
 -- a @UserError@.
-failedUserError :: (    Event m Symbolic
+failedUserError :: (    ImmDBEvent m Symbolic
                      -> UserError
                      -> Either Tag (EventPred m)
                    )
@@ -968,9 +966,9 @@ failedUserError f = failed $ \ev e -> case e of
 
 -- | Convenience combinator for creating classifiers for commands for which an
 -- error is simulated.
-simulatedError :: (Event m Symbolic -> Either Tag (EventPred m))
+simulatedError :: (ImmDBEvent m Symbolic -> Either Tag (EventPred m))
                -> EventPred m
-simulatedError f = C.predicate $ \ev ->
+simulatedError f = predicate $ \ev ->
     case (_cmdErr (unAt (eventCmdErr ev)), getResp (eventMockResp ev)) of
       (Just _, Right _) -> f ev
       _                 -> Right $ simulatedError f
@@ -979,8 +977,8 @@ simulatedError f = C.predicate $ \ev ->
 -- | Tag commands
 --
 -- Tagging works on symbolic events, so that we can tag without doing real IO.
-tag :: forall m. [Event m Symbolic] -> [Tag]
-tag = C.classify
+tag :: forall m. [ImmDBEvent m Symbolic] -> [Tag]
+tag = QSM.classify
     [ tagGetBlockComponentJust
     , tagGetBlockComponentNothing
     , tagGetEBBComponentJust
@@ -1014,37 +1012,37 @@ tag = C.classify
   where
     tagGetBlockComponentJust :: EventPred m
     tagGetBlockComponentJust = successful $ \ev r -> case r of
-      MbAllComponents (Just _) | GetBlockComponent {} <- unAt $ eventCmd ev ->
+      MbAllComponents (Just _) | GetBlockComponent {} <- unAt $ eventCmdNoErr ev ->
         Left TagGetBlockComponentJust
       _ -> Right tagGetBlockComponentJust
 
     tagGetBlockComponentNothing :: EventPred m
     tagGetBlockComponentNothing = successful $ \ev r -> case r of
-      MbAllComponents Nothing | GetBlockComponent {} <- unAt $ eventCmd ev ->
+      MbAllComponents Nothing | GetBlockComponent {} <- unAt $ eventCmdNoErr ev ->
         Left TagGetBlockComponentNothing
       _ -> Right tagGetBlockComponentNothing
 
     tagGetEBBComponentJust :: EventPred m
     tagGetEBBComponentJust = successful $ \ev r -> case r of
-      MbAllComponents (Just _) | GetEBBComponent {} <- unAt $ eventCmd ev ->
+      MbAllComponents (Just _) | GetEBBComponent {} <- unAt $ eventCmdNoErr ev ->
         Left TagGetEBBComponentJust
       _ -> Right tagGetEBBComponentJust
 
     tagGetEBBComponentNothing :: EventPred m
     tagGetEBBComponentNothing = successful $ \ev r -> case r of
-      MbAllComponents Nothing | GetEBBComponent {} <- unAt $ eventCmd ev ->
+      MbAllComponents Nothing | GetEBBComponent {} <- unAt $ eventCmdNoErr ev ->
         Left TagGetEBBComponentNothing
       _ -> Right tagGetEBBComponentNothing
 
     tagGetBlockOrEBBComponentJust :: EventPred m
     tagGetBlockOrEBBComponentJust = successful $ \ev r -> case r of
-      MbAllComponents (Just _) | GetBlockOrEBBComponent {} <- unAt $ eventCmd ev ->
+      MbAllComponents (Just _) | GetBlockOrEBBComponent {} <- unAt $ eventCmdNoErr ev ->
         Left TagGetBlockOrEBBComponentJust
       _ -> Right tagGetBlockOrEBBComponentJust
 
     tagGetBlockOrEBBComponentNothing :: EventPred m
     tagGetBlockOrEBBComponentNothing = successful $ \ev r -> case r of
-      MbAllComponents Nothing | GetBlockOrEBBComponent {} <- unAt $ eventCmd ev ->
+      MbAllComponents Nothing | GetBlockOrEBBComponent {} <- unAt $ eventCmdNoErr ev ->
         Left TagGetBlockOrEBBComponentNothing
       _ -> Right tagGetBlockOrEBBComponentNothing
 
@@ -1065,14 +1063,14 @@ tag = C.classify
 
     tagIteratorStreamedN :: Map IteratorId Int
                          -> EventPred m
-    tagIteratorStreamedN streamedPerIterator = C.Predicate
-      { C.predApply = \ev -> case eventMockResp ev of
+    tagIteratorStreamedN streamedPerIterator = Predicate
+      { predApply = \ev -> case eventMockResp ev of
           Resp (Right (IterResult (IteratorResult {})))
             | IteratorNext it <- eventMockCmd ev
             -> Right $ tagIteratorStreamedN $
                Map.insertWith (+) it 1 streamedPerIterator
           _ -> Right $ tagIteratorStreamedN streamedPerIterator
-      , C.predFinish = do
+      , predFinish = do
           -- Find the entry with the highest value, i.e. the iterator that has
           -- streamed the most blocks/headers
           (_, longestStream) <- listToMaybe $ sortBy (flip compare `on` snd) $
@@ -1081,49 +1079,29 @@ tag = C.classify
       }
 
     tagIteratorWithoutBounds :: EventPred m
-    tagIteratorWithoutBounds = successful $ \ev _ -> case eventCmd ev of
+    tagIteratorWithoutBounds = successful $ \ev _ -> case eventCmdNoErr ev of
       At (Stream Nothing Nothing) -> Left TagIteratorWithoutBounds
       _                           -> Right tagIteratorWithoutBounds
 
     tagCorruption :: EventPred m
-    tagCorruption = C.Predicate
-      { C.predApply = \ev -> case eventCmd ev of
+    tagCorruption = Predicate
+      { predApply = \ev -> case eventCmdNoErr ev of
           At (Corruption {}) -> Left  TagCorruption
           _                  -> Right tagCorruption
-      , C.predFinish = Nothing
+      , predFinish = Nothing
       }
 
     tagReopenInThePast :: EventPred m
-    tagReopenInThePast = C.Predicate
-      { C.predApply = \ev -> case eventCmd ev of
+    tagReopenInThePast = Predicate
+      { predApply = \ev -> case eventCmdNoErr ev of
           At (ReopenInThePast {}) -> Left  TagReopenInThePast
           _                       -> Right tagReopenInThePast
-      , C.predFinish = Nothing
+      , predFinish = Nothing
       }
 
     tagErrorDuring :: Tag -> (At Cmd m Symbolic -> Bool) -> EventPred m
     tagErrorDuring t isErr = simulatedError $ \ev ->
-      if isErr (eventCmd ev) then Left t else Right $ tagErrorDuring t isErr
-
-
--- | Step the model using a 'QSM.Command' (i.e., a command associated with
--- an explicit set of variables)
-execCmd :: Model m Symbolic
-        -> QSM.Command (At CmdErr m) (At Resp m)
-        -> Event m Symbolic
-execCmd model (QSM.Command cmdErr resp _vars) = lockstep model cmdErr resp
-
--- | 'execCmds' is just the repeated form of 'execCmd'
-execCmds :: forall m
-          . Model m Symbolic
-         -> QSM.Commands (At CmdErr m) (At Resp m) -> [Event m Symbolic]
-execCmds model = \(QSM.Commands cs) -> go model cs
-  where
-    go :: Model m Symbolic -> [QSM.Command (At CmdErr m) (At Resp m)]
-       -> [Event m Symbolic]
-    go _ []       = []
-    go m (c : cs) = let ev = execCmd m c in ev : go (eventAfter ev) cs
-
+      if isErr (eventCmdNoErr ev) then Left t else Right $ tagErrorDuring t isErr
 
 {-------------------------------------------------------------------------------
   Required instances
@@ -1185,97 +1163,82 @@ instance ToExpr (Model m Concrete)
 -------------------------------------------------------------------------------}
 
 -- | Show minimal examples for each of the generated tags
---
-showLabelledExamples'
-  :: Maybe Int
-  -- ^ Seed
-  -> Int
-  -- ^ Number of tests to run to find examples
-  -> (Tag -> Bool)
-  -- ^ Tag filter (can be @const True@)
-  -> (   DBModel Hash
-      -> StateMachine (Model m) (At CmdErr m) m (At Resp m)
-     )
-  -> IO ()
-showLabelledExamples' mbReplay numTests focus stateMachine = do
-    replaySeed <- case mbReplay of
-      Nothing   -> getStdRandom (randomR (1,999999))
-      Just seed -> return seed
-
-    labelledExamplesWith (stdArgs { replay     = Just (mkQCGen replaySeed, 0)
-                                  , maxSuccess = numTests
-                                  }) $
-      forAllShrinkShow (QSM.generateCommands smUnused Nothing)
-                       (QSM.shrinkCommands   smUnused)
-                       ppShow $ \cmds ->
-        collects (filter focus . tag . execCmds (QSM.initModel smUnused) $ cmds) $
-          property True
+showLabelledExamples' :: Maybe Int
+                      -- ^ Seed
+                      -> Int
+                      -- ^ Number of tests to run to find examples
+                      -> (Tag -> Bool)
+                      -- ^ Tag filter (can be @const True@)
+                      -> IO ()
+showLabelledExamples' mReplay numTests focus =
+    QSM.showLabelledExamples' smUnused mReplay numTests tag focus
   where
-    smUnused = stateMachine mkDBModel
+    smUnused = sm unusedEnv mkDBModel
 
 showLabelledExamples :: IO ()
-showLabelledExamples = showLabelledExamples' Nothing 1000 (const True) $
-    sm unusedEnv
+showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
 
 prop_sequential :: Index.CacheConfig -> Property
 prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
-    (hist, prop) <- test cacheConfig cmds
+    (hist, prop) <- QC.run $ test cacheConfig cmds
     prettyCommands smUnused hist
-      $ tabulate "Tags" (map show $ tag (execCmds (QSM.initModel smUnused) cmds))
+      $ tabulate "Tags" (map show $ tag (execCmds smUnused cmds))
       $ prop
   where
-    dbm = mkDBModel
-    smUnused = sm unusedEnv dbm
+    smUnused = sm unusedEnv mkDBModel
 
 test :: Index.CacheConfig
      -> QSM.Commands (At CmdErr IO) (At Resp IO)
-     -> QC.PropertyM IO (QSM.History (At CmdErr IO) (At Resp IO), Property)
+     -> IO (QSM.History (At CmdErr IO) (At Resp IO), Property)
 test cacheConfig cmds = do
-    fsVar              <- QC.run $ uncheckedNewTVarM Mock.empty
-    varErrors          <- QC.run $ uncheckedNewTVarM mempty
-    varNextId          <- QC.run $ uncheckedNewTVarM 0
-    varCurSlot         <- QC.run $ uncheckedNewTVarM maxBound
-    (tracer, getTrace) <- QC.run $ recordingTracerIORef
-    registry           <- QC.run $ unsafeNewRegistry
+    fsVar              <- uncheckedNewTVarM Mock.empty
+    varErrors          <- uncheckedNewTVarM mempty
+    varNextId          <- uncheckedNewTVarM 0
+    varCurSlot         <- uncheckedNewTVarM maxBound
+    (tracer, getTrace) <- recordingTracerIORef
 
     let hasFS  = mkSimErrorHasFS fsVar varErrors
         parser = epochFileParser hasFS (const <$> decode) isEBB
           getBinaryInfo testBlockIsValid
         btime  = settableBlockchainTime varCurSlot
 
-    (db, internal) <- QC.run $ openDBInternal registry hasFS
-      (fixedSizeEpochInfo fixedEpochSize) testHashInfo
-      ValidateMostRecentEpoch parser tracer cacheConfig btime
+    withRegistry $ \registry -> do
 
-    let env = ImmutableDBEnv
-          { varErrors, varNextId, varCurSlot, registry, hasFS, db, internal }
-        sm' = sm env dbm
+      bracket
+        (openDBInternal registry hasFS (fixedSizeEpochInfo fixedEpochSize)
+           testHashInfo ValidateMostRecentEpoch parser tracer cacheConfig btime)
+        (closeDB . fst) $ \(db, internal) -> do
 
-    (hist, model, res) <- runCommands sm' cmds
+        let env = ImmutableDBEnv
+              { varErrors, varNextId, varCurSlot, registry, hasFS, db, internal }
+            sm' = sm env dbm
 
-    trace <- QC.run $ getTrace
-    fs    <- QC.run $ atomically $ readTVar fsVar
+        (hist, model, res) <- QSM.runCommands' sm' cmds
 
-    QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
-    QC.monitor $ counterexample ("FS: " <> Mock.pretty fs)
+        trace <- getTrace
+        fs    <- atomically $ readTVar fsVar
 
-    let prop = res === Ok .&&. openHandlesProp fs model
+        let prop =
+              counterexample ("Trace: " <> unlines (map show trace)) $
+              counterexample ("FS: " <> Mock.pretty fs)              $
+              res === Ok .&&. openHandlesProp fs model
 
-    case res of
-      Ok -> do
-        QC.run $ closeDB db >> reopen db ValidateAllEpochs
-        validation <- validate model db
-        dbTip <- QC.run $ getTip db <* closeDB db <* closeRegistry registry
+        case res of
+          Ok -> do
+            closeDB db
+            reopen db ValidateAllEpochs
+            validation <- validate model db
+            dbTip <- getTip db
 
-        let modelTip = dbmTip $ dbModel model
-        QC.monitor $ counterexample ("dbTip:    " <> show dbTip)
-        QC.monitor $ counterexample ("modelTip: " <> show modelTip)
+            let modelTip = dbmTip $ dbModel model
+                prop' =
+                  counterexample ("dbTip:    " <> show dbTip)    $
+                  counterexample ("modelTip: " <> show modelTip) $
+                  prop .&&. dbTip === modelTip .&&. validation
+            return (hist, prop')
 
-        return (hist, prop .&&. dbTip === modelTip .&&. validation)
-      -- If something went wrong, don't try to reopen the database
-      _ -> do
-        QC.run $ closeRegistry registry
-        return (hist, prop)
+          -- If something went wrong, don't try to reopen the database
+          _ -> return (hist, prop)
   where
     dbm = mkDBModel
     isEBB = testHeaderEpochNoIfEBB fixedEpochSize . getHeader

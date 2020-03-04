@@ -20,7 +20,8 @@ import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
-import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+                     (ClockSkew (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util.Random (Seed (..))
 

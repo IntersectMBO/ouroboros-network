@@ -247,7 +247,7 @@ instance RunNode DualByronBlock where
   -- The header is just the concrete header, so we can just reuse the Byron def
   nodeAddHeaderEnvelope = \_ -> nodeAddHeaderEnvelope pb
 
-  nodeToExitReason      = \_ -> nodeToExitReason pb
+  nodeExceptionIsFatal  = \_ -> nodeExceptionIsFatal pb
 
   -- Encoders
   nodeEncodeBlockWithInfo  = const $ encodeDualBlockWithInfo encodeByronBlockWithInfo

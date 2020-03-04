@@ -24,15 +24,16 @@ import           Ouroboros.Network.TxSubmission.Outbound
 
 import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.BlockchainTime (TraceBlockchainTimeEvent)
-import           Ouroboros.Consensus.BlockFetchServer
-                     (TraceBlockFetchServerEvent)
-import           Ouroboros.Consensus.ChainSyncClient (InvalidBlockReason,
-                     TraceChainSyncClientEvent)
-import           Ouroboros.Consensus.ChainSyncServer (TraceChainSyncServerEvent)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTx, GenTxId,
                      MempoolSize, TraceEventMempool)
-import           Ouroboros.Consensus.TxSubmission
+import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
+                     (TraceBlockFetchServerEvent)
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+                     (InvalidBlockReason, TraceChainSyncClientEvent)
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
+                     (TraceChainSyncServerEvent)
+import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
                      (TraceLocalTxSubmissionServerEvent (..))
 
 {-------------------------------------------------------------------------------
@@ -156,6 +157,7 @@ data TraceForgeEvent blk tx
   -- * TraceNodeNotLeader if we are not the leader
   -- * TraceNodeIsLeader if we are the leader
   -- * TraceBlockFromFuture (rarely)
+  -- * TraceSlotIsImmutable (leadership check failed)
   -- * TraceNoLedgerState (rarely)
   -- * TraceNoLedgerView (rarely)
   = TraceStartLeadershipCheck SlotNo
@@ -225,16 +227,17 @@ data TraceForgeEvent blk tx
 
   -- | We forged a block
   --
-  -- We record the current slot number, the block itself, and the total size
-  -- of the mempool snapshot at the time we produced the block (which may be
-  -- significantly larger than the block, due to maximum block size)
+  -- We record the current slot number, the point of the predecessor, the block
+  -- itself, and the total size of the mempool snapshot at the time we produced
+  -- the block (which may be significantly larger than the block, due to
+  -- maximum block size)
   --
   -- This will be followed by one of three messages:
   --
   -- * TraceAdoptedBlock (normally)
   -- * TraceDidntAdoptBlock (rarely)
   -- * TraceForgedInvalidBlock (hopefully never -- this would indicate a bug)
-  | TraceForgedBlock SlotNo blk MempoolSize
+  | TraceForgedBlock SlotNo (Point blk) blk MempoolSize
 
   -- | We adopted the block we produced, we also trace the transactions
   -- that were adopted.

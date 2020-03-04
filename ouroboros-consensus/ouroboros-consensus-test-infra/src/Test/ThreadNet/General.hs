@@ -19,7 +19,7 @@ module Test.ThreadNet.General (
     -- * Block rejections
   , BlockRejection (..)
     -- * Re-exports
-  , ForgeEBB
+  , ForgeEbbEnv (..)
   , TestOutput (..)
   ) where
 
@@ -57,7 +57,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
-import           Ouroboros.Consensus.Storage.Common (EpochNo)
+import           Ouroboros.Consensus.Storage.Common
 
 import           Test.ThreadNet.Network
 import           Test.ThreadNet.TxGen
@@ -164,13 +164,17 @@ instance Arbitrary TestConfig where
 -------------------------------------------------------------------------------}
 
 data TestConfigBlock blk = TestConfigBlock
-  { forgeEBB :: Maybe (ForgeEBB blk)
-  , nodeInfo :: CoreNodeId -> ProtocolInfo blk
-  , rekeying :: Maybe (Rekeying blk)
+  { forgeEbbEnv :: Maybe (ForgeEbbEnv blk)
+  , nodeInfo    :: CoreNodeId -> ProtocolInfo blk
+  , rekeying    :: Maybe (Rekeying blk)
   }
 
 data Rekeying blk = forall opKey. Rekeying
-  { rekeyUpd ::
+  { rekeyOracle
+      :: CoreNodeId -> SlotNo -> Maybe SlotNo
+    -- ^ The first /nominal/ slot after the given slot, assuming the given core
+    -- node cannot lead.
+  , rekeyUpd ::
          ProtocolInfo blk
       -> EpochNo
       -> opKey
@@ -196,6 +200,9 @@ runTestNetwork ::
      , Show (LedgerView (BlockProtocol blk))
      )
   => TestConfig
+  -> EpochSize
+  -- ^ Temporary: until we start testing the hard fork combinator, we just
+  -- support a single 'EpochSize'. See also comments for 'tnaEpochInfo'.
   -> TestConfigBlock blk
   -> TestOutput blk
 runTestNetwork
@@ -208,10 +215,11 @@ runTestNetwork
     , slotLengths
     , initSeed
     }
-  TestConfigBlock{forgeEBB, nodeInfo, rekeying}
+  epochSize
+  TestConfigBlock{forgeEbbEnv, nodeInfo, rekeying}
   = runSimOrThrow $ do
     let tna = ThreadNetworkArgs
-          { tnaForgeEBB       = forgeEBB
+          { tnaForgeEbbEnv    = forgeEbbEnv
           , tnaJoinPlan       = nodeJoinPlan
           , tnaNodeInfo       = nodeInfo
           , tnaNumCoreNodes   = numCoreNodes
@@ -221,20 +229,24 @@ runTestNetwork
           , tnaRestarts       = nodeRestarts
           , tnaSlotLengths    = slotLengths
           , tnaTopology       = nodeTopology
+          , tnaEpochSize      = epochSize
           }
 
     case rekeying of
       Nothing                                -> runThreadNetwork tna
-      Just Rekeying{rekeyUpd, rekeyFreshSKs} -> do
+      Just Rekeying{rekeyFreshSKs, rekeyOracle, rekeyUpd} -> do
         rekeyVar <- uncheckedNewTVarM rekeyFreshSKs
         runThreadNetwork tna
-          { tnaRekeyM = Just $ \pInfo eno -> do
-              x <- atomically $ do
-                x :< xs <- readTVar rekeyVar
-                x <$ writeTVar rekeyVar xs
-              pure $ case rekeyUpd pInfo eno x of
-                Nothing           -> (pInfo, Nothing)
-                Just (pInfo', tx) -> (pInfo', Just tx)
+          { tnaRekeyM = Just $ \cid pInfo s mkEno -> case rekeyOracle cid s of
+              Nothing -> pure (pInfo, Nothing)
+              Just s' -> do
+                x <- atomically $ do
+                  x :< xs <- readTVar rekeyVar
+                  x <$ writeTVar rekeyVar xs
+                eno <- mkEno s'
+                pure $ case rekeyUpd pInfo eno x of
+                  Nothing           -> (pInfo, Nothing)
+                  Just (pInfo', tx) -> (pInfo', Just tx)
           }
 
 {-------------------------------------------------------------------------------
@@ -271,11 +283,14 @@ prop_general ::
   -> SecurityParam
   -> TestConfig
   -> Maybe LeaderSchedule
+  -> Maybe NumBlocks
   -> (BlockRejection blk -> Bool)
+  -> BlockNo
+     -- ^ block number of the first proper block after genesis
   -> TestOutput blk
   -> Property
 prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
-  mbSchedule expectedBlockRejection
+  mbSchedule mbMaxForkLength expectedBlockRejection firstBlockNo
   TestOutput{testOutputNodes, testOutputTipBlockNos} =
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
@@ -286,8 +301,11 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
     counterexample ("growth schedule: " <> condense growthSchedule) $
     counterexample ("actual leader schedule: " <> condense actualLeaderSchedule) $
     counterexample ("consensus expected: " <> show isConsensusExpected) $
+    counterexample ("maxForkLength: " <> show maxForkLength) $
     tabulate "consensus expected" [show isConsensusExpected] $
-    tabulate "shortestLength" [show (rangeK k (shortestLength nodeChains))] $
+    tabulate "k" [show (maxRollbacks k)] $
+    tabulate ("shortestLength (k = " <> show (maxRollbacks k) <> ")")
+      [show (rangeK k (shortestLength nodeChains))] $
     tabulate "floor(4 * lastJoinSlot / numSlots)" [show lastJoinSlot] $
     tabulate "minimumDegreeNodeTopology" [show (minimumDegreeNodeTopology nodeTopology)] $
     tabulate "involves >=1 re-delegation" [show hasNodeRekey] $
@@ -331,7 +349,9 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
         Nothing    -> actualLeaderSchedule
         Just sched -> sched
 
-    NumBlocks maxForkLength = determineForkLength k nodeJoinPlan schedule
+    NumBlocks maxForkLength = case mbMaxForkLength of
+      Nothing -> determineForkLength k nodeJoinPlan schedule
+      Just fl -> fl
 
     -- build a leader schedule which includes every node that forged unless:
     --
@@ -568,7 +588,7 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
             --
             -- NOTE This predicate is more general than that specific scenario,
             -- but we don't anticipate it wholly masking any interesting cases.
-            delayOK1 = 1 == bno
+            delayOK1 = firstBlockNo == bno
 
             -- When a slot has multiple leaders, each node chooses one of the
             -- mutually-exclusive forged blocks and won't fetch any of the

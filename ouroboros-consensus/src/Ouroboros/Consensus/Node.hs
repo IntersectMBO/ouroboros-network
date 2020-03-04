@@ -51,9 +51,10 @@ import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+                     (ClockSkew (..))
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
 import           Ouroboros.Consensus.Node.LedgerDerivedInfo
@@ -244,7 +245,7 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
              (localResponderNetworkApplication $ networkApps version)
          | version <- supportedNetworkProtocolVersions (Proxy @blk)
          ]
-     , daErrorPolicies = consensusErrorPolicy
+     , daErrorPolicies = consensusErrorPolicy (Proxy @blk)
      }
 
     combineVersions :: Semigroup a => [a] -> a

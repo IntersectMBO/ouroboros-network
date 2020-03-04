@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Ouroboros.Consensus.LocalStateQueryServer
+module Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
   ( localStateQueryServer
   ) where
 

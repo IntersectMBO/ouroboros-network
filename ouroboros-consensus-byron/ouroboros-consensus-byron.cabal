@@ -79,7 +79,6 @@ test-suite test
                        Test.Consensus.Byron.Ledger
                        Test.ThreadNet.DualPBFT
                        Test.ThreadNet.RealPBFT
-                       Test.ThreadNet.Ref.RealPBFT
                        Test.ThreadNet.TxGen.Byron
 
                        Ouroboros.Consensus.ByronDual.Ledger
@@ -96,6 +95,7 @@ test-suite test
                      , cardano-ledger
                      , cardano-ledger-test
                      , cardano-prelude
+                     , cardano-slotting
                      , cborg
                      , containers
                      , cryptonite
@@ -159,6 +159,7 @@ executable db-analyser
   hs-source-dirs:      tools/db-analyser
   main-is:             Main.hs
   build-depends:       base
+                     , bytestring
                      , cardano-binary
                      , cardano-crypto-wrapper
                      , cardano-ledger

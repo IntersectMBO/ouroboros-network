@@ -25,6 +25,9 @@ import           Test.QuickCheck.Hedgehog (hedgehog)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Cardano.Slotting.Slot
+
+import qualified Cardano.Chain.ProtocolConstants as Impl
 import qualified Cardano.Chain.UTxO as Impl
 
 import qualified Cardano.Spec.Chain.STS.Rule.Chain as Spec
@@ -47,6 +50,7 @@ import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Ledger.Conversions
 
 import           Ouroboros.Consensus.ByronSpec.Ledger
 import qualified Ouroboros.Consensus.ByronSpec.Ledger.Genesis as Genesis
@@ -57,6 +61,7 @@ import           Ouroboros.Consensus.ByronDual.Node
 
 import           Test.ThreadNet.General
 import qualified Test.ThreadNet.RealPBFT as RealPBFT
+import qualified Test.ThreadNet.Ref.PBFT as Ref
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeRestarts
@@ -72,13 +77,45 @@ tests = testGroup "DualPBFT" [
 -- We limit it to 10 tests for now.
 prop_convergence :: SetupDualPBft -> Property
 prop_convergence setup = withMaxSuccess 10 $
+    (\prop -> if mightForgeInSlot0 then discard else prop) $
+    tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
     prop_general
       (countByronGenTxs . dualBlockMain)
       (setupSecurityParam      setup)
-      (setupConfig             setup)
+      cfg
       (setupSchedule           setup)
+      (Just $ NumBlocks $ case refResult of
+         Ref.Forked{} -> 1
+         _            -> 0)
       (setupExpectedRejections setup)
+      1
       (setupTestOutput         setup)
+  where
+    cfg = setupConfig setup
+
+    refResult :: Ref.Result
+    refResult =
+      Ref.simulate (setupParams setup) (nodeJoinPlan cfg) (numSlots cfg)
+
+    -- The test infrastructure allows nodes to forge in slot 0; however, the
+    -- cardano-ledger-specs code causes @PBFTFailure (SlotNotAfterLastBlock
+    -- (Slot 0) (Slot 0))@ in that case. So we discard such tests.
+    --
+    -- This is ultimately due to the spec not modeling EBBs, while Byron
+    -- requires that successor of the genesis block is always the epoch 0 EBB.
+    -- As a result, the PBFT implementation tests the slot progression with
+    -- @<=@ to accomodate EBBs whereas the executable STS spec uses @<@.
+    mightForgeInSlot0 :: Bool
+    mightForgeInSlot0 = case refResult of
+      Ref.Forked _ m        -> any (0 `Set.member`) m
+      Ref.Nondeterministic  -> True
+      Ref.Outcomes outcomes -> case outcomes of
+        []    -> False
+        o : _ -> case o of
+          Ref.Absent  -> False
+          Ref.Nominal -> True
+          Ref.Unable  -> True
+          Ref.Wasted  -> True
 
 {-------------------------------------------------------------------------------
   Test setup
@@ -95,6 +132,12 @@ data SetupDualPBft = SetupDualPBft {
 setupSecurityParam :: SetupDualPBft -> SecurityParam
 setupSecurityParam = pbftSecurityParam . setupParams
 
+setupEpochSize :: SetupDualPBft -> EpochSize
+setupEpochSize setup =
+    fromByronEpochSlots $ Impl.kEpochSlots (toByronBlockCount k)
+  where
+    k = setupSecurityParam setup
+
 setupNumSlots :: SetupDualPBft -> NumSlots
 setupNumSlots = numSlots . setupConfig
 
@@ -105,15 +148,15 @@ setupSchedule setup@SetupDualPBft{..} = Just $
       (setupNumSlots setup)
 
 setupTestOutput :: SetupDualPBft -> TestOutput DualByronBlock
-setupTestOutput SetupDualPBft{..} =
-    runTestNetwork setupConfig $ TestConfigBlock {
-        forgeEBB = Nothing -- spec does not model EBBs
-      , rekeying = Nothing -- TODO
-      , nodeInfo = \coreNodeId ->
-                      protocolInfoDualByron
-                        setupGenesis
-                        setupParams
-                        (Just coreNodeId)
+setupTestOutput setup@SetupDualPBft{..} =
+    runTestNetwork setupConfig (setupEpochSize setup) $ TestConfigBlock {
+        forgeEbbEnv = Nothing -- spec does not model EBBs
+      , rekeying    = Nothing -- TODO
+      , nodeInfo    = \coreNodeId ->
+          protocolInfoDualByron
+            setupGenesis
+            setupParams
+            (Just coreNodeId)
       }
 
 -- | Override 'TestConfig'

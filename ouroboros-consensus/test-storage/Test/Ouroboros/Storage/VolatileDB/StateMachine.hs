@@ -35,8 +35,6 @@ import           Data.Word
 import qualified Generics.SOP as SOP
 import           GHC.Generics
 import           GHC.Stack
-import           System.Random (getStdRandom, randomR)
-import           Text.Show.Pretty (ppShow)
 
 import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
                      MaxSlotNo (..), SlotNo (..), blockHash)
@@ -44,7 +42,6 @@ import           Ouroboros.Network.Point (WithOrigin)
 import qualified Ouroboros.Network.Point as WithOrigin
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
-import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
@@ -57,9 +54,11 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Util
 
 import           Test.QuickCheck
 import           Test.QuickCheck.Monadic
-import           Test.QuickCheck.Random (mkQCGen)
-import           Test.StateMachine
-import           Test.StateMachine.Sequential
+import           Test.StateMachine hiding (showLabelledExamples,
+                     showLabelledExamples')
+import           Test.StateMachine.Labelling
+import qualified Test.StateMachine.Labelling as QSM
+import qualified Test.StateMachine.Sequential as QSM
 import           Test.StateMachine.Types
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
@@ -71,7 +70,6 @@ import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
 
 import           Test.Ouroboros.Storage.TestBlock
-import           Test.Ouroboros.Storage.Util
 import           Test.Ouroboros.Storage.VolatileDB.Model
 
 
@@ -199,27 +197,25 @@ newtype Model (r :: Type -> Type) = Model {
   deriving (Generic, Show)
 
 -- | An event records the model before and after a command along with the
--- command itself, and a mocked version of the response.
-data Event r = Event {
-      eventBefore   :: Model     r
-    , eventCmd      :: At CmdErr r
-    , eventAfter    :: Model     r
-    , eventMockResp :: Resp
-    }
-  deriving (Show)
+-- command itself, and the response.
+type VolDBEvent = Event Model (At CmdErr) (At Resp)
+
+eventMockResp :: VolDBEvent r -> Resp
+eventMockResp Event{..} = toMock eventAfter eventResp
 
 lockstep :: forall r.
-            Model     r
-         -> At CmdErr r
-         -> Event     r
-lockstep model cmdErr = Event {
-      eventBefore   = model
-    , eventCmd      = cmdErr
-    , eventAfter    = model'
-    , eventMockResp = mockResp
+            Model      r
+         -> At CmdErr  r
+         -> At Resp    r
+         -> VolDBEvent r
+lockstep model cmdErr resp = Event {
+      eventBefore = model
+    , eventCmd    = cmdErr
+    , eventAfter  = model'
+    , eventResp   = resp
     }
   where
-    (mockResp, dbModel') = step model cmdErr
+    (_mockResp, dbModel') = step model cmdErr
     model' = Model dbModel'
 
 -- | Key property of the model is that we can go from real to mock responses.
@@ -288,20 +284,20 @@ sm env dbm = StateMachine {
     , semantics     = semanticsImpl env
     , mock          = mockImpl
     , invariant     = Nothing
-    , distribution  = Nothing
+    , cleanup       = noCleanup
     }
 
 initModelImpl :: DBModel BlockId -> Model r
 initModelImpl = Model
 
 transitionImpl :: Model r -> At CmdErr r -> At Resp r -> Model r
-transitionImpl model cmd _ = eventAfter $ lockstep model cmd
+transitionImpl model cmd = eventAfter . lockstep model cmd
 
 preconditionImpl :: Model Symbolic -> At CmdErr Symbolic -> Logic
 preconditionImpl Model{..} (At (CmdErr cmd mbErrors)) =
     compatibleWithError .&& case cmd of
       Corruption cors ->
-        forall (corruptionFiles cors) (`elem` getDBFiles dbModel)
+        forall (corruptionFiles cors) (`member` getDBFiles dbModel)
 
       -- When duplicating a block by appending it to some other file, make
       -- sure that both the file and the block exists, and that we're adding
@@ -336,7 +332,7 @@ postconditionImpl :: Model Concrete
 postconditionImpl model cmdErr resp =
     toMock (eventAfter ev) resp .== eventMockResp ev
   where
-    ev = lockstep model cmdErr
+    ev = lockstep model cmdErr resp
 
 generatorCmdImpl :: Model Symbolic -> Gen Cmd
 generatorCmdImpl Model {..} = frequency
@@ -532,8 +528,8 @@ mockImpl model cmdErr = At <$> return mockResp
 
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
-    (hist, prop) <- test cmds
-    let events = execCmds (initModel smUnused) cmds
+    (hist, prop) <- run $ test cmds
+    let events = execCmds smUnused cmds
     prettyCommands smUnused hist
         $ tabulate "Tags"
           (map show $ tag events)
@@ -557,31 +553,30 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
       | otherwise = ">=100"
 
 test :: Commands (At CmdErr) (At Resp)
-     -> PropertyM IO (History (At CmdErr) (At Resp), Property)
+     -> IO (History (At CmdErr) (At Resp), Property)
 test cmds = do
-    varErrors          <- run $ uncheckedNewTVarM mempty
-    varFs              <- run $ uncheckedNewTVarM Mock.empty
-    (tracer, getTrace) <- run $ recordingTracerIORef
+    varErrors          <- uncheckedNewTVarM mempty
+    varFs              <- uncheckedNewTVarM Mock.empty
+    (tracer, getTrace) <- recordingTracerIORef
 
     let hasFS  = mkSimErrorHasFS varFs varErrors
         parser = blockFileParser' hasFS testBlockIsEBB
           testBlockToBinaryInfo (const <$> decode) testBlockIsValid
           ValidateAll
 
-    db <- run $ openDB hasFS parser tracer maxBlocksPerFile
+    withDB (openDB hasFS parser tracer maxBlocksPerFile) $ \db -> do
+      let env = VolatileDBEnv { varErrors, db, hasFS }
+          sm' = sm env dbm
+      (hist, _model, res) <- QSM.runCommands' sm' cmds
 
-    let env = VolatileDBEnv { varErrors, db, hasFS }
-        sm' = sm env dbm
-    (hist, _model, res) <- runCommands sm' cmds
+      trace <- getTrace
+      fs    <- atomically $ readTVar varFs
 
-    trace <- run $ getTrace
-    fs    <- run $ atomically $ readTVar varFs
-
-    monitor $ counterexample ("Trace: " <> unlines (map show trace))
-    monitor $ counterexample ("FS: " <> Mock.pretty fs)
-
-    run $ closeDB db
-    return (hist, res === Ok)
+      let prop =
+            counterexample ("Trace: " <> unlines (map show trace)) $
+            counterexample ("FS: " <> Mock.pretty fs)              $
+            res === Ok
+      return (hist, prop)
   where
     dbm = initDBModel maxBlocksPerFile
 
@@ -601,24 +596,24 @@ tests = testGroup "VolatileDB q-s-m" [
 -------------------------------------------------------------------------------}
 
 -- | Predicate on events
-type EventPred = C.Predicate (Event Symbolic) Tag
+type EventPred = Predicate (VolDBEvent Symbolic) Tag
 
 -- | Convenience combinator for creating classifiers for successful commands
-successful :: (    Event Symbolic
+successful :: (    VolDBEvent Symbolic
                 -> Success
                 -> Either Tag EventPred
               )
            -> EventPred
-successful f = C.predicate $ \ev -> case (eventMockResp ev, eventCmd ev) of
+successful f = predicate $ \ev -> case (eventMockResp ev, eventCmd ev) of
     (Resp (Right ok), At (CmdErr _ Nothing)) -> f ev ok
     _                                        -> Right $ successful f
 
 -- | Tag commands
 --
 -- Tagging works on symbolic events, so that we can tag without doing real IO.
-tag :: [Event Symbolic] -> [Tag]
+tag :: [VolDBEvent Symbolic] -> [Tag]
 tag [] = [TagEmpty]
-tag ls = C.classify
+tag ls = QSM.classify
     [ tagGetBlockComponentNothing
     , tagGetJust $ Left TagGetJust
     , tagGetReOpenGet
@@ -695,7 +690,7 @@ tag ls = C.classify
           = False
 
     tagIsClosedError :: EventPred
-    tagIsClosedError = C.predicate $ \ev -> case eventMockResp ev of
+    tagIsClosedError = predicate $ \ev -> case eventMockResp ev of
       Resp (Left (UserError ClosedDBError)) -> Left TagClosedError
       _                                     -> Right tagIsClosedError
 
@@ -705,13 +700,13 @@ tag ls = C.classify
                             Left TagGarbageCollectThenReOpen
       _                -> Right $ tagGarbageCollectThenReOpen
 
-getCmd :: Event r -> Cmd
+getCmd :: VolDBEvent r -> Cmd
 getCmd ev = cmd $ unAt (eventCmd ev)
 
-isMemberTrue :: [Event Symbolic] -> Int
+isMemberTrue :: [VolDBEvent Symbolic] -> Int
 isMemberTrue events = sum $ count <$> events
   where
-    count :: Event Symbolic -> Int
+    count :: VolDBEvent Symbolic -> Int
     count e = case eventMockResp e of
       Resp (Left _)                -> 0
       Resp (Right (BlockInfos ls)) -> length $ catMaybes ls
@@ -770,57 +765,36 @@ data Tag =
 
     deriving Show
 
-tagSimulatedErrors :: [Event Symbolic] -> [String]
+tagSimulatedErrors :: [VolDBEvent Symbolic] -> [String]
 tagSimulatedErrors events = fmap tagError events
   where
-    tagError :: Event Symbolic -> String
+    tagError :: VolDBEvent Symbolic -> String
     tagError ev = case eventCmd ev of
       At (CmdErr _ Nothing) -> "NoError"
       At (CmdErr cmd _)     -> cmdName (At cmd) <> " Error"
 
-tagGetSuccessors :: [Event Symbolic] -> [String]
+tagGetSuccessors :: [VolDBEvent Symbolic] -> [String]
 tagGetSuccessors = mapMaybe f
   where
-    f :: Event Symbolic -> Maybe String
+    f :: VolDBEvent Symbolic -> Maybe String
     f ev = case (getCmd ev, eventMockResp ev) of
         (GetSuccessors _pid, Resp (Right (Successors st))) ->
             if all Set.null st then Just "Empty Successors"
             else Just "Non empty Successors"
         _otherwise -> Nothing
 
-execCmd :: Model Symbolic
-        -> Command (At CmdErr) (At Resp)
-        -> Event Symbolic
-execCmd model (Command cmdErr _resp _vars) = lockstep model cmdErr
-
-execCmds :: Model Symbolic -> Commands (At CmdErr) (At Resp) -> [Event Symbolic]
-execCmds model (Commands cs) = go model cs
-  where
-    go :: Model Symbolic -> [Command (At CmdErr) (At Resp)] -> [Event Symbolic]
-    go _ []        = []
-    go m (c : css) = let ev = execCmd m c in ev : go (eventAfter ev) css
-
 showLabelledExamples :: IO ()
-showLabelledExamples = showLabelledExamples' Nothing 1000
+showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
 
 showLabelledExamples' :: Maybe Int
                       -- ^ Seed
                       -> Int
                       -- ^ Number of tests to run to find examples
+                      -> (Tag -> Bool)
+                      -- ^ Tag filter (can be @const True@)
                       -> IO ()
-showLabelledExamples' mReplay numTests = do
-    replaySeed <- case mReplay of
-        Nothing   -> getStdRandom (randomR (1,999999))
-        Just seed -> return seed
-
-    labelledExamplesWith (stdArgs { replay     = Just (mkQCGen replaySeed, 0)
-                                  , maxSuccess = numTests
-                                  }) $
-        forAllShrinkShow (generateCommands smUnused Nothing)
-                         (shrinkCommands   smUnused)
-                         ppShow $ \cmds ->
-            collects (tag . execCmds (initModel smUnused) $ cmds) $
-                property True
+showLabelledExamples' mReplay numTests focus =
+    QSM.showLabelledExamples' smUnused mReplay numTests tag focus
   where
     dbm      = initDBModel maxBlocksPerFile
     smUnused = sm unusedEnv dbm

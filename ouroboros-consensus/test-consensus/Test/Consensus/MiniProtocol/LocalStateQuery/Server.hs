@@ -3,7 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Consensus.LocalStateQueryServer where
+module Test.Consensus.MiniProtocol.LocalStateQuery.Server where
 
 import           Control.Monad.Except (runExcept)
 import           Control.Tracer (nullTracer)
@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.LocalStateQueryServer
+import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))

@@ -2,6 +2,7 @@
 
 module Ouroboros.Consensus.Node.ErrorPolicy (consensusErrorPolicy) where
 
+import           Data.Proxy (Proxy)
 import           Data.Time.Clock (DiffTime)
 
 import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
@@ -15,16 +16,19 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types
                      (ImmutableDBError)
 import           Ouroboros.Consensus.Storage.VolatileDB.Types (VolatileDBError)
 
-import           Ouroboros.Consensus.BlockFetchServer
+import           Ouroboros.Consensus.BlockchainTime.WallClock
+                     (SystemClockMovedBackException)
+import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (BlockFetchServerException)
-import           Ouroboros.Consensus.ChainSyncClient
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ChainSyncClientException (..))
 import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
+import           Ouroboros.Consensus.Node.Run (RunNode (nodeExceptionIsFatal))
 import           Ouroboros.Consensus.Util.ResourceRegistry
                      (RegistryClosedException, ResourceRegistryThreadException)
 
-consensusErrorPolicy :: ErrorPolicies
-consensusErrorPolicy = ErrorPolicies {
+consensusErrorPolicy :: RunNode blk => Proxy blk -> ErrorPolicies
+consensusErrorPolicy pb = ErrorPolicies {
       -- Exception raised during connect
       --
       -- This is entirely a network-side concern.
@@ -59,6 +63,14 @@ consensusErrorPolicy = ErrorPolicies {
         , ErrorPolicy $ \(_ :: VolatileDBError)  -> Just shutdownNode
         , ErrorPolicy $ \(_ :: FsError)          -> Just shutdownNode
         , ErrorPolicy $ \(_ :: ImmutableDBError) -> Just shutdownNode
+
+          -- When the system clock moved back, we have to restart the node,
+          -- because the ImmutableDB validation might have to truncate some
+          -- blocks from the future. Note that a full validation is not
+          -- required, as the default validation (most recent epoch) will keep
+          -- on truncating epochs until a block that is not from the future is
+          -- found.
+        , ErrorPolicy $ \(_ :: SystemClockMovedBackException) -> Just shutdownNode
 
           -- Some chain DB errors are indicative of a bug in our code, others
           -- indicate an invalid request from the peer. If the DB is closed
@@ -97,7 +109,13 @@ consensusErrorPolicy = ErrorPolicies {
 
           -- Dispatch on nested exception
         , ErrorPolicy $ \(ExceptionInLinkedThread _ e) ->
-            evalErrorPolicies e (epAppErrorPolicies consensusErrorPolicy)
+            evalErrorPolicies e (epAppErrorPolicies (consensusErrorPolicy pb))
+
+          -- Blocks can have their own specific exceptions, which can be fatal
+          -- too
+        , ErrorPolicy $ \e -> case nodeExceptionIsFatal pb e of
+            Just _reason -> Just shutdownNode
+            Nothing      -> Nothing
         ]
     }
   where
