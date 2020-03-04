@@ -70,15 +70,16 @@ import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
-import qualified Ouroboros.Consensus.BlockFetchServer as BFServer
-import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
-import qualified Ouroboros.Consensus.ChainSyncClient as CSClient
-import           Ouroboros.Consensus.ChainSyncServer (Tip)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
+import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.Server as BFServer
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+                     (ClockSkew (..))
+import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server (Tip)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -1192,7 +1193,7 @@ type LimitedApp' m peer blk unused1 unused2 unused3 =
 --
 data MiniProtocolExpectedException
   = MPEEChainSyncClient CSClient.ChainSyncClientException
-    -- ^ see "Ouroboros.Consensus.ChainSyncClient"
+    -- ^ see "Ouroboros.Consensus.MiniProtocol.ChainSync.Client"
     --
     -- NOTE: the second type in 'ChainSyncClientException' denotes the 'tip'.
     -- If it does not agree with the consensus client & server, 'Dynamic chain
@@ -1201,7 +1202,7 @@ data MiniProtocolExpectedException
   | MPEEBlockFetchClient BFClient.BlockFetchProtocolFailure
     -- ^ see "Ouroboros.Network.BlockFetch.Client"
   | MPEEBlockFetchServer BFServer.BlockFetchServerException
-    -- ^ see "Ouroboros.Consensus.BlockFetchServer"
+    -- ^ see "Ouroboros.Consensus.MiniProtocol.BlockFetch.Server"
   | MPEETxSubmissionClient TxOutbound.TxSubmissionProtocolError
     -- ^ see "Ouroboros.Network.TxSubmission.Outbound"
   | MPEETxSubmissionServer TxInbound.TxSubmissionProtocolError

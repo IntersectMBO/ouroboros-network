@@ -4,9 +4,9 @@ import           Test.Tasty
 
 import qualified Test.Consensus.BlockchainTime.SlotLengths (tests)
 import qualified Test.Consensus.BlockchainTime.WallClock (tests)
-import qualified Test.Consensus.ChainSyncClient (tests)
-import qualified Test.Consensus.LocalStateQueryServer (tests)
 import qualified Test.Consensus.Mempool (tests)
+import qualified Test.Consensus.MiniProtocol.ChainSync.Client (tests)
+import qualified Test.Consensus.MiniProtocol.LocalStateQuery.Server (tests)
 import qualified Test.Consensus.Node (tests)
 import qualified Test.Consensus.Protocol.PBFT (tests)
 import qualified Test.Consensus.ResourceRegistry (tests)
@@ -20,8 +20,8 @@ tests =
   testGroup "ouroboros-consensus"
   [ Test.Consensus.BlockchainTime.SlotLengths.tests
   , Test.Consensus.BlockchainTime.WallClock.tests
-  , Test.Consensus.ChainSyncClient.tests
-  , Test.Consensus.LocalStateQueryServer.tests
+  , Test.Consensus.MiniProtocol.ChainSync.Client.tests
+  , Test.Consensus.MiniProtocol.LocalStateQuery.Server.tests
   , Test.Consensus.Mempool.tests
   , Test.Consensus.Node.tests
   , Test.Consensus.Protocol.PBFT.tests

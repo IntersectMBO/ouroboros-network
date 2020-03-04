@@ -18,9 +18,9 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Types (VolatileDBError)
 
 import           Ouroboros.Consensus.BlockchainTime.WallClock
                      (SystemClockMovedBackException)
-import           Ouroboros.Consensus.BlockFetchServer
+import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (BlockFetchServerException)
-import           Ouroboros.Consensus.ChainSyncClient
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ChainSyncClientException (..))
 import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
 import           Ouroboros.Consensus.Node.Run (RunNode (nodeExceptionIsFatal))
