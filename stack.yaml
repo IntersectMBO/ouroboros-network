@@ -74,12 +74,14 @@ extra-deps:
       - .
       - test
 
+  - git: https://github.com/advancedtelematic/quickcheck-state-machine
+    commit: 19c5080dd940f7c23b26e7f469d6b06a40da70e3
+
   - bimap-0.4.0
   - binary-0.8.7.0
   - generic-monoid-0.1.0.0
   - graphviz-2999.20.0.3
   - hedgehog-quickcheck-0.1.1
-  - quickcheck-state-machine-0.6.0
   - splitmix-0.0.2
   - tasty-hedgehog-1.0.0.1
   - Unique-0.4.7.6

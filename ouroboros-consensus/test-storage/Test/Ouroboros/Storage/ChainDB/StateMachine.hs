@@ -51,6 +51,8 @@ import qualified Generics.SOP as SOP
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QC
 import           Test.StateMachine
+import           Test.StateMachine.Labelling
+import qualified Test.StateMachine.Sequential as QSM
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
@@ -632,27 +634,23 @@ instance Bitraversable (t blk) => Rank2.Traversable (At t blk m) where
 -------------------------------------------------------------------------------}
 
 -- | An event records the model before and after a command along with the
--- command itself, and a mocked version of the response.
-data Event blk m r = Event
-  { eventBefore   :: Model  blk m r
-  , eventCmd      :: At Cmd blk m r
-  , eventAfter    :: Model  blk m r
-  , eventMockResp :: Resp   blk     IteratorId ReaderId
-  }
+-- command itself, and the response.
+type ChainDBEvent blk m = Event (Model blk m) (At Cmd blk m) (At Resp blk m)
 
-deriving instance (TestConstraints blk, Show1 r) => Show (Event blk m r)
+eventMockResp :: Eq1 r => ChainDBEvent blk m r -> Resp blk IteratorId ReaderId
+eventMockResp Event{..} = toMock eventAfter eventResp
 
 -- | Construct an event
 lockstep :: (TestConstraints blk, Eq1 r, Show1 r)
-         => Model     blk m r
-         -> At Cmd    blk m r
-         -> At Resp   blk m r
-         -> Event     blk m r
+         => Model        blk m r
+         -> At Cmd       blk m r
+         -> At Resp      blk m r
+         -> ChainDBEvent blk m r
 lockstep model@Model {..} cmd (At resp) = Event
-    { eventBefore   = model
-    , eventCmd      = cmd
-    , eventAfter    = model'
-    , eventMockResp = mockResp
+    { eventBefore = model
+    , eventCmd    = cmd
+    , eventAfter  = model'
+    , eventResp   = At resp
     }
   where
     (mockResp, dbModel') = step model cmd
@@ -873,8 +871,8 @@ mock model cmd = At <$> bitraverse (const genSym) (const genSym) resp
 precondition :: forall m blk. TestConstraints blk
              => Model blk m Symbolic -> At Cmd blk m Symbolic -> Logic
 precondition Model {..} (At cmd) =
-   forall (iters cmd) (`elem` RE.keys knownIters)   .&&
-   forall (rdrs  cmd) (`elem` RE.keys knownReaders) .&&
+   forall (iters cmd) (`member` RE.keys knownIters)   .&&
+   forall (rdrs  cmd) (`member` RE.keys knownReaders) .&&
    case cmd of
      -- Even though we ensure this in the generator, shrinking might change
      -- it.
@@ -1013,7 +1011,7 @@ sm db internal registry varCurSlot varNextId genBlock env initLedger = StateMach
   , semantics     = semantics db internal registry varCurSlot varNextId
   , mock          = mock
   , invariant     = Nothing
-  , distribution  = Nothing
+  , cleanup       = noCleanup
   }
 
 {-------------------------------------------------------------------------------
@@ -1297,33 +1295,33 @@ smUnused =
 
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
-    (hist, prop) <- test cmds
+    (hist, prop) <- QC.run $ test cmds
     -- TODO label tags
     prettyCommands smUnused hist prop
   where
     test :: QSM.Commands (At Cmd Blk IO) (At Resp Blk IO)
-         -> QC.PropertyM IO
+         -> IO
             ( QSM.History (At Cmd Blk IO) (At Resp Blk IO)
             , Property
             )
     test cmds = do
-      threadRegistry     <- QC.run unsafeNewRegistry
-      iteratorRegistry   <- QC.run unsafeNewRegistry
-      (tracer, getTrace) <- QC.run recordingTracerIORef
-      varCurSlot         <- QC.run $ uncheckedNewTVarM 0
-      varNextId          <- QC.run $ uncheckedNewTVarM 0
-      fsVars             <- QC.run $ (,,)
+      threadRegistry     <- unsafeNewRegistry
+      iteratorRegistry   <- unsafeNewRegistry
+      (tracer, getTrace) <- recordingTracerIORef
+      varCurSlot         <- uncheckedNewTVarM 0
+      varNextId          <- uncheckedNewTVarM 0
+      fsVars             <- (,,)
         <$> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
-      let args = mkArgs testCfg testInitExtLedger tracer threadRegistry varCurSlot fsVars
-      (db, internal)     <- QC.run $ openDBInternal args False
-      -- TODO use withAsync or registry
-      addBlockAsync      <- QC.run $ async $ intAddBlockRunner internal
-      QC.run $ link addBlockAsync
-      let sm' = sm db internal iteratorRegistry varCurSlot varNextId genBlk testCfg testInitExtLedger
-      (hist, model, res) <- runCommands sm' cmds
-      (realChain, realChain', trace, fses, remainingCleanups) <- QC.run $ do
+      let args = mkArgs testCfg testInitExtLedger tracer threadRegistry
+            varCurSlot fsVars
+      (db, internal)     <- openDBInternal args False
+      withAsync (intAddBlockRunner internal) $ \addBlockAsync -> do
+        link addBlockAsync
+        let sm' = sm db internal iteratorRegistry varCurSlot varNextId genBlk
+              testCfg testInitExtLedger
+        (hist, model, res) <- QSM.runCommands' sm' cmds
         cancel addBlockAsync
         trace <- getTrace
         open <- atomically $ isOpen db
@@ -1363,36 +1361,34 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
           <*> readTVar volDbFsVar
           <*> readTVar lgrDbFsVar
 
-        return (realChain, realChain', trace, fses, remainingCleanups)
-
-      let modelChain = Model.currentChain $ dbModel model
-          (immDbFs, volDbFs, lgrDbFs) = fses
-          prop =
-            counterexample ("Real  chain: " <> condense realChain)       $
-            counterexample ("Model chain: " <> condense modelChain)      $
-            counterexample ("TraceEvents: " <> unlines (map show trace)) $
-            tabulate "Chain length" [show (Chain.length realChain)]      $
-            tabulate "TraceEvents" (map traceEventName trace)            $
-            res === Ok .&&.
-            counterexample
-              ("Real chain and model chain differ")
-              (realChain =:= modelChain) .&&.
-            prop_trace trace .&&.
-            -- Another equally preferable fork may be selected when opening
-            -- the DB.
-            counterexample
-             ("Real chain after reopening: " <> show realChain' <> "\n" <>
-              "Chain after reopening not equally preferable to previous chain")
-             (equallyPreferable (cdbTopLevelConfig args) realChain realChain') .&&.
-            counterexample "ImmutableDB is leaking file handles"
-                           (Mock.numOpenHandles immDbFs === 0) .&&.
-            counterexample "VolatileDB is leaking file handles"
-                           (Mock.numOpenHandles volDbFs === 0) .&&.
-            counterexample "LedgerDB is leaking file handles"
-                           (Mock.numOpenHandles lgrDbFs === 0) .&&.
-            counterexample "There were registered clean-up actions"
-                           (remainingCleanups === 0)
-      return (hist, prop)
+        let modelChain = Model.currentChain $ dbModel model
+            (immDbFs, volDbFs, lgrDbFs) = fses
+            prop =
+              counterexample ("Real  chain: " <> condense realChain)       $
+              counterexample ("Model chain: " <> condense modelChain)      $
+              counterexample ("TraceEvents: " <> unlines (map show trace)) $
+              tabulate "Chain length" [show (Chain.length realChain)]      $
+              tabulate "TraceEvents" (map traceEventName trace)            $
+              res === Ok .&&.
+              counterexample
+                ("Real chain and model chain differ")
+                (realChain =:= modelChain) .&&.
+              prop_trace trace .&&.
+              -- Another equally preferable fork may be selected when opening
+              -- the DB.
+              counterexample
+               ("Real chain after reopening: " <> show realChain' <> "\n" <>
+                "Chain after reopening not equally preferable to previous chain")
+               (equallyPreferable (cdbTopLevelConfig args) realChain realChain') .&&.
+              counterexample "ImmutableDB is leaking file handles"
+                             (Mock.numOpenHandles immDbFs === 0) .&&.
+              counterexample "VolatileDB is leaking file handles"
+                             (Mock.numOpenHandles volDbFs === 0) .&&.
+              counterexample "LedgerDB is leaking file handles"
+                             (Mock.numOpenHandles lgrDbFs === 0) .&&.
+              counterexample "There were registered clean-up actions"
+                             (remainingCleanups === 0)
+        return (hist, prop)
 
 prop_trace :: [TraceEvent Blk] -> Property
 prop_trace trace = invalidBlockNeverValidatedAgain
