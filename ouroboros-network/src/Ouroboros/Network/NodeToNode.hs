@@ -22,6 +22,7 @@ module Ouroboros.Network.NodeToNode (
 
   , NetworkServerTracers (..)
   , nullNetworkServerTracers
+  , connectTo
 
   , withConnections
 
@@ -65,6 +66,7 @@ module Ouroboros.Network.NodeToNode (
   ) where
 
 import           Control.Exception (IOException)
+import qualified Data.ByteString.Lazy as BL
 import           Data.Time.Clock (DiffTime)
 import           Data.Text (Text)
 import qualified Data.Text as T
@@ -191,6 +193,21 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
       decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToNodeVersionData $ NetworkMagic $ fromIntegral x)
                                | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
+
+-- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
+--
+connectTo
+  :: Snocket IO Socket.Socket Socket.SockAddr
+  -> NetworkConnectTracers Socket.SockAddr NodeToNodeVersion
+  -> Versions NodeToNodeVersion
+              DictVersion
+              (ConnectionId Socket.SockAddr ->
+                 OuroborosApplication InitiatorApp BL.ByteString IO a b)
+  -> Socket.SockAddr
+  -> Socket.SockAddr
+  -> IO ()
+connectTo sn =
+    connectToNode sn cborTermVersionDataCodec
 
 -- | `Ouroboros.Network.Socket.withConnections` but with the protocol types
 -- specialized. It also fills in the version data codec

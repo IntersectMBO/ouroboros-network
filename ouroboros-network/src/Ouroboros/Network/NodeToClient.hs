@@ -20,6 +20,7 @@ module Ouroboros.Network.NodeToClient (
 
   , NetworkServerTracers (..)
   , nullNetworkServerTracers
+  , connectTo
 
   , withConnections
 
@@ -54,6 +55,7 @@ module Ouroboros.Network.NodeToClient (
   ) where
 
 import           Control.Exception (IOException)
+import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Time.Clock
@@ -157,6 +159,32 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
       decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData $ NetworkMagic $ fromIntegral x)
                                | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
+
+-- | A specialised version of 'Ouroboros.Network.Socket.connectToNode'.  It is
+-- a general purpose function which can connect using any version of the
+-- protocol.  This is mostly useful for future enhancements.
+--
+connectTo
+  :: LocalSnocket
+  -- ^ callback constructed by 'Ouroboros.Network.IOManager.withIOManager'
+  -> NetworkConnectTracers LocalAddress NodeToClientVersion
+  -> Versions NodeToClientVersion
+              DictVersion
+              (ConnectionId LocalAddress ->
+                 OuroborosApplication InitiatorApp BL.ByteString IO a b)
+  -- ^ A dictionary of protocol versions & applications to run on an established
+  -- connection.  The application to run will be chosen by initial handshake
+  -- protocol (the highest shared version will be chosen).
+  -> FilePath
+  -- ^ path of the unix socket or named pipe
+  -> IO ()
+connectTo snocket tracers versions path =
+    connectToNode snocket
+                  cborTermVersionDataCodec
+                  tracers
+                  versions
+                  (localAddressFromPath "")
+                  (localAddressFromPath path)
 
 -- | `Ouroboros.Network.Socket.withConnections` but with the protocol types
 -- specialized.
