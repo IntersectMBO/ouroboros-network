@@ -33,6 +33,8 @@ module Ouroboros.Consensus.Byron.Ledger.Mempool (
     -- * Low-level API (primarily for testing)
   , toMempoolPayload
   , fromMempoolPayload
+    -- * Auxiliary functions
+  , countByronGenTxs
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -276,3 +278,11 @@ encodeByronApplyTxError = toCBOR
 
 decodeByronApplyTxError :: Decoder s (ApplyTxErr ByronBlock)
 decodeByronApplyTxError = fromCBOR
+
+{-------------------------------------------------------------------------------
+  Auxiliary functions
+-------------------------------------------------------------------------------}
+
+-- | Count all (generalized) transactions in the block
+countByronGenTxs :: ByronBlock -> Word64
+countByronGenTxs = fromIntegral . length . extractTxs

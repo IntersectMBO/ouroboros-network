@@ -182,8 +182,8 @@ matchesSimpleHeader SimpleHeader{..} SimpleBlock {..} =
   where
     SimpleStdHeader{..} = simpleHeaderStd
 
-countSimpleGenTxs :: SimpleBlock' c ext ext'' -> Word64
-countSimpleGenTxs = fromIntegral . length . simpleTxs . simpleBody
+countSimpleGenTxs :: SimpleBlock c ext -> Word64
+countSimpleGenTxs = fromIntegral . length . extractTxs
 
 {-------------------------------------------------------------------------------
   HasHeader instance for SimpleHeader
