@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Mempool.API (
   , GenTxId
   , MempoolSize (..)
   , TraceEventMempool(..)
+  , HasTxs(..)
     -- * Re-exports
   , TxSizeInBytes
   ) where
@@ -84,6 +85,10 @@ class Ord (TxId tx) => HasTxId tx where
 
 -- | Shorthand: ID of a generalized transaction
 type GenTxId blk = TxId (GenTx blk)
+
+class HasTxs blk where
+  -- | Return the transactions part of the given block in no particular order.
+  extractTxs :: blk -> [GenTx blk]
 
 -- | Mempool
 --

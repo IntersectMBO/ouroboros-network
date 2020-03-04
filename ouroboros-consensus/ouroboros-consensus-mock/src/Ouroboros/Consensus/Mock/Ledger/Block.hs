@@ -344,6 +344,9 @@ instance HasTxId (GenTx (SimpleBlock c ext)) where
 instance (Typeable p, Typeable c) => NoUnexpectedThunks (GenTx (SimpleBlock p c)) where
   showTypeOf _ = show $ typeRep (Proxy @(GenTx (SimpleBlock p c)))
 
+instance HasTxs (SimpleBlock c ext) where
+  extractTxs = map mkSimpleGenTx . simpleTxs . simpleBody
+
 instance Mock.HasUtxo (GenTx (SimpleBlock p c)) where
   txIns      = Mock.txIns      . simpleGenTx
   txOuts     = Mock.txOuts     . simpleGenTx

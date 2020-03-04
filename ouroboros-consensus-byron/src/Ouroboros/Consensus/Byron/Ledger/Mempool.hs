@@ -43,6 +43,7 @@ import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Maybe (maybeToList)
 import           Data.Word
 import           GHC.Generics (Generic)
 
@@ -57,8 +58,7 @@ import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.MempoolPayload as CC
-import qualified Cardano.Chain.Update.Proposal as Update
-import qualified Cardano.Chain.Update.Vote as Update
+import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Chain.UTxO as Utxo
 import qualified Cardano.Chain.ValidationMode as CC
 
@@ -120,6 +120,20 @@ instance HasTxId (GenTx ByronBlock) where
   txId (ByronDlg            i _) = ByronDlgId            i
   txId (ByronUpdateProposal i _) = ByronUpdateProposalId i
   txId (ByronUpdateVote     i _) = ByronUpdateVoteId     i
+
+instance HasTxs ByronBlock where
+  extractTxs blk = case byronBlockRaw blk of
+    -- EBBs don't contain transactions
+    CC.ABOBBoundary _ebb    -> []
+    CC.ABOBBlock regularBlk -> fromMempoolPayload <$>
+        maybeToList proposal <> votes <> dlgs <> txs
+      where
+        body = CC.blockBody regularBlk
+
+        txs      = CC.MempoolTx             <$> Utxo.aUnTxPayload      (CC.bodyTxPayload     body)
+        proposal = CC.MempoolUpdateProposal <$> Update.payloadProposal (CC.bodyUpdatePayload body)
+        votes    = CC.MempoolUpdateVote     <$> Update.payloadVotes    (CC.bodyUpdatePayload body)
+        dlgs     = CC.MempoolDlg            <$> Delegation.getPayload  (CC.bodyDlgPayload    body)
 
 {-------------------------------------------------------------------------------
   Conversion to and from 'AMempoolPayload'
