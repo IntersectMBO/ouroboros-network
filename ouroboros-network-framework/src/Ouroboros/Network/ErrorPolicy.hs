@@ -22,8 +22,6 @@ module Ouroboros.Network.ErrorPolicy
   , WithAddr (..)
 
   , SuspendDecision (..)
-  , consumerSuspendedUntil
-  , producerSuspendedUntil
   ) where
 
 import           Control.Exception (Exception, IOException, SomeException (..))
@@ -61,17 +59,6 @@ data SuspendDecision t
     | Throw
     -- ^ throw an error from the main thread.
     deriving (Eq, Ord, Show, Functor)
-
-
-consumerSuspendedUntil :: SuspendDecision t -> Maybe t
-consumerSuspendedUntil (SuspendPeer _ consT)   = Just consT
-consumerSuspendedUntil (SuspendConsumer consT) = Just consT
-consumerSuspendedUntil Throw                   = Nothing
-
-producerSuspendedUntil :: SuspendDecision t -> Maybe t
-producerSuspendedUntil (SuspendPeer prodT _) = Just prodT
-producerSuspendedUntil (SuspendConsumer _) = Nothing
-producerSuspendedUntil Throw               = Nothing
 
 -- | The semigroup instance.  Note that composing 'SuspendPeer' with
 -- 'SuspendConsumer' gives 'SuspendPeer'.  'SuspendPeer' and 'SuspendConsumer'
