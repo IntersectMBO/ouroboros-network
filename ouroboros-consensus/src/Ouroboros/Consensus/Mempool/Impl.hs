@@ -19,7 +19,9 @@ module Ouroboros.Consensus.Mempool.Impl (
 import           Control.Exception (assert)
 import           Control.Monad (void)
 import           Control.Monad.Except
+import           Data.Foldable (foldl')
 import           Data.Maybe (isJust, isNothing, listToMaybe)
+import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable
 import           Data.Word (Word32)
@@ -108,6 +110,14 @@ data InternalState blk = IS {
       -- | Transactions currently in the mempool
       isTxs          :: !(TxSeq (GenTx blk))
 
+      -- | The cached IDs of transactions currently in the mempool.
+      --
+      -- This allows one to more quickly lookup transactions by ID from a
+      -- 'MempoolSnapshot' (see 'snapshotHasTx').
+      --
+      -- This should always be in-sync with the transactions in 'isTxs'.
+    , isTxIds        :: !(Set (GenTxId blk))
+
       -- | The cached ledger state after applying the transactions in the
       -- Mempool against the chain's ledger state. New transactions will be
       -- validated against this ledger.
@@ -134,6 +144,7 @@ data InternalState blk = IS {
   deriving (Generic)
 
 deriving instance ( NoUnexpectedThunks (GenTx blk)
+                  , NoUnexpectedThunks (GenTxId blk)
                   , NoUnexpectedThunks (LedgerState blk)
                   , StandardHash blk
                   , Typeable blk
@@ -159,13 +170,18 @@ initInternalState
   -> InternalState blk
 initInternalState lastTicketNo st = IS {
       isTxs          = TxSeq.Empty
+    , isTxIds        = Set.empty
     , isLedgerState  = st
     , isTip          = ledgerTipHash $ tickedLedgerState st
     , isSlotNo       = tickedSlotNo st
     , isLastTicketNo = lastTicketNo
     }
 
-initMempoolEnv :: (IOLike m, ApplyTx blk, ValidateEnvelope blk)
+initMempoolEnv :: ( IOLike m
+                  , NoUnexpectedThunks (GenTxId blk)
+                  , ApplyTx blk
+                  , ValidateEnvelope blk
+                  )
                => LedgerInterface m blk
                -> LedgerConfig blk
                -> MempoolCapacityBytes
@@ -188,6 +204,7 @@ initMempoolEnv ledgerInterface cfg capacity tracer = do
 forkSyncStateOnTipPointChange :: forall m blk. (
                                    IOLike m
                                  , ApplyTx blk
+                                 , HasTxId (GenTx blk)
                                  , ValidateEnvelope blk
                                  )
                               => ResourceRegistry m
@@ -224,7 +241,7 @@ forkSyncStateOnTipPointChange registry menv =
 -- > (processed, toProcess) <- implTryAddTxs mpEnv txs
 -- > map fst processed ++ toProcess == txs
 implTryAddTxs
-  :: forall m blk. (IOLike m, ApplyTx blk)
+  :: forall m blk. (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
   => MempoolEnv m blk
   -> [GenTx blk]
   -> m ( [(GenTx blk, Maybe (ApplyTxErr blk))]
@@ -325,7 +342,11 @@ implRemoveTxs mpEnv txIds = do
 
     toRemove = Set.fromList txIds
 
-implSyncWithLedger :: (IOLike m, ApplyTx blk, ValidateEnvelope blk)
+implSyncWithLedger :: ( IOLike m
+                      , ApplyTx blk
+                      , HasTxId (GenTx blk)
+                      , ValidateEnvelope blk
+                      )
                    => MempoolEnv m blk -> m (MempoolSnapshot blk TicketNo)
 implSyncWithLedger mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} = do
     (removed, mempoolSize, snapshot) <- atomically $ do
@@ -339,13 +360,18 @@ implSyncWithLedger mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} = do
       traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
     return snapshot
 
-implGetSnapshot :: IOLike m
+implGetSnapshot :: (IOLike m, HasTxId (GenTx blk))
                 => MempoolEnv m blk
                 -> STM m (MempoolSnapshot blk TicketNo)
 implGetSnapshot MempoolEnv{mpEnvStateVar} =
     implSnapshotFromIS <$> readTVar mpEnvStateVar
 
-implGetSnapshotFor :: forall m blk. (IOLike m, ApplyTx blk, ValidateEnvelope blk)
+implGetSnapshotFor :: forall m blk.
+                      ( IOLike m
+                      , ApplyTx blk
+                      , HasTxId (GenTx blk)
+                      , ValidateEnvelope blk
+                      )
                    => MempoolEnv m blk
                    -> BlockSlot
                    -> LedgerState blk
@@ -380,12 +406,15 @@ getMempoolSize MempoolEnv{mpEnvStateVar} =
   MempoolSnapshot Implementation
 -------------------------------------------------------------------------------}
 
-implSnapshotFromIS :: InternalState blk -> MempoolSnapshot blk TicketNo
+implSnapshotFromIS :: HasTxId (GenTx blk)
+                   => InternalState blk
+                   -> MempoolSnapshot blk TicketNo
 implSnapshotFromIS is = MempoolSnapshot {
       snapshotTxs         = implSnapshotGetTxs         is
     , snapshotTxsAfter    = implSnapshotGetTxsAfter    is
     , snapshotTxsForSize  = implSnapshotGetTxsForSize  is
     , snapshotLookupTx    = implSnapshotGetTx          is
+    , snapshotHasTx       = implSnapshotHasTx          is
     , snapshotMempoolSize = implSnapshotGetMempoolSize is
     }
 
@@ -409,6 +438,12 @@ implSnapshotGetTx :: InternalState blk
                   -> TicketNo
                   -> Maybe (GenTx blk)
 implSnapshotGetTx IS{isTxs} tn = isTxs `TxSeq.lookupByTicketNo` tn
+
+implSnapshotHasTx :: Ord (GenTxId blk)
+                  => InternalState blk
+                  -> GenTxId blk
+                  -> Bool
+implSnapshotHasTx IS{isTxIds} txid = Set.member txid isTxIds
 
 implSnapshotGetMempoolSize :: InternalState blk
                            -> MempoolSize
@@ -455,9 +490,12 @@ data ValidationResult blk = ValidationResult {
 -- | Construct internal state from 'ValidationResult'
 --
 -- Discards information about invalid and newly valid transactions
-internalStateFromVR :: ValidationResult blk -> InternalState blk
+internalStateFromVR :: HasTxId (GenTx blk)
+                    => ValidationResult blk
+                    -> InternalState blk
 internalStateFromVR vr = IS {
       isTxs          = vrValid
+    , isTxIds        = txIdSet
     , isLedgerState  = vrAfter
     , isTip          = vrBeforeTip
     , isSlotNo       = vrBeforeSlotNo
@@ -471,6 +509,11 @@ internalStateFromVR vr = IS {
       , vrAfter
       , vrLastTicketNo
       } = vr
+
+    txIdSet = foldl'
+      (\acc tx -> Set.insert (txId tx) acc)
+      Set.empty
+      vrValid
 
 -- | Construct a 'ValidationResult' from internal state.
 validationResultFromIS :: InternalState blk -> ValidationResult blk

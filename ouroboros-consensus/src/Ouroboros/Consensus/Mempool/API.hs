@@ -74,7 +74,7 @@ class ( UpdateLedger blk
 --
 -- The mempool will use these to locate transactions, so two different
 -- transactions should have different identifiers.
-class Ord (TxId tx) => HasTxId tx where
+class (Ord (TxId tx), NoUnexpectedThunks (TxId tx)) => HasTxId tx where
   -- | A generalized transaction, 'GenTx', identifier.
   data family TxId tx :: *
 
@@ -323,6 +323,10 @@ data MempoolSnapshot blk idx = MempoolSnapshot {
     -- | Get a specific transaction from the mempool snapshot by its ticket
     -- number, if it exists.
   , snapshotLookupTx    :: idx -> Maybe (GenTx blk)
+
+    -- | Determine whether a specific transaction exists within the mempool
+    -- snapshot.
+  , snapshotHasTx       :: GenTxId blk -> Bool
 
     -- | Get the size of the mempool snapshot.
   , snapshotMempoolSize :: MempoolSize
