@@ -14,6 +14,7 @@ module Ouroboros.Network.NodeToNode (
     nodeToNodeProtocols
   , NodeToNodeProtocols (..)
   , MiniProtocolParameters (..)
+  , defaultMiniProtocolParameters
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
   , DictVersion (..)
@@ -165,6 +166,14 @@ data MiniProtocolParameters = MiniProtocolParameters {
       -- ^ maximal number of unacked tx (pipelineing is bounded by twice this
       -- number)
     }
+
+defaultMiniProtocolParameters :: MiniProtocolParameters
+defaultMiniProtocolParameters = MiniProtocolParameters {
+      chainSyncPipelineingLowMark  = 200
+    , chainSyncPipelineingHighMark = 300
+    , blockFetchPipelineingMax     = 100
+    , txSubmissionMaxUnacked       = 10
+  }
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-node protocol.

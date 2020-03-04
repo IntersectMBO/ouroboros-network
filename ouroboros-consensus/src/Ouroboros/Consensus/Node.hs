@@ -47,7 +47,7 @@ import           Ouroboros.Network.NodeToClient (DictVersion (..),
                      nodeToClientCodecCBORTerm)
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
                      NodeToNodeVersionData (..), RemoteConnectionId,
-                     nodeToNodeCodecCBORTerm)
+                     defaultMiniProtocolParameters, nodeToNodeCodecCBORTerm)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -331,23 +331,18 @@ mkNodeArgs
 mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     { tracers
     , registry
-    , maxClockSkew          = ClockSkew 1
+    , maxClockSkew           = ClockSkew 1
     , cfg
     , initState
     , btime
     , chainDB
-    , initChainDB           = nodeInitChainDB
+    , initChainDB            = nodeInitChainDB
     , blockProduction
-    , blockFetchSize        = nodeBlockFetchSize
-    , blockMatchesHeader    = nodeBlockMatchesHeader
-    , maxBlockSize          = NoOverride
-    , mempoolCap            = NoMempoolCapacityBytesOverride
-    , miniProtocolParameters = MiniProtocolParameters {
-        chainSyncPipelineingLowMark  = 200
-      , chainSyncPipelineingHighMark = 300
-      , blockFetchPipelineingMax     = 100
-      , txSubmissionMaxUnacked       = 10
-      }
+    , blockFetchSize         = nodeBlockFetchSize
+    , blockMatchesHeader     = nodeBlockMatchesHeader
+    , maxBlockSize           = NoOverride
+    , mempoolCap             = NoMempoolCapacityBytesOverride
+    , miniProtocolParameters = defaultMiniProtocolParameters
     }
   where
     blockProduction = case isProducer of
