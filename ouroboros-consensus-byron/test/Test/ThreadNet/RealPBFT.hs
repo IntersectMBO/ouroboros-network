@@ -584,7 +584,7 @@ prop_simple_real_pbft_convergence produceEBBs k
         runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = case produceEBBs of
                 NoEBBs      -> Nothing
-                ProduceEBBs -> Just $ byronForgeEbbEnv k
+                ProduceEBBs -> Just byronForgeEbbEnv
             , nodeInfo = \nid ->
                 mkProtocolRealPBFT params nid genesisConfig genesisSecrets
             , rekeying = Just Rekeying
@@ -637,12 +637,9 @@ prop_simple_real_pbft_convergence produceEBBs k
     genesisSecrets :: Genesis.GeneratedSecrets
     (genesisConfig, genesisSecrets) = generateGenesisConfig params
 
-byronForgeEbbEnv :: SecurityParam -> ForgeEbbEnv ByronBlock
-byronForgeEbbEnv k = ForgeEbbEnv
-    { forgeEBB      = Byron.forgeEBB
-    , ebbSlotBefore = \(SlotNo s) ->
-        let denom = unEpochSlots $ kEpochSlots $ coerce k
-        in SlotNo $ denom * div s denom
+byronForgeEbbEnv :: ForgeEbbEnv ByronBlock
+byronForgeEbbEnv = ForgeEbbEnv
+    { forgeEBB = Byron.forgeEBB
     }
 
 -- | Whether to produce EBBs in the tests or not

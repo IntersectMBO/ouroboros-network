@@ -128,12 +128,6 @@ data ForgeEbbEnv blk = ForgeEbbEnv
       -> ChainHash blk
          -- EBB predecessor's hash
       -> blk
-  , ebbSlotBefore :: SlotNo -> SlotNo
-    -- ^ Given the slot of a proper block B, returns the slot of the latest
-    -- expected EBB that should precede B.
-    --
-    -- Note that this is pure, unlike 'EpochInfo', which would usually be used
-    -- for this.
   }
 
 -- | How to rekey a node with a fresh operational key
@@ -614,7 +608,12 @@ runThreadNetwork ThreadNetworkArgs
                 case mbForgeEbbEnv of
                   Nothing          -> forgeWithoutEBB
                   Just forgeEbbEnv -> do
-                    let ebbSlot = ebbSlotBefore forgeEbbEnv currentSlot
+                    let ebbSlot :: SlotNo
+                        ebbSlot =
+                            SlotNo $ denom * div numer denom
+                          where
+                            SlotNo numer    = currentSlot
+                            EpochSize denom = epochSize
 
                     let p = ledgerTipPoint $ ledgerState extLdgSt
                     let mSlot = pointSlot p
