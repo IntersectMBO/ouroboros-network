@@ -70,6 +70,7 @@ prop_simple_bft_convergence k
         runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = Nothing
             , nodeInfo    = \nid ->
+                plainTestNodeInitialization $
                 protocolInfoBft numCoreNodes nid k slotLengths
             , rekeying    = Nothing
             }

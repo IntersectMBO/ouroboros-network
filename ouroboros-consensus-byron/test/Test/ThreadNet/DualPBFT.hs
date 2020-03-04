@@ -153,6 +153,7 @@ setupTestOutput setup@SetupDualPBft{..} =
         forgeEbbEnv = Nothing -- spec does not model EBBs
       , rekeying    = Nothing -- TODO
       , nodeInfo    = \coreNodeId ->
+          plainTestNodeInitialization $
           protocolInfoDualByron
             setupGenesis
             setupParams

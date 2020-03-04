@@ -103,7 +103,8 @@ prop_simple_leader_schedule_convergence
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = Nothing
-            , nodeInfo    = \nid -> protocolInfoPraosRule
+            , nodeInfo    = \nid -> plainTestNodeInitialization $
+                                    protocolInfoPraosRule
                                       numCoreNodes
                                       nid
                                       params
