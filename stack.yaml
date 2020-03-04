@@ -82,6 +82,7 @@ extra-deps:
   - generic-monoid-0.1.0.0
   - graphviz-2999.20.0.3
   - hedgehog-quickcheck-0.1.1
+  - markov-chain-usage-model-0.0.0  # Needed for `quickcheck-state-machine`
   - splitmix-0.0.2
   - tasty-hedgehog-1.0.0.1
   - Unique-0.4.7.6
