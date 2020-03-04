@@ -83,7 +83,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.API (ImmutableDB,
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeChunkNoToEpochNo, unsafeEpochNoToChunkNo)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (parseDBFile,
                      validateIteratorRange)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
@@ -233,7 +232,7 @@ dbmBlobs dbm = repeatedly insert (Map.toList $ dbmSlots dbm) Map.empty
                    (Right (tipInfoHash info, xs))
 
     insertEBB slot (info, xs) =
-        Map.insert (chunkSlotForBoundaryBlock (forgetTipInfo info), slot)
+        Map.insert (chunkSlotForBoundaryBlock' dbm (forgetTipInfo info), slot)
                    (Left (tipInfoHash info, xs))
 
 -- TODO #1151
@@ -290,6 +289,9 @@ chunkSlotForUnknownBlock' = chunkSlotForUnknownBlock . dbmChunkInfo
 
 chunkSlotForRegularBlock' :: DBModel hash -> SlotNo -> ChunkSlot
 chunkSlotForRegularBlock' = chunkSlotForRegularBlock . dbmChunkInfo
+
+chunkSlotForBoundaryBlock' :: DBModel hash -> EpochNo -> ChunkSlot
+chunkSlotForBoundaryBlock' = chunkSlotForBoundaryBlock . dbmChunkInfo
 
 chunkSlotForBlockOrEBB' :: DBModel hash -> BlockOrEBB -> ChunkSlot
 chunkSlotForBlockOrEBB' = chunkSlotForBlockOrEBB . dbmChunkInfo

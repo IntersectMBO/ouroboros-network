@@ -14,7 +14,7 @@
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
   ( -- * Environment
-    CacheEnv(..) -- TODO: Temporary. Make opaque.
+    CacheEnv
   , newEnv
   , CacheConfig (..)
   , checkInvariants
@@ -105,13 +105,18 @@ type Entry hash = WithBlockSize (Secondary.Entry hash)
 -- We use sequences (as opposed to vectors) to allow for efficient appending
 -- in addition to (reasonably) efficient indexing.
 data CurrentChunkInfo hash = CurrentChunkInfo
-  { currentChunkOffsets :: !(StrictSeq SecondaryOffset)
+  { currentChunkNo      :: !ChunkNo
+  , currentChunkOffsets :: !(StrictSeq SecondaryOffset)
   , currentChunkEntries :: !(StrictSeq (Entry hash))
   }
   deriving (Generic, NoUnexpectedThunks, Show)
 
-emptyCurrentEpochInfo :: CurrentChunkInfo hash
-emptyCurrentEpochInfo = CurrentChunkInfo (Seq.singleton 0) Seq.empty
+emptyCurrentEpochInfo :: ChunkNo -> CurrentChunkInfo hash
+emptyCurrentEpochInfo chunk = CurrentChunkInfo
+  { currentChunkNo      = chunk
+  , currentChunkOffsets = Seq.singleton 0
+  , currentChunkEntries = Seq.empty
+  }
 
 -- | Convert a 'CurrentChunkInfo' to a 'PastChunkInfo'
 --
@@ -119,11 +124,11 @@ emptyCurrentEpochInfo = CurrentChunkInfo (Seq.singleton 0) Seq.empty
 -- up. Epochs that become past epochs because we advance to new epochs, we can
 -- just leave in memory as seqs?
 toPastEpochInfo :: CurrentChunkInfo hash -> PastChunkInfo hash
-toPastEpochInfo CurrentChunkInfo { currentChunkOffsets, currentChunkEntries } =
+toPastEpochInfo CurrentChunkInfo{..} =
     PastChunkInfo
       { pastEpochOffsets =
           fromMaybe (error "invalid current epoch") $
-          Primary.mk (toList currentChunkOffsets)
+          Primary.mk currentChunkNo (toList currentChunkOffsets)
       , pastEpochEntries =
           -- TODO optimise this
           Vector.fromList $ toList currentChunkEntries
@@ -366,7 +371,7 @@ newEnv hasFS hashInfo registry tracer cacheConfig chunkInfo chunk = do
     when (pastChunksToCache == 0) $
       error "pastChunksToCache must be > 0"
 
-    currentEpochInfo <- loadCurrentEpochInfo hasFS hashInfo chunk
+    currentEpochInfo <- loadCurrentEpochInfo hasFS chunkInfo hashInfo chunk
     cacheVar <- newMVarWithInvariants $ emptyCached chunk currentEpochInfo
     bgThreadVar <- newMVar Nothing
     let cacheEnv = CacheEnv {..}
@@ -453,14 +458,15 @@ expireUnusedChunks CacheEnv { cacheVar, cacheConfig, tracer } =
 readPrimaryIndex
   :: (HasCallStack, IOLike m)
   => HasFS m h
+  -> ChunkInfo
   -> ChunkNo
   -> m (PrimaryIndex, IsEBB)
      -- ^ The primary index and whether it starts with an EBB or not
-readPrimaryIndex hasFS chunk = do
+readPrimaryIndex hasFS chunkInfo chunk = do
     primaryIndex <- Primary.load hasFS chunk
     let firstIsEBB
-          | Primary.containsSlot primaryIndex firstRelativeSlot
-          , Primary.isFilledSlot primaryIndex firstRelativeSlot
+          | Primary.containsSlot primaryIndex $ firstRelativeSlot chunkInfo chunk
+          , Primary.isFilledSlot primaryIndex $ firstRelativeSlot chunkInfo chunk
           = IsEBB
           | otherwise
           = IsNotEBB
@@ -487,35 +493,38 @@ readSecondaryIndex hasFS@HasFS { hGetSize } hashInfo chunk firstIsEBB = do
 loadCurrentEpochInfo
   :: (HasCallStack, IOLike m)
   => HasFS m h
+  -> ChunkInfo
   -> HashInfo hash
   -> ChunkNo
   -> m (CurrentChunkInfo hash)
-loadCurrentEpochInfo hasFS hashInfo chunk = do
+loadCurrentEpochInfo hasFS chunkInfo hashInfo chunk = do
     -- We're assuming that when the primary index file exists, the secondary
     -- index file will also exist
     epochExists <- doesFileExist hasFS primaryIndexFile
     if epochExists then do
-      (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS chunk
+      (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS chunkInfo chunk
       entries <- readSecondaryIndex hasFS hashInfo chunk firstIsEBB
       return CurrentChunkInfo
-        { currentChunkOffsets =
+        { currentChunkNo      = chunk
+        , currentChunkOffsets =
           -- TODO optimise this
             Seq.fromList . Primary.toSecondaryOffsets $ primaryIndex
         , currentChunkEntries = Seq.fromList entries
         }
     else
-      return emptyCurrentEpochInfo
+      return $ emptyCurrentEpochInfo chunk
   where
     primaryIndexFile = renderFile "primary" chunk
 
 loadPastEpochInfo
   :: (HasCallStack, IOLike m)
   => HasFS m h
+  -> ChunkInfo
   -> HashInfo hash
   -> ChunkNo
   -> m (PastChunkInfo hash)
-loadPastEpochInfo hasFS hashInfo chunk = do
-    (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS chunk
+loadPastEpochInfo hasFS chunkInfo hashInfo chunk = do
+    (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS chunkInfo chunk
     entries <- readSecondaryIndex hasFS hashInfo chunk firstIsEBB
     return PastChunkInfo
       { pastEpochOffsets = primaryIndex
@@ -554,7 +563,7 @@ getChunkInfo cacheEnv chunk = do
       Just hit -> return hit
       Nothing  -> do
         -- Cache miss, load both entire indices for the chunk from disk.
-        pastEpochInfo <- loadPastEpochInfo hasFS hashInfo chunk
+        pastEpochInfo <- loadPastEpochInfo hasFS chunkInfo hashInfo chunk
         -- Loading the chunk might have taken some time, so obtain the time
         -- again.
         lastUsed' <- LastUsed <$> getMonotonicTime
@@ -566,7 +575,7 @@ getChunkInfo cacheEnv chunk = do
           traceWith tracer $ TracePastChunkEvict evicted pastChunksToCache
         return $ Right pastEpochInfo
   where
-    CacheEnv { hasFS, hashInfo, cacheVar, cacheConfig, tracer } = cacheEnv
+    CacheEnv { hasFS, hashInfo, cacheVar, cacheConfig, tracer, chunkInfo } = cacheEnv
     CacheConfig { pastChunksToCache } = cacheConfig
 
 {------------------------------------------------------------------------------
@@ -593,7 +602,7 @@ restart
   -> ChunkNo  -- ^ The new current chunk
   -> m ()
 restart cacheEnv chunk = do
-    currentEpochInfo <- loadCurrentEpochInfo hasFS hashInfo chunk
+    currentEpochInfo <- loadCurrentEpochInfo hasFS chunkInfo hashInfo chunk
     void $ swapMVar cacheVar $ emptyCached chunk currentEpochInfo
     mask_ $ modifyMVar_ bgThreadVar $ \mbBgThread ->
       case mbBgThread of
@@ -602,7 +611,7 @@ restart cacheEnv chunk = do
           !bgThread <- forkLinkedThread registry $ expireUnusedChunks cacheEnv
           return $ Just bgThread
   where
-    CacheEnv { hasFS, hashInfo, registry, cacheVar, bgThreadVar } = cacheEnv
+    CacheEnv { hasFS, hashInfo, registry, cacheVar, bgThreadVar, chunkInfo } = cacheEnv
 
 {------------------------------------------------------------------------------
   On the primary index
@@ -625,7 +634,8 @@ readOffsets cacheEnv chunk relSlots =
       :: StrictSeq SecondaryOffset
       -> RelativeSlot
       -> Maybe SecondaryOffset
-    getOffsetFromSecondaryOffsets offsets (RelativeSlot s) =
+    getOffsetFromSecondaryOffsets offsets relSlot =
+      let s = assertRelativeSlotInChunk chunk relSlot in
       case Seq.splitAt (fromIntegral s + 1) offsets of
         (_ Seq.:|> offset, offsetAfter Seq.:<| _)
           | offset /= offsetAfter
@@ -654,13 +664,15 @@ readFirstFilledSlot cacheEnv chunk =
       Left CurrentChunkInfo { currentChunkOffsets } ->
         firstFilledSlotInSeq currentChunkOffsets
       Right PastChunkInfo { pastEpochOffsets } ->
-        Primary.firstFilledSlot pastEpochOffsets
+        Primary.firstFilledSlot chunkInfo pastEpochOffsets
   where
+    CacheEnv { chunkInfo } = cacheEnv
+
     firstFilledSlotInSeq :: StrictSeq SecondaryOffset -> Maybe RelativeSlot
     firstFilledSlotInSeq = fmap indexToRelativeSlot . Seq.findIndexL (/= 0)
       where
         indexToRelativeSlot :: Int -> RelativeSlot
-        indexToRelativeSlot = RelativeSlot . fromIntegral . pred
+        indexToRelativeSlot = mkRelativeSlot chunkInfo chunk . fromIntegral . pred
 
 -- | This is called when a new chunk is started, which means we need to update
 -- 'Cached' to reflect this.
@@ -676,8 +688,8 @@ openPrimaryIndex cacheEnv chunk allowExisting = do
     -- Don't leak the handle in case of an exception
     flip onException (hClose pHnd) $ do
       newCurrentEpochInfo <- case allowExisting of
-        MustBeNew     -> return emptyCurrentEpochInfo
-        AllowExisting -> loadCurrentEpochInfo hasFS hashInfo chunk
+        MustBeNew     -> return $ emptyCurrentEpochInfo chunk
+        AllowExisting -> loadCurrentEpochInfo hasFS chunkInfo hashInfo chunk
       mbEvicted <- updateMVar cacheVar $
         evictIfNecessary pastChunksToCache .
         openEpoch chunk lastUsed newCurrentEpochInfo
@@ -686,7 +698,7 @@ openPrimaryIndex cacheEnv chunk allowExisting = do
         traceWith tracer $ TracePastChunkEvict evicted pastChunksToCache
       return pHnd
   where
-    CacheEnv { hasFS, hashInfo, cacheVar, cacheConfig, tracer } = cacheEnv
+    CacheEnv { hasFS, hashInfo, cacheVar, cacheConfig, tracer, chunkInfo } = cacheEnv
     HasFS { hClose } = hasFS
     CacheConfig { pastChunksToCache } = cacheConfig
 

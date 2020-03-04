@@ -38,7 +38,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unChunkNo, unsafeEpochNoToChunkNo)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
                      (cachedIndex)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -148,7 +147,7 @@ validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
       let shouldBeFinalised =
             if chunk == lastChunk
               then ShouldNotBeFinalised
-              else ShouldBeFinalised $ getChunkSize chunkInfo chunk
+              else ShouldBeFinalised
       runExceptT
         (validateChunk validateEnv shouldBeFinalised chunk (Just prevHash)) >>= \case
           Left  ()              -> cleanup lastValid chunk $> lastValid
@@ -188,7 +187,7 @@ validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
       At _  -> do
         removeFilesStartingFrom hasFS (nextChunkNo lastValidChunk)
         when (lastValidChunk < lastValidatedEpoch) $
-          Primary.unfinalise hasFS lastValidChunk
+          Primary.unfinalise hasFS chunkInfo lastValidChunk
 
 -- | Validate the given most recent chunk. If that chunk contains no valid
 -- block, try the chunk before it, and so on. Stop as soon as an chunk with a
@@ -224,7 +223,7 @@ validateMostRecentChunk validateEnv@ValidateEnv { hasFS } = go
 -- of the chunk, the primary index should be padded with offsets to indicate
 -- that these slots are empty. See 'Primary.backfill'.
 data ShouldBeFinalised
-  = ShouldBeFinalised ChunkSize
+  = ShouldBeFinalised
   | ShouldNotBeFinalised
   deriving (Show)
 
@@ -354,8 +353,12 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
       -- Read the primary index file, if it is missing, parsing fails, or it
       -- does not match the reconstructed primary index, overwrite it using
       -- the reconstructed index (truncate first).
-      primaryIndex            <- reconstructPrimaryIndex chunkInfo hashInfo
-        shouldBeFinalised (map Secondary.blockOrEBB entries)
+      let primaryIndex = reconstructPrimaryIndex
+                           chunkInfo
+                           hashInfo
+                           shouldBeFinalised
+                           chunk
+                           (map Secondary.blockOrEBB entries)
       primaryIndexFileExists  <- doesFileExist primaryIndexFile
       primaryIndexFileMatches <- if primaryIndexFileExists
         then tryJust isInvalidFileError (Primary.load hasFS chunk) >>= \case
@@ -438,45 +441,50 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
 
 -- | Reconstruct a 'PrimaryIndex' based on a list of 'Secondary.Entry's.
 reconstructPrimaryIndex
-  :: forall m hash. Monad m
+  :: forall hash. HasCallStack
   => ChunkInfo
   -> HashInfo hash
   -> ShouldBeFinalised
+  -> ChunkNo
   -> [BlockOrEBB]
-  -> m PrimaryIndex
+  -> PrimaryIndex
 reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
-                        blockOrEBBs = do
-    let relSlots = map toRelativeSlot blockOrEBBs
-    let secondaryOffsets = 0 : go firstRelativeSlot 0 relSlots
-
-    -- This can only fail if the slot numbers of the entries are not
-    -- monotonically increasing.
-    return $ fromMaybe (error msg) $ Primary.mk secondaryOffsets
+                        chunk blockOrEBBs =
+    fromMaybe (error nonIncreasing) $
+      Primary.mk chunk . (0:) $
+        go (NextRelativeSlot (firstRelativeSlot chunkInfo chunk)) 0 $
+          map (chunkRelative . chunkSlotForBlockOrEBB chunkInfo) blockOrEBBs
   where
-    msg = "blocks have non-increasing slot numbers"
+    nonIncreasing :: String
+    nonIncreasing = "blocks have non-increasing slot numbers"
 
-    toRelativeSlot :: BlockOrEBB -> RelativeSlot
-    toRelativeSlot = chunkRelative . chunkSlotForBlockOrEBB chunkInfo
-
-    go
-      :: HasCallStack
-      => RelativeSlot
-      -> SecondaryOffset
-      -> [RelativeSlot]
-      -> [SecondaryOffset]
-    go nextExpectedRelSlot lastSecondaryOffset = \case
-      [] -> case shouldBeFinalised of
-        ShouldNotBeFinalised        -> []
-        ShouldBeFinalised chunkSize ->
-          Primary.backfillEpoch chunkSize nextExpectedRelSlot lastSecondaryOffset
-
-      relSlot:relSlots'
-        | relSlot < nextExpectedRelSlot
-        -> error msg
-        | otherwise
-        -> let backfilled = Primary.backfill relSlot nextExpectedRelSlot
-                 lastSecondaryOffset
-               secondaryOffset = lastSecondaryOffset
-                               + Secondary.entrySize hashSize
-           in backfilled ++ secondaryOffset :
-              go (nextRelativeSlot relSlot) secondaryOffset relSlots'
+    go :: HasCallStack
+       => NextRelativeSlot
+       -> SecondaryOffset
+       -> [RelativeSlot]
+       -> [SecondaryOffset]
+    go expected lastSecondaryOffset relSlots =
+        case (expected, relSlots) of
+          (_, []) ->
+            case shouldBeFinalised of
+              ShouldNotBeFinalised -> []
+              ShouldBeFinalised    -> Primary.backfillEpoch
+                                        chunkInfo
+                                        chunk
+                                        expected
+                                        lastSecondaryOffset
+          (NoMoreRelativeSlots _, _) ->
+            -- Assumption: when we validate the chunk file, we chunk its size
+            error "reconstructPrimaryIndex: too many entries"
+          (NextRelativeSlot nextExpectedRelSlot, relSlot:relSlots') ->
+            if compareRelativeSlot relSlot nextExpectedRelSlot == LT then
+              error nonIncreasing
+            else
+              let backfilled      = Primary.backfill
+                                      relSlot
+                                      nextExpectedRelSlot
+                                      lastSecondaryOffset
+                  secondaryOffset = lastSecondaryOffset
+                                  + Secondary.entrySize hashSize
+              in backfilled ++ secondaryOffset
+               : go (nextRelativeSlot relSlot) secondaryOffset relSlots'

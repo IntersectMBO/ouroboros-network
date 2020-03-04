@@ -238,6 +238,7 @@ library
                        -Wredundant-constraints
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
+    cpp-options:       -DENABLE_ASSERTIONS
 
 test-suite test-consensus
   type:                exitcode-stdio-1.0
@@ -411,6 +412,7 @@ test-suite test-storage
                      , time
                      , transformers
                      , tree-diff
+                     , vector
 
                      , io-sim-classes
                      , io-sim

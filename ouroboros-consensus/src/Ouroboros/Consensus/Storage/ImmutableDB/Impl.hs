@@ -123,7 +123,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeEpochNoToChunkNo)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -466,7 +465,7 @@ getEBBComponentImpl dbEnv blockComponent epoch =
 
       let curEpochInfo = CurrentChunkInfo _currentChunk _currentChunkOffset
       getEpochSlot _dbHasFS _dbChunkInfo _index curEpochInfo
-        blockComponent (UnsafeChunkSlot chunk firstRelativeSlot)
+        blockComponent (chunkSlotForBoundaryBlock _dbChunkInfo epoch)
   where
     ImmutableDBEnv { _dbChunkInfo } = dbEnv
 
@@ -691,7 +690,7 @@ appendEBBImpl dbEnv epoch blockNumber headerHash binaryInfo =
         AppendToEBBInThePastError epoch _currentChunk
 
       appendEpochSlot _dbRegistry _dbHasFS _dbChunkInfo _index
-        (UnsafeChunkSlot chunk firstRelativeSlot) blockNumber (EBB epoch)
+        (chunkSlotForBoundaryBlock _dbChunkInfo epoch) blockNumber (EBB epoch)
         headerHash binaryInfo
   where
     ImmutableDBEnv { _dbChunkInfo, _dbRegistry } = dbEnv
@@ -727,15 +726,17 @@ appendEpochSlot registry hasFS chunkInfo index chunkSlot blockNumber blockOrEBB 
 
     -- Compute the next empty slot @m@, if we need to write to slot @n@, we
     -- will need to backfill @n - m@ slots.
-    let nextFreeRelSlot =
+    let nextFreeRelSlot :: RelativeSlot
+        nextFreeRelSlot =
           if chunk > initialChunk
             -- If we had to start a new chunk, we start with slot 0. Note that
             -- in this case the _currentTip will refer to something in an chunk
             -- before _currentChunk.
-            then firstRelativeSlot
+            then firstRelativeSlot chunkInfo chunk
             else case forgetTipInfo <$> _currentTip of
-              Origin -> firstRelativeSlot
-              At b   -> nextRelativeSlot . chunkRelative $
+              Origin -> firstRelativeSlot chunkInfo firstChunkNo
+              -- Invariant: the currently open chunk is never full
+              At b   -> unsafeNextRelativeSlot . chunkRelative $
                           chunkSlotForBlockOrEBB chunkInfo b
 
     -- Append to the end of the chunk file.
@@ -782,10 +783,6 @@ startNewEpoch
 startNewEpoch registry hasFS@HasFS{..} index chunkInfo = do
     st@OpenState {..} <- get
 
-    -- Find out the size of the current chunk, so we can pad the primary
-    -- index.
-    let epochSize = getChunkSize chunkInfo _currentChunk
-
     -- We have to take care when starting multiple new epochs in a row. In the
     -- first call the tip will be in the current epoch, but in subsequent
     -- calls, the tip will still be in an epoch in the past, not the
@@ -793,16 +790,22 @@ startNewEpoch registry hasFS@HasFS{..} index chunkInfo = do
     -- tip, since it will point to a relative slot in a past epoch. So when
     -- the current (empty) epoch is not the epoch containing the tip, we use
     -- relative slot 0 to calculate how much to pad.
-    let nextFreeRelSlot = case forgetTipInfo <$> _currentTip of
-          Origin -> firstRelativeSlot
-          At b   ->
-            let ChunkSlot chunk relSlot = chunkSlotForBlockOrEBB chunkInfo b
-            in if chunk == _currentChunk
-                 then nextRelativeSlot relSlot
-                 else firstRelativeSlot
+    let nextFreeRelSlot :: NextRelativeSlot
+        nextFreeRelSlot = case forgetTipInfo <$> _currentTip of
+          Origin ->
+            NextRelativeSlot $ firstRelativeSlot chunkInfo firstChunkNo
+          At b ->
+            if chunk == _currentChunk
+              then nextRelativeSlot relSlot
+              else NextRelativeSlot $ firstRelativeSlot chunkInfo _currentChunk
+            where
+              ChunkSlot chunk relSlot = chunkSlotForBlockOrEBB chunkInfo b
 
-    let backfillOffsets = Primary.backfillEpoch epochSize nextFreeRelSlot
-          _currentSecondaryOffset
+    let backfillOffsets = Primary.backfillEpoch
+                            chunkInfo
+                            _currentChunk
+                            nextFreeRelSlot
+                            _currentSecondaryOffset
 
     lift $
       Index.appendOffsets index _currentPrimaryHandle backfillOffsets

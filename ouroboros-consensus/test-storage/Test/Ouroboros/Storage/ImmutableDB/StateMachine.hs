@@ -77,7 +77,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB hiding
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeChunkNoToEpochNo)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl as ImmDB
                      (Internal (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -1125,6 +1124,7 @@ instance ToExpr SlotNo where
 
 instance ToExpr EpochNo
 instance ToExpr EpochSize
+instance ToExpr ChunkSize
 instance ToExpr ChunkNo
 instance ToExpr ChunkSlot
 instance ToExpr RelativeSlot

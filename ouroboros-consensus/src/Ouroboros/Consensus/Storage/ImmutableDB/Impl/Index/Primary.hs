@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -13,7 +15,8 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
   ( -- * SecondaryOffset
     SecondaryOffset
     -- * PrimaryIndex
-  , PrimaryIndex
+  , PrimaryIndex(..) -- Exported for the benefit of tests
+  , InvalidPrimaryIndexException(..)
   , currentVersionNumber
   , slots
   , secondaryOffsetSize
@@ -45,7 +48,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (forM, void, when)
+import           Control.Monad
 import           Data.Binary (Get, Put)
 import qualified Data.Binary.Get as Get
 import qualified Data.Binary.Put as Put
@@ -69,7 +72,6 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..),
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
                      runGet)
 
@@ -129,23 +131,30 @@ secondaryOffsetSize = fromIntegral $ sizeOf (error "sizeOf" :: SecondaryOffset)
 --
 -- The serialisation of a primary index file starts with
 -- @currentVersionNumber@ followed by all its offset.
-newtype PrimaryIndex = MkPrimaryIndex {
-      getOffsets :: Vector SecondaryOffset
+data PrimaryIndex = MkPrimaryIndex {
+      -- | The 'ChunkNo' of the chunk this index is associated with
+      primaryIndexChunkNo :: !ChunkNo
+
+      -- | The entries in the index proper
+    , primaryIndexOffsets :: !(Vector SecondaryOffset)
     }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving stock    (Eq, Show, Generic)
+  deriving anyclass (NoUnexpectedThunks)
+
+assertInPrimaryIndex :: HasCallStack => PrimaryIndex -> RelativeSlot -> Word64
+assertInPrimaryIndex = assertRelativeSlotInChunk . primaryIndexChunkNo
 
 -- | Smart constructor: checks that the offsets are non-decreasing, there is
 -- at least one offset, and that the first offset is 0.
-mk :: [SecondaryOffset] -> Maybe PrimaryIndex
-mk offsets@(0:_)
+mk :: ChunkNo -> [SecondaryOffset] -> Maybe PrimaryIndex
+mk chunk offsets@(0:_)
     | and $ zipWith (<=) offsets (drop 1 offsets)
-    = Just $ MkPrimaryIndex $ V.fromList offsets
-mk _
-    = Nothing
+    = Just $ MkPrimaryIndex chunk $ V.fromList offsets
+mk _ _ = Nothing
 
 -- | Return the 'SecondaryOffset's in the 'PrimaryIndex'.
 toSecondaryOffsets :: PrimaryIndex -> [SecondaryOffset]
-toSecondaryOffsets = V.toList . getOffsets
+toSecondaryOffsets = V.toList . primaryIndexOffsets
 
 -- | Version number of the index format
 currentVersionNumber :: Word8
@@ -153,7 +162,7 @@ currentVersionNumber = 1
 
 -- | Count the number of (filled or unfilled) slots currently in the index
 slots :: PrimaryIndex -> Word64
-slots (MkPrimaryIndex offsets) = fromIntegral $ V.length offsets - 1
+slots (MkPrimaryIndex _ offsets) = fromIntegral $ V.length offsets - 1
 
 -- | Read the 'SecondaryOffset' corresponding to the given relative slot in
 -- the primary index. Return 'Nothing' when the slot is empty.
@@ -181,7 +190,8 @@ readOffsets
 readOffsets hasFS@HasFS { hGetSize } chunk toRead =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd -> do
       size <- hGetSize pHnd
-      forM toRead $ \(RelativeSlot slot) -> do
+      forM toRead $ \relSlot -> do
+        let slot   = assertRelativeSlotInChunk chunk relSlot
         let offset = AbsOffset $
               fromIntegral (sizeOf currentVersionNumber) +
               slot * secondaryOffsetSize
@@ -207,15 +217,18 @@ readOffsets hasFS@HasFS { hGetSize } chunk toRead =
 --
 -- PRECONDITION: the index file must exist and contain at least the version
 -- number and offset 0.
+--
+-- May throw 'InvalidPrimaryIndexException'.
 readFirstFilledSlot
   :: forall m h. (HasCallStack, MonadThrow m)
   => HasFS m h
+  -> ChunkInfo
   -> ChunkNo
   -> m (Maybe RelativeSlot)
-readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunk =
+readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunkInfo chunk =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd -> do
       hSeek pHnd AbsoluteSeek skip
-      go pHnd firstRelativeSlot
+      go pHnd $ firstRelativeSlot chunkInfo chunk
   where
     primaryIndexFile = renderFile "primary" chunk
 
@@ -233,7 +246,11 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunk =
       -- Reached end of file, no filled slot
       Nothing -> return Nothing
       Just offset
-        | offset == 0 -> go pHnd (nextRelativeSlot slot)
+        | offset == 0 -> case nextRelativeSlot slot of
+                           NextRelativeSlot slot' ->
+                             go pHnd slot'
+                           NoMoreRelativeSlots _ ->
+                             throwM $ PrimaryIndexTooLarge chunk
         | otherwise   -> return $ Just slot
 
     -- | We don't know in advance if there are bytes left to read, so it could
@@ -257,6 +274,19 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunk =
               -> assert (n == remaining) $ Just <$>
                  runGet primaryIndexFile getSecondaryOffset acc'
 
+data InvalidPrimaryIndexException =
+    -- | The primary index contains too many entries
+    --
+    -- This is thrown when scanning through a primary index and constructing
+    -- 'RelativeSlot's while doing so. If this exception is thrown, it
+    -- indicates disk corruption.
+    --
+    -- We record the number of the index.
+    PrimaryIndexTooLarge ChunkNo
+  deriving (Show)
+
+instance Exception InvalidPrimaryIndexException
+
 -- | Load a primary index file in memory.
 load
   :: forall m h. (HasCallStack, MonadThrow m)
@@ -273,7 +303,7 @@ load hasFS chunk =
     get :: Get PrimaryIndex
     get = Get.getWord8 >>= \versionNumber ->
       if versionNumber == currentVersionNumber
-        then MkPrimaryIndex . V.fromList <$> go
+        then MkPrimaryIndex chunk . V.fromList <$> go
         else fail $ "unknown version number: " <> show versionNumber
       where
         go = do
@@ -298,7 +328,7 @@ write
   -> ChunkNo
   -> PrimaryIndex
   -> m ()
-write hasFS@HasFS { hTruncate } chunk (MkPrimaryIndex offsets) =
+write hasFS@HasFS { hTruncate } chunk (MkPrimaryIndex _ offsets) =
     withFile hasFS primaryIndexFile (AppendMode AllowExisting) $ \pHnd -> do
       -- NOTE: open it in AppendMode and truncate it first, otherwise we might
       -- just overwrite part of the data stored in the index file.
@@ -314,12 +344,14 @@ write hasFS@HasFS { hTruncate } chunk (MkPrimaryIndex offsets) =
 -- | Truncate the primary index so that the given 'RelativeSlot'. will be the
 -- last slot (filled or not) in the primary index, unless the primary index
 -- didn't contain the 'RelativeSlot' in the first place.
-truncateToSlot :: RelativeSlot -> PrimaryIndex -> PrimaryIndex
-truncateToSlot slot primary@(MkPrimaryIndex offsets)
-    | lastSlot primary <= slot
+truncateToSlot :: ChunkInfo -> RelativeSlot -> PrimaryIndex -> PrimaryIndex
+truncateToSlot chunkInfo relSlot primary@(MkPrimaryIndex _ offsets)
+    | compareRelativeSlot (lastSlot chunkInfo primary) relSlot /= GT
     = primary
     | otherwise
-    = MkPrimaryIndex (V.take (fromIntegral (unRelativeSlot slot) + 2) offsets)
+    = primary { primaryIndexOffsets = V.take (fromIntegral slot + 2) offsets }
+  where
+    slot = assertInPrimaryIndex primary relSlot
 
 -- | On-disk variant of 'truncateToSlot'. The truncation is done without
 -- reading the primary index from disk.
@@ -329,11 +361,12 @@ truncateToSlotFS
   -> ChunkNo
   -> RelativeSlot
   -> m ()
-truncateToSlotFS hasFS@HasFS { hTruncate, hGetSize } chunk (RelativeSlot slot) =
+truncateToSlotFS hasFS@HasFS { hTruncate, hGetSize } chunk relSlot =
     withFile hasFS primaryIndexFile (AppendMode AllowExisting) $ \pHnd -> do
       size <- hGetSize pHnd
       when (offset < size) $ hTruncate pHnd offset
   where
+    slot             = assertRelativeSlotInChunk chunk relSlot
     primaryIndexFile = renderFile "primary" chunk
     offset           = fromIntegral (sizeOf currentVersionNumber)
                      + (slot + 2) * secondaryOffsetSize
@@ -346,12 +379,13 @@ truncateToSlotFS hasFS@HasFS { hTruncate, hGetSize } chunk (RelativeSlot slot) =
 unfinalise
   :: (HasCallStack, MonadThrow m)
   => HasFS m h
+  -> ChunkInfo
   -> ChunkNo
   -> m ()
-unfinalise hasFS chunk = do
+unfinalise hasFS chunkInfo chunk = do
     -- TODO optimise so that we only need to open the file once
     primaryIndex <- load hasFS chunk
-    case lastFilledSlot primaryIndex of
+    case lastFilledSlot chunkInfo primaryIndex of
       Nothing   -> return ()
       Just slot -> truncateToSlotFS hasFS chunk slot
 
@@ -394,34 +428,41 @@ appendOffsets hasFS pHnd offsets =
 
 -- | Return the last 'SecondaryOffset' in the primary index file.
 lastOffset :: PrimaryIndex -> SecondaryOffset
-lastOffset (MkPrimaryIndex offsets)
+lastOffset (MkPrimaryIndex _ offsets)
   | V.null offsets = 0
   | otherwise = offsets ! (V.length offsets - 1)
 
 -- | Return the last slot of the primary index (empty or not).
-lastSlot :: PrimaryIndex -> RelativeSlot
-lastSlot (MkPrimaryIndex offsets) = nthRelativeSlot (V.length offsets - 2)
+lastSlot :: ChunkInfo -> PrimaryIndex -> RelativeSlot
+lastSlot chunkInfo (MkPrimaryIndex chunk offsets) =
+    nthRelativeSlot chunkInfo chunk (V.length offsets - 2)
 
 -- | Check whether the given slot is within the primary index.
 containsSlot :: PrimaryIndex -> RelativeSlot -> Bool
-containsSlot (MkPrimaryIndex offsets) (RelativeSlot slot) =
-  slot < fromIntegral (V.length offsets) - 1
+containsSlot primary@(MkPrimaryIndex _ offsets) relSlot =
+    slot < fromIntegral (V.length offsets) - 1
+  where
+    slot = assertInPrimaryIndex primary relSlot
 
 -- | Return the offset for the given slot.
 --
 -- Precondition: the given slot must be within the primary index
 -- ('containsSlot').
 offsetOfSlot :: HasCallStack => PrimaryIndex -> RelativeSlot -> SecondaryOffset
-offsetOfSlot (MkPrimaryIndex offsets) (RelativeSlot slot) =
-  offsets ! fromIntegral slot
+offsetOfSlot primary@(MkPrimaryIndex _ offsets) relSlot =
+    offsets ! fromIntegral slot
+  where
+    slot = assertInPrimaryIndex primary relSlot
 
 -- | Return the size of the given slot according to the primary index.
 --
 -- Precondition: the given slot must be within the primary index
 -- ('containsSlot').
 sizeOfSlot :: HasCallStack => PrimaryIndex -> RelativeSlot -> Word32
-sizeOfSlot (MkPrimaryIndex offsets) (RelativeSlot slot) = offsetAfter - offsetAt
+sizeOfSlot primary@(MkPrimaryIndex _ offsets) relSlot =
+    offsetAfter - offsetAt
   where
+    slot        = assertInPrimaryIndex primary relSlot
     i           = fromIntegral slot
     offsetAt    = offsets ! i
     offsetAfter = offsets ! (i + 1)
@@ -447,10 +488,12 @@ isFilledSlot primary slot = sizeOfSlot primary slot /= 0
 -- >         └───┴───┴───┴───┴───┴───┘
 --
 -- Return slot 4.
-nextFilledSlot :: PrimaryIndex -> RelativeSlot -> Maybe RelativeSlot
-nextFilledSlot (MkPrimaryIndex offsets) (RelativeSlot slot) =
+nextFilledSlot :: ChunkInfo -> PrimaryIndex -> RelativeSlot -> Maybe RelativeSlot
+nextFilledSlot chunkInfo primary@(MkPrimaryIndex chunk offsets) relSlot =
     go (fromIntegral slot + 1)
   where
+    slot = assertInPrimaryIndex primary relSlot
+
     len :: Int
     len = V.length offsets
 
@@ -461,7 +504,7 @@ nextFilledSlot (MkPrimaryIndex offsets) (RelativeSlot slot) =
       | offsets ! i == offsets ! (i + 1)
       = go (i + 1)
       | otherwise
-      = Just (nthRelativeSlot i)
+      = Just (nthRelativeSlot chunkInfo chunk i)
 
 -- | Find the first filled (length > zero) slot in the primary index. If there
 -- is none, return 'Nothing'.
@@ -474,8 +517,8 @@ nextFilledSlot (MkPrimaryIndex offsets) (RelativeSlot slot) =
 -- >         └───┴───┴───┘
 --
 -- Return slot 1.
-firstFilledSlot :: PrimaryIndex -> Maybe RelativeSlot
-firstFilledSlot (MkPrimaryIndex offsets) = go 1
+firstFilledSlot :: ChunkInfo -> PrimaryIndex -> Maybe RelativeSlot
+firstFilledSlot chunkInfo (MkPrimaryIndex chunk offsets) = go 1
   where
     len :: Int
     len = V.length offsets
@@ -487,19 +530,20 @@ firstFilledSlot (MkPrimaryIndex offsets) = go 1
       | offsets ! i == 0
       = go (i + 1)
       | otherwise
-      = Just (nthRelativeSlot (i - 1))
+      = Just (nthRelativeSlot chunkInfo chunk (i - 1))
 
 -- | Return a list of all the filled (length > zero) slots in the primary
 -- index.
-filledSlots :: PrimaryIndex -> [RelativeSlot]
-filledSlots primary = go (firstFilledSlot primary)
+filledSlots :: ChunkInfo -> PrimaryIndex -> [RelativeSlot]
+filledSlots chunkInfo primary = go (firstFilledSlot chunkInfo primary)
   where
     go Nothing     = []
-    go (Just slot) = slot : go (nextFilledSlot primary slot)
+    go (Just slot) = slot : go (nextFilledSlot chunkInfo primary slot)
 
 -- | Return the last filled slot in the primary index.
-lastFilledSlot :: HasCallStack => PrimaryIndex -> Maybe RelativeSlot
-lastFilledSlot (MkPrimaryIndex offsets) = go (V.length offsets - 1)
+lastFilledSlot :: HasCallStack => ChunkInfo -> PrimaryIndex -> Maybe RelativeSlot
+lastFilledSlot chunkInfo (MkPrimaryIndex chunk offsets) =
+    go (V.length offsets - 1)
   where
     go :: Int -> Maybe RelativeSlot
     go i
@@ -508,7 +552,7 @@ lastFilledSlot (MkPrimaryIndex offsets) = go (V.length offsets - 1)
       | offsets ! i == offsets ! (i - 1)
       = go (i - 1)
       | otherwise
-      = Just (nthRelativeSlot (i - 1))
+      = Just (nthRelativeSlot chunkInfo chunk (i - 1))
 
 -- | Return the slots to backfill the primary index file with.
 --
@@ -553,24 +597,31 @@ backfill
   -> RelativeSlot     -- ^ The next expected slot to write to
   -> SecondaryOffset  -- ^ The last 'SecondaryOffset' written to
   -> [SecondaryOffset]
-backfill (RelativeSlot slot) (RelativeSlot nextExpected) offset =
-    replicate gap offset
+backfill slot nextExpected offset =
+    replicate (fromIntegral gap) offset
   where
-    gap = fromIntegral $ slot - nextExpected
+    gap = relativeSlotIndex slot
+        - relativeSlotIndex nextExpected
 
 -- | Return the slots to backfill the primary index file with when padding it
 -- to the epoch size.
 --
 -- See 'backfill' for more details.
 backfillEpoch
-  :: ChunkSize
-  -> RelativeSlot
+  :: ChunkInfo
+  -> ChunkNo
+  -> NextRelativeSlot
   -> SecondaryOffset
   -> [SecondaryOffset]
-backfillEpoch chunkSize nextExpected offset =
-    backfill (nextRelativeSlot finalSlot) nextExpected offset
+backfillEpoch _ _ (NoMoreRelativeSlots _) _ =
+    []
+backfillEpoch chunkInfo chunk (NextRelativeSlot nextExpected) offset =
+    replicate (fromIntegral gap) offset
   where
-    finalSlot = maxRelativeSlot chunkSize
+    finalSlot = maxRelativeSlot chunkInfo chunk
+    gap       = relativeSlotIndex finalSlot
+              - relativeSlotIndex nextExpected
+              + 1 -- fill all slots /including/ 'finalSlot'
 
 {------------------------------------------------------------------------------
   Helper for debugging

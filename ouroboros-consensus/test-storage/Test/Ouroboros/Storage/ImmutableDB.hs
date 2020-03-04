@@ -4,14 +4,9 @@ module Test.Ouroboros.Storage.ImmutableDB (tests) where
 import qualified Codec.Serialise as S
 import           Control.Monad (void)
 import           Control.Tracer (nullTracer)
-import           Data.Binary (get, put)
-import           Data.Functor.Identity (Identity (..))
-import           Data.Maybe (fromJust)
 
-import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
-import           Test.Tasty.QuickCheck (testProperty)
 
 import qualified Cardano.Slotting.Slot as S
 
@@ -25,14 +20,7 @@ import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.ImmutableDB
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
-                     (RelativeSlot (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
-import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
-                     (PrimaryIndex)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
-import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
-                     (ShouldBeFinalised (..), reconstructPrimaryIndex)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
                      (chunkFileParser)
 
@@ -50,7 +38,6 @@ tests = testGroup "ImmutableDB"
     [ testCase     "ReadFutureSlotError equivalence" test_ReadFutureSlotErrorEquivalence
     , testCase     "openDB with empty index files"   test_openDBEmptyIndexFilesEquivalence
     , testCase     "closeDB is idempotent"           test_closeDBIdempotentEquivalence
-    , testProperty "reconstructPrimaryIndex"         prop_reconstructPrimaryIndex
     , Primary.tests
     , StateMachine.tests
     ]
@@ -122,44 +109,3 @@ test_closeDBIdempotentEquivalence = withRegistry $ \registry ->
       db <- openTestDB registry hasFS
       closeDB db
       closeDB db
-
-{------------------------------------------------------------------------------
-  reconstructPrimaryIndex
-------------------------------------------------------------------------------}
-
-prop_reconstructPrimaryIndex :: PrimaryIndex -> Property
-prop_reconstructPrimaryIndex primaryIndex =
-    counterexample ("blocksOrEBBs: " <> show blockOrEBBs)    $
-    counterexample ("primaryIndex': " <> show primaryIndex') $
-    reconstructedPrimaryIndex === primaryIndex'
-  where
-    reconstructedPrimaryIndex = runIdentity $
-      reconstructPrimaryIndex chunkInfo hashInfo ShouldNotBeFinalised
-                              blockOrEBBs
-
-    -- Remove empty trailing slots because we don't reconstruct them
-    primaryIndex' = case Primary.lastFilledSlot primaryIndex of
-      Just slot -> Primary.truncateToSlot slot primaryIndex
-      -- Index is empty, use the minimal empty index without any trailing
-      -- slots
-      Nothing   -> fromJust $ Primary.mk [0]
-
-    blockOrEBBs :: [BlockOrEBB]
-    blockOrEBBs =
-      [ if relSlot == 0 then EBB 0 else Block (SlotNo (relSlot - 1))
-      | RelativeSlot relSlot <- Primary.filledSlots primaryIndex
-      ]
-
-    -- Use maxBound as epoch size so that we can easily map from SlotNo to
-    -- RelativeSlot and vice versa.
-    chunkInfo :: ChunkInfo
-    chunkInfo = simpleChunkInfo (EpochSize maxBound)
-
-    -- Only 'hashSize' is used. Note that 32 matches the hard-coded value in
-    -- the 'PrimaryIndex' generator we use.
-    hashInfo :: HashInfo ()
-    hashInfo = HashInfo
-      { hashSize = 32
-      , getHash  = get
-      , putHash  = put
-      }

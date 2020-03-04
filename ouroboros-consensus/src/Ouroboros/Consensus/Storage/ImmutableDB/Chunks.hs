@@ -2,6 +2,9 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks (
     module X
   ) where
 
+
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout as X
+
 -- Only export public API from the Internal module
 --
 -- In particular, the following types will remain opaque:
@@ -11,5 +14,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks (
 -- * 'ChunkNo'
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal as X
                      (ChunkInfo, ChunkNo, ChunkSize, chunksBetween,
-                     countChunks, firstChunkNo, getChunkSize, nextChunkNo,
-                     prevChunkNo, simpleChunkInfo)
+                     compareRelativeSlot, countChunks, firstChunkNo,
+                     getChunkSize, mkRelativeSlot, nextChunkNo, prevChunkNo,
+                     simpleChunkInfo, singleChunkInfo)

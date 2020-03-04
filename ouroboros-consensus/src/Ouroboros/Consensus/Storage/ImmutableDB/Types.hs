@@ -56,7 +56,9 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, FsPath,
                      prettyFsError, sameFsError)
 import           Ouroboros.Consensus.Storage.FS.CRC (CRC)
 
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+-- Importing from Internal to avoid circular dependency
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (ChunkNo)
 
 data BlockOrEBB
   = Block !SlotNo

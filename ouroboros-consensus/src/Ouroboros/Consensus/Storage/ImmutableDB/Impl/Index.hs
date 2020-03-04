@@ -151,11 +151,12 @@ readEntry index chunk isEBB slotOffset = runIdentity <$>
 fileBackedIndex
   :: forall m hash h. MonadCatch m
   => HasFS m h
+  -> ChunkInfo
   -> HashInfo hash
   -> Index m hash h
-fileBackedIndex hasFS hashInfo = Index
+fileBackedIndex hasFS chunkInfo hashInfo = Index
     { readOffsets         = Primary.readOffsets         hasFS
-    , readFirstFilledSlot = Primary.readFirstFilledSlot hasFS
+    , readFirstFilledSlot = Primary.readFirstFilledSlot hasFS chunkInfo
     , openPrimaryIndex    = Primary.open                hasFS
     , appendOffsets       = Primary.appendOffsets       hasFS
     , readEntries         = Secondary.readEntries       hasFS hashInfo

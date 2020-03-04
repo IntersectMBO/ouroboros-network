@@ -46,7 +46,6 @@ import           Ouroboros.Consensus.Storage.FS.CRC
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
@@ -145,7 +144,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
           -- would have thrown a 'ReadFutureSlotError'.
           assert (isNothing mbStart && isNothing mbEnd) $ return mkEmptyIterator
         At tip -> do
-          WithHash endHash endEpochSlot <- fillInEndBound   _index tip mbEnd
+          WithHash endHash endChunkSlot <- fillInEndBound   _index tip mbEnd
           (secondaryOffset, start)      <- fillInStartBound _index     mbStart
 
           lift $ do
@@ -156,13 +155,13 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
             -- regular block, as both have the same slot number, we need to
             -- look at the hashes. 'validateIteratorRange' doesn't have enough
             -- information to do that.
-            let WithHash _startHash startEpochSlot = start
-            when (startEpochSlot > endEpochSlot) $ do
-              let startSlot = chunkSlotToSlot _dbChunkInfo startEpochSlot
-                  endSlot   = chunkSlotToSlot _dbChunkInfo endEpochSlot
+            let WithHash _startHash startChunkSlot = start
+            when (startChunkSlot > endChunkSlot) $ do
+              let startSlot = chunkSlotToSlot _dbChunkInfo startChunkSlot
+                  endSlot   = chunkSlotToSlot _dbChunkInfo endChunkSlot
               throwUserError $ InvalidIteratorRangeError startSlot endSlot
 
-            let ChunkSlot startChunk startRelSlot = startEpochSlot
+            let ChunkSlot startChunk startRelSlot = startChunkSlot
                 startIsEBB   = relativeSlotIsEBB startRelSlot
                 curEpochInfo = CurrentChunkInfo _currentChunk _currentChunkOffset
 
@@ -178,7 +177,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
               { itHasFS   = hasFS
               , itIndex   = _index
               , itState   = varIteratorState
-              , itEnd     = endEpochSlot
+              , itEnd     = endChunkSlot
               , itEndHash = endHash
               }
   where
