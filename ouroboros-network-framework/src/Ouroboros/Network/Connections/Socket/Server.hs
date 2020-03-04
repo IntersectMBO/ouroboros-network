@@ -87,11 +87,12 @@ acceptOne snocket connections bindaddr request accept = mask $ \restore -> do
         Acquired decision -> pure (Acquired decision, accept')
 
 -- | A common pattern: accept in a loop, passing each connection through a
--- Connections term, and handling exceptions without necessarily dying.
+-- Connections term.
+--
 -- The decision given by the Connections term is ignored.
 --
--- Be prudent in choosing what to do in the exception handler.
--- Async exceptions should be re-thrown.
+-- The error case handler allows you to deal with errors given by the Accept
+-- term. Actual exceptions are fatal.
 acceptLoop
   :: ( MonadMask m )
   => Snocket m socket addr
