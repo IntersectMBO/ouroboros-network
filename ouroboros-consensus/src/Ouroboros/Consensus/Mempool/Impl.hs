@@ -263,48 +263,61 @@ implTryAddTxs mpEnv = go []
     done acc toAdd = return (reverse acc, toAdd)
 
     go acc []                     = done acc []
-    go acc toAdd@(firstTx:toAdd') = do
-      let firstTxSize = txSize firstTx
-      -- Note: we execute the continuation returned by 'atomically'
-      join $ atomically $ do
-        is <- readTVar mpEnvStateVar
-        let curSize = msNumBytes $ isMempoolSize is
-        if curSize + firstTxSize > capacity then
-          -- No space in the Mempool
-          return $ done acc toAdd
-        else do
-          let vr  = extendVRNew cfg firstTx $ validationResultFromIS is
-              is' = internalStateFromVR vr
-          unless (null (vrNewValid vr)) $
-            -- Each time we have found a valid transaction, we update the
-            -- Mempool. This keeps our STM transactions short, avoiding
-            -- repeated work.
-            --
-            -- Note that even if the transaction were invalid, we could still
-            -- write the state, because in that case we would have that @is ==
-            -- is'@, but there's no reason to do that additional write.
-            writeTVar mpEnvStateVar is'
+    go acc toAdd@(firstTx:toAdd') =
+        -- Note: we execute the continuation returned by 'atomically'
+        join $ atomically $ readTVar mpEnvStateVar >>= tryAdd
+      where
+        tryAdd is
+          -- This transaction already exists within the mempool.
+          -- Note that we don't treat this as an error/rejection case.
+          | implSnapshotHasTx is (txId firstTx)
+          = return $ go
+              ((firstTx, MempoolTxAdded):acc)
+              toAdd'
 
-          -- We only extended the ValidationResult with a single transaction
-          -- ('firstTx'). So if it's not in 'vrInvalid', it must be in
-          -- 'vrNewValid'.
-          return $ case listToMaybe (vrInvalid vr) of
-            -- The transaction was valid
-            Nothing ->
-              assert (isJust (vrNewValid vr)) $ do
-                traceWith mpEnvTracer $ TraceMempoolAddedTx
-                  firstTx
-                  (isMempoolSize is)
-                  (isMempoolSize is')
-                go ((firstTx, MempoolTxAdded):acc) toAdd'
-            Just (_, err) ->
-              assert (isNothing (vrNewValid vr))  $
-              assert (length (vrInvalid vr) == 1) $ do
-                traceWith mpEnvTracer $ TraceMempoolRejectedTx
-                  firstTx
-                  err
-                  (isMempoolSize is)
-                go ((firstTx, MempoolTxRejected (TxApplicationError err)):acc) toAdd'
+          -- No space in the Mempool.
+          | let firstTxSize = txSize firstTx
+                curSize = msNumBytes $ isMempoolSize is
+          , curSize + firstTxSize > capacity
+          = return $ done acc toAdd
+
+          | otherwise
+          = do
+              let vr  = extendVRNew cfg firstTx $ validationResultFromIS is
+                  is' = internalStateFromVR vr
+              unless (null (vrNewValid vr)) $
+                -- Each time we have found a valid transaction, we update the
+                -- Mempool. This keeps our STM transactions short, avoiding
+                -- repeated work.
+                --
+                -- Note that even if the transaction were invalid, we could
+                -- still write the state, because in that case we would have
+                -- that @is == is'@, but there's no reason to do that
+                -- additional write.
+                writeTVar mpEnvStateVar is'
+
+              -- We only extended the ValidationResult with a single
+              -- transaction ('firstTx'). So if it's not in 'vrInvalid', it
+              -- must be in 'vrNewValid'.
+              return $ case listToMaybe (vrInvalid vr) of
+                -- The transaction was valid
+                Nothing ->
+                  assert (isJust (vrNewValid vr)) $ do
+                    traceWith mpEnvTracer $ TraceMempoolAddedTx
+                      firstTx
+                      (isMempoolSize is)
+                      (isMempoolSize is')
+                    go ((firstTx, MempoolTxAdded):acc) toAdd'
+                Just (_, err) ->
+                  assert (isNothing (vrNewValid vr))  $
+                  assert (length (vrInvalid vr) == 1) $ do
+                    traceWith mpEnvTracer $ TraceMempoolRejectedTx
+                      firstTx
+                      err
+                      (isMempoolSize is)
+                    go
+                      ((firstTx, MempoolTxRejected err):acc)
+                      toAdd'
 
 implRemoveTxs
   :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
