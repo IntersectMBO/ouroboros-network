@@ -36,26 +36,27 @@ library
                        Ouroboros.Consensus.Block.EBB
                        Ouroboros.Consensus.Block.RealPoint
                        Ouroboros.Consensus.Block.SupportsProtocol
-                       Ouroboros.Consensus.BlockFetchServer
                        Ouroboros.Consensus.BlockchainTime
                        Ouroboros.Consensus.BlockchainTime.API
                        Ouroboros.Consensus.BlockchainTime.Mock
                        Ouroboros.Consensus.BlockchainTime.SlotLength
                        Ouroboros.Consensus.BlockchainTime.SlotLengths
                        Ouroboros.Consensus.BlockchainTime.WallClock
-                       Ouroboros.Consensus.ChainSyncClient
-                       Ouroboros.Consensus.ChainSyncServer
                        Ouroboros.Consensus.Config
                        Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Dual
                        Ouroboros.Consensus.Ledger.Extended
                        Ouroboros.Consensus.Ledger.SupportsProtocol
-                       Ouroboros.Consensus.LocalStateQueryServer
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
                        Ouroboros.Consensus.Mempool.Impl
                        Ouroboros.Consensus.Mempool.TxSeq
+                       Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
+                       Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+                       Ouroboros.Consensus.MiniProtocol.ChainSync.Server
+                       Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
+                       Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
                        Ouroboros.Consensus.Node
                        Ouroboros.Consensus.Node.DbMarker
                        Ouroboros.Consensus.Node.ErrorPolicy
@@ -76,11 +77,10 @@ library
                        Ouroboros.Consensus.Protocol.MockChainSel
                        Ouroboros.Consensus.Protocol.ModChainSel
                        Ouroboros.Consensus.Protocol.PBFT
+                       Ouroboros.Consensus.Protocol.PBFT.Crypto
                        Ouroboros.Consensus.Protocol.PBFT.State
                        Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
-                       Ouroboros.Consensus.Protocol.PBFT.Crypto
                        Ouroboros.Consensus.Protocol.Signed
-                       Ouroboros.Consensus.TxSubmission
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.AnchoredFragment
                        Ouroboros.Consensus.Util.CBOR
@@ -248,8 +248,8 @@ test-suite test-consensus
   other-modules:
                        Test.Consensus.BlockchainTime.SlotLengths
                        Test.Consensus.BlockchainTime.WallClock
-                       Test.Consensus.ChainSyncClient
-                       Test.Consensus.LocalStateQueryServer
+                       Test.Consensus.MiniProtocol.ChainSync.Client
+                       Test.Consensus.MiniProtocol.LocalStateQuery.Server
                        Test.Consensus.Mempool
                        Test.Consensus.Node
                        Test.Consensus.Protocol.PBFT

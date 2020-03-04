@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
-module Ouroboros.Consensus.ChainSyncServer
+module Ouroboros.Consensus.MiniProtocol.ChainSync.Server
   ( chainSyncHeadersServer
   , chainSyncBlocksServer
   , Tip

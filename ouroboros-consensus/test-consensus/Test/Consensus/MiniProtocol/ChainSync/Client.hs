@@ -6,7 +6,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-module Test.Consensus.ChainSyncClient ( tests ) where
+module Test.Consensus.MiniProtocol.ChainSync.Client ( tests ) where
 
 import           Control.Monad (replicateM_, void)
 import           Control.Monad.Except (runExcept)
@@ -26,11 +26,11 @@ import           Test.Tasty.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block hiding (ChainUpdate (..))
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Driver
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState (chainState,
@@ -50,9 +50,9 @@ import           Cardano.Crypto.DSIGN.Mock
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
-import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended hiding (ledgerState)
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract

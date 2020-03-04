@@ -24,15 +24,16 @@ import           Ouroboros.Network.TxSubmission.Outbound
 
 import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.BlockchainTime (TraceBlockchainTimeEvent)
-import           Ouroboros.Consensus.BlockFetchServer
-                     (TraceBlockFetchServerEvent)
-import           Ouroboros.Consensus.ChainSyncClient (InvalidBlockReason,
-                     TraceChainSyncClientEvent)
-import           Ouroboros.Consensus.ChainSyncServer (TraceChainSyncServerEvent)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTx, GenTxId,
                      MempoolSize, TraceEventMempool)
-import           Ouroboros.Consensus.TxSubmission
+import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
+                     (TraceBlockFetchServerEvent)
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+                     (InvalidBlockReason, TraceChainSyncClientEvent)
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
+                     (TraceChainSyncServerEvent)
+import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
                      (TraceLocalTxSubmissionServerEvent (..))
 
 {-------------------------------------------------------------------------------
