@@ -40,6 +40,7 @@ import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Point)
@@ -61,8 +62,6 @@ import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
-                     EpochSize (..))
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
                      hPutAll, hSeek, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types

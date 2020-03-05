@@ -18,6 +18,8 @@ import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 
 import           Control.Tracer (Tracer, contramap)
 
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Network.Block (HeaderHash)
 
 import           Ouroboros.Consensus.Block

@@ -48,8 +48,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB hiding
                      (withImmDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
                      (withImmDB)
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
-                     EpochSize (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
                      (simpleChunkInfo)

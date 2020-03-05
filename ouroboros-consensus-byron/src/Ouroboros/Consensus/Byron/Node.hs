@@ -40,6 +40,7 @@ import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochSlots (..))
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      ChainHash (..), pattern GenesisPoint, SlotNo (..))
@@ -56,8 +57,6 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
-                     EpochSize (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.IOLike
 

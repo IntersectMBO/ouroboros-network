@@ -61,6 +61,7 @@ import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
 import           Cardano.Prelude (NoUnexpectedThunks (..), fromMaybe)
 import           Cardano.Slotting.EpochInfo
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      pointSlot)
@@ -72,9 +73,6 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
-
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
-                     EpochSize (..))
 
 {-------------------------------------------------------------------------------
   Fields required by Praos in the header

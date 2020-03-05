@@ -7,10 +7,12 @@ import           Control.Monad (void)
 import           Data.Bifunctor (first)
 import           Data.Tuple (swap)
 
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Consensus.Util ((...:), (..:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common (BlockComponent, EpochSize)
+import           Ouroboros.Consensus.Storage.Common (BlockComponent)
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model

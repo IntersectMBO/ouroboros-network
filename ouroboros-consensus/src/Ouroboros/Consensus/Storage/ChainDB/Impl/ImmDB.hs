@@ -74,7 +74,8 @@ import           GHC.Stack
 import           System.FilePath ((</>))
 
 import           Cardano.Prelude (allNoUnexpectedThunks)
-import           Cardano.Slotting.Block (BlockNo)
+import           Cardano.Slotting.Block
+import           Cardano.Slotting.Slot
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (pattern BlockPoint,

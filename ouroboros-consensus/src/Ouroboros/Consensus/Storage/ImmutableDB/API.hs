@@ -16,7 +16,8 @@ module Ouroboros.Consensus.Storage.ImmutableDB.API
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      ThunkInfo (..))
-import           Cardano.Slotting.Block (BlockNo)
+import           Cardano.Slotting.Block
+import           Cardano.Slotting.Slot
 
 import           Data.ByteString.Builder (Builder)
 

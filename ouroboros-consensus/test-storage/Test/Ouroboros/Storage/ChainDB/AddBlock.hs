@@ -24,6 +24,8 @@ import           Control.Monad.IOSim
 
 import           Control.Tracer
 
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
@@ -40,7 +42,6 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDbArgs (..),
                      TraceAddBlockEvent (..), addBlock, toChain, withDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
-import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
                      HashInfo (..), ValidationPolicy (ValidateAllChunks),
                      simpleChunkInfo)

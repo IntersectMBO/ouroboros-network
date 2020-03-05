@@ -13,6 +13,7 @@ import           Data.Time.Clock (UTCTime (..))
 import           Data.Typeable (Typeable)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
@@ -27,7 +28,6 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
-import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 
 {-------------------------------------------------------------------------------

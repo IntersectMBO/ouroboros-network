@@ -46,6 +46,7 @@ import           Cardano.Chain.Slotting (EpochSlots (..))
 import qualified Cardano.Chain.Update as CC.Update
 import           Cardano.Crypto (Hash, RequiresNetworkMagic (..),
                      decodeAbstractHash)
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
 import qualified Ouroboros.Consensus.Node as Node
@@ -59,7 +60,6 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
-import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)

@@ -18,6 +18,7 @@ import           Data.Proxy (Proxy)
 import           Data.Word (Word32)
 
 import           Cardano.Crypto (ProtocolMagicId)
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block (BlockNo, HeaderHash, Serialised,
                      SlotNo)
@@ -41,7 +42,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
-import           Ouroboros.Consensus.Storage.Common (EpochNo)
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
                      ChunkInfo, HashInfo)
 

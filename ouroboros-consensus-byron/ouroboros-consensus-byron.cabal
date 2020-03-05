@@ -136,6 +136,7 @@ executable db-converter
                      , cardano-binary
                      , cardano-crypto-wrapper
                      , cardano-ledger
+                     , cardano-slotting
                      , contra-tracer
                      , directory
                      , mtl

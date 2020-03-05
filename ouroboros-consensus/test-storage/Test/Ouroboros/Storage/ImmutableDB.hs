@@ -8,7 +8,7 @@ import           Control.Tracer (nullTracer)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 
-import qualified Cardano.Slotting.Slot as S
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Block (getHeader)
 import           Ouroboros.Consensus.BlockchainTime.Mock (fixedBlockchainTime)
@@ -92,7 +92,7 @@ test_ReadFutureSlotErrorEquivalence =
 
 test_openDBEmptyIndexFilesEquivalence :: Assertion
 test_openDBEmptyIndexFilesEquivalence =
-    apiEquivalenceImmDB (expectImmDBResult (@?= S.Origin)) $ \hasFS@HasFS{..} -> do
+    apiEquivalenceImmDB (expectImmDBResult (@?= Origin)) $ \hasFS@HasFS{..} -> do
       -- Create empty index files
       h1 <- hOpen (mkFsPath ["00000.epoch"]) (WriteMode MustBeNew)
       h2 <- hOpen (mkFsPath ["00000.primary"]) (WriteMode MustBeNew)

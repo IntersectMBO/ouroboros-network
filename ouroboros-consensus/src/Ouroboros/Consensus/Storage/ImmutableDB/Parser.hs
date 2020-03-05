@@ -26,10 +26,11 @@ import           Streaming (Of, Stream)
 import qualified Streaming as S
 import qualified Streaming.Prelude as S
 
-import           Cardano.Slotting.Block (BlockNo)
+import           Cardano.Slotting.Block
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
-                     HeaderHash, SlotNo)
+                     HeaderHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
