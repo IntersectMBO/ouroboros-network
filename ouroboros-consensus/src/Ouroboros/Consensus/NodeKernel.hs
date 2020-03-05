@@ -44,9 +44,9 @@ import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TxSubmissionMempoolWriter)
 import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
-import           Ouroboros.Network.TxSubmission.Outbound
+import           Ouroboros.Network.TxSubmission.Mempool.Reader
                      (TxSubmissionMempoolReader)
-import qualified Ouroboros.Network.TxSubmission.Outbound as Outbound
+import qualified Ouroboros.Network.TxSubmission.Mempool.Reader as MempoolReader
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -601,17 +601,17 @@ getMempoolReader
   :: forall m blk. (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
   => Mempool m blk TicketNo
   -> TxSubmissionMempoolReader (GenTxId blk) (GenTx blk) TicketNo m
-getMempoolReader mempool = Outbound.TxSubmissionMempoolReader
+getMempoolReader mempool = MempoolReader.TxSubmissionMempoolReader
     { mempoolZeroIdx     = zeroIdx mempool
     , mempoolGetSnapshot = convertSnapshot <$> getSnapshot mempool
     }
   where
     convertSnapshot
-      :: MempoolSnapshot          blk                       TicketNo
-      -> Outbound.MempoolSnapshot (GenTxId blk) (GenTx blk) TicketNo
+      :: MempoolSnapshot               blk                       TicketNo
+      -> MempoolReader.MempoolSnapshot (GenTxId blk) (GenTx blk) TicketNo
     convertSnapshot MempoolSnapshot { snapshotTxsAfter, snapshotLookupTx,
                                       snapshotHasTx } =
-      Outbound.MempoolSnapshot
+      MempoolReader.MempoolSnapshot
         { mempoolTxIdsAfter = \idx ->
             [ (txId tx, idx', txSize tx)
             | (tx, idx') <- snapshotTxsAfter idx

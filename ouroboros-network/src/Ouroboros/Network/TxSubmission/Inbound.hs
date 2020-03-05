@@ -29,7 +29,7 @@ import           Control.Tracer (Tracer)
 import           Network.TypedProtocol.Pipelined (N, Nat (..))
 
 import           Ouroboros.Network.Protocol.TxSubmission.Server
-import           Ouroboros.Network.TxSubmission.Outbound
+import           Ouroboros.Network.TxSubmission.Mempool.Reader
                      (MempoolSnapshot (..), TxSubmissionMempoolReader (..))
 
 
