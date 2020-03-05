@@ -18,7 +18,6 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (enforceSize)
 import qualified Cardano.Binary
-import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
 import qualified Cardano.Ledger.Spec.STS.UTXO as Spec
 import qualified Cardano.Ledger.Spec.STS.UTXOW as Spec
@@ -66,11 +65,11 @@ instance Serialise Spec.ProtVer
 instance Serialise Spec.Slot
 instance Serialise Spec.SlotCount
 instance Serialise Spec.SwVer
-instance Serialise Spec.Tx
+instance Serialise Spec.TxBody
 instance Serialise Spec.TxId
 instance Serialise Spec.TxIn
 instance Serialise Spec.TxOut
-instance Serialise Spec.TxWits
+instance Serialise Spec.Tx
 instance Serialise Spec.UpAdptThd
 instance Serialise Spec.UpdateConstraintViolation
 instance Serialise Spec.UpId
@@ -144,48 +143,16 @@ deriving instance Eq Spec.BlockBody
   Not all types in cardano-ledger-specs have generic instances
 -------------------------------------------------------------------------------}
 
-deriving instance Generic Spec.DIState
-deriving instance Generic Spec.EpochDiff
-deriving instance Generic Spec.UpdateConstraintViolation
 deriving instance Generic Spec.UTxO
-deriving instance Generic Spec.UTxOState
 
 deriving instance Generic (Spec.Threshold a)
 
-deriving instance Generic (Spec.PredicateFailure Spec.ADDVOTE)
-deriving instance Generic (Spec.PredicateFailure Spec.ADELEG)
-deriving instance Generic (Spec.PredicateFailure Spec.ADELEGS)
-deriving instance Generic (Spec.PredicateFailure Spec.APPLYVOTES)
 deriving instance Generic (Spec.PredicateFailure Spec.BBODY)
 deriving instance Generic (Spec.PredicateFailure Spec.BUPI)
 deriving instance Generic (Spec.PredicateFailure Spec.CHAIN)
-deriving instance Generic (Spec.PredicateFailure Spec.DELEG)
 deriving instance Generic (Spec.PredicateFailure Spec.EPOCH)
 deriving instance Generic (Spec.PredicateFailure Spec.PBFT)
-deriving instance Generic (Spec.PredicateFailure Spec.PVBUMP)
-deriving instance Generic (Spec.PredicateFailure Spec.SDELEG)
-deriving instance Generic (Spec.PredicateFailure Spec.SDELEGS)
 deriving instance Generic (Spec.PredicateFailure Spec.SIGCNT)
-deriving instance Generic (Spec.PredicateFailure Spec.UPEND)
-deriving instance Generic (Spec.PredicateFailure Spec.UPIEC)
-deriving instance Generic (Spec.PredicateFailure Spec.UPIEND)
-deriving instance Generic (Spec.PredicateFailure Spec.UPIREG)
-deriving instance Generic (Spec.PredicateFailure Spec.UPIVOTE)
-deriving instance Generic (Spec.PredicateFailure Spec.UPIVOTES)
-deriving instance Generic (Spec.PredicateFailure Spec.UPPVV)
-deriving instance Generic (Spec.PredicateFailure Spec.UPREG)
-deriving instance Generic (Spec.PredicateFailure Spec.UPSVV)
-deriving instance Generic (Spec.PredicateFailure Spec.UPV)
-deriving instance Generic (Spec.PredicateFailure Spec.UPVOTE)
-deriving instance Generic (Spec.PredicateFailure Spec.UTXO)
-deriving instance Generic (Spec.PredicateFailure Spec.UTXOW)
-deriving instance Generic (Spec.PredicateFailure Spec.UTXOWS)
-
-{-------------------------------------------------------------------------------
-  NoUnexpectedThunks
--------------------------------------------------------------------------------}
-
-deriving via AllowThunk Spec.Hash instance NoUnexpectedThunks Spec.Hash
 
 {-------------------------------------------------------------------------------
   Orphans for generic types

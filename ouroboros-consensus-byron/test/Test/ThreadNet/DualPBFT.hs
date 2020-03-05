@@ -332,14 +332,14 @@ genTx :: TopLevelConfig DualByronBlock
 genTx cfg st = HH.choice [
       do aux <- sigGen (Rules.ctxtUTXOW cfg') st'
          let main :: Impl.ATxAux ByteString
-             main = Spec.Test.elaborateTxWitsBS
+             main = Spec.Test.elaborateTxBS
                       elaborateTxId
                       aux
 
          return $ DualGenTx {
              dualGenTxMain   = ByronTx (byronIdTx main) main
            , dualGenTxAux    = ByronSpecGenTx $ ByronSpecGenTxTx aux
-           , dualGenTxBridge = specToImplTxWit aux main
+           , dualGenTxBridge = specToImplTx aux main
            }
     ]
   where
