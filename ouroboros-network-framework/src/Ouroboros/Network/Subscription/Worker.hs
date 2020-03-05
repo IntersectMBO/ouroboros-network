@@ -44,6 +44,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void (Void)
 import           GHC.Stack
+import           Network.Socket (Family( AF_UNIX ))
 import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
@@ -166,7 +167,11 @@ safeConnect sn remoteAddr localAddr malloc mclean k =
       )
       (\sock -> Snocket.close sn sock >> mclean)
       (\sock -> mask $ \unmask -> do
-          Snocket.bind sn sock localAddr 
+          let doBind = case Snocket.addrFamily sn localAddr of
+                            Snocket.SocketFamily fam -> fam /= AF_UNIX
+                            _ -> False -- Bind is a nop for Named Pipes anyway
+          when doBind $
+            Snocket.bind sn sock localAddr
           res :: Either SomeException ()
               <- try (unmask $ Snocket.connect sn sock remoteAddr)
           k unmask sock res)
