@@ -182,8 +182,8 @@ matchesSimpleHeader SimpleHeader{..} SimpleBlock {..} =
   where
     SimpleStdHeader{..} = simpleHeaderStd
 
-countSimpleGenTxs :: SimpleBlock' c ext ext'' -> Word64
-countSimpleGenTxs = fromIntegral . length . simpleTxs . simpleBody
+countSimpleGenTxs :: SimpleBlock c ext -> Word64
+countSimpleGenTxs = fromIntegral . length . extractTxs
 
 {-------------------------------------------------------------------------------
   HasHeader instance for SimpleHeader
@@ -343,6 +343,9 @@ instance HasTxId (GenTx (SimpleBlock c ext)) where
 
 instance (Typeable p, Typeable c) => NoUnexpectedThunks (GenTx (SimpleBlock p c)) where
   showTypeOf _ = show $ typeRep (Proxy @(GenTx (SimpleBlock p c)))
+
+instance HasTxs (SimpleBlock c ext) where
+  extractTxs = map mkSimpleGenTx . simpleTxs . simpleBody
 
 instance Mock.HasUtxo (GenTx (SimpleBlock p c)) where
   txIns      = Mock.txIns      . simpleGenTx
