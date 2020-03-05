@@ -236,18 +236,18 @@ nodeToNodeProtocols MiniProtocolParameters {
       MiniProtocolLimits {
           -- chain sync has two potentially large messages:
           --
-          -- * 'MsgFindIntersect'
+          -- - 'MsgFindIntersect'
           --      it can include up to 18 'Points' (see
           --      'Ouroboros.Consensus.ChainSyncClient.chainSyncClient'; search
           --      for the 'offset' term)
-          -- * 'MnsgRollForward'
+          -- - 'MnsgRollForward'
           --      These messages are pipelined.  Up to 300 messages can be
           --      pipelined (this is defined in
           --      'Ouroboros.Consensus.NodeKernel.NodeArgs', which is
           --      instantiated in 'Ouroboros.Consensus.Node.mkNodeArgs').
           --
           -- Sizes:
-          -- * @Point (HeaderHash ByronBlock)@ - 45 as witnessed by
+          -- - @Point (HeaderHash ByronBlock)@ - 45 as witnessed by
           --    @encodedPointSize (szGreedy :: Proxy (HeaderHash ByronBlock) -> Size) (Proxy :: Proxy (Point ByronBlock))
           --    or
           --    ```
@@ -259,7 +259,7 @@ nodeToNodeProtocols MiniProtocolParameters {
           --             'Cardano.Chain.Block.HeaderHash'
           --    = 45
           --
-          -- * @Tip (HeaderHash ByronBlock)@ - 55 as witnessed by
+          -- - @Tip (HeaderHash ByronBlock)@ - 55 as witnessed by
           --    @encodedTipSize (szGreedy :: Proxy (HeaderHash ByronBlock) -> Size) (Proxy :: Proxy (Tip ByronBlock))
           --    or
           --    ```
@@ -269,7 +269,7 @@ nodeToNodeProtocols MiniProtocolParameters {
           --    + 55
           --    ```
           --
-          -- * @MsgFindIntersect@ carrying 18 @Point (HeaderHash ByronBlock)@
+          -- - @MsgFindIntersect@ carrying 18 @Point (HeaderHash ByronBlock)@
           --   ```
           --     1 -- encodeListLen 2
           --   + 1 -- enocdeWord 4
@@ -278,7 +278,7 @@ nodeToNodeProtocols MiniProtocolParameters {
           --   = 994
           --   ```
           --
-          -- * @MsgRollForward@
+          -- - @MsgRollForward@
           --   ```
           --     1   -- encodeListLen 3
           --   + 1   -- encodeWord 2
@@ -309,7 +309,7 @@ nodeToNodeProtocols MiniProtocolParameters {
         -- the largest (and the only pipelined message) in 'block-fetch'
         -- protocol is 'MsgBlock'.  We put a hard limit of 2Mb on each block.
         --
-        -- * size of 'MsgBlock'
+        -- - size of 'MsgBlock'
         --   ```
         --       1               -- encodeListLen 2
         --     + 1               -- encodeWord 4
@@ -351,7 +351,7 @@ nodeToNodeProtocols MiniProtocolParameters {
           --
           -- Ingress side of `txSubmissinInbound`
           --
-          -- * 'MsgReplyTxs' carrying a single `TxId`:
+          -- - 'MsgReplyTxs' carrying a single `TxId`:
           -- ```
           --    1  -- encodeListLen 2
           --  + 1  -- encodeWord 1
@@ -362,7 +362,7 @@ nodeToNodeProtocols MiniProtocolParameters {
           --  + 1  -- encodeBreak
           --  = 44
           -- ```
-          -- * 'MsgReplyTx' carrying a single 'Tx':
+          -- - 'MsgReplyTx' carrying a single 'Tx':
           -- ```
           --    1      -- encodeListLen 2
           --  + 1      -- encodeWord 3
