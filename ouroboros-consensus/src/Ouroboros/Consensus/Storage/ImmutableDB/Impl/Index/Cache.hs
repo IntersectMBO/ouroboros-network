@@ -465,12 +465,15 @@ readPrimaryIndex
 readPrimaryIndex hasFS chunkInfo chunk = do
     primaryIndex <- Primary.load hasFS chunk
     let firstIsEBB
-          | Primary.containsSlot primaryIndex $ firstRelativeSlot chunkInfo chunk
-          , Primary.isFilledSlot primaryIndex $ firstRelativeSlot chunkInfo chunk
-          = IsEBB
+          | Primary.containsSlot primaryIndex firstRelativeSlot
+          , Primary.isFilledSlot primaryIndex firstRelativeSlot
+          = relativeSlotIsEBB firstRelativeSlot
           | otherwise
           = IsNotEBB
     return (primaryIndex, firstIsEBB)
+  where
+    firstRelativeSlot :: RelativeSlot
+    firstRelativeSlot = firstBlockOrEBB chunkInfo chunk
 
 readSecondaryIndex
   :: (HasCallStack, IOLike m)

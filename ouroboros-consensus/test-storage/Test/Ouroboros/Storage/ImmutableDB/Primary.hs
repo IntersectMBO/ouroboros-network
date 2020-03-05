@@ -17,8 +17,7 @@ import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
-                     (ChunkNo (..), ChunkSize (..), RelativeSlot (..),
-                     maxRelativeIndex)
+                     (ChunkNo (..), RelativeSlot (..), maxRelativeIndex)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (PrimaryIndex, SecondaryOffset)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -190,7 +189,7 @@ instance Arbitrary TestPrimaryIndex where
       -- The chunk number is not very relevant here; a single primary index
       -- is anyway for a single chunk and hence a single chunk size.
       chunk     <- arbitrary
-      nbOffsets <- choose (1, fromIntegral (unChunkSize chunkSize))
+      nbOffsets <- fromIntegral <$> choose (1, maxRelativeIndex chunkSize)
       offsets   <- go nbOffsets 0 [] <&> \offsets ->
                      case Primary.mk chunk offsets of
                        Nothing    -> error $ "invalid offsets: " <> show offsets

@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeApplications           #-}
 
 module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal (
@@ -33,33 +34,29 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal (
   , ChunkAssertionFailure
   , assertSameChunk
   , assertWithinBounds
+  , assertChunkCanContainEBB
   ) where
 
 import           Control.Exception (Exception, throw)
 import           Control.Monad
-import           Data.Functor.Identity
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.EpochInfo (EpochInfo)
-import qualified Cardano.Slotting.EpochInfo as EI
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
--- TODO: Temporary definition
-data ChunkInfo = WrapEpochInfo {
-      getSimpleChunkInfo :: EpochSize
-    , unwrapEpochInfo    :: EpochInfo Identity
-    }
-  deriving stock (Generic)
+data ChunkInfo =
+    -- | A single, uniform, chunk size
+    --
+    -- If EBBs are present, the chunk size must line up precisely with the
+    -- epoch size (that is, the number of regular blocks in the chunk must equal
+    -- the number of regular blocks in an epoch).
+    UniformChunkSize ChunkSize
+  deriving stock (Show, Generic)
   deriving anyclass (NoUnexpectedThunks)
-
--- TODO: Temporary definition
-instance Show ChunkInfo where
-  show ci = "(simpleChunkInfo " ++ show (getSimpleChunkInfo ci) ++ ")"
 
 -- | Simple chunk config with a single chunk size
 --
@@ -67,33 +64,18 @@ instance Show ChunkInfo where
 -- 'ChunkSize': the translation from 'EpochSize' to 'ChunkSize' (number of
 -- available entries in a chunk) should not be done by client code.
 simpleChunkInfo :: EpochSize -> ChunkInfo
-simpleChunkInfo sz = WrapEpochInfo sz $ EI.fixedSizeEpochInfo sz
+simpleChunkInfo (EpochSize sz) = UniformChunkSize (ChunkSize True sz)
 
 -- | 'ChunkInfo' for a single 'ChunkSize'
 --
 -- See also 'simpleChunkInfo'.
---
--- TODO: This definition should change once we modify 'ChunkSize' to record
--- whether or not EBBs are present.
 singleChunkInfo :: ChunkSize -> ChunkInfo
-singleChunkInfo (ChunkSize n) = simpleChunkInfo (EpochSize n)
+singleChunkInfo = UniformChunkSize
 
 {-------------------------------------------------------------------------------
   Queries
 -------------------------------------------------------------------------------}
 
--- | Size of a chunk
---
--- 'ChunkSize' is an opaque type in the public API, as its interpretation is
--- confusing: a chunk of @ChunkSize n@ can actually contain @n + 1@ blocks:
--- @n@ regular blocks and one EBB.
---
--- TODO: Replace by the definition below.
-newtype ChunkSize = ChunkSize { unChunkSize :: Word64 }
-  deriving stock   (Show, Eq, Generic)
-  deriving newtype (NoUnexpectedThunks)
-
-{-
 -- | Size of a chunk
 --
 -- The total number of slots available in a chunk is equal to 'numRegularBlocks'
@@ -105,8 +87,8 @@ data ChunkSize = ChunkSize {
       -- | The number of regular blocks in this chunk
     , numRegularBlocks   :: Word64
     }
-  deriving stock (Show)
--}
+  deriving stock    (Show, Generic)
+  deriving anyclass (NoUnexpectedThunks)
 
 -- | Chunk number
 newtype ChunkNo = ChunkNo { unChunkNo :: Word64 }
@@ -166,12 +148,9 @@ unsafeChunkNoToEpochNo :: ChunkNo -> EpochNo
 unsafeChunkNoToEpochNo (ChunkNo n) = EpochNo n
 
 getChunkSize :: ChunkInfo -> ChunkNo -> ChunkSize
-getChunkSize ci = ChunkSize
-                . unEpochSize
-                . runIdentity
-                . EI.epochInfoSize (unwrapEpochInfo ci)
-                . EpochNo
-                . unChunkNo
+getChunkSize chunkInfo _chunk =
+    case chunkInfo of
+      UniformChunkSize sz -> sz
 
 {-------------------------------------------------------------------------------
   Layout
@@ -183,7 +162,7 @@ getChunkSize ci = ChunkSize
 -------------------------------------------------------------------------------}
 
 -- | A /relative/ slot within a chunk
-data RelativeSlot = MkRelativeSlot {
+data RelativeSlot = RelativeSlot {
     -- | The chunk index of the chunk this slot is in
     --
     -- Recorded primarily to be able to define a semi-sensible 'Ord' instance.
@@ -202,17 +181,16 @@ data RelativeSlot = MkRelativeSlot {
   deriving anyclass (NoUnexpectedThunks)
 
 -- | Maximum relative index within a chunk
---
--- Relative slot 0 is reserved for the EBB and regular relative slots start at
--- 1, so the last relative slot is equal to the chunk size.
 maxRelativeIndex :: ChunkSize -> Word64
-maxRelativeIndex (ChunkSize n) = n
+maxRelativeIndex ChunkSize{..}
+  | chunkCanContainEBB = numRegularBlocks
+  | otherwise          = numRegularBlocks - 1
 
 -- | Smart constructor for 'RelativeSlot'
 mkRelativeSlot :: HasCallStack => ChunkInfo -> ChunkNo -> Word64 -> RelativeSlot
 mkRelativeSlot chunkInfo chunk index =
     assertWithinBounds index size $
-    MkRelativeSlot {
+    RelativeSlot {
         relativeSlotChunkNo   = chunk
       , relativeSlotChunkSize = size
       , relativeSlotIndex     = index
@@ -253,6 +231,7 @@ assertRelativeSlotInChunk chunk relSlot =
 data ChunkAssertionFailure =
     NotSameChunk ChunkNo ChunkNo CallStack
   | NotWithinBounds Word64 ChunkSize CallStack
+  | ChunkCannotContainEBBs ChunkNo
   deriving (Show)
 
 instance Exception ChunkAssertionFailure
@@ -275,6 +254,17 @@ assertWithinBounds ix sz
   | otherwise                 = throw $ NotWithinBounds ix sz callStack
 #else
 assertWithinBounds _ _ = id
+#endif
+  where
+    _ = keepRedundantConstraint (Proxy @HasCallStack)
+
+assertChunkCanContainEBB :: HasCallStack => ChunkNo -> ChunkSize -> a -> a
+#if ENABLE_ASSERTIONS
+assertChunkCanContainEBB chunk size
+  | chunkCanContainEBB size = id
+  | otherwise               = throw $ ChunkCannotContainEBBs chunk
+#else
+assertChunkCanContainEBB _ _ = id
 #endif
   where
     _ = keepRedundantConstraint (Proxy @HasCallStack)

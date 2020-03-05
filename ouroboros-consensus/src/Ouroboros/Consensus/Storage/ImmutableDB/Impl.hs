@@ -732,9 +732,9 @@ appendEpochSlot registry hasFS chunkInfo index chunkSlot blockNumber blockOrEBB 
             -- If we had to start a new chunk, we start with slot 0. Note that
             -- in this case the _currentTip will refer to something in an chunk
             -- before _currentChunk.
-            then firstRelativeSlot chunkInfo chunk
+            then firstBlockOrEBB chunkInfo chunk
             else case forgetTipInfo <$> _currentTip of
-              Origin -> firstRelativeSlot chunkInfo firstChunkNo
+              Origin -> firstBlockOrEBB chunkInfo firstChunkNo
               -- Invariant: the currently open chunk is never full
               At b   -> unsafeNextRelativeSlot . chunkRelative $
                           chunkSlotForBlockOrEBB chunkInfo b
@@ -793,11 +793,11 @@ startNewEpoch registry hasFS@HasFS{..} index chunkInfo = do
     let nextFreeRelSlot :: NextRelativeSlot
         nextFreeRelSlot = case forgetTipInfo <$> _currentTip of
           Origin ->
-            NextRelativeSlot $ firstRelativeSlot chunkInfo firstChunkNo
+            NextRelativeSlot $ firstBlockOrEBB chunkInfo firstChunkNo
           At b ->
             if chunk == _currentChunk
               then nextRelativeSlot relSlot
-              else NextRelativeSlot $ firstRelativeSlot chunkInfo _currentChunk
+              else NextRelativeSlot $ firstBlockOrEBB chunkInfo _currentChunk
             where
               ChunkSlot chunk relSlot = chunkSlotForBlockOrEBB chunkInfo b
 

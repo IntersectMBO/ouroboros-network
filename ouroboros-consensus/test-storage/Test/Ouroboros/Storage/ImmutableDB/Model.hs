@@ -690,7 +690,8 @@ appendBlockModel slot block hash binaryInfo dbm@DBModel {..} = do
     _ = keepRedundantConstraint (Proxy @(Show hash))
 
 appendEBBModel
-  :: EpochNo
+  :: forall hash. Show hash
+  => EpochNo
   -> BlockNo
   -> hash
   -> BinaryInfo Builder
@@ -712,6 +713,8 @@ appendEBBModel epoch block hash binaryInfo dbm@DBModel {..} = do
         tipInfo     = TipInfo hash (EBB epoch) block
 
     return dbm { dbmSlots = insertInSlot ebbSlot tipInfo binaryInfo' dbmSlots }
+  where
+    _ = keepRedundantConstraint (Proxy @(Show hash))
 
 streamModel
   :: forall hash. (Eq hash, HasCallStack)

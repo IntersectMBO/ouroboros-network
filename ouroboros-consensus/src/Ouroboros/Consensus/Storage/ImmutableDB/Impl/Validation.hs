@@ -452,7 +452,7 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
                         chunk blockOrEBBs =
     fromMaybe (error nonIncreasing) $
       Primary.mk chunk . (0:) $
-        go (NextRelativeSlot (firstRelativeSlot chunkInfo chunk)) 0 $
+        go (NextRelativeSlot (firstBlockOrEBB chunkInfo chunk)) 0 $
           map (chunkRelative . chunkSlotForBlockOrEBB chunkInfo) blockOrEBBs
   where
     nonIncreasing :: String
@@ -473,8 +473,8 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
                                         chunk
                                         expected
                                         lastSecondaryOffset
-          (NoMoreRelativeSlots _, _) ->
-            -- Assumption: when we validate the chunk file, we chunk its size
+          (NoMoreRelativeSlots, _) ->
+            -- Assumption: when we validate the chunk file, we check its size
             error "reconstructPrimaryIndex: too many entries"
           (NextRelativeSlot nextExpectedRelSlot, relSlot:relSlots') ->
             if compareRelativeSlot relSlot nextExpectedRelSlot == LT then

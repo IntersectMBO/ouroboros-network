@@ -72,7 +72,7 @@ deriving via Positive Word64 instance Arbitrary SlotNo
 deriving via Word64          instance Arbitrary EpochNo
 
 instance Arbitrary RelativeSlot where
-  arbitrary = MkRelativeSlot <$> arbitrary <*> arbitrary <*> arbitrary
+  arbitrary = RelativeSlot <$> arbitrary <*> arbitrary <*> arbitrary
 
 -- | The functions 'slotAtTime' and 'timeUntilNextSlot' suffer from arithmetic
 -- overflow for very large values, so generate values that avoid overflow when
@@ -109,9 +109,9 @@ instance Arbitrary ChunkNo where
   arbitrary = ChunkNo <$> choose (0, 10000)
   shrink    = genericShrink
 
--- | Picks a 'ChunkSize' between 1 and 100
+-- | Picks a 'ChunkSize' between 1 and 100, and randomly choose to enable EBBs
 instance Arbitrary ChunkSize where
-  arbitrary = ChunkSize <$> choose (1, 100)
+  arbitrary = ChunkSize <$> arbitrary <*> choose (1, 100)
   shrink    = genericShrink
 
 instance Arbitrary ChunkSlot where

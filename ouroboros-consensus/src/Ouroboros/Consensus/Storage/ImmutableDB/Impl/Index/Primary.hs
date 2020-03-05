@@ -31,7 +31,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
   , open
   , appendOffsets
   , lastOffset
-  , lastSlot
+  , getLastSlot
   , containsSlot
   , offsetOfSlot
   , sizeOfSlot
@@ -60,7 +60,7 @@ import qualified Data.Vector.Unboxed as V
 import           Data.Word
 import           Foreign.Storable (sizeOf)
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack)
+import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
@@ -228,7 +228,7 @@ readFirstFilledSlot
 readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunkInfo chunk =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd -> do
       hSeek pHnd AbsoluteSeek skip
-      go pHnd $ firstRelativeSlot chunkInfo chunk
+      go pHnd $ NextRelativeSlot (firstBlockOrEBB chunkInfo chunk)
   where
     primaryIndexFile = renderFile "primary" chunk
 
@@ -241,17 +241,17 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunkInfo chunk =
     -- to read one 4-byte offset. In the Shelley era, approximately one in ten
     -- slots is filled, so on average we need to read 5 4-byte offsets. The OS
     -- will buffer this anyway.
-    go :: Handle h -> RelativeSlot -> m (Maybe RelativeSlot)
-    go pHnd slot = getNextOffset pHnd >>= \case
-      -- Reached end of file, no filled slot
-      Nothing -> return Nothing
-      Just offset
-        | offset == 0 -> case nextRelativeSlot slot of
-                           NextRelativeSlot slot' ->
-                             go pHnd slot'
-                           NoMoreRelativeSlots _ ->
-                             throwM $ PrimaryIndexTooLarge chunk
-        | otherwise   -> return $ Just slot
+    go :: HasCallStack => Handle h -> NextRelativeSlot -> m (Maybe RelativeSlot)
+    go pHnd nextRelative = getNextOffset pHnd >>= \mOffset ->
+      case (nextRelative, mOffset) of
+        (_, Nothing) ->
+          -- Reached end of file, no filled slot
+          return Nothing
+        (NoMoreRelativeSlots, Just _) ->
+          throwM $ PrimaryIndexTooLarge chunk callStack
+        (NextRelativeSlot slot, Just offset)
+          | offset == 0 -> go pHnd (nextRelativeSlot slot)
+          | otherwise   -> return $ Just slot
 
     -- | We don't know in advance if there are bytes left to read, so it could
     -- be that 'hGetSome' returns 0 bytes, in which case we reached EOF and
@@ -282,7 +282,7 @@ data InvalidPrimaryIndexException =
     -- indicates disk corruption.
     --
     -- We record the number of the index.
-    PrimaryIndexTooLarge ChunkNo
+    PrimaryIndexTooLarge ChunkNo CallStack
   deriving (Show)
 
 instance Exception InvalidPrimaryIndexException
@@ -341,15 +341,16 @@ write hasFS@HasFS { hTruncate } chunk (MkPrimaryIndex _ offsets) =
   where
     primaryIndexFile = renderFile "primary" chunk
 
--- | Truncate the primary index so that the given 'RelativeSlot'. will be the
+-- | Truncate the primary index so that the given 'RelativeSlot' will be the
 -- last slot (filled or not) in the primary index, unless the primary index
 -- didn't contain the 'RelativeSlot' in the first place.
 truncateToSlot :: ChunkInfo -> RelativeSlot -> PrimaryIndex -> PrimaryIndex
-truncateToSlot chunkInfo relSlot primary@(MkPrimaryIndex _ offsets)
-    | compareRelativeSlot (lastSlot chunkInfo primary) relSlot /= GT
-    = primary
-    | otherwise
-    = primary { primaryIndexOffsets = V.take (fromIntegral slot + 2) offsets }
+truncateToSlot chunkInfo relSlot primary@(MkPrimaryIndex _ offsets) =
+    case getLastSlot chunkInfo primary of
+      Just lastSlot | compareRelativeSlot lastSlot relSlot == GT ->
+        primary { primaryIndexOffsets = V.take (fromIntegral slot + 2) offsets }
+      _otherwise ->
+        primary
   where
     slot = assertInPrimaryIndex primary relSlot
 
@@ -433,9 +434,12 @@ lastOffset (MkPrimaryIndex _ offsets)
   | otherwise = offsets ! (V.length offsets - 1)
 
 -- | Return the last slot of the primary index (empty or not).
-lastSlot :: ChunkInfo -> PrimaryIndex -> RelativeSlot
-lastSlot chunkInfo (MkPrimaryIndex chunk offsets) =
-    nthRelativeSlot chunkInfo chunk (V.length offsets - 2)
+--
+-- Returns 'Nothing' if the index is empty.
+getLastSlot :: ChunkInfo -> PrimaryIndex -> Maybe RelativeSlot
+getLastSlot chunkInfo (MkPrimaryIndex chunk offsets) = do
+    guard $ V.length offsets >= 2
+    return $ nthBlockOrEBB chunkInfo chunk (V.length offsets - 2)
 
 -- | Check whether the given slot is within the primary index.
 containsSlot :: PrimaryIndex -> RelativeSlot -> Bool
@@ -504,7 +508,7 @@ nextFilledSlot chunkInfo primary@(MkPrimaryIndex chunk offsets) relSlot =
       | offsets ! i == offsets ! (i + 1)
       = go (i + 1)
       | otherwise
-      = Just (nthRelativeSlot chunkInfo chunk i)
+      = Just (nthBlockOrEBB chunkInfo chunk i)
 
 -- | Find the first filled (length > zero) slot in the primary index. If there
 -- is none, return 'Nothing'.
@@ -530,7 +534,7 @@ firstFilledSlot chunkInfo (MkPrimaryIndex chunk offsets) = go 1
       | offsets ! i == 0
       = go (i + 1)
       | otherwise
-      = Just (nthRelativeSlot chunkInfo chunk (i - 1))
+      = Just (nthBlockOrEBB chunkInfo chunk (i - 1))
 
 -- | Return a list of all the filled (length > zero) slots in the primary
 -- index.
@@ -552,7 +556,7 @@ lastFilledSlot chunkInfo (MkPrimaryIndex chunk offsets) =
       | offsets ! i == offsets ! (i - 1)
       = go (i - 1)
       | otherwise
-      = Just (nthRelativeSlot chunkInfo chunk (i - 1))
+      = Just (nthBlockOrEBB chunkInfo chunk (i - 1))
 
 -- | Return the slots to backfill the primary index file with.
 --
@@ -613,7 +617,7 @@ backfillEpoch
   -> NextRelativeSlot
   -> SecondaryOffset
   -> [SecondaryOffset]
-backfillEpoch _ _ (NoMoreRelativeSlots _) _ =
+backfillEpoch _ _ NoMoreRelativeSlots _ =
     []
 backfillEpoch chunkInfo chunk (NextRelativeSlot nextExpected) offset =
     replicate (fromIntegral gap) offset
