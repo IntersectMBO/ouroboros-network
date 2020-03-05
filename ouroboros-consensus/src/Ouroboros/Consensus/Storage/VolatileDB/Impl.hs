@@ -150,7 +150,7 @@ data InternalState blockId h = InternalState {
       -- ^ The path of the file above.
     , currentWriteId     :: !FileId
       -- ^ The 'FileId' of the same file.
-    , currentWriteOffset :: !Word64
+    , currentWriteOffset :: !AbsOffset
       -- ^ The offset of the same file.
     , currentMap         :: !(Index blockId)
       -- ^ The contents of each file.
@@ -324,17 +324,18 @@ putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
                     ++ "Current write file not found in Index.")
             (Index.lookup currentWriteId currentMap)
         fileBlockInfo = FileInfo.mkFileBlockInfo (BlockSize bytesWritten) bbid
-        fileInfo' = FileInfo.addBlock bslot currentWriteOffset fileBlockInfo fileInfo
+        AbsOffset offset = currentWriteOffset
+        fileInfo' = FileInfo.addBlock bslot offset fileBlockInfo fileInfo
         currentMap' = Index.insert currentWriteId fileInfo' currentMap
         internalBlockInfo' = InternalBlockInfo {
             ibFile         = currentWritePath
-          , ibBlockOffset  = currentWriteOffset
+          , ibBlockOffset  = offset
           , ibBlockSize    = BlockSize bytesWritten
           , ibBlockInfo    = blockInfo
           }
         currentRevMap' = Map.insert bbid internalBlockInfo' currentRevMap
         st' = st {
-            currentWriteOffset = currentWriteOffset + bytesWritten
+            currentWriteOffset = AbsOffset $ offset + bytesWritten
           , currentMap         = currentMap'
           , currentRevMap      = currentRevMap'
           , currentSuccMap     = insertMapSet currentSuccMap (bbid, bpreBid)
@@ -536,7 +537,7 @@ mkInternalState hasFS parser tracer maxBlocksPerFile files =
           currentWriteHandle = currentWriteHandle
         , currentWritePath   = currentWritePath
         , currentWriteId     = currentWriteId
-        , currentWriteOffset = currentWriteOffset
+        , currentWriteOffset = AbsOffset currentWriteOffset
         , currentMap         = currentMap''
         , currentRevMap      = currentRevMap'
         , currentSuccMap     = currentSuccMap'

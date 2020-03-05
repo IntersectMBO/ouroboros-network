@@ -197,7 +197,7 @@ instance Show (Handle h) where
 -------------------------------------------------------------------------------}
 
 newtype AbsOffset = AbsOffset { unAbsOffset :: Word64 }
-  deriving (Eq, Ord, Enum, Bounded, Num, Show)
+  deriving (Eq, Ord, Enum, Bounded, Num, Show, NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   Errors
