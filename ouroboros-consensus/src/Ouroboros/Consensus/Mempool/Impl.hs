@@ -19,7 +19,6 @@ module Ouroboros.Consensus.Mempool.Impl (
 import           Control.Exception (assert)
 import           Control.Monad (void)
 import           Control.Monad.Except
-import           Data.Foldable (foldl')
 import           Data.Maybe (isJust, isNothing, listToMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -476,6 +475,10 @@ data ValidationResult blk = ValidationResult {
     -- | The transactions that were found to be valid (oldest to newest)
   , vrValid        :: TxSeq (GenTx blk)
 
+    -- | The cached IDs of transactions that were found to be valid (oldest to
+    -- newest)
+  , vrValidTxIds   :: Set (GenTxId blk)
+
     -- | A new transaction (not previously known) which was found to be valid.
     --
     -- n.b. This will only contain a valid transaction that was /newly/ added
@@ -503,12 +506,10 @@ data ValidationResult blk = ValidationResult {
 -- | Construct internal state from 'ValidationResult'
 --
 -- Discards information about invalid and newly valid transactions
-internalStateFromVR :: HasTxId (GenTx blk)
-                    => ValidationResult blk
-                    -> InternalState blk
+internalStateFromVR :: ValidationResult blk -> InternalState blk
 internalStateFromVR vr = IS {
       isTxs          = vrValid
-    , isTxIds        = txIdSet
+    , isTxIds        = vrValidTxIds
     , isLedgerState  = vrAfter
     , isTip          = vrBeforeTip
     , isSlotNo       = vrBeforeSlotNo
@@ -519,14 +520,10 @@ internalStateFromVR vr = IS {
         vrBeforeTip
       , vrBeforeSlotNo
       , vrValid
+      , vrValidTxIds
       , vrAfter
       , vrLastTicketNo
       } = vr
-
-    txIdSet = foldl'
-      (\acc tx -> Set.insert (txId tx) acc)
-      Set.empty
-      vrValid
 
 -- | Construct a 'ValidationResult' from internal state.
 validationResultFromIS :: InternalState blk -> ValidationResult blk
@@ -534,6 +531,7 @@ validationResultFromIS is = ValidationResult {
       vrBeforeTip    = isTip
     , vrBeforeSlotNo = isSlotNo
     , vrValid        = isTxs
+    , vrValidTxIds   = isTxIds
     , vrNewValid     = Nothing
     , vrAfter        = isLedgerState
     , vrInvalid      = []
@@ -542,6 +540,7 @@ validationResultFromIS is = ValidationResult {
   where
     IS {
         isTxs
+      , isTxIds
       , isLedgerState
       , isTip
       , isSlotNo
@@ -556,7 +555,7 @@ validationResultFromIS is = ValidationResult {
 -- validated this transaction because, if we have, we can utilize 'reapplyTx'
 -- rather than 'applyTx' and, therefore, skip things like cryptographic
 -- signatures.
-extendVRPrevApplied :: ApplyTx blk
+extendVRPrevApplied :: (ApplyTx blk, HasTxId (GenTx blk))
                     => LedgerConfig blk
                     -> TxTicket (GenTx blk)
                     -> ValidationResult blk
@@ -565,12 +564,13 @@ extendVRPrevApplied cfg txTicket vr =
     case runExcept (reapplyTx cfg tx vrAfter) of
       Left err  -> vr { vrInvalid = (tx, err) : vrInvalid
                       }
-      Right st' -> vr { vrValid   = vrValid :> txTicket
-                      , vrAfter   = st'
+      Right st' -> vr { vrValid      = vrValid :> txTicket
+                      , vrValidTxIds = Set.insert (txId tx) vrValidTxIds
+                      , vrAfter      = st'
                       }
   where
     TxTicket { txTicketTx = tx } = txTicket
-    ValidationResult { vrValid, vrAfter, vrInvalid } = vr
+    ValidationResult { vrValid, vrValidTxIds, vrAfter, vrInvalid } = vr
 
 -- | Extend 'ValidationResult' with a new transaction (one which we have not
 -- previously validated) that may or may not be valid in this ledger state.
@@ -578,7 +578,7 @@ extendVRPrevApplied cfg txTicket vr =
 -- PRECONDITION: 'vrNewValid' is 'Nothing'. In other words: new transactions
 -- should be validated one-by-one, not by calling 'extendVRNew' on its result
 -- again.
-extendVRNew :: ApplyTx blk
+extendVRNew :: (ApplyTx blk, HasTxId (GenTx blk))
             => LedgerConfig blk
             -> GenTx blk
             -> ValidationResult blk
@@ -588,6 +588,7 @@ extendVRNew cfg tx vr = assert (isNothing vrNewValid) $
       Left err  -> vr { vrInvalid      = (tx, err) : vrInvalid
                       }
       Right st' -> vr { vrValid        = vrValid :> TxTicket tx nextTicketNo (txSize tx)
+                      , vrValidTxIds   = Set.insert (txId tx) vrValidTxIds
                       , vrNewValid     = Just tx
                       , vrAfter        = st'
                       , vrLastTicketNo = nextTicketNo
@@ -595,6 +596,7 @@ extendVRNew cfg tx vr = assert (isNothing vrNewValid) $
   where
     ValidationResult {
         vrValid
+      , vrValidTxIds
       , vrAfter
       , vrInvalid
       , vrLastTicketNo
@@ -605,7 +607,12 @@ extendVRNew cfg tx vr = assert (isNothing vrNewValid) $
 
 -- | Validate the internal state against the current ledger state and the
 -- given 'BlockSlot', revalidating if necessary.
-validateIS :: forall m blk. (IOLike m, ApplyTx blk, ValidateEnvelope blk)
+validateIS :: forall m blk.
+              ( IOLike m
+              , ApplyTx blk
+              , HasTxId (GenTx blk)
+              , ValidateEnvelope blk
+              )
            => MempoolEnv m blk
            -> BlockSlot
            -> STM m (ValidationResult blk)
@@ -624,7 +631,7 @@ validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} blockSlot =
 -- When these don't match, the transaction in the internal state will be
 -- revalidated ('revalidateTxsFor').
 validateStateFor
-  :: forall blk. (ApplyTx blk, ValidateEnvelope blk)
+  :: forall blk. (ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
   => LedgerConfig     blk
   -> BlockSlot
   -> LedgerState      blk
@@ -643,7 +650,7 @@ validateStateFor cfg blockSlot st is
 -- | Revalidate the given transactions (@['TxTicket' ('GenTx' blk)]@) against
 -- the given ticked ledger state.
 revalidateTxsFor
-  :: forall blk. ApplyTx blk
+  :: forall blk. (ApplyTx blk, HasTxId (GenTx blk))
   => LedgerConfig blk
   -> TickedLedgerState blk
   -> TicketNo
