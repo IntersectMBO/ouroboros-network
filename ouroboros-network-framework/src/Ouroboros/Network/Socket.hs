@@ -88,7 +88,7 @@ import qualified Network.Mux.Types as Mx
 import           Network.Mux.Types (MuxBearer)
 
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.ByteLimit
+import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Driver (TraceSendRecv)
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.ErrorPolicy
@@ -150,15 +150,6 @@ data ConnectionId addr = ConnectionId {
   }
   deriving (Eq, Ord, Show, Generic)
   deriving NoUnexpectedThunks via (UseIsNormalForm (ConnectionId addr))
-
--- |
--- We assume that a TCP segment size of 1440 bytes with initial window of size
--- 4.  This sets upper limit of 5760 bytes on each message of handshake
--- protocol.  If the limit is exceeded, then @'TooMuchInput'@ exception will
--- be thrown.
---
-maxTransmissionUnit :: Int64
-maxTransmissionUnit = 4 * 1440
 
 -- | The handshake protocol number.
 --
@@ -236,19 +227,23 @@ connectToNode' sn versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHands
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
     let bearer = Snocket.toBearer sn muxTracer sd
     ts_start <- getMonotonicTime
-    mapp <- runPeerWithByteLimit
-              maxTransmissionUnit
-              BL.length
+    mapp <- try $ runPeerWithLimits
               (contramap (Mx.WithMuxBearer connectionId) nctHandshakeTracer)
               codecHandshake
+              byteLimitsHandshake
+              timeLimitsHandshake
               (fromChannel (Mx.muxBearerAsChannel bearer handshakeProtocolNum Mx.ModeInitiator))
               (handshakeClientPeer versionDataCodec versions)
     ts_end <- getMonotonicTime
+
     case mapp of
-         Left err -> do
+         Left (errDrv :: ProtocolLimitFailure)-> do
+            traceWith muxTracer $ Mx.MuxTraceHandshakeClientError errDrv (diffTime ts_end ts_start)
+            throwIO errDrv
+         Right (Left err) -> do
             traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
             throwIO err
-         Right app -> do
+         Right (Right app) -> do
             traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
             Mx.muxStart muxTracer (toApplication (app connectionId)) bearer
 
@@ -344,18 +339,21 @@ beginConnection sn muxTracer handshakeTracer versionDataCodec acceptVersion fn t
         let bearer :: MuxBearer IO
             bearer = Snocket.toBearer sn muxTracer' sd
         traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
-        mapp <- runPeerWithByteLimit
-                maxTransmissionUnit
-                BL.length
+        mapp <- try $ runPeerWithLimits
                 (contramap (Mx.WithMuxBearer peerid) handshakeTracer)
                 codecHandshake
+                byteLimitsHandshake
+                timeLimitsHandshake
                 (fromChannel (Mx.muxBearerAsChannel bearer handshakeProtocolNum Mx.ModeResponder))
                 (handshakeServerPeer versionDataCodec acceptVersion versions)
         case mapp of
-          Left err -> do
+          Left (errDrv :: ProtocolLimitFailure) -> do
+            traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError errDrv
+            throwIO errDrv
+          Right (Left err) -> do
             traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
             throwIO err
-          Right mkapp ->
+          Right (Right mkapp) ->
             case mkapp peerid of
               SomeResponderApplication app -> do
                 traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
