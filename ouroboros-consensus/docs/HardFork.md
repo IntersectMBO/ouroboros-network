@@ -150,19 +150,18 @@ distinction between votes and proposals: to "vote" for a proposal one merely
 submits the exact same proposal. There is also no separate endorsement step.
 The procedure is as follows:
 
-1. Proposals (change parameter `x` to value `y` are submitted to the chain)
-2. "Voting" (submitting of proposals) ends `2k` slots before the end of the
+1. As in Byron, a proposal is a partial map from parameters to their values.
+2. During each epoch, a genesis key can submit (via its delegates) zero, one,
+   or many proposals; each submission overrides the previous one.
+3. "Voting" (submitting of proposals) ends `2k` slots before the end of the
    epoch (that `2k` might need to be adjusted pending more detailed analysis
    from the researchers -- the spec records this as a single specification
    parameter (not protocol parameter!) called `slotsPrior`).
-3. By the end of the epoch, if a majority (for some definition of majority) is
-   reached for _all_ proposed parameters, then _all_ parameters take their new
-   value at the start of the next epoch. If no majority is reached on _any one_
-   of the parameters, then _none_ of the parameters change. The next epoch is
-   always started with a clean slate, proposals from the previous epoch that
-   didn't make it are discarded. This all-or-nothing approach means that nodes
-   can indicate "I'm willing to change `A` in this way, but only if `B` changes
-   in that way".
+4. At the end of an epoch, if the majority of nodes (as determined by the
+   `Quorum` specification constant, which must be greater than half the nodes)
+   have most recently submitted the same exact proposal, then it is adopted.
+5. The next epoch is always started with a clean slate, proposals from the
+   previous epoch that didn't make it are discarded.
 
 The protocol version itself is also considered to be merely another parameter,
 and parameters can change _without_ changing the protocol version, although
