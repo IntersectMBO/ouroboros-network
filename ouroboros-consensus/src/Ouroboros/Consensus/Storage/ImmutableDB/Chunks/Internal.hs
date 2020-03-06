@@ -10,6 +10,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal (
     ChunkInfo(..)
   , simpleChunkInfo
   , singleChunkInfo
+  , chunkInfoSupportsEBBs
     -- * Chunk number
   , ChunkNo(..)
   , firstChunkNo
@@ -41,11 +42,11 @@ import           Control.Exception (Exception, throw)
 import           Control.Monad
 import           Data.Word
 import           GHC.Generics (Generic)
-import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot
 
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
 data ChunkInfo =
@@ -71,6 +72,14 @@ simpleChunkInfo (EpochSize sz) = UniformChunkSize (ChunkSize True sz)
 -- See also 'simpleChunkInfo'.
 singleChunkInfo :: ChunkSize -> ChunkInfo
 singleChunkInfo = UniformChunkSize
+
+-- | Can we store EBBs in the chunks described by this 'ChunkInfo'?
+--
+-- This is only used for tests. This API will need to change (and the tests will
+-- become more complicated) once we support non-uniform 'ChunkInfo'.
+chunkInfoSupportsEBBs :: ChunkInfo -> Bool
+chunkInfoSupportsEBBs (UniformChunkSize chunkSize) =
+    chunkCanContainEBB chunkSize
 
 {-------------------------------------------------------------------------------
   Queries
@@ -229,9 +238,9 @@ assertRelativeSlotInChunk chunk relSlot =
 -------------------------------------------------------------------------------}
 
 data ChunkAssertionFailure =
-    NotSameChunk ChunkNo ChunkNo CallStack
-  | NotWithinBounds Word64 ChunkSize CallStack
-  | ChunkCannotContainEBBs ChunkNo
+    NotSameChunk ChunkNo ChunkNo PrettyCallStack
+  | NotWithinBounds Word64 ChunkSize PrettyCallStack
+  | ChunkCannotContainEBBs ChunkNo PrettyCallStack
   deriving (Show)
 
 instance Exception ChunkAssertionFailure
@@ -240,7 +249,7 @@ assertSameChunk :: HasCallStack => ChunkNo -> ChunkNo -> a -> a
 #if ENABLE_ASSERTIONS
 assertSameChunk a b
   | a == b    = id
-  | otherwise = throw $ NotSameChunk a b callStack
+  | otherwise = throw $ NotSameChunk a b prettyCallStack
 #else
 assertSameChunk _ _ = id
 #endif
@@ -251,7 +260,7 @@ assertWithinBounds :: HasCallStack => Word64 -> ChunkSize -> a -> a
 #if ENABLE_ASSERTIONS
 assertWithinBounds ix sz
   | ix <= maxRelativeIndex sz = id
-  | otherwise                 = throw $ NotWithinBounds ix sz callStack
+  | otherwise                 = throw $ NotWithinBounds ix sz prettyCallStack
 #else
 assertWithinBounds _ _ = id
 #endif
@@ -262,7 +271,7 @@ assertChunkCanContainEBB :: HasCallStack => ChunkNo -> ChunkSize -> a -> a
 #if ENABLE_ASSERTIONS
 assertChunkCanContainEBB chunk size
   | chunkCanContainEBB size = id
-  | otherwise               = throw $ ChunkCannotContainEBBs chunk
+  | otherwise               = throw $ ChunkCannotContainEBBs chunk prettyCallStack
 #else
 assertChunkCanContainEBB _ _ = id
 #endif

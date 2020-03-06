@@ -27,16 +27,16 @@ openDBMock chunkInfo = do
 
     immDB :: StrictTVar m (DBModel hash) -> ImmutableDB hash m
     immDB dbVar = ImmutableDB
-        { closeDB                = return ()
-        , isOpen                 = return True
-        , reopen                 = \_valPol -> void $ update reopenModel
-        , getTip                 = query       $ getTipModel
-        , getBlockComponent      = queryE     .: getBlockComponentModel
-        , getEBBComponent        = queryE     .: getEBBComponentModel
-        , getBlockOrEBBComponent = queryE    ..: getBlockOrEBBComponentModel
-        , appendBlock            = updateE_ ...: appendBlockModel
-        , appendEBB              = updateE_ ...: appendEBBModel
-        , stream                 = updateEE ...: \_rr bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
+        { closeDB_                = return ()
+        , isOpen_                 = return True
+        , reopen_                 = \_valPol -> void $ update reopenModel
+        , getTip_                 = query       $ getTipModel
+        , getBlockComponent_      = queryE     .: getBlockComponentModel
+        , getEBBComponent_        = queryE     .: getEBBComponentModel
+        , getBlockOrEBBComponent_ = queryE    ..: getBlockOrEBBComponentModel
+        , appendBlock_            = updateE_ ...: appendBlockModel
+        , appendEBB_              = updateE_ ...: appendEBBModel
+        , stream_                 = updateEE ...: \_rr bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
         }
       where
         iterator :: BlockComponent (ImmutableDB hash m) b

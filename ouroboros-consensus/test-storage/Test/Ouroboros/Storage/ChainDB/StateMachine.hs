@@ -1165,7 +1165,9 @@ genBlk chunkInfo Model{..} = frequency
     , (3,                      genGap)
     ]
   where
-    blocksInChainDB = Model.blocks dbModel
+    blocksInChainDB   = Model.blocks dbModel
+    modelSupportsEBBs = ImmDB.chunkInfoSupportsEBBs chunkInfo
+    canContainEBB     = const modelSupportsEBBs -- TODO: we could be more precise
 
     empty :: Bool
     empty = Map.null blocksInChainDB
@@ -1218,8 +1220,12 @@ genBlk chunkInfo Model{..} = frequency
     -- Generate a block or EBB fitting on genesis
     genFirstBlock :: Gen TestBlock
     genFirstBlock = frequency
-      [ (1, firstBlock <$> chooseSlot 0 2 <*> genBody)
-      , (1, firstEBB <$> genBody)
+      [ ( 1
+        , firstBlock canContainEBB <$> chooseSlot 0 2 <*> genBody
+        )
+      , ( if modelSupportsEBBs then 1 else 0
+        , firstEBB   canContainEBB <$> genBody
+        )
       ]
 
     -- Helper that generates a block that fits onto the given block.
@@ -1230,11 +1236,11 @@ genBlk chunkInfo Model{..} = frequency
                   then chooseSlot (blockSlot b)     (blockSlot b + 2)
                   else chooseSlot (blockSlot b + 1) (blockSlot b + 3)
                 body   <- genBody
-                return $ mkNextBlock b slotNo body)
+                return $ mkNextBlock canContainEBB b slotNo body)
         -- An EBB is never followed directly by another EBB, otherwise they
         -- would have the same 'BlockNo', as the EBB has the same 'BlockNo' of
         -- the block before it.
-        , (if fromIsEBB (testBlockIsEBB b) then 0 else 1, do
+        , (if fromIsEBB (testBlockIsEBB b) || not modelSupportsEBBs then 0 else 1, do
              let prevSlotNo    = blockSlot b
                  prevChunk     = ImmDB.chunkIndexOfSlot
                                    chunkInfo
@@ -1251,7 +1257,7 @@ genBlk chunkInfo Model{..} = frequency
                , (1, return nextNextEBB)
                ]
              body   <- genBody
-             return $ mkNextEBB b slotNo body
+             return $ mkNextEBB canContainEBB b slotNo body
           )
         ]
 

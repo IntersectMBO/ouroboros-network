@@ -352,11 +352,10 @@ generatorCmdImpl Model {..} = frequency
     , (if isEmpty then 0 else 1, genDuplicateBlock)
     ]
   where
-    blockIdx = blockIndex dbModel
-
-    dbFiles = getDBFiles dbModel
-
-    isEmpty = Map.null blockIdx
+    blockIdx      = blockIndex dbModel
+    dbFiles       = getDBFiles dbModel
+    isEmpty       = Map.null blockIdx
+    canContainEBB = const True
 
     getSlot :: BlockId -> Maybe SlotNo
     getSlot bid = bslot . fst <$> Map.lookup bid blockIdx
@@ -387,7 +386,7 @@ generatorCmdImpl Model {..} = frequency
           th    = testHeader b
           no    = thBlockNo th
           isEBB = thIsEBB th
-      return $ mkBlock body (BlockHash prevHash) slot no isEBB
+      return $ mkBlock canContainEBB body (BlockHash prevHash) slot no isEBB
 
     genRandomBlock :: Gen TestBlock
     genRandomBlock = do
@@ -400,7 +399,7 @@ generatorCmdImpl Model {..} = frequency
       -- We don't care about block numbers in the VolatileDB
       no       <- BlockNo <$> arbitrary
       isEBB    <- elements [IsEBB, IsNotEBB]
-      return $ mkBlock body prevHash slot no isEBB
+      return $ mkBlock canContainEBB body prevHash slot no isEBB
 
     genBlockId :: Gen BlockId
     genBlockId = frequency

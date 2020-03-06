@@ -54,12 +54,12 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
-import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      UseIsNormalFormNamed (..), allNoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Util (mustBeRight)
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -955,17 +955,4 @@ instance NoUnexpectedThunks (Context m) where
 deriving instance Show (Context m)
 
 captureContext :: IOLike m => HasCallStack => m (Context m)
-captureContext = Context (PrettyCallStack callStack) <$> myThreadId
-
-{-------------------------------------------------------------------------------
-  Auxiliary: CallStack with different Show instance
-
-  TODO: May we should move this someplace more general.
--------------------------------------------------------------------------------}
-
--- | CallStack with 'Show' instance using 'prettyCallStack'
-newtype PrettyCallStack = PrettyCallStack CallStack
-  deriving newtype (NoUnexpectedThunks)
-
-instance Show PrettyCallStack where
-  show (PrettyCallStack cs) = prettyCallStack cs
+captureContext = Context prettyCallStack <$> myThreadId

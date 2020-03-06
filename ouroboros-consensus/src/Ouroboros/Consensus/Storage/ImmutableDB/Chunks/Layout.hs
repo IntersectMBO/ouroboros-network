@@ -93,8 +93,6 @@ data NextRelativeSlot =
     NextRelativeSlot RelativeSlot
 
     -- | We reached the end of the chunk
-    --
-    -- We record the 'ChunkSize' for ease of reference
   | NoMoreRelativeSlots
 
 -- | Next relative slot
@@ -193,7 +191,7 @@ chunkSlotForRegularBlock (UniformChunkSize sz@ChunkSize{..}) (SlotNo slot) =
     (chunk, withinChunk) = slot `divMod` numRegularBlocks
 
 -- | Chunk slot for EBB
-chunkSlotForBoundaryBlock :: ChunkInfo -> EpochNo -> ChunkSlot
+chunkSlotForBoundaryBlock :: HasCallStack => ChunkInfo -> EpochNo -> ChunkSlot
 chunkSlotForBoundaryBlock ci epoch =
     assertChunkCanContainEBB chunk size $
       UnsafeChunkSlot chunk $ firstBlockOrEBB ci chunk
@@ -241,15 +239,16 @@ chunkSlotToBlockOrEBB chunkInfo chunkSlot@(ChunkSlot chunk relSlot) =
   Support for EBBs
 -------------------------------------------------------------------------------}
 
-slotNoOfEBB :: ChunkInfo -> EpochNo -> SlotNo
+slotNoOfEBB :: HasCallStack => ChunkInfo -> EpochNo -> SlotNo
 slotNoOfEBB ci = chunkSlotToSlot ci . chunkSlotForBoundaryBlock ci
 
 slotMightBeEBB :: ChunkInfo -> SlotNo -> Maybe EpochNo
 slotMightBeEBB ci slot = do
-    guard $ relativeSlotIndex (chunkRelative ifRegular) == 1
-    return $ unsafeChunkNoToEpochNo $ chunkIndex ifRegular
+    guard $ chunkCanContainEBB relativeSlotChunkSize && relativeSlotIndex == 1
+    return $ unsafeChunkNoToEpochNo chunkIndex
   where
-    ifRegular = chunkSlotForRegularBlock ci slot
+    UnsafeChunkSlot{..} = chunkSlotForRegularBlock ci slot
+    RelativeSlot{..}    = chunkRelative
 
 slotNoOfBlockOrEBB :: ChunkInfo -> BlockOrEBB -> SlotNo
 slotNoOfBlockOrEBB _  (Block slot)  = slot

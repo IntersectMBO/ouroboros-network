@@ -270,7 +270,7 @@ type IterRes hash = (Either EpochNo SlotNo, hash, BinaryInfo ByteString)
 slotNoOfBlockOrEBB' :: DBModel hash -> BlockOrEBB -> SlotNo
 slotNoOfBlockOrEBB' = slotNoOfBlockOrEBB . dbmChunkInfo
 
-slotNoOfEBB' :: DBModel hash -> EpochNo -> SlotNo
+slotNoOfEBB' :: HasCallStack => DBModel hash -> EpochNo -> SlotNo
 slotNoOfEBB' = slotNoOfEBB . dbmChunkInfo
 
 chunkIndexOfSlot' :: DBModel hash -> SlotNo -> ChunkNo
@@ -687,7 +687,7 @@ appendBlockModel slot block hash binaryInfo dbm@DBModel {..} = do
     _ = keepRedundantConstraint (Proxy @(Show hash))
 
 appendEBBModel
-  :: forall hash. Show hash
+  :: forall hash. (Show hash, HasCallStack)
   => EpochNo
   -> BlockNo
   -> hash

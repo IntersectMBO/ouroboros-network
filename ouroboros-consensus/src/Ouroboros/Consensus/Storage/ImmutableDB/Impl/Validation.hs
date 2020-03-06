@@ -310,8 +310,8 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
     -- expensive integrity check of a block.
     let expectedChecksums = map Secondary.checksum entriesFromSecondaryIndex
     (entriesWithPrevHashes, mbErr) <- lift $
-        runChunkFileParser parser chunkFile currentSlot expectedChecksums $ \stream ->
-          (\(es :> mbErr) -> (es, mbErr)) <$> S.toList stream
+        runChunkFileParser parser chunkFile currentSlot expectedChecksums $ \entries ->
+          (\(es :> mbErr) -> (es, mbErr)) <$> S.toList entries
 
     -- Check whether the first block of this epoch fits onto the last block of
     -- the previous epoch.

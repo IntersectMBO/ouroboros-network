@@ -483,7 +483,7 @@ generateCmd Model {..} = At <$> frequency
     [ -- Block
       (1, GetBlockComponent <$> genGetBlockSlot)
       -- EBB
-    , (1, GetEBBComponent <$> genGetEBB)
+    , (if modelSupportsEBBs then 1 else 0, GetEBBComponent <$> genGetEBB)
     , (1, uncurry GetBlockOrEBBComponent <$> genSlotAndHash)
     , (3, do
             let mbPrevBlock = dbmTipBlock dbModel
@@ -501,12 +501,15 @@ generateCmd Model {..} = At <$> frequency
               , (1, chooseSlot (inLaterChunk 1 lastSlot,
                                 inLaterChunk 4 lastSlot))
               ]
-            let block = (maybe firstBlock mkNextBlock mbPrevBlock)
-                        slotNo (TestBody 0 True)
+            let block = (maybe (firstBlock  canContainEBB)
+                               (mkNextBlock canContainEBB)
+                               mbPrevBlock)
+                          slotNo
+                          (TestBody 0 True)
             return $ AppendBlock slotNo (blockHash block) block)
-    , (1, do
+    , (if modelSupportsEBBs then 1 else 0, do
             (epoch, ebb) <- case dbmTipBlock dbModel of
-              Nothing        -> return (0, firstEBB (TestBody 0 True))
+              Nothing        -> return (0, firstEBB canContainEBB (TestBody 0 True))
               Just prevBlock -> do
                 epoch <- frequency
                 -- Epoch in the past -> invalid
@@ -514,7 +517,7 @@ generateCmd Model {..} = At <$> frequency
                   , (3, chooseEpoch (currentEpoch, currentEpoch + 5))
                   ]
                 let slotNo = slotNoOfEBB dbmChunkInfo epoch
-                return (epoch, mkNextEBB prevBlock slotNo (TestBody 0 True))
+                return (epoch, mkNextEBB canContainEBB prevBlock slotNo (TestBody 0 True))
             return $ AppendEBB epoch (blockHash ebb) ebb)
     , (4, frequency
             -- An iterator with a random and likely invalid range,
@@ -558,8 +561,9 @@ generateCmd Model {..} = At <$> frequency
     ]
   where
     DBModel {..} = dbModel
-
-    currentEpoch = unsafeChunkNoToEpochNo $ dbmCurrentChunk dbModel
+    modelSupportsEBBs = chunkInfoSupportsEBBs dbmChunkInfo
+    currentEpoch      = unsafeChunkNoToEpochNo $ dbmCurrentChunk dbModel
+    canContainEBB     = const modelSupportsEBBs -- TODO: we could be more precise
 
     lastSlot :: SlotNo
     lastSlot = fromIntegral $ length (dbmRegular dbModel)

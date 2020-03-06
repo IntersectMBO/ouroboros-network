@@ -224,7 +224,8 @@ testHashInfo = HashInfo
 testBlockIsEBB :: TestBlock -> IsEBB
 testBlockIsEBB = thIsEBB . testHeader
 
-testHeaderEpochNoIfEBB :: ChunkInfo -> Header TestBlock -> Maybe EpochNo
+testHeaderEpochNoIfEBB :: HasCallStack
+                       => ChunkInfo -> Header TestBlock -> Maybe EpochNo
 testHeaderEpochNoIfEBB chunkInfo (TestHeader' hdr) = case thIsEBB hdr of
     IsNotEBB -> Nothing
     IsEBB    -> Just $
@@ -289,14 +290,25 @@ testBlockToBlockInfo tb = BlockInfo {
 -------------------------------------------------------------------------------}
 
 mkBlock
-  :: TestBody
-  -> ChainHash TestHeader  -- ^ Hash of previous header
+  :: HasCallStack
+  => (SlotNo -> Bool)
+  -- ^ Is this slot allowed contain an EBB?
+  --
+  -- This argument is used primarily to detect the generation of invalid blocks
+  -- with different kind of 'ChunkInfo'.
+  -> TestBody
+  -> ChainHash TestHeader
+  -- ^ Hash of previous header
   -> SlotNo
   -> BlockNo
   -> IsEBB
   -> TestBlock
-mkBlock testBody thPrevHash thSlotNo thBlockNo thIsEBB =
-    TestBlock { testHeader, testBody }
+mkBlock canContainEBB testBody thPrevHash thSlotNo thBlockNo thIsEBB =
+    case (canContainEBB thSlotNo, thIsEBB) of
+      (False, IsEBB) ->
+        error "mkBlock: EBB in invalid slot"
+      _otherwise ->
+        TestBlock { testHeader, testBody }
   where
     testHeader = TestHeader {
         thHash     = hashHeader testHeader
@@ -308,39 +320,44 @@ mkBlock testBody thPrevHash thSlotNo thBlockNo thIsEBB =
       }
 
 -- | Note the first block need not be an EBB, see 'firstEBB'.
-firstBlock :: SlotNo
+firstBlock :: HasCallStack
+           => (SlotNo -> Bool)
+           -> SlotNo
            -> TestBody
            -> TestBlock
-firstBlock slotNo testBody = mkBlock
+firstBlock canContainEBB slotNo testBody = mkBlock canContainEBB
     testBody
     GenesisHash
     slotNo
     1
     IsNotEBB
 
-mkNextBlock :: TestBlock  -- ^ Previous block
+mkNextBlock :: (SlotNo -> Bool)
+            -> TestBlock  -- ^ Previous block
             -> SlotNo
             -> TestBody
             -> TestBlock
-mkNextBlock prev slotNo testBody = mkBlock
+mkNextBlock canContainEBB prev slotNo testBody = mkBlock canContainEBB
     testBody
     (BlockHash (blockHash prev))
     slotNo
     (succ (blockNo prev))
     IsNotEBB
 
-firstEBB :: TestBody
+firstEBB :: (SlotNo -> Bool)
+         -> TestBody
          -> TestBlock
-firstEBB testBody = mkBlock testBody GenesisHash 0 0 IsEBB
+firstEBB canContainEBB testBody = mkBlock canContainEBB testBody GenesisHash 0 0 IsEBB
 
 -- | Note that in various places, e.g., the ImmutableDB, we rely on the fact
 -- that the @slotNo@ should correspond to the first slot number of the epoch,
 -- as is the case for real EBBs.
-mkNextEBB :: TestBlock  -- ^ Previous block
+mkNextEBB :: (SlotNo -> Bool)
+          -> TestBlock  -- ^ Previous block
           -> SlotNo     -- ^ @slotNo@
           -> TestBody
           -> TestBlock
-mkNextEBB prev slotNo testBody = mkBlock
+mkNextEBB canContainEBB prev slotNo testBody = mkBlock canContainEBB
     testBody
     (BlockHash (blockHash prev))
     slotNo

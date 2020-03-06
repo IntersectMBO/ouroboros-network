@@ -20,8 +20,8 @@ data SmallChunkInfo = SmallChunkInfo ChunkInfo
 
 instance Arbitrary SmallChunkInfo where
   arbitrary = do
-      numRegularBlocks <- choose (5, 15)
-      let chunkCanContainEBB = True -- TODO: Generalize
+      numRegularBlocks   <- choose (5, 15)
+      chunkCanContainEBB <- arbitrary
       return $ SmallChunkInfo $ singleChunkInfo $ ChunkSize{..}
 
   -- Intentionally no shrinker, as shrinking the epoch size independent from

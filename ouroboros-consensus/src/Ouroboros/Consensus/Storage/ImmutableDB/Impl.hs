@@ -217,16 +217,16 @@ deleteAfter = deleteAfter_
 mkDBRecord :: (IOLike m, Eq hash, NoUnexpectedThunks hash)
            => ImmutableDBEnv m hash -> ImmutableDB hash m
 mkDBRecord dbEnv = ImmutableDB
-    { closeDB                = closeDBImpl                dbEnv
-    , isOpen                 = isOpenImpl                 dbEnv
-    , reopen                 = reopenImpl                 dbEnv
-    , getTip                 = getTipImpl                 dbEnv
-    , getBlockComponent      = getBlockComponentImpl      dbEnv
-    , getEBBComponent        = getEBBComponentImpl        dbEnv
-    , getBlockOrEBBComponent = getBlockOrEBBComponentImpl dbEnv
-    , appendBlock            = appendBlockImpl            dbEnv
-    , appendEBB              = appendEBBImpl              dbEnv
-    , stream                 = streamImpl                 dbEnv
+    { closeDB_                = closeDBImpl                dbEnv
+    , isOpen_                 = isOpenImpl                 dbEnv
+    , reopen_                 = reopenImpl                 dbEnv
+    , getTip_                 = getTipImpl                 dbEnv
+    , getBlockComponent_      = getBlockComponentImpl      dbEnv
+    , getEBBComponent_        = getEBBComponentImpl        dbEnv
+    , getBlockOrEBBComponent_ = getBlockOrEBBComponentImpl dbEnv
+    , appendBlock_            = appendBlockImpl            dbEnv
+    , appendEBB_              = appendEBBImpl              dbEnv
+    , stream_                 = streamImpl                 dbEnv
     }
 
 -- | For testing purposes:
