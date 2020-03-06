@@ -306,7 +306,7 @@ putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
         traceWith tracer $ BlockAlreadyHere bbid
         return st -- putting an existing block is a no-op.
       else do
-        bytesWritten <- hPut hasFS currentWriteHandle builder
+        bytesWritten <- hPutAt hasFS currentWriteHandle builder currentWriteOffset
         updateStateAfterWrite hasFS st bytesWritten
   where
     updateStateAfterWrite :: forall h.
@@ -441,7 +441,7 @@ nextFile :: forall h m blockId. IOLike m
          -> m (InternalState blockId h)
 nextFile hasFS st@InternalState{..} = do
     hClose hasFS currentWriteHandle
-    hndl <- hOpen hasFS file (AppendMode MustBeNew)
+    hndl <- hOpen hasFS file (WriteMode MustBeNew)
     return st {
         currentWriteHandle = hndl
       , currentWritePath   = file
@@ -526,7 +526,7 @@ mkInternalState hasFS parser tracer maxBlocksPerFile files =
 
       let currentWritePath = filePath currentWriteId
 
-      currentWriteHandle <- hOpen hasFS currentWritePath (AppendMode AllowExisting)
+      currentWriteHandle <- hOpen hasFS currentWritePath (WriteMode AllowExisting)
       -- If 'hGetSize' fails, we should close the opened handle that didn't
       -- make it into the state, otherwise we'd leak it.
       currentWriteOffset <- onException
