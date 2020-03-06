@@ -62,6 +62,7 @@ module Ouroboros.Network.NodeToClient (
   , Handshake
   , LocalAddresses (..)
   , SubscriptionTrace (..)
+  , HandshakeTr
   ) where
 
 import qualified Control.Concurrent.Async as Async
@@ -78,6 +79,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
+import           Network.Mux (WithMuxBearer (..))
 
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure)
@@ -97,6 +99,10 @@ import qualified Ouroboros.Network.Subscription.Client as Subscription
 import           Ouroboros.Network.Subscription.Ip (SubscriptionTrace (..))
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.IOManager
+
+-- The Handshake tracer types are simply terrible.
+type HandshakeTr = WithMuxBearer (ConnectionId LocalAddress)
+    (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-client protocol.
