@@ -337,7 +337,7 @@ instance HasTxId (GenTx (SimpleBlock c ext)) where
   newtype TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId
     { unSimpleGenTxId :: Mock.TxId
     } deriving stock   (Generic)
-      deriving newtype (Show, Eq, Ord, Serialise)
+      deriving newtype (Show, Eq, Ord, Serialise, NoUnexpectedThunks)
 
   txId = SimpleGenTxId . simpleGenTxId
 

@@ -21,9 +21,11 @@ directPipelined
   => TxSubmissionServerPipelined txid tx m a
   -> TxSubmissionClient          txid tx m b
   -> m (a, b)
-directPipelined (TxSubmissionServerPipelined server)
-                (TxSubmissionClient mclient) =
-    mclient >>= directSender EmptyQ server
+directPipelined (TxSubmissionServerPipelined mserver)
+                (TxSubmissionClient mclient) = do
+    server <- mserver
+    client <- mclient
+    directSender EmptyQ server client
   where
     directSender :: forall (n :: N).
                     Queue        n (Collect txid tx)
@@ -60,4 +62,3 @@ directPipelined (TxSubmissionServerPipelined server)
     directSender (ConsQ c q) (CollectPipelined _ collect) client = do
       server' <- collect c
       directSender q server' client
-

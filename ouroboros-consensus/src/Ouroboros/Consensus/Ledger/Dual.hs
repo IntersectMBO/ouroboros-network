@@ -483,6 +483,7 @@ instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
   newtype TxId (GenTx (DualBlock m a)) = DualGenTxId {
         dualGenTxIdMain :: GenTxId m
       }
+    deriving NoUnexpectedThunks via AllowThunk (TxId (GenTx (DualBlock m a)))
 
   txId = DualGenTxId . txId . dualGenTxMain
 

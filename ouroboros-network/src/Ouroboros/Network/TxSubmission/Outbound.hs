@@ -6,10 +6,8 @@
 
 module Ouroboros.Network.TxSubmission.Outbound (
     txSubmissionOutbound,
-    TxSubmissionMempoolReader(..),
     TraceTxSubmissionOutbound(..),
     TxSubmissionProtocolError(..),
-    MempoolSnapshot(..),
   ) where
 
 import           Data.Word (Word16)
@@ -29,45 +27,9 @@ import           Control.Exception (Exception(..), assert)
 import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.Protocol.TxSubmission.Client
+import           Ouroboros.Network.TxSubmission.Mempool.Reader
+                     (MempoolSnapshot (..), TxSubmissionMempoolReader (..))
 
-
--- | The consensus layer functionality that the outbound side of the tx
--- submission logic requires.
---
--- This is provided to the tx submission logic by the consensus layer.
---
-data TxSubmissionMempoolReader txid tx idx m =
-     TxSubmissionMempoolReader {
-
-       -- | In STM, grab a snapshot of the contents of the mempool. This allows
-       -- further pure queries on the snapshot.
-       --
-       mempoolGetSnapshot  :: STM m (MempoolSnapshot txid tx idx),
-
-       -- | 'mempoolTxIdsAfter' with 'mempoolZeroIdx' is expected to give all
-       -- txs currently in the mempool.
-       mempoolZeroIdx      :: idx
-    }
-
--- | A pure snapshot of the contents of the mempool. It allows fetching
--- information about transactions in the mempool, and fetching individual
--- transactions.
---
--- This uses a transaction sequence number type for identifying transactions
--- within the mempool sequence. The sequence number is local to this mempool,
--- unlike the transaction hash. This allows us to ask for all transactions
--- after a known sequence number, to get new transactions. It is also used to
--- look up individual transactions.
---
--- Note that it is expected that 'mempoolLookupTx' will often return 'Nothing'
--- even for tx sequence numbers returned in previous snapshots. This happens
--- when the transaction has been removed from the mempool between snapshots.
---
-data MempoolSnapshot txid tx idx =
-     MempoolSnapshot {
-       mempoolTxIdsAfter :: idx -> [(txid, idx, TxSizeInBytes)],
-       mempoolLookupTx   :: idx -> Maybe tx
-     }
 
 data TraceTxSubmissionOutbound txid tx
   = TraceTxSubmissionOutboundRecvMsgRequestTxs

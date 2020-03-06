@@ -330,7 +330,7 @@ mkNodeArgs
 mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     { tracers
     , registry
-    , maxClockSkew       = ClockSkew 1
+    , maxClockSkew        = ClockSkew 1
     , cfg
     , initState
     , btime

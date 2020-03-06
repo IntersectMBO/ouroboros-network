@@ -182,6 +182,7 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncP
         txSubmissionInbound
           (txInboundTracer tracers)
           maxUnackTxs
+          (getMempoolReader getMempool)
           (getMempoolWriter getMempool)
 
     , phLocalChainSyncServer =
