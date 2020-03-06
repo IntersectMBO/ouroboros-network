@@ -12,7 +12,45 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Ouroboros.Storage.TestBlock where
+module Test.Ouroboros.Storage.TestBlock (
+    -- * Test block
+    TestBlock(..)
+  , TestHeader(..)
+  , TestHeaderHash(..)
+  , TestBody(..)
+  , TestBodyHash(..)
+  , Header(..)
+  , BlockConfig(..)
+    -- ** Construction
+  , mkBlock
+  , firstBlock
+  , firstEBB
+  , mkNextBlock
+  , mkNextEBB
+    -- ** Query
+  , testBlockToBlockInfo
+  , testBlockIsValid
+  , testBlockIsEBB
+  , testHeaderEpochNoIfEBB
+    -- ** Serialisation
+  , testHashInfo
+  , testBlockToBuilder
+  , testBlockToBinaryInfo
+  , testBlockFromBinaryInfo
+  , testBlockFromLazyByteString
+  , testBlockToLazyByteString
+    -- * Ledger
+  , TestBlockError(..)
+  , LedgerConfig(..)
+  , testInitExtLedger
+    -- * Corruptions
+  , Corruptions
+  , FileCorruption(..)
+  , corruptionFiles
+  , generateCorruptions
+  , shrinkCorruptions
+  , corruptFile
+  ) where
 
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
@@ -29,7 +67,6 @@ import           Data.Hashable
 import           Data.Int (Int64)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import qualified Data.Map.Strict as Map
 import           Data.Maybe (maybeToList)
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -55,8 +92,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -401,20 +436,6 @@ testInitExtLedger = ExtLedgerState {
       ledgerState = testInitLedger
     , headerState = genesisHeaderState ()
     }
-
--- | Trivial test configuration with a single core node
-singleNodeTestConfig :: ConsensusConfig (Bft BftMockCrypto)
-singleNodeTestConfig = BftConfig {
-      bftParams   = BftParams { bftSecurityParam = k
-                              , bftNumNodes      = NumCoreNodes 1
-                              }
-    , bftNodeId   = CoreId (CoreNodeId 0)
-    , bftSignKey  = SignKeyMockDSIGN 0
-    , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
-    }
-  where
-    -- We fix k at 4 for now
-    k = SecurityParam 4
 
 {-------------------------------------------------------------------------------
   Corruption
