@@ -176,7 +176,7 @@ stopMux Mux{muxControlCmdQueue} =
     atomically $ writeTQueue muxControlCmdQueue CmdShutdown
 
 
--- | muxStart starts a mux bearer for the specified protocols corresponding to
+-- | runMux starts a mux bearer for the specified protocols corresponding to
 -- one of the provided Versions.
 --
 -- __Isometric flow control: analysis of head-of-line blocking of the ingress side of the multiplexer__
@@ -349,7 +349,7 @@ monitor tracer jobpool egressQueue cmdQueue =
           traceWith tracer (MuxTraceExceptionExit pnum pmode e)
           throwM e
 
-        -- These would always be internal errors, so propagate.
+        -- These two cover internal and protocol errors, but always fatal, so propagate.
         --TODO: decide if we should have exception wrappers here to identify
         -- the source of the failure, e.g. specific mini-protocol. If we're
         -- propagating exceptions, we don't need to log them.
@@ -381,7 +381,7 @@ monitor tracer jobpool egressQueue cmdQueue =
           return ()
 
         -- Data has arrived on a channel for a mini-protocol for which we have
-        -- and on-demand start protocol thread. So we start it now.
+        -- an on-demand-start protocol thread. So we start it now.
         EventStartOnDemand ptclState@MiniProtocolState {
                              miniProtocolInfo = MiniProtocolInfo {
                                miniProtocolNum,
@@ -434,10 +434,10 @@ data MuxJobResult =
        -- respond by terminating the whole mux.
      | MiniProtocolException MiniProtocolNum MiniProtocolDir SomeException
 
-       -- | Exception in the 'mux' thread. Always unexpected and fatal.
+       -- | Exception in the 'mux' thread. Always fatal.
      | MuxerException   SomeException
 
-       -- | Exception in the 'demux' thread. Always unexpected and fatal.
+       -- | Exception in the 'demux' thread. Always fatal.
      | DemuxerException SomeException
 
 
@@ -457,7 +457,7 @@ muxChannel
     -> MiniProtocolDir
     -> IngressQueue m
     -> Channel m
-muxChannel tracer tq want@(Wanton w) mc md q =
+muxChannel tracer egressQueue want@(Wanton w) mc md q =
     Channel { send, recv}
   where
     -- Limit for the message buffer between send and mux thread.
@@ -478,7 +478,7 @@ muxChannel tracer tq want@(Wanton w) mc md q =
                    let wasEmpty = BL.null buf
                    writeTVar w (BL.append buf encoding)
                    when wasEmpty $
-                       writeTBQueue tq (TLSRDemand mc md want)
+                     writeTBQueue egressQueue (TLSRDemand mc md want)
                else retry
 
         traceWith tracer $ MuxTraceChannelSendEnd mc
