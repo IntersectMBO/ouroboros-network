@@ -13,6 +13,10 @@
 
 module Network.Mux (
       muxStart
+    , newMux
+    , runMux
+    , runMiniProtocol
+    , stopMux
 
       -- * Mux bearers
     , MuxBearer
