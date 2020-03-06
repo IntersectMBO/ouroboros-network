@@ -119,7 +119,7 @@ data DiffusionApplications = DiffusionApplications {
     , daLocalResponderApplication :: Versions
                                        NodeToClientVersion
                                        DictVersion
-                                       (ConnectionId Socket.SockAddr ->
+                                       (ConnectionId LocalAddress ->
                                           OuroborosApplication
                                             ResponderApp
                                             ByteString IO Void ())
