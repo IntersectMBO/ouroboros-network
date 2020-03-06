@@ -58,10 +58,11 @@ module Ouroboros.Network.NodeToClient (
   , WithAddr (..)
   , SuspendDecision (..)
   , TraceSendRecv (..)
-  , DecoderFailureOrTooMuchInput
+  , ProtocolLimitFailure
   , Handshake
   , LocalAddresses (..)
   , SubscriptionTrace (..)
+  , HandshakeTr
   ) where
 
 import qualified Control.Concurrent.Async as Async
@@ -78,9 +79,10 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
+import           Network.Mux (WithMuxBearer (..))
 
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
-import           Ouroboros.Network.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure)
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
@@ -97,6 +99,10 @@ import qualified Ouroboros.Network.Subscription.Client as Subscription
 import           Ouroboros.Network.Subscription.Ip (SubscriptionTrace (..))
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.IOManager
+
+-- The Handshake tracer types are simply terrible.
+type HandshakeTr = WithMuxBearer (ConnectionId LocalAddress)
+    (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-client protocol.
@@ -387,10 +393,10 @@ networkErrorPolicies = ErrorPolicies
           $ \(_ :: HandshakeClientProtocolError NodeToClientVersion)
                 -> Just ourBug
 
-        -- exception thrown by `runDecoderWithByteLimit`
+        -- exception thrown by `runPeerWithLimits`
         -- trusted node send too much input
       , ErrorPolicy
-          $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+          $ \(_ :: ProtocolLimitFailure)
                 -> Just ourBug
 
         -- deserialisation failure of a message from a trusted node

@@ -8,11 +8,16 @@
 
 module Ouroboros.Network.Protocol.Handshake.Codec
   ( codecHandshake
+
+  , byteLimitsHandshake
+  , timeLimitsHandshake
   ) where
 
 import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadTime
 import           Control.Monad (unless)
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as BL
 import           Data.Map (Map)
 import qualified Data.Map as Map
 
@@ -24,7 +29,36 @@ import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise     as CBOR
 
 import           Ouroboros.Network.Codec hiding (encode, decode)
+import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Limits
+
+-- |
+-- We assume that a TCP segment size of 1440 bytes with initial window of size
+-- 4.  This sets upper limit of 5760 bytes on each message of handshake
+-- protocol.
+--
+maxTransmissionUnit :: Word
+maxTransmissionUnit = 4 * 1440
+
+-- | Byte limits
+byteLimitsHandshake :: ProtocolSizeLimits (Handshake vNumber CBOR.Term) ByteString
+byteLimitsHandshake = ProtocolSizeLimits stateToLimit (fromIntegral . BL.length)
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st  :: Handshake vNumber CBOR.Term).
+                    PeerHasAgency pr st -> Word
+    stateToLimit (ClientAgency TokPropose) = maxTransmissionUnit
+    stateToLimit (ServerAgency TokConfirm) = maxTransmissionUnit
+
+-- Time limits
+timeLimitsHandshake :: ProtocolTimeLimits (Handshake vNumber CBOR.Term)
+timeLimitsHandshake = ProtocolTimeLimits stateToLimit
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st  :: Handshake vNumber CBOR.Term).
+                    PeerHasAgency pr st -> Maybe DiffTime
+    stateToLimit (ClientAgency TokPropose) = shortWait
+    stateToLimit (ServerAgency TokConfirm) = shortWait
+
 
 -- |
 -- @'Handshake'@ codec.  The @'MsgProposeVersions'@ encodes proposed map in

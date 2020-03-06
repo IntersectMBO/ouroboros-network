@@ -52,7 +52,7 @@ module Ouroboros.Network.NodeToNode (
   -- * Re-exports
   , ConnectionId (..)
   , RemoteConnectionId
-  , DecoderFailureOrTooMuchInput
+  , ProtocolLimitFailure
   , Handshake
   , LocalAddresses (..)
 
@@ -72,6 +72,7 @@ module Ouroboros.Network.NodeToNode (
   , WithIPList (..)
   , WithDomainName (..)
   , WithAddr (..)
+  , HandshakeTr
   ) where
 
 import qualified Control.Concurrent.Async as Async
@@ -86,10 +87,11 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
+import           Network.Mux (WithMuxBearer (..))
 import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
-import           Ouroboros.Network.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure)
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
@@ -116,6 +118,9 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.Snocket
 
+-- The Handshake tracer types are simply terrible.
+type HandshakeTr = WithMuxBearer (ConnectionId Socket.SockAddr)
+    (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term))
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-node protocol.
@@ -457,10 +462,10 @@ remoteNetworkErrorPolicy = ErrorPolicies {
           ErrorPolicy
             $ \(_ :: HandshakeClientProtocolError NodeToNodeVersion)
                   -> Just misconfiguredPeer
-        
-          -- exception thrown by `runDecoderWithByteLimit`
+
+          -- exception thrown by `runPeerWithLimits`
         , ErrorPolicy
-            $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+            $ \(_ :: ProtocolLimitFailure)
                    -> Just theyBuggyOrEvil
 
           -- deserialisation failure; this means that the remote peer is either
@@ -540,9 +545,9 @@ remoteNetworkErrorPolicy = ErrorPolicies {
 localNetworkErrorPolicy :: ErrorPolicies
 localNetworkErrorPolicy = ErrorPolicies {
       epAppErrorPolicies = [
-          -- exception thrown by `runDecoderWithByteLimit`
+          -- exception thrown by `runPeerWithLimits`
           ErrorPolicy
-            $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+            $ \(_ :: ProtocolLimitFailure)
                   -> Nothing
 
           -- deserialisation failure
