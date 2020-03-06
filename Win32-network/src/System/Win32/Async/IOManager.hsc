@@ -134,6 +134,11 @@ withIOManager k = do
         (createIOCompletionPort maxBound)
         closeIOCompletionPort
         $ \iocp -> do
+          -- The 'c_GetQueuedCompletionStatus' is not interruptible so we
+          -- cannot simply use `withAsync` pattern here (the main thread will
+          -- deadlock when trying to kill the io-manager thread).
+          -- But note that 'closeIOCopletionPort' will terminate the io-manager
+          -- thread (we cover this scenario in the 'test_closeIOCP' test).
           _ <-
             forkOS
               $ void $ dequeueCompletionPackets iocp
