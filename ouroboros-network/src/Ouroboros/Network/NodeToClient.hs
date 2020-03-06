@@ -58,7 +58,7 @@ module Ouroboros.Network.NodeToClient (
   , WithAddr (..)
   , SuspendDecision (..)
   , TraceSendRecv (..)
-  , DecoderFailureOrTooMuchInput
+  , ProtocolLimitFailure
   , Handshake
   , LocalAddresses (..)
   , SubscriptionTrace (..)
@@ -80,7 +80,7 @@ import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
-import           Ouroboros.Network.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure)
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
@@ -387,10 +387,10 @@ networkErrorPolicies = ErrorPolicies
           $ \(_ :: HandshakeClientProtocolError NodeToClientVersion)
                 -> Just ourBug
 
-        -- exception thrown by `runDecoderWithByteLimit`
+        -- exception thrown by `runPeerWithLimits`
         -- trusted node send too much input
       , ErrorPolicy
-          $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+          $ \(_ :: ProtocolLimitFailure)
                 -> Just ourBug
 
         -- deserialisation failure of a message from a trusted node

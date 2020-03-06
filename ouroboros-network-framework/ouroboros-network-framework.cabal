@@ -25,7 +25,6 @@ library
                        Ouroboros.Network.Driver
                        Ouroboros.Network.Driver.Simple
                        Ouroboros.Network.Driver.Limits
-                       Ouroboros.Network.Driver.ByteLimit
                        Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.IOManager
                        Ouroboros.Network.Mux

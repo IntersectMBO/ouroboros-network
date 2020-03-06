@@ -52,7 +52,7 @@ module Ouroboros.Network.NodeToNode (
   -- * Re-exports
   , ConnectionId (..)
   , RemoteConnectionId
-  , DecoderFailureOrTooMuchInput
+  , ProtocolLimitFailure
   , Handshake
   , LocalAddresses (..)
 
@@ -89,7 +89,7 @@ import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
-import           Ouroboros.Network.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure)
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
@@ -457,10 +457,10 @@ remoteNetworkErrorPolicy = ErrorPolicies {
           ErrorPolicy
             $ \(_ :: HandshakeClientProtocolError NodeToNodeVersion)
                   -> Just misconfiguredPeer
-        
-          -- exception thrown by `runDecoderWithByteLimit`
+
+          -- exception thrown by `runPeerWithLimits`
         , ErrorPolicy
-            $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+            $ \(_ :: ProtocolLimitFailure)
                    -> Just theyBuggyOrEvil
 
           -- deserialisation failure; this means that the remote peer is either
@@ -540,9 +540,9 @@ remoteNetworkErrorPolicy = ErrorPolicies {
 localNetworkErrorPolicy :: ErrorPolicies
 localNetworkErrorPolicy = ErrorPolicies {
       epAppErrorPolicies = [
-          -- exception thrown by `runDecoderWithByteLimit`
+          -- exception thrown by `runPeerWithLimits`
           ErrorPolicy
-            $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+            $ \(_ :: ProtocolLimitFailure)
                   -> Nothing
 
           -- deserialisation failure
