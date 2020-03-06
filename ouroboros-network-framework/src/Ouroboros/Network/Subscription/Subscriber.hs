@@ -1,7 +1,6 @@
 
 module Ouroboros.Network.Subscription.Subscriber
     ( SubscriptionTarget (..)
-    , constantSubscriptionTarget
     , listSubscriptionTarget
     ) where
 
@@ -12,10 +11,6 @@ newtype SubscriptionTarget m target = SubscriptionTarget
       -- ^ This should be used with the exception that implementations can block on
       -- the order of seconds.
     }
-
-constantSubscriptionTarget :: Applicative m => target -> SubscriptionTarget m target
-constantSubscriptionTarget target =
-    SubscriptionTarget (pure (Just (target, constantSubscriptionTarget target)))
 
 listSubscriptionTarget
     :: Applicative m

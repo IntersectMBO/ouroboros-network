@@ -75,6 +75,6 @@ clientSubscriptionWorker snocket
         wpLocalAddresses         = Identity cspAddress,
         wpSelectAddress          = \_ (Identity addr) -> Just addr,
         wpConnectionAttemptDelay = const cspConnectionAttemptDelay,
-        wpSubscriptionTarget     = pure (constantSubscriptionTarget cspAddress),
+        wpSubscriptionTarget     = pure (listSubscriptionTarget [cspAddress]),
         wpValency                = 1
       }
