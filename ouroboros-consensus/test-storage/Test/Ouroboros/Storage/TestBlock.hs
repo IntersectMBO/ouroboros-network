@@ -12,7 +12,45 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Ouroboros.Storage.TestBlock where
+module Test.Ouroboros.Storage.TestBlock (
+    -- * Test block
+    TestBlock(..)
+  , TestHeader(..)
+  , TestHeaderHash(..)
+  , TestBody(..)
+  , TestBodyHash(..)
+  , Header(..)
+  , BlockConfig(..)
+    -- ** Construction
+  , mkBlock
+  , firstBlock
+  , firstEBB
+  , mkNextBlock
+  , mkNextEBB
+    -- ** Query
+  , testBlockToBlockInfo
+  , testBlockIsValid
+  , testBlockIsEBB
+  , testHeaderEpochNoIfEBB
+    -- ** Serialisation
+  , testHashInfo
+  , testBlockToBuilder
+  , testBlockToBinaryInfo
+  , testBlockFromBinaryInfo
+  , testBlockFromLazyByteString
+  , testBlockToLazyByteString
+    -- * Ledger
+  , TestBlockError(..)
+  , LedgerConfig(..)
+  , testInitExtLedger
+    -- * Corruptions
+  , Corruptions
+  , FileCorruption(..)
+  , corruptionFiles
+  , generateCorruptions
+  , shrinkCorruptions
+  , corruptFile
+  ) where
 
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
@@ -29,7 +67,6 @@ import           Data.Hashable
 import           Data.Int (Int64)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import qualified Data.Map.Strict as Map
 import           Data.Maybe (maybeToList)
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -40,6 +77,7 @@ import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Point)
@@ -54,18 +92,15 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
-                     EpochSize (..))
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
                      hPutAll, hSeek, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BinaryInfo (..),
                      HashInfo (..))
 import           Ouroboros.Consensus.Storage.VolatileDB.Types (BlockInfo (..))
@@ -189,12 +224,14 @@ testHashInfo = HashInfo
 testBlockIsEBB :: TestBlock -> IsEBB
 testBlockIsEBB = thIsEBB . testHeader
 
--- | Only works correctly if the epoch size is fixed
-testHeaderEpochNoIfEBB :: EpochSize -> Header TestBlock -> Maybe EpochNo
-testHeaderEpochNoIfEBB fixedEpochSize (TestHeader' hdr) = case thIsEBB hdr of
+testHeaderEpochNoIfEBB :: HasCallStack
+                       => ChunkInfo -> Header TestBlock -> Maybe EpochNo
+testHeaderEpochNoIfEBB chunkInfo (TestHeader' hdr) = case thIsEBB hdr of
     IsNotEBB -> Nothing
     IsEBB    -> Just $
-      EpochNo (unSlotNo (thSlotNo hdr) `div` unEpochSize fixedEpochSize)
+      case slotMightBeEBB chunkInfo (thSlotNo hdr) of
+        Just epochNo -> epochNo
+        Nothing      -> error "testHeaderEpochNoIfEBB: EBB in incorrect slot"
 
 -- | Check whether the header matches its hash and whether the body matches
 -- its hash.
@@ -253,14 +290,25 @@ testBlockToBlockInfo tb = BlockInfo {
 -------------------------------------------------------------------------------}
 
 mkBlock
-  :: TestBody
-  -> ChainHash TestHeader  -- ^ Hash of previous header
+  :: HasCallStack
+  => (SlotNo -> Bool)
+  -- ^ Is this slot allowed contain an EBB?
+  --
+  -- This argument is used primarily to detect the generation of invalid blocks
+  -- with different kind of 'ChunkInfo'.
+  -> TestBody
+  -> ChainHash TestHeader
+  -- ^ Hash of previous header
   -> SlotNo
   -> BlockNo
   -> IsEBB
   -> TestBlock
-mkBlock testBody thPrevHash thSlotNo thBlockNo thIsEBB =
-    TestBlock { testHeader, testBody }
+mkBlock canContainEBB testBody thPrevHash thSlotNo thBlockNo thIsEBB =
+    case (canContainEBB thSlotNo, thIsEBB) of
+      (False, IsEBB) ->
+        error "mkBlock: EBB in invalid slot"
+      _otherwise ->
+        TestBlock { testHeader, testBody }
   where
     testHeader = TestHeader {
         thHash     = hashHeader testHeader
@@ -272,39 +320,44 @@ mkBlock testBody thPrevHash thSlotNo thBlockNo thIsEBB =
       }
 
 -- | Note the first block need not be an EBB, see 'firstEBB'.
-firstBlock :: SlotNo
+firstBlock :: HasCallStack
+           => (SlotNo -> Bool)
+           -> SlotNo
            -> TestBody
            -> TestBlock
-firstBlock slotNo testBody = mkBlock
+firstBlock canContainEBB slotNo testBody = mkBlock canContainEBB
     testBody
     GenesisHash
     slotNo
     1
     IsNotEBB
 
-mkNextBlock :: TestBlock  -- ^ Previous block
+mkNextBlock :: (SlotNo -> Bool)
+            -> TestBlock  -- ^ Previous block
             -> SlotNo
             -> TestBody
             -> TestBlock
-mkNextBlock prev slotNo testBody = mkBlock
+mkNextBlock canContainEBB prev slotNo testBody = mkBlock canContainEBB
     testBody
     (BlockHash (blockHash prev))
     slotNo
     (succ (blockNo prev))
     IsNotEBB
 
-firstEBB :: TestBody
+firstEBB :: (SlotNo -> Bool)
+         -> TestBody
          -> TestBlock
-firstEBB testBody = mkBlock testBody GenesisHash 0 0 IsEBB
+firstEBB canContainEBB testBody = mkBlock canContainEBB testBody GenesisHash 0 0 IsEBB
 
 -- | Note that in various places, e.g., the ImmutableDB, we rely on the fact
 -- that the @slotNo@ should correspond to the first slot number of the epoch,
 -- as is the case for real EBBs.
-mkNextEBB :: TestBlock  -- ^ Previous block
+mkNextEBB :: (SlotNo -> Bool)
+          -> TestBlock  -- ^ Previous block
           -> SlotNo     -- ^ @slotNo@
           -> TestBody
           -> TestBlock
-mkNextEBB prev slotNo testBody = mkBlock
+mkNextEBB canContainEBB prev slotNo testBody = mkBlock canContainEBB
     testBody
     (BlockHash (blockHash prev))
     slotNo
@@ -402,20 +455,6 @@ testInitExtLedger = ExtLedgerState {
       ledgerState = testInitLedger
     , headerState = genesisHeaderState ()
     }
-
--- | Trivial test configuration with a single core node
-singleNodeTestConfig :: ConsensusConfig (Bft BftMockCrypto)
-singleNodeTestConfig = BftConfig {
-      bftParams   = BftParams { bftSecurityParam = k
-                              , bftNumNodes      = NumCoreNodes 1
-                              }
-    , bftNodeId   = CoreId (CoreNodeId 0)
-    , bftSignKey  = SignKeyMockDSIGN 0
-    , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
-    }
-  where
-    -- We fix k at 4 for now
-    k = SecurityParam 4
 
 {-------------------------------------------------------------------------------
   Corruption

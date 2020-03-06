@@ -39,7 +39,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
   , iteratorClose
     -- * Tracing
   , TraceEvent
-  , ImmDB.EpochFileError
+  , ImmDB.ChunkFileError
     -- * Re-exports
   , ImmDB.Iterator
   , ImmDB.IteratorResult (..)
@@ -48,11 +48,16 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
   , ImmDB.BinaryInfo (..)
   , ImmDB.HashInfo (..)
   , Index.CacheConfig (..)
+    -- * Re-exports of aspects of 'ChunkInfo'
+  , ChunkInfo
+  , chunkIndexOfSlot
+  , ChunkNo
+  , firstChunkNo
     -- * Exported for testing purposes
   , openDB
   , mkImmDB
     -- * Exported for utilities
-  , ImmDB.epochFileParser
+  , ImmDB.chunkFileParser
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -69,7 +74,8 @@ import           GHC.Stack
 import           System.FilePath ((</>))
 
 import           Cardano.Prelude (allNoUnexpectedThunks)
-import           Cardano.Slotting.Block (BlockNo)
+import           Cardano.Slotting.Block
+import           Cardano.Slotting.Slot
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (pattern BlockPoint,
@@ -88,7 +94,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.API hiding (ChainDB (..),
                      Iterator (..), closeDB)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockComponent
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo (..))
 import           Ouroboros.Consensus.Storage.FS.API (HasFS,
                      createDirectoryIfMissing)
 import           Ouroboros.Consensus.Storage.FS.API.Types (MountPoint (..),
@@ -97,6 +102,7 @@ import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
                      HashInfo (..), ImmutableDB, TipInfo (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Parser as ImmDB
@@ -109,7 +115,7 @@ data ImmDB m blk = ImmDB {
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
     , encBlock  :: !(blk -> BinaryInfo Encoding)
-    , epochInfo :: !(EpochInfo m)
+    , chunkInfo :: !ChunkInfo
     , isEBB     :: !(Header blk -> Maybe EpochNo)
     , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     }
@@ -123,14 +129,14 @@ instance NoUnexpectedThunks (ImmDB m blk) where
     , noUnexpectedThunks ctxt decHeader
     , noUnexpectedThunks ctxt decBlock
     , noUnexpectedThunks ctxt encBlock
-    , noUnexpectedThunks ctxt epochInfo
+    , noUnexpectedThunks ctxt chunkInfo
     , noUnexpectedThunks ctxt isEBB
     , noUnexpectedThunks ctxt addHdrEnv
     ]
 
 -- | Short-hand for events traced by the ImmDB wrapper.
 type TraceEvent blk =
-  ImmDB.TraceEvent (ImmDB.EpochFileError (HeaderHash blk)) (HeaderHash blk)
+  ImmDB.TraceEvent (ImmDB.ChunkFileError (HeaderHash blk)) (HeaderHash blk)
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -145,7 +151,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immDecodeHeader   :: forall s. Decoder s (Lazy.ByteString -> Header blk)
     , immEncodeHash     :: HeaderHash blk -> Encoding
     , immEncodeBlock    :: blk -> BinaryInfo Encoding
-    , immEpochInfo      :: EpochInfo m
+    , immChunkInfo      :: ChunkInfo
     , immHashInfo       :: HashInfo (HeaderHash blk)
     , immValidation     :: ImmDB.ValidationPolicy
     , immIsEBB          :: Header blk -> Maybe EpochNo
@@ -167,7 +173,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immDecodeHeader'
 -- * 'immEncodeHash'
 -- * 'immEncodeBlock'
--- * 'immEpochInfo'
+-- * 'immChunkInfo'
 -- * 'immHashInfo'
 -- * 'immValidation'
 -- * 'immIsEBB'
@@ -186,7 +192,7 @@ defaultArgs fp = ImmDbArgs{
     , immDecodeHeader   = error "no default for immDecodeHeader"
     , immEncodeHash     = error "no default for immEncodeHash"
     , immEncodeBlock    = error "no default for immEncodeBlock"
-    , immEpochInfo      = error "no default for immEpochInfo"
+    , immChunkInfo      = error "no default for immChunkInfo"
     , immHashInfo       = error "no default for immHashInfo"
     , immValidation     = error "no default for immValidation"
     , immIsEBB          = error "no default for immIsEBB"
@@ -196,15 +202,16 @@ defaultArgs fp = ImmDbArgs{
     , immBlockchainTime = error "no default for immBlockchainTime"
     }
   where
-    -- Cache 250 past epochs by default. This will take roughly 250 MB of RAM.
-    -- At the time of writing (1/2020), there are 166 epochs, so even one year
-    -- from now, we will be able to cache all epochs' indices in the chain.
+    -- Cache 250 past chunks by default. This will take roughly 250 MB of RAM.
+    -- At the time of writing (1/2020), there are 166 epochs, and we store one
+    -- epoch per chunk, so even one year from now, we will be able to cache all
+    -- chunks' indices in the chain.
     --
-    -- If this number were too low, i.e., less than the number of epochs that
+    -- If this number were too low, i.e., less than the number of chunks that
     -- that clients are requesting blocks from, we would constantly evict and
     -- reparse indices, causing a much higher CPU load.
     cacheConfig = Index.CacheConfig
-      { pastEpochsToCache = 250
+      { pastChunksToCache = 250
       , expireUnusedAfter = 5 * 60 -- Expire after 1 minute
       }
 
@@ -221,7 +228,7 @@ openDB ImmDbArgs{..} = do
     (immDB, _internal) <- ImmDB.openDBInternal
       immRegistry
       immHasFS
-      immEpochInfo
+      immChunkInfo
       immHashInfo
       immValidation
       parser
@@ -233,12 +240,12 @@ openDB ImmDbArgs{..} = do
       , decHeader = immDecodeHeader
       , decBlock  = immDecodeBlock
       , encBlock  = immEncodeBlock
-      , epochInfo = immEpochInfo
+      , chunkInfo = immChunkInfo
       , isEBB     = immIsEBB
       , addHdrEnv = immAddHdrEnv
       }
   where
-    parser = ImmDB.epochFileParser immHasFS immDecodeBlock (immIsEBB . getHeader)
+    parser = ImmDB.chunkFileParser immHasFS immDecodeBlock (immIsEBB . getHeader)
       -- TODO a more efficient to accomplish this?
       (void . immEncodeBlock) immCheckIntegrity
 
@@ -248,11 +255,11 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> Header blk))
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> BinaryInfo Encoding)
-        -> EpochInfo m
+        -> ChunkInfo
         -> (Header blk -> Maybe EpochNo)
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> ImmDB m blk
-mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv = ImmDB {..}
+mkImmDB immDB decHeader decBlock encBlock chunkInfo isEBB addHdrEnv = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
@@ -274,10 +281,15 @@ hasBlock
 hasBlock db (RealPoint slot hash) =
     withDB db $ \imm -> do
       immTip <- ImmDB.getTip imm
-      (slotNoAtTip, ebbAtTip) <- case forgetTipInfo <$> immTip of
-        Origin                  -> return (Origin, Nothing)
-        At (ImmDB.EBB epochNo)  -> (, Just epochNo) . At  <$> epochInfoFirst epochNo
-        At (ImmDB.Block slotNo) -> return (At slotNo, Nothing)
+
+      let slotNoAtTip :: WithOrigin SlotNo
+          slotNoAtTip = slotNoOfBlockOrEBB (chunkInfo db) . forgetTipInfo <$>
+                          immTip
+
+          ebbAtTip :: Maybe EpochNo
+          ebbAtTip = case forgetTipInfo <$> immTip of
+                       At (ImmDB.EBB epochNo) -> Just epochNo
+                       _otherwise             -> Nothing
 
       case At slot `compare` slotNoAtTip of
         -- The request is greater than the tip, so we cannot have the block
@@ -293,33 +305,26 @@ hasBlock db (RealPoint slot hash) =
             ImmDB.getBlockComponent imm GetHash slot
           if hasRegularBlock then
             return True
-          else do
-            epochNo <- epochInfoEpoch slot
-            ebbSlot <- epochInfoFirst epochNo
-            -- If it's a slot that can also contain an EBB, check if we have
-            -- an EBB
-            if slot == ebbSlot then
-              (== Just hash) <$>
-                ImmDB.getEBBComponent imm GetHash epochNo
-            else
-              return False
-  where
-    EpochInfo{..} = epochInfo db
+          -- If it's a slot that can contain an EBB, check if we have an EBB
+          else case slotMightBeEBB (chunkInfo db) slot of
+            Nothing      -> return False
+            Just epochNo -> (== Just hash) <$>
+                              ImmDB.getEBBComponent imm GetHash epochNo
 
 getTipInfo :: forall m blk.
               (MonadCatch m, HasCallStack)
            => ImmDB m blk
            -> m (WithOrigin (SlotNo, HeaderHash blk, IsEBB, BlockNo))
-getTipInfo db = do
-    immTip <- withDB db $ \imm -> ImmDB.getTip imm
-    case immTip of
-      Origin -> return Origin
-      At (TipInfo hash (ImmDB.EBB epochNo) block) ->
-        At . (, hash, IsEBB, block) <$> epochInfoFirst epochNo
-      At (TipInfo hash (ImmDB.Block slotNo) block) ->
-        return $ At (slotNo, hash, IsNotEBB, block)
+getTipInfo db = withDB db $ \imm -> fmap conv <$> ImmDB.getTip imm
   where
-    EpochInfo{..} = epochInfo db
+    conv :: TipInfo (HeaderHash blk) ImmDB.BlockOrEBB
+         -> (SlotNo, HeaderHash blk, IsEBB, BlockNo)
+    conv (TipInfo hash blockOrEBB tipBlockNo) = (
+          slotNoOfBlockOrEBB (chunkInfo db) blockOrEBB
+        , hash
+        , ImmDB.isBlockOrEBB blockOrEBB
+        , tipBlockNo
+        )
 
 getPointAtTip :: forall m blk.
                  (MonadCatch m, HasCallStack)
@@ -401,7 +406,6 @@ appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB (getHeader b) of
     hash    = blockHash b
     slotNo  = blockSlot b
     blockNr = blockNo   b
-    EpochInfo{..} = epochInfo
 
 {-------------------------------------------------------------------------------
   Streaming
@@ -631,7 +635,7 @@ closeDB db = withDB db ImmDB.closeDB
 
 reopen :: (MonadCatch m, HasCallStack) => ImmDB m blk -> m ()
 reopen db = withDB db $ \imm ->
-    ImmDB.reopen imm ImmDB.ValidateMostRecentEpoch
+    ImmDB.reopen imm ImmDB.ValidateMostRecentChunk
 
 -- These wrappers ensure that we correctly rethrow exceptions using 'withDB'.
 

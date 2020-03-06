@@ -6,11 +6,8 @@
 {-# LANGUAGE TypeFamilies   #-}
 
 module Ouroboros.Consensus.Storage.Common (
-    -- * Epochs
-    EpochNo(..)
-  , EpochSize(..)
     -- * Indexing
-  , tipIsGenesis
+    tipIsGenesis
     -- * BinaryInfo
   , BinaryInfo (..)
   , extractHeader

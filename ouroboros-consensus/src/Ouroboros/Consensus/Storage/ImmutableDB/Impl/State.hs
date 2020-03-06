@@ -35,11 +35,10 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
                      allocate)
 
-import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
@@ -58,8 +57,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
     , _dbInternalState   :: !(StrictMVar m (InternalState m hash h))
-    , _dbEpochFileParser :: !(EpochFileParser e m (BlockSummary hash) hash)
-    , _dbEpochInfo       :: !(EpochInfo m)
+    , _dbChunkFileParser :: !(ChunkFileParser e m (BlockSummary hash) hash)
+    , _dbChunkInfo       :: !ChunkInfo
     , _dbHashInfo        :: !(HashInfo hash)
     , _dbTracer          :: !(Tracer m (TraceEvent e hash))
     , _dbRegistry        :: !(ResourceRegistry m)
@@ -78,16 +77,16 @@ dbIsOpen (DbOpen _) = True
 
 -- | Internal state when the database is open.
 data OpenState m hash h = OpenState
-    { _currentEpoch           :: !EpochNo
-      -- ^ The current 'EpochNo' the immutable store is writing to.
-    , _currentEpochOffset     :: !BlockOffset
+    { _currentChunk           :: !ChunkNo
+      -- ^ The current 'ChunkNo' the immutable store is writing to.
+    , _currentChunkOffset     :: !BlockOffset
       -- ^ The offset at which the next block will be written in the current
-      -- epoch file.
+      -- chunk file.
     , _currentSecondaryOffset :: !SecondaryOffset
       -- ^ The offset at which the next index entry will be written in the
       -- current secondary index.
-    , _currentEpochHandle     :: !(Handle h)
-      -- ^ The write handle for the current epoch file.
+    , _currentChunkHandle     :: !(Handle h)
+      -- ^ The write handle for the current chunk file.
     , _currentPrimaryHandle   :: !(Handle h)
       -- ^ The write handle for the current primary index file.
     , _currentSecondaryHandle :: !(Handle h)
@@ -103,27 +102,27 @@ data OpenState m hash h = OpenState
   State helpers
 ------------------------------------------------------------------------------}
 
--- | Create the internal open state for the given epoch.
+-- | Create the internal open state for the given chunk.
 mkOpenState
   :: forall m hash h. (HasCallStack, IOLike m)
   => ResourceRegistry m
   -> HasFS m h
   -> Index m hash h
-  -> EpochNo
+  -> ChunkNo
   -> ImmTipWithInfo hash
   -> AllowExisting
   -> m (OpenState m hash h)
-mkOpenState registry HasFS{..} index epoch tip existing = do
-    eHnd <- allocateHandle $ hOpen (renderFile "epoch" epoch)     appendMode
-    pHnd <- allocateHandle $ Index.openPrimaryIndex index epoch existing
-    sHnd <- allocateHandle $ hOpen (renderFile "secondary" epoch) appendMode
-    epochOffset     <- hGetSize eHnd
+mkOpenState registry HasFS{..} index chunk tip existing = do
+    eHnd <- allocateHandle $ hOpen (renderFile "epoch"     chunk) appendMode
+    pHnd <- allocateHandle $ Index.openPrimaryIndex index  chunk  existing
+    sHnd <- allocateHandle $ hOpen (renderFile "secondary" chunk) appendMode
+    chunkOffset     <- hGetSize eHnd
     secondaryOffset <- hGetSize sHnd
     return OpenState
-      { _currentEpoch           = epoch
-      , _currentEpochOffset     = BlockOffset epochOffset
+      { _currentChunk           = chunk
+      , _currentChunkOffset     = BlockOffset chunkOffset
       , _currentSecondaryOffset = fromIntegral secondaryOffset
-      , _currentEpochHandle     = eHnd
+      , _currentChunkHandle     = eHnd
       , _currentPrimaryHandle   = pHnd
       , _currentSecondaryHandle = sHnd
       , _currentTip             = tip
@@ -264,6 +263,6 @@ cleanUp HasFS { hClose } OpenState {..}  = do
     -- If one of the 'hClose' calls fails, the error will bubble up to the
     -- bracketed call to 'withRegistry', which will close the
     -- 'ResourceRegistry' and thus all the remaining handles in it.
-    hClose _currentEpochHandle
+    hClose _currentChunkHandle
     hClose _currentPrimaryHandle
     hClose _currentSecondaryHandle

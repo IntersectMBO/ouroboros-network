@@ -33,6 +33,8 @@ import           Test.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Network.Block (BlockNo (..), HasHeader, HeaderHash,
                      SlotNo (..))
 import qualified Ouroboros.Network.MockChain.Chain as MockChain
@@ -56,8 +58,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.RedundantConstraints
-
-import           Ouroboros.Consensus.Storage.Common
 
 import           Test.ThreadNet.Network
 import           Test.ThreadNet.TxGen

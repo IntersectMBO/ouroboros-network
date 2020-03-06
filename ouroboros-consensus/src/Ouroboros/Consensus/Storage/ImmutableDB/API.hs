@@ -6,6 +6,16 @@
 {-# LANGUAGE TypeFamilies      #-}
 module Ouroboros.Consensus.Storage.ImmutableDB.API
   ( ImmutableDB (..)
+  , closeDB
+  , isOpen
+  , reopen
+  , getTip
+  , getBlockComponent
+  , getEBBComponent
+  , getBlockOrEBBComponent
+  , appendBlock
+  , appendEBB
+  , stream
   , Iterator (..)
   , IteratorResult (..)
   , traverseIterator
@@ -16,7 +26,8 @@ module Ouroboros.Consensus.Storage.ImmutableDB.API
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      ThunkInfo (..))
-import           Cardano.Slotting.Block (BlockNo)
+import           Cardano.Slotting.Block
+import           Cardano.Slotting.Slot
 
 import           Data.ByteString.Builder (Builder)
 
@@ -60,13 +71,13 @@ data ImmutableDB hash m = ImmutableDB
     -- Idempotent.
     --
     -- __Note__: Use 'withDB' instead of this function.
-    closeDB
+    closeDB_
       :: HasCallStack => m ()
       -- TODO remove this operation from the public API and expose it using an
       -- internal record so it can be used by 'withDB'.
 
     -- | Return 'True' when the database is open.
-  , isOpen
+  , isOpen_
       :: HasCallStack => m Bool
 
     -- | When the database was closed, manually or because of an
@@ -79,7 +90,7 @@ data ImmutableDB hash m = ImmutableDB
     -- an unfilled slot or missing EBB.
     --
     -- Throws an 'OpenDBError' if the database is open.
-  , reopen
+  , reopen_
       :: HasCallStack => ValidationPolicy -> m ()
 
     -- | Return the tip of the database.
@@ -88,7 +99,7 @@ data ImmutableDB hash m = ImmutableDB
     -- EBB.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
-  , getTip
+  , getTip_
       :: HasCallStack => m (ImmTipWithInfo hash)
 
     -- | Get the block component of the block at the given 'SlotNo'.
@@ -99,7 +110,7 @@ data ImmutableDB hash m = ImmutableDB
     -- i.e > the result of 'getTip'.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
-  , getBlockComponent
+  , getBlockComponent_
       :: forall b. HasCallStack
       => BlockComponent (ImmutableDB hash m) b -> SlotNo -> m (Maybe b)
 
@@ -111,7 +122,7 @@ data ImmutableDB hash m = ImmutableDB
     -- Throws a 'ReadFutureEBBError' if the requested EBB is in the future.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
-  , getEBBComponent
+  , getEBBComponent_
       :: forall b. HasCallStack
       => BlockComponent (ImmutableDB hash m) b -> EpochNo -> m (Maybe b)
 
@@ -128,7 +139,7 @@ data ImmutableDB hash m = ImmutableDB
     -- Throws a 'ReadFutureSlotError' if the requested slot is in the future.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
-  , getBlockOrEBBComponent
+  , getBlockOrEBBComponent_
       :: forall b. HasCallStack
       => BlockComponent (ImmutableDB hash m) b -> SlotNo -> hash -> m (Maybe b)
 
@@ -140,7 +151,7 @@ data ImmutableDB hash m = ImmutableDB
     -- Throws a 'ClosedDBError' if the database is closed.
     --
     -- TODO the given binary blob may not be empty.
-  , appendBlock
+  , appendBlock_
       :: HasCallStack => SlotNo -> BlockNo -> hash -> BinaryInfo Builder -> m ()
 
     -- | Appends a block as the EBB of the given epoch.
@@ -155,7 +166,7 @@ data ImmutableDB hash m = ImmutableDB
     -- Throws a 'ClosedDBError' if the database is closed.
     --
     -- TODO the given binary blob may not be empty.
-  , appendEBB
+  , appendEBB_
       :: HasCallStack => EpochNo -> BlockNo -> hash -> BinaryInfo Builder -> m ()
 
     -- | Return an 'Iterator' to efficiently stream binary blocks out of the
@@ -197,7 +208,7 @@ data ImmutableDB hash m = ImmutableDB
     --
     -- The iterator is automatically closed when exhausted, and can be
     -- prematurely closed with 'iteratorClose'.
-  , stream
+  , stream_
       :: forall b. HasCallStack
       => ResourceRegistry m
       -> BlockComponent (ImmutableDB hash m) b
@@ -292,3 +303,74 @@ iteratorToList it = go []
       case next of
         IteratorExhausted  -> return $ reverse acc
         IteratorResult res -> go (res:acc)
+
+{-------------------------------------------------------------------------------
+  Wrappers that preserve 'HasCallStack'
+
+  @ghc@ really should do this for us :-/
+-------------------------------------------------------------------------------}
+
+closeDB
+  :: HasCallStack
+  => ImmutableDB hash m
+  -> m ()
+closeDB = closeDB_
+
+isOpen
+  :: HasCallStack
+  => ImmutableDB hash m
+  -> m Bool
+isOpen = isOpen_
+
+reopen
+  :: HasCallStack
+  => ImmutableDB hash m
+  -> ValidationPolicy -> m ()
+reopen = reopen_
+
+getTip
+  :: HasCallStack
+  => ImmutableDB hash m
+  -> m (ImmTipWithInfo hash)
+getTip = getTip_
+
+getBlockComponent
+  :: HasCallStack
+  => ImmutableDB hash m
+  -> BlockComponent (ImmutableDB hash m) b -> SlotNo -> m (Maybe b)
+getBlockComponent = getBlockComponent_
+
+getEBBComponent
+  :: HasCallStack
+  => ImmutableDB hash m
+  -> BlockComponent (ImmutableDB hash m) b -> EpochNo -> m (Maybe b)
+getEBBComponent = getEBBComponent_
+
+getBlockOrEBBComponent
+  :: HasCallStack
+  => ImmutableDB hash m
+  -> BlockComponent (ImmutableDB hash m) b -> SlotNo -> hash -> m (Maybe b)
+getBlockOrEBBComponent = getBlockOrEBBComponent_
+
+appendBlock
+  :: HasCallStack
+  => ImmutableDB hash m
+  -> SlotNo -> BlockNo -> hash -> BinaryInfo Builder -> m ()
+appendBlock = appendBlock_
+
+appendEBB
+  :: HasCallStack
+  => ImmutableDB hash m
+  -> EpochNo -> BlockNo -> hash -> BinaryInfo Builder -> m ()
+appendEBB = appendEBB_
+
+stream
+  :: HasCallStack
+  => ImmutableDB hash m
+  -> ResourceRegistry m
+  -> BlockComponent (ImmutableDB hash m) b
+  -> Maybe (SlotNo, hash)
+  -> Maybe (SlotNo, hash)
+  -> m (Either (WrongBoundError hash)
+               (Iterator hash m b))
+stream = stream_

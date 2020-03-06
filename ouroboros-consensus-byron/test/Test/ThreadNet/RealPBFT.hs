@@ -52,8 +52,6 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.Crypto as Crypto
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.Random
 
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
-
 import qualified Cardano.Binary
 import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Common as Common

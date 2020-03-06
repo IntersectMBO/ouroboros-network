@@ -83,6 +83,7 @@ library
                        Ouroboros.Consensus.Protocol.Signed
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.AnchoredFragment
+                       Ouroboros.Consensus.Util.CallStack
                        Ouroboros.Consensus.Util.CBOR
                        Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.EarlyExit
@@ -118,10 +119,6 @@ library
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                        Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
                        Ouroboros.Consensus.Storage.Common
-                       Ouroboros.Consensus.Storage.EpochInfo
-                       Ouroboros.Consensus.Storage.EpochInfo.API
-                       Ouroboros.Consensus.Storage.EpochInfo.CumulEpochSizes
-                       Ouroboros.Consensus.Storage.EpochInfo.Impl
                        Ouroboros.Consensus.Storage.FS.API
                        Ouroboros.Consensus.Storage.FS.API.Types
                        Ouroboros.Consensus.Storage.FS.CRC
@@ -130,6 +127,9 @@ library
                        Ouroboros.Consensus.Storage.IO
                        Ouroboros.Consensus.Storage.ImmutableDB
                        Ouroboros.Consensus.Storage.ImmutableDB.API
+                       Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+                       Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                       Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
@@ -139,7 +139,6 @@ library
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
-                       Ouroboros.Consensus.Storage.ImmutableDB.Layout
                        Ouroboros.Consensus.Storage.ImmutableDB.Parser
                        Ouroboros.Consensus.Storage.ImmutableDB.Types
                        Ouroboros.Consensus.Storage.LedgerDB.Conf
@@ -240,6 +239,7 @@ library
                        -Wredundant-constraints
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
+    cpp-options:       -DENABLE_ASSERTIONS
 
 test-suite test-consensus
   type:                exitcode-stdio-1.0
@@ -355,7 +355,6 @@ test-suite test-storage
                        Test.Ouroboros.Storage.FS
                        Test.Ouroboros.Storage.FS.StateMachine
                        Test.Ouroboros.Storage.ImmutableDB
-                       Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes
                        Test.Ouroboros.Storage.ImmutableDB.Mock
                        Test.Ouroboros.Storage.ImmutableDB.Model
                        Test.Ouroboros.Storage.ImmutableDB.Primary
@@ -371,6 +370,7 @@ test-suite test-storage
                        Test.Ouroboros.Storage.VolatileDB.StateMachine
 
                        Test.Util.Blob
+                       Test.Util.ChunkInfo
                        Test.Util.FS.Sim.Error
                        Test.Util.FS.Sim.FsTree
                        Test.Util.FS.Sim.MockFS
@@ -414,6 +414,7 @@ test-suite test-storage
                      , time
                      , transformers
                      , tree-diff
+                     , vector
 
                      , io-sim-classes
                      , io-sim

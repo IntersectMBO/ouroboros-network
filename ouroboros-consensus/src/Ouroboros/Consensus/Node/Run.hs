@@ -18,6 +18,7 @@ import           Data.Proxy (Proxy)
 import           Data.Word (Word32)
 
 import           Cardano.Crypto (ProtocolMagicId)
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block (BlockNo, HeaderHash, Serialised,
                      SlotNo)
@@ -41,9 +42,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
-import           Ouroboros.Consensus.Storage.Common (EpochNo, EpochSize)
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
-                     HashInfo)
+                     ChunkInfo, HashInfo)
 
 {-------------------------------------------------------------------------------
   RunNode proper
@@ -72,10 +72,10 @@ class ( LedgerSupportsProtocol    blk
   nodeBlockMatchesHeader  :: Header blk -> blk -> Bool
   nodeBlockFetchSize      :: Header blk -> SizeInBytes
   nodeIsEBB               :: Header blk -> Maybe EpochNo
-  nodeEpochSize           :: Monad m
-                          => Proxy blk
+
+  nodeImmDbChunkInfo      :: Proxy blk
                           -> TopLevelConfig blk
-                          -> EpochNo -> m EpochSize
+                          -> ChunkInfo
   nodeStartTime           :: Proxy blk
                           -> TopLevelConfig blk
                           -> SystemStart

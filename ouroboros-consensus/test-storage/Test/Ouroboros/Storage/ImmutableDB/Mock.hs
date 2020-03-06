@@ -10,32 +10,33 @@ import           Data.Tuple (swap)
 import           Ouroboros.Consensus.Util ((...:), (..:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common (BlockComponent, EpochSize)
+import           Ouroboros.Consensus.Storage.Common (BlockComponent)
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 
 openDBMock  :: forall m hash. (IOLike m, Eq hash, Show hash)
-            => EpochSize
+            => ChunkInfo
             -> m (DBModel hash, ImmutableDB hash m)
-openDBMock epochSize = do
+openDBMock chunkInfo = do
     dbVar <- uncheckedNewTVarM dbModel
     return (dbModel, immDB dbVar)
   where
-    dbModel = initDBModel epochSize
+    dbModel = initDBModel chunkInfo
 
     immDB :: StrictTVar m (DBModel hash) -> ImmutableDB hash m
     immDB dbVar = ImmutableDB
-        { closeDB                = return ()
-        , isOpen                 = return True
-        , reopen                 = \_valPol -> void $ update reopenModel
-        , getTip                 = query       $ getTipModel
-        , getBlockComponent      = queryE     .: getBlockComponentModel
-        , getEBBComponent        = queryE     .: getEBBComponentModel
-        , getBlockOrEBBComponent = queryE    ..: getBlockOrEBBComponentModel
-        , appendBlock            = updateE_ ...: appendBlockModel
-        , appendEBB              = updateE_ ...: appendEBBModel
-        , stream                 = updateEE ...: \_rr bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
+        { closeDB_                = return ()
+        , isOpen_                 = return True
+        , reopen_                 = \_valPol -> void $ update reopenModel
+        , getTip_                 = query       $ getTipModel
+        , getBlockComponent_      = queryE     .: getBlockComponentModel
+        , getEBBComponent_        = queryE     .: getEBBComponentModel
+        , getBlockOrEBBComponent_ = queryE    ..: getBlockOrEBBComponentModel
+        , appendBlock_            = updateE_ ...: appendBlockModel
+        , appendEBB_              = updateE_ ...: appendEBBModel
+        , stream_                 = updateEE ...: \_rr bc s e -> fmap (fmap (first (iterator bc))) . streamModel s e
         }
       where
         iterator :: BlockComponent (ImmutableDB hash m) b

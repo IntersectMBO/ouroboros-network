@@ -48,6 +48,7 @@ import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           GHC.Stack
 
+import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block
@@ -97,9 +98,6 @@ import           Ouroboros.Consensus.Util.STM
 
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
-import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo,
-                     epochInfoEpoch, fixedSizeEpochInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
@@ -528,14 +526,14 @@ runThreadNetwork ThreadNetworkArgs
         , cdbHasFSVolDb           = simHasFS (nodeDBsVol nodeDBs)
         , cdbHasFSLgrDB           = simHasFS (nodeDBsLgr nodeDBs)
           -- Policy
-        , cdbImmValidation        = ImmDB.ValidateAllEpochs
+        , cdbImmValidation        = ImmDB.ValidateAllChunks
         , cdbVolValidation        = VolDB.ValidateAll
         , cdbBlocksPerFile        = VolDB.mkBlocksPerFile 4
         , cdbParamsLgrDB          = LgrDB.ledgerDbDefaultParams (configSecurityParam cfg)
         , cdbDiskPolicy           = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
           -- Integration
         , cdbTopLevelConfig       = cfg
-        , cdbEpochInfo            = epochInfo
+        , cdbChunkInfo            = ImmDB.simpleChunkInfo epochSize
         , cdbHashInfo             = nodeHashInfo (Proxy @blk)
         , cdbIsEBB                = nodeIsEBB
         , cdbCheckIntegrity       = nodeCheckIntegrity cfg

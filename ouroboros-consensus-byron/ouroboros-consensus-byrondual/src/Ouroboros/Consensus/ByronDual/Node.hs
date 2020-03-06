@@ -216,7 +216,7 @@ instance RunNode DualByronBlock where
                          GenesisHash
 
   -- Node config is a consensus concern, determined by the main block only
-  nodeEpochSize       = \_p -> nodeEpochSize       pb . dualTopLevelConfigMain
+  nodeImmDbChunkInfo  = \_p -> nodeImmDbChunkInfo  pb . dualTopLevelConfigMain
   nodeStartTime       = \_p -> nodeStartTime       pb . dualTopLevelConfigMain
   nodeNetworkMagic    = \_p -> nodeNetworkMagic    pb . dualTopLevelConfigMain
   nodeProtocolMagicId = \_p -> nodeProtocolMagicId pb . dualTopLevelConfigMain

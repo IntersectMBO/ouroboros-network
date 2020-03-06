@@ -85,9 +85,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
-import           Ouroboros.Consensus.Storage.Common (EpochNo)
-import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo)
-
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      ChainDbError (..), InvalidBlockReason, StreamFrom,
                      StreamTo, UnknownRange)
@@ -228,7 +225,7 @@ data ChainDbEnv m blk = CDB
     -- ImmutableDB and garbage collecting it from the VolatileDB
   , cdbKillBgThreads   :: !(StrictTVar m (m ()))
     -- ^ A handle to kill the background threads.
-  , cdbEpochInfo       :: !(EpochInfo m)
+  , cdbChunkInfo       :: !ImmDB.ChunkInfo
   , cdbIsEBB           :: !(Header blk -> IsEBB)
   , cdbCheckIntegrity  :: !(blk -> Bool)
   , cdbBlockchainTime  :: !(BlockchainTime m)
@@ -514,7 +511,7 @@ data TraceOpenEvent blk
     -- ^ The ChainDB was successfully reopened.
   | OpenedImmDB
     { _immDbTip      :: Point blk
-    , _immDbTipEpoch :: EpochNo
+    , _immDbTipChunk :: ImmDB.ChunkNo
     }
     -- ^ The ImmutableDB was opened.
   | OpenedVolDB
