@@ -116,11 +116,11 @@ mkOpenState registry HasFS{..} index chunk tip existing = do
     eHnd <- allocateHandle $ hOpen (renderFile "epoch"     chunk) appendMode
     pHnd <- allocateHandle $ Index.openPrimaryIndex index  chunk  existing
     sHnd <- allocateHandle $ hOpen (renderFile "secondary" chunk) appendMode
-    epochOffset     <- hGetSize eHnd
+    chunkOffset     <- hGetSize eHnd
     secondaryOffset <- hGetSize sHnd
     return OpenState
       { _currentChunk           = chunk
-      , _currentChunkOffset     = BlockOffset epochOffset
+      , _currentChunkOffset     = BlockOffset chunkOffset
       , _currentSecondaryOffset = fromIntegral secondaryOffset
       , _currentChunkHandle     = eHnd
       , _currentPrimaryHandle   = pHnd

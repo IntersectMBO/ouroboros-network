@@ -11,7 +11,7 @@
 -- the ImmutableDB would be unaffected.
 module Ouroboros.Consensus.Storage.ImmutableDB.Parser
   ( -- * ChunkFileParser
-    EpochFileError (..)
+    ChunkFileError (..)
   , BlockSummary(..)
   , chunkFileParser
   , chunkFileParser'
@@ -47,23 +47,23 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types
   ChunkFileParser
 -------------------------------------------------------------------------------}
 
-data EpochFileError hash =
-    EpochErrRead Util.CBOR.ReadIncrementalErr
+data ChunkFileError hash =
+    ChunkErrRead Util.CBOR.ReadIncrementalErr
 
     -- | The previous hash of a block did not match the hash of the previous
     -- block.
-  | EpochErrHashMismatch
+  | ChunkErrHashMismatch
       (WithOrigin hash)  -- ^ The hash of the previous block
       (WithOrigin hash)  -- ^ The previous hash of the block
 
     -- | The integrity verification of the block with the given hash and
     -- 'BlockOrEBB' number returned 'False', indicating that the block got
     -- corrupted.
-  | EpochErrCorrupt hash BlockOrEBB
+  | ChunkErrCorrupt hash BlockOrEBB
 
     -- | The block has a slot number greater than the current slot (wall
     -- clock). This block is in the future, so we must truncate it.
-  | EpochErrFutureBlock
+  | ChunkErrFutureBlock
       SlotNo  -- ^ Current slot (wall clock)
       SlotNo  -- ^ Slot number of the block
   deriving (Eq, Show)
@@ -87,7 +87,7 @@ chunkFileParser'
   -> (blk -> Bool)             -- ^ Check integrity of the block. 'False' =
                                -- corrupt.
   -> ChunkFileParser
-       (EpochFileError hash)
+       (ChunkFileError hash)
        m
        (BlockSummary hash)
        hash
@@ -99,7 +99,7 @@ chunkFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEB
         . checkIfHashesLineUp
         . checkEntries expectedChecksums
         . checkFutureSlot currentSlotNo
-        . fmap (fmap (first EpochErrRead))
+        . fmap (fmap (first ChunkErrRead))
         )
   where
     decoder :: forall s. Decoder s (BL.ByteString -> (blk, CRC))
@@ -109,18 +109,18 @@ chunkFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEB
       in (blk, checksum)
 
     -- | Stop when a block has slot number > the current slot, return
-    -- 'EpochErrFutureBlock'.
+    -- 'ChunkErrFutureBlock'.
     checkFutureSlot
       :: SlotNo  -- ^ Current slot (wall clock).
       -> Stream (Of (Word64, (Word64, (blk, CRC))))
                 m
-                (Maybe (EpochFileError hash, Word64))
+                (Maybe (ChunkFileError hash, Word64))
       -> Stream (Of (Word64, (Word64, (blk, CRC))))
                 m
-                (Maybe (EpochFileError hash, Word64))
+                (Maybe (ChunkFileError hash, Word64))
     checkFutureSlot currentSlotNo = mapS $ \x@(offset, (_, (blk, _))) ->
       if getSlotNo blk > currentSlotNo
-      then Left $ Just (EpochErrFutureBlock currentSlotNo (getSlotNo blk), offset)
+      then Left $ Just (ChunkErrFutureBlock currentSlotNo (getSlotNo blk), offset)
       else Right x
 
     -- | Go over the expected checksums and blocks in parallel. Stop with an
@@ -138,17 +138,17 @@ chunkFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEB
          -- ^ Expected checksums
       -> Stream (Of (Word64, (Word64, (blk, CRC))))
                 m
-                (Maybe (EpochFileError hash, Word64))
+                (Maybe (ChunkFileError hash, Word64))
          -- ^ Input stream of blocks (with additional info)
       -> Stream (Of (BlockSummary hash, WithOrigin hash))
                 m
-                (Maybe (EpochFileError hash, Word64))
+                (Maybe (ChunkFileError hash, Word64))
     checkEntries = \expected -> mapAccumS expected updateAcc
       where
         updateAcc
           :: [CRC]
           -> (Word64, (Word64, (blk, CRC)))
-          -> Either (Maybe (EpochFileError hash, Word64))
+          -> Either (Maybe (ChunkFileError hash, Word64))
                     ( (BlockSummary hash, WithOrigin hash)
                     , [CRC]
                     )
@@ -163,7 +163,7 @@ chunkFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEB
                 -> Right (entryAndPrevHash, drop 1 expected)
                 | otherwise
                   -- The block is corrupt, stop
-                -> Left $ Just (EpochErrCorrupt headerHash blockOrEBB, offset)
+                -> Left $ Just (ChunkErrCorrupt headerHash blockOrEBB, offset)
           where
             entryAndPrevHash@(BlockSummary actualEntry _, _) =
               entryForBlockAndInfo blkAndInfo
@@ -192,10 +192,10 @@ chunkFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEB
     checkIfHashesLineUp
       :: Stream (Of (BlockSummary hash, WithOrigin hash))
                 m
-                (Maybe (EpochFileError hash, Word64))
+                (Maybe (ChunkFileError hash, Word64))
       -> Stream (Of (BlockSummary hash, WithOrigin hash))
                 m
-                (Maybe (EpochFileError hash, Word64))
+                (Maybe (ChunkFileError hash, Word64))
     checkIfHashesLineUp = mapAccumS0 checkFirst checkNext
       where
         -- We pass the hash of the previous block around as the state (@s@).
@@ -208,7 +208,7 @@ chunkFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEB
           | otherwise
           = Left (Just (err, offset))
             where
-              err = EpochErrHashMismatch (At hashOfPrevBlock) prevHash
+              err = ChunkErrHashMismatch (At hashOfPrevBlock) prevHash
               offset = Secondary.unBlockOffset $ Secondary.blockOffset entry
 
 -- | A version of 'chunkFileParser'' for blocks that implement 'HasHeader'.
@@ -221,7 +221,7 @@ chunkFileParser
   -> (blk -> Bool)           -- ^ Check integrity of the block. 'False' =
                              -- corrupt.
   -> ChunkFileParser
-       (EpochFileError (HeaderHash blk))
+       (ChunkFileError (HeaderHash blk))
        m
        (BlockSummary (HeaderHash blk))
        (HeaderHash blk)

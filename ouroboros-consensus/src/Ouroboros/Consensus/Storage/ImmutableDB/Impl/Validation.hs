@@ -124,7 +124,7 @@ validate validateEnv@ValidateEnv{ hasFS } valPol = do
   where
     HasFS { listDirectory } = hasFS
 
--- | Validate epochs from oldest to newest, stop after the most recent chunk
+-- | Validate chunks from oldest to newest, stop after the most recent chunk
 -- on disk. During this validation, keep track of the last valid block we
 -- encountered. If at the end, that block is not in the last chunk on disk,
 -- remove the chunk and index files after that chunk.
@@ -156,9 +156,9 @@ validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
             where
               prevHash' = At (tipInfoHash validBlk)
 
-    -- | Validate the next epoch, unless the epoch just validated is the last
-    -- epoch to validate. Cleanup files corresponding to epochs after the
-    -- epoch in which we found the last valid block. Return that epoch and the
+    -- | Validate the next chunk, unless the chunk just validated is the last
+    -- chunk to validate. Cleanup files corresponding to chunks after the
+    -- chunk in which we found the last valid block. Return that chunk and the
     -- tip corresponding to that block.
     continueOrStop
       :: (ChunkNo, ImmTipWithInfo hash)
@@ -174,19 +174,19 @@ validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
         cleanup lastValid chunk
         return lastValid
 
-    -- | Remove left over files from epochs newer than the last epoch
+    -- | Remove left over files from chunks newer than the last chunk
     -- containing a valid file. Also unfinalise it if necessary.
     cleanup
       :: (ChunkNo, ImmTipWithInfo hash)  -- ^ The last valid chunk and tip
       -> ChunkNo  -- ^ The last validated chunk, could have been invalid or
                   -- empty
       -> m ()
-    cleanup (lastValidChunk, tip) lastValidatedEpoch = case tip of
+    cleanup (lastValidChunk, tip) lastValidatedChunk = case tip of
       Origin ->
         removeFilesStartingFrom hasFS firstChunkNo
       At _  -> do
         removeFilesStartingFrom hasFS (nextChunkNo lastValidChunk)
-        when (lastValidChunk < lastValidatedEpoch) $
+        when (lastValidChunk < lastValidatedChunk) $
           Primary.unfinalise hasFS chunkInfo lastValidChunk
 
 -- | Validate the given most recent chunk. If that chunk contains no valid
@@ -227,39 +227,39 @@ data ShouldBeFinalised
   | ShouldNotBeFinalised
   deriving (Show)
 
--- | Validate the given epoch
+-- | Validate the given chunk
 --
--- * Invalid or missing epoch files will cause truncation. All blocks after a
+-- * Invalid or missing chunk files will cause truncation. All blocks after a
 --   gap in blocks (due to a missing blocks or invalid block(s)) are
 --   truncated.
 --
--- * Epoch files are the main source of truth. Primary and secondary index
---   files can be reconstructed from the epoch files using the
---   'EpochFileParser'. If index files are missing, corrupt, or do not match
---   the epoch files, they are overwritten.
+-- * Chunk files are the main source of truth. Primary and secondary index
+--   files can be reconstructed from the chunk files using the
+--   'ChunkFileParser'. If index files are missing, corrupt, or do not match
+--   the chunk files, they are overwritten.
 --
--- * The 'EpochFileParser' checks whether the hashes (header hash) line up
---   within an epoch. When they do not, we truncate the epoch, including the
+-- * The 'ChunkFileParser' checks whether the hashes (header hash) line up
+--   within an chunk. When they do not, we truncate the chunk, including the
 --   block of which its previous hash does not match the hash of the previous
 --   block.
 --
--- * For each block, the 'EpochFileParser' checks whether the checksum (and
+-- * For each block, the 'ChunkFileParser' checks whether the checksum (and
 --   other fields) from the secondary index file match the ones retrieved from
 --   the actual block. If they do, the block has not been corrupted. If they
 --   don't match or if the secondary index file is missing or corrupt, we have
 --   to do the expensive integrity check of the block itself to determine
 --   whether it is corrupt or not.
 --
--- * This function checks whether the first block in the epoch fits onto the
---   last block of the previous epoch by checking the hashes. If they do not
---   fit, this epoch is truncated and @()@ is thrown.
+-- * This function checks whether the first block in the chunk fits onto the
+--   last block of the previous chunk by checking the hashes. If they do not
+--   fit, this chunk is truncated and @()@ is thrown.
 --
 -- * When an invalid block needs to be truncated, trailing empty slots are
 --   also truncated so that the tip of the database will always point to a
 --   valid block or EBB.
 --
--- * All but the most recent epoch in the database should be finalised, i.e.
---   padded to the size of the epoch.
+-- * All but the most recent chunk in the database should be finalised, i.e.
+--   padded to the size of the chunk.
 --
 validateChunk
   :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
@@ -267,18 +267,18 @@ validateChunk
   -> ShouldBeFinalised
   -> ChunkNo
   -> Maybe (WithOrigin hash)
-     -- ^ The hash of the last block of the previous epoch. 'Nothing' if
-     -- unknown. When this is the first epoch, it should be 'Just Origin'.
+     -- ^ The hash of the last block of the previous chunk. 'Nothing' if
+     -- unknown. When this is the first chunk, it should be 'Just Origin'.
   -> ExceptT () m (Maybe (TipInfo hash BlockOrEBB))
      -- ^ When non-empty, return the 'BlockOrEBB' and @hash@ of the last valid
-     -- block in the epoch.
+     -- block in the chunk.
      --
-     -- When the epoch file is missing or when we should truncate starting
-     -- from this epoch because it doesn't fit onto the previous one, @()@ is
+     -- When the chunk file is missing or when we should truncate starting
+     -- from this chunk because it doesn't fit onto the previous one, @()@ is
      -- thrown.
      --
      -- Note that when an invalid block is detected, we don't throw, but we
-     -- truncate the epoch file. When validating the epoch file after it, we
+     -- truncate the chunk file. When validating the chunk file after it, we
      -- would notice it doesn't fit anymore, and then throw.
 validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
     trace $ ValidatingChunk chunk
@@ -313,15 +313,15 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
         runChunkFileParser parser chunkFile currentSlot expectedChecksums $ \entries ->
           (\(es :> mbErr) -> (es, mbErr)) <$> S.toList entries
 
-    -- Check whether the first block of this epoch fits onto the last block of
-    -- the previous epoch.
+    -- Check whether the first block of this chunk fits onto the last block of
+    -- the previous chunk.
     case entriesWithPrevHashes of
       (_, actualPrevHash) : _
         | Just expectedPrevHash <- mbPrevHash
         , expectedPrevHash /= actualPrevHash
-          -- The previous hash of the first block in the epoch does not match
-          -- the hash of the last block of the previous epoch. There must be a
-          -- gap. This epoch should be truncated.
+          -- The previous hash of the first block in the chunk does not match
+          -- the hash of the last block of the previous chunk. There must be a
+          -- gap. This chunk should be truncated.
         -> do
           trace $ ChunkFileDoesntFit expectedPrevHash actualPrevHash
           throwError ()
@@ -329,7 +329,7 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
 
     lift $ do
 
-      -- If the parser returneds a deserialisation error, truncate the epoch
+      -- If the parser returneds a deserialisation error, truncate the chunk
       -- file. Don't truncate the database just yet, because the
       -- deserialisation error may be due to some extra random bytes that
       -- shouldn't have been there in the first place.
@@ -404,28 +404,29 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
     --
     -- However, at the point we are reading the secondary index file, we don't
     -- yet know whether the first block will be an EBB or a regular block. We
-    -- will find that out when we read the actual block from the epoch file.
+    -- will find that out when we read the actual block from the chunk file.
     --
     -- Fortunately, we can make a /very/ good guess: if the 'Word64' of the
-    -- 'BlockOrEBB' matches the epoch number, it is almost certainly an EBB,
-    -- as the slot numbers increase @10k@ times faster than epoch numbers.
-    -- Property: for every epoch @e > 0@, for all slot numbers @s@ in epoch
-    -- @e@ we have @s > e@. The only exception is epoch 0, which contains a
+    -- 'BlockOrEBB' matches the chunk number, it is almost certainly an EBB,
+    -- as the slot numbers increase @10k@ times faster than chunk numbers
+    -- (remember that for EBBs, chunk numbers and epoch numbers must line up).
+    -- Property: for every chunk @e > 0@, for all slot numbers @s@ in chunk
+    -- @e@ we have @s > e@. The only exception is chunk 0, which contains a
     -- slot number 0. From this follows that it's an EBB if and only if the
-    -- 'Word64' matches the epoch number.
+    -- 'Word64' matches the chunk number.
     --
-    -- E.g., the first slot number in epoch 1 will be 21600 if @k = 2160@. We
-    -- could only make the wrong guess in the first very first epoch, i.e.,
-    -- epoch 0, as the first slot number is also 0. However, we know that the
+    -- E.g., the first slot number in chunk 1 will be 21600 if @k = 2160@. We
+    -- could only make the wrong guess in the first very first chunk, i.e.,
+    -- chunk 0, as the first slot number is also 0. However, we know that the
     -- real blockchain starts with an EBB, so even in that case we're fine.
     --
-    -- If the epoch size were 1, then we would make the wrong guess for each
-    -- epoch that contains an EBB, which is a rather unrealistic scenario.
+    -- If the chunk size were 1, then we would make the wrong guess for each
+    -- chunk that contains an EBB, which is a rather unrealistic scenario.
     --
     -- Note that even making the wrong guess is not a problem. The (CRC)
     -- checksums are the only thing we extract from the secondary index file.
-    -- These are passed to the 'EpochFileParser'. We then reconstruct the
-    -- secondary index using the output of the 'EpochFileParser'. If that
+    -- These are passed to the 'ChunkFileParser'. We then reconstruct the
+    -- secondary index using the output of the 'ChunkFileParser'. If that
     -- output doesn't match the parsed secondary index file, we will overwrite
     -- the secondary index file.
     --
@@ -468,7 +469,7 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
           (_, []) ->
             case shouldBeFinalised of
               ShouldNotBeFinalised -> []
-              ShouldBeFinalised    -> Primary.backfillEpoch
+              ShouldBeFinalised    -> Primary.backfillChunk
                                         chunkInfo
                                         chunk
                                         expected

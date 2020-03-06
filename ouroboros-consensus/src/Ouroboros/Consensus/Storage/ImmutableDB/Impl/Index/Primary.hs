@@ -41,7 +41,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
   , filledSlots
   , lastFilledSlot
   , backfill
-  , backfillEpoch
+  , backfillChunk
     -- * Exported for testing purposes
   , mk
   , toSecondaryOffsets
@@ -313,10 +313,10 @@ load hasFS chunk =
 
 -- | Write a primary index to a file.
 --
--- Property: for @hasFS@, @err@, @epoch@
+-- Property: for @hasFS@, @err@, @chunk@
 --
--- > 'write' hasFS epoch primaryIndex
--- > primaryIndex' <- 'load' hasFS err epoch
+-- > 'write' hasFS chunk primaryIndex
+-- > primaryIndex' <- 'load' hasFS err chunk
 --
 -- Then it must be that:
 --
@@ -563,9 +563,9 @@ lastFilledSlot chunkInfo (MkPrimaryIndex chunk offsets) =
 -- A situation may arise in which we \"skip\" some relative slots, and we
 -- write into the DB, for example, every other relative slot. In this case, we
 -- need to backfill the primary index file with offsets for the skipped
--- relative slots. Similarly, before we start a new epoch, we must backfill
--- the primary index file of the current epoch to indicate that the remaining
--- slots in the epoch are empty.
+-- relative slots. Similarly, before we start a new chunk, we must backfill
+-- the primary index file of the current chunk to indicate that the remaining
+-- slots in the chunk are empty.
 --
 -- For example, say we have written to relative slots 0 and 1. We have the
 -- following primary index file:
@@ -608,18 +608,18 @@ backfill slot nextExpected offset =
         - relativeSlotIndex nextExpected
 
 -- | Return the slots to backfill the primary index file with when padding it
--- to the epoch size.
+-- to the chunk size.
 --
 -- See 'backfill' for more details.
-backfillEpoch
+backfillChunk
   :: ChunkInfo
   -> ChunkNo
   -> NextRelativeSlot
   -> SecondaryOffset
   -> [SecondaryOffset]
-backfillEpoch _ _ NoMoreRelativeSlots _ =
+backfillChunk _ _ NoMoreRelativeSlots _ =
     []
-backfillEpoch chunkInfo chunk (NextRelativeSlot nextExpected) offset =
+backfillChunk chunkInfo chunk (NextRelativeSlot nextExpected) offset =
     replicate (fromIntegral gap) offset
   where
     finalSlot = maxRelativeSlot chunkInfo chunk

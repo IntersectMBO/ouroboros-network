@@ -39,7 +39,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
   , iteratorClose
     -- * Tracing
   , TraceEvent
-  , ImmDB.EpochFileError
+  , ImmDB.ChunkFileError
     -- * Re-exports
   , ImmDB.Iterator
   , ImmDB.IteratorResult (..)
@@ -136,7 +136,7 @@ instance NoUnexpectedThunks (ImmDB m blk) where
 
 -- | Short-hand for events traced by the ImmDB wrapper.
 type TraceEvent blk =
-  ImmDB.TraceEvent (ImmDB.EpochFileError (HeaderHash blk)) (HeaderHash blk)
+  ImmDB.TraceEvent (ImmDB.ChunkFileError (HeaderHash blk)) (HeaderHash blk)
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -202,11 +202,12 @@ defaultArgs fp = ImmDbArgs{
     , immBlockchainTime = error "no default for immBlockchainTime"
     }
   where
-    -- Cache 250 past epochs by default. This will take roughly 250 MB of RAM.
-    -- At the time of writing (1/2020), there are 166 epochs, so even one year
-    -- from now, we will be able to cache all epochs' indices in the chain.
+    -- Cache 250 past chunks by default. This will take roughly 250 MB of RAM.
+    -- At the time of writing (1/2020), there are 166 epochs, and we store one
+    -- epoch per chunk, so even one year from now, we will be able to cache all
+    -- chunks' indices in the chain.
     --
-    -- If this number were too low, i.e., less than the number of epochs that
+    -- If this number were too low, i.e., less than the number of chunks that
     -- that clients are requesting blocks from, we would constantly evict and
     -- reparse indices, causing a much higher CPU load.
     cacheConfig = Index.CacheConfig

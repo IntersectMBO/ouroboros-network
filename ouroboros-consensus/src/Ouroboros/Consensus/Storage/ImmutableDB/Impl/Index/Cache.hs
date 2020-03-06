@@ -88,19 +88,19 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types (HashInfo (..),
 
 data CacheConfig = CacheConfig
   { pastChunksToCache :: Word32
-    -- ^ Maximum number of past epochs to cache, excluding the current chunk.
+    -- ^ Maximum number of past chunks to cache, excluding the current chunk.
     --
     -- NOTE: must be > 0
   , expireUnusedAfter :: DiffTime
-    -- ^ Expire past epochs that haven't been used for 'expireUnusedAfter'
-    -- from the cache, regardless the number of past epochs in the cache.
+    -- ^ Expire past chunks that haven't been used for 'expireUnusedAfter'
+    -- from the cache, regardless the number of past chunks in the cache.
   }
   deriving (Eq, Show)
 
 -- | Short-hand we use internally
 type Entry hash = WithBlockSize (Secondary.Entry hash)
 
--- | The cached primary and secondary indices of the current epoch.
+-- | The cached primary and secondary indices of the current chunk.
 --
 -- We use sequences (as opposed to vectors) to allow for efficient appending
 -- in addition to (reasonably) efficient indexing.
@@ -111,8 +111,8 @@ data CurrentChunkInfo hash = CurrentChunkInfo
   }
   deriving (Generic, NoUnexpectedThunks, Show)
 
-emptyCurrentEpochInfo :: ChunkNo -> CurrentChunkInfo hash
-emptyCurrentEpochInfo chunk = CurrentChunkInfo
+emptyCurrentChunkInfo :: ChunkNo -> CurrentChunkInfo hash
+emptyCurrentChunkInfo chunk = CurrentChunkInfo
   { currentChunkNo      = chunk
   , currentChunkOffsets = Seq.singleton 0
   , currentChunkEntries = Seq.empty
@@ -120,62 +120,62 @@ emptyCurrentEpochInfo chunk = CurrentChunkInfo
 
 -- | Convert a 'CurrentChunkInfo' to a 'PastChunkInfo'
 --
--- TODO don't bother with the conversion? Use vectors for past epochs at start
--- up. Epochs that become past epochs because we advance to new epochs, we can
+-- TODO don't bother with the conversion? Use vectors for past chunks at start
+-- up. Chunks that become past chunks because we advance to new chunks, we can
 -- just leave in memory as seqs?
-toPastEpochInfo :: CurrentChunkInfo hash -> PastChunkInfo hash
-toPastEpochInfo CurrentChunkInfo{..} =
+toPastChunkInfo :: CurrentChunkInfo hash -> PastChunkInfo hash
+toPastChunkInfo CurrentChunkInfo{..} =
     PastChunkInfo
-      { pastEpochOffsets =
-          fromMaybe (error "invalid current epoch") $
+      { pastChunkOffsets =
+          fromMaybe (error "invalid current chunk") $
           Primary.mk currentChunkNo (toList currentChunkOffsets)
-      , pastEpochEntries =
+      , pastChunkEntries =
           -- TODO optimise this
           Vector.fromList $ toList currentChunkEntries
       }
 
--- | The cached primary and secondary indices of an epoch in the past.
+-- | The cached primary and secondary indices of an chunk in the past.
 --
 -- We use vectors to allow for efficient indexing. We don't need to append to
 -- them, as they are in the past and thus immutable.
 data PastChunkInfo hash = PastChunkInfo
-  { pastEpochOffsets :: !PrimaryIndex
-  , pastEpochEntries :: !(Vector (Entry hash))
+  { pastChunkOffsets :: !PrimaryIndex
+  , pastChunkEntries :: !(Vector (Entry hash))
   }
   deriving (Generic, NoUnexpectedThunks)
 
--- | The last time a cached past epoch was accessed.
+-- | The last time a cached past chunk was accessed.
 --
 -- We care about the ordering /and/ the absolute times so we can also evict
--- epochs when they haven't been used for @x@ seconds or minutes.
+-- chunks when they haven't been used for @x@ seconds or minutes.
 newtype LastUsed = LastUsed Time
   deriving newtype (Eq, Ord, Show, NoUnexpectedThunks)
 
 -- | The data stored in the cache.
 data Cached hash = Cached
   { currentChunk     :: !ChunkNo
-    -- ^ The current epoch of the ImmutableDB, i.e., the epoch we're still
+    -- ^ The current chunk of the ImmutableDB, i.e., the chunk we're still
     -- appending entries too.
-  , currentEpochInfo :: !(CurrentChunkInfo hash)
-    -- ^ We always cache the current epoch.
+  , currentChunkInfo :: !(CurrentChunkInfo hash)
+    -- ^ We always cache the current chunk.
     --
     -- When clients are in sync with our chain, they will only request blocks
-    -- from the current epoch, so it is worth optimising this case.
-    -- Additionally, by appending to the current epoch through the cache, we
-    -- are sure the current epoch info is never stale.
+    -- from the current chunk, so it is worth optimising this case.
+    -- Additionally, by appending to the current chunk through the cache, we
+    -- are sure the current chunk info is never stale.
     --
-    -- We use an 'IntPSQ' here, where the keys are in fact epoch numbers. Since
-    -- epoch numbers are internally represented by a 'Word64', one might be worried
+    -- We use an 'IntPSQ' here, where the keys are in fact chunk numbers. Since
+    -- chunk numbers are internally represented by a 'Word64', one might be worried
     -- about a potential overflow here. While possible, it's not worth worrying about:
     -- - Whilst guaranteed to be only at least 30 bits, in practice, 64-bit GHC has 64-bit
     --   integers, so the conversion is bijective.
-    -- - An epoch currently lasts around a week. Systems using a smaller representation
+    -- - An chunk currently lasts around a week. Systems using a smaller representation
     --   might need to worry in a million years or so.
     -- - In the event of running for a million years, we're unlikely to have a problem anyway,
-    --   since we only really cache _recent_ epochs. So the fact that they clash with the
-    --   epochs from a million years ago isn't likely to be an issue.
+    --   since we only really cache _recent_ chunks. So the fact that they clash with the
+    --   chunks from a million years ago isn't likely to be an issue.
   , pastChunksInfo   :: !(IntPSQ LastUsed (PastChunkInfo hash))
-    -- ^ Cached epochs from the past.
+    -- ^ Cached chunks from the past.
     --
     -- A LRU-cache (least recently used). Whenever a we get a cache hit
     -- ('getChunkInfo') for a past chunk, we change its 'LastUsed' priority to
@@ -195,14 +195,14 @@ data Cached hash = Cached
   deriving (Generic, NoUnexpectedThunks)
 
 checkInvariants
-  :: Word32  -- ^ Maximum number of past epochs to cache
+  :: Word32  -- ^ Maximum number of past chunks to cache
   -> Cached hash
   -> Maybe String
 checkInvariants pastChunksToCache Cached {..} = either Just (const Nothing) $ do
-    forM_ (PSQ.keys pastChunksInfo) $ \pastEpoch ->
-      unless (pastEpoch < chunkNoToInt currentChunk) $
+    forM_ (PSQ.keys pastChunksInfo) $ \pastChunk ->
+      unless (pastChunk < chunkNoToInt currentChunk) $
         throwError $
-          "past epoch (" <> show pastEpoch <> ") >= current epoch (" <>
+          "past chunk (" <> show pastChunk <> ") >= current chunk (" <>
           show currentChunk <> ")"
 
     unless (PSQ.size pastChunksInfo <= fromIntegral pastChunksToCache) $
@@ -224,20 +224,20 @@ checkInvariants pastChunksToCache Cached {..} = either Just (const Nothing) $ do
 -- NOTE: does not trim the cache.
 --
 -- PRECONDITION: the given 'ChunkNo' is < the 'currentChunk'.
-addPastEpochInfo
+addPastChunkInfo
   :: ChunkNo
   -> LastUsed
   -> PastChunkInfo hash
   -> Cached hash
   -> Cached hash
-addPastEpochInfo chunk lastUsed pastEpochInfo cached =
+addPastChunkInfo chunk lastUsed pastChunkInfo cached =
     assert (chunk < currentChunk cached) $
     -- NOTE: in case of multiple concurrent cache misses of the same chunk,
     -- we might add the same past chunk multiple times to the cache. This
     -- means the following cannot be a precondition:
     -- assert (not (PSQ.member chunk pastChunksInfo)) $
     cached
-      { pastChunksInfo = PSQ.insert (chunkNoToInt chunk) lastUsed pastEpochInfo pastChunksInfo
+      { pastChunksInfo = PSQ.insert (chunkNoToInt chunk) lastUsed pastChunkInfo pastChunksInfo
       , nbPastChunks   = succ nbPastChunks
       }
   where
@@ -252,20 +252,20 @@ addPastEpochInfo chunk lastUsed pastEpochInfo cached =
 --
 -- If a past chunk was evicted, its chunk number is returned.
 evictIfNecessary
-  :: Word32  -- ^ Maximum number of past epochs to cache
+  :: Word32  -- ^ Maximum number of past chunks to cache
   -> Cached hash
   -> (Cached hash, Maybe ChunkNo)
-evictIfNecessary maxNbPastEpochs cached
-    | nbPastChunks > maxNbPastEpochs
-    = assert (nbPastChunks == maxNbPastEpochs + 1) $
+evictIfNecessary maxNbPastChunks cached
+    | nbPastChunks > maxNbPastChunks
+    = assert (nbPastChunks == maxNbPastChunks + 1) $
       case PSQ.minView pastChunksInfo of
         Nothing                                 -> error
-          "nbPastChunks > maxNbPastEpochs but pastChunksInfo was empty"
+          "nbPastChunks > maxNbPastChunks but pastChunksInfo was empty"
         Just (chunkNo, _p, _v, pastChunksInfo') ->
             (cached', Just $ chunkNoFromInt chunkNo)
           where
             cached' = cached
-              { nbPastChunks   = maxNbPastEpochs
+              { nbPastChunks   = maxNbPastChunks
               , pastChunksInfo = pastChunksInfo'
               }
     | otherwise
@@ -285,7 +285,7 @@ lookupPastChunkInfo
 lookupPastChunkInfo chunk lastUsed cached@Cached { pastChunksInfo } =
     case PSQ.alter lookupAndUpdateLastUsed (chunkNoToInt chunk) pastChunksInfo of
       (Nothing, _) -> Nothing
-      (Just pastEpochInfo, pastChunksInfo') -> Just (pastEpochInfo, cached')
+      (Just pastChunkInfo, pastChunksInfo') -> Just (pastChunkInfo, cached')
         where
           cached' = cached { pastChunksInfo = pastChunksInfo' }
   where
@@ -296,21 +296,21 @@ lookupPastChunkInfo chunk lastUsed cached@Cached { pastChunksInfo } =
       Nothing                -> (Nothing, Nothing)
       Just (_lastUsed, info) -> (Just info, Just (lastUsed, info))
 
-openEpoch
+openChunk
   :: ChunkNo
   -> LastUsed
   -> CurrentChunkInfo hash
   -> Cached hash
   -> Cached hash
-openEpoch chunk lastUsed newCurrentEpochInfo cached
+openChunk chunk lastUsed newCurrentChunkInfo cached
     | currentChunk == chunk
     = cached
-        { currentEpochInfo = newCurrentEpochInfo }
+        { currentChunkInfo = newCurrentChunkInfo }
 
     | nextChunkNo currentChunk == chunk
     = Cached
         { currentChunk     = chunk
-        , currentEpochInfo = newCurrentEpochInfo
+        , currentChunkInfo = newCurrentChunkInfo
           -- We use 'lastUsed' for the current chunk that has now become a
           -- "past" chunk, which means that that chunk is most recently used
           -- one. When clients are roughly in sync with us, when we switch to a
@@ -318,7 +318,7 @@ openEpoch chunk lastUsed newCurrentEpochInfo cached
           -- So to avoid throwing away that cached information, we give it the
           -- highest priority.
         , pastChunksInfo   = PSQ.insert (chunkNoToInt currentChunk) lastUsed
-            (toPastEpochInfo currentEpochInfo) pastChunksInfo
+            (toPastChunkInfo currentChunkInfo) pastChunksInfo
         , nbPastChunks     = succ nbPastChunks
         }
 
@@ -326,16 +326,16 @@ openEpoch chunk lastUsed newCurrentEpochInfo cached
     = error $ "Going from chunk " <> show currentChunk <> " to " <> show chunk
   where
     Cached
-      { currentChunk, currentEpochInfo, pastChunksInfo, nbPastChunks
+      { currentChunk, currentChunkInfo, pastChunksInfo, nbPastChunks
       } = cached
 
 emptyCached
   :: ChunkNo -- ^ The current chunk
   -> CurrentChunkInfo hash
   -> Cached hash
-emptyCached currentChunk currentEpochInfo = Cached
+emptyCached currentChunk currentChunkInfo = Cached
     { currentChunk
-    , currentEpochInfo
+    , currentChunkInfo
     , pastChunksInfo = PSQ.empty
     , nbPastChunks   = 0
     }
@@ -371,8 +371,8 @@ newEnv hasFS hashInfo registry tracer cacheConfig chunkInfo chunk = do
     when (pastChunksToCache == 0) $
       error "pastChunksToCache must be > 0"
 
-    currentEpochInfo <- loadCurrentEpochInfo hasFS chunkInfo hashInfo chunk
-    cacheVar <- newMVarWithInvariants $ emptyCached chunk currentEpochInfo
+    currentChunkInfo <- loadCurrentChunkInfo hasFS chunkInfo hashInfo chunk
+    cacheVar <- newMVarWithInvariants $ emptyCached chunk currentChunkInfo
     bgThreadVar <- newMVar Nothing
     let cacheEnv = CacheEnv {..}
     mask_ $ modifyMVar_ bgThreadVar $ \_mustBeNothing -> do
@@ -396,7 +396,7 @@ newEnv hasFS hashInfo registry tracer cacheConfig chunkInfo chunk = do
 
 -- | Intended to run as a background thread.
 --
--- Will expire past epochs that haven't been used for 'expireUnusedAfter' from
+-- Will expire past chunks that haven't been used for 'expireUnusedAfter' from
 -- the cache.
 expireUnusedChunks
   :: (HasCallStack, IOLike m)
@@ -415,14 +415,14 @@ expireUnusedChunks CacheEnv { cacheVar, cacheConfig, tracer } =
     -- hasn't been used for 'expireUnusedAfter', otherwise the original
     -- 'Cached' is returned.
     --
-    -- In case a 'TracePastEpochsExpired' event should be traced, it is
+    -- In case a 'TracePastChunksExpired' event should be traced, it is
     -- returned as a 'Just'.
     garbageCollect
       :: Time
       -> Cached hash
       -> (Cached hash, Maybe TraceCacheEvent)
     garbageCollect now cached@Cached { pastChunksInfo, nbPastChunks } =
-        case expiredPastEpochs of
+        case expiredPastChunks of
           [] -> (cached,  Nothing)
           _  -> (cached', Just traceMsg)
       where
@@ -432,10 +432,10 @@ expireUnusedChunks CacheEnv { cacheVar, cacheConfig, tracer } =
         expiredLastUsedTime = LastUsed $
           Time (now `diffTime` Time expireUnusedAfter)
 
-        (expiredPastEpochs, pastChunksInfo') =
+        (expiredPastChunks, pastChunksInfo') =
           PSQ.atMostView expiredLastUsedTime pastChunksInfo
 
-        nbPastChunks' = nbPastChunks - fromIntegral (length expiredPastEpochs)
+        nbPastChunks' = nbPastChunks - fromIntegral (length expiredPastChunks)
 
         cached' = cached
           { pastChunksInfo = pastChunksInfo'
@@ -444,10 +444,10 @@ expireUnusedChunks CacheEnv { cacheVar, cacheConfig, tracer } =
 
         !traceMsg = TracePastChunksExpired
           -- Force this list, otherwise the traced message holds onto to the
-          -- past epoch indices.
+          -- past chunk indices.
           (forceElemsToWHNF
-            [ chunkNoFromInt $ epoch
-            | (epoch, _, _) <- expiredPastEpochs
+            [ chunkNoFromInt $ chunk
+            | (chunk, _, _) <- expiredPastChunks
             ])
           nbPastChunks'
 
@@ -483,28 +483,28 @@ readSecondaryIndex
   -> IsEBB
   -> m [Entry hash]
 readSecondaryIndex hasFS@HasFS { hGetSize } hashInfo chunk firstIsEBB = do
-    !epochFileSize <- withFile hasFS epochFile ReadMode hGetSize
+    !chunkFileSize <- withFile hasFS chunkFile ReadMode hGetSize
     Secondary.readAllEntries hasFS hashInfo secondaryOffset
-      chunk stopCondition epochFileSize firstIsEBB
+      chunk stopCondition chunkFileSize firstIsEBB
   where
-    epochFile = renderFile "epoch" chunk
+    chunkFile = renderFile "epoch" chunk
     -- Read from the start
     secondaryOffset = 0
     -- Don't stop until the end
     stopCondition = const False
 
-loadCurrentEpochInfo
+loadCurrentChunkInfo
   :: (HasCallStack, IOLike m)
   => HasFS m h
   -> ChunkInfo
   -> HashInfo hash
   -> ChunkNo
   -> m (CurrentChunkInfo hash)
-loadCurrentEpochInfo hasFS chunkInfo hashInfo chunk = do
+loadCurrentChunkInfo hasFS chunkInfo hashInfo chunk = do
     -- We're assuming that when the primary index file exists, the secondary
     -- index file will also exist
-    epochExists <- doesFileExist hasFS primaryIndexFile
-    if epochExists then do
+    chunkExists <- doesFileExist hasFS primaryIndexFile
+    if chunkExists then do
       (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS chunkInfo chunk
       entries <- readSecondaryIndex hasFS hashInfo chunk firstIsEBB
       return CurrentChunkInfo
@@ -515,23 +515,23 @@ loadCurrentEpochInfo hasFS chunkInfo hashInfo chunk = do
         , currentChunkEntries = Seq.fromList entries
         }
     else
-      return $ emptyCurrentEpochInfo chunk
+      return $ emptyCurrentChunkInfo chunk
   where
     primaryIndexFile = renderFile "primary" chunk
 
-loadPastEpochInfo
+loadPastChunkInfo
   :: (HasCallStack, IOLike m)
   => HasFS m h
   -> ChunkInfo
   -> HashInfo hash
   -> ChunkNo
   -> m (PastChunkInfo hash)
-loadPastEpochInfo hasFS chunkInfo hashInfo chunk = do
+loadPastChunkInfo hasFS chunkInfo hashInfo chunk = do
     (primaryIndex, firstIsEBB) <- readPrimaryIndex hasFS chunkInfo chunk
     entries <- readSecondaryIndex hasFS hashInfo chunk firstIsEBB
     return PastChunkInfo
-      { pastEpochOffsets = primaryIndex
-      , pastEpochEntries = Vector.fromList $ forceElemsToWHNF entries
+      { pastChunkOffsets = primaryIndex
+      , pastChunkEntries = Vector.fromList $ forceElemsToWHNF entries
       }
 
 getChunkInfo
@@ -543,17 +543,17 @@ getChunkInfo cacheEnv chunk = do
     lastUsed <- LastUsed <$> getMonotonicTime
     -- Make sure we don't leave an empty MVar in case of an exception.
     mbCacheHit <- bracketOnError (takeMVar cacheVar) (tryPutMVar cacheVar) $
-      \cached@Cached { currentChunk, currentEpochInfo, nbPastChunks } -> if
+      \cached@Cached { currentChunk, currentChunkInfo, nbPastChunks } -> if
         | chunk == currentChunk -> do
           -- Cache hit for the current chunk
           putMVar cacheVar cached
           traceWith tracer $ TraceCurrentChunkHit chunk nbPastChunks
-          return $ Just $ Left currentEpochInfo
-        | Just (pastEpochInfo, cached') <- lookupPastChunkInfo chunk lastUsed cached -> do
+          return $ Just $ Left currentChunkInfo
+        | Just (pastChunkInfo, cached') <- lookupPastChunkInfo chunk lastUsed cached -> do
           -- Cache hit for an chunk in the past
           putMVar cacheVar cached'
           traceWith tracer $ TracePastChunkHit chunk nbPastChunks
-          return $ Just $ Right pastEpochInfo
+          return $ Just $ Right pastChunkInfo
         | otherwise -> do
           -- Cache miss for an chunk in the past. We don't want to hold on to
           -- the 'cacheVar' MVar, blocking all other access to the cace, while
@@ -566,17 +566,17 @@ getChunkInfo cacheEnv chunk = do
       Just hit -> return hit
       Nothing  -> do
         -- Cache miss, load both entire indices for the chunk from disk.
-        pastEpochInfo <- loadPastEpochInfo hasFS chunkInfo hashInfo chunk
+        pastChunkInfo <- loadPastChunkInfo hasFS chunkInfo hashInfo chunk
         -- Loading the chunk might have taken some time, so obtain the time
         -- again.
         lastUsed' <- LastUsed <$> getMonotonicTime
         mbEvicted <- updateMVar cacheVar $
           evictIfNecessary pastChunksToCache .
-          addPastEpochInfo chunk lastUsed' pastEpochInfo
+          addPastChunkInfo chunk lastUsed' pastChunkInfo
         whenJust mbEvicted $ \evicted ->
           -- If we had to evict, we are at 'pastChunksToCache'
           traceWith tracer $ TracePastChunkEvict evicted pastChunksToCache
-        return $ Right pastEpochInfo
+        return $ Right pastChunkInfo
   where
     CacheEnv { hasFS, hashInfo, cacheVar, cacheConfig, tracer, chunkInfo } = cacheEnv
     CacheConfig { pastChunksToCache } = cacheConfig
@@ -605,8 +605,8 @@ restart
   -> ChunkNo  -- ^ The new current chunk
   -> m ()
 restart cacheEnv chunk = do
-    currentEpochInfo <- loadCurrentEpochInfo hasFS chunkInfo hashInfo chunk
-    void $ swapMVar cacheVar $ emptyCached chunk currentEpochInfo
+    currentChunkInfo <- loadCurrentChunkInfo hasFS chunkInfo hashInfo chunk
+    void $ swapMVar cacheVar $ emptyCached chunk currentChunkInfo
     mask_ $ modifyMVar_ bgThreadVar $ \mbBgThread ->
       case mbBgThread of
         Just _  -> throwM $ userError "background thread still running"
@@ -630,8 +630,8 @@ readOffsets cacheEnv chunk relSlots =
     getChunkInfo cacheEnv chunk <&> \case
       Left CurrentChunkInfo { currentChunkOffsets } ->
         getOffsetFromSecondaryOffsets currentChunkOffsets <$> relSlots
-      Right PastChunkInfo { pastEpochOffsets } ->
-        getOffsetFromPrimaryIndex pastEpochOffsets <$> relSlots
+      Right PastChunkInfo { pastChunkOffsets } ->
+        getOffsetFromPrimaryIndex pastChunkOffsets <$> relSlots
   where
     getOffsetFromSecondaryOffsets
       :: StrictSeq SecondaryOffset
@@ -666,8 +666,8 @@ readFirstFilledSlot cacheEnv chunk =
     getChunkInfo cacheEnv chunk <&> \case
       Left CurrentChunkInfo { currentChunkOffsets } ->
         firstFilledSlotInSeq currentChunkOffsets
-      Right PastChunkInfo { pastEpochOffsets } ->
-        Primary.firstFilledSlot chunkInfo pastEpochOffsets
+      Right PastChunkInfo { pastChunkOffsets } ->
+        Primary.firstFilledSlot chunkInfo pastChunkOffsets
   where
     CacheEnv { chunkInfo } = cacheEnv
 
@@ -690,12 +690,12 @@ openPrimaryIndex cacheEnv chunk allowExisting = do
     pHnd <- Primary.open hasFS chunk allowExisting
     -- Don't leak the handle in case of an exception
     flip onException (hClose pHnd) $ do
-      newCurrentEpochInfo <- case allowExisting of
-        MustBeNew     -> return $ emptyCurrentEpochInfo chunk
-        AllowExisting -> loadCurrentEpochInfo hasFS chunkInfo hashInfo chunk
+      newCurrentChunkInfo <- case allowExisting of
+        MustBeNew     -> return $ emptyCurrentChunkInfo chunk
+        AllowExisting -> loadCurrentChunkInfo hasFS chunkInfo hashInfo chunk
       mbEvicted <- updateMVar cacheVar $
         evictIfNecessary pastChunksToCache .
-        openEpoch chunk lastUsed newCurrentEpochInfo
+        openChunk chunk lastUsed newCurrentChunkInfo
       whenJust mbEvicted $ \evicted ->
         -- If we had to evict, we are at 'pastChunksToCache'
         traceWith tracer $ TracePastChunkEvict evicted pastChunksToCache
@@ -713,13 +713,13 @@ appendOffsets
   -> m ()
 appendOffsets CacheEnv { hasFS, cacheVar } pHnd offsets = do
     Primary.appendOffsets hasFS pHnd offsets
-    updateMVar_ cacheVar addCurrentEpochOffsets
+    updateMVar_ cacheVar addCurrentChunkOffsets
   where
     -- Lenses would be nice here
-    addCurrentEpochOffsets :: Cached hash -> Cached hash
-    addCurrentEpochOffsets cached@Cached { currentEpochInfo } = cached
-      { currentEpochInfo = currentEpochInfo
-        { currentChunkOffsets = currentChunkOffsets currentEpochInfo <>
+    addCurrentChunkOffsets :: Cached hash -> Cached hash
+    addCurrentChunkOffsets cached@Cached { currentChunkInfo } = cached
+      { currentChunkInfo = currentChunkInfo
+        { currentChunkOffsets = currentChunkOffsets currentChunkInfo <>
                                 Seq.fromList (toList offsets)
         }
       }
@@ -741,9 +741,9 @@ readEntries cacheEnv@CacheEnv { hashInfo } chunk toRead =
           case currentChunkEntries Seq.!? indexForOffset secondaryOffset of
             Just (WithBlockSize size entry) -> return (entry, BlockSize size)
             Nothing                         -> noEntry secondaryOffset
-      Right PastChunkInfo { pastEpochEntries } ->
+      Right PastChunkInfo { pastChunkEntries } ->
         forM toRead $ \(_isEBB, secondaryOffset) ->
-          case pastEpochEntries Vector.!? indexForOffset secondaryOffset of
+          case pastChunkEntries Vector.!? indexForOffset secondaryOffset of
             Just (WithBlockSize size entry) -> return (entry, BlockSize size)
             Nothing                         -> noEntry secondaryOffset
   where
@@ -772,14 +772,14 @@ readAllEntries
   -> IsEBB
   -> m [WithBlockSize (Secondary.Entry hash)]
 readAllEntries cacheEnv@CacheEnv { hashInfo } secondaryOffset chunk stopCondition
-               _epochFileSize _firstIsEBB =
+               _chunkFileSize _firstIsEBB =
     getChunkInfo cacheEnv chunk <&> \case
       Left CurrentChunkInfo { currentChunkEntries } ->
         takeUntil (stopCondition . withoutBlockSize) $
         toList $ Seq.drop toDrop currentChunkEntries
-      Right PastChunkInfo { pastEpochEntries } ->
+      Right PastChunkInfo { pastChunkEntries } ->
         takeUntil (stopCondition . withoutBlockSize) $
-        toList $ Vector.drop toDrop pastEpochEntries
+        toList $ Vector.drop toDrop pastChunkEntries
   where
     toDrop :: Int
     toDrop = fromIntegral $
@@ -794,21 +794,21 @@ appendEntry
   -> m Word64
 appendEntry CacheEnv { hasFS, hashInfo, cacheVar } chunk sHnd entry = do
     nbBytes <- Secondary.appendEntry hasFS hashInfo sHnd (withoutBlockSize entry)
-    updateMVar_ cacheVar addCurrentEpochEntry
+    updateMVar_ cacheVar addCurrentChunkEntry
     return nbBytes
   where
     -- Lenses would be nice here
-    addCurrentEpochEntry :: Cached hash -> Cached hash
-    addCurrentEpochEntry cached@Cached { currentChunk, currentEpochInfo }
+    addCurrentChunkEntry :: Cached hash -> Cached hash
+    addCurrentChunkEntry cached@Cached { currentChunk, currentChunkInfo }
       | currentChunk /= chunk
       = error $
           "Appending to chunk " <> show chunk <>
           " while the index is still in " <> show currentChunk
       | otherwise
       = cached
-          { currentEpochInfo = currentEpochInfo
+          { currentChunkInfo = currentChunkInfo
             { currentChunkEntries =
-                currentChunkEntries currentEpochInfo Seq.|> entry
+                currentChunkEntries currentChunkInfo Seq.|> entry
             }
           }
 

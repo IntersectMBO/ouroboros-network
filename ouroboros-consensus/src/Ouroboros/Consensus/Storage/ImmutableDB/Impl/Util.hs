@@ -15,7 +15,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
   , tryImmDB
   , parseDBFile
   , validateIteratorRange
-  , epochSlotToTip
   , dbFilesOnDisk
   , removeFilesStartingFrom
   , runGet
@@ -59,9 +58,9 @@ data Two a = Two a a
   deriving (Functor, Foldable, Traversable)
 
 renderFile :: Text -> ChunkNo -> FsPath
-renderFile fileType (ChunkNo epoch) = fsPathFromList [name]
+renderFile fileType (ChunkNo chunk) = fsPathFromList [name]
   where
-    name = T.justifyRight 5 '0' (T.pack (show epoch)) <> "." <> fileType
+    name = T.justifyRight 5 '0' (T.pack (show chunk)) <> "." <> fileType
 
 throwUserError :: (MonadThrow m, HasCallStack) => UserError -> m a
 throwUserError e = throwM $ UserError e callStack
@@ -85,7 +84,7 @@ tryImmDB = fmap squash . try . try
            -> Either ImmutableDBError a
     squash = either (Left . fromFS) id
 
--- | Parse the prefix and epoch number from the filename of an index or epoch
+-- | Parse the prefix and chunk number from the filename of an index or chunk
 -- file.
 --
 -- > parseDBFile "00001.epoch"
@@ -137,20 +136,16 @@ validateIteratorRange chunkInfo tip mbStart mbEnd = runExceptT $ do
       Origin -> True
       At b   -> slot > slotNoOfBlockOrEBB chunkInfo b
 
--- | Convert an 'ChunkSlot' to a 'Tip'
-epochSlotToTip :: ChunkInfo -> ChunkSlot -> ImmTip
-epochSlotToTip chunkInfo = At . chunkSlotToBlockOrEBB chunkInfo
-
 -- | Go through all files, making three sets: the set of chunk files, primary
 -- index files, and secondary index files,, discarding all others.
 dbFilesOnDisk :: Set String -> (Set ChunkNo, Set ChunkNo, Set ChunkNo)
 dbFilesOnDisk = foldr categorise mempty
   where
-    categorise file fs@(epoch, primary, secondary) =
+    categorise file fs@(chunk, primary, secondary) =
       case parseDBFile file of
-        Just ("epoch",     n) -> (Set.insert n epoch, primary, secondary)
-        Just ("primary",   n) -> (epoch, Set.insert n primary, secondary)
-        Just ("secondary", n) -> (epoch, primary, Set.insert n secondary)
+        Just ("epoch",     n) -> (Set.insert n chunk, primary, secondary)
+        Just ("primary",   n) -> (chunk, Set.insert n primary, secondary)
+        Just ("secondary", n) -> (chunk, primary, Set.insert n secondary)
         _                     -> fs
 
 -- | Remove all chunk and index starting from the given chunk (included).
@@ -207,9 +202,9 @@ checkChecksum
   -> CRC  -- ^ Expected checksum
   -> CRC  -- ^ Actual checksum
   -> m ()
-checkChecksum epochFile blockOrEBB expected actual
+checkChecksum chunkFile blockOrEBB expected actual
     | expected == actual
     = return ()
     | otherwise
     = throwUnexpectedError $
-      ChecksumMismatchError blockOrEBB expected actual epochFile callStack
+      ChecksumMismatchError blockOrEBB expected actual chunkFile callStack

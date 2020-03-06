@@ -218,7 +218,7 @@ readAllEntries
   -> IsEBB                 -- ^ Is the first entry to read an EBB?
   -> m [WithBlockSize (Entry hash)]
 readAllEntries hasFS HashInfo { getHash } secondaryOffset chunk stopAfter
-               epochFileSize = \isEBB ->
+               chunkFileSize = \isEBB ->
     withFile hasFS secondaryIndexFile ReadMode $ \sHnd -> do
       bl <- hGetAllAt hasFS sHnd (AbsOffset (fromIntegral secondaryOffset))
       go isEBB bl [] Nothing
@@ -235,7 +235,7 @@ readAllEntries hasFS HashInfo { getHash } secondaryOffset chunk stopAfter
        -> m [WithBlockSize (Entry hash)]
     go isEBB bl acc mbPrevEntry
       | Lazy.null bl = return $ reverse $
-        (addBlockSize epochFileSize <$> mbPrevEntry) `consMaybe` acc
+        (addBlockSize chunkFileSize <$> mbPrevEntry) `consMaybe` acc
       | otherwise    = do
         (remaining, entry) <- runGetWithUnconsumed secondaryIndexFile
           (getEntry isEBB getHash) bl
@@ -245,7 +245,7 @@ readAllEntries hasFS HashInfo { getHash } secondaryOffset chunk stopAfter
         if stopAfter entry then
 
           if Lazy.null remaining then
-            return $ reverse $ addBlockSize epochFileSize entry : acc'
+            return $ reverse $ addBlockSize chunkFileSize entry : acc'
           else do
             -- Read the next blockOffset so we can compute the size of the
             -- last block we read.

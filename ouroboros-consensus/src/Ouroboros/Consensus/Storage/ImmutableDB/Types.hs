@@ -325,9 +325,9 @@ prettyUnexpectedError = \case
     MissingFileError path cs ->
       "MissingFileError (" <> show path <> "): " <>
       prettyCallStack cs
-    ChecksumMismatchError epochSlot expected actual path cs ->
-      "ChecksumMismatchError (" <> show path <> "): for epoch slot " <>
-      show epochSlot <> " expected " <> show expected <>
+    ChecksumMismatchError chunkSlot expected actual path cs ->
+      "ChecksumMismatchError (" <> show path <> "): for chunk slot " <>
+      show chunkSlot <> " expected " <> show expected <>
       " but got " <> show actual <>
       prettyCallStack cs
 
@@ -376,10 +376,10 @@ data TraceCacheEvent
   deriving (Eq, Generic, Show)
 
 {-------------------------------------------------------------------------------
-  Reference to EBB in current epoch
+  Reference to EBB in current chunk
 -------------------------------------------------------------------------------}
 
--- | Hash of the EBB in the current epoch
+-- | Hash of the EBB in the current chunk
 data CurrentEBB hash =
     NoCurrentEBB
   | CurrentEBB !hash

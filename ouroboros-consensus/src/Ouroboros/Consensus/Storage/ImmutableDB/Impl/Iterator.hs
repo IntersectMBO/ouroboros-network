@@ -163,13 +163,13 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
 
             let ChunkSlot startChunk startRelSlot = startChunkSlot
                 startIsEBB   = relativeSlotIsEBB startRelSlot
-                curEpochInfo = CurrentChunkInfo _currentChunk _currentChunkOffset
+                curChunkInfo = CurrentChunkInfo _currentChunk _currentChunkOffset
 
             -- TODO avoid rereading the indices of the start thunk. We read
             -- from both the primary and secondary index in 'fillInStartBound'
 
-            iteratorState <- iteratorStateForEpoch hasFS _index registry
-              curEpochInfo endHash startChunk secondaryOffset startIsEBB
+            iteratorState <- iteratorStateForChunk hasFS _index registry
+              curChunkInfo endHash startChunk secondaryOffset startIsEBB
 
             varIteratorState <- newTVarM $ IteratorStateOpen iteratorState
 
@@ -202,9 +202,9 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
       -- End bound given, check whether it corresponds to a regular block or
       -- an EBB. Convert the 'SlotNo' to an 'ChunkSlot' accordingly.
       Just end -> do
-        (epochSlot, (entry, _blockSize), _secondaryOffset) <-
+        (chunkSlot, (entry, _blockSize), _secondaryOffset) <-
           getSlotInfo _dbChunkInfo index end
-        return (WithHash (Secondary.headerHash entry) epochSlot)
+        return (WithHash (Secondary.headerHash entry) chunkSlot)
 
       -- No end bound given, use the current tip, but convert the 'BlockOrEBB'
       -- to an 'ChunkSlot'.
@@ -229,9 +229,9 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
       -- Start bound given, check whether it corresponds to a regular block or
       -- an EBB. Convert the 'SlotNo' to an 'ChunkSlot' accordingly.
       Just start -> do
-        (epochSlot, (entry, _blockSize), secondaryOffset) <-
+        (chunkSlot, (entry, _blockSize), secondaryOffset) <-
           getSlotInfo _dbChunkInfo index start
-        return (secondaryOffset, WithHash (Secondary.headerHash entry) epochSlot)
+        return (secondaryOffset, WithHash (Secondary.headerHash entry) chunkSlot)
 
       -- No start bound given, use the first block in the ImmutableDB as the
       -- start bound.
@@ -246,14 +246,14 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
               Just relSlot -> do
                   (Secondary.Entry { headerHash }, _) <-
                     Index.readEntry index chunk isEBB secondaryOffset
-                  return (secondaryOffset, WithHash headerHash epochSlot)
+                  return (secondaryOffset, WithHash headerHash chunkSlot)
                 where
                   -- The first entry in the secondary index file (i.e. the
                   -- first filled slot in the primary index) always starts at
                   -- 0.
                   secondaryOffset = 0
                   isEBB           = relativeSlotIsEBB relSlot
-                  epochSlot       = UnsafeChunkSlot chunk relSlot
+                  chunkSlot       = UnsafeChunkSlot chunk relSlot
 
     mkEmptyIterator :: Iterator hash m b
     mkEmptyIterator = Iterator
@@ -358,18 +358,18 @@ iteratorNextImpl dbEnv it@IteratorHandle
     -- The idea is that if the state is not 'IteratorStateExhausted, then the
     -- head of 'itChunkEntries' is always ready to be read. After reading it
     -- with 'readNextBlock' or 'readNextHeader', 'stepIterator' will advance
-    -- the iterator to the next valid epoch slot if @step@ is True.
+    -- the iterator to the next valid chunk slot if @step@ is True.
     atomically (readTVar itState) >>= \case
       -- Iterator already closed
       IteratorStateExhausted -> return IteratorExhausted
       IteratorStateOpen iteratorState@IteratorState{..} ->
         withOpenState dbEnv $ \_ st -> do
-          let curEpochInfo = CurrentChunkInfo
+          let curChunkInfo = CurrentChunkInfo
                 (_currentChunk       st)
                 (_currentChunkOffset st)
               entry = NE.head itChunkEntries
           b <- getBlockComponent itChunkHandle itChunk entry blockComponent
-          when step $ stepIterator curEpochInfo iteratorState
+          when step $ stepIterator curChunkInfo iteratorState
           return $ IteratorResult b
   where
     ImmutableDBEnv { _dbChunkInfo, _dbHashInfo } = dbEnv
@@ -415,12 +415,12 @@ iteratorNextImpl dbEnv it@IteratorHandle
       -> m ByteString
     readNextBlock eHnd (WithBlockSize size entry) chunk = do
         (bl, checksum') <- hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
-        checkChecksum epochFile blockOrEBB checksum checksum'
+        checkChecksum chunkFile blockOrEBB checksum checksum'
         return bl
       where
         Secondary.Entry { blockOffset, checksum, blockOrEBB } = entry
         offset    = AbsOffset $ Secondary.unBlockOffset blockOffset
-        epochFile = renderFile "epoch" chunk
+        chunkFile = renderFile "epoch" chunk
 
     -- | We don't rely on the position of the handle, we always use
     -- 'hGetExactlyAt', i.e. @pread@ for reading from a given offset.
@@ -439,34 +439,34 @@ iteratorNextImpl dbEnv it@IteratorHandle
           fromIntegral (Secondary.unHeaderOffset headerOffset)
 
     -- | Move the iterator to the next position that can be read from,
-    -- advancing epochs if necessary. If no next position can be found, the
+    -- advancing chunks if necessary. If no next position can be found, the
     -- iterator is closed.
     stepIterator :: CurrentChunkInfo -> IteratorState hash m h -> m ()
-    stepIterator curEpochInfo iteratorState@IteratorState {..} =
+    stepIterator curChunkInfo iteratorState@IteratorState {..} =
       case NE.nonEmpty (NE.tail itChunkEntries) of
-        -- There are entries left in this epoch, so continue. See the
+        -- There are entries left in this chunk, so continue. See the
         -- invariant on 'itChunkEntries'
         Just itChunkEntries' -> atomically $ writeTVar itState $
           IteratorStateOpen iteratorState { itChunkEntries = itChunkEntries' }
 
-        -- No more entries in this epoch, so open the next.
+        -- No more entries in this chunk, so open the next.
         Nothing -> do
           -- Release the resource, i.e., close the handle.
           release itChunkKey
-          -- If this was the final epoch, close the iterator
+          -- If this was the final chunk, close the iterator
           if itChunk >= chunkIndex itEnd then
             iteratorCloseImpl it
 
           else
-            openNextEpoch curEpochInfo itEnd (nextChunkNo itChunk) >>= \iteratorState' ->
+            openNextChunk curChunkInfo itEnd (nextChunkNo itChunk) >>= \iteratorState' ->
             atomically $ writeTVar itState $ IteratorStateOpen iteratorState'
 
-    openNextEpoch
+    openNextChunk
       :: CurrentChunkInfo
       -> ChunkSlot  -- ^ The end bound
       -> ChunkNo    -- ^ The chunk to open
       -> m (IteratorState hash m h)
-    openNextEpoch curEpochInfo end chunk =
+    openNextChunk curChunkInfo end chunk =
       Index.readFirstFilledSlot index chunk >>= \case
         -- This chunk is empty, look in the next one.
         --
@@ -474,7 +474,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
         -- when we reach the non-empty chunk containing the end bound. This
         -- cannot loop forever as an error would be thrown when opening the
         -- index file(s) of a non-existing chunk.
-        Nothing      -> openNextEpoch curEpochInfo end (nextChunkNo chunk)
+        Nothing      -> openNextChunk curChunkInfo end (nextChunkNo chunk)
         Just relSlot -> do
           -- Note that the only reason we actually open the primary index file
           -- is to see whether the first block in the chunk is an EBB or not.
@@ -486,7 +486,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
           let firstIsEBB      = relativeSlotIsEBB relSlot
               secondaryOffset = 0
 
-          iteratorStateForEpoch hasFS index registry curEpochInfo itEndHash
+          iteratorStateForChunk hasFS index registry curChunkInfo itEndHash
             chunk secondaryOffset firstIsEBB
 
 iteratorHasNextImpl
@@ -532,7 +532,7 @@ iteratorCloseImpl IteratorHandle { itState } = do
         -- registry A from a thread tracked by resource registry B. See #1390.
         unsafeRelease itChunkKey
 
-iteratorStateForEpoch
+iteratorStateForChunk
   :: (HasCallStack, IOLike m, Eq hash)
   => HasFS m h
   -> Index m hash h
@@ -546,7 +546,7 @@ iteratorStateForEpoch
   -> IsEBB
      -- ^ Whether the first expected block will be an EBB or not.
   -> m (IteratorState hash m h)
-iteratorStateForEpoch hasFS index registry
+iteratorStateForChunk hasFS index registry
                       (CurrentChunkInfo curChunk curChunkOffset) endHash
                       chunk secondaryOffset firstIsEBB = do
     -- Open the chunk file. Allocate the handle in the registry so that it
@@ -557,10 +557,10 @@ iteratorStateForEpoch hasFS index registry
       hClose
 
     -- If the last entry in @entries@ corresponds to the last block in the
-    -- epoch, we cannot calculate the block size based on the next block.
+    -- chunk, we cannot calculate the block size based on the next block.
     -- Instead, we calculate it based on the size of the chunk file.
     --
-    -- IMPORTANT: for older epochs, this is fine, as the secondary index
+    -- IMPORTANT: for older chunks, this is fine, as the secondary index
     -- (entries) and the chunk file (size) are immutable. However, when doing
     -- this for the current chunk, there is a potential race condition between
     -- reading of the entries from the secondary index and obtaining the chunk
@@ -581,12 +581,12 @@ iteratorStateForEpoch hasFS index registry
     -- the state. In this case, the chunk file size (@curChunkOffset@) we are
     -- passed is consistent with the tip, as it was obtained from the same
     -- consistent state.
-    epochFileSize <- if chunk == curChunk
+    chunkFileSize <- if chunk == curChunk
       then return (unBlockOffset curChunkOffset)
       else hGetSize eHnd
 
     entries <- Index.readAllEntries index secondaryOffset chunk
-      ((== endHash) . Secondary.headerHash) epochFileSize firstIsEBB
+      ((== endHash) . Secondary.headerHash) chunkFileSize firstIsEBB
 
     case NE.nonEmpty entries of
       -- We still haven't encountered the end bound, so it cannot be

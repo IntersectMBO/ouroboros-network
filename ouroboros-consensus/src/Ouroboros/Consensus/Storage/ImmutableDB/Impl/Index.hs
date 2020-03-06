@@ -161,11 +161,11 @@ fileBackedIndex hasFS chunkInfo hashInfo = Index
     , appendOffsets       = Primary.appendOffsets       hasFS
     , readEntries         = Secondary.readEntries       hasFS hashInfo
     , readAllEntries      = Secondary.readAllEntries    hasFS hashInfo
-    , appendEntry         = \_epoch h (WithBlockSize _ entry) ->
+    , appendEntry         = \_chunk h (WithBlockSize _ entry) ->
                             Secondary.appendEntry       hasFS hashInfo h entry
       -- Nothing to do
     , close               = return ()
-    , restart             = \_newCurEpoch -> return ()
+    , restart             = \_newCurChunk -> return ()
     }
 
 {------------------------------------------------------------------------------

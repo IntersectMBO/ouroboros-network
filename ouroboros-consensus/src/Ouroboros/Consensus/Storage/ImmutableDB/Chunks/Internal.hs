@@ -49,12 +49,19 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
+-- | Size of the chunks of the immutable DB
+--
+-- This is the key data structure that drives all layout functions.
+--
+-- TODO: Add support for non-uniform 'ChunkInfo'
+-- <https://github.com/input-output-hk/ouroboros-network/issues/1754>
 data ChunkInfo =
     -- | A single, uniform, chunk size
     --
     -- If EBBs are present, the chunk size must line up precisely with the
     -- epoch size (that is, the number of regular blocks in the chunk must equal
     -- the number of regular blocks in an epoch).
+    --
     UniformChunkSize ChunkSize
   deriving stock (Show, Generic)
   deriving anyclass (NoUnexpectedThunks)
