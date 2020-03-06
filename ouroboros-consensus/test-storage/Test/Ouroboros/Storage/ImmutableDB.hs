@@ -42,8 +42,8 @@ tests = testGroup "ImmutableDB"
     , StateMachine.tests
     ]
 
-fixedEpochSize :: EpochSize
-fixedEpochSize = 10
+fixedChunkInfo :: ChunkInfo
+fixedChunkInfo = simpleChunkInfo 10
 
 type Hash = TestHeaderHash
 
@@ -55,7 +55,7 @@ openTestDB :: (HasCallStack, IOLike m)
 openTestDB registry hasFS = fst <$> openDBInternal
     registry
     hasFS
-    (simpleChunkInfo fixedEpochSize)
+    fixedChunkInfo
     testHashInfo
     ValidateMostRecentChunk
     parser
@@ -65,7 +65,7 @@ openTestDB registry hasFS = fst <$> openDBInternal
   where
     parser = chunkFileParser hasFS (const <$> S.decode) isEBB getBinaryInfo
       testBlockIsValid
-    isEBB  = testHeaderEpochNoIfEBB fixedEpochSize . getHeader
+    isEBB  = testHeaderEpochNoIfEBB fixedChunkInfo . getHeader
     getBinaryInfo = void . testBlockToBinaryInfo
 
 -- Shorthand

@@ -369,6 +369,7 @@ test-suite test-storage
                        Test.Ouroboros.Storage.VolatileDB.StateMachine
 
                        Test.Util.Blob
+                       Test.Util.ChunkInfo
                        Test.Util.FS.Sim.Error
                        Test.Util.FS.Sim.FsTree
                        Test.Util.FS.Sim.MockFS

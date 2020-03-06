@@ -114,17 +114,14 @@ data InSlot hash =
 data DBModel hash = DBModel
   { dbmSlots        :: Map SlotNo (InSlot hash)
   , dbmChunkInfo    :: ChunkInfo
-  , dbmEpochSize    :: EpochSize -- ^ Used to initialize 'dbmChunkInfo'
   , dbmIterators    :: Map IteratorId (IteratorModel hash)
   , dbmNextIterator :: IteratorId
   } deriving (Show, Generic)
 
-initDBModel :: EpochSize -- ^ We assume fixed chunk size
-            -> DBModel hash
-initDBModel epochSize = DBModel
+initDBModel :: ChunkInfo -> DBModel hash
+initDBModel chunkInfo = DBModel
   { dbmSlots        = Map.empty
-  , dbmChunkInfo    = simpleChunkInfo epochSize
-  , dbmEpochSize    = epochSize
+  , dbmChunkInfo    = chunkInfo
   , dbmIterators    = Map.empty
   , dbmNextIterator = 0
   }
@@ -320,7 +317,7 @@ rollBackToTip :: forall hash. Show hash
               => ImmTip -> DBModel hash -> DBModel hash
 rollBackToTip tip dbm@DBModel {..} = case tip of
     Origin ->
-        (initDBModel dbmEpochSize) { dbmNextIterator = dbmNextIterator }
+        (initDBModel dbmChunkInfo) { dbmNextIterator = dbmNextIterator }
 
     At (EBB epoch) ->
         dbm { dbmSlots = Map.update deleteRegular (slotNoOfEBB' dbm epoch)

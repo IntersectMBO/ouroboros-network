@@ -100,6 +100,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
                      hPutAll, hSeek, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BinaryInfo (..),
                      HashInfo (..))
 import           Ouroboros.Consensus.Storage.VolatileDB.Types (BlockInfo (..))
@@ -223,12 +224,13 @@ testHashInfo = HashInfo
 testBlockIsEBB :: TestBlock -> IsEBB
 testBlockIsEBB = thIsEBB . testHeader
 
--- | Only works correctly if the epoch size is fixed
-testHeaderEpochNoIfEBB :: EpochSize -> Header TestBlock -> Maybe EpochNo
-testHeaderEpochNoIfEBB fixedEpochSize (TestHeader' hdr) = case thIsEBB hdr of
+testHeaderEpochNoIfEBB :: ChunkInfo -> Header TestBlock -> Maybe EpochNo
+testHeaderEpochNoIfEBB chunkInfo (TestHeader' hdr) = case thIsEBB hdr of
     IsNotEBB -> Nothing
     IsEBB    -> Just $
-      EpochNo (unSlotNo (thSlotNo hdr) `div` unEpochSize fixedEpochSize)
+      case slotMightBeEBB chunkInfo (thSlotNo hdr) of
+        Just epochNo -> epochNo
+        Nothing      -> error "testHeaderEpochNoIfEBB: EBB in incorrect slot"
 
 -- | Check whether the header matches its hash and whether the body matches
 -- its hash.

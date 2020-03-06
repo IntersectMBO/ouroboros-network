@@ -7,24 +7,23 @@ import           Control.Monad (void)
 import           Data.Bifunctor (first)
 import           Data.Tuple (swap)
 
-import           Cardano.Slotting.Slot
-
 import           Ouroboros.Consensus.Util ((...:), (..:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.Common (BlockComponent)
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 
 openDBMock  :: forall m hash. (IOLike m, Eq hash, Show hash)
-            => EpochSize
+            => ChunkInfo
             -> m (DBModel hash, ImmutableDB hash m)
-openDBMock epochSize = do
+openDBMock chunkInfo = do
     dbVar <- uncheckedNewTVarM dbModel
     return (dbModel, immDB dbVar)
   where
-    dbModel = initDBModel epochSize
+    dbModel = initDBModel chunkInfo
 
     immDB :: StrictTVar m (DBModel hash) -> ImmutableDB hash m
     immDB dbVar = ImmutableDB

@@ -416,7 +416,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     -- | Open a mock ImmutableDB and add the given chain of blocks
     openImmDB :: Chain TestBlock -> m (ImmDB m TestBlock)
     openImmDB chain = do
-        (_immDBModel, immDB) <- ImmDB.openDBMock epochSize
+        (_immDBModel, immDB) <- ImmDB.openDBMock chunkInfo
         forM_ (Chain.toOldestFirst chain) $ \block -> case isEBB (getHeader block) of
           Nothing -> ImmDB.appendBlock immDB
             (blockSlot block) (blockNo block) (blockHash block)
@@ -428,7 +428,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
           encodeWithBinaryInfo chunkInfo isEBB addHdrEnv
       where
         chunkInfo = ImmDB.simpleChunkInfo epochSize
-        isEBB     = testHeaderEpochNoIfEBB epochSize
+        isEBB     = testHeaderEpochNoIfEBB chunkInfo
 
 encodeWithBinaryInfo :: TestBlock -> BinaryInfo Encoding
 encodeWithBinaryInfo blk = BinaryInfo

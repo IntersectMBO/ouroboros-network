@@ -87,6 +87,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
 import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
                      (chunkFileParser)
 
+import           Test.Util.ChunkInfo
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.Arbitrary (genSmallSlotNo)
@@ -497,8 +498,8 @@ generateCmd Model {..} = At <$> frequency
                 -- Slots not too far in the future
               , (4, chooseSlot (lastSlot, lastSlot + 10))
                 -- Slots in some future epoch
-              , (1, chooseSlot (lastSlot + epochSize',
-                                lastSlot + epochSize' * 4))
+              , (1, chooseSlot (inLaterChunk 1 lastSlot,
+                                inLaterChunk 4 lastSlot))
               ]
             let block = (maybe firstBlock mkNextBlock mbPrevBlock)
                         slotNo (TestBody 0 True)
@@ -512,7 +513,7 @@ generateCmd Model {..} = At <$> frequency
                   [ (1, chooseEpoch (0, currentEpoch))
                   , (3, chooseEpoch (currentEpoch, currentEpoch + 5))
                   ]
-                let slotNo = SlotNo (unEpochNo epoch) * epochSize'
+                let slotNo = slotNoOfEBB dbmChunkInfo epoch
                 return (epoch, mkNextEBB prevBlock slotNo (TestBody 0 True))
             return $ AppendEBB epoch (blockHash ebb) ebb)
     , (4, frequency
@@ -563,9 +564,14 @@ generateCmd Model {..} = At <$> frequency
     lastSlot :: SlotNo
     lastSlot = fromIntegral $ length (dbmRegular dbModel)
 
-    -- Useful when adding to another 'SlotNo'
-    epochSize' :: SlotNo
-    epochSize' = SlotNo $ unEpochSize fixedEpochSize
+    -- Construct a 'SlotNo' @n@ chunks later
+    inLaterChunk :: Word -> SlotNo -> SlotNo
+    inLaterChunk 0 s = s
+    inLaterChunk n s = inLaterChunk (n - 1) $
+                         SlotNo (unSlotNo s + numRegularBlocks size)
+      where
+        chunk = chunkIndexOfSlot dbmChunkInfo s
+        size  = getChunkSize     dbmChunkInfo chunk
 
     empty = dbmTip dbModel == S.Origin
 
@@ -1172,28 +1178,30 @@ showLabelledExamples' :: Maybe Int
                       -- ^ Number of tests to run to find examples
                       -> (Tag -> Bool)
                       -- ^ Tag filter (can be @const True@)
-                      -> IO ()
-showLabelledExamples' mReplay numTests focus =
+                      -> ChunkInfo -> IO ()
+showLabelledExamples' mReplay numTests focus chunkInfo =
     QSM.showLabelledExamples' smUnused mReplay numTests tag focus
   where
-    smUnused = sm unusedEnv mkDBModel
+    smUnused = sm unusedEnv $ initDBModel chunkInfo
 
-showLabelledExamples :: IO ()
+showLabelledExamples :: ChunkInfo -> IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
 
-prop_sequential :: Index.CacheConfig -> Property
-prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
-    (hist, prop) <- QC.run $ test cacheConfig cmds
-    prettyCommands smUnused hist
-      $ tabulate "Tags" (map show $ tag (execCmds smUnused cmds))
-      $ prop
+prop_sequential :: Index.CacheConfig -> SmallChunkInfo -> Property
+prop_sequential cacheConfig (SmallChunkInfo chunkInfo) =
+    forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
+      (hist, prop) <- QC.run $ test cacheConfig chunkInfo cmds
+      prettyCommands smUnused hist
+        $ tabulate "Tags" (map show $ tag (execCmds smUnused cmds))
+        $ prop
   where
-    smUnused = sm unusedEnv mkDBModel
+    smUnused = sm unusedEnv $ initDBModel chunkInfo
 
 test :: Index.CacheConfig
+     -> ChunkInfo
      -> QSM.Commands (At CmdErr IO) (At Resp IO)
      -> IO (QSM.History (At CmdErr IO) (At Resp IO), Property)
-test cacheConfig cmds = do
+test cacheConfig chunkInfo cmds = do
     fsVar              <- uncheckedNewTVarM Mock.empty
     varErrors          <- uncheckedNewTVarM mempty
     varNextId          <- uncheckedNewTVarM 0
@@ -1207,13 +1215,13 @@ test cacheConfig cmds = do
 
     withRegistry $ \registry -> do
       bracket
-        (openDBInternal registry hasFS (simpleChunkInfo fixedEpochSize)
+        (openDBInternal registry hasFS chunkInfo
            testHashInfo ValidateMostRecentChunk parser tracer cacheConfig btime)
         (closeDB . fst) $ \(db, internal) -> do
 
         let env = ImmutableDBEnv
               { varErrors, varNextId, varCurSlot, registry, hasFS, db, internal }
-            sm' = sm env dbm
+            sm' = sm env (initDBModel chunkInfo)
 
         (hist, model, res) <- QSM.runCommands' sm' cmds
 
@@ -1242,8 +1250,7 @@ test cacheConfig cmds = do
           -- If something went wrong, don't try to reopen the database
           _ -> return (hist, prop)
   where
-    dbm = mkDBModel
-    isEBB = testHeaderEpochNoIfEBB fixedEpochSize . getHeader
+    isEBB = testHeaderEpochNoIfEBB chunkInfo . getHeader
     getBinaryInfo = void . testBlockToBinaryInfo
 
     openHandlesProp fs model
@@ -1268,12 +1275,6 @@ tests :: TestTree
 tests = testGroup "ImmutableDB q-s-m"
     [ testProperty "sequential" prop_sequential
     ]
-
-fixedEpochSize :: EpochSize
-fixedEpochSize = 10
-
-mkDBModel :: DBModel Hash
-mkDBModel = initDBModel fixedEpochSize
 
 unusedEnv :: ImmutableDBEnv h
 unusedEnv = error "ImmutableDBEnv used during command generation"

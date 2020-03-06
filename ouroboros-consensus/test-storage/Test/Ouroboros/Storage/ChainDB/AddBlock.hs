@@ -24,8 +24,6 @@ import           Control.Monad.IOSim
 
 import           Control.Tracer
 
-import           Cardano.Slotting.Slot
-
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
@@ -43,8 +41,8 @@ import           Ouroboros.Consensus.Storage.ChainDB (ChainDbArgs (..),
                      TraceAddBlockEvent (..), addBlock, toChain, withDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
-                     HashInfo (..), ValidationPolicy (ValidateAllChunks),
-                     simpleChunkInfo)
+                     ChunkInfo, HashInfo (..),
+                     ValidationPolicy (ValidateAllChunks))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (defaultDiskPolicy)
@@ -53,6 +51,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..), mkBlocksPerFile)
 
+import           Test.Util.ChunkInfo
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
@@ -104,8 +103,8 @@ tests = testGroup "AddBlock"
 --
 -- TODO test with multiple protocols
 -- TODO test with different thread schedulings for the simulator
-prop_addBlock_multiple_threads :: BlocksPerThread -> Property
-prop_addBlock_multiple_threads bpt =
+prop_addBlock_multiple_threads :: SmallChunkInfo -> BlocksPerThread -> Property
+prop_addBlock_multiple_threads (SmallChunkInfo chunkInfo) bpt =
   -- TODO coverage checking
     tabulate "Event" (map constrName trace) $
     counterexample ("Actual chain: " <> condense actualChain) $
@@ -126,7 +125,7 @@ prop_addBlock_multiple_threads bpt =
           <*> uncheckedNewTVarM Mock.empty
           <*> uncheckedNewTVarM Mock.empty
         withRegistry $ \registry -> do
-          let args = mkArgs cfg initLedger dynamicTracer registry hashInfo fsVars
+          let args = mkArgs cfg chunkInfo initLedger dynamicTracer registry hashInfo fsVars
           withDB args $ \db -> do
             -- Add blocks concurrently
             mapConcurrently_ (mapM_ (addBlock db)) $ blocksPerThread bpt
@@ -230,11 +229,9 @@ instance Arbitrary BlocksPerThread where
   ChainDB args
 -------------------------------------------------------------------------------}
 
-fixedEpochSize :: EpochSize
-fixedEpochSize = 10
-
 mkArgs :: IOLike m
        => TopLevelConfig TestBlock
+       -> ChunkInfo
        -> ExtLedgerState TestBlock
        -> Tracer m (ChainDB.TraceEvent TestBlock)
        -> ResourceRegistry m
@@ -242,7 +239,7 @@ mkArgs :: IOLike m
        -> (StrictTVar m MockFS, StrictTVar m MockFS, StrictTVar m MockFS)
           -- ^ ImmutableDB, VolatileDB, LedgerDB
        -> ChainDbArgs m TestBlock
-mkArgs cfg initLedger tracer registry hashInfo
+mkArgs cfg chunkInfo initLedger tracer registry hashInfo
        (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
     { -- Decoders
       cdbDecodeHash           = decode
@@ -274,7 +271,7 @@ mkArgs cfg initLedger tracer registry hashInfo
 
       -- Integration
     , cdbTopLevelConfig       = cfg
-    , cdbChunkInfo            = simpleChunkInfo fixedEpochSize
+    , cdbChunkInfo            = chunkInfo
     , cdbHashInfo             = hashInfo
     , cdbIsEBB                = const Nothing
     , cdbCheckIntegrity       = const True
