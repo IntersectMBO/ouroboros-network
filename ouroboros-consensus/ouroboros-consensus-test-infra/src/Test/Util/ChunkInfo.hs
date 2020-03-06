@@ -10,9 +10,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 
 {-------------------------------------------------------------------------------
   ChunkInfo
-
-  This is defined here rather than in @test-infra@ as this is (somewhat)
-  internal to the immutable DB.
 -------------------------------------------------------------------------------}
 
 data SmallChunkInfo = SmallChunkInfo ChunkInfo

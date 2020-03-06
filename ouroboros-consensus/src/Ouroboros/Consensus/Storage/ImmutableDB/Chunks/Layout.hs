@@ -126,7 +126,7 @@ chunkIndexOfSlot (UniformChunkSize ChunkSize{..}) (SlotNo slot) = ChunkNo $
   Slot within an epoch
 -------------------------------------------------------------------------------}
 
--- | Uniquely identity a block within the immutable DB
+-- | Uniquely identify a block within the immutable DB
 --
 -- Constructor marked as 'Unsafe'; construction should normally happen inside
 -- this module only (though see the 'ChunkSlot' pattern synonym).

@@ -16,7 +16,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
     SecondaryOffset
     -- * PrimaryIndex
   , PrimaryIndex(..) -- Exported for the benefit of tests
-  , InvalidPrimaryIndexException(..)
   , currentVersionNumber
   , slots
   , secondaryOffsetSize
@@ -74,6 +73,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
                      runGet)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Types
+                     (ImmutableDBError (..), UnexpectedError (..))
 
 {------------------------------------------------------------------------------
   SecondaryOffset
@@ -248,7 +249,8 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunkInfo chunk =
           -- Reached end of file, no filled slot
           return Nothing
         (NoMoreRelativeSlots, Just _) ->
-          throwM $ PrimaryIndexTooLarge chunk callStack
+          throwM $ UnexpectedError $
+            InvalidFileError primaryIndexFile "Index file too large" callStack
         (NextRelativeSlot slot, Just offset)
           | offset == 0 -> go pHnd (nextRelativeSlot slot)
           | otherwise   -> return $ Just slot
@@ -273,19 +275,6 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunkInfo chunk =
               | otherwise      -- All bytes read, 'Get' the offset
               -> assert (n == remaining) $ Just <$>
                  runGet primaryIndexFile getSecondaryOffset acc'
-
-data InvalidPrimaryIndexException =
-    -- | The primary index contains too many entries
-    --
-    -- This is thrown when scanning through a primary index and constructing
-    -- 'RelativeSlot's while doing so. If this exception is thrown, it
-    -- indicates disk corruption.
-    --
-    -- We record the number of the index.
-    PrimaryIndexTooLarge ChunkNo CallStack
-  deriving (Show)
-
-instance Exception InvalidPrimaryIndexException
 
 -- | Load a primary index file in memory.
 load
