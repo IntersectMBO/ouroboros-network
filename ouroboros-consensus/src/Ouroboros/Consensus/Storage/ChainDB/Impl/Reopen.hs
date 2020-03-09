@@ -4,8 +4,6 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
-
 -- | Closing and reopening
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Reopen
   ( isOpen

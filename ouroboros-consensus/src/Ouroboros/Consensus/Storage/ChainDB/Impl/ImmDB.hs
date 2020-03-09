@@ -7,7 +7,6 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TupleSections             #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Thin wrapper around the ImmutableDB
 module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
     ImmDB -- Opaque

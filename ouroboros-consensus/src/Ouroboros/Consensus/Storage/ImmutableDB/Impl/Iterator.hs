@@ -10,7 +10,6 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE UndecidableInstances      #-}
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Iterator
   ( streamImpl
   , getSlotInfo

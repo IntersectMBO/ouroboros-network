@@ -15,7 +15,6 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
     Consensus
   , chainSyncClient
