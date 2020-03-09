@@ -10,6 +10,7 @@
 --
 module Ouroboros.Network.NodeToClient (
     nodeToClientProtocols
+  , NodeToClientProtocols (..)
   , NodeToClientVersion (..)
   , NodeToClientVersionData (..)
   , DictVersion (..)
@@ -104,6 +105,20 @@ import           Ouroboros.Network.IOManager
 type HandshakeTr = WithMuxBearer (ConnectionId LocalAddress)
     (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))
 
+
+-- | Recorod of node-to-client mini protocols.
+--
+data NodeToClientProtocols appType bytes m a b = NodeToClientProtocols {
+    -- | local chain-sync mini-protocol
+    --
+    localChainSyncProtocol    :: RunMiniProtocol appType bytes m a b,
+
+    -- | local tx-submission mini-protocol
+    --
+    localTxSubmissionProtocol :: RunMiniProtocol appType bytes m a b
+  }
+
+
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-client protocol.
 --
@@ -115,20 +130,22 @@ type HandshakeTr = WithMuxBearer (ConnectionId LocalAddress)
 -- wireshark plugins.
 --
 nodeToClientProtocols
-  :: RunMiniProtocol appType bytes m a b -- ^ localChainSync
-  -> RunMiniProtocol appType bytes m a b -- ^ localTxSubmission
+  :: NodeToClientProtocols appType bytes m a b
   -> OuroborosApplication appType bytes m a b
-nodeToClientProtocols localChainSync localTxSubmission =
+nodeToClientProtocols NodeToClientProtocols {
+                          localChainSyncProtocol,
+                          localTxSubmissionProtocol
+                        } =
     OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 5,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = localChainSync
+        miniProtocolRun    = localChainSyncProtocol
       }
     , MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 6,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = localTxSubmission
+        miniProtocolRun    = localTxSubmissionProtocol
       }
     ]
 
