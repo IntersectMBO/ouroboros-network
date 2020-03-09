@@ -72,7 +72,6 @@ import qualified Codec.CBOR.Term     as CBOR
 import           Codec.Serialise (Serialise)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
-import           Data.Int
 import           Data.Void
 import           GHC.Generics (Generic)
 
