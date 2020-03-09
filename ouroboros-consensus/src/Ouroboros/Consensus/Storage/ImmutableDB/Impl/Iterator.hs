@@ -44,7 +44,8 @@ import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
 
-import           Ouroboros.Consensus.Storage.ImmutableDB.API hiding (getBlockComponent)
+import           Ouroboros.Consensus.Storage.ImmutableDB.API hiding
+                     (getBlockComponent)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
@@ -115,10 +116,10 @@ data IteratorState hash m h = IteratorState
   }
   deriving (Generic, NoUnexpectedThunks)
 
--- | Auxiliary data type that combines the '_currentChunk' and
--- '_currentChunkOffset' fields from 'OpenState'. This is used to avoid
--- passing the whole state around, and moreover, it avoids issues with
--- existential @h@ type parameter.
+-- | Auxiliary data type that combines the 'currentChunk' and
+-- 'currentChunkOffset' fields from 'OpenState'. This is used to avoid passing
+-- the whole state around, and moreover, it avoids issues with existential @h@
+-- type parameter.
 data CurrentChunkInfo = CurrentChunkInfo !ChunkNo !BlockOffset
 
 streamImpl
@@ -135,17 +136,17 @@ streamImpl
 streamImpl dbEnv registry blockComponent mbStart mbEnd =
     withOpenState dbEnv $ \hasFS OpenState{..} -> runExceptT $ do
       lift $ either throwM return =<<
-        validateIteratorRange _dbChunkInfo (forgetTipInfo <$> _currentTip)
+        validateIteratorRange chunkInfo (forgetTipInfo <$> currentTip)
           mbStart mbEnd
 
-      case _currentTip of
+      case currentTip of
         Origin ->
           -- If any of the two bounds were specified, 'validateIteratorRange'
           -- would have thrown a 'ReadFutureSlotError'.
           assert (isNothing mbStart && isNothing mbEnd) $ return mkEmptyIterator
         At tip -> do
-          WithHash endHash endChunkSlot <- fillInEndBound   _index tip mbEnd
-          (secondaryOffset, start)      <- fillInStartBound _index     mbStart
+          WithHash endHash endChunkSlot <- fillInEndBound   currentIndex tip mbEnd
+          (secondaryOffset, start)      <- fillInStartBound currentIndex     mbStart
 
           lift $ do
             -- 'validateIteratorRange' will catch nearly all invalid ranges,
@@ -157,31 +158,31 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
             -- information to do that.
             let WithHash _startHash startChunkSlot = start
             when (startChunkSlot > endChunkSlot) $ do
-              let startSlot = chunkSlotToSlot _dbChunkInfo startChunkSlot
-                  endSlot   = chunkSlotToSlot _dbChunkInfo endChunkSlot
+              let startSlot = chunkSlotToSlot chunkInfo startChunkSlot
+                  endSlot   = chunkSlotToSlot chunkInfo endChunkSlot
               throwUserError $ InvalidIteratorRangeError startSlot endSlot
 
             let ChunkSlot startChunk startRelSlot = startChunkSlot
                 startIsEBB   = relativeSlotIsEBB startRelSlot
-                curChunkInfo = CurrentChunkInfo _currentChunk _currentChunkOffset
+                curChunkInfo = CurrentChunkInfo currentChunk currentChunkOffset
 
             -- TODO avoid rereading the indices of the start thunk. We read
             -- from both the primary and secondary index in 'fillInStartBound'
 
-            iteratorState <- iteratorStateForChunk hasFS _index registry
+            iteratorState <- iteratorStateForChunk hasFS currentIndex registry
               curChunkInfo endHash startChunk secondaryOffset startIsEBB
 
             varIteratorState <- newTVarM $ IteratorStateOpen iteratorState
 
             return $ mkIterator IteratorHandle
               { itHasFS   = hasFS
-              , itIndex   = _index
+              , itIndex   = currentIndex
               , itState   = varIteratorState
               , itEnd     = endChunkSlot
               , itEndHash = endHash
               }
   where
-    ImmutableDBEnv { _dbChunkInfo, _dbHashInfo } = dbEnv
+    ImmutableDBEnv { chunkInfo } = dbEnv
 
     -- | Fill in the end bound: if 'Nothing', use the current tip. Otherwise,
     -- check whether the bound exists in the database and return the
@@ -203,13 +204,13 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
       -- an EBB. Convert the 'SlotNo' to an 'ChunkSlot' accordingly.
       Just end -> do
         (chunkSlot, (entry, _blockSize), _secondaryOffset) <-
-          getSlotInfo _dbChunkInfo index end
+          getSlotInfo chunkInfo index end
         return (WithHash (Secondary.headerHash entry) chunkSlot)
 
       -- No end bound given, use the current tip, but convert the 'BlockOrEBB'
       -- to an 'ChunkSlot'.
       Nothing ->
-        return $ chunkSlotForBlockOrEBB _dbChunkInfo <$> fromTipInfo currentTip
+        return $ chunkSlotForBlockOrEBB chunkInfo <$> fromTipInfo currentTip
 
     -- | Fill in the start bound: if 'Nothing', use the first block in the
     -- database. Otherwise, check whether the bound exists in the database and
@@ -230,7 +231,7 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
       -- an EBB. Convert the 'SlotNo' to an 'ChunkSlot' accordingly.
       Just start -> do
         (chunkSlot, (entry, _blockSize), secondaryOffset) <-
-          getSlotInfo _dbChunkInfo index start
+          getSlotInfo chunkInfo index start
         return (secondaryOffset, WithHash (Secondary.headerHash entry) chunkSlot)
 
       -- No start bound given, use the first block in the ImmutableDB as the
@@ -365,14 +366,14 @@ iteratorNextImpl dbEnv it@IteratorHandle
       IteratorStateOpen iteratorState@IteratorState{..} ->
         withOpenState dbEnv $ \_ st -> do
           let curChunkInfo = CurrentChunkInfo
-                (_currentChunk       st)
-                (_currentChunkOffset st)
+                (currentChunk       st)
+                (currentChunkOffset st)
               entry = NE.head itChunkEntries
           b <- getBlockComponent itChunkHandle itChunk entry blockComponent
           when step $ stepIterator curChunkInfo iteratorState
           return $ IteratorResult b
   where
-    ImmutableDBEnv { _dbChunkInfo, _dbHashInfo } = dbEnv
+    ImmutableDBEnv { chunkInfo } = dbEnv
 
     getBlockComponent
       :: Handle h
@@ -382,7 +383,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
       -> m b'
     getBlockComponent itChunkHandle itChunk entryWithBlockSize = \case
         GetHash         -> return headerHash
-        GetSlot         -> return $ slotNoOfBlockOrEBB _dbChunkInfo blockOrEBB
+        GetSlot         -> return $ slotNoOfBlockOrEBB chunkInfo blockOrEBB
         GetIsEBB        -> return $ case blockOrEBB of
           Block _ -> IsNotEBB
           EBB   _ -> IsEBB
@@ -569,7 +570,7 @@ iteratorStateForChunk hasFS index registry
     -- not correspond to the last entry we read, but to the block after it.
     -- Similarly if we switch the order of the two operations.
     --
-    -- To avoid this race condition, we use the value of '_currentChunkOffset'
+    -- To avoid this race condition, we use the value of 'currentChunkOffset'
     -- from the state as the file size of the current chunk (stored in
     -- 'CurrentChunkInfo'). This value corresponds to the chunk file size at
     -- the time we /read the state/. We also know that the end bound of our
