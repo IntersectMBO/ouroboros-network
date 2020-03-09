@@ -66,18 +66,17 @@ codecBlockFetchUnwrapped encodeBlock     decodeBlock
   decode stok = do
     len <- CBOR.decodeListLen
     key <- CBOR.decodeWord
-    -- TODO: match for 'len' as we do in other codecs
-    case (stok, key) of
-      (ClientAgency TokIdle, 0) -> do
+    case (stok, key, len) of
+      (ClientAgency TokIdle, 0, 3) -> do
         from <- decodePoint
         to   <- decodePoint
         return $ SomeMessage $ MsgRequestRange (ChainRange from to)
-      (ClientAgency TokIdle, 1) -> return $ SomeMessage MsgClientDone
-      (ServerAgency TokBusy, 2) -> return $ SomeMessage MsgStartBatch
-      (ServerAgency TokBusy, 3) -> return $ SomeMessage MsgNoBlocks
-      (ServerAgency TokStreaming, 4) -> SomeMessage . MsgBlock
+      (ClientAgency TokIdle, 1, 1) -> return $ SomeMessage MsgClientDone
+      (ServerAgency TokBusy, 2, 1) -> return $ SomeMessage MsgStartBatch
+      (ServerAgency TokBusy, 3, 1) -> return $ SomeMessage MsgNoBlocks
+      (ServerAgency TokStreaming, 4, 2) -> SomeMessage . MsgBlock
                                           <$> decodeBlock
-      (ServerAgency TokStreaming, 5) -> return $ SomeMessage MsgBatchDone
+      (ServerAgency TokStreaming, 5, 1) -> return $ SomeMessage MsgBatchDone
 
       --
       -- failures per protocol state
