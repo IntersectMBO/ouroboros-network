@@ -262,14 +262,14 @@ type instance Signed (Header TestBlock) = ()
 instance SignedHeader (Header TestBlock) where
   headerSigned _ = ()
 
-data TestBlockError
-  = InvalidHash
-    { _expectedHash :: ChainHash TestBlock
-    , _invalidHash  :: ChainHash TestBlock
-    }
-    -- ^ The hashes don't line up
+data TestBlockError =
+    -- | The hashes don't line up
+    InvalidHash
+      (ChainHash TestBlock)  -- ^ Expected hash
+      (ChainHash TestBlock)  -- ^ Invalid hash
+
+    -- | The block itself is invalid
   | InvalidBlock
-    -- ^ The block itself is invalid
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 instance BlockSupportsProtocol TestBlock where

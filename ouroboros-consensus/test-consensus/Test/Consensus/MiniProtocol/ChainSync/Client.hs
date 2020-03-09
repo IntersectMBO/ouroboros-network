@@ -104,15 +104,15 @@ prop_chainSync ChainSyncClientSetup {..} =
     -- it, but not the other way around: we don't check whether a situation
     -- has occured where an exception should have been thrown, but wasn't.
     case mbEx of
-      Just (ForkTooDeep { _intersection = intersection })     ->
+      Just (ForkTooDeep intersection _ _)     ->
         label "ForkTooDeep" $
         counterexample ("ForkTooDeep intersection: " <> ppPoint intersection) $
         not (withinFragmentBounds intersection clientFragment)
-      Just (InvalidRollBack { _newPoint = intersection }) ->
+      Just (InvalidRollBack intersection _ _) ->
         label "InvalidRollBack" $
         counterexample ("InvalidRollBack intersection: " <> ppPoint intersection) $
         not (withinFragmentBounds intersection synchedFragment)
-      Just (NoMoreIntersection {_ourTip = Our ourTip, _theirTip = Their theirTip}) ->
+      Just (NoMoreIntersection (Our ourTip) (Their theirTip)) ->
         label "NoMoreIntersection" $
         counterexample ("NoMoreIntersection ourHead: " <> ppPoint (getTipPoint ourTip) <>
                         ", theirHead: " <> ppPoint (getTipPoint theirTip)) $
@@ -648,22 +648,22 @@ prop_genUpdateSchedule_notInFuture securityParam maxClockSkew =
 
 -- | We need some state to generate @ChainUpdate@s
 data ChainUpdateState = ChainUpdateState
-  { _currentChain :: !(Chain TestBlock)
-    -- ^ The current chain, obtained by applying all the '_updates' in reverse
+  { cusCurrentChain :: !(Chain TestBlock)
+    -- ^ The current chain, obtained by applying all the 'cusUpdates' in reverse
     -- order.
-  , _updates      :: ![ChainUpdate]
+  , cusUpdates      :: ![ChainUpdate]
     -- ^ The updates that have been generated so far, in reverse order: the
     -- first update in the list is the last update to apply.
   } deriving (Show)
 
 emptyUpdateState :: ChainUpdateState
 emptyUpdateState = ChainUpdateState
-  { _currentChain = Genesis
-  , _updates      = []
+  { cusCurrentChain = Genesis
+  , cusUpdates      = []
   }
 
 getChainUpdates :: ChainUpdateState -> [ChainUpdate]
-getChainUpdates = reverse . _updates
+getChainUpdates = reverse . cusUpdates
 
 -- | Test that applying the generated updates gives us the same chain as
 -- '_currentChain'.
@@ -671,7 +671,7 @@ prop_genChainUpdates :: SecurityParam -> Int -> Property
 prop_genChainUpdates securityParam n =
     forAll (genChainUpdates securityParam n emptyUpdateState) $ \cus ->
       Chain.applyChainUpdates (toChainUpdates (getChainUpdates cus)) Genesis ===
-      Just (_currentChain cus)
+      Just (cusCurrentChain cus)
 
 genChainUpdates :: SecurityParam
                 -> Int  -- ^ The number of updates to generate
@@ -681,13 +681,13 @@ genChainUpdates securityParam n =
     execStateT (replicateM_ n genChainUpdate)
   where
     -- Modify the state
-    addUpdate u cus = cus { _updates = u : _updates cus }
-    setChain  c cus = cus { _currentChain = c }
+    addUpdate u cus = cus { cusUpdates = u : cusUpdates cus }
+    setChain  c cus = cus { cusCurrentChain = c }
 
     k = fromIntegral $ maxRollbacks securityParam
 
     genChainUpdate = do
-      ChainUpdateState { _currentChain = chain } <- get
+      ChainUpdateState { cusCurrentChain = chain } <- get
       frequency'
         [ (3, genAddBlock)
         , (if Chain.null chain then 0 else 1, genSwitchFork)
@@ -699,7 +699,7 @@ genChainUpdates securityParam n =
       ]
 
     genBlockToAdd = do
-      ChainUpdateState { _currentChain = chain } <- get
+      ChainUpdateState { cusCurrentChain = chain } <- get
       block <- lift $ case Chain.head chain of
         Nothing      -> firstBlock <$> genForkNo
         Just curHead -> do
@@ -713,7 +713,7 @@ genChainUpdates securityParam n =
       modify $ addUpdate (AddBlock block)
 
     genSwitchFork  = do
-      ChainUpdateState { _currentChain = chain } <- get
+      ChainUpdateState { cusCurrentChain = chain } <- get
       rollBackBlocks <- lift $ choose (1, k)
       let chain' = Chain.drop rollBackBlocks chain
       modify $ setChain chain'

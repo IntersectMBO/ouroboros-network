@@ -84,10 +84,7 @@ openDBInternal args launchBgTasks = do
     immDB <- ImmDB.openDB argsImmDb
     immDbTipPoint <- ImmDB.getPointAtTip immDB
     let immDbTipChunk = Reopen.chunkIndexOfPoint (Args.cdbChunkInfo args) immDbTipPoint
-    traceWith tracer $ TraceOpenEvent $ OpenedImmDB
-      { _immDbTip      = immDbTipPoint
-      , _immDbTipChunk = immDbTipChunk
-      }
+    traceWith tracer $ TraceOpenEvent $ OpenedImmDB immDbTipPoint immDbTipChunk
 
     volDB   <- VolDB.openDB argsVolDb
     traceWith tracer $ TraceOpenEvent OpenedVolDB
@@ -183,9 +180,8 @@ openDBInternal args launchBgTasks = do
           }
 
     traceWith tracer $ TraceOpenEvent $ OpenedDB
-      { _immTip   = castPoint $ AF.anchorPoint chain
-      , _chainTip = castPoint $ AF.headPoint   chain
-      }
+      (castPoint $ AF.anchorPoint chain)
+      (castPoint $ AF.headPoint   chain)
 
     when launchBgTasks $ Background.launchBgTasks env replayed
 

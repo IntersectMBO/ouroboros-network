@@ -552,10 +552,7 @@ runThreadNetwork ThreadNetworkArgs
         -- prop_general relies on this tracer
         instrumentationTracer = Tracer $ \case
           ChainDB.TraceAddBlockEvent
-              (ChainDB.AddBlockValidation ChainDB.InvalidBlock
-                  { _invalidPoint  = p
-                  , _validationErr = e
-                  })
+              (ChainDB.AddBlockValidation (ChainDB.InvalidBlock e p))
               -> traceWith invalidTracer (p, e)
           ChainDB.TraceAddBlockEvent
               (ChainDB.AddedBlockToVolDB p bno IsNotEBB)

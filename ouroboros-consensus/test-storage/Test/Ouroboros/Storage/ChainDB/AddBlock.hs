@@ -193,18 +193,18 @@ instance Arbitrary Threads where
 
 
 data BlocksPerThread = BlocksPerThread
-  { _blockTree   :: !BlockTree
-  , _permutation :: !Permutation
-  , _threads     :: !Threads
+  { bptBlockTree   :: !BlockTree
+  , bptPermutation :: !Permutation
+  , bptThreads     :: !Threads
   }
 
 blocks :: BlocksPerThread -> [TestBlock]
 blocks BlocksPerThread{..} =
-    permute _permutation $ treeToBlocks _blockTree
+    permute bptPermutation $ treeToBlocks bptBlockTree
 
 blocksPerThread :: BlocksPerThread -> [[TestBlock]]
 blocksPerThread bpt@BlocksPerThread{..} =
-    transpose $ chunks (unThreads _threads) $ blocks bpt
+    transpose $ chunks (unThreads bptThreads) $ blocks bpt
 
 instance Show BlocksPerThread where
   show bpt = unlines $ zipWith

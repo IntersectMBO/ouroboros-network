@@ -77,9 +77,8 @@ closeDB (CDBHandle varState) = do
       chain <- atomically $ readTVar cdbChain
 
       traceWith cdbTracer $ TraceOpenEvent $ ClosedDB
-        { _immTip   = castPoint $ AF.anchorPoint chain
-        , _chainTip = castPoint $ AF.headPoint chain
-        }
+        (castPoint $ AF.anchorPoint chain)
+        (castPoint $ AF.headPoint chain)
 
 reopen
   :: forall m blk.
@@ -111,10 +110,8 @@ reopen (CDBHandle varState) launchBgTasks = do
         ImmDB.reopen cdbImmDB
         immDbTipPoint <- ImmDB.getPointAtTip cdbImmDB
         let immDbTipChunk = chunkIndexOfPoint cdbChunkInfo immDbTipPoint
-        traceWith cdbTracer $ TraceOpenEvent $ OpenedImmDB
-          { _immDbTip      = immDbTipPoint
-          , _immDbTipChunk = immDbTipChunk
-          }
+        traceWith cdbTracer $ TraceOpenEvent $
+          OpenedImmDB immDbTipPoint immDbTipChunk
 
         -- Note that we must reopen the VolatileDB before the LedgerDB, as the
         -- latter may try to access the former: when we initially opened it,
@@ -149,9 +146,8 @@ reopen (CDBHandle varState) launchBgTasks = do
           -- Change the state from 'ChainDbReopening' to 'ChainDbOpen'
           writeTVar varState $ ChainDbOpen env
         traceWith cdbTracer $ TraceOpenEvent $ ReopenedDB
-          { _immTip   = castPoint $ AF.anchorPoint chain
-          , _chainTip = castPoint $ AF.headPoint   chain
-          }
+          (castPoint $ AF.anchorPoint chain)
+          (castPoint $ AF.headPoint   chain)
 
         when launchBgTasks $ Background.launchBgTasks env replayed
 

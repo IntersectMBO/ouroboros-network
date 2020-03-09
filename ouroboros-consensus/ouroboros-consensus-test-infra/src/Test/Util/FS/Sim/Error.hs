@@ -224,44 +224,44 @@ type ErrorStreamPutSome =
 -- An 'Errors' is used in conjunction with 'SimErrorFS', which is a layer on
 -- top of 'SimFS' that simulates methods throwing 'FsError's.
 data Errors = Errors
-  { _dumpState                :: ErrorStream -- TODO remove
+  { dumpStateE                :: ErrorStream -- TODO remove
 
     -- Operations on files
-  , _hOpen                    :: ErrorStream
-  , _hClose                   :: ErrorStream
-  , _hSeek                    :: ErrorStream
-  , _hGetSome                 :: ErrorStreamGetSome
-  , _hGetSomeAt               :: ErrorStreamGetSome
-  , _hPutSome                 :: ErrorStreamPutSome
-  , _hTruncate                :: ErrorStream
-  , _hGetSize                 :: ErrorStream
+  , hOpenE                    :: ErrorStream
+  , hCloseE                   :: ErrorStream
+  , hSeekE                    :: ErrorStream
+  , hGetSomeE                 :: ErrorStreamGetSome
+  , hGetSomeAtE               :: ErrorStreamGetSome
+  , hPutSomeE                 :: ErrorStreamPutSome
+  , hTruncateE                :: ErrorStream
+  , hGetSizeE                 :: ErrorStream
 
     -- Operations on directories
-  , _createDirectory          :: ErrorStream
-  , _createDirectoryIfMissing :: ErrorStream
-  , _listDirectory            :: ErrorStream
-  , _doesDirectoryExist       :: ErrorStream
-  , _doesFileExist            :: ErrorStream
-  , _removeFile               :: ErrorStream
+  , createDirectoryE          :: ErrorStream
+  , createDirectoryIfMissingE :: ErrorStream
+  , listDirectoryE            :: ErrorStream
+  , doesDirectoryExistE       :: ErrorStream
+  , doesFileExistE            :: ErrorStream
+  , removeFileE               :: ErrorStream
   }
 
 -- | Return 'True' if all streams are empty ('null').
 allNull :: Errors -> Bool
-allNull Errors {..} = null _dumpState
-                   && null _hOpen
-                   && null _hClose
-                   && null _hSeek
-                   && null _hGetSome
-                   && null _hGetSomeAt
-                   && null _hPutSome
-                   && null _hTruncate
-                   && null _hGetSize
-                   && null _createDirectory
-                   && null _createDirectoryIfMissing
-                   && null _listDirectory
-                   && null _doesDirectoryExist
-                   && null _doesFileExist
-                   && null _removeFile
+allNull Errors {..} = null dumpStateE
+                   && null hOpenE
+                   && null hCloseE
+                   && null hSeekE
+                   && null hGetSomeE
+                   && null hGetSomeAtE
+                   && null hPutSomeE
+                   && null hTruncateE
+                   && null hGetSizeE
+                   && null createDirectoryE
+                   && null createDirectoryIfMissingE
+                   && null listDirectoryE
+                   && null doesDirectoryExistE
+                   && null doesFileExistE
+                   && null removeFileE
 
 
 instance Show Errors where
@@ -277,40 +277,40 @@ instance Show Errors where
 
       streams :: [String]
       streams = catMaybes
-        [ s "_dumpState"                _dumpState
-        , s "_hOpen"                    _hOpen
-        , s "_hClose"                   _hClose
-        , s "_hSeek"                    _hSeek
-        , s "_hGetSome"                 _hGetSome
-        , s "_hGetSomeAt"               _hGetSomeAt
-        , s "_hPutSome"                 _hPutSome
-        , s "_hTruncate"                _hTruncate
-        , s "_hGetSize"                 _hGetSize
-        , s "_createDirectory"          _createDirectory
-        , s "_createDirectoryIfMissing" _createDirectoryIfMissing
-        , s "_listDirectory"            _listDirectory
-        , s "_doesDirectoryExist"       _doesDirectoryExist
-        , s "_doesFileExist"            _doesFileExist
-        , s "_removeFile"               _removeFile
+        [ s "dumpStateE"                dumpStateE
+        , s "hOpenE"                    hOpenE
+        , s "hCloseE"                   hCloseE
+        , s "hSeekE"                    hSeekE
+        , s "hGetSomeE"                 hGetSomeE
+        , s "hGetSomeAtE"               hGetSomeAtE
+        , s "hPutSomeE"                 hPutSomeE
+        , s "hTruncateE"                hTruncateE
+        , s "hGetSizeE"                 hGetSizeE
+        , s "createDirectoryE"          createDirectoryE
+        , s "createDirectoryIfMissingE" createDirectoryIfMissingE
+        , s "listDirectoryE"            listDirectoryE
+        , s "doesDirectoryExistE"       doesDirectoryExistE
+        , s "doesFileExistE"            doesFileExistE
+        , s "removeFileE"               removeFileE
         ]
 
 instance Semigroup Errors where
   egs1 <> egs2 = Errors
-      { _dumpState                = combine _dumpState
-      , _hOpen                    = combine _hOpen
-      , _hClose                   = combine _hClose
-      , _hSeek                    = combine _hSeek
-      , _hGetSome                 = combine _hGetSome
-      , _hGetSomeAt               = combine _hGetSomeAt
-      , _hPutSome                 = combine _hPutSome
-      , _hTruncate                = combine _hTruncate
-      , _hGetSize                 = combine _hGetSize
-      , _createDirectory          = combine _createDirectory
-      , _createDirectoryIfMissing = combine _createDirectoryIfMissing
-      , _listDirectory            = combine _listDirectory
-      , _doesDirectoryExist       = combine _doesDirectoryExist
-      , _doesFileExist            = combine _doesFileExist
-      , _removeFile               = combine _removeFile
+      { dumpStateE                = combine dumpStateE
+      , hOpenE                    = combine hOpenE
+      , hCloseE                   = combine hCloseE
+      , hSeekE                    = combine hSeekE
+      , hGetSomeE                 = combine hGetSomeE
+      , hGetSomeAtE               = combine hGetSomeAtE
+      , hPutSomeE                 = combine hPutSomeE
+      , hTruncateE                = combine hTruncateE
+      , hGetSizeE                 = combine hGetSizeE
+      , createDirectoryE          = combine createDirectoryE
+      , createDirectoryIfMissingE = combine createDirectoryIfMissingE
+      , listDirectoryE            = combine listDirectoryE
+      , doesDirectoryExistE       = combine doesDirectoryExistE
+      , doesFileExistE            = combine doesFileExistE
+      , removeFileE               = combine removeFileE
       }
     where
       combine :: (Errors -> Stream a) -> Stream a
@@ -324,21 +324,21 @@ instance Monoid Errors where
 -- 'hPutSome'.
 simpleErrors :: ErrorStream -> Errors
 simpleErrors es = Errors
-    { _dumpState                = es
-    , _hOpen                    = es
-    , _hClose                   = es
-    , _hSeek                    = es
-    , _hGetSome                 =  Left                <$> es
-    , _hGetSomeAt               =  Left                <$> es
-    , _hPutSome                 = (Left . (, Nothing)) <$> es
-    , _hTruncate                = es
-    , _hGetSize                 = es
-    , _createDirectory          = es
-    , _createDirectoryIfMissing = es
-    , _listDirectory            = es
-    , _doesDirectoryExist       = es
-    , _doesFileExist            = es
-    , _removeFile               = es
+    { dumpStateE                = es
+    , hOpenE                    = es
+    , hCloseE                   = es
+    , hSeekE                    = es
+    , hGetSomeE                 =  Left                <$> es
+    , hGetSomeAtE               =  Left                <$> es
+    , hPutSomeE                 = (Left . (, Nothing)) <$> es
+    , hTruncateE                = es
+    , hGetSizeE                 = es
+    , createDirectoryE          = es
+    , createDirectoryIfMissingE = es
+    , listDirectoryE            = es
+    , doesDirectoryExistE       = es
+    , doesFileExistE            = es
+    , removeFileE               = es
     }
 
 -- | Generator for 'Errors' that allows some things to be disabled.
@@ -353,24 +353,24 @@ genErrors genPartialWrites genSubstituteWithJunk = do
         -- TODO which errors are possible for these operations below (that
         -- have dummy for now)?
         dummy = streamGen 2 [ FsInsufficientPermissions ]
-    _dumpState          <- dummy
+    dumpStateE          <- dummy
     -- TODO let this one fail:
-    let _hClose = mkStream []
-    _hTruncate          <- dummy
-    _doesDirectoryExist <- dummy
-    _doesFileExist      <- dummy
-    _hOpen <- streamGen 1
+    let hCloseE = mkStream []
+    hTruncateE          <- dummy
+    doesDirectoryExistE <- dummy
+    doesFileExistE      <- dummy
+    hOpenE <- streamGen 1
       [ FsResourceDoesNotExist, FsResourceInappropriateType
       , FsResourceAlreadyInUse, FsResourceAlreadyExist
       , FsInsufficientPermissions, FsTooManyOpenFiles ]
-    _hSeek      <- streamGen 3 [ FsReachedEOF ]
-    _hGetSome   <- mkStreamGen 20 $ QC.frequency
+    hSeekE      <- streamGen 3 [ FsReachedEOF ]
+    hGetSomeE   <- mkStreamGen 20 $ QC.frequency
       [ (1, return $ Left FsReachedEOF)
       , (3, Right <$> arbitrary) ]
-    _hGetSomeAt <- mkStreamGen 20 $ QC.frequency
+    hGetSomeAtE <- mkStreamGen 20 $ QC.frequency
       [ (1, return $ Left FsReachedEOF)
       , (3, Right <$> arbitrary) ]
-    _hPutSome   <- mkStreamGen 5 $ QC.frequency
+    hPutSomeE   <- mkStreamGen 5 $ QC.frequency
       [ (1, Left . (FsDeviceFull, ) <$> QC.frequency
             [ (2, return Nothing)
             , (1, Just . PartialWrite <$> arbitrary)
@@ -378,17 +378,17 @@ genErrors genPartialWrites genSubstituteWithJunk = do
                Just . SubstituteWithJunk <$> arbitrary)
             ])
       , (if genPartialWrites then 3 else 0, Right <$> arbitrary) ]
-    _hGetSize   <- streamGen 2 [ FsResourceDoesNotExist ]
-    _createDirectory <- streamGen 3
+    hGetSizeE   <- streamGen 2 [ FsResourceDoesNotExist ]
+    createDirectoryE <- streamGen 3
       [ FsInsufficientPermissions, FsResourceInappropriateType
       , FsResourceAlreadyExist ]
-    _createDirectoryIfMissing <- streamGen 3
+    createDirectoryIfMissingE <- streamGen 3
       [ FsInsufficientPermissions, FsResourceInappropriateType
       , FsResourceAlreadyExist ]
-    _listDirectory <- streamGen 3
+    listDirectoryE <- streamGen 3
       [ FsInsufficientPermissions, FsResourceInappropriateType
       , FsResourceDoesNotExist ]
-    _removeFile    <- streamGen 3
+    removeFileE    <- streamGen 3
       [ FsInsufficientPermissions, FsResourceAlreadyInUse
       , FsResourceDoesNotExist, FsResourceInappropriateType ]
     return Errors {..}
@@ -397,21 +397,21 @@ instance Arbitrary Errors where
   arbitrary = genErrors True True
 
   shrink err@Errors {..} = filter (not . allNull) $ catMaybes
-      [ (\s' -> err { _dumpState = s' })                <$> dropLast _dumpState
-      , (\s' -> err { _hOpen = s' })                    <$> dropLast _hOpen
-      , (\s' -> err { _hClose = s' })                   <$> dropLast _hClose
-      , (\s' -> err { _hSeek = s' })                    <$> dropLast _hSeek
-      , (\s' -> err { _hGetSome = s' })                 <$> dropLast _hGetSome
-      , (\s' -> err { _hGetSomeAt = s' })               <$> dropLast _hGetSomeAt
-      , (\s' -> err { _hPutSome = s' })                 <$> dropLast _hPutSome
-      , (\s' -> err { _hTruncate = s' })                <$> dropLast _hTruncate
-      , (\s' -> err { _hGetSize = s' })                 <$> dropLast _hGetSize
-      , (\s' -> err { _createDirectory = s' })          <$> dropLast _createDirectory
-      , (\s' -> err { _createDirectoryIfMissing = s' }) <$> dropLast _createDirectoryIfMissing
-      , (\s' -> err { _listDirectory = s' })            <$> dropLast _listDirectory
-      , (\s' -> err { _doesDirectoryExist = s' })       <$> dropLast _doesDirectoryExist
-      , (\s' -> err { _doesFileExist = s' })            <$> dropLast _doesFileExist
-      , (\s' -> err { _removeFile = s' })               <$> dropLast _removeFile
+      [ (\s' -> err { dumpStateE = s' })                <$> dropLast dumpStateE
+      , (\s' -> err { hOpenE = s' })                    <$> dropLast hOpenE
+      , (\s' -> err { hCloseE = s' })                   <$> dropLast hCloseE
+      , (\s' -> err { hSeekE = s' })                    <$> dropLast hSeekE
+      , (\s' -> err { hGetSomeE = s' })                 <$> dropLast hGetSomeE
+      , (\s' -> err { hGetSomeAtE = s' })               <$> dropLast hGetSomeAtE
+      , (\s' -> err { hPutSomeE = s' })                 <$> dropLast hPutSomeE
+      , (\s' -> err { hTruncateE = s' })                <$> dropLast hTruncateE
+      , (\s' -> err { hGetSizeE = s' })                 <$> dropLast hGetSizeE
+      , (\s' -> err { createDirectoryE = s' })          <$> dropLast createDirectoryE
+      , (\s' -> err { createDirectoryIfMissingE = s' }) <$> dropLast createDirectoryIfMissingE
+      , (\s' -> err { listDirectoryE = s' })            <$> dropLast listDirectoryE
+      , (\s' -> err { doesDirectoryExistE = s' })       <$> dropLast doesDirectoryExistE
+      , (\s' -> err { doesFileExistE = s' })            <$> dropLast doesFileExistE
+      , (\s' -> err { removeFileE = s' })               <$> dropLast removeFileE
       ]
     where
       dropLast :: Stream a -> Maybe (Stream a)
@@ -434,44 +434,44 @@ mkSimErrorHasFS fsVar errorsVar =
       HasFS{..} -> HasFS{
           dumpState =
             withErr errorsVar (mkFsPath ["<dumpState>"]) dumpState "dumpState"
-              _dumpState (\e es -> es { _dumpState = e })
+              dumpStateE (\e es -> es { dumpStateE = e })
         , hOpen      = \p m ->
             withErr errorsVar p (hOpen p m) "hOpen"
-            _hOpen (\e es -> es { _hOpen = e })
+            hOpenE (\e es -> es { hOpenE = e })
         , hClose     = \h ->
             withErr' errorsVar h (hClose h) "hClose"
-            _hClose (\e es -> es { _hClose = e })
+            hCloseE (\e es -> es { hCloseE = e })
         , hSeek      = \h m n ->
             withErr' errorsVar h (hSeek h m n) "hSeek"
-            _hSeek (\e es -> es { _hSeek = e })
+            hSeekE (\e es -> es { hSeekE = e })
         , hGetSome   = hGetSome' errorsVar hGetSome
         , hGetSomeAt = hGetSomeAt' errorsVar hGetSomeAt
         , hPutSome   = hPutSome' errorsVar hPutSome
         , hTruncate  = \h w ->
             withErr' errorsVar h (hTruncate h w) "hTruncate"
-            _hTruncate (\e es -> es { _hTruncate = e })
+            hTruncateE (\e es -> es { hTruncateE = e })
         , hGetSize   =  \h ->
             withErr' errorsVar h (hGetSize h) "hGetSize"
-            _hGetSize (\e es -> es { _hGetSize = e })
+            hGetSizeE (\e es -> es { hGetSizeE = e })
 
         , createDirectory          = \p ->
             withErr errorsVar p (createDirectory p) "createDirectory"
-            _createDirectory (\e es -> es { _createDirectory = e })
+            createDirectoryE (\e es -> es { createDirectoryE = e })
         , createDirectoryIfMissing = \b p ->
             withErr errorsVar p (createDirectoryIfMissing b p) "createDirectoryIfMissing"
-            _createDirectoryIfMissing (\e es -> es { _createDirectoryIfMissing = e })
+            createDirectoryIfMissingE (\e es -> es { createDirectoryIfMissingE = e })
         , listDirectory            = \p ->
             withErr errorsVar p (listDirectory p) "listDirectory"
-            _listDirectory (\e es -> es { _listDirectory = e })
+            listDirectoryE (\e es -> es { listDirectoryE = e })
         , doesDirectoryExist       = \p ->
             withErr errorsVar p (doesDirectoryExist p) "doesDirectoryExist"
-            _doesDirectoryExist (\e es -> es { _doesDirectoryExist = e })
+            doesDirectoryExistE (\e es -> es { doesDirectoryExistE = e })
         , doesFileExist            = \p ->
             withErr errorsVar p (doesFileExist p) "doesFileExist"
-            _doesFileExist (\e es -> es { _doesFileExist = e })
+            doesFileExistE (\e es -> es { doesFileExistE = e })
         , removeFile               = \p ->
             withErr errorsVar p (removeFile p) "removeFile"
-            _removeFile (\e es -> es { _removeFile = e })
+            removeFileE (\e es -> es { removeFileE = e })
         , mkFsErrorPath = fsToFsErrorPathUnmounted
         }
 
@@ -566,7 +566,7 @@ hGetSome'  :: (MonadSTM m, MonadThrow m, HasCallStack)
            -> (Handle HandleMock -> Word64 -> m BS.ByteString)  -- ^ Wrapped 'hGetSome'
            -> Handle HandleMock -> Word64 -> m BS.ByteString
 hGetSome' errorsVar hGetSomeWrapped handle n =
-    next errorsVar _hGetSome (\e es -> es { _hGetSome = e }) >>= \case
+    next errorsVar hGetSomeE (\e es -> es { hGetSomeE = e }) >>= \case
       Nothing             -> hGetSomeWrapped handle n
       Just (Left errType) -> throwM FsError
         { fsErrorType   = errType
@@ -585,7 +585,7 @@ hGetSomeAt' :: (MonadSTM m, MonadThrow m, HasCallStack)
             -> (Handle HandleMock -> Word64 -> AbsOffset -> m BS.ByteString)  -- ^ Wrapped 'hGetSomeAt'
             -> Handle HandleMock -> Word64 -> AbsOffset -> m BS.ByteString
 hGetSomeAt' errorsVar hGetSomeAtWrapped handle n offset =
-    next errorsVar _hGetSomeAt (\e es -> es { _hGetSomeAt = e }) >>= \case
+    next errorsVar hGetSomeAtE (\e es -> es { hGetSomeAtE = e }) >>= \case
       Nothing             -> hGetSomeAtWrapped handle n offset
       Just (Left errType) -> throwM FsError
         { fsErrorType   = errType
@@ -606,7 +606,7 @@ hPutSome' :: (MonadSTM m, MonadThrow m, HasCallStack)
           -> (Handle HandleMock -> BS.ByteString -> m Word64)  -- ^ Wrapped 'hPutSome'
           -> Handle HandleMock -> BS.ByteString -> m Word64
 hPutSome' errorsVar hPutSomeWrapped handle bs =
-    next errorsVar _hPutSome (\e es -> es { _hPutSome = e }) >>= \case
+    next errorsVar hPutSomeE (\e es -> es { hPutSomeE = e }) >>= \case
       Nothing                       -> hPutSomeWrapped handle bs
       Just (Left (errType, mbCorr)) -> do
         whenJust mbCorr $ \corr ->

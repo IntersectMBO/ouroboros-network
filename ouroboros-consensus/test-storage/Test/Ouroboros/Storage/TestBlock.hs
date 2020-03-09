@@ -391,14 +391,14 @@ instance BlockSupportsProtocol TestBlock where
       signKey :: SlotNo -> SignKeyDSIGN MockDSIGN
       signKey (SlotNo n) = SignKeyMockDSIGN $ fromIntegral (n `mod` numCore)
 
-data TestBlockError
-  = InvalidHash
-    { _expectedHash :: ChainHash TestBlock
-    , _invalidHash  :: ChainHash TestBlock
-    }
-    -- ^ The hashes don't line up
+data TestBlockError =
+    -- | The hashes don't line up
+    InvalidHash
+      (ChainHash TestBlock)  -- ^ Expected hash
+      (ChainHash TestBlock)  -- ^ Invalid hash
+
+    -- | The block itself is invalid
   | InvalidBlock
-    -- ^ The block itself is invalid
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 instance UpdateLedger TestBlock where

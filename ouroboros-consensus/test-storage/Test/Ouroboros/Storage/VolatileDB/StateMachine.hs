@@ -52,7 +52,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB
 import           Ouroboros.Consensus.Storage.VolatileDB.Util
 
-import           Test.QuickCheck
+import           Test.QuickCheck hiding (elements)
 import           Test.QuickCheck.Monadic
 import           Test.StateMachine hiding (showLabelledExamples,
                      showLabelledExamples')
@@ -66,6 +66,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Test.Util.FS.Sim.Error hiding (null)
 import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.QuickCheck
 import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
 
