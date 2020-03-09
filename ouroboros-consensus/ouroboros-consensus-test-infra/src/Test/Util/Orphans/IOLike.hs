@@ -1,5 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Util.Orphans.IOLike () where
 
 import           Control.Monad.Class.MonadSTM (lengthTBQueueDefault)

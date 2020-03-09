@@ -5,7 +5,7 @@
 {-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Missing instances for standard type classes in the Byron spec
 module Ouroboros.Consensus.ByronSpec.Ledger.Orphans () where
