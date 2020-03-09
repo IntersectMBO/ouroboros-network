@@ -26,6 +26,7 @@ import           Codec.CBOR.Encoding (encodeListLen, encodeWord)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.Serialise as Serialise
+import           Text.Printf
 
 -- | The main CBOR 'Codec' for the 'ChainSync' protocol.
 --
@@ -126,7 +127,18 @@ codecChainSyncUnwrapped encodeHeader decodeHeader
         (7, 1, ClientAgency TokIdle) ->
           return (SomeMessage MsgDone)
 
-        _ -> fail ("codecChainSync: unexpected key " ++ show (key, len))
+        --
+        -- failures per protcol state
+        --
+
+        (_, _, ClientAgency TokIdle) ->
+          fail (printf "codecChainSync (%s) unexpected key (%d, %d)" (show stok) key len)
+        (_, _, ServerAgency (TokNext TokCanAwait)) ->
+          fail (printf "codecChainSync (%s) unexpected key (%d, %d)" (show stok) key len)
+        (_, _, ServerAgency (TokNext TokMustReply)) ->
+          fail (printf "codecChainSync (%s) unexpected key (%d, %d)" (show stok) key len)
+        (_, _, ServerAgency TokIntersect) ->
+          fail (printf "codecChainSync (%s) unexpected key (%d, %d)" (show stok) key len)
 
 -- | Codec for chain sync that encodes/decodes headers
 --
