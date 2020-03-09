@@ -1,7 +1,6 @@
 -- | Common values for size and time limits used by ourobors-network.
 module Ouroboros.Network.Protocol.Limits where
 
-import           Data.Word
 import           Control.Monad.Class.MonadTime
 
 -- TODO: better limits

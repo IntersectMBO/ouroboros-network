@@ -430,9 +430,14 @@ initiatorNetworkApplication
   -> OuroborosApplication InitiatorApp bytes m a Void
 initiatorNetworkApplication NetworkApplication {..} them =
     nodeToNodeProtocols
-      (InitiatorProtocolOnly (MuxPeerRaw (naChainSyncClient them)))
-      (InitiatorProtocolOnly (MuxPeerRaw (naBlockFetchClient them)))
-      (InitiatorProtocolOnly (MuxPeerRaw (naTxSubmissionClient them)))
+      NodeToNodeProtocols {
+          chainSyncProtocol =
+            (InitiatorProtocolOnly (MuxPeerRaw (naChainSyncClient them))),
+          blockFetchProtocol =
+            (InitiatorProtocolOnly (MuxPeerRaw (naBlockFetchClient them))),
+          txSubmissionProtocol =
+            (InitiatorProtocolOnly (MuxPeerRaw (naTxSubmissionClient them)))
+        }
 
 -- | A projection from 'NetworkApplication' to a server-side
 -- 'OuroborosApplication' for the node-to-node protocols.
@@ -443,9 +448,14 @@ responderNetworkApplication
   -> OuroborosApplication ResponderApp bytes m Void a
 responderNetworkApplication NetworkApplication {..} them =
     nodeToNodeProtocols
-      (ResponderProtocolOnly (MuxPeerRaw (naChainSyncServer them)))
-      (ResponderProtocolOnly (MuxPeerRaw (naBlockFetchServer them)))
-      (ResponderProtocolOnly (MuxPeerRaw (naTxSubmissionServer them)))
+      NodeToNodeProtocols {
+          chainSyncProtocol =
+            (ResponderProtocolOnly (MuxPeerRaw (naChainSyncServer them))),
+          blockFetchProtocol =
+            (ResponderProtocolOnly (MuxPeerRaw (naBlockFetchServer them))),
+          txSubmissionProtocol =
+            (ResponderProtocolOnly (MuxPeerRaw (naTxSubmissionServer them)))
+        }
 
 -- | A projection from 'NetworkApplication' to a server-side
 -- 'OuroborosApplication' for the node-to-client protocols.
@@ -456,8 +466,12 @@ localResponderNetworkApplication
   -> OuroborosApplication ResponderApp bytes m Void a
 localResponderNetworkApplication NetworkApplication {..} peer =
     nodeToClientProtocols
-      (ResponderProtocolOnly (MuxPeerRaw (naLocalChainSyncServer peer)))
-      (ResponderProtocolOnly (MuxPeerRaw (naLocalTxSubmissionServer peer)))
+      NodeToClientProtocols {
+          localChainSyncProtocol =
+            (ResponderProtocolOnly (MuxPeerRaw (naLocalChainSyncServer peer))),
+          localTxSubmissionProtocol =
+            (ResponderProtocolOnly (MuxPeerRaw (naLocalTxSubmissionServer peer)))
+        }
 
 
 -- | Example function which creates consensus mux applications, this is useful

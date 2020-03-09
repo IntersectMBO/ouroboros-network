@@ -17,7 +17,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import Data.Void
 
-import qualified Network.Mux.Types as Mx
+import qualified Network.Mux as Mx
 import qualified Network.Mux.Bearer.Pipe as Mx
 
 import Test.Mux.ReqResp
@@ -60,7 +60,6 @@ debugTracer = showTracing (Tracer putStrLn_)
 defaultProtocolLimits :: Mx.MiniProtocolLimits
 defaultProtocolLimits =
     Mx.MiniProtocolLimits {
-      Mx.maximumMessageSize  = 3_000_000,
       Mx.maximumIngressQueue = 3_000_000
     }
 
@@ -94,10 +93,11 @@ serverLoop :: HANDLE
            -> IO ()
 serverLoop h = do
     let pipeChannel = Mx.pipeChannelFromNamedPipe h
-    Mx.runMuxWithPipes
+        bearer = Mx.pipeAsMuxBearer nullTracer pipeChannel
+    Mx.muxStart
         nullTracer
         app
-        pipeChannel
+        bearer
   where
     app :: Mx.MuxApplication 'Mx.ResponderApp IO Void ()
     app = Mx.MuxApplication
@@ -132,10 +132,11 @@ client n msg = Win32.Async.withIOManager $ \iocp -> do
                         Nothing
     Win32.Async.associateWithIOCompletionPort (Left hpipe) iocp
     let pipeChannel = Mx.pipeChannelFromNamedPipe hpipe
-    Mx.runMuxWithPipes
+        bearer = Mx.pipeAsMuxBearer nullTracer pipeChannel
+    Mx.muxStart
         nullTracer
         app
-        pipeChannel
+        bearer
   where
     app :: Mx.MuxApplication 'Mx.InitiatorApp IO () Void
     app = Mx.MuxApplication
