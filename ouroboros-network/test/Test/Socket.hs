@@ -100,7 +100,7 @@ demo :: forall block .
         , Serialise block, Eq block, Show block )
      => Chain block -> [ChainUpdate block block] -> IO Bool
 demo chain0 updates = withIOManager $ \iocp -> do
-    producerAddressInfo:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    producerAddressInfo:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     consumerAddressInfo:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
 
     let producerAddress = Socket.addrAddress producerAddressInfo
@@ -154,7 +154,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         (DictVersion nodeToNodeCodecCBORTerm)
         (\_peerid -> SomeResponderApplication responderApp))
       nullErrorPolicies
-      $ \_ _ -> do
+      $ \realProducerAddress _ -> do
       withAsync
         (connectToNode
           (socketSnocket iocp)
@@ -166,7 +166,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
             (DictVersion nodeToNodeCodecCBORTerm)
             (\_peerid -> initiatorApp))
           (Just consumerAddress)
-          producerAddress)
+          realProducerAddress)
         $ \ _connAsync -> do
           void $ fork $ sequence_
               [ do
