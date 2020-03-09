@@ -19,6 +19,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Type.Equality ((:~:) (..))
+import           Text.Printf
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Network.Codec
@@ -133,14 +134,18 @@ codecLocalStateQuery encodePoint  decodePoint
         (ClientAgency TokIdle, 1, 7) ->
           return (SomeMessage MsgDone)
 
+        --
+        -- failures per protocol state
+        --
+
         (ClientAgency TokIdle, _, _) ->
-          fail "codecLocalStateQuery.Idle: unexpected key"
+          fail (printf "codecLocalStateQuery (%s) unexpected key (%d, %d)" (show stok) key len)
         (ClientAgency TokAcquired, _, _) ->
-          fail "codecLocalStateQuery.Acquired: unexpected key"
+          fail (printf "codecLocalStateQuery (%s) unexpected key (%d, %d)" (show stok) key len)
         (ServerAgency TokAcquiring, _, _) ->
-          fail "codecLocalStateQuery.Acquiring: unexpected key"
+          fail (printf "codecLocalStateQuery (%s) unexpected key (%d, %d)" (show stok) key len)
         (ServerAgency (TokQuerying _), _, _) ->
-          fail "codecLocalStateQuery.Querying: unexpected key"
+          fail (printf "codecLocalStateQuery (%s) unexpected key (%d, %d)" (show stok) key len)
 
 
 -- | An identity 'Codec' for the 'LocalStateQuery' protocol. It does not do

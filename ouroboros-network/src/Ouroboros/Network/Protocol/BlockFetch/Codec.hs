@@ -22,6 +22,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.Serialise as Serialise
+import           Text.Printf
 
 import           Ouroboros.Network.Block (HeaderHash, Point, Serialised (..))
 import qualified Ouroboros.Network.Block as Block
@@ -63,8 +64,9 @@ codecBlockFetchUnwrapped encodeBlock     decodeBlock
             PeerHasAgency pr st
          -> CBOR.Decoder s (SomeMessage st)
   decode stok = do
-    _ <- CBOR.decodeListLen
+    len <- CBOR.decodeListLen
     key <- CBOR.decodeWord
+    -- TODO: match for 'len' as we do in other codecs
     case (stok, key) of
       (ClientAgency TokIdle, 0) -> do
         from <- decodePoint
@@ -77,10 +79,17 @@ codecBlockFetchUnwrapped encodeBlock     decodeBlock
                                           <$> decodeBlock
       (ServerAgency TokStreaming, 5) -> return $ SomeMessage MsgBatchDone
 
-      -- TODO proper exceptions
-      (ClientAgency TokIdle, _)      -> fail "codecBlockFetch.Idle: unexpected key"
-      (ServerAgency TokBusy, _)      -> fail "codecBlockFetch.Busy: unexpected key"
-      (ServerAgency TokStreaming, _) -> fail "codecBlockFetch.Streaming: unexpected key"
+      --
+      -- failures per protocol state
+      --
+
+      (ClientAgency TokIdle, _, _) ->
+        fail (printf "codecBlockFetch (%s) unexpected key (%d, %d)" (show stok) key len)
+      (ServerAgency TokStreaming, _ , _) ->
+        fail (printf "codecBlockFetch (%s) unexpected key (%d, %d)" (show stok) key len)
+      (ServerAgency TokBusy, _, _) -> 
+        fail (printf "codecBlockFetch (%s) unexpected key (%d, %d)" (show stok) key len)
+
 
 
   encodePoint :: Point block -> CBOR.Encoding
