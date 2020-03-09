@@ -97,7 +97,8 @@ prop_simple_pbft_convergence
     testOutput =
         runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = Nothing
-            , nodeInfo    = protocolInfoMockPBFT
+            , nodeInfo    = plainTestNodeInitialization .
+                            protocolInfoMockPBFT
                               params
                               (singletonSlotLengths pbftSlotLength)
             , rekeying    = Nothing

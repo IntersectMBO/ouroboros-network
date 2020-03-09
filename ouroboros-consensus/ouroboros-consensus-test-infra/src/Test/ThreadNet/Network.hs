@@ -18,6 +18,8 @@ module Test.ThreadNet.Network (
   , ForgeEbbEnv (..)
   , RekeyM
   , ThreadNetworkArgs (..)
+  , TestNodeInitialization (..)
+  , plainTestNodeInitialization
   , TracingConstraints
     -- * Tracers
   , MiniProtocolExpectedException (..)
@@ -41,7 +43,6 @@ import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -137,15 +138,32 @@ type RekeyM m blk =
   -> SlotNo
      -- ^ The slot in which the node is rekeying
   -> (SlotNo -> m EpochNo)
-  -> m (ProtocolInfo blk, Maybe (GenTx blk))
-     -- ^ resulting config and any corresponding delegation certificate transaction
+  -> m (TestNodeInitialization blk)
+     -- ^ 'tniProtocolInfo' should include new delegation cert/operational key,
+     -- and 'tniCrucialTxs' should include the new delegation certificate
+     -- transaction
+
+-- | Data used when starting/restarting a node
+data TestNodeInitialization blk = TestNodeInitialization
+  { tniCrucialTxs   :: [GenTx blk]
+    -- ^ these transactions are added immediately and repeatedly (whenever the
+    -- 'ledgerTipSlot' changes)
+  , tniProtocolInfo :: ProtocolInfo blk
+  }
+
+plainTestNodeInitialization
+  :: ProtocolInfo blk -> TestNodeInitialization blk
+plainTestNodeInitialization pInfo = TestNodeInitialization
+    { tniCrucialTxs   = []
+    , tniProtocolInfo = pInfo
+    }
 
 -- | Parameters for the test node net
 --
 data ThreadNetworkArgs m blk = ThreadNetworkArgs
   { tnaForgeEbbEnv  :: Maybe (ForgeEbbEnv blk)
   , tnaJoinPlan     :: NodeJoinPlan
-  , tnaNodeInfo     :: CoreNodeId -> ProtocolInfo blk
+  , tnaNodeInfo     :: CoreNodeId -> TestNodeInitialization blk
   , tnaNumCoreNodes :: NumCoreNodes
   , tnaNumSlots     :: NumSlots
   , tnaRNG          :: ChaChaDRG
@@ -182,9 +200,10 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
 -- context.
 --
 data VertexStatus m blk
-  = VDown (Chain blk)
+  = VDown (Chain blk) (LedgerState blk)
     -- ^ The vertex does not currently have a node instance; its previous
-    -- instance stopped with this chain (empty before first instance)
+    -- instance stopped with this chain and ledger state (empty/initial before
+    -- first instance)
   | VFalling
     -- ^ The vertex has a node instance, but it is about to transition to
     -- 'VDown' as soon as its edges transition to 'EDown'.
@@ -277,7 +296,13 @@ runThreadNetwork ThreadNetworkArgs
     -- allocate the status variable for each vertex
     vertexStatusVars <- fmap Map.fromList $ do
       forM coreNodeIds $ \nid -> do
-        v <- uncheckedNewTVarM (VDown Genesis)
+        -- assume they all start with the empty chain and the same initial
+        -- ledger
+        let nodeInitData = mkProtocolInfo (CoreNodeId 0)
+            TestNodeInitialization{tniProtocolInfo} = nodeInitData
+            ProtocolInfo{pInfoInitLedger} = tniProtocolInfo
+            ExtLedgerState{ledgerState} = pInfoInitLedger
+        v <- uncheckedNewTVarM (VDown Genesis ledgerState)
         pure (nid, v)
 
     -- fork the directed edges, which also allocates their status variables
@@ -353,7 +378,7 @@ runThreadNetwork ThreadNetworkArgs
       atomically $
       forM vertexInfos0 $ \(coreNodeId, vertexStatusVar, readNodeInfo) -> do
         readTVar vertexStatusVar >>= \case
-          VDown ch -> pure (coreNodeId, readNodeInfo, ch)
+          VDown ch ldgr -> pure (coreNodeId, readNodeInfo, ch, ldgr)
           _        -> retry
 
     mkTestOutput vertexInfos
@@ -387,8 +412,13 @@ runThreadNetwork ThreadNetworkArgs
       edgeStatusVars
       nodeInfo =
         void $ forkLinkedThread sharedRegistry $ do
-          loop 0 (mkProtocolInfo coreNodeId) NodeRestart restarts0
+          loop 0 tniProtocolInfo NodeRestart restarts0
       where
+        TestNodeInitialization
+           { tniCrucialTxs
+           , tniProtocolInfo
+           } = mkProtocolInfo coreNodeId
+
         restarts0 :: Map SlotNo NodeRestart
         restarts0 = Map.mapMaybe (Map.lookup coreNodeId) m
           where
@@ -397,16 +427,21 @@ runThreadNetwork ThreadNetworkArgs
         loop :: SlotNo -> ProtocolInfo blk -> NodeRestart -> Map SlotNo NodeRestart -> m ()
         loop s pInfo nr rs = do
           -- a registry solely for the resources of this specific node instance
-          (again, finalChain) <- withRegistry $ \nodeRegistry -> do
+          (again, finalChain, finalLdgr) <- withRegistry $ \nodeRegistry -> do
             let nodeTestBtime = testBlockchainTimeClone sharedTestBtime nodeRegistry
                 nodeBtime     = testBlockchainTime nodeTestBtime
 
             -- change the node's key and prepare a delegation transaction if
             -- the node is restarting because it just rekeyed
-            (pInfo', txs0) <- case (nr, mbRekeyM) of
+            tni' <- case (nr, mbRekeyM) of
               (NodeRekey, Just rekeyM) -> do
-                fmap maybeToList <$> rekeyM coreNodeId pInfo s (epochInfoEpoch epochInfo)
-              _                        -> pure (pInfo, [])
+                rekeyM coreNodeId pInfo s (epochInfoEpoch epochInfo)
+              _                        ->
+                  pure $ plainTestNodeInitialization pInfo
+            let TestNodeInitialization
+                  { tniCrucialTxs   = crucialTxs'
+                  , tniProtocolInfo = pInfo'
+                  } = tni'
 
             -- allocate the node's internal state and fork its internal threads
             -- (specifically not the communication threads running the Mini
@@ -417,7 +452,7 @@ runThreadNetwork ThreadNetworkArgs
               nodeRegistry
               pInfo'
               nodeInfo
-              txs0
+              (crucialTxs' ++ tniCrucialTxs)
             atomically $ writeTVar vertexStatusVar $ VUp kernel app
 
             -- wait until this node instance should stop
@@ -442,11 +477,15 @@ runThreadNetwork ThreadNetworkArgs
 
             -- assuming nothing else is changing it, read the final chain
             let chainDB = getChainDB kernel
+            ExtLedgerState{ledgerState} <- atomically $
+              ChainDB.getCurrentLedger chainDB
             finalChain <- ChainDB.toChain chainDB
 
-            pure (again, finalChain)   -- end of the node's withRegistry
+            pure (again, finalChain, ledgerState)
+            -- end of the node's withRegistry
 
-          atomically $ writeTVar vertexStatusVar $ VDown finalChain
+          atomically $ writeTVar vertexStatusVar $
+            VDown finalChain finalLdgr
 
           case again of
             Nothing                     -> pure ()
@@ -458,7 +497,7 @@ runThreadNetwork ThreadNetworkArgs
     -- If we add the transaction and then the mempools discards it for some
     -- reason, this thread will add it again.
     --
-    forkTxs0
+    forkCrucialTxs
       :: HasCallStack
       => ResourceRegistry m
       -> STM m (WithOrigin SlotNo)
@@ -467,7 +506,7 @@ runThreadNetwork ThreadNetworkArgs
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
       -> m ()
-    forkTxs0 registry get mempool txs0 =
+    forkCrucialTxs registry get mempool txs0 =
       void $ forkLinkedThread registry $ do
         let loop mbSlot = do
               _ <- addTxs mempool txs0
@@ -708,7 +747,7 @@ runThreadNetwork ThreadNetworkArgs
       --
       -- TODO Is there a risk that this will block because the 'forkTxProducer'
       -- fills up the mempool too quickly?
-      forkTxs0
+      forkCrucialTxs
         registry
         ((ledgerTipSlot . ledgerState) <$> ChainDB.getCurrentLedger chainDB)
         mempool
@@ -1036,11 +1075,12 @@ newNodeInfo = do
 -------------------------------------------------------------------------------}
 
 data NodeOutput blk = NodeOutput
-  { nodeOutputAdds       :: Map SlotNo (Set (RealPoint blk, BlockNo))
-  , nodeOutputFinalChain :: Chain blk
-  , nodeOutputNodeDBs    :: NodeDBs MockFS
-  , nodeOutputForges     :: Map SlotNo blk
-  , nodeOutputInvalids   :: Map (RealPoint blk) [ExtValidationError blk]
+  { nodeOutputAdds        :: Map SlotNo (Set (RealPoint blk, BlockNo))
+  , nodeOutputFinalChain  :: Chain blk
+  , nodeOutputFinalLedger :: LedgerState blk
+  , nodeOutputNodeDBs     :: NodeDBs MockFS
+  , nodeOutputForges      :: Map SlotNo blk
+  , nodeOutputInvalids    :: Map (RealPoint blk) [ExtValidationError blk]
   }
 
 data TestOutput blk = TestOutput
@@ -1054,11 +1094,12 @@ mkTestOutput ::
     => [( CoreNodeId
         , m (NodeInfo blk MockFS [])
         , Chain blk
+        , LedgerState blk
         )]
     -> m (TestOutput blk)
 mkTestOutput vertexInfos = do
     (nodeOutputs', tipBlockNos') <- fmap unzip $ forM vertexInfos $
-      \(cid, readNodeInfo, ch) -> do
+      \(cid, readNodeInfo, ch, ldgr) -> do
         let nid = fromCoreNodeId cid
         nodeInfo <- readNodeInfo
         let NodeInfo
@@ -1072,15 +1113,16 @@ mkTestOutput vertexInfos = do
               , nodeEventsTipBlockNos
               } = nodeInfoEvents
         let nodeOutput = NodeOutput
-              { nodeOutputAdds       =
+              { nodeOutputAdds        =
                   Map.fromListWith Set.union $
                   [ (s, Set.singleton (p, bno)) | (s, p, bno) <- nodeEventsAdds ]
-              , nodeOutputFinalChain = ch
-              , nodeOutputNodeDBs    = nodeInfoDBs
-              , nodeOutputForges     =
+              , nodeOutputFinalChain  = ch
+              , nodeOutputFinalLedger = ldgr
+              , nodeOutputNodeDBs     = nodeInfoDBs
+              , nodeOutputForges      =
                   Map.fromList $
                   [ (s, b) | TraceForgedBlock s _ b _ <- nodeEventsForges ]
-              , nodeOutputInvalids   = (:[]) <$> Map.fromList nodeEventsInvalids
+              , nodeOutputInvalids    = (:[]) <$> Map.fromList nodeEventsInvalids
               }
 
         pure

@@ -1,0 +1,401 @@
+{-# LANGUAGE BangPatterns   #-}
+{-# LANGUAGE LambdaCase     #-}
+{-# LANGUAGE NamedFieldPuns #-}
+
+module Test.ThreadNet.RealPBFT.ProtocolVersionUpdate (
+  mkProtocolRealPBftAndHardForkTxs,
+  ProtocolVersionUpdateLabel (..),
+  mkProtocolVersionUpdateLabel,
+  ) where
+
+import           Control.Exception (assert)
+import           Data.ByteString (ByteString)
+import           Data.Coerce (coerce)
+import qualified Data.Map as Map
+import           Data.Set (Set)
+import qualified Data.Set as Set
+import           Data.Word (Word64)
+import           GHC.Stack (HasCallStack)
+
+import qualified Cardano.Binary
+import qualified Cardano.Chain.Block as Block
+import qualified Cardano.Chain.Byron.API as ByronAPI
+import qualified Cardano.Chain.Genesis as Genesis
+import qualified Cardano.Chain.MempoolPayload as MempoolPayload
+import           Cardano.Chain.Slotting (EpochSlots (..), SlotNumber (..))
+import qualified Cardano.Chain.Update as Update
+import           Cardano.Chain.Update.Proposal (AProposal)
+import qualified Cardano.Chain.Update.Proposal as Proposal
+import qualified Cardano.Chain.Update.Validation.Interface as Update
+import           Cardano.Chain.Update.Vote (AVote)
+import qualified Cardano.Chain.Update.Vote as Vote
+import qualified Cardano.Crypto as Crypto
+import qualified Cardano.Crypto.DSIGN as Crypto
+
+import           Ouroboros.Network.Block (SlotNo (..))
+
+import           Ouroboros.Consensus.Block (BlockProtocol)
+import           Ouroboros.Consensus.BlockchainTime.Mock (NumSlots (..))
+import           Ouroboros.Consensus.Config (TopLevelConfig (..))
+import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
+                     ProtocolInfo (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
+import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import           Ouroboros.Consensus.Protocol.PBFT
+
+import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto
+import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
+import qualified Ouroboros.Consensus.Byron.Ledger as Byron
+
+import qualified Test.ThreadNet.Ref.PBFT as Ref
+import           Test.ThreadNet.Network (TestNodeInitialization (..))
+import           Test.ThreadNet.Util.NodeJoinPlan
+
+import           Test.ThreadNet.RealPBFT.ProtocolInfo
+
+data ProtocolVersionUpdateLabel = ProtocolVersionUpdateLabel
+  { pvuRequired :: !(Maybe Bool)
+    -- ^ @Just b@ indicates whether the final chains must have adopted or must
+    -- have not adopted the proposed protocol version. @Nothing@ means there is
+    -- no requirement.
+  , pvuObserved :: !Bool
+    -- ^ whether the proposed protocol version is adopted or not adopted by the
+    -- end of the test
+  }
+  deriving (Show)
+
+mkProtocolVersionUpdateLabel
+  :: PBftParams
+  -> NumSlots
+  -> Genesis.Config
+  -> NodeJoinPlan
+  -> Ref.Result
+  -> Byron.LedgerState ByronBlock
+     -- ^ from 'nodeOutputFinalLedger'
+  -> ProtocolVersionUpdateLabel
+mkProtocolVersionUpdateLabel params numSlots genesisConfig nodeJoinPlan result ldgr = ProtocolVersionUpdateLabel
+    { pvuObserved =
+        (== theProposedProtocolVersion) $
+        Update.adoptedProtocolVersion $
+        Block.cvsUpdateState $
+        -- tick the chain over into the slot after the final simulated slot
+        ByronAPI.applyChainTick genesisConfig sentinel $
+        Byron.byronLedgerState ldgr
+    , pvuRequired = case result of
+        -- 'Ref.Forked' means there's only 1-block chains, and that's not enough
+        -- for a proposal to succeed
+        Ref.Forked{}           -> Just False
+        -- we wouldn't necessarily be able to anticipate when the last
+        -- endorsement happens, so give up
+        Ref.Nondeterministic{} -> Nothing
+        Ref.Outcomes outcomes  -> Just $ go Proposing (SlotNo 0) outcomes
+    }
+  where
+    PBftParams{pbftNumNodes, pbftSecurityParam} = params
+
+    -- the slot immediately after the end of the simulation
+    sentinel :: SlotNumber
+    sentinel = SlotNumber t
+      where
+        NumSlots t = numSlots
+
+    -- a block forged in slot @s@ becomes immutable/stable in slot @s + twoK@
+    -- according to the Byron Chain Density invariant
+    twoK :: SlotNo
+    twoK = SlotNo $ 2 * maxRollbacks pbftSecurityParam
+
+    -- the number of slots in an epoch
+    epochSlots :: SlotNo
+    epochSlots = coerce $ Genesis.configEpochSlots genesisConfig
+
+    -- the protocol parameters
+    --
+    -- ASSUMPTION: These do not change during the test.
+    pp0 :: Update.ProtocolParameters
+    pp0 = Genesis.configProtocolParameters genesisConfig
+
+    -- how many votes/endorsements the proposal needs to gain
+    quorum :: Word64
+    quorum =
+      (\x -> assert (x > 0) x) $
+      fromIntegral $ Update.upAdptThd (fromIntegral n) pp0
+      where
+        NumCoreNodes n = pbftNumNodes
+
+    -- how many slots the proposal has to gain sufficient votes before it
+    -- expires
+    ttl :: SlotNo
+    ttl = coerce $ Update.ppUpdateProposalTTL pp0
+
+    -- the slot in which the node that casts the confirming vote joins
+    --
+    -- By design of the test, all nodes vote for the proposal as soon as they
+    -- join. When a node joins, it quickly adds its vote to its mempool, but it
+    -- won't do so fast enough for the vote to be included in that same slot's
+    -- block. But TxSubmission will spread it to the other blocks.
+    --
+    -- So the confirming vote will be submitted in first 'Nominal' slot
+    -- strictly after this slot.
+    confirmerJoinSlot :: SlotNo
+    confirmerJoinSlot =
+        coreNodeIdJoinSlot nodeJoinPlan $ CoreNodeId (pred quorum)
+
+    -- the first slot of the epoch after the epoch containing the given slot
+    ebbSlotAfter :: SlotNo -> SlotNo
+    ebbSlotAfter (SlotNo s) =
+        SlotNo (denom * div s denom) + epochSlots
+      where
+        SlotNo denom = epochSlots
+
+    -- compute the @Just@ case of 'pvuRequired' from the simulated outcomes
+    go
+      :: PvuLabelState
+         -- ^ the state before the next outcome
+      -> SlotNo
+         -- ^ the slot described by the next outcome
+      -> [Ref.Outcome]
+      -> Bool
+    go !st !s = \case
+      []   -> case st of
+          Proposing{}                   -> False
+          Voting{}                      -> False
+          Endorsing{}                   -> False
+          Adopting finalEndorsementSlot ->
+              assert (coerce sentinel == s) $
+              ebbSlotAfter (finalEndorsementSlot + twoK) <= s
+      o:os -> case o of
+          Ref.Absent  -> continueWith st
+          Ref.Unable  -> continueWith st
+          Ref.Wasted  -> continueWith st
+          Ref.Nominal -> case st of
+              -- the proposal is in this slot
+              Proposing                    ->
+                  let leaderJoinSlot =
+                          coreNodeIdJoinSlot nodeJoinPlan
+                            (Ref.mkLeaderOf params s)
+
+                      -- if this leader just joined, it will forge before the
+                      -- proposal is added to the mempool
+                      lostRace = s == leaderJoinSlot
+                  in
+                  if lostRace then continueWith st else
+                  -- votes can come immediately and at least one should also
+                  -- be in this block
+                  go (Voting s) s (o:os)
+              Voting proposalSlot          ->
+                  if proposalSlot + ttl < s
+                  then False   -- proposal expired
+                  else
+                    continueWith $
+                    if s <= confirmerJoinSlot
+                    then st
+                    else Endorsing s Set.empty   -- enough votes
+              Endorsing finalVoteSlot ends ->
+                  continueWith $
+                  if s < finalVoteSlot + twoK
+                  then st  -- ignore endorsements until final vote is stable
+                  else
+                    let ends' = Set.insert (Ref.mkLeaderOf params s) ends
+                    in
+                    if fromIntegral (Set.size ends) < quorum
+                    then Endorsing finalVoteSlot ends'
+                    else Adopting s   -- enough endorsements
+              Adopting{}                   -> continueWith st
+        where
+          continueWith st' = go st' (succ s) os
+
+data PvuLabelState =
+    Proposing
+    -- ^ submitting the proposal
+  | Voting !SlotNo
+    -- ^ accumulating sufficient votes
+    --
+    -- The slot is when the proposal was submitted; it might expire during
+    -- voting.
+  | Endorsing !SlotNo !(Set CoreNodeId)
+    -- ^ accumulating sufficient endorsements
+    --
+    -- The slot is when the first sufficient vote was submitted. The set is the
+    -- endorsements seen so far.
+  | Adopting !SlotNo
+    -- ^ waiting for epoch transition
+    --
+    -- The slot is when the first sufficient endorsement was submitted.
+  deriving (Show)
+
+{-------------------------------------------------------------------------------
+  ProtocolVersion update proposals
+-------------------------------------------------------------------------------}
+
+-- | The protocol info for a node as well as some initial transactions
+--
+-- The transactions implement a smoke test for the hard-fork from Byron to
+-- Shelley. See PR #1741 for details on how that hard-fork will work. The key
+-- fact is that last thing the nodes will ever do while running the Byron
+-- protocol is adopt a specific (but as of yet to-be-determined) protocol
+-- version. So this smoke test ensures that the nodes can in fact adopt a new
+-- protocol version.
+--
+-- Adopting a new protocol version requires four kinds of event in Byron.
+-- Again, see PR #1741 for more details.
+--
+--  * Proposal transaction. A protocol parameter update proposal transaction
+--    makes it onto the chain (it doesn't have to actually change any
+--    parameters, just increase the protocol version). Proposals are
+--    'MempoolPayload.MempoolUpdateProposal' transactions; one is included in
+--    the return value of this function. In the smoke test, we immediately and
+--    repeatedly throughout the test add the proposal to @CoreNodeId 0@'s
+--    mempool; this seems realistic.
+--
+--  * Vote transactions. A sufficient number of nodes (@floor (0.6 *
+--    'pbftNumNodes')@ as of this writing) must vote for the proposal. Votes
+--    are 'MempoolPayload.MempoolUpdateVote' transactions; one per node is
+--    included in the return value of this function. In the smoke test, we
+--    immediately and repeatedly throughout the test add each node's vote to
+--    its own mempool; this seems realistic.
+--
+--  * Endorsement header field. After enough votes are 2k slots old, a
+--    sufficient number of nodes (@floor (0.6 * 'pbftNumNodes')@ as of this
+--    writing) must then endorse the proposal. Endorsements are not
+--    transactions. Instead, every Byron header includes a field that specifies
+--    a protocol version to endorse. At a particular stage of a corresponding
+--    proposal's lifetime, that field constitutes an endorsement. At all other
+--    times, it is essentially ignored. In the smoke test, we take advantage of
+--    that to avoid having to restart our nodes: the nodes' initial
+--    configuration causes them to immediately and always attempt to endorse
+--    the proposed protocol version; this seems only slightly unrealistic.
+--
+--  * Epoch transition. After enough endorsements are 2k slots old, the
+--    protocol version will be adopted at the next epoch transition, unless
+--    something else prevents it. In the smoke test, we check the validation
+--    state of the final chains for the new protocol version when we detect no
+--    mitigating circumstances, such as the test not even being scheduled to
+--    reach the second epoch.
+--
+mkProtocolRealPBftAndHardForkTxs
+  :: HasCallStack
+  => PBftParams
+  -> CoreNodeId
+  -> Genesis.Config
+  -> Genesis.GeneratedSecrets
+  -> TestNodeInitialization ByronBlock
+mkProtocolRealPBftAndHardForkTxs params cid genesisConfig genesisSecrets =
+    TestNodeInitialization
+      { tniCrucialTxs   = proposals ++ votes
+      , tniProtocolInfo = pInfo
+      }
+  where
+    ProtocolInfo{pInfoConfig}                    = pInfo
+    TopLevelConfig{configBlock, configConsensus} = pInfoConfig
+
+    pInfo :: ProtocolInfo ByronBlock
+    pInfo = mkProtocolRealPBFT params cid genesisConfig genesisSecrets
+
+    proposals :: [Byron.GenTx ByronBlock]
+    proposals =
+        if cid /= CoreNodeId 0 then [] else
+        (:[]) $
+        Byron.fromMempoolPayload $
+        MempoolPayload.MempoolUpdateProposal proposal
+
+    votes :: [Byron.GenTx ByronBlock]
+    votes =
+        (:[]) $
+        Byron.fromMempoolPayload $
+        MempoolPayload.MempoolUpdateVote vote
+
+    vote :: AVote ByteString
+    vote =
+        loopbackAnnotations $
+        -- signed by delegate SK
+        Vote.signVote
+          (Byron.byronProtocolMagicId configBlock)
+          (Update.recoverUpId proposal)
+          True   -- the serialization hardwires this value anyway
+          (Crypto.noPassSafeSigner opKey)
+      where
+        Crypto.SignKeyByronDSIGN opKey = getOpKey configConsensus
+
+    proposal :: AProposal ByteString
+    proposal =
+        loopbackAnnotations $
+        mkHardForkProposal params genesisConfig genesisSecrets
+
+-- | A protocol parameter update proposal that doesn't actually change any
+-- parameter value but does propose 'theProposedProtocolVersion'
+--
+-- Without loss of generality, the proposal is signed by @'CoreNodeId' 0@.
+--
+mkHardForkProposal
+  :: HasCallStack
+  => PBftParams
+  -> Genesis.Config
+  -> Genesis.GeneratedSecrets
+  -> AProposal ()
+mkHardForkProposal params genesisConfig genesisSecrets =
+    -- signed by delegate SK
+    Proposal.signProposal
+      (Byron.byronProtocolMagicId configBlock)
+      propBody
+      (Crypto.noPassSafeSigner opKey)
+  where
+    pInfo :: ProtocolInfo ByronBlock
+    pInfo = mkProtocolRealPBFT params (CoreNodeId 0) genesisConfig genesisSecrets
+
+    ProtocolInfo{pInfoConfig}                    = pInfo
+    TopLevelConfig{configBlock, configConsensus} = pInfoConfig
+
+    Crypto.SignKeyByronDSIGN opKey = getOpKey configConsensus
+
+    propBody :: Proposal.ProposalBody
+    propBody = Proposal.ProposalBody
+      { Proposal.protocolVersion          = theProposedProtocolVersion
+      , Proposal.protocolParametersUpdate = Update.ProtocolParametersUpdate
+        { Update.ppuScriptVersion     = Nothing
+        , Update.ppuSlotDuration      = Nothing
+        , Update.ppuMaxBlockSize      = Nothing
+        , Update.ppuMaxHeaderSize     = Nothing
+        , Update.ppuMaxTxSize         = Nothing
+        , Update.ppuMaxProposalSize   = Nothing
+        , Update.ppuMpcThd            = Nothing
+        , Update.ppuHeavyDelThd       = Nothing
+        , Update.ppuUpdateVoteThd     = Nothing
+        , Update.ppuUpdateProposalThd = Nothing
+        , Update.ppuUpdateProposalTTL = Nothing
+        , Update.ppuSoftforkRule      = Nothing
+        , Update.ppuTxFeePolicy       = Nothing
+        , Update.ppuUnlockStakeEpoch  = Nothing
+        }
+      , Proposal.softwareVersion          = theProposedSoftwareVersion
+      , Proposal.metadata                 = Map.empty
+      }
+
+-- | Get the delegate's operational signing key
+--
+getOpKey
+  :: ConsensusConfig (BlockProtocol ByronBlock)
+  -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
+getOpKey cfgConsensus = case pbftIsLeader of
+    PBftIsALeader PBftIsLeader{pbftSignKey} -> pbftSignKey
+    PBftIsNotALeader                        -> error "impossible!"
+  where
+    PBftConfig{pbftIsLeader} = cfgConsensus
+
+-- | Add the bytestring annotations that would be present if we were to
+-- serialize the argument, send it to ourselves, receive it, and deserialize it
+--
+-- The mempool payloads require the serialized bytes as annotations. It's
+-- tricky to get right, and this function lets use reuse the existing CBOR
+-- instances.
+--
+loopbackAnnotations
+  :: ( Cardano.Binary.FromCBOR (f Cardano.Binary.ByteSpan)
+     , Cardano.Binary.ToCBOR (f ())
+     , Functor f
+     )
+  => f ()
+  -> f ByteString
+loopbackAnnotations =
+    ByronAPI.reAnnotateUsing
+      Cardano.Binary.toCBOR
+      Cardano.Binary.fromCBOR

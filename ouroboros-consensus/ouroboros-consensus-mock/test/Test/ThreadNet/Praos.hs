@@ -107,7 +107,8 @@ prop_simple_praos_convergence
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = Nothing
-            , nodeInfo    = \nid -> protocolInfoPraos
+            , nodeInfo    = \nid -> plainTestNodeInitialization $
+                                    protocolInfoPraos
                                       numCoreNodes
                                       nid
                                       params

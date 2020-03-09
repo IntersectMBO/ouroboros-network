@@ -21,6 +21,7 @@ module Test.ThreadNet.General (
     -- * Re-exports
   , ForgeEbbEnv (..)
   , TestOutput (..)
+  , plainTestNodeInitialization
   ) where
 
 import           Control.Monad (guard)
@@ -44,7 +45,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
-import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
@@ -165,7 +165,7 @@ instance Arbitrary TestConfig where
 
 data TestConfigBlock blk = TestConfigBlock
   { forgeEbbEnv :: Maybe (ForgeEbbEnv blk)
-  , nodeInfo    :: CoreNodeId -> ProtocolInfo blk
+  , nodeInfo    :: CoreNodeId -> TestNodeInitialization blk
   , rekeying    :: Maybe (Rekeying blk)
   }
 
@@ -178,7 +178,7 @@ data Rekeying blk = forall opKey. Rekeying
          ProtocolInfo blk
       -> EpochNo
       -> opKey
-      -> Maybe (ProtocolInfo blk, GenTx blk)
+      -> Maybe (TestNodeInitialization blk)
      -- ^ new config and any corresponding delegation certificate transactions
   , rekeyFreshSKs :: Stream opKey
      -- ^ a stream that only repeats itself after an *effectively* *infinite*
@@ -238,15 +238,15 @@ runTestNetwork
         rekeyVar <- uncheckedNewTVarM rekeyFreshSKs
         runThreadNetwork tna
           { tnaRekeyM = Just $ \cid pInfo s mkEno -> case rekeyOracle cid s of
-              Nothing -> pure (pInfo, Nothing)
+              Nothing -> pure $ plainTestNodeInitialization pInfo
               Just s' -> do
                 x <- atomically $ do
                   x :< xs <- readTVar rekeyVar
                   x <$ writeTVar rekeyVar xs
                 eno <- mkEno s'
                 pure $ case rekeyUpd pInfo eno x of
-                  Nothing           -> (pInfo, Nothing)
-                  Just (pInfo', tx) -> (pInfo', Just tx)
+                  Nothing  -> plainTestNodeInitialization pInfo
+                  Just tni -> tni
           }
 
 {-------------------------------------------------------------------------------
