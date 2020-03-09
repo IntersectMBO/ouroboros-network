@@ -75,7 +75,7 @@ extra-deps:
       - test
 
   - git: https://github.com/advancedtelematic/quickcheck-state-machine
-    commit: 19c5080dd940f7c23b26e7f469d6b06a40da70e3
+    commit: 2bf37003ca1c0c57e4354610d7c47da0a0e77b5c
 
   - bimap-0.4.0
   - binary-0.8.7.0
