@@ -9,7 +9,6 @@
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Operations involving chain selection: the initial chain selection and
 -- adding a block.
 module Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel

@@ -8,7 +8,6 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 
 -- | Model for the 'ImmutableDB' based on a chain.
 --

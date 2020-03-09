@@ -1,8 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
-
 module Ouroboros.Consensus.Storage.ChainDB.Impl (
     -- * Initialization
     ChainDbArgs(..)

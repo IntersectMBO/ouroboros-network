@@ -7,7 +7,6 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Immutable on-disk database of binary blobs
 --
 -- = Internal format

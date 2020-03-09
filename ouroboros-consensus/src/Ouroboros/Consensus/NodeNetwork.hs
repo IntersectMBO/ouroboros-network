@@ -10,8 +10,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints -Werror=missing-fields
-                -Wno-unticked-promoted-constructors #-}
+{-# OPTIONS_GHC -Werror=missing-fields -Wno-unticked-promoted-constructors #-}
 
 module Ouroboros.Consensus.NodeNetwork (
     ProtocolHandlers (..)
