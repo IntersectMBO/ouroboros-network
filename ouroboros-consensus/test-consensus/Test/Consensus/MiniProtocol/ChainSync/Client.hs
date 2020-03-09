@@ -420,7 +420,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     -- | Take the last slot at which a client or server update is planned, or
     -- the slot at which syncing starts, and add one to it
     numSlots :: NumSlots
-    numSlots = NumSlots $ fromIntegral $ unSlotNo $ succ $ maximum
+    numSlots = NumSlots $ unSlotNo $ succ $ maximum
       [ lastSlot clientUpdates
       , lastSlot serverUpdates
       , startSyncingAt

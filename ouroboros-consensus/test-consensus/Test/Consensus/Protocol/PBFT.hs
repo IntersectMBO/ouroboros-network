@@ -520,8 +520,7 @@ prop_appendOldStatePreservesInvariant TestPBftState{..} =
 -- add a sufficient number signed blocks (and any number of EBBs).
 prop_appendOldStateRestoresPreWindow :: TestPBftState -> Property
 prop_appendOldStateRestoresPreWindow TestPBftState{..} =
-    let missing = fromIntegral
-                $ maxRollbacks      testPBftStateK
+    let missing = maxRollbacks      testPBftStateK
                 + S.getWindowSize   testPBftStateN
                 - S.countSignatures testOldPBftState
         inps = pre' <> post'

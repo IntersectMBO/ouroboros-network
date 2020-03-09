@@ -2,7 +2,6 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Queries
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Query
   ( -- * Queries

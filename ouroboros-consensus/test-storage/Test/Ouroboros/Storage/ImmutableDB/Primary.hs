@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans -Wno-incomplete-uni-patterns #-}
 module Test.Ouroboros.Storage.ImmutableDB.Primary (tests) where
 
 import           Data.Binary (get, put)

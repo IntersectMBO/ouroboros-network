@@ -7,7 +7,6 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Iterators
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
   ( stream

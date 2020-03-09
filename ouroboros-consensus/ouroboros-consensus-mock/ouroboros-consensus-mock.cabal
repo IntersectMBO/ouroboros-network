@@ -63,9 +63,14 @@ library
 
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
                        -Wredundant-constraints
+                       -Wmissing-export-lists
                        -Wno-unticked-promoted-constructors
-
 
 test-suite test
   type:                exitcode-stdio-1.0
@@ -100,7 +105,13 @@ test-suite test
 
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
                        -Wredundant-constraints
+                       -Wmissing-export-lists
                        -fno-ignore-asserts
                        -threaded
                        -rtsopts

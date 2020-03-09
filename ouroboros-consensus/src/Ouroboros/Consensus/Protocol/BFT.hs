@@ -140,7 +140,7 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
                    -- Relays are never leaders
                    Nothing
                  CoreId (CoreNodeId i) ->
-                   if n `mod` numCoreNodes == fromIntegral i
+                   if n `mod` numCoreNodes == i
                      then Just ()
                      else Nothing
     where
@@ -161,7 +161,7 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
         Left err -> throwError $ BftInvalidSignature err
     where
       BftParams{..}  = bftParams
-      expectedLeader = CoreId . CoreNodeId $ fromIntegral (n `mod` numCoreNodes)
+      expectedLeader = CoreId $ CoreNodeId (n `mod` numCoreNodes)
       NumCoreNodes numCoreNodes = bftNumNodes
 
   rewindConsensusState _ _ _ = Just ()

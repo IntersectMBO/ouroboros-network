@@ -4,7 +4,6 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Background tasks:
 --
 -- * Copying blocks from the VolatileDB to the ImmutableDB

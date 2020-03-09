@@ -10,7 +10,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints -Werror=missing-fields #-}
+{-# OPTIONS_GHC -Werror=missing-fields #-}
 
 module Ouroboros.Consensus.NodeKernel (
     -- * Node kernel

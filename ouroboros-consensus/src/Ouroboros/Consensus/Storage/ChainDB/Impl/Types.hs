@@ -13,7 +13,6 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Types used throughout the implementation: handle, state, environment,
 -- types, trace types, etc.
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (

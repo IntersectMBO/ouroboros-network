@@ -21,7 +21,7 @@
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE UndecidableInstances      #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Ouroboros.Storage.LedgerDB.OnDisk (
     tests
@@ -795,7 +795,7 @@ generator lgrDbParams (Model mock hs) = Just $ QC.oneof $ concat [
             Switch numRollback <$> genBlocks numNewBlocks (mockCurrent afterRollback)
         , fmap At $ return Snap
         , fmap At $ return Restore
-        , fmap At $ (Drop . fromIntegral) <$> QC.choose (0, mockChainLength mock)
+        , fmap At $ Drop <$> QC.choose (0, mockChainLength mock)
         ]
 
     possibleCorruptions :: [(Corruption, Reference DiskSnapshot Symbolic)]

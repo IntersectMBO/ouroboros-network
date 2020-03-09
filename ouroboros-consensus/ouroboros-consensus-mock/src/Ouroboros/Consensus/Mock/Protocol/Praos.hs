@@ -413,7 +413,7 @@ infosEta l xs e =
         eta' = infosEta l xs e'
         from = epochFirst l e'
         n    = div (2 * praosSlotsPerEpoch) 3
-        to   = SlotNo $ unSlotNo from + fromIntegral n
+        to   = SlotNo $ unSlotNo from + n
         rhos = reverse [biRho b | b <- infosSlice from to xs]
     in  fromHash $ hash @(PraosHash c) (eta', e, rhos)
   where

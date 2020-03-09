@@ -2,7 +2,6 @@
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Args
   ( ChainDbArgs (..)
   , ChainDbSpecificArgs (..)

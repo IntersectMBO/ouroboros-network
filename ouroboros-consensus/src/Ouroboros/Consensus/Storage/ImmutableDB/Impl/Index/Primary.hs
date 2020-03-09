@@ -6,7 +6,6 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Primary Index
 --
 -- Intended for qualified import

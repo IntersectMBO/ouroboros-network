@@ -862,13 +862,14 @@ _demo = db0 : go 1 8 db0
         let blockInfos = [ (Apply, Val (DR ('b', n-1)) (DB ('b', n-1)))
                          , (Apply, Val (DR ('b', n-0)) (DB ('b', n-0)))
                          ]
-            Identity (RollbackSuccessful (ValidBlocks db')) =
-                ledgerDbSwitch demoConf 1 blockInfos db
-        in [db']
+        in case runIdentity $ ledgerDbSwitch demoConf 1 blockInfos db of
+          RollbackSuccessful (ValidBlocks db') -> [db']
+          _                                    -> error "unexpected outcome"
       else
         let blockInfo = (Apply, Val (DR ('a', n)) (DB ('a', n)))
-            Identity (Right db') = ledgerDbPush demoConf blockInfo db
-        in db' : go (n + 1) m db'
+        in case runIdentity $ ledgerDbPush demoConf blockInfo db of
+          Right db' -> db' : go (n + 1) m db'
+          _         -> error "unexpected outcome"
 
 {-------------------------------------------------------------------------------
   Auxiliary
