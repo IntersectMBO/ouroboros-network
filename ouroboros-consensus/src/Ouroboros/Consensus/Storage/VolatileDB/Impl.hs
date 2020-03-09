@@ -191,15 +191,15 @@ openDB hasFS parser tracer maxBlocksPerFile = do
           , tracer           = tracer
           }
     return VolatileDB {
-        closeDB           = closeDBImpl           env
-      , isOpenDB          = isOpenDBImpl          env
-      , reOpenDB          = reOpenDBImpl          env
-      , getBlockComponent = getBlockComponentImpl env
-      , putBlock          = putBlockImpl          env
-      , garbageCollect    = garbageCollectImpl    env
-      , getSuccessors     = getSuccessorsImpl     env
-      , getBlockInfo      = getBlockInfoImpl      env
-      , getMaxSlotNo      = getMaxSlotNoImpl      env
+        closeDB             = closeDBImpl             env
+      , isOpenDB            = isOpenDBImpl            env
+      , reOpenDB            = reOpenDBImpl            env
+      , getBlockComponent   = getBlockComponentImpl   env
+      , putBlock            = putBlockImpl            env
+      , garbageCollect      = garbageCollectImpl      env
+      , filterByPredecessor = filterByPredecessorImpl env
+      , getBlockInfo        = getBlockInfoImpl        env
+      , getMaxSlotNo        = getMaxSlotNoImpl        env
       }
 
 closeDBImpl :: IOLike m
@@ -411,10 +411,10 @@ tryCollectFile hasFS slot st@InternalState{..} (fileId, fileInfo)
       bids
     succMap'       = foldl' deleteMapSet currentSuccMap deletedPairs
 
-getSuccessorsImpl :: forall m blockId. (IOLike m, Ord blockId)
-                  => VolatileDBEnv m blockId
-                  -> STM m (WithOrigin blockId -> Set blockId)
-getSuccessorsImpl = getterSTM $ \st blockId ->
+filterByPredecessorImpl :: forall m blockId. (IOLike m, Ord blockId)
+                        => VolatileDBEnv m blockId
+                        -> STM m (WithOrigin blockId -> Set blockId)
+filterByPredecessorImpl = getterSTM $ \st blockId ->
     fromMaybe Set.empty (Map.lookup blockId (currentSuccMap st))
 
 getBlockInfoImpl :: forall m blockId. (IOLike m, Ord blockId)

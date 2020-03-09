@@ -38,7 +38,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (
   , getBlockInfo
   , getIsMember
   , getPredecessor
-  , getSuccessors
+  , filterByPredecessor
   , getMaxSlotNo
   , putBlock
   , closeDB
@@ -222,9 +222,10 @@ getPredecessor :: Functor (STM m)
                -> STM m (HeaderHash blk -> Maybe (WithOrigin (HeaderHash blk)))
 getPredecessor = fmap (fmap VolDB.bpreBid .) . getBlockInfo
 
-getSuccessors :: VolDB m blk
-              -> STM m (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
-getSuccessors db = withSTM db VolDB.getSuccessors
+filterByPredecessor :: VolDB m blk
+                    -> STM m (WithOrigin (HeaderHash blk)
+                    -> Set (HeaderHash blk))
+filterByPredecessor db = withSTM db VolDB.filterByPredecessor
 
 getMaxSlotNo :: VolDB m blk
              -> STM m MaxSlotNo
@@ -263,8 +264,9 @@ garbageCollect db slotNo = withDB db $ \vol ->
 -- the chain (fragment) ending with @B@ is also a potential candidate.
 candidates
   :: forall blk.
-     (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk)) -- ^ @getSuccessors@
-  -> Point blk                                             -- ^ @B@
+     (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
+     -- ^ @filterByPredecessor@
+  -> Point blk -- ^ @B@
   -> [NonEmpty (HeaderHash blk)]
      -- ^ Each element in the list is a list of hashes from which we can
      -- construct a fragment anchored at the point @B@.

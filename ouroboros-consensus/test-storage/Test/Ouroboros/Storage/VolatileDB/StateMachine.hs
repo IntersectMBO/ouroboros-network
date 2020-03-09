@@ -119,7 +119,7 @@ data Cmd
     | GetBlockComponent BlockId
     | PutBlock TestBlock
     | GarbageCollect SlotNo
-    | GetSuccessors [Predecessor]
+    | FilterByPredecessor [Predecessor]
     | GetBlockInfo [BlockId]
     | GetMaxSlotNo
     | Corruption Corruptions
@@ -230,20 +230,20 @@ runPure :: Cmd
         -> DBModel BlockId
         -> (Resp, DBModel BlockId)
 runPure = \case
-    GetBlockComponent bid -> ok MbAllComponents            $ queryE   (getBlockComponentModel allComponents bid)
-    GetSuccessors bids    -> ok (Successors  . (<$> bids)) $ queryE    getSuccessorsModel
-    GetBlockInfo bids     -> ok (BlockInfos  . (<$> bids)) $ queryE    getBlockInfoModel
-    GarbageCollect slot   -> ok Unit                       $ updateE_ (garbageCollectModel slot)
-    IsOpen                -> ok Bool                       $ query     isOpenModel
-    Close                 -> ok Unit                       $ update_   closeModel
-    ReOpen                -> ok Unit                       $ update_   reOpenModel
-    GetMaxSlotNo          -> ok MaxSlot                    $ queryE    getMaxSlotNoModel
-    PutBlock b            -> ok Unit                       $ updateE_ (putBlockModel blockInfo blob)
+    GetBlockComponent bid    -> ok MbAllComponents            $ queryE   (getBlockComponentModel allComponents bid)
+    FilterByPredecessor bids -> ok (Successors  . (<$> bids)) $ queryE    filterByPredecessorModel
+    GetBlockInfo bids        -> ok (BlockInfos  . (<$> bids)) $ queryE    getBlockInfoModel
+    GarbageCollect slot      -> ok Unit                       $ updateE_ (garbageCollectModel slot)
+    IsOpen                   -> ok Bool                       $ query     isOpenModel
+    Close                    -> ok Unit                       $ update_   closeModel
+    ReOpen                   -> ok Unit                       $ update_   reOpenModel
+    GetMaxSlotNo             -> ok MaxSlot                    $ queryE    getMaxSlotNoModel
+    PutBlock b               -> ok Unit                       $ updateE_ (putBlockModel blockInfo blob)
       where
         blockInfo = testBlockToBlockInfo b
         blob      = testBlockToBuilder b
-    Corruption cors       -> ok Unit                       $ update_  (withClosedDB (runCorruptionsModel cors))
-    DuplicateBlock {}     -> ok Unit                       $ update_  (withClosedDB noop)
+    Corruption cors          -> ok Unit                       $ update_  (withClosedDB (runCorruptionsModel cors))
+    DuplicateBlock {}        -> ok Unit                       $ update_  (withClosedDB noop)
   where
     query f m = (Right (f m), m)
 
@@ -345,7 +345,7 @@ generatorCmdImpl Model {..} = frequency
     , (2, GetBlockComponent <$> genBlockId)
     , (2, GarbageCollect <$> genGCSlot)
     , (2, GetBlockInfo <$> listOf genBlockId)
-    , (2, GetSuccessors <$> listOf genWithOriginBlockId)
+    , (2, FilterByPredecessor <$> listOf genWithOriginBlockId)
     , (2, return GetMaxSlotNo)
 
     , (if null dbFiles then 0 else 1,
@@ -466,10 +466,10 @@ shrinkerImpl m (At (CmdErr cmd mbErr)) = fmap At $
 
 shrinkCmd :: Model Symbolic -> Cmd -> [Cmd]
 shrinkCmd Model{..} cmd = case cmd of
-    GetBlockInfo   bids  -> GetBlockInfo   <$> shrinkList (const []) bids
-    GetSuccessors  preds -> GetSuccessors  <$> shrinkList (const []) preds
-    Corruption cors      -> Corruption <$> shrinkCorruptions cors
-    _                    -> []
+    GetBlockInfo   bids       -> GetBlockInfo <$> shrinkList (const []) bids
+    FilterByPredecessor preds -> FilterByPredecessor <$> shrinkList (const []) preds
+    Corruption cors           -> Corruption <$> shrinkCorruptions cors
+    _                         -> []
 
 -- | Environment to run commands against the real VolatileDB implementation.
 data VolatileDBEnv h = VolatileDBEnv
@@ -496,15 +496,15 @@ runDB :: HasCallStack
       -> Cmd
       -> IO Success
 runDB VolatileDBEnv { db, hasFS } cmd = case cmd of
-    GetBlockComponent bid -> MbAllComponents          <$> getBlockComponent db allComponents bid
-    PutBlock b            -> Unit                     <$> putBlock db (testBlockToBlockInfo b) (testBlockToBuilder b)
-    GetSuccessors  bids   -> Successors .  (<$> bids) <$> atomically (getSuccessors db)
-    GetBlockInfo   bids   -> BlockInfos .  (<$> bids) <$> atomically (getBlockInfo db)
-    GarbageCollect slot   -> Unit                     <$> garbageCollect db slot
-    GetMaxSlotNo          -> MaxSlot                  <$> atomically (getMaxSlotNo db)
-    IsOpen                -> Bool                     <$> isOpenDB db
-    Close                 -> Unit                     <$> closeDB db
-    ReOpen                -> Unit                     <$> reOpenDB db
+    GetBlockComponent bid    -> MbAllComponents          <$> getBlockComponent db allComponents bid
+    PutBlock b               -> Unit                     <$> putBlock db (testBlockToBlockInfo b) (testBlockToBuilder b)
+    FilterByPredecessor bids -> Successors .  (<$> bids) <$> atomically (filterByPredecessor db)
+    GetBlockInfo   bids      -> BlockInfos .  (<$> bids) <$> atomically (getBlockInfo db)
+    GarbageCollect slot      -> Unit                     <$> garbageCollect db slot
+    GetMaxSlotNo             -> MaxSlot                  <$> atomically (getMaxSlotNo db)
+    IsOpen                   -> Bool                     <$> isOpenDB db
+    Close                    -> Unit                     <$> closeDB db
+    ReOpen                   -> Unit                     <$> reOpenDB db
     Corruption corrs ->
       withClosedDB $
         forM_ corrs $ \(corr, file) -> corruptFile hasFS corr file
@@ -540,7 +540,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
         $ tabulate "GetBlockInfo: total number of Just's"
           [groupIsMember $ isMemberTrue events]
         $ tabulate "Successors"
-          (tagGetSuccessors events)
+          (tagFilterByPredecessor events)
         $ prop
   where
     dbm = initDBModel maxBlocksPerFile
@@ -773,12 +773,12 @@ tagSimulatedErrors events = fmap tagError events
       At (CmdErr _ Nothing) -> "NoError"
       At (CmdErr cmd _)     -> cmdName (At cmd) <> " Error"
 
-tagGetSuccessors :: [VolDBEvent Symbolic] -> [String]
-tagGetSuccessors = mapMaybe f
+tagFilterByPredecessor :: [VolDBEvent Symbolic] -> [String]
+tagFilterByPredecessor = mapMaybe f
   where
     f :: VolDBEvent Symbolic -> Maybe String
     f ev = case (getCmd ev, eventMockResp ev) of
-        (GetSuccessors _pid, Resp (Right (Successors st))) ->
+        (FilterByPredecessor _pid, Resp (Right (Successors st))) ->
             if all Set.null st then Just "Empty Successors"
             else Just "Non empty Successors"
         _otherwise -> Nothing
