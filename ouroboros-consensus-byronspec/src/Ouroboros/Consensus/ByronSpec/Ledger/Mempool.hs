@@ -3,7 +3,7 @@
 {-# LANGUAGE DerivingVia    #-}
 {-# LANGUAGE TypeFamilies   #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.ByronSpec.Ledger.Mempool (
     -- * Type family instances

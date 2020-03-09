@@ -1,5 +1,5 @@
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.BlockchainTime.SlotLengths (tests) where
 
 import           Data.Maybe
