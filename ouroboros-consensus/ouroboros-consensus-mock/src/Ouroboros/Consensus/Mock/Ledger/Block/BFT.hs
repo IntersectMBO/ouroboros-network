@@ -121,7 +121,7 @@ instance ( SimpleCrypto c
   protocolLedgerView _ _ =
       ()
   anachronisticProtocolLedgerView _ _ _ =
-      Right ()
+      return ()
 
 {-------------------------------------------------------------------------------
   Serialisation

@@ -575,7 +575,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
         -- and our tip is within k blocks from our tip. This means that the
         -- anachronistic ledger view must be available, unless they are
         -- too far /ahead/ of us. In this case we must simply wait
-        case anachronisticProtocolLedgerView
+        case runExcept $ anachronisticProtocolLedgerView
               (configLedger cfg)
               curLedger
               (pointSlot hdrPoint) of

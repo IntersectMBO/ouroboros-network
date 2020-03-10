@@ -442,7 +442,7 @@ instance LedgerSupportsProtocol TestBlock where
   protocolLedgerView _ _ =
       ()
   anachronisticProtocolLedgerView _ _ _ =
-      Right ()
+      return ()
 
 instance LedgerDerivedInfo TestBlock where
   knownSlotLengths = testBlockSlotLengths

@@ -3,6 +3,8 @@ module Ouroboros.Consensus.Ledger.SupportsProtocol (
   , AnachronyFailure(..)
   ) where
 
+import           Control.Monad.Except
+
 import           Ouroboros.Network.Block (SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
@@ -57,7 +59,7 @@ class ( BlockSupportsProtocol blk
     :: LedgerConfig blk
     -> LedgerState blk
     -> WithOrigin SlotNo -- ^ Slot for which you would like a ledger view
-    -> Either AnachronyFailure (LedgerView (BlockProtocol blk))
+    -> Except AnachronyFailure (LedgerView (BlockProtocol blk))
 
 -- | See 'anachronisticProtocolLedgerView'.
 data AnachronyFailure

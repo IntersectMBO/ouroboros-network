@@ -26,6 +26,7 @@ module Ouroboros.Consensus.NodeKernel (
   ) where
 
 import           Control.Monad
+import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import           Data.Maybe (isJust)
 import           Data.Proxy
@@ -396,7 +397,7 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
 
         -- Check if we are the leader
         proof <-
-          case anachronisticProtocolLedgerView
+          case runExcept $ anachronisticProtocolLedgerView
                  (configLedger cfg)
                  ledger
                  (At currentSlot) of
