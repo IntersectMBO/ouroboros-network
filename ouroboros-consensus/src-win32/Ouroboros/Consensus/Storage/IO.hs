@@ -62,7 +62,7 @@ write fh data' bytes = withOpenHandle "write" fh $ \h ->
 
 seek :: FHandle -> SeekMode -> Int64 -> IO ()
 seek fh seekMode size = void <$> withOpenHandle "seek" fh $ \h ->
-  setFilePointerEx h (fromIntegral size) (fromSeekMode seekMode)
+  setFilePointerEx h size (fromSeekMode seekMode)
 
 fromSeekMode :: SeekMode -> FilePtrDirection
 fromSeekMode AbsoluteSeek = fILE_BEGIN
@@ -97,8 +97,8 @@ close :: FHandle -> IO ()
 close fh = closeHandleOS fh closeHandle
 
 getSize :: FHandle -> IO Word64
-getSize fh = withOpenHandle "getSize" fh $ \h -> do
-  fromIntegral . bhfiSize <$>  getFileInformationByHandle h
+getSize fh = withOpenHandle "getSize" fh $ \h ->
+  bhfiSize <$> getFileInformationByHandle h
 
 -- | For the following error types, our mock FS implementation (and the Posix
 -- implementation) throw the same errors:
