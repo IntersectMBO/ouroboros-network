@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                  #-}
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
@@ -110,7 +111,21 @@ applyExtLedgerState :: (LedgerSupportsProtocol blk, HasCallStack)
                     -> ExtLedgerState blk
                     -> Except (ExtValidationError blk) (ExtLedgerState blk)
 applyExtLedgerState prevApplied cfg blk ExtLedgerState{..} = do
-    -- TODO: Flip order, and use anachronistic ledger view
+    let TickedLedgerState { tickedLedgerState } =
+          applyChainTick
+            (configLedger cfg)
+            (blockSlot blk)
+            ledgerState
+        ledgerView =
+          protocolLedgerView
+            (configLedger cfg)
+            tickedLedgerState
+    headerState' <- withExcept ExtValidationErrorHeader $
+                      validateHeader
+                        cfg
+                        ledgerView
+                        (getHeader blk)
+                        headerState
     ledgerState' <- case prevApplied of
                        BlockNotPreviouslyApplied ->
                          withExcept ExtValidationErrorLedger $
@@ -123,12 +138,6 @@ applyExtLedgerState prevApplied cfg blk ExtLedgerState{..} = do
                            (configLedger cfg)
                            blk
                            ledgerState
-    headerState' <- withExcept ExtValidationErrorHeader $
-                      validateHeader
-                        cfg
-                        (protocolLedgerView (configLedger cfg) ledgerState')
-                        (getHeader blk)
-                        headerState
     return $!
       assertWithMsg
         (lemma_protocoLedgerView_applyLedgerBlock_applyChainTick
