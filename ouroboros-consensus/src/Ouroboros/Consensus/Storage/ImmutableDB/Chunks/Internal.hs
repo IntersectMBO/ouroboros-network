@@ -62,7 +62,7 @@ data ChunkInfo =
     -- epoch size (that is, the number of regular blocks in the chunk must equal
     -- the number of regular blocks in an epoch).
     --
-    UniformChunkSize ChunkSize
+    UniformChunkSize !ChunkSize
   deriving stock (Show, Generic)
   deriving anyclass (NoUnexpectedThunks)
 
@@ -98,10 +98,10 @@ chunkInfoSupportsEBBs (UniformChunkSize chunkSize) =
 -- if @not@ 'chunkCanContainEBB', and 'numRegularBlocks' @+ 1@ otherwise.
 data ChunkSize = ChunkSize {
       -- | Does this chunk also accomodate an EBB?
-      chunkCanContainEBB :: Bool
+      chunkCanContainEBB :: !Bool
 
       -- | The number of regular blocks in this chunk
-    , numRegularBlocks   :: Word64
+    , numRegularBlocks   :: !Word64
     }
   deriving stock    (Show, Generic)
   deriving anyclass (NoUnexpectedThunks)
