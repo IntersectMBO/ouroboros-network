@@ -76,7 +76,7 @@ let
         packages.network.components.library.build-tools = lib.mkForce [];
       })
     ];
-    configureArgs = lib.optionalString stdenv.hostPlatform.isWindows "--disable-tests";
+    configureArgs = lib.optionalString (stdenv.hostPlatform.isWindows || stdenv.targetPlatform.isWindows) "--disable-tests";
   };
 in
   pkgSet
