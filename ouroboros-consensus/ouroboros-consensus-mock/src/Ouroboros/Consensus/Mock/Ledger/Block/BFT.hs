@@ -120,7 +120,7 @@ instance ( SimpleCrypto c
          ) => LedgerSupportsProtocol (SimpleBftBlock c c') where
   protocolLedgerView _ _ =
       ()
-  anachronisticProtocolLedgerView _ _ _ =
+  anachronisticProtocolLedgerView_ _ _ _ =
       return ()
 
 {-------------------------------------------------------------------------------

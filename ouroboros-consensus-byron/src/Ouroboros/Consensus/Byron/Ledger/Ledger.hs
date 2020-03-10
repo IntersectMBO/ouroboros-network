@@ -205,7 +205,7 @@ instance LedgerSupportsProtocol ByronBlock where
   -- TODO: verify that the sdSlot of ScheduledDelegation is the slot at which
   -- it becomes active (i.e., that delegation should be applied /in/ that slot)
   -- i.e., that delegate is allowed to issue a block in that very same slot.
-  anachronisticProtocolLedgerView cfg (ByronLedgerState ls ss) slot =
+  anachronisticProtocolLedgerView_ cfg (ByronLedgerState ls ss) slot =
       case History.find slot ss of
         Just sb -> return $ toPBftLedgerView sb -- Case (A)
         Nothing -- Case (B), (C) or (D)

@@ -197,7 +197,6 @@ runTestNetwork ::
      ( RunNode blk
      , TxGen blk
      , TracingConstraints blk
-     , Show (LedgerView (BlockProtocol blk))
      )
   => TestConfig
   -> EpochSize
@@ -277,7 +276,6 @@ prop_general ::
      , Eq blk
      , HasHeader blk
      , RunNode blk
-     , Show (LedgerView (BlockProtocol blk))
      )
   => (blk -> Word64) -- ^ Count transactions
   -> SecurityParam

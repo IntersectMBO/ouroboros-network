@@ -388,8 +388,8 @@ instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
         (dualLedgerConfigMain cfg)
         (dualLedgerStateMain  state)
 
-  anachronisticProtocolLedgerView cfg state =
-      anachronisticProtocolLedgerView
+  anachronisticProtocolLedgerView_ cfg state =
+      anachronisticProtocolLedgerView_
         (dualLedgerConfigMain cfg)
         (dualLedgerStateMain  state)
 
