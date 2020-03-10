@@ -21,7 +21,7 @@ import           Test.QuickCheck ( Arbitrary (..)
                                  , (.&&.)
                                  , (===))
 
-import           Network.NTP.Packet ( Microsecond (..)
+import           Network.NTP.Client.Packet ( Microsecond (..)
                                     , NtpOffset (..)
                                     , NtpPacket (..)
                                     , clockOffsetPure

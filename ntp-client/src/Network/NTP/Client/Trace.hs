@@ -1,6 +1,6 @@
-module Network.NTP.Trace
+module Network.NTP.Client.Trace
 where
-import           Network.NTP.Packet (Microsecond)
+import           Network.NTP.Client.Packet (Microsecond)
 
 data IPVersion = IPv4 | IPv6
     deriving (Show)
