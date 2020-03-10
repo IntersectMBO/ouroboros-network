@@ -239,6 +239,9 @@ data MempoolAddTxResult blk
     -- ^ The transaction was rejected and could not be added to the mempool
     -- for the specified reason.
 
+deriving instance Eq (ApplyTxErr blk) => Eq (MempoolAddTxResult blk)
+deriving instance Show (ApplyTxErr blk) => Show (MempoolAddTxResult blk)
+
 isTxAddedOrAlreadyInMempool :: MempoolAddTxResult blk -> Bool
 isTxAddedOrAlreadyInMempool MempoolTxAdded            = True
 isTxAddedOrAlreadyInMempool MempoolTxAlreadyInMempool = True
