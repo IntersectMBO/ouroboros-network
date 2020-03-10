@@ -1,7 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards            #-}
 
-module Network.NTP.Packet
+module Network.NTP.Client.Packet
     ( NtpPacket (..)
     , ntpPacketSize
     , mkNtpPacket

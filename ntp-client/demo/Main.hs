@@ -7,8 +7,9 @@ import           Control.Concurrent.Async
 import           Control.Monad (forever)
 import           Control.Tracer
 
-import           Network.NTP.Client
-import           Network.NTP.Query
+import           Network.NTP.Client (withNtpClient
+                                    , NtpSettings(..)
+                                    , NtpClient(..))
 
 main :: IO ()
 main = withNtpClient (showTracing stdoutTracer) testSettings runApplication

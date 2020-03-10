@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NumericUnderscores  #-}
-module Network.NTP.Query (
+module Network.NTP.Client.Query (
     NtpSettings(..)
   , NtpStatus(..)
   , ntpQuery
@@ -31,13 +31,13 @@ import           Network.Socket ( AddrInfo
                                 , addrSocketType)
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString as Socket.ByteString (recvFrom, sendManyTo)
-import           Network.NTP.Packet ( mkNtpPacket
+import           Network.NTP.Client.Packet ( mkNtpPacket
                                     , ntpPacketSize
                                     , Microsecond
                                     , NtpOffset (..)
                                     , getCurrentTime
                                     , clockOffsetPure)
-import           Network.NTP.Trace (NtpTrace (..), IPVersion (..))
+import           Network.NTP.Client.Trace (NtpTrace (..), IPVersion (..))
 
 data NtpSettings = NtpSettings
     { ntpServers         :: [String]
