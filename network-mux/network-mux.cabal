@@ -122,8 +122,7 @@ test-suite test-network-mux
     cpp-options:       -DOUROBOROS_NETWORK_IPV6
 
 executable mux-demo
-  if !os(windows)
-    buildable:         False
+  buildable:           !os(windows)
   hs-source-dirs:      demo, test
   main-is:             mux-demo.hs
   other-modules:       Test.Mux.ReqResp
