@@ -318,10 +318,13 @@ ppTestSetup :: TestSetup -> String
 ppTestSetup TestSetup { testInitialTxs
                       , testMempoolCap = MempoolCapacityBytes mpCap
                       } = unlines $
-    ["Initial contents of the Mempool:"] <>
-    (map condense testInitialTxs)        <>
-    ["Mempool capacity:"]                <>
+    ["Initial contents of the Mempool:"]  <>
+    (map ppTestTxWithHash testInitialTxs) <>
+    ["Mempool capacity:"]                 <>
     [condense mpCap]
+
+ppTestTxWithHash :: TestTx -> String
+ppTestTxWithHash x = condense (hash (simpleGenTx x) :: Hash MD5 Tx, x)
 
 -- | Given some transactions, calculate the sum of their sizes in bytes.
 txSizesInBytes :: [TestTx] -> TxSizeInBytes
@@ -660,6 +663,8 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
                                               testMempoolCap
                                               tracer
       result  <- addTxs mempool testInitialTxs
+      -- the invalid transactions are reported in the same order they were
+      -- added, so the first error is not the result of a cascade
       whenJust (find (isTxRejected . snd) result) $ \(invalidTx, _) -> error $
         "Invalid initial transaction: " <> condense invalidTx
 
