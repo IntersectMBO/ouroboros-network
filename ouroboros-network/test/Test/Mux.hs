@@ -42,7 +42,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
 
-import qualified Network.Mux               as Mx (muxStart)
+import qualified Network.Mux.Compat        as Mx (muxStart)
 import qualified Network.Mux.Bearer.Queues as Mx
 import           Ouroboros.Network.Mux as Mx
 

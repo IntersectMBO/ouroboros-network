@@ -51,7 +51,8 @@ import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 -- TODO: remove Mx prefixes
 import           Ouroboros.Network.Mux
-import qualified Network.Mux as Mx (MuxError(..), MuxErrorType(..), muxStart)
+import qualified Network.Mux as Mx (MuxError(..), MuxErrorType(..))
+import qualified Network.Mux.Compat as Mx (muxStart)
 import qualified Network.Mux.Bearer.Socket as Mx (socketAsMuxBearer)
 import           Network.Mux.Types ( MiniProtocolDir (..) , MuxSDU (..), MuxSDUHeader (..)
                                    , RemoteClockModel (..), write)

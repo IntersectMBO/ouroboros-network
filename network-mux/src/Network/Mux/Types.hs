@@ -6,7 +6,6 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE DuplicateRecordFields      #-}
 
 module Network.Mux.Types (
       MiniProtocolBundle (..)
@@ -18,10 +17,6 @@ module Network.Mux.Types (
     , MuxMode (..)
     , HasInitiator
     , HasResponder
-    , MuxApplication (..)
-    , MuxMiniProtocol (..)
-    , RunMiniProtocol (..)
-    , StartOnDemandOrEagerly (..)
 
     , IngressQueue
     , MiniProtocolIx
@@ -44,7 +39,6 @@ module Network.Mux.Types (
 
 import           Prelude hiding (read)
 
-import           Data.Void (Void)
 import           Data.Functor (void)
 import           Data.Ix (Ix (..))
 import           Data.Word
@@ -127,37 +121,6 @@ type family HasResponder (mode :: MuxMode) :: Bool where
 --   serving downstream peers using server side of each protocol and getting
 --   updates from upstream peers using client side of each of the protocols.
 --
-newtype MuxApplication (mode :: MuxMode) m a b =
-        MuxApplication [MuxMiniProtocol mode m a b]
-
-data MuxMiniProtocol (mode :: MuxMode) m a b =
-     MuxMiniProtocol {
-       miniProtocolNum    :: !MiniProtocolNum,
-       miniProtocolLimits :: !MiniProtocolLimits,
-       miniProtocolRun    :: !(RunMiniProtocol mode m a b)
-     }
-
-data RunMiniProtocol (mode :: MuxMode) m a b where
-  InitiatorProtocolOnly
-    -- Initiator application; most simple application will be @'runPeer'@ or
-    -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
-    -- @ptcl@.  But it allows to handle resources if just application of
-    -- @'runPeer'@ is not enough.  It will be run as @'InitiatorDir'@.
-    :: (Channel m -> m a)
-    -> RunMiniProtocol InitiatorMode m a Void
-
-  ResponderProtocolOnly
-    -- Responder application; similarly to the @'MuxInitiatorApplication'@ but it
-    -- will be run using @'ResponderDir'@.
-    :: (Channel m -> m b)
-    -> RunMiniProtocol ResponderMode m Void b
-
-  InitiatorAndResponderProtocol
-    -- Initiator and server applications.
-    :: (Channel m -> m a)
-    -> (Channel m -> m b)
-    -> RunMiniProtocol InitiatorResponderMode m a b
-
 newtype MiniProtocolBundle (mode :: MuxMode) =
         MiniProtocolBundle [MiniProtocolInfo mode]
 
@@ -173,9 +136,6 @@ data MiniProtocolDirection (mode :: MuxMode) where
     ResponderDirectionOnly :: MiniProtocolDirection ResponderMode
     InitiatorDirection     :: MiniProtocolDirection InitiatorResponderMode
     ResponderDirection     :: MiniProtocolDirection InitiatorResponderMode
-
-data StartOnDemandOrEagerly = StartOnDemand | StartEagerly
-  deriving Eq
 
 --
 -- Mux internal types

@@ -3,34 +3,32 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE GADTSyntax          #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE DuplicateRecordFields     #-}
 
 module Network.Mux (
-      muxStart
-    , newMux
-    , runMux
-    , runMiniProtocol
-    , stopMux
 
-      -- * Mux bearers
-    , MuxBearer
-
-    -- * Defining 'MuxApplication's
+    -- * Defining 'Mux' protocol bundles
+      newMux
+    , Mux
     , MuxMode (..)
     , HasInitiator
     , HasResponder
-    , MuxApplication (..)
-    , MuxMiniProtocol (..)
-    , RunMiniProtocol (..)
+    , MiniProtocolBundle (..)
+    , MiniProtocolInfo (..)
     , MiniProtocolNum (..)
+    , MiniProtocolDirection (..)
     , MiniProtocolLimits (..)
-    , MiniProtocolDir (..)
+
+      -- * Running the Mux
+    , runMux
+    , MuxBearer
+    , runMiniProtocol
+    , StartOnDemandOrEagerly (..)
+    , stopMux
 
       -- * Errors
     , MuxError (..)
@@ -66,67 +64,6 @@ import           Network.Mux.Ingress as Ingress
 import           Network.Mux.Types
 import           Network.Mux.Trace
 
-
-muxStart
-    :: forall m mode a b.
-       ( MonadAsync m
-       , MonadCatch m
-       , MonadFork m
-       , MonadSTM m
-       , MonadThrow (STM m)
-       , MonadTime  m
-       , MonadTimer m
-       , MonadMask m
-       )
-    => Tracer m MuxTrace
-    -> MuxApplication mode m a b
-    -> MuxBearer m
-    -> m ()
-muxStart tracer muxapp bearer = do
-    mux <- newMux (toMiniProtocolBundle muxapp)
-
-    sequence_
-      [ runMiniProtocol
-          mux
-          miniProtocolNum
-          ptclDir
-          StartEagerly
-          action
-      | let MuxApplication ptcls = muxapp
-      , MuxMiniProtocol{miniProtocolNum, miniProtocolRun} <- ptcls
-      , (ptclDir, action) <- selectRunner miniProtocolRun
-      ]
-
-    runMux tracer mux bearer
-  where
-    toMiniProtocolBundle :: MuxApplication mode m a b -> MiniProtocolBundle mode
-    toMiniProtocolBundle (MuxApplication ptcls) =
-      MiniProtocolBundle
-        [ MiniProtocolInfo {
-            miniProtocolNum,
-            miniProtocolDir,
-            miniProtocolLimits
-          }
-        | MuxMiniProtocol {
-            miniProtocolNum,
-            miniProtocolLimits,
-            miniProtocolRun
-          } <- ptcls
-        , miniProtocolDir <- case miniProtocolRun of
-            InitiatorProtocolOnly{} -> [InitiatorDirectionOnly]
-            ResponderProtocolOnly{} -> [ResponderDirectionOnly]
-            InitiatorAndResponderProtocol{} -> [InitiatorDirection, ResponderDirection]
-        ]
-
-    selectRunner :: RunMiniProtocol mode m a b
-                 -> [(MiniProtocolDirection mode, Channel m -> m ())]
-    selectRunner (InitiatorProtocolOnly initiator) =
-      [(InitiatorDirectionOnly, void . initiator)]
-    selectRunner (ResponderProtocolOnly responder) =
-      [(ResponderDirectionOnly, void . responder)]
-    selectRunner (InitiatorAndResponderProtocol initiator responder) =
-      [(InitiatorDirection, void . initiator)
-      ,(ResponderDirection, void . responder)]
 
 data Mux (mode :: MuxMode) m =
      Mux {
@@ -298,6 +235,9 @@ data ControlCmd mode m =
        !(MiniProtocolState mode m)
        !(MiniProtocolAction m)
    | CmdShutdown
+
+data StartOnDemandOrEagerly = StartOnDemand | StartEagerly
+  deriving Eq
 
 data MiniProtocolAction m where
      MiniProtocolAction :: (Channel m -> m a)     -- ^ Action

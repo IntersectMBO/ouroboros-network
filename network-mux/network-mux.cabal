@@ -52,6 +52,7 @@ library
   exposed-modules:     Network.Mux
                        Network.Mux.Channel
                        Network.Mux.Codec
+                       Network.Mux.Compat
                        Network.Mux.Egress
                        Network.Mux.Ingress
                        Network.Mux.Time
