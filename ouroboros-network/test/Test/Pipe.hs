@@ -24,7 +24,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Tracer
 
-import qualified Network.Mux             as Mx (muxStart)
+import qualified Network.Mux.Compat      as Mx (muxStart)
 import qualified Network.Mux.Bearer.Pipe as Mx
 import           Ouroboros.Network.Mux
 

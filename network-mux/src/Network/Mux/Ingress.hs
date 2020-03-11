@@ -26,7 +26,7 @@ import           Control.Monad.Class.MonadTimer hiding (timeout)
 
 import           Network.Mux.Timeout
 import           Network.Mux.Trace
-import           Network.Mux.Types hiding (MuxMiniProtocol(..))
+import           Network.Mux.Types
 
 
 flipMiniProtocolDir :: MiniProtocolDir -> MiniProtocolDir

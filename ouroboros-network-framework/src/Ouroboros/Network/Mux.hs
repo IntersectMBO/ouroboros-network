@@ -32,7 +32,7 @@ import qualified Data.ByteString.Lazy as LBS
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
 
-import qualified Network.Mux as Mux
+import qualified Network.Mux.Compat as Mux
 import           Network.Mux
                    ( MuxMode(..), HasInitiator, HasResponder
                    , MiniProtocolNum, MiniProtocolLimits(..)
