@@ -121,7 +121,7 @@ tests = testGroup "RealPBFT" $
             , nodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 0), (CoreNodeId 1,SlotNo 20), (CoreNodeId 2,SlotNo 22)]
             , nodeRestarts = noRestarts
             , nodeTopology = meshNodeTopology ncn
-            , slotLengths = defaultSlotLengths
+            , slotLength   = defaultSlotLength
             , initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
             }
     , testProperty "rewind to EBB supported as of Issue #1312, #1" $
@@ -139,7 +139,7 @@ tests = testGroup "RealPBFT" $
             , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
             , nodeRestarts = noRestarts
             , nodeTopology = meshNodeTopology ncn
-            , slotLengths  = defaultSlotLengths
+            , slotLength   = defaultSlotLength
             , initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
             }
     , testProperty "rewind to EBB supported as of Issue #1312, #2" $
@@ -153,7 +153,7 @@ tests = testGroup "RealPBFT" $
             , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 3})])
             , nodeRestarts = noRestarts
             , nodeTopology = meshNodeTopology ncn
-            , slotLengths  = defaultSlotLengths
+            , slotLength   = defaultSlotLength
             , initSeed     = Seed (16817746570690588019, 3284322327197424879, 14951803542883145318, 5227823917971823767, 14093715642382269482)
             }
     , testProperty "one testOutputTipBlockNos update per node per slot" $
@@ -170,7 +170,7 @@ tests = testGroup "RealPBFT" $
             , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0})])
             , nodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 5},Map.fromList [(CoreNodeId 1,NodeRestart)])])
             , nodeTopology = meshNodeTopology ncn
-            , slotLengths  = defaultSlotLengths
+            , slotLength   = defaultSlotLength
             , initSeed     = Seed {getSeed = (17927476716858194849,11935807562313832971,15925564353519845641,3835030747036900598,2802397826914039548)}
             }
     , testProperty "BlockFetch live lock due to an EBB at the ImmutableDB tip, Issue #1435" $
@@ -188,7 +188,7 @@ tests = testGroup "RealPBFT" $
             , nodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 3),(CoreNodeId 1,SlotNo 3),(CoreNodeId 2,SlotNo 5),(CoreNodeId 3,SlotNo 57)]
             , nodeRestarts = noRestarts
             , nodeTopology = meshNodeTopology ncn
-            , slotLengths  = defaultSlotLengths
+            , slotLength   = defaultSlotLength
             , initSeed     = Seed (11044330969750026700,14522662956180538128,9026549867550077426,3049168255170604478,643621447671665184)
             }
     , testProperty "ImmutableDB is leaking file handles, #1543" $
@@ -217,7 +217,7 @@ tests = testGroup "RealPBFT" $
               ]
             , nodeTopology = meshNodeTopology ncn5
               -- Slot length of 19s passes, and 21s also fails; I haven't seen this matter before.
-            , slotLengths  = singletonSlotLengths (slotLengthFromSec 20)
+            , slotLength   = slotLengthFromSec 20
             , initSeed     = Seed {getSeed = (15062108706768000853,6202101653126031470,15211681930891010376,1718914402782239589,12639712845887620121)}
             }
     , -- RealPBFT runs are slow, so do 10x less of this narrow test
@@ -242,7 +242,7 @@ tests = testGroup "RealPBFT" $
                 (SlotNo (slotsPerEpoch + mod w window))
                 (Map.singleton (CoreNodeId 0) NodeRekey)
             , nodeTopology = meshNodeTopology ncn
-            , slotLengths  = defaultSlotLengths
+            , slotLength   = defaultSlotLength
             , initSeed     = seed
             }
     , testProperty "exercise a corner case of mkCurrentBlockContext" $
@@ -263,7 +263,7 @@ tests = testGroup "RealPBFT" $
             , nodeRestarts = NodeRestarts $ Map.singleton
                 (SlotNo 1) (Map.singleton (CoreNodeId 1) NodeRestart)
             , nodeTopology = meshNodeTopology ncn
-            , slotLengths  = defaultSlotLengths
+            , slotLength   = defaultSlotLength
             , initSeed     = Seed (4690259409304062007,9560140637825988311,3774468764133159390,14745090572658815456,7199590241247856333)
             }
     , testProperty "correct EpochNumber in delegation certificate 1" $
@@ -279,7 +279,7 @@ tests = testGroup "RealPBFT" $
             , nodeJoinPlan = trivialNodeJoinPlan ncn4
             , nodeRestarts = NodeRestarts (Map.fromList [(SlotNo 59,Map.fromList [(CoreNodeId 3,NodeRekey)])])
             , nodeTopology = meshNodeTopology ncn4
-            , slotLengths  = defaultSlotLengths
+            , slotLength   = defaultSlotLength
             , initSeed     = Seed (17364222041321661634,8266509462575908621,10410472349244348261,9332246846568887555,6178891282750652496)
             }
     , testProperty "correct EpochNumber in delegation certificate 2" $
@@ -299,7 +299,7 @@ tests = testGroup "RealPBFT" $
             , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 1}),(CoreNodeId 1,SlotNo {unSlotNo = 1}),(CoreNodeId 2,SlotNo {unSlotNo = 58})])
             , nodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 58},Map.fromList [(CoreNodeId 2,NodeRekey)])])
             , nodeTopology = meshNodeTopology ncn3
-            , slotLengths  = defaultSlotLengths
+            , slotLength   = defaultSlotLength
             , initSeed     = Seed {getSeed = (15151717355257504044,5938503171282920606,17557892055617026469,2625071732074633531,737988411488637670)}
             }
     , testProperty "repeatedly add the the dlg cert tx" $
@@ -350,7 +350,7 @@ tests = testGroup "RealPBFT" $
             , nodeRestarts = NodeRestarts $ Map.fromList [(SlotNo 83,Map.fromList [(CoreNodeId 2,NodeRekey)])]
             , nodeTopology =    --   1 <-> 0 <-> 2
                 NodeTopology $ Map.fromList [(CoreNodeId 0,Set.fromList []),(CoreNodeId 1,Set.fromList [CoreNodeId 0]),(CoreNodeId 2,Set.fromList [CoreNodeId 0])]
-            , slotLengths  = defaultSlotLengths
+            , slotLength   = defaultSlotLength
             , initSeed     = Seed {getSeed = (6137414258840919713,13743611065535662953,11200456599001708481,15059765168210441725,7592004320108020587)}
             }
     , testProperty "topology prevents timely dlg cert tx propagation" $
@@ -387,7 +387,7 @@ tests = testGroup "RealPBFT" $
             , nodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 37},Map.fromList [(CoreNodeId 4,NodeRekey)])])
             , nodeTopology = -- 3 <-> {0,1,2} <-> 4
                 NodeTopology (Map.fromList [(CoreNodeId 0,Set.fromList []),(CoreNodeId 1,Set.fromList [CoreNodeId 0]),(CoreNodeId 2,Set.fromList [CoreNodeId 0, CoreNodeId 1]),(CoreNodeId 3,Set.fromList [CoreNodeId 0,CoreNodeId 1,CoreNodeId 2]),(CoreNodeId 4,Set.fromList [CoreNodeId 0,CoreNodeId 1,CoreNodeId 2])])
-            , slotLengths  = defaultSlotLengths
+            , slotLength   = defaultSlotLength
             , initSeed = Seed {getSeed = (13428626417421372024,5113871799759534838,13943132470772613446,18226529569527889118,4309403968134095151)}
             }
     , testProperty "mkDelegationEnvironment uses currentSlot not latestSlot" $
@@ -411,7 +411,7 @@ tests = testGroup "RealPBFT" $
          , nodeJoinPlan = trivialNodeJoinPlan ncn
          , nodeRestarts = NodeRestarts $ Map.singleton (SlotNo 30) $ Map.singleton (CoreNodeId 2) NodeRekey
          , nodeTopology = meshNodeTopology ncn
-         , slotLengths  = defaultSlotLengths
+         , slotLength   = defaultSlotLength
          , initSeed     = Seed (368401128646137767,7989071211759985580,4921478144180472393,11759221144888418607,7602439127562955319)
          }
     , testProperty "delayed message corner case" $
@@ -423,7 +423,7 @@ tests = testGroup "RealPBFT" $
             , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 1})])
             , nodeRestarts = noRestarts
             , nodeTopology = meshNodeTopology ncn
-            , slotLengths  = defaultSlotLengths
+            , slotLength   = defaultSlotLength
             , initSeed     = Seed (11954171112552902178,1213614443200450055,13600682863893184545,15433529895532611662,2464843772450023204)
             }
     , testProperty "simple convergence" $
@@ -439,8 +439,8 @@ tests = testGroup "RealPBFT" $
           prop_simple_real_pbft_convergence produceEBBs k testConfig
     ]
   where
-    defaultSlotLengths :: SlotLengths
-    defaultSlotLengths = singletonSlotLengths (SlotLength 1)
+    defaultSlotLength :: SlotLength
+    defaultSlotLength = SlotLength 1
 
 prop_deterministicPlan :: PBftParams -> NumSlots -> NumCoreNodes -> Property
 prop_deterministicPlan params numSlots numCoreNodes =
@@ -903,7 +903,7 @@ genRealPBFTTestConfig k = do
       , nodeTopology
       , numCoreNodes
       , numSlots
-      , slotLengths = singletonSlotLengths pbftSlotLength
+      , slotLength = pbftSlotLength
       , initSeed
       }
 
@@ -924,7 +924,7 @@ shrinkTestConfigSlotsOnly TestConfig
   , nodeJoinPlan
   , nodeRestarts
   , nodeTopology
-  , slotLengths
+  , slotLength
   , initSeed
   } =
     dropId $
@@ -934,7 +934,7 @@ shrinkTestConfigSlotsOnly TestConfig
         , nodeTopology = top'
         , numCoreNodes
         , numSlots     = t'
-        , slotLengths  = ls'
+        , slotLength   = len'
         , initSeed
         }
     | t'            <- andId shrink numSlots
@@ -943,7 +943,7 @@ shrinkTestConfigSlotsOnly TestConfig
     , p'            <- andId shrinkNodeJoinPlan adjustedP
     , r'            <- andId shrinkNodeRestarts adjustedR
     , top'          <- andId shrinkNodeTopology nodeTopology
-    , ls'           <- andId shrink slotLengths
+    , len'          <- andId shrink slotLength
     ]
 
 -- | Possibly promote some 'NodeRestart's to 'NodeRekey's

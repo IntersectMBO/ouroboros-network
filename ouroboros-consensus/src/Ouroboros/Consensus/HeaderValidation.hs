@@ -262,6 +262,7 @@ castHeaderEnvelopeError = \case
         expected' = castHash expected
         actual'   = castHash actual
 
+-- | Validate header envelope (block, slot, hash)
 class HasAnnTip blk => ValidateEnvelope blk where
   -- | Validate the header envelope
   validateEnvelope :: BlockConfig blk
@@ -275,8 +276,8 @@ class HasAnnTip blk => ValidateEnvelope blk where
 
   -- | The smallest possible 'SlotNo'
   --
-  -- The /actual/ 'SlotNo' of the first block on the chain may well be larger
-  -- than this value of course (if some slots were empty)
+  -- NOTE: This does not affect the translation between 'SlotNo' and 'EpochNo'.
+  -- "Ouroboros.Consensus.HardFork.History" for details.
   minimumPossibleSlotNo :: Proxy blk -> SlotNo
   minimumPossibleSlotNo _ = SlotNo 0
 
@@ -309,7 +310,7 @@ class HasAnnTip blk => ValidateEnvelope blk where
           case oldTip of
             At (AnnTip s h b _) -> ( succ s, succ b, BlockHash h )
             Origin              -> ( minimumPossibleSlotNo proxy
-                                   , firstBlockNo proxy
+                                   , firstBlockNo          proxy
                                    , GenesisHash
                                    )
         where

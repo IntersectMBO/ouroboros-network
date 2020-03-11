@@ -61,7 +61,7 @@ tests = testGroup "LeaderSchedule"
             , nodeJoinPlan
             , nodeRestarts = noRestarts
             , nodeTopology
-            , slotLengths
+            , slotLength
             , initSeed
             }
               schedule
@@ -77,7 +77,7 @@ tests = testGroup "LeaderSchedule"
     numCoreNodes = NumCoreNodes 3
     numSlots     = NumSlots $ maxRollbacks k * praosSlotsPerEpoch * numEpochs
     numEpochs    = 3
-    slotLengths  = singletonSlotLengths praosSlotLength
+    slotLength   = praosSlotLength
 
 praosSlotLength :: SlotLength
 praosSlotLength = slotLengthFromSec 2
@@ -109,7 +109,9 @@ prop_simple_leader_schedule_convergence
                                       numCoreNodes
                                       nid
                                       params
-                                      (singletonSlotLengths praosSlotLength)
+                                      (defaultSimpleBlockConfig
+                                        praosSecurityParam
+                                        praosSlotLength)
                                       schedule
             , rekeying    = Nothing
             }

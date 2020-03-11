@@ -3,6 +3,7 @@ module Test.Util.QuickCheck (
     -- * Comparison functions
     lt
   , ge
+  , expectRight
     -- * Improved variants
   , elements
   , (=:=)
@@ -32,6 +33,15 @@ x `ge` y = counterexample (show x ++ " < " ++ show y) $ x >= y
 -- | Like '<', but prints a counterexample when it fails.
 lt :: (Ord a, Show a) => a -> a -> Property
 x `lt` y = counterexample (show x ++ " >= " ++ show y) $ x < y
+
+-- | Check that we have the expected 'Right' value
+--
+-- @expectRight b ab@ is roughly equivalent to @Right b === ab@, but avoids an
+-- equality constraint on @a@.
+expectRight :: (Show a, Show b, Eq b) => b -> Either a b -> Property
+expectRight b (Right b') = b === b'
+expectRight _ (Left a)   = counterexample ("Unexpected left " ++ show a) $
+                             False
 
 {-------------------------------------------------------------------------------
   Improved variants

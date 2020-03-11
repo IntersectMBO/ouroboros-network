@@ -393,6 +393,18 @@ instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
         (dualLedgerConfigMain cfg)
         (dualLedgerStateMain  state)
 
+instance Bridge m a => HasHardForkHistory (DualBlock m a) where
+  type HardForkIndices (DualBlock m a) = HardForkIndices m
+
+  hardForkShape cfg =
+      hardForkShape
+        (dualBlockConfigMain cfg)
+
+  hardForkTransitions cfg state =
+      hardForkTransitions
+        (dualLedgerConfigMain cfg)
+        (dualLedgerStateMain  state)
+
 instance Bridge m a => LedgerDerivedInfo (DualBlock m a) where
   knownSlotLengths cfg =
       knownSlotLengths

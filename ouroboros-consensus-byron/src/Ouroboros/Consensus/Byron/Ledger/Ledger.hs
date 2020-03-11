@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleInstances   #-}
@@ -38,13 +39,13 @@ import           Data.ByteString (ByteString)
 import           Data.Type.Equality ((:~:) (Refl))
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (Natural, NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.Slot
 
 import           Cardano.Binary (fromCBOR, toCBOR)
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Genesis as Gen
-import qualified Cardano.Chain.Update as CC
 import qualified Cardano.Chain.Update.Validation.Interface as UPI
 import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Chain.ValidationMode as CC
@@ -55,6 +56,7 @@ import qualified Ouroboros.Network.Point as Point
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.LedgerDerivedInfo
@@ -225,14 +227,39 @@ instance LedgerSupportsProtocol ByronBlock where
                         else unSlotNo now - (2 * k)
       maxHi = SlotNo $ unSlotNo now + (2 * k)
 
+instance HasHardForkHistory ByronBlock where
+  type HardForkIndices ByronBlock = '[()]
+
+  hardForkShape cfg = HardFork.singletonShape eraParams
+    where
+      genesis         = byronGenesisConfig cfg
+      SecurityParam k = genesisSecurityParam genesis
+
+      eraParams :: HardFork.EraParams
+      eraParams = HardFork.EraParams {
+            eraEpochSize  = fromByronEpochSlots $ byronEpochSlots cfg
+          , eraSlotLength = fromByronSlotLength $ genesisSlotLength genesis
+          , eraSafeZone   = HardFork.SafeZone {
+                safeFromTip     = 2 * k
+
+                -- @180@ is merely a lower bound on the 'EpochNo' in which the
+                -- Byron-to-Shelley transition could take place. We can update
+                -- it over time, and set it to the precise value once the
+                -- transition has actually taken place.
+              , safeBeforeEpoch = HardFork.LowerBound (EpochNo 180)
+              }
+          }
+
+  -- TODO: This is wrong. We should look at the state of the ledger.
+  -- Once we actually start using the hard fork combinator, we should fix this.
+  -- <https://github.com/input-output-hk/ouroboros-network/issues/1786>
+  hardForkTransitions _ _ = HardFork.transitionsUnknown
+
 instance LedgerDerivedInfo ByronBlock where
-  knownSlotLengths =
-        singletonSlotLengths
-      . slotLengthFromMillisec
-      . (fromIntegral :: Natural -> Integer)
-      . CC.ppSlotDuration
-      . Gen.configProtocolParameters
-      . byronGenesisConfig
+  knownSlotLengths = singletonSlotLengths
+                   . fromByronSlotLength
+                   . genesisSlotLength
+                   . byronGenesisConfig
 
 {-------------------------------------------------------------------------------
   Auxiliary

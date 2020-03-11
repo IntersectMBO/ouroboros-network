@@ -87,7 +87,7 @@ data TestConfig = TestConfig
   , nodeJoinPlan :: !NodeJoinPlan
   , nodeRestarts :: !NodeRestarts
   , nodeTopology :: !NodeTopology
-  , slotLengths  :: !SlotLengths
+  , slotLength   :: !SlotLength
   , initSeed     :: !Seed
   }
   deriving (Show)
@@ -117,7 +117,7 @@ instance Arbitrary TestConfig where
       numSlots     <- arbitrary
       nodeJoinPlan <- genNodeJoinPlan numCoreNodes numSlots
       nodeTopology <- genNodeTopology numCoreNodes
-      slotLengths  <- arbitrary
+      slotLength   <- arbitrary
       initSeed     <- arbitrary
       pure TestConfig
         { numCoreNodes
@@ -126,7 +126,7 @@ instance Arbitrary TestConfig where
           -- TODO how to enrich despite variable schedules?
         , nodeRestarts = noRestarts
         , nodeTopology
-        , slotLengths
+        , slotLength
         , initSeed
         }
 
@@ -136,7 +136,7 @@ instance Arbitrary TestConfig where
     , nodeJoinPlan
     , nodeRestarts
     , nodeTopology
-    , slotLengths
+    , slotLength
     , initSeed
     } =
       dropId $
@@ -146,7 +146,7 @@ instance Arbitrary TestConfig where
           , nodeJoinPlan = p'
           , nodeRestarts = r'
           , nodeTopology = top'
-          , slotLengths  = ls'
+          , slotLength   = len'
           , initSeed
           }
       | n'             <- andId shrink numCoreNodes
@@ -157,7 +157,7 @@ instance Arbitrary TestConfig where
       , p'             <- andId shrinkNodeJoinPlan adjustedP
       , r'             <- andId shrinkNodeRestarts adjustedR
       , top'           <- andId shrinkNodeTopology adjustedTop
-      , ls'            <- andId shrink slotLengths
+      , len'           <- andId shrink slotLength
       ]
 
 {-------------------------------------------------------------------------------
@@ -212,7 +212,7 @@ runTestNetwork
     , nodeJoinPlan
     , nodeRestarts
     , nodeTopology
-    , slotLengths
+    , slotLength
     , initSeed
     }
   epochSize
@@ -227,7 +227,7 @@ runTestNetwork
           , tnaRNG            = seedToChaCha initSeed
           , tnaRekeyM         = Nothing
           , tnaRestarts       = nodeRestarts
-          , tnaSlotLengths    = slotLengths
+          , tnaSlotLength     = slotLength
           , tnaTopology       = nodeTopology
           , tnaEpochSize      = epochSize
           }

@@ -40,6 +40,7 @@ import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor as LedgerCursor
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
@@ -57,7 +58,6 @@ import           Test.Tasty.QuickCheck
 
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
-
 
 {-------------------------------------------------------------------------------
   Top-level tests
@@ -247,14 +247,21 @@ testCfg securityParam = TopLevelConfig {
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = LedgerConfig
-    , configBlock  = TestBlockConfig slotLengths numCoreNodes
+    , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
     }
   where
     slotLengths :: SlotLengths
-    slotLengths = singletonSlotLengths $ slotLengthFromSec 20
+    slotLengths = singletonSlotLengths slotLength
+
+    slotLength :: SlotLength
+    slotLength = slotLengthFromSec 20
 
     numCoreNodes :: NumCoreNodes
     numCoreNodes = NumCoreNodes 1
+
+    eraParams :: HardFork.EraParams
+    eraParams = HardFork.defaultEraParams securityParam slotLength
+
 
 {-------------------------------------------------------------------------------
   Orphans

@@ -26,6 +26,9 @@ import           Test.Tasty.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
+import           Cardano.Crypto.DSIGN.Mock
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block hiding (ChainUpdate (..))
@@ -46,11 +49,10 @@ import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type (ChainSync)
 
-import           Cardano.Crypto.DSIGN.Mock
-
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Extended hiding (ledgerState)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -394,7 +396,10 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     k = maxRollbacks securityParam
 
     slotLengths :: SlotLengths
-    slotLengths = singletonSlotLengths $ slotLengthFromSec 20
+    slotLengths = singletonSlotLengths slotLength
+
+    slotLength :: SlotLength
+    slotLength = slotLengthFromSec 20
 
     nodeCfg :: CoreNodeId -> TopLevelConfig TestBlock
     nodeCfg coreNodeId = TopLevelConfig {
@@ -411,8 +416,11 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                           ]
           }
       , configLedger = LedgerConfig
-      , configBlock  = TestBlockConfig slotLengths numCoreNodes
+      , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
       }
+
+    eraParams :: HardFork.EraParams
+    eraParams = HardFork.defaultEraParams securityParam slotLength
 
     numCoreNodes :: NumCoreNodes
     numCoreNodes = NumCoreNodes 2

@@ -60,7 +60,7 @@ tests = testGroup "PBFT" $
           ]
         , nodeRestarts = noRestarts
         , nodeTopology = meshNodeTopology ncn5
-        , slotLengths  = singletonSlotLengths $ slotLengthFromSec 1
+        , slotLength   = slotLengthFromSec 1
         , initSeed     = Seed (9550173506264790139,4734409083700350196,9697926137031612922,16476814117921936461,9569412668768792610)
         }
     , testProperty "simple convergence" $ \tc ->
@@ -101,7 +101,7 @@ prop_simple_pbft_convergence
             , nodeInfo    = plainTestNodeInitialization .
                             protocolInfoMockPBFT
                               params
-                              (singletonSlotLengths pbftSlotLength)
+                              (defaultSimpleBlockConfig k pbftSlotLength)
             , rekeying    = Nothing
             }
 

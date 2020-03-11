@@ -43,6 +43,7 @@ library
                        Ouroboros.Consensus.BlockchainTime.SlotLengths
                        Ouroboros.Consensus.BlockchainTime.WallClock
                        Ouroboros.Consensus.Config
+                       Ouroboros.Consensus.HardFork.History
                        Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Dual
@@ -87,6 +88,7 @@ library
                        Ouroboros.Consensus.Util.CallStack
                        Ouroboros.Consensus.Util.CBOR
                        Ouroboros.Consensus.Util.Condense
+                       Ouroboros.Consensus.Util.Counting
                        Ouroboros.Consensus.Util.EarlyExit
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.IOLike
@@ -256,6 +258,7 @@ test-suite test-consensus
   other-modules:
                        Test.Consensus.BlockchainTime.SlotLengths
                        Test.Consensus.BlockchainTime.WallClock
+                       Test.Consensus.HardFork.History
                        Test.Consensus.MiniProtocol.ChainSync.Client
                        Test.Consensus.MiniProtocol.LocalStateQuery.Server
                        Test.Consensus.Mempool

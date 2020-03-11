@@ -2,14 +2,14 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Mock.Node.PBFT (
-    protocolInfoMockPBFT
+    MockPBftBlock
+  , protocolInfoMockPBFT
   ) where
 
 import qualified Data.Bimap as Bimap
 
 import           Cardano.Crypto.DSIGN
 
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
@@ -19,12 +19,13 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 
+type MockPBftBlock = SimplePBftBlock SimpleMockCrypto PBftMockCrypto
+
 protocolInfoMockPBFT :: PBftParams
-                     -> SlotLengths
+                     -> BlockConfig MockPBftBlock
                      -> CoreNodeId
-                     -> ProtocolInfo (SimplePBftBlock SimpleMockCrypto
-                                                      PBftMockCrypto)
-protocolInfoMockPBFT params slotLengths nid =
+                     -> ProtocolInfo MockPBftBlock
+protocolInfoMockPBFT params cfg nid =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             configConsensus = PBftConfig {
@@ -37,7 +38,7 @@ protocolInfoMockPBFT params slotLengths nid =
                    }
                }
           , configLedger = SimpleLedgerConfig ledgerView
-          , configBlock  = SimpleBlockConfig slotLengths
+          , configBlock  = cfg
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState S.empty)

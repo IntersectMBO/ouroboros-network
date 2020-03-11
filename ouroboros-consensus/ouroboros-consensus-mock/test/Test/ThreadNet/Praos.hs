@@ -54,7 +54,7 @@ tests = testGroup "Praos"
             , nodeJoinPlan
             , nodeRestarts = noRestarts
             , nodeTopology
-            , slotLengths  = singletonSlotLengths praosSlotLength
+            , slotLength   = praosSlotLength
             , initSeed
             }
     ]
@@ -66,7 +66,7 @@ tests = testGroup "Praos"
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeRestarts = noRestarts
       , nodeTopology = meshNodeTopology numCoreNodes
-      , slotLengths  = singletonSlotLengths praosSlotLength
+      , slotLength   = praosSlotLength
       , initSeed     = seed
       }
 
@@ -113,7 +113,9 @@ prop_simple_praos_convergence
                                       numCoreNodes
                                       nid
                                       params
-                                      (singletonSlotLengths praosSlotLength)
+                                      (defaultSimpleBlockConfig
+                                        praosSecurityParam
+                                        praosSlotLength)
             , rekeying    = Nothing
             }
 

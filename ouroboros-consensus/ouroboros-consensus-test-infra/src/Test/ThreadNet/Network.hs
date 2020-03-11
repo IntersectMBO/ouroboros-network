@@ -168,7 +168,7 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
   , tnaRNG          :: ChaChaDRG
   , tnaRekeyM       :: Maybe (RekeyM m blk)
   , tnaRestarts     :: NodeRestarts
-  , tnaSlotLengths  :: SlotLengths
+  , tnaSlotLength   :: SlotLength
   , tnaTopology     :: NodeTopology
   , tnaEpochSize    :: EpochSize
     -- ^ Epoch size
@@ -258,7 +258,7 @@ runThreadNetwork ThreadNetworkArgs
   , tnaRNG            = initRNG
   , tnaRekeyM         = mbRekeyM
   , tnaRestarts       = nodeRestarts
-  , tnaSlotLengths    = slotLengths
+  , tnaSlotLength     = slotLength
   , tnaTopology       = nodeTopology
   , tnaEpochSize      = epochSize
   } = withRegistry $ \sharedRegistry -> do
@@ -272,7 +272,10 @@ runThreadNetwork ThreadNetworkArgs
     -- from the wrong thread. To stop the network, wait for all the nodes'
     -- blockchain times to be done and then kill the main thread of each node,
     -- which should terminate all other threads it spawned.
-    sharedTestBtime <- newTestBlockchainTime sharedRegistry numSlots slotLengths
+    sharedTestBtime <- newTestBlockchainTime
+                         sharedRegistry
+                         numSlots
+                         (singletonSlotLengths slotLength)
     let sharedBtime = testBlockchainTime sharedTestBtime
 
     -- This function is organized around the notion of a network of nodes as a

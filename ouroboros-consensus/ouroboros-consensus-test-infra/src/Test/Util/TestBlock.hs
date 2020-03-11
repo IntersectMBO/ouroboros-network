@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -84,6 +85,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -245,6 +247,11 @@ instance Condense (ChainHash TestBlock) where
 data instance BlockConfig TestBlock = TestBlockConfig {
       testBlockSlotLengths :: !SlotLengths
 
+      -- | Era parameters
+      --
+      -- TODO: This should obsolete 'testBlockSlotLengths' (#1637)
+    , testBlockEraParams :: HardFork.EraParams
+
       -- | Number of core nodes
       --
       -- We need this in order to compute the 'ValidateView', which must
@@ -329,6 +336,11 @@ instance LedgerSupportsProtocol TestBlock where
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView_ _ _ _ = return ()
 
+instance HasHardForkHistory TestBlock where
+  type HardForkIndices TestBlock = '[()]
+  hardForkShape           = HardFork.singletonShape . testBlockEraParams
+  hardForkTransitions _ _ = HardFork.transitionsUnknown
+
 instance LedgerDerivedInfo TestBlock where
   knownSlotLengths = testBlockSlotLengths
 
@@ -367,14 +379,20 @@ singleNodeTestConfig = TopLevelConfig {
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = LedgerConfig
-    , configBlock  = TestBlockConfig slotLengths numCoreNodes
+    , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
     }
   where
     slotLengths :: SlotLengths
-    slotLengths = singletonSlotLengths $ slotLengthFromSec 20
+    slotLengths = singletonSlotLengths slotLength
+
+    slotLength :: SlotLength
+    slotLength = slotLengthFromSec 20
 
     numCoreNodes :: NumCoreNodes
     numCoreNodes = NumCoreNodes 1
+
+    eraParams :: HardFork.EraParams
+    eraParams = HardFork.defaultEraParams k slotLength
 
     -- We fix k at 4 for now
     k = SecurityParam 4

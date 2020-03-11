@@ -10,6 +10,7 @@ module Test.Util.Orphans.Arbitrary
     , genSmallEpochNo
     , genSmallSlotNo
     , SmallDiffTime (..)
+    , dawnOfTime
     ) where
 
 import           Data.Time
