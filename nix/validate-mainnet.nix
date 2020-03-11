@@ -23,7 +23,8 @@ let
       --dbDir $out \
       --epochSlots 21600
     '';
-  validate-mainnet = pkgs.runCommand "validate-mainnet"
+in
+  pkgs.runCommand "validate-mainnet"
     { buildInputs = [ byron-db-converter ]; }
     ''
     mkdir $out
@@ -34,6 +35,4 @@ let
       --genesisHash 5f20df933584822601f9e3f8c024eb5eb252fe8cefb24d1317dc3d432e940ebb \
       --dbDir $out \
       ${immDBStr}
-    '';
-in
-  { inherit validate-mainnet; }
+    ''
