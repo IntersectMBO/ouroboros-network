@@ -311,6 +311,8 @@ runDataDiffusion tracers
       case ipSubscriptionTargets (ispIps daIpProducers) initiatorLocalAddresses of
         -- There were no addresses in the config (ispIps) which have an
         -- address in initiatorLocalAddresses of the same family.
+        --
+        -- TODO: add a log warning message.  This could be a misconfiguration.
         Nothing -> pure ()
         Just connIds -> Subscription.worker
           (contramap (WithIPList initiatorLocalAddresses (ispIps daIpProducers)) dtIpSubscriptionTracer)
@@ -337,6 +339,7 @@ runDataDiffusion tracers
         resolver
         (dstDomain target)
       case ipSubscriptionTargets addrs initiatorLocalAddresses of
+        -- TODO: add a log warning message.  This could be a misconfiguration.
         Nothing -> pure ()
         Just connIds -> Subscription.worker
           (contramap (WithDomainName (dstDomain target)) dtDnsSubscriptionTracer)
