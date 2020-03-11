@@ -89,5 +89,6 @@ theProposedProtocolVersion = Update.ProtocolVersion 1 0 0
 --
 theProposedSoftwareVersion :: Update.SoftwareVersion
 theProposedSoftwareVersion = Update.SoftwareVersion
-  (Update.ApplicationName "Cardano Test")
+  -- appnames must be ASCII and <= 12 characters
+  (Update.ApplicationName "Dummy")
   0
