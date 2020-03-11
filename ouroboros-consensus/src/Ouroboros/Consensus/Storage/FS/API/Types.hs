@@ -288,7 +288,11 @@ ioToFsError :: HasCallStack
 ioToFsError fep ioErr = FsError
     { fsErrorType   = ioToFsErrorType ioErr
     , fsErrorPath   = fep
-    , fsErrorString = IO.ioeGetErrorString ioErr
+      -- We don't use 'ioeGetErrorString', because that only returns the
+      -- description in case 'isUserErrorType' is true, otherwise it will
+      -- return 'ioToFsErrorType', which we already include in 'fsErrorType'.
+      -- So we use the underlying field directly.
+    , fsErrorString = GHC.ioe_description ioErr
     , fsErrorNo     = Errno <$> GHC.ioe_errno ioErr
     , fsErrorStack  = callStack
     , fsLimitation  = False
