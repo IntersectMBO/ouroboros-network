@@ -19,6 +19,11 @@ let
     # the Haskell.nix package set, reduced to local packages.
     (selectProjectPackages ouroborosNetworkHaskellPackages);
 
+  validate-mainnet-test = import ./nix/validate-mainnet.nix {
+    inherit pkgs;
+    byron-db-converter = haskellPackages.ouroboros-consensus-byron.components.exes.db-converter;
+  };
+
   self = {
     inherit haskellPackages;
 
@@ -35,12 +40,12 @@ let
 
     checks = recurseIntoAttrs {
       # `checks.tests` collect results of executing the tests:
-      tests = collectChecks haskellPackages;
+      tests = collectChecks haskellPackages // {inherit validate-mainnet-test; };
     };
 
     shell = import ./shell.nix {
       inherit pkgs;
       withHoogle = true;
     };
-};
+  };
 in self
