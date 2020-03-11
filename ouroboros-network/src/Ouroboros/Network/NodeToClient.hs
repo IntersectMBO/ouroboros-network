@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -21,6 +22,8 @@ module Ouroboros.Network.NodeToClient (
   , NetworkServerTracers (..)
   , nullNetworkServerTracers
   , connectTo
+  , subscriptionWorker
+  , subscriptionWorker_V1
 
   , withConnections
 
@@ -55,7 +58,11 @@ module Ouroboros.Network.NodeToClient (
   ) where
 
 import           Control.Exception (IOException)
+import           Control.Tracer (contramap)
 import qualified Data.ByteString.Lazy as BL
+import           Data.Functor.Identity (Identity (..))
+import           Data.Maybe (fromMaybe)
+import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Time.Clock
@@ -66,7 +73,9 @@ import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 
 import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.Connections.Types (Connections)
+import           Ouroboros.Network.Connections.Types ( Connections
+                                                     , Provenance (..)
+                                                     )
 import qualified Ouroboros.Network.Connections.Concurrent as Connection
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
 import           Ouroboros.Network.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
@@ -78,6 +87,8 @@ import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNul
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
 import           Ouroboros.Network.Protocol.Handshake.Type
 
+import qualified Ouroboros.Network.Subscription as Subscription (worker)
+import qualified Ouroboros.Network.Subscription.Ip as Subscription (ipRetryDelay)
 import           Ouroboros.Network.Subscription.Ip ( LocalAddresses (..)
                                                    , SubscriptionTrace (..)
                                                    )
@@ -185,6 +196,7 @@ connectTo snocket tracers versions path =
                   versions
                   (localAddressFromPath "")
                   (localAddressFromPath path)
+  
 
 -- | `Ouroboros.Network.Socket.withConnections` but with the protocol types
 -- specialized.
@@ -216,6 +228,93 @@ withConnections errorPolicies sn mkApp =
       errorPolicies
       cborTermVersionDataCodec
       versions
+
+-- | A node-to-client client admits only locally initiated connections.
+--
+-- This is local declaration, there's no need to export it, and it cannot be
+-- eliminated.
+--
+data LocalRequest (p :: Provenance) where
+    LocalSubscriptionConnection :: LocalRequest Local
+
+
+-- | Client subscription configuration parameters.
+--
+data ClientSubscriptionParams = ClientSubscriptionParams
+  { cspAddress                :: !LocalAddress
+  -- ^ unix socket or named pipe address
+  , cspConnectionAttemptDelay :: !(Maybe DiffTime)
+  -- ^ delay between connection attempts, the default is 10s.
+  , cspErrorPolicies          :: !ErrorPolicies
+  -- ^ error policies for subscription worker
+  }
+
+-- | Local subscription worker.  It keeps connected to a the node. If the node
+-- goes down it will re-connect after `cspConnectionAttemptDelay`.
+--
+subscriptionWorker
+  :: LocalSnocket
+  -> NetworkSubscriptionTracers Identity LocalAddress NodeToClientVersion
+  -> ClientSubscriptionParams
+  -> Versions
+      NodeToClientVersion
+      DictVersion
+      (ConnectionId LocalAddress ->
+         OuroborosApplication
+           InitiatorApp
+           BL.ByteString IO x y)
+  -> IO ()
+subscriptionWorker snocket tracers
+                   ClientSubscriptionParams {
+                       cspAddress,
+                       cspConnectionAttemptDelay,
+                       cspErrorPolicies
+                     }
+                   initiatorApplication =
+    withConnections cspErrorPolicies snocket localConnectionRequest $ \connections ->
+      Subscription.worker
+        (Identity `contramap` nsSubscriptionTracer tracers)
+        (nsErrorPolicyTracer tracers)
+        cspErrorPolicies
+        (ConnectionId cspAddress cspAddress :| [])
+        1
+        (fromMaybe Subscription.ipRetryDelay cspConnectionAttemptDelay)
+        snocket
+        connections
+        LocalSubscriptionConnection
+  where
+    localConnectionRequest 
+      :: LocalRequest provenance
+      -> SomeVersionedApplication NodeToClientVersion DictVersion LocalAddress provenance
+    localConnectionRequest LocalSubscriptionConnection =
+      SomeVersionedInitiatorApp
+        (NetworkConnectTracers { 
+          nctMuxTracer = nsMuxTracer tracers,
+          nctHandshakeTracer = nsHandshakeTracer tracers
+        })
+        initiatorApplication
+
+-- | Subscription worker for version 'NodeToClientV_1' of the node-to-client
+-- mini-protocol suite protocol.
+--
+subscriptionWorker_V1
+  :: LocalSnocket
+  -> NetworkSubscriptionTracers Identity LocalAddress NodeToClientVersion
+  -> ClientSubscriptionParams
+  -> NodeToClientVersionData
+  -> (ConnectionId LocalAddress ->
+         OuroborosApplication
+           InitiatorApp
+           BL.ByteString IO x y)
+  -> IO ()
+subscriptionWorker_V1 snocket tracers params versionData application =
+    subscriptionWorker snocket tracers params
+      (V.simpleSingletonVersions
+        NodeToClientV_1
+        versionData
+        (DictVersion nodeToClientCodecCBORTerm)
+        application)
+
 
 -- | 'ErrorPolicies' for client application.  Additional rules can be added by
 -- means of a 'Semigroup' instance of 'ErrorPolicies'.
