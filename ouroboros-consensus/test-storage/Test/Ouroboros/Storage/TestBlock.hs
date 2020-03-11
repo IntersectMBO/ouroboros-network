@@ -441,8 +441,8 @@ instance ValidateEnvelope TestBlock where
 instance LedgerSupportsProtocol TestBlock where
   protocolLedgerView _ _ =
       ()
-  anachronisticProtocolLedgerView _ _ _ =
-      Right ()
+  anachronisticProtocolLedgerView_ _ _ _ =
+      return ()
 
 instance LedgerDerivedInfo TestBlock where
   knownSlotLengths = testBlockSlotLengths

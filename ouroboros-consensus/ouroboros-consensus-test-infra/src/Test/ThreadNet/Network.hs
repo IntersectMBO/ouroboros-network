@@ -248,7 +248,6 @@ runThreadNetwork :: forall m blk.
                     , TxGen blk
                     , TracingConstraints blk
                     , HasCallStack
-                    , Show (LedgerView (BlockProtocol blk))
                     )
                  => ThreadNetworkArgs m blk -> m (TestOutput blk)
 runThreadNetwork ThreadNetworkArgs

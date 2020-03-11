@@ -102,8 +102,8 @@ instance SimpleCrypto c
   validateView _ _ = ()
 
 instance SimpleCrypto c => LedgerSupportsProtocol (SimplePraosRuleBlock c) where
-  protocolLedgerView              _ _   = ()
-  anachronisticProtocolLedgerView _ _ _ = Right ()
+  protocolLedgerView               _ _   = ()
+  anachronisticProtocolLedgerView_ _ _ _ = return ()
 
 {-------------------------------------------------------------------------------
   We don't need crypto for this protocol

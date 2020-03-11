@@ -83,6 +83,7 @@ library
                        Ouroboros.Consensus.Protocol.Signed
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.AnchoredFragment
+                       Ouroboros.Consensus.Util.Assert
                        Ouroboros.Consensus.Util.CallStack
                        Ouroboros.Consensus.Util.CBOR
                        Ouroboros.Consensus.Util.Condense

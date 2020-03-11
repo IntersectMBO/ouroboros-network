@@ -133,8 +133,8 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => LedgerSupportsProtocol (SimplePBftBlock c PBftMockCrypto) where
-  protocolLedgerView              cfg _   =         simpleMockLedgerConfig cfg
-  anachronisticProtocolLedgerView cfg _ _ = Right $ simpleMockLedgerConfig cfg
+  protocolLedgerView               cfg _   =          simpleMockLedgerConfig cfg
+  anachronisticProtocolLedgerView_ cfg _ _ = return $ simpleMockLedgerConfig cfg
 
 {-------------------------------------------------------------------------------
   Serialisation
