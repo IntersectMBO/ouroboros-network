@@ -2,7 +2,7 @@
 {-# LANGUAGE NumericUnderscores   #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Util.Orphans.Arbitrary
     ( genLimitedEpochSize
@@ -16,7 +16,7 @@ import           Data.Time
 import           Data.Word (Word64)
 import           Test.QuickCheck hiding (Fixed (..))
 
-import           Ouroboros.Network.Block (SlotNo (..))
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
@@ -25,10 +25,9 @@ import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util.Random (Seed (..))
 
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
-                     EpochSize (..))
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
-
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 
 minNumCoreNodes :: Word64
 minNumCoreNodes = 2
@@ -69,8 +68,9 @@ instance Arbitrary SlotLength where
 deriving via UTCTime         instance Arbitrary SystemStart
 deriving via Positive Word64 instance Arbitrary SlotNo
 deriving via Word64          instance Arbitrary EpochNo
-deriving via Positive Word64 instance Arbitrary EpochSize
-deriving via Word64          instance Arbitrary RelativeSlot
+
+instance Arbitrary RelativeSlot where
+  arbitrary = RelativeSlot <$> arbitrary <*> arbitrary <*> arbitrary
 
 -- | The functions 'slotAtTime' and 'timeUntilNextSlot' suffer from arithmetic
 -- overflow for very large values, so generate values that avoid overflow when
@@ -99,8 +99,21 @@ genSmallEpochNo :: Gen EpochNo
 genSmallEpochNo =
     EpochNo <$> choose (0, 10000)
 
-instance Arbitrary EpochSlot where
-  arbitrary = EpochSlot <$> arbitrary <*> arbitrary
+-- | This picks an 'EpochNo' between 0 and 10000
+--
+-- We don't pick larger values because we're not interested in testing overflow
+-- due to huge epoch numbers and even huger slot numbers.
+instance Arbitrary ChunkNo where
+  arbitrary = ChunkNo <$> choose (0, 10000)
+  shrink    = genericShrink
+
+-- | Picks a 'ChunkSize' between 1 and 100, and randomly choose to enable EBBs
+instance Arbitrary ChunkSize where
+  arbitrary = ChunkSize <$> arbitrary <*> choose (1, 100)
+  shrink    = genericShrink
+
+instance Arbitrary ChunkSlot where
+  arbitrary = UnsafeChunkSlot <$> arbitrary <*> arbitrary
   shrink    = genericShrink
 
 instance Arbitrary ClockSkew where

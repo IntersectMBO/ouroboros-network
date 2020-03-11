@@ -4,7 +4,7 @@
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 -- | Instances required to support PBFT
 module Ouroboros.Consensus.Byron.Ledger.PBFT (
     toPBftLedgerView

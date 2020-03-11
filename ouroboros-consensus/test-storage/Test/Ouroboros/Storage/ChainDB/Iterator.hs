@@ -19,6 +19,8 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 
+import           Cardano.Slotting.Slot hiding (At)
+
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
@@ -42,7 +44,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                      (IteratorKey (..), TraceIteratorEvent (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo (fixedSizeEpochInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolDB
 
@@ -105,12 +106,14 @@ tests = testGroup "Iterator"
 
 -- All blocks on the same chain
 a, b, c, d, e :: TestBlock
-a = firstBlock    0 TestBody { tbForkNo = 0, tbIsValid = True }
-b = mkNextBlock a 1 TestBody { tbForkNo = 0, tbIsValid = True }
-c = mkNextBlock b 2 TestBody { tbForkNo = 0, tbIsValid = True }
-d = mkNextBlock c 3 TestBody { tbForkNo = 0, tbIsValid = True }
-e = mkNextBlock d 4 TestBody { tbForkNo = 0, tbIsValid = True }
+a = firstBlock  noEBBs   0 TestBody { tbForkNo = 0, tbIsValid = True }
+b = mkNextBlock noEBBs a 1 TestBody { tbForkNo = 0, tbIsValid = True }
+c = mkNextBlock noEBBs b 2 TestBody { tbForkNo = 0, tbIsValid = True }
+d = mkNextBlock noEBBs c 3 TestBody { tbForkNo = 0, tbIsValid = True }
+e = mkNextBlock noEBBs d 4 TestBody { tbForkNo = 0, tbIsValid = True }
 
+noEBBs :: SlotNo -> Bool
+noEBBs _ = False
 
 -- | Requested stream = A -> C
 --
@@ -164,9 +167,10 @@ prop_1435_case1 = prop_general_test
     (StreamToInclusive   (blockRealPoint b'))
     (Left (ForkTooOld (StreamFromInclusive (blockRealPoint b'))))
   where
-    ebb = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
-    b   = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
-    b'  = mkNextBlock ebb 0 TestBody { tbForkNo = 1, tbIsValid = True }
+    canContainEBB = const True
+    ebb = firstEBB    canContainEBB       TestBody { tbForkNo = 0, tbIsValid = True }
+    b   = mkNextBlock canContainEBB ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
+    b'  = mkNextBlock canContainEBB ebb 0 TestBody { tbForkNo = 1, tbIsValid = True }
 
 -- | Requested stream = EBB' -> EBB' where EBB, B, and EBB' are all blocks in
 -- the same slot, and EBB' is not part of the current chain nor ChainDB.
@@ -184,9 +188,10 @@ prop_1435_case2 = prop_general_test
     (StreamToInclusive   (blockRealPoint ebb'))
     (Left (ForkTooOld (StreamFromInclusive (blockRealPoint ebb'))))
   where
-    ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
-    b    = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
-    ebb' = firstEBB          TestBody { tbForkNo = 1, tbIsValid = True }
+    canContainEBB = const True
+    ebb  = firstEBB    canContainEBB       TestBody { tbForkNo = 0, tbIsValid = True }
+    b    = mkNextBlock canContainEBB ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
+    ebb' = firstEBB    canContainEBB       TestBody { tbForkNo = 1, tbIsValid = True }
 
 -- | Requested stream = EBB -> EBB where EBB and B are all blocks in the same
 -- slot.
@@ -204,8 +209,9 @@ prop_1435_case3 = prop_general_test
     (StreamToInclusive   (blockRealPoint ebb))
     (Right (map Right [ebb]))
   where
-    ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
-    b    = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
+    canContainEBB = const True
+    ebb  = firstEBB    canContainEBB       TestBody { tbForkNo = 0, tbIsValid = True }
+    b    = mkNextBlock canContainEBB ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
 
 -- | Requested stream = EBB -> EBB where EBB and B are all blocks in the same
 -- slot.
@@ -223,8 +229,9 @@ prop_1435_case4 = prop_general_test
     (StreamToInclusive   (blockRealPoint ebb))
     (Right (map Right [ebb]))
   where
-    ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
-    b    = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
+    canContainEBB = const True
+    ebb  = firstEBB    canContainEBB       TestBody { tbForkNo = 0, tbIsValid = True }
+    b    = mkNextBlock canContainEBB ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
 
 -- | Requested stream = EBB -> EBB where EBB and B' are all blocks in the same
 -- slot, and B' is not part of the current chain nor ChainDB.
@@ -242,8 +249,9 @@ prop_1435_case5 = prop_general_test
     (StreamToInclusive   (blockRealPoint b'))
     (Left (ForkTooOld (StreamFromInclusive (blockRealPoint b'))))
   where
-    ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
-    b'   = mkNextBlock ebb 0 TestBody { tbForkNo = 1, tbIsValid = True }
+    canContainEBB = const True
+    ebb  = firstEBB    canContainEBB       TestBody { tbForkNo = 0, tbIsValid = True }
+    b'   = mkNextBlock canContainEBB ebb 0 TestBody { tbForkNo = 1, tbIsValid = True }
 
 -- | Requested stream = EBB' -> EBB' where EBB and EBB' are all blocks in the
 -- same slot, and EBB' is not part of the current chain nor ChainDB.
@@ -261,8 +269,9 @@ prop_1435_case6 = prop_general_test
     (StreamToInclusive   (blockRealPoint ebb'))
     (Left (ForkTooOld (StreamFromInclusive (blockRealPoint ebb'))))
   where
-    ebb  = firstEBB TestBody { tbForkNo = 0, tbIsValid = True }
-    ebb' = firstEBB TestBody { tbForkNo = 1, tbIsValid = True }
+    canContainEBB = const True
+    ebb  = firstEBB canContainEBB TestBody { tbForkNo = 0, tbIsValid = True }
+    ebb' = firstEBB canContainEBB TestBody { tbForkNo = 1, tbIsValid = True }
 
 -- | The general property test
 prop_general_test
@@ -415,7 +424,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     -- | Open a mock ImmutableDB and add the given chain of blocks
     openImmDB :: Chain TestBlock -> m (ImmDB m TestBlock)
     openImmDB chain = do
-        (_immDBModel, immDB) <- ImmDB.openDBMock epochSize
+        (_immDBModel, immDB) <- ImmDB.openDBMock chunkInfo
         forM_ (Chain.toOldestFirst chain) $ \block -> case isEBB (getHeader block) of
           Nothing -> ImmDB.appendBlock immDB
             (blockSlot block) (blockNo block) (blockHash block)
@@ -424,10 +433,10 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
             epoch (blockNo block) (blockHash block)
             (CBOR.toBuilder <$> encodeWithBinaryInfo block)
         return $ mkImmDB immDB (const <$> decode) (const <$> decode)
-          encodeWithBinaryInfo epochInfo isEBB addHdrEnv
+          encodeWithBinaryInfo chunkInfo isEBB addHdrEnv
       where
-        epochInfo = fixedSizeEpochInfo epochSize
-        isEBB     = testHeaderEpochNoIfEBB epochSize
+        chunkInfo = ImmDB.simpleChunkInfo epochSize
+        isEBB     = testHeaderEpochNoIfEBB chunkInfo
 
 encodeWithBinaryInfo :: TestBlock -> BinaryInfo Encoding
 encodeWithBinaryInfo blk = BinaryInfo

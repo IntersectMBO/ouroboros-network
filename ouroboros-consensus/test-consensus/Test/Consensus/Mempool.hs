@@ -18,7 +18,7 @@ import           Data.Either (isRight)
 import           Data.List (find, foldl', isSuffixOf, nub, partition, sort)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (isJust, isNothing, mapMaybe)
+import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import           Data.Word
 import           GHC.Stack (HasCallStack)
@@ -114,8 +114,8 @@ prop_Mempool_addTxs_result setup =
     withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
       result <- addTxs mempool (allTxs setup)
       return $ counterexample (ppTxs (txs setup)) $
-        [(tx, isNothing mbErr) | (tx, mbErr) <- result] ===
-        [(testTx, valid)       | (testTx, valid) <- txs setup]
+        [(tx, isTxAddedOrAlreadyInMempool res) | (tx, res) <- result] ===
+        [(testTx, valid)                       | (testTx, valid) <- txs setup]
 
 -- | Test that invalid transactions are never added to the 'Mempool'.
 prop_Mempool_InvalidTxsNeverAdded :: TestSetupWithTxs -> Property
@@ -185,14 +185,15 @@ prop_Mempool_Capacity (MempoolCapTestSetup testSetupWithTxs) =
     TestSetupWithTxs testSetup txsToAdd = testSetupWithTxs
     MempoolCapacityBytes capacity = testMempoolCap testSetup
 
-    -- | Convert @Maybe TestTxError@ into a @Bool@: Nothing -> True, Just _ ->
-    -- False.
+    -- | Convert 'MempoolAddTxResult' into a 'Bool':
+    -- isTxAddedOrAlreadyInMempool -> True, isTxRejected -> False.
     blindErrors
-      :: ([(GenTx TestBlock, Maybe TestTxError)], [GenTx TestBlock])
+      :: ([(GenTx TestBlock, MempoolAddTxResult blk)], [GenTx TestBlock])
       -> ([(GenTx TestBlock, Bool)], [GenTx TestBlock])
     blindErrors (processed, toAdd) = (processed', toAdd)
       where
-        processed' = [(tx, isNothing mbErr) | (tx, mbErr) <- processed]
+        processed' = [ (tx, isTxAddedOrAlreadyInMempool txAddRes)
+                     | (tx, txAddRes) <- processed ]
 
     expectedResult
       :: Word32  -- ^ Current mempool size
@@ -317,10 +318,13 @@ ppTestSetup :: TestSetup -> String
 ppTestSetup TestSetup { testInitialTxs
                       , testMempoolCap = MempoolCapacityBytes mpCap
                       } = unlines $
-    ["Initial contents of the Mempool:"] <>
-    (map condense testInitialTxs)        <>
-    ["Mempool capacity:"]                <>
+    ["Initial contents of the Mempool:"]  <>
+    (map ppTestTxWithHash testInitialTxs) <>
+    ["Mempool capacity:"]                 <>
     [condense mpCap]
+
+ppTestTxWithHash :: TestTx -> String
+ppTestTxWithHash x = condense (hash (simpleGenTx x) :: Hash MD5 Tx, x)
 
 -- | Given some transactions, calculate the sum of their sizes in bytes.
 txSizesInBytes :: [TestTx] -> TxSizeInBytes
@@ -456,7 +460,7 @@ genValidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
         ins     = Set.fromList $ map fst assets
 
     -- At most spent half of someone's fortune
-    amount <- fromIntegral <$> choose (1, fortune `div` 2)
+    amount <- choose (1, fortune `div` 2)
     let outRecipient = (recipient, amount)
         outs
           | amount == fortune
@@ -659,7 +663,9 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
                                               testMempoolCap
                                               tracer
       result  <- addTxs mempool testInitialTxs
-      whenJust (find (isJust . snd) result) $ \(invalidTx, _) -> error $
+      -- the invalid transactions are reported in the same order they were
+      -- added, so the first error is not the result of a cascade
+      whenJust (find (isTxRejected . snd) result) $ \(invalidTx, _) -> error $
         "Invalid initial transaction: " <> condense invalidTx
 
       -- Clear the trace

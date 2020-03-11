@@ -15,7 +15,6 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
   , tryImmDB
   , parseDBFile
   , validateIteratorRange
-  , epochSlotToTip
   , dbFilesOnDisk
   , removeFilesStartingFrom
   , runGet
@@ -24,7 +23,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
   ) where
 
 import           Control.Monad (forM_, when)
-import           Control.Monad.Except (lift, runExceptT, throwError)
+import           Control.Monad.Except (runExceptT, throwError)
 import           Data.Binary.Get (Get)
 import qualified Data.Binary.Get as Get
 import qualified Data.ByteString.Lazy as Lazy
@@ -40,12 +39,13 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.EpochInfo.API
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
 
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (ChunkNo (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 
 {------------------------------------------------------------------------------
@@ -57,10 +57,10 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 data Two a = Two a a
   deriving (Functor, Foldable, Traversable)
 
-renderFile :: Text -> EpochNo -> FsPath
-renderFile fileType (EpochNo epoch) = fsPathFromList [name]
+renderFile :: Text -> ChunkNo -> FsPath
+renderFile fileType (ChunkNo chunk) = fsPathFromList [name]
   where
-    name = T.justifyRight 5 '0' (T.pack (show epoch)) <> "." <> fileType
+    name = T.justifyRight 5 '0' (T.pack (show chunk)) <> "." <> fileType
 
 throwUserError :: (MonadThrow m, HasCallStack) => UserError -> m a
 throwUserError e = throwM $ UserError e callStack
@@ -84,16 +84,16 @@ tryImmDB = fmap squash . try . try
            -> Either ImmutableDBError a
     squash = either (Left . fromFS) id
 
--- | Parse the prefix and epoch number from the filename of an index or epoch
+-- | Parse the prefix and chunk number from the filename of an index or chunk
 -- file.
 --
 -- > parseDBFile "00001.epoch"
 -- Just ("epoch", 1)
 -- > parseDBFile "00012.primary"
 -- Just ("primary", 12)
-parseDBFile :: String -> Maybe (String, EpochNo)
+parseDBFile :: String -> Maybe (String, ChunkNo)
 parseDBFile s = case T.splitOn "." $ T.pack s of
-    [n, ext] -> (T.unpack ext,) . EpochNo <$> readMaybe (T.unpack n)
+    [n, ext] -> (T.unpack ext,) . ChunkNo <$> readMaybe (T.unpack n)
     _        -> Nothing
 
 -- | Check whether the given iterator range is valid.
@@ -109,12 +109,12 @@ parseDBFile s = case T.splitOn "." $ T.pack s of
 -- See 'Ouroboros.Consensus.Storage.ImmutableDB.API.streamBinaryBlobs'.
 validateIteratorRange
   :: forall m hash. Monad m
-  => EpochInfo m
+  => ChunkInfo
   -> ImmTip
   -> Maybe (SlotNo, hash)  -- ^ range start (inclusive)
   -> Maybe (SlotNo, hash)  -- ^ range end (inclusive)
   -> m (Either ImmutableDBError ())
-validateIteratorRange epochInfo tip mbStart mbEnd = runExceptT $ do
+validateIteratorRange chunkInfo tip mbStart mbEnd = runExceptT $ do
     case (mbStart, mbEnd) of
       (Just (start, _), Just (end, _)) ->
         when (start > end) $
@@ -122,52 +122,45 @@ validateIteratorRange epochInfo tip mbStart mbEnd = runExceptT $ do
       _ -> return ()
 
     whenJust mbStart $ \(start, _) -> do
-      isNewer <- lift $ isNewerThanTip start
+      let isNewer = isNewerThanTip start
       when isNewer $
         throwError $ UserError (ReadFutureSlotError start tip) callStack
 
     whenJust mbEnd $ \(end, _) -> do
-      isNewer <- lift $ isNewerThanTip end
+      let isNewer = isNewerThanTip end
       when isNewer $
         throwError $ UserError (ReadFutureSlotError end tip) callStack
   where
-    isNewerThanTip :: SlotNo -> m Bool
+    isNewerThanTip :: SlotNo -> Bool
     isNewerThanTip slot = case tip of
-      Origin               -> return True
-      At (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
-      At (Block lastSlot)  -> return $ slot > lastSlot
+      Origin -> True
+      At b   -> slot > slotNoOfBlockOrEBB chunkInfo b
 
--- | Convert an 'EpochSlot' to a 'Tip'
-epochSlotToTip :: Monad m => EpochInfo m -> EpochSlot -> m ImmTip
-epochSlotToTip _         (EpochSlot epoch 0) = return $ At (EBB epoch)
-epochSlotToTip epochInfo epochSlot           = At . Block <$>
-    epochInfoAbsolute epochInfo epochSlot
-
--- | Go through all files, making three sets: the set of epoch files, primary
+-- | Go through all files, making three sets: the set of chunk files, primary
 -- index files, and secondary index files,, discarding all others.
-dbFilesOnDisk :: Set String -> (Set EpochNo, Set EpochNo, Set EpochNo)
+dbFilesOnDisk :: Set String -> (Set ChunkNo, Set ChunkNo, Set ChunkNo)
 dbFilesOnDisk = foldr categorise mempty
   where
-    categorise file fs@(epoch, primary, secondary) =
+    categorise file fs@(chunk, primary, secondary) =
       case parseDBFile file of
-        Just ("epoch",     n) -> (Set.insert n epoch, primary, secondary)
-        Just ("primary",   n) -> (epoch, Set.insert n primary, secondary)
-        Just ("secondary", n) -> (epoch, primary, Set.insert n secondary)
+        Just ("epoch",     n) -> (Set.insert n chunk, primary, secondary)
+        Just ("primary",   n) -> (chunk, Set.insert n primary, secondary)
+        Just ("secondary", n) -> (chunk, primary, Set.insert n secondary)
         _                     -> fs
 
--- | Remove all epoch and index starting from the given epoch (included).
+-- | Remove all chunk and index starting from the given chunk (included).
 removeFilesStartingFrom :: (HasCallStack, Monad m)
                         => HasFS m h
-                        -> EpochNo
+                        -> ChunkNo
                         -> m ()
-removeFilesStartingFrom HasFS { removeFile, listDirectory } epoch = do
+removeFilesStartingFrom HasFS { removeFile, listDirectory } chunk = do
     filesInDBFolder <- listDirectory (mkFsPath [])
-    let (epochFiles, primaryFiles, secondaryFiles) = dbFilesOnDisk filesInDBFolder
-    forM_ (takeWhile (>= epoch) (Set.toDescList epochFiles)) $ \e ->
+    let (chunkFiles, primaryFiles, secondaryFiles) = dbFilesOnDisk filesInDBFolder
+    forM_ (takeWhile (>= chunk) (Set.toDescList chunkFiles)) $ \e ->
       removeFile (renderFile "epoch" e)
-    forM_ (takeWhile (>= epoch) (Set.toDescList primaryFiles)) $ \i ->
+    forM_ (takeWhile (>= chunk) (Set.toDescList primaryFiles)) $ \i ->
       removeFile (renderFile "primary" i)
-    forM_ (takeWhile (>= epoch) (Set.toDescList secondaryFiles)) $ \i ->
+    forM_ (takeWhile (>= chunk) (Set.toDescList secondaryFiles)) $ \i ->
       removeFile (renderFile "secondary" i)
 
 -- | Wrapper around 'Get.runGetOrFail' that throws an 'InvalidFileError' when
@@ -209,9 +202,9 @@ checkChecksum
   -> CRC  -- ^ Expected checksum
   -> CRC  -- ^ Actual checksum
   -> m ()
-checkChecksum epochFile blockOrEBB expected actual
+checkChecksum chunkFile blockOrEBB expected actual
     | expected == actual
     = return ()
     | otherwise
     = throwUnexpectedError $
-      ChecksumMismatchError blockOrEBB expected actual epochFile callStack
+      ChecksumMismatchError blockOrEBB expected actual chunkFile callStack

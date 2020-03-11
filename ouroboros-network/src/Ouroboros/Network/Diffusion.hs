@@ -22,7 +22,6 @@ module Ouroboros.Network.Diffusion
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException, SomeException, fromException)
 import           Control.Tracer (Tracer, traceWith)
-import qualified Codec.CBOR.Term as CBOR
 import           Data.Functor (void)
 import           Data.Functor.Contravariant (contramap)
 import           Data.Void (Void)
@@ -40,10 +39,8 @@ import           Ouroboros.Network.Connections.Socket.Server as Server (acceptLo
 import           Ouroboros.Network.Snocket (LocalAddress, SocketSnocket, LocalSnocket, LocalFD)
 import qualified Ouroboros.Network.Snocket as Snocket
 
-import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import           Ouroboros.Network.Protocol.Handshake.Version
 
-import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
@@ -72,11 +69,9 @@ data DiffusionTracers = DiffusionTracers {
       -- ^ Mux tracer
     , dtMuxLocalTracer         :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace)
       -- ^ Mux tracer for local clients
-    , dtHandshakeTracer        :: Tracer IO (WithMuxBearer (ConnectionId Socket.SockAddr)
-                                             (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term)))
+    , dtHandshakeTracer        :: Tracer IO NodeToNode.HandshakeTr
       -- ^ Handshake protocol tracer
-    , dtHandshakeLocalTracer   :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress)
-                                             (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term)))
+    , dtHandshakeLocalTracer   :: Tracer IO NodeToClient.HandshakeTr
       -- ^ Handshake protocol tracer for local clients
     , dtErrorPolicyTracer      :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     , dtLocalErrorPolicyTracer :: Tracer IO (WithAddr LocalAddress    ErrorPolicyTrace)

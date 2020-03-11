@@ -11,6 +11,7 @@
 --
 module Ouroboros.Network.NodeToClient (
     nodeToClientProtocols
+  , NodeToClientProtocols (..)
   , NodeToClientVersion (..)
   , NodeToClientVersionData (..)
   , DictVersion (..)
@@ -51,10 +52,11 @@ module Ouroboros.Network.NodeToClient (
   , WithAddr (..)
   , SuspendDecision (..)
   , TraceSendRecv (..)
-  , DecoderFailureOrTooMuchInput
+  , ProtocolLimitFailure
   , Handshake
   , LocalAddresses (..)
   , SubscriptionTrace (..)
+  , HandshakeTr
   ) where
 
 import           Control.Exception (IOException)
@@ -71,6 +73,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
+import           Network.Mux (WithMuxBearer (..))
 
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Connections.Types ( Connections
@@ -78,7 +81,7 @@ import           Ouroboros.Network.Connections.Types ( Connections
                                                      )
 import qualified Ouroboros.Network.Connections.Concurrent as Connection
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
-import           Ouroboros.Network.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure)
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
@@ -99,6 +102,24 @@ import           Ouroboros.Network.Socket hiding (withConnections)
 import qualified Ouroboros.Network.Socket as Socket (withConnections)
 import           Ouroboros.Network.IOManager
 
+-- The Handshake tracer types are simply terrible.
+type HandshakeTr = WithMuxBearer (ConnectionId LocalAddress)
+    (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))
+
+
+-- | Recorod of node-to-client mini protocols.
+--
+data NodeToClientProtocols appType bytes m a b = NodeToClientProtocols {
+    -- | local chain-sync mini-protocol
+    --
+    localChainSyncProtocol    :: RunMiniProtocol appType bytes m a b,
+
+    -- | local tx-submission mini-protocol
+    --
+    localTxSubmissionProtocol :: RunMiniProtocol appType bytes m a b
+  }
+
+
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-client protocol.
 --
@@ -110,20 +131,22 @@ import           Ouroboros.Network.IOManager
 -- wireshark plugins.
 --
 nodeToClientProtocols
-  :: RunMiniProtocol appType bytes m a b -- ^ localChainSync
-  -> RunMiniProtocol appType bytes m a b -- ^ localTxSubmission
+  :: NodeToClientProtocols appType bytes m a b
   -> OuroborosApplication appType bytes m a b
-nodeToClientProtocols localChainSync localTxSubmission =
+nodeToClientProtocols NodeToClientProtocols {
+                          localChainSyncProtocol,
+                          localTxSubmissionProtocol
+                        } =
     OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 5,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = localChainSync
+        miniProtocolRun    = localChainSyncProtocol
       }
     , MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 6,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = localTxSubmission
+        miniProtocolRun    = localTxSubmissionProtocol
       }
     ]
 
@@ -339,10 +362,10 @@ networkErrorPolicies = ErrorPolicies
           $ \(_ :: HandshakeClientProtocolError NodeToClientVersion)
                 -> Just ourBug
 
-        -- exception thrown by `runDecoderWithByteLimit`
+        -- exception thrown by `runPeerWithLimits`
         -- trusted node send too much input
       , ErrorPolicy
-          $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+          $ \(_ :: ProtocolLimitFailure)
                 -> Just ourBug
 
         -- deserialisation failure of a message from a trusted node

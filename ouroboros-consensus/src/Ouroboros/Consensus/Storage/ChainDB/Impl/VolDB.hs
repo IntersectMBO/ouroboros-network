@@ -13,7 +13,6 @@
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE UndecidableInstances      #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Thin wrapper around the VolatileDB
 module Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (
     VolDB -- Opaque

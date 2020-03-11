@@ -21,6 +21,7 @@ module Test.ThreadNet.General (
     -- * Re-exports
   , ForgeEbbEnv (..)
   , TestOutput (..)
+  , plainTestNodeInitialization
   ) where
 
 import           Control.Monad (guard)
@@ -33,6 +34,8 @@ import           Test.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
+import           Cardano.Slotting.Slot
+
 import           Ouroboros.Network.Block (BlockNo (..), HasHeader, HeaderHash,
                      SlotNo (..))
 import qualified Ouroboros.Network.MockChain.Chain as MockChain
@@ -42,7 +45,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
-import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
@@ -56,8 +58,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.RedundantConstraints
-
-import           Ouroboros.Consensus.Storage.Common
 
 import           Test.ThreadNet.Network
 import           Test.ThreadNet.TxGen
@@ -108,7 +108,7 @@ truncateNodeTopology (NodeTopology m) (NumCoreNodes n') =
 
 truncateNodeRestarts :: NodeRestarts -> NumSlots -> NodeRestarts
 truncateNodeRestarts (NodeRestarts m) (NumSlots t) =
-    NodeRestarts $ Map.filterWithKey (\(SlotNo s) _ -> s < fromIntegral t) m
+    NodeRestarts $ Map.filterWithKey (\(SlotNo s) _ -> s < t) m
 
 instance Arbitrary TestConfig where
   arbitrary = do
@@ -165,7 +165,7 @@ instance Arbitrary TestConfig where
 
 data TestConfigBlock blk = TestConfigBlock
   { forgeEbbEnv :: Maybe (ForgeEbbEnv blk)
-  , nodeInfo    :: CoreNodeId -> ProtocolInfo blk
+  , nodeInfo    :: CoreNodeId -> TestNodeInitialization blk
   , rekeying    :: Maybe (Rekeying blk)
   }
 
@@ -178,7 +178,7 @@ data Rekeying blk = forall opKey. Rekeying
          ProtocolInfo blk
       -> EpochNo
       -> opKey
-      -> Maybe (ProtocolInfo blk, GenTx blk)
+      -> Maybe (TestNodeInitialization blk)
      -- ^ new config and any corresponding delegation certificate transactions
   , rekeyFreshSKs :: Stream opKey
      -- ^ a stream that only repeats itself after an *effectively* *infinite*
@@ -197,7 +197,6 @@ runTestNetwork ::
      ( RunNode blk
      , TxGen blk
      , TracingConstraints blk
-     , Show (LedgerView (BlockProtocol blk))
      )
   => TestConfig
   -> EpochSize
@@ -238,15 +237,15 @@ runTestNetwork
         rekeyVar <- uncheckedNewTVarM rekeyFreshSKs
         runThreadNetwork tna
           { tnaRekeyM = Just $ \cid pInfo s mkEno -> case rekeyOracle cid s of
-              Nothing -> pure (pInfo, Nothing)
+              Nothing -> pure $ plainTestNodeInitialization pInfo
               Just s' -> do
                 x <- atomically $ do
                   x :< xs <- readTVar rekeyVar
                   x <$ writeTVar rekeyVar xs
                 eno <- mkEno s'
                 pure $ case rekeyUpd pInfo eno x of
-                  Nothing           -> (pInfo, Nothing)
-                  Just (pInfo', tx) -> (pInfo', Just tx)
+                  Nothing  -> plainTestNodeInitialization pInfo
+                  Just tni -> tni
           }
 
 {-------------------------------------------------------------------------------
@@ -277,7 +276,6 @@ prop_general ::
      , Eq blk
      , HasHeader blk
      , RunNode blk
-     , Show (LedgerView (BlockProtocol blk))
      )
   => (blk -> Word64) -- ^ Count transactions
   -> SecurityParam

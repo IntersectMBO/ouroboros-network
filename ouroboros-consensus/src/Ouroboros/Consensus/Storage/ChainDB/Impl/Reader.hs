@@ -5,7 +5,6 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Readers
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Reader
   ( newReader

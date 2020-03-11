@@ -17,14 +17,11 @@ module Test.ThreadNet.RealPBFT (
   ) where
 
 import           Data.Coerce (coerce)
-import           Data.Foldable (find)
-import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe, mapMaybe)
+import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import           Data.Time (Day (..), UTCTime (..))
 import           Data.Word (Word64)
-import           GHC.Stack (HasCallStack)
 
 import           Numeric.Search.Range (searchFromTo)
 import           Test.QuickCheck
@@ -52,8 +49,6 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.Crypto as Crypto
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.Random
 
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
-
 import qualified Cardano.Binary
 import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Common as Common
@@ -61,7 +56,6 @@ import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochNumber (..), unEpochSlots)
-import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 import qualified Cardano.Crypto.DSIGN as Crypto
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
@@ -70,11 +64,11 @@ import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
-import           Ouroboros.Consensus.Byron.Node
 import           Ouroboros.Consensus.Byron.Protocol
 
 import           Test.ThreadNet.General
-import           Test.ThreadNet.Network (NodeOutput (..))
+import           Test.ThreadNet.Network (NodeOutput (..),
+                     TestNodeInitialization (..))
 import qualified Test.ThreadNet.Ref.PBFT as Ref
 import           Test.ThreadNet.TxGen.Byron ()
 import           Test.ThreadNet.Util
@@ -85,6 +79,9 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Shrink (andId, dropId)
 import qualified Test.Util.Stream as Stream
+
+import           Test.ThreadNet.RealPBFT.ProtocolInfo
+import           Test.ThreadNet.RealPBFT.ProtocolVersionUpdate
 
 -- | Generate k values as small as this module is known to handle.
 --
@@ -512,7 +509,7 @@ expectedBlockRejection
     -- the node lead but rejected its own block. This is the only case we
     -- expect. (Rejecting its own block also prevents the node from propagating
     -- that block.)
-    ownBlock = fromIntegral i == mod (unSlotNo s) (fromIntegral nn)
+    ownBlock = i == mod (unSlotNo s) nn
 expectedBlockRejection _ _ _ _ = False
 
 -- | If we rekey in slot rekeySlot, it is in general possible that the leader
@@ -537,7 +534,7 @@ latestPossibleDlgMaturation
   :: SecurityParam -> NumCoreNodes -> SlotNo -> SlotNo
 latestPossibleDlgMaturation
   (SecurityParam k) (NumCoreNodes n) (SlotNo rekeySlot) =
-    SlotNo $ rekeySlot + fromIntegral n + 2 * k
+    SlotNo $ rekeySlot + n + 2 * k
 
 prop_simple_real_pbft_convergence :: ProduceEBBs
                                   -> SecurityParam
@@ -553,6 +550,7 @@ prop_simple_real_pbft_convergence produceEBBs k
     } =
     tabulate "produce EBBs" [show produceEBBs] $
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
+    tabulate "proposed protocol version was adopted" [show aPvuRequired] $
     counterexample ("params: " <> show params) $
     counterexample ("Ref.PBFT result: " <> show refResult) $
     counterexample
@@ -577,6 +575,7 @@ prop_simple_real_pbft_convergence produceEBBs k
         (expectedBlockRejection k numCoreNodes nodeRestarts)
         1
         testOutput .&&.
+    prop_pvu .&&.
     not (all (Chain.null . snd) finalChains) .&&.
     conjoin (map (hasAllEBBs k numSlots produceEBBs) finalChains)
   where
@@ -586,7 +585,8 @@ prop_simple_real_pbft_convergence produceEBBs k
                 NoEBBs      -> Nothing
                 ProduceEBBs -> Just byronForgeEbbEnv
             , nodeInfo = \nid ->
-                mkProtocolRealPBFT params nid genesisConfig genesisSecrets
+                mkProtocolRealPBftAndHardForkTxs
+                  params nid genesisConfig genesisSecrets
             , rekeying = Just Rekeying
               { rekeyOracle   = \cid s ->
                   let nominalSlots = case refResult of
@@ -629,6 +629,49 @@ prop_simple_real_pbft_convergence produceEBBs k
 
     finalChains :: [(NodeId, Chain ByronBlock)]
     finalChains = Map.toList $ nodeOutputFinalChain <$> testOutputNodes testOutput
+
+    finalLedgers :: [(NodeId, Byron.LedgerState ByronBlock)]
+    finalLedgers = Map.toList $ nodeOutputFinalLedger <$> testOutputNodes testOutput
+
+    pvuLabels :: [(NodeId, ProtocolVersionUpdateLabel)]
+    pvuLabels =
+        [ (,) cid $
+          mkProtocolVersionUpdateLabel
+            params
+            numSlots
+            genesisConfig
+            nodeJoinPlan
+            refResult
+            ldgr
+        | (cid, ldgr) <- finalLedgers
+        ]
+
+    -- whether the proposed protocol version was required have been adopted in
+    -- one of the chains
+    aPvuRequired :: Bool
+    aPvuRequired =
+        or
+        [ Just True == pvuRequired
+        | (_, ProtocolVersionUpdateLabel{pvuRequired}) <- pvuLabels
+        ]
+
+    -- check whether the proposed protocol version should have been and if so
+    -- was adopted
+    prop_pvu :: Property
+    prop_pvu =
+        counterexample (show pvuLabels) $
+        conjoin
+        [ counterexample (show (cid, pvuLabel)) $
+          let ProtocolVersionUpdateLabel
+                { pvuObserved
+                , pvuRequired
+                } = pvuLabel
+          in
+          property $ case pvuRequired of
+            Just b  -> b == pvuObserved
+            Nothing -> True
+        | (cid, pvuLabel) <- pvuLabels
+        ]
 
     params :: PBftParams
     params = realPBftParams k numCoreNodes
@@ -679,47 +722,10 @@ hasAllEBBs k (NumSlots t) produceEBBs (nid, c) =
       ProduceEBBs -> coerce [0 .. hi]
         where
           hi :: Word64
-          hi = if t < 1 then 0 else fromIntegral (t - 1) `div` denom
+          hi = if t < 1 then 0 else (t - 1) `div` denom
           denom = unEpochSlots $ kEpochSlots $ coerce k
 
     actual   = mapMaybe (nodeIsEBB . getHeader) $ Chain.toOldestFirst c
-
-mkProtocolRealPBFT :: HasCallStack
-                   => PBftParams
-                   -> CoreNodeId
-                   -> Genesis.Config
-                   -> Genesis.GeneratedSecrets
-                   -> ProtocolInfo ByronBlock
-mkProtocolRealPBFT params (CoreNodeId i)
-                   genesisConfig genesisSecrets =
-    protocolInfoByron
-      genesisConfig
-      (Just $ PBftSignatureThreshold pbftSignatureThreshold)
-      (Update.ProtocolVersion 1 0 0)
-      (Update.SoftwareVersion (Update.ApplicationName "Cardano Test") 2)
-      (Just leaderCredentials)
-  where
-    leaderCredentials :: PBftLeaderCredentials
-    leaderCredentials = either (error . show) id $
-        mkPBftLeaderCredentials
-          genesisConfig
-          dlgKey
-          dlgCert
-
-    PBftParams{pbftSignatureThreshold} = params
-
-    dlgKey :: Crypto.SigningKey
-    dlgKey = fromMaybe (error "dlgKey") $
-       find (\sec -> Delegation.delegateVK dlgCert == Crypto.toVerification sec)
-            $ Genesis.gsRichSecrets genesisSecrets
-
-    dlgCert :: Delegation.Certificate
-    dlgCert = snd $ Map.toAscList dlgMap !! (fromIntegral i)
-
-    dlgMap :: Map Common.KeyHash Delegation.Certificate
-    dlgMap = Genesis.unGenesisDelegation
-           $ Genesis.gdHeavyDelegation
-           $ Genesis.configGenesisData genesisConfig
 
 {-------------------------------------------------------------------------------
   Generating the genesis configuration
@@ -1011,7 +1017,7 @@ mkRekeyUpd
   -> ProtocolInfo ByronBlock
   -> EpochNo
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-  -> Maybe (ProtocolInfo ByronBlock, Byron.GenTx ByronBlock)
+  -> Maybe (TestNodeInitialization ByronBlock)
 mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
   case pbftIsLeader configConsensus of
     PBftIsNotALeader       -> Nothing
@@ -1030,7 +1036,10 @@ mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
             }
 
           PBftIsLeader{pbftDlgCert} = isLeader'
-      in Just (pInfo', dlgTx pbftDlgCert)
+      in Just TestNodeInitialization
+        { tniCrucialTxs = [dlgTx pbftDlgCert]
+        , tniProtocolInfo = pInfo'
+        }
   where
     ProtocolInfo{pInfoConfig = TopLevelConfig{ configConsensus
                                              , configLedger

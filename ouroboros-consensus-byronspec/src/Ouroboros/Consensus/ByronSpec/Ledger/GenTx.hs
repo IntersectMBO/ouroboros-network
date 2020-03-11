@@ -41,7 +41,7 @@ import qualified Ouroboros.Consensus.ByronSpec.Ledger.Rules as Rules
 -- into separate lists
 data ByronSpecGenTx =
     ByronSpecGenTxDCert Spec.DCert
-  | ByronSpecGenTxTx    Spec.TxWits
+  | ByronSpecGenTxTx    Spec.Tx
   | ByronSpecGenTxUProp Spec.UProp
   | ByronSpecGenTxVote  Spec.Vote
   deriving (Show, Generic, Serialise)
@@ -71,7 +71,7 @@ apply cfg = \genTx -> withExcept ByronSpecGenTxErr . go genTx
 
 partition :: [ByronSpecGenTx]
           -> ( [Spec.DCert]
-             , [Spec.TxWits]
+             , [Spec.Tx]
              , [Spec.UProp]
              , [Spec.Vote]
              )

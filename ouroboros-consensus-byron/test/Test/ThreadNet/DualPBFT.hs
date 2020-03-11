@@ -3,7 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.ThreadNet.DualPBFT (
     tests
@@ -153,6 +153,7 @@ setupTestOutput setup@SetupDualPBft{..} =
         forgeEbbEnv = Nothing -- spec does not model EBBs
       , rekeying    = Nothing -- TODO
       , nodeInfo    = \coreNodeId ->
+          plainTestNodeInitialization $
           protocolInfoDualByron
             setupGenesis
             setupParams
@@ -332,14 +333,14 @@ genTx :: TopLevelConfig DualByronBlock
 genTx cfg st = HH.choice [
       do aux <- sigGen (Rules.ctxtUTXOW cfg') st'
          let main :: Impl.ATxAux ByteString
-             main = Spec.Test.elaborateTxWitsBS
+             main = Spec.Test.elaborateTxBS
                       elaborateTxId
                       aux
 
          return $ DualGenTx {
              dualGenTxMain   = ByronTx (byronIdTx main) main
            , dualGenTxAux    = ByronSpecGenTx $ ByronSpecGenTxTx aux
-           , dualGenTxBridge = specToImplTxWit aux main
+           , dualGenTxBridge = specToImplTx aux main
            }
     ]
   where

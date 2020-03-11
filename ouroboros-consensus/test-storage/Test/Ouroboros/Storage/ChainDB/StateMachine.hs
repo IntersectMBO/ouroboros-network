@@ -17,7 +17,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-{-# OPTIONS_GHC -Wno-orphans -Wredundant-constraints #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Ouroboros.Storage.ChainDB.StateMachine ( tests ) where
 
 import           Prelude hiding (elem)
@@ -59,6 +59,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Cardano.Crypto.DSIGN.Mock
+import           Cardano.Slotting.Slot hiding (At)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -97,11 +98,11 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 import           Ouroboros.Consensus.Storage.ChainDB hiding
                      (TraceReaderEvent (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
-import           Ouroboros.Consensus.Storage.Common (EpochSize (..))
-import           Ouroboros.Consensus.Storage.EpochInfo (fixedSizeEpochInfo)
 import           Ouroboros.Consensus.Storage.ImmutableDB
-                     (ValidationPolicy (ValidateAllEpochs))
+                     (ValidationPolicy (ValidateAllChunks))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (unsafeChunkNoToEpochNo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (defaultDiskPolicy)
@@ -114,11 +115,12 @@ import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
                      ModelSupportsBlock, ReaderId)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.TestBlock
-import           Test.Ouroboros.Storage.Util ((=:=))
 
+import           Test.Util.ChunkInfo
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
+import           Test.Util.QuickCheck ((=:=))
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
@@ -1155,15 +1157,17 @@ instance ModelSupportsBlock TestBlock where
 -- ChainDB, blocks are added /out of order/, while in the ImmutableDB, they
 -- must be added /in order/. This generator can thus not be reused for the
 -- ImmutableDB.
-genBlk :: BlockGen Blk m
-genBlk Model{..} = frequency
+genBlk :: ImmDB.ChunkInfo -> BlockGen Blk m
+genBlk chunkInfo Model{..} = frequency
     [ (if empty then 0 else 1, genAlreadyInChain)
     , (5,                      genAppendToCurrentChain)
     , (5,                      genFitsOnSomewhere)
     , (3,                      genGap)
     ]
   where
-    blocksInChainDB = Model.blocks dbModel
+    blocksInChainDB   = Model.blocks dbModel
+    modelSupportsEBBs = ImmDB.chunkInfoSupportsEBBs chunkInfo
+    canContainEBB     = const modelSupportsEBBs -- TODO: we could be more precise
 
     empty :: Bool
     empty = Map.null blocksInChainDB
@@ -1216,8 +1220,12 @@ genBlk Model{..} = frequency
     -- Generate a block or EBB fitting on genesis
     genFirstBlock :: Gen TestBlock
     genFirstBlock = frequency
-      [ (1, firstBlock <$> chooseSlot 0 2 <*> genBody)
-      , (1, firstEBB <$> genBody)
+      [ ( 1
+        , firstBlock canContainEBB <$> chooseSlot 0 2 <*> genBody
+        )
+      , ( if modelSupportsEBBs then 1 else 0
+        , firstEBB   canContainEBB <$> genBody
+        )
       ]
 
     -- Helper that generates a block that fits onto the given block.
@@ -1228,23 +1236,29 @@ genBlk Model{..} = frequency
                   then chooseSlot (blockSlot b)     (blockSlot b + 2)
                   else chooseSlot (blockSlot b + 1) (blockSlot b + 3)
                 body   <- genBody
-                return $ mkNextBlock b slotNo body)
+                return $ mkNextBlock canContainEBB b slotNo body)
         -- An EBB is never followed directly by another EBB, otherwise they
         -- would have the same 'BlockNo', as the EBB has the same 'BlockNo' of
         -- the block before it.
-        , (if fromIsEBB (testBlockIsEBB b) then 0 else 1, do
-                let SlotNo prevSlotNo   = blockSlot b
-                    EpochSize epochSize = fixedEpochSize
-                    nextEBBSlotNo = SlotNo $
-                      (prevSlotNo `div` epochSize + 1) * epochSize
-                slotNo <- frequency
-                  [ (7, return $ nextEBBSlotNo)
-                    -- Skip an epoch
-                  , (1, return $ nextEBBSlotNo + SlotNo (1 * epochSize))
-                    -- Skip two epochs
-                  ]
-                body   <- genBody
-                return $ mkNextEBB b slotNo body)
+        , (if fromIsEBB (testBlockIsEBB b) || not modelSupportsEBBs then 0 else 1, do
+             let prevSlotNo    = blockSlot b
+                 prevChunk     = ImmDB.chunkIndexOfSlot
+                                   chunkInfo
+                                   prevSlotNo
+                 prevEpoch     = unsafeChunkNoToEpochNo prevChunk
+                 nextEBB       = ImmDB.chunkSlotForBoundaryBlock
+                                   chunkInfo
+                                   (prevEpoch + 1)
+                 nextNextEBB   = ImmDB.chunkSlotForBoundaryBlock
+                                   chunkInfo
+                                   (prevEpoch + 2)
+             slotNo <- (ImmDB.chunkSlotToSlot chunkInfo) <$> frequency
+               [ (7, return nextEBB)
+               , (1, return nextNextEBB)
+               ]
+             body   <- genBody
+             return $ mkNextEBB canContainEBB b slotNo body
+          )
         ]
 
 {-------------------------------------------------------------------------------
@@ -1288,16 +1302,24 @@ varCurSlotUnused = error "StrictTVar m SlotNo used during command generation"
 varNextIdUnused :: StrictTVar m Id
 varNextIdUnused = error "StrictTVar m Id used during command generation"
 
-smUnused :: StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
-smUnused =
-    sm dbUnused internalUnused registryUnunused varCurSlotUnused varNextIdUnused
-      genBlk testCfg testInitExtLedger
+smUnused :: ImmDB.ChunkInfo
+         -> StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
+smUnused chunkInfo =
+    sm dbUnused
+       internalUnused
+       registryUnunused
+       varCurSlotUnused
+       varNextIdUnused
+       (genBlk chunkInfo)
+       testCfg
+       testInitExtLedger
 
-prop_sequential :: Property
-prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
-    (hist, prop) <- QC.run $ test cmds
-    -- TODO label tags
-    prettyCommands smUnused hist prop
+prop_sequential :: SmallChunkInfo -> Property
+prop_sequential (SmallChunkInfo chunkInfo) =
+    forAllCommands (smUnused chunkInfo) Nothing $ \cmds -> QC.monadicIO $ do
+      (hist, prop) <- QC.run $ test cmds
+      -- TODO label tags
+      prettyCommands (smUnused chunkInfo) hist prop
   where
     test :: QSM.Commands (At Cmd Blk IO) (At Resp Blk IO)
          -> IO
@@ -1314,13 +1336,19 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
         <$> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
-      let args = mkArgs testCfg testInitExtLedger tracer threadRegistry
+      let args = mkArgs testCfg chunkInfo testInitExtLedger tracer threadRegistry
             varCurSlot fsVars
       (db, internal)     <- openDBInternal args False
       withAsync (intAddBlockRunner internal) $ \addBlockAsync -> do
         link addBlockAsync
-        let sm' = sm db internal iteratorRegistry varCurSlot varNextId genBlk
-              testCfg testInitExtLedger
+        let sm' = sm db
+                     internal
+                     iteratorRegistry
+                     varCurSlot
+                     varNextId
+                     (genBlk chunkInfo)
+                     testCfg
+                     testInitExtLedger
         (hist, model, res) <- QSM.runCommands' sm' cmds
         cancel addBlockAsync
         trace <- getTrace
@@ -1440,11 +1468,9 @@ traceEventName = \case
     TraceImmDBEvent          ev    -> "ImmDB."        <> constrName ev
     TraceVolDBEvent          ev    -> "VolDB."        <> constrName ev
 
-fixedEpochSize :: EpochSize
-fixedEpochSize = 10
-
 mkArgs :: IOLike m
        => TopLevelConfig Blk
+       -> ImmDB.ChunkInfo
        -> ExtLedgerState Blk
        -> Tracer m (TraceEvent Blk)
        -> ResourceRegistry m
@@ -1452,7 +1478,7 @@ mkArgs :: IOLike m
        -> (StrictTVar m MockFS, StrictTVar m MockFS, StrictTVar m MockFS)
           -- ^ ImmutableDB, VolatileDB, LedgerDB
        -> ChainDbArgs m Blk
-mkArgs cfg initLedger tracer registry varCurSlot
+mkArgs cfg chunkInfo initLedger tracer registry varCurSlot
        (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
     { -- Decoders
       cdbDecodeHash           = decode
@@ -1476,7 +1502,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbHasFSLgrDB           = simHasFS lgrDbFsVar
 
       -- Policy
-    , cdbImmValidation        = ValidateAllEpochs
+    , cdbImmValidation        = ValidateAllChunks
     , cdbVolValidation        = VolDB.ValidateAll
     , cdbBlocksPerFile        = VolDB.mkBlocksPerFile 4
     , cdbParamsLgrDB          = LedgerDbParams {
@@ -1489,9 +1515,9 @@ mkArgs cfg initLedger tracer registry varCurSlot
 
       -- Integration
     , cdbTopLevelConfig       = cfg
-    , cdbEpochInfo            = fixedSizeEpochInfo fixedEpochSize
+    , cdbChunkInfo            = chunkInfo
     , cdbHashInfo             = testHashInfo
-    , cdbIsEBB                = testHeaderEpochNoIfEBB fixedEpochSize
+    , cdbIsEBB                = testHeaderEpochNoIfEBB chunkInfo
     , cdbCheckIntegrity       = testBlockIsValid
     , cdbGenesis              = return initLedger
     , cdbBlockchainTime       = settableBlockchainTime varCurSlot
@@ -1516,8 +1542,10 @@ tests = testGroup "ChainDB q-s-m"
 -------------------------------------------------------------------------------}
 
 -- | Debugging utility: run some commands against the real implementation.
-_runCmds :: [Cmd Blk IteratorId ReaderId] -> IO [Resp Blk IteratorId ReaderId]
-_runCmds cmds = withRegistry $ \registry -> do
+_runCmds :: ImmDB.ChunkInfo
+         ->    [Cmd  Blk IteratorId ReaderId]
+         -> IO [Resp Blk IteratorId ReaderId]
+_runCmds chunkInfo cmds = withRegistry $ \registry -> do
     varCurSlot <- uncheckedNewTVarM 0
     varNextId  <- uncheckedNewTVarM 0
     fsVars <- (,,)
@@ -1526,6 +1554,7 @@ _runCmds cmds = withRegistry $ \registry -> do
       <*> uncheckedNewTVarM Mock.empty
     let args = mkArgs
           testCfg
+          chunkInfo
           testInitExtLedger
           (showTracing stdoutTracer)
           registry
@@ -1543,19 +1572,19 @@ _runCmds cmds = withRegistry $ \registry -> do
                  IO
                  (Resp Blk IteratorId ReaderId)
     go db internal resourceRegistry varCurSlot varNextId cmd = do
-      RunCmdState { _knownIters, _knownReaders} <- get
+      RunCmdState { rcsKnownIters, rcsKnownReaders} <- get
       let cmd' = At $
-            bimap (revLookup _knownIters) (revLookup _knownReaders) cmd
+            bimap (revLookup rcsKnownIters) (revLookup rcsKnownReaders) cmd
       resp <- lift $ unAt <$> semantics db internal resourceRegistry varCurSlot varNextId cmd'
       newIters <- RE.fromList <$>
        mapM (\rdr -> (rdr, ) <$> newIteratorId) (iters resp)
       newReaders <- RE.fromList <$>
         mapM (\rdr -> (rdr, ) <$> newReaderId) (rdrs  resp)
-      let knownIters'   = _knownIters   `RE.union` newIters
-          knownReaders' = _knownReaders `RE.union` newReaders
+      let knownIters'   = rcsKnownIters   `RE.union` newIters
+          knownReaders' = rcsKnownReaders `RE.union` newReaders
           resp'      = bimap (knownIters' RE.!) (knownReaders' RE.!) resp
       modify $ \s ->
-        s { _knownIters = knownIters', _knownReaders = knownReaders' }
+        s { rcsKnownIters = knownIters', rcsKnownReaders = knownReaders' }
       return resp'
 
     revLookup :: Eq a => RefEnv k a r -> a -> Reference k r
@@ -1563,27 +1592,27 @@ _runCmds cmds = withRegistry $ \registry -> do
 
     newIteratorId :: forall m. Monad m => StateT RunCmdState m IteratorId
     newIteratorId = do
-      s@RunCmdState { _nextIteratorId } <- get
-      put (s { _nextIteratorId = succ _nextIteratorId })
-      return _nextIteratorId
+      s@RunCmdState { rcsNextIteratorId } <- get
+      put (s { rcsNextIteratorId = succ rcsNextIteratorId })
+      return rcsNextIteratorId
 
     newReaderId :: forall m. Monad m => StateT RunCmdState m ReaderId
     newReaderId = do
-      s@RunCmdState { _nextReaderId } <- get
-      put (s { _nextReaderId = succ _nextReaderId })
-      return _nextReaderId
+      s@RunCmdState { rcsNextReaderId } <- get
+      put (s { rcsNextReaderId = succ rcsNextReaderId })
+      return rcsNextReaderId
 
 data RunCmdState = RunCmdState
-  { _knownIters     :: KnownIters   Blk IO Concrete
-  , _knownReaders   :: KnownReaders Blk IO Concrete
-  , _nextIteratorId :: IteratorId
-  , _nextReaderId   :: ReaderId
+  { rcsKnownIters     :: KnownIters   Blk IO Concrete
+  , rcsKnownReaders   :: KnownReaders Blk IO Concrete
+  , rcsNextIteratorId :: IteratorId
+  , rcsNextReaderId   :: ReaderId
   }
 
 emptyRunCmdState :: RunCmdState
 emptyRunCmdState = RunCmdState
-  { _knownIters     = RE.empty
-  , _knownReaders   = RE.empty
-  , _nextIteratorId = 0
-  , _nextReaderId   = 0
+  { rcsKnownIters     = RE.empty
+  , rcsKnownReaders   = RE.empty
+  , rcsNextIteratorId = 0
+  , rcsNextReaderId   = 0
   }

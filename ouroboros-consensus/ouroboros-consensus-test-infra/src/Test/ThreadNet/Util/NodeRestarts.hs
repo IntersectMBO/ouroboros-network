@@ -65,7 +65,7 @@ genNodeRestarts (NodeJoinPlan m) (NumSlots t)
   | t < 1     = pure noRestarts
   | otherwise =
   fmap (NodeRestarts . Map.filter (not . Map.null) . Map.fromList) $ do
-    ss <- sublistOf [0 .. SlotNo (fromIntegral t - 1)]
+    ss <- sublistOf [0 .. SlotNo (t - 1)]
     forM ss $ \s ->
       fmap ((,) s) $
       let alreadyJoined = Map.keysSet $ Map.filter (< s) m
@@ -81,7 +81,7 @@ genNodeRestarts (NodeJoinPlan m) (NumSlots t)
       else fmap (Map.fromList . map (flip (,) NodeRestart)) $
            sublistOf $ Map.keys $ candidates
   where
-    isLeading (CoreNodeId i) s = fromIntegral i /= unSlotNo s `mod` n
+    isLeading (CoreNodeId i) s = i /= unSlotNo s `mod` n
       where
         n = fromIntegral $ Map.size m
 

@@ -18,6 +18,7 @@ import           Data.ByteString.Lazy (ByteString)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Read     as CBOR
+import           Text.Printf
 
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Protocol.TxSubmission.Type
@@ -131,12 +132,18 @@ codecTxSubmission encodeTxId decodeTxId
         (ClientAgency (TokTxIds TokBlocking), 1, 4) ->
           return (SomeMessage MsgDone)
 
-        (ServerAgency TokIdle,    _, _) ->
-          fail "codecTxSubmission.Idle: unexpected key"
-        (ClientAgency TokTxIds{}, _, _) ->
-          fail "codecTxSubmission.TxIds: unexpected key"
-        (ClientAgency TokTxs,     _, _) ->
-          fail "codecTxSubmission.Tx: unexpected message key"
+        --
+        -- failures per protocol state
+        --
+
+        (ClientAgency (TokTxIds TokBlocking), _, _) ->
+            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+        (ClientAgency (TokTxIds TokNonBlocking), _, _) ->
+            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+        (ClientAgency TokTxs, _, _) ->
+            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+        (ServerAgency TokIdle, _, _) ->
+            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
 
 codecTxSubmissionId
   :: forall txid tx m. Monad m

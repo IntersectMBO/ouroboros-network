@@ -53,4 +53,10 @@ library
 
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
                        -Wredundant-constraints
+                       -Wmissing-export-lists

@@ -34,17 +34,18 @@ import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..))
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
 
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (SecondaryOffset)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
@@ -152,12 +153,12 @@ readEntry
   :: forall m hash h. (HasCallStack, MonadThrow m)
   => HasFS m h
   -> HashInfo hash
-  -> EpochNo
+  -> ChunkNo
   -> IsEBB
   -> SecondaryOffset
   -> m (Entry hash, BlockSize)
-readEntry hasFS hashInfo epoch isEBB slotOffset = runIdentity <$>
-    readEntries hasFS hashInfo epoch (Identity (isEBB, slotOffset))
+readEntry hasFS hashInfo chunk isEBB slotOffset = runIdentity <$>
+    readEntries hasFS hashInfo chunk (Identity (isEBB, slotOffset))
 
 -- | Same as 'readEntry', but for multiple entries.
 --
@@ -168,10 +169,10 @@ readEntries
   :: forall m hash h t. (HasCallStack, MonadThrow m, Traversable t)
   => HasFS m h
   -> HashInfo hash
-  -> EpochNo
+  -> ChunkNo
   -> t (IsEBB, SecondaryOffset)
   -> m (t (Entry hash, BlockSize))
-readEntries hasFS HashInfo { hashSize, getHash } epoch toRead =
+readEntries hasFS HashInfo { hashSize, getHash } chunk toRead =
     withFile hasFS secondaryIndexFile ReadMode $ \sHnd -> do
       -- TODO can we avoid this call to 'hGetSize'?
       size <- hGetSize sHnd
@@ -196,7 +197,7 @@ readEntries hasFS HashInfo { hashSize, getHash } epoch toRead =
             runGet secondaryIndexFile (getEntry isEBB getHash)
           return (entry, LastEntry)
   where
-    secondaryIndexFile = renderFile "secondary" epoch
+    secondaryIndexFile = renderFile "secondary" chunk
     nbBytes            = fromIntegral $ entrySize hashSize
     nbBlockOffsetBytes = fromIntegral (sizeOf (blockOffset (error "blockOffset")))
     HasFS { hGetSize } = hasFS
@@ -210,19 +211,19 @@ readAllEntries
   => HasFS m h
   -> HashInfo hash
   -> SecondaryOffset       -- ^ Start from this offset
-  -> EpochNo
+  -> ChunkNo
   -> (Entry hash -> Bool)  -- ^ Stop condition: stop after this entry
-  -> Word64                -- ^ The size of the epoch file, used to compute
+  -> Word64                -- ^ The size of the chunk file, used to compute
                            -- the size of the last block.
   -> IsEBB                 -- ^ Is the first entry to read an EBB?
   -> m [WithBlockSize (Entry hash)]
-readAllEntries hasFS HashInfo { getHash } secondaryOffset epoch stopAfter
-               epochFileSize = \isEBB ->
+readAllEntries hasFS HashInfo { getHash } secondaryOffset chunk stopAfter
+               chunkFileSize = \isEBB ->
     withFile hasFS secondaryIndexFile ReadMode $ \sHnd -> do
       bl <- hGetAllAt hasFS sHnd (AbsOffset (fromIntegral secondaryOffset))
       go isEBB bl [] Nothing
   where
-    secondaryIndexFile = renderFile "secondary" epoch
+    secondaryIndexFile = renderFile "secondary" chunk
 
     go :: IsEBB  -- ^ Interpret the next entry as an EBB?
        -> Lazy.ByteString
@@ -234,7 +235,7 @@ readAllEntries hasFS HashInfo { getHash } secondaryOffset epoch stopAfter
        -> m [WithBlockSize (Entry hash)]
     go isEBB bl acc mbPrevEntry
       | Lazy.null bl = return $ reverse $
-        (addBlockSize epochFileSize <$> mbPrevEntry) `consMaybe` acc
+        (addBlockSize chunkFileSize <$> mbPrevEntry) `consMaybe` acc
       | otherwise    = do
         (remaining, entry) <- runGetWithUnconsumed secondaryIndexFile
           (getEntry isEBB getHash) bl
@@ -244,7 +245,7 @@ readAllEntries hasFS HashInfo { getHash } secondaryOffset epoch stopAfter
         if stopAfter entry then
 
           if Lazy.null remaining then
-            return $ reverse $ addBlockSize epochFileSize entry : acc'
+            return $ reverse $ addBlockSize chunkFileSize entry : acc'
           else do
             -- Read the next blockOffset so we can compute the size of the
             -- last block we read.
@@ -291,14 +292,14 @@ truncateToEntry
   :: forall m hash h. (HasCallStack, MonadThrow m)
   => HasFS m h
   -> HashInfo hash
-  -> EpochNo
+  -> ChunkNo
   -> SecondaryOffset
   -> m ()
-truncateToEntry hasFS HashInfo { hashSize } epoch secondaryOffset =
+truncateToEntry hasFS HashInfo { hashSize } chunk secondaryOffset =
     withFile hasFS secondaryIndexFile (AppendMode AllowExisting) $ \sHnd ->
       hTruncate sHnd offset
   where
-    secondaryIndexFile  = renderFile "secondary" epoch
+    secondaryIndexFile  = renderFile "secondary" chunk
     HasFS { hTruncate } = hasFS
     offset              = fromIntegral (secondaryOffset + entrySize hashSize)
 
@@ -306,15 +307,15 @@ writeAllEntries
   :: forall m hash h. (HasCallStack, MonadThrow m)
   => HasFS m h
   -> HashInfo hash
-  -> EpochNo
+  -> ChunkNo
   -> [Entry hash]
   -> m ()
-writeAllEntries hasFS hashInfo epoch entries =
+writeAllEntries hasFS hashInfo chunk entries =
     withFile hasFS secondaryIndexFile (AppendMode AllowExisting) $ \sHnd -> do
       -- First truncate the file, otherwise we might leave some old contents
       -- at the end if the new contents are smaller than the previous contents
       hTruncate sHnd 0
       mapM_ (appendEntry hasFS hashInfo sHnd) entries
   where
-    secondaryIndexFile  = renderFile "secondary" epoch
+    secondaryIndexFile  = renderFile "secondary" chunk
     HasFS { hTruncate } = hasFS

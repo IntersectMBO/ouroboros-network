@@ -241,6 +241,6 @@ emptyLeaderSchedule (NumSlots t) = LeaderSchedule $
 roundRobinLeaderSchedule :: NumCoreNodes -> NumSlots -> LeaderSchedule
 roundRobinLeaderSchedule (NumCoreNodes n) (NumSlots t) = LeaderSchedule $
     Map.fromList $
-    [ (SlotNo i, [CoreNodeId (fromIntegral i `mod` n)])
+    [ (SlotNo i, [CoreNodeId (i `mod` n)])
     | i <- [ 0 .. t - 1 ]
     ]

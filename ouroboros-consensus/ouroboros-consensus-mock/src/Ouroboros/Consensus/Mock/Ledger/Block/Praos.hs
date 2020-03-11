@@ -9,7 +9,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Mock.Ledger.Block.Praos (
     SimplePraosBlock
@@ -151,8 +151,8 @@ instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
-  protocolLedgerView              cfg _   =         stakeDist cfg
-  anachronisticProtocolLedgerView cfg _ _ = Right $ stakeDist cfg
+  protocolLedgerView               cfg _   =          stakeDist cfg
+  anachronisticProtocolLedgerView_ cfg _ _ = return $ stakeDist cfg
 
 -- | Praos needs a ledger that can give it the "active stake distribution"
 --

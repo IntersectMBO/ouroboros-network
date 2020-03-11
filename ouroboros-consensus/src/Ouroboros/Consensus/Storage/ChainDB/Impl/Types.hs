@@ -13,7 +13,6 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Types used throughout the implementation: handle, state, environment,
 -- types, trace types, etc.
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
@@ -84,9 +83,6 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
-
-import           Ouroboros.Consensus.Storage.Common (EpochNo)
-import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      ChainDbError (..), InvalidBlockReason, StreamFrom,
@@ -228,7 +224,7 @@ data ChainDbEnv m blk = CDB
     -- ImmutableDB and garbage collecting it from the VolatileDB
   , cdbKillBgThreads   :: !(StrictTVar m (m ()))
     -- ^ A handle to kill the background threads.
-  , cdbEpochInfo       :: !(EpochInfo m)
+  , cdbChunkInfo       :: !ImmDB.ChunkInfo
   , cdbIsEBB           :: !(Header blk -> IsEBB)
   , cdbCheckIntegrity  :: !(blk -> Bool)
   , cdbBlockchainTime  :: !(BlockchainTime m)
@@ -496,31 +492,32 @@ deriving instance
   , LedgerSupportsProtocol blk
   ) => Show (TraceEvent blk)
 
-data TraceOpenEvent blk
-  = OpenedDB
-    { _immTip   :: Point blk
-    , _chainTip :: Point blk
-    }
-    -- ^ The ChainDB was opened.
+data TraceOpenEvent blk =
+    -- | The ChainDB was opened.
+    OpenedDB
+      (Point blk)  -- ^ Immutable tip
+      (Point blk)  -- ^ Tip of the current chain
+
+    -- | The ChainDB was closed.
   | ClosedDB
-    { _immTip   :: Point blk
-    , _chainTip :: Point blk
-    }
-    -- ^ The ChainDB was closed.
+      (Point blk)  -- ^ Immutable tip
+      (Point blk)  -- ^ Tip of the current chain
+
+    -- | The ChainDB was successfully reopened.
   | ReopenedDB
-    { _immTip   :: Point blk
-    , _chainTip :: Point blk
-    }
-    -- ^ The ChainDB was successfully reopened.
+      (Point blk)  -- ^ Immutable tip
+      (Point blk)  -- ^ Tip of the current chain
+
+    -- | The ImmutableDB was opened.
   | OpenedImmDB
-    { _immDbTip      :: Point blk
-    , _immDbTipEpoch :: EpochNo
-    }
-    -- ^ The ImmutableDB was opened.
+      (Point blk)    -- ^ Immutable tip
+      ImmDB.ChunkNo  -- ^ Chunk number of the immutable tip
+
+    -- | The VolatileDB was opened.
   | OpenedVolDB
-    -- ^ The VolatileDB was opened.
+
+    -- | The LedgerDB was opened.
   | OpenedLgrDB
-    -- ^ The LedgerDB was opened.
   deriving (Generic, Eq, Show)
 
 -- | Trace type for the various events that occur when adding a block.
@@ -613,30 +610,28 @@ deriving instance
   , LedgerSupportsProtocol blk
   ) => Show (TraceAddBlockEvent blk)
 
-data TraceValidationEvent blk
-  = InvalidBlock
-    { _validationErr :: ExtValidationError blk
-    , _invalidPoint  :: RealPoint blk
-    }
-    -- ^ A point was found to be invalid.
+data TraceValidationEvent blk =
+    -- | A point was found to be invalid.
+    InvalidBlock
+      (ExtValidationError blk)
+      (RealPoint blk)
 
+    -- | A candidate chain was invalid.
   | InvalidCandidate
-    { _candidate     :: AnchoredFragment (Header blk)
-    }
-    -- ^ A candidate chain was invalid.
+      (AnchoredFragment (Header blk))
 
+    -- | A candidate chain was valid.
   | ValidCandidate (AnchoredFragment (Header blk))
-    -- ^ A candidate chain was valid.
 
-  | CandidateExceedsRollback
-    { _supportedRollback :: Word64
-    , _candidateRollback :: Word64
-    , _candidate         :: AnchoredFragment (Header blk)
-    }
-    -- ^ Candidate required rollback past what LedgerDB supported
+    -- | Candidate required rollback past what LedgerDB supported
     --
-    -- This should only happen in exceptional circumstances (like after
-    -- disk corruption).
+    -- This should only happen in exceptional circumstances (like after disk
+    -- corruption).
+  | CandidateExceedsRollback
+      Word64  -- ^ Supported rollback
+      Word64  -- ^ Rollback requested from the candidate
+      (AnchoredFragment (Header blk))
+
   deriving (Generic)
 
 deriving instance
@@ -666,29 +661,27 @@ deriving instance
   ) => Show (TraceInitChainSelEvent blk)
 
 
-data TraceReaderEvent blk
-  = NewReader
-    -- ^ A new reader was created.
+data TraceReaderEvent blk =
+    -- | A new reader was created.
+    NewReader
 
-  | ReaderNoLongerInMem (ReaderRollState blk)
-    -- ^ The reader was in the 'ReaderInMem' state but its point is no longer
+    -- | The reader was in the 'ReaderInMem' state but its point is no longer
     -- on the in-memory chain fragment, so it has to switch to the
     -- 'ReaderInImmDB' state.
+  | ReaderNoLongerInMem (ReaderRollState blk)
 
-  | ReaderSwitchToMem
-    { _readerPoint      :: Point blk
-    , _slotNoAtImmDBTip :: WithOrigin SlotNo
-    }
-    -- ^ The reader was in the 'ReaderInImmDB' state and is switched to the
+    -- | The reader was in the 'ReaderInImmDB' state and is switched to the
     -- 'ReaderInMem' state.
+  | ReaderSwitchToMem
+      (Point blk)          -- ^ Point at which the reader is
+      (WithOrigin SlotNo)  -- ^ Slot number at the tip of the ImmutableDB
 
-  | ReaderNewImmIterator
-    { _readerPoint      :: Point blk
-    , _slotNoAtImmDBTip :: WithOrigin SlotNo
-    }
-    -- ^ The reader is in the 'ReaderInImmDB' state but the iterator is
+    -- | The reader is in the 'ReaderInImmDB' state but the iterator is
     -- exhausted while the ImmutableDB has grown, so we open a new iterator to
     -- stream these blocks too.
+  | ReaderNewImmIterator
+      (Point blk)          -- ^ Point at which the reader is
+      (WithOrigin SlotNo)  -- ^ Slot number at the tip of the ImmutableDB
   deriving (Generic, Eq, Show)
 
 
@@ -711,21 +704,21 @@ data TraceIteratorEvent blk
   = UnknownRangeRequested (UnknownRange blk)
     -- ^ An unknown range was requested, see 'UnknownRange'.
   | StreamFromVolDB
-    { _streamFrom :: StreamFrom blk
-    , _streamTo   :: StreamTo   blk
-    , _hashes     :: [HeaderHash blk]
-    }
+      (StreamFrom blk)
+      (StreamTo   blk)
+      [HeaderHash blk]
+
     -- ^ Stream only from the VolatileDB.
   | StreamFromImmDB
-    { _streamFrom :: StreamFrom blk
-    , _streamTo   :: StreamTo   blk
-    }
+      (StreamFrom blk)
+      (StreamTo   blk)
+
     -- ^ Stream only from the ImmutableDB.
   | StreamFromBoth
-    { _streamFrom :: StreamFrom blk
-    , _streamTo   :: StreamTo   blk
-    , _hashes     :: [HeaderHash blk]
-    }
+      (StreamFrom blk)
+      (StreamTo   blk)
+      [HeaderHash blk]
+
     -- ^ Stream from both the VolatileDB and the ImmutableDB.
   | BlockMissingFromVolDB (HeaderHash blk)
     -- ^ A block is no longer in the VolatileDB because it has been garbage

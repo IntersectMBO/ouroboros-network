@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.ByronDual.Ledger (
     -- * Shorthand
@@ -15,7 +15,7 @@ module Ouroboros.Consensus.ByronDual.Ledger (
     -- * Bridge
   , ByronSpecBridge(..)
   , SpecToImplIds(..)
-  , specToImplTxWit
+  , specToImplTx
   , initByronSpecBridge
   , bridgeToSpecKey
   , bridgeTransactionIds
@@ -89,13 +89,13 @@ instance Monoid SpecToImplIds where
       }
 
 -- | Construct singleton 'SpecToImplIds' for a transaction
-specToImplTxWit :: Spec.TxWits -> Impl.ATxAux ByteString -> SpecToImplIds
-specToImplTxWit spec impl = SpecToImplIds $ Spec.Test.AbstractToConcreteIdMaps {
+specToImplTx :: Spec.Tx -> Impl.ATxAux ByteString -> SpecToImplIds
+specToImplTx spec impl = SpecToImplIds $ Spec.Test.AbstractToConcreteIdMaps {
       transactionIds = Map.singleton (specTxId spec) (byronIdTx impl)
     , proposalIds    = Map.empty
     }
   where
-    specTxId :: Spec.TxWits -> Spec.TxId
+    specTxId :: Spec.Tx -> Spec.TxId
     specTxId = Spec.txid . Spec.body
 
 {-------------------------------------------------------------------------------

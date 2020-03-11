@@ -72,7 +72,7 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot (WithOrigin (..))
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF

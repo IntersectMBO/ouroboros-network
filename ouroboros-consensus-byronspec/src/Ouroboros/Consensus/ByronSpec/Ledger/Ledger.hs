@@ -4,7 +4,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies    #-}
 
-{-# OPTIONS -fno-warn-orphans #-}
+{-# OPTIONS -Wno-orphans #-}
 
 module Ouroboros.Consensus.ByronSpec.Ledger.Ledger (
     ByronSpecLedgerError(..)

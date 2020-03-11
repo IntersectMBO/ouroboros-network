@@ -46,7 +46,6 @@ import           Data.Proxy (Proxy (..))
 import           Data.Typeable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-import           GHC.Stack
 import           Numeric.Natural
 
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
@@ -60,6 +59,8 @@ import           Cardano.Crypto.VRF.Class
 import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
 import           Cardano.Prelude (NoUnexpectedThunks (..), fromMaybe)
+import           Cardano.Slotting.EpochInfo
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      pointSlot)
@@ -71,11 +72,6 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
-
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
-                     EpochSize (..))
-import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo (..),
-                     fixedSizeEpochInfo)
 
 {-------------------------------------------------------------------------------
   Fields required by Praos in the header
@@ -159,7 +155,7 @@ forgePraosFields PraosConfig{..} updateState PraosProof{..} mkToSign = do
 
     -- Evolve the key
     newKey <- fromMaybe (error "mkOutoborosPayload: updateKES failed") <$>
-                 updateKESTo () kesPeriod oldKey
+                 updateKES () oldKey kesPeriod
     runUpdate updateState $ \_ -> return (PraosKeyAvailable newKey, ())
 
     let signedFields = PraosExtraFields {
@@ -175,28 +171,6 @@ forgePraosFields PraosConfig{..} updateState PraosProof{..} mkToSign = do
             praosSignature   = signature
           , praosExtraFields = signedFields
           }
-
--- | Update key to specified period
---
--- Throws an error if the key is already /past/ the period
-updateKESTo :: forall m v. (MonadRandom m, HasCallStack, KESAlgorithm v)
-            => ContextKES v
-            -> Natural -- ^ KES period to evolve to
-            -> SignKeyKES v
-            -> m (Maybe (SignKeyKES v))
-updateKESTo ctxt evolveTo = go
-  where
-    go :: SignKeyKES v -> m (Maybe (SignKeyKES v))
-    go key
-      | iterationCountKES ctxt key < evolveTo = do
-          mKey' <- updateKES ctxt key
-          case mKey' of
-            Nothing   -> return Nothing
-            Just key' -> go key'
-      | iterationCountKES ctxt key == evolveTo =
-          return (Just key)
-      | otherwise =
-          error "updateKESTo: key already past period"
 
 {-------------------------------------------------------------------------------
   Praos specific types
@@ -416,7 +390,7 @@ infosEta l xs e =
         eta' = infosEta l xs e'
         from = epochFirst l e'
         n    = div (2 * praosSlotsPerEpoch) 3
-        to   = SlotNo $ unSlotNo from + fromIntegral n
+        to   = SlotNo $ unSlotNo from + n
         rhos = reverse [biRho b | b <- infosSlice from to xs]
     in  fromHash $ hash @(PraosHash c) (eta', e, rhos)
   where

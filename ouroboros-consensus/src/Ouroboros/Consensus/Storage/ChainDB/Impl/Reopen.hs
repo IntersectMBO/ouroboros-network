@@ -4,15 +4,13 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
-
 -- | Closing and reopening
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Reopen
   ( isOpen
   , closeDB
   , reopen
     -- * Auxiliary
-  , pointToEpoch
+  , chunkIndexOfPoint
   ) where
 
 import           Control.Monad (when)
@@ -29,10 +27,6 @@ import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
-
-import           Ouroboros.Consensus.Storage.Common (EpochNo)
-import           Ouroboros.Consensus.Storage.EpochInfo (EpochInfo,
-                     epochInfoEpoch)
 
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Background as Background
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
@@ -81,9 +75,8 @@ closeDB (CDBHandle varState) = do
       chain <- atomically $ readTVar cdbChain
 
       traceWith cdbTracer $ TraceOpenEvent $ ClosedDB
-        { _immTip   = castPoint $ AF.anchorPoint chain
-        , _chainTip = castPoint $ AF.headPoint chain
-        }
+        (castPoint $ AF.anchorPoint chain)
+        (castPoint $ AF.headPoint chain)
 
 reopen
   :: forall m blk.
@@ -114,11 +107,9 @@ reopen (CDBHandle varState) launchBgTasks = do
 
         ImmDB.reopen cdbImmDB
         immDbTipPoint <- ImmDB.getPointAtTip cdbImmDB
-        immDbTipEpoch <- pointToEpoch cdbEpochInfo immDbTipPoint
-        traceWith cdbTracer $ TraceOpenEvent $ OpenedImmDB
-          { _immDbTip      = immDbTipPoint
-          , _immDbTipEpoch = immDbTipEpoch
-          }
+        let immDbTipChunk = chunkIndexOfPoint cdbChunkInfo immDbTipPoint
+        traceWith cdbTracer $ TraceOpenEvent $
+          OpenedImmDB immDbTipPoint immDbTipChunk
 
         -- Note that we must reopen the VolatileDB before the LedgerDB, as the
         -- latter may try to access the former: when we initially opened it,
@@ -153,9 +144,8 @@ reopen (CDBHandle varState) launchBgTasks = do
           -- Change the state from 'ChainDbReopening' to 'ChainDbOpen'
           writeTVar varState $ ChainDbOpen env
         traceWith cdbTracer $ TraceOpenEvent $ ReopenedDB
-          { _immTip   = castPoint $ AF.anchorPoint chain
-          , _chainTip = castPoint $ AF.headPoint   chain
-          }
+          (castPoint $ AF.anchorPoint chain)
+          (castPoint $ AF.headPoint   chain)
 
         when launchBgTasks $ Background.launchBgTasks env replayed
 
@@ -164,7 +154,10 @@ reopen (CDBHandle varState) launchBgTasks = do
   Auxiliary
 -------------------------------------------------------------------------------}
 
-pointToEpoch :: Monad m => EpochInfo m -> Point blk -> m EpochNo
-pointToEpoch epochInfo = \case
-    GenesisPoint      -> return 0
-    BlockPoint slot _ -> epochInfoEpoch epochInfo slot
+-- | Lift 'chunkIndexOfSlot' to 'Point'
+--
+-- Returns 'firstChunkNo' in case of 'GenesisPoint'.
+chunkIndexOfPoint :: ImmDB.ChunkInfo -> Point blk -> ImmDB.ChunkNo
+chunkIndexOfPoint chunkInfo = \case
+    GenesisPoint      -> ImmDB.firstChunkNo
+    BlockPoint slot _ -> ImmDB.chunkIndexOfSlot chunkInfo slot

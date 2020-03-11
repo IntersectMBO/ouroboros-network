@@ -9,7 +9,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Mock.Ledger.Block.BFT (
     SimpleBftBlock
@@ -120,8 +120,8 @@ instance ( SimpleCrypto c
          ) => LedgerSupportsProtocol (SimpleBftBlock c c') where
   protocolLedgerView _ _ =
       ()
-  anachronisticProtocolLedgerView _ _ _ =
-      Right ()
+  anachronisticProtocolLedgerView_ _ _ _ =
+      return ()
 
 {-------------------------------------------------------------------------------
   Serialisation

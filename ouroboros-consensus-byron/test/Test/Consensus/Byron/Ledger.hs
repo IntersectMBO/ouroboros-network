@@ -9,7 +9,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans -Wno-incomplete-uni-patterns #-}
 module Test.Consensus.Byron.Ledger (tests) where
 
 import           Codec.CBOR.Decoding (Decoder)

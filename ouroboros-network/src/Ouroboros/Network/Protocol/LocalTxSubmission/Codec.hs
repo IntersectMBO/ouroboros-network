@@ -17,6 +17,7 @@ import           Data.ByteString.Lazy (ByteString)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Read     as CBOR
+import           Text.Printf
 
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
@@ -77,10 +78,7 @@ codecLocalTxSubmission encodeTx decodeTx encodeReject decodeReject =
         (ClientAgency TokIdle, 1, 3) ->
           return (SomeMessage MsgDone)
 
-        (ClientAgency TokIdle, _, _) ->
-          fail "codecLocalTxSubmission.Idle: unexpected key"
-        (ServerAgency TokBusy, _, _) ->
-          fail "codecLocalTxSubmission.Busy: unexpected key"
+        _ -> fail (printf "codecLocalTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
 
 codecLocalTxSubmissionId
   :: forall tx reject m.

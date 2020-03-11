@@ -31,14 +31,13 @@ import           Data.Coerce (Coercible, coerce)
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Functor.Classes (Eq1, Show1)
-import           Data.Functor.Identity
 import           Data.List (sortBy)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, isNothing, listToMaybe)
 import           Data.Proxy (Proxy (..))
-import           Data.TreeDiff (Expr (App))
+import           Data.TreeDiff (Expr (App), defaultExprViaShow)
 import           Data.TreeDiff.Class (ToExpr (..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word16, Word32, Word64)
@@ -58,6 +57,7 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Cardano.Slotting.Slot hiding (At)
 import qualified Cardano.Slotting.Slot as S
 
 import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB, getHeader)
@@ -71,22 +71,23 @@ import           Ouroboros.Network.Block (BlockNo (..), HasHeader (..),
 import qualified Ouroboros.Network.Block as Block
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath)
 import           Ouroboros.Consensus.Storage.ImmutableDB hiding
                      (BlockOrEBB (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+                     (unsafeChunkNoToEpochNo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl as ImmDB
                      (Internal (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
                      tryImmDB)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Layout
 import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
-                     (epochFileParser)
+                     (chunkFileParser)
 
+import           Test.Util.ChunkInfo
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.Arbitrary (genSmallSlotNo)
@@ -143,9 +144,9 @@ newtype Corruption = MkCorruption { getCorruptions :: Corruptions }
 -- simulate file system errors thrown at the 'HasFS' level. When 'Nothing', no
 -- errors will be thrown.
 data CmdErr it = CmdErr
-  { _cmdErr   :: Maybe Errors
-  , _cmd      :: Cmd it
-  , _cmdIters :: [it]
+  { cmdErr   :: Maybe Errors
+  , cmd      :: Cmd it
+  , cmdIters :: [it]
     -- ^ A list of all open iterators. For some commands, e.g., corrupting the
     -- database or simulating errors, we need to close and reopen the
     -- database, which almost always requires truncation of the database.
@@ -424,7 +425,7 @@ eventCmdErr :: ImmDBEvent m r -> At CmdErr m r
 eventCmdErr = eventCmd
 
 eventCmdNoErr :: ImmDBEvent m r -> At Cmd m r
-eventCmdNoErr = At . _cmd . unAt . eventCmdErr
+eventCmdNoErr = At . cmd . unAt . eventCmdErr
 
 eventMockCmd :: Eq1 r => ImmDBEvent m r -> Cmd IteratorId
 eventMockCmd ev@Event {..} = toMock eventBefore (eventCmdNoErr ev)
@@ -459,15 +460,15 @@ lockstep model@Model {..} cmdErr (At resp) = Event
 -- | Generate a 'CmdErr'
 generator :: Model m Symbolic -> Gen (At CmdErr m Symbolic)
 generator m@Model {..} = do
-    _cmd    <- unAt <$> generateCmd m
-    _cmdErr <- if errorFor _cmd
+    cmd    <- unAt <$> generateCmd m
+    cmdErr <- if errorFor cmd
        then frequency
           -- We want to make some progress
           [ (4, return Nothing)
           , (1, Just <$> arbitrary)
           ]
        else return Nothing
-    let _cmdIters = RE.keys knownIters
+    let cmdIters = RE.keys knownIters
     return $ At CmdErr {..}
   where
     -- Don't simulate an error during corruption, because we don't want an
@@ -482,7 +483,7 @@ generateCmd Model {..} = At <$> frequency
     [ -- Block
       (1, GetBlockComponent <$> genGetBlockSlot)
       -- EBB
-    , (1, GetEBBComponent <$> genGetEBB)
+    , (if modelSupportsEBBs then 1 else 0, GetEBBComponent <$> genGetEBB)
     , (1, uncurry GetBlockOrEBBComponent <$> genSlotAndHash)
     , (3, do
             let mbPrevBlock = dbmTipBlock dbModel
@@ -497,23 +498,26 @@ generateCmd Model {..} = At <$> frequency
                 -- Slots not too far in the future
               , (4, chooseSlot (lastSlot, lastSlot + 10))
                 -- Slots in some future epoch
-              , (1, chooseSlot (lastSlot + epochSize',
-                                lastSlot + epochSize' * 4))
+              , (1, chooseSlot (inLaterChunk 1 lastSlot,
+                                inLaterChunk 4 lastSlot))
               ]
-            let block = (maybe firstBlock mkNextBlock mbPrevBlock)
-                        slotNo (TestBody 0 True)
+            let block = (maybe (firstBlock  canContainEBB)
+                               (mkNextBlock canContainEBB)
+                               mbPrevBlock)
+                          slotNo
+                          (TestBody 0 True)
             return $ AppendBlock slotNo (blockHash block) block)
-    , (1, do
+    , (if modelSupportsEBBs then 1 else 0, do
             (epoch, ebb) <- case dbmTipBlock dbModel of
-              Nothing        -> return (0, firstEBB (TestBody 0 True))
+              Nothing        -> return (0, firstEBB canContainEBB (TestBody 0 True))
               Just prevBlock -> do
                 epoch <- frequency
                 -- Epoch in the past -> invalid
                   [ (1, chooseEpoch (0, currentEpoch))
                   , (3, chooseEpoch (currentEpoch, currentEpoch + 5))
                   ]
-                let slotNo = SlotNo (unEpochNo epoch) * epochSize'
-                return (epoch, mkNextEBB prevBlock slotNo (TestBody 0 True))
+                let slotNo = slotNoOfEBB dbmChunkInfo epoch
+                return (epoch, mkNextEBB canContainEBB prevBlock slotNo (TestBody 0 True))
             return $ AppendEBB epoch (blockHash ebb) ebb)
     , (4, frequency
             -- An iterator with a random and likely invalid range,
@@ -557,15 +561,21 @@ generateCmd Model {..} = At <$> frequency
     ]
   where
     DBModel {..} = dbModel
-
-    currentEpoch = dbmCurrentEpoch dbModel
+    modelSupportsEBBs = chunkInfoSupportsEBBs dbmChunkInfo
+    currentEpoch      = unsafeChunkNoToEpochNo $ dbmCurrentChunk dbModel
+    canContainEBB     = const modelSupportsEBBs -- TODO: we could be more precise
 
     lastSlot :: SlotNo
     lastSlot = fromIntegral $ length (dbmRegular dbModel)
 
-    -- Useful when adding to another 'SlotNo'
-    epochSize' :: SlotNo
-    epochSize' = SlotNo $ unEpochSize fixedEpochSize
+    -- Construct a 'SlotNo' @n@ chunks later
+    inLaterChunk :: Word -> SlotNo -> SlotNo
+    inLaterChunk 0 s = s
+    inLaterChunk n s = inLaterChunk (n - 1) $
+                         SlotNo (unSlotNo s + numRegularBlocks size)
+      where
+        chunk = chunkIndexOfSlot dbmChunkInfo s
+        size  = getChunkSize     dbmChunkInfo chunk
 
     empty = dbmTip dbModel == S.Origin
 
@@ -581,7 +591,8 @@ generateCmd Model {..} = At <$> frequency
 
     genGetEBB :: Gen EpochNo
     genGetEBB = frequency
-      [ (if noEBBs then 0 else 5, elements $ Map.keys (dbmEBBs dbModel))
+      [ (if noEBBs then 0 else 5,
+           elements $ map unsafeChunkNoToEpochNo $ Map.keys (dbmEBBs dbModel))
       , (1, chooseEpoch (0, 5))
       ]
 
@@ -635,7 +646,7 @@ generateCmd Model {..} = At <$> frequency
 
     dbFiles = getDBFiles dbModel
 
-    genValPol = elements [ValidateMostRecentEpoch, ValidateAllEpochs]
+    genValPol = elements [ValidateMostRecentChunk, ValidateAllChunks]
 
     genTip :: Gen (ImmTipWithInfo Hash)
     genTip = elements $ NE.toList $ tips dbModel
@@ -645,7 +656,7 @@ generateCmd Model {..} = At <$> frequency
 getDBFiles :: DBModel Hash -> [FsPath]
 getDBFiles dbm =
     [ renderFile fileType epoch
-    | epoch <- [0..dbmCurrentEpoch dbm]
+    | epoch <- chunksBetween firstChunkNo (dbmCurrentChunk dbm)
     , fileType <- ["epoch", "primary", "secondary"]
     ]
 
@@ -721,7 +732,7 @@ mock model cmdErr = At <$> traverse (const genSym) resp
     (resp, _dbm) = step model cmdErr
 
 precondition :: Model m Symbolic -> At CmdErr m Symbolic -> Logic
-precondition Model {..} (At (CmdErr { _cmd = cmd })) =
+precondition Model {..} (At (CmdErr { cmd })) =
    forall (iters cmd) (`member` RE.keys knownIters) .&&
     case cmd of
       AppendBlock    _ _ b -> fitsOnTip b
@@ -816,7 +827,7 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
       closeDB db
       -- Release any handles that weren't closed because of a simulated error.
       releaseAll registry
-      reopen db ValidateAllEpochs
+      reopen db ValidateAllChunks
       deleteAfter internal tipBefore
       -- If the cmd deleted things, we must do it here to have a deterministic
       -- outcome and to stay in sync with the model. If no error was thrown,
@@ -836,7 +847,7 @@ semanticsCorruption :: MonadCatch m
 semanticsCorruption hasFS db _internal (MkCorruption corrs) = do
     closeDB db
     forM_ corrs $ \(corr, file) -> corruptFile hasFS corr file
-    reopen db ValidateAllEpochs
+    reopen db ValidateAllChunks
     Tip <$> getTip db
 
 -- | The state machine proper
@@ -969,7 +980,7 @@ failedUserError f = failed $ \ev e -> case e of
 simulatedError :: (ImmDBEvent m Symbolic -> Either Tag (EventPred m))
                -> EventPred m
 simulatedError f = predicate $ \ev ->
-    case (_cmdErr (unAt (eventCmdErr ev)), getResp (eventMockResp ev)) of
+    case (cmdErr (unAt (eventCmdErr ev)), getResp (eventMockResp ev)) of
       (Just _, Right _) -> f ev
       _                 -> Right $ simulatedError f
 
@@ -1115,7 +1126,7 @@ instance CommandNames (At Cmd m) where
     constrNames (Proxy @(Cmd (IterRef m r)))
 
 instance CommandNames (At CmdErr m) where
-  cmdName (At (CmdErr { _cmd = cmd }) ) = constrName cmd
+  cmdName (At (CmdErr { cmd }) ) = constrName cmd
   cmdNames (_ :: Proxy (At CmdErr m r)) =
     constrNames (Proxy @(Cmd (IterRef m r)))
 
@@ -1124,7 +1135,9 @@ instance ToExpr SlotNo where
 
 instance ToExpr EpochNo
 instance ToExpr EpochSize
-instance ToExpr EpochSlot
+instance ToExpr ChunkSize
+instance ToExpr ChunkNo
+instance ToExpr ChunkSlot
 instance ToExpr RelativeSlot
 instance ToExpr BlockNo
 instance (ToExpr a, ToExpr b, ToExpr c, ToExpr d, ToExpr e, ToExpr f, ToExpr g,
@@ -1153,8 +1166,8 @@ instance ToExpr (DBModel Hash)
 instance ToExpr FsError where
   toExpr fsError = App (show fsError) []
 
-instance ToExpr (EpochInfo Identity) where
-  toExpr it = App "fixedSizeEpochInfo" [App (show (runIdentity $ epochInfoSize it 0)) []]
+instance ToExpr ChunkInfo where
+  toExpr = defaultExprViaShow
 
 instance ToExpr (Model m Concrete)
 
@@ -1169,28 +1182,30 @@ showLabelledExamples' :: Maybe Int
                       -- ^ Number of tests to run to find examples
                       -> (Tag -> Bool)
                       -- ^ Tag filter (can be @const True@)
-                      -> IO ()
-showLabelledExamples' mReplay numTests focus =
+                      -> ChunkInfo -> IO ()
+showLabelledExamples' mReplay numTests focus chunkInfo =
     QSM.showLabelledExamples' smUnused mReplay numTests tag focus
   where
-    smUnused = sm unusedEnv mkDBModel
+    smUnused = sm unusedEnv $ initDBModel chunkInfo
 
-showLabelledExamples :: IO ()
+showLabelledExamples :: ChunkInfo -> IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
 
-prop_sequential :: Index.CacheConfig -> Property
-prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
-    (hist, prop) <- QC.run $ test cacheConfig cmds
-    prettyCommands smUnused hist
-      $ tabulate "Tags" (map show $ tag (execCmds smUnused cmds))
-      $ prop
+prop_sequential :: Index.CacheConfig -> SmallChunkInfo -> Property
+prop_sequential cacheConfig (SmallChunkInfo chunkInfo) =
+    forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
+      (hist, prop) <- QC.run $ test cacheConfig chunkInfo cmds
+      prettyCommands smUnused hist
+        $ tabulate "Tags" (map show $ tag (execCmds smUnused cmds))
+        $ prop
   where
-    smUnused = sm unusedEnv mkDBModel
+    smUnused = sm unusedEnv $ initDBModel chunkInfo
 
 test :: Index.CacheConfig
+     -> ChunkInfo
      -> QSM.Commands (At CmdErr IO) (At Resp IO)
      -> IO (QSM.History (At CmdErr IO) (At Resp IO), Property)
-test cacheConfig cmds = do
+test cacheConfig chunkInfo cmds = do
     fsVar              <- uncheckedNewTVarM Mock.empty
     varErrors          <- uncheckedNewTVarM mempty
     varNextId          <- uncheckedNewTVarM 0
@@ -1198,20 +1213,19 @@ test cacheConfig cmds = do
     (tracer, getTrace) <- recordingTracerIORef
 
     let hasFS  = mkSimErrorHasFS fsVar varErrors
-        parser = epochFileParser hasFS (const <$> decode) isEBB
+        parser = chunkFileParser hasFS (const <$> decode) isEBB
           getBinaryInfo testBlockIsValid
         btime  = settableBlockchainTime varCurSlot
 
     withRegistry $ \registry -> do
-
       bracket
-        (openDBInternal registry hasFS (fixedSizeEpochInfo fixedEpochSize)
-           testHashInfo ValidateMostRecentEpoch parser tracer cacheConfig btime)
+        (openDBInternal registry hasFS chunkInfo
+           testHashInfo ValidateMostRecentChunk parser tracer cacheConfig btime)
         (closeDB . fst) $ \(db, internal) -> do
 
         let env = ImmutableDBEnv
               { varErrors, varNextId, varCurSlot, registry, hasFS, db, internal }
-            sm' = sm env dbm
+            sm' = sm env (initDBModel chunkInfo)
 
         (hist, model, res) <- QSM.runCommands' sm' cmds
 
@@ -1226,7 +1240,7 @@ test cacheConfig cmds = do
         case res of
           Ok -> do
             closeDB db
-            reopen db ValidateAllEpochs
+            reopen db ValidateAllChunks
             validation <- validate model db
             dbTip <- getTip db
 
@@ -1240,8 +1254,7 @@ test cacheConfig cmds = do
           -- If something went wrong, don't try to reopen the database
           _ -> return (hist, prop)
   where
-    dbm = mkDBModel
-    isEBB = testHeaderEpochNoIfEBB fixedEpochSize . getHeader
+    isEBB = testHeaderEpochNoIfEBB chunkInfo . getHeader
     getBinaryInfo = void . testBlockToBinaryInfo
 
     openHandlesProp fs model
@@ -1267,18 +1280,12 @@ tests = testGroup "ImmutableDB q-s-m"
     [ testProperty "sequential" prop_sequential
     ]
 
-fixedEpochSize :: EpochSize
-fixedEpochSize = 10
-
-mkDBModel :: DBModel Hash
-mkDBModel = initDBModel fixedEpochSize
-
 unusedEnv :: ImmutableDBEnv h
 unusedEnv = error "ImmutableDBEnv used during command generation"
 
 instance Arbitrary Index.CacheConfig where
   arbitrary = do
-    pastEpochsToCache <- frequency
+    pastChunksToCache <- frequency
       -- Pick small values so that we exercise cache eviction
       [ (1, return 1)
       , (1, return 2)

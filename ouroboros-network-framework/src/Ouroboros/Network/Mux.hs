@@ -27,7 +27,6 @@ import           Control.Exception (Exception)
 import           Control.Tracer (Tracer)
 
 import           Data.Void (Void)
-import           Data.Int (Int64)
 import qualified Data.ByteString.Lazy as LBS
 
 import           Network.TypedProtocol.Core

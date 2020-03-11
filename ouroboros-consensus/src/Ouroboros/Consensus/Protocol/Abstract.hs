@@ -49,7 +49,9 @@ data family ConsensusConfig p :: *
 -- block representation.
 class ( Show (ConsensusState p)
       , Show (ValidationErr  p)
+      , Show (LedgerView     p)
       , Eq   (ValidationErr  p)
+      , Eq   (LedgerView     p)
       , NoUnexpectedThunks (ConsensusConfig p)
       , NoUnexpectedThunks (ConsensusState  p)
       , NoUnexpectedThunks (ValidationErr   p)

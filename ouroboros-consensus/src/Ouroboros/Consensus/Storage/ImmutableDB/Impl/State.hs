@@ -35,11 +35,10 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
                      allocate)
 
-import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.EpochInfo
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
@@ -56,15 +55,15 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 
 -- | The environment used by the immutable database.
 data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
-    { _dbHasFS           :: !(HasFS m h)
-    , _dbInternalState   :: !(StrictMVar m (InternalState m hash h))
-    , _dbEpochFileParser :: !(EpochFileParser e m (BlockSummary hash) hash)
-    , _dbEpochInfo       :: !(EpochInfo m)
-    , _dbHashInfo        :: !(HashInfo hash)
-    , _dbTracer          :: !(Tracer m (TraceEvent e hash))
-    , _dbRegistry        :: !(ResourceRegistry m)
-    , _dbCacheConfig     :: !Index.CacheConfig
-    , _dbBlockchainTime  :: !(BlockchainTime m)
+    { hasFS            :: !(HasFS m h)
+    , varInternalState :: !(StrictMVar m (InternalState m hash h))
+    , chunkFileParser  :: !(ChunkFileParser e m (BlockSummary hash) hash)
+    , chunkInfo        :: !ChunkInfo
+    , hashInfo         :: !(HashInfo hash)
+    , tracer           :: !(Tracer m (TraceEvent e hash))
+    , registry         :: !(ResourceRegistry m)
+    , cacheConfig      :: !Index.CacheConfig
+    , blockchainTime   :: !(BlockchainTime m)
     }
 
 data InternalState m hash h =
@@ -78,23 +77,23 @@ dbIsOpen (DbOpen _) = True
 
 -- | Internal state when the database is open.
 data OpenState m hash h = OpenState
-    { _currentEpoch           :: !EpochNo
-      -- ^ The current 'EpochNo' the immutable store is writing to.
-    , _currentEpochOffset     :: !BlockOffset
+    { currentChunk           :: !ChunkNo
+      -- ^ The current 'ChunkNo' the immutable store is writing to.
+    , currentChunkOffset     :: !BlockOffset
       -- ^ The offset at which the next block will be written in the current
-      -- epoch file.
-    , _currentSecondaryOffset :: !SecondaryOffset
+      -- chunk file.
+    , currentSecondaryOffset :: !SecondaryOffset
       -- ^ The offset at which the next index entry will be written in the
       -- current secondary index.
-    , _currentEpochHandle     :: !(Handle h)
-      -- ^ The write handle for the current epoch file.
-    , _currentPrimaryHandle   :: !(Handle h)
+    , currentChunkHandle     :: !(Handle h)
+      -- ^ The write handle for the current chunk file.
+    , currentPrimaryHandle   :: !(Handle h)
       -- ^ The write handle for the current primary index file.
-    , _currentSecondaryHandle :: !(Handle h)
+    , currentSecondaryHandle :: !(Handle h)
       -- ^ The write handle for the current secondary index file.
-    , _currentTip             :: !(ImmTipWithInfo hash)
+    , currentTip             :: !(ImmTipWithInfo hash)
       -- ^ The current tip of the database.
-    , _index                  :: !(Index m hash h)
+    , currentIndex           :: !(Index m hash h)
       -- ^ An abstraction layer on top of the indices to allow for caching.
     }
   deriving (Generic, NoUnexpectedThunks)
@@ -103,31 +102,31 @@ data OpenState m hash h = OpenState
   State helpers
 ------------------------------------------------------------------------------}
 
--- | Create the internal open state for the given epoch.
+-- | Create the internal open state for the given chunk.
 mkOpenState
   :: forall m hash h. (HasCallStack, IOLike m)
   => ResourceRegistry m
   -> HasFS m h
   -> Index m hash h
-  -> EpochNo
+  -> ChunkNo
   -> ImmTipWithInfo hash
   -> AllowExisting
   -> m (OpenState m hash h)
-mkOpenState registry HasFS{..} index epoch tip existing = do
-    eHnd <- allocateHandle $ hOpen (renderFile "epoch" epoch)     appendMode
-    pHnd <- allocateHandle $ Index.openPrimaryIndex index epoch existing
-    sHnd <- allocateHandle $ hOpen (renderFile "secondary" epoch) appendMode
-    epochOffset     <- hGetSize eHnd
+mkOpenState registry HasFS{..} index chunk tip existing = do
+    eHnd <- allocateHandle $ hOpen (renderFile "epoch"     chunk) appendMode
+    pHnd <- allocateHandle $ Index.openPrimaryIndex index  chunk  existing
+    sHnd <- allocateHandle $ hOpen (renderFile "secondary" chunk) appendMode
+    chunkOffset     <- hGetSize eHnd
     secondaryOffset <- hGetSize sHnd
     return OpenState
-      { _currentEpoch           = epoch
-      , _currentEpochOffset     = BlockOffset epochOffset
-      , _currentSecondaryOffset = fromIntegral secondaryOffset
-      , _currentEpochHandle     = eHnd
-      , _currentPrimaryHandle   = pHnd
-      , _currentSecondaryHandle = sHnd
-      , _currentTip             = tip
-      , _index                  = index
+      { currentChunk           = chunk
+      , currentChunkOffset     = BlockOffset chunkOffset
+      , currentSecondaryOffset = fromIntegral secondaryOffset
+      , currentChunkHandle     = eHnd
+      , currentPrimaryHandle   = pHnd
+      , currentSecondaryHandle = sHnd
+      , currentTip             = tip
+      , currentIndex           = index
       }
   where
     appendMode = AppendMode existing
@@ -148,10 +147,10 @@ getOpenState :: (HasCallStack, IOLike m)
              => ImmutableDBEnv m hash
              -> m (SomePair (HasFS m) (OpenState m hash))
 getOpenState ImmutableDBEnv {..} = do
-    internalState <- readMVar _dbInternalState
+    internalState <- readMVar varInternalState
     case internalState of
        DbClosed         -> throwUserError  ClosedDBError
-       DbOpen openState -> return (SomePair _dbHasFS openState)
+       DbOpen openState -> return (SomePair hasFS openState)
 
 -- | Modify the internal state of an open database.
 --
@@ -169,7 +168,7 @@ modifyOpenState :: forall m hash r. (HasCallStack, IOLike m)
                 => ImmutableDBEnv m hash
                 -> (forall h. HasFS m h -> StateT (OpenState m hash h) m r)
                 -> m r
-modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
+modifyOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
     (mr, ()) <- generalBracket open close (tryImmDB . mutation)
     case mr of
       Left  e      -> throwM e
@@ -183,10 +182,10 @@ modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
 
     open :: m (OpenState m hash h)
     -- TODO Is uninterruptibleMask_ absolutely necessary here?
-    open = uninterruptibleMask_ $ takeMVar _dbInternalState >>= \case
+    open = uninterruptibleMask_ $ takeMVar varInternalState >>= \case
       DbOpen ost -> return ost
       DbClosed   -> do
-        putMVar _dbInternalState DbClosed
+        putMVar varInternalState DbClosed
         throwUserError ClosedDBError
 
     close :: OpenState m hash h
@@ -194,7 +193,7 @@ modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
           -> m ()
     close !ost ec = do
         -- It is crucial to replace the MVar.
-        putMVar _dbInternalState st'
+        putMVar varInternalState st'
         followUp
       where
         (st', followUp) = case ec of
@@ -223,16 +222,16 @@ withOpenState :: forall m hash r. (HasCallStack, IOLike m)
               => ImmutableDBEnv m hash
               -> (forall h. HasFS m h -> OpenState m hash h -> m r)
               -> m r
-withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
+withOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
     (mr, ()) <- generalBracket open (const close) (tryImmDB . access)
     case mr of
       Left  e -> throwM e
       Right r -> return r
   where
-    HasFS{..}         = hasFS
+    HasFS{..} = hasFS
 
     open :: m (OpenState m hash h)
-    open = readMVar _dbInternalState >>= \case
+    open = readMVar varInternalState >>= \case
       DbOpen ost -> return ost
       DbClosed   -> throwUserError ClosedDBError
 
@@ -251,7 +250,7 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
       ExitCaseSuccess (Left (UserError {}))       -> return ()
 
     shutDown :: m ()
-    shutDown = swapMVar _dbInternalState DbClosed >>= \case
+    shutDown = swapMVar varInternalState DbClosed >>= \case
       DbOpen ost -> cleanUp hasFS ost
       DbClosed   -> return ()
 
@@ -260,10 +259,10 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
 
 cleanUp :: Monad m => HasFS m h -> OpenState m hash h -> m ()
 cleanUp HasFS { hClose } OpenState {..}  = do
-    Index.close _index
+    Index.close currentIndex
     -- If one of the 'hClose' calls fails, the error will bubble up to the
     -- bracketed call to 'withRegistry', which will close the
     -- 'ResourceRegistry' and thus all the remaining handles in it.
-    hClose _currentEpochHandle
-    hClose _currentPrimaryHandle
-    hClose _currentSecondaryHandle
+    hClose currentChunkHandle
+    hClose currentPrimaryHandle
+    hClose currentSecondaryHandle

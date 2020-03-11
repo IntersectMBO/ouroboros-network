@@ -52,7 +52,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB
 import           Ouroboros.Consensus.Storage.VolatileDB.Util
 
-import           Test.QuickCheck
+import           Test.QuickCheck hiding (elements)
 import           Test.QuickCheck.Monadic
 import           Test.StateMachine hiding (showLabelledExamples,
                      showLabelledExamples')
@@ -66,6 +66,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Test.Util.FS.Sim.Error hiding (null)
 import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.QuickCheck
 import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
 
@@ -352,11 +353,10 @@ generatorCmdImpl Model {..} = frequency
     , (if isEmpty then 0 else 1, genDuplicateBlock)
     ]
   where
-    blockIdx = blockIndex dbModel
-
-    dbFiles = getDBFiles dbModel
-
-    isEmpty = Map.null blockIdx
+    blockIdx      = blockIndex dbModel
+    dbFiles       = getDBFiles dbModel
+    isEmpty       = Map.null blockIdx
+    canContainEBB = const True
 
     getSlot :: BlockId -> Maybe SlotNo
     getSlot bid = bslot . fst <$> Map.lookup bid blockIdx
@@ -387,7 +387,7 @@ generatorCmdImpl Model {..} = frequency
           th    = testHeader b
           no    = thBlockNo th
           isEBB = thIsEBB th
-      return $ mkBlock body (BlockHash prevHash) slot no isEBB
+      return $ mkBlock canContainEBB body (BlockHash prevHash) slot no isEBB
 
     genRandomBlock :: Gen TestBlock
     genRandomBlock = do
@@ -400,7 +400,7 @@ generatorCmdImpl Model {..} = frequency
       -- We don't care about block numbers in the VolatileDB
       no       <- BlockNo <$> arbitrary
       isEBB    <- elements [IsEBB, IsNotEBB]
-      return $ mkBlock body prevHash slot no isEBB
+      return $ mkBlock canContainEBB body prevHash slot no isEBB
 
     genBlockId :: Gen BlockId
     genBlockId = frequency

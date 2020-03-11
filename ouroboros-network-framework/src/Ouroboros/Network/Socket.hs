@@ -76,7 +76,7 @@ import qualified Network.Mux.Types as Mx
 import           Network.Mux.Types (MuxBearer)
 
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.ByteLimit
+import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Driver (TraceSendRecv)
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.ErrorPolicy
@@ -127,14 +127,6 @@ sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
 sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
 sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
 
--- |
--- We assume that a TCP segment size of 1440 bytes with initial window of size
--- 4.  This sets upper limit of 5760 bytes on each message of handshake
--- protocol.  If the limit is exceeded, then @'TooMuchInput'@ exception will
--- be thrown.
---
-maxTransmissionUnit :: Int64
-maxTransmissionUnit = 4 * 1440
 
 -- | The handshake protocol number.
 --
@@ -448,21 +440,24 @@ runInitiator sn versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandsha
   Mx.traceMuxBearerState muxTracer Mx.Connected
   traceWith muxTracer $ Mx.MuxTraceHandshakeStart
   ts_start <- getMonotonicTime
-  !mapp <- runPeerWithByteLimit
-            maxTransmissionUnit
-            BL.length
+  mapp <- try $ runPeerWithLimits
             (contramap (Mx.WithMuxBearer connectionId) nctHandshakeTracer)
             codecHandshake
+            byteLimitsHandshake
+            timeLimitsHandshake
             (fromChannel (Mx.muxBearerAsChannel bearer handshakeProtocolNum Mx.ModeInitiator))
             (handshakeClientPeer versionDataCodec versions)
   ts_end <- getMonotonicTime
   case mapp of
-       Left err -> do
+       Left (errDrv :: ProtocolLimitFailure) -> do 
+          traceWith muxTracer $ Mx.MuxTraceHandshakeClientError errDrv (diffTime ts_end ts_start)
+          throwIO errDrv
+       Right (Left err) -> do
            traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
            -- FIXME is it right to throw an exception here? Or would it be
            -- better to return Connection.Reject
            throwIO err
-       Right app -> do
+       Right (Right app) -> do
            traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
            Mx.muxStart muxTracer (toApplication (app connectionId)) bearer
 
@@ -521,18 +516,23 @@ incomingConnection sn
               bearer = Snocket.toBearer sn muxTracer' sd
           Mx.traceMuxBearerState muxTracer' Mx.Connected
           traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
-          mapp <- runPeerWithByteLimit
-                  maxTransmissionUnit
-                  BL.length
+          ts_start <- getMonotonicTime
+          mapp <- try $ runPeerWithLimits
                   (contramap (Mx.WithMuxBearer connid) nstHandshakeTracer)
                   codecHandshake
+                  byteLimitsHandshake
+                  timeLimitsHandshake
                   (fromChannel (Mx.muxBearerAsChannel bearer handshakeProtocolNum Mx.ModeResponder))
                   (handshakeServerPeer versionDataCodec acceptVersion versions)
+          ts_end <- getMonotonicTime
           case mapp of
-            Left err -> do
-              traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
-              throwIO err
-            Right mkapp -> case mkapp connid of
+            Left (errDrv :: ProtocolLimitFailure)-> do
+               traceWith muxTracer' $ Mx.MuxTraceHandshakeClientError errDrv (diffTime ts_end ts_start)
+               throwIO errDrv
+            Right (Left err) -> do
+               traceWith muxTracer' $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
+               throwIO err
+            Right (Right mkapp) -> case mkapp connid of
               SomeResponderApplication app -> do
                 traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
                 Mx.muxStart muxTracer' (toApplication app) bearer

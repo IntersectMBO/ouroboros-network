@@ -75,8 +75,7 @@ tests = testGroup "Praos"
 
     numCoreNodes = NumCoreNodes 3
     numEpochs    = 3
-    numSlots     = NumSlots $ fromIntegral $
-      maxRollbacks k * praosSlotsPerEpoch * numEpochs
+    numSlots     = NumSlots $ maxRollbacks k * praosSlotsPerEpoch * numEpochs
 
     params@PraosParams{praosSecurityParam = k, ..} = PraosParams
       { praosSecurityParam = SecurityParam 5
@@ -108,7 +107,8 @@ prop_simple_praos_convergence
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = Nothing
-            , nodeInfo    = \nid -> protocolInfoPraos
+            , nodeInfo    = \nid -> plainTestNodeInitialization $
+                                    protocolInfoPraos
                                       numCoreNodes
                                       nid
                                       params

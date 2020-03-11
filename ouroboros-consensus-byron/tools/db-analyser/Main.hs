@@ -12,6 +12,7 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS (length)
 import           Data.Coerce
 import           Data.Foldable (asum)
+import           Data.Functor.Identity
 import           Data.IORef
 import           Data.List (foldl', intercalate)
 import           Data.Proxy (Proxy (..))
@@ -20,6 +21,7 @@ import           GHC.Natural (Natural)
 import           Options.Applicative
 
 import           Cardano.Binary (unAnnotated)
+import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot
 
 import qualified Cardano.Chain.Block as Chain
@@ -46,10 +48,9 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB hiding
                      (withImmDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
                      (withImmDB)
-import           Ouroboros.Consensus.Storage.Common (EpochNo (..),
-                     EpochSize (..))
-import           Ouroboros.Consensus.Storage.EpochInfo
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmDB
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+                     (simpleChunkInfo)
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock, ByronHash)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
@@ -61,9 +62,10 @@ main = do
     genesisConfig <- openGenesis clConfig clIsMainNet
     let epochSlots = Genesis.configEpochSlots genesisConfig
         epochInfo  = fixedSizeEpochInfo (coerce epochSlots)
+        chunkInfo  = simpleChunkInfo    (coerce epochSlots)
         cfg        = mkByronTopLevelConfig genesisConfig
     withRegistry $ \registry ->
-      withImmDB clImmDB cfg epochInfo registry $ \immDB -> do
+      withImmDB clImmDB cfg chunkInfo registry $ \immDB -> do
         runAnalysis clAnalysis immDB epochInfo registry
         putStrLn "Done"
 
@@ -78,7 +80,7 @@ data AnalysisName =
   | ShowBlockTxsSize
 
 type Analysis = ImmDB IO ByronBlock
-             -> EpochInfo IO
+             -> EpochInfo Identity
              -> ResourceRegistry IO
              -> IO ()
 
@@ -122,7 +124,7 @@ countTxOutputs immDB epochInfo rr = do
     go' cumulative slotNo Chain.ABlock{..} = do
         countCum  <- atomicModifyIORef cumulative $ \c ->
                        let c' = c + count in (c', c')
-        epochSlot <- relativeSlotNo epochInfo slotNo
+        let epochSlot = relativeSlotNo epochInfo slotNo
         putStrLn $ intercalate "\t" [
             show slotNo
           , show epochSlot
@@ -149,13 +151,15 @@ countTxOutputs immDB epochInfo rr = do
 
 -- | Convert 'SlotNo' to relative 'EpochSlot'
 --
--- NOTE: Unlike 'epochInfoBlockRelative', which puts the EBB at relative slot 0,
--- this puts the first real block at relative slot 0.
-relativeSlotNo :: Monad m => EpochInfo m -> SlotNo -> m (EpochNo, Word64)
-relativeSlotNo epochInfo (SlotNo absSlot) = do
-    epoch        <- epochInfoEpoch epochInfo (SlotNo absSlot)
-    SlotNo first <- epochInfoFirst epochInfo epoch
-    return (epoch, absSlot - first)
+-- We use this only to produce more informative output: "this is the @x@'th
+-- block within this epoch", similar to what the explorer reports. We don't
+-- output EBBs at all, so we place the first real block in an epoch at relative
+-- slot 0 (unlike the imm DB, which puts it at relative slot 1 within a chunk).
+relativeSlotNo :: EpochInfo Identity -> SlotNo -> (EpochNo, Word64)
+relativeSlotNo chunkInfo (SlotNo absSlot) = runIdentity $ do
+    epoch        <- epochInfoEpoch chunkInfo (SlotNo absSlot)
+    SlotNo first <- epochInfoFirst chunkInfo epoch
+    return $ (epoch, absSlot - first)
 
 {-------------------------------------------------------------------------------
   Analysis: show the block header size in bytes for all blocks
@@ -175,7 +179,7 @@ showBlockHeaderSize immDB epochInfo rr = do
             let blockHdrSz = Chain.headerLength (Chain.blockHeader regularBlk)
                 slotNo = blockSlot blk
             void $ modifyIORef' maxBlockHeaderSizeRef (max blockHdrSz)
-            epochSlot <- relativeSlotNo epochInfo slotNo
+            let epochSlot = relativeSlotNo epochInfo slotNo
             putStrLn $ intercalate "\t" [
                 show slotNo
               , show epochSlot
@@ -201,7 +205,7 @@ showBlockTxsSize immDB epochInfo rr = processAll immDB rr processUnlessEBB
 
     process :: SlotNo -> Chain.ABlock ByteString -> IO ()
     process slotNo block = do
-        epochSlot <- relativeSlotNo epochInfo slotNo
+        let epochSlot = relativeSlotNo epochInfo slotNo
         putStrLn $ intercalate "\t" [
             show slotNo
           , show epochSlot
@@ -341,11 +345,11 @@ mkByronTopLevelConfig genesisConfig = pInfoConfig $
 
 withImmDB :: FilePath
           -> TopLevelConfig ByronBlock
-          -> EpochInfo IO
+          -> ChunkInfo
           -> ResourceRegistry IO
           -> (ImmDB IO ByronBlock -> IO a)
           -> IO a
-withImmDB fp cfg epochInfo registry = ImmDB.withImmDB args
+withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
   where
     args :: ImmDbArgs IO ByronBlock
     args = (defaultArgs fp) {
@@ -354,9 +358,9 @@ withImmDB fp cfg epochInfo registry = ImmDB.withImmDB args
         , immDecodeHeader   = nodeDecodeHeader        cfg SerialisedToDisk
         , immEncodeHash     = nodeEncodeHeaderHash    (Proxy @ByronBlock)
         , immEncodeBlock    = nodeEncodeBlockWithInfo cfg
-        , immEpochInfo      = epochInfo
+        , immChunkInfo      = chunkInfo
         , immHashInfo       = nodeHashInfo            (Proxy @ByronBlock)
-        , immValidation     = ValidateMostRecentEpoch
+        , immValidation     = ValidateMostRecentChunk
         , immIsEBB          = nodeIsEBB
         , immCheckIntegrity = nodeCheckIntegrity      cfg
         , immAddHdrEnv      = nodeAddHeaderEnvelope   (Proxy @ByronBlock)

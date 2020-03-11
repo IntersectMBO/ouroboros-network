@@ -11,7 +11,7 @@
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Byron mempool integration
 module Ouroboros.Consensus.Byron.Ledger.Mempool (
@@ -117,6 +117,7 @@ instance HasTxId (GenTx ByronBlock) where
     | ByronUpdateProposalId !Update.UpId
     | ByronUpdateVoteId     !Update.VoteId
     deriving (Eq, Ord)
+    deriving NoUnexpectedThunks via UseIsNormalForm (TxId (GenTx ByronBlock))
 
   txId (ByronTx             i _) = ByronTxId             i
   txId (ByronDlg            i _) = ByronDlgId            i

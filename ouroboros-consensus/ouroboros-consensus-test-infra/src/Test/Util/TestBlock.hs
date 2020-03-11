@@ -14,6 +14,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 -- | Minimal instantiation of the consensus layer to be able to run the ChainDB
 module Test.Util.TestBlock (
     -- * Blocks
@@ -262,14 +263,14 @@ type instance Signed (Header TestBlock) = ()
 instance SignedHeader (Header TestBlock) where
   headerSigned _ = ()
 
-data TestBlockError
-  = InvalidHash
-    { _expectedHash :: ChainHash TestBlock
-    , _invalidHash  :: ChainHash TestBlock
-    }
-    -- ^ The hashes don't line up
+data TestBlockError =
+    -- | The hashes don't line up
+    InvalidHash
+      (ChainHash TestBlock)  -- ^ Expected hash
+      (ChainHash TestBlock)  -- ^ Invalid hash
+
+    -- | The block itself is invalid
   | InvalidBlock
-    -- ^ The block itself is invalid
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 instance BlockSupportsProtocol TestBlock where
@@ -326,7 +327,7 @@ instance ValidateEnvelope TestBlock where
 
 instance LedgerSupportsProtocol TestBlock where
   protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Right ()
+  anachronisticProtocolLedgerView_ _ _ _ = return ()
 
 instance LedgerDerivedInfo TestBlock where
   knownSlotLengths = testBlockSlotLengths

@@ -20,6 +20,7 @@ import           Control.Exception (assert)
 import           Control.Monad (void)
 import           Control.Monad.Except
 import           Data.Maybe (isJust, isNothing, listToMaybe)
+import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable
 import           Data.Word (Word32)
@@ -108,6 +109,14 @@ data InternalState blk = IS {
       -- | Transactions currently in the mempool
       isTxs          :: !(TxSeq (GenTx blk))
 
+      -- | The cached IDs of transactions currently in the mempool.
+      --
+      -- This allows one to more quickly lookup transactions by ID from a
+      -- 'MempoolSnapshot' (see 'snapshotHasTx').
+      --
+      -- This should always be in-sync with the transactions in 'isTxs'.
+    , isTxIds        :: !(Set (GenTxId blk))
+
       -- | The cached ledger state after applying the transactions in the
       -- Mempool against the chain's ledger state. New transactions will be
       -- validated against this ledger.
@@ -134,6 +143,7 @@ data InternalState blk = IS {
   deriving (Generic)
 
 deriving instance ( NoUnexpectedThunks (GenTx blk)
+                  , NoUnexpectedThunks (GenTxId blk)
                   , NoUnexpectedThunks (LedgerState blk)
                   , StandardHash blk
                   , Typeable blk
@@ -159,13 +169,18 @@ initInternalState
   -> InternalState blk
 initInternalState lastTicketNo st = IS {
       isTxs          = TxSeq.Empty
+    , isTxIds        = Set.empty
     , isLedgerState  = st
     , isTip          = ledgerTipHash $ tickedLedgerState st
     , isSlotNo       = tickedSlotNo st
     , isLastTicketNo = lastTicketNo
     }
 
-initMempoolEnv :: (IOLike m, ApplyTx blk, ValidateEnvelope blk)
+initMempoolEnv :: ( IOLike m
+                  , NoUnexpectedThunks (GenTxId blk)
+                  , ApplyTx blk
+                  , ValidateEnvelope blk
+                  )
                => LedgerInterface m blk
                -> LedgerConfig blk
                -> MempoolCapacityBytes
@@ -188,6 +203,7 @@ initMempoolEnv ledgerInterface cfg capacity tracer = do
 forkSyncStateOnTipPointChange :: forall m blk. (
                                    IOLike m
                                  , ApplyTx blk
+                                 , HasTxId (GenTx blk)
                                  , ValidateEnvelope blk
                                  )
                               => ResourceRegistry m
@@ -224,10 +240,10 @@ forkSyncStateOnTipPointChange registry menv =
 -- > (processed, toProcess) <- implTryAddTxs mpEnv txs
 -- > map fst processed ++ toProcess == txs
 implTryAddTxs
-  :: forall m blk. (IOLike m, ApplyTx blk)
+  :: forall m blk. (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
   => MempoolEnv m blk
   -> [GenTx blk]
-  -> m ( [(GenTx blk, Maybe (ApplyTxErr blk))]
+  -> m ( [(GenTx blk, MempoolAddTxResult blk)]
          -- Transactions that were added or rejected. A prefix of the input
          -- list.
        , [GenTx blk]
@@ -246,48 +262,61 @@ implTryAddTxs mpEnv = go []
     done acc toAdd = return (reverse acc, toAdd)
 
     go acc []                     = done acc []
-    go acc toAdd@(firstTx:toAdd') = do
-      let firstTxSize = txSize firstTx
-      -- Note: we execute the continuation returned by 'atomically'
-      join $ atomically $ do
-        is <- readTVar mpEnvStateVar
-        let curSize = msNumBytes $ isMempoolSize is
-        if curSize + firstTxSize > capacity then
-          -- No space in the Mempool
-          return $ done acc toAdd
-        else do
-          let vr  = extendVRNew cfg firstTx $ validationResultFromIS is
-              is' = internalStateFromVR vr
-          unless (null (vrNewValid vr)) $
-            -- Each time we have found a valid transaction, we update the
-            -- Mempool. This keeps our STM transactions short, avoiding
-            -- repeated work.
-            --
-            -- Note that even if the transaction were invalid, we could still
-            -- write the state, because in that case we would have that @is ==
-            -- is'@, but there's no reason to do that additional write.
-            writeTVar mpEnvStateVar is'
+    go acc toAdd@(firstTx:toAdd') =
+        -- Note: we execute the continuation returned by 'atomically'
+        join $ atomically $ readTVar mpEnvStateVar >>= tryAdd
+      where
+        tryAdd is
+          -- This transaction already exists within the mempool.
+          -- Note that we don't treat this as an error/rejection case.
+          | implSnapshotHasTx is (txId firstTx)
+          = return $ go
+              ((firstTx, MempoolTxAdded):acc)
+              toAdd'
 
-          -- We only extended the ValidationResult with a single transaction
-          -- ('firstTx'). So if it's not in 'vrInvalid', it must be in
-          -- 'vrNewValid'.
-          return $ case listToMaybe (vrInvalid vr) of
-            -- The transaction was valid
-            Nothing ->
-              assert (isJust (vrNewValid vr)) $ do
-                traceWith mpEnvTracer $ TraceMempoolAddedTx
-                  firstTx
-                  (isMempoolSize is)
-                  (isMempoolSize is')
-                go ((firstTx, Nothing):acc) toAdd'
-            Just (_, err) ->
-              assert (isNothing (vrNewValid vr))  $
-              assert (length (vrInvalid vr) == 1) $ do
-                traceWith mpEnvTracer $ TraceMempoolRejectedTx
-                  firstTx
-                  err
-                  (isMempoolSize is)
-                go ((firstTx, Just err):acc) toAdd'
+          -- No space in the Mempool.
+          | let firstTxSize = txSize firstTx
+                curSize = msNumBytes $ isMempoolSize is
+          , curSize + firstTxSize > capacity
+          = return $ done acc toAdd
+
+          | otherwise
+          = do
+              let vr  = extendVRNew cfg firstTx $ validationResultFromIS is
+                  is' = internalStateFromVR vr
+              unless (null (vrNewValid vr)) $
+                -- Each time we have found a valid transaction, we update the
+                -- Mempool. This keeps our STM transactions short, avoiding
+                -- repeated work.
+                --
+                -- Note that even if the transaction were invalid, we could
+                -- still write the state, because in that case we would have
+                -- that @is == is'@, but there's no reason to do that
+                -- additional write.
+                writeTVar mpEnvStateVar is'
+
+              -- We only extended the ValidationResult with a single
+              -- transaction ('firstTx'). So if it's not in 'vrInvalid', it
+              -- must be in 'vrNewValid'.
+              return $ case listToMaybe (vrInvalid vr) of
+                -- The transaction was valid
+                Nothing ->
+                  assert (isJust (vrNewValid vr)) $ do
+                    traceWith mpEnvTracer $ TraceMempoolAddedTx
+                      firstTx
+                      (isMempoolSize is)
+                      (isMempoolSize is')
+                    go ((firstTx, MempoolTxAdded):acc) toAdd'
+                Just (_, err) ->
+                  assert (isNothing (vrNewValid vr))  $
+                  assert (length (vrInvalid vr) == 1) $ do
+                    traceWith mpEnvTracer $ TraceMempoolRejectedTx
+                      firstTx
+                      err
+                      (isMempoolSize is)
+                    go
+                      ((firstTx, MempoolTxRejected err):acc)
+                      toAdd'
 
 implRemoveTxs
   :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
@@ -325,7 +354,11 @@ implRemoveTxs mpEnv txIds = do
 
     toRemove = Set.fromList txIds
 
-implSyncWithLedger :: (IOLike m, ApplyTx blk, ValidateEnvelope blk)
+implSyncWithLedger :: ( IOLike m
+                      , ApplyTx blk
+                      , HasTxId (GenTx blk)
+                      , ValidateEnvelope blk
+                      )
                    => MempoolEnv m blk -> m (MempoolSnapshot blk TicketNo)
 implSyncWithLedger mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} = do
     (removed, mempoolSize, snapshot) <- atomically $ do
@@ -339,13 +372,18 @@ implSyncWithLedger mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} = do
       traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
     return snapshot
 
-implGetSnapshot :: IOLike m
+implGetSnapshot :: (IOLike m, HasTxId (GenTx blk))
                 => MempoolEnv m blk
                 -> STM m (MempoolSnapshot blk TicketNo)
 implGetSnapshot MempoolEnv{mpEnvStateVar} =
     implSnapshotFromIS <$> readTVar mpEnvStateVar
 
-implGetSnapshotFor :: forall m blk. (IOLike m, ApplyTx blk, ValidateEnvelope blk)
+implGetSnapshotFor :: forall m blk.
+                      ( IOLike m
+                      , ApplyTx blk
+                      , HasTxId (GenTx blk)
+                      , ValidateEnvelope blk
+                      )
                    => MempoolEnv m blk
                    -> BlockSlot
                    -> LedgerState blk
@@ -380,12 +418,15 @@ getMempoolSize MempoolEnv{mpEnvStateVar} =
   MempoolSnapshot Implementation
 -------------------------------------------------------------------------------}
 
-implSnapshotFromIS :: InternalState blk -> MempoolSnapshot blk TicketNo
+implSnapshotFromIS :: HasTxId (GenTx blk)
+                   => InternalState blk
+                   -> MempoolSnapshot blk TicketNo
 implSnapshotFromIS is = MempoolSnapshot {
       snapshotTxs         = implSnapshotGetTxs         is
     , snapshotTxsAfter    = implSnapshotGetTxsAfter    is
     , snapshotTxsForSize  = implSnapshotGetTxsForSize  is
     , snapshotLookupTx    = implSnapshotGetTx          is
+    , snapshotHasTx       = implSnapshotHasTx          is
     , snapshotMempoolSize = implSnapshotGetMempoolSize is
     }
 
@@ -410,6 +451,12 @@ implSnapshotGetTx :: InternalState blk
                   -> Maybe (GenTx blk)
 implSnapshotGetTx IS{isTxs} tn = isTxs `TxSeq.lookupByTicketNo` tn
 
+implSnapshotHasTx :: Ord (GenTxId blk)
+                  => InternalState blk
+                  -> GenTxId blk
+                  -> Bool
+implSnapshotHasTx IS{isTxIds} txid = Set.member txid isTxIds
+
 implSnapshotGetMempoolSize :: InternalState blk
                            -> MempoolSize
 implSnapshotGetMempoolSize = TxSeq.toMempoolSize . isTxs
@@ -427,6 +474,10 @@ data ValidationResult blk = ValidationResult {
 
     -- | The transactions that were found to be valid (oldest to newest)
   , vrValid        :: TxSeq (GenTx blk)
+
+    -- | The cached IDs of transactions that were found to be valid (oldest to
+    -- newest)
+  , vrValidTxIds   :: Set (GenTxId blk)
 
     -- | A new transaction (not previously known) which was found to be valid.
     --
@@ -458,6 +509,7 @@ data ValidationResult blk = ValidationResult {
 internalStateFromVR :: ValidationResult blk -> InternalState blk
 internalStateFromVR vr = IS {
       isTxs          = vrValid
+    , isTxIds        = vrValidTxIds
     , isLedgerState  = vrAfter
     , isTip          = vrBeforeTip
     , isSlotNo       = vrBeforeSlotNo
@@ -468,6 +520,7 @@ internalStateFromVR vr = IS {
         vrBeforeTip
       , vrBeforeSlotNo
       , vrValid
+      , vrValidTxIds
       , vrAfter
       , vrLastTicketNo
       } = vr
@@ -478,6 +531,7 @@ validationResultFromIS is = ValidationResult {
       vrBeforeTip    = isTip
     , vrBeforeSlotNo = isSlotNo
     , vrValid        = isTxs
+    , vrValidTxIds   = isTxIds
     , vrNewValid     = Nothing
     , vrAfter        = isLedgerState
     , vrInvalid      = []
@@ -486,6 +540,7 @@ validationResultFromIS is = ValidationResult {
   where
     IS {
         isTxs
+      , isTxIds
       , isLedgerState
       , isTip
       , isSlotNo
@@ -500,7 +555,7 @@ validationResultFromIS is = ValidationResult {
 -- validated this transaction because, if we have, we can utilize 'reapplyTx'
 -- rather than 'applyTx' and, therefore, skip things like cryptographic
 -- signatures.
-extendVRPrevApplied :: ApplyTx blk
+extendVRPrevApplied :: (ApplyTx blk, HasTxId (GenTx blk))
                     => LedgerConfig blk
                     -> TxTicket (GenTx blk)
                     -> ValidationResult blk
@@ -509,12 +564,13 @@ extendVRPrevApplied cfg txTicket vr =
     case runExcept (reapplyTx cfg tx vrAfter) of
       Left err  -> vr { vrInvalid = (tx, err) : vrInvalid
                       }
-      Right st' -> vr { vrValid   = vrValid :> txTicket
-                      , vrAfter   = st'
+      Right st' -> vr { vrValid      = vrValid :> txTicket
+                      , vrValidTxIds = Set.insert (txId tx) vrValidTxIds
+                      , vrAfter      = st'
                       }
   where
     TxTicket { txTicketTx = tx } = txTicket
-    ValidationResult { vrValid, vrAfter, vrInvalid } = vr
+    ValidationResult { vrValid, vrValidTxIds, vrAfter, vrInvalid } = vr
 
 -- | Extend 'ValidationResult' with a new transaction (one which we have not
 -- previously validated) that may or may not be valid in this ledger state.
@@ -522,7 +578,7 @@ extendVRPrevApplied cfg txTicket vr =
 -- PRECONDITION: 'vrNewValid' is 'Nothing'. In other words: new transactions
 -- should be validated one-by-one, not by calling 'extendVRNew' on its result
 -- again.
-extendVRNew :: ApplyTx blk
+extendVRNew :: (ApplyTx blk, HasTxId (GenTx blk))
             => LedgerConfig blk
             -> GenTx blk
             -> ValidationResult blk
@@ -532,6 +588,7 @@ extendVRNew cfg tx vr = assert (isNothing vrNewValid) $
       Left err  -> vr { vrInvalid      = (tx, err) : vrInvalid
                       }
       Right st' -> vr { vrValid        = vrValid :> TxTicket tx nextTicketNo (txSize tx)
+                      , vrValidTxIds   = Set.insert (txId tx) vrValidTxIds
                       , vrNewValid     = Just tx
                       , vrAfter        = st'
                       , vrLastTicketNo = nextTicketNo
@@ -539,6 +596,7 @@ extendVRNew cfg tx vr = assert (isNothing vrNewValid) $
   where
     ValidationResult {
         vrValid
+      , vrValidTxIds
       , vrAfter
       , vrInvalid
       , vrLastTicketNo
@@ -549,7 +607,12 @@ extendVRNew cfg tx vr = assert (isNothing vrNewValid) $
 
 -- | Validate the internal state against the current ledger state and the
 -- given 'BlockSlot', revalidating if necessary.
-validateIS :: forall m blk. (IOLike m, ApplyTx blk, ValidateEnvelope blk)
+validateIS :: forall m blk.
+              ( IOLike m
+              , ApplyTx blk
+              , HasTxId (GenTx blk)
+              , ValidateEnvelope blk
+              )
            => MempoolEnv m blk
            -> BlockSlot
            -> STM m (ValidationResult blk)
@@ -568,7 +631,7 @@ validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} blockSlot =
 -- When these don't match, the transaction in the internal state will be
 -- revalidated ('revalidateTxsFor').
 validateStateFor
-  :: forall blk. (ApplyTx blk, ValidateEnvelope blk)
+  :: forall blk. (ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
   => LedgerConfig     blk
   -> BlockSlot
   -> LedgerState      blk
@@ -587,7 +650,7 @@ validateStateFor cfg blockSlot st is
 -- | Revalidate the given transactions (@['TxTicket' ('GenTx' blk)]@) against
 -- the given ticked ledger state.
 revalidateTxsFor
-  :: forall blk. ApplyTx blk
+  :: forall blk. (ApplyTx blk, HasTxId (GenTx blk))
   => LedgerConfig blk
   -> TickedLedgerState blk
   -> TicketNo

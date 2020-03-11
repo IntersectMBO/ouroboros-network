@@ -1,8 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
-
 module Ouroboros.Consensus.Storage.ChainDB.Impl (
     -- * Initialization
     ChainDbArgs(..)
@@ -83,11 +81,8 @@ openDBInternal
 openDBInternal args launchBgTasks = do
     immDB <- ImmDB.openDB argsImmDb
     immDbTipPoint <- ImmDB.getPointAtTip immDB
-    immDbTipEpoch <- Reopen.pointToEpoch (Args.cdbEpochInfo args) immDbTipPoint
-    traceWith tracer $ TraceOpenEvent $ OpenedImmDB
-      { _immDbTip      = immDbTipPoint
-      , _immDbTipEpoch = immDbTipEpoch
-      }
+    let immDbTipChunk = Reopen.chunkIndexOfPoint (Args.cdbChunkInfo args) immDbTipPoint
+    traceWith tracer $ TraceOpenEvent $ OpenedImmDB immDbTipPoint immDbTipChunk
 
     volDB   <- VolDB.openDB argsVolDb
     traceWith tracer $ TraceOpenEvent OpenedVolDB
@@ -144,7 +139,7 @@ openDBInternal args launchBgTasks = do
                   , cdbRegistry        = Args.cdbRegistry args
                   , cdbGcDelay         = Args.cdbGcDelay args
                   , cdbKillBgThreads   = varKillBgThreads
-                  , cdbEpochInfo       = Args.cdbEpochInfo args
+                  , cdbChunkInfo       = Args.cdbChunkInfo args
                   , cdbIsEBB           = toIsEBB . isJust . Args.cdbIsEBB args
                   , cdbCheckIntegrity  = Args.cdbCheckIntegrity args
                   , cdbBlockchainTime  = Args.cdbBlockchainTime args
@@ -183,9 +178,8 @@ openDBInternal args launchBgTasks = do
           }
 
     traceWith tracer $ TraceOpenEvent $ OpenedDB
-      { _immTip   = castPoint $ AF.anchorPoint chain
-      , _chainTip = castPoint $ AF.headPoint   chain
-      }
+      (castPoint $ AF.anchorPoint chain)
+      (castPoint $ AF.headPoint   chain)
 
     when launchBgTasks $ Background.launchBgTasks env replayed
 

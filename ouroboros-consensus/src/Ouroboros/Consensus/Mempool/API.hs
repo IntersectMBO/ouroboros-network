@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE OverloadedStrings       #-}
 {-# LANGUAGE RankNTypes              #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE StandaloneDeriving      #-}
@@ -15,6 +16,9 @@ module Ouroboros.Consensus.Mempool.API (
   , ApplyTx(..)
   , HasTxId(..)
   , GenTxId
+  , MempoolAddTxResult (..)
+  , isTxAddedOrAlreadyInMempool
+  , isTxRejected
   , MempoolSize (..)
   , TraceEventMempool(..)
   , HasTxs(..)
@@ -74,7 +78,7 @@ class ( UpdateLedger blk
 --
 -- The mempool will use these to locate transactions, so two different
 -- transactions should have different identifiers.
-class Ord (TxId tx) => HasTxId tx where
+class (Ord (TxId tx), NoUnexpectedThunks (TxId tx)) => HasTxId tx where
   -- | A generalized transaction, 'GenTx', identifier.
   data family TxId tx :: *
 
@@ -134,8 +138,9 @@ data Mempool m blk idx = Mempool {
       -- 1. A list containing the following transactions:
       --
       --    * Those transactions provided which were found to be valid, along
-      --      with 'Nothing' for their accompanying @Maybe (ApplyTxErr blk)@
-      --      values. These transactions are now in the Mempool.
+      --      with 'MempoolTxAdded' for their accompanying
+      --      'MempoolAddTxResult' values. These transactions are now in the
+      --      Mempool.
       --    * Those transactions provided which were found to be invalid,
       --      along with their accompanying validation errors. These
       --      transactions are not in the Mempool.
@@ -175,7 +180,7 @@ data Mempool m blk idx = Mempool {
       -- blockchain.
       --
       tryAddTxs      :: [GenTx blk]
-                     -> m ( [(GenTx blk, Maybe (ApplyTxErr blk))]
+                     -> m ( [(GenTx blk, MempoolAddTxResult blk)]
                           , [GenTx blk]
                           )
 
@@ -221,6 +226,31 @@ data Mempool m blk idx = Mempool {
     , zeroIdx        :: idx
     }
 
+-- | The result of attempting to add a transaction to the mempool.
+data MempoolAddTxResult blk
+  = MempoolTxAdded
+    -- ^ The transaction was added to the mempool.
+  | MempoolTxAlreadyInMempool
+    -- ^ The transaction already exists within the mempool and therefore could
+    -- not be added.
+    --
+    -- Note that we don't treat this like an error/rejection case.
+  | MempoolTxRejected !(ApplyTxErr blk)
+    -- ^ The transaction was rejected and could not be added to the mempool
+    -- for the specified reason.
+
+deriving instance Eq (ApplyTxErr blk) => Eq (MempoolAddTxResult blk)
+deriving instance Show (ApplyTxErr blk) => Show (MempoolAddTxResult blk)
+
+isTxAddedOrAlreadyInMempool :: MempoolAddTxResult blk -> Bool
+isTxAddedOrAlreadyInMempool MempoolTxAdded            = True
+isTxAddedOrAlreadyInMempool MempoolTxAlreadyInMempool = True
+isTxAddedOrAlreadyInMempool _                         = False
+
+isTxRejected :: MempoolAddTxResult blk -> Bool
+isTxRejected (MempoolTxRejected _) = True
+isTxRejected _                     = False
+
 -- | Wrapper around 'implTryAddTxs' that blocks until all transaction have
 -- either been added to the Mempool or rejected.
 --
@@ -234,7 +264,7 @@ addTxs
   :: forall m blk idx. (MonadSTM m, ApplyTx blk)
   => Mempool m blk idx
   -> [GenTx blk]
-  -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
+  -> m [(GenTx blk, MempoolAddTxResult blk)]
 addTxs mempool = \txs -> do
     (processed, toAdd) <- tryAddTxs mempool txs
     case toAdd of
@@ -242,11 +272,11 @@ addTxs mempool = \txs -> do
       _  -> go [processed] toAdd
   where
     go
-      :: [[(GenTx blk, Maybe (ApplyTxErr blk))]]
+      :: [[(GenTx blk, MempoolAddTxResult blk)]]
          -- ^ The outer list is in reverse order, but all the inner lists will
          -- be in the right order.
       -> [GenTx blk]
-      -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
+      -> m [(GenTx blk, MempoolAddTxResult blk)]
     go acc []         = return (concat (reverse acc))
     go acc txs@(tx:_) = do
       let firstTxSize = txSize tx
@@ -323,6 +353,10 @@ data MempoolSnapshot blk idx = MempoolSnapshot {
     -- | Get a specific transaction from the mempool snapshot by its ticket
     -- number, if it exists.
   , snapshotLookupTx    :: idx -> Maybe (GenTx blk)
+
+    -- | Determine whether a specific transaction exists within the mempool
+    -- snapshot.
+  , snapshotHasTx       :: GenTxId blk -> Bool
 
     -- | Get the size of the mempool snapshot.
   , snapshotMempoolSize :: MempoolSize

@@ -1,10 +1,12 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeApplications    #-}
 
 
 module Test.Ouroboros.Network.Driver (tests) where
@@ -14,7 +16,7 @@ import Network.TypedProtocol.Core
 import Ouroboros.Network.Codec
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver
-import Ouroboros.Network.Driver.ByteLimit
+import Ouroboros.Network.Driver.Limits
 
 import Network.TypedProtocol.ReqResp.Type
 import Network.TypedProtocol.ReqResp.Client
@@ -25,11 +27,11 @@ import Network.TypedProtocol.ReqResp.Examples
 import Control.Monad (void, replicateM)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadTime
+import Control.Monad.Class.MonadTimer
 import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Tracer (nullTracer)
-
-import Data.Int (Int64)
 
 import Test.QuickCheck
 import Text.Show.Functions ()
@@ -42,16 +44,39 @@ import Test.Tasty.QuickCheck (testProperty)
 --
 
 tests :: TestTree
-tests = testGroup "Ouroboros.Network.Driver.ByteLimit"
-  [ testProperty "runPeerWithByteLimit ST"
-                                       prop_runPeerWithByteLimit_ST
-  , testProperty "runPeerWithByteLimit IO"
-                                       prop_runPeerWithByteLimit_IO
+tests = testGroup "Ouroboros.Network.Driver.Limits"
+  [ testProperty "runPeerWithLimits ST"
+                                       prop_runPeerWithLimits_ST
+  , testProperty "runPeerWithLimits IO"
+                                       prop_runPeerWithLimits_IO
   ]
 
 
+
+-- | Byte limits
+byteLimitsReqResp
+  :: Word
+  -> ProtocolSizeLimits (ReqResp req resp) String
+byteLimitsReqResp limit = ProtocolSizeLimits stateToLimit (fromIntegral . length)
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st  :: ReqResp req resp).
+                    PeerHasAgency pr st -> Word
+    stateToLimit (ClientAgency TokIdle) = limit
+    stateToLimit (ServerAgency TokBusy) = limit
+
+-- TODO add test cases for time limits
+
+-- Time limits
+timeLimitsReqResp :: ProtocolTimeLimits (ReqResp req resp)
+timeLimitsReqResp = ProtocolTimeLimits stateToLimit
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st  :: ReqResp req resp).
+                    PeerHasAgency pr st -> Maybe DiffTime
+    stateToLimit (ClientAgency TokIdle) = Nothing
+    stateToLimit (ServerAgency TokBusy) = Nothing
+
 --
--- runPeerWithByteLimit properties
+-- runPeerWithLimits properties
 --
 
 
@@ -59,25 +84,25 @@ tests = testGroup "Ouroboros.Network.Driver.ByteLimit"
 -- Run the server peer using @runPeerWithByteLimit@, which will receive requests
 -- with the given payloads.
 --
-prop_runPeerWithByteLimit
-  :: forall m. (MonadSTM m, MonadAsync m, MonadCatch m)
-  => Int64
+prop_runPeerWithLimits
+  :: forall m. (MonadSTM m, MonadAsync m, MonadCatch m, MonadTimer m)
+  => Word
   -- ^ byte limit
   -> [String]
   -- ^ request payloads
   -> m Bool
-prop_runPeerWithByteLimit limit reqPayloads = do
+prop_runPeerWithLimits limit reqPayloads = do
       (c1, c2) <- createConnectedChannels
 
       res <- try $
-        runPeerWithByteLimit limit (fromIntegral . length) nullTracer codecReqResp c1 recvPeer
+        runPeerWithLimits nullTracer codecReqResp (byteLimitsReqResp limit) timeLimitsReqResp c1 recvPeer
           `concurrently`
         void (runPeer nullTracer codecReqResp c2 sendPeer)
 
-      case res :: Either (DecoderFailureOrTooMuchInput CodecFailure) ([String], ()) of
-        Right _           -> pure $ not shouldFail
-        Left TooMuchInput -> pure $ shouldFail
-        Left _            -> pure $ False
+      case res :: Either ProtocolLimitFailure ([String], ()) of
+        Right _                -> pure $ not shouldFail
+        Left ExceededSizeLimit -> pure $ shouldFail
+        Left _                 -> pure $ False
 
     where
       sendPeer :: Peer (ReqResp String ()) AsClient StIdle m [()]
@@ -97,7 +122,7 @@ prop_runPeerWithByteLimit limit reqPayloads = do
       shouldFail :: Bool
       shouldFail = any (> limit) $ map (fromIntegral . length) encoded
 
-data ReqRespPayloadWithLimit = ReqRespPayloadWithLimit Int64 String
+data ReqRespPayloadWithLimit = ReqRespPayloadWithLimit Word String
   deriving Show
 
 instance Arbitrary ReqRespPayloadWithLimit where
@@ -128,14 +153,14 @@ instance Arbitrary ReqRespPayloadWithLimit where
 -- TODO: This test could be improved: it will not test the case in which
 -- @runDecoderWithByteLimit@ receives trailing bytes.
 --
-prop_runPeerWithByteLimit_ST
+prop_runPeerWithLimits_ST
   :: ReqRespPayloadWithLimit
   -> Property
-prop_runPeerWithByteLimit_ST (ReqRespPayloadWithLimit limit payload) =
+prop_runPeerWithLimits_ST (ReqRespPayloadWithLimit limit payload) =
       tabulate "Limit Boundaries" (labelExamples limit payload) $
-        runSimOrThrow (prop_runPeerWithByteLimit limit [payload])
+        runSimOrThrow (prop_runPeerWithLimits limit [payload])
     where
-      labelExamples :: Int64 -> String -> [String]
+      labelExamples :: Word -> String -> [String]
       labelExamples l p =
         [ case length p `compare` fromIntegral l of
             LT -> "BelowTheLimit"
@@ -147,9 +172,9 @@ prop_runPeerWithByteLimit_ST (ReqRespPayloadWithLimit limit payload) =
             then ["CloseToTheLimit"]
             else []
 
-prop_runPeerWithByteLimit_IO
+prop_runPeerWithLimits_IO
   :: ReqRespPayloadWithLimit
   -> Property
-prop_runPeerWithByteLimit_IO (ReqRespPayloadWithLimit limit payload) =
-  ioProperty (prop_runPeerWithByteLimit limit [payload])
+prop_runPeerWithLimits_IO (ReqRespPayloadWithLimit limit payload) =
+  ioProperty (prop_runPeerWithLimits limit [payload])
 

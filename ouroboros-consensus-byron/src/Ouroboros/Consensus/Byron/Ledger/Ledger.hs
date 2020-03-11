@@ -121,7 +121,10 @@ initByronLedgerState genesis mUtxo = ByronLedgerState {
     }
   where
     initState :: CC.ChainValidationState
-    Right initState = runExcept $ CC.initialChainValidationState genesis
+    initState = case runExcept $ CC.initialChainValidationState genesis of
+      Right st -> st
+      Left e   -> error $
+        "could not create initial ChainValidationState: " <> show e
 
     override :: Maybe CC.UTxO
              -> CC.ChainValidationState -> CC.ChainValidationState
@@ -202,15 +205,15 @@ instance LedgerSupportsProtocol ByronBlock where
   -- TODO: verify that the sdSlot of ScheduledDelegation is the slot at which
   -- it becomes active (i.e., that delegation should be applied /in/ that slot)
   -- i.e., that delegate is allowed to issue a block in that very same slot.
-  anachronisticProtocolLedgerView cfg (ByronLedgerState ls ss) slot =
+  anachronisticProtocolLedgerView_ cfg (ByronLedgerState ls ss) slot =
       case History.find slot ss of
-        Just sb -> Right (toPBftLedgerView sb) -- Case (A)
+        Just sb -> return $ toPBftLedgerView sb -- Case (A)
         Nothing -- Case (B), (C) or (D)
-          | slot <  At maxLo -> Left TooFarBehind -- lower bound is inclusive
-          | slot >= At maxHi -> Left TooFarAhead  -- upper bound is exclusive
+          | slot <  At maxLo -> throwError TooFarBehind -- lower bound is inclusive
+          | slot >= At maxHi -> throwError TooFarAhead  -- upper bound is exclusive
           | otherwise        -> case slot of
-              Origin -> Left TooFarBehind -- this should be unreachable
-              At s -> Right $ toPBftLedgerView $
+              Origin -> throwError TooFarBehind -- this should be unreachable
+              At s -> return $ toPBftLedgerView $
                 CC.previewDelegationMap (toByronSlotNo s) ls
     where
       SecurityParam k = genesisSecurityParam (unByronLedgerConfig cfg)

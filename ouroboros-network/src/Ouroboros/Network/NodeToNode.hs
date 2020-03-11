@@ -12,6 +12,7 @@
 --
 module Ouroboros.Network.NodeToNode (
     nodeToNodeProtocols
+  , NodeToNodeProtocols (..)
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
   , DictVersion (..)
@@ -44,7 +45,7 @@ module Ouroboros.Network.NodeToNode (
   -- * Re-exports
   , ConnectionId (..)
   , RemoteConnectionId
-  , DecoderFailureOrTooMuchInput
+  , ProtocolLimitFailure
   , Handshake
   , LocalAddresses (..)
 
@@ -63,6 +64,7 @@ module Ouroboros.Network.NodeToNode (
   , ErrorPolicyTrace (..)
   , WithDomainName (..)
   , WithAddr (..)
+  , HandshakeTr
   ) where
 
 import           Control.Exception (IOException)
@@ -75,13 +77,14 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
+import           Network.Mux (WithMuxBearer (..))
 import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Connections.Types (Connections)
 import qualified Ouroboros.Network.Connections.Concurrent as Connection
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
-import           Ouroboros.Network.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure)
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
@@ -106,6 +109,27 @@ import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 import           Ouroboros.Network.Tracers
 
+
+-- The Handshake tracer types are simply terrible.
+type HandshakeTr = WithMuxBearer (ConnectionId Socket.SockAddr)
+    (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term))
+
+
+data NodeToNodeProtocols appType bytes m a b = NodeToNodeProtocols {
+    -- | chain-sync mini-protocol
+    --
+    chainSyncProtocol    :: RunMiniProtocol appType bytes m a b,
+
+    -- | block-fetch mini-protocol
+    --
+    blockFetchProtocol   :: RunMiniProtocol appType bytes m a b,
+
+    -- | tx-submission mini-protocol
+    --
+    txSubmissionProtocol :: RunMiniProtocol appType bytes m a b
+  }
+
+
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-node protocol.
 --
@@ -125,28 +149,28 @@ import           Ouroboros.Network.Tracers
 -- both protocols, e.g.  wireshark plugins.
 --
 nodeToNodeProtocols
-  :: RunMiniProtocol appType bytes m a b -- ^ chainSync
-  -> RunMiniProtocol appType bytes m a b -- ^ blockFetch
-  -> RunMiniProtocol appType bytes m a b -- ^ txSubmission
+  :: NodeToNodeProtocols appType bytes m a b
   -> OuroborosApplication appType bytes m a b
-nodeToNodeProtocols chainSync
-                    blockFetch
-                    txSubmission =
+nodeToNodeProtocols NodeToNodeProtocols {
+                        chainSyncProtocol,
+                        blockFetchProtocol,
+                        txSubmissionProtocol
+                      } =
     OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = chainSync
+        miniProtocolRun    = chainSyncProtocol
       }
     , MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 3,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = blockFetch
+        miniProtocolRun    = blockFetchProtocol
       }
     , MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 4,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = txSubmission
+        miniProtocolRun    = txSubmissionProtocol
       }
     ]
 
@@ -258,10 +282,10 @@ remoteNetworkErrorPolicy = ErrorPolicies {
           ErrorPolicy
             $ \(_ :: HandshakeClientProtocolError NodeToNodeVersion)
                   -> Just misconfiguredPeer
-        
-          -- exception thrown by `runDecoderWithByteLimit`
+
+          -- exception thrown by `runPeerWithLimits`
         , ErrorPolicy
-            $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+            $ \(_ :: ProtocolLimitFailure)
                    -> Just theyBuggyOrEvil
 
           -- deserialisation failure; this means that the remote peer is either
@@ -341,9 +365,9 @@ remoteNetworkErrorPolicy = ErrorPolicies {
 localNetworkErrorPolicy :: ErrorPolicies
 localNetworkErrorPolicy = ErrorPolicies {
       epAppErrorPolicies = [
-          -- exception thrown by `runDecoderWithByteLimit`
+          -- exception thrown by `runPeerWithLimits`
           ErrorPolicy
-            $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+            $ \(_ :: ProtocolLimitFailure)
                   -> Nothing
 
           -- deserialisation failure

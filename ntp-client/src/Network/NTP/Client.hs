@@ -1,8 +1,17 @@
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE LambdaCase          #-}
 module Network.NTP.Client (
-    NtpClient(..)
-  , withNtpClient
+-- * The API for starting an ntp client-thread.
+    withNtpClient
+  , NtpSettings(..)
+  , NtpClient(..)
+  , NtpStatus(..)
+  , NtpTrace(..)
+  , IPVersion(..)
+-- * ntpQuery runs a single ntp query.
+--   ntpQuery may be useful for testing,etc.., but there should be
+--   no need to use ntpQuery in combination with withNtpClient.
+  , ntpQuery
   ) where
 
 import           Control.Concurrent (threadDelay)
@@ -14,8 +23,8 @@ import           System.IO.Error (tryIOError)
 import           Control.Tracer
 import           Data.Void (Void)
 
-import           Network.NTP.Query
-import           Network.NTP.Trace
+import           Network.NTP.Client.Query
+import           Network.NTP.Client.Trace
 
 
 -- | 'NtpClient' which recieves updates of the wall clcok drift every

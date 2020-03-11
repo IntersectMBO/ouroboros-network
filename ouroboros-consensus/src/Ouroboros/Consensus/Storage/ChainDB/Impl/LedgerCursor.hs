@@ -1,7 +1,6 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
 module Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor
   ( newLedgerCursor
   ) where

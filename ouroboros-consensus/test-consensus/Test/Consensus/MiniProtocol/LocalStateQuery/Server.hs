@@ -3,7 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Consensus.MiniProtocol.LocalStateQuery.Server where
+module Test.Consensus.MiniProtocol.LocalStateQuery.Server (tests) where
 
 import           Control.Monad.Except (runExcept)
 import           Control.Tracer (nullTracer)

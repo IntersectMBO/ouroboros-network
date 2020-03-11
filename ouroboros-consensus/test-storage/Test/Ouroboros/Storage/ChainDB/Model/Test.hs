@@ -5,7 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-{-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans -Wno-incomplete-uni-patterns #-}
 module Test.Ouroboros.Storage.ChainDB.Model.Test (
     tests
   ) where
