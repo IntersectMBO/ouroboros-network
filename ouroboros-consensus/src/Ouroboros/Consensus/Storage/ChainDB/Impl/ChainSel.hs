@@ -97,7 +97,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
     i :: Anchor blk <- ImmDB.getAnchorForTip immDB
     (succsOf, ledger) <- atomically $ do
       invalid <- forgetFingerprint <$> readTVar varInvalid
-      (,) <$> (ignoreInvalidSuc volDB invalid <$> VolDB.getSuccessors volDB)
+      (,) <$> (ignoreInvalidSuc volDB invalid <$> VolDB.filterByPredecessor volDB)
           <*> LgrDB.getCurrent lgrDB
 
     chains <- constructChains i succsOf
@@ -364,11 +364,11 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     (invalid, succsOf, predecessor, curChain, tipPoint, ledgerDB)
       <- atomically $ (,,,,,)
           <$> (forgetFingerprint <$> readTVar cdbInvalid)
-          <*> VolDB.getSuccessors   cdbVolDB
-          <*> VolDB.getPredecessor  cdbVolDB
-          <*> Query.getCurrentChain cdb
-          <*> Query.getTipPoint     cdb
-          <*> LgrDB.getCurrent      cdbLgrDB
+          <*> VolDB.filterByPredecessor cdbVolDB
+          <*> VolDB.getPredecessor      cdbVolDB
+          <*> Query.getCurrentChain     cdb
+          <*> Query.getTipPoint         cdb
+          <*> LgrDB.getCurrent          cdbLgrDB
     let curChainAndLedger :: ChainAndLedger blk
         curChainAndLedger =
           -- The current chain we're working with here is not longer than @k@

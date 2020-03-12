@@ -17,7 +17,7 @@ module Test.Ouroboros.Storage.VolatileDB.Model
     , putBlockModel
     , garbageCollectModel
     , getBlockInfoModel
-    , getSuccessorsModel
+    , filterByPredecessorModel
     , getMaxSlotNoModel
       -- * Corruptions
     , runCorruptionsModel
@@ -302,11 +302,11 @@ garbageCollectModel slot dbm = whenOpen dbm $
       fileId /= getCurrentFileId dbm &&
       fileMaxSlotNo file < MaxSlotNo slot
 
-getSuccessorsModel
+filterByPredecessorModel
   :: forall blockId. Ord blockId
   => DBModel blockId
   -> Either VolatileDBError (WithOrigin blockId -> Set blockId)
-getSuccessorsModel dbm = whenOpen dbm $ \predecessor ->
+filterByPredecessorModel dbm = whenOpen dbm $ \predecessor ->
     fromMaybe Set.empty $ Map.lookup predecessor successors
   where
     successors :: Map (WithOrigin blockId) (Set blockId)

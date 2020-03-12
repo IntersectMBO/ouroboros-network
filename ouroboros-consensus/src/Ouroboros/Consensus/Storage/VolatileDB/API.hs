@@ -37,14 +37,14 @@ withDB :: (HasCallStack, MonadThrow m)
 withDB openDB = bracket openDB closeDB
 
 data VolatileDB blockId m = VolatileDB {
-      closeDB           :: HasCallStack => m ()
-    , isOpenDB          :: HasCallStack => m Bool
-    , reOpenDB          :: HasCallStack => m ()
-    , getBlockComponent :: forall b. HasCallStack
+      closeDB             :: HasCallStack => m ()
+    , isOpenDB            :: HasCallStack => m Bool
+    , reOpenDB            :: HasCallStack => m ()
+    , getBlockComponent   :: forall b. HasCallStack
                         => BlockComponent (VolatileDB blockId m) b
                         -> blockId
                         -> m (Maybe b)
-    , putBlock          :: HasCallStack => BlockInfo blockId -> Builder -> m ()
+    , putBlock            :: HasCallStack => BlockInfo blockId -> Builder -> m ()
       -- | Return a function that returns the successors of the block with the
       -- given @blockId@.
       --
@@ -55,11 +55,11 @@ data VolatileDB blockId m = VolatileDB {
       --
       -- Note that it is not required that the given block has been added to
       -- the VolatileDB.
-    , getSuccessors     :: HasCallStack => STM m (WithOrigin blockId -> Set blockId)
+    , filterByPredecessor :: HasCallStack => STM m (WithOrigin blockId -> Set blockId)
       -- | Return a function that returns the 'BlockInfo' of the block with
       -- the given @blockId@ or 'Nothing' if the @blockId@ is not found in the
       -- VolatileDB.
-    , getBlockInfo      :: HasCallStack => STM m (blockId -> Maybe (BlockInfo blockId))
+    , getBlockInfo        :: HasCallStack => STM m (blockId -> Maybe (BlockInfo blockId))
       -- | Try to remove all blocks with a slot number less than the given
       -- one.
       --
@@ -116,9 +116,9 @@ data VolatileDB blockId m = VolatileDB {
       -- will be removed anyway. The reason for @<@ opposed to @<=@ is to
       -- avoid issues with /EBBs/, which have the same slot number as the
       -- block after it.
-    , garbageCollect    :: HasCallStack => SlotNo -> m ()
+    , garbageCollect      :: HasCallStack => SlotNo -> m ()
       -- | Return the highest slot number ever stored by the VolatileDB.
-    , getMaxSlotNo      :: HasCallStack => STM m MaxSlotNo
+    , getMaxSlotNo        :: HasCallStack => STM m MaxSlotNo
 } deriving NoUnexpectedThunks via OnlyCheckIsWHNF "VolatileDB" (VolatileDB blockId m)
 
 
