@@ -19,6 +19,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
   , getOpenState
   , modifyOpenState
   , withOpenState
+  , closeOpenHandles
   , cleanUp
   ) where
 
@@ -257,12 +258,21 @@ withOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
     access :: OpenState m hash h -> m r
     access = action hasFS
 
-cleanUp :: Monad m => HasFS m h -> OpenState m hash h -> m ()
-cleanUp HasFS { hClose } OpenState {..}  = do
-    Index.close currentIndex
+-- | Close the handles in the 'OpenState'.
+--
+-- Idempotent, as closing a handle is idempotent.
+closeOpenHandles :: Monad m => HasFS m h -> OpenState m hash h -> m ()
+closeOpenHandles HasFS { hClose } OpenState {..}  = do
     -- If one of the 'hClose' calls fails, the error will bubble up to the
     -- bracketed call to 'withRegistry', which will close the
     -- 'ResourceRegistry' and thus all the remaining handles in it.
     hClose currentChunkHandle
     hClose currentPrimaryHandle
     hClose currentSecondaryHandle
+
+-- | Clean up the 'OpenState': 'closeOpenHandles' + close the index (i.e.,
+-- shut down its background thread)
+cleanUp :: Monad m => HasFS m h -> OpenState m hash h -> m ()
+cleanUp hasFS ost@OpenState {..}  = do
+    Index.close currentIndex
+    closeOpenHandles hasFS ost

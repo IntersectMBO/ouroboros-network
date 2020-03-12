@@ -792,7 +792,7 @@ startNewChunk registry hasFS index chunkInfo = do
 
     lift $
       Index.appendOffsets index currentPrimaryHandle backfillOffsets
-      `finally` cleanUp hasFS st
+      `finally` closeOpenHandles hasFS st
 
     st' <- lift $ mkOpenState registry hasFS index (nextChunkNo currentChunk)
       currentTip MustBeNew
