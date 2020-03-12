@@ -564,17 +564,21 @@ prop_simple_real_pbft_convergence produceEBBs k
             ]
           | (nid, ch) <- finalChains
           ]) $
-    prop_general
-        Byron.countByronGenTxs
-        k
-        testConfig
-        (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
-        (Just $ NumBlocks $ case refResult of
-           Ref.Forked{} -> 1
-           _            -> 0)
-        (expectedBlockRejection k numCoreNodes nodeRestarts)
-        1
-        testOutput .&&.
+    prop_general PropGeneralArgs
+      { pgaCountTxs               = Byron.countByronGenTxs
+      , pgaExpectedBlockRejection =
+          expectedBlockRejection k numCoreNodes nodeRestarts
+      , pgaFirstBlockNo           = 1
+      , pgaFixedMaxForkLength     =
+          Just $ NumBlocks $ case refResult of
+            Ref.Forked{} -> 1
+            _            -> 0
+      , pgaFixedSchedule          =
+          Just $ roundRobinLeaderSchedule numCoreNodes numSlots
+      , pgaSecurityParam          = k
+      , pgaTestConfig             = testConfig
+      }
+      testOutput .&&.
     prop_pvu .&&.
     not (all (Chain.null . snd) finalChains) .&&.
     conjoin (map (hasAllEBBs k numSlots produceEBBs) finalChains)

@@ -84,7 +84,7 @@ extra-deps:
   - hedgehog-quickcheck-0.1.1
   - markov-chain-usage-model-0.0.0  # Needed for `quickcheck-state-machine`
   - splitmix-0.0.2
-  - tasty-hedgehog-1.0.0.1
+  - tasty-hedgehog-1.0.0.2
   - Unique-0.4.7.6
   - statistics-linreg-0.3
   - network-3.1.0.1

@@ -90,14 +90,15 @@ prop_simple_leader_schedule_convergence
   params@PraosParams{praosSecurityParam}
   testConfig@TestConfig{numCoreNodes} schedule =
     counterexample (tracesToDot testOutputNodes) $
-    prop_general
-      countSimpleGenTxs
-      praosSecurityParam
-      testConfig
-      (Just schedule)
-      Nothing
-      (const False)
-      0
+    prop_general PropGeneralArgs
+      { pgaCountTxs               = countSimpleGenTxs
+      , pgaExpectedBlockRejection = const False
+      , pgaFirstBlockNo           = 0
+      , pgaFixedMaxForkLength     = Nothing
+      , pgaFixedSchedule          = Just schedule
+      , pgaSecurityParam          = praosSecurityParam
+      , pgaTestConfig             = testConfig
+      }
       testOutput
   where
     testOutput@TestOutput{testOutputNodes} =

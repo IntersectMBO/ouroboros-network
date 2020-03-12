@@ -79,17 +79,19 @@ prop_convergence :: SetupDualPBft -> Property
 prop_convergence setup = withMaxSuccess 10 $
     (\prop -> if mightForgeInSlot0 then discard else prop) $
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
-    prop_general
-      (countByronGenTxs . dualBlockMain)
-      (setupSecurityParam      setup)
-      cfg
-      (setupSchedule           setup)
-      (Just $ NumBlocks $ case refResult of
-         Ref.Forked{} -> 1
-         _            -> 0)
-      (setupExpectedRejections setup)
-      1
-      (setupTestOutput         setup)
+    prop_general PropGeneralArgs
+      { pgaCountTxs               = countByronGenTxs . dualBlockMain
+      , pgaExpectedBlockRejection = setupExpectedRejections setup
+      , pgaFirstBlockNo           = 1
+      , pgaFixedMaxForkLength     =
+          Just $ NumBlocks $ case refResult of
+            Ref.Forked{} -> 1
+            _            -> 0
+      , pgaFixedSchedule          = setupSchedule setup
+      , pgaSecurityParam          = setupSecurityParam setup
+      , pgaTestConfig             = cfg
+      }
+      (setupTestOutput setup)
   where
     cfg = setupConfig setup
 

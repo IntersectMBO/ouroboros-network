@@ -75,19 +75,20 @@ prop_simple_pbft_convergence
   k testConfig@TestConfig{numCoreNodes, numSlots, nodeJoinPlan} =
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
     prop_asSimulated .&&.
-    prop_general
-        countSimpleGenTxs
-        k
-        testConfig
-        (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
-        -- do not use the "Test.ThreadNet.Util.Expectations" module; it doesn't
-        -- consider the PBFT threshold
-        (Just $ NumBlocks $ case refResult of
-           Ref.Forked{} -> 1
-           _            -> 0)
-        (expectedBlockRejection numCoreNodes)
-        0
-        testOutput
+    prop_general PropGeneralArgs
+      { pgaCountTxs               = countSimpleGenTxs
+      , pgaExpectedBlockRejection = expectedBlockRejection numCoreNodes
+      , pgaFirstBlockNo           = 0
+      , pgaFixedMaxForkLength     =
+          Just $ NumBlocks $ case refResult of
+            Ref.Forked{} -> 1
+            _            -> 0
+      , pgaFixedSchedule          =
+          Just $ roundRobinLeaderSchedule numCoreNodes numSlots
+      , pgaSecurityParam          = k
+      , pgaTestConfig             = testConfig
+      }
+      testOutput
   where
     NumCoreNodes nn = numCoreNodes
 
