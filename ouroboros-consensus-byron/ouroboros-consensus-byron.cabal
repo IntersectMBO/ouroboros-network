@@ -86,7 +86,7 @@ test-suite test
                        Test.ThreadNet.DualPBFT
                        Test.ThreadNet.RealPBFT
                        Test.ThreadNet.RealPBFT.ProtocolInfo
-                       Test.ThreadNet.RealPBFT.ProtocolVersionUpdate
+                       Test.ThreadNet.RealPBFT.TrackUpdates
                        Test.ThreadNet.TxGen.Byron
 
                        Ouroboros.Consensus.ByronDual.Ledger
