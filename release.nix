@@ -25,6 +25,8 @@
 # A Hydra option
 , scrubJobs ? true
 
+, withProblematicWindowsTests ? false
+
 # Dependencies overrides
 , sourcesOverride ? {}
 
@@ -52,15 +54,21 @@ let
     mapAttrsToList (packageName: package:
       map (drv: drv // { inherit packageName; }) (collectTests' package)
     ) ds);
-    disabledTests = {
-      checks.tests.ouroboros-consensus.test-storage.x86_64-darwin = null;
-    };
+
+  disabledMingwW64Tests = if withProblematicWindowsTests then {} else {
+    haskellPackages.ouroboros-network.checks.test-network = null;
+    checks.tests.ouroboros-network.test-network = null;
+    haskellPackages.Win32-network.checks.test-Win32-network = null;
+    checks.tests.Win32-network.test-Win32-network = null;
+    haskellPackages.network-mux.checks.test-network-mux = null;
+    checks.tests.network-mux.test-network-mux.x86_64-linux = null;
+  };
 
   inherit (systems.examples) mingwW64 musl64;
 
   jobs = {
-    native = recursiveUpdate (mapTestOn (__trace (__toJSON (packagePlatforms project)) (packagePlatforms project))) disabledTests;
-    "${mingwW64.config}" = mapTestOnCross mingwW64 (packagePlatformsCross project);
+    native = mapTestOn (__trace (__toJSON (packagePlatforms project)) (packagePlatforms project));
+    "${mingwW64.config}" = recursiveUpdate (mapTestOnCross mingwW64 (packagePlatformsCross project)) disabledMingwW64Tests;
     # TODO: fix broken evals
     #musl64 = mapTestOnCross musl64 (packagePlatformsCross project);
   } // (mkRequiredJob (
