@@ -268,12 +268,12 @@ getBlockComponentImpl env blockComponent blockId =
         GetRawBlock     -> withFile hasFS ibFile ReadMode $ \hndl -> do
           let size   = unBlockSize ibBlockSize
               offset = ibBlockOffset
-          hGetExactlyAt hasFS hndl size (AbsOffset offset)
+          hGetExactlyAt hasFS hndl size offset
         GetHeader       -> return ()
         GetRawHeader    -> withFile hasFS ibFile ReadMode $ \hndl -> do
           let size   = fromIntegral bheaderSize
               offset = ibBlockOffset + fromIntegral bheaderOffset
-          hGetExactlyAt hasFS hndl size (AbsOffset offset)
+          hGetExactlyAt hasFS hndl size offset
       where
         InternalBlockInfo { ibBlockInfo = BlockInfo {..}, .. } = ib
 
@@ -324,18 +324,18 @@ putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
                     ++ "Current write file not found in Index.")
             (Index.lookup currentWriteId currentMap)
         fileBlockInfo = FileInfo.mkFileBlockInfo (BlockSize bytesWritten) bbid
-        AbsOffset offset = currentWriteOffset
-        fileInfo' = FileInfo.addBlock bslot offset fileBlockInfo fileInfo
+        fileInfo' = FileInfo.addBlock
+          bslot currentWriteOffset fileBlockInfo fileInfo
         currentMap' = Index.insert currentWriteId fileInfo' currentMap
         internalBlockInfo' = InternalBlockInfo {
             ibFile         = currentWritePath
-          , ibBlockOffset  = offset
+          , ibBlockOffset  = currentWriteOffset
           , ibBlockSize    = BlockSize bytesWritten
           , ibBlockInfo    = blockInfo
           }
         currentRevMap' = Map.insert bbid internalBlockInfo' currentRevMap
         st' = st {
-            currentWriteOffset = AbsOffset $ offset + bytesWritten
+            currentWriteOffset = currentWriteOffset + AbsOffset bytesWritten
           , currentMap         = currentMap'
           , currentRevMap      = currentRevMap'
           , currentSuccMap     = insertMapSet currentSuccMap (bbid, bpreBid)
@@ -571,7 +571,7 @@ mkInternalState hasFS parser tracer maxBlocksPerFile files =
     truncateError
       :: FsPath
       -> ParserError blockId e
-      -> BlockOffset
+      -> TruncateOffset
       -> m ()
     truncateError file e offset = do
       traceWith tracer $ Truncate e file offset
@@ -677,7 +677,7 @@ addToReverseIndex
   -> ParsedInfo blockId
   -> ( ReverseIndex blockId
      , ParsedInfo blockId
-     , Maybe (ParserError blockId e, BlockOffset)
+     , Maybe (ParserError blockId e, TruncateOffset)
      )
 addToReverseIndex file = \revMap -> go revMap []
   where
@@ -686,7 +686,7 @@ addToReverseIndex file = \revMap -> go revMap []
        -> ParsedInfo blockId
        -> ( ReverseIndex blockId
           , ParsedInfo blockId
-          , Maybe (ParserError blockId e, BlockOffset)
+          , Maybe (ParserError blockId e, TruncateOffset)
           )
     go revMap acc = \case
       []               -> (revMap, reverse acc, Nothing)
@@ -695,7 +695,8 @@ addToReverseIndex file = \revMap -> go revMap []
           Left InternalBlockInfo { ibFile = alreadyExistsHere } ->
               ( revMap
               , reverse acc
-              , Just (DuplicatedBlock bbid alreadyExistsHere file, offset)
+              , Just ( DuplicatedBlock bbid alreadyExistsHere file
+                     , unAbsOffset offset )
               )
         where
           (offset, (size, blockInfo@BlockInfo { bbid })) = parsedBlock

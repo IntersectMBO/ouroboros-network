@@ -16,11 +16,11 @@ module Ouroboros.Consensus.Storage.VolatileDB.Types
   , sameVolatileDBError
   , sameUnexpectedError
   , BlockSize (..)
-  , BlockOffset
   , Parser (..)
   , ParsedInfo
   , ParsedBlockInfo
   , BlockInfo (..)
+  , TruncateOffset
   , InternalBlockInfo (..)
     -- * Tracing
   , TraceEvent (..)
@@ -129,8 +129,9 @@ sameUnexpectedError e1 e2 = case (e1, e2) of
 newtype BlockSize = BlockSize {unBlockSize :: Word64}
     deriving (Show, Generic, NoUnexpectedThunks)
 
--- | The offset at which a block is stored in a file.
-type BlockOffset = Word64
+-- | In case of a parser error, this is the offset at which the file should be
+-- truncated.
+type TruncateOffset = Word64
 
 -- | Parse the given file containing blocks.
 --
@@ -139,7 +140,7 @@ type BlockOffset = Word64
 newtype Parser e m blockId = Parser {
     parse :: FsPath
           -> m ( ParsedInfo blockId
-               , Maybe (ParserError blockId e, BlockOffset)
+               , Maybe (ParserError blockId e, TruncateOffset)
                )
   }
 
@@ -149,7 +150,7 @@ type ParsedInfo blockId = [ParsedBlockInfo blockId]
 -- | Information returned by the parser about a single block.
 --
 -- The parser returns for each block, its offset, its size and its 'BlockInfo'
-type ParsedBlockInfo blockId = (BlockOffset, (BlockSize, BlockInfo blockId))
+type ParsedBlockInfo blockId = (AbsOffset, (BlockSize, BlockInfo blockId))
 
 -- | The information that the user has to provide for each new block.
 data BlockInfo blockId = BlockInfo {
@@ -164,7 +165,7 @@ data BlockInfo blockId = BlockInfo {
 -- | The internal information the db keeps for each block.
 data InternalBlockInfo blockId = InternalBlockInfo {
       ibFile        :: !FsPath
-    , ibBlockOffset :: !BlockOffset
+    , ibBlockOffset :: !AbsOffset
     , ibBlockSize   :: !BlockSize
     , ibBlockInfo   :: !(BlockInfo blockId)
     } deriving (Show, Generic, NoUnexpectedThunks)
@@ -178,6 +179,6 @@ data TraceEvent e blockId
     | DBAlreadyOpen
     | BlockAlreadyHere blockId
     | TruncateCurrentFile FsPath
-    | Truncate (ParserError blockId e) FsPath BlockOffset
+    | Truncate (ParserError blockId e) FsPath TruncateOffset
     | InvalidFileNames [FsPath]
   deriving (Eq, Generic, Show)

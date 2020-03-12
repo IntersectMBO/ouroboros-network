@@ -25,10 +25,11 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks, Word64)
 
 import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo)
 
+import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB.Types
 
 {-------------------------------------------------------------------------------
@@ -38,7 +39,7 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Types
 -- | The internal information the db keeps for each file
 data FileInfo blockId = MkFileInfo {
       fLatestSlot :: !MaxSlotNo
-    , fContents   :: !(Map BlockOffset (FileBlockInfo blockId))
+    , fContents   :: !(Map Word64 (FileBlockInfo blockId))
     } deriving (Show, Generic, NoUnexpectedThunks)
 
 -- | Information about a block in a file
@@ -59,14 +60,14 @@ empty = MkFileInfo {
 
 -- | Adds a block to a 'FileInfo'.
 addBlock :: SlotNo
-         -> BlockOffset
+         -> AbsOffset
          -> FileBlockInfo blockId
          -> FileInfo blockId
          -> FileInfo blockId
-addBlock slotNo blockOffset blockInfo MkFileInfo { fLatestSlot, fContents } =
+addBlock slotNo offset blockInfo MkFileInfo { fLatestSlot, fContents } =
     MkFileInfo {
         fLatestSlot = fLatestSlot `max` MaxSlotNo slotNo
-      , fContents   = Map.insert blockOffset blockInfo fContents
+      , fContents   = Map.insert (unAbsOffset offset) blockInfo fContents
       }
 
 -- | Construct a 'FileInfo' from the parser result.
@@ -79,10 +80,10 @@ fromParsedInfo parsedInfo = MkFileInfo maxSlotNo contents
     parsedBlockInfoToMaxSlotNo (_, (_, blockInfo)) =
       MaxSlotNo $ bslot blockInfo
 
-    contents :: Map BlockOffset (FileBlockInfo blockId)
+    contents :: Map Word64 (FileBlockInfo blockId)
     contents = Map.fromList
-      [ (blockOffset, FileBlockInfo blockSize (bbid blockInfo))
-      | (blockOffset, (blockSize, blockInfo)) <- parsedInfo
+      [ (offset, FileBlockInfo blockSize (bbid blockInfo))
+      | (AbsOffset offset, (blockSize, blockInfo)) <- parsedInfo
       ]
 
 mkFileBlockInfo :: BlockSize -> blockId -> FileBlockInfo blockId

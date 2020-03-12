@@ -94,8 +94,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockComponent
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (HasFS,
                      createDirectoryIfMissing)
-import           Ouroboros.Consensus.Storage.FS.API.Types (MountPoint (..),
-                     mkFsPath)
+import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset(..),
+                     MountPoint (..), mkFsPath)
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..), BlocksPerFile, VolatileDB,
@@ -527,9 +527,10 @@ blockFileParser' hasFS isEBB encodeBlock decodeBlock isNotCorrupt validationPoli
     checkEntries :: VolDB.ParsedInfo (HeaderHash blk)
                  -> Stream (Of (Word64, (Word64, blk)))
                     m
-                    (Maybe (Util.CBOR.ReadIncrementalErr, Word64))
+                    (Maybe (Util.CBOR.ReadIncrementalErr, VolDB.TruncateOffset))
                  -> m ( VolDB.ParsedInfo (HeaderHash blk)
-                      , Maybe (BlockFileParserError (HeaderHash blk), VolDB.BlockOffset)
+                      , Maybe ( BlockFileParserError (HeaderHash blk)
+                              , VolDB.TruncateOffset )
                       )
     checkEntries parsed stream = S.next stream >>= \case
       Left mbErr
@@ -537,7 +538,7 @@ blockFileParser' hasFS isEBB encodeBlock decodeBlock isNotCorrupt validationPoli
       Right ((offset, (size, blk)), stream')
         | noValidation || isNotCorrupt blk
         -> let !blockInfo = extractInfo' blk
-               newParsed = (offset, (VolDB.BlockSize size, blockInfo))
+               newParsed = (AbsOffset offset, (VolDB.BlockSize size, blockInfo))
            in checkEntries (newParsed : parsed) stream'
         | otherwise  -- The block was invalid
         -> let !bid = VolDB.bbid $ extractInfo' blk
