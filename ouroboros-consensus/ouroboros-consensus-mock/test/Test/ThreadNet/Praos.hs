@@ -94,14 +94,15 @@ prop_simple_praos_convergence
   params@PraosParams{praosSecurityParam}
   testConfig@TestConfig{numCoreNodes} =
     counterexample (tracesToDot testOutputNodes) $
-    prop_general
-      countSimpleGenTxs
-      praosSecurityParam
-      testConfig
-      Nothing
-      Nothing
-      (const False)
-      0
+    prop_general PropGeneralArgs
+      { pgaCountTxs               = countSimpleGenTxs
+      , pgaExpectedBlockRejection = const False
+      , pgaFirstBlockNo           = 0
+      , pgaFixedMaxForkLength     = Nothing
+      , pgaFixedSchedule          = Nothing
+      , pgaSecurityParam          = praosSecurityParam
+      , pgaTestConfig             = testConfig
+      }
       testOutput
   where
     testOutput@TestOutput{testOutputNodes} =

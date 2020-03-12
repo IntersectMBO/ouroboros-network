@@ -7,7 +7,8 @@
 {-# LANGUAGE TypeApplications          #-}
 
 module Test.ThreadNet.General (
-    prop_general
+    PropGeneralArgs (..)
+  , prop_general
   , runTestNetwork
     -- * TestConfig
   , Rekeying (..)
@@ -262,13 +263,54 @@ data BlockRejection blk = BlockRejection
   }
   deriving (Show)
 
+data PropGeneralArgs blk = PropGeneralArgs
+  { pgaCountTxs               :: blk -> Word64
+    -- ^ the number of transactions in the block
+    --
+  , pgaExpectedBlockRejection :: BlockRejection blk -> Bool
+    -- ^ whether this block rejection was expected
+    --
+  , pgaFirstBlockNo           :: BlockNo
+    -- ^ the block number of the first proper block on the chain
+    --
+    -- At time of writing this comment... For example, this is 1 for Byron
+    -- tests and 0 for mock tests. The epoch boundary block (EBB) in slot 0
+    -- specifies itself as having block number 0, which implies the genesis
+    -- block is block number 0, and so the first proper block is number 1. For
+    -- the mock tests, the first proper block is block number 0.
+    --
+    -- TODO This implies the mock genesis block does not have a number?
+    --
+  , pgaFixedMaxForkLength     :: Maybe NumBlocks
+    -- ^ the maximum length of a unique suffix among the final chains
+    --
+    -- If not provided, it will be crudely estimated. For example, this
+    -- estimation is known to be incorrect for PBFT; it does not anticipate
+    -- 'Ouroboros.Consensus.Protocol.PBFT.PBftExceededSignThreshold'.
+    --
+  , pgaFixedSchedule          :: Maybe LeaderSchedule
+    -- ^ the leader schedule of the nodes
+    --
+    -- If not provided, it will be recovered from the nodes' 'Tracer' data.
+    --
+  , pgaSecurityParam          :: SecurityParam
+  , pgaTestConfig             :: TestConfig
+  }
+
 -- | The properties always required
 --
 -- Includes:
 --
 -- * The competitive chains at the end of the simulation respect the expected
 --   bound on fork length
+--
 -- * The nodes do not leak file handles
+--
+-- * Blocks are exchanged without unexpected delays.
+--
+-- * The nodes' chains grow without unexpected delays.
+--
+-- * No blocks are unduly rejected (see 'pgaExpectedBlockRejection').
 --
 prop_general ::
   forall blk.
@@ -277,19 +319,10 @@ prop_general ::
      , HasHeader blk
      , RunNode blk
      )
-  => (blk -> Word64) -- ^ Count transactions
-  -> SecurityParam
-  -> TestConfig
-  -> Maybe LeaderSchedule
-  -> Maybe NumBlocks
-  -> (BlockRejection blk -> Bool)
-  -> BlockNo
-     -- ^ block number of the first proper block after genesis
+  => PropGeneralArgs blk
   -> TestOutput blk
   -> Property
-prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
-  mbSchedule mbMaxForkLength expectedBlockRejection firstBlockNo
-  TestOutput{testOutputNodes, testOutputTipBlockNos} =
+prop_general pga testOutput =
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("nodeRestarts: " <> condense nodeRestarts) $
@@ -319,6 +352,26 @@ prop_general countTxs k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTop
       | (nid, nodeDBs) <- Map.toList nodeOutputDBs ]
   where
     _ = keepRedundantConstraint (Proxy @(Show (LedgerView (BlockProtocol blk))))
+
+    PropGeneralArgs
+      { pgaCountTxs               = countTxs
+      , pgaExpectedBlockRejection = expectedBlockRejection
+      , pgaFirstBlockNo           = firstBlockNo
+      , pgaFixedMaxForkLength     = mbMaxForkLength
+      , pgaFixedSchedule          = mbSchedule
+      , pgaSecurityParam          = k
+      , pgaTestConfig
+      } = pga
+    TestConfig
+      { numSlots
+      , nodeJoinPlan
+      , nodeRestarts
+      , nodeTopology
+      } = pgaTestConfig
+    TestOutput
+      { testOutputNodes
+      , testOutputTipBlockNos
+      } = testOutput
 
     prop_no_unexpected_BlockRejections =
         counterexample msg $
