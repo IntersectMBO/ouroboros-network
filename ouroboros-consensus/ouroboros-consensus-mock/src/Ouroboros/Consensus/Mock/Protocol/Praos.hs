@@ -118,7 +118,7 @@ praosValidateView getFields hdr =
 
 data PraosNodeState c =
     -- | The KES key is available
-    PraosKeyAvailable (SignKeyKES (PraosKES c))
+    PraosKeyAvailable !(SignKeyKES (PraosKES c))
 
     -- | The KES key is being evolved by another thread
     --

@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards   #-}
 
@@ -64,6 +65,9 @@ protocolInfoPraos numCoreNodes nid params slotLengths =
     addrDist = mkAddrDist numCoreNodes
 
     verKeys :: Map CoreNodeId (VerKeyKES MockKES, VerKeyVRF MockVRF)
-    verKeys = Map.fromList [ (nid', (verKeyKES nid', verKeyVRF nid'))
-                           | nid' <- enumCoreNodes numCoreNodes
-                           ]
+    verKeys = Map.fromList
+      [ (nid', (kesKey, vrfKey))
+      | nid' <- enumCoreNodes numCoreNodes
+      , let !kesKey = verKeyKES nid'
+            !vrfKey = verKeyVRF nid'
+      ]
