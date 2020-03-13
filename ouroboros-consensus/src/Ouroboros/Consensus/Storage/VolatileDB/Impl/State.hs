@@ -11,12 +11,14 @@ module Ouroboros.Consensus.Storage.VolatileDB.Impl.State
   , InternalState (..)
   , dbIsOpen
   , OpenState (..)
+  , ModifyOpenState
   , modifyOpenState
   , withOpenState
   , mkOpenState
   ) where
 
 import           Control.Monad
+import           Control.Monad.State.Strict hiding (withState)
 import           Control.Tracer (Tracer, traceWith)
 import           Data.List (foldl')
 import           Data.Map.Strict (Map)
@@ -30,6 +32,8 @@ import           Ouroboros.Network.Block (MaxSlotNo (..))
 
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (WithTempRegistry,
+                     allocateTemp, modifyWithTempRegistry)
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
@@ -43,7 +47,7 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
   Main types
 ------------------------------------------------------------------------------}
 
-data VolatileDBEnv m blockId = forall h e. VolatileDBEnv {
+data VolatileDBEnv m blockId = forall h e. Eq h => VolatileDBEnv {
       hasFS            :: !(HasFS m h)
     , varInternalState :: !(StrictMVar m (InternalState blockId h))
     , maxBlocksPerFile :: !BlocksPerFile
@@ -88,54 +92,52 @@ data OpenState blockId h = OpenState {
   State helpers
 ------------------------------------------------------------------------------}
 
+-- | Shorthand
+type ModifyOpenState m blockId h =
+  StateT (OpenState blockId h) (WithTempRegistry (OpenState blockId h) m)
+
 -- | NOTE: This is safe in terms of throwing FsErrors.
-modifyOpenState :: forall blockId m r. (HasCallStack, IOLike m)
-                => VolatileDBEnv m blockId
-                -> (forall h
-                   .  HasFS m h
-                   -> OpenState blockId h
-                   -> m (OpenState blockId h, r)
-                   )
-                -> m r
-modifyOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} action = do
-    (mr, ()) <- generalBracket open close (tryVolDB . mutation)
-    case mr of
-      Left  e      -> throwM e
-      Right (_, r) -> return r
+modifyOpenState
+  :: forall blockId m a. (HasCallStack, IOLike m)
+  => VolatileDBEnv m blockId
+  -> (forall h. Eq h => HasFS m h -> ModifyOpenState m blockId h a)
+  -> m a
+modifyOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} modSt = do
+    wrapFsError $ modifyWithTempRegistry getSt putSt (modSt hasFS)
   where
-    open :: m (InternalState blockId h)
     -- TODO Is uninterruptibleMask_ absolutely necessary here?
-    open = uninterruptibleMask_ $ takeMVar varInternalState
+    getSt :: m (OpenState blockId h)
+    getSt = uninterruptibleMask_ $ takeMVar varInternalState >>= \case
+      DbOpen ost -> return ost
+      DbClosed   -> do
+        putMVar varInternalState DbClosed
+        throwM $ UserError ClosedDBError
 
-    close
-      :: InternalState blockId h
-      -> ExitCase (Either VolatileDBError (OpenState blockId h, r))
-      -> m ()
-    close mst ec = do
-        -- It is crucial to replace the TMVar.
-        putMVar varInternalState mst'
-        followUp
+    putSt :: OpenState blockId h -> ExitCase (OpenState blockId h) -> m ()
+    putSt ost ec = do
+        -- It is crucial to replace the MVar.
+        putMVar varInternalState st'
+        unless (dbIsOpen st') $ closeOpenHandles hasFS ost
       where
-        (mst', followUp) = case ec of
-          -- If we were interrupted, restore the original state.
-          ExitCaseAbort                         -> (mst, return ())
-          ExitCaseException _ex                 -> (mst, return ())
-          -- In case of success, update to the newest state.
-          ExitCaseSuccess (Right (newState, _)) ->
-            (DbOpen newState, return ())
-          -- In case of an error (not an exception), close the DB for safety.
-          ExitCaseSuccess (Left _)              ->
-            (DbClosed, cleanUp mst)
+        st' = case ec of
+          ExitCaseSuccess ost' -> DbOpen ost'
 
-    mutation :: InternalState blockId h
-             -> m (OpenState blockId h, r)
-    mutation DbClosed          = throwM $ UserError ClosedDBError
-    mutation (DbOpen oldState) = action hasFS oldState
-
-    -- TODO what if this fails?
-    cleanUp :: InternalState blockId h -> m ()
-    cleanUp DbClosed     = return ()
-    cleanUp (DbOpen ost) = closeOpenHandles hasFS ost
+          -- When something goes wrong, close the VolatileDB for safety.
+          -- Except for user errors, because they stem from incorrect use of
+          -- the VolatileDB.
+          --
+          -- NOTE: we only modify the VolatileDB in background threads of the
+          -- ChainDB, not in per-connection threads that could be killed at
+          -- any point. When an exception is encountered while modifying the
+          -- VolatileDB in a background thread, or that background thread
+          -- itself is killed with an async exception, we will shut down the
+          -- node anway, so it is safe to close the VolatileDB here.
+          ExitCaseAbort        -> DbClosed
+          ExitCaseException ex
+            | Just (UserError {}) <- fromException ex
+            -> DbOpen ost
+            | otherwise
+            -> DbClosed
 
 -- | Perform an action that accesses the internal state of an open database.
 --
@@ -177,7 +179,7 @@ withOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} actio
 
     shutDown :: m ()
     shutDown = swapMVar varInternalState DbClosed >>= \case
-      DbOpen ost -> closeOpenHandles hasFS ost
+      DbOpen ost -> wrapFsError $ closeOpenHandles hasFS ost
       DbClosed   -> return ()
 
     access :: OpenState blockId h -> m r
@@ -186,28 +188,27 @@ withOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} actio
 -- | Close the handles in the 'OpenState'.
 --
 -- Idempotent, as closing a handle is idempotent.
-closeOpenHandles :: MonadCatch m => HasFS m h -> OpenState blockId h -> m ()
+closeOpenHandles :: HasFS m h -> OpenState blockId h -> m ()
 closeOpenHandles HasFS { hClose } OpenState { currentWriteHandle } =
-    wrapFsError $ hClose currentWriteHandle
+    hClose currentWriteHandle
 
 mkOpenState
   :: forall m blockId e h.
      ( HasCallStack
-     , MonadThrow m
-     , MonadCatch m
+     , IOLike m
      , Ord blockId
+     , Eq h
      )
   => HasFS m h
   -> Parser e m blockId
   -> Tracer m (TraceEvent e blockId)
   -> BlocksPerFile
-  -> m (OpenState blockId h)
-mkOpenState hasFS@HasFS{..} parser tracer maxBlocksPerFile =
-    wrapFsError $ do
-      createDirectoryIfMissing True dbDir
-      allFiles <- map toFsPath . Set.toList <$> listDirectory dbDir
-      filesWithIds <- logInvalidFiles $ parseAllFds allFiles
-      mkOpenStateHelper hasFS parser tracer maxBlocksPerFile filesWithIds
+  -> WithTempRegistry (OpenState blockId h) m (OpenState blockId h)
+mkOpenState hasFS@HasFS{..} parser tracer maxBlocksPerFile = do
+    lift $ createDirectoryIfMissing True dbDir
+    allFiles <- map toFsPath . Set.toList <$> lift (listDirectory dbDir)
+    filesWithIds <- lift $ logInvalidFiles $ parseAllFds allFiles
+    mkOpenStateHelper hasFS parser tracer maxBlocksPerFile filesWithIds
   where
     -- | Logs about any invalid 'FsPath' and returns the valid ones.
     logInvalidFiles :: ([(FileId, FsPath)], [FsPath]) -> m [(FileId, FsPath)]
@@ -234,53 +235,53 @@ type Indices blockId =
 mkOpenStateHelper
   :: forall blockId m h e. (
        HasCallStack
-     , MonadCatch m
+     , IOLike m
      , Ord blockId
+     , Eq h
      )
   => HasFS m h
   -> Parser e m blockId
   -> Tracer m (TraceEvent e blockId)
   -> BlocksPerFile
   -> [(FileId, FsPath)]
-  -> m (OpenState blockId h)
-mkOpenStateHelper hasFS parser tracer maxBlocksPerFile files =
-    wrapFsError $ do
-      (currentMap', currentRevMap', currentSuccMap') <-
-        foldM validateFile (Index.empty, Map.empty, Map.empty) files
+  -> WithTempRegistry (OpenState blockId h) m (OpenState blockId h)
+mkOpenStateHelper hasFS parser tracer maxBlocksPerFile files = do
+    (currentMap', currentRevMap', currentSuccMap') <- lift $
+      foldM validateFile (Index.empty, Map.empty, Map.empty) files
 
-      let (currentWriteId, currentMap'') = case Index.lastFile currentMap' of
-            -- The DB is empty. Create a new file with 'FileId' 0
-            Nothing
-              -> (0, Index.insert 0 FileInfo.empty currentMap')
-            Just (lastWriteId, lastFileInfo)
-              | FileInfo.isFull maxBlocksPerFile lastFileInfo
-              , let nextWriteId = lastWriteId + 1
-                -- If the last file is full, we need to create a new one
-              -> (nextWriteId, Index.insert nextWriteId FileInfo.empty currentMap')
-              | otherwise
-                -- If the last file is not full, then use that one
-              -> (lastWriteId, currentMap')
+    let (currentWriteId, currentMap'') = case Index.lastFile currentMap' of
+          -- The DB is empty. Create a new file with 'FileId' 0
+          Nothing
+            -> (0, Index.insert 0 FileInfo.empty currentMap')
+          Just (lastWriteId, lastFileInfo)
+            | FileInfo.isFull maxBlocksPerFile lastFileInfo
+            , let nextWriteId = lastWriteId + 1
+              -- If the last file is full, we need to create a new one
+            -> (nextWriteId, Index.insert nextWriteId FileInfo.empty currentMap')
+            | otherwise
+              -- If the last file is not full, then use that one
+            -> (lastWriteId, currentMap')
 
-      let currentWritePath = filePath currentWriteId
+    let currentWritePath = filePath currentWriteId
 
-      currentWriteHandle <- hOpen hasFS currentWritePath (AppendMode AllowExisting)
-      -- If 'hGetSize' fails, we should close the opened handle that didn't
-      -- make it into the state, otherwise we'd leak it.
-      currentWriteOffset <- onException
-        (hGetSize hasFS currentWriteHandle)
-        (hClose   hasFS currentWriteHandle)
+    currentWriteHandle <-
+      allocateTemp
+        (hOpen   hasFS currentWritePath (AppendMode AllowExisting))
+        (hClose' hasFS)
+        ((==) . currentWriteHandle)
+    currentWriteOffset <- lift $ hGetSize hasFS currentWriteHandle
 
-      return OpenState {
-          currentWriteHandle = currentWriteHandle
-        , currentWritePath   = currentWritePath
-        , currentWriteId     = currentWriteId
-        , currentWriteOffset = currentWriteOffset
-        , currentMap         = currentMap''
-        , currentRevMap      = currentRevMap'
-        , currentSuccMap     = currentSuccMap'
-        , currentMaxSlotNo   = FileInfo.maxSlotInFiles
-                                  (Index.elems currentMap')
-        }
+    return OpenState {
+        currentWriteHandle = currentWriteHandle
+      , currentWritePath   = currentWritePath
+      , currentWriteId     = currentWriteId
+      , currentWriteOffset = currentWriteOffset
+      , currentMap         = currentMap''
+      , currentRevMap      = currentRevMap'
+      , currentSuccMap     = currentSuccMap'
+      , currentMaxSlotNo   = FileInfo.maxSlotInFiles
+                                (Index.elems currentMap')
+      }
   where
     validateFile :: Indices blockId -> (FileId, FsPath) -> m (Indices blockId)
     validateFile (currentMap, currentRevMap, currentSuccMap) (fd, file) = do
@@ -322,7 +323,6 @@ mkOpenStateHelper hasFS parser tracer maxBlocksPerFile files =
       -- read with truncate.
       withFile hasFS file (AppendMode AllowExisting) $ \hndl ->
         hTruncate hasFS hndl offset
-
 
 -- | For each block found in a parsed file, we insert its 'InternalBlockInfo'
 -- in the 'ReverseIndex'.

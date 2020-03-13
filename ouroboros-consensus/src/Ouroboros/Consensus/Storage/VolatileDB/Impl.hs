@@ -100,6 +100,7 @@ module Ouroboros.Consensus.Storage.VolatileDB.Impl
     ) where
 
 import           Control.Monad
+import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer, traceWith)
 import qualified Data.ByteString.Builder as BS
 import           Data.List (foldl', sortOn)
@@ -114,6 +115,8 @@ import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (allocateTemp,
+                     runWithTempRegistry)
 
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.FS.API
@@ -133,15 +136,16 @@ openDB :: ( HasCallStack
           , IOLike m
           , Ord                blockId
           , NoUnexpectedThunks blockId
+          , Eq h
           )
        => HasFS m h
        -> Parser e m blockId
        -> Tracer m (TraceEvent e blockId)
        -> BlocksPerFile
        -> m (VolatileDB blockId m)
-openDB hasFS parser tracer maxBlocksPerFile = do
-    st    <- mkOpenState hasFS parser tracer maxBlocksPerFile
-    stVar <- newMVar $ DbOpen st
+openDB hasFS parser tracer maxBlocksPerFile = runWithTempRegistry $ do
+    ost   <- mkOpenState hasFS parser tracer maxBlocksPerFile
+    stVar <- lift $ newMVar (DbOpen ost)
     let env = VolatileDBEnv {
             hasFS          = hasFS
           , varInternalState  = stVar
@@ -149,17 +153,18 @@ openDB hasFS parser tracer maxBlocksPerFile = do
           , parser           = parser
           , tracer           = tracer
           }
-    return VolatileDB {
-        closeDB             = closeDBImpl             env
-      , isOpenDB            = isOpenDBImpl            env
-      , reOpenDB            = reOpenDBImpl            env
-      , getBlockComponent   = getBlockComponentImpl   env
-      , putBlock            = putBlockImpl            env
-      , garbageCollect      = garbageCollectImpl      env
-      , filterByPredecessor = filterByPredecessorImpl env
-      , getBlockInfo        = getBlockInfoImpl        env
-      , getMaxSlotNo        = getMaxSlotNoImpl        env
-      }
+        volDB = VolatileDB {
+            closeDB             = closeDBImpl             env
+          , isOpenDB            = isOpenDBImpl            env
+          , reOpenDB            = reOpenDBImpl            env
+          , getBlockComponent   = getBlockComponentImpl   env
+          , putBlock            = putBlockImpl            env
+          , garbageCollect      = garbageCollectImpl      env
+          , filterByPredecessor = filterByPredecessorImpl env
+          , getBlockInfo        = getBlockInfoImpl        env
+          , getMaxSlotNo        = getMaxSlotNoImpl        env
+          }
+    return (volDB, ost)
 
 closeDBImpl :: IOLike m
             => VolatileDBEnv m blockId
@@ -186,14 +191,18 @@ reOpenDBImpl :: ( HasCallStack
                 )
              => VolatileDBEnv m blockId
              -> m ()
-reOpenDBImpl VolatileDBEnv{..} =
-    modifyMVar varInternalState $ \case
+reOpenDBImpl VolatileDBEnv{..} = bracketOnError
+    (takeMVar varInternalState)
+    -- Important: put back the state when an error is thrown, otherwise we have
+    -- an empty TMVar.
+    (putMVar varInternalState) $ \case
       DbOpen st -> do
         traceWith tracer DBAlreadyOpen
-        return (DbOpen st, ())
-      DbClosed -> do
-        st <- mkOpenState hasFS parser tracer maxBlocksPerFile
-        return (DbOpen st, ())
+        putMVar varInternalState (DbOpen st)
+      DbClosed -> runWithTempRegistry $ do
+        ost <- mkOpenState hasFS parser tracer maxBlocksPerFile
+        lift $ putMVar varInternalState (DbOpen ost)
+        return ((), ost)
 
 getBlockComponentImpl
   :: forall m blockId b. (IOLike m, Ord blockId, HasCallStack)
@@ -260,23 +269,22 @@ putBlockImpl :: forall m blockId. (IOLike m, Ord blockId)
 putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
              blockInfo@BlockInfo { bbid, bslot, bpreBid }
              builder =
-    modifyOpenState env $ \hasFS st@OpenState {..} ->
-      if Map.member bbid currentRevMap then do
-        traceWith tracer $ BlockAlreadyHere bbid
-        return (st, ()) -- putting an existing block is a no-op.
+    modifyOpenState env $ \hasFS -> do
+      OpenState { currentRevMap, currentWriteHandle } <- get
+      if Map.member bbid currentRevMap then
+        lift $ lift $ traceWith tracer $ BlockAlreadyHere bbid
       else do
-        bytesWritten <- hPut hasFS currentWriteHandle builder
-        updateStateAfterWrite hasFS st bytesWritten
+        bytesWritten <- lift $ lift $ hPut hasFS currentWriteHandle builder
+        fileIsFull <- state $ updateStateAfterWrite bytesWritten
+        when fileIsFull $ nextFile hasFS
   where
-    updateStateAfterWrite :: forall h.
-                             HasFS m h
-                          -> OpenState blockId h
-                          -> Word64
-                          -> m (OpenState blockId h, ())
-    updateStateAfterWrite hasFS st@OpenState{..} bytesWritten =
-        if FileInfo.isFull maxBlocksPerFile fileInfo'
-        then (,()) <$> nextFile hasFS st'
-        else return (st', ())
+    updateStateAfterWrite
+      :: forall h.
+         Word64
+      -> OpenState blockId h
+      -> (Bool, OpenState blockId h)  -- ^ True: current file is full
+    updateStateAfterWrite bytesWritten st@OpenState{..} =
+        (FileInfo.isFull maxBlocksPerFile fileInfo', st')
       where
         fileInfo = fromMaybe
             (error $ "VolatileDB invariant violation:"
@@ -315,20 +323,19 @@ garbageCollectImpl :: forall m blockId. (IOLike m, Ord blockId)
                    -> SlotNo
                    -> m ()
 garbageCollectImpl env slot =
-    modifyOpenState env $ \hasFS st -> do
-      st' <- foldM (tryCollectFile hasFS slot) st
-              (sortOn fst $ Index.toList (currentMap st))
+    modifyOpenState env $ \hasFS -> do
+      files <- gets (sortOn fst . Index.toList . currentMap)
+      mapM_ (tryCollectFile hasFS slot) files
       -- Recompute the 'MaxSlotNo' based on the files left in the VolatileDB.
       -- This value can never go down, except to 'NoMaxSlotNo' (when we GC
       -- everything), because a GC can only delete blocks < a slot.
-      let st'' = st' {
-              currentMaxSlotNo = FileInfo.maxSlotInFiles
-                (Index.elems (currentMap st'))
-            }
-      return (st'', ())
+      modify $ \st -> st {
+          currentMaxSlotNo = FileInfo.maxSlotInFiles
+            (Index.elems (currentMap st))
+        }
 
--- | For the given file, we garbage collect it if possible and return the
--- updated 'OpenState'.
+-- | For the given file, we garbage collect it if possible, updating the
+-- 'OpenState'.
 --
 -- NOTE: the current file is never garbage collected.
 --
@@ -336,7 +343,7 @@ garbageCollectImpl env slot =
 -- a consistent state, without depending on other calls. We achieve this by
 -- only needed a single system call: 'removeFile'.
 --
--- NOTE: the returned 'OpenState' is inconsistent in the follow respect:
+-- NOTE: the updated 'OpenState' is inconsistent in the follow respect:
 -- the cached 'currentMaxSlotNo' hasn't been updated yet.
 --
 -- This may throw an FsError.
@@ -344,31 +351,29 @@ tryCollectFile :: forall m h blockId
                .  (MonadThrow m, Ord blockId)
                => HasFS m h
                -> SlotNo
-               -> OpenState blockId h
                -> (FileId, FileInfo blockId)
-               -> m (OpenState blockId h)
-tryCollectFile hasFS slot st@OpenState{..} (fileId, fileInfo)
-    | FileInfo.canGC fileInfo slot && not isCurrent
+               -> ModifyOpenState m blockId h ()
+tryCollectFile hasFS slot (fileId, fileInfo) = do
+    st@OpenState{..} <- get
+    let isCurrentFile = fileId == currentWriteId
+
+    when (FileInfo.canGC fileInfo slot && not isCurrentFile) $ do
       -- We don't GC the current file. This is unlikely to happen in practice
       -- anyway, and it makes things simpler.
-    = do
-      removeFile hasFS $ filePath fileId
-      return st {
+      lift $ lift $ removeFile hasFS $ filePath fileId
+
+      let bids           = FileInfo.blockIds fileInfo
+          currentRevMap' = Map.withoutKeys currentRevMap (Set.fromList bids)
+          deletedPairs   = mapMaybe
+            (\b -> (b,) . bpreBid . ibBlockInfo <$> Map.lookup b currentRevMap)
+            bids
+          succMap'       = foldl' deleteMapSet currentSuccMap deletedPairs
+
+      put st {
           currentMap     = Index.delete fileId currentMap
         , currentRevMap  = currentRevMap'
         , currentSuccMap = succMap'
         }
-
-    | otherwise
-    = return st
-  where
-    isCurrent      = fileId == currentWriteId
-    bids           = FileInfo.blockIds fileInfo
-    currentRevMap' = Map.withoutKeys currentRevMap (Set.fromList bids)
-    deletedPairs   = mapMaybe
-      (\b -> (b,) . bpreBid . ibBlockInfo <$> Map.lookup b currentRevMap)
-      bids
-    succMap'       = foldl' deleteMapSet currentSuccMap deletedPairs
 
 filterByPredecessorImpl :: forall m blockId. (IOLike m, Ord blockId)
                         => VolatileDBEnv m blockId
@@ -393,14 +398,21 @@ getMaxSlotNoImpl = getterSTM currentMaxSlotNo
 
 -- | Creates a new file and updates the 'OpenState' accordingly.
 -- This may throw an FsError.
-nextFile :: forall h m blockId. IOLike m
-         => HasFS m h
-         -> OpenState blockId h
-         -> m (OpenState blockId h)
-nextFile hasFS st@OpenState{..} = do
-    hClose hasFS currentWriteHandle
-    hndl <- hOpen hasFS file (AppendMode MustBeNew)
-    return st {
+nextFile :: forall h m blockId. (IOLike m, Eq h)
+         => HasFS m h -> ModifyOpenState m blockId h ()
+nextFile hasFS = do
+    st@OpenState { currentWriteHandle = curHndl, currentWriteId, currentMap } <- get
+
+    let currentWriteId' = currentWriteId + 1
+        file = filePath currentWriteId'
+
+    lift $ lift $ hClose hasFS curHndl
+
+    hndl <- lift $ allocateTemp
+      (hOpen   hasFS file (AppendMode MustBeNew))
+      (hClose' hasFS)
+      ((==) . currentWriteHandle)
+    put st {
         currentWriteHandle = hndl
       , currentWritePath   = file
       , currentWriteId     = currentWriteId'
@@ -408,9 +420,6 @@ nextFile hasFS st@OpenState{..} = do
       , currentMap         = Index.insert currentWriteId' FileInfo.empty
                                 currentMap
       }
-  where
-    currentWriteId' = currentWriteId + 1
-    file = filePath currentWriteId'
 
 -- | Gets part of the 'OpenState' in 'STM'.
 getterSTM :: forall m blockId a. IOLike m
