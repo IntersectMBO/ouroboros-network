@@ -518,6 +518,23 @@ tests = testGroup "RealPBFT" $
             , slotLength   = defaultSlotLength
             , initSeed     = Seed {getSeed = (306806859316465898,5351335255935493133,6240542044036351784,5824248410373935607,16492982022780410836)}
             }
+    , testProperty "only expect EBBs if the reference simulator does" $
+          -- In this repro, block in the 20th slot is wasted since c2 just
+          -- joined. As a result, the final chains won't include that EBB.
+          let ncn = NumCoreNodes 3 in
+          prop_simple_real_pbft_convergence ProduceEBBs SecurityParam {maxRollbacks = 2} TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 21
+            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+              [ (CoreNodeId 0,SlotNo {unSlotNo = 0})
+              , (CoreNodeId 1,SlotNo {unSlotNo = 0})
+              , (CoreNodeId 2,SlotNo {unSlotNo = 20})
+              ]
+            , nodeRestarts = noRestarts
+            , nodeTopology = meshNodeTopology ncn
+            , slotLength   = defaultSlotLength
+            , initSeed     = Seed {getSeed = (5875984841520223242,5307155813931649482,9880810077012492572,1841667196263253753,11730891841989901381)}
+            }
     , testProperty "simple convergence" $
           \produceEBBs ->
           -- TODO k > 1 as a workaround for Issue #1511.
@@ -677,7 +694,10 @@ prop_simple_real_pbft_convergence produceEBBs k
     prop_pvu .&&.
     prop_svu .&&.
     not (all (Chain.null . snd) finalChains) .&&.
-    conjoin (map (hasAllEBBs k numSlots produceEBBs) finalChains)
+    case refResult of
+      Ref.Outcomes outcomes ->
+          conjoin (map (hasAllEBBs k produceEBBs outcomes) finalChains)
+      _ -> property True
   where
     testOutput =
         runTestNetwork testConfig epochSize TestConfigBlock
@@ -842,22 +862,24 @@ instance Arbitrary ProduceEBBs where
   shrink ProduceEBBs = [NoEBBs]
 
 hasAllEBBs :: SecurityParam
-           -> NumSlots
            -> ProduceEBBs
+           -> [Ref.Outcome]
            -> (NodeId, Chain ByronBlock)
            -> Property
-hasAllEBBs k (NumSlots t) produceEBBs (nid, c) =
+hasAllEBBs k produceEBBs outcomes (nid, c) =
     counterexample ("Missing or unexpected EBBs in " <> condense (nid, c)) $
     actual === expected
   where
     expected :: [EpochNo]
     expected = case produceEBBs of
       NoEBBs      -> [0]
-      ProduceEBBs -> coerce [0 .. hi]
-        where
-          hi :: Word64
-          hi = if t < 1 then 0 else (t - 1) `div` denom
-          denom = unEpochSlots $ kEpochSlots $ coerce k
+      ProduceEBBs -> case reverse [ s :: SlotNo | (Ref.Nominal, s) <- zip outcomes [0..] ] of
+          []  -> [0]
+          s:_ -> coerce [0 .. hi]
+            where
+              hi :: Word64
+              hi = unSlotNo s `div` denom
+              denom = unEpochSlots $ kEpochSlots $ coerce k
 
     actual   = mapMaybe (nodeIsEBB . getHeader) $ Chain.toOldestFirst c
 
