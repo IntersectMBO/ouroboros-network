@@ -71,6 +71,7 @@ clientSubscriptionWorker snocket
            workerParams
            k
   where
+    workerParams :: WorkerParams IO Identity LocalAddress
     workerParams = WorkerParams {
         wpLocalAddresses         = Identity cspAddress,
         wpSelectAddress          = \_ (Identity addr) -> Just addr,
