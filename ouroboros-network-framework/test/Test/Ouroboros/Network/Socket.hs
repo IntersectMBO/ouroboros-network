@@ -23,8 +23,7 @@ import           System.IO.Error
 #endif
 import qualified Network.Socket as Socket
 #if defined(mingw32_HOST_OS)
-import qualified Data.ByteString as BS
-import qualified System.Win32.Async as Win32.Async
+import qualified System.Win32.Async.Socket.ByteString.Lazy as Win32.Async (sendAll)
 #else
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
 #endif
@@ -321,7 +320,7 @@ prop_socket_recv_close f _ =
           _ <- connect snocket sd' (Socket.addrAddress muxAddress)
 
 #if defined(mingw32_HOST_OS)
-          Win32.Async.sendAll sd' $ BS.singleton 0xa
+          Win32.Async.sendAll sd' $ BL.singleton 0xa
 #else
           Socket.sendAll sd' $ BL.singleton 0xa
 #endif
