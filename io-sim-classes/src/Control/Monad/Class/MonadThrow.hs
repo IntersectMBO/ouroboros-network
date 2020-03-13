@@ -1,4 +1,5 @@
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE RankNTypes        #-}
 
 module Control.Monad.Class.MonadThrow
@@ -123,7 +124,7 @@ data ExitCase a
   = ExitCaseSuccess a
   | ExitCaseException SomeException
   | ExitCaseAbort
-  deriving Show
+  deriving (Show, Functor)
 
 -- | Support for safely working in the presence of asynchronous exceptions.
 --
