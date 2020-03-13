@@ -16,6 +16,7 @@ module Test.ThreadNet.RealPBFT (
   , expectedBlockRejection
   ) where
 
+import           Control.Monad.Except (runExceptT)
 import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
@@ -759,7 +760,10 @@ pbftSlotLength = slotLengthFromSec 20
 -- number of rich men.
 generateGenesisConfig :: PBftParams -> (Genesis.Config, Genesis.GeneratedSecrets)
 generateGenesisConfig params =
-    either (error . show) id $ Genesis.generateGenesisConfig startTime spec
+    either (error . show) id $
+      Crypto.deterministic "this is fake entropy for testing" $
+        runExceptT $
+          Genesis.generateGenesisConfigWithEntropy startTime spec
   where
     startTime = UTCTime (ModifiedJulianDay 0) 0
     PBftParams{pbftNumNodes, pbftSecurityParam} = params

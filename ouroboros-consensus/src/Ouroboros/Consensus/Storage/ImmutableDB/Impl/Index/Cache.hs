@@ -236,11 +236,22 @@ addPastChunkInfo chunk lastUsed pastChunkInfo cached =
     -- means the following cannot be a precondition:
     -- assert (not (PSQ.member chunk pastChunksInfo)) $
     cached
-      { pastChunksInfo = PSQ.insert (chunkNoToInt chunk) lastUsed pastChunkInfo pastChunksInfo
-      , nbPastChunks   = succ nbPastChunks
+      { pastChunksInfo = pastChunksInfo'
+      , nbPastChunks   = nbPastChunks'
       }
   where
     Cached { pastChunksInfo, nbPastChunks } = cached
+
+    -- In case of multiple concurrent cache misses of the same chunk, the
+    -- chunk might already be in there.
+    (mbAlreadyPresent, pastChunksInfo') =
+      PSQ.insertView (chunkNoToInt chunk) lastUsed pastChunkInfo pastChunksInfo
+
+    nbPastChunks'
+      | Just _ <- mbAlreadyPresent
+      = nbPastChunks
+      | otherwise
+      = succ nbPastChunks
 
 -- | Remove the least recently used past chunk from the cache when 'Cached'
 -- contains more chunks than the given maximum.
