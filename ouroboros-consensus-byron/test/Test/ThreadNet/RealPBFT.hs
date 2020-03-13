@@ -22,6 +22,7 @@ import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import           Data.Time (Day (..), UTCTime (..))
 import           Data.Word (Word64)
+import           Control.Monad.Trans.Except
 
 import           Numeric.Search.Range (searchFromTo)
 import           Test.QuickCheck
@@ -759,7 +760,10 @@ pbftSlotLength = slotLengthFromSec 20
 -- number of rich men.
 generateGenesisConfig :: PBftParams -> (Genesis.Config, Genesis.GeneratedSecrets)
 generateGenesisConfig params =
-    either (error . show) id $ Genesis.generateGenesisConfig startTime spec
+    either (error . show) id $
+      Crypto.deterministic "this is fake entropy for testing" $
+        runExceptT $
+          Genesis.generateGenesisConfigWithEntropy startTime spec
   where
     startTime = UTCTime (ModifiedJulianDay 0) 0
     PBftParams{pbftNumNodes, pbftSecurityParam} = params

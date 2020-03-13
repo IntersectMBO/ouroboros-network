@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/3893f21db1665e7bab9e8c6504c547fc7c28f98c/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/fe76ec64f6b45259cc407a6d840dad79ee6063b6/snapshot.yaml
 
 packages:
   - ./typed-protocols
@@ -35,7 +35,7 @@ flags:
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: dd30455144e11efb435619383ba84ce02aee720d
+    commit: 3e45d5dd4942c295f0ea4bfed7c407b914b15447
     subdirs:
       - contra-tracer
 
@@ -48,7 +48,7 @@ extra-deps:
       - slotting
 
   - git: https://github.com/input-output-hk/cardano-ledger-specs
-    commit: 2500720815d30a29c95d153b3d97b1e0307f6906
+    commit: 647cd71e3c4630488e71596f5e9c26fee598b541
     subdirs:
       - byron/semantics/executable-spec
       - byron/ledger/executable-spec
@@ -61,7 +61,7 @@ extra-deps:
   - gray-code-0.3.1
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 1d28218397913ed2c832a780037fc5c7d5ab3c09
+    commit: 026aa98773c43da4a66cff201c58a0e7a3f09b0b
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -69,7 +69,7 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: 3893f21db1665e7bab9e8c6504c547fc7c28f98c
+    commit: fe76ec64f6b45259cc407a6d840dad79ee6063b6
     subdirs:
       - .
       - test
