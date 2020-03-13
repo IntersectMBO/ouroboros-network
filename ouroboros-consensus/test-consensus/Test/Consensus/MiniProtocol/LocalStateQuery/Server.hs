@@ -46,6 +46,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                      (LedgerDbParams (..), LgrDB, LgrDBConf, LgrDbArgs (..),
                      mkLgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
+import           Ouroboros.Consensus.Storage.FS.API (HasFS)
 import           Ouroboros.Consensus.Storage.LedgerDB.Conf (LedgerDbConf (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
                      (ledgerDbFromGenesis)
@@ -219,7 +220,7 @@ initLgrDB k chain = do
 
     args = LgrDbArgs
       { lgrTopLevelConfig       = cfg
-      , lgrHasFS                = error "lgrHasFS"
+      , lgrHasFS                = error "lgrHasFS" :: HasFS m ()
       , lgrDecodeLedger         = error "lgrDecodeLedger"
       , lgrDecodeConsensusState = error "lgrDecodeConsensusState"
       , lgrDecodeHash           = error "lgrDecodeHash"

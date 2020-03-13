@@ -1,13 +1,14 @@
-{-# LANGUAGE BangPatterns              #-}
-{-# LANGUAGE DeriveAnyClass            #-}
-{-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE NamedFieldPuns            #-}
-{-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE RecordWildCards           #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
   ( -- * State types
     ImmutableDBEnv (..)
@@ -17,6 +18,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
     -- * State helpers
   , mkOpenState
   , getOpenState
+  , ModifyOpenState
   , modifyOpenState
   , withOpenState
   , closeOpenHandles
@@ -34,7 +36,7 @@ import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     allocate)
+                     WithTempRegistry, allocateTemp, modifyWithTempRegistry)
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
@@ -55,7 +57,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 ------------------------------------------------------------------------------}
 
 -- | The environment used by the immutable database.
-data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
+data ImmutableDBEnv m hash = forall h e. Eq h => ImmutableDBEnv
     { hasFS            :: !(HasFS m h)
     , varInternalState :: !(StrictMVar m (InternalState m hash h))
     , chunkFileParser  :: !(ChunkFileParser e m (BlockSummary hash) hash)
@@ -105,20 +107,19 @@ data OpenState m hash h = OpenState
 
 -- | Create the internal open state for the given chunk.
 mkOpenState
-  :: forall m hash h. (HasCallStack, IOLike m)
-  => ResourceRegistry m
-  -> HasFS m h
+  :: forall m hash h. (HasCallStack, IOLike m, Eq h)
+  => HasFS m h
   -> Index m hash h
   -> ChunkNo
   -> ImmTipWithInfo hash
   -> AllowExisting
-  -> m (OpenState m hash h)
-mkOpenState registry HasFS{..} index chunk tip existing = do
-    eHnd <- allocateHandle $ hOpen (renderFile "epoch"     chunk) appendMode
-    pHnd <- allocateHandle $ Index.openPrimaryIndex index  chunk  existing
-    sHnd <- allocateHandle $ hOpen (renderFile "secondary" chunk) appendMode
-    chunkOffset     <- hGetSize eHnd
-    secondaryOffset <- hGetSize sHnd
+  -> WithTempRegistry (OpenState m hash h) m (OpenState m hash h)
+mkOpenState hasFS@HasFS{..} index chunk tip existing = do
+    eHnd <- allocateHandle currentChunkHandle     $ hOpen (renderFile "epoch"     chunk) appendMode
+    pHnd <- allocateHandle currentPrimaryHandle   $ Index.openPrimaryIndex index  chunk  existing
+    sHnd <- allocateHandle currentSecondaryHandle $ hOpen (renderFile "secondary" chunk) appendMode
+    chunkOffset     <- lift $ hGetSize eHnd
+    secondaryOffset <- lift $ hGetSize sHnd
     return OpenState
       { currentChunk           = chunk
       , currentChunkOffset     = BlockOffset chunkOffset
@@ -132,8 +133,14 @@ mkOpenState registry HasFS{..} index chunk tip existing = do
   where
     appendMode = AppendMode existing
 
-    allocateHandle :: m (Handle h) -> m (Handle h)
-    allocateHandle open = snd <$> allocate registry (const open) hClose
+    allocateHandle
+      :: (OpenState m hash h -> Handle h)
+      -> m (Handle h)
+      -> WithTempRegistry (OpenState m hash h) m (Handle h)
+    allocateHandle getHandle open =
+      -- To check whether the handle made it in the final state, we check for
+      -- equality.
+      allocateTemp open (hClose' hasFS) ((==) . getHandle)
 
 -- | Get the 'OpenState' of the given database, throw a 'ClosedDBError' in
 -- case it is closed.
@@ -153,6 +160,10 @@ getOpenState ImmutableDBEnv {..} = do
        DbClosed         -> throwUserError  ClosedDBError
        DbOpen openState -> return (SomePair hasFS openState)
 
+-- | Shorthand
+type ModifyOpenState m hash h =
+  StateT (OpenState m hash h) (WithTempRegistry (OpenState m hash h) m)
+
 -- | Modify the internal state of an open database.
 --
 -- In case the database is closed, a 'ClosedDBError' is thrown.
@@ -160,57 +171,59 @@ getOpenState ImmutableDBEnv {..} = do
 -- In case an 'UnexpectedError' is thrown, the database is closed to prevent
 -- further appending to a database in a potentially inconsistent state.
 --
+-- The action is run in the 'ModifyOpenState' monad, which is a 'StateT'
+-- transformer (of the 'OpenState') over the 'WithTempRegistry' monad. This
+-- monad can be used to allocate resources in that will be transferred to the
+-- returned 'OpenState' that is safely stored in the 'ImmutableDBEnv'. This
+-- approach makes sure that no resources are leaked when an exception is
+-- thrown while running the action modifying the state.
+--
 -- __Note__: This /takes/ the 'TMVar', /then/ runs the action (which might be
 -- in 'IO'), and then puts the 'TMVar' back, just like
 -- 'Control.Concurrent.MVar.modifyMVar' does. Consequently, it has the same
 -- gotchas that @modifyMVar@ does; the effects are observable and it is
 -- susceptible to deadlock.
-modifyOpenState :: forall m hash r. (HasCallStack, IOLike m)
-                => ImmutableDBEnv m hash
-                -> (forall h. HasFS m h -> StateT (OpenState m hash h) m r)
-                -> m r
-modifyOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
-    (mr, ()) <- generalBracket open close (tryImmDB . mutation)
-    case mr of
-      Left  e      -> throwM e
-      Right (r, _) -> return r
+modifyOpenState
+  :: forall m hash a. (HasCallStack, IOLike m)
+  => ImmutableDBEnv m hash
+  -> (forall h. Eq h => HasFS m h -> ModifyOpenState m hash h a)
+  -> m a
+modifyOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } modSt =
+    wrapFsError $ modifyWithTempRegistry getSt putSt (modSt hasFS)
   where
-    HasFS{..}         = hasFS
-
-    -- We use @m (Either e a)@ instead of @EitherT e m a@ for 'generalBracket'
-    -- so that 'close' knows which error is thrown (@Either e (s, r)@ vs. @(s,
-    -- r)@).
-
-    open :: m (OpenState m hash h)
     -- TODO Is uninterruptibleMask_ absolutely necessary here?
-    open = uninterruptibleMask_ $ takeMVar varInternalState >>= \case
+    getSt :: m (OpenState m hash h)
+    getSt = uninterruptibleMask_ $ takeMVar varInternalState >>= \case
       DbOpen ost -> return ost
       DbClosed   -> do
         putMVar varInternalState DbClosed
         throwUserError ClosedDBError
 
-    close :: OpenState m hash h
-          -> ExitCase (Either ImmutableDBError (r, OpenState m hash h))
-          -> m ()
-    close !ost ec = do
+    putSt :: OpenState m hash h -> ExitCase (OpenState m hash h) -> m ()
+    putSt ost ec = do
         -- It is crucial to replace the MVar.
         putMVar varInternalState st'
-        followUp
+        unless (dbIsOpen st') $ cleanUp hasFS ost
       where
-        (st', followUp) = case ec of
-          -- If we were interrupted, restore the original state.
-          ExitCaseAbort                               -> (DbOpen ost, return ())
-          ExitCaseException _ex                       -> (DbOpen ost, return ())
-          -- In case of success, update to the newest state
-          ExitCaseSuccess (Right (_, ost'))           -> (DbOpen ost', return ())
-          -- In case of an unexpected error (not an exception), close the DB
-          -- for safety
-          ExitCaseSuccess (Left (UnexpectedError {})) -> (DbClosed, cleanUp hasFS ost)
-          -- In case a user error, just restore the previous state
-          ExitCaseSuccess (Left (UserError {}))       -> (DbOpen ost, return ())
+        st' = case ec of
+          ExitCaseSuccess ost'  -> DbOpen ost'
 
-    mutation :: OpenState m hash h -> m (r, OpenState m hash h)
-    mutation = runStateT (action hasFS)
+          -- When something goes wrong, close the ImmutableDB for safety.
+          -- Except for user errors, because they stem from incorrect use of
+          -- the ImmutableDB.
+          --
+          -- NOTE: we only modify the ImmutableDB in a background thread of
+          -- the ChainDB, not in per-connection threads that could be killed
+          -- at any point. When an exception is encountered while modifying
+          -- the ImmutableDB in the background thread, or that background
+          -- thread itself is killed with an async exception, we will shut
+          -- down the node anway, so it is safe to close the ImmutableDB here.
+          ExitCaseAbort         -> DbClosed
+          ExitCaseException ex
+            | Just (UserError {}) <- fromException ex
+            -> DbOpen ost
+            | otherwise
+            -> DbClosed
 
 -- | Perform an action that accesses the internal state of an open database.
 --
@@ -252,7 +265,7 @@ withOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
 
     shutDown :: m ()
     shutDown = swapMVar varInternalState DbClosed >>= \case
-      DbOpen ost -> cleanUp hasFS ost
+      DbOpen ost -> wrapFsError $ cleanUp hasFS ost
       DbClosed   -> return ()
 
     access :: OpenState m hash h -> m r
@@ -263,9 +276,6 @@ withOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
 -- Idempotent, as closing a handle is idempotent.
 closeOpenHandles :: Monad m => HasFS m h -> OpenState m hash h -> m ()
 closeOpenHandles HasFS { hClose } OpenState {..}  = do
-    -- If one of the 'hClose' calls fails, the error will bubble up to the
-    -- bracketed call to 'withRegistry', which will close the
-    -- 'ResourceRegistry' and thus all the remaining handles in it.
     hClose currentChunkHandle
     hClose currentPrimaryHandle
     hClose currentSecondaryHandle

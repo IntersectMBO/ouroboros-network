@@ -29,7 +29,8 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util (lastMaybe, whenJust)
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
+                     WithTempRegistry)
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
@@ -61,7 +62,6 @@ data ValidateEnv m hash h e = ValidateEnv
   , hashInfo    :: !(HashInfo hash)
   , parser      :: !(ChunkFileParser e m (BlockSummary hash) hash)
   , tracer      :: !(Tracer m (TraceEvent e hash))
-  , registry    :: !(ResourceRegistry m)
   , cacheConfig :: !Index.CacheConfig
   , currentSlot :: !SlotNo
   }
@@ -69,13 +69,21 @@ data ValidateEnv m hash h e = ValidateEnv
 -- | Perform validation as per the 'ValidationPolicy' using 'validate' and
 -- create an 'OpenState' corresponding to its outcome using 'mkOpenState'.
 validateAndReopen
-  :: forall m hash h e. (IOLike m, Eq hash, NoUnexpectedThunks hash, HasCallStack)
+  :: forall m hash h e.
+     ( IOLike m
+     , Eq hash
+     , NoUnexpectedThunks hash
+     , Eq h
+     , HasCallStack
+     )
   => ValidateEnv m hash h e
+  -> ResourceRegistry m
+     -- ^ Not used for validation, only used to open a new index
   -> ValidationPolicy
-  -> m (OpenState m hash h)
-validateAndReopen validateEnv valPol = do
-    (chunk, tip) <- validate validateEnv valPol
-    index        <- cachedIndex
+  -> WithTempRegistry (OpenState m hash h) m (OpenState m hash h)
+validateAndReopen validateEnv registry valPol = do
+    (chunk, tip) <- lift $ validate validateEnv valPol
+    index        <- lift $ cachedIndex
                       hasFS
                       hashInfo
                       registry
@@ -85,22 +93,27 @@ validateAndReopen validateEnv valPol = do
                       chunk
     case tip of
       Origin -> assert (chunk == firstChunkNo) $ do
-        traceWith tracer NoValidLastLocation
-        mkOpenState registry hasFS index chunk Origin MustBeNew
+        lift $ traceWith tracer NoValidLastLocation
+        mkOpenState hasFS index chunk Origin MustBeNew
       _      -> do
-        traceWith tracer $ ValidatedLastLocation chunk (forgetTipInfo <$> tip)
-        mkOpenState registry hasFS index chunk tip    AllowExisting
+        lift $ traceWith tracer $ ValidatedLastLocation chunk (forgetTipInfo <$> tip)
+        mkOpenState hasFS index chunk tip    AllowExisting
   where
     ValidateEnv { hasFS
                 , hashInfo
                 , tracer
-                , registry
                 , cacheConfig
                 , chunkInfo
                 } = validateEnv
     cacheTracer = contramap TraceCacheEvent tracer
 
 -- | Execute the 'ValidationPolicy'.
+--
+-- NOTE: we don't use a 'ResourceRegistry' to allocate file handles in,
+-- because validation happens on startup, so when an exception is thrown, the
+-- database hasn't even been opened and the node will shut down. In which case
+-- we don't have to worry about leaking handles, they will be closed when the
+-- process terminates.
 validate
   :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
   => ValidateEnv m hash h e
