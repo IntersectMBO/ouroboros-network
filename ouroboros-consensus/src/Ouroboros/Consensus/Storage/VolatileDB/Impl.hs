@@ -19,75 +19,81 @@
 -- The db is a key-value store of binary blocks and is parametric on the key
 -- of blocks, named @blockId@.
 --
--- The database uses in memory indexes, which are created on each reopening.
--- reopening includes parsing all blocks of the dbFolder, so it can be an
+-- The database uses in-memory indexes, which are created on each (re)opening.
+-- Reopening includes parsing all blocks in the @dbFolder@, so it can be an
 -- expensive operation if the database gets big. That's why the intention of
--- this db is to be used for only the tip of the blockchain, when there is still
--- volatility on which blocks are included. The db is agnostic to the format of
--- the blocks, so a parser must be provided. In addition to getBlock and
--- putBlock, the db provides also the ability to garbage-collect old blocks.
--- The actual garbage-collection happens in terms of files and not blocks: a
--- file is deleted/garbage-collected only if its latest block is old enough. A
--- block is old enough if its toSlot value is old enough and not based on its
--- Ord instance. This type of garbage collection makes the deletion of blocks
--- depend on the number of blocks we insert on each file, as well as the order
--- of insertion, so it's not deterministic on blocks themselves.
+-- this db is to be used for only the tip of the blockchain, when there is
+-- still volatility on which blocks are included. The db is agnostic to the
+-- format of the blocks, so a parser must be provided. In addition to
+-- 'getBlock' and 'putBlock', the db provides also the ability to
+-- garbage-collect old blocks. The actual garbage-collection happens in terms
+-- of files and not blocks: a file is deleted/garbage-collected if all blocks
+-- in it have a slot number less than the slot number for which garbage
+-- collection was triggered. This type of garbage collection makes the
+-- deletion of blocks depend on the number of blocks we insert in each file,
+-- as well as the order of insertion, so it's not deterministic on blocks
+-- themselves.
 --
 -- = Errors
 --
--- On any exception or error the db closes and its Internal State is lost,
--- inluding in memory indexes. We try to make sure that even on errors the
--- fs represantation of the db remains consistent and the Internal State
--- can be recovered on reopening. In general we try to make sure that at
--- any point, losing the in-memory Internal State is not fatal to the db
--- as it can recovered. This is important since we must always expect unexpected
--- shutdowns, power loss, sleep mode etc.
--- This is achived by leting only basic operations on the db:
--- + putBlock only appends a new block on a file. Losing an update means we only
---   lose a block, which can be recovered.
--- + garbage collect deletes only whole files.
--- + there is no modify block operation. Thanks to that we need not keep any
---   rollback journals to make sure we are safe in case of unexpected shutdowns.
+-- When an exception occurs while modifying the db, we close the database as a
+-- safety measure, e.g., in case a file could not be written to disk, as we
+-- can no longer make sure the in-memory indices match what's stored on the
+-- file system. When reopening, we validate the blocks stored in the file
+-- system and reconstruct the in-memory indices.
 --
--- We only throw VolatileDBError. All internal errors, like io errors, are
--- cought, wrapped and rethrown. For all new calls of HasFs, we must make sure
--- that they are used properly wrapped. All top-level function of this module
--- are safe. You can safely use HasFs calls in modifyState or wrapFsError
--- actions.
+-- NOTE: this means that when a thread modifying the db is killed, the db will
+-- close. This is an intentional choice to simplify things.
+--
+-- The in-memory indices can always be reconstructed from the file system.
+-- This is important, as we must be resilient against unexpected shutdowns,
+-- power losses, etc.
+--
+-- We achieve this by only performing basic operations on the db:
+-- * 'putBlock' only appends a new block on a file. Losing an update means we
+--   only lose a block, which can be recovered.
+-- * 'garbageCollect' only deletes whole files.
+-- * there is no operation that modifies blocks. Thanks to that we need not
+--   keep any rollback journals to make sure we are safe in case of unexpected
+--   shutdowns.
+--
+-- We only throw 'VolatileDBError'. File-system errors, are caught, wrapped in
+-- a 'VolatileDBError', and rethrown. We must make sure that all calls to
+-- 'HasFS' functions are properly wrapped. This wrapping is automatically done
+-- when inside the scope of 'modifyOpenState' and 'withOpenState'. Otherwise,
+-- use 'wrapFsError'.
 --
 -- = Concurrency
 --
--- The same db should only be opened once
--- Multiple threads can share the same db as concurency if fully supported.
+-- The same db should only be opened once. Multiple threads can share the same
+-- db as concurency is fully supported.
 --
 -- = FS Layout:
 --
--- On disk represantation is as follows:
+-- The on-disk representation is as follows:
 --
---  dbFolder\
---    blocks-0.dat
---    blocks-1.dat
---    ...
+-- > dbFolder/
+-- >   blocks-0.dat
+-- >   blocks-1.dat
+-- >   ...
 --
---  If on opening any other filename which does not follow blocks-i.dat is found
---  an error is raised. The Ordering of blocks is not guarranteed to be
---  followed, files can be garbage-collected.
+-- Files not fitting the naming scheme are ignored. The numbering of these
+-- files does not correlate to the blocks stored in them.
 --
---  Each file stores a fixed number of slots, specified by 'maxBlocksPerFile'.
---  If the db finds files with less blocks than this max, it will start
---  appending to the newest of them, if it's the newest of all files. If it's
---  not the newest of all files it will create a new file to append blocks.
+-- Each file stores a fixed number of blocks, specified by 'maxBlocksPerFile'.
+-- If the db finds files with less blocks than this limit, it will start
+-- appending to the newest of them if there are no newer full files. Otherwise
+-- it will create a new file.
 --
---  There is an implicit ordering of block files, which is NOT alpharithmetic
---  For example blocks-20.dat < blocks-100.dat
+-- There is an implicit ordering of block files, which is NOT alpharithmetic
+-- For example blocks-20.dat < blocks-100.dat
 --
 -- = Recovery
 --
 -- The VolatileDB will always try to recover to a consistent state even if this
 -- means deleting all of its contents. In order to achieve this, it truncates
 -- the files containing blocks if some blocks fail to parse, are invalid, or are
--- duplicated. The db ignores files with unrecognised names.
---
+-- duplicated.
 module Ouroboros.Consensus.Storage.VolatileDB.Impl
     ( -- * Opening a database
       openDB
@@ -134,8 +140,8 @@ openDB :: ( HasCallStack
        -> BlocksPerFile
        -> m (VolatileDB blockId m)
 openDB hasFS parser tracer maxBlocksPerFile = do
-    st    <- mkInternalStateDB hasFS parser tracer maxBlocksPerFile
-    stVar <- newMVar $ VolatileDbOpen st
+    st    <- mkOpenState hasFS parser tracer maxBlocksPerFile
+    stVar <- newMVar $ DbOpen st
     let env = VolatileDBEnv {
             hasFS          = hasFS
           , varInternalState  = stVar
@@ -159,10 +165,10 @@ closeDBImpl :: IOLike m
             => VolatileDBEnv m blockId
             -> m ()
 closeDBImpl VolatileDBEnv { varInternalState, tracer, hasFS = HasFS {..} } = do
-    mbInternalState <- swapMVar varInternalState VolatileDbClosed
+    mbInternalState <- swapMVar varInternalState DbClosed
     case mbInternalState of
-      VolatileDbClosed -> traceWith tracer DBAlreadyClosed
-      VolatileDbOpen InternalState{..} ->
+      DbClosed -> traceWith tracer DBAlreadyClosed
+      DbOpen OpenState{..} ->
         wrapFsError $ hClose currentWriteHandle
 
 isOpenDBImpl :: IOLike m
@@ -170,7 +176,7 @@ isOpenDBImpl :: IOLike m
              -> m Bool
 isOpenDBImpl VolatileDBEnv { varInternalState } = do
     mSt <- readMVar varInternalState
-    return $ volatileDbIsOpen mSt
+    return $ dbIsOpen mSt
 
 -- | Property: @'closeDB' >> 'reOpenDB'@  should be a no-op. This is true
 -- because 'reOpenDB' will always append to the last created file.
@@ -182,12 +188,12 @@ reOpenDBImpl :: ( HasCallStack
              -> m ()
 reOpenDBImpl VolatileDBEnv{..} =
     modifyMVar varInternalState $ \case
-      VolatileDbOpen st -> do
+      DbOpen st -> do
         traceWith tracer DBAlreadyOpen
-        return (VolatileDbOpen st, ())
-      VolatileDbClosed -> do
-        st <- mkInternalStateDB hasFS parser tracer maxBlocksPerFile
-        return (VolatileDbOpen st, ())
+        return (DbOpen st, ())
+      DbClosed -> do
+        st <- mkOpenState hasFS parser tracer maxBlocksPerFile
+        return (DbOpen st, ())
 
 getBlockComponentImpl
   :: forall m blockId b. (IOLike m, Ord blockId, HasCallStack)
@@ -196,7 +202,7 @@ getBlockComponentImpl
   -> blockId
   -> m (Maybe b)
 getBlockComponentImpl env blockComponent blockId =
-    withState env $ \hasFS InternalState { currentRevMap } ->
+    withOpenState env $ \hasFS OpenState { currentRevMap } ->
       case Map.lookup blockId currentRevMap of
         Nothing                -> return Nothing
         Just internalBlockInfo -> Just <$>
@@ -254,7 +260,7 @@ putBlockImpl :: forall m blockId. (IOLike m, Ord blockId)
 putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
              blockInfo@BlockInfo { bbid, bslot, bpreBid }
              builder =
-    modifyState env $ \hasFS st@InternalState {..} ->
+    modifyOpenState env $ \hasFS st@OpenState {..} ->
       if Map.member bbid currentRevMap then do
         traceWith tracer $ BlockAlreadyHere bbid
         return (st, ()) -- putting an existing block is a no-op.
@@ -264,10 +270,10 @@ putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
   where
     updateStateAfterWrite :: forall h.
                              HasFS m h
-                          -> InternalState blockId h
+                          -> OpenState blockId h
                           -> Word64
-                          -> m (InternalState blockId h, ())
-    updateStateAfterWrite hasFS st@InternalState{..} bytesWritten =
+                          -> m (OpenState blockId h, ())
+    updateStateAfterWrite hasFS st@OpenState{..} bytesWritten =
         if FileInfo.isFull maxBlocksPerFile fileInfo'
         then (,()) <$> nextFile hasFS st'
         else return (st', ())
@@ -309,7 +315,7 @@ garbageCollectImpl :: forall m blockId. (IOLike m, Ord blockId)
                    -> SlotNo
                    -> m ()
 garbageCollectImpl env slot =
-    modifyState env $ \hasFS st -> do
+    modifyOpenState env $ \hasFS st -> do
       st' <- foldM (tryCollectFile hasFS slot) st
               (sortOn fst $ Index.toList (currentMap st))
       -- Recompute the 'MaxSlotNo' based on the files left in the VolatileDB.
@@ -322,7 +328,7 @@ garbageCollectImpl env slot =
       return (st'', ())
 
 -- | For the given file, we garbage collect it if possible and return the
--- updated 'InternalState'.
+-- updated 'OpenState'.
 --
 -- NOTE: the current file is never garbage collected.
 --
@@ -330,7 +336,7 @@ garbageCollectImpl env slot =
 -- a consistent state, without depending on other calls. We achieve this by
 -- only needed a single system call: 'removeFile'.
 --
--- NOTE: the returned 'InternalState' is inconsistent in the follow respect:
+-- NOTE: the returned 'OpenState' is inconsistent in the follow respect:
 -- the cached 'currentMaxSlotNo' hasn't been updated yet.
 --
 -- This may throw an FsError.
@@ -338,10 +344,10 @@ tryCollectFile :: forall m h blockId
                .  (MonadThrow m, Ord blockId)
                => HasFS m h
                -> SlotNo
-               -> InternalState blockId h
+               -> OpenState blockId h
                -> (FileId, FileInfo blockId)
-               -> m (InternalState blockId h)
-tryCollectFile hasFS slot st@InternalState{..} (fileId, fileInfo)
+               -> m (OpenState blockId h)
+tryCollectFile hasFS slot st@OpenState{..} (fileId, fileInfo)
     | FileInfo.canGC fileInfo slot && not isCurrent
       -- We don't GC the current file. This is unlikely to happen in practice
       -- anyway, and it makes things simpler.
@@ -385,13 +391,13 @@ getMaxSlotNoImpl = getterSTM currentMaxSlotNo
   Internal functions
 ------------------------------------------------------------------------------}
 
--- | Creates a new file and updates the 'InternalState' accordingly.
+-- | Creates a new file and updates the 'OpenState' accordingly.
 -- This may throw an FsError.
 nextFile :: forall h m blockId. IOLike m
          => HasFS m h
-         -> InternalState blockId h
-         -> m (InternalState blockId h)
-nextFile hasFS st@InternalState{..} = do
+         -> OpenState blockId h
+         -> m (OpenState blockId h)
+nextFile hasFS st@OpenState{..} = do
     hClose hasFS currentWriteHandle
     hndl <- hOpen hasFS file (AppendMode MustBeNew)
     return st {
@@ -406,13 +412,13 @@ nextFile hasFS st@InternalState{..} = do
     currentWriteId' = currentWriteId + 1
     file = filePath currentWriteId'
 
--- | Gets part of the 'InternalState' in 'STM'.
+-- | Gets part of the 'OpenState' in 'STM'.
 getterSTM :: forall m blockId a. IOLike m
-          => (forall h. InternalState blockId h -> a)
+          => (forall h. OpenState blockId h -> a)
           -> VolatileDBEnv m blockId
           -> STM m a
 getterSTM fromSt VolatileDBEnv { varInternalState } = do
     mSt <- readMVarSTM varInternalState
     case mSt of
-      VolatileDbClosed  -> throwM $ UserError ClosedDBError
-      VolatileDbOpen st -> return $ fromSt st
+      DbClosed  -> throwM $ UserError ClosedDBError
+      DbOpen st -> return $ fromSt st
