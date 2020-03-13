@@ -630,6 +630,6 @@ getMempoolWriter
 getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
     { Inbound.txId          = txId
     , mempoolAddTxs = \txs ->
-        map (txId . fst) . filter (isTxAddedOrAlreadyInMempool . snd) <$>
+        map (txId . fst) . filter (isTxAdded . snd) <$>
         addTxs mempool txs
     }

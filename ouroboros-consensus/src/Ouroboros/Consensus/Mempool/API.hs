@@ -17,7 +17,7 @@ module Ouroboros.Consensus.Mempool.API (
   , HasTxId(..)
   , GenTxId
   , MempoolAddTxResult (..)
-  , isTxAddedOrAlreadyInMempool
+  , isTxAdded
   , isTxRejected
   , MempoolSize (..)
   , TraceEventMempool(..)
@@ -235,11 +235,6 @@ data Mempool m blk idx = Mempool {
 data MempoolAddTxResult blk
   = MempoolTxAdded
     -- ^ The transaction was added to the mempool.
-  | MempoolTxAlreadyInMempool
-    -- ^ The transaction already exists within the mempool and therefore could
-    -- not be added.
-    --
-    -- Note that we don't treat this like an error/rejection case.
   | MempoolTxRejected !(ApplyTxErr blk)
     -- ^ The transaction was rejected and could not be added to the mempool
     -- for the specified reason.
@@ -247,10 +242,9 @@ data MempoolAddTxResult blk
 deriving instance Eq (ApplyTxErr blk) => Eq (MempoolAddTxResult blk)
 deriving instance Show (ApplyTxErr blk) => Show (MempoolAddTxResult blk)
 
-isTxAddedOrAlreadyInMempool :: MempoolAddTxResult blk -> Bool
-isTxAddedOrAlreadyInMempool MempoolTxAdded            = True
-isTxAddedOrAlreadyInMempool MempoolTxAlreadyInMempool = True
-isTxAddedOrAlreadyInMempool _                         = False
+isTxAdded :: MempoolAddTxResult blk -> Bool
+isTxAdded MempoolTxAdded = True
+isTxAdded _              = False
 
 isTxRejected :: MempoolAddTxResult blk -> Bool
 isTxRejected (MempoolTxRejected _) = True

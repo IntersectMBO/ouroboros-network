@@ -114,8 +114,8 @@ prop_Mempool_addTxs_result setup =
     withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
       result <- addTxs mempool (allTxs setup)
       return $ counterexample (ppTxs (txs setup)) $
-        [(tx, isTxAddedOrAlreadyInMempool res) | (tx, res) <- result] ===
-        [(testTx, valid)                       | (testTx, valid) <- txs setup]
+        [(tx, isTxAdded res) | (tx, res) <- result] ===
+        [(testTx, valid)     | (testTx, valid) <- txs setup]
 
 -- | Test that invalid transactions are never added to the 'Mempool'.
 prop_Mempool_InvalidTxsNeverAdded :: TestSetupWithTxs -> Property
@@ -186,13 +186,13 @@ prop_Mempool_Capacity (MempoolCapTestSetup testSetupWithTxs) =
     MempoolCapacityBytes capacity = testMempoolCap testSetup
 
     -- | Convert 'MempoolAddTxResult' into a 'Bool':
-    -- isTxAddedOrAlreadyInMempool -> True, isTxRejected -> False.
+    -- isTxAdded -> True, isTxRejected -> False.
     blindErrors
       :: ([(GenTx TestBlock, MempoolAddTxResult blk)], [GenTx TestBlock])
       -> ([(GenTx TestBlock, Bool)], [GenTx TestBlock])
     blindErrors (processed, toAdd) = (processed', toAdd)
       where
-        processed' = [ (tx, isTxAddedOrAlreadyInMempool txAddRes)
+        processed' = [ (tx, isTxAdded txAddRes)
                      | (tx, txAddRes) <- processed ]
 
     expectedResult
