@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Ouroboros.Consensus.Storage.VolatileDB.Util
+module Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
     ( -- * FileId utilities
       parseFd
     , parseAllFds

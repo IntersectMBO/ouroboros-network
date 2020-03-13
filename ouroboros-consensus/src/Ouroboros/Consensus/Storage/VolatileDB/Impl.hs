@@ -113,11 +113,11 @@ import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB.API
-import           Ouroboros.Consensus.Storage.VolatileDB.FileInfo (FileInfo)
-import qualified Ouroboros.Consensus.Storage.VolatileDB.FileInfo as FileInfo
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo (FileInfo)
+import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo as FileInfo
+import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.State
-import qualified Ouroboros.Consensus.Storage.VolatileDB.Index as Index
-import           Ouroboros.Consensus.Storage.VolatileDB.Util
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
 
 {------------------------------------------------------------------------------
   VolatileDB API

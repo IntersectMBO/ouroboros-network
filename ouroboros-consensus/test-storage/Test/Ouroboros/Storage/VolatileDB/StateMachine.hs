@@ -50,7 +50,7 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (HasFS, hPutAll, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB
-import           Ouroboros.Consensus.Storage.VolatileDB.Util
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
 
 import           Test.QuickCheck hiding (elements)
 import           Test.QuickCheck.Monadic
