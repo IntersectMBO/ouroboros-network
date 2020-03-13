@@ -499,21 +499,42 @@ runThreadNetwork ThreadNetworkArgs
     -- reason, this thread will add it again.
     --
     forkCrucialTxs
-      :: HasCallStack
+      :: forall fingerprint.
+         (Eq fingerprint, HasCallStack)
       => ResourceRegistry m
-      -> STM m (WithOrigin SlotNo)
-      -- ^ How to get the slot of the current ledger state
+      -> (fingerprint, STM m fingerprint)
+      -- ^ How to get the fingerprint of the current ledger state
       -> Mempool m blk TicketNo
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
       -> m ()
-    forkCrucialTxs registry get mempool txs0 =
+    forkCrucialTxs registry (initialLdgr, getLdgr) mempool txs0 =
       void $ forkLinkedThread registry $ do
-        let loop mbSlot = do
+        let getFingerprint :: STM m ([TicketNo], fingerprint)
+            getFingerprint = do
+              -- NB the following two hypotheticals may happen independently
+              --
+              -- In particular, a different ledger state does not necessarily
+              -- imply a different mempool snapshot.
+
+              -- a new tx (e.g. added by TxSubmission) might render a crucial
+              -- transaction valid
+              mempoolFp <- (map snd . snapshotTxs) <$> getSnapshot mempool
+
+              -- a new ledger state might render a crucial transaction valid
+              ldgrFp <- getLdgr
+
+              pure (mempoolFp, ldgrFp)
+
+            loop fp = do
               _ <- addTxs mempool txs0
-              (mbSlot', _) <- atomically $ blockUntilChanged id mbSlot get
-              loop mbSlot'
-        loop Origin
+              (fp', _) <- atomically $ blockUntilChanged id fp getFingerprint
+              -- avoid the race in which we wake up before the mempool's
+              -- background thread wakes up by mimicking it before we do
+              -- anything else
+              void $ syncWithLedger mempool
+              loop fp'
+        loop ([], initialLdgr)
 
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
@@ -745,16 +766,25 @@ runThreadNetwork ThreadNetworkArgs
       --
       -- It's necessary here because under some circumstances a transaction in
       -- the mempool can be \"lost\" due to no fault of its own. If a dlg cert
-      -- is lost, a node that rekeyed can never lead again.
-      --
-      -- The thread might also have to block until enough of the chain is
-      -- synced that the transaction is valid.
+      -- is lost, a node that rekeyed can never lead again. Moreover,
+      -- promptness of certain transactions simplifies the definition of
+      -- corresponding test properties: it's easier to predict whether a
+      -- proposal will expire if we're ensured all votes are as prompt as
+      -- possible. Lastly, the \"wallet\" might simply need to wait until
+      -- enough of the chain is synced that the transaction is valid.
       --
       -- TODO Is there a risk that this will block because the 'forkTxProducer'
       -- fills up the mempool too quickly?
       forkCrucialTxs
         registry
-        ((ledgerTipSlot . ledgerState) <$> ChainDB.getCurrentLedger chainDB)
+        -- a fingerprint for the ledger
+        ( (Origin, GenesisPoint)
+        , do
+            -- time matters, because some transaction expire
+            now <- getCurrentSlot btime
+            p <- (ledgerTipPoint . ledgerState) <$> ChainDB.getCurrentLedger chainDB
+            pure (At now, p)
+        )
         mempool
         txs0
 
