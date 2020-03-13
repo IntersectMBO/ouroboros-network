@@ -144,7 +144,7 @@ type TraceEvent blk =
 -- | Arguments to initialize the ImmutableDB
 --
 -- See also 'defaultArgs'.
-data ImmDbArgs m blk = forall h. ImmDbArgs {
+data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
       immDecodeHash     :: forall s. Decoder s (HeaderHash blk)
     , immDecodeBlock    :: forall s. Decoder s (Lazy.ByteString -> blk)
     , immDecodeHeader   :: forall s. Decoder s (Lazy.ByteString -> Header blk)

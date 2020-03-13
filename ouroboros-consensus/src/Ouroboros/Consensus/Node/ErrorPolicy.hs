@@ -25,7 +25,8 @@ import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
 import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
 import           Ouroboros.Consensus.Node.Run (RunNode (nodeExceptionIsFatal))
 import           Ouroboros.Consensus.Util.ResourceRegistry
-                     (RegistryClosedException, ResourceRegistryThreadException)
+                     (RegistryClosedException, ResourceRegistryThreadException,
+                     TempRegistryException)
 
 consensusErrorPolicy :: RunNode blk => Proxy blk -> ErrorPolicies
 consensusErrorPolicy pb = ErrorPolicies {
@@ -86,6 +87,7 @@ consensusErrorPolicy pb = ErrorPolicies {
           -- the connection but leave the rest of the node running.
         , ErrorPolicy $ \(_ :: RegistryClosedException)         -> Just ourBug
         , ErrorPolicy $ \(_ :: ResourceRegistryThreadException) -> Just ourBug
+        , ErrorPolicy $ \(_ :: TempRegistryException)           -> Just ourBug
 
           -- An exception in the block fetch server meant the client asked
           -- for some blocks we used to have but got GCed. This means the

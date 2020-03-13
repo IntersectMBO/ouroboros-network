@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
   , renderFile
   , throwUserError
   , throwUnexpectedError
+  , wrapFsError
   , tryImmDB
   , parseDBFile
   , validateIteratorRange
@@ -68,6 +69,10 @@ throwUserError e = throwM $ UserError e callStack
 throwUnexpectedError :: MonadThrow m => UnexpectedError -> m a
 throwUnexpectedError = throwM . UnexpectedError
 
+-- | Rewrap 'FsError' in a 'ImmutableDBError'.
+wrapFsError :: MonadCatch m => m a -> m a
+wrapFsError = handle $ throwUnexpectedError . FileSystemError
+
 -- | Execute an action and catch the 'ImmutableDBError' and 'FsError' that can
 -- be thrown by it, and wrap the 'FsError' in an 'ImmutableDBError' using the
 -- 'FileSystemError' constructor.
@@ -76,13 +81,7 @@ throwUnexpectedError = throwM . UnexpectedError
 -- and catch the 'ImmutableDBError' and the 'FsError' (wrapped in the former)
 -- it may thrown.
 tryImmDB :: MonadCatch m => m a -> m (Either ImmutableDBError a)
-tryImmDB = fmap squash . try . try
-  where
-    fromFS = UnexpectedError . FileSystemError
-
-    squash :: Either FsError (Either ImmutableDBError a)
-           -> Either ImmutableDBError a
-    squash = either (Left . fromFS) id
+tryImmDB = try . wrapFsError
 
 -- | Parse the prefix and chunk number from the filename of an index or chunk
 -- file.

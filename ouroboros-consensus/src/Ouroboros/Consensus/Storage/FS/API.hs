@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -17,6 +18,7 @@ module Ouroboros.Consensus.Storage.FS.API (
     , hPutAll
     , hPutAllStrict
     , withFile
+    , hClose'
     ) where
 
 import           Control.Monad (foldM)
@@ -50,6 +52,9 @@ data HasFS m h = HasFS {
 
     -- | Close a file
   , hClose                   :: HasCallStack => Handle h -> m ()
+
+    -- | Is the handle open?
+  , hIsOpen                  :: HasCallStack => Handle h -> m Bool
 
     -- | Seek handle
     --
@@ -137,6 +142,16 @@ data HasFS m h = HasFS {
 withFile :: (HasCallStack, MonadThrow m)
          => HasFS m h -> FsPath -> OpenMode -> (Handle h -> m a) -> m a
 withFile HasFS{..} fp openMode = bracket (hOpen fp openMode) hClose
+
+-- | Returns 'True' when the handle was still open.
+hClose' :: (HasCallStack, Monad m) => HasFS m h -> Handle h -> m Bool
+hClose' HasFS { hClose, hIsOpen } h = do
+    isOpen <- hIsOpen h
+    if isOpen then do
+      hClose h
+      return True
+    else
+      return False
 
 -- | Makes sure it reads all requested bytes.
 -- If eof is found before all bytes are read, it throws an exception.

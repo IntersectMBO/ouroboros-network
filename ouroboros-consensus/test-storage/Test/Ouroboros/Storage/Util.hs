@@ -125,7 +125,7 @@ apiEquivalence :: (HasCallStack, Eq a, Show a)
                -> (e -> String)
                -> (e -> e -> Bool)
                -> (Either e a -> Assertion)
-               -> (forall h. HasFS IO h -> IO a)
+               -> (forall h. Eq h => HasFS IO h -> IO a)
                -> Assertion
 apiEquivalence tryE prettyError sameErr resAssert m = do
     sysTmpDir <- getTemporaryDirectory
@@ -162,13 +162,13 @@ apiEquivalence tryE prettyError sameErr resAssert m = do
 
 apiEquivalenceFs :: (HasCallStack, Eq a, Show a)
                  => (Either FsError a -> Assertion)
-                 -> (forall h. HasFS IO h -> IO a)
+                 -> (forall h. Eq h => HasFS IO h -> IO a)
                  -> Assertion
 apiEquivalenceFs = apiEquivalence tryFS prettyFsError sameError
 
 apiEquivalenceImmDB :: (HasCallStack, Eq a, Show a)
                     => (Either ImmutableDBError a -> Assertion)
-                    -> (forall h. HasFS IO h -> IO a)
+                    -> (forall h. Eq h => HasFS IO h -> IO a)
                     -> Assertion
 apiEquivalenceImmDB =
     apiEquivalence tryImmDB prettyImmutableDBError sameImmutableDBError

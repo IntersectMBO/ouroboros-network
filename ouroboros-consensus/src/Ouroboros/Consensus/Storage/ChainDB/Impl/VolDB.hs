@@ -138,7 +138,7 @@ type TraceEvent blk =
   Initialization
 -------------------------------------------------------------------------------}
 
-data VolDbArgs m blk = forall h. VolDbArgs {
+data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
       volHasFS          :: HasFS m h
     , volCheckIntegrity :: blk -> Bool
     , volBlocksPerFile  :: BlocksPerFile

@@ -45,7 +45,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
   Arguments
 -------------------------------------------------------------------------------}
 
-data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
+data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
 
       -- Decoders
       cdbDecodeHash           :: forall s. Decoder s (HeaderHash blk)

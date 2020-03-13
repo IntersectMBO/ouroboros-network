@@ -441,6 +441,7 @@ mkSimErrorHasFS fsVar errorsVar =
         , hClose     = \h ->
             withErr' errorsVar h (hClose h) "hClose"
             hCloseE (\e es -> es { hCloseE = e })
+        , hIsOpen    = hIsOpen
         , hSeek      = \h m n ->
             withErr' errorsVar h (hSeek h m n) "hSeek"
             hSeekE (\e es -> es { hSeekE = e })

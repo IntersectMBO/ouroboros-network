@@ -3,11 +3,14 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Util.ResourceRegistry (
     ResourceRegistry -- opaque
@@ -34,6 +37,12 @@ module Ouroboros.Consensus.Util.ResourceRegistry (
   , waitAnyThread
   , linkToRegistry
   , forkLinkedThread
+    -- * Temporary registry
+  , WithTempRegistry -- opaque
+  , runWithTempRegistry
+  , TempRegistryException(..)
+  , allocateTemp
+  , modifyWithTempRegistry
     -- * Combinators primarily for testing
   , unsafeNewRegistry
   , closeRegistry
@@ -43,9 +52,10 @@ module Ouroboros.Consensus.Util.ResourceRegistry (
 import           Control.Applicative ((<|>))
 import           Control.Exception (Exception, asyncExceptionFromException)
 import           Control.Monad
-import           Control.Monad.State
+import           Control.Monad.Reader
+import           Control.Monad.State.Strict
 import           Data.Bifunctor
-import           Data.Either (lefts)
+import           Data.Either (partitionEithers)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, listToMaybe)
@@ -58,7 +68,7 @@ import           GHC.Generics (Generic)
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      UseIsNormalFormNamed (..), allNoUnexpectedThunks)
 
-import           Ouroboros.Consensus.Util (mustBeRight)
+import           Ouroboros.Consensus.Util (mustBeRight, whenJust)
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -334,6 +344,10 @@ data RegistryStatus =
 data ResourceKey m = ResourceKey !(ResourceRegistry m) !ResourceId
   deriving (Generic, NoUnexpectedThunks)
 
+-- | Return the 'ResourceId' of a 'ResourceKey'.
+resourceKeyId :: ResourceKey m -> ResourceId
+resourceKeyId (ResourceKey _rr rid) = rid
+
 -- | Resource ID
 --
 -- Resources allocated later have a "larger" key (in terms of the 'Ord'
@@ -353,10 +367,14 @@ data Resource m = Resource {
     }
   deriving (Generic, NoUnexpectedThunks)
 
-newtype Release m = Release (m ())
+-- | Release the resource, return 'True' when the resource was actually
+-- released, return 'False' when the resource was already released.
+--
+-- If unsure, returning 'True' is always fine.
+newtype Release m = Release (m Bool)
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "Release" (Release m)
 
-releaseResource :: Resource m -> m ()
+releaseResource :: Resource m -> m Bool
 releaseResource Resource{resourceRelease = Release f} = f
 
 instance Show (Release m) where
@@ -533,39 +551,221 @@ closeRegistry rr = mask_ $ do
         -- releasing its resources.)
         -- /If/ a concurrent thread does some cleanup, then some of the calls
         -- to 'release' that we do here might be no-ops.
-       releaseResources rr keys release
+       void $ releaseResources rr keys release
 
 -- | Helper for 'closeRegistry', 'releaseAll', and 'unsafeReleaseAll': release
 -- the resources allocated with the given 'ResourceId's.
+--
+-- Returns the contexts of the resources that were actually released.
 releaseResources :: IOLike m
                  => ResourceRegistry m
                  -> Set ResourceId
-                 -> (ResourceKey m -> m ())
+                 -> (ResourceKey m -> m (Maybe (Context m)))
                     -- ^ How to release the resource, e.g., 'release' or
                     -- 'unsafeRelease'.
-                 ->  m ()
+                 ->  m [Context m]
 releaseResources rr keys releaser = do
-    exs <- forM (newToOld keys) $ try . releaser . ResourceKey rr
+    (exs, mbContexts) <- fmap partitionEithers $
+      forM (newToOld keys) $ try . releaser . ResourceKey rr
+
     case prioritize exs of
-      Nothing -> return ()
+      Nothing -> return (catMaybes mbContexts)
       Just e  -> throwM e
   where
     newToOld :: Set ResourceId -> [ResourceId]
     newToOld = Set.toDescList -- depends on 'Ord' instance
 
-    prioritize :: [Either SomeException ()] -> Maybe SomeException
+    prioritize :: [SomeException] -> Maybe SomeException
     prioritize =
           (\(asyncEx, otherEx) -> listToMaybe asyncEx <|> listToMaybe otherEx)
         . first catMaybes
         . unzip
         . map (\e -> (asyncExceptionFromException e, e))
-        . lefts
 
 -- | Create a new registry
 --
 -- See documentation of 'ResourceRegistry' for a detailed discussion.
 withRegistry :: (IOLike m, HasCallStack) => (ResourceRegistry m -> m a) -> m a
 withRegistry = bracket unsafeNewRegistry closeRegistry
+
+{-------------------------------------------------------------------------------
+  Temporary registry
+-------------------------------------------------------------------------------}
+
+-- | Run an action with a temporary resource registry.
+--
+-- When allocating resources that are meant to end up in some final state,
+-- e.g., stored in a 'TVar', after which they are guaranteed to be released
+-- correctly, it is possible that an exception is thrown after allocating such
+-- a resource, but before it was stored in the final state. In that case, the
+-- resource would be leaked. 'runWithTempRegistry' solves that problem.
+--
+-- When no exception is thrown before the end of 'runWithTempRegistry', the
+-- user must have transferred all the resources it allocated to their final
+-- state. This means that these resources don't have to be released by the
+-- temporary registry anymore, the final state is now in charge of releasing
+-- them.
+--
+-- In case an exception is thrown before the end of 'runWithTempRegistry',
+-- /all/ resources allocated in the temporary registry will be released.
+--
+-- Resources must be allocated using 'allocateTemp'.
+--
+-- To make sure that the user doesn't forget to transfer a resource to the
+-- final state @st@, the user must pass a function to 'allocateTemp' that
+-- checks whether a given @st@ contains the resource, i.e., whether the
+-- resource was successfully transferred to its final destination.
+--
+-- When no exception is thrown before the end of 'runWithTempRegistry', we
+-- check whether all allocated resources have been transferred to the final
+-- state @st@. If there's a resource that hasn't been transferred to the final
+-- state /and/ that hasn't be released or closed before (see the release
+-- function passed to 'allocateTemp'), a 'TempRegistryRemainingResource'
+-- exception will be thrown.
+--
+-- For that reason, 'WithTempRegistry' is parameterised over the final state
+-- type @st@ and the given 'WithTempRegistry' action must return the final
+-- state.
+--
+-- NOTE: we explicitly don't let 'runWithTempRegistry' return the final state,
+-- because the state /must/ have been stored somewhere safely, transferring
+-- the resources, before the temporary registry is closed.
+runWithTempRegistry
+  :: (IOLike m, HasCallStack)
+  => WithTempRegistry st m (a, st)
+  -> m a
+runWithTempRegistry m = withRegistry $ \rr -> do
+    varTransferredTo <- newTVarM mempty
+    let tempRegistry = TempRegistry {
+            tempResourceRegistry = rr
+          , tempTransferredTo    = varTransferredTo
+          }
+    (a, st) <- runReaderT (unWithTempRegistry m) tempRegistry
+    -- We won't reach this point if an exception is thrown, so we won't check
+    -- for remaining resources in that case.
+    --
+    -- No need to mask here, whether we throw the async exception or
+    -- 'TempRegistryRemainingResource' doesn't matter.
+    transferredTo <- atomically $ readTVar varTransferredTo
+    untrackTransferredTo rr transferredTo st
+
+    context <- captureContext
+    remainingResources <- releaseAllHelper rr context release
+
+    whenJust (listToMaybe remainingResources) $ \remainingResource ->
+      throwM $ TempRegistryRemainingResource {
+          tempRegistryContext  = registryContext rr
+        , tempRegistryResource = remainingResource
+        }
+    return a
+
+-- | When 'runWithTempRegistry' exits successfully while there are still
+-- resources remaining in the temporary registry that haven't been transferred
+-- to the final state.
+data TempRegistryException =
+    forall m. IOLike m => TempRegistryRemainingResource {
+        -- | The context in which the temporary registry was created.
+        tempRegistryContext  :: !(Context m)
+
+        -- | The context in which the resource was allocated that was not
+        -- transferred to the final state.
+      , tempRegistryResource :: !(Context m)
+      }
+
+deriving instance Show TempRegistryException
+instance Exception TempRegistryException
+
+-- | Given a final state, return the 'ResourceId's of the resources that have
+-- been /transferred to/ that state.
+newtype TransferredTo st = TransferredTo {
+      runTransferredTo :: st -> Set ResourceId
+    }
+  deriving newtype (Semigroup, Monoid)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "TransferredTo" (TransferredTo st)
+
+-- | The environment used to run a 'WithTempRegistry' action.
+data TempRegistry st m = TempRegistry {
+      tempResourceRegistry :: !(ResourceRegistry m)
+    , tempTransferredTo    :: !(StrictTVar m (TransferredTo st))
+      -- ^ Used as a @Writer@.
+    }
+
+-- | An action with a temporary registry in scope, see 'runWithTempRegistry'
+-- for more details.
+--
+-- The most important function to run in this monad is 'allocateTemp'.
+newtype WithTempRegistry st m a = WithTempRegistry {
+      unWithTempRegistry :: ReaderT (TempRegistry st m) m a
+    }
+  deriving newtype (Functor, Applicative, Monad, MonadThrow, MonadCatch, MonadMask, MonadSTM)
+
+instance MonadTrans (WithTempRegistry st) where
+  lift = WithTempRegistry . lift
+
+instance MonadState s m => MonadState s (WithTempRegistry st m) where
+  state = WithTempRegistry . state
+
+-- | Untrack all the resources from the registry that have been transferred to
+-- the given state.
+--
+-- Untracking a resource means removing it from the registry without releasing
+-- it.
+--
+-- NOTE: does not check that it's called by the same thread that allocated the
+-- resources, as it's an internal function only used in 'runWithTempRegistry'.
+untrackTransferredTo
+  :: IOLike m
+  => ResourceRegistry m
+  -> TransferredTo st
+  -> st
+  -> m ()
+untrackTransferredTo rr transferredTo st =
+    updateState rr $ mapM_ removeResource rids
+  where
+    rids = runTransferredTo transferredTo st
+
+-- | Allocate a resource in a temporary registry until it has been transferred
+-- to the final state @st@. See 'runWithTempRegistry' for more details.
+allocateTemp
+  :: (IOLike m, HasCallStack)
+  => m a
+     -- ^ Allocate the resource
+  -> (a -> m Bool)
+     -- ^ Release the resource, return 'True' when the resource was actually
+     -- released, return 'False' when the resource was already released.
+     --
+     -- Note that it is safe to always return 'True' when unsure.
+  -> (st -> a -> Bool)
+     -- ^ Check whether the resource is in the given state
+  -> WithTempRegistry st m a
+allocateTemp alloc free isTransferred = WithTempRegistry $ do
+    TempRegistry rr varTransferredTo <- ask
+    (key, a) <- lift $ fmap mustBeRight $
+      allocateEither rr (fmap Right . const alloc) free
+    atomically $ modifyTVar varTransferredTo $ mappend $
+      TransferredTo $ \st ->
+        if isTransferred st a
+        then Set.singleton (resourceKeyId key)
+        else Set.empty
+    return a
+
+-- | Higher level API on top of 'runWithTempRegistry': modify the given @st@,
+-- allocating resources in the process that will be transferred to the
+-- returned @st@.
+modifyWithTempRegistry
+  :: forall m st a. IOLike m
+  => m st                                 -- ^ Get the state
+  -> (st -> ExitCase st -> m ())          -- ^ Store the new state
+  -> StateT st (WithTempRegistry st m) a  -- ^ Modify the state
+  -> m a
+modifyWithTempRegistry getSt putSt modSt = runWithTempRegistry $
+    fst <$> generalBracket (lift getSt) transfer mutate
+  where
+    transfer :: st -> ExitCase (a, st) -> WithTempRegistry st m ()
+    transfer initSt ec = lift $ putSt initSt (snd <$> ec)
+
+    mutate :: st -> WithTempRegistry st m (a, st)
+    mutate = runStateT modSt
 
 {-------------------------------------------------------------------------------
   Simple queries on the registry
@@ -597,15 +797,18 @@ countResources rr = atomically $ aux <$> readTVar (registryState rr)
 allocate :: forall m a. (IOLike m, HasCallStack)
          => ResourceRegistry m
          -> (ResourceId -> m a)
-         -> (a -> m ())
+         -> (a -> m ())  -- ^ Release the resource
          -> m (ResourceKey m, a)
-allocate rr alloc = fmap mustBeRight . allocateEither rr (fmap Right . alloc)
+allocate rr alloc free = mustBeRight <$>
+    allocateEither rr (fmap Right . alloc) (\a -> free a >> return True)
 
 -- | Generalization of 'allocate' for allocation functions that may fail
 allocateEither :: forall m e a. (IOLike m, HasCallStack)
                => ResourceRegistry m
                -> (ResourceId -> m (Either e a))
-               -> (a -> m ())
+               -> (a -> m Bool)
+                  -- ^ Release the resource, return 'True' when the resource
+                  -- hasn't been released or closed before.
                -> m (Either e (ResourceKey m, a))
 allocateEither rr alloc free = do
     context <- captureContext
@@ -630,7 +833,7 @@ allocateEither rr alloc free = do
                 -- got closed after we allocated a new key but before we got a
                 -- chance to register the resource. In this case, we must
                 -- deallocate the resource again before throwing the exception.
-                free a
+                void $ free a
                 throwRegistryClosed rr context closed
               Right () ->
                 return $ Right (ResourceKey rr key, a)
@@ -662,7 +865,9 @@ throwRegistryClosed rr context closed = throwM RegistryClosedException {
 -- guaranteed not to remove the resource from the registry without releasing it.
 --
 -- Releasing an already released resource is a no-op.
-release :: (IOLike m, HasCallStack) => ResourceKey m -> m ()
+--
+-- When the resource has not been released before, its context is returned.
+release :: (IOLike m, HasCallStack) => ResourceKey m -> m (Maybe (Context m))
 release key@(ResourceKey rr _) = do
     context <- captureContext
     ensureKnownThread rr context
@@ -680,11 +885,18 @@ release key@(ResourceKey rr _) = do
 --
 -- This function should only be used if the above situation can be ruled out
 -- or handled by other means.
-unsafeRelease :: IOLike m => ResourceKey m -> m ()
+unsafeRelease :: IOLike m => ResourceKey m -> m (Maybe (Context m))
 unsafeRelease (ResourceKey rr rid) = do
     mask_ $ do
       mResource <- updateState rr $ removeResource rid
-      mapM_ releaseResource mResource
+      case mResource of
+        Nothing       -> return Nothing
+        Just resource -> do
+          actuallyReleased <- releaseResource resource
+          return $
+            if actuallyReleased
+            then Just (resourceContext resource)
+            else Nothing
 
 -- | Release all resources in the 'ResourceRegistry' without closing.
 --
@@ -697,7 +909,7 @@ releaseAll rr = do
           resourceRegistryCreatedIn = registryContext rr
         , resourceRegistryUsedIn    = context
         }
-    releaseAllHelper rr context release
+    void $ releaseAllHelper rr context release
 
 -- | This is to 'releaseAll' what 'unsafeRelease' is to 'release': we do not
 -- insist that this funciton is called from a thread that is known to the
@@ -705,14 +917,15 @@ releaseAll rr = do
 unsafeReleaseAll :: (IOLike m, HasCallStack) => ResourceRegistry m -> m ()
 unsafeReleaseAll rr = do
     context <- captureContext
-    releaseAllHelper rr context unsafeRelease
+    void $ releaseAllHelper rr context unsafeRelease
 
 -- | Internal helper used by 'releaseAll' and 'unsafeReleaseAll'.
 releaseAllHelper :: IOLike m
                  => ResourceRegistry m
                  -> Context m
-                 -> (ResourceKey m -> m ())  -- ^ How to release a resource
-                 -> m ()
+                 -> (ResourceKey m -> m (Maybe (Context m)))
+                    -- ^ How to release a resource
+                 -> m [Context m]
 releaseAllHelper rr context releaser = mask_ $ do
     mKeys   <- updateState rr $ unlessClosed $
       gets $ Map.keysSet . registryResources

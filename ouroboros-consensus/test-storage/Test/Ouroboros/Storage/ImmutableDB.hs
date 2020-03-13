@@ -48,7 +48,7 @@ fixedChunkInfo = simpleChunkInfo 10
 type Hash = TestHeaderHash
 
 -- Shorthand
-openTestDB :: (HasCallStack, IOLike m)
+openTestDB :: (HasCallStack, IOLike m, Eq h)
            => ResourceRegistry m
            -> HasFS m h
            -> m (ImmutableDB Hash m)
@@ -69,7 +69,7 @@ openTestDB registry hasFS = fst <$> openDBInternal
     getBinaryInfo = void . testBlockToBinaryInfo
 
 -- Shorthand
-withTestDB :: (HasCallStack, IOLike m)
+withTestDB :: (HasCallStack, IOLike m, Eq h)
            => HasFS m h
            -> (ImmutableDB Hash m -> m a)
            -> m a

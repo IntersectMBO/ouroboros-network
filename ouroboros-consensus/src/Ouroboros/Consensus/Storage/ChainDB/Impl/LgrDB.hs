@@ -145,7 +145,7 @@ type LgrDBConf m blk =
   Initialization
 -------------------------------------------------------------------------------}
 
-data LgrDbArgs m blk = forall h. LgrDbArgs {
+data LgrDbArgs m blk = forall h. Eq h => LgrDbArgs {
       lgrTopLevelConfig       :: TopLevelConfig blk
     , lgrHasFS                :: HasFS m h
     , lgrDecodeLedger         :: forall s. Decoder s (LedgerState                   blk)

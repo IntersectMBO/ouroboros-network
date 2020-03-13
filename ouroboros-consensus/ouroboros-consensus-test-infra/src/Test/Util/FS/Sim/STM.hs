@@ -42,6 +42,7 @@ simHasFS var = HasFS {
       dumpState                = sim     Mock.dumpState
     , hOpen                    = sim  .: Mock.hOpen
     , hClose                   = sim  .  Mock.hClose
+    , hIsOpen                  = sim  .  Mock.hIsOpen
     , hSeek                    = sim ..: Mock.hSeek
     , hGetSome                 = sim  .: Mock.hGetSome
     , hGetSomeAt               = sim ..: Mock.hGetSomeAt
