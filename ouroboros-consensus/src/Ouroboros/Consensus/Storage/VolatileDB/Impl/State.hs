@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Storage.VolatileDB.Impl.State
   , volatileDbIsOpen
   , InternalState (..)
   , modifyState
+  , withState
   , mkInternalStateDB
   ) where
 
@@ -123,7 +124,7 @@ modifyState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} action 
             (VolatileDbOpen newState, return ())
           -- In case of an error (not an exception), close the DB for safety.
           ExitCaseSuccess (Left _)              ->
-            (VolatileDbClosed, closeOpenHandle mst)
+            (VolatileDbClosed, cleanUp mst)
 
     mutation :: OpenOrClosed blockId h
              -> m (InternalState blockId h, r)
@@ -131,10 +132,61 @@ modifyState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} action 
     mutation (VolatileDbOpen oldState) = action hasFS oldState
 
     -- TODO what if this fails?
-    closeOpenHandle :: OpenOrClosed blockId h -> m ()
-    closeOpenHandle VolatileDbClosed = return ()
-    closeOpenHandle (VolatileDbOpen InternalState { currentWriteHandle }) =
-      wrapFsError $ hClose hasFS currentWriteHandle
+    cleanUp :: OpenOrClosed blockId h -> m ()
+    cleanUp VolatileDbClosed     = return ()
+    cleanUp (VolatileDbOpen ost) = closeOpenHandles hasFS ost
+
+-- | Perform an action that accesses the internal state of an open database.
+--
+-- In case the database is closed, a 'ClosedDBError' is thrown.
+--
+-- In case an 'UnexpectedError' is thrown while the action is being run, the
+-- database is closed to prevent further appending to a database in a
+-- potentially inconsistent state. All other exceptions will leave the
+-- database open.
+withState :: forall blockId m r. (HasCallStack, IOLike m)
+            => VolatileDBEnv m blockId
+            -> (forall h. HasFS m h -> InternalState blockId h -> m r)
+            -> m r
+withState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} action = do
+    (mr, ()) <- generalBracket open (const close) (tryVolDB . access)
+    case mr of
+      Left  e -> throwM e
+      Right r -> return r
+  where
+    open :: m (InternalState blockId h)
+    open = readMVar varInternalState >>= \case
+      VolatileDbOpen ost -> return ost
+      VolatileDbClosed   -> throwM $ UserError ClosedDBError
+
+    -- close doesn't take the state that @open@ returned, because the state
+    -- may have been updated by someone else since we got it (remember we're
+    -- using 'readMVar' here, not 'takeMVar'). So we need to get the most
+    -- recent state anyway.
+    close :: ExitCase (Either VolatileDBError r)
+          -> m ()
+    close ec = case ec of
+      ExitCaseAbort                               -> return ()
+      ExitCaseException _ex                       -> return ()
+      ExitCaseSuccess (Right _)                   -> return ()
+      -- In case of a VolatileDBError, close when unexpected
+      ExitCaseSuccess (Left (UnexpectedError {})) -> shutDown
+      ExitCaseSuccess (Left (UserError {}))       -> return ()
+
+    shutDown :: m ()
+    shutDown = swapMVar varInternalState VolatileDbClosed >>= \case
+      VolatileDbOpen ost -> closeOpenHandles hasFS ost
+      VolatileDbClosed   -> return ()
+
+    access :: InternalState blockId h -> m r
+    access = action hasFS
+
+-- | Close the handles in the 'InternalState'.
+--
+-- Idempotent, as closing a handle is idempotent.
+closeOpenHandles :: MonadCatch m => HasFS m h -> InternalState blockId h -> m ()
+closeOpenHandles HasFS { hClose } InternalState {..} = wrapFsError $
+    hClose currentWriteHandle
 
 mkInternalStateDB :: forall m blockId e h.
                      ( HasCallStack

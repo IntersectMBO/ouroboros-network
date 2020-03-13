@@ -196,10 +196,10 @@ getBlockComponentImpl
   -> blockId
   -> m (Maybe b)
 getBlockComponentImpl env blockComponent blockId =
-    modifyState env $ \hasFS st@InternalState { currentRevMap } ->
+    withState env $ \hasFS InternalState { currentRevMap } ->
       case Map.lookup blockId currentRevMap of
-        Nothing                -> return (st, Nothing)
-        Just internalBlockInfo -> ((st, ) . Just) <$>
+        Nothing                -> return Nothing
+        Just internalBlockInfo -> Just <$>
           getBlockComponent hasFS internalBlockInfo blockComponent
   where
     getBlockComponent
