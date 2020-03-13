@@ -273,13 +273,6 @@ implTryAddTxs mpEnv = go []
         join $ atomically $ readTVar mpEnvStateVar >>= tryAdd
       where
         tryAdd is
-          -- This transaction already exists within the mempool.
-          -- Note that we don't treat this as an error/rejection case.
-          | implSnapshotHasTx is (txId firstTx)
-          = return $ go
-              ((firstTx, MempoolTxAdded):acc)
-              toAdd'
-
           -- No space in the Mempool.
           | let firstTxSize = txSize firstTx
                 curSize = msNumBytes $ isMempoolSize is
