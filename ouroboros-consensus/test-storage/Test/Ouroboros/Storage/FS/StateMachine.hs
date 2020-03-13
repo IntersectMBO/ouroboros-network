@@ -109,6 +109,7 @@ evalPathExpr (PExpParentOf fp) = fsPathInit fp
 data Cmd fp h =
     Open               (PathExpr fp) OpenMode
   | Close              h
+  | IsOpen             h
   | Seek               h SeekMode Int64
   | Get                h Word64
   | GetAt              h Word64 AbsOffset
@@ -153,6 +154,7 @@ run hasFS@HasFS{..} = go
 
     go (CreateDir            pe) = withPE pe Path   $ createDirectory
     go (CreateDirIfMissing b pe) = withPE pe Path   $ createDirectoryIfMissing b
+    go (IsOpen   h             ) = Bool       <$> hIsOpen   h
     go (Close    h             ) = Unit       <$> hClose    h
     go (Seek     h mode sz     ) = Unit       <$> hSeek     h mode sz
     -- Note: we're not using 'hGetSome', 'hGetSomeAt' and 'hPutSome' that may
@@ -445,6 +447,7 @@ generator Model{..} = oneof $ concat [
     withHandle :: [Gen (Cmd :@ Symbolic)]
     withHandle = [
           fmap At $ Close    <$> genHandle
+        , fmap At $ IsOpen   <$> genHandle
         , fmap At $ Seek     <$> genHandle <*> genSeekMode <*> genOffset
         , fmap At $ Get      <$> genHandle <*> (getSmall <$> arbitrary)
         , fmap At $ GetAt    <$> genHandle <*> (getSmall <$> arbitrary) <*> arbitrary
@@ -1367,6 +1370,7 @@ instance (Condense fp, Condense h) => Condense (Cmd fp h) where
     where
       go (Open fp mode)            = ["open", condense fp, condense mode]
       go (Close h)                 = ["close", condense h]
+      go (IsOpen h)                = ["isOpen", condense h]
       go (Seek h mode o)           = ["seek", condense h, condense mode, condense o]
       go (Get h n)                 = ["get", condense h, condense n]
       go (GetAt h n o)             = ["getAt", condense h, condense n, condense o]

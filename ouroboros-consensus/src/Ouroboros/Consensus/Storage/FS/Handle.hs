@@ -4,6 +4,7 @@
 -- instances and not directly by client code.
 module Ouroboros.Consensus.Storage.FS.Handle (
       HandleOS (..)
+    , isOpenHandleOS
     , closeHandleOS
     , withOpenHandle
     , isHandleClosedException
@@ -11,6 +12,7 @@ module Ouroboros.Consensus.Storage.FS.Handle (
 
 import           Control.Concurrent.MVar
 import           Control.Exception hiding (handle)
+import           Data.Maybe (isJust)
 import           System.IO.Error as IO
 
 -- | File handlers for the IO instance for HasFS.
@@ -29,6 +31,9 @@ instance Eq (HandleOS a) where
 
 instance Show (HandleOS a) where
   show h = "<Handle " ++ filePath h ++ ">"
+
+isOpenHandleOS :: HandleOS osHandle -> IO Bool
+isOpenHandleOS = fmap isJust . readMVar . handle
 
 -- | This is a no-op when the handle is already closed.
 closeHandleOS :: HandleOS osHandle -> (osHandle -> IO ()) -> IO ()

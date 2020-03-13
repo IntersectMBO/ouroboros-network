@@ -40,6 +40,7 @@ ioHasFS mount = HasFS {
         return $ Handle (H.HandleOS path hVar) fp
     , hClose = \(Handle h fp) -> rethrowFsError fp $
         F.close h
+    , hIsOpen = H.isOpenHandleOS . handleRaw
     , hSeek = \(Handle h fp) mode o -> rethrowFsError fp $
         F.seek h mode o
     , hGetSome = \(Handle h fp) n -> rethrowFsError fp $

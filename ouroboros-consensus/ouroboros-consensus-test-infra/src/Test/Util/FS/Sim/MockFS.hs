@@ -29,6 +29,7 @@ module Test.Util.FS.Sim.MockFS (
     -- * Operations on files
   , hOpen
   , hClose
+  , hIsOpen
   , hSeek
   , hGetSome
   , hGetSomeAt
@@ -495,6 +496,10 @@ hClose h = withHandleRead h $ \_fs -> \case
       return ((), HandleClosed (ClosedHandle (openFilePath hs)))
     HandleClosed hs ->
       return ((), HandleClosed hs)
+
+-- | Mock implementation of 'hIsOpen'
+hIsOpen :: CanSimFS m => Handle' -> m Bool
+hIsOpen h = gets (`handleIsOpen` handleRaw h)
 
 -- | Mock implementation of 'hSeek'
 --
