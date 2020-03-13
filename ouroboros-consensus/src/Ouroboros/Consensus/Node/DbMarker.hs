@@ -162,7 +162,7 @@ lockDbMarkerFile registry dbPath = do
     mlockFile <- allocateEither
                     registry
                     (const $ justToRight <$> tryLockFile fullPath Exclusive)
-                    unlockFile
+                    (\f -> unlockFile f >> return True)
     case mlockFile of
       Left () -> throwM $ DbLocked fullPath
       Right _ -> return ()

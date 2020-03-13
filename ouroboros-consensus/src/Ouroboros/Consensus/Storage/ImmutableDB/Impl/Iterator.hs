@@ -452,7 +452,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
         -- No more entries in this chunk, so open the next.
         Nothing -> do
           -- Release the resource, i.e., close the handle.
-          release itChunkKey
+          void $ release itChunkKey
           -- If this was the final chunk, close the iterator
           if itChunk >= chunkIndex itEnd then
             iteratorCloseImpl it
@@ -530,7 +530,7 @@ iteratorCloseImpl IteratorHandle { itState } = do
         -- closing all open iterators, i.e., the iterators opened by the
         -- protocol threads. So we're releasing handles allocated in resource
         -- registry A from a thread tracked by resource registry B. See #1390.
-        unsafeRelease itChunkKey
+        void $ unsafeRelease itChunkKey
 
 iteratorStateForChunk
   :: (HasCallStack, IOLike m, Eq hash)

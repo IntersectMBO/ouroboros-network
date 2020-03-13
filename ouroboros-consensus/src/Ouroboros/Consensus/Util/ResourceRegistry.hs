@@ -45,7 +45,7 @@ import           Control.Exception (Exception, asyncExceptionFromException)
 import           Control.Monad
 import           Control.Monad.State
 import           Data.Bifunctor
-import           Data.Either (lefts)
+import           Data.Either (partitionEithers)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, listToMaybe)
@@ -353,10 +353,14 @@ data Resource m = Resource {
     }
   deriving (Generic, NoUnexpectedThunks)
 
-newtype Release m = Release (m ())
+-- | Release the resource, return 'True' when the resource was actually
+-- released, return 'False' when the resource was already released.
+--
+-- If unsure, returning 'True' is always fine.
+newtype Release m = Release (m Bool)
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "Release" (Release m)
 
-releaseResource :: Resource m -> m ()
+releaseResource :: Resource m -> m Bool
 releaseResource Resource{resourceRelease = Release f} = f
 
 instance Show (Release m) where
@@ -533,33 +537,36 @@ closeRegistry rr = mask_ $ do
         -- releasing its resources.)
         -- /If/ a concurrent thread does some cleanup, then some of the calls
         -- to 'release' that we do here might be no-ops.
-       releaseResources rr keys release
+       void $ releaseResources rr keys release
 
 -- | Helper for 'closeRegistry', 'releaseAll', and 'unsafeReleaseAll': release
 -- the resources allocated with the given 'ResourceId's.
+--
+-- Returns the contexts of the resources that were actually released.
 releaseResources :: IOLike m
                  => ResourceRegistry m
                  -> Set ResourceId
-                 -> (ResourceKey m -> m ())
+                 -> (ResourceKey m -> m (Maybe (Context m)))
                     -- ^ How to release the resource, e.g., 'release' or
                     -- 'unsafeRelease'.
-                 ->  m ()
+                 ->  m [Context m]
 releaseResources rr keys releaser = do
-    exs <- forM (newToOld keys) $ try . releaser . ResourceKey rr
+    (exs, mbContexts) <- fmap partitionEithers $
+      forM (newToOld keys) $ try . releaser . ResourceKey rr
+
     case prioritize exs of
-      Nothing -> return ()
+      Nothing -> return (catMaybes mbContexts)
       Just e  -> throwM e
   where
     newToOld :: Set ResourceId -> [ResourceId]
     newToOld = Set.toDescList -- depends on 'Ord' instance
 
-    prioritize :: [Either SomeException ()] -> Maybe SomeException
+    prioritize :: [SomeException] -> Maybe SomeException
     prioritize =
           (\(asyncEx, otherEx) -> listToMaybe asyncEx <|> listToMaybe otherEx)
         . first catMaybes
         . unzip
         . map (\e -> (asyncExceptionFromException e, e))
-        . lefts
 
 -- | Create a new registry
 --
@@ -597,15 +604,18 @@ countResources rr = atomically $ aux <$> readTVar (registryState rr)
 allocate :: forall m a. (IOLike m, HasCallStack)
          => ResourceRegistry m
          -> (ResourceId -> m a)
-         -> (a -> m ())
+         -> (a -> m ())  -- ^ Release the resource
          -> m (ResourceKey m, a)
-allocate rr alloc = fmap mustBeRight . allocateEither rr (fmap Right . alloc)
+allocate rr alloc free = mustBeRight <$>
+    allocateEither rr (fmap Right . alloc) (\a -> free a >> return True)
 
 -- | Generalization of 'allocate' for allocation functions that may fail
 allocateEither :: forall m e a. (IOLike m, HasCallStack)
                => ResourceRegistry m
                -> (ResourceId -> m (Either e a))
-               -> (a -> m ())
+               -> (a -> m Bool)
+                  -- ^ Release the resource, return 'True' when the resource
+                  -- hasn't been released or closed before.
                -> m (Either e (ResourceKey m, a))
 allocateEither rr alloc free = do
     context <- captureContext
@@ -630,7 +640,7 @@ allocateEither rr alloc free = do
                 -- got closed after we allocated a new key but before we got a
                 -- chance to register the resource. In this case, we must
                 -- deallocate the resource again before throwing the exception.
-                free a
+                void $ free a
                 throwRegistryClosed rr context closed
               Right () ->
                 return $ Right (ResourceKey rr key, a)
@@ -662,7 +672,9 @@ throwRegistryClosed rr context closed = throwM RegistryClosedException {
 -- guaranteed not to remove the resource from the registry without releasing it.
 --
 -- Releasing an already released resource is a no-op.
-release :: (IOLike m, HasCallStack) => ResourceKey m -> m ()
+--
+-- When the resource has not been released before, its context is returned.
+release :: (IOLike m, HasCallStack) => ResourceKey m -> m (Maybe (Context m))
 release key@(ResourceKey rr _) = do
     context <- captureContext
     ensureKnownThread rr context
@@ -680,11 +692,18 @@ release key@(ResourceKey rr _) = do
 --
 -- This function should only be used if the above situation can be ruled out
 -- or handled by other means.
-unsafeRelease :: IOLike m => ResourceKey m -> m ()
+unsafeRelease :: IOLike m => ResourceKey m -> m (Maybe (Context m))
 unsafeRelease (ResourceKey rr rid) = do
     mask_ $ do
       mResource <- updateState rr $ removeResource rid
-      mapM_ releaseResource mResource
+      case mResource of
+        Nothing       -> return Nothing
+        Just resource -> do
+          actuallyReleased <- releaseResource resource
+          return $
+            if actuallyReleased
+            then Just (resourceContext resource)
+            else Nothing
 
 -- | Release all resources in the 'ResourceRegistry' without closing.
 --
@@ -697,7 +716,7 @@ releaseAll rr = do
           resourceRegistryCreatedIn = registryContext rr
         , resourceRegistryUsedIn    = context
         }
-    releaseAllHelper rr context release
+    void $ releaseAllHelper rr context release
 
 -- | This is to 'releaseAll' what 'unsafeRelease' is to 'release': we do not
 -- insist that this funciton is called from a thread that is known to the
@@ -705,14 +724,15 @@ releaseAll rr = do
 unsafeReleaseAll :: (IOLike m, HasCallStack) => ResourceRegistry m -> m ()
 unsafeReleaseAll rr = do
     context <- captureContext
-    releaseAllHelper rr context unsafeRelease
+    void $ releaseAllHelper rr context unsafeRelease
 
 -- | Internal helper used by 'releaseAll' and 'unsafeReleaseAll'.
 releaseAllHelper :: IOLike m
                  => ResourceRegistry m
                  -> Context m
-                 -> (ResourceKey m -> m ())  -- ^ How to release a resource
-                 -> m ()
+                 -> (ResourceKey m -> m (Maybe (Context m)))
+                    -- ^ How to release a resource
+                 -> m [Context m]
 releaseAllHelper rr context releaser = mask_ $ do
     mKeys   <- updateState rr $ unlessClosed $
       gets $ Map.keysSet . registryResources
