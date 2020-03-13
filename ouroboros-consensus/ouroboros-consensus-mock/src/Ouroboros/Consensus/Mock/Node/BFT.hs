@@ -1,12 +1,12 @@
 module Ouroboros.Consensus.Mock.Node.BFT (
-    protocolInfoBft
+    MockBftBlock
+  , protocolInfoBft
   ) where
 
 import qualified Data.Map.Strict as Map
 
 import           Cardano.Crypto.DSIGN
 
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
@@ -16,12 +16,14 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 
+type MockBftBlock = SimpleBftBlock SimpleMockCrypto BftMockCrypto
+
 protocolInfoBft :: NumCoreNodes
                 -> CoreNodeId
                 -> SecurityParam
-                -> SlotLengths
-                -> ProtocolInfo (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
-protocolInfoBft numCoreNodes nid securityParam slotLengths =
+                -> BlockConfig MockBftBlock
+                -> ProtocolInfo MockBftBlock
+protocolInfoBft numCoreNodes nid securityParam cfg =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             configConsensus = BftConfig {
@@ -37,7 +39,7 @@ protocolInfoBft numCoreNodes nid securityParam slotLengths =
                   ]
               }
           , configLedger = SimpleLedgerConfig ()
-          , configBlock  = SimpleBlockConfig slotLengths
+          , configBlock  = cfg
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState ())

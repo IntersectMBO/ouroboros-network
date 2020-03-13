@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -33,6 +34,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , mkSimpleHeader
   , matchesSimpleHeader
   , countSimpleGenTxs
+  , defaultSimpleBlockConfig
     -- * Configuration
   , BlockConfig(..)
     -- * Protocol-specific part
@@ -81,6 +83,7 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API
@@ -88,6 +91,7 @@ import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
 import           Ouroboros.Consensus.Node.LedgerDerivedInfo
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -250,8 +254,24 @@ instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
 
 data instance BlockConfig (SimpleBlock c ext) = SimpleBlockConfig {
       simpleBlockSlotLengths :: !SlotLengths
+
+      -- TODO: This should obsolete 'simpleBlockSlotLengths' (#1637)
+    , simpleBlockEraParams :: !HardFork.EraParams
     }
   deriving (Generic, NoUnexpectedThunks)
+
+defaultSimpleBlockConfig :: SecurityParam
+                         -> SlotLength
+                         -> BlockConfig (SimpleBlock c ext)
+defaultSimpleBlockConfig k slotLength = SimpleBlockConfig {
+      simpleBlockSlotLengths = singletonSlotLengths slotLength
+    , simpleBlockEraParams   = HardFork.defaultEraParams k slotLength
+    }
+
+instance HasHardForkHistory (SimpleBlock c ext) where
+  type HardForkIndices (SimpleBlock c ext) = '[()]
+  hardForkShape           = HardFork.singletonShape . simpleBlockEraParams
+  hardForkTransitions _ _ = HardFork.transitionsUnknown
 
 instance LedgerDerivedInfo (SimpleBlock c ext) where
   knownSlotLengths = simpleBlockSlotLengths

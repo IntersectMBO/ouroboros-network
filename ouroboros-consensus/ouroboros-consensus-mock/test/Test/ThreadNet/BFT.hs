@@ -41,7 +41,7 @@ tests = testGroup "BFT"
           , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 1})])
           , nodeRestarts = noRestarts
           , nodeTopology = meshNodeTopology ncn
-          , slotLengths = singletonSlotLengths (slotLengthFromSec 1)
+          , slotLength   = slotLengthFromSec 1
           , initSeed = Seed {getSeed = (12659702313441544615,9326820694273232011,15820857683988100572,2201554969601311572,4716411940989238571)}
           }
     ,
@@ -54,8 +54,7 @@ prop_simple_bft_convergence :: SecurityParam
                             -> TestConfig
                             -> Property
 prop_simple_bft_convergence k
-  testConfig@TestConfig{numCoreNodes, numSlots, slotLengths} =
-    tabulate "slot length changes" [show $ countSlotLengthChanges numSlots slotLengths] $
+  testConfig@TestConfig{numCoreNodes, numSlots, slotLength} =
     prop_general PropGeneralArgs
       { pgaCountTxs               = countSimpleGenTxs
       , pgaExpectedBlockRejection = const False
@@ -73,7 +72,11 @@ prop_simple_bft_convergence k
             { forgeEbbEnv = Nothing
             , nodeInfo    = \nid ->
                 plainTestNodeInitialization $
-                protocolInfoBft numCoreNodes nid k slotLengths
+                  protocolInfoBft
+                    numCoreNodes
+                    nid
+                    k
+                    (defaultSimpleBlockConfig k slotLength)
             , rekeying    = Nothing
             }
 

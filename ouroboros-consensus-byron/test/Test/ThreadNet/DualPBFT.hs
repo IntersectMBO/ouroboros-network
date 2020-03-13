@@ -276,7 +276,7 @@ genDualPBFTTestConfig numSlots params = do
 
     return TestConfig {
           nodeRestarts = noRestarts
-        , slotLengths  = singletonSlotLengths (slotLengthFromSec 20)
+        , slotLength   = slotLengthFromSec 20
         , numCoreNodes = pbftNumNodes params
         , ..
         }

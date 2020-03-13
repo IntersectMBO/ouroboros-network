@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -86,6 +87,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -193,6 +195,11 @@ instance HasHeader (Header TestBlock) where
 
 data instance BlockConfig TestBlock = TestBlockConfig {
       testBlockSlotLengths :: !SlotLengths
+
+      -- | Era parameters
+      --
+      -- TODO: This should obsolete 'testBlockSlotLengths' (#1637)
+    , testBlockEraParams :: HardFork.EraParams
 
       -- | Number of core nodes
       --
@@ -443,6 +450,11 @@ instance LedgerSupportsProtocol TestBlock where
       ()
   anachronisticProtocolLedgerView_ _ _ _ =
       return ()
+
+instance HasHardForkHistory TestBlock where
+  type HardForkIndices TestBlock = '[()]
+  hardForkShape           = HardFork.singletonShape . testBlockEraParams
+  hardForkTransitions _ _ = HardFork.transitionsUnknown
 
 instance LedgerDerivedInfo TestBlock where
   knownSlotLengths = testBlockSlotLengths

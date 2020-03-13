@@ -24,7 +24,6 @@ import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node as X
 import           Ouroboros.Consensus.Byron.Protocol (PBftByronCrypto)
@@ -70,40 +69,32 @@ data Protocol blk p where
     :: NumCoreNodes
     -> CoreNodeId
     -> SecurityParam
-    -> SlotLengths
-    -> Protocol
-         (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
-         ProtocolMockBFT
+    -> BlockConfig MockBftBlock
+    -> Protocol MockBftBlock ProtocolMockBFT
 
   -- | Run Praos against the mock ledger
   ProtocolMockPraos
     :: NumCoreNodes
     -> CoreNodeId
     -> PraosParams
-    -> SlotLengths
-    -> Protocol
-         (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
-         ProtocolMockPraos
+    -> BlockConfig MockPraosBlock
+    -> Protocol MockPraosBlock ProtocolMockPraos
 
   -- | Run Praos against the mock ledger but with an explicit leader schedule
   ProtocolLeaderSchedule
     :: NumCoreNodes
     -> CoreNodeId
     -> PraosParams
-    -> SlotLengths
+    -> BlockConfig MockPraosRuleBlock
     -> LeaderSchedule
-    -> Protocol
-         (SimplePraosRuleBlock SimpleMockCrypto)
-         ProtocolLeaderSchedule
+    -> Protocol MockPraosRuleBlock ProtocolLeaderSchedule
 
   -- | Run PBFT against the mock ledger
   ProtocolMockPBFT
     :: PBftParams
-    -> SlotLengths
+    -> BlockConfig MockPBftBlock
     -> CoreNodeId
-    -> Protocol
-         (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
-         ProtocolMockPBFT
+    -> Protocol MockPBftBlock ProtocolMockPBFT
 
   -- | Run PBFT against the real ledger
   ProtocolRealPBFT
@@ -129,17 +120,17 @@ verifyProtocol ProtocolRealPBFT{}       = Refl
 
 -- | Data required to run the selected protocol
 protocolInfo :: Protocol blk p -> ProtocolInfo blk
-protocolInfo (ProtocolMockBFT nodes nid params slotLengths) =
-    protocolInfoBft nodes nid params slotLengths
+protocolInfo (ProtocolMockBFT nodes nid params cfg) =
+    protocolInfoBft nodes nid params cfg
 
-protocolInfo (ProtocolMockPraos nodes nid params slotLengths) =
-    protocolInfoPraos nodes nid params slotLengths
+protocolInfo (ProtocolMockPraos nodes nid params cfg) =
+    protocolInfoPraos nodes nid params cfg
 
-protocolInfo (ProtocolLeaderSchedule nodes nid params slotLengths schedule) =
-    protocolInfoPraosRule nodes nid params slotLengths schedule
+protocolInfo (ProtocolLeaderSchedule nodes nid params cfg schedule) =
+    protocolInfoPraosRule nodes nid params cfg schedule
 
-protocolInfo (ProtocolMockPBFT params slotLengths nid) =
-    protocolInfoMockPBFT params slotLengths nid
+protocolInfo (ProtocolMockPBFT params cfg nid) =
+    protocolInfoMockPBFT params cfg nid
 
 protocolInfo (ProtocolRealPBFT gc mthr prv swv mplc) =
     protocolInfoByron gc mthr prv swv mplc

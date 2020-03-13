@@ -79,6 +79,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
                      (settableBlockchainTime)
 import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -1276,14 +1277,20 @@ testCfg = TopLevelConfig {
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = LedgerConfig
-    , configBlock  = TestBlockConfig slotLengths numCoreNodes
+    , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
     }
   where
     slotLengths :: SlotLengths
-    slotLengths = singletonSlotLengths $ slotLengthFromSec 20
+    slotLengths = singletonSlotLengths slotLength
+
+    slotLength :: SlotLength
+    slotLength = slotLengthFromSec 20
 
     numCoreNodes :: NumCoreNodes
     numCoreNodes = NumCoreNodes 1
+
+    eraParams :: HardFork.EraParams
+    eraParams = HardFork.defaultEraParams k slotLength
 
     k = SecurityParam 2
 

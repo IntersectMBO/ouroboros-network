@@ -1,6 +1,7 @@
 -- | Test the Praos chain selection rule but with explicit leader schedule
 module Ouroboros.Consensus.Mock.Node.PraosRule (
-    protocolInfoPraosRule
+    MockPraosRuleBlock
+  , protocolInfoPraosRule
   ) where
 
 import           Data.Map (Map)
@@ -9,7 +10,6 @@ import qualified Data.Map as Map
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
@@ -19,16 +19,18 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 
+type MockPraosRuleBlock = SimplePraosRuleBlock SimpleMockCrypto
+
 protocolInfoPraosRule :: NumCoreNodes
                       -> CoreNodeId
                       -> PraosParams
-                      -> SlotLengths
+                      -> BlockConfig MockPraosRuleBlock
                       -> LeaderSchedule
-                      -> ProtocolInfo (SimplePraosRuleBlock SimpleMockCrypto)
+                      -> ProtocolInfo MockPraosRuleBlock
 protocolInfoPraosRule numCoreNodes
                       nid
                       params
-                      slotLengths
+                      cfg
                       schedule =
     ProtocolInfo {
       pInfoConfig = TopLevelConfig {
@@ -45,7 +47,7 @@ protocolInfoPraosRule numCoreNodes
             , wlsConfigNodeId   = nid
             }
         , configLedger = SimpleLedgerConfig ()
-        , configBlock  = SimpleBlockConfig slotLengths
+        , configBlock  = cfg
         }
     , pInfoInitLedger = ExtLedgerState
         { ledgerState = genesisSimpleLedgerState addrDist
