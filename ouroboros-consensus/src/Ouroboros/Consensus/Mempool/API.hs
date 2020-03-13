@@ -17,8 +17,8 @@ module Ouroboros.Consensus.Mempool.API (
   , HasTxId(..)
   , GenTxId
   , MempoolAddTxResult (..)
-  , isTxAdded
-  , isTxRejected
+  , isMempoolTxAdded
+  , isMempoolTxRejected
   , MempoolSize (..)
   , TraceEventMempool(..)
   , HasTxs(..)
@@ -242,13 +242,13 @@ data MempoolAddTxResult blk
 deriving instance Eq (ApplyTxErr blk) => Eq (MempoolAddTxResult blk)
 deriving instance Show (ApplyTxErr blk) => Show (MempoolAddTxResult blk)
 
-isTxAdded :: MempoolAddTxResult blk -> Bool
-isTxAdded MempoolTxAdded = True
-isTxAdded _              = False
+isMempoolTxAdded :: MempoolAddTxResult blk -> Bool
+isMempoolTxAdded MempoolTxAdded = True
+isMempoolTxAdded _              = False
 
-isTxRejected :: MempoolAddTxResult blk -> Bool
-isTxRejected (MempoolTxRejected _) = True
-isTxRejected _                     = False
+isMempoolTxRejected :: MempoolAddTxResult blk -> Bool
+isMempoolTxRejected (MempoolTxRejected _) = True
+isMempoolTxRejected _                     = False
 
 -- | Wrapper around 'implTryAddTxs' that blocks until all transaction have
 -- either been added to the Mempool or rejected.

@@ -114,8 +114,8 @@ prop_Mempool_addTxs_result setup =
     withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
       result <- addTxs mempool (allTxs setup)
       return $ counterexample (ppTxs (txs setup)) $
-        [(tx, isTxAdded res) | (tx, res) <- result] ===
-        [(testTx, valid)     | (testTx, valid) <- txs setup]
+        [(tx, isMempoolTxAdded res) | (tx, res) <- result] ===
+        [(testTx, valid)            | (testTx, valid) <- txs setup]
 
 -- | Test that invalid transactions are never added to the 'Mempool'.
 prop_Mempool_InvalidTxsNeverAdded :: TestSetupWithTxs -> Property
@@ -186,13 +186,13 @@ prop_Mempool_Capacity (MempoolCapTestSetup testSetupWithTxs) =
     MempoolCapacityBytes capacity = testMempoolCap testSetup
 
     -- | Convert 'MempoolAddTxResult' into a 'Bool':
-    -- isTxAdded -> True, isTxRejected -> False.
+    -- isMempoolTxAdded -> True, isMempoolTxRejected -> False.
     blindErrors
       :: ([(GenTx TestBlock, MempoolAddTxResult blk)], [GenTx TestBlock])
       -> ([(GenTx TestBlock, Bool)], [GenTx TestBlock])
     blindErrors (processed, toAdd) = (processed', toAdd)
       where
-        processed' = [ (tx, isTxAdded txAddRes)
+        processed' = [ (tx, isMempoolTxAdded txAddRes)
                      | (tx, txAddRes) <- processed ]
 
     expectedResult
@@ -670,8 +670,8 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
       result  <- addTxs mempool testInitialTxs
       -- the invalid transactions are reported in the same order they were
       -- added, so the first error is not the result of a cascade
-      whenJust (find (isTxRejected . snd) result) $ \(invalidTx, _) -> error $
-        "Invalid initial transaction: " <> condense invalidTx
+      whenJust (find (isMempoolTxRejected . snd) result) $ \(invalidTx, _) ->
+        error $ "Invalid initial transaction: " <> condense invalidTx
 
       -- Clear the trace
       atomically $ writeTVar varEvents []
