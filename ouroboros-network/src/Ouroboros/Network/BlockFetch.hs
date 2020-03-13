@@ -211,7 +211,10 @@ data BlockFetchConfiguration =
          bfcMaxConcurrencyBulkSync :: !Word,
 
          -- | Maximum concurrent downloads during deadline syncing.
-         bfcMaxConcurrencyDeadline :: !Word
+         bfcMaxConcurrencyDeadline :: !Word,
+
+         -- | Maximum requests in flight per each peer.
+         bfcMaxRequestsInflight    :: !Word
      }
 
 -- | Execute the block fetch logic. It monitors the current chain and candidate
@@ -254,10 +257,7 @@ blockFetchLogic decisionTracer clientStateTracer
     fetchDecisionPolicy :: FetchDecisionPolicy header
     fetchDecisionPolicy =
       FetchDecisionPolicy {
-        -- TODO: This is a protocol constant, but determined elsewhere.
-        -- It should be passed in.
-        maxInFlightReqsPerPeer   = 10,
-
+        maxInFlightReqsPerPeer   = bfcMaxRequestsInflight,
         maxConcurrencyBulkSync   = bfcMaxConcurrencyBulkSync,
         maxConcurrencyDeadline   = bfcMaxConcurrencyDeadline,
 

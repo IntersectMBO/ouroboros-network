@@ -125,7 +125,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
           decisionTracer clientStateTracer
           (sampleBlockFetchPolicy1 blockHeap currentChainHeaders candidateChainHeaders)
           registry
-          (BlockFetchConfiguration 2 1)
+          (BlockFetchConfiguration 2 1 10)
         >> return ()
 
     driver :: TestFetchedBlockHeap m Block -> m ()

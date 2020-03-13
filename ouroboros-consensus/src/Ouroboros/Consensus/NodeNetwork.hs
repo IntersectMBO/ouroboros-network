@@ -53,6 +53,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch (..))
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec
+import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec
@@ -148,7 +149,7 @@ protocolHandlers
     => NodeArgs   m peer blk  --TODO eliminate, merge relevant into NodeKernel
     -> NodeKernel m peer blk
     -> ProtocolHandlers m peer blk
-protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncPipelining}
+protocolHandlers NodeArgs {btime, maxClockSkew, tracers, miniProtocolParameters}
                  NodeKernel {getChainDB, getMempool, getTopLevelConfig} =
     --TODO: bundle needed NodeArgs into the NodeKernel
     -- so we do not have to pass it separately
@@ -157,7 +158,8 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncP
     ProtocolHandlers {
       phChainSyncClient =
         chainSyncClient
-          chainSyncPipelining
+          (pipelineDecisionLowHighMark (chainSyncPipelineingLowMark  miniProtocolParameters)
+                                       (chainSyncPipelineingHighMark miniProtocolParameters))
           (chainSyncClientTracer tracers)
           getTopLevelConfig
           btime
@@ -175,12 +177,12 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncP
     , phTxSubmissionClient =
         txSubmissionOutbound
           (txOutboundTracer tracers)
-          maxUnackTxs
+          (txSubmissionMaxUnacked miniProtocolParameters)
           (getMempoolReader getMempool)
     , phTxSubmissionServer =
         txSubmissionInbound
           (txInboundTracer tracers)
-          maxUnackTxs
+          (txSubmissionMaxUnacked miniProtocolParameters)
           (getMempoolReader getMempool)
           (getMempoolWriter getMempool)
 
@@ -425,11 +427,13 @@ data NetworkApplication m peer localPeer
 -- 'OuroborosApplication' for the node-to-node protocols.
 --
 initiatorNetworkApplication
-  :: NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
+  :: MiniProtocolParameters
+  -> NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
   -> peer
   -> OuroborosApplication InitiatorApp bytes m a Void
-initiatorNetworkApplication NetworkApplication {..} them =
+initiatorNetworkApplication miniProtocolParameters NetworkApplication {..} them =
     nodeToNodeProtocols
+      miniProtocolParameters
       NodeToNodeProtocols {
           chainSyncProtocol =
             (InitiatorProtocolOnly (MuxPeerRaw (naChainSyncClient them))),
@@ -443,11 +447,13 @@ initiatorNetworkApplication NetworkApplication {..} them =
 -- 'OuroborosApplication' for the node-to-node protocols.
 --
 responderNetworkApplication
-  :: NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
+  :: MiniProtocolParameters
+  -> NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
   -> peer
   -> OuroborosApplication ResponderApp bytes m Void a
-responderNetworkApplication NetworkApplication {..} them =
+responderNetworkApplication miniProtocolParameters NetworkApplication {..} them =
     nodeToNodeProtocols
+      miniProtocolParameters
       NodeToNodeProtocols {
           chainSyncProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (naChainSyncServer them))),

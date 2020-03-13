@@ -30,7 +30,7 @@ import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import           Data.Maybe (isJust)
 import           Data.Proxy
-import           Data.Word (Word16, Word32)
+import           Data.Word (Word32)
 
 import           Control.Tracer
 
@@ -40,14 +40,13 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
-import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
-                     (MkPipelineDecision)
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TxSubmissionMempoolWriter)
 import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
 import           Ouroboros.Network.TxSubmission.Mempool.Reader
                      (TxSubmissionMempoolReader)
 import qualified Ouroboros.Network.TxSubmission.Mempool.Reader as MempoolReader
+import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -160,21 +159,20 @@ data MempoolCapacityBytesOverride
 
 -- | Arguments required when initializing a node
 data NodeArgs m peer blk = NodeArgs {
-      tracers             :: Tracers m peer blk
-    , registry            :: ResourceRegistry m
-    , maxClockSkew        :: ClockSkew
-    , cfg                 :: TopLevelConfig blk
-    , initState           :: NodeState blk
-    , btime               :: BlockchainTime m
-    , chainDB             :: ChainDB m blk
-    , initChainDB         :: TopLevelConfig blk -> ChainDB m blk -> m ()
-    , blockFetchSize      :: Header blk -> SizeInBytes
-    , blockProduction     :: Maybe (BlockProduction m blk)
-    , blockMatchesHeader  :: Header blk -> blk -> Bool
-    , maxUnackTxs         :: Word16
-    , maxBlockSize        :: MaxBlockSizeOverride
-    , mempoolCap          :: MempoolCapacityBytesOverride
-    , chainSyncPipelining :: MkPipelineDecision
+      tracers                :: Tracers m peer blk
+    , registry               :: ResourceRegistry m
+    , maxClockSkew           :: ClockSkew
+    , cfg                    :: TopLevelConfig blk
+    , initState              :: NodeState blk
+    , btime                  :: BlockchainTime m
+    , chainDB                :: ChainDB m blk
+    , initChainDB            :: TopLevelConfig blk -> ChainDB m blk -> m ()
+    , blockFetchSize         :: Header blk -> SizeInBytes
+    , blockProduction        :: Maybe (BlockProduction m blk)
+    , blockMatchesHeader     :: Header blk -> blk -> Bool
+    , maxBlockSize           :: MaxBlockSizeOverride
+    , mempoolCap             :: MempoolCapacityBytesOverride
+    , miniProtocolParameters :: MiniProtocolParameters
     }
 
 initNodeKernel
@@ -187,7 +185,8 @@ initNodeKernel
     => NodeArgs m peer blk
     -> m (NodeKernel m peer blk)
 initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
-                             , blockProduction, chainDB, initChainDB } = do
+                             , blockProduction, chainDB, initChainDB
+                             , miniProtocolParameters } = do
 
     initChainDB cfg chainDB
 
@@ -221,6 +220,7 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
     blockFetchConfiguration = BlockFetchConfiguration
       { bfcMaxConcurrencyBulkSync = 1 -- Set to 1 for now, see #1526
       , bfcMaxConcurrencyDeadline = 1
+      , bfcMaxRequestsInflight    = blockFetchPipelineingMax miniProtocolParameters
       }
 
 {-------------------------------------------------------------------------------

@@ -45,10 +45,9 @@ import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (DictVersion (..),
                      LocalConnectionId, NodeToClientVersionData (..),
                      nodeToClientCodecCBORTerm)
-import           Ouroboros.Network.NodeToNode (NodeToNodeVersionData (..),
-                     RemoteConnectionId, nodeToNodeCodecCBORTerm)
-import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
-                     (pipelineDecisionLowHighMark)
+import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
+                     NodeToNodeVersionData (..), RemoteConnectionId,
+                     defaultMiniProtocolParameters, nodeToNodeCodecCBORTerm)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -178,7 +177,7 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
         onNodeKernel registry nodeKernel
 
         let networkApps = mkNetworkApps nodeArgs nodeKernel
-            diffusionApplications = mkDiffusionApplications networkApps
+            diffusionApplications = mkDiffusionApplications (miniProtocolParameters nodeArgs) networkApps
 
         runDataDiffusion diffusionTracers
                          diffusionArguments
@@ -213,20 +212,21 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
       (protocolHandlers nodeArgs nodeKernel)
 
     mkDiffusionApplications
-      :: (   NetworkProtocolVersion blk
+      :: MiniProtocolParameters
+      -> (   NetworkProtocolVersion blk
           -> NetworkApplication
               IO RemoteConnectionId LocalConnectionId
               ByteString ByteString ByteString ByteString ByteString ByteString
               ()
          )
       -> DiffusionApplications
-    mkDiffusionApplications networkApps = DiffusionApplications
+    mkDiffusionApplications miniProtocolParams networkApps = DiffusionApplications
       { daResponderApplication = combineVersions [
       simpleSingletonVersions
     (nodeToNodeProtocolVersion (Proxy @blk) version)
     nodeToNodeVersionData
     (DictVersion nodeToNodeCodecCBORTerm)
-    (responderNetworkApplication $ networkApps version)
+    (responderNetworkApplication miniProtocolParams $ networkApps version)
       | version <- supportedNetworkProtocolVersions (Proxy @blk)
       ]
      , daInitiatorApplication = combineVersions [
@@ -234,7 +234,7 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
              (nodeToNodeProtocolVersion (Proxy @blk) version)
              nodeToNodeVersionData
              (DictVersion nodeToNodeCodecCBORTerm)
-             (initiatorNetworkApplication $ networkApps version)
+             (initiatorNetworkApplication miniProtocolParams $ networkApps version)
          | version <- supportedNetworkProtocolVersions (Proxy @blk)
          ]
      , daLocalResponderApplication = combineVersions [
@@ -331,19 +331,18 @@ mkNodeArgs
 mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     { tracers
     , registry
-    , maxClockSkew        = ClockSkew 1
+    , maxClockSkew           = ClockSkew 1
     , cfg
     , initState
     , btime
     , chainDB
-    , initChainDB         = nodeInitChainDB
+    , initChainDB            = nodeInitChainDB
     , blockProduction
-    , blockFetchSize      = nodeBlockFetchSize
-    , blockMatchesHeader  = nodeBlockMatchesHeader
-    , maxUnackTxs         = 100 -- TODO
-    , maxBlockSize        = NoOverride
-    , mempoolCap          = NoMempoolCapacityBytesOverride
-    , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO
+    , blockFetchSize         = nodeBlockFetchSize
+    , blockMatchesHeader     = nodeBlockMatchesHeader
+    , maxBlockSize           = NoOverride
+    , mempoolCap             = NoMempoolCapacityBytesOverride
+    , miniProtocolParameters = defaultMiniProtocolParameters
     }
   where
     blockProduction = case isProducer of

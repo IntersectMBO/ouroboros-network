@@ -60,12 +60,11 @@ import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
-import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
-                     (pipelineDecisionLowHighMark)
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 import           Ouroboros.Network.Protocol.TxSubmission.Type
+import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 
@@ -707,19 +706,23 @@ runThreadNetwork ThreadNetworkArgs
                 -- ChainDB
                 instrumentationTracers <> nullDebugTracers
             , registry
-            , maxClockSkew        = ClockSkew 1
-            , cfg                 = pInfoConfig
-            , initState           = pInfoInitState
+            , maxClockSkew           = ClockSkew 1
+            , cfg                    = pInfoConfig
+            , initState              = pInfoInitState
             , btime
             , chainDB
-            , initChainDB         = nodeInitChainDB
-            , blockProduction     = Just blockProduction
-            , blockFetchSize      = nodeBlockFetchSize
-            , blockMatchesHeader  = nodeBlockMatchesHeader
-            , maxUnackTxs         = 1000 -- TODO
-            , maxBlockSize        = NoOverride
-            , mempoolCap          = NoMempoolCapacityBytesOverride
-            , chainSyncPipelining = pipelineDecisionLowHighMark 2 4
+            , initChainDB            = nodeInitChainDB
+            , blockProduction        = Just blockProduction
+            , blockFetchSize         = nodeBlockFetchSize
+            , blockMatchesHeader     = nodeBlockMatchesHeader
+            , maxBlockSize           = NoOverride
+            , mempoolCap             = NoMempoolCapacityBytesOverride
+            , miniProtocolParameters = MiniProtocolParameters {
+                  chainSyncPipelineingHighMark = 4,
+                  chainSyncPipelineingLowMark  = 2,
+                  blockFetchPipelineingMax     = 10,
+                  txSubmissionMaxUnacked       = 1000 -- TODO ?
+                }
             }
 
       nodeKernel <- initNodeKernel nodeArgs
