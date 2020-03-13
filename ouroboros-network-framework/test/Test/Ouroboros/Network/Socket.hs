@@ -292,7 +292,7 @@ prop_socket_recv_close f _ =
             atomically $ putTMVar sv r
 
     let snocket :: SocketSnocket
-        snocket = rawSocketSnocket iomgr
+        snocket = socketSnocket iomgr
 
     bracket
       (open snocket (SocketFamily Socket.AF_INET))
