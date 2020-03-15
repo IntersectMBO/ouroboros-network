@@ -1,0 +1,34 @@
+tests: True
+
+max-backjumps: 5000
+reorder-goals: True
+
+package Win32-network
+  ghc-options: -Werror 
+  flags: +demo
+
+package ntp-client
+  ghc-options: -Werror
+  flags: +demo
+
+package io-sim-classes
+  ghc-options: -Werror
+  flags: +asserts +checktvarinvariant
+
+package typed-protocols
+  ghc-options: -Werror
+
+package typed-protocols-examples
+  ghc-options: -Werror
+  flags:
+
+package network-mux
+  ghc-options: -Werror
+  flags: +ipv6 +asserts
+
+package ouroboros-network-framework
+  ghc-options: -Werror
+
+package ouroboros-network
+  ghc-options: -Werror
+  flags: +ipv6 +cddl +asserts
