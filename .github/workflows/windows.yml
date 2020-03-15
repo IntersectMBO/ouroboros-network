@@ -1,0 +1,129 @@
+name: "Windows"
+on: [push]
+
+jobs:
+  test-windows-8_6_5:
+    name: "Win32 GHC-8.6.5"
+    runs-on: windows-latest
+    steps:
+      #
+      # Provisioning:
+      # * install ghc-8.6.5, msys2, cabal-isntall
+      # * setup path
+      # * close the repository
+      #
+      - name: Setup Haskell
+        uses: actions/setup-haskell@v1
+        with:
+          - ghc-version: '8.6.5'
+          - cabal-version: '3.0.0'
+      - name: Print versions
+        run: |
+          ghc --version
+          cabal --version
+          cabal user-config init -a "http-transport: plain-http" -a "store-dir: C:\SR" -f -v3
+      - uses: actions/cache@v1
+        with:
+          path: C:\SR
+          key: cabal-store-8.6.5
+      - name: Update Hackage index
+        run: cabal v2-update
+      - uses: actions/checkout@v2
+
+      - name: Use cabal.project.local.windows
+        run: Copy-Item "./cabal.project.local.ci.windows" -Destination "./cabal.project.local"
+
+      # Win32-network
+      - name: Build Win32-network dependencies
+        run: cabal v2-build --only-dependencies Win32-network
+
+      - name: Build Win32-network
+        run: cabal v2-build Win32-network
+
+      - name: Test Win32-network
+        run: cabal v2-run test-Win32-network
+
+      # ntp-client
+      - name: Build ntp-client dependencies
+        run: cabal v2-build -fdemo ntp-client
+
+      - name: Build ntp-client
+        run: cabal v2-build -fdemo ntp-client
+
+      - name: Test ntp-client
+        run: cabal v2-run test-ntp-client
+
+
+      # io-sim-classes
+      - name: Build io-sim-classes dependencies
+        run: cabal v2-build --only-dependencies io-sim-classes
+
+      - name: Build io-sim-classes
+        run: cabal v2-build io-sim-classes
+
+      - name: Test io-sim
+        run: cabal v2-run -fasserts test-sim
+
+
+      # io-sim
+      - name: Build io-sim dependencies
+        run: cabal v2-build -fasserts --only-dependencies io-sim
+
+      - name: Build io-sim
+        run: cabal v2-build -fasserts io-sim
+
+
+      # typed-protocols
+      - name: Build typed-protcols dependencies
+        run: cabal v2-build --only-dependencies typed-protocols
+
+      - name: Build typed-protocols
+        run: cabal v2-build typed-protocols
+
+
+      # typed-protocols-examples
+      - name: Build typed-protocols-examples dependencies
+        run: cabal v2-build --only-dependencies typed-protocols-examples
+
+      - name: Build typed-protocols-examples
+        run: cabal v2-build typed-protocols-examples
+
+      - name: Test typed-protocols-examples
+        run: cabal v2-run typed-protocols-tests
+
+
+      # network-mux
+      - name: Build network-mux dependencies
+        run: cabal v2-build --only-dependencies -fasserts network-mux
+
+      - name: Build typed-protocols
+        run: cabal v2-build -fasserts network-mux
+
+      - name: Test network-mux
+        run: cabal v2-run -fasserts test-network-mux
+
+
+      # ouroboros-network-framework
+      - name: Build ouroboros-network-frm dependencies
+        run: cabal v2-build --only-dependencies -fasserts ouroboros-network-frm
+
+      - name: Build ouroboros-network-frm
+        run: cabal v2-build -fasserts ouroboros-network-frm
+
+      - name: Test ourobors-network-frm
+        run: cabal v2-run -fasserts test-framework
+
+
+      # ouroboros-network
+      - name: Build ouroboros-network dependencies
+        run: cabal v2-build --only-dependencies -fasserts ouroboros-network
+
+      - name: Build ouroboros-network
+        run: cabal v2-build -fasserts ouroboros-network
+
+      - name: Test ouroboros-network
+        run: cabal v2-run -fasserts test-network
+
+      # TODO: we need to install the cddl tool
+      # - name: Test CDDL spec
+      #   run: cabal v2-run -fasserts test-cddl
