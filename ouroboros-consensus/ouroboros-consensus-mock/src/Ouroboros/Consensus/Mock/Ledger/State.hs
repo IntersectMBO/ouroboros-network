@@ -100,7 +100,7 @@ updateMockUTxO1 now tx (MockState u c t) = case hasExpired of
       u' <- withExcept MockUtxoError $ updateUtxo tx u
       return $ MockState u' (c `Set.union` confirmed tx) t
   where
-      Tx expiry _ins _outs       = tx
+      Tx expiry _ins _outs = tx
 
       hasExpired :: Maybe (MockError blk)
       hasExpired = case expiry of
