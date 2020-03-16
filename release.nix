@@ -73,7 +73,8 @@ let
     #musl64 = mapTestOnCross musl64 (packagePlatformsCross project);
   } // (mkRequiredJob (
       collectTests jobs.native.checks ++
-      collectTests jobs.native.benchmarks
+      collectTests jobs.native.benchmarks ++
+      collectTests jobs."${mingwW64.config}".checks
     ));
 
 in jobs
