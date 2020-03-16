@@ -60,11 +60,11 @@ import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
+import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 import           Ouroboros.Network.Protocol.TxSubmission.Type
-import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 
