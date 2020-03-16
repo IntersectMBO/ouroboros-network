@@ -62,7 +62,7 @@ deriving instance Serialise (HeaderHash blk) => Serialise (MockError blk)
 updateMockState :: ( GetHeader blk
                    , HasHeader (Header blk)
                    , StandardHash blk
-                   , HasTxs blk
+                   , HasMockTxs blk
                    )
                 => blk
                 -> MockState blk
@@ -82,12 +82,12 @@ updateMockTip hdr (MockState u c t)
     | otherwise
     = throwError $ MockInvalidHash (headerPrevHash hdr) (pointHash t)
 
-updateMockUTxO :: HasTxs a
+updateMockUTxO :: HasMockTxs a
                => SlotNo
                -> a
                -> MockState blk
                -> Except (MockError blk) (MockState blk)
-updateMockUTxO now = repeatedlyM (updateMockUTxO1 now) . getTxs
+updateMockUTxO now = repeatedlyM (updateMockUTxO1 now) . getMockTxs
 
 updateMockUTxO1 :: forall blk.
                    SlotNo

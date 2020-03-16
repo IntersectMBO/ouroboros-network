@@ -17,7 +17,7 @@ module Ouroboros.Consensus.Mock.Ledger.UTxO (
   , Utxo
   , Expiry(..)
     -- * Computing UTxO
-  , HasTxs(..)
+  , HasMockTxs(..)
   , txIns
   , txOuts
   , confirmed
@@ -104,25 +104,27 @@ data UtxoError
 instance Condense UtxoError where
   condense = show
 
-class HasTxs a where
-  getTxs :: a -> [Tx]
+class HasMockTxs a where
+  -- | The transactions in the order they are to be applied
+  --
+  getMockTxs :: a -> [Tx]
 
-instance HasTxs Tx where
-  getTxs = (:[])
+instance HasMockTxs Tx where
+  getMockTxs = (:[])
 
-instance HasTxs a => HasTxs [a] where
-  getTxs = concatMap getTxs
+instance HasMockTxs a => HasMockTxs [a] where
+  getMockTxs = concatMap getMockTxs
 
-instance HasTxs a => HasTxs (Chain a) where
-  getTxs = getTxs . toOldestFirst
+instance HasMockTxs a => HasMockTxs (Chain a) where
+  getMockTxs = getMockTxs . toOldestFirst
 
-txIns :: HasTxs a => a -> Set TxIn
-txIns = Set.unions . map each . getTxs
+txIns :: HasMockTxs a => a -> Set TxIn
+txIns = Set.unions . map each . getMockTxs
   where
     each (Tx _expiry ins _outs) = ins
 
-txOuts :: HasTxs a => a -> Utxo
-txOuts = Map.unions . map each . getTxs
+txOuts :: HasMockTxs a => a -> Utxo
+txOuts = Map.unions . map each . getMockTxs
   where
     each tx@(Tx _expiry _ins outs) =
         Map.fromList $ zipWith aux [0..] outs
@@ -130,11 +132,11 @@ txOuts = Map.unions . map each . getTxs
         aux :: Ix -> TxOut -> (TxIn, TxOut)
         aux ix out = ((hash tx, ix), out)
 
-confirmed :: HasTxs a => a -> Set TxId
-confirmed = Set.fromList . map hash . getTxs
+confirmed :: HasMockTxs a => a -> Set TxId
+confirmed = Set.fromList . map hash . getMockTxs
 
-updateUtxo :: HasTxs a => a -> Utxo -> Except UtxoError Utxo
-updateUtxo = repeatedlyM each . getTxs
+updateUtxo :: HasMockTxs a => a -> Utxo -> Except UtxoError Utxo
+updateUtxo = repeatedlyM each . getMockTxs
   where
     each tx = execStateT $ do
         -- Remove all inputs from the Utxo and calculate the sum of all the
