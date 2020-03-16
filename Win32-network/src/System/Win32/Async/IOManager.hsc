@@ -159,7 +159,7 @@ data IOCompletionException
 instance Exception IOCompletionException
 
 -- | I/O manager which handles completions of I/O operations.  It should run on
--- a bound thread.  It dereferences the stable pointed which was allocated by
+-- a bound thread.  It dereferences the stable pointer which was allocated by
 -- `readAsync` or `writeAsync`, and puts the results of the operation in the
 -- 'MVar' which it points to.  This wakes up the 'waitForCompletion' function.
 --
@@ -197,7 +197,7 @@ dequeueCompletionPackets iocp@(IOCompletionPort port) =
            -- <https://docs.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getqueuedcompletionstatus#remarks>)
               return ()
          | gqcsOverlappedIsNull && errorCode == eRROR_INVALID_HANDLE ->
-           -- If one doesn't terminate the dequeueing thread, some of the tests
+           -- If we don't terminate the dequeueing thread, some of the tests
            -- will take 10x-100x more time to complete:
            --
            -- - 'Async.Handle.async reads and writes'
@@ -233,7 +233,9 @@ dequeueCompletionPackets iocp@(IOCompletionPort port) =
            -- 'GetQueuedCompletionStatus' system call returned without errors.
              !(numBytes :: Int) <-
                  fromIntegral <$> peek numBytesPtr
-             let ioDataPtr :: Ptr AsyncIOCPData
+             let -- we can cast @Ptr OVERLAPPED@ to @Ptr AsyncIOCPData@ since
+                 -- 'OVERLAPPED' is a frist member of '_IODATA' struct.
+                 ioDataPtr :: Ptr AsyncIOCPData
                  ioDataPtr = castPtr lpOverlapped
              mvarPtr <- peek (iodDataPtr AsyncSing ioDataPtr)
              mvar <- deRefStablePtr mvarPtr

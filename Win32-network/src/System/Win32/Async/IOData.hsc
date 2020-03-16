@@ -94,9 +94,11 @@ type family OverlappedType (asyncType :: AsyncType) :: * where
 --  When an async call is initialised, e.g. 'ReadFile', the windows api takes
 --  a pointer to 'OVERLAPPED' or 'WSAOVERLAPPED' in case of 'winsock2'.  When
 --  it completes 'GetQueuedCompletionStatus' returns the 'OVERLAPPED' (or
---  'WSAOVERLAPPED') in the same memory location.  The windows kernel macro
---  'CONTAINING_RECORD' allows to access the 'IODATA' via its member
---  'iodOverlapped'.
+--  'WSAOVERLAPPED') in the same memory location.  Since we keep 'OVERLAPPED'
+--  ('WSAOVERLAPPED') as a first member of  '_IODATA' ('_WSAIODATA') struct, we
+--  can cast a pointer to 'OVERLAPPED' ('WSAOVERLAPPED') to recover a pointer
+--  to '_IODATA'  ('_WSAIODATA)' and thus recover 'IOData asyncType', including
+--  the stable pointer.
 --
 --  The 'dequeueCompletionPackets' (which calls 'GetQueuedCompletionStatus'
 --  fills the 'MVar' with the result returned by 'GetQueuedCompletionStatus'
