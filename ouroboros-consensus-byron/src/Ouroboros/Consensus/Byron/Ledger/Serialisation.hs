@@ -296,21 +296,8 @@ fakeByronBlockSizeHint = 2000
 -- (which never send or store these headers), but should be inverse to
 -- 'decodeSizedHeader', and moreover uses 'fromCBORABlockOrBoundaryHdr' from
 -- cardano-ledger, and so we don't have too much choice in this encoder.
---
--- TODO: This ought to live in cardano-ledger itself.
 encodeUnsizedHeader :: UnsizedHeader -> Encoding
-encodeUnsizedHeader (UnsizedHeader raw _ _) = mconcat [
-      CBOR.encodeListLen 2
-    , case raw of
-        CC.ABOBBoundaryHdr h -> mconcat [
-            CBOR.encodeWord 0
-          , CBOR.encodePreEncoded $ CC.boundaryHeaderAnnotation h
-          ]
-        CC.ABOBBlockHdr h -> mconcat [
-            CBOR.encodeWord 1
-          , CBOR.encodePreEncoded $ CC.headerAnnotation h
-          ]
-    ]
+encodeUnsizedHeader (UnsizedHeader raw _ _) = CC.toCBORABlockOrBoundaryHdr raw
 
 -- | Inverse of 'encodeSizedHeader'
 decodeUnsizedHeader :: CC.EpochSlots
