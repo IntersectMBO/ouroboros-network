@@ -24,7 +24,6 @@ import           Data.Foldable (foldl', traverse_)
 import           GHC.IO.Exception ( IOException (..)
                                   , IOErrorType (..)
                                   )
-
 import           System.Win32 hiding (try)
 
 import           System.Win32.NamedPipes
@@ -65,6 +64,8 @@ tests =
     ]
   , testCase "async cancel"
       test_async_cancel
+  , testCase "close handle"
+      test_close_blocked_on_reading
   , testProperty "async reads and writes"
       prop_async_reads_and_writes
   , testProperty "PingPong test"
@@ -465,6 +466,58 @@ test_connectNamedPipe_ERROR_NO_DATA =
   where
     pname = pipeName ++ "-connectNamedPipe-ERROR_NO_DATA"
 
+
+-- | Check what happens when one closes a handle which is blocked on reading
+-- data.
+--
+-- The 'GetQueeudCompletionStatus' will return 'False' (meaning that there was
+-- an error), the 'OVERLAPPED' pointer will not be null, the completion key will
+-- agree.  The reported error through 'GetLastError' is 'ERROR_BROKEN_PIPE'
+-- (#109).  Which is interpreted as 'ResourceVanished'.
+--
+test_close_blocked_on_reading :: IO ()
+test_close_blocked_on_reading = withIOManager $ \iocp -> do
+    h <- createNamedPipe pipeName
+                         (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                         (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                         pIPE_UNLIMITED_INSTANCES
+                         maxBound
+                         maxBound
+                         0
+                         Nothing
+    associateWithIOCompletionPort (Left h) iocp
+    v <- newEmptyMVar
+    _ <- async $ do
+      -- wait for a connection
+      connectNamedPipe h
+      -- block on reading; the other end never writes.
+      readHandle h 1
+        `catch` \(e :: IOException) -> putMVar v e >> throwIO e
+    -- connect, so the other thread can progress and block on reading
+    fh <- createFile
+            pipeName
+            (gENERIC_READ .|. gENERIC_WRITE)
+            fILE_SHARE_NONE
+            Nothing
+            oPEN_EXISTING
+            fILE_FLAG_OVERLAPPED
+            Nothing
+    associateWithIOCompletionPort (Left fh) iocp
+    threadDelay 100_000
+    closeHandle h
+    e <- takeMVar v
+    let msg = concat
+            [ "Wrong IOException type; catched: "
+            , show e
+            , " of type "
+            , show $ ioe_type e
+            , " but expected "
+            , show ResourceVanished
+            , " or "
+            , show InvalidArgument
+            ]
+    assertBool msg (ioe_type e == ResourceVanished
+                 || ioe_type e == InvalidArgument)
 
 --
 -- QuickCheck tests
