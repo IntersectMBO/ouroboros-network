@@ -10,13 +10,19 @@ module Ouroboros.Network.Protocol.ChainSync.Codec
   , codecChainSyncSerialised
   , codecChainSyncSerialised'
   , codecChainSyncId
+
+  , byteLimitsChainSync
+  , timeLimitsChainSync
   ) where
 
 import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadTime
 
 import           Ouroboros.Network.Block (Point, Serialised (..), castPoint)
 import           Ouroboros.Network.Codec
+import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.Limits
 
 import qualified Data.ByteString.Lazy as LBS
 
@@ -27,6 +33,34 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.Serialise as Serialise
 import           Text.Printf
+
+
+-- | Byte Limits
+byteLimitsChainSync :: (bytes -> Word) -> ProtocolSizeLimits (ChainSync header tip) bytes
+byteLimitsChainSync = ProtocolSizeLimits stateToLimit
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header tip).
+                    PeerHasAgency pr st -> Word
+    stateToLimit (ClientAgency TokIdle)                = smallByteLimit
+    stateToLimit (ServerAgency (TokNext TokCanAwait))  = smallByteLimit
+    stateToLimit (ServerAgency (TokNext TokMustReply)) = smallByteLimit
+    stateToLimit (ServerAgency TokIntersect)           = smallByteLimit
+
+-- | Time Limits
+--
+-- `TokIdle`  No timeout
+-- `TokNext TokCanAwait` `longWait` timeout
+-- `TokNext TokMustReply` No timeout
+-- `TokIntersect` `longWait timeout
+timeLimitsChainSync :: ProtocolTimeLimits (ChainSync header tip)
+timeLimitsChainSync = ProtocolTimeLimits stateToLimit
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header tip).
+                    PeerHasAgency pr st -> Maybe DiffTime
+    stateToLimit (ClientAgency TokIdle)                = waitForever
+    stateToLimit (ServerAgency (TokNext TokCanAwait))  = longWait
+    stateToLimit (ServerAgency (TokNext TokMustReply)) = waitForever
+    stateToLimit (ServerAgency TokIntersect)           = longWait
 
 -- | The main CBOR 'Codec' for the 'ChainSync' protocol.
 --
