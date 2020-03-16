@@ -12,11 +12,19 @@ jobs:
       # * setup path
       # * close the repository
       #
-      - name: Setup Haskell
-        uses: actions/setup-haskell@v1
-        with:
-          - ghc-version: '8.6.5'
-          - cabal-version: '3.0.0'
+      - name: Configure Chocolatey
+        run: choco source add -n mistuke -s https://www.myget.org/F/mistuke/api/v2
+      - name: Install msys2
+        run: choco install -y msys2
+      - name: Install GHC
+        run: choco install -y ghc --version 8.6.5
+      - name: Install Cabal
+        run: choco install -y cabal --version 3.0.0.0
+      - name: Set PATH
+        run: |
+          [Environment]::GetEnvironmentVariable("Path")
+          Write-Host "::add-path::C:\ProgramData\chocolatey\lib\cabal\tools\cabal-3.0.0.0"
+          Write-Host "::add-path::C:\ProgramData\chocolatey\lib\ghc\tools\ghc-8.6.5\bin"
       - name: Print versions
         run: |
           ghc --version
