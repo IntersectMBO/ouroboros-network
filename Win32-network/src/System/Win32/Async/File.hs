@@ -138,7 +138,7 @@ connectNamedPipe h =
              | otherwise ->
                return $ ErrorSync (ErrorCode errorCode) False
 
-foreign import ccall interruptible "ConnectNamedPipe"
+foreign import ccall safe "ConnectNamedPipe"
     c_ConnectNamedPipe :: HANDLE
                        -> LPOVERLAPPED
                        -> IO BOOL
