@@ -9,9 +9,13 @@
 module Ouroboros.Network.Protocol.TxSubmission.Codec (
     codecTxSubmission
   , codecTxSubmissionId
+
+  , byteLimitsTxSubmission
+  , timeLimitsTxSubmission
   ) where
 
 import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadTime
 import qualified Data.List.NonEmpty as NonEmpty
 
 import           Data.ByteString.Lazy (ByteString)
@@ -21,7 +25,37 @@ import qualified Codec.CBOR.Read     as CBOR
 import           Text.Printf
 
 import           Ouroboros.Network.Codec
+import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.TxSubmission.Type
+import           Ouroboros.Network.Protocol.Limits
+
+-- | Byte Limits.
+byteLimitsTxSubmission :: (bytes -> Word) -> ProtocolSizeLimits (TxSubmission txid tx) bytes
+byteLimitsTxSubmission= ProtocolSizeLimits stateToLimit
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st :: TxSubmission txid tx).
+                    PeerHasAgency pr st -> Word
+    stateToLimit (ClientAgency (TokTxIds TokBlocking))    = largeByteLimit
+    stateToLimit (ClientAgency (TokTxIds TokNonBlocking)) = largeByteLimit
+    stateToLimit (ClientAgency TokTxs)                    = largeByteLimit
+    stateToLimit (ServerAgency TokIdle)                   = smallByteLimit
+
+
+-- | Time Limits.
+--
+-- `TokTxIds TokBlocking` No timeout
+-- `TokTxIds TokNonBlocking` `shortWait` timeout
+-- `TokTxs` `shortWait` timeout
+-- `TokIdle` `shortWait` timeout
+timeLimitsTxSubmission :: ProtocolTimeLimits (TxSubmission txid tx)
+timeLimitsTxSubmission = ProtocolTimeLimits stateToLimit
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st :: TxSubmission txid tx).
+                    PeerHasAgency pr st -> Maybe DiffTime
+    stateToLimit (ClientAgency (TokTxIds TokBlocking))    = waitForever
+    stateToLimit (ClientAgency (TokTxIds TokNonBlocking)) = shortWait
+    stateToLimit (ClientAgency TokTxs)                    = shortWait
+    stateToLimit (ServerAgency TokIdle)                   = waitForever
 
 
 codecTxSubmission

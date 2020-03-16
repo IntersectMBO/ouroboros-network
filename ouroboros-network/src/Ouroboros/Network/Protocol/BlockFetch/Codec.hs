@@ -12,9 +12,13 @@ module Ouroboros.Network.Protocol.BlockFetch.Codec
   , codecBlockFetchSerialised
   , codecBlockFetchSerialised'
   , codecBlockFetchId
+
+  , byteLimitsBlockFetch
+  , timeLimitsBlockFetch
   ) where
 
 import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadTime
 
 import qualified Data.ByteString.Lazy as LBS
 
@@ -27,7 +31,33 @@ import           Text.Printf
 import           Ouroboros.Network.Block (HeaderHash, Point, Serialised (..))
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Codec
+import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.BlockFetch.Type
+import           Ouroboros.Network.Protocol.Limits
+
+-- | Byte Limit.
+byteLimitsBlockFetch :: (bytes -> Word) -> ProtocolSizeLimits (BlockFetch block) bytes
+byteLimitsBlockFetch = ProtocolSizeLimits stateToLimit
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st :: BlockFetch block).
+                    PeerHasAgency pr st -> Word
+    stateToLimit (ClientAgency TokIdle)      = smallByteLimit
+    stateToLimit (ServerAgency TokBusy)      = smallByteLimit
+    stateToLimit (ServerAgency TokStreaming) = largeByteLimit
+
+-- | Time Limits
+--
+-- `TokIdle' No timeout
+-- `TokBusy` `longWait` timeout
+-- `TokStreaming` `longWait` timeout
+timeLimitsBlockFetch :: ProtocolTimeLimits (BlockFetch block)
+timeLimitsBlockFetch = ProtocolTimeLimits stateToLimit
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st :: BlockFetch block).
+                    PeerHasAgency pr st -> Maybe DiffTime
+    stateToLimit (ClientAgency TokIdle)      = waitForever
+    stateToLimit (ServerAgency TokBusy)      = longWait
+    stateToLimit (ServerAgency TokStreaming) = longWait
 
 -- | 'codecBlockFetch' but without the CBOR-in-CBOR trick
 codecBlockFetchUnwrapped

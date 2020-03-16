@@ -187,7 +187,7 @@ exampleFixedPeerGSVs =
 -- Utils to run fetch clients and servers
 --
 
-runFetchClient :: (MonadCatch m, MonadAsync m, MonadFork m, MonadST m,
+runFetchClient :: (MonadCatch m, MonadAsync m, MonadFork m, MonadST m, MonadTimer m,
                    Ord peerid, Serialise block, Serialise (HeaderHash block))
                 => Tracer m (TraceSendRecv (BlockFetch block))
                 -> FetchClientRegistry peerid header block m
@@ -198,12 +198,12 @@ runFetchClient :: (MonadCatch m, MonadAsync m, MonadFork m, MonadST m,
                 -> m a
 runFetchClient tracer registry peerid channel client =
     bracketFetchClient registry peerid $ \clientCtx ->
-      runPipelinedPeer tracer codec channel $
-        client clientCtx
+      runPipelinedPeerWithLimits tracer codec (byteLimitsBlockFetch (fromIntegral . LBS.length))
+        timeLimitsBlockFetch channel $ client clientCtx
   where
     codec = codecBlockFetch encode decode encode decode
 
-runFetchServer :: (MonadThrow m, MonadST m,
+runFetchServer :: (MonadThrow m, MonadST m, MonadTimer m,
                    Serialise block,
                    Serialise (HeaderHash block))
                 => Tracer m (TraceSendRecv (BlockFetch block))
@@ -211,8 +211,8 @@ runFetchServer :: (MonadThrow m, MonadST m,
                 -> BlockFetchServer block m a
                 -> m a
 runFetchServer tracer channel server =
-    runPeer tracer codec channel $
-      blockFetchServerPeer server
+    runPeerWithLimits tracer codec (byteLimitsBlockFetch (fromIntegral . LBS.length))
+      timeLimitsBlockFetch channel $ blockFetchServerPeer server
   where
     codec = codecBlockFetch encode decode encode decode
 
