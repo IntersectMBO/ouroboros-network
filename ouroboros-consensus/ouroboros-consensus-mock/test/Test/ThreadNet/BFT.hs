@@ -47,9 +47,9 @@ tests = testGroup "BFT" $
           , initSeed = Seed {getSeed = (12659702313441544615,9326820694273232011,15820857683988100572,2201554969601311572,4716411940989238571)}
           }
     , testProperty "Mock.applyChainTick is not a no-op" $
-        -- This repro failed via on a wip branch that included a fix for Issue
-        -- 1489 and but not for Issue 1559. PR 1562 fixed it. We're retaining
-        -- this as a regression test.
+        -- This repro failed on a wip branch that included a fix for Issue 1489
+        -- and but not for Issue 1559. PR 1562 fixed it. We're retaining this
+        -- as a regression test.
         once $
         let ncn = NumCoreNodes 3 in
         prop_simple_bft_convergence (SecurityParam 5)
