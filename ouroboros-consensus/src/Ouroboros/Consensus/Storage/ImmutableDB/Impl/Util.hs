@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -28,6 +29,7 @@ import           Control.Monad.Except (runExceptT, throwError)
 import           Data.Binary.Get (Get)
 import qualified Data.Binary.Get as Get
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.List (foldl')
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
@@ -136,11 +138,11 @@ validateIteratorRange chunkInfo tip mbStart mbEnd = runExceptT $ do
       At b   -> slot > slotNoOfBlockOrEBB chunkInfo b
 
 -- | Go through all files, making three sets: the set of chunk files, primary
--- index files, and secondary index files,, discarding all others.
+-- index files, and secondary index files, discarding all others.
 dbFilesOnDisk :: Set String -> (Set ChunkNo, Set ChunkNo, Set ChunkNo)
-dbFilesOnDisk = foldr categorise mempty
+dbFilesOnDisk = foldl' categorise mempty
   where
-    categorise file fs@(chunk, primary, secondary) =
+    categorise fs@(!chunk, !primary, !secondary) file =
       case parseDBFile file of
         Just ("epoch",     n) -> (Set.insert n chunk, primary, secondary)
         Just ("primary",   n) -> (chunk, Set.insert n primary, secondary)
