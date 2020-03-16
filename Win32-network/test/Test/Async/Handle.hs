@@ -155,6 +155,8 @@ test_interruptible_readHandle_2 = withIOManager $ \iocp -> do
               killThread tid'
 
 
+-- | Test that 'writeHandle' is interruptible.
+--
 test_interruptible_writeHandle :: IO ()
 test_interruptible_writeHandle = withIOManager $ \iocp -> do
     let bs = BSC.pack $ replicate 100 'a'
@@ -222,17 +224,22 @@ test_async_cancel = withIOManager $ \iocp -> do
                          Nothing
     associateWithIOCompletionPort (Left h) iocp
     asyncHandle <- async $ do
+      -- wait for a connection
       connectNamedPipe h
+      -- block on reading; the other end never writes.
       readHandle h 1
-    fh <- createFile pipeName
-                (gENERIC_READ .|. gENERIC_WRITE)
-                fILE_SHARE_NONE
-                Nothing
-                oPEN_EXISTING
-                fILE_FLAG_OVERLAPPED
-                Nothing
+    -- connect, so the other thread can progress and block on reading
+    fh <- createFile
+            pipeName
+            (gENERIC_READ .|. gENERIC_WRITE)
+            fILE_SHARE_NONE
+            Nothing
+            oPEN_EXISTING
+            fILE_FLAG_OVERLAPPED
+            Nothing
     associateWithIOCompletionPort (Left fh) iocp
     threadDelay 100_000
+    -- cancel the blocked thread
     cancel asyncHandle
 
 
@@ -319,6 +326,8 @@ test_connectNamedPipe_ERROR_PIPE_CONNECTED =
     pname = pipeName ++ "-connectNamedPipe-ERROR_PIPE_CONNECTED"
 
 
+-- | Trigger 'ERROR_INVALID_HANDLE' error.
+--
 test_ERROR_INVALID_HANDLE :: IO ()
 test_ERROR_INVALID_HANDLE =
     withIOManager $ \iocp -> do
