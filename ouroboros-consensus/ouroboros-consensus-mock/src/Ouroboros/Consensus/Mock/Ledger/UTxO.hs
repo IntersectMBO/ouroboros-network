@@ -1,8 +1,8 @@
 {-# LANGUAGE DeriveAnyClass       #-}
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE DerivingVia          #-}
+{-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE PatternSynonyms      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.Mock.Ledger.UTxO (
@@ -15,9 +15,14 @@ module Ouroboros.Consensus.Mock.Ledger.UTxO (
   , Amount
   , Ix
   , Utxo
+  , Expiry(..)
     -- * Computing UTxO
+  , HasMockTxs(..)
+  , txIns
+  , txOuts
+  , confirmed
+  , updateUtxo
   , UtxoError(..)
-  , HasUtxo(..)
     -- * Genesis
   , genesisTx
   , genesisUtxo
@@ -38,9 +43,10 @@ import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.Hash
 import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
 
+import           Ouroboros.Network.Block (SlotNo)
 import           Ouroboros.Network.MockChain.Chain (Chain, toOldestFirst)
 
-import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util (repeatedlyM)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -50,14 +56,23 @@ import           Ouroboros.Consensus.Mock.Ledger.Address
   Basic definitions
 -------------------------------------------------------------------------------}
 
-data Tx = UnsafeTx (Set TxIn) [TxOut]
+data Expiry
+  = DoNotExpire
+  | ExpireAtOnsetOf !SlotNo
+  deriving stock    (Show, Eq, Ord, Generic)
+  deriving anyclass (Serialise, NFData, NoUnexpectedThunks)
+
+instance Condense Expiry where
+  condense = show
+
+data Tx = UnsafeTx Expiry (Set TxIn) [TxOut]
   deriving stock    (Show, Eq, Ord, Generic)
   deriving anyclass (Serialise, NFData)
   deriving NoUnexpectedThunks via UseIsNormalForm Tx
 
-pattern Tx :: Set TxIn -> [TxOut] -> Tx
-pattern Tx ins outs <- UnsafeTx ins outs where
-  Tx ins outs = force $ UnsafeTx ins outs
+pattern Tx :: Expiry -> Set TxIn -> [TxOut] -> Tx
+pattern Tx expiry ins outs <- UnsafeTx expiry ins outs where
+  Tx expiry ins outs = force $ UnsafeTx expiry ins outs
 
 {-# COMPLETE Tx #-}
 
@@ -65,7 +80,7 @@ instance ToCBOR Tx where
   toCBOR = encode
 
 instance Condense Tx where
-  condense (Tx ins outs) = condense (ins, outs)
+  condense (Tx expiry ins outs) = condense (expiry, ins, outs)
 
 type Ix     = Word
 type Amount = Word
@@ -89,53 +104,56 @@ data UtxoError
 instance Condense UtxoError where
   condense = show
 
-class HasUtxo a where
-  txIns      :: a -> Set TxIn
-  txOuts     :: a -> Utxo
-  confirmed  :: a -> Set TxId
-  updateUtxo :: a -> Utxo -> Except UtxoError Utxo
+class HasMockTxs a where
+  -- | The transactions in the order they are to be applied
+  --
+  getMockTxs :: a -> [Tx]
 
-{-------------------------------------------------------------------------------
-  HasUtxo instances
--------------------------------------------------------------------------------}
+instance HasMockTxs Tx where
+  getMockTxs = (:[])
 
-instance HasUtxo Tx where
-  txIns     (Tx ins _outs) = ins
-  txOuts tx@(Tx _ins outs) =
-      Map.fromList $ zipWith aux [0..] outs
-    where
-      aux :: Ix -> TxOut -> (TxIn, TxOut)
-      aux ix out = ((hash tx, ix), out)
+instance HasMockTxs a => HasMockTxs [a] where
+  getMockTxs = concatMap getMockTxs
 
-  confirmed       = Set.singleton . hash
-  updateUtxo tx = execStateT $ do
-    -- Remove all inputs from the Utxo and calculate the sum of all the input
-    -- amounts
-    inputAmount <- fmap sum $ forM (Set.toList (txIns tx)) $ \txIn -> do
-      u <- get
-      case Map.updateLookupWithKey (\_ _ -> Nothing) txIn u of
-        (Nothing,              _)  -> throwError $ MissingInput txIn
-        (Just (_addr, amount), u') -> put u' $> amount
+instance HasMockTxs a => HasMockTxs (Chain a) where
+  getMockTxs = getMockTxs . toOldestFirst
 
-    -- Check that the sum of the inputs is equal to the sum of the outputs
-    let outputAmount = sum $ map snd $ Map.elems $ txOuts tx
-    when (inputAmount /= outputAmount) $
-      throwError $ InputOutputMismatch inputAmount outputAmount
+txIns :: HasMockTxs a => a -> Set TxIn
+txIns = Set.unions . map each . getMockTxs
+  where
+    each (Tx _expiry ins _outs) = ins
 
-    -- Add the outputs to the Utxo
-    modify (`Map.union` txOuts tx)
+txOuts :: HasMockTxs a => a -> Utxo
+txOuts = Map.unions . map each . getMockTxs
+  where
+    each tx@(Tx _expiry _ins outs) =
+        Map.fromList $ zipWith aux [0..] outs
+      where
+        aux :: Ix -> TxOut -> (TxIn, TxOut)
+        aux ix out = ((hash tx, ix), out)
 
-instance HasUtxo a => HasUtxo [a] where
-  txIns      = foldr (Set.union . txIns)     Set.empty
-  txOuts     = foldr (Map.union . txOuts)    Map.empty
-  confirmed  = foldr (Set.union . confirmed) Set.empty
-  updateUtxo = repeatedlyM updateUtxo
+confirmed :: HasMockTxs a => a -> Set TxId
+confirmed = Set.fromList . map hash . getMockTxs
 
-instance HasUtxo a => HasUtxo (Chain a) where
-  txIns      = txIns      . toOldestFirst
-  txOuts     = txOuts     . toOldestFirst
-  updateUtxo = updateUtxo . toOldestFirst
-  confirmed  = confirmed  . toOldestFirst
+updateUtxo :: HasMockTxs a => a -> Utxo -> Except UtxoError Utxo
+updateUtxo = repeatedlyM each . getMockTxs
+  where
+    each tx = execStateT $ do
+        -- Remove all inputs from the Utxo and calculate the sum of all the
+        -- input amounts
+        inputAmount <- fmap sum $ forM (Set.toList (txIns tx)) $ \txIn -> do
+          u <- get
+          case Map.updateLookupWithKey (\_ _ -> Nothing) txIn u of
+            (Nothing,              _)  -> throwError $ MissingInput txIn
+            (Just (_addr, amount), u') -> put u' $> amount
+
+        -- Check that the sum of the inputs is equal to the sum of the outputs
+        let outputAmount = sum $ map snd $ Map.elems $ txOuts tx
+        when (inputAmount /= outputAmount) $
+          throwError $ InputOutputMismatch inputAmount outputAmount
+
+        -- Add the outputs to the Utxo
+        modify (`Map.union` txOuts tx)
 
 {-------------------------------------------------------------------------------
   Genesis
@@ -143,7 +161,8 @@ instance HasUtxo a => HasUtxo (Chain a) where
 
 -- | Transaction giving initial stake to the nodes
 genesisTx :: AddrDist -> Tx
-genesisTx addrDist = Tx mempty [(addr, 1000) | addr <- Map.keys addrDist]
+genesisTx addrDist =
+    Tx DoNotExpire mempty [(addr, 1000) | addr <- Map.keys addrDist]
 
 genesisUtxo :: AddrDist -> Utxo
 genesisUtxo addrDist = txOuts (genesisTx addrDist)

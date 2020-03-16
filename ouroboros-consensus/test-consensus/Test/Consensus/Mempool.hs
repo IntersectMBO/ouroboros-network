@@ -35,7 +35,7 @@ import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (Tracer (..))
 
 import           Ouroboros.Network.Block (pattern BlockPoint, HeaderHash,
-                     pointSlot)
+                     SlotNo, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -467,7 +467,7 @@ genValidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
           = [outRecipient]
           | otherwise
           = [outRecipient, (sender, fortune - amount)]
-        tx = mkSimpleGenTx $ Tx ins outs
+        tx = mkSimpleGenTx $ Tx DoNotExpire ins outs
     return (tx, mustBeValid (applyTxToLedger ledgerState tx))
   where
     peopleWithFunds :: Map Addr [(TxIn, Amount)]
@@ -487,7 +487,7 @@ genInvalidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
     -- more than 5 000 is invalid.
     amount <- choose (5_001, 10_000)
     let outs = [(recipient, amount)]
-        tx   = mkSimpleGenTx $ Tx ins outs
+        tx   = mkSimpleGenTx $ Tx DoNotExpire ins outs
     return $ assert (not (txIsValid ledgerState tx)) tx
 
 -- | Apply a transaction to the ledger
@@ -500,8 +500,13 @@ applyTxToLedger :: LedgerState TestBlock
                 -> TestTx
                 -> Except TestTxError (LedgerState TestBlock)
 applyTxToLedger (SimpleLedgerState mockState) tx =
-    mkNewLedgerState <$> updateMockUTxO tx mockState
+    mkNewLedgerState <$> updateMockUTxO dummy tx mockState
   where
+    -- All expiries in this test are 'DoNotExpire', so the current time is
+    -- irrelevant.
+    dummy :: SlotNo
+    dummy = 0
+
     mkNewLedgerState mockState' =
       SimpleLedgerState mockState' { mockTip = BlockPoint slot' hash' }
 

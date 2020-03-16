@@ -264,7 +264,13 @@ data BlockRejection blk = BlockRejection
   deriving (Show)
 
 data PropGeneralArgs blk = PropGeneralArgs
-  { pgaCountTxs               :: blk -> Word64
+  { pgaBlockProperty          :: blk -> Property
+    -- ^ test if the block is as expected
+    --
+    -- For example, it may fail if the block includes transactions that should
+    -- have expired before/when the block was forged.
+    --
+  , pgaCountTxs               :: blk -> Word64
     -- ^ the number of transactions in the block
     --
   , pgaExpectedBlockRejection :: BlockRejection blk -> Bool
@@ -342,6 +348,7 @@ prop_general pga testOutput =
     tabulate "involves >=1 re-delegation" [show hasNodeRekey] $
     tabulate "average #txs/block" [show (range averageNumTxs)] $
     prop_no_unexpected_BlockRejections .&&.
+    prop_no_invalid_blocks .&&.
     prop_all_common_prefix
         maxForkLength
         (Map.elems nodeChains) .&&.
@@ -354,7 +361,8 @@ prop_general pga testOutput =
     _ = keepRedundantConstraint (Proxy @(Show (LedgerView (BlockProtocol blk))))
 
     PropGeneralArgs
-      { pgaCountTxs               = countTxs
+      { pgaBlockProperty          = prop_valid_block
+      , pgaCountTxs               = countTxs
       , pgaExpectedBlockRejection = expectedBlockRejection
       , pgaFirstBlockNo           = firstBlockNo
       , pgaFixedMaxForkLength     = mbMaxForkLength
@@ -672,3 +680,17 @@ prop_general pga testOutput =
         average :: [Double] -> Double
         average [] = 0
         average xs = sum xs / fromIntegral (length xs)
+
+    -- The 'prop_valid_block' argument could, for example, check for no expired
+    -- transactions.
+    prop_no_invalid_blocks :: Property
+    prop_no_invalid_blocks = conjoin $
+        [ counterexample
+            ("In slot " <> condense s <> ", node " <> condense nid) $
+          counterexample ("forged an invalid block " <> condense blk) $
+          prop_valid_block blk
+        | (nid, NodeOutput{nodeOutputForges}) <- Map.toList testOutputNodes
+          -- checking all forged blocks, even if they were never or only
+          -- temporarily selected.
+        , (s, blk) <- Map.toAscList nodeOutputForges
+        ]

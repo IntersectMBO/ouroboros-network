@@ -223,20 +223,14 @@ instance (SimpleCrypto c, Typeable ext) => HasHeader (SimpleBlock c ext) where
 instance (SimpleCrypto c, Typeable ext) => StandardHash (SimpleBlock c ext)
 
 {-------------------------------------------------------------------------------
-  HasUTxO instance
+  HasMockTxs instance
 -------------------------------------------------------------------------------}
 
-instance Mock.HasUtxo (SimpleBlock' c ext ext') where
-  txIns      = Mock.txIns      . simpleBody
-  txOuts     = Mock.txOuts     . simpleBody
-  confirmed  = Mock.confirmed  . simpleBody
-  updateUtxo = Mock.updateUtxo . simpleBody
+instance Mock.HasMockTxs (SimpleBlock' c ext ext') where
+  getMockTxs = Mock.getMockTxs . simpleBody
 
-instance Mock.HasUtxo SimpleBody where
-  txIns      = Mock.txIns      . simpleTxs
-  txOuts     = Mock.txOuts     . simpleTxs
-  confirmed  = Mock.confirmed  . simpleTxs
-  updateUtxo = Mock.updateUtxo . simpleTxs
+instance Mock.HasMockTxs SimpleBody where
+  getMockTxs = simpleTxs
 
 {-------------------------------------------------------------------------------
   Envelope validation
@@ -326,13 +320,14 @@ updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
 updateSimpleLedgerState b (SimpleLedgerState st) =
     SimpleLedgerState <$> updateMockState b st
 
-updateSimpleUTxO :: Mock.HasUtxo a
+updateSimpleUTxO :: Mock.HasMockTxs a
                  => a
                  -> TickedLedgerState (SimpleBlock c ext)
                  -> Except (MockError (SimpleBlock c ext))
                            (TickedLedgerState (SimpleBlock c ext))
-updateSimpleUTxO b (TickedLedgerState slot (SimpleLedgerState st)) =
-    TickedLedgerState slot . SimpleLedgerState <$> updateMockUTxO b st
+updateSimpleUTxO x (TickedLedgerState slot (SimpleLedgerState st)) =
+    TickedLedgerState slot . SimpleLedgerState <$>
+      updateMockUTxO slot x st
 
 genesisSimpleLedgerState :: AddrDist -> LedgerState (SimpleBlock c ext)
 genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
@@ -369,11 +364,8 @@ instance (Typeable p, Typeable c) => NoUnexpectedThunks (GenTx (SimpleBlock p c)
 instance HasTxs (SimpleBlock c ext) where
   extractTxs = map mkSimpleGenTx . simpleTxs . simpleBody
 
-instance Mock.HasUtxo (GenTx (SimpleBlock p c)) where
-  txIns      = Mock.txIns      . simpleGenTx
-  txOuts     = Mock.txOuts     . simpleGenTx
-  confirmed  = Mock.confirmed  . simpleGenTx
-  updateUtxo = Mock.updateUtxo . simpleGenTx
+instance Mock.HasMockTxs (GenTx (SimpleBlock p c)) where
+  getMockTxs = Mock.getMockTxs . simpleGenTx
 
 instance Condense (GenTx (SimpleBlock p c)) where
     condense = condense . simpleGenTx

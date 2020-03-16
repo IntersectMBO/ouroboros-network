@@ -60,11 +60,11 @@ import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
+import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 import           Ouroboros.Network.Protocol.TxSubmission.Type
-import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 
@@ -1083,9 +1083,9 @@ data NodeOutput blk = NodeOutput
   { nodeOutputAdds        :: Map SlotNo (Set (RealPoint blk, BlockNo))
   , nodeOutputFinalChain  :: Chain blk
   , nodeOutputFinalLedger :: LedgerState blk
-  , nodeOutputNodeDBs     :: NodeDBs MockFS
   , nodeOutputForges      :: Map SlotNo blk
   , nodeOutputInvalids    :: Map (RealPoint blk) [ExtValidationError blk]
+  , nodeOutputNodeDBs     :: NodeDBs MockFS
   }
 
 data TestOutput blk = TestOutput
@@ -1123,11 +1123,11 @@ mkTestOutput vertexInfos = do
                   [ (s, Set.singleton (p, bno)) | (s, p, bno) <- nodeEventsAdds ]
               , nodeOutputFinalChain  = ch
               , nodeOutputFinalLedger = ldgr
-              , nodeOutputNodeDBs     = nodeInfoDBs
               , nodeOutputForges      =
                   Map.fromList $
                   [ (s, b) | TraceForgedBlock s _ b _ <- nodeEventsForges ]
               , nodeOutputInvalids    = (:[]) <$> Map.fromList nodeEventsInvalids
+              , nodeOutputNodeDBs     = nodeInfoDBs
               }
 
         pure

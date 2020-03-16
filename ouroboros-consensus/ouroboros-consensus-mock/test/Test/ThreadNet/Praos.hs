@@ -29,6 +29,7 @@ import           Test.ThreadNet.Util.HasCreator.Mock ()
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
+import           Test.ThreadNet.Util.SimpleBlock
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -95,7 +96,8 @@ prop_simple_praos_convergence
   testConfig@TestConfig{numCoreNodes} =
     counterexample (tracesToDot testOutputNodes) $
     prop_general PropGeneralArgs
-      { pgaCountTxs               = countSimpleGenTxs
+      { pgaBlockProperty          = prop_validSimpleBlock
+      , pgaCountTxs               = countSimpleGenTxs
       , pgaExpectedBlockRejection = const False
       , pgaFirstBlockNo           = 0
       , pgaFixedMaxForkLength     = Nothing

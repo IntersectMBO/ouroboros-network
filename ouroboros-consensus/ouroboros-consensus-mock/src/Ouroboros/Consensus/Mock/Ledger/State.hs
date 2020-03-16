@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass       #-}
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -23,13 +24,15 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.Hash
 import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.Slot (SlotNo)
 
 import           Ouroboros.Network.Block (ChainHash, HasHeader, HeaderHash,
-                     Point, StandardHash, genesisPoint, pointHash)
+                     Point, StandardHash, blockSlot, genesisPoint, pointHash)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.UTxO
+import           Ouroboros.Consensus.Util (repeatedlyM)
 
 {-------------------------------------------------------------------------------
   State of the mock ledger
@@ -45,7 +48,10 @@ data MockState blk = MockState {
 deriving instance Serialise (HeaderHash blk) => Serialise (MockState blk)
 
 data MockError blk =
-    MockUtxoError UtxoError
+    MockExpired !SlotNo !SlotNo
+    -- ^ The transaction expired in the first 'SlotNo', and it failed to
+    -- validate in the second 'SlotNo'.
+  | MockUtxoError UtxoError
   | MockInvalidHash (ChainHash blk) (ChainHash blk)
   deriving (Generic, NoUnexpectedThunks)
 
@@ -56,14 +62,15 @@ deriving instance Serialise (HeaderHash blk) => Serialise (MockError blk)
 updateMockState :: ( GetHeader blk
                    , HasHeader (Header blk)
                    , StandardHash blk
-                   , HasUtxo blk
+                   , HasMockTxs blk
                    )
                 => blk
                 -> MockState blk
                 -> Except (MockError blk) (MockState blk)
-updateMockState b st = do
-    st' <- updateMockTip (getHeader b) st
-    updateMockUTxO b st'
+updateMockState blk st = do
+    let hdr = getHeader blk
+    st' <- updateMockTip hdr st
+    updateMockUTxO (blockSlot hdr) blk st'
 
 updateMockTip :: (HasHeader (Header blk), StandardHash blk)
               => Header blk
@@ -75,13 +82,32 @@ updateMockTip hdr (MockState u c t)
     | otherwise
     = throwError $ MockInvalidHash (headerPrevHash hdr) (pointHash t)
 
-updateMockUTxO :: HasUtxo a
-               => a
+updateMockUTxO :: HasMockTxs a
+               => SlotNo
+               -> a
                -> MockState blk
                -> Except (MockError blk) (MockState blk)
-updateMockUTxO b (MockState u c t) = do
-    u' <- withExcept MockUtxoError $ updateUtxo b u
-    return $ MockState u' (c `Set.union` confirmed b) t
+updateMockUTxO now = repeatedlyM (updateMockUTxO1 now) . getMockTxs
+
+updateMockUTxO1 :: forall blk.
+                   SlotNo
+                -> Tx
+                -> MockState blk
+                -> Except (MockError blk) (MockState blk)
+updateMockUTxO1 now tx (MockState u c t) = case hasExpired of
+    Just e  -> throwError e
+    Nothing -> do
+      u' <- withExcept MockUtxoError $ updateUtxo tx u
+      return $ MockState u' (c `Set.union` confirmed tx) t
+  where
+      Tx expiry _ins _outs = tx
+
+      hasExpired :: Maybe (MockError blk)
+      hasExpired = case expiry of
+          DoNotExpire       -> Nothing
+          ExpireAtOnsetOf s -> do
+            guard $ s <= now
+            Just $ MockExpired s now
 
 {-------------------------------------------------------------------------------
   Genesis

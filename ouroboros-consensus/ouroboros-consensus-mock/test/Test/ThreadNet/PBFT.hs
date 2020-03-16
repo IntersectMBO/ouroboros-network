@@ -40,6 +40,7 @@ import           Test.ThreadNet.Util.HasCreator.Mock ()
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
+import           Test.ThreadNet.Util.SimpleBlock
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -76,7 +77,8 @@ prop_simple_pbft_convergence
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
     prop_asSimulated .&&.
     prop_general PropGeneralArgs
-      { pgaCountTxs               = countSimpleGenTxs
+      { pgaBlockProperty          = prop_validSimpleBlock
+      , pgaCountTxs               = countSimpleGenTxs
       , pgaExpectedBlockRejection = expectedBlockRejection numCoreNodes
       , pgaFirstBlockNo           = 0
       , pgaFixedMaxForkLength     =

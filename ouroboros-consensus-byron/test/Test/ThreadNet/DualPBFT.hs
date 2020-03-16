@@ -80,7 +80,8 @@ prop_convergence setup = withMaxSuccess 10 $
     (\prop -> if mightForgeInSlot0 then discard else prop) $
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
     prop_general PropGeneralArgs
-      { pgaCountTxs               = countByronGenTxs . dualBlockMain
+      { pgaBlockProperty          = const $ property True
+      , pgaCountTxs               = countByronGenTxs . dualBlockMain
       , pgaExpectedBlockRejection = setupExpectedRejections setup
       , pgaFirstBlockNo           = 1
       , pgaFixedMaxForkLength     =

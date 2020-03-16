@@ -566,7 +566,8 @@ prop_simple_real_pbft_convergence produceEBBs k
           | (nid, ch) <- finalChains
           ]) $
     prop_general PropGeneralArgs
-      { pgaCountTxs               = Byron.countByronGenTxs
+      { pgaBlockProperty          = const $ property True
+      , pgaCountTxs               = Byron.countByronGenTxs
       , pgaExpectedBlockRejection =
           expectedBlockRejection k numCoreNodes nodeRestarts
       , pgaFirstBlockNo           = 1

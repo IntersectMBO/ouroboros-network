@@ -84,6 +84,7 @@ test-suite test
                        Test.ThreadNet.Praos
                        Test.ThreadNet.TxGen.Mock
                        Test.ThreadNet.Util.HasCreator.Mock
+                       Test.ThreadNet.Util.SimpleBlock
 
   build-depends:       base
                      , binary
