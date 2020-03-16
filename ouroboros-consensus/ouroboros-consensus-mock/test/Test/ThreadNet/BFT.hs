@@ -43,7 +43,7 @@ tests = testGroup "BFT" $
           , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 1})])
           , nodeRestarts = noRestarts
           , nodeTopology = meshNodeTopology ncn
-          , slotLength   = slotLengthFromSec 1
+          , slotLength   = defaultSlotLength
           , initSeed = Seed {getSeed = (12659702313441544615,9326820694273232011,15820857683988100572,2201554969601311572,4716411940989238571)}
           }
     , testProperty "Mock.applyChainTick is not a no-op" $
@@ -59,7 +59,7 @@ tests = testGroup "BFT" $
           , nodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0, SlotNo 0),(CoreNodeId 1, SlotNo 2),(CoreNodeId 2, SlotNo 2)]
           , nodeRestarts = noRestarts
           , nodeTopology = meshNodeTopology ncn
-          , slotLengths  = defaultSlotLengths
+          , slotLength   = defaultSlotLength
           , initSeed     = Seed (6358650144370660550,17563794202468751585,17692838336641672274,12649320068211251815,18441126729279419067)
           }
     , testProperty "simple convergence" $ \tc ->
@@ -69,7 +69,7 @@ tests = testGroup "BFT" $
         prop_simple_bft_convergence k tc
     ]
   where
-    defaultSlotLengths = singletonSlotLengths $ slotLengthFromSec 1
+    defaultSlotLength = slotLengthFromSec 20
 
 prop_simple_bft_convergence :: SecurityParam
                             -> TestConfig
