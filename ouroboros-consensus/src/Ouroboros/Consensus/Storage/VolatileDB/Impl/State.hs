@@ -15,6 +15,7 @@ module Ouroboros.Consensus.Storage.VolatileDB.Impl.State
   , modifyOpenState
   , withOpenState
   , mkOpenState
+  , closeOpenHandles
   ) where
 
 import           Control.Monad
@@ -188,6 +189,9 @@ withOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} actio
 -- | Close the handles in the 'OpenState'.
 --
 -- Idempotent, as closing a handle is idempotent.
+--
+-- NOTE: does not wrap 'FsError's and must be called within 'wrapFsError' or
+-- 'tryVolDB'.
 closeOpenHandles :: HasFS m h -> OpenState blockId h -> m ()
 closeOpenHandles HasFS { hClose } OpenState { currentWriteHandle } =
     hClose currentWriteHandle

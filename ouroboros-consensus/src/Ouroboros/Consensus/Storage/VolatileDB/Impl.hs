@@ -169,12 +169,12 @@ openDB hasFS parser tracer maxBlocksPerFile = runWithTempRegistry $ do
 closeDBImpl :: IOLike m
             => VolatileDBEnv m blockId
             -> m ()
-closeDBImpl VolatileDBEnv { varInternalState, tracer, hasFS = HasFS {..} } = do
+closeDBImpl VolatileDBEnv { varInternalState, tracer, hasFS } = do
     mbInternalState <- swapMVar varInternalState DbClosed
     case mbInternalState of
       DbClosed -> traceWith tracer DBAlreadyClosed
-      DbOpen OpenState{..} ->
-        wrapFsError $ hClose currentWriteHandle
+      DbOpen ost ->
+        wrapFsError $ closeOpenHandles hasFS ost
 
 isOpenDBImpl :: IOLike m
              => VolatileDBEnv m blockId
