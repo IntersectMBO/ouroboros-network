@@ -535,6 +535,49 @@ tests = testGroup "RealPBFT" $
             , slotLength   = defaultSlotLength
             , initSeed     = Seed {getSeed = (5875984841520223242,5307155813931649482,9880810077012492572,1841667196263253753,11730891841989901381)}
             }
+    , testProperty "only check updates for mesh topologies" $
+          -- This repro exercises
+          -- 'Test.ThreadNet.RealPBFT.TrackUpdates.checkTopo'.
+          --
+          -- The predicted slot outcomes are
+          --
+          -- > leader 01234
+          -- >    s0  NAAAA
+          -- >    s5  NAAAA
+          -- >    s10 NWN
+          --
+          -- The votes of c1, c3, and c4 arrive to c2 during s11 via TxSub
+          -- /before/ the block containing the proposal does, so c2's mempool
+          -- rejects them as invalid. When it then forges in s12, it only
+          -- includes its own vote, which doesn't meet quota (3 = 5 * 0.6) and
+          -- so the proposal then expires (TTL 10 slots, but only after an
+          -- endorsement; see Issue 749 in cardano-ledger).
+          --
+          -- "Test.ThreadNet.RealPBFT.TrackUpdates" does not otherwise
+          -- correctly anticipate such races, so it makes no requirement for
+          -- non-mesh topologies.
+          prop_simple_real_pbft_convergence NoEBBs SecurityParam {maxRollbacks = 10} TestConfig
+            { numCoreNodes = NumCoreNodes 5
+            , numSlots     = NumSlots 13
+            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+              [ (CoreNodeId 0, SlotNo 0)
+              , (CoreNodeId 1, SlotNo 11)
+              , (CoreNodeId 2, SlotNo 11)
+              , (CoreNodeId 3, SlotNo 11)
+              , (CoreNodeId 4, SlotNo 11)
+              ]
+            , nodeRestarts = noRestarts
+            , nodeTopology = NodeTopology $ Map.fromList
+                -- mesh except for 0 <-> 2
+              [ (CoreNodeId 0, Set.fromList [])
+              , (CoreNodeId 1, Set.fromList [CoreNodeId 0])
+              , (CoreNodeId 2, Set.fromList [CoreNodeId 1])
+              , (CoreNodeId 3, Set.fromList [CoreNodeId 0, CoreNodeId 1, CoreNodeId 2])
+              , (CoreNodeId 4, Set.fromList [CoreNodeId 0, CoreNodeId 1, CoreNodeId 2, CoreNodeId 3])
+              ]
+            , slotLength   = defaultSlotLength
+            , initSeed     = Seed {getSeed = (8051309618816278461,2819388114162022931,16483461939305597384,11191453672390756304,8021847551866528244)}
+            }
     , testProperty "simple convergence" $
           \produceEBBs ->
           -- TODO k > 1 as a workaround for Issue #1511.
@@ -655,6 +698,7 @@ prop_simple_real_pbft_convergence produceEBBs k
     { numCoreNodes
     , numSlots
     , nodeJoinPlan
+    , nodeTopology
     , nodeRestarts
     , initSeed
     } =
@@ -768,6 +812,7 @@ prop_simple_real_pbft_convergence produceEBBs k
             numSlots
             genesisConfig
             nodeJoinPlan
+            nodeTopology
             refResult
             ldgr
         | (cid, ldgr) <- finalLedgers

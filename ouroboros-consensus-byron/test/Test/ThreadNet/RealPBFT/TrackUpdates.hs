@@ -11,6 +11,7 @@ module Test.ThreadNet.RealPBFT.TrackUpdates (
   ) where
 
 import           Control.Exception (assert)
+import           Control.Monad (guard)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
 import qualified Data.Map as Map
@@ -53,6 +54,7 @@ import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import qualified Test.ThreadNet.Ref.PBFT as Ref
 import           Test.ThreadNet.Network (TestNodeInitialization (..))
 import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.ThreadNet.RealPBFT.ProtocolInfo
 
@@ -90,11 +92,13 @@ mkUpdateLabels
   -> NumSlots
   -> Genesis.Config
   -> NodeJoinPlan
+  -> NodeTopology
   -> Ref.Result
   -> Byron.LedgerState ByronBlock
      -- ^ from 'nodeOutputFinalLedger'
   -> (ProtocolVersionUpdateLabel, SoftwareVersionUpdateLabel)
-mkUpdateLabels params numSlots genesisConfig nodeJoinPlan result ldgr =
+mkUpdateLabels params numSlots genesisConfig nodeJoinPlan topology result
+  ldgr =
     (pvuLabel, svuLabel)
   where
     PBftParams{pbftNumNodes, pbftSecurityParam} = params
@@ -233,14 +237,16 @@ mkUpdateLabels params numSlots genesisConfig nodeJoinPlan result ldgr =
             -- we wouldn't necessarily be able to anticipate when the last
             -- endorsement happens, so give up
             Ref.Nondeterministic{} -> Nothing
-            Ref.Outcomes outcomes  -> Just $ case finalState outcomes of
-                Proposing{}                   -> False
-                Voting{}                      -> False
-                Endorsing{}                   -> False
-                Adopting finalEndorsementSlot ->
-                    ebbSlotAfter (finalEndorsementSlot + twoK) <= s
-                  where
-                    s = coerce sentinel
+            Ref.Outcomes outcomes  -> do
+                checkTopo params topology
+                Just $ case finalState outcomes of
+                  Proposing{}                   -> False
+                  Voting{}                      -> False
+                  Endorsing{}                   -> False
+                  Adopting finalEndorsementSlot ->
+                      ebbSlotAfter (finalEndorsementSlot + twoK) <= s
+                    where
+                      s = coerce sentinel
         }
 
     svuLabel = SoftwareVersionUpdateLabel
@@ -264,12 +270,30 @@ mkUpdateLabels params numSlots genesisConfig nodeJoinPlan result ldgr =
             -- We wouldn't necessarily be able to anticipate if the proposal is
             -- confirmed or even in all of the final chains, so we ignore it.
             Ref.Nondeterministic{} -> Nothing
-            Ref.Outcomes outcomes  -> Just $ case finalState outcomes of
-                Proposing{} -> False
-                Voting{}    -> False
-                Endorsing{} -> True
-                Adopting{}  -> True
+            Ref.Outcomes outcomes  -> do
+                checkTopo params topology
+                Just $ case finalState outcomes of
+                  Proposing{} -> False
+                  Voting{}    -> False
+                  Endorsing{} -> True
+                  Adopting{}  -> True
         }
+
+-- if the topology is not mesh, then some assumptions in 'finalState' about
+-- races maybe be wrong
+--
+-- In particular, if the proposal is already on the chain, and the leader of
+-- the next slot, call it node L, is joining and is only directly connected to
+-- other nodes that are also joining, then those other node's votes will not
+-- reach L's mempool before it forges in the next slot. In fact, those votes
+-- will arrive to node L via TxSub during the current slot but /before/ the
+-- block containing the proposal does, so node L's mempool will reject the
+-- votes as invalid. The votes are not resent (at least not before node L
+-- leads).
+checkTopo :: PBftParams -> NodeTopology -> Maybe ()
+checkTopo params topology = do
+    let PBftParams{pbftNumNodes} = params
+    guard $ topology == meshNodeTopology pbftNumNodes
 
 -- | The state of a proposal within a linear timeline
 --
