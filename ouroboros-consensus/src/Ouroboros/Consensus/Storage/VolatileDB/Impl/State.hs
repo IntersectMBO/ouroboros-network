@@ -154,34 +154,39 @@ withOpenState
   -> (forall h. HasFS m h -> OpenState blockId h -> m r)
   -> m r
 withOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} action = do
-    (mr, ()) <- generalBracket open (const close) (tryVolDB . access)
+    (mr, ()) <- generalBracket open close (tryVolDB . access)
     case mr of
       Left  e -> throwM e
       Right r -> return r
   where
+    -- TODO #1816: we're locking the state ('takeMVar' vs. 'readMVar') to make
+    -- sure it impossible that a concurrent call to 'garbageCollect' removes
+    -- the file we might try to read from.
     open :: m (OpenState blockId h)
-    open = readMVar varInternalState >>= \case
+    open = takeMVar varInternalState >>= \case
       DbOpen ost -> return ost
-      DbClosed   -> throwM $ UserError ClosedDBError
+      DbClosed   -> do
+        putMVar varInternalState DbClosed
+        throwM $ UserError ClosedDBError
 
-    -- close doesn't take the state that @open@ returned, because the state
-    -- may have been updated by someone else since we got it (remember we're
-    -- using 'readMVar' here, not 'takeMVar'). So we need to get the most
-    -- recent state anyway.
-    close :: ExitCase (Either VolatileDBError r)
+    close :: OpenState blockId h
+          -> ExitCase (Either VolatileDBError r)
           -> m ()
-    close ec = case ec of
-      ExitCaseAbort                               -> return ()
-      ExitCaseException _ex                       -> return ()
-      ExitCaseSuccess (Right _)                   -> return ()
-      -- In case of a VolatileDBError, close when unexpected
-      ExitCaseSuccess (Left (UnexpectedError {})) -> shutDown
-      ExitCaseSuccess (Left (UserError {}))       -> return ()
-
-    shutDown :: m ()
-    shutDown = swapMVar varInternalState DbClosed >>= \case
-      DbOpen ost -> wrapFsError $ closeOpenHandles hasFS ost
-      DbClosed   -> return ()
+    close ost ec = do
+        -- It is crucial to replace the MVar
+        putMVar varInternalState st'
+        when shouldClose $
+          wrapFsError $ closeOpenHandles hasFS ost
+      where
+        st' | shouldClose = DbClosed
+            | otherwise   = DbOpen ost
+        shouldClose = case ec of
+          ExitCaseAbort                               -> False
+          ExitCaseException _ex                       -> False
+          ExitCaseSuccess (Right _)                   -> False
+          -- In case of a VolatileDBError, close when unexpected
+          ExitCaseSuccess (Left (UnexpectedError {})) -> True
+          ExitCaseSuccess (Left (UserError {}))       -> False
 
     access :: OpenState blockId h -> m r
     access = action hasFS
