@@ -64,7 +64,7 @@ readHandle h size =
               then return $ ResultSync 0 False
               else return $ ErrorSync (ErrorCode errorCode) False
 
-foreign import ccall safe "ReadFile"
+foreign import ccall unsafe "ReadFile"
     c_ReadFile :: HANDLE
                -> Ptr a
                -- ^ lpBuffer
@@ -97,8 +97,7 @@ writeHandle h bs =
               Left  errorAsync -> return $ ErrorAsync (ErrorCode errorAsync)
           else return $ ErrorSync (ErrorCode errorCode) False
 
-
-foreign import ccall safe "WriteFile"
+foreign import ccall unsafe "WriteFile"
     c_WriteFile :: HANDLE
                 -- ^ hFile
                 -> Ptr a
@@ -110,6 +109,7 @@ foreign import ccall safe "WriteFile"
                 -> LPOVERLAPPED
                 -- ^ lpOverlapped
                 -> IO BOOL
+
 
 -- | Connect named pipe aka accept a connection.  The 'HANDLE' must be opened
 -- with 'System.Win32.FILE_FLAG_OVERLLAPPED' and associated with IO completion
@@ -138,7 +138,7 @@ connectNamedPipe h =
              | otherwise ->
                return $ ErrorSync (ErrorCode errorCode) False
 
-foreign import ccall safe "ConnectNamedPipe"
+foreign import ccall unsafe "ConnectNamedPipe"
     c_ConnectNamedPipe :: HANDLE
                        -> LPOVERLAPPED
                        -> IO BOOL

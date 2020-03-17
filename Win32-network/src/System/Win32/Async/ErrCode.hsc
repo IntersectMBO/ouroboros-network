@@ -69,7 +69,7 @@ type WSAErrCode = Int
 wSA_IO_PENDING :: WSAErrCode
 wSA_IO_PENDING = #const WSA_IO_PENDING
 
-foreign import ccall safe "winsock2.hs WSAGetLastError"
+foreign import ccall unsafe "winsock2.hs WSAGetLastError"
     wsaGetLastError :: IO WSAErrCode
 
 -- Accordin to

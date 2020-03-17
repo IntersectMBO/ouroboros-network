@@ -18,7 +18,7 @@ import           System.Win32.Async.Overlapped
 type SOCKET = CInt
 
 
-foreign import ccall safe "WSASend"
+foreign import ccall unsafe "WSASend"
     c_WSASend :: SOCKET
               -> Ptr WSABuf      -- ^ lpBuffers
               -> DWORD           -- ^ dwBufferCount
@@ -29,7 +29,7 @@ foreign import ccall safe "WSASend"
               -> IO CInt
 
     
-foreign import ccall safe "WSARecv"
+foreign import ccall unsafe "WSARecv"
     c_WSARecv :: SOCKET          -- ^ socket
               -> Ptr WSABuf      -- ^ lpBuffers
               -> DWORD           -- ^ dwBufferCount
