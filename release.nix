@@ -55,13 +55,18 @@ let
       map (drv: drv // { inherit packageName; }) (collectTests' package)
     ) ds);
 
-  disabledMingwW64Tests = if withProblematicWindowsTests then {} else {
+  disabledMingwW64Tests = recursiveUpdate (if withProblematicWindowsTests then {} else {
     haskellPackages.ouroboros-network.checks.test-network = null;
     checks.tests.ouroboros-network.test-network = null;
     haskellPackages.Win32-network.checks.test-Win32-network = null;
     checks.tests.Win32-network.test-Win32-network = null;
     haskellPackages.network-mux.checks.test-network-mux = null;
-    checks.tests.network-mux.test-network-mux.x86_64-linux = null;
+    checks.tests.network-mux.test-network-mux = null;
+  }) {
+    haskellPackages.ouroboros-network.components.tests.test-cddl = null;
+    tests.ouroboros-network.test-cddl = null;
+    haskellPackages.ouroboros-network.checks.test-cddl = null;
+    checks.tests.ouroboros-network.test-cddl = null;
   };
 
   inherit (systems.examples) mingwW64 musl64;
@@ -72,8 +77,15 @@ let
     # TODO: fix broken evals
     #musl64 = mapTestOnCross musl64 (packagePlatformsCross project);
   } // (mkRequiredJob (
-      collectTests jobs.native.checks ++
-      collectTests jobs.native.benchmarks
-    ));
+    collectTests jobs.native.checks ++
+    collectTests jobs.native.benchmarks
+  )) // {
+    # This is used for testing the build on windows.
+    ouroboros-network-tests-win64 = pkgs.callPackage ./nix/windows-testing-bundle.nix {
+      inherit project;
+      tests = collectTests jobs.x86_64-w64-mingw32.tests;
+      benchmarks = collectTests jobs.x86_64-w64-mingw32.benchmarks;
+    };
+  };
 
 in jobs
