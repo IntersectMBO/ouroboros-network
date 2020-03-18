@@ -24,6 +24,7 @@ module Ouroboros.Network.Snocket
 
 import           Control.Exception
 import           Control.Monad (when)
+import           Control.Monad.Class.MonadTime (DiffTime)
 import           Control.Tracer (Tracer, contramap)
 import           Network.Socket ( Family (AF_UNIX)
                                 , Socket
@@ -243,9 +244,28 @@ socketSnocket iocp = Snocket {
     , listen   = \s -> Socket.listen s 8
     , accept   = berkeleyAccept iocp
     , close    = Socket.close
-    , toBearer = Mx.socketAsMuxBearer
+    , toBearer = Mx.socketAsMuxBearer $ Just sduTimeout
     }
   where
+
+    -- We place an upper limit of 30s on the time we wait on receiving an SDU.
+    -- There is no upper bound on the time we wait when waiting for a new SDU.
+    -- This makes it possible for miniprotocols to use timeouts that are larger
+    -- than 30s or wait forever.
+    --
+    -- 30s for receiving an SDU corresponds to a minimum speed limit of 17kbps.
+    --
+    -- ( 8      -- mux header length
+    -- + 0xffff -- maximum SDU payload
+    -- )
+    -- * 8
+    -- = 524_344 -- maximum bits in an SDU
+    --
+    --  524_344 / 30 / 1024 = 17kbps
+    --
+    sduTimeout :: DiffTime
+    sduTimeout = 30
+
     openSocket :: AddressFamily SockAddr -> IO Socket
     openSocket (SocketFamily family_) = do
       sd <- Socket.socket family_ Socket.Stream Socket.defaultProtocol
@@ -383,7 +403,7 @@ localSnocket iocp _ = Snocket {
     , open          = openSocket
     , openToConnect = \addr -> openSocket LocalFamily
     , close         = Socket.close
-    , toBearer      = Mx.socketAsMuxBearer
+    , toBearer      = Mx.socketAsMuxBearer Nothing
     }
   where
     toLocalAddress :: SockAddr -> LocalAddress

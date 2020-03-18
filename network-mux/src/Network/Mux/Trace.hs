@@ -54,6 +54,8 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   -- mux was set up as an 'InitiatorApp'.
                   | MuxIOException IOException
                   -- ^ 'IOException' thrown by 
+                  | MuxSDUReadTimeout
+                  -- ^ thrown when reading of a single SDU takes too long
                   deriving (Show, Eq)
 
 instance Exception MuxError where
@@ -139,6 +141,7 @@ data MuxTrace =
     | MuxTraceHandshakeServerEnd
     | forall e. Exception e => MuxTraceHandshakeClientError e DiffTime
     | forall e. Exception e => MuxTraceHandshakeServerError e
+    | MuxTraceSDUReadTimeoutException
 
 instance Show MuxTrace where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
@@ -179,4 +182,5 @@ instance Show MuxTrace where
          -- Client Error can include an error string from the peer which could be very large.
         printf "Handshake Client Error %s duration %s" (take 256 $ show e) (show duration)
     show (MuxTraceHandshakeServerError e) = printf "Handshake Server Error %s" (show e)
+    show MuxTraceSDUReadTimeoutException = "Timed out reading SDU"
 

@@ -436,6 +436,7 @@ networkErrorPolicies = ErrorPolicies
                       -- 'NodeToNode.networkErrorPolicies'
                       MuxBearerClosed         -> Just (SuspendPeer shortDelay shortDelay)
                       MuxIOException{}        -> Just (SuspendPeer shortDelay shortDelay)
+                      MuxSDUReadTimeout       -> Just (SuspendPeer shortDelay shortDelay)
       ]
     , epConErrorPolicies = [
         -- If an 'IOException' is thrown by the 'connect' call we suspend the
