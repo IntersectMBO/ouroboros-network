@@ -48,8 +48,6 @@ let
         packages.ntp-client.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-network-framework.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-network.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.ouroboros-network.flags.cddl = true;
-        packages.ouroboros-network.components.tests.test-cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];
         packages.ouroboros-consensus.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-consensus-byron.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-consensus-byronspec.configureFlags = [ "--ghc-option=-Werror" ];
@@ -59,13 +57,16 @@ let
         packages.prometheus.components.library.doExactConfig = true;
         enableLibraryProfiling = profiling;
       }
-      (lib.optionalAttrs stdenv.hostPlatform.isWindows {
+      (if stdenv.hostPlatform.isWindows then {
         # Disable cabal-doctest tests by turning off custom setups
         packages.comonad.package.buildType = lib.mkForce "Simple";
         packages.distributive.package.buildType = lib.mkForce "Simple";
         packages.lens.package.buildType = lib.mkForce "Simple";
         packages.nonempty-vector.package.buildType = lib.mkForce "Simple";
         packages.semigroupoids.package.buildType = lib.mkForce "Simple";
+
+        # ruby/perl dependencies cannot be cross-built for cddl tests:
+        packages.ouroboros-network.flags.cddl = false;
 
         # Make sure we use a buildPackages version of happy
         packages.pretty-show.components.library.build-tools = [ buildPackages.haskell-nix.haskellPackages.happy ];
@@ -74,6 +75,9 @@ let
         packages.Win32.components.library.build-tools = lib.mkForce [];
         packages.terminal-size.components.library.build-tools = lib.mkForce [];
         packages.network.components.library.build-tools = lib.mkForce [];
+      } else {
+        packages.ouroboros-network.flags.cddl = true;
+        packages.ouroboros-network.components.tests.test-cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];
       })
     ];
     configureArgs = lib.optionalString stdenv.hostPlatform.isWindows "--disable-tests";
