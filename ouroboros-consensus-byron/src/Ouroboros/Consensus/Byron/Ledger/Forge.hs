@@ -67,7 +67,7 @@ forgeEBB
 forgeEBB cfg curSlot curNo prevHash =
         mkByronBlock (byronEpochSlots byronConfig)
       . CC.Block.ABOBBoundary
-      . CC.reAnnotateBoundary (byronProtocolMagicId byronConfig)
+      . CC.reAnnotateABOBBoundary (byronProtocolMagicId byronConfig)
       $ boundaryBlock
   where
     byronConfig :: BlockConfig ByronBlock
