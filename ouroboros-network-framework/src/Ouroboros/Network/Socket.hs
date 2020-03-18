@@ -22,6 +22,7 @@ module Ouroboros.Network.Socket (
     , newNetworkMutableState
     , newNetworkMutableStateSTM
     , cleanNetworkMutableState
+    , AcceptedConnectionsLimit (..)
     , ConnectionId (..)
     , withServerNode
     , connectToNode
@@ -98,6 +99,7 @@ import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.IOManager (AssociateWithIOCP)
 import           Ouroboros.Network.Snocket (Snocket)
 import qualified Ouroboros.Network.Snocket as Snocket
+import           Ouroboros.Network.Server.Socket (AcceptedConnectionsLimit (..))
 import qualified Ouroboros.Network.Server.Socket as Server
 import           Ouroboros.Network.Server.ConnectionTable
 
@@ -472,6 +474,7 @@ runServerThread
     -> NetworkMutableState addr
     -> Snocket IO fd addr
     -> fd
+    -> AcceptedConnectionsLimit
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -> Versions vNumber extra
@@ -485,6 +488,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
                                     , nmsPeerStates }
                 sn
                 sd
+                acceptedConnectionsLimit
                 versionDataCodec
                 acceptVersion
                 versions
@@ -493,6 +497,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
     Server.run
         nstErrorPolicyTracer
         (fromSnocket nmsConnectionTable sn sd)
+        acceptedConnectionsLimit
         (acceptException sockAddr)
         (beginConnection sn nstMuxTracer nstHandshakeTracer versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
         -- register producer when application starts, it will be unregistered
@@ -562,6 +567,7 @@ withServerNode
     => Snocket IO fd addr
     -> NetworkServerTracers addr vNumber
     -> NetworkMutableState addr
+    -> AcceptedConnectionsLimit
     -> addr
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
@@ -576,7 +582,7 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode sn tracers networkState addr versionDataCodec acceptVersion versions errorPolicies k =
+withServerNode sn tracers networkState acceptedConnectionsLimit addr versionDataCodec acceptVersion versions errorPolicies k =
     bracket (mkListeningSocket sn (Just addr) (Snocket.addrFamily sn addr)) (Snocket.close sn) $ \sd -> do
       addr' <- Snocket.getLocalAddr sn sd
       withAsync
@@ -585,6 +591,7 @@ withServerNode sn tracers networkState addr versionDataCodec acceptVersion versi
           networkState
           sn
           sd
+          acceptedConnectionsLimit
           versionDataCodec
           acceptVersion
           versions

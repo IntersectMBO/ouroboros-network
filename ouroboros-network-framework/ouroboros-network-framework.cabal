@@ -36,6 +36,7 @@ library
 
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket
+                       Ouroboros.Network.Server.RateLimiting
                        Ouroboros.Network.Snocket
                        Ouroboros.Network.Socket
 
