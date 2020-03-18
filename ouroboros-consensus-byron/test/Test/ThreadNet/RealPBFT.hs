@@ -82,7 +82,7 @@ import           Test.Util.Shrink (andId, dropId)
 import qualified Test.Util.Stream as Stream
 
 import           Test.ThreadNet.RealPBFT.ProtocolInfo
-import           Test.ThreadNet.RealPBFT.ProtocolVersionUpdate
+import           Test.ThreadNet.RealPBFT.TrackUpdates
 
 -- | Generate k values as small as this module is known to handle.
 --
@@ -195,8 +195,8 @@ tests = testGroup "RealPBFT" $
           -- The failure was: c0 leaks one ImmDB file handle (for path
           -- @00000.epoch@, read only, offset at 0).
           --
-          -- The test case seems somewhat fragile, since the 'slotLengths'
-          -- value seems to matter!
+          -- The test case seems somewhat fragile, since the 'slotLength' value
+          -- seems to matter!
           once $
           let ncn5 = NumCoreNodes 5 in
           prop_simple_real_pbft_convergence NoEBBs (SecurityParam 2) TestConfig
@@ -388,7 +388,7 @@ tests = testGroup "RealPBFT" $
             , nodeTopology = -- 3 <-> {0,1,2} <-> 4
                 NodeTopology (Map.fromList [(CoreNodeId 0,Set.fromList []),(CoreNodeId 1,Set.fromList [CoreNodeId 0]),(CoreNodeId 2,Set.fromList [CoreNodeId 0, CoreNodeId 1]),(CoreNodeId 3,Set.fromList [CoreNodeId 0,CoreNodeId 1,CoreNodeId 2]),(CoreNodeId 4,Set.fromList [CoreNodeId 0,CoreNodeId 1,CoreNodeId 2])])
             , slotLength   = defaultSlotLength
-            , initSeed = Seed {getSeed = (13428626417421372024,5113871799759534838,13943132470772613446,18226529569527889118,4309403968134095151)}
+            , initSeed     = Seed {getSeed = (13428626417421372024,5113871799759534838,13943132470772613446,18226529569527889118,4309403968134095151)}
             }
     , testProperty "mkDelegationEnvironment uses currentSlot not latestSlot" $
       -- After rekeying, node 2 continues to emit its dlg cert tx. This an ugly
@@ -425,6 +425,158 @@ tests = testGroup "RealPBFT" $
             , nodeTopology = meshNodeTopology ncn
             , slotLength   = defaultSlotLength
             , initSeed     = Seed (11954171112552902178,1213614443200450055,13600682863893184545,15433529895532611662,2464843772450023204)
+            }
+    , testProperty "mkUpdateLabels anticipates instant confirmation" $
+          -- caught a bug in 'mkUpdateLabels' where it didn't anticipate that
+          -- node c0 can confirm the proposal as soon as it joins when quorum
+          -- == 1
+          let ncn = NumCoreNodes 3 in
+          prop_simple_real_pbft_convergence NoEBBs (SecurityParam 9) TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 1
+            , nodeJoinPlan = trivialNodeJoinPlan ncn
+            , nodeRestarts = noRestarts
+            , nodeTopology = meshNodeTopology ncn
+            , slotLength   = defaultSlotLength
+            , initSeed     = Seed {getSeed = (560784040296064078,562654861307142039,14390345921802859256,6074698800134646104,12960749422959162150)}
+            }
+    , testProperty "have nodes add transactions as promptly as possible, as expected by proposal tracking" $
+          -- this repro requires that changes to the ledger point triggers the
+          -- nearly oracular wallet to attempt to add its proposal vote again
+          --
+          -- Without that, node c1's own vote is not included in the block it
+          -- forges in the last slot, because it attempts to add the vote
+          -- before the proposal arrives from c0. With the trigger, the arrival
+          -- of c0's block triggers it. In particular, the ledger *slot*
+          -- doesn't change in this repro, since the new block and its
+          -- predecessor both inhabit slot 0. EBBeeeeeees!
+          let ncn = NumCoreNodes 4 in
+          prop_simple_real_pbft_convergence NoEBBs (SecurityParam 8) TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 2
+            , nodeJoinPlan = trivialNodeJoinPlan ncn
+            , nodeRestarts = noRestarts
+            , nodeTopology = meshNodeTopology ncn
+            , slotLength   = defaultSlotLength
+            , initSeed     = Seed {getSeed = (17661772013144211573,3458753765485439359,3510665480596920798,18073896085829422849,10200170902568172302)}
+            }
+    , testProperty "track proposals even when c0 is not the first to lead" $
+          -- requires prompt and accurate vote tracking when c0 is not the
+          -- first node to lead
+          --
+          -- The necessary promptness trigger in this case is the arrival of
+          -- the proposal transaction.
+          let ncn = NumCoreNodes 4 in
+          prop_simple_real_pbft_convergence NoEBBs (SecurityParam 5) TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 5
+            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+              [ (CoreNodeId 0, SlotNo 2)
+              , (CoreNodeId 1, SlotNo 3)
+              , (CoreNodeId 2, SlotNo 4)
+              , (CoreNodeId 3, SlotNo 4)
+              ]
+            , nodeRestarts = noRestarts
+            , nodeTopology = meshNodeTopology ncn
+            , slotLength   = defaultSlotLength
+            , initSeed     = Seed {getSeed = (7536539674426109099,5947274896735415773,14396421290275890646,8359457880945605675,13921484090802881569)}
+            }
+    , testProperty "cardano-ledger checks for proposal confirmation before it checks for expiry" $
+          -- must check for quorum before checking for expiration
+          let ncn = NumCoreNodes 5 in
+          prop_simple_real_pbft_convergence NoEBBs SecurityParam {maxRollbacks = 10} TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 12
+            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+              [ (CoreNodeId 0, SlotNo 0)
+              , (CoreNodeId 1, SlotNo 0)
+              , (CoreNodeId 2, SlotNo 10)
+              , (CoreNodeId 3, SlotNo 10)
+              , (CoreNodeId 4, SlotNo 10)
+              ]
+            , nodeRestarts = noRestarts
+            , nodeTopology = meshNodeTopology ncn
+            , slotLength   = defaultSlotLength
+            , initSeed     = Seed {getSeed = (2578884099630273185,16934506387441904343,18333130054045336554,17133864958166263786,3231825379390681058)}
+            }
+    , testProperty "repropose an expired proposal" $
+          -- the proposal expires in slot 10, but then c0 reintroduces it in
+          -- slot 11 and it is eventually confirmed
+          let ncn = NumCoreNodes 5 in
+          prop_simple_real_pbft_convergence NoEBBs SecurityParam {maxRollbacks = 10} TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 17
+            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+              [(CoreNodeId 0, SlotNo 0)
+              ,(CoreNodeId 1, SlotNo 10)
+              ,(CoreNodeId 2, SlotNo 11)
+              ,(CoreNodeId 3, SlotNo 11)
+              ,(CoreNodeId 4, SlotNo 16)
+              ]
+            , nodeRestarts = noRestarts
+            , nodeTopology = meshNodeTopology ncn
+            , slotLength   = defaultSlotLength
+            , initSeed     = Seed {getSeed = (306806859316465898,5351335255935493133,6240542044036351784,5824248410373935607,16492982022780410836)}
+            }
+    , testProperty "only expect EBBs if the reference simulator does" $
+          -- In this repro, block in the 20th slot is wasted since c2 just
+          -- joined. As a result, the final chains won't include that EBB.
+          let ncn = NumCoreNodes 3 in
+          prop_simple_real_pbft_convergence ProduceEBBs SecurityParam {maxRollbacks = 2} TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 21
+            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+              [ (CoreNodeId 0,SlotNo {unSlotNo = 0})
+              , (CoreNodeId 1,SlotNo {unSlotNo = 0})
+              , (CoreNodeId 2,SlotNo {unSlotNo = 20})
+              ]
+            , nodeRestarts = noRestarts
+            , nodeTopology = meshNodeTopology ncn
+            , slotLength   = defaultSlotLength
+            , initSeed     = Seed {getSeed = (5875984841520223242,5307155813931649482,9880810077012492572,1841667196263253753,11730891841989901381)}
+            }
+    , testProperty "only check updates for mesh topologies" $
+          -- This repro exercises
+          -- 'Test.ThreadNet.RealPBFT.TrackUpdates.checkTopo'.
+          --
+          -- The predicted slot outcomes are
+          --
+          -- > leader 01234
+          -- >    s0  NAAAA
+          -- >    s5  NAAAA
+          -- >    s10 NWN
+          --
+          -- The votes of c1, c3, and c4 arrive to c2 during s11 via TxSub
+          -- /before/ the block containing the proposal does, so c2's mempool
+          -- rejects them as invalid. When it then forges in s12, it only
+          -- includes its own vote, which doesn't meet quota (3 = 5 * 0.6) and
+          -- so the proposal then expires (TTL 10 slots, but only after an
+          -- endorsement; see Issue 749 in cardano-ledger).
+          --
+          -- "Test.ThreadNet.RealPBFT.TrackUpdates" does not otherwise
+          -- correctly anticipate such races, so it makes no requirement for
+          -- non-mesh topologies.
+          prop_simple_real_pbft_convergence NoEBBs SecurityParam {maxRollbacks = 10} TestConfig
+            { numCoreNodes = NumCoreNodes 5
+            , numSlots     = NumSlots 13
+            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+              [ (CoreNodeId 0, SlotNo 0)
+              , (CoreNodeId 1, SlotNo 11)
+              , (CoreNodeId 2, SlotNo 11)
+              , (CoreNodeId 3, SlotNo 11)
+              , (CoreNodeId 4, SlotNo 11)
+              ]
+            , nodeRestarts = noRestarts
+            , nodeTopology = NodeTopology $ Map.fromList
+                -- mesh except for 0 <-> 2
+              [ (CoreNodeId 0, Set.fromList [])
+              , (CoreNodeId 1, Set.fromList [CoreNodeId 0])
+              , (CoreNodeId 2, Set.fromList [CoreNodeId 1])
+              , (CoreNodeId 3, Set.fromList [CoreNodeId 0, CoreNodeId 1, CoreNodeId 2])
+              , (CoreNodeId 4, Set.fromList [CoreNodeId 0, CoreNodeId 1, CoreNodeId 2, CoreNodeId 3])
+              ]
+            , slotLength   = defaultSlotLength
+            , initSeed     = Seed {getSeed = (8051309618816278461,2819388114162022931,16483461939305597384,11191453672390756304,8021847551866528244)}
             }
     , testProperty "simple convergence" $
           \produceEBBs ->
@@ -546,12 +698,14 @@ prop_simple_real_pbft_convergence produceEBBs k
     { numCoreNodes
     , numSlots
     , nodeJoinPlan
+    , nodeTopology
     , nodeRestarts
     , initSeed
     } =
     tabulate "produce EBBs" [show produceEBBs] $
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
     tabulate "proposed protocol version was adopted" [show aPvuRequired] $
+    tabulate "proposed software version was adopted" [show aSvuRequired] $
     counterexample ("params: " <> show params) $
     counterexample ("Ref.PBFT result: " <> show refResult) $
     counterexample
@@ -582,8 +736,12 @@ prop_simple_real_pbft_convergence produceEBBs k
       }
       testOutput .&&.
     prop_pvu .&&.
+    prop_svu .&&.
     not (all (Chain.null . snd) finalChains) .&&.
-    conjoin (map (hasAllEBBs k numSlots produceEBBs) finalChains)
+    case refResult of
+      Ref.Outcomes outcomes ->
+          conjoin (map (hasAllEBBs k produceEBBs outcomes) finalChains)
+      _ -> property True
   where
     testOutput =
         runTestNetwork testConfig epochSize TestConfigBlock
@@ -640,25 +798,42 @@ prop_simple_real_pbft_convergence produceEBBs k
     finalLedgers = Map.toList $ nodeOutputFinalLedger <$> testOutputNodes testOutput
 
     pvuLabels :: [(NodeId, ProtocolVersionUpdateLabel)]
-    pvuLabels =
+    pvuLabels = map (fmap fst) updLabels
+
+    svuLabels :: [(NodeId, SoftwareVersionUpdateLabel)]
+    svuLabels = map (fmap snd) updLabels
+
+    updLabels
+      :: [(NodeId, (ProtocolVersionUpdateLabel, SoftwareVersionUpdateLabel))]
+    updLabels =
         [ (,) cid $
-          mkProtocolVersionUpdateLabel
+          mkUpdateLabels
             params
             numSlots
             genesisConfig
             nodeJoinPlan
+            nodeTopology
             refResult
             ldgr
         | (cid, ldgr) <- finalLedgers
         ]
 
-    -- whether the proposed protocol version was required have been adopted in
-    -- one of the chains
+    -- whether the proposed protocol version was required to have been adopted
+    -- in one of the chains
     aPvuRequired :: Bool
     aPvuRequired =
         or
         [ Just True == pvuRequired
         | (_, ProtocolVersionUpdateLabel{pvuRequired}) <- pvuLabels
+        ]
+
+    -- whether the proposed software version was required to have been adopted in
+    -- one of the chains
+    aSvuRequired :: Bool
+    aSvuRequired =
+        or
+        [ Just True == svuRequired
+        | (_, SoftwareVersionUpdateLabel{svuRequired}) <- svuLabels
         ]
 
     -- check whether the proposed protocol version should have been and if so
@@ -677,6 +852,24 @@ prop_simple_real_pbft_convergence produceEBBs k
             Just b  -> b == pvuObserved
             Nothing -> True
         | (cid, pvuLabel) <- pvuLabels
+        ]
+
+    -- check whether the proposed software version should have been and if so
+    -- was adopted
+    prop_svu :: Property
+    prop_svu =
+        counterexample (show svuLabels) $
+        conjoin
+        [ counterexample (show (cid, svuLabel)) $
+          let SoftwareVersionUpdateLabel
+                { svuObserved
+                , svuRequired
+                } = svuLabel
+          in
+          property $ case svuRequired of
+            Just b  -> b == svuObserved
+            Nothing -> True
+        | (cid, svuLabel) <- svuLabels
         ]
 
     params :: PBftParams
@@ -714,22 +907,24 @@ instance Arbitrary ProduceEBBs where
   shrink ProduceEBBs = [NoEBBs]
 
 hasAllEBBs :: SecurityParam
-           -> NumSlots
            -> ProduceEBBs
+           -> [Ref.Outcome]
            -> (NodeId, Chain ByronBlock)
            -> Property
-hasAllEBBs k (NumSlots t) produceEBBs (nid, c) =
+hasAllEBBs k produceEBBs outcomes (nid, c) =
     counterexample ("Missing or unexpected EBBs in " <> condense (nid, c)) $
     actual === expected
   where
     expected :: [EpochNo]
     expected = case produceEBBs of
       NoEBBs      -> [0]
-      ProduceEBBs -> coerce [0 .. hi]
-        where
-          hi :: Word64
-          hi = if t < 1 then 0 else (t - 1) `div` denom
-          denom = unEpochSlots $ kEpochSlots $ coerce k
+      ProduceEBBs -> case reverse [ s :: SlotNo | (Ref.Nominal, s) <- zip outcomes [0..] ] of
+          []  -> [0]
+          s:_ -> coerce [0 .. hi]
+            where
+              hi :: Word64
+              hi = unSlotNo s `div` denom
+              denom = unEpochSlots $ kEpochSlots $ coerce k
 
     actual   = mapMaybe (nodeIsEBB . getHeader) $ Chain.toOldestFirst c
 

@@ -65,7 +65,7 @@ mkProtocolRealPBFT params (CoreNodeId i)
 
 -- | The protocol version proposed as part of the hard-fork smoke test
 --
--- The initial Byron ledger state beings with protocol version @0.0.0@. In the
+-- The initial Byron ledger state begins with protocol version @0.0.0@. In the
 -- smoke test, if the proposal and votes are enabled, then we will be proposing
 -- an update to @1.0.0@.
 --
@@ -83,11 +83,12 @@ theProposedProtocolVersion = Update.ProtocolVersion 1 0 0
 -- configuration. Its use in the static configuration is legacy and does not
 -- seem to affect anything; see Issue #1732.
 --
--- The initial Byron ledger state beings with no recorded software versions.
+-- The initial Byron ledger state begins with no recorded software versions.
 -- For the addition of a new software version, the Byron ledger rules require
 -- that it starts at 0 or 1.
 --
 theProposedSoftwareVersion :: Update.SoftwareVersion
 theProposedSoftwareVersion = Update.SoftwareVersion
-  (Update.ApplicationName "Cardano Test")
+  -- appnames must be ASCII and <= 12 characters
+  (Update.ApplicationName "Dummy")
   0
