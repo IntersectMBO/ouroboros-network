@@ -6,6 +6,6 @@ import           Ouroboros.Consensus.Byron.Ledger
 import           Test.ThreadNet.TxGen
 
 instance TxGen ByronBlock where
-  testGenTx = error "TODO #855 testGenTx"
-  -- 'testGenTxs' is used by the tests, not 'testGenTx'.
+  -- We don't generate transactions for 'ByronBlock', but we do for
+  -- 'DualByronBlock'.
   testGenTxs _ _ _ _ = return []

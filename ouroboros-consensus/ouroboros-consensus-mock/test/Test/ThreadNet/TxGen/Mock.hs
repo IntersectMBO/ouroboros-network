@@ -4,6 +4,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.ThreadNet.TxGen.Mock () where
 
+import           Control.Monad (replicateM)
 import           Crypto.Number.Generate (generateBetween)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -21,8 +22,12 @@ import           Test.ThreadNet.TxGen
 -------------------------------------------------------------------------------}
 
 instance TxGen (SimpleBlock SimpleMockCrypto ext) where
-  testGenTx numCoreNodes curSlotNo _cfg ledgerState =
-      mkSimpleGenTx <$> genSimpleTx curSlotNo addrs utxo
+  testGenTxs numCoreNodes curSlotNo _cfg ledgerState = do
+      n <- generateBetween 0 20
+      -- We don't update the UTxO after each transaction, so some of the
+      -- generated transactions could very well be invalid.
+      replicateM (fromIntegral n) $
+        mkSimpleGenTx <$> genSimpleTx curSlotNo addrs utxo
     where
       addrs :: [Addr]
       addrs = Map.keys $ mkAddrDist numCoreNodes
