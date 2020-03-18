@@ -59,6 +59,7 @@ data ProtocolTimeLimits ps = ProtocolTimeLimits {
 
 data ProtocolLimitFailure = ExceededSizeLimit
                           | ExceededTimeLimit
+                          | ExceededCodecTimeLimit
   deriving (Eq, Show)
 
 instance Exception ProtocolLimitFailure
@@ -106,7 +107,8 @@ driverWithLimits tracer Codec{encode, decode}
         Nothing                    -> throwM ExceededTimeLimit
 
 runDecoderWithLimit
-    :: forall m bytes failure a. Monad m
+    :: forall m bytes failure a.
+       ( MonadThrow m, MonadTimer m )
     => Word
     -- ^ message size limit
     -> (bytes -> Word)
@@ -143,7 +145,20 @@ runDecoderWithLimit limit size Channel{recv} =
 
     go !_ _  (DecodeFail failure) = return (Left (Just failure))
 
-    go !sz trailing (DecodePartial k)
+    go 0 trailing (DecodePartial k) = do
+          -- Partial parcing of a new message. Start a timer.
+          r <- timeout codecTimeLimit $ partialCont 0 trailing (DecodePartial k)
+          case r of
+               Nothing -> throwM ExceededCodecTimeLimit
+               Just a  -> return a
+
+    go !sz trailing (DecodePartial k) = partialCont sz trailing (DecodePartial k)
+
+    partialCont :: Word  -- ^ size of consumed input so far
+       -> Maybe bytes    -- ^ any trailing data
+       -> DecodeStep bytes failure m a
+       -> m (Either (Maybe failure) (a, Maybe bytes))
+    partialCont !sz trailing (DecodePartial k)
       | sz > limit = return (Left Nothing)
       | otherwise  = case trailing of
                        Nothing -> do mbs <- recv
@@ -151,6 +166,15 @@ runDecoderWithLimit limit size Channel{recv} =
                                      go sz' Nothing =<< k mbs
                        Just bs -> do let sz' = sz + size bs
                                      go sz' Nothing =<< k (Just bs)
+
+    -- We place an upper limit of 180s on the time we wait on receiving a partial CBOR message even when
+    -- there isn't an explicit limit for the current state.
+    -- 180s for receiving an CBOR message of 2_097_154 bytes corresponds to a minimum speed limit of
+    -- 93kbps.
+    --
+    -- 2_097_154 comes from the current maximum message, see `blockFetchProtocolLimits`.
+    codecTimeLimit :: DiffTime
+    codecTimeLimit = 180
 
 
 runPeerWithLimits
