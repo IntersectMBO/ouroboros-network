@@ -22,6 +22,7 @@ let
   validate-mainnet = import ./nix/validate-mainnet.nix {
     inherit pkgs;
     byron-db-converter = haskellPackages.ouroboros-consensus-byron.components.exes.db-converter;
+    onlyImmDB = false;
   };
 
   self = {
