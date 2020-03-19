@@ -39,7 +39,8 @@ import           Data.Fixed
 import           Data.Time
 import           Data.Word
 
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..),
+                     UseIsNormalForm (..))
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
@@ -386,7 +387,8 @@ slotFromDiffTime absTime = modifySnd go . refocusAtTime absTime
 --
 -- Slots are counted from the system start.
 newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
-  deriving (Show)
+  deriving (Eq, Show)
+  deriving NoUnexpectedThunks via UseIsNormalForm SystemStart
 
 -- | Wrapper around 'slotToDiffTime' that takes system start into account
 slotToUTCTime :: SystemStart

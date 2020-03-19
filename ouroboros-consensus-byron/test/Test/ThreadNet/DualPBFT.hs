@@ -296,10 +296,7 @@ realPBftParams ByronSpecGenesis{..} =
   Generate transactions
 -------------------------------------------------------------------------------}
 
--- | Redefine 'testGenTxs' rather than 'testGenTx' as the generator can fail
 instance TxGen DualByronBlock where
-  testGenTx = error "testGenTx not defined; use testGenTxs instead"
-
   testGenTxs _numCoreNodes curSlotNo cfg = \st -> do
       n <- generateBetween 0 20
       go [] n $ applyChainTick (configLedger cfg) curSlotNo st

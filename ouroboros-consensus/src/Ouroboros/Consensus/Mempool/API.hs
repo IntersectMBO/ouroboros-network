@@ -82,7 +82,12 @@ class (Ord (TxId tx), NoUnexpectedThunks (TxId tx)) => HasTxId tx where
   -- | A generalized transaction, 'GenTx', identifier.
   data family TxId tx :: *
 
-  -- | Return the 'GenTxId' of a 'GenTx'.
+  -- | Return the 'TxId' of a 'GenTx'.
+  --
+  -- NOTE: a 'TxId' must be unique up to ledger rules, i.e., two 'GenTx's with
+  -- the same 'TxId' must be the same transaction /according to the ledger/.
+  -- However, we do not assume that a 'TxId' uniquely determines a 'GenTx':
+  -- two 'GenTx's with the same 'TxId' can differ in, e.g., witnesses.
   --
   -- Should be cheap as this will be called often.
   txId :: tx -> TxId tx
