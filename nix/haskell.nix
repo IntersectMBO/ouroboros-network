@@ -49,7 +49,7 @@ let
         packages.ouroboros-network-framework.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-network.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-network.flags.cddl = true;
-        packages.ouroboros-network.components.tests.test-cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];
+        packages.ouroboros-network.components.tests.test-cddl.build-tools = [ buildPackages.cddl buildPackages.cbor-diag];
         packages.ouroboros-consensus.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-consensus-byron.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-consensus-byronspec.configureFlags = [ "--ghc-option=-Werror" ];
