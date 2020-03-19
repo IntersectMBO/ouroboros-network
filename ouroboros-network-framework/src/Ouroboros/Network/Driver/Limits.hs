@@ -118,7 +118,7 @@ runDecoderWithLimit
     -> DecodeStep bytes failure m a
     -> m (Either (Maybe failure) (a, Maybe bytes))
 runDecoderWithLimit limit size Channel{recv} =
-    go 0
+    go True 0
   where
     -- Our strategy here is as follows...
     --
@@ -133,26 +133,28 @@ runDecoderWithLimit limit size Channel{recv} =
     -- This leaves just one special case: if the decoder finishes with that
     -- final chunk, we must check if it consumed too much of the final chunk.
     --
-    go :: Word        -- ^ size of consumed input so far
+    go :: Bool        -- ^ First XXX
+       -> Word        -- ^ size of consumed input so far
        -> Maybe bytes -- ^ any trailing data
        -> DecodeStep bytes failure m a
        -> m (Either (Maybe failure) (a, Maybe bytes))
 
-    go !sz _ (DecodeDone x trailing)
+    go _ !sz _ (DecodeDone x trailing)
       | let sz' = sz - maybe 0 size trailing
       , sz' > limit = return (Left Nothing)
       | otherwise   = return (Right (x, trailing))
 
-    go !_ _  (DecodeFail failure) = return (Left (Just failure))
+    go _ !_ _  (DecodeFail failure) = return (Left (Just failure))
 
-    go 0 trailing (DecodePartial k) = do
+    go True sz trailing (DecodePartial k) = do
           -- Partial parcing of a new message. Start a timer.
-          r <- timeout codecTimeLimit $ partialCont 0 trailing (DecodePartial k)
+          r <- timeout codecTimeLimit $ partialCont sz trailing (DecodePartial k)
+          --r <- Just <$> partialCont 0 trailing (DecodePartial k)
           case r of
-               Nothing -> throwM ExceededCodecTimeLimit
+               Nothing -> return $ Left Nothing --throwM ExceededCodecTimeLimit
                Just a  -> return a
 
-    go !sz trailing (DecodePartial k) = partialCont sz trailing (DecodePartial k)
+    go False !sz trailing (DecodePartial k) = partialCont sz trailing (DecodePartial k)
 
     partialCont :: Word  -- ^ size of consumed input so far
        -> Maybe bytes    -- ^ any trailing data
@@ -163,9 +165,9 @@ runDecoderWithLimit limit size Channel{recv} =
       | otherwise  = case trailing of
                        Nothing -> do mbs <- recv
                                      let !sz' = sz + maybe 0 size mbs
-                                     go sz' Nothing =<< k mbs
+                                     go False sz' Nothing =<< k mbs
                        Just bs -> do let sz' = sz + size bs
-                                     go sz' Nothing =<< k (Just bs)
+                                     go False sz' Nothing =<< k (Just bs)
 
     -- We place an upper limit of 180s on the time we wait on receiving a partial CBOR message even when
     -- there isn't an explicit limit for the current state.
@@ -174,7 +176,7 @@ runDecoderWithLimit limit size Channel{recv} =
     --
     -- 2_097_154 comes from the current maximum message, see `blockFetchProtocolLimits`.
     codecTimeLimit :: DiffTime
-    codecTimeLimit = 180
+    codecTimeLimit = 900
 
 
 runPeerWithLimits
