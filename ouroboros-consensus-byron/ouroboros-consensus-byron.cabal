@@ -46,6 +46,7 @@ library
 
   build-depends:       base              >=4.9   && <4.13
                      , binary            >=0.8   && <0.9
+                     , base64-bytestring
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class

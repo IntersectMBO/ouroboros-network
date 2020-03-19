@@ -29,6 +29,9 @@ module Ouroboros.Consensus.Byron.Node (
 import           Codec.Serialise (decode, encode)
 import           Control.Exception (Exception (..))
 import           Control.Monad.Except
+import qualified Data.ByteString.Base64 as B64
+import qualified Data.ByteString.Char8 as Char8
+import qualified Data.ByteString.Lazy as LBS
 import           Data.Coerce (coerce)
 import           Data.Maybe
 
@@ -46,6 +49,7 @@ import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      ChainHash (..), pattern GenesisPoint, SlotNo (..))
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
+import           Ouroboros.Consensus.Block.RealPoint (blockRealPoint)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
@@ -64,6 +68,8 @@ import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Protocol
+
+import Debug.Trace (traceM)
 
 {-------------------------------------------------------------------------------
   Credentials
@@ -210,8 +216,15 @@ instance RunNode ByronBlock where
     case tip of
       -- Chain is not empty
       BlockPoint {} -> return ()
-      GenesisPoint  -> ChainDB.addBlock_ chainDB genesisEBB
-        where
+      GenesisPoint  -> do
+        ChainDB.addBlock_ chainDB genesisEBB
+        x :: Maybe LBS.ByteString <- ChainDB.getBlockComponent chainDB ChainDB.GetRawBlock (blockRealPoint genesisEBB)
+        traceM "============================ EBB ============================"
+        case x of
+          Nothing -> traceM "EBB not found in ChainDB"
+          Just bs -> traceM (Char8.unpack $ B64.encode $ LBS.toStrict bs :: String)
+        traceM "============================ EBB ============================"
+       where
           genesisEBB = forgeEBB cfg (SlotNo 0) (BlockNo 0) GenesisHash
 
   -- Extract it from the 'Genesis.Config'
