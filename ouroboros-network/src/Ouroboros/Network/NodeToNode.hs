@@ -28,6 +28,7 @@ module Ouroboros.Network.NodeToNode (
   , NetworkServerTracers (..)
   , nullNetworkServerTracers
   , NetworkMutableState (..)
+  , AcceptedConnectionsLimit (..)
   , newNetworkMutableState
   , newNetworkMutableStateSTM
   , cleanNetworkMutableState
@@ -480,17 +481,19 @@ withServer
   => SocketSnocket
   -> NetworkServerTracers Socket.SockAddr NodeToNodeVersion
   -> NetworkMutableState Socket.SockAddr
+  -> AcceptedConnectionsLimit
   -> Socket.SockAddr
   -> Versions NodeToNodeVersion DictVersion
               (ConnectionId Socket.SockAddr ->
                  OuroborosApplication appType BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
-withServer sn tracers networkState addr versions errPolicies =
+withServer sn tracers networkState acceptedConnectionsLimit addr versions errPolicies =
   withServerNode
     sn
     tracers
     networkState
+    acceptedConnectionsLimit
     addr
     cborTermVersionDataCodec
     (\(DictVersion _) -> acceptableVersion)
@@ -506,15 +509,16 @@ withServer_V1
   => SocketSnocket
   -> NetworkServerTracers Socket.SockAddr NodeToNodeVersion
   -> NetworkMutableState Socket.SockAddr
+  -> AcceptedConnectionsLimit
   -> Socket.SockAddr
   -> NodeToNodeVersionData
   -> (ConnectionId Socket.SockAddr ->
         OuroborosApplication appType BL.ByteString IO x y)
   -> ErrorPolicies
   -> IO Void
-withServer_V1 sn tracers networkState addr versionData application =
+withServer_V1 sn tracers networkState acceptedConnectionsLimit addr versionData application =
     withServer
-      sn tracers networkState addr
+      sn tracers networkState acceptedConnectionsLimit addr
       (simpleSingletonVersions
           NodeToNodeV_1
           versionData

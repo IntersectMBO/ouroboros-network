@@ -145,6 +145,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
       (socketSnocket iocp)
       nullNetworkServerTracers
       networkState
+      (AcceptedConnectionsLimit maxBound maxBound 0)
       producerAddress
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptableVersion)

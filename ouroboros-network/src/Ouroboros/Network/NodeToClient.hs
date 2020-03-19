@@ -269,6 +269,7 @@ withServer sn tracers networkState addr versions errPolicies =
     sn
     tracers
     networkState
+    (AcceptedConnectionsLimit maxBound maxBound 0)
     addr
     cborTermVersionDataCodec
     (\(DictVersion _) -> acceptableVersion)

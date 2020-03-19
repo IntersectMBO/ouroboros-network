@@ -5,6 +5,7 @@
 module Ouroboros.Network.Diffusion
   ( DiffusionTracers (..)
   , DiffusionArguments (..)
+  , AcceptedConnectionsLimit (..)
   , DiffusionApplications (..)
   , OuroborosApplication (..)
   , runDataDiffusion
@@ -36,7 +37,9 @@ import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..) )
 import qualified Ouroboros.Network.NodeToClient as NodeToClient
-import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
+import           Ouroboros.Network.NodeToNode ( NodeToNodeVersion (..)
+                                              , AcceptedConnectionsLimit (..)
+                                              )
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
 import           Ouroboros.Network.Socket ( ConnectionId (..)
                                           , NetworkMutableState
@@ -80,6 +83,8 @@ data DiffusionArguments = DiffusionArguments {
       -- ^ ip subscription addresses
     , daDnsProducers :: [DnsSubscriptionTarget]
       -- ^ list of domain names to subscribe to
+    , daAcceptedConnectionsLimit :: AcceptedConnectionsLimit
+      -- ^ parameters for limiting number of accepted connections
     }
 
 data DiffusionApplications = DiffusionApplications {
@@ -125,6 +130,7 @@ runDataDiffusion tracers
                                     , daLocalAddress
                                     , daIpProducers
                                     , daDnsProducers
+                                    , daAcceptedConnectionsLimit
                                     }
                  applications@DiffusionApplications { daErrorPolicies } =
     withIOManager $ \iocp -> do
@@ -224,6 +230,7 @@ runDataDiffusion tracers
           dtHandshakeTracer
           dtErrorPolicyTracer)
         networkState
+        daAcceptedConnectionsLimit
         address
         (daResponderApplication applications)
         remoteErrorPolicy
