@@ -6,14 +6,19 @@
 module Ouroboros.Network.Server.RateLimiting
   ( AcceptedConnectionsLimit (..)
   , runConnectionRateLimits
+
+    -- * Tracing
+  , AcceptConnectionsPolicyTrace (..)
   ) where
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad (when)
+import           Control.Tracer (Tracer, traceWith)
 
 import           Data.Word
+import           Text.Printf
 
 
 -- | Policy which governs how to limit the number of accepted connections.
@@ -96,10 +101,12 @@ runConnectionRateLimits
        , MonadDelay m
        , MonadTime  m
        )
-    => STM m Int
+    => Tracer m AcceptConnectionsPolicyTrace
+    -> STM m Int
     -> AcceptedConnectionsLimit
     -> m ()
-runConnectionRateLimits numberOfConnectionsSTM
+runConnectionRateLimits tracer
+                        numberOfConnectionsSTM
                         acceptedConnectionsLimit@AcceptedConnectionsLimit
                           { acceptedConnectionsDelay } = do
     numberOfConnections <- atomically numberOfConnectionsSTM
@@ -107,12 +114,15 @@ runConnectionRateLimits numberOfConnectionsSTM
 
       NoRateLimiting  -> pure ()
 
-      SoftDelay delay -> threadDelay delay
+      SoftDelay delay -> do
+        traceWith tracer (ServerTraceAcceptConnectionRateLimiting delay numberOfConnections)
+        threadDelay delay
 
       -- wait until the current number of connection drops below the limit, and
       -- wait at least 'acceptedConnectionsDelay'.  This is to avoid accepting
       -- the last connection to frequently if it fails almost immediately .
       HardLimit limit -> do
+        traceWith tracer (ServerTraceAcceptConnectionHardLimit limit)
         start <- getMonotonicTime
         atomically $ do
           numberOfConnections <- numberOfConnectionsSTM
@@ -121,3 +131,26 @@ runConnectionRateLimits numberOfConnectionsSTM
         let remainingDelay = end `diffTime` start - acceptedConnectionsDelay
         when (remainingDelay > 0)
           $ threadDelay remainingDelay
+
+
+--
+-- trace
+--
+
+
+-- | Trace for the 'AcceptConnectionsLimit' policy.
+--
+data AcceptConnectionsPolicyTrace
+      = ServerTraceAcceptConnectionRateLimiting DiffTime Int
+      | ServerTraceAcceptConnectionHardLimit Word32
+  deriving (Eq, Ord)
+
+instance Show AcceptConnectionsPolicyTrace where
+    show (ServerTraceAcceptConnectionRateLimiting delay numberOfConnections) =
+      printf
+        "rate limiting accepting connections, dalaying next accept for %s, currently serving %s connections"
+        (show delay) (show numberOfConnections)
+    show (ServerTraceAcceptConnectionHardLimit limit) =
+      printf
+        "hard rate limit reached, waiting until the number of connections drops below %s"
+        (show limit)

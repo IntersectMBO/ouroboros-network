@@ -251,9 +251,10 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
 
   where
     networkTracers = NetworkServerTracers {
-        nstMuxTracer         = activeMuxTracer,
-        nstHandshakeTracer   = nullTracer,
-        nstErrorPolicyTracer = showTracing stdoutTracer
+        nstMuxTracer          = activeMuxTracer,
+        nstHandshakeTracer    = nullTracer,
+        nstErrorPolicyTracer  = showTracing stdoutTracer,
+        nstAcceptPolicyTracer = nullTracer
       }
 
 

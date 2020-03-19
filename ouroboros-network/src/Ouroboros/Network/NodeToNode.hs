@@ -70,6 +70,7 @@ module Ouroboros.Network.NodeToNode (
   , SuspendDecision (..)
 
   -- ** Traces
+  , AcceptConnectionsPolicyTrace (..)
   , TraceSendRecv (..)
   , SubscriptionTrace (..)
   , DnsTrace (..)

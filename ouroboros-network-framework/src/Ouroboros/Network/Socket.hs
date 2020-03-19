@@ -36,6 +36,7 @@ module Ouroboros.Network.Socket (
     , NetworkServerTracers (..)
     , nullNetworkServerTracers
     , debuggingNetworkServerTracers
+    , AcceptConnectionsPolicyTrace (..)
 
     -- * Helper function for creating servers
     , fromSnocket
@@ -99,7 +100,9 @@ import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.IOManager (AssociateWithIOCP)
 import           Ouroboros.Network.Snocket (Snocket)
 import qualified Ouroboros.Network.Snocket as Snocket
-import           Ouroboros.Network.Server.Socket (AcceptedConnectionsLimit (..))
+import           Ouroboros.Network.Server.Socket ( AcceptedConnectionsLimit (..)
+                                                 , AcceptConnectionsPolicyTrace (..)
+                                                 )
 import qualified Ouroboros.Network.Server.Socket as Server
 import           Ouroboros.Network.Server.ConnectionTable
 
@@ -410,25 +413,29 @@ data NetworkServerTracers addr vNumber = NetworkServerTracers {
                                           (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
-      nstErrorPolicyTracer :: Tracer IO (WithAddr addr ErrorPolicyTrace)
+      nstErrorPolicyTracer :: Tracer IO (WithAddr addr ErrorPolicyTrace),
       -- ^ error policy tracer; must not be 'nullTracer', otherwise all the
       -- exceptions which are not matched by any error policy will be caught
       -- and not logged or rethrown.
+      nstAcceptPolicyTracer :: Tracer IO AcceptConnectionsPolicyTrace
+      -- ^ tracing rate limiting of accepting connections.
     }
 
 nullNetworkServerTracers :: NetworkServerTracers addr vNumber
 nullNetworkServerTracers = NetworkServerTracers {
-      nstMuxTracer         = nullTracer,
-      nstHandshakeTracer   = nullTracer,
-      nstErrorPolicyTracer = nullTracer
+      nstMuxTracer          = nullTracer,
+      nstHandshakeTracer    = nullTracer,
+      nstErrorPolicyTracer  = nullTracer,
+      nstAcceptPolicyTracer = nullTracer
     }
 
 debuggingNetworkServerTracers :: (Show addr, Show vNumber)
                               =>  NetworkServerTracers addr vNumber
 debuggingNetworkServerTracers = NetworkServerTracers {
-      nstMuxTracer         = showTracing stdoutTracer,
-      nstHandshakeTracer   = showTracing stdoutTracer,
-      nstErrorPolicyTracer = showTracing stdoutTracer
+      nstMuxTracer          = showTracing stdoutTracer,
+      nstHandshakeTracer    = showTracing stdoutTracer,
+      nstErrorPolicyTracer  = showTracing stdoutTracer,
+      nstAcceptPolicyTracer = showTracing stdoutTracer
     }
 
 
@@ -483,7 +490,9 @@ runServerThread
     -> IO Void
 runServerThread NetworkServerTracers { nstMuxTracer
                                      , nstHandshakeTracer
-                                     , nstErrorPolicyTracer }
+                                     , nstErrorPolicyTracer
+                                     , nstAcceptPolicyTracer
+                                     }
                 NetworkMutableState { nmsConnectionTable
                                     , nmsPeerStates }
                 sn
@@ -496,6 +505,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
     sockAddr <- Snocket.getLocalAddr sn sd
     Server.run
         nstErrorPolicyTracer
+        nstAcceptPolicyTracer
         (fromSnocket nmsConnectionTable sn sd)
         acceptedConnectionsLimit
         (acceptException sockAddr)

@@ -39,6 +39,7 @@ import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..) )
 import qualified Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode ( NodeToNodeVersion (..)
                                               , AcceptedConnectionsLimit (..)
+                                              , AcceptConnectionsPolicyTrace (..)
                                               )
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
 import           Ouroboros.Network.Socket ( ConnectionId (..)
@@ -69,6 +70,8 @@ data DiffusionTracers = DiffusionTracers {
       -- ^ Handshake protocol tracer for local clients
     , dtErrorPolicyTracer      :: Tracer IO (WithAddr SockAddr     ErrorPolicyTrace)
     , dtLocalErrorPolicyTracer :: Tracer IO (WithAddr LocalAddress ErrorPolicyTrace)
+    , dtAcceptPolicyTracer     :: Tracer IO AcceptConnectionsPolicyTrace
+      -- ^ Trace rate limiting of accepted connections
     }
 
 
@@ -182,6 +185,7 @@ runDataDiffusion tracers
                      , dtHandshakeLocalTracer
                      , dtErrorPolicyTracer
                      , dtLocalErrorPolicyTracer
+                     , dtAcceptPolicyTracer
                      } = tracers
 
     initiatorLocalAddresses :: LocalAddresses SockAddr
@@ -215,7 +219,8 @@ runDataDiffusion tracers
         (NetworkServerTracers
           dtMuxLocalTracer
           dtHandshakeLocalTracer
-          dtLocalErrorPolicyTracer)
+          dtLocalErrorPolicyTracer
+          dtAcceptPolicyTracer)
         networkLocalState
         (Snocket.localAddressFromPath daLocalAddress)
         (daLocalResponderApplication applications)
@@ -228,7 +233,8 @@ runDataDiffusion tracers
         (NetworkServerTracers
           dtMuxTracer
           dtHandshakeTracer
-          dtErrorPolicyTracer)
+          dtErrorPolicyTracer
+          dtAcceptPolicyTracer)
         networkState
         daAcceptedConnectionsLimit
         address
