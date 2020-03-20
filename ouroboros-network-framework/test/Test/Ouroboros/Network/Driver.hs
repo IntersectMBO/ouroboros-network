@@ -31,13 +31,12 @@ import Control.Monad.Class.MonadTime
 import Control.Monad.Class.MonadTimer
 import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim (runSimOrThrow)
-import Control.Tracer (nullTracer)
+import Control.Tracer
 
 import Test.QuickCheck
 import Text.Show.Functions ()
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
-
 
 --
 -- The list of all properties
@@ -64,7 +63,9 @@ byteLimitsReqResp limit = ProtocolSizeLimits stateToLimit (fromIntegral . length
     stateToLimit (ClientAgency TokIdle) = limit
     stateToLimit (ServerAgency TokBusy) = limit
 
--- TODO add test cases for time limits
+
+serverTimeout :: DiffTime
+serverTimeout = 0.2 -- 200 ms
 
 -- Time limits
 timeLimitsReqResp :: ProtocolTimeLimits (ReqResp req resp)
@@ -72,8 +73,18 @@ timeLimitsReqResp = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (pr :: PeerRole) (st  :: ReqResp req resp).
                     PeerHasAgency pr st -> Maybe DiffTime
+    stateToLimit (ClientAgency TokIdle) = Just serverTimeout
+    stateToLimit (ServerAgency TokBusy) = Just serverTimeout
+
+-- Unlimited Time
+timeUnLimitsReqResp :: ProtocolTimeLimits (ReqResp req resp)
+timeUnLimitsReqResp = ProtocolTimeLimits stateToLimit
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st  :: ReqResp req resp).
+                    PeerHasAgency pr st -> Maybe DiffTime
     stateToLimit (ClientAgency TokIdle) = Nothing
     stateToLimit (ServerAgency TokBusy) = Nothing
+
 
 --
 -- runPeerWithLimits properties
@@ -86,44 +97,56 @@ timeLimitsReqResp = ProtocolTimeLimits stateToLimit
 --
 prop_runPeerWithLimits
   :: forall m. (MonadSTM m, MonadAsync m, MonadCatch m, MonadTimer m)
-  => Word
+  => Tracer m (TraceSendRecv (ReqResp String ()))
+  -> Word
   -- ^ byte limit
-  -> [String]
+  -> [(String, DiffTime)]
   -- ^ request payloads
   -> m Bool
-prop_runPeerWithLimits limit reqPayloads = do
+prop_runPeerWithLimits tracer limit reqPayloads = do
       (c1, c2) <- createConnectedChannels
 
       res <- try $
-        runPeerWithLimits nullTracer codecReqResp (byteLimitsReqResp limit) timeLimitsReqResp c1 recvPeer
+        runPeerWithLimits tracer codecReqResp (byteLimitsReqResp limit) timeUnLimitsReqResp c1 recvPeer
           `concurrently`
-        void (runPeer nullTracer codecReqResp c2 sendPeer)
+        void (runPeerWithLimits tracer codecReqResp (byteLimitsReqResp maxBound) timeLimitsReqResp
+              c2 sendPeer)
 
-      case res :: Either ProtocolLimitFailure ([String], ()) of
-        Right _                -> pure $ not shouldFail
-        Left ExceededSizeLimit -> pure $ shouldFail
-        Left _                 -> pure $ False
+      case res :: Either ProtocolLimitFailure ([DiffTime], ()) of
+        Right _                -> pure $ shouldFail reqPayloads == Nothing
+        Left ExceededSizeLimit -> pure $ shouldFail reqPayloads == Just ExceededSizeLimit
+        Left ExceededTimeLimit -> pure $ shouldFail reqPayloads == Just ExceededTimeLimit
 
     where
       sendPeer :: Peer (ReqResp String ()) AsClient StIdle m [()]
-      sendPeer = reqRespClientPeer $ reqRespClientMap reqPayloads
+      sendPeer = reqRespClientPeer $ reqRespClientMap $ map fst reqPayloads
 
-      recvPeer :: Peer (ReqResp String ()) AsServer StIdle m [String]
+      recvPeer :: Peer (ReqResp String ()) AsServer StIdle m [DiffTime]
       recvPeer = reqRespServerPeer $ reqRespServerMapAccumL
-        (\acc req -> pure (req:acc, ()))
-        []
+        (\(delay:acc) _ -> do
+            threadDelay delay 
+            return (acc, ()))
+        (map snd reqPayloads)
 
-      encoded :: [String]
-      encoded =
-        -- add @MsgDone@ which is always sent
-        (encode (codecReqResp @String @() @m) (ClientAgency TokIdle) MsgDone)
-        : map (encode (codecReqResp @String @() @m) (ClientAgency TokIdle) . MsgReq) reqPayloads
+      -- It is not enough to check if a testcase is expected to fail, we need to
+      -- calculate which type of failure is going to happen first.
+      shouldFail ::  [(String, DiffTime)] -> Maybe ProtocolLimitFailure
+      shouldFail [] =
+          -- Check @MsgDone@ which is always sent
+          let msgDone = encode (codecReqResp @String @() @m) (ClientAgency TokIdle) MsgDone in
+          if length msgDone > fromIntegral limit
+             then Just ExceededSizeLimit
+             else Nothing
+      shouldFail ((msg, delay):cmds) =
+          let msg' = encode (codecReqResp @String @() @m) (ClientAgency TokIdle) (MsgReq msg) in
+          if length msg' > fromIntegral limit 
+          then Just ExceededSizeLimit
+          else if delay >= serverTimeout
+          then Just ExceededTimeLimit
+          else shouldFail cmds
 
-      shouldFail :: Bool
-      shouldFail = any (> limit) $ map (fromIntegral . length) encoded
-
-data ReqRespPayloadWithLimit = ReqRespPayloadWithLimit Word String
-  deriving Show
+data ReqRespPayloadWithLimit = ReqRespPayloadWithLimit Word (String, DiffTime)
+  deriving (Eq, Show)
 
 instance Arbitrary ReqRespPayloadWithLimit where
     arbitrary = do
@@ -139,14 +162,23 @@ instance Arbitrary ReqRespPayloadWithLimit where
         -- right at the limit
         , (1, choose (limit, limit))
         ]
-      ReqRespPayloadWithLimit limit <$> replicateM (fromIntegral len) arbitrary
+      msgs <- replicateM (fromIntegral len) arbitrary
+      delay <- frequency
+        -- no delay
+        [ (1, pure 0.0)
+        -- below the limit
+        , (1, pure 0.1)
+        -- above the limit
+        , (2, pure 0.3)
+        ]
+      return $ ReqRespPayloadWithLimit limit (msgs, delay)
 
-    shrink (ReqRespPayloadWithLimit l p) =
-      [ ReqRespPayloadWithLimit l' p
+    shrink (ReqRespPayloadWithLimit l (p, d)) =
+      [ ReqRespPayloadWithLimit l' (p, d)
       | l' <- shrink l
       ]
       ++
-      [ ReqRespPayloadWithLimit l p'
+      [ ReqRespPayloadWithLimit l (p', d)
       | p' <- shrink p
       ]
 
@@ -158,10 +190,10 @@ prop_runPeerWithLimits_ST
   -> Property
 prop_runPeerWithLimits_ST (ReqRespPayloadWithLimit limit payload) =
       tabulate "Limit Boundaries" (labelExamples limit payload) $
-        runSimOrThrow (prop_runPeerWithLimits limit [payload])
+        runSimOrThrow (prop_runPeerWithLimits nullTracer limit [payload])
     where
-      labelExamples :: Word -> String -> [String]
-      labelExamples l p =
+      labelExamples :: Word -> (String, DiffTime) -> [String]
+      labelExamples l (p,_) =
         [ case length p `compare` fromIntegral l of
             LT -> "BelowTheLimit"
             EQ -> "AtTheLimit"
@@ -176,5 +208,5 @@ prop_runPeerWithLimits_IO
   :: ReqRespPayloadWithLimit
   -> Property
 prop_runPeerWithLimits_IO (ReqRespPayloadWithLimit limit payload) =
-  ioProperty (prop_runPeerWithLimits limit [payload])
+  ioProperty  (prop_runPeerWithLimits nullTracer limit [payload])
 
