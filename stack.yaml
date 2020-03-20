@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/3893f21db1665e7bab9e8c6504c547fc7c28f98c/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/15329855d4eadbee5f5f486104c7b04b50e05f7b/snapshot.yaml
 
 packages:
   - ./typed-protocols
@@ -69,10 +69,13 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: 3893f21db1665e7bab9e8c6504c547fc7c28f98c
+    commit: 15329855d4eadbee5f5f486104c7b04b50e05f7b
     subdirs:
       - .
       - test
+
+  - git: https://github.com/input-output-hk/cardano-crypto/
+    commit: 2547ad1e80aeabca2899951601079408becbc92c
 
   - git: https://github.com/advancedtelematic/quickcheck-state-machine
     commit: 2bf37003ca1c0c57e4354610d7c47da0a0e77b5c
