@@ -22,6 +22,7 @@ let
   validate-mainnet = import ./nix/validate-mainnet.nix {
     inherit pkgs;
     byron-db-converter = haskellPackages.ouroboros-consensus-byron.components.exes.db-converter;
+    onlyImmDB = false;
   };
 
   self = {
@@ -39,9 +40,14 @@ let
     exes = collectComponents' "exes" haskellPackages;
 
     checks = recurseIntoAttrs {
-      inherit validate-mainnet;
       # `checks.tests` collect results of executing the tests:
       tests = collectChecks haskellPackages;
+    };
+
+    # These are not run on hydra, but will be built separately in a nightly
+    # build job.
+    nightly-checks = {
+      inherit validate-mainnet;
     };
 
     shell = import ./shell.nix {
