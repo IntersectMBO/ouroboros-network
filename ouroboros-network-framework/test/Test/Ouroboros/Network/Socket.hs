@@ -231,6 +231,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
         snocket
         networkTracers
         networkState
+        (AcceptedConnectionsLimit maxBound maxBound 0)
         responderAddr
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptableVersion)
@@ -250,9 +251,10 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
 
   where
     networkTracers = NetworkServerTracers {
-        nstMuxTracer         = activeMuxTracer,
-        nstHandshakeTracer   = nullTracer,
-        nstErrorPolicyTracer = showTracing stdoutTracer
+        nstMuxTracer          = activeMuxTracer,
+        nstHandshakeTracer    = nullTracer,
+        nstErrorPolicyTracer  = showTracing stdoutTracer,
+        nstAcceptPolicyTracer = nullTracer
       }
 
 

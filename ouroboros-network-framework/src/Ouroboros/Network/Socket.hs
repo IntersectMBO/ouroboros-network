@@ -22,6 +22,7 @@ module Ouroboros.Network.Socket (
     , newNetworkMutableState
     , newNetworkMutableStateSTM
     , cleanNetworkMutableState
+    , AcceptedConnectionsLimit (..)
     , ConnectionId (..)
     , withServerNode
     , connectToNode
@@ -35,6 +36,7 @@ module Ouroboros.Network.Socket (
     , NetworkServerTracers (..)
     , nullNetworkServerTracers
     , debuggingNetworkServerTracers
+    , AcceptConnectionsPolicyTrace (..)
 
     -- * Helper function for creating servers
     , fromSnocket
@@ -98,6 +100,9 @@ import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.IOManager (AssociateWithIOCP)
 import           Ouroboros.Network.Snocket (Snocket)
 import qualified Ouroboros.Network.Snocket as Snocket
+import           Ouroboros.Network.Server.Socket ( AcceptedConnectionsLimit (..)
+                                                 , AcceptConnectionsPolicyTrace (..)
+                                                 )
 import qualified Ouroboros.Network.Server.Socket as Server
 import           Ouroboros.Network.Server.ConnectionTable
 
@@ -408,25 +413,29 @@ data NetworkServerTracers addr vNumber = NetworkServerTracers {
                                           (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
-      nstErrorPolicyTracer :: Tracer IO (WithAddr addr ErrorPolicyTrace)
+      nstErrorPolicyTracer :: Tracer IO (WithAddr addr ErrorPolicyTrace),
       -- ^ error policy tracer; must not be 'nullTracer', otherwise all the
       -- exceptions which are not matched by any error policy will be caught
       -- and not logged or rethrown.
+      nstAcceptPolicyTracer :: Tracer IO AcceptConnectionsPolicyTrace
+      -- ^ tracing rate limiting of accepting connections.
     }
 
 nullNetworkServerTracers :: NetworkServerTracers addr vNumber
 nullNetworkServerTracers = NetworkServerTracers {
-      nstMuxTracer         = nullTracer,
-      nstHandshakeTracer   = nullTracer,
-      nstErrorPolicyTracer = nullTracer
+      nstMuxTracer          = nullTracer,
+      nstHandshakeTracer    = nullTracer,
+      nstErrorPolicyTracer  = nullTracer,
+      nstAcceptPolicyTracer = nullTracer
     }
 
 debuggingNetworkServerTracers :: (Show addr, Show vNumber)
                               =>  NetworkServerTracers addr vNumber
 debuggingNetworkServerTracers = NetworkServerTracers {
-      nstMuxTracer         = showTracing stdoutTracer,
-      nstHandshakeTracer   = showTracing stdoutTracer,
-      nstErrorPolicyTracer = showTracing stdoutTracer
+      nstMuxTracer          = showTracing stdoutTracer,
+      nstHandshakeTracer    = showTracing stdoutTracer,
+      nstErrorPolicyTracer  = showTracing stdoutTracer,
+      nstAcceptPolicyTracer = showTracing stdoutTracer
     }
 
 
@@ -472,6 +481,7 @@ runServerThread
     -> NetworkMutableState addr
     -> Snocket IO fd addr
     -> fd
+    -> AcceptedConnectionsLimit
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -> Versions vNumber extra
@@ -480,11 +490,14 @@ runServerThread
     -> IO Void
 runServerThread NetworkServerTracers { nstMuxTracer
                                      , nstHandshakeTracer
-                                     , nstErrorPolicyTracer }
+                                     , nstErrorPolicyTracer
+                                     , nstAcceptPolicyTracer
+                                     }
                 NetworkMutableState { nmsConnectionTable
                                     , nmsPeerStates }
                 sn
                 sd
+                acceptedConnectionsLimit
                 versionDataCodec
                 acceptVersion
                 versions
@@ -492,7 +505,9 @@ runServerThread NetworkServerTracers { nstMuxTracer
     sockAddr <- Snocket.getLocalAddr sn sd
     Server.run
         nstErrorPolicyTracer
+        nstAcceptPolicyTracer
         (fromSnocket nmsConnectionTable sn sd)
+        acceptedConnectionsLimit
         (acceptException sockAddr)
         (beginConnection sn nstMuxTracer nstHandshakeTracer versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
         -- register producer when application starts, it will be unregistered
@@ -562,6 +577,7 @@ withServerNode
     => Snocket IO fd addr
     -> NetworkServerTracers addr vNumber
     -> NetworkMutableState addr
+    -> AcceptedConnectionsLimit
     -> addr
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
@@ -576,7 +592,7 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode sn tracers networkState addr versionDataCodec acceptVersion versions errorPolicies k =
+withServerNode sn tracers networkState acceptedConnectionsLimit addr versionDataCodec acceptVersion versions errorPolicies k =
     bracket (mkListeningSocket sn (Just addr) (Snocket.addrFamily sn addr)) (Snocket.close sn) $ \sd -> do
       addr' <- Snocket.getLocalAddr sn sd
       withAsync
@@ -585,6 +601,7 @@ withServerNode sn tracers networkState addr versionDataCodec acceptVersion versi
           networkState
           sn
           sd
+          acceptedConnectionsLimit
           versionDataCodec
           acceptVersion
           versions

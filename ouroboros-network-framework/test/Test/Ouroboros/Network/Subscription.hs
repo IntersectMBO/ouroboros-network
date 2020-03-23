@@ -567,6 +567,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         sn
         nullNetworkServerTracers
         (NetworkMutableState tbl peerStatesVar)
+        (AcceptedConnectionsLimit maxBound maxBound 0)
         (Socket.addrAddress responderAddr)
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptableVersion)
@@ -704,6 +705,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
         (socketSnocket iocp)
         nullNetworkServerTracers
         (NetworkMutableState tbl stVar)
+        (AcceptedConnectionsLimit maxBound maxBound 0)
         responderAddr
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptableVersion)
@@ -722,6 +724,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
           sn
           nullNetworkServerTracers
           (NetworkMutableState tbl stVar)
+          (AcceptedConnectionsLimit maxBound maxBound 0)
           responderAddr
           cborTermVersionDataCodec
           (\(DictVersion _) -> acceptableVersion)
@@ -835,6 +838,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
             (socketSnocket iocp)
             nullNetworkServerTracers
             (NetworkMutableState tbl stVar)
+            (AcceptedConnectionsLimit maxBound maxBound 0)
             (Socket.addrAddress addr)
             cborTermVersionDataCodec
             (\(DictVersion _) -> acceptableVersion)

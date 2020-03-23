@@ -178,6 +178,7 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
       (localSnocket iocp defaultLocalSocketAddrPath)
       nullNetworkServerTracers
       networkState
+      (AcceptedConnectionsLimit maxBound maxBound 0)
       (localAddressFromPath sockAddr)
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptableVersion)
@@ -395,6 +396,7 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
       (localSnocket iocp defaultLocalSocketAddrPath)
       nullNetworkServerTracers
       networkState
+      (AcceptedConnectionsLimit maxBound maxBound 0)
       (localAddressFromPath sockAddr)
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptableVersion)

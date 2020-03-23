@@ -138,6 +138,7 @@ serverPingPong =
       (localSnocket iomgr defaultLocalSocketAddrPath)
       nullNetworkServerTracers
       networkState
+      (AcceptedConnectionsLimit maxBound maxBound 0)
       defaultLocalSocketAddr
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptableVersion)
@@ -243,6 +244,7 @@ serverPingPong2 =
       (localSnocket iomgr defaultLocalSocketAddrPath)
       nullNetworkServerTracers
       networkState
+      (AcceptedConnectionsLimit maxBound maxBound 0)
       defaultLocalSocketAddr
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptableVersion)

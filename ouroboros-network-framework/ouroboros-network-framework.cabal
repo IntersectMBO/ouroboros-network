@@ -36,6 +36,7 @@ library
 
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket
+                       Ouroboros.Network.Server.RateLimiting
                        Ouroboros.Network.Snocket
                        Ouroboros.Network.Socket
 
@@ -92,6 +93,7 @@ test-suite ouroboros-network-framework-tests
                        Test.Ouroboros.Network.Driver
                        Test.Ouroboros.Network.Socket
                        Test.Ouroboros.Network.Subscription
+                       Test.Ouroboros.Network.RateLimiting
 
   build-depends:       base
                      , bytestring

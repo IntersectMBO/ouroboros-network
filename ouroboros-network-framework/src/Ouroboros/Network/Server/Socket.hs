@@ -10,7 +10,9 @@
 {-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
 
 module Ouroboros.Network.Server.Socket
-  ( BeginConnection
+  ( AcceptedConnectionsLimit (..)
+  , AcceptConnectionsPolicyTrace (..)
+  , BeginConnection
   , HandleConnection (..)
   , ApplicationStart
   , CompleteConnection
@@ -25,17 +27,21 @@ module Ouroboros.Network.Server.Socket
 
 import Control.Exception (SomeException (..), IOException, mask, mask_, finally, onException, try)
 import Control.Concurrent.Async (Async)
+import Control.Monad.Class.MonadTime (MonadTime (..))
+import Control.Monad.Class.MonadTimer (MonadDelay (..))
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM (STM)
 import qualified Control.Concurrent.STM as STM
-import Control.Monad (forM_, join)
-import Control.Monad.Class.MonadTime (Time, getMonotonicTime)
+import Control.Monad (forM_, join, when)
+import Control.Monad.Class.MonadTime (DiffTime, Time, diffTime, getMonotonicTime)
 import Control.Tracer (Tracer, traceWith)
 import Data.Foldable (traverse_)
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Word (Word32)
 
 import Ouroboros.Network.ErrorPolicy (CompleteApplicationResult (..), WithAddr, ErrorPolicyTrace)
+import Ouroboros.Network.Server.RateLimiting
 
 -- | Abstraction of something that can provide connections.
 -- A `Network.Socket` can be used to get a
@@ -56,6 +62,7 @@ ioSocket io = Socket
   }
 
 type StatusVar st = STM.TVar st
+
 
 -- | What to do with a new connection: reject it and give a new state, or
 -- accept it and give a new state with a continuation to run against the
@@ -151,34 +158,45 @@ spawnOne remoteAddr statusVar resQ threadsVar applicationStart io = mask_ $ do
 -- stop it, whether normally or exceptionally, it must be killed by an async
 -- exception, or the exception callback here must re-throw.
 acceptLoop
-  :: ResultQ addr r
+  :: Tracer IO AcceptConnectionsPolicyTrace
+  -> ResultQ addr r
   -> ThreadsVar
   -> StatusVar st
+  -> AcceptedConnectionsLimit
   -> BeginConnection addr channel st r
   -> ApplicationStart addr st
   -> (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
   -> Socket addr channel
   -> IO ()
-acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptException socket = do
-    mNextSocket <- acceptOne resQ threadsVar statusVar beginConnection applicationStart acceptException socket
+acceptLoop acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionLimit beginConnection applicationStart acceptException socket = do
+    mNextSocket <- acceptOne acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionLimit beginConnection applicationStart acceptException socket
     case mNextSocket of
       Nothing -> pure ()
       Just nextSocket ->
-        acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptException nextSocket
+        acceptLoop acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionLimit beginConnection applicationStart acceptException nextSocket
 
 -- | Accept once from the socket, use the `Accept` to make a decision (accept
 -- or reject), and spawn the thread if accepted.
 acceptOne
   :: forall addr channel st r.
-     ResultQ addr r
+     Tracer IO AcceptConnectionsPolicyTrace
+  -> ResultQ addr r
   -> ThreadsVar
   -> StatusVar st
+  -> AcceptedConnectionsLimit
   -> BeginConnection addr channel st r
   -> ApplicationStart addr st
   -> (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
   -> Socket addr channel
   -> IO (Maybe (Socket addr channel))
-acceptOne resQ threadsVar statusVar beginConnection applicationStart acceptException socket = mask $ \restore -> do
+acceptOne acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionsLimit beginConnection applicationStart acceptException socket = mask $ \restore -> do
+
+  -- Rate limiting of accepted connections; this might block.
+  runConnectionRateLimits
+    acceptPolicyTrace
+    (Set.size <$> STM.readTVar threadsVar)
+    acceptedConnectionsLimit
+
   -- mask is to assure that every socket is closed.
   outcome <- try (restore (acceptConnection socket))
   case outcome :: Either IOException (addr, channel, IO (), Socket addr channel) of
@@ -253,12 +271,15 @@ mainLoop errorPolicyTrace resQ threadsVar statusVar complete main =
       traverse_ (traceWith errorPolicyTrace) carTrace
       mainLoop errorPolicyTrace resQ threadsVar statusVar complete main
 
+
 -- | Run a server.
 run
   :: Tracer IO (WithAddr addr ErrorPolicyTrace)
+  -> Tracer IO AcceptConnectionsPolicyTrace
   -- TODO: extend this trace to trace server action (this might be useful for
   -- debugging)
   -> Socket addr channel
+  -> AcceptedConnectionsLimit
   -> (IOException -> IO ())
   -> BeginConnection addr channel st r
   -> ApplicationStart addr st
@@ -266,10 +287,10 @@ run
   -> Main st t
   -> STM.TVar st
   -> IO t
-run errroPolicyTrace socket acceptException beginConnection applicationStart complete main statusVar = do
+run errroPolicyTrace acceptPolicyTrace socket acceptedConnectionLimit acceptException beginConnection applicationStart complete main statusVar = do
   resQ <- STM.newTQueueIO
   threadsVar <- STM.newTVarIO Set.empty
-  let acceptLoopDo = acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptException socket
+  let acceptLoopDo = acceptLoop acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionLimit beginConnection applicationStart acceptException socket
       -- The accept loop is killed when the main loop stops.
       mainDo = Async.withAsync acceptLoopDo $ \_ ->
         mainLoop errroPolicyTrace resQ threadsVar statusVar complete main
