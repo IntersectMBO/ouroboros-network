@@ -35,7 +35,7 @@ import Control.Monad (when)
 import Data.Word (Word32)
 import Data.Functor (void)
 import Foreign.C (CInt (..), CUIntPtr (..))
-import Foreign.Ptr (Ptr, castPtr, nullPtr)
+import Foreign.Ptr (Ptr, intPtrToPtr, nullPtr)
 import Foreign.StablePtr (deRefStablePtr, freeStablePtr)
 import Foreign.Marshal (alloca, free)
 import Foreign.Storable (Storable (..))
@@ -50,7 +50,6 @@ import System.Win32.Async.ErrCode
 import System.Win32.Async.IOData
 import System.Win32.Async.Overlapped
 
-import Unsafe.Coerce (unsafeCoerce)
 
 -- | New type wrapper which holds 'HANDLE' of the I/O completion port.
 -- <https://docs.microsoft.com/en-us/windows/win32/fileio/createiocompletionport>
@@ -106,7 +105,7 @@ associateWithIOCompletionPort (Right sock) (IOCompletionPort iocp) =
   where
     -- this is actually safe
     coerceFdToHANDLE :: CInt -> HANDLE
-    coerceFdToHANDLE = unsafeCoerce
+    coerceFdToHANDLE = intPtrToPtr . fromIntegral
 
 -- | A newtype warpper for 'IOError's whihc are catched in the 'IOManager'
 -- thread and are re-thrown in the main application thread.
@@ -228,6 +227,9 @@ dequeueCompletionPackets iocp@(IOCompletionPort port) =
            -- this is not true we cannot trust other arguments.
               throwIO NullOverlappedPointer
          | completionKey /= magicCompletionKey ->
+           -- The completion key does not agree with what we expect, we ignore
+           -- and carry on. The completion key is set when one calls
+           -- 'associateWithIOCompletionPort'.
             dequeueCompletionPackets iocp
          | gqcsResult -> do
            -- 'GetQueuedCompletionStatus' system call returned without errors.
@@ -236,7 +238,7 @@ dequeueCompletionPackets iocp@(IOCompletionPort port) =
              let -- we can cast @Ptr OVERLAPPED@ to @Ptr AsyncIOCPData@ since
                  -- 'OVERLAPPED' is a frist member of '_IODATA' struct.
                  ioDataPtr :: Ptr AsyncIOCPData
-                 ioDataPtr = castPtr lpOverlapped
+                 ioDataPtr = castOverlappedPtr lpOverlapped
              mvarPtr <- peek (iodDataPtr AsyncSing ioDataPtr)
              mvar <- deRefStablePtr mvarPtr
              freeStablePtr mvarPtr
@@ -248,7 +250,7 @@ dequeueCompletionPackets iocp@(IOCompletionPort port) =
          | otherwise -> do
            -- the async action returned with an error
              let ioDataPtr :: Ptr AsyncIOCPData
-                 ioDataPtr = castPtr lpOverlapped
+                 ioDataPtr = castOverlappedPtr lpOverlapped
              mvarPtr <- peek (iodDataPtr AsyncSing ioDataPtr)
              mvar <- deRefStablePtr mvarPtr
              freeStablePtr mvarPtr

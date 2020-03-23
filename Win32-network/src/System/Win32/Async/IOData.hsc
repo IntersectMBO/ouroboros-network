@@ -23,6 +23,7 @@ module System.Win32.Async.IOData
   , AsyncSing (..)
   , IOData
   , AsyncIOCPData
+  , castOverlappedPtr
   , WsaAsyncIOCPData
   , iodOverlappedPtr
   , iodDataPtr
@@ -45,6 +46,7 @@ import Control.Monad ( when
 import Foreign ( Ptr
                , StablePtr
                , Storable (..)
+               , castPtr
                , free
                , malloc
                , newStablePtr
@@ -113,6 +115,14 @@ data IOData (asyncType :: AsyncType) =
            , iodData       :: StablePtr (MVar (Either ErrCode Int))
              -- ^ associated stable pointer.
            }
+
+-- | We can safly cast a pointer to @'OverlappedType' asyncType@ to a pointer
+-- to @'IOData asyncType@.  This is because @'IOData' asyncType@ is represented
+-- by a struct @IODATA@ (or @WSAIODATA@), which first member is @OVERLAPPED@
+-- (@WSAOVERLAPPED@ respectively).  See the 'Storable' instance for 'IOData' below.
+--
+castOverlappedPtr :: Ptr (OverlappedType asyncType) -> Ptr (IOData asyncType)
+castOverlappedPtr = castPtr
 
 -- | 'AsyncIOCPData' type synonim guarantess that 'dequeueCompletionPackets' is
 -- using the same dataa type as 'withIOCPData' in this module, i.e. submitted
