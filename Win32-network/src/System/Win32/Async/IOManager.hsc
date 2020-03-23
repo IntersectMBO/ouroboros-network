@@ -155,6 +155,17 @@ data IOCompletionException
     | IOCompoletionError !Win32.ErrCode
   deriving Show
 
+
+data IOManagerNotification
+    = IOManagerSkip
+    -- ^ io manger loop will skip and continue
+    | IOManagerStop
+    -- ^ io manage loop will exit
+    | IOManagerOperationError   !Win32.ErrCode !LPOVERLAPPED
+    -- ^ io manager loop received a notification of a successful IO operation
+    | IOManagerOperationSuccess !Int           !LPOVERLAPPED
+    -- ^ io manager loop received a notification of an erronous IO operation 
+
 instance Exception IOCompletionException
 
 -- | I/O manager which handles completions of I/O operations.  It should run on
@@ -171,94 +182,117 @@ instance Exception IOCompletionException
 dequeueCompletionPackets :: IOCompletionPort
                          -- ^ handle of a completion port
                          -> IO ()
-dequeueCompletionPackets iocp@(IOCompletionPort port) =
-    alloca $ \numBytesPtr ->
-      alloca $ \lpCompletionKey ->
-        alloca $ \lpOverlappedPtr -> do
-      -- make 'GetQueuedCompletionStatus' system call which dequeues
-      -- a packet from io completion packet.  We use 'maxBound' as the timeouts
-      -- for dequeueing completion packets from IOCP.  The thread that runs
-      -- 'dequeueCompletionPackets' is ment to run for the entire execution time
-      -- of an appliction.
-      gqcsResult <- c_GetQueuedCompletionStatus port numBytesPtr lpCompletionKey lpOverlappedPtr maxBound
-      errorCode <- Win32.getLastError
-      lpOverlapped <- peek lpOverlappedPtr
-      completionKey <- peek lpCompletionKey
-      let gqcsOverlappedIsNull = lpOverlapped == nullPtr
+dequeueCompletionPackets (IOCompletionPort port) = ioManagerLoop
+    where
+      -- Do all memory allocations, analyse results and return
+      -- 'IOManagerNotification'.  Accessing 'numuberOfBytesPtr'is only safe if
+      -- 'lpOverlapped' is not 'null', thus we do case analysis inside all
+      -- the allocations.
+      getCompletionStatus :: IO IOManagerNotification
+      getCompletionStatus = 
+        alloca $ \numberOfBytesPtr ->
+          alloca $ \lpCompletionKey ->
+            alloca $ \lpOverlappedPtr -> do
+              -- make 'GetQueuedCompletionStatus' system call which dequeues
+              -- a packet from io completion packet.  We use 'maxBound' as the timeouts
+              -- for dequeueing completion packets from IOCP.  The thread that runs
+              -- 'dequeueCompletionPackets' is ment to run for the entire execution time
+              -- of an appliction.
+              gqcsResult <- c_GetQueuedCompletionStatus port numberOfBytesPtr lpCompletionKey lpOverlappedPtr maxBound
+              errorCode <- Win32.getLastError
+              lpOverlapped <- peek lpOverlappedPtr
+              completionKey <- peek lpCompletionKey
+              let gqcsOverlappedIsNull = lpOverlapped == nullPtr
+              -- gqcsIODataPtr was allocated by 'withIODataPtr' or
+              -- 'wsaWaitForCompletion', and we are responsible to deallocate it but
+              -- only if 'gqcsCompletionKey' is 'True'.
 
-      -- gqcsIODataPtr was allocated by 'withIODataPtr' or
-      -- 'wsaWaitForCompletion', and we are responsible to deallocate it but
-      -- only if 'gqcsCompletionKey' is 'True'.
+              if | gqcsOverlappedIsNull && errorCode == eRROR_ABANDONED_WAIT_0 ->
+                   -- this is triggered by closing IO completion 'HANDLE' while there
+                   -- are outstanding requests (this is documented
+                   -- <https://docs.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getqueuedcompletionstatus#remarks>)
+                      pure IOManagerStop
+                 | gqcsOverlappedIsNull && errorCode == eRROR_INVALID_HANDLE ->
+                   -- If we don't terminate the dequeueing thread, some of the tests
+                   -- will take 10x-100x more time to complete:
+                   --
+                   -- - 'Async.Handle.async reads and writes'
+                   -- - 'Async.Handle.PingPongPipelined test'
+                   -- - 'Async.Socket.PingPong test'
+                   -- - 'Async.Socket.PingPongPipelined test'
+                   --
+                   -- or not terminate at all within reasonable timeout:
+                   --
+                   -- - 'Async.Handle.PingPong test'
+                   --
+                   -- Note that in the test setup, we start io manager thread for each
+                   -- test case.  If we don't terminate it when the iocp port is closed
+                   -- we might end up with a busy loop which runs expensive system
+                   -- calls that fail.  This could explain the slowdown.
+                   --
+                   -- In every observed case both values:
+                   --
+                   -- - 'gqcsResult'
+                   -- - 'gqcsCompletionKey'
+                   --
+                   -- where false.
+                   --
+                       pure IOManagerStop
+                 | gqcsOverlappedIsNull ->
+                   -- 'GetLastCompletionStatus' has not dequeued any completion packet
+                   -- from the completion port.  Must be the first clause, since if
+                   -- this is not true we cannot trust other arguments.
+                      throwIO NullOverlappedPointer
+                 | completionKey /= magicCompletionKey ->
+                   -- The completion key does not agree with what we expect, we ignore
+                   -- and carry on. The completion key is set when one calls
+                   -- 'associateWithIOCompletionPort'.
+                      pure IOManagerSkip
+                 | gqcsResult -> do
+                   -- 'GetQueuedCompletionStatus' system call returned without errors.
+                     !(numberOfBytes :: Int) <-
+                         fromIntegral <$> peek numberOfBytesPtr
+                     pure (IOManagerOperationSuccess numberOfBytes lpOverlapped)
+                 | otherwise -> do
+                   -- the async action returned with an error
+                     pure (IOManagerOperationError errorCode lpOverlapped)
 
-      if | gqcsOverlappedIsNull && errorCode == eRROR_ABANDONED_WAIT_0 ->
-           -- this is triggered by closing IO completion 'HANDLE' while there
-           -- are outstanding requests (this is documented
-           -- <https://docs.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getqueuedcompletionstatus#remarks>)
-              return ()
-         | gqcsOverlappedIsNull && errorCode == eRROR_INVALID_HANDLE ->
-           -- If we don't terminate the dequeueing thread, some of the tests
-           -- will take 10x-100x more time to complete:
-           --
-           -- - 'Async.Handle.async reads and writes'
-           -- - 'Async.Handle.PingPongPipelined test'
-           -- - 'Async.Socket.PingPong test'
-           -- - 'Async.Socket.PingPongPipelined test'
-           --
-           -- or not terminate at all within reasonable timeout:
-           --
-           -- - 'Async.Handle.PingPong test'
-           --
-           -- Note that in the test setup, we start io manager thread for each
-           -- test case.  If we don't terminate it when the iocp port is closed
-           -- we might end up with a busy loop which runs expensive system
-           -- calls that fail.  This could explain the slowdown.
-           --
-           -- In every observed case both values:
-           --
-           -- - 'gqcsResult'
-           -- - 'gqcsCompletionKey'
-           --
-           -- where false.
-           --
-               return ()
-         | gqcsOverlappedIsNull ->
-           -- 'GetLastCompletionStatus' has not dequeued any completion packet
-           -- from the completion port.  Must be the first clause, since if
-           -- this is not true we cannot trust other arguments.
-              throwIO NullOverlappedPointer
-         | completionKey /= magicCompletionKey ->
-           -- The completion key does not agree with what we expect, we ignore
-           -- and carry on. The completion key is set when one calls
-           -- 'associateWithIOCompletionPort'.
-            dequeueCompletionPackets iocp
-         | gqcsResult -> do
-           -- 'GetQueuedCompletionStatus' system call returned without errors.
-             !(numBytes :: Int) <-
-                 fromIntegral <$> peek numBytesPtr
-             let -- we can cast @Ptr OVERLAPPED@ to @Ptr AsyncIOCPData@ since
-                 -- 'OVERLAPPED' is a frist member of '_IODATA' struct.
-                 ioDataPtr :: Ptr AsyncIOCPData
-                 ioDataPtr = castOverlappedPtr lpOverlapped
-             mvarPtr <- peek (iodDataPtr AsyncSing ioDataPtr)
-             mvar <- deRefStablePtr mvarPtr
-             freeStablePtr mvarPtr
-             free ioDataPtr
-             success <- tryPutMVar mvar (Right numBytes)
-             when (not success)
-               $ fail "System.Win32.Async.dequeueCompletionPackets: MVar is not empty."
-             dequeueCompletionPackets iocp
-         | otherwise -> do
-           -- the async action returned with an error
-             let ioDataPtr :: Ptr AsyncIOCPData
-                 ioDataPtr = castOverlappedPtr lpOverlapped
-             mvarPtr <- peek (iodDataPtr AsyncSing ioDataPtr)
-             mvar <- deRefStablePtr mvarPtr
-             freeStablePtr mvarPtr
-             free ioDataPtr
-             success <- tryPutMVar mvar (Left (ErrorCode errorCode))
-             when (not success)
-               $ fail "System.Win32.Async.dequeueCompletionPackets: MVar is not empty."
-             dequeueCompletionPackets iocp
+      -- tail recursive io-manger loop
+      ioManagerLoop :: IO ()
+      ioManagerLoop = do
+        notification <- getCompletionStatus
+        case notification of
+          IOManagerSkip -> ioManagerLoop
+
+          IOManagerStop -> pure ()
+
+          IOManagerOperationSuccess numberOfBytes lpOverlapped -> do
+            let -- we can cast @Ptr OVERLAPPED@ to @Ptr AsyncIOCPData@ since
+                -- 'OVERLAPPED' is a frist member of '_IODATA' struct.
+                ioDataPtr :: Ptr AsyncIOCPData
+                ioDataPtr = castOverlappedPtr lpOverlapped
+            mvarPtr <- peek (iodDataPtr AsyncSing ioDataPtr)
+            mvar <- deRefStablePtr mvarPtr
+            freeStablePtr mvarPtr
+            free ioDataPtr
+            success <- tryPutMVar mvar (Right numberOfBytes)
+            when (not success)
+              $ fail "System.Win32.Async.dequeueCompletionPackets: MVar is not empty."
+
+            ioManagerLoop
+
+          IOManagerOperationError errorCode lpOverlapped -> do
+            let ioDataPtr :: Ptr AsyncIOCPData
+                ioDataPtr = castOverlappedPtr lpOverlapped
+            mvarPtr <- peek (iodDataPtr AsyncSing ioDataPtr)
+            mvar <- deRefStablePtr mvarPtr
+            freeStablePtr mvarPtr
+            free ioDataPtr
+            success <- tryPutMVar mvar (Left (ErrorCode errorCode))
+            when (not success)
+              $ fail "System.Win32.Async.dequeueCompletionPackets: MVar is not empty."
+
+            ioManagerLoop
 
 
 foreign import ccall safe "GetQueuedCompletionStatus"
