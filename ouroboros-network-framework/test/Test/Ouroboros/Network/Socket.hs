@@ -33,6 +33,7 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTimer (threadDelay)
 import           Control.Concurrent (ThreadId)
 import           Control.Exception (IOException)
 import           Control.Tracer
@@ -88,7 +89,7 @@ tests =
   , testProperty "socket send receive Unix"              prop_socket_send_recv_unix
 #endif
   , after AllFinish LAST_IP_TEST $
-    testProperty "socket close during receive"           prop_socket_recv_close
+    testProperty "socket error during receive"           (withMaxSuccess 10 prop_socket_recv_error)
   , after AllFinish "socket close during receive" $
     testProperty "socket client connection failure"      prop_socket_client_connect_error
   ]
@@ -265,13 +266,18 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
             cnt <- readTVar cntVar
             unless (cnt == 0) retry
 
+data RecvErrorType = SocketClosed | SDUTimeout deriving (Eq, Show)
+
+instance Arbitrary RecvErrorType where
+    arbitrary = oneof [pure SocketClosed, pure SDUTimeout]
+
 -- |
--- Verify that we raise the correct exception in case a socket closes during
+-- Verify that we raise the correct exception in case a socket closes or a timeout during
 -- a read.
-prop_socket_recv_close :: (Int -> Int -> (Int, Int))
-                       -> [Int]
+prop_socket_recv_error :: (Int -> Int -> (Int, Int))
+                       -> RecvErrorType
                        -> Property
-prop_socket_recv_close f _ =
+prop_socket_recv_error f rerr =
     ioProperty $
     withIOManager $ \iomgr -> do
 
@@ -312,7 +318,9 @@ prop_socket_recv_close f _ =
                 (runAccept $ accept snocket sd)
                 (\(sd', _, _) -> Socket.close sd')
                 $ \(sd', _, _) -> do
-                  let bearer = Mx.socketAsMuxBearer nullTracer sd'
+                  let timeout = if rerr == SDUTimeout then Just 0.10
+                                                      else Nothing
+                  let bearer = Mx.socketAsMuxBearer timeout nullTracer sd'
                   Mx.muxStart nullTracer (toApplication app) bearer
           )
           $ \muxAsync -> do
@@ -326,16 +334,24 @@ prop_socket_recv_close f _ =
 #else
           Socket.sendAll sd' $ BL.singleton 0xa
 #endif
-          Socket.close sd'
+
+          if rerr == SocketClosed then Socket.close sd'
+                                  else threadDelay 0.2
 
           res <- waitCatch muxAsync
-          case res of
+          result <- case res of
               Left e  ->
                   case fromException e of
-                        Just me -> return $ Mx.errorType me === Mx.MuxBearerClosed
+                        Just me -> return $
+                            case Mx.errorType me of
+                                 Mx.MuxBearerClosed   -> rerr === SocketClosed
+                                 Mx.MuxSDUReadTimeout -> rerr === SDUTimeout
+                                 _                    -> property False
                         Nothing -> return $ counterexample (show e) False
-              Right _ -> return $ property $ False
+              Right _ -> return $ property False
 
+          when (rerr /= SocketClosed) $ Socket.close sd'
+          return result
 
 prop_socket_client_connect_error :: (Int -> Int -> (Int, Int))
                                  -> [Int]

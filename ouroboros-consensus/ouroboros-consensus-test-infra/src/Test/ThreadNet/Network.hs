@@ -36,6 +36,7 @@ import           Codec.CBOR.Read (DeserialiseFailure)
 import qualified Control.Exception as Exn
 import           Control.Monad
 import qualified Control.Monad.Except as Exc
+import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
 import           Crypto.Random (ChaChaDRG)
 import qualified Data.ByteString.Lazy as Lazy
@@ -243,6 +244,7 @@ type EdgeStatusVar m = StrictTVar m EdgeStatus
 -- each node.
 runThreadNetwork :: forall m blk.
                     ( IOLike m
+                    , MonadTimer m
                     , RunNode blk
                     , TxGen blk
                     , TracingConstraints blk

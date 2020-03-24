@@ -59,7 +59,7 @@ data ProtocolTimeLimits ps = ProtocolTimeLimits {
 
 data ProtocolLimitFailure = ExceededSizeLimit
                           | ExceededTimeLimit
-  deriving Show
+  deriving (Eq, Show)
 
 instance Exception ProtocolLimitFailure
 

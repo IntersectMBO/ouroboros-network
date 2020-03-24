@@ -31,6 +31,7 @@ module Ouroboros.Consensus.NodeNetwork (
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad (void)
+import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
@@ -487,6 +488,7 @@ localResponderNetworkApplication NetworkApplication {..} peer =
 consensusNetworkApps
     :: forall m peer localPeer blk failure bytesCS bytesBF bytesTX bytesLCS bytesLTX bytesLSQ.
        ( IOLike m
+       , MonadTimer m
        , Ord peer
        , Exception failure
        , LedgerSupportsProtocol blk
@@ -527,9 +529,11 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
           (chainDbView (getChainDB kernel))
           (getNodeCandidates kernel)
           them $ \varCandidate->
-        runPipelinedPeer
+        runPipelinedPeerWithLimits
           (contramap (TraceLabelPeer them) ptChainSyncTracer)
           pcChainSyncCodec
+          (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
+          timeLimitsChainSync
           channel
           $ chainSyncClientPeerPipelined
           $ phChainSyncClient varCandidate
@@ -539,9 +543,11 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       -> Channel m bytesCS
       -> m ()
     naChainSyncServer them channel = withRegistry $ \registry ->
-      runPeer
+      runPeerWithLimits
         (contramap (TraceLabelPeer them) ptChainSyncSerialisedTracer)
         pcChainSyncCodecSerialised
+        (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
+        timeLimitsChainSync
         channel
         $ chainSyncServerPeer
         $ phChainSyncServer registry
@@ -552,9 +558,11 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       -> m ()
     naBlockFetchClient them channel =
       bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx ->
-        runPipelinedPeer
+        runPipelinedPeerWithLimits
           (contramap (TraceLabelPeer them) ptBlockFetchTracer)
           pcBlockFetchCodec
+          (byteLimitsBlockFetch (const 0)) -- TODO: Real Bytelimits, see #1727
+          timeLimitsBlockFetch
           channel
           $ phBlockFetchClient clientCtx
 
@@ -563,9 +571,11 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       -> Channel m bytesBF
       -> m ()
     naBlockFetchServer them channel = withRegistry $ \registry ->
-      runPeer
+      runPeerWithLimits
         (contramap (TraceLabelPeer them) ptBlockFetchSerialisedTracer)
         pcBlockFetchCodecSerialised
+        (byteLimitsBlockFetch (const 0)) -- TODO: Real Bytelimits, see #1727
+        timeLimitsBlockFetch
         channel
         $ blockFetchServerPeer
         $ phBlockFetchServer registry
@@ -575,9 +585,11 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       -> Channel m bytesTX
       -> m ()
     naTxSubmissionClient them channel =
-      runPeer
+      runPeerWithLimits
         (contramap (TraceLabelPeer them) ptTxSubmissionTracer)
         pcTxSubmissionCodec
+        (byteLimitsTxSubmission (const 0)) -- TODO: Real Bytelimits, see #1727
+        timeLimitsTxSubmission
         channel
         (txSubmissionClientPeer phTxSubmissionClient)
 
@@ -586,9 +598,11 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       -> Channel m bytesTX
       -> m ()
     naTxSubmissionServer them channel =
-      runPipelinedPeer
+      runPipelinedPeerWithLimits
         (contramap (TraceLabelPeer them) ptTxSubmissionTracer)
         pcTxSubmissionCodec
+        (byteLimitsTxSubmission (const 0)) -- TODO: Real Bytelimits, see #1727
+        timeLimitsTxSubmission
         channel
         (txSubmissionServerPeerPipelined phTxSubmissionServer)
 
