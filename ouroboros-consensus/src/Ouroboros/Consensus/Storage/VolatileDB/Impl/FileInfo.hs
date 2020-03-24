@@ -6,7 +6,7 @@
 -- | Information about the files stored by the volatile DB
 --
 -- Intended for qualified import.
-module Ouroboros.Consensus.Storage.VolatileDB.FileInfo (
+module Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo (
     FileInfo      -- opaque
   , FileBlockInfo -- opaque
     -- * Construction

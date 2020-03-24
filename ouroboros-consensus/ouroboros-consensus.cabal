@@ -151,11 +151,12 @@ library
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                        Ouroboros.Consensus.Storage.VolatileDB
                        Ouroboros.Consensus.Storage.VolatileDB.API
-                       Ouroboros.Consensus.Storage.VolatileDB.FileInfo
                        Ouroboros.Consensus.Storage.VolatileDB.Impl
-                       Ouroboros.Consensus.Storage.VolatileDB.Index
+                       Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo
+                       Ouroboros.Consensus.Storage.VolatileDB.Impl.Index
+                       Ouroboros.Consensus.Storage.VolatileDB.Impl.State
+                       Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
                        Ouroboros.Consensus.Storage.VolatileDB.Types
-                       Ouroboros.Consensus.Storage.VolatileDB.Util
 
   default-language:    Haskell2010
   other-extensions:

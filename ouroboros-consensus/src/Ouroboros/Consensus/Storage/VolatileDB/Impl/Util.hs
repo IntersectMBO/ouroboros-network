@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Ouroboros.Consensus.Storage.VolatileDB.Util
+module Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
     ( -- * FileId utilities
       parseFd
     , parseAllFds
@@ -74,7 +74,7 @@ filePath fd = mkFsPath ["blocks-" ++ show fd ++ ".dat"]
 ------------------------------------------------------------------------------}
 
 wrapFsError :: MonadCatch m => m a -> m a
-wrapFsError action = tryVolDB action >>= either throwM return
+wrapFsError = handle $ throwM . UnexpectedError . FileSystemError
 
 -- | Execute an action and catch the 'VolatileDBError' and 'FsError' that can
 -- be thrown by it, and wrap the 'FsError' in an 'VolatileDBError' using the
@@ -86,13 +86,7 @@ wrapFsError action = tryVolDB action >>= either throwM return
 tryVolDB :: forall m a. MonadCatch m
          => m a
          -> m (Either VolatileDBError a)
-tryVolDB = fmap squash . try . try
-  where
-    fromFS = UnexpectedError . FileSystemError
-
-    squash :: Either FsError (Either VolatileDBError a)
-           -> Either VolatileDBError a
-    squash = either (Left . fromFS) id
+tryVolDB = try . wrapFsError
 
 {------------------------------------------------------------------------------
   Map of Set utilities

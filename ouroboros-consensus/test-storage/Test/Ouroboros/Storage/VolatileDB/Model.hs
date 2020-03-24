@@ -49,7 +49,8 @@ import           Ouroboros.Consensus.Storage.Common (BinaryInfo (..),
                      BlockComponent (..), extractHeader)
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath)
 import           Ouroboros.Consensus.Storage.VolatileDB.API
-import           Ouroboros.Consensus.Storage.VolatileDB.Util (filePath, parseFd)
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util (filePath,
+                     parseFd)
 
 import           Test.Ouroboros.Storage.TestBlock (Corruptions,
                      FileCorruption (..))

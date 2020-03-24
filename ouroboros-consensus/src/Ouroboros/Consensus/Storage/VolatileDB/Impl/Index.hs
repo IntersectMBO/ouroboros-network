@@ -4,8 +4,8 @@
 -- | VolatileDB Index
 --
 -- Intended for qualified import
--- > import qualified Ouroboros.Consensus.Storage.VolatileDB.Index as Index
-module Ouroboros.Consensus.Storage.VolatileDB.Index (
+-- > import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl.Index as Index
+module Ouroboros.Consensus.Storage.VolatileDB.Impl.Index (
     Index -- opaque
   , empty
   , lookup
@@ -23,7 +23,7 @@ import qualified Data.IntMap.Strict as IM
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
-import           Ouroboros.Consensus.Storage.VolatileDB.FileInfo (FileInfo)
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo (FileInfo)
 import           Ouroboros.Consensus.Storage.VolatileDB.Types (FileId)
 
 -- | Mapping from 'FileId' to 'FileInfo'
