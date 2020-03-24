@@ -137,7 +137,7 @@ instance QueryLedger ByronBlock where
   data Query ByronBlock :: * -> * where
     GetUpdateInterfaceState :: Query ByronBlock UPI.State
 
-  answerQuery GetUpdateInterfaceState ledgerState =
+  answerQuery _cfg GetUpdateInterfaceState ledgerState =
     CC.cvsUpdateState (byronLedgerState ledgerState)
 
   eqQuery GetUpdateInterfaceState GetUpdateInterfaceState = Just Refl

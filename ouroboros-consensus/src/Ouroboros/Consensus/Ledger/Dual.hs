@@ -419,8 +419,8 @@ instance Bridge m a => QueryLedger (DualBlock m a) where
   data Query (DualBlock m a) result
     deriving (Show)
 
-  answerQuery = \case {}
-  eqQuery     = \case {}
+  answerQuery _ = \case {}
+  eqQuery       = \case {}
 
 instance ShowQuery (Query (DualBlock m a)) where
   showResult = \case {}

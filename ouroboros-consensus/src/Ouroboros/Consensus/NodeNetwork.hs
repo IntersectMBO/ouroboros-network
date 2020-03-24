@@ -150,7 +150,7 @@ protocolHandlers
     => NodeArgs   m peer blk  --TODO eliminate, merge relevant into NodeKernel
     -> NodeKernel m peer blk
     -> ProtocolHandlers m peer blk
-protocolHandlers NodeArgs {btime, maxClockSkew, tracers, miniProtocolParameters}
+protocolHandlers NodeArgs {btime, cfg, maxClockSkew, tracers, miniProtocolParameters}
                  NodeKernel {getChainDB, getMempool, getTopLevelConfig} =
     --TODO: bundle needed NodeArgs into the NodeKernel
     -- so we do not have to pass it separately
@@ -197,6 +197,7 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, miniProtocolParameters}
           getMempool
     , phLocalStateQueryServer =
         localStateQueryServer
+          (configLedger cfg)
           (ChainDB.newLedgerCursor getChainDB)
     }
 

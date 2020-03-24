@@ -146,7 +146,7 @@ class (UpdateLedger blk, ShowQuery (Query blk)) => QueryLedger blk where
   data family Query  blk :: * -> *
 
   -- | Answer the given query about the ledger state.
-  answerQuery :: Query blk result -> LedgerState blk -> result
+  answerQuery :: LedgerConfig blk -> Query blk result -> LedgerState blk -> result
 
   -- | Generalisation of value-level equality of two queries.
   eqQuery :: Query blk result1 -> Query blk result2

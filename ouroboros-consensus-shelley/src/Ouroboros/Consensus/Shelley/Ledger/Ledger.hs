@@ -244,7 +244,7 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
   data Query (ShelleyBlock c) :: Type -> Type where
     GetLedgerTip :: Query (ShelleyBlock c) (Point (ShelleyBlock c))
 
-  answerQuery GetLedgerTip ls = ledgerTip ls
+  answerQuery _cfg GetLedgerTip ls = ledgerTip ls
 
   eqQuery GetLedgerTip GetLedgerTip = Just Refl
 
