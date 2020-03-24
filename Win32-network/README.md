@@ -14,3 +14,8 @@ not present in this package.
 An application which is using this package should use `-threaded` option, as
 the io manager thread runs a blocking ffi call (e.g.
 [GetQueuedCompletionStatus](https://docs.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getqueuedcompletionstatus)).
+
+## Acknowledgement
+
+The initial version of this library was based on
+[winio](https://hackage.haskell.org/package/winio) by Felix Martini.
