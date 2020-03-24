@@ -22,7 +22,8 @@ flag demo
 library
   hs-source-dirs:      src
   if os(windows)
-    exposed-modules:   System.Win32.NamedPipes
+    exposed-modules:   System.IOManager
+                       System.Win32.NamedPipes
                        System.Win32.Async
                        System.Win32.Async.File
                        System.Win32.Async.ErrCode
@@ -40,6 +41,12 @@ library
                        network           >= 3.1  && < 3.2,
                        Win32             >= 2.5.4.1
     extra-libraries:   ws2_32
+
+  else
+
+    exposed-modules:   System.IOManager
+    build-depends:     base              >= 4.5  && < 4.13
+
   default-language:    Haskell2010
   ghc-options:         -Wall
 
@@ -63,8 +70,10 @@ test-suite test-Win32-network
   hs-source-dirs:      test
   main-is:             Main.hs
   default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -threaded
+  if os(windows)
+    buildable: True
+  else
+    buildable: False
   if os(windows)
     other-modules:       Test.Generators
                          Test.Async.PingPong
@@ -83,5 +92,5 @@ test-suite test-Win32-network
                          quickcheck-instances,
                          Win32,
                          Win32-network
-  else
-    build-depends:       base
+  ghc-options:          -Wall
+                        -threaded
