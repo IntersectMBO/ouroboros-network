@@ -50,7 +50,6 @@ import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.Rewards as SL
 import qualified Shelley.Spec.Ledger.Scripts as SL
-import qualified Shelley.Spec.Ledger.STS.Avup as STS
 import qualified Shelley.Spec.Ledger.STS.Chain as STS
 import qualified Shelley.Spec.Ledger.STS.Deleg as STS
 import qualified Shelley.Spec.Ledger.STS.Delegs as STS
@@ -60,7 +59,6 @@ import qualified Shelley.Spec.Ledger.STS.Ledgers as STS
 import qualified Shelley.Spec.Ledger.STS.Pool as STS
 import qualified Shelley.Spec.Ledger.STS.Ppup as STS
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
-import qualified Shelley.Spec.Ledger.STS.Up as STS
 import qualified Shelley.Spec.Ledger.STS.Utxo as STS
 import qualified Shelley.Spec.Ledger.STS.Utxow as STS
 import qualified Shelley.Spec.Ledger.Tx as SL
@@ -611,6 +609,7 @@ instance Arbitrary (SL.EpochState TPraosMockCrypto) where
     <*> arbitrary
     <*> arbitrary
     <*> arbitrary
+    <*> arbitrary
 
 instance Arbitrary SL.PParams where
   arbitrary = Gen.genPParams
@@ -627,15 +626,7 @@ instance Arbitrary (SL.Tx TPraosMockCrypto) where
     (_ledgerState, _steps, _txfee, tx, _lv) <- hedgehog SL.genStateTx
     return tx
 
-instance Arbitrary (STS.PredicateFailure (STS.AVUP TPraosMockCrypto)) where
-  arbitrary = genericArbitraryU
-  shrink    = genericShrink
-
 instance Arbitrary (STS.PredicateFailure (STS.PPUP TPraosMockCrypto)) where
-  arbitrary = genericArbitraryU
-  shrink    = genericShrink
-
-instance Arbitrary (STS.PredicateFailure (STS.UP TPraosMockCrypto)) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 

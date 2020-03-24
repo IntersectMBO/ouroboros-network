@@ -57,7 +57,6 @@ import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as SL
 import qualified Shelley.Spec.Ledger.TxData as SL
-import qualified Shelley.Spec.Ledger.Updates as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
@@ -201,7 +200,6 @@ protocolInfoShelley genesis protVer mbCredentials =
       (fromIntegral (sgMaxLovelaceSupply genesis) - SL.balance genesisUtxO)
       (sgGenDelegs genesis)
       oSched
-      (SL.Applications Map.empty)
       pparams
       -- TODO initial nonce, typically created from the hash of
       -- the last Byron block using 'SL.hashHeaderToNonce'.
