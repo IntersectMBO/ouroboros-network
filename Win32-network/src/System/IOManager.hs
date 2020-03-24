@@ -7,6 +7,10 @@ module System.IOManager
   ( WithIOManager
   , IOManager (..)
   , withIOManager
+
+  -- * Deprecated API
+  , AssociateWithIOCP
+  , associateWithIOCP
   ) where
 
 
@@ -16,21 +20,32 @@ import qualified System.Win32.Async.IOManager as Win32.Async
 import Network.Socket (Socket)
 #endif
 
--- | On Windows 'AssociateWithIOCP' holds
--- `System.Win32.Async.IOManager.associateWithIOCompletionPort';
--- on other platforms 'AssociateWithIOCP' can run over any type, and thus is
+-- | This is public api to interact with the io manager; On Windows 'IOManager'
+-- holds 'System.Win32.Async.IOManager.associateWithIOCompletionPort';
+-- on other platforms 'IOManager' can run over any type, and thus is
 -- guaranteed to be no-op.
 --
 #if defined(mingw32_HOST_OS)
 newtype IOManager = IOManager {
-    associateWithIOCP :: Either HANDLE Socket -> IO ()
+    associateWithIOManager :: Either HANDLE Socket -> IO ()
   }
+
+associateWithIOCP :: IOManager -> Either HANDLE Socket -> IO ()
+associateWithIOCP = associateWithIOManager
+
 #else
 newtype IOManager = IOManager {
-    associateWithIOCP :: forall hole. hole -> IO ()
+    associateWithIOManager :: forall hole. hole -> IO ()
   }
+
+associateWithIOCP :: forall hole. IOManager -> hole -> IO ()
+associateWithIOCP = associateWithIOManager
 #endif
 
+type AssociateWithIOCP = IOManager
+{-# DEPRECATED AssociateWithIOCP "Usage of type alias AssociateWithIOCP is deprecated, use 'IOManager' instead " #-}
+
+{-# DEPRECATED associateWithIOCP "Usage of 'associateWithIOCP' is deprecated, use 'associateWithIOManager' instead." #-}
 
 type WithIOManager = forall a. (IOManager -> IO a) -> IO a
 
