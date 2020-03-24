@@ -100,7 +100,7 @@ demo chain0 updates = do
 -- posix anonymous pipes.
 #if defined(mingw32_HOST_OS)
   -- using named pipe
-  Win32.Async.withIOManager $ \iocp ->
+  withIOManager $ \ioManager ->
     let pipeName = "\\\\.\\pipe\\demo-pipe" in
     bracket
       ((,) <$> Win32.NamedPipes.createNamedPipe
@@ -124,9 +124,9 @@ demo chain0 updates = do
                  Nothing)
       (\(namedPipe, file) -> Win32.closeHandle namedPipe >> Win32.closeHandle file)
       $ \ (namedPipe, file) -> do
-        Win32.Async.associateWithIOCompletionPort (Left namedPipe)  iocp
+        associateWithIOManager ioManager (Left namedPipe)
         Win32.Async.connectNamedPipe namedPipe
-        Win32.Async.associateWithIOCompletionPort (Left file) iocp
+        associateWithIOManager ioManager (Left file)
         let chan1 = Mx.pipeChannelFromNamedPipe namedPipe
             chan2 = Mx.pipeChannelFromNamedPipe file
 #else
