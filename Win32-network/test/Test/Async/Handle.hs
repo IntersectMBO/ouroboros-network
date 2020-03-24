@@ -21,8 +21,10 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Char8 as BSC
 import           Data.Foldable (foldl', traverse_)
-
-import           System.Win32
+import           GHC.IO.Exception ( IOException (..)
+                                  , IOErrorType (..)
+                                  )
+import           System.Win32 hiding (try)
 
 import           System.Win32.NamedPipes
 import           System.Win32.Async
@@ -49,12 +51,27 @@ tests =
       test_interruptible_readHandle_2
   , testCase "interruptible writeHandle"
       test_interruptible_writeHandle
+  , testCase "close iocp"
+      test_closeIOCP
+  , testCase "ERROR_INVALID_HANDLE"
+      test_ERROR_INVALID_HANDLE
+  , testProperty "ERROR_BROKEN_PIPE"
+      test_ERROR_BROKEN_PIPE
+  , testGroup "connectNamedPipe"
+    -- [ testCase "ERROR_PIPE_LISTENING" test_connectNamedPipe_ERROR_PIPE_LISTENING
+    [ testCase "ERROR_PIPE_CONNECTED" test_connectNamedPipe_ERROR_PIPE_CONNECTED
+    , testCase "ERROR_NO_DATA"        test_connectNamedPipe_ERROR_NO_DATA
+    ]
+  , testCase "async cancel"
+      test_async_cancel
+  , testCase "close handle"
+      test_close_blocked_on_reading
   , testProperty "async reads and writes"
-      prop_async_read_and_writes
+      prop_async_reads_and_writes
   , testProperty "PingPong test"
       prop_PingPong
   , testProperty "PingPongPipelined test"
-      $ withMaxSuccess 50 prop_PingPongPipelined
+      prop_PingPongPipelined
   ]
 
 
@@ -139,6 +156,8 @@ test_interruptible_readHandle_2 = withIOManager $ \iocp -> do
               killThread tid'
 
 
+-- | Test that 'writeHandle' is interruptible.
+--
 test_interruptible_writeHandle :: IO ()
 test_interruptible_writeHandle = withIOManager $ \iocp -> do
     let bs = BSC.pack $ replicate 100 'a'
@@ -181,6 +200,325 @@ test_interruptible_writeHandle = withIOManager $ \iocp -> do
         assertBool "test_interruptible_writeHandle" (ThreadKilled == e)
 
 
+-- | Close IOCP 'HANDLE'
+--
+test_closeIOCP :: IO ()
+test_closeIOCP = do
+    iocp <- createIOCompletionPort maxBound
+    _ <- forkIO $ do
+      threadDelay 100_000
+      closeIOCompletionPort iocp
+    dequeueCompletionPackets iocp
+
+
+-- | Test canceling of async io ('CancelIoEx').
+--
+test_async_cancel :: IO ()
+test_async_cancel = withIOManager $ \iocp -> do
+    h <- createNamedPipe pipeName
+                         (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                         (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                         pIPE_UNLIMITED_INSTANCES
+                         maxBound
+                         maxBound
+                         0
+                         Nothing
+    associateWithIOCompletionPort (Left h) iocp
+    asyncHandle <- async $ do
+      -- wait for a connection
+      connectNamedPipe h
+      -- block on reading; the other end never writes.
+      readHandle h 1
+    -- connect, so the other thread can progress and block on reading
+    fh <- createFile
+            pipeName
+            (gENERIC_READ .|. gENERIC_WRITE)
+            fILE_SHARE_NONE
+            Nothing
+            oPEN_EXISTING
+            fILE_FLAG_OVERLAPPED
+            Nothing
+    associateWithIOCompletionPort (Left fh) iocp
+    threadDelay 100_000
+    -- cancel the blocked thread
+    cancel asyncHandle
+
+
+--
+-- connectNamedPipe tests
+--
+
+-- A failed attempt to trigger 'ERROR_PIPE_LISTENING', MSDN docs are not clear
+-- how this can happen:
+-- <https://docs.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-connectnamedpipe#remarks>
+--
+{-
+test_connectNamedPipe_ERROR_PIPE_LISTENING :: IO ()
+test_connectNamedPipe_ERROR_PIPE_LISTENING =
+    withIOManager $ \iocp -> do
+
+      hServer <-
+        createNamedPipe pname
+                        (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                        (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                        pIPE_UNLIMITED_INSTANCES
+                        maxBound
+                        maxBound
+                        0
+                        Nothing
+      associateWithIOCompletionPort (Left hServer) iocp
+      _ <-
+        forkOS $ void $
+          connectNamedPipe hServer
+          `race`
+          connectNamedPipe hServer
+      threadDelay 100_000
+      hClient <-
+        createFile pname
+                   (gENERIC_READ .|. gENERIC_WRITE)
+                   fILE_SHARE_NONE
+                   Nothing
+                   oPEN_EXISTING
+                   fILE_FLAG_OVERLAPPED
+                   Nothing
+      closeHandle hServer
+      return ()
+  where
+    pname = pipeName ++ "-connectNamedPipe-ERROR_PIPE_LISTENING"
+-}
+
+
+-- | This test triggers 'eRROR_PIPE_CONNECTED' when executing 'connectNamedPipe'.
+-- It checks that the IOManager thread is not deallocating the 'ioDataPtr'
+-- twice (if that would happen, the windows silently kills the test).
+--
+-- This test ensures that io completion packet is not enqueued in the
+-- completion port.
+--
+test_connectNamedPipe_ERROR_PIPE_CONNECTED :: IO ()
+test_connectNamedPipe_ERROR_PIPE_CONNECTED =
+    withIOManager $ \iocp -> do
+      hServer <-
+        createNamedPipe pname
+                        (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                        (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                        pIPE_UNLIMITED_INSTANCES
+                        maxBound
+                        maxBound
+                        0
+                        Nothing
+      associateWithIOCompletionPort (Left hServer) iocp
+      hClient <-
+        createFile pname
+                   (gENERIC_READ .|. gENERIC_WRITE)
+                   fILE_SHARE_NONE
+                   Nothing
+                   oPEN_EXISTING
+                   fILE_FLAG_OVERLAPPED
+                   Nothing
+      associateWithIOCompletionPort (Left hClient) iocp
+
+      connectNamedPipe hServer
+
+      closeHandle hServer
+      closeHandle hClient
+      return ()
+  where
+    pname = pipeName ++ "-connectNamedPipe-ERROR_PIPE_CONNECTED"
+
+
+-- | Trigger 'ERROR_INVALID_HANDLE' error.
+--
+test_ERROR_INVALID_HANDLE :: IO ()
+test_ERROR_INVALID_HANDLE =
+    withIOManager $ \iocp -> do
+      hServer <-
+        createNamedPipe pname
+                        (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                        (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                        pIPE_UNLIMITED_INSTANCES
+                        maxBound
+                        maxBound
+                        0
+                        Nothing
+      associateWithIOCompletionPort (Left hServer) iocp
+      hClient <-
+        createFile pname
+                   (gENERIC_READ .|. gENERIC_WRITE)
+                   fILE_SHARE_NONE
+                   Nothing
+                   oPEN_EXISTING
+                   fILE_FLAG_OVERLAPPED
+                   Nothing
+      associateWithIOCompletionPort (Left hClient) iocp
+
+      connectNamedPipe hServer
+
+      closeHandle hServer
+      -- trying to read from a closed handle -> ERROR_INVALID_HANDLE
+      asyncRead <- async $ readHandle hServer 1
+
+      closeHandle hClient
+      result <- waitCatch asyncRead
+      case result of
+        Left e  -> case fromException e of
+          Just ioe | ioe_description ioe == "The handle is invalid."
+                   -> pure ()
+                   | otherwise
+                   -> throwIO ioe
+          Nothing -> throwIO e
+        Right _ -> error "impossible happend"
+      return ()
+  where
+    pname = pipeName ++ "-connectNamedPipe-ERROR_INVALID_HANDLE"
+
+
+-- | This is a QuickCheck test, because triggering 'ERROR_BROKEN_PIPE' is not
+-- deterministic.
+--
+test_ERROR_BROKEN_PIPE :: Int -> Property
+test_ERROR_BROKEN_PIPE _ =
+    ioProperty $ withIOManager $ \iocp -> do
+      hServer <-
+        createNamedPipe pname
+                        (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                        (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                        pIPE_UNLIMITED_INSTANCES
+                        maxBound
+                        maxBound
+                        0
+                        Nothing
+      associateWithIOCompletionPort (Left hServer) iocp
+      hClient <-
+        createFile pname
+                   (gENERIC_READ .|. gENERIC_WRITE)
+                   fILE_SHARE_NONE
+                   Nothing
+                   oPEN_EXISTING
+                   fILE_FLAG_OVERLAPPED
+                   Nothing
+      associateWithIOCompletionPort (Left hClient) iocp
+
+      connectNamedPipe hServer
+
+      asyncRead <- async $ readHandle hServer 1
+      closeHandle hClient
+      closeHandle hServer
+      result <- waitCatch asyncRead
+      case result of
+        Left e  -> case fromException e of
+          Just ioe | ioe_description ioe == "The handle is invalid."
+                   -> return True
+                   | ioe_description ioe == "The pipe has been ended."
+                   -> return True
+                   | ioe_type ioe == InvalidArgument
+                   -- at times 'readHandle' errors with 'IOError' of type 'InvalidArgument'.
+                   -> return True
+                   | otherwise
+                   -> return False
+          Nothing -> return False
+        Right _ -> error "impossible happend"
+  where
+    pname = pipeName ++ "-connectNamedPipe-ERROR_BROKEN_PIPE"
+
+
+-- | This test performs another scenario mentioned in 'connectNamedPipe' MSDN docs:
+--
+-- GetLastError returns ... ERROR_NO_DATA if a previous client has closed its
+-- pipe handle but the server has not disconnected.
+--
+test_connectNamedPipe_ERROR_NO_DATA :: IO ()
+test_connectNamedPipe_ERROR_NO_DATA =
+    withIOManager $ \iocp -> do
+
+      hServer <-
+        createNamedPipe pname
+                        (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                        (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                        pIPE_UNLIMITED_INSTANCES
+                        maxBound
+                        maxBound
+                        0
+                        Nothing
+      associateWithIOCompletionPort (Left hServer) iocp
+      hClient <-
+        createFile pname
+                   (gENERIC_READ .|. gENERIC_WRITE)
+                   fILE_SHARE_NONE
+                   Nothing
+                   oPEN_EXISTING
+                   fILE_FLAG_OVERLAPPED
+                   Nothing
+      associateWithIOCompletionPort (Left hClient) iocp
+
+      connectNamedPipe hServer
+      closeHandle hClient
+      -- 232 (ERROR_NO_DATA): resouce vanished (The pipe is being closed.)
+      (r :: Either IOError ())
+        <- try $ connectNamedPipe hServer
+      closeHandle hServer
+      case r of
+        Right{} -> error "impossible happend"
+        Left e | ioe_description e == "The pipe is being closed."
+               -> return ()
+               | otherwise
+               -> throwIO e
+  where
+    pname = pipeName ++ "-connectNamedPipe-ERROR_NO_DATA"
+
+
+-- | Check what happens when one closes a handle which is blocked on reading
+-- data.
+--
+-- The 'GetQueeudCompletionStatus' will return 'False' (meaning that there was
+-- an error), the 'OVERLAPPED' pointer will not be null, the completion key will
+-- agree.  The reported error through 'GetLastError' is 'ERROR_BROKEN_PIPE'
+-- (#109).  Which is interpreted as 'ResourceVanished'.
+--
+test_close_blocked_on_reading :: IO ()
+test_close_blocked_on_reading = withIOManager $ \iocp -> do
+    h <- createNamedPipe pipeName
+                         (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
+                         (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                         pIPE_UNLIMITED_INSTANCES
+                         maxBound
+                         maxBound
+                         0
+                         Nothing
+    associateWithIOCompletionPort (Left h) iocp
+    v <- newEmptyMVar
+    _ <- async $ do
+      -- wait for a connection
+      connectNamedPipe h
+      -- block on reading; the other end never writes.
+      readHandle h 1
+        `catch` \(e :: IOException) -> putMVar v e >> throwIO e
+    -- connect, so the other thread can progress and block on reading
+    fh <- createFile
+            pipeName
+            (gENERIC_READ .|. gENERIC_WRITE)
+            fILE_SHARE_NONE
+            Nothing
+            oPEN_EXISTING
+            fILE_FLAG_OVERLAPPED
+            Nothing
+    associateWithIOCompletionPort (Left fh) iocp
+    threadDelay 100_000
+    closeHandle h
+    e <- takeMVar v
+    let msg = concat
+            [ "Wrong IOException type; catched: "
+            , show e
+            , " of type "
+            , show $ ioe_type e
+            , " but expected "
+            , show ResourceVanished
+            , " or "
+            , show InvalidArgument
+            ]
+    assertBool msg (ioe_type e == ResourceVanished
+                 || ioe_type e == InvalidArgument)
+
 --
 -- QuickCheck tests
 --
@@ -188,20 +526,22 @@ test_interruptible_writeHandle = withIOManager $ \iocp -> do
 -- | Run a server and client which both simultanously read and write from a
 -- handle.
 --
-prop_async_read_and_writes :: LargeNonEmptyBS
-                           -> LargeNonEmptyBS
-                           -> Property
-prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsOut bufSizeOut) =
+prop_async_reads_and_writes :: LargeNonEmptyBS
+                            -> LargeNonEmptyBS
+                            -> Property
+prop_async_reads_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsOut bufSizeOut) =
     ioProperty $ withIOManager $ \iocp -> do
       threadDelay 100
+      -- putStrLn "\nstart reads_and_writes test"
 
       syncVarStart <- newEmptyMVar
-      syncVarEnd   <- newEmptyMVar
       clientVar <- newEmptyMVar
       serverVar <- newEmptyMVar
 
+      mainThread <- myThreadId
+
       -- fork a server
-      _ <- forkIO $
+      _ <- forkIO $ handle (\e -> throwTo mainThread e >> ioError e) $
         bracket
             (createNamedPipe pname
                              (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
@@ -211,21 +551,22 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
                              (fromIntegral bufSizeOut)
                              0
                              Nothing)
+            -- (\h -> putStrLn "server: close handle" >> closeHandle h)
             closeHandle
             $ \h -> do
               -- associate 'h' with  I/O completion 'port'
               _ <- associateWithIOCompletionPort (Left h) iocp
               putMVar syncVarStart ()
               connectNamedPipe h
-              void $ forkIO $
+              readerAsync <- async $
                 readHandle h (BS.length bsIn)
                   >>= putMVar serverVar
-              void $ forkIO $ writeHandle h bsOut
-              takeMVar syncVarEnd
+              writeHandle h bsOut
+              void $ wait readerAsync
 
 
       -- fork a client
-      _ <- forkIO $ do
+      _ <- forkIO $ handle (\e -> throwTo mainThread e >> ioError e) $ do
         takeMVar syncVarStart
         bracket
           (createFile pname
@@ -235,6 +576,7 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
                       oPEN_EXISTING
                       fILE_FLAG_OVERLAPPED
                       Nothing)
+          -- (\h -> putStrLn "client: close handle" >> closeHandle h)
           closeHandle
           $ \h -> do
             -- associate 'h' with  I/O completion 'port'
@@ -242,14 +584,14 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
             readerAsync <- async $
               readHandle h (BS.length bsOut)
                 >>= putMVar clientVar
-            writerAsync <- async $ writeHandle h bsIn
-            _ <- waitBoth readerAsync writerAsync
-            putMVar syncVarEnd ()
+            writeHandle h bsIn
+            void $ wait readerAsync
 
       bsOut' <- takeMVar clientVar
       bsIn'  <- takeMVar serverVar
 
-      pure $ bsIn == bsIn' && bsOut == bsOut'
+      let result = bsIn == bsIn' && bsOut == bsOut'
+      return result
 
   where
     pname = pipeName ++ "-reads-and-writes"
@@ -292,7 +634,7 @@ handleToBinaryChannel h = BinaryChannel { readChannel, writeChannel, closeChanne
         when (BS.null bs)
           $ throwIO ReceivedNullBytes
         readLen (bs : bufs) (s - fromIntegral (BS.length bs))
-        
+
       -- we close the handle explicitely
       closeChannel = closeHandle h
 

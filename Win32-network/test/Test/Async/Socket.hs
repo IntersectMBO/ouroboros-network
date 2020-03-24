@@ -173,21 +173,23 @@ prop_send_recv (LargeNonEmptyBS bs _size) =
           syncVar <- newEmptyMVar
           Async.associateWithIOCompletionPort (Right fd_in)  iocp
 
-          _ <- forkIO $ do
-            let addr = SockAddrInet 0 (Socket.tupleToHostAddress (127, 0, 0, 1))
-            Socket.bind fd_out addr
-            addr' <- Socket.getSocketName fd_out
-            Socket.listen fd_out 1024
-              `catch` \(e :: IOException) -> putStrLn ("listen errored: " ++ displayException e) >> throwIO e
-            putMVar syncVar addr'
-            (fd, _) <- Async.accept fd_out
-                        `catch` \(e :: IOException) -> putStrLn ("accept errored: " ++ displayException e) >> throwIO e
+          mainThread <- myThreadId
 
-            Async.associateWithIOCompletionPort (Right fd) iocp
-            bs' <- BL.toStrict <$> recvLen fd (BS.length bs)
-            putMVar v bs'
+          _ <- forkIO $ handle (\e -> throwTo mainThread e >> ioError e) $ do
+              let addr = SockAddrInet 0 (Socket.tupleToHostAddress (127, 0, 0, 1))
+              Socket.bind fd_out addr
+              addr' <- Socket.getSocketName fd_out
+              Socket.listen fd_out 1024
+                `catch` \(e :: IOException) -> putStrLn ("listen errored: " ++ displayException e) >> throwIO e
+              putMVar syncVar addr'
+              (fd, _) <- Async.accept fd_out
+                          `catch` \(e :: IOException) -> putStrLn ("accept errored: " ++ displayException e) >> throwIO e
 
-          _ <- forkIO $ do
+              Async.associateWithIOCompletionPort (Right fd) iocp
+              bs' <- BL.toStrict <$> recvLen fd (BS.length bs)
+              putMVar v bs'
+
+          _ <- forkIO $ handle (\e -> throwTo mainThread e >> ioError e) $ do
             -- wait for the other end to start listening
             addr' <- takeMVar syncVar
             Socket.connect fd_in addr'

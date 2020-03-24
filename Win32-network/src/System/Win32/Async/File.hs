@@ -1,8 +1,10 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE CApiFFI             #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE InterruptibleFFI    #-}
 {-# LANGUAGE MultiWayIf          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module System.Win32.Async.File
     ( -- * HANDLE API
@@ -15,19 +17,26 @@ module System.Win32.Async.File
 
 import Prelude hiding (read)
 
-import Control.Monad (unless)
+import Control.Concurrent
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as BS
-import qualified Data.ByteString.Unsafe as BS (unsafeUseAsCStringLen)
+import qualified Data.ByteString.Unsafe   as BS (unsafeUseAsCStringLen)
 import Data.Functor (void)
-import Foreign.C.Types (CInt (..))
-import Foreign.Ptr (Ptr, castPtr)
-import Foreign.StablePtr (StablePtr)
+import Foreign.Ptr ( Ptr
+                   , castPtr
+                   , nullPtr
+                   )
 
-import System.Win32.Types (HANDLE)
+import           System.Win32.Types ( HANDLE
+                                    , BOOL
+                                    , DWORD
+                                    )
 import qualified System.Win32.Types as Win32
+
 import System.Win32.Async.ErrCode
-import System.Win32.Async.Internal
+import System.Win32.Async.IOData
+import System.Win32.Async.Overlapped
+
 
 -- | Read a given number of bytes from a 'HANDLE'.  The 'HANDLE' must be
 -- opened with 'System.Win32.fILE_FLAG_OVERLAPPED' and associated with an IO
@@ -37,17 +46,35 @@ import System.Win32.Async.Internal
 readHandle :: HANDLE
            -> Int
            -> IO ByteString
-readHandle h size = BS.createAndTrim size
-      (\ptr ->
-          fromIntegral <$>
-            waitForCompletion "readHandle" (c_AsyncRead h ptr (fromIntegral size)))
+readHandle h size =
+    BS.createAndTrim size $ \ptr ->
+      withIOCPData "readHandle" (FDHandle h) $ \lpOverlapped waitVar -> do
+        readResult <- c_ReadFile h ptr (fromIntegral size) nullPtr lpOverlapped
+        errorCode <- Win32.getLastError
+        if readResult || errorCode == eRROR_IO_PENDING
+          then do
+            iocpResult <- takeMVar waitVar
+            case iocpResult of
+              Right numBytes  -> return $ ResultAsync numBytes
+              Left e          | e == eRROR_HANDLE_EOF
+                              -> return $ ResultAsync 0
+              Left errorAsync -> return $ ErrorAsync (ErrorCode errorAsync)
+          else
+            if errorCode == eRROR_HANDLE_EOF
+              then return $ ResultSync 0 False
+              else return $ ErrorSync (ErrorCode errorCode) False
 
-foreign import ccall safe "HsAsyncRead"
-    c_AsyncRead :: HANDLE
-                -> Ptr a
-                -> CInt
-                -> StablePtr b
-                -> IO ()
+foreign import ccall unsafe "ReadFile"
+    c_ReadFile :: HANDLE
+               -> Ptr a
+               -- ^ lpBuffer
+               -> DWORD
+               -- ^ nNumberedOfBytesToRead
+               -> Ptr DWORD
+               -- ^ lpNumberOfBytesRead
+               -> LPOVERLAPPED
+               -- ^ lpOverlapped
+               -> IO BOOL
 
 
 -- | Write a 'ByteString' to a 'HANDLE'.  The 'HANDLE' must be opened with
@@ -57,16 +84,31 @@ foreign import ccall safe "HsAsyncRead"
 writeHandle :: HANDLE
             -> ByteString
             -> IO ()
-writeHandle h bs = BS.unsafeUseAsCStringLen bs $
-    \(str, len) ->
-        void $ waitForCompletion "writeHandle" (c_AsyncWrite h (castPtr str) (fromIntegral len))
+writeHandle h bs =
+    BS.unsafeUseAsCStringLen bs $ \(str, len) ->
+      void $ withIOCPData @Int "writeHandle" (FDHandle h) $ \lpOverlapped waitVar -> do
+        writeResult <- c_WriteFile h (castPtr str) (fromIntegral len) nullPtr lpOverlapped
+        errorCode <- Win32.getLastError
+        if writeResult || errorCode == eRROR_IO_PENDING
+          then do
+            iocpResult <- takeMVar waitVar
+            case iocpResult of
+              Right numBytes   -> return $ ResultAsync numBytes
+              Left  errorAsync -> return $ ErrorAsync (ErrorCode errorAsync)
+          else return $ ErrorSync (ErrorCode errorCode) False
 
-foreign import ccall safe "HsAsyncWrite"
-    c_AsyncWrite :: HANDLE
-                 -> Ptr a
-                 -> CInt
-                 -> StablePtr b
-                 -> IO ()
+foreign import ccall unsafe "WriteFile"
+    c_WriteFile :: HANDLE
+                -- ^ hFile
+                -> Ptr a
+                -- ^ lpBuffer
+                -> DWORD
+                -- ^ nNumberOfBytesToWrite
+                -> Ptr DWORD
+                -- ^ nNumberOfBytesWritten
+                -> LPOVERLAPPED
+                -- ^ lpOverlapped
+                -> IO BOOL
 
 
 -- | Connect named pipe aka accept a connection.  The 'HANDLE' must be opened
@@ -76,21 +118,27 @@ foreign import ccall safe "HsAsyncWrite"
 -- [msdn documentation](https://docs.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-connectnamedpipe)
 --
 connectNamedPipe :: HANDLE -> IO ()
-connectNamedPipe h = void $ waitForCompletion "connectNamedPipe" $ \ptr -> do
-    c_ConnectNamedPipe h ptr
-    errCode <- Win32.getLastError
-    -- connectNamedPipe can error with:
-    --
-    -- 'ERROR_PIPE_LISTENING' - the pipe is listening, we need to wait more
-    -- 'ERROR_PIPE_CONNECTED' - the pipe is already connected
-    -- 'ERROR_NO_DATA'        - previous client has not disconnected, we
-    --                          should error
-    -- 'ERROR_IO_PENDING'     - IO is pending, 'waitForCompletion' should
-    --                            resolve this
-    unless (   errCode == eRROR_PIPE_LISTENING
-            || errCode == eRROR_PIPE_CONNECTED
-            || errCode == eRROR_IO_PENDING)
-        $ Win32.failWith ("connectNamedPipe (" ++ show errCode ++ ")") errCode
+connectNamedPipe h =
+    void $ withIOCPData "connectNamedPipe" (FDHandle h) $ \lpOverlapped waitVar -> do
+      connectResult <- c_ConnectNamedPipe h lpOverlapped
+      errorCode <- Win32.getLastError
+      if connectResult || errorCode == eRROR_IO_PENDING
+        then do
+          iocpResult <- takeMVar waitVar
+          case iocpResult of
+            Right _         -> return $ ResultAsync ()
+            Left e          | e == eRROR_PIPE_CONNECTED
+                            -> return $ ResultAsync ()
+            Left errorAsync -> return $ ErrorAsync (ErrorCode errorAsync)
+        else
+          if | errorCode == eRROR_PIPE_CONNECTED ->
+               return $ ResultSync () True
+             | errorCode == eRROR_NO_DATA ->
+               return $ ErrorSync (ErrorCode errorCode) True
+             | otherwise ->
+               return $ ErrorSync (ErrorCode errorCode) False
 
-foreign import ccall interruptible "HsConnectNamedPipe"
-    c_ConnectNamedPipe :: HANDLE -> StablePtr a -> IO ()
+foreign import ccall unsafe "ConnectNamedPipe"
+    c_ConnectNamedPipe :: HANDLE
+                       -> LPOVERLAPPED
+                       -> IO BOOL

@@ -13,12 +13,8 @@ Copyright 2019 Input Output (Hong Kong) Ltd.
    limitations under the License.
 
 
-Parts of this project is based on 
+The project was initially based on:
 http://hackage.haskell.org/package/winio-0.1
-
-The following license applies to:
-  * ./cbits/Win32Async.c
-  * ./src/System/Win32/Async.hs
 
 Copyright 2007-2009 Felix Martini.
 

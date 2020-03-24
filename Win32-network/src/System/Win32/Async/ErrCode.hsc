@@ -3,7 +3,8 @@
 
 #include <windows.h>
 
--- | 'ErrCode's used by 'System.Win32.Async'
+-- | 'ErrCode's which can appear when working with 'System.Win32.Async'
+--
 module System.Win32.Async.ErrCode where
 
 import System.Win32.Types (ErrCode, failWith)
@@ -27,6 +28,26 @@ eRROR_HANDLE_EOF = #const ERROR_HANDLE_EOF
 eRROR_INVALID_HANDLE :: ErrCode
 eRROR_INVALID_HANDLE = #const ERROR_INVALID_HANDLE
 
+-- 232
+eRROR_NO_DATA :: ErrCode
+eRROR_NO_DATA = #const ERROR_NO_DATA
+
+-- | Error returned by 'GetQueuedCompletionsStatus' when an I/O operation was
+-- cancelled with 'CancelIoEx'.
+--
+-- 995
+eRROR_OPERATION_ABORTED :: ErrCode
+eRROR_OPERATION_ABORTED = #const ERROR_OPERATION_ABORTED
+
+-- 996
+eRROR_IO_INCOMPLETE :: ErrCode
+eRROR_IO_INCOMPLETE = #const ERROR_IO_INCOMPLETE
+
+-- | For async operations, 'getLastError' reports 'ERROR_IO_PENDING'.  It is
+-- not an error per se, but used by the os to notify that the i/o will be
+-- completed asynchronously.  For the scope of this library it means that the
+-- 'IOManager' thread will be notified when the operation completes.
+--
 -- 997
 eRROR_IO_PENDING :: ErrCode
 eRROR_IO_PENDING = #const ERROR_IO_PENDING
@@ -39,12 +60,16 @@ eRROR_PIPE_CONNECTED = #const ERROR_PIPE_CONNECTED
 eRROR_PIPE_LISTENING :: ErrCode
 eRROR_PIPE_LISTENING = #const ERROR_PIPE_LISTENING
 
+-- 1168
+eRROR_NOT_FOUND :: ErrCode
+eRROR_NOT_FOUND = #const ERROR_NOT_FOUND
+
 type WSAErrCode = Int
 
 wSA_IO_PENDING :: WSAErrCode
 wSA_IO_PENDING = #const WSA_IO_PENDING
 
-foreign import ccall safe "winsock2.hs WSAGetLastError"
+foreign import ccall unsafe "winsock2.hs WSAGetLastError"
     wsaGetLastError :: IO WSAErrCode
 
 -- Accordin to

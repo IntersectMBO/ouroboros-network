@@ -12,7 +12,7 @@ maintainer:          duncan@well-typed.com, marcin.szamotulski@iohk.io
 copyright:           2019 Input Output (Hong Kong) Ltd.
 category:            System
 build-type:          Simple
--- extra-source-files:  ChangeLog.md
+extra-source-files:  include/Win32-network.h
 cabal-version:       >=1.10
 
 flag demo
@@ -27,13 +27,14 @@ library
                        System.Win32.Async.File
                        System.Win32.Async.ErrCode
                        System.Win32.Async.IOManager
-                       System.Win32.Async.Internal
-                       System.Win32.Async.WSABuf
                        System.Win32.Async.Socket
                        System.Win32.Async.Socket.ByteString
                        System.Win32.Async.Socket.ByteString.Lazy
-    c-sources:         cbits/Win32Async.c
-                       cbits/Win32Socket.c
+    other-modules:     System.Win32.Async.IOData
+                       System.Win32.Async.Overlapped
+                       System.Win32.Async.Socket.Syscalls
+                       System.Win32.Async.WSABuf
+    include-dirs:      include
     build-depends:     base              >= 4.5  && < 4.13,
                        bytestring        >= 0.10 && < 0.11,
                        network           >= 3.1  && < 3.2,
