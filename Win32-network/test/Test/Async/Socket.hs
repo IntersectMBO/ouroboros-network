@@ -18,7 +18,7 @@ import           Data.Functor (void)
 import           Data.Foldable (foldl', traverse_)
 import           GHC.IO.Exception (IOException (..))
 
-import qualified System.Win32.Async.IOManager              as Async
+import           System.IOManager
 import qualified System.Win32.Async.Socket                 as Async
 import qualified System.Win32.Async.Socket.ByteString      as Async
 import qualified System.Win32.Async.Socket.ByteString.Lazy as Async.Lazy
@@ -63,15 +63,15 @@ tests =
 --
 test_interruptible_connect :: IO ()
 test_interruptible_connect =
-    Async.withIOManager $ \iocp ->
+    withIOManager $ \ioManager ->
       bracket
         ((,) <$> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
              <*> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
         (\(x, y) -> Socket.close x >> Socket.close y)
         $ \ (fd_in, fd_out) -> do
           lock <- newEmptyMVar
-          Async.associateWithIOCompletionPort (Right fd_in)  iocp
-          Async.associateWithIOCompletionPort (Right fd_out) iocp
+          associateWithIOManager ioManager (Right fd_in)
+          associateWithIOManager ioManager (Right fd_out)
           (v :: MVar (Maybe SomeException)) <- newEmptyMVar
           let addr = SockAddrInet 0 (Socket.tupleToHostAddress (127, 0, 0, 1))
           Socket.bind fd_in addr
@@ -163,7 +163,7 @@ recvLen sock = go []
 
 prop_send_recv :: LargeNonEmptyBS -> IO Bool
 prop_send_recv (LargeNonEmptyBS bs _size) =
-    Async.withIOManager $ \iocp ->
+    withIOManager $ \ioManager ->
       bracket
         ((,) <$> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
              <*> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
@@ -171,7 +171,7 @@ prop_send_recv (LargeNonEmptyBS bs _size) =
         $ \ (fd_in, fd_out) -> do
           v <- newEmptyMVar
           syncVar <- newEmptyMVar
-          Async.associateWithIOCompletionPort (Right fd_in)  iocp
+          associateWithIOManager ioManager (Right fd_in)
 
           mainThread <- myThreadId
 
@@ -185,7 +185,7 @@ prop_send_recv (LargeNonEmptyBS bs _size) =
               (fd, _) <- Async.accept fd_out
                           `catch` \(e :: IOException) -> putStrLn ("accept errored: " ++ displayException e) >> throwIO e
 
-              Async.associateWithIOCompletionPort (Right fd) iocp
+              associateWithIOManager ioManager (Right fd)
               bs' <- BL.toStrict <$> recvLen fd (BS.length bs)
               putMVar v bs'
 
@@ -285,7 +285,7 @@ test_PingPong :: (forall a. Binary a => Socket -> BinaryChannel a)
               -> ByteString
               -> IO Bool
 test_PingPong createBinaryChannel n blocking bs =
-    Async.withIOManager $ \iocp ->
+    withIOManager $ \ioManager ->
       bracket
         ((,) <$> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
              <*> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
@@ -301,7 +301,7 @@ test_PingPong createBinaryChannel n blocking bs =
           tid <- mask_ $ forkIOWithUnmask $ \unmask ->
             do
               (socket, _) <- Socket.accept sockIn
-              Async.associateWithIOCompletionPort (Right socket) iocp
+              associateWithIOManager ioManager (Right socket)
               let channel = createBinaryChannel socket
               unmask (runPingPongServer channel (constPingPongServer @ByteString))
             `finally` putMVar lock ()
@@ -309,7 +309,7 @@ test_PingPong createBinaryChannel n blocking bs =
           -- run a PingPong client, at this stage server socket is in
           -- listening state accepting connections.
           Socket.connect sockOut addr'
-          Async.associateWithIOCompletionPort (Right sockOut) iocp
+          associateWithIOManager ioManager (Right sockOut)
           let channelOut = createBinaryChannel sockOut
           res <- runPingPongClient channelOut blocking tid (constPingPongClient n bs)
 
@@ -345,7 +345,7 @@ test_PingPongPipelined :: (forall a. Binary a => Socket -> BinaryChannel a)
                        -> [ByteString]
                        -> IO Bool
 test_PingPongPipelined createBinaryChannel blocking bss =
-    Async.withIOManager $ \iocp ->
+    withIOManager $ \ioManager ->
       bracket
         ((,) <$> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
              <*> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
@@ -361,7 +361,7 @@ test_PingPongPipelined createBinaryChannel blocking bss =
           tid <- mask_ $ forkIOWithUnmask $ \unmask ->
             do
               (socket, _) <- Socket.accept sockIn
-              Async.associateWithIOCompletionPort (Right socket) iocp
+              associateWithIOManager ioManager (Right socket)
               let channel = createBinaryChannel socket
               unmask (runPingPongServer channel (constPingPongServer @ByteString))
             `finally` putMVar lock ()
@@ -369,7 +369,7 @@ test_PingPongPipelined createBinaryChannel blocking bss =
           -- run a PingPong client, at this stage server socket is in
           -- listening state accepting connections.
           Socket.connect sockOut addr'
-          Async.associateWithIOCompletionPort (Right sockOut) iocp
+          associateWithIOManager ioManager (Right sockOut)
           let channelOut = createBinaryChannel sockOut
           res <- runPingPongClientPipelined channelOut blocking tid bss
 

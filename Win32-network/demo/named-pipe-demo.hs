@@ -16,6 +16,7 @@ import           System.Win32 (HANDLE)
 import qualified System.Win32.NamedPipes as Win32
 import qualified System.Win32 as Win32
 import qualified System.Win32.Async as Win32
+import           System.IOManager
 import System.Environment
 
 main :: IO ()
@@ -39,9 +40,10 @@ putStrLn_ :: String -> IO ()
 putStrLn_ = BSC.putStrLn . BSC.pack
 
 server :: IO ()
-server = Win32.withIOManager loop
+server = withIOManager loop
   where
-    loop iocp = do
+    loop :: IOManager -> IO ()
+    loop ioManager = do
       putStrLn_ "creating pipe..."
       hpipe <- Win32.createNamedPipe pipeName
                                      (Win32.pIPE_ACCESS_DUPLEX .|. Win32.fILE_FLAG_OVERLAPPED)
@@ -51,7 +53,7 @@ server = Win32.withIOManager loop
                                      512
                                      0
                                      Nothing
-      Win32.associateWithIOCompletionPort (Left hpipe) iocp
+      associateWithIOManager ioManager (Left hpipe)
       putStrLn_ "created pipe, waiting for client"
       Win32.connectNamedPipe hpipe
       putStrLn_ "client connected"
@@ -61,7 +63,7 @@ server = Win32.withIOManager loop
                `finally` (do putStrLn "client disconnected"
                              Win32.closeHandle hpipe)
       threadDelay 1
-      loop iocp
+      loop ioManager
 
 
 encodeMsg :: String -> ByteString
@@ -90,7 +92,7 @@ serverLoop hpipe = do
   serverLoop hpipe
 
 client :: IO ()
-client = Win32.withIOManager $ \iocp -> do
+client = withIOManager $ \ioManager -> do
     hpipe <- Win32.createFile pipeName
                               (Win32.gENERIC_READ .|. Win32.gENERIC_WRITE)
                               Win32.fILE_SHARE_NONE
@@ -98,7 +100,7 @@ client = Win32.withIOManager $ \iocp -> do
                               Win32.oPEN_EXISTING
                               Win32.fILE_FLAG_OVERLAPPED
                               Nothing
-    Win32.associateWithIOCompletionPort (Left hpipe) iocp
+    associateWithIOManager ioManager (Left hpipe)
     putStrLn "opened pipe"
     clientLoop hpipe
       `finally` Win32.closeHandle hpipe

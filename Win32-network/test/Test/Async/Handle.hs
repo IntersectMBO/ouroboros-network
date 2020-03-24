@@ -26,8 +26,10 @@ import           GHC.IO.Exception ( IOException (..)
                                   )
 import           System.Win32 hiding (try)
 
+import           System.IOManager
 import           System.Win32.NamedPipes
 import           System.Win32.Async
+import           System.Win32.Async.Internal
 import           Test.Generators hiding (tests)
 import           Test.Async.PingPong
 
@@ -83,7 +85,7 @@ tests =
 -- would not be interruptible.
 --
 test_interruptible_connectNamedPipe :: IO ()
-test_interruptible_connectNamedPipe = withIOManager $ \iocp ->
+test_interruptible_connectNamedPipe = withIOManager $ \ioManager ->
     bracket (createNamedPipe pipeName
                              (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
                              (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
@@ -94,7 +96,7 @@ test_interruptible_connectNamedPipe = withIOManager $ \iocp ->
                              Nothing)
             closeHandle
             $ \hpipe -> do
-                _ <- associateWithIOCompletionPort (Left hpipe) iocp
+                _ <- associateWithIOManager ioManager (Left hpipe)
                 tid <- forkIO (connectNamedPipe hpipe)
                 threadDelay 100
                 killThread tid
@@ -102,7 +104,7 @@ test_interruptible_connectNamedPipe = withIOManager $ \iocp ->
 -- | Check if 'readHandle'`is interruptible
 --
 test_interruptible_readHandle :: IO ()
-test_interruptible_readHandle = withIOManager $ \iocp ->
+test_interruptible_readHandle = withIOManager $ \ioManager ->
     bracket ((,) <$> createNamedPipe pipeName
                                      (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
                                      (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
@@ -120,8 +122,8 @@ test_interruptible_readHandle = withIOManager $ \iocp ->
                                 Nothing)
             (\(x, y) -> closeHandle x >> closeHandle y)
             $ \(hpipe, hpipe') -> do
-                _ <- associateWithIOCompletionPort (Left hpipe)  iocp
-                _ <- associateWithIOCompletionPort (Left hpipe') iocp
+                _ <- associateWithIOManager ioManager (Left hpipe)
+                _ <- associateWithIOManager ioManager (Left hpipe')
                 tid <- forkIO (void $ readHandle hpipe' 1)
                 threadDelay 100
                 killThread tid
@@ -129,7 +131,7 @@ test_interruptible_readHandle = withIOManager $ \iocp ->
 -- | Interrupt two simultanous reads.
 --
 test_interruptible_readHandle_2 :: IO ()
-test_interruptible_readHandle_2 = withIOManager $ \iocp -> do
+test_interruptible_readHandle_2 = withIOManager $ \ioManager -> do
     bracket ((,) <$> createNamedPipe pipeName
                                      (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
                                      (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
@@ -147,8 +149,8 @@ test_interruptible_readHandle_2 = withIOManager $ \iocp -> do
                                 Nothing)
             (\(x, y) -> closeHandle x >> closeHandle y)
             $ \(hpipe, hpipe') -> do
-              _ <- associateWithIOCompletionPort (Left hpipe)  iocp
-              _ <- associateWithIOCompletionPort (Left hpipe') iocp
+              _ <- associateWithIOManager ioManager (Left hpipe)
+              _ <- associateWithIOManager ioManager (Left hpipe')
               tid  <- forkIO (void $ readHandle hpipe' 1)
               tid' <- forkIO (void $ readHandle hpipe' 1)
               threadDelay 100
@@ -159,7 +161,7 @@ test_interruptible_readHandle_2 = withIOManager $ \iocp -> do
 -- | Test that 'writeHandle' is interruptible.
 --
 test_interruptible_writeHandle :: IO ()
-test_interruptible_writeHandle = withIOManager $ \iocp -> do
+test_interruptible_writeHandle = withIOManager $ \ioManager -> do
     let bs = BSC.pack $ replicate 100 'a'
     v <- newEmptyMVar
     syncVar <- newEmptyMVar
@@ -182,8 +184,8 @@ test_interruptible_writeHandle = withIOManager $ \iocp -> do
                           Nothing)
       (\(x, y) -> closeHandle x >> closeHandle y)
       $ \(r, w) -> do
-        _ <- associateWithIOCompletionPort (Left r) iocp
-        _ <- associateWithIOCompletionPort (Left w) iocp
+        _ <- associateWithIOManager ioManager (Left r)
+        _ <- associateWithIOManager ioManager (Left w)
 
         tid <- forkIOWithUnmask $ \unmask ->
           void $ do
@@ -214,7 +216,7 @@ test_closeIOCP = do
 -- | Test canceling of async io ('CancelIoEx').
 --
 test_async_cancel :: IO ()
-test_async_cancel = withIOManager $ \iocp -> do
+test_async_cancel = withIOManager $ \ioManager -> do
     h <- createNamedPipe pipeName
                          (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
                          (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
@@ -223,7 +225,7 @@ test_async_cancel = withIOManager $ \iocp -> do
                          maxBound
                          0
                          Nothing
-    associateWithIOCompletionPort (Left h) iocp
+    associateWithIOManager ioManager (Left h)
     asyncHandle <- async $ do
       -- wait for a connection
       connectNamedPipe h
@@ -238,7 +240,7 @@ test_async_cancel = withIOManager $ \iocp -> do
             oPEN_EXISTING
             fILE_FLAG_OVERLAPPED
             Nothing
-    associateWithIOCompletionPort (Left fh) iocp
+    associateWithIOManager ioManager (Left fh)
     threadDelay 100_000
     -- cancel the blocked thread
     cancel asyncHandle
@@ -255,7 +257,7 @@ test_async_cancel = withIOManager $ \iocp -> do
 {-
 test_connectNamedPipe_ERROR_PIPE_LISTENING :: IO ()
 test_connectNamedPipe_ERROR_PIPE_LISTENING =
-    withIOManager $ \iocp -> do
+    withIOManager $ \ioManager -> do
 
       hServer <-
         createNamedPipe pname
@@ -266,7 +268,7 @@ test_connectNamedPipe_ERROR_PIPE_LISTENING =
                         maxBound
                         0
                         Nothing
-      associateWithIOCompletionPort (Left hServer) iocp
+      associateWithIOManager ioManager (Left hServer)
       _ <-
         forkOS $ void $
           connectNamedPipe hServer
@@ -297,7 +299,7 @@ test_connectNamedPipe_ERROR_PIPE_LISTENING =
 --
 test_connectNamedPipe_ERROR_PIPE_CONNECTED :: IO ()
 test_connectNamedPipe_ERROR_PIPE_CONNECTED =
-    withIOManager $ \iocp -> do
+    withIOManager $ \ioManager -> do
       hServer <-
         createNamedPipe pname
                         (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
@@ -307,7 +309,7 @@ test_connectNamedPipe_ERROR_PIPE_CONNECTED =
                         maxBound
                         0
                         Nothing
-      associateWithIOCompletionPort (Left hServer) iocp
+      associateWithIOManager ioManager (Left hServer)
       hClient <-
         createFile pname
                    (gENERIC_READ .|. gENERIC_WRITE)
@@ -316,7 +318,7 @@ test_connectNamedPipe_ERROR_PIPE_CONNECTED =
                    oPEN_EXISTING
                    fILE_FLAG_OVERLAPPED
                    Nothing
-      associateWithIOCompletionPort (Left hClient) iocp
+      associateWithIOManager ioManager (Left hClient)
 
       connectNamedPipe hServer
 
@@ -331,7 +333,7 @@ test_connectNamedPipe_ERROR_PIPE_CONNECTED =
 --
 test_ERROR_INVALID_HANDLE :: IO ()
 test_ERROR_INVALID_HANDLE =
-    withIOManager $ \iocp -> do
+    withIOManager $ \ioManager -> do
       hServer <-
         createNamedPipe pname
                         (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
@@ -341,7 +343,7 @@ test_ERROR_INVALID_HANDLE =
                         maxBound
                         0
                         Nothing
-      associateWithIOCompletionPort (Left hServer) iocp
+      associateWithIOManager ioManager (Left hServer)
       hClient <-
         createFile pname
                    (gENERIC_READ .|. gENERIC_WRITE)
@@ -350,7 +352,7 @@ test_ERROR_INVALID_HANDLE =
                    oPEN_EXISTING
                    fILE_FLAG_OVERLAPPED
                    Nothing
-      associateWithIOCompletionPort (Left hClient) iocp
+      associateWithIOManager ioManager (Left hClient)
 
       connectNamedPipe hServer
 
@@ -378,7 +380,7 @@ test_ERROR_INVALID_HANDLE =
 --
 test_ERROR_BROKEN_PIPE :: Int -> Property
 test_ERROR_BROKEN_PIPE _ =
-    ioProperty $ withIOManager $ \iocp -> do
+    ioProperty $ withIOManager $ \ioManager -> do
       hServer <-
         createNamedPipe pname
                         (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
@@ -388,7 +390,7 @@ test_ERROR_BROKEN_PIPE _ =
                         maxBound
                         0
                         Nothing
-      associateWithIOCompletionPort (Left hServer) iocp
+      associateWithIOManager ioManager (Left hServer)
       hClient <-
         createFile pname
                    (gENERIC_READ .|. gENERIC_WRITE)
@@ -397,7 +399,7 @@ test_ERROR_BROKEN_PIPE _ =
                    oPEN_EXISTING
                    fILE_FLAG_OVERLAPPED
                    Nothing
-      associateWithIOCompletionPort (Left hClient) iocp
+      associateWithIOManager ioManager (Left hClient)
 
       connectNamedPipe hServer
 
@@ -429,7 +431,7 @@ test_ERROR_BROKEN_PIPE _ =
 --
 test_connectNamedPipe_ERROR_NO_DATA :: IO ()
 test_connectNamedPipe_ERROR_NO_DATA =
-    withIOManager $ \iocp -> do
+    withIOManager $ \ioManager -> do
 
       hServer <-
         createNamedPipe pname
@@ -440,7 +442,7 @@ test_connectNamedPipe_ERROR_NO_DATA =
                         maxBound
                         0
                         Nothing
-      associateWithIOCompletionPort (Left hServer) iocp
+      associateWithIOManager ioManager (Left hServer)
       hClient <-
         createFile pname
                    (gENERIC_READ .|. gENERIC_WRITE)
@@ -449,7 +451,7 @@ test_connectNamedPipe_ERROR_NO_DATA =
                    oPEN_EXISTING
                    fILE_FLAG_OVERLAPPED
                    Nothing
-      associateWithIOCompletionPort (Left hClient) iocp
+      associateWithIOManager ioManager (Left hClient)
 
       connectNamedPipe hServer
       closeHandle hClient
@@ -476,7 +478,7 @@ test_connectNamedPipe_ERROR_NO_DATA =
 -- (#109).  Which is interpreted as 'ResourceVanished'.
 --
 test_close_blocked_on_reading :: IO ()
-test_close_blocked_on_reading = withIOManager $ \iocp -> do
+test_close_blocked_on_reading = withIOManager $ \ioManager -> do
     h <- createNamedPipe pipeName
                          (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
                          (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
@@ -485,7 +487,7 @@ test_close_blocked_on_reading = withIOManager $ \iocp -> do
                          maxBound
                          0
                          Nothing
-    associateWithIOCompletionPort (Left h) iocp
+    associateWithIOManager ioManager (Left h)
     v <- newEmptyMVar
     _ <- async $ do
       -- wait for a connection
@@ -502,7 +504,7 @@ test_close_blocked_on_reading = withIOManager $ \iocp -> do
             oPEN_EXISTING
             fILE_FLAG_OVERLAPPED
             Nothing
-    associateWithIOCompletionPort (Left fh) iocp
+    associateWithIOManager ioManager (Left fh)
     threadDelay 100_000
     closeHandle h
     e <- takeMVar v
@@ -530,7 +532,7 @@ prop_async_reads_and_writes :: LargeNonEmptyBS
                             -> LargeNonEmptyBS
                             -> Property
 prop_async_reads_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsOut bufSizeOut) =
-    ioProperty $ withIOManager $ \iocp -> do
+    ioProperty $ withIOManager $ \ioManager -> do
       threadDelay 100
       -- putStrLn "\nstart reads_and_writes test"
 
@@ -555,7 +557,7 @@ prop_async_reads_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bs
             closeHandle
             $ \h -> do
               -- associate 'h' with  I/O completion 'port'
-              _ <- associateWithIOCompletionPort (Left h) iocp
+              _ <- associateWithIOManager ioManager (Left h)
               putMVar syncVarStart ()
               connectNamedPipe h
               readerAsync <- async $
@@ -580,7 +582,7 @@ prop_async_reads_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bs
           closeHandle
           $ \h -> do
             -- associate 'h' with  I/O completion 'port'
-            _ <- associateWithIOCompletionPort (Left h) iocp
+            _ <- associateWithIOManager ioManager (Left h)
             readerAsync <- async $
               readHandle h (BS.length bsOut)
                 >>= putMVar clientVar
@@ -661,7 +663,7 @@ prop_PingPong :: Int
               -> LargeNonEmptyBS
               -> Property
 prop_PingPong n blocking (LargeNonEmptyBS bs bufSize) =
-    ioProperty $ withIOManager $ \iocp -> do
+    ioProperty $ withIOManager $ \ioManager -> do
       let pname = pipeName ++ "-ping-pong"
 
       -- fork the PingPong server
@@ -673,7 +675,7 @@ prop_PingPong n blocking (LargeNonEmptyBS bs bufSize) =
                            (fromIntegral bufSize)
                            0
                            Nothing
-      associateWithIOCompletionPort (Left h) iocp
+      associateWithIOManager ioManager (Left h)
       let channel = handleToBinaryChannel h
       lock <- newEmptyMVar
       tid <- mask_ $ forkIOWithUnmask $ \unmask ->
@@ -691,7 +693,7 @@ prop_PingPong n blocking (LargeNonEmptyBS bs bufSize) =
                        oPEN_EXISTING
                        fILE_FLAG_OVERLAPPED
                        Nothing
-      associateWithIOCompletionPort (Left h') iocp
+      associateWithIOManager ioManager (Left h')
       let channel' = handleToBinaryChannel h'
       res <- runPingPongClient channel' blocking tid (constPingPongClient n bs)
 
@@ -716,7 +718,7 @@ prop_PingPongPipelined :: Blocking
                        -- non empty list of requests
                        -> Property
 prop_PingPongPipelined blocking (Positive bufSize) (NonEmpty bss0) =
-    ioProperty $ withIOManager $ \iocp -> do
+    ioProperty $ withIOManager $ \ioManager -> do
 
       let bss = map getLargeNonEmptyBS bss0
           pname = pipeName ++ "-ping-pong-pipelined"
@@ -730,7 +732,7 @@ prop_PingPongPipelined blocking (Positive bufSize) (NonEmpty bss0) =
                            maxBound
                            0
                            Nothing
-      associateWithIOCompletionPort (Left h) iocp
+      associateWithIOManager ioManager (Left h)
       let channel = handleToBinaryChannel h
       lock <- newEmptyMVar
       tid <- mask_ $ forkIOWithUnmask $ \unmask ->
@@ -747,7 +749,7 @@ prop_PingPongPipelined blocking (Positive bufSize) (NonEmpty bss0) =
                        oPEN_EXISTING
                        fILE_FLAG_OVERLAPPED
                        Nothing
-      associateWithIOCompletionPort (Left h') iocp
+      associateWithIOManager ioManager (Left h')
       let channel' = handleToBinaryChannel h'
       res <- runPingPongClientPipelined channel' blocking tid bss
 

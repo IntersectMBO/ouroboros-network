@@ -42,6 +42,7 @@ module Ouroboros.Network.NodeToClient (
   , localTxSubmissionClientNull
 
   -- * Re-exported network interface
+  , IOManager (..)
   , AssociateWithIOCP
   , withIOManager
   , LocalSnocket

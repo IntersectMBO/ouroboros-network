@@ -97,7 +97,7 @@ import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.IOManager (AssociateWithIOCP)
+import           Ouroboros.Network.IOManager (IOManager)
 import           Ouroboros.Network.Snocket (Snocket)
 import qualified Ouroboros.Network.Snocket as Snocket
 import           Ouroboros.Network.Server.Socket ( AcceptedConnectionsLimit (..)
@@ -262,7 +262,7 @@ connectToNodeSocket
      , Show vNumber
      , Mx.HasInitiator appType ~ True
      )
-  => AssociateWithIOCP
+  => IOManager
   -> VersionDataCodec extra CBOR.Term
   -> NetworkConnectTracers Socket.SockAddr vNumber
   -> Versions vNumber extra
