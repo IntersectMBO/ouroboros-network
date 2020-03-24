@@ -12,6 +12,7 @@ packages: ./typed-protocols
           ./ouroboros-consensus/ouroboros-consensus-mock
           ./ouroboros-consensus-byron
           ./ouroboros-consensus-byronspec
+          ./ouroboros-consensus-shelley
           ./ouroboros-consensus-cardano
           ./io-sim
           ./io-sim-classes
@@ -63,6 +64,10 @@ package ouroboros-consensus-mock
   tests: True
 
 package ouroboros-consensus-byron
+  tests: True
+  flags: +asserts
+
+package ouroboros-consensus-shelley
   tests: True
   flags: +asserts
 
@@ -171,6 +176,27 @@ source-repository-package
   tag: fec02d5bf92360c7f333c57b5add990dcbdff318
   --sha256: 0ca9si39r6zgxj0la0w15b9nhcj3szqq98phm10qxxinki4b0f2j
   subdir: byron/chain/executable-spec
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-ledger-specs
+  tag: fec02d5bf92360c7f333c57b5add990dcbdff318
+  --sha256: 0ca9si39r6zgxj0la0w15b9nhcj3szqq98phm10qxxinki4b0f2j
+  subdir: shelley/chain-and-ledger/dependencies/non-integer
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-ledger-specs
+  tag: fec02d5bf92360c7f333c57b5add990dcbdff318
+  --sha256: 0ca9si39r6zgxj0la0w15b9nhcj3szqq98phm10qxxinki4b0f2j
+  subdir: shelley/chain-and-ledger/executable-spec
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-ledger-specs
+  tag: fec02d5bf92360c7f333c57b5add990dcbdff318
+  --sha256: 0ca9si39r6zgxj0la0w15b9nhcj3szqq98phm10qxxinki4b0f2j
+  subdir: shelley/chain-and-ledger/executable-spec/test
 
 source-repository-package
   type: git

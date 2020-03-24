@@ -12,6 +12,7 @@ packages:
   - ./ouroboros-consensus/ouroboros-consensus-mock
   - ./ouroboros-consensus-byron
   - ./ouroboros-consensus-byronspec
+  - ./ouroboros-consensus-shelley
   - ./ouroboros-consensus-cardano
   - ./io-sim
   - ./io-sim-classes
@@ -50,9 +51,12 @@ extra-deps:
   - git: https://github.com/input-output-hk/cardano-ledger-specs
     commit: fec02d5bf92360c7f333c57b5add990dcbdff318
     subdirs:
-      - byron/semantics/executable-spec
-      - byron/ledger/executable-spec
       - byron/chain/executable-spec
+      - byron/ledger/executable-spec
+      - byron/semantics/executable-spec
+      - shelley/chain-and-ledger/dependencies/non-integer
+      - shelley/chain-and-ledger/executable-spec
+      - shelley/chain-and-ledger/executable-spec/test
 
   # Needed for `cardano-ledger-specs`
   - git: https://github.com/input-output-hk/goblins

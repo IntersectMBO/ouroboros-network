@@ -33,6 +33,7 @@ library
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-mock
+                     , ouroboros-consensus-shelley
 
   default-language:    Haskell2010
   ghc-options:         -Wall

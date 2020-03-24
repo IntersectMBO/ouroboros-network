@@ -33,5 +33,8 @@ Related packages:
   This is used to run the Byron protocol tests in lockstep with the spec to
   detect any discrepancies.
 
+* `../ouroboros-consensus-shelley`: integration with the Shelley ledger,
+  including protocol tests simulating various node setups.
+
 * `../ouroboros-consensus-cardano`: the consensus instantiated to the ledgers
   the `cardano-node` currently supports.

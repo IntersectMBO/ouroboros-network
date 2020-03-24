@@ -103,6 +103,14 @@ or with `nix`
 ```
 nix-build -A haskellPackages.ouroboros-consensus-byron.checks.test
 ```
+### Shelley test suite
+```
+cabal new-run ouroboros-consensus-shelley:test
+```
+or with `nix`
+```
+nix-build -A haskellPackages.ouroboros-consensus-shelley.checks.test
+```
 ### Test infrastructure test suite
 ```
 cabal new-run ouroboros-consensus-test-infra:test

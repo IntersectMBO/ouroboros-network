@@ -31,6 +31,7 @@ let
        ouroboros-consensus-byronspec
        ouroboros-consensus-cardano
        ouroboros-consensus-mock
+       ouroboros-consensus-shelley
        ouroboros-consensus-test-infra
        io-sim
        io-sim-classes
