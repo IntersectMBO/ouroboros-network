@@ -328,3 +328,4 @@ executable demo-chain-sync
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -threaded
+                       -rtsopts
