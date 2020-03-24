@@ -952,14 +952,20 @@ precondition Model {..} (At cmd) =
     secParam :: SecurityParam
     secParam = configSecurityParam cfg
 
+    -- TODO #871
     isValidIterator :: StreamFrom blk -> StreamTo blk -> Logic
     isValidIterator from to =
-      case Model.between secParam from to dbModel of
-        Left  _    -> Bot
-        -- All blocks must be valid
-        Right blks -> forall blks $ \blk -> Boolean $
-          Map.notMember (blockHash blk) $
-          forgetFingerprint (Model.invalid dbModel)
+        case Model.between secParam from to' dbModel of
+          Left  _    -> Bot
+          -- All blocks must be valid
+          Right blks -> forall blks $ \blk -> Boolean $
+            Map.notMember (blockHash blk) $
+            forgetFingerprint (Model.invalid dbModel)
+      where
+        -- Include the exclusive bound in the check, as it must be valid too
+        to' = case to of
+          StreamToExclusive pt -> StreamToInclusive pt
+          StreamToInclusive pt -> StreamToInclusive pt
 
 equallyOrMorePreferable :: forall blk. BlockSupportsProtocol blk
                         => TopLevelConfig blk
