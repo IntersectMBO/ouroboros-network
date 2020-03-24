@@ -49,7 +49,7 @@ extra-deps:
       - slotting
 
   - git: https://github.com/input-output-hk/cardano-ledger-specs
-    commit: fec02d5bf92360c7f333c57b5add990dcbdff318
+    commit: 28b4381461252b523473972c85b003301a5deadc
     subdirs:
       - byron/chain/executable-spec
       - byron/ledger/executable-spec
@@ -65,7 +65,7 @@ extra-deps:
   - gray-code-0.3.1
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 2f6a649662aa93fc8427dcf6706ee63167f4205d
+    commit: 22e89a5f7cc2b02192b1eb420d74530eb2d6cb82
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
