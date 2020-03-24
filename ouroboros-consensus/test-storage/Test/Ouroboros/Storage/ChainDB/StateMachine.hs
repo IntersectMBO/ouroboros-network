@@ -58,7 +58,6 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Cardano.Crypto.DSIGN.Mock
 import           Cardano.Slotting.Slot hiding (At)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -75,17 +74,13 @@ import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
                      (settableBlockchainTime)
 import           Ouroboros.Consensus.Config
-import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (takeLast)
@@ -1286,40 +1281,17 @@ genBlk chunkInfo Model{..} = frequency
   Top-level tests
 -------------------------------------------------------------------------------}
 
-testCfg :: TopLevelConfig TestBlock
-testCfg = TopLevelConfig {
-      configConsensus = BftConfig
-        { bftParams   = BftParams { bftSecurityParam = k
-                                  , bftNumNodes      = numCoreNodes
-                                  }
-        , bftNodeId   = CoreId (CoreNodeId 0)
-        , bftSignKey  = SignKeyMockDSIGN 0
-        , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
-        }
-    , configLedger = LedgerConfig
-    , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
-    }
-  where
-    slotLengths :: SlotLengths
-    slotLengths = singletonSlotLengths slotLength
-
-    slotLength :: SlotLength
-    slotLength = slotLengthFromSec 20
-
-    numCoreNodes :: NumCoreNodes
-    numCoreNodes = NumCoreNodes 1
-
-    eraParams :: HardFork.EraParams
-    eraParams = HardFork.defaultEraParams k slotLength
-
-    k = SecurityParam 2
+mkTestCfg :: ImmDB.ChunkInfo -> TopLevelConfig TestBlock
+mkTestCfg (ImmDB.UniformChunkSize chunkSize) =
+    mkTestConfig (SecurityParam 2) chunkSize
 
 envUnused :: ChainDBEnv m blk
 envUnused = error "ChainDBEnv used during command generation"
 
 smUnused :: ImmDB.ChunkInfo
          -> StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
-smUnused chunkInfo = sm envUnused (genBlk chunkInfo) testCfg testInitExtLedger
+smUnused chunkInfo =
+    sm envUnused (genBlk chunkInfo) (mkTestCfg chunkInfo) testInitExtLedger
 
 prop_sequential :: SmallChunkInfo -> Property
 prop_sequential (SmallChunkInfo chunkInfo) =
@@ -1328,6 +1300,8 @@ prop_sequential (SmallChunkInfo chunkInfo) =
       -- TODO label tags
       prettyCommands (smUnused chunkInfo) hist prop
   where
+    testCfg = mkTestCfg chunkInfo
+
     test :: QSM.Commands (At Cmd Blk IO) (At Resp Blk IO)
          -> IO
             ( QSM.History (At Cmd Blk IO) (At Resp Blk IO)
@@ -1561,7 +1535,7 @@ _runCmds chunkInfo cmds = withRegistry $ \registry -> do
       <*> uncheckedNewTVarM Mock.empty
       <*> uncheckedNewTVarM Mock.empty
     let args = mkArgs
-          testCfg
+          (mkTestCfg chunkInfo)
           chunkInfo
           testInitExtLedger
           (showTracing stdoutTracer)
