@@ -30,6 +30,7 @@ library
                        System.Win32.Async.Socket
                        System.Win32.Async.Socket.ByteString
                        System.Win32.Async.Socket.ByteString.Lazy
+                       System.Win32.Async.Internal
     other-modules:     System.Win32.Async.IOData
                        System.Win32.Async.IOManager
                        System.Win32.Async.Overlapped
