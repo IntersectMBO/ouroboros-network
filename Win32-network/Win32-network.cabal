@@ -27,11 +27,11 @@ library
                        System.Win32.Async
                        System.Win32.Async.File
                        System.Win32.Async.ErrCode
-                       System.Win32.Async.IOManager
                        System.Win32.Async.Socket
                        System.Win32.Async.Socket.ByteString
                        System.Win32.Async.Socket.ByteString.Lazy
     other-modules:     System.Win32.Async.IOData
+                       System.Win32.Async.IOManager
                        System.Win32.Async.Overlapped
                        System.Win32.Async.Socket.Syscalls
                        System.Win32.Async.WSABuf
