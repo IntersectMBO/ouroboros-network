@@ -84,7 +84,7 @@ import           Control.Monad.Except (runExcept)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function (on)
 import           Data.Functor.Identity (Identity (..))
-import           Data.List (isPrefixOf, sortBy)
+import           Data.List (isInfixOf, isPrefixOf, sortBy)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
@@ -781,13 +781,19 @@ between :: forall blk. HasHeader blk
         -> Either (UnknownRange blk) [blk]
 between (SecurityParam k) from to m = do
     fork <- errFork
-    if Fragment.forksAtMostKBlocks k currentFrag fork
+    -- See #871.
+    if partOfCurrentChain fork || Fragment.forksAtMostKBlocks k currentFrag fork
       then return $ Fragment.toOldestFirst fork
            -- We cannot stream from an old fork
       else Left $ ForkTooOld from
   where
     currentFrag :: AnchoredFragment blk
     currentFrag = Chain.toAnchoredFragment (currentChain m)
+
+    partOfCurrentChain :: AnchoredFragment blk -> Bool
+    partOfCurrentChain fork =
+      map Block.blockPoint (Fragment.toOldestFirst fork) `isInfixOf`
+      map Block.blockPoint (Chain.toOldestFirst (currentChain m))
 
     -- A fragment for each possible chain in the database
     fragments :: [AnchoredFragment blk]
