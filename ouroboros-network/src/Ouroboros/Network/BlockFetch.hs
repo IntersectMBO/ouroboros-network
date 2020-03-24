@@ -286,9 +286,9 @@ blockFetchLogic decisionTracer clientStateTracer
 
     -- TODO: get this from elsewhere once we have DeltaQ info available
     readPeerGSVs = Map.map (const dummyGSVs) <$> readFetchClientsStateVars registry
-    -- roughly 100ms one-way ping time and 5MBit/s bandwidth gives an in-flight
-    -- low watermark and high watermark of ~100kb and ~200kb respectively.
+    -- roughly 500ms one-way ping time and 5MBit/s bandwidth gives an in-flight
+    -- low watermark and high watermark of ~500kb and ~1000kb respectively.
     dummyGSVs    = PeerGSV{outboundGSV, inboundGSV}
-    inboundGSV   = ballisticGSV 100e-3 2e-6 (degenerateDistribution 0)
+    inboundGSV   = ballisticGSV 500e-3 2e-6 (degenerateDistribution 0)
     outboundGSV  = inboundGSV
 
