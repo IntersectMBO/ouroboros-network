@@ -95,7 +95,6 @@ test-suite test
                      , QuickCheck
                      , time
                      , tasty
-                     , tasty-golden
                      , tasty-hunit
                      , tasty-quickcheck
 

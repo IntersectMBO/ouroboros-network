@@ -1,5 +1,6 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
 module Test.Consensus.Shelley.Ledger.Golden (
@@ -7,8 +8,6 @@ module Test.Consensus.Shelley.Ledger.Golden (
   , mkDummyHash
   ) where
 
-import           Codec.CBOR.Encoding (Encoding)
-import qualified Codec.CBOR.Write as CBOR
 import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
@@ -37,22 +36,23 @@ import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as TPraosState
 
 import           Test.Tasty
-import           Test.Tasty.Golden
+import           Test.Tasty.HUnit
 
+import           Test.Util.Golden
 import           Test.Util.Orphans.Arbitrary ()
 
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 
 tests :: TestTree
 tests = testGroup "Golden tests"
-    [ test_golden_Block
-    , test_golden_Header
-    , test_golden_HeaderHash
-    , test_golden_GenTx
-    , test_golden_GenTxId
-    , test_golden_ApplyTxErr
-    , test_golden_ConsensusState
-    , test_golden_LedgerState
+    [ testCase "Block"          test_golden_Block
+    , testCase "Header"         test_golden_Header
+    , testCase "HeaderHash"     test_golden_HeaderHash
+    , testCase "GenTx"          test_golden_GenTx
+    , testCase "GenTxId"        test_golden_GenTxId
+    , testCase "ApplyTxErr"     test_golden_ApplyTxErr
+    , testCase "ConsensusState" test_golden_ConsensusState
+    , testCase "LedgerState"    test_golden_LedgerState
       -- TODO Query and result
     ]
 
@@ -64,47 +64,53 @@ exampleBlock = mkShelleyBlock Examples.blockEx3B
 exampleGenTx :: GenTx Block
 exampleGenTx = mkShelleyTx Examples.txEx2A
 
-test_golden_Block :: TestTree
+test_golden_Block :: Assertion
 test_golden_Block = goldenTestCBOR
-    "Block"
     toCBOR
     exampleBlock
-    "test/golden/cbor/shelley/Block"
+    "2nidM76Ny8pviiZezND3D7MZ6y37Fx4j4bQetNkXysWGxrahrTaxxSnrgg4tkQfMLggA4gfLXd\
+    \hB6zeiK4xPrkaa3yDFQFEfgvayoyAEZmLKsJYeLqoM2iHMnFysTYUVDL1qSNjfReV2mFYzcrs3\
+    \46L2B47QG1x5g4Hk52PZA39SBPcvqXkHiw6DgtcYmdXAQW8JpW5zJqwKKnMTamfwvvKVTTqR1x\
+    \shgn49xHV1vEMQ5ubGUZYYi6RF1XmaTsGcFPfT5D69Gdx91DbCzLLjD8JhPZivTghC6iwDJMhp\
+    \dkC8bjRLWdP7xx52s4u44BDNiRcYrTVjXRVbB4bpjyr5GvtZKt8Muz5rfNrv3S3TynSZvQ3jhc\
+    \FbdwK2uaJw2cYbSqRLm2SNdfxJir3Df5LwHnZ1Prqov254fRcCPRqnvAW5xeLzKEo"
 
-test_golden_Header :: TestTree
+test_golden_Header :: Assertion
 test_golden_Header = goldenTestCBOR
-    "Header"
     toCBOR
     (getHeader exampleBlock)
-    "test/golden/cbor/shelley/Header"
+    "3FrQDCt2rUAPbDFJ66wa7NCrgaZARaZg9mcvdgwzS7XnVgHNGvcUdrrdEnPMeziiVVkZTvhtcE\
+    \bPUVnAyq2dReKLtqgntvCR5Xf4p7d2BwwzLjtsBYmx8yuCgwVa6NZXCzdzB5nEoVTGR6hFTTGn\
+    \7jYwG7qZSSbgZwtyacPyZj"
 
-test_golden_HeaderHash :: TestTree
+test_golden_HeaderHash :: Assertion
 test_golden_HeaderHash = goldenTestCBOR
-    "HeaderHash"
     toCBOR
     (blockHash exampleBlock)
-    "test/golden/cbor/shelley/HeaderHash"
+    "8h2JEJf"
 
-test_golden_GenTx :: TestTree
+test_golden_GenTx :: Assertion
 test_golden_GenTx = goldenTestCBOR
-    "GenTx"
     toCBOR
     exampleGenTx
-    "test/golden/cbor/shelley/GenTx"
+    "4Wnj4aL4oxhnRJbGmrWeygZGFARTVMN8QFaqSTu4JPMVdVLAQ2BojPHwt9yUSrUePYhHBMdv5x\
+    \uWwMyVUBQYc1cu7Db57huJngYVaTDuiiSX2f1pQ3e4EUVzzR3BzdkWV58kyMMwEeukNSqguq6s\
+    \iF3bawYuB2FJKtowVAjc8WMtLkhZLZsxRpbxsrpdA7wCXWQ1Ce33x6Acad54Yj5GcheEdBSohd\
+    \hLDno58rGTwt2U87u2NrXZjPCbALWb5M5mUrHA3eAuqKxGjPb1k6stj5XPdTB8185qHsEhNG9i\
+    \2yJR4MDHUbPkiA1QonqhU3R5W3hjxisiRQboxPD7nNNv5MssAdrrVTDgCrDhFmLL1Y2dW377gr\
+    \BUD4DsRMMHJnWZcgN2GJ8GVaTRM5GUY74fTJKQa24FENPUu7ugf94th1uTmeZT15X23HZPgoh"
 
-test_golden_GenTxId :: TestTree
+test_golden_GenTxId :: Assertion
 test_golden_GenTxId = goldenTestCBOR
-    "GenTxId"
     toCBOR
     (txId exampleGenTx)
-    "test/golden/cbor/shelley/GenTxId"
+    "8kUeMTQ"
 
-test_golden_ApplyTxErr :: TestTree
+test_golden_ApplyTxErr :: Assertion
 test_golden_ApplyTxErr = goldenTestCBOR
-    "ApplyTxErr"
     toCBOR
     exampleApplyTxErr
-    "test/golden/cbor/shelley/ApplyTxErr"
+    "2NRxKASh4"
   where
     -- TODO incomplete, this type has tons of constructors that can all
     -- change.
@@ -116,12 +122,16 @@ test_golden_ApplyTxErr = goldenTestCBOR
       $ STS.UtxowFailure
       $ STS.InvalidWitnessesUTXOW
 
-test_golden_ConsensusState :: TestTree
+test_golden_ConsensusState :: Assertion
 test_golden_ConsensusState = goldenTestCBOR
-    "ConsensusState"
     toCBOR
     exampleConsensusState
-    "test/golden/cbor/shelley/ConsensusState"
+    "Ymgf4xjnZfRRx8eyR1z1CCciUJPLPZwySJhVFwrELPsNLfjNWacKeaEKyFE49BLwjkbwVM4thd\
+    \xNFi2mBhkLgxAX3xwMqzakSyEYuNbQ7wDA2D9q6vyE8RwM3eGhz1jS7fWv3MwVN9fwCdrUkKMs\
+    \qbYHLynDwuuT95Nb4FLL4i7utVV1HQBH7dq7Qn51npCVsXQwJwsTC2M6RD7j6VyhzHpCNDTWo4\
+    \wCgKd9ezH234wRxbQ32uB4FFXnz5iK46b9MhqHokspn2qLFF7evyWqocGN748j5GmhNpbvJf61\
+    \1J9skUcPNFkkibNjPsKoivcwtrzXF4YKLiFKGH7CZugxJ3TqZKmMW64FxhrNmKxpehkwEeWtA4\
+    \UftFwGN9qGp"
   where
     exampleConsensusState :: ConsensusState (BlockProtocol Block)
     exampleConsensusState =
@@ -144,12 +154,27 @@ test_golden_ConsensusState = goldenTestCBOR
       (SL.mkNonce 2)
       (SL.mkNonce 3)
 
-test_golden_LedgerState :: TestTree
+test_golden_LedgerState :: Assertion
 test_golden_LedgerState = goldenTestCBOR
-    "LedgerState"
     encodeShelleyLedgerState
     exampleLedgerState
-    "test/golden/cbor/shelley/LedgerState"
+    "BdWSwUUCJeRwZ385owJZcogJVLPA36X5DAi5vV9wwrULTURpd16N7AHfCvkEseTPgKL6xndfa4\
+    \ocw188C3FamenBggc15HuYfSj4cz3FWgYWaYvRz56TabWzT8of8mNr8pWEDeSsSfR4Q1YMwZEQ\
+    \vkMD58zMoTsvVBJpKqJbvNA768w1HPVjhALNt1gy6tY47jnSLKomNm7oBMEP5Fa4q7QkQPrhw8\
+    \VkpfKcukMZU8rEMP7FmjM4hpEhY4wyfiHeivSrPSZPvQjQF9a6EaxaZ2rnTdT7cm1DDo3q7KHq\
+    \boRLBVh9dA6ahcMQHdEJug9gEdaC2jTvWfe6d8iPG3H6cXme9e7oYrFrMyLxCMHUJqQu8L6LrE\
+    \wEGLChhY8N1b11SEBd1vRDpXHKEGWqpQPEG62nbR9QE4ggSJD7h1cxhW4Razj3UTVUPox1mrH3\
+    \JLAP2cpjVGjJaoXsWgrXMjVKcXKTBGVKwNCfZg9eZPadfYgX6WnbueQLMKVpFHtkMpswjYteVG\
+    \E6EtPaCaTrsq1mHa1wEbEvKCE3B3UWYBy5cUA2Bg2AbH9kKj5YsUdK3NfrwKRwKMPhh4CsgpLt\
+    \nuEHDqKnj3uK2nKoMQtsxZ3BU9dMMP33rFwLbSyPciybJ5tiystSqzFz9fXZ4aZYcwFyvJefxZ\
+    \t1YhXF8xA9fCXypAWeZu3WDHPnazYdbWsoZxf3Q21tWk4WYGy8TEoiXziYCisk9J9P2SqXLbkJ\
+    \9ztRbrJN9NXoEC5PG9gswjgyqfJ4N5n48WXVZPRrdzRk4G1eNErkur3Ya3T9RQetfxiQfuRbDD\
+    \AibN5ZAUw3bAtuttNUS82gikKjvtz812Apg3UU5iJmtv3nrHrBTSmsdwjYGz4LDX4SRWsMDxCK\
+    \KAHrAG8qkcgsTr8xykyWiebEQvVxAgW2ch3rj9ixJsC3Mevf9zhCW9p5LweKmWV8pnG7fWQ3jX\
+    \nh7P31GhZQtFmyqditLPjXUVXo64G6V2f1WThSMG7s8byAQKfn3SW67kWktGj1BgkQAiYo7z2q\
+    \W2XrAWY8YgFRa6AoL4LmnHn635gn8xf1ut5bnPm38QX3B1unDKKFeiwwGcnXXdRR2k6VtBZpoL\
+    \7iyeMhhtufn2AtzNKCqXaQjT8hXzmyVfPCEkoJ7gKWb14yLFpWpPvdWRh39HZNn7WCyToTzwCW\
+    \cfT8hMuVsthMbqPS9SvGafVdP5sbSgzX5RGcEiJabPd9M8w5hmztXmvYnDi"
   where
     Examples.CHAINExample { startState, newBlock } = Examples.ex2A
 
@@ -162,13 +187,6 @@ test_golden_LedgerState = goldenTestCBOR
         , history      = History.empty
         , shelleyState = STS.chainNes startState
         })
-
-goldenTestCBOR :: String -> (a -> Encoding) -> a -> FilePath -> TestTree
-goldenTestCBOR name enc a path =
-    goldenVsString name path (return bs)
-  where
-    bs = CBOR.toLazyByteString (enc a)
-
 
 {-------------------------------------------------------------------------------
   Auxiliary
