@@ -39,6 +39,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
+import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TxSubmissionMempoolWriter)
@@ -46,7 +47,6 @@ import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
 import           Ouroboros.Network.TxSubmission.Mempool.Reader
                      (TxSubmissionMempoolReader)
 import qualified Ouroboros.Network.TxSubmission.Mempool.Reader as MempoolReader
-import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -332,10 +332,10 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
     readFetchedBlocks :: STM m (Point blk -> Bool)
     readFetchedBlocks = ChainDB.getIsFetched chainDB
 
-    -- Asynchronous: doesn't wait until the block has been written to disk or
-    -- processed.
+    -- Waits until the block has been written to disk, but not until chain
+    -- selection has processed the block.
     addFetchedBlock :: Point blk -> blk -> m ()
-    addFetchedBlock _pt = void . ChainDB.addBlockAsync chainDB
+    addFetchedBlock _pt = void . ChainDB.addBlockWaitWrittenToDisk chainDB
 
     readFetchedMaxSlotNo :: STM m MaxSlotNo
     readFetchedMaxSlotNo = ChainDB.getMaxSlotNo chainDB
