@@ -198,6 +198,7 @@ runTestNetwork ::
      ( RunNode blk
      , TxGen blk
      , TracingConstraints blk
+     , Eq (Header blk)
      )
   => TestConfig
   -> EpochSize

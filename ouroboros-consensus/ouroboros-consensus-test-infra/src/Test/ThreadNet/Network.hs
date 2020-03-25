@@ -32,6 +32,14 @@ module Test.ThreadNet.Network (
   , NodeDBs (..)
   ) where
 
+import           Ouroboros.Network.BlockFetch.ClientRegistry (
+                     readFetchClientsStateVars)
+import           Ouroboros.Network.BlockFetch.ClientState (
+                     FetchClientStateVars(..), FetchRequest,
+                     IsIdle (..), PeerFetchStatus (..), tryReadTMergeVar)
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
+
 import           Codec.CBOR.Read (DeserialiseFailure)
 import qualified Control.Exception as Exn
 import           Control.Monad
@@ -39,10 +47,12 @@ import qualified Control.Monad.Except as Exc
 import           Control.Tracer
 import           Crypto.Random (ChaChaDRG)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Function (on)
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (isJust)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -199,15 +209,19 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
 -- context.
 --
 data VertexStatus m blk
-  = VDown (Chain blk) (LedgerState blk)
+  = VDown !(Chain blk) !(LedgerState blk)
     -- ^ The vertex does not currently have a node instance; its previous
     -- instance stopped with this chain and ledger state (empty/initial before
     -- first instance)
   | VFalling
     -- ^ The vertex has a node instance, but it is about to transition to
     -- 'VDown' as soon as its edges transition to 'EDown'.
-  | VUp !(NodeKernel m NodeId blk) !(LimitedApp m NodeId blk)
-    -- ^ The vertex currently has a node instance, with these handles.
+  | VUp !Int
+      !(BlockchainTime m)
+      !(NodeKernel m NodeId blk)
+      !(LimitedApp m NodeId blk)
+    -- ^ The vertex currently has a node instance (the @n@th), with these
+    -- handles.
 
 -- | A directed /edge/ denotes the \"operator of a node-to-node connection\";
 -- in production, that's generally the TCP connection and the networking layers
@@ -222,15 +236,15 @@ data VertexStatus m blk
 -- protocols; we only need 'VFalling' because mini protocol instances cannot
 -- exist without node instances.)
 --
-data EdgeStatus
-  = EDown
-    -- ^ The edge does not currently have mini protocol instances.
-  | EUp
-    -- ^ The edge currently has mini protocol instances.
-  deriving (Eq)
+data EdgeStatus m
+  = EDown !Int !RestartCause
+    -- ^ The edge does not currently have mini protocol instances (was formerly
+    -- the @n@th such set).
+  | EUp !Int !(STM m Bool) !(STM m Bool) !(STM m Bool)
+    -- ^ The edge currently has mini protocol instances (the @n@th such set).
 
 type VertexStatusVar m blk = StrictTVar m (VertexStatus m blk)
-type EdgeStatusVar m = StrictTVar m EdgeStatus
+type EdgeStatusVar m = StrictTVar m (EdgeStatus m)
 
 {-------------------------------------------------------------------------------
   Running the node net
@@ -247,6 +261,7 @@ runThreadNetwork :: forall m blk.
                     , TxGen blk
                     , TracingConstraints blk
                     , HasCallStack
+                    , Eq (Header blk)
                     )
                  => ThreadNetworkArgs m blk -> m (TestOutput blk)
 runThreadNetwork ThreadNetworkArgs
@@ -262,6 +277,8 @@ runThreadNetwork ThreadNetworkArgs
   , tnaTopology       = nodeTopology
   , tnaEpochSize      = epochSize
   } = withRegistry $ \sharedRegistry -> do
+    traceWith debugTracer $ show (numCoreNodes, numSlots)
+
     -- This shared registry is used for 'newTestBlockchainTime' and the
     -- network communication threads. Each node will create its own registry
     -- for its ChainDB.
@@ -318,6 +335,25 @@ runThreadNetwork ThreadNetworkArgs
           vertexStatusVars
           uedge
 
+    -- monitor the status variables etc
+    void $ forkLinkedThread sharedRegistry $ let
+      vvs  = Map.mapKeys CoreId vertexStatusVars
+      devs = Map.mapKeys (\(c, s) -> (CoreId c, CoreId s)) edgeStatusVars
+
+      loop fp1 = do
+          -- wait for it to change
+          fp2 <- atomically $ do
+            fp2 <- getNextStableNetFingerprintSTM nodeTopology vvs devs
+            check $ fp1 /= fp2
+            pure fp2
+          -- wait for it to stabilize again
+          fp3 <- getNextStableNetFingerprint nodeTopology vvs devs fp2
+          case checkStableNetFingerprint nodeTopology fp3 of
+            [] -> pure ()
+            ss -> error $ unlines ss
+          loop fp3
+      in loop (StableNetFingerprint Map.empty)
+
     -- fork the vertices
     let nodesByJoinSlot =
           List.sortOn fst $   -- sort non-descending by join slot
@@ -361,7 +397,7 @@ runThreadNetwork ThreadNetworkArgs
                 s <- getCurrentSlot sharedBtime
                 check $ s >= next
                 readTVar vertexStatusVar >>= \case
-                  VUp kernel _ -> do
+                  VUp _n _btime kernel _app -> do
                     bno <- ChainDB.getTipBlockNo (getChainDB kernel)
                     pure (s, bno)
                   _ -> retry
@@ -413,7 +449,7 @@ runThreadNetwork ThreadNetworkArgs
       edgeStatusVars
       nodeInfo =
         void $ forkLinkedThread sharedRegistry $ do
-          loop 0 tniProtocolInfo NodeRestart restarts0
+          loop 0 0 tniProtocolInfo NodeRestart restarts0
       where
         TestNodeInitialization
            { tniCrucialTxs
@@ -425,8 +461,8 @@ runThreadNetwork ThreadNetworkArgs
           where
             NodeRestarts m = nodeRestarts
 
-        loop :: SlotNo -> ProtocolInfo blk -> NodeRestart -> Map SlotNo NodeRestart -> m ()
-        loop s pInfo nr rs = do
+        loop :: Int -> SlotNo -> ProtocolInfo blk -> NodeRestart -> Map SlotNo NodeRestart -> m ()
+        loop n s pInfo nr rs = do
           -- a registry solely for the resources of this specific node instance
           (again, finalChain, finalLdgr) <- withRegistry $ \nodeRegistry -> do
             let nodeTestBtime = testBlockchainTimeClone sharedTestBtime nodeRegistry
@@ -447,14 +483,15 @@ runThreadNetwork ThreadNetworkArgs
             -- allocate the node's internal state and fork its internal threads
             -- (specifically not the communication threads running the Mini
             -- Protocols, like the ChainSync Client)
-            (kernel, app) <- forkNode
+            (kernel, app) <- forkNode coreNodeId
               varRNG
               nodeBtime
               nodeRegistry
               pInfo'
               nodeInfo
               (crucialTxs' ++ tniCrucialTxs)
-            atomically $ writeTVar vertexStatusVar $ VUp kernel app
+            atomically $ do
+              writeTVar vertexStatusVar $ VUp n nodeBtime kernel app
 
             -- wait until this node instance should stop
             again <- case Map.minViewWithKey rs of
@@ -474,7 +511,10 @@ runThreadNetwork ThreadNetworkArgs
             -- stop threads that depend on/stimulate the kernel
             atomically $ writeTVar vertexStatusVar VFalling
             forM_ edgeStatusVars $ \edgeStatusVar -> atomically $ do
-              readTVar edgeStatusVar >>= check . (== EDown)
+              let isDown = \case
+                      EDown{} -> True
+                      EUp{}   -> False
+              readTVar edgeStatusVar >>= check . isDown
 
             -- assuming nothing else is changing it, read the final chain
             let chainDB = getChainDB kernel
@@ -490,7 +530,7 @@ runThreadNetwork ThreadNetworkArgs
 
           case again of
             Nothing                     -> pure ()
-            Just (s', pInfo', nr', rs') -> loop s' pInfo' nr' rs'
+            Just (s', pInfo', nr', rs') -> loop (n+1) s' pInfo' nr' rs'
 
     -- | Persistently attempt to add the given transactions to the mempool
     -- every time the ledger slot changes, even if successful!
@@ -553,7 +593,8 @@ runThreadNetwork ThreadNetworkArgs
           testGenTxs numCoreNodes curSlotNo cfg ledger
         void $ addTxs mempool txs
 
-    mkArgs :: BlockchainTime m
+    mkArgs :: CoreNodeId
+           -> BlockchainTime m
            -> ResourceRegistry m
            -> TopLevelConfig blk
            -> ExtLedgerState blk
@@ -563,7 +604,7 @@ runThreadNetwork ThreadNetworkArgs
               -- ^ added block tracer
            -> NodeDBs (StrictTVar m MockFS)
            -> ChainDbArgs m blk
-    mkArgs
+    mkArgs _coreNodeId
       btime registry
       cfg initLedger
       invalidTracer addTracer
@@ -622,7 +663,8 @@ runThreadNetwork ThreadNetworkArgs
 
     forkNode
       :: HasCallStack
-      => StrictTVar m ChaChaDRG
+      => CoreNodeId
+      -> StrictTVar m ChaChaDRG
       -> BlockchainTime m
       -> ResourceRegistry m
       -> ProtocolInfo blk
@@ -632,7 +674,7 @@ runThreadNetwork ThreadNetworkArgs
       -> m ( NodeKernel m NodeId blk
            , LimitedApp m NodeId blk
            )
-    forkNode varRNG btime registry pInfo nodeInfo txs0 = do
+    forkNode coreNodeId varRNG btime registry pInfo nodeInfo txs0 = do
       let ProtocolInfo{..} = pInfo
 
       let NodeInfo
@@ -645,7 +687,7 @@ runThreadNetwork ThreadNetworkArgs
           addTracer = Tracer $ \(p, bno) -> do
             s <- atomically $ getCurrentSlot btime
             traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno)
-      let chainDbArgs = mkArgs
+      let chainDbArgs = mkArgs coreNodeId
             btime registry
             pInfoConfig pInfoInitLedger
             invalidTracer
@@ -862,6 +904,7 @@ data RestartCause
     -- 'MiniProtocolExpectedException'.
   | RestartNode
     -- ^ restart because at least one of the two nodes is 'VFalling'
+  deriving (Eq, Show)
 
 -- | Fork two directed edges, one in each direction between the two vertices
 --
@@ -881,7 +924,7 @@ forkBothEdges sharedRegistry btime tr vertexStatusVars (node1, node2) = do
           Just var -> (node, var)
 
   let mkDirEdge e1 e2 = do
-        v <- uncheckedNewTVarM EDown
+        v <- uncheckedNewTVarM (EDown 0 RestartNode)
         void $ forkLinkedThread sharedRegistry $ do
           directedEdge tr btime v e1 e2
         pure ((fst e1, fst e2), v)
@@ -919,13 +962,13 @@ directedEdge ::
   -> (CoreNodeId, VertexStatusVar m blk)
   -> m ()
 directedEdge tr btime edgeStatusVar client server =
-    loop
+    loop 0
   where
-    loop = do
-        restart <- directedEdgeInner edgeStatusVar client server
+    loop n = do
+        restart <- directedEdgeInner n edgeStatusVar client server
           `catch` (pure . RestartExn)
           `catch` hUnexpected
-        atomically $ writeTVar edgeStatusVar EDown
+        atomically $ writeTVar edgeStatusVar (EDown n restart)
         case restart of
           RestartNode  -> pure ()
           RestartExn e -> do
@@ -935,7 +978,7 @@ directedEdge tr btime edgeStatusVar client server =
             traceWith tr (s, MiniProtocolDelayed, e)
             void $ blockUntilSlot btime s'
             traceWith tr (s', MiniProtocolRestarting, e)
-        loop
+        loop (n+1)
       where
         -- Wrap synchronous exceptions in 'MiniProtocolFatalException'
         --
@@ -956,19 +999,18 @@ directedEdge tr btime edgeStatusVar client server =
 -- See 'directedEdge'.
 directedEdgeInner ::
   forall m blk. IOLike m
-  => EdgeStatusVar m
+  => Int
+  -> EdgeStatusVar m
   -> (CoreNodeId, VertexStatusVar m blk)
      -- ^ client threads on this node
   -> (CoreNodeId, VertexStatusVar m blk)
      -- ^ server threads on this node
   -> m RestartCause
-directedEdgeInner edgeStatusVar
+directedEdgeInner n edgeStatusVar
   (node1, vertexStatusVar1) (node2, vertexStatusVar2) = do
     -- block until both nodes are 'VUp'
     (LimitedApp app1, LimitedApp app2) <- atomically $ do
       (,) <$> getApp vertexStatusVar1 <*> getApp vertexStatusVar2
-
-    atomically $ writeTVar edgeStatusVar EUp
 
     let miniProtocol ::
              (forall unused1 unused2 unused3.
@@ -983,35 +1025,42 @@ directedEdgeInner edgeStatusVar
              -> Channel m msg
              -> m ())
              -- ^ server action to run on node2
-          -> m (m (), m ())
+          -> m (STM m Bool, (m (), m ()))
         miniProtocol client server = do
-           (chan, dualChan) <- createConnectedChannels
+           pair <- createConnectedTestChannelPair
            pure
-             ( client app1 (fromCoreNodeId node2) chan
-             , server app2 (fromCoreNodeId node1) dualChan
+             ( testChannelEmpty pair
+             , ( client app1 (fromCoreNodeId node2) (testChannel1 pair)
+               , server app2 (fromCoreNodeId node1) (testChannel2 pair)
+               )
              )
+
+    chainSync <- miniProtocol
+        (wrapMPEE MPEEChainSyncClient naChainSyncClient)
+        naChainSyncServer
+    blockFetch <- miniProtocol
+        (wrapMPEE MPEEBlockFetchClient naBlockFetchClient)
+        (wrapMPEE MPEEBlockFetchServer naBlockFetchServer)
+    txSub <- miniProtocol
+        (wrapMPEE MPEETxSubmissionClient naTxSubmissionClient)
+        (wrapMPEE MPEETxSubmissionServer naTxSubmissionServer)
+
+    atomically $ writeTVar edgeStatusVar $
+      EUp n (fst chainSync) (fst blockFetch) (fst txSub)
 
     -- NB only 'watcher' ever returns in these tests
     fmap (\() -> RestartNode) $
-      (>>= withAsyncsWaitAny) $
-      fmap flattenPairs $
-      sequence $
-        pure (watcher vertexStatusVar1, watcher vertexStatusVar2)
-        NE.:|
-      [ miniProtocol
-          (wrapMPEE MPEEChainSyncClient naChainSyncClient)
-          naChainSyncServer
-      , miniProtocol
-          (wrapMPEE MPEEBlockFetchClient naBlockFetchClient)
-          (wrapMPEE MPEEBlockFetchServer naBlockFetchServer)
-      , miniProtocol
-          (wrapMPEE MPEETxSubmissionClient naTxSubmissionClient)
-          (wrapMPEE MPEETxSubmissionServer naTxSubmissionServer)
-      ]
+      withAsyncsWaitAny $
+      flattenPairs $
+        (watcher vertexStatusVar1, watcher vertexStatusVar2) NE.:|
+        [ snd chainSync
+        , snd blockFetch
+        , snd txSub
+        ]
   where
     getApp v = readTVar v >>= \case
-      VUp _ app -> pure app
-      _         -> retry
+      VUp _n _btime _kernel app -> pure app
+      _                         -> retry
 
     flattenPairs :: forall a. NE.NonEmpty (a, a) -> NE.NonEmpty a
     flattenPairs = uncurry (<>) . NE.unzip
@@ -1279,7 +1328,7 @@ data MiniProtocolExpectedException
     -- ^ see "Ouroboros.Network.TxSubmission.Outbound"
   | MPEETxSubmissionServer TxInbound.TxSubmissionProtocolError
     -- ^ see "Ouroboros.Network.TxSubmission.Inbound"
-  deriving (Show)
+  deriving (Eq, Show)
 
 instance Exception MiniProtocolExpectedException
 
@@ -1317,3 +1366,346 @@ data JitEbbError blk
   deriving (Show)
 
 instance LedgerSupportsProtocol blk => Exception (JitEbbError blk)
+
+{-------------------------------------------------------------------------------
+  Detecting stable states of the net
+-------------------------------------------------------------------------------}
+
+-- | Fingerprint of those state variables in a client node relevant to chain
+-- selection with a peer server node
+--
+-- This is the latest output from the ChainSync client thread, the BlockFetch
+-- client thread, and the client node's fetch logic thread.
+--
+data EUpFingerprint hdr = MkEUpFingerprint
+  { ufpBlockFetch :: PeerFetchStatus hdr
+  , ufpChainSync  :: AnchoredFragment hdr
+  , ufpCounter    :: !Int
+  , ufpFetchLogic :: Maybe (FetchRequest hdr)
+  }
+  deriving (Show)
+
+instance (Eq hdr, StandardHash hdr) => Eq (EUpFingerprint hdr) where
+  MkEUpFingerprint l1 l2 l3 l4 == MkEUpFingerprint r1 r2 r3 r4 =
+    l1 == r1 &&
+    l2 == r2 &&
+    l3 == r3 &&
+    -- since ClientState.hs doesn't instantiate Eq (FetchRequest hdr)
+    on (==) (fmap BFClient.fetchRequestFragments) l4 r4
+
+data EDownFingerprint = MkEDownFingerprint
+  { dfpCause   :: RestartCause
+  , dfpCounter :: !Int
+  }
+  deriving (Eq, Show)
+
+data DirectedEdgeFingerprint hdr =
+    EDownFingerprint !EDownFingerprint
+  | EUpFingerprint !(EUpFingerprint hdr)
+  deriving (Eq, Show)
+
+-- | Fingerprint of those state variables in a node relevant to chain selection
+-- throughout the net
+--
+data VertexFingerprint peer hdr = VertexFingerprint
+  { vfpChainDB       :: Tip hdr
+  , vfpClock         :: SlotNo
+  , vfpCounter       :: !Int
+  , vfpDirectedEdges :: Map peer (DirectedEdgeFingerprint hdr)
+  }
+  deriving (Eq, Show)
+
+-- | Fingerprint of a /stable/ state of a net relevant to chain selection
+--
+-- This involves no channels because all channels in a stable state are assumed
+-- to be empty.
+--
+newtype StableNetFingerprint peer hdr =
+    StableNetFingerprint (Map peer (VertexFingerprint peer hdr))
+ deriving (Eq, Show)
+
+-- | Each element is an error message
+--
+checkStableNetFingerprint
+  :: (HasHeader hdr, Show hdr)
+  => NodeTopology
+  -> StableNetFingerprint NodeId hdr
+  -> [String]
+checkStableNetFingerprint topo (StableNetFingerprint m) =
+    concatMap checkVertex (Map.toList m) <>
+    concatMap checkUedgeExists (edgesNodeTopology topo)
+    -- TODO confirm any missing nodes haven't joined yet via NodeJoinPlan
+  where
+    checkVertex (client, vClient) =
+        map (\s -> show client <> " " <> s) $
+          concatMap (checkDedge vClient) (Map.toList vfpDirectedEdges) <>
+          case vfpChainDB of
+            TipGenesis -> []
+            Tip s _ _  ->
+                [ "CDB tip is from the future " <> show (s, vfpClock)
+                | s > vfpClock
+                ]
+      where
+        VertexFingerprint
+          { vfpChainDB
+          , vfpClock
+          , vfpDirectedEdges
+          } = vClient
+      
+    checkDedge vClient (server, EUpFingerprint ufp) =
+        map (\s -> show server <> " " <> s) $
+
+        [ "BF status is not ready " <> show ufpBlockFetch
+        | ufpBlockFetch /= PeerFetchStatusReady Set.empty IsIdle
+        ] <>
+
+        [ "BF request is not empty " <> show ufpFetchLogic
+        | isJust ufpFetchLogic
+        ] <>
+
+        -- TODO use 'Ouroboros.Consensus.Protocol.Abstract.preferCandidate'
+        [ "candidate is preferable to CDB tip " <>
+            show (AF.head ufpChainSync, cdbTip)
+        | let cdbTip = vfpChainDB
+        , case cdbTip of
+            TipGenesis  -> Origin /= candidateBNo
+            Tip _ _ bno -> candidateBNo > At bno
+        ] <>
+
+        checkServer ufpChainSync (Map.lookup server m)
+      where
+        VertexFingerprint{vfpChainDB} = vClient
+        MkEUpFingerprint
+          { ufpBlockFetch
+          , ufpChainSync
+          , ufpFetchLogic
+          } = ufp
+        candidateBNo = AF.headBlockNo ufpChainSync
+    checkDedge _      (server, EDownFingerprint dfp) =
+        map (\s -> show server <> " " <> s) $
+        case dfpCause of
+          RestartNode  ->
+              [ "a node restart was apparently not instantaneous" ]
+          -- TODO confirm via...
+          --
+          -- * NodeJoinPlan should suffice for non-Praos
+          --
+          -- * not sure yet about Praos
+          RestartExn
+            (MPEEChainSyncClient
+              CSClient.ForkTooDeep{})
+                       -> []
+          -- TODO confirm similarly to ForkTooDeep?
+          RestartExn
+            (MPEEChainSyncClient
+              CSClient.NoMoreIntersection{})
+                       -> []
+          RestartExn e ->
+              [ "unexpected mini protocol fatal exception " <> show e ]
+      where
+        MkEDownFingerprint{dfpCause} = dfp
+
+    checkServer candidate = \case
+        Nothing     ->
+            -- if the dedge is present, both vertices must be too
+            [ "client's server is not in stable state" ]
+        Just vertex ->
+            [ "candidate is not server's tip"
+            | AF.anchorToTip (AF.headAnchor candidate) /= vfpChainDB
+            ]
+          where
+            VertexFingerprint{vfpChainDB} = vertex
+
+    checkUedgeExists (cClient, cServer) =
+        case (Map.lookup client m, Map.lookup server m) of
+          (Just vClient, Just vServer) ->
+              checkDedgeExists (client, vClient) (server, vServer) <>
+              checkDedgeExists (server, vServer) (client, vClient)
+          _                  -> []   -- TODO confirm with NodeJoinPlan
+      where
+        client = CoreId cClient
+        server = CoreId cServer
+
+    checkDedgeExists (client, vClient) (server, _vServer) =
+
+        [ "Directed edge missing! " <> show (client, server)
+        | Map.notMember server vfpDirectedEdges
+        ]
+
+      where
+        VertexFingerprint{vfpDirectedEdges} = vClient
+
+getNextStableNetFingerprint
+  :: (IOLike m, HasHeader (Header blk), Eq (Header blk))
+  => NodeTopology
+  -> Map NodeId (VertexStatusVar m blk)
+  -> Map (NodeId, NodeId) (EdgeStatusVar m)
+  -> StableNetFingerprint NodeId (Header blk)
+  -> m (StableNetFingerprint NodeId (Header blk))
+getNextStableNetFingerprint topo vvs devs = go 0
+  where
+    yield = atomically (return ())
+
+    -- Our core assumption here is ASSUMPTION: If this thread sees the same
+    -- fingerprint before and after yielding @iteration@-many times, then all
+    -- other threads (including currently-irrelevant threads like TxSub, though
+    -- I don't anticipate that mattering) in the @io-sim@ulation are blocked,
+    -- waiting for a node 'BlockchainTime' to tick. So, the number of
+    -- iterations is asserted here as an assumed upper bound on the
+    -- \"complexity\" of each thread in a running node.
+    --
+    -- This approach relies on all relevant computations being instantaneous in
+    -- @io-sim@. E.G. If we were to add a random 'threadDelay' prior to forging
+    -- a block to more emulate the fact that that computation is not
+    -- instantaneous on real machine, then this implementation would conclude
+    -- the net is stable during that 'threadDelay', even though it should not.
+    --
+    -- Here are some possible alternatives to this implementation, all of which
+    -- would still rely on all relevant computations being instantaneous in
+    -- @io-sim@.
+    --
+    --  * Use threadDelay @1@ instead of yielding a fixed number of times. If
+    --    all other @threadDelays@ are significantly greater than 1, then this
+    --    should also work.
+    --
+    --  * Add a hook to the @io-sim@ interface that lets us simply sleep until
+    --    we're the only otherwise-unblocked thread.
+    --
+    -- The approaches discussed above are all indirect in the sense that they
+    -- don't require us to explicitly track all the relevant threads we're
+    -- monitoring. Our ultimate goal is to wait until all /relevant/ threads
+    -- are blocked in an 'STM' transaction, in particular until they are all
+    -- transitively waiting for the 'BlockchainTime's' underlying 'STM'
+    -- variables to tick. (Note that /relevant/ excludes those background
+    -- threads that rely on 'threadDelay' directly instead of waiting for the
+    -- slot to change.)
+    --
+    iterations = 10000  -- TODO tune the iteration count
+
+    go n fp0
+      | n >= (10000 :: Int) = error "safety pressure release valve opened!"
+      | otherwise = do
+        -- give all other threads a generous opportunity to finish their
+        -- computations
+        replicateM_ iterations yield
+        fp1 <- atomically $ getNextStableNetFingerprintSTM topo vvs devs
+        -- ASSUMPTION: We're assuming that the threads' computation are
+        -- effectively idempotent if the 'STM' variables they're blocked on are
+        -- written to but without actually changing the contained value.
+        if fp0 /= fp1 then go (n + 1) fp1 else pure fp0
+
+getNextStableNetFingerprintSTM
+  :: forall m blk.
+     (IOLike m, HasHeader (Header blk))
+  => NodeTopology
+  -> Map NodeId (VertexStatusVar m blk)
+  -> Map (NodeId, NodeId) (EdgeStatusVar m)
+  -> STM m (StableNetFingerprint NodeId (Header blk))
+getNextStableNetFingerprintSTM topo vvs devs =
+    StableNetFingerprint <$> Map.traverseWithKey vertex vvs
+  where
+    vertex
+      :: NodeId
+      -> VertexStatusVar m blk
+      -> STM m (VertexFingerprint NodeId (Header blk))
+    vertex client = \vsv -> readTVar vsv >>= \case
+        VUp n btime kernel _app -> do
+            vfpChainDB     <-
+              fmap castTip $ ChainDB.getCurrentTip $ getChainDB kernel
+            vfpClock       <- getCurrentSlot btime
+            let vfpCounter  = n
+
+            -- pair up the BF and CS servers
+            serversCS <- readTVar $ getNodeCandidates kernel
+            serversBF <-
+              readFetchClientsStateVars $ getFetchClientRegistry kernel
+
+            -- not stable if BF and CS servers are not paired
+            check $ Map.keysSet serversCS == Map.keysSet serversBF
+
+            let servers = Map.fromAscList $
+                    [ (k, (v1, v2))
+                    | ((k, v1), v2) <-
+                      Map.toList serversCS `zip` Map.elems serversBF
+                    ]
+            vfpDirectedEdges <- dedges client servers
+
+            pure VertexFingerprint{..}
+
+        -- not stable if not up, since node restarts are currently
+        -- \"instantaneous\" and node status vars do not exist before the node
+        -- first joins the network
+        VDown{}         -> retry
+        VFalling{}      -> retry
+
+    dedges
+      :: NodeId
+      -> Map NodeId
+           ( StrictTVar m (AnchoredFragment (Header blk))
+           , FetchClientStateVars m (Header blk)
+           )
+      -> STM m (Map NodeId (DirectedEdgeFingerprint (Header blk)))
+    dedges client servers = do
+      let neighbors = case client of
+              CoreId c  -> CoreId <$> coreNodeIdNeighbors topo c
+              RelayId{} -> error "impossible! RelayId"
+          collide = error "impossible! EUp and EDown"
+
+      up   <- dedgesUp   client servers
+      down <- dedgesDown client $ filter (`Map.notMember` up) neighbors
+
+      pure $ Map.unionWith collide
+        (fmap EUpFingerprint   up)
+        (fmap EDownFingerprint down)
+
+    dedgesUp
+      :: NodeId
+      -> Map NodeId
+           ( StrictTVar m (AnchoredFragment (Header blk))
+           , FetchClientStateVars m (Header blk)
+           )
+      -> STM m (Map NodeId (EUpFingerprint (Header blk)))
+    dedgesUp client servers =
+        flip Map.traverseWithKey servers $ \server (sync, fetch) -> do
+          ufpChainSync <- readTVar sync
+          ufpBlockFetch <- readTVar $ fetchClientStatusVar fetch
+          ufpFetchLogic <- do
+            let v = fetchClientRequestVar fetch
+                wibble (fr, _gsv, _lims) = fr
+            fmap wibble <$> tryReadTMergeVar v
+          case Map.lookup (client, server) devs of
+            Nothing ->
+                error "impossible! no edge var"
+            Just dev -> readTVar dev >>= \case
+                -- we never expect a down edge to still be in the
+                -- FetchClientRegistry
+                EDown _nE _restart ->
+                    error $ "an EDown edge is in the fetch client registry"
+                -- if edge is up, the relevant channels must be empty for the
+                -- net to be stable
+                EUp nE isEmptyCS isEmptyBF _isEmptyTS -> do
+                    ((&&) <$> isEmptyCS <*> isEmptyBF) >>= check
+                    let ufpCounter = nE
+                    pure MkEUpFingerprint{..}
+
+    dedgesDown
+      :: NodeId
+      -> [NodeId]
+      -> STM m (Map NodeId EDownFingerprint)
+    dedgesDown client servers =
+        fmap Map.fromList $ forM servers $ \server -> (,) server <$>
+          case Map.lookup (client, server) devs of
+            Nothing ->
+                error "impossible! no edge var"
+            Just dev -> readTVar dev >>= \case
+                -- edges can be down in a stable net (they restart at the next
+                -- slot onset)
+                EDown nE restart -> do
+                    let dfpCause = restart
+                        dfpCounter = nE
+                    pure MkEDownFingerprint{..}
+                -- once an edge is up, it should be in the FetchClientRegistry
+                -- \"instantaneously\", so this case indicates the net state is
+                -- not yet stable
+                EUp _nE _isEmptyCS _isEmptyBF _isEmptyTS ->
+                    retry

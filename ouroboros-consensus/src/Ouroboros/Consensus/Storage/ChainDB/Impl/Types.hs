@@ -719,6 +719,8 @@ data TraceIteratorEvent blk
       (StreamTo   blk)
       [HeaderHash blk]
 
+  | MISC String
+
     -- ^ Stream from both the VolatileDB and the ImmutableDB.
   | BlockMissingFromVolDB (HeaderHash blk)
     -- ^ A block is no longer in the VolatileDB because it has been garbage

@@ -587,7 +587,8 @@ implIteratorNext registry varItState blockComponent IteratorEnv{..} =
                    -- the block indeed has been moved there).
                 -> NonEmpty (HeaderHash blk)
                 -> m (IteratorResult blk b)
-    nextInVolDB continueFrom (hash NE.:| hashes) =
+    nextInVolDB continueFrom (hash NE.:| hashes) = do
+      trace $ hash `seq` MISC "TICK"
       VolDB.getBlockComponent itVolDB ((,) <$> getPoint <*> blockComponent) hash >>= \case
         -- Block is missing
         Nothing -> do

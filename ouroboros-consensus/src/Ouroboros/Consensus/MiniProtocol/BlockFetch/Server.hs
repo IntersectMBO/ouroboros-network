@@ -16,7 +16,7 @@ module Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
   , BlockFetchServerException
   ) where
 
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, traceWith)
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable ((:~:) (..), Typeable, eqT)
 
@@ -102,12 +102,14 @@ blockFetchServer _tracer chainDB registry = senderSide
                -> RealPoint blk
                -> m (BlockFetchBlockSender (Serialised blk) m ())
     receiveReq start end = do
+      traceWith _tracer $ OpeningIterator start end
       errIt <- ChainDB.stream
         chainDB
         registry
         getSerialisedBlockWithPoint
         (ChainDB.StreamFromInclusive start)
         (ChainDB.StreamToInclusive   end)
+      traceWith _tracer $ errIt `seq` OpenedIterator start end
       return $ case errIt of
         -- The range is not in the ChainDB or it forks off more than @k@
         -- blocks back.
@@ -120,7 +122,9 @@ blockFetchServer _tracer chainDB registry = senderSide
     sendBlocks :: ChainDB.Iterator m blk (SerialisedWithPoint blk blk)
                -> m (BlockFetchSendBlocks (Serialised blk) m ())
     sendBlocks it = do
+      traceWith _tracer $ it `seq` AdvancingIterator
       next <- ChainDB.iteratorNext it
+      traceWith _tracer $ next `seq` AdvancedIterator
       case next of
         IteratorResult blk     ->
           return $ SendMsgBlock (serialised blk) (sendBlocks it)
@@ -137,7 +141,14 @@ blockFetchServer _tracer chainDB registry = senderSide
 -------------------------------------------------------------------------------}
 
 -- | Events traced by the Block Fetch Server.
-data TraceBlockFetchServerEvent blk
+data TraceBlockFetchServerEvent blk =
    -- TODO no events yet. Tracing the messages send/received over the network
    -- might be all we need?
+    OpeningIterator (RealPoint blk) (RealPoint blk)
+  |
+    OpenedIterator (RealPoint blk) (RealPoint blk)
+  |
+    AdvancingIterator
+  |
+    AdvancedIterator
   deriving (Eq, Show)

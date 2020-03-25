@@ -242,13 +242,21 @@ getBlockComponentImpl
   -> BlockComponent (VolatileDB blockId m) b
   -> blockId
   -> m (Maybe b)
-getBlockComponentImpl env blockComponent blockId =
+getBlockComponentImpl env blockComponent blockId = trace "getBlockComponentImpl" $ do
     modifyState env $ \hasFS st@InternalState { currentRevMap } ->
       case Map.lookup blockId currentRevMap of
         Nothing                -> return (st, Nothing)
-        Just internalBlockInfo -> ((st, ) . Just) <$>
-          getBlockComponent hasFS internalBlockInfo blockComponent
+        Just internalBlockInfo -> trace "getBlockComponentImpl Just" $ do
+          
+          ((st, ) . Just) <$> getBlockComponent hasFS internalBlockInfo blockComponent
   where
+    trace :: String -> m a -> m a
+    trace s m = do
+      case env of VolatileDBEnv{tracer} -> traceWith tracer $ m `seq` MISC (s <> " 1")
+      x <- m
+      case env of VolatileDBEnv{tracer} -> traceWith tracer $ x `seq` MISC (s <> " 2")
+      pure x
+
     getBlockComponent
       :: forall b' h.
          HasFS m h
@@ -265,12 +273,12 @@ getBlockComponentImpl env blockComponent blockId =
         GetApply f bc   ->
           getBlockComponent hasFS ib f <*> getBlockComponent hasFS ib bc
         GetBlock        -> return ()
-        GetRawBlock     -> withFile hasFS ibFile ReadMode $ \hndl -> do
+        GetRawBlock     -> trace "RawBlock" $ withFile hasFS ibFile ReadMode $ \hndl -> do
           let size   = unBlockSize ibBlockSize
               offset = ibBlockOffset
-          hGetExactlyAt hasFS hndl size (AbsOffset offset)
+          trace "RawBlock hGetExactlyAt" $ hGetExactlyAt hasFS hndl size (AbsOffset offset)
         GetHeader       -> return ()
-        GetRawHeader    -> withFile hasFS ibFile ReadMode $ \hndl -> do
+        GetRawHeader    -> trace "RawHeader" $ withFile hasFS ibFile ReadMode $ \hndl -> do
           let size   = fromIntegral bheaderSize
               offset = ibBlockOffset + fromIntegral bheaderOffset
           hGetExactlyAt hasFS hndl size (AbsOffset offset)

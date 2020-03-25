@@ -180,4 +180,5 @@ data TraceEvent e blockId
     | TruncateCurrentFile FsPath
     | Truncate (ParserError blockId e) FsPath BlockOffset
     | InvalidFileNames [FsPath]
+    | MISC String
   deriving (Eq, Generic, Show)

@@ -68,6 +68,14 @@ tests = testGroup "BFT" $
         forAll (SecurityParam <$> elements [2 .. 10]) $ \k ->
         prop_simple_bft_convergence k tc
     ]
+    `seq`
+    [ localOption (QuickCheckTests 1) $
+      testProperty "simple convergence" $ \tc ->
+        -- TODO k > 1 as a workaround for Issue #1511.
+        --
+        forAll (SecurityParam <$> elements [2 .. 10]) $ \k ->
+        prop_simple_bft_convergence k tc
+    ]
   where
     defaultSlotLength = slotLengthFromSec 20
 

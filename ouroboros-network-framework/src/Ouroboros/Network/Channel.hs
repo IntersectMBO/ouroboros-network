@@ -4,6 +4,7 @@
 
 module Ouroboros.Network.Channel
   ( Channel (..)
+  , TestChannelPair (..)
   , toChannel
   , fromChannel
   , createPipeConnectedChannels
@@ -14,6 +15,7 @@ module Ouroboros.Network.Channel
   , handlesAsChannel
   , createConnectedChannels
   , createConnectedBufferedChannels
+  , createConnectedTestChannelPair
   , createPipelineTestChannels
   , channelEffect
   , delayChannel
@@ -162,6 +164,31 @@ createConnectedChannels = do
     return (mvarsAsChannel bufferB bufferA,
             mvarsAsChannel bufferA bufferB)
 
+
+data TestChannelPair m a = TestChannelPair
+  { testChannel1     :: Channel m a
+  , testChannel2     :: Channel m a
+  , testChannelEmpty :: STM m Bool
+  }
+
+-- | Create a pair of channels that are connected via one-place buffers.
+--
+-- This is primarily useful for testing protocols.
+--
+createConnectedTestChannelPair :: MonadSTM m => m (TestChannelPair m a)
+createConnectedTestChannelPair = do
+    -- Create two TMVars to act as the channel buffer (one for each direction)
+    -- and use them to make both ends of a bidirectional channel
+    bufferA <- atomically $ newEmptyTMVar
+    bufferB <- atomically $ newEmptyTMVar
+
+    let chk = isEmptyTMVar
+
+    return TestChannelPair
+      { testChannel1     = mvarsAsChannel bufferB bufferA
+      , testChannel2     = mvarsAsChannel bufferA bufferB
+      , testChannelEmpty = (&&) <$> chk bufferA <*> chk bufferB
+      }
 
 -- | Create a pair of channels that are connected via N-place buffers.
 --

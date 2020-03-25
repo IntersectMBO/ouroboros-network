@@ -25,6 +25,8 @@ module Ouroboros.Network.BlockFetch.ClientState (
     TraceFetchClientState(..),
     TraceLabelPeer(..),
     ChainRange(..),
+    -- * for tests
+    tryReadTMergeVar,
   ) where
 
 import           Data.List (foldl')

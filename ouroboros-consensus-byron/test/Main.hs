@@ -11,8 +11,11 @@ main = defaultMain tests
 
 tests :: TestTree
 tests =
-  testGroup "byron"
+  testGroup "byron" $
   [ Test.Consensus.Byron.Ledger.tests
   , Test.ThreadNet.RealPBFT.tests
   , Test.ThreadNet.DualPBFT.tests
+  ]
+  `seq`
+  [ Test.ThreadNet.RealPBFT.tests
   ]

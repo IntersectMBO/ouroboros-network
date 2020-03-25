@@ -590,6 +590,20 @@ tests = testGroup "RealPBFT" $
             $ \testConfig ->
           prop_simple_real_pbft_convergence produceEBBs k testConfig
     ]
+    `seq`
+    [ localOption (QuickCheckTests 1000) $
+      testProperty "simple convergence" $
+          \produceEBBs ->
+          -- TODO k > 1 as a workaround for Issue #1511.
+          --
+          forAll (SecurityParam <$> elements [2 .. 10])
+            $ \k ->
+          forAllShrink
+              (genRealPBFTTestConfig k)
+              shrinkRealPBFTTestConfig
+            $ \testConfig ->
+          prop_simple_real_pbft_convergence produceEBBs k testConfig
+    ]
   where
     defaultSlotLength :: SlotLength
     defaultSlotLength = SlotLength 1

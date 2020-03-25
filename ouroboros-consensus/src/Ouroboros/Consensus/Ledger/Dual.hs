@@ -125,6 +125,7 @@ instance GetHeader m => GetHeader (DualBlock m a) where
 
 type DualHeader m a = Header (DualBlock m a)
 
+deriving instance Eq (Header m) => Eq (DualHeader m a)
 deriving instance Show (Header m) => Show (DualHeader m a)
 
 {-------------------------------------------------------------------------------
