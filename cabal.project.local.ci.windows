@@ -32,3 +32,24 @@ package ouroboros-network-framework
 package ouroboros-network
   ghc-options: -Werror
   flags: +ipv6 +cddl +asserts
+
+package ouroboros-consensus
+  ghc-options: -Werror
+  flags: +asserts
+
+package ouroboros-consensus-test-infra
+  ghc-options: -Werror
+
+package ouroboros-consensus-mock
+  ghc-options: -Werror
+
+package ouroboros-consensus-byron
+  ghc-options: -Werror
+  flags: +asserts
+
+package ouroboros-consensus-shelley
+  ghc-options: -Werror
+  flags: +asserts
+
+package ouroboros-consensus-cardano
+  flags: +asserts
