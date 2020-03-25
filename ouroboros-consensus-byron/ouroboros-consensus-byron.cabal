@@ -112,7 +112,6 @@ test-suite test
                      , mtl
                      , QuickCheck
                      , tasty
-                     , tasty-golden
                      , tasty-hunit
                      , tasty-quickcheck
                      , time
