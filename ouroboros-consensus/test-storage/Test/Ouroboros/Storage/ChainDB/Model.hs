@@ -416,8 +416,11 @@ addBlockPromise
 addBlockPromise cfg blk m = (result, m')
   where
     m' = addBlock cfg blk m
+    blockWritten = Map.notMember (Block.blockHash blk) (blocks m)
+                && Map.member    (Block.blockHash blk) (blocks m')
     result = AddBlockPromise
-      { blockProcessed          = return $ tipPoint m'
+      { blockWrittenToDisk      = return blockWritten
+      , blockProcessed          = return $ tipPoint m'
         -- We currently cannot wait for future blocks
       , chainSelectionPerformed = error "chainSelectionPerformed not supported"
       }

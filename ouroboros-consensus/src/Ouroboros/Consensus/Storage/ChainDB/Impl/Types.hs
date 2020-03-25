@@ -409,6 +409,8 @@ newtype BlocksToAdd m blk = BlocksToAdd (TBQueue m (BlockToAdd m blk))
 -- to implement 'AddBlockPromise'.
 data BlockToAdd m blk = BlockToAdd
   { blockToAdd                 :: !blk
+  , varBlockWrittenToDisk      :: !(StrictTMVar m Bool)
+    -- ^ Used for the 'blockWrittenToDisk' field of 'AddBlockPromise'.
   , varBlockProcessed          :: !(StrictTMVar m (Point blk))
     -- ^ Used for the 'blockProcessed' field of 'AddBlockPromise'.
   , varChainSelectionPerformed :: !(StrictTMVar m (Point blk))
@@ -428,10 +430,12 @@ addBlockToAdd
   -> blk
   -> m (AddBlockPromise m blk)
 addBlockToAdd tracer (BlocksToAdd queue) blk = do
+    varBlockWrittenToDisk      <- newEmptyTMVarM
     varBlockProcessed          <- newEmptyTMVarM
     varChainSelectionPerformed <- newEmptyTMVarM
     let !toAdd = BlockToAdd
           { blockToAdd = blk
+          , varBlockWrittenToDisk
           , varBlockProcessed
           , varChainSelectionPerformed
           }
@@ -441,7 +445,8 @@ addBlockToAdd tracer (BlocksToAdd queue) blk = do
     traceWith tracer $
       AddedBlockToQueue (blockRealPoint blk) (fromIntegral queueSize)
     return AddBlockPromise
-      { blockProcessed          = readTMVar varBlockProcessed
+      { blockWrittenToDisk      = readTMVar varBlockWrittenToDisk
+      , blockProcessed          = readTMVar varBlockProcessed
       , chainSelectionPerformed = readTMVar varChainSelectionPerformed
       }
 

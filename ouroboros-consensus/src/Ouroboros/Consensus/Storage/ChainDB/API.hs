@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   , getTipBlockNo
     -- * Adding a block
   , AddBlockPromise(..)
+  , addBlockWaitWrittenToDisk
   , addBlock
   , addBlock_
     -- * Useful utilities
@@ -332,7 +333,20 @@ instance DB (ChainDB m blk) where
 -------------------------------------------------------------------------------}
 
 data AddBlockPromise m blk = AddBlockPromise
-    { blockProcessed          :: STM m (Point blk)
+    { blockWrittenToDisk      :: STM m Bool
+      -- ^ Use this 'STM' transaction to wait until the block has been written
+      -- to disk.
+      --
+      -- Returns 'True' when the block was written to disk or 'False' when it
+      -- was ignored, e.g., because it was older than @k@.
+      --
+      -- If the 'STM' transaction has returned 'True' then 'getIsFetched' will
+      -- return 'True' for the added block.
+      --
+      -- NOTE: Even when the result is 'False', 'getIsFetched' might still
+      -- return 'True', e.g., the block was older than @k@, but it has been
+      -- downloaded and stored on disk before.
+    , blockProcessed          :: STM m (Point blk)
       -- ^ Use this 'STM' transaction to wait until the block has been
       -- processed: the block has been written to disk and chain selection has
       -- been performed for the block, /unless/ the block's slot is in the
@@ -357,6 +371,13 @@ data AddBlockPromise m blk = AddBlockPromise
       -- In case the block's slot was not in the future, this is equivalent to
       -- 'blockProcessed'.
     }
+
+-- | Add a block synchronously: wait until the block has been written to disk
+-- (see 'blockWrittenToDisk').
+addBlockWaitWrittenToDisk :: IOLike m => ChainDB m blk -> blk -> m Bool
+addBlockWaitWrittenToDisk chainDB blk = do
+    promise <- addBlockAsync chainDB blk
+    atomically $ blockWrittenToDisk promise
 
 -- | Add a block synchronously: wait until the block has been processed (see
 -- 'blockProcessed'). The new tip of the ChainDB is returned.

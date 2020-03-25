@@ -226,20 +226,21 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
     if
       | olderThanK hdr (cdbIsEBB hdr) immBlockNo -> do
         trace $ IgnoreBlockOlderThanK (blockRealPoint b)
-        deliverPromises curTip
+        deliverPromises False curTip
 
       | isMember (blockHash b) -> do
         trace $ IgnoreBlockAlreadyInVolDB (blockRealPoint b)
-        deliverPromises curTip
+        deliverPromises True curTip
 
       | Just (InvalidBlockInfo reason _) <- Map.lookup (blockHash b) invalid -> do
         trace $ IgnoreInvalidBlock (blockRealPoint b) reason
-        deliverPromises curTip
+        deliverPromises False curTip
 
       -- ### Store but schedule chain selection
       | blockSlot b > curSlot -> do
         VolDB.putBlock cdbVolDB b
         trace $ AddedBlockToVolDB (blockRealPoint b) (blockNo b) (cdbIsEBB hdr)
+        atomically $ putTMVar varBlockWrittenToDisk True
         atomically $ putTMVar varBlockProcessed curTip
         -- We'll fill in 'varChainSelectionPerformed' when the scheduled chain
         -- selection is performed.
@@ -250,8 +251,10 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
       | otherwise -> do
         VolDB.putBlock cdbVolDB b
         trace $ AddedBlockToVolDB (blockRealPoint b) (blockNo b) (cdbIsEBB hdr)
+        atomically $ putTMVar varBlockWrittenToDisk True
         newTip <- chainSelectionForBlock cdb (BlockCache.singleton b) hdr
-        deliverPromises newTip
+        atomically $ putTMVar varBlockProcessed newTip
+        atomically $ putTMVar varChainSelectionPerformed newTip
   where
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
@@ -259,10 +262,11 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
     hdr :: Header blk
     hdr = getHeader b
 
-    -- | Use the given 'Point' to fill in the 'TMVar's corresponding to the
-    -- block's 'AddBlockPromise'.
-    deliverPromises :: Point blk -> m ()
-    deliverPromises tip = atomically $ do
+    -- | Use the given 'Bool' and 'Point' to fill in the 'TMVar's
+    -- corresponding to the block's 'AddBlockPromise'.
+    deliverPromises :: Bool -> Point blk -> m ()
+    deliverPromises writtenToDisk tip = atomically $ do
+      putTMVar varBlockWrittenToDisk      writtenToDisk
       putTMVar varBlockProcessed          tip
       putTMVar varChainSelectionPerformed tip
 
