@@ -165,7 +165,7 @@ data MiniProtocolParameters = MiniProtocolParameters {
       -- ^ maximal number of pipelined messages in 'block-fetch' mini-protocol.
 
       txSubmissionMaxUnacked       :: !Word16
-      -- ^ maximal number of unacked tx (pipelineing is bounded by twice this
+      -- ^ maximal number of unacked tx (pipelining is bounded by twice this
       -- number)
     }
 
