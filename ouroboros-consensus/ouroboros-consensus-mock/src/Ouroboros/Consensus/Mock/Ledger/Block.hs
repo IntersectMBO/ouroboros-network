@@ -390,8 +390,8 @@ instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
   data Query (SimpleBlock c ext) result
     deriving (Show)
 
-  answerQuery = \case {}
-  eqQuery     = \case {}
+  answerQuery _ = \case {}
+  eqQuery       = \case {}
 
 instance ShowQuery (Query (SimpleBlock c ext)) where
   showResult = \case {}

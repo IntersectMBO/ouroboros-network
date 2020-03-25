@@ -147,6 +147,20 @@ tests = testGroup "Shelley"
 type Block = ShelleyBlock TPraosMockCrypto
 
 {-------------------------------------------------------------------------------
+  SomeResult
+-------------------------------------------------------------------------------}
+
+-- | To easily generate all the possible @result@s of the 'Query' GADT, we
+-- introduce an existential that also bundles the corresponding 'Query' as
+-- evidence. We also capture an 'Eq' and a 'Show' constraint, as we need them
+-- in the tests.
+data SomeResult where
+  SomeResult :: (Eq result, Show result)
+             => Query Block result -> result -> SomeResult
+
+deriving instance Show SomeResult
+
+{-------------------------------------------------------------------------------
   Serialisation roundtrips
 -------------------------------------------------------------------------------}
 
@@ -174,11 +188,12 @@ prop_roundtrip_Query =
       (\case { Some query -> encodeShelleyQuery query })
       decodeShelleyQuery
 
-prop_roundtrip_Result :: Point Block -> Property
-prop_roundtrip_Result =
+prop_roundtrip_Result :: SomeResult -> Property
+prop_roundtrip_Result (SomeResult query result) =
     roundtrip
-      (encodeShelleyResult GetLedgerTip)
-      (decodeShelleyResult GetLedgerTip)
+      (encodeShelleyResult query)
+      (decodeShelleyResult query)
+      result
 
 prop_roundtrip_ConsensusState
   :: TPraosState TPraosMockCrypto
@@ -419,7 +434,27 @@ instance Arbitrary (ApplyTxError TPraosMockCrypto) where
   shrink (ApplyTxError xs) = [ApplyTxError xs' | xs' <- shrink xs]
 
 instance Arbitrary (Some (Query Block)) where
-  arbitrary = pure $ Some GetLedgerTip
+  arbitrary = oneof
+    [ pure $ Some GetLedgerTip
+    , pure $ Some GetEpochNo
+    , Some . GetNonMyopicMemberRewards <$> arbitrary
+    , pure $ Some GetCurrentPParams
+    , pure $ Some GetProposedPParamsUpdates
+    , pure $ Some GetStakeDistribution
+    ]
+
+instance Arbitrary SomeResult where
+  arbitrary = oneof
+    [ SomeResult GetLedgerTip <$> arbitrary
+    , SomeResult GetEpochNo <$> arbitrary
+    , SomeResult <$> (GetNonMyopicMemberRewards <$> arbitrary) <*> arbitrary
+    , SomeResult GetCurrentPParams <$> arbitrary
+    , SomeResult GetProposedPParamsUpdates <$> arbitrary
+    , SomeResult GetStakeDistribution <$> arbitrary
+    ]
+
+instance Arbitrary (NonMyopicMemberRewards TPraosMockCrypto) where
+  arbitrary = NonMyopicMemberRewards <$> arbitrary
 
 instance Arbitrary (Point Block) where
   arbitrary = BlockPoint <$> arbitrary <*> arbitrary
@@ -626,6 +661,21 @@ instance Arbitrary (SL.Tx TPraosMockCrypto) where
     (_ledgerState, _steps, _txfee, tx, _lv) <- hedgehog SL.genStateTx
     return tx
 
+instance Arbitrary SL.ProtVer where
+  arbitrary = genericArbitraryU
+  shrink    = genericShrink
+
+instance Arbitrary SL.ActiveSlotCoeff where
+  arbitrary = SL.mkActiveSlotCoeff <$> arbitrary
+
+instance Arbitrary (SL.PParams' Maybe) where
+  arbitrary = genericArbitraryU
+  shrink    = genericShrink
+
+instance Arbitrary (SL.ProposedPPUpdates TPraosMockCrypto) where
+  arbitrary = genericArbitraryU
+  shrink    = genericShrink
+
 instance Arbitrary (STS.PredicateFailure (STS.PPUP TPraosMockCrypto)) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
@@ -668,5 +718,17 @@ instance Arbitrary (STS.PredicateFailure (STS.LEDGERS TPraosMockCrypto)) where
 
 instance Eq (Some (Query Block)) where
   Some GetLedgerTip == Some GetLedgerTip = True
+  Some GetLedgerTip == _ = False
+  Some GetEpochNo == Some GetEpochNo = True
+  Some GetEpochNo == _ = False
+  Some (GetNonMyopicMemberRewards creds) == Some (GetNonMyopicMemberRewards creds') =
+    creds == creds'
+  Some (GetNonMyopicMemberRewards _) == _ = False
+  Some GetCurrentPParams == Some GetCurrentPParams = True
+  Some GetCurrentPParams == _ = False
+  Some GetProposedPParamsUpdates == Some GetProposedPParamsUpdates = True
+  Some GetProposedPParamsUpdates == _ = False
+  Some GetStakeDistribution == Some GetStakeDistribution = True
+  Some GetStakeDistribution == _ = False
 
 deriving instance Show (Some (Query Block))

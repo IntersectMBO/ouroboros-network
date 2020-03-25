@@ -166,8 +166,10 @@ mkServer
   -> m (LocalStateQueryServer TestBlock (Query TestBlock) m ())
 mkServer k chain = do
     lgrDB <- initLgrDB k chain
-    return $ localStateQueryServer $ LedgerCursor.newLedgerCursor lgrDB getImmutablePoint
+    return $ localStateQueryServer cfg $
+      LedgerCursor.newLedgerCursor lgrDB getImmutablePoint
   where
+    cfg = configLedger $ testCfg k
     getImmutablePoint = return $ Chain.headPoint $
       Chain.drop (fromIntegral (maxRollbacks k)) chain
 

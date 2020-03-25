@@ -1,18 +1,19 @@
-{-# LANGUAGE DataKinds                #-}
-{-# LANGUAGE DeriveAnyClass           #-}
-{-# LANGUAGE DeriveGeneric            #-}
-{-# LANGUAGE DerivingStrategies       #-}
-{-# LANGUAGE DerivingVia              #-}
-{-# LANGUAGE DisambiguateRecordFields #-}
-{-# LANGUAGE FlexibleInstances        #-}
-{-# LANGUAGE GADTs                    #-}
-{-# LANGUAGE NamedFieldPuns           #-}
-{-# LANGUAGE OverloadedStrings        #-}
-{-# LANGUAGE RankNTypes               #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE StandaloneDeriving       #-}
-{-# LANGUAGE TypeApplications         #-}
-{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE DisambiguateRecordFields   #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Shelley.Ledger.Ledger (
@@ -22,6 +23,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , UpdateLedger (..)
   , QueryLedger (..)
   , Query (..)
+  , NonMyopicMemberRewards (..)
     -- * Auxiliary
   , getPParams
     -- * Serialisation
@@ -37,17 +39,20 @@ import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
-import           Codec.Serialise (decode, encode)
+import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad.Except
 import           Data.Kind (Type)
+import           Data.Map.Strict (Map)
 import           Data.Proxy (Proxy (..))
+import           Data.Set (Set)
 import           Data.Type.Equality ((:~:) (Refl))
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (enforceSize, fromCBOR, toCBOR)
 import           Cardano.Prelude (Natural, NoUnexpectedThunks (..),
                      OnlyCheckIsWHNF (..))
-import           Cardano.Slotting.Slot (WithOrigin (..), fromWithOrigin)
+import           Cardano.Slotting.Slot (EpochNo, WithOrigin (..),
+                     fromWithOrigin)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
@@ -63,8 +68,12 @@ import           Ouroboros.Consensus.Util.Versioned
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.Coin as SL
+import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
+import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
+import qualified Shelley.Spec.Ledger.TxData as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
@@ -239,20 +248,80 @@ instance LedgerDerivedInfo (ShelleyBlock c) where
   QueryLedger
 -------------------------------------------------------------------------------}
 
+newtype NonMyopicMemberRewards c = NonMyopicMemberRewards {
+      unNonMyopicMemberRewards :: Map (SL.Credential c)
+                                      (Map (SL.KeyHash c) SL.Coin)
+    }
+  deriving stock   (Show)
+  deriving newtype (Eq)
+
+instance Crypto c => Serialise (NonMyopicMemberRewards c) where
+  encode = toCBOR . unNonMyopicMemberRewards
+  decode = NonMyopicMemberRewards <$> fromCBOR
+
 instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
-  -- TODO #1442
   data Query (ShelleyBlock c) :: Type -> Type where
     GetLedgerTip :: Query (ShelleyBlock c) (Point (ShelleyBlock c))
+    GetEpochNo :: Query (ShelleyBlock c) EpochNo
+    -- | Calculate the Non-Myopic Pool Member Rewards for a set of
+    -- credentials. See 'SL.getNonMyopicMemberRewards'
+    GetNonMyopicMemberRewards
+      :: Set (SL.Credential c)
+      -> Query (ShelleyBlock c) (NonMyopicMemberRewards c)
+    GetCurrentPParams
+      :: Query (ShelleyBlock c) SL.PParams
+    GetProposedPParamsUpdates
+      :: Query (ShelleyBlock c) (SL.ProposedPPUpdates c)
+    GetStakeDistribution
+      :: Query (ShelleyBlock c) (SL.PoolDistr c)
 
-  answerQuery GetLedgerTip ls = ledgerTip ls
+  answerQuery (ShelleyLedgerConfig globals) query st = case query of
+    GetLedgerTip -> ledgerTip st
+    GetEpochNo -> SL.nesEL $ shelleyState st
+    GetNonMyopicMemberRewards creds -> NonMyopicMemberRewards $
+        SL.getNonMyopicMemberRewards globals (shelleyState st) creds
+    GetCurrentPParams -> getPParams $ shelleyState st
+    GetProposedPParamsUpdates -> getProposedPPUpdates $ shelleyState st
+    GetStakeDistribution -> SL.nesPd $ shelleyState st
 
-  eqQuery GetLedgerTip GetLedgerTip = Just Refl
+  eqQuery GetLedgerTip GetLedgerTip
+    = Just Refl
+  eqQuery GetLedgerTip _
+    = Nothing
+  eqQuery GetEpochNo GetEpochNo
+    = Just Refl
+  eqQuery GetEpochNo _
+    = Nothing
+  eqQuery (GetNonMyopicMemberRewards creds) (GetNonMyopicMemberRewards creds')
+    | creds == creds'
+    = Just Refl
+    | otherwise
+    = Nothing
+  eqQuery (GetNonMyopicMemberRewards _) _
+    = Nothing
+  eqQuery GetCurrentPParams GetCurrentPParams
+    = Just Refl
+  eqQuery GetCurrentPParams _
+    = Nothing
+  eqQuery GetProposedPParamsUpdates GetProposedPParamsUpdates
+    = Just Refl
+  eqQuery GetProposedPParamsUpdates _
+    = Nothing
+  eqQuery GetStakeDistribution GetStakeDistribution
+    = Just Refl
+  eqQuery GetStakeDistribution _
+    = Nothing
 
 deriving instance Eq   (Query (ShelleyBlock c) result)
 deriving instance Show (Query (ShelleyBlock c) result)
 
 instance Crypto c => ShowQuery (Query (ShelleyBlock c)) where
-  showResult GetLedgerTip = show
+  showResult GetLedgerTip                   = show
+  showResult GetEpochNo                     = show
+  showResult (GetNonMyopicMemberRewards {}) = show
+  showResult GetCurrentPParams              = show
+  showResult GetProposedPParamsUpdates      = show
+  showResult GetStakeDistribution           = show
 
 {-------------------------------------------------------------------------------
   Auxiliary
@@ -260,6 +329,9 @@ instance Crypto c => ShowQuery (Query (ShelleyBlock c)) where
 
 getPParams :: SL.ShelleyState c -> SL.PParams
 getPParams = SL.esPp . SL.nesEs
+
+getProposedPPUpdates :: SL.ShelleyState c -> SL.ProposedPPUpdates c
+getProposedPPUpdates = SL._ppups . SL._utxoState . SL.esLState . SL.nesEs
 
 -- | The \"oh noes?!\" operator.
 (?!) :: MonadError e m => Bool -> e -> m ()
@@ -296,26 +368,55 @@ decodeShelleyLedgerState = decodeVersion
         <*> History.decodeLedgerViewHistory
         <*> fromCBOR
 
-encodeShelleyQuery :: Query (ShelleyBlock c) result -> Encoding
+encodeShelleyQuery :: Crypto c => Query (ShelleyBlock c) result -> Encoding
 encodeShelleyQuery query = case query of
-    GetLedgerTip -> CBOR.encodeWord8 0
+    GetLedgerTip ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 0
+    GetEpochNo ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 1
+    GetNonMyopicMemberRewards creds ->
+      CBOR.encodeListLen 2 <> CBOR.encodeWord8 2 <> toCBOR creds
+    GetCurrentPParams ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 3
+    GetProposedPParamsUpdates ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 4
+    GetStakeDistribution ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 5
 
-decodeShelleyQuery :: Decoder s (Some (Query (ShelleyBlock c)))
+decodeShelleyQuery :: Crypto c => Decoder s (Some (Query (ShelleyBlock c)))
 decodeShelleyQuery = do
+    len <- CBOR.decodeListLen
     tag <- CBOR.decodeWord8
-    case tag of
-      0 -> return $ Some GetLedgerTip
-      _ -> fail $ "decodeShelleyQuery: invalid tag " <> show tag
+    case (len, tag) of
+      (1, 0) -> return $ Some GetLedgerTip
+      (1, 1) -> return $ Some GetEpochNo
+      (2, 2) -> Some . GetNonMyopicMemberRewards <$> fromCBOR
+      (1, 3) -> return $ Some GetCurrentPParams
+      (1, 4) -> return $ Some GetProposedPParamsUpdates
+      (1, 5) -> return $ Some GetStakeDistribution
+      _      -> fail $
+        "decodeShelleyQuery: invalid (len, tag): (" <>
+        show len <> ", " <> show tag <> ")"
 
 encodeShelleyResult
   :: Crypto c
   => Query (ShelleyBlock c) result -> result -> Encoding
 encodeShelleyResult query = case query of
-    GetLedgerTip -> encodePoint encode
+    GetLedgerTip                 -> encodePoint encode
+    GetEpochNo                   -> encode
+    GetNonMyopicMemberRewards {} -> encode
+    GetCurrentPParams            -> toCBOR
+    GetProposedPParamsUpdates    -> toCBOR
+    GetStakeDistribution         -> toCBOR
 
 decodeShelleyResult
   :: Crypto c
   => Query (ShelleyBlock c) result
   -> forall s. Decoder s result
 decodeShelleyResult query = case query of
-    GetLedgerTip -> decodePoint decode
+    GetLedgerTip                 -> decodePoint decode
+    GetEpochNo                   -> decode
+    GetNonMyopicMemberRewards {} -> decode
+    GetCurrentPParams            -> fromCBOR
+    GetProposedPParamsUpdates    -> fromCBOR
+    GetStakeDistribution         -> fromCBOR

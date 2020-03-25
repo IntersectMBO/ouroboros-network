@@ -348,7 +348,7 @@ instance QueryLedger TestBlock where
   data Query TestBlock result where
     QueryLedgerTip :: Query TestBlock (Point TestBlock)
 
-  answerQuery QueryLedgerTip (TestLedger { lastAppliedPoint }) =
+  answerQuery _cfg QueryLedgerTip (TestLedger { lastAppliedPoint }) =
     lastAppliedPoint
   eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
 
