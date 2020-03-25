@@ -52,7 +52,7 @@ byteLimitsHandshake = ProtocolSizeLimits stateToLimit (fromIntegral . BL.length)
 
 -- Time limits
 timeLimitsHandshake :: ProtocolTimeLimits (Handshake vNumber CBOR.Term)
-timeLimitsHandshake = ProtocolTimeLimits stateToLimit
+timeLimitsHandshake = ProtocolTimeLimits stateToLimit 10
   where
     stateToLimit :: forall (pr :: PeerRole) (st  :: Handshake vNumber CBOR.Term).
                     PeerHasAgency pr st -> Maybe DiffTime

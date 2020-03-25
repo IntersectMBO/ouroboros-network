@@ -48,7 +48,7 @@ byteLimitsTxSubmission= ProtocolSizeLimits stateToLimit
 -- `TokTxs` `shortWait` timeout
 -- `TokIdle` `shortWait` timeout
 timeLimitsTxSubmission :: ProtocolTimeLimits (TxSubmission txid tx)
-timeLimitsTxSubmission = ProtocolTimeLimits stateToLimit
+timeLimitsTxSubmission = ProtocolTimeLimits stateToLimit decodeWait
   where
     stateToLimit :: forall (pr :: PeerRole) (st :: TxSubmission txid tx).
                     PeerHasAgency pr st -> Maybe DiffTime

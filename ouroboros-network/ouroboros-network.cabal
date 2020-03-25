@@ -29,9 +29,9 @@ Flag ipv6
 
 flag cddl
   Description: Enable CDDL based tests of the CBOR encoding
-  Manual: True
+  Manual: False
   -- These tests need the cddl and the cbor-diag Ruby-package
-  Default: True
+  Default: False
 
 source-repository head
   type:     git
@@ -274,7 +274,7 @@ test-suite test-cddl
   hs-source-dirs:      test-cddl
   main-is:             Main.hs
   if flag(cddl)
-    buildable: True
+    buildable: False
   else
     buildable: False
   default-language:    Haskell2010

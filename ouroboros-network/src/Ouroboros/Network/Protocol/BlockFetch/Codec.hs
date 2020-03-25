@@ -51,7 +51,7 @@ byteLimitsBlockFetch = ProtocolSizeLimits stateToLimit
 -- `TokBusy` `longWait` timeout
 -- `TokStreaming` `longWait` timeout
 timeLimitsBlockFetch :: ProtocolTimeLimits (BlockFetch block)
-timeLimitsBlockFetch = ProtocolTimeLimits stateToLimit
+timeLimitsBlockFetch = ProtocolTimeLimits stateToLimit decodeWait
   where
     stateToLimit :: forall (pr :: PeerRole) (st :: BlockFetch block).
                     PeerHasAgency pr st -> Maybe DiffTime

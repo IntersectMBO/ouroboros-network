@@ -3,7 +3,9 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -17,6 +19,7 @@ import           Data.Void (Void)
 import           Data.List (mapAccumL)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Time.Clock (UTCTime, getCurrentTime)
+import           Data.Word
 #ifndef mingw32_HOST_OS
 import           System.Directory (removeFile)
 import           System.IO.Error
@@ -33,6 +36,7 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime (DiffTime)
 import           Control.Monad.Class.MonadTimer (threadDelay)
 import           Control.Concurrent (ThreadId)
 import           Control.Exception (IOException)
@@ -46,6 +50,7 @@ import qualified Network.TypedProtocol.ReqResp.Examples   as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
 
 import           Ouroboros.Network.Driver
+import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.ErrorPolicy
@@ -264,10 +269,26 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
             cnt <- readTVar cntVar
             unless (cnt == 0) retry
 
-data RecvErrorType = SocketClosed | SDUTimeout deriving (Eq, Show)
+data RecvErrorType = SocketClosed | SDUTimeout | CodecTimeout deriving (Eq, Show)
 
 instance Arbitrary RecvErrorType where
-    arbitrary = oneof [pure SocketClosed, pure SDUTimeout]
+    arbitrary = oneof [pure SocketClosed, pure SDUTimeout, pure CodecTimeout]
+
+
+byteLimitsReqResp :: ProtocolSizeLimits (ReqResp.ReqResp req resp) BL.ByteString
+byteLimitsReqResp = ProtocolSizeLimits stateToLimit (fromIntegral . BL.length)
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st :: ReqResp.ReqResp req resp).
+                    PeerHasAgency pr st -> Word
+    stateToLimit _ = maxBound
+
+timeLimitsReqResp :: ProtocolTimeLimits (ReqResp.ReqResp req resp)
+timeLimitsReqResp = ProtocolTimeLimits stateToLimit
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st :: ReqResp.ReqResp req resp).
+                    PeerHasAgency pr st -> Maybe DiffTime
+    stateToLimit _ = Nothing
+
 
 -- |
 -- Verify that we raise the correct exception in case a socket closes or a timeout during
@@ -278,7 +299,6 @@ prop_socket_recv_error :: (Int -> Int -> (Int, Int))
 prop_socket_recv_error f rerr =
     ioProperty $
     withIOManager $ \iomgr -> do
-
     sv   <- newEmptyTMVarM
 
     let app :: OuroborosApplication ResponderApp BL.ByteString IO Void ()
@@ -290,8 +310,10 @@ prop_socket_recv_error f rerr =
           -- do something with the result after the protocol is run.
           -- This should be replaced with use of the handles.
           MuxPeerRaw $ \channel -> do
-            r <- runPeer nullTracer
+            r <- runPeerWithLimits nullTracer
                          ReqResp.codecReqResp
+                         byteLimitsReqResp
+                         timeLimitsReqResp
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
@@ -327,14 +349,7 @@ prop_socket_recv_error f rerr =
           sd' <- openToConnect snocket (Socket.addrAddress muxAddress)
           _ <- connect snocket sd' (Socket.addrAddress muxAddress)
 
-#if defined(mingw32_HOST_OS)
-          Win32.Async.sendAll sd' $ BL.singleton 0xa
-#else
-          Socket.sendAll sd' $ BL.singleton 0xa
-#endif
-
-          if rerr == SocketClosed then Socket.close sd'
-                                  else threadDelay 0.2
+          provoke rerr sd'
 
           res <- waitCatch muxAsync
           result <- case res of
@@ -350,6 +365,32 @@ prop_socket_recv_error f rerr =
 
           when (rerr /= SocketClosed) $ Socket.close sd'
           return result
+
+  where
+    provoke :: RecvErrorType -> Socket.Socket -> IO ()
+    provoke CodecTimeout sd = do
+        sendRaw sd
+          [ 0x00, 0x01, 0x02, 0x03 -- Transmission time
+          , 0x80, 0x04             -- Initiator for ReqResp
+          , 0x00, 0x01             -- Lenght, 1 byte.
+          , 0x82                   -- Start of a CBOR list
+          ]
+        threadDelay 10
+        printf "Codec provoked\n"
+    provoke SocketClosed sd = do
+        sendRaw sd [0xa]
+        Socket.close sd
+    provoke SDUTimeout sd = do
+        sendRaw sd [0xa]
+        threadDelay 0.2
+
+    sendRaw :: Socket.Socket -> [Word8] -> IO ()
+    sendRaw sd r =
+#if defined(mingw32_HOST_OS)
+          Win32.Async.sendAll sd $ BL.pack r
+#else
+          Socket.sendAll sd $ BL.pack r
+#endif
 
 prop_socket_client_connect_error :: (Int -> Int -> (Int, Int))
                                  -> [Int]

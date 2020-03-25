@@ -69,7 +69,7 @@ serverTimeout = 0.2 -- 200 ms
 
 -- Time limits
 timeLimitsReqResp :: ProtocolTimeLimits (ReqResp req resp)
-timeLimitsReqResp = ProtocolTimeLimits stateToLimit
+timeLimitsReqResp = ProtocolTimeLimits stateToLimit (-1)
   where
     stateToLimit :: forall (pr :: PeerRole) (st  :: ReqResp req resp).
                     PeerHasAgency pr st -> Maybe DiffTime
@@ -78,7 +78,7 @@ timeLimitsReqResp = ProtocolTimeLimits stateToLimit
 
 -- Unlimited Time
 timeUnLimitsReqResp :: ProtocolTimeLimits (ReqResp req resp)
-timeUnLimitsReqResp = ProtocolTimeLimits stateToLimit
+timeUnLimitsReqResp = ProtocolTimeLimits stateToLimit (-1)
   where
     stateToLimit :: forall (pr :: PeerRole) (st  :: ReqResp req resp).
                     PeerHasAgency pr st -> Maybe DiffTime

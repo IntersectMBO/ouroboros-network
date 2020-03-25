@@ -21,3 +21,6 @@ longWait = Just 60
 waitForever :: Maybe DiffTime
 waitForever = Nothing
 
+decodeWait :: DiffTime
+decodeWait = 180
+

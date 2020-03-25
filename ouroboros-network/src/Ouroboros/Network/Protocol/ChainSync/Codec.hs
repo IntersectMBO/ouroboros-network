@@ -53,7 +53,7 @@ byteLimitsChainSync = ProtocolSizeLimits stateToLimit
 -- `TokNext TokMustReply` No timeout
 -- `TokIntersect` `longWait timeout
 timeLimitsChainSync :: ProtocolTimeLimits (ChainSync header tip)
-timeLimitsChainSync = ProtocolTimeLimits stateToLimit
+timeLimitsChainSync = ProtocolTimeLimits stateToLimit decodeWait
   where
     stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header tip).
                     PeerHasAgency pr st -> Maybe DiffTime

@@ -54,7 +54,8 @@ data ProtocolSizeLimits ps bytes = ProtocolSizeLimits {
 
 data ProtocolTimeLimits ps = ProtocolTimeLimits {
        timeLimitForState :: forall (pr :: PeerRole) (st :: ps).
-                            PeerHasAgency pr st -> Maybe DiffTime
+                            PeerHasAgency pr st -> Maybe DiffTime,
+       decodeLimit :: DiffTime
      }
 
 data ProtocolLimitFailure = ExceededSizeLimit
@@ -75,7 +76,7 @@ driverWithLimits :: forall ps failure bytes m.
                  -> Driver ps (Maybe bytes) m
 driverWithLimits tracer Codec{encode, decode}
                  ProtocolSizeLimits{sizeLimitForState, dataSize}
-                 ProtocolTimeLimits{timeLimitForState}
+                 ProtocolTimeLimits{timeLimitForState, decodeLimit}
                  channel@Channel{send} =
     Driver { sendMessage, recvMessage, startDState = Nothing }
   where
@@ -96,28 +97,30 @@ driverWithLimits tracer Codec{encode, decode}
       let sizeLimit = sizeLimitForState stok
           timeLimit = fromMaybe (-1) (timeLimitForState stok)
       result  <- timeout timeLimit $
-                   runDecoderWithLimit sizeLimit dataSize
+                   runDecoderWithLimit sizeLimit decodeLimit dataSize
                                        channel trailing decoder
       case result of
         Just (Right x@(SomeMessage msg, _trailing')) -> do
           traceWith tracer (TraceRecvMsg (AnyMessage msg))
           return x
-        Just (Left (Just failure)) -> throwM failure
-        Just (Left Nothing)        -> throwM ExceededSizeLimit
+        Just (Left (Right failure)) -> throwM failure
+        Just (Left (Left failture)) -> throwM failture
         Nothing                    -> throwM ExceededTimeLimit
 
 runDecoderWithLimit
     :: forall m bytes failure a.
-       ( MonadThrow m, MonadTimer m )
+       ( MonadThrow m, MonadTimer m, Exception failure)
     => Word
     -- ^ message size limit
+    -> DiffTime
+    -- ^ message time limit
     -> (bytes -> Word)
     -- ^ byte size
     -> Channel m bytes
     -> Maybe bytes
     -> DecodeStep bytes failure m a
-    -> m (Either (Maybe failure) (a, Maybe bytes))
-runDecoderWithLimit limit size Channel{recv} =
+    -> m (Either (Either ProtocolLimitFailure failure) (a, Maybe bytes))
+runDecoderWithLimit sizeLimit timeLimit size Channel{recv} =
     go True 0
   where
     -- Our strategy here is as follows...
@@ -137,21 +140,21 @@ runDecoderWithLimit limit size Channel{recv} =
        -> Word        -- ^ size of consumed input so far
        -> Maybe bytes -- ^ any trailing data
        -> DecodeStep bytes failure m a
-       -> m (Either (Maybe failure) (a, Maybe bytes))
+       -> m (Either (Either ProtocolLimitFailure failure) (a, Maybe bytes))
 
     go _ !sz _ (DecodeDone x trailing)
       | let sz' = sz - maybe 0 size trailing
-      , sz' > limit = return (Left Nothing)
+      , sz' > sizeLimit = return (Left $ Left ExceededSizeLimit)
       | otherwise   = return (Right (x, trailing))
 
-    go _ !_ _  (DecodeFail failure) = return (Left (Just failure))
+    go _ !_ _  (DecodeFail failure) = return (Left (Right failure))
 
     go True sz trailing (DecodePartial k) = do
           -- Partial parcing of a new message. Start a timer.
-          r <- timeout codecTimeLimit $ partialCont sz trailing (DecodePartial k)
+          r <- timeout timeLimit $ partialCont sz trailing (DecodePartial k)
           --r <- Just <$> partialCont 0 trailing (DecodePartial k)
           case r of
-               Nothing -> return $ Left Nothing --throwM ExceededCodecTimeLimit
+               Nothing -> return $ Left $ Left ExceededCodecTimeLimit
                Just a  -> return a
 
     go False !sz trailing (DecodePartial k) = partialCont sz trailing (DecodePartial k)
@@ -159,9 +162,9 @@ runDecoderWithLimit limit size Channel{recv} =
     partialCont :: Word  -- ^ size of consumed input so far
        -> Maybe bytes    -- ^ any trailing data
        -> DecodeStep bytes failure m a
-       -> m (Either (Maybe failure) (a, Maybe bytes))
+       -> m (Either (Either ProtocolLimitFailure failure) (a, Maybe bytes))
     partialCont !sz trailing (DecodePartial k)
-      | sz > limit = return (Left Nothing)
+      | sz > sizeLimit = return $ Left $ Left ExceededSizeLimit
       | otherwise  = case trailing of
                        Nothing -> do mbs <- recv
                                      let !sz' = sz + maybe 0 size mbs
@@ -176,7 +179,7 @@ runDecoderWithLimit limit size Channel{recv} =
     --
     -- 2_097_154 comes from the current maximum message, see `blockFetchProtocolLimits`.
     codecTimeLimit :: DiffTime
-    codecTimeLimit = 900
+    codecTimeLimit = 2
 
 
 runPeerWithLimits
