@@ -4,7 +4,7 @@ max-backjumps: 5000
 reorder-goals: True
 
 package Win32-network
-  ghc-options: -Werror 
+  ghc-options: -Werror
   flags: +demo
 
 package ntp-client
@@ -13,7 +13,7 @@ package ntp-client
 
 package io-sim-classes
   ghc-options: -Werror
-  flags: +asserts +checktvarinvariant
+  flags: +asserts -checktvarinvariant
 
 package typed-protocols
   ghc-options: -Werror
