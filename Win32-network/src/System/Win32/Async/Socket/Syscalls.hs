@@ -48,7 +48,7 @@ foreign import ccall unsafe "WSARecv"
     c_WSARecv :: SOCKET          -- ^ socket
               -> Ptr WSABuf      -- ^ lpBuffers
               -> DWORD           -- ^ dwBufferCount
-              -> LPDWORD         -- ^ lpNumberOfBytesRecvd
+              -> LPDWORD         -- ^ lpNumberOfBytesReceived
               -> LPDWORD         -- ^ lpFlags
               -> LPWSAOVERLAPPED -- ^ lpOverlapped
               -> Ptr ()          -- ^ lpCompletionRouting
@@ -59,7 +59,7 @@ foreign import ccall unsafe "WSARecvFrom"
     c_WSARecvFrom :: SOCKET          -- ^ socket
                   -> Ptr WSABuf      -- ^ lpBuffers
                   -> DWORD           -- ^ dwBufferCount
-                  -> LPDWORD         -- ^ lpNumberOfBytesRecvd
+                  -> LPDWORD         -- ^ lpNumberOfBytesReceived
                   -> LPDWORD         -- ^ lpFlags
                   -> Ptr sa          -- ^ lpFrom
                   -> Ptr Int         -- ^ iFromLen (size in bytes of `lpFrom`)
