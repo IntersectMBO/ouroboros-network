@@ -106,7 +106,7 @@ blockFetchClientPipelinedMax ranges0 =
   go acc []           Zero     = SendMsgDonePipelined acc
 
 
--- | A piplined block-fetch client that sends eagerly but always tries to
+-- | A pipelined block-fetch client that sends eagerly but always tries to
 -- collect any replies as soon as they are available.  This keeps pipelining to
 -- bare minimum, and gives maximum choice to the environment (drivers).
 --

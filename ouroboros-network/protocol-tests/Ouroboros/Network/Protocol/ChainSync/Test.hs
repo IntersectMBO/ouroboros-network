@@ -213,7 +213,7 @@ chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps ch
   return (pchain == cchain)
 
 --
--- Piplined direct tests
+-- Pipelined direct tests
 --
 
 propChainSyncPipeliendMaxDirectST :: ChainProducerStateForkTest
@@ -257,7 +257,7 @@ propChainSyncPipeliendMinDirectIO cps (Positive omax) =
         cps
 
 --
--- Piplined connect tests
+-- Pipelined connect tests
 --
 
 propChainSyncPipelinedMaxConnectST :: ChainProducerStateForkTest
@@ -583,7 +583,7 @@ propChainSyncPipe cps =
     chainSyncDemo clientChan serverChan cps
 
 --
--- Piplined demo
+-- Pipelined demo
 --
 
 chainSyncDemoPipelined

@@ -61,7 +61,7 @@ tests = testGroup "BlockFetch"
   --                unit_bracketSyncWithFetchClient
 
   --TODO: test where for any given delta-Q, check that we do achieve full
-  -- pipelineing to keep the server busy and get decent enough batching of
+  -- pipelining to keep the server busy and get decent enough batching of
   -- requests (testing the high/low watermark mechanism).
   ]
 
