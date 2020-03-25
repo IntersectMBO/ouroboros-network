@@ -179,3 +179,81 @@ jobs:
       # TODO: we need to install the cddl tool
       # - name: ouroboros-network [cddl]
       #   run: cabal v2-run --builddir "C:\dist" test-cddl
+
+
+      #
+      # Build & Test consensus packages
+      #
+
+      # ouroboros-consensus
+      - name: ouroboros-consensus [dependencies]
+        run: cabal v2-build --only-dependencies --builddir "C:\dist" ouroboros-consensus
+
+      - name: ouroboros-consensus [build]
+        run: cabal v2-build --builddir "C:\dist" ouroboros-consensus
+
+      - name: ouroboros-consensus [test-consensus]
+        run: cabal v2-run --builddir "C:\dist" ouroboros-consensus:test:test-consensus
+
+      - name: ouroboros-consensus [test-storage]
+        run: cabal v2-run --builddir "C:\dist" ouroboros-consensus:test:test-storage
+
+      # ouroboros-consensus-test-infra
+      - name: ouroboros-consensus-test-infra [dependencies]
+        run: cabal v2-build --only-dependencies --builddir "C:\dist" ouroboros-consensus-test-infra
+
+      - name: ouroboros-consensus-test-infra [build]
+        run: cabal v2-build --builddir "C:\dist" ouroboros-consensus-test-infra
+
+      - name: ouroboros-consensus-test-infra [test]
+        run: cabal v2-run --builddir "C:\dist" ouroboros-consensus-test-infra:test
+
+      # ouroboros-consensus-mock
+      - name: ouroboros-consensus-mock [dependencies]
+        run: cabal v2-build --only-dependencies --builddir "C:\dist" ouroboros-consensus-mock
+
+      - name: ouroboros-consensus-mock [build]
+        run: cabal v2-build --builddir "C:\dist" ouroboros-consensus-mock
+
+      - name: ouroboros-consensus-mock [test]
+        run: cabal v2-run --builddir "C:\dist" ouroboros-consensus-mock:test
+
+      # ouroboros-consensus-byronspec
+      - name: ouroboros-consensus-byronspec [dependencies]
+        run: cabal v2-build --only-dependencies --builddir "C:\dist" ouroboros-consensus-byronspec
+
+      - name: ouroboros-consensus-byronspec [build]
+        run: cabal v2-build --builddir "C:\dist" ouroboros-consensus-byronspec
+
+      # ouroboros-consensus-byron
+      - name: ouroboros-consensus-byron [dependencies]
+        run: cabal v2-build --only-dependencies --builddir "C:\dist" ouroboros-consensus-byron
+
+      - name: ouroboros-consensus-byron [build]
+        run: cabal v2-build --builddir "C:\dist" ouroboros-consensus-byron
+
+      - name: ouroboros-consensus-byron [test]
+        run: cabal v2-run --builddir "C:\dist" ouroboros-consensus-byron:test
+
+      - name: ouroboros-consensus-byron [db-analyser]
+        run: cabal v2-build --builddir "C:\dist" ouroboros-consensus-byron:exe:db-analyser
+
+      - name: ouroboros-consensus-byron [db-converter]
+        run: cabal v2-build --builddir "C:\dist" ouroboros-consensus-byron:exe:db-converter
+
+      # ouroboros-consensus-shelley
+      - name: ouroboros-consensus-shelley [dependencies]
+        run: cabal v2-build --only-dependencies --builddir "C:\dist" ouroboros-consensus-shelley
+
+      - name: ouroboros-consensus-shelley [build]
+        run: cabal v2-build --builddir "C:\dist" ouroboros-consensus-shelley
+
+      - name: ouroboros-consensus-shelley [test]
+        run: cabal v2-run --builddir "C:\dist" ouroboros-consensus-shelley:test
+
+      # ouroboros-consensus-cardano
+      - name: ouroboros-consensus-cardano [dependencies]
+        run: cabal v2-build --only-dependencies --builddir "C:\dist" ouroboros-consensus-cardano
+
+      - name: ouroboros-consensus-cardano [build]
+        run: cabal v2-build --builddir "C:\dist" ouroboros-consensus-cardano
