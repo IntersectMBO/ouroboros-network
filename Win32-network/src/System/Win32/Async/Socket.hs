@@ -3,6 +3,7 @@
 
 module System.Win32.Async.Socket
   ( sendBuf
+  , sendBufTo
   , recvBuf
   , connect
   , accept
@@ -13,12 +14,13 @@ import           Control.Concurrent
 import           Control.Exception
 import           Data.Word
 
-import           Foreign.Ptr (Ptr)
-import           Foreign.Marshal.Alloc (alloca)
+import           Foreign.Ptr (Ptr, castPtr)
+import           Foreign.Marshal.Alloc (alloca, allocaBytes)
 import           Foreign.Storable (Storable (poke))
 
 import           Network.Socket (Socket, SockAddr)
 import qualified Network.Socket as Socket
+import           Network.Socket.Address (SocketAddress (..))
 
 import           System.Win32.Types
 import           System.Win32.Async.WSABuf
@@ -46,6 +48,30 @@ sendBuf sock buf size = Socket.withFdSocket sock $ \fd ->
               Right numBytes -> return $ ResultAsync numBytes
               Left  e        -> return $ ErrorAsync  (ErrorCode e)
           else return $ ErrorSync (WsaErrorCode errorCode) False
+
+
+sendBufTo :: SocketAddress sa
+          => Socket    -- ^ Socket
+          -> Ptr Word8 -- ^ data to send
+          -> Int       -- ^ size of the data
+          -> sa        -- ^ address to send to
+          -> IO Int
+sendBufTo sock buf size sa =
+    Socket.withFdSocket sock $ \fd ->
+      withSocketAddress sa $ \sa_ptr sa_size->
+        alloca $ \bufsPtr ->
+          withIOCPData "sendBufTo" (FDSocket fd) $ \lpOverlapped waitVar -> do
+            poke bufsPtr WSABuf {buf, len = fromIntegral size}
+            sendResult <- c_WSASendTo fd bufsPtr 1 nullPtr 0 sa_ptr sa_size lpOverlapped nullPtr
+            errorCode <- wsaGetLastError
+            if sendResult == 0 || errorCode == wSA_IO_PENDING
+              then do
+                iocpResult <- takeMVar waitVar
+                case iocpResult of
+                  Right numBytes -> return $ ResultAsync numBytes
+                  Left  e        -> return $ ErrorAsync  (ErrorCode e)
+              else return $ ErrorSync (WsaErrorCode errorCode) False
+
 
 -- | Unfortunatelly `connect` using interruptible ffi is not interruptible. 
 -- Instead we run the `Socket.connect` in a dedicated thread and block on an
@@ -102,3 +128,15 @@ recvBuf sock buf size =
                   Right numBytes -> return $ ResultAsync numBytes
                   Left e         -> return $ ErrorAsync  (ErrorCode e)
               else return $ ErrorSync (WsaErrorCode errorCode) False
+
+
+--
+-- Utils
+--
+
+-- | Copied from `Network.Socket.Types.withSocketAddress`.
+--
+withSocketAddress :: SocketAddress sa => sa -> (Ptr sa -> Int -> IO a) -> IO a
+withSocketAddress addr f = do
+    let sz = sizeOfSocketAddress addr
+    allocaBytes sz $ \p -> pokeSocketAddress p addr >> f (castPtr p) sz

@@ -3,6 +3,7 @@
 module System.Win32.Async.Socket.Syscalls
   ( SOCKET
   , c_WSASend
+  , c_WSASendTo
   , c_WSARecv
   ) where
 
@@ -27,6 +28,19 @@ foreign import ccall unsafe "WSASend"
               -> LPWSAOVERLAPPED -- ^ lpOverlapped
               -> Ptr ()          -- ^ lpCompletionRouting
               -> IO CInt
+
+
+foreign import ccall unsafe "WSASendTo"
+    c_WSASendTo :: SOCKET
+                -> Ptr WSABuf      -- ^ lpBuffers
+                -> DWORD           -- ^ dwBufferCount
+                -> LPDWORD         -- ^ lpNumberOfBytesSent
+                -> DWORD           -- ^ dwFlags
+                -> Ptr sa          -- ^ lpTo
+                -> Int             -- ^ iToLen (size in bytes of `lpTo`)
+                -> LPWSAOVERLAPPED -- ^ lpOverlapped
+                -> Ptr ()          -- ^ lpCompletionRouting
+                -> IO CInt
 
     
 foreign import ccall unsafe "WSARecv"
