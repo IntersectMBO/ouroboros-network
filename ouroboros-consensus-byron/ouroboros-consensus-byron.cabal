@@ -83,6 +83,7 @@ test-suite test
   main-is:             Main.hs
   other-modules:
                        Test.Consensus.Byron.Ledger
+                       Test.Consensus.Byron.Ledger.Golden
                        Test.ThreadNet.DualPBFT
                        Test.ThreadNet.RealPBFT
                        Test.ThreadNet.RealPBFT.ProtocolInfo
