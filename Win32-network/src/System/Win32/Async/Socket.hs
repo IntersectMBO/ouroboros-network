@@ -5,6 +5,7 @@ module System.Win32.Async.Socket
   ( sendBuf
   , sendBufTo
   , recvBuf
+  , recvBufFrom
   , connect
   , accept
   ) where
@@ -13,6 +14,8 @@ module System.Win32.Async.Socket
 import           Control.Concurrent
 import           Control.Exception
 import           Data.Word
+import           GHC.IO.Exception (IOErrorType(InvalidArgument))
+import           System.IO.Error
 
 import           Foreign.Ptr (Ptr, castPtr)
 import           Foreign.Marshal.Alloc (alloca, allocaBytes)
@@ -23,6 +26,8 @@ import qualified Network.Socket as Socket
 import           Network.Socket.Address (SocketAddress (..))
 
 import           System.Win32.Types
+import           System.Win32.Mem (zeroMemory)
+
 import           System.Win32.Async.WSABuf
 import           System.Win32.Async.IOData
 import           System.Win32.Async.ErrCode
@@ -130,6 +135,39 @@ recvBuf sock buf size =
               else return $ ErrorSync (WsaErrorCode errorCode) False
 
 
+recvBufFrom :: SocketAddress sa => Socket -> Ptr Word8 -> Int -> IO (Int, sa)
+recvBufFrom _    _   size | size <= 0 =
+    ioError (mkInvalidRecvArgError "System.Win32.Async.Socket.recvBufFrom")
+recvBufFrom sock buf size =
+    Socket.withFdSocket sock $ \fd ->
+      withIOCPData "recvBufFrom" (FDSocket fd) $ \lpOverlapped waitVar ->
+        withNewSocketAddress $ \saPtr saSize ->
+          alloca $ \saSizePtr ->
+            alloca $ \wsaBufPtr ->
+              alloca $ \lpFlags -> do
+                poke saSizePtr (fromIntegral saSize)
+                poke wsaBufPtr (WSABuf (fromIntegral size) buf)
+                poke lpFlags 0
+                recvResult <-
+                  c_WSARecvFrom fd wsaBufPtr 1
+                                nullPtr lpFlags
+                                saPtr saSizePtr
+                                lpOverlapped nullPtr
+                errorCode <- wsaGetLastError
+                if recvResult == 0 || errorCode == wSA_IO_PENDING
+                  then do
+                    iocpResult <- takeMVar waitVar
+                    case iocpResult of
+                      Right numBytes -> do
+                        -- if we catch IO exception and use `getPeerName` as the
+                        -- `network` package does it throws `WSAENOTCONN` exception,
+                        -- hiding the initial exception.
+                        sockAddr <- peekSocketAddress saPtr
+                        return $ ResultAsync (numBytes, sockAddr)
+                      Left e         -> return $ ErrorAsync  (ErrorCode e)
+                  else return $ ErrorSync (WsaErrorCode errorCode) False
+
+
 --
 -- Utils
 --
@@ -140,3 +178,20 @@ withSocketAddress :: SocketAddress sa => sa -> (Ptr sa -> Int -> IO a) -> IO a
 withSocketAddress addr f = do
     let sz = sizeOfSocketAddress addr
     allocaBytes sz $ \p -> pokeSocketAddress p addr >> f (castPtr p) sz
+
+-- sizeof(struct sockaddr_storage) which has enough space to contain
+-- sockaddr_in, sockaddr_in6 and sockaddr_un.
+sockaddrStorageLen :: Int
+sockaddrStorageLen = 128
+
+-- | Copied from `Network.Socket.Types.withNewSocketAddress`.
+--
+withNewSocketAddress :: SocketAddress sa => (Ptr sa -> Int -> IO a) -> IO a
+withNewSocketAddress f = allocaBytes sockaddrStorageLen $ \ptr -> do
+    zeroMemory ptr $ fromIntegral sockaddrStorageLen
+    f ptr sockaddrStorageLen
+
+mkInvalidRecvArgError :: String -> IOError
+mkInvalidRecvArgError loc = ioeSetErrorString (mkIOError
+                                    InvalidArgument
+                                    loc Nothing Nothing) "non-positive length"
