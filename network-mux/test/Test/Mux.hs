@@ -50,6 +50,7 @@ import           Control.Tracer (Tracer (..), contramap, nullTracer)
 import qualified System.Win32.NamedPipes as Win32.NamedPipes
 import qualified System.Win32.File       as Win32.File
 import qualified System.Win32.Async      as Win32.Async
+import           System.IOManager
 #else
 import           System.IO (hClose)
 import           System.Process (createPipe)
@@ -460,7 +461,7 @@ runWithQueues initApp respApp = do
 runWithPipe :: RunMuxApplications
 runWithPipe initApp respApp =
 #if defined(mingw32_HOST_OS)
-    Win32.Async.withIOManager $ \iocp -> do
+    withIOManager $ \ioManager -> do
       let pipeName = "\\\\.\\pipe\\mux-test-pipe"
       bracket
         (Win32.NamedPipes.createNamedPipe
@@ -484,8 +485,8 @@ runWithPipe initApp respApp =
                    Nothing)
                 Win32.File.closeHandle
           $ \hCli -> do
-             Win32.Async.associateWithIOCompletionPort (Left hSrv) iocp
-             Win32.Async.associateWithIOCompletionPort (Left hCli) iocp
+             associateWithIOManager ioManager (Left hSrv)
+             associateWithIOManager ioManager (Left hCli)
 
              let clientChannel = pipeChannelFromNamedPipe hCli
                  serverChannel = pipeChannelFromNamedPipe hSrv

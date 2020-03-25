@@ -25,6 +25,7 @@ import Test.Mux.ReqResp
 import System.Win32
 import System.Win32.NamedPipes
 import qualified System.Win32.Async as Win32.Async
+import System.IOManager
 
 import System.IO
 import System.Exit
@@ -71,7 +72,7 @@ defaultProtocolLimits =
 -- | Server accept loop.
 --
 echoServer :: IO ()
-echoServer = Win32.Async.withIOManager $ \iocp -> do
+echoServer = withIOManager $ \ioManager -> do
     hpipe <- createNamedPipe pipeName
                              (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
                              (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
@@ -80,7 +81,7 @@ echoServer = Win32.Async.withIOManager $ \iocp -> do
                              1024
                              0
                              Nothing
-    Win32.Async.associateWithIOCompletionPort (Left hpipe) iocp
+    associateWithIOManager ioManager (Left hpipe)
     Win32.Async.connectNamedPipe hpipe
     _ <- forkIO $ do
            serverLoop hpipe
@@ -122,7 +123,7 @@ serverLoop h = do
     
 
 client :: Int -> String -> IO ()
-client n msg = Win32.Async.withIOManager $ \iocp -> do
+client n msg = withIOManager $ \ioManager -> do
     hpipe <- createFile pipeName
                         (gENERIC_READ .|. gENERIC_WRITE)
                         fILE_SHARE_NONE
@@ -130,7 +131,7 @@ client n msg = Win32.Async.withIOManager $ \iocp -> do
                         oPEN_EXISTING
                         fILE_FLAG_OVERLAPPED
                         Nothing
-    Win32.Async.associateWithIOCompletionPort (Left hpipe) iocp
+    associateWithIOManager ioManager (Left hpipe)
     let pipeChannel = Mx.pipeChannelFromNamedPipe hpipe
         bearer = Mx.pipeAsMuxBearer nullTracer pipeChannel
     Mx.muxStart

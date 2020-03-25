@@ -35,6 +35,7 @@ import           Data.Bits ((.|.))
 import qualified System.Win32.NamedPipes as Win32.NamedPipes
 import qualified System.Win32.Async      as Win32.Async
 import qualified System.Win32            as Win32
+import           System.IOManager
 #else
 import           System.Process (createPipe)
 import           System.IO (hClose)
