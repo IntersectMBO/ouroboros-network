@@ -65,7 +65,7 @@ import           Ouroboros.Network.Subscription.Subscriber
 -- info.
 --
 defaultConnectionAttemptDelay :: DiffTime
-defaultConnectionAttemptDelay = 0.250 -- 250ms delay
+defaultConnectionAttemptDelay = 0.025 -- 25ms delay
 
 -- | Minimum time to wait between connection attempts.
 --
@@ -294,8 +294,14 @@ subscriptionLoop
              then traceWith tr SubscriptionTraceSubscriptionRunning
              else traceWith tr SubscriptionTraceSubscriptionFailed
 
-        Just (remoteAddr, sTargetNext) ->
-          innerStep conThreads valencyVar remoteAddr sTargetNext
+        Just (remoteAddr, sTargetNext) -> do
+          valencyLeft <- atomically $ readValencyCounter valencyVar
+
+          -- If we have already created enough connections (valencyLeft <= 0)
+          -- we don't need to traverse the rest of the list.
+          if valencyLeft <= 0
+              then traceWith tr SubscriptionTraceSubscriptionRunning
+              else innerStep conThreads valencyVar remoteAddr sTargetNext
 
     innerStep :: StrictTVar m (Set (Async m ()))
               -- ^ outstanding connection threads; threads are removed as soon
