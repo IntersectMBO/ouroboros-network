@@ -65,7 +65,7 @@ import           Ouroboros.Network.Subscription.Subscriber
 -- info.
 --
 defaultConnectionAttemptDelay :: DiffTime
-defaultConnectionAttemptDelay = 0.250 -- 250ms delay
+defaultConnectionAttemptDelay = 0.025 -- 25ms delay
 
 -- | Minimum time to wait between connection attempts.
 --
