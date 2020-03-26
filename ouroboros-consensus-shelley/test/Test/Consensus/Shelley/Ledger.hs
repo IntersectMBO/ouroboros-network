@@ -12,12 +12,10 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Shelley.Ledger (tests) where
 
-import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Write as CBOR
 import qualified Data.Binary.Get as Get
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.Proxy (Proxy (..))
@@ -27,13 +25,12 @@ import           Numeric.Natural (Natural)
 import           Cardano.Binary (fromCBOR, serialize, toCBOR)
 
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
-                     HeaderHash, Point, SlotNo (..), blockHash, genesisPoint)
+                     HeaderHash, Point, SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
                      HashInfo (..))
 
@@ -63,11 +60,9 @@ import qualified Shelley.Spec.Ledger.STS.Utxo as STS
 import qualified Shelley.Spec.Ledger.STS.Utxow as STS
 import qualified Shelley.Spec.Ledger.Tx as SL
 import qualified Shelley.Spec.Ledger.TxData as SL
-import qualified Test.Shelley.Spec.Ledger.Examples.Examples as Examples
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
 import qualified Test.Shelley.Spec.Ledger.Generator.Update as Gen
 import qualified Test.Shelley.Spec.Ledger.PreSTSGenerator as SL
-import qualified Test.Shelley.Spec.Ledger.Utils as SL (testGlobals)
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.History (LedgerViewHistory)
@@ -80,15 +75,15 @@ import           Generic.Random (genericArbitraryU)
 import           Test.QuickCheck hiding (Result)
 import           Test.QuickCheck.Hedgehog (hedgehog)
 import           Test.Tasty
-import           Test.Tasty.Golden
 import           Test.Tasty.QuickCheck
 
 import           Test.Util.Corruption
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Roundtrip
 
+import           Test.Consensus.Shelley.Ledger.Golden (mkDummyHash)
+import qualified Test.Consensus.Shelley.Ledger.Golden as Golden
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
-
 
 tests :: TestTree
 tests = testGroup "Shelley"
@@ -111,23 +106,13 @@ tests = testGroup "Shelley"
   , testHashInfo (Proxy @TPraosStandardCrypto) "Real crypto"
   , testHashInfo (Proxy @TPraosMockCrypto)     "Mock crypto"
 
-  , testGroup "Golden tests"
-      [ test_golden_Block
-      , test_golden_Header
-      , test_golden_HeaderHash
-      , test_golden_GenTx
-      , test_golden_GenTxId
-      , test_golden_ApplyTxErr
-      , test_golden_ConsensusState
-      , test_golden_LedgerState
-        -- TODO Query and result
-      ]
-
   , testGroup "Integrity"
       $ const [] $ -- TODO these tests are disabled awaiting #1821
       [ testProperty "detect corruption in blocks"  prop_detectCorruption_Block
       , testProperty "detect corruption in headers" prop_detectCorruption_Header
       ]
+
+  , Golden.tests
   ]
   where
     testHashInfo :: forall c. Crypto c => Proxy c -> String -> TestTree
@@ -253,121 +238,6 @@ prop_shelleyHashInfo_hashSize h =
     serialisedHash = Put.runPut (putHash h)
 
 {-------------------------------------------------------------------------------
-  Golden tests
--------------------------------------------------------------------------------}
-
-exampleBlock :: Block
-exampleBlock = mkShelleyBlock Examples.blockEx3B
-
-exampleGenTx :: GenTx Block
-exampleGenTx = mkShelleyTx Examples.txEx2A
-
-test_golden_Block :: TestTree
-test_golden_Block = goldenTestCBOR
-    "Block"
-    toCBOR
-    exampleBlock
-    "test/golden/cbor/shelley/Block"
-
-test_golden_Header :: TestTree
-test_golden_Header = goldenTestCBOR
-    "Header"
-    toCBOR
-    (getHeader exampleBlock)
-    "test/golden/cbor/shelley/Header"
-
-test_golden_HeaderHash :: TestTree
-test_golden_HeaderHash = goldenTestCBOR
-    "HeaderHash"
-    toCBOR
-    (blockHash exampleBlock)
-    "test/golden/cbor/shelley/HeaderHash"
-
-test_golden_GenTx :: TestTree
-test_golden_GenTx = goldenTestCBOR
-    "GenTx"
-    toCBOR
-    exampleGenTx
-    "test/golden/cbor/shelley/GenTx"
-
-test_golden_GenTxId :: TestTree
-test_golden_GenTxId = goldenTestCBOR
-    "GenTxId"
-    toCBOR
-    (txId exampleGenTx)
-    "test/golden/cbor/shelley/GenTxId"
-
-test_golden_ApplyTxErr :: TestTree
-test_golden_ApplyTxErr = goldenTestCBOR
-    "ApplyTxErr"
-    toCBOR
-    exampleApplyTxErr
-    "test/golden/cbor/shelley/ApplyTxErr"
-  where
-    -- TODO incomplete, this type has tons of constructors that can all
-    -- change.
-    exampleApplyTxErr :: ApplyTxErr Block
-    exampleApplyTxErr =
-        ApplyTxError
-      $ pure
-      $ STS.LedgerFailure
-      $ STS.UtxowFailure
-      $ STS.InvalidWitnessesUTXOW
-
-test_golden_ConsensusState :: TestTree
-test_golden_ConsensusState = goldenTestCBOR
-    "ConsensusState"
-    toCBOR
-    exampleConsensusState
-    "test/golden/cbor/shelley/ConsensusState"
-  where
-    exampleConsensusState :: ConsensusState (BlockProtocol Block)
-    exampleConsensusState =
-      TPraosState.append (mkPrtclState 2) $
-      TPraosState.empty  (mkPrtclState 1)
-
-    mkPrtclState :: SlotNo -> STS.PrtclState TPraosMockCrypto
-    mkPrtclState slot = STS.PrtclState
-      (Map.fromList
-       [ (SL.DiscKeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 1), 1)
-       , (SL.DiscKeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 2), 2)
-       ])
-      (At SL.LastAppliedBlock {
-          labBlockNo = 0
-        , labSlotNo  = slot
-        , labHash    = SL.HashHeader (mkDummyHash (Proxy @TPraosMockCrypto) 1)
-        })
-      SL.NeutralNonce
-      (SL.mkNonce 1)
-      (SL.mkNonce 2)
-      (SL.mkNonce 3)
-
-test_golden_LedgerState :: TestTree
-test_golden_LedgerState = goldenTestCBOR
-    "LedgerState"
-    encodeShelleyLedgerState
-    exampleLedgerState
-    "test/golden/cbor/shelley/LedgerState"
-  where
-    Examples.CHAINExample { startState, newBlock } = Examples.ex2A
-
-    exampleLedgerState :: LedgerState Block
-    exampleLedgerState = reapplyLedgerBlock
-      (ShelleyLedgerConfig SL.testGlobals)
-      (mkShelleyBlock newBlock)
-      (ShelleyLedgerState {
-          ledgerTip    = genesisPoint
-        , history      = History.empty
-        , shelleyState = STS.chainNes startState
-        })
-
-goldenTestCBOR :: String -> (a -> Encoding) -> a -> FilePath -> TestTree
-goldenTestCBOR name enc a path =
-    goldenVsString name path (return bs)
-  where
-    bs = CBOR.toLazyByteString (enc a)
-
-{-------------------------------------------------------------------------------
   Integrity
 -------------------------------------------------------------------------------}
 
@@ -384,9 +254,6 @@ prop_detectCorruption_Header =
 {-------------------------------------------------------------------------------
   Generators
 -------------------------------------------------------------------------------}
-
-mkDummyHash :: forall c a. Crypto c => Proxy c -> Int -> SL.Hash (SL.HASH c) a
-mkDummyHash _ = coerce . SL.hash @(SL.HASH c)
 
 genHash :: forall a c. Crypto c => Proxy c -> Gen (SL.Hash (SL.HASH c) a)
 genHash proxy = mkDummyHash proxy <$> arbitrary
