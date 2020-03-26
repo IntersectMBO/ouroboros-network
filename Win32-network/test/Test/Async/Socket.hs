@@ -15,7 +15,8 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (void)
-import           Data.Foldable (foldl', traverse_)
+import           Data.Function (on)
+import           Data.Foldable (all, foldl', traverse_)
 import           GHC.IO.Exception (IOException (..))
 
 import           System.IOManager
@@ -46,6 +47,8 @@ tests =
       test_close_accept
   , testProperty "send and recv"
       (ioProperty . prop_send_recv)
+  , testProperty "sendTo and recvFrom"
+      (ioProperty . prop_sendTo_recvFrom)
   , testProperty "PingPong test"
       $ withMaxSuccess 100 prop_PingPong
   , testProperty "PingPongPipelined test"
@@ -161,6 +164,7 @@ recvLen sock = go []
                   buf <- Async.recv sock l
                   go (buf : bufs) (l - BS.length buf)
 
+
 prop_send_recv :: LargeNonEmptyBS -> IO Bool
 prop_send_recv (LargeNonEmptyBS bs _size) =
     withIOManager $ \ioManager ->
@@ -195,6 +199,66 @@ prop_send_recv (LargeNonEmptyBS bs _size) =
             Socket.connect fd_in addr'
             Async.sendAll fd_in bs
               `catch` \(e :: IOException) -> putStrLn ("sendAll errored: " ++ displayException e) >> throwIO e
+
+          bs' <- takeMVar v
+          pure $ bs == bs'
+
+
+--  | Like recv but using `recvFrom`.  It assumes that each 'recvFrom' will
+--  return the same address otherwise it will throw an exception.
+--
+recvFromLen :: Socket -> Int -> IO (BL.ByteString, Socket.SockAddr)
+recvFromLen sock len0 = do
+    res <- go [] len0
+    case res of
+      as@((_, addr) : _)
+          | all (uncurry $ on (==) snd) (zip as (tail as))
+          -> pure (BL.fromChunks (fst `map` as), addr)
+
+          -- not all addresses where the same
+          | otherwise
+          -> throwIO $ userError "recvFromLen: recevied from various addresses"
+
+      []  -> throwIO $ userError "recvFromLen: requesting less than zero bytes is not supported"
+
+
+  where
+    go as !l | l <= 0    = pure $ reverse as
+             | otherwise = do
+                a@(buf, _) <- Async.recvFrom sock l
+                go (a : as) (l - BS.length buf)
+
+
+-- TODO: this test fails when using 'LargeNonEmptyBS' generator.
+--
+prop_sendTo_recvFrom :: NonEmptyBS -> IO Bool
+prop_sendTo_recvFrom (NonEmptyBS bs) =
+    withIOManager $ \ioManager ->
+      bracket
+        ((,) <$> Socket.socket Socket.AF_INET Socket.Datagram Socket.defaultProtocol
+             <*> Socket.socket Socket.AF_INET Socket.Datagram Socket.defaultProtocol)
+        (\(x, y) -> Socket.close x >> Socket.close y)
+        $ \ (fd_in, fd_out) -> do
+          v <- newEmptyMVar
+          syncVar <- newEmptyMVar
+          associateWithIOManager ioManager (Right fd_in)
+          associateWithIOManager ioManager (Right fd_out)
+
+          mainThread <- myThreadId
+
+          _ <- forkIO $ handle (\e -> throwTo mainThread e >> ioError e) $ do
+              let addr = SockAddrInet 0 (Socket.tupleToHostAddress (127, 0, 0, 1))
+              Socket.bind fd_in addr
+              addr' <- Socket.getSocketName fd_in
+              putMVar syncVar addr'
+
+              (bs', _) <- recvFromLen fd_in (BS.length bs)
+              putMVar v (BL.toStrict bs')
+
+          _ <- forkIO $ handle (\e -> throwTo mainThread e >> ioError e) $ do
+            -- wait for the other end to start listening
+            addr' <- takeMVar syncVar
+            Async.sendAllTo fd_out bs addr'
 
           bs' <- takeMVar v
           pure $ bs == bs'
@@ -300,10 +364,13 @@ test_PingPong createBinaryChannel n blocking bs =
           Socket.listen sockIn 1024
           tid <- mask_ $ forkIOWithUnmask $ \unmask ->
             do
-              (socket, _) <- Socket.accept sockIn
+              (socket, _remoteAddr) <- Socket.accept sockIn
               associateWithIOManager ioManager (Right socket)
               let channel = createBinaryChannel socket
               unmask (runPingPongServer channel (constPingPongServer @ByteString))
+                `catch` \(e :: IOException) -> do
+                    putStrLn ("ping-pong server cought: " ++ show e)
+                    throwIO e
             `finally` putMVar lock ()
 
           -- run a PingPong client, at this stage server socket is in
@@ -312,6 +379,9 @@ test_PingPong createBinaryChannel n blocking bs =
           associateWithIOManager ioManager (Right sockOut)
           let channelOut = createBinaryChannel sockOut
           res <- runPingPongClient channelOut blocking tid (constPingPongClient n bs)
+            `catch` \(e :: IOException) -> do
+              putStrLn ("ping-pong client cought: " ++ show e)
+              throwIO e
 
           -- this lock asserts that the server was terminated
           -- TODO: check that it was killed by the right exception
@@ -364,6 +434,9 @@ test_PingPongPipelined createBinaryChannel blocking bss =
               associateWithIOManager ioManager (Right socket)
               let channel = createBinaryChannel socket
               unmask (runPingPongServer channel (constPingPongServer @ByteString))
+                `catch` \(e :: IOException) -> do
+                  putStrLn ("ping-pong server cought: " ++ show e)
+                  throwIO e
             `finally` putMVar lock ()
 
           -- run a PingPong client, at this stage server socket is in
@@ -371,8 +444,11 @@ test_PingPongPipelined createBinaryChannel blocking bss =
           Socket.connect sockOut addr'
           associateWithIOManager ioManager (Right sockOut)
           let channelOut = createBinaryChannel sockOut
-          res <- runPingPongClientPipelined channelOut blocking tid bss
-
+          res <-
+            runPingPongClientPipelined channelOut blocking tid bss
+              `catch` \(e :: IOException) -> do
+                putStrLn ("ping-pong client cought: " ++ show e)
+                throwIO e
           -- this lock asserts that the server was terminated
           -- TODO: check that it was killed by the right exception
           takeMVar lock

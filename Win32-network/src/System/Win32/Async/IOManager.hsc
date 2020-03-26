@@ -127,26 +127,27 @@ instance Exception IOManagerError
 -- TODO: add a tracer which logs when `dequeueCompletionPackets' errors
 --
 withIOManager :: (IOCompletionPort -> IO r) -> IO r
-withIOManager k = do
-    tid <- myThreadId
-    bracket
-        (createIOCompletionPort maxBound)
-        closeIOCompletionPort
-        $ \iocp -> do
-          -- The 'c_GetQueuedCompletionStatus' is not interruptible so we
-          -- cannot simply use `withAsync` pattern here (the main thread will
-          -- deadlock when trying to kill the io-manager thread).
-          -- But note that 'closeIOCopletionPort' will terminate the io-manager
-          -- thread (we cover this scenario in the 'test_closeIOCP' test).
-          _ <-
-            forkOS
-              $ void $ dequeueCompletionPackets iocp
-                `catch`
-                \(e :: IOException) -> do
-                  -- throw IOExceptoin's back to the thread which started 'IOManager'
-                  throwTo tid (IOManagerError e)
-                  throwIO e
-          k iocp
+withIOManager k =
+    Socket.withSocketsDo $ do
+      tid <- myThreadId
+      bracket
+          (createIOCompletionPort maxBound)
+          closeIOCompletionPort
+          $ \iocp -> do
+            -- The 'c_GetQueuedCompletionStatus' is not interruptible so we
+            -- cannot simply use `withAsync` pattern here (the main thread will
+            -- deadlock when trying to kill the io-manager thread).
+            -- But note that 'closeIOCopletionPort' will terminate the io-manager
+            -- thread (we cover this scenario in the 'test_closeIOCP' test).
+            _ <-
+              forkOS
+                $ void $ dequeueCompletionPackets iocp
+                  `catch`
+                  \(e :: IOException) -> do
+                    -- throw IOExceptoin's back to the thread which started 'IOManager'
+                    throwTo tid (IOManagerError e)
+                    throwIO e
+            k iocp
 
 
 data IOCompletionException

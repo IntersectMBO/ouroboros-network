@@ -1,7 +1,10 @@
 module System.Win32.Async.Socket.ByteString
   ( send
   , sendAll
+  , sendTo
+  , sendAllTo
   , recv
+  , recvFrom
   ) where
 
 import           Control.Exception
@@ -12,10 +15,11 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BS (createAndTrim)
 import qualified Data.ByteString.Unsafe as BS (unsafeUseAsCStringLen)
 import           Foreign.Ptr (castPtr)
+import           Foreign.Marshal.Alloc (allocaBytes)
 import           GHC.IO.Exception (IOErrorType(..))
 import           System.IO.Error (mkIOError, ioeSetErrorString)
 
-import           Network.Socket (Socket)
+import           Network.Socket (Socket, SockAddr)
 
 import           System.Win32.Async.Socket
 
@@ -44,6 +48,25 @@ sendAll sock bs = do
       $ sendAll sock (BS.drop sent bs)
 
 
+sendTo :: Socket
+       -> ByteString
+       -> SockAddr
+       -> IO Int
+sendTo sock bs sa =
+    BS.unsafeUseAsCStringLen bs $ \(str, size) ->
+      sendBufTo sock (castPtr str) size sa
+
+
+sendAllTo :: Socket
+          -> ByteString
+          -> SockAddr
+          -> IO ()
+sendAllTo _    bs _  | BS.null bs = return ()
+sendAllTo sock bs sa = do
+    sent <- sendTo sock bs sa
+    when (sent >= 0) $ sendAllTo sock (BS.drop sent bs) sa
+
+
 -- | Recv a 'ByteString' from a socket, which must be in a connected state, and
 -- must be associated with an IO completion port via
 -- 'System.Win32.Async.IOManager.associateWithIOCompletionProt'.  It may return
@@ -58,3 +81,13 @@ recv _sock size | size <= 0 =
         (mkIOError InvalidArgument "System.Win32.Async.Socket.ByteString.recv" Nothing Nothing)
         "non-positive length"
 recv sock size = BS.createAndTrim size $ \ptr -> recvBuf sock ptr size
+
+
+recvFrom :: Socket                     -- ^ Socket
+         -> Int                        -- ^ Maximum number of bytes to receive
+         -> IO (ByteString, SockAddr)  -- ^ Data received and sender address
+recvFrom sock size =
+    allocaBytes size $ \ptr -> do
+      (len, sockAddr) <- recvBufFrom sock (castPtr ptr) size
+      str <- BS.packCStringLen (ptr, len)
+      return (str, sockAddr)
