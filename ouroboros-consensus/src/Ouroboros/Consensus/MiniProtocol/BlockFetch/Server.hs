@@ -17,7 +17,8 @@ module Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
   ) where
 
 import           Control.Tracer (Tracer)
-import           Data.Typeable (Typeable)
+import           Data.Proxy (Proxy (..))
+import           Data.Typeable ((:~:) (..), Typeable, eqT)
 
 import           Ouroboros.Network.Block (pattern BlockPoint, HeaderHash,
                      Serialised (..), StandardHash)
@@ -49,7 +50,7 @@ data BlockFetchServerException =
       -- garbage collected. However, the network protocol will have timed out
       -- long before this happens.
       forall blk. (Typeable blk, StandardHash blk) =>
-        BlockGCed (HeaderHash blk)
+        BlockGCed (Proxy blk) (HeaderHash blk)
 
       -- | Thrown when requesting the genesis block from the database
       --
@@ -59,6 +60,14 @@ data BlockFetchServerException =
     | NoGenesisBlock
 
 deriving instance Show BlockFetchServerException
+
+instance Eq BlockFetchServerException where
+  BlockGCed (_ :: Proxy blk1) h1 == BlockGCed (_ :: Proxy blk2) h2 =
+      case eqT @blk1 @blk2 of
+        Nothing   -> False
+        Just Refl -> h1 == h2
+  NoGenesisBlock                 == NoGenesisBlock                 = True
+  _                              == _                              = False
 
 instance Exception BlockFetchServerException
 
@@ -120,7 +129,7 @@ blockFetchServer _tracer chainDB registry = senderSide
           return $ SendMsgBatchDone $ return senderSide
         IteratorBlockGCed hash -> do
           ChainDB.iteratorClose it
-          throwM $ BlockGCed @blk hash
+          throwM $ BlockGCed (Proxy @blk) hash
 
 
 {-------------------------------------------------------------------------------

@@ -47,7 +47,7 @@ data TxSubmissionProtocolError =
      | ProtocolErrorRequestBlocking
      | ProtocolErrorRequestNonBlocking
      | ProtocolErrorRequestedUnavailableTx
-  deriving Show
+  deriving (Eq, Show)
 
 instance Exception TxSubmissionProtocolError where
   displayException ProtocolErrorAckedTooManyTxids =

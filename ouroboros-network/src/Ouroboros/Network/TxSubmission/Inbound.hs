@@ -63,7 +63,7 @@ data TraceTxSubmissionInbound txid tx = TraceTxSubmissionInbound --TODO
 data TxSubmissionProtocolError =
        ProtocolErrorTxNotRequested
 
-  deriving Show
+  deriving (Eq, Show)
 
 instance Exception TxSubmissionProtocolError where
   displayException ProtocolErrorTxNotRequested =
