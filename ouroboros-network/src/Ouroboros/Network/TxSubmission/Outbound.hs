@@ -189,7 +189,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} =
               !unackedMap' = foldl' (flip Map.delete) unackedMap txids
               client'      = client unackedSeq unackedMap' lastIdx
 
-          -- Trace the transactions to be sent in the response.
-          traceWith tracer (TraceTxSubmissionOutboundSendMsgReplyTxs txs)
+              -- Trace the transactions to be sent in the response.
+              traceTxsSent = traceWith tracer . TraceTxSubmissionOutboundSendMsgReplyTxs
 
-          return $ SendMsgReplyTxs txs client'
+          return $ SendMsgReplyTxs txs traceTxsSent client'
