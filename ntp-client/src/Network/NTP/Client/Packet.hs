@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFoldable             #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards            #-}
 
@@ -13,9 +12,6 @@ module Network.NTP.Client.Packet
     , realMcsToNtp
     , ntpToRealMcs
     , Microsecond (..)
-    , IPVersion (..)
-    , ResultOrFailure (..)
-    , mkResultOrFailure
     ) where
 
 
@@ -159,49 +155,3 @@ clockOffset respTimeout packet = do
 -- Helper function to get current time in @Microsecond@.
 getCurrentTime :: IO Microsecond
 getCurrentTime = Microsecond . round . ( * 1000000) <$> getPOSIXTime
-
-
---
--- TODO: this is not the right place for this types
---
-
-data IPVersion = IPv4 | IPv6
-    deriving (Eq, Show)
-
-
--- | Result of two threads running concurrently.
---
-data ResultOrFailure e a
-    = BothSucceeded !a
-    -- ^ both threads suceeded
-    | SuccessAndFailure !a !IPVersion !e
-    -- ^ one of the threads errors. 'IPVersion' indicates which one.
-    | BothFailed !e !e
-    -- ^ both threads failed
-    deriving (Eq, Foldable)
-
-instance (Show a, Show e) => Show (ResultOrFailure e a) where
-    show (BothSucceeded a) = "BothSucceded " ++ show a
-    show (SuccessAndFailure a ipVersion e) = concat
-      [ "SuccessAndFailure "
-      , show a
-      , " "
-      -- group ipVersion and error together, to indicated that the ipversion is
-      -- about which thread errored.
-      , show (ipVersion, e)
-      ]
-    show (BothFailed e4 e6) = concat
-      [ "BothFailed "
-      , show e4
-      , " "
-      , show e6
-      ]
-
-mkResultOrFailure :: Semigroup a
-                  => Either e a -- ^ ipv4 result
-                  -> Either e a -- ^ ipv6 result
-                  -> ResultOrFailure e a
-mkResultOrFailure (Right a0) (Right a1) = BothSucceeded (a0 <> a1)
-mkResultOrFailure (Left e)   (Right a)  = SuccessAndFailure a IPv4 e
-mkResultOrFailure (Right a)  (Left e)   = SuccessAndFailure a IPv6 e
-mkResultOrFailure (Left e0)  (Left e1)  = BothFailed e0 e1

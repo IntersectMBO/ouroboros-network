@@ -6,12 +6,15 @@ module Network.NTP.Client (
   , NtpSettings(..)
   , NtpClient(..)
   , NtpStatus(..)
+  -- * 'ntpQuery' runs a single ntp query.
+  --   'ntpQuery' may be useful for testing,etc.., but there should be
+  --   no need to use ntpQuery in combination with 'withNtpClient'.
+  , ntpQuery
+
+  -- * Logging
   , NtpTrace(..)
   , IPVersion(..)
--- * ntpQuery runs a single ntp query.
---   ntpQuery may be useful for testing,etc.., but there should be
---   no need to use ntpQuery in combination with withNtpClient.
-  , ntpQuery
+  , ResultOrFailure(..)
   ) where
 
 import           Control.Concurrent (threadDelay)
@@ -26,7 +29,6 @@ import           Data.Void (Void)
 import           System.IOManager
 
 import           Network.NTP.Client.Query
-import           Network.NTP.Client.Packet (IPVersion (..))
 
 -- | 'NtpClient' which recieves updates of the wall clcok drift every
 -- 'ntpPollDelay'.  It also allows to force engaging in ntp protocol.

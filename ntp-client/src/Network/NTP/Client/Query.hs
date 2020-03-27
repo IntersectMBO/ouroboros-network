@@ -1,6 +1,7 @@
 -- TODO: provide a corrss platform  network bindings using `network` or
 -- `Win32-network`, to get rid of CPP.
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveFoldable      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
@@ -9,8 +10,12 @@
 module Network.NTP.Client.Query (
     NtpSettings(..)
   , NtpStatus(..)
-  , NtpTrace(..)
   , ntpQuery
+
+  -- * Logging
+  , NtpTrace(..)
+  , IPVersion (..)
+  , ResultOrFailure (..)
   ) where
 
 import           Control.Concurrent (threadDelay)
@@ -25,6 +30,7 @@ import           Data.Bifunctor (bimap)
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Either (partitionEithers)
 import           Data.Functor (void)
+import           Data.Foldable (Foldable (..), fold)
 import           Data.Maybe
 import           Network.Socket (Socket, SockAddr (..), AddrInfo (..))
 import qualified Network.Socket as Socket
@@ -42,9 +48,6 @@ import           Network.NTP.Client.Packet
                                     , NtpOffset (..)
                                     , getCurrentTime
                                     , clockOffsetPure
-                                    , ResultOrFailure
-                                    , mkResultOrFailure
-                                    , IPVersion (..)
                                     )
 
 -- | Settings of the ntp client.
@@ -168,6 +171,39 @@ partitionAddrInfos = partitionEithers . mapMaybe fn
          | Socket.addrFamily a == Socket.AF_INET6 = Just (Right a)
          | otherwise                              = Nothing
 
+
+
+data IPVersion = IPv4 | IPv6
+    deriving (Eq, Show)
+
+
+-- | Result of two threads running concurrently.
+--
+data ResultOrFailure a
+    = BothSucceeded !a
+    -- ^ both threads suceeded
+    | SuccessAndFailure !a !IPVersion !IOException
+    -- ^ one of the threads errors. 'IPVersion' indicates which one.
+    | BothFailed !IOException !IOException
+    -- ^ both threads failed
+    deriving (Eq, Foldable)
+
+instance Show a => Show (ResultOrFailure a) where
+    show (BothSucceeded a) = "BothSucceded " ++ show a
+    show (SuccessAndFailure a ipVersion e) = concat
+      [ "SuccessAndFailure "
+      , show a
+      , " "
+      -- group ipVersion and error together, to indicated that the ipversion is
+      -- about which thread errored.
+      , show (ipVersion, e)
+      ]
+    show (BothFailed e4 e6) = concat
+      [ "BothFailed "
+      , show e4
+      , " "
+      , show e6
+      ]
 -- | Perform a series of NTP queries: one for each dns name.  Resolve each dns
 -- name, get local addresses: both IPv4 and IPv6 and engage in ntp protocol
 -- towards one ip address per address family per dns name, but only for address
@@ -204,8 +240,16 @@ ntpQuery ioManager tracer ntpSettings@NtpSettings { ntpRequiredNumberOfResults }
                     <$> waitCatchIOException ipv4Async
                     <*> waitCatchIOException ipv6Async
         traceWith tracer (NtpTraceRunProtocolResults results)
-        handleResults (foldMap id results)
+        handleResults (fold results)
   where
+    mkResultOrFailure :: Either IOException [a] -- ^ ipv4 result
+                      -> Either IOException [a] -- ^ ipv6 result
+                      -> ResultOrFailure [a]
+    mkResultOrFailure (Right a0) (Right a1) = BothSucceeded (a0 <> a1)
+    mkResultOrFailure (Left e)   (Right a)  = SuccessAndFailure a IPv4 e
+    mkResultOrFailure (Right a)  (Left e)   = SuccessAndFailure a IPv6 e
+    mkResultOrFailure (Left e0)  (Left e1)  = BothFailed e0 e1
+
     runProtocol :: IPVersion -> Maybe AddrInfo -> [SockAddr] -> IO [NtpOffset]
     -- no addresses to sent to
     runProtocol _protocol _localAddr  []      = return []
@@ -324,7 +368,7 @@ data NtpTrace
     | NtpTraceClientStartQuery
     | NtpTraceNoLocalAddr
     | NtpTraceResult !NtpStatus
-    | NtpTraceRunProtocolResults !(ResultOrFailure IOException [NtpOffset])
+    | NtpTraceRunProtocolResults !(ResultOrFailure [NtpOffset])
     | NtpTracePacketSent !SockAddr !NtpPacket
     | NtpTracePacketSendError !SockAddr !IOException
     | NtpTracePacketDecodeError !SockAddr !String
