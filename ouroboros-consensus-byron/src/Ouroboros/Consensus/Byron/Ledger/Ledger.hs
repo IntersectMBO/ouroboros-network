@@ -19,6 +19,8 @@ module Ouroboros.Consensus.Byron.Ledger.Ledger (
   , Query(..)
   , initByronLedgerState
     -- * Serialisation
+  , encodeByronExtLedgerState
+  , encodeByronHeaderState
   , encodeByronLedgerState
   , decodeByronLedgerState
   , encodeByronQuery
@@ -57,7 +59,9 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.BlockchainTime
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -70,6 +74,7 @@ import           Ouroboros.Consensus.Byron.Ledger.DelegationHistory
 import qualified Ouroboros.Consensus.Byron.Ledger.DelegationHistory as History
 import           Ouroboros.Consensus.Byron.Ledger.HeaderValidation ()
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
+import           Ouroboros.Consensus.Byron.Ledger.Serialisation
 
 instance UpdateLedger ByronBlock where
 
@@ -334,6 +339,19 @@ applyABoundaryBlock cfg blk ByronLedgerState{..} = do
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
+
+encodeByronExtLedgerState :: ExtLedgerState ByronBlock -> Encoding
+encodeByronExtLedgerState = encodeExtLedgerState
+    encodeByronLedgerState
+    encodeByronConsensusState
+    encodeByronHeaderHash
+    encode
+
+encodeByronHeaderState :: HeaderState ByronBlock -> Encoding
+encodeByronHeaderState = encodeHeaderState
+    encodeByronConsensusState
+    encodeByronHeaderHash
+    encode
 
 encodeByronLedgerState :: LedgerState ByronBlock -> Encoding
 encodeByronLedgerState ByronLedgerState{..} = mconcat
