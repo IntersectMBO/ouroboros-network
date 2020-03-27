@@ -16,7 +16,7 @@ module Network.NTP.Client.Query (
 import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
-import           Control.Exception (SomeException, IOException, bracket, catch)
+import           Control.Exception (Exception (..), IOException, bracket, catch, throwIO)
 import           System.IO.Error (userError, ioError)
 import           Control.Monad (foldM, forM_, replicateM_, when)
 import           Control.Tracer
@@ -146,6 +146,18 @@ lookupNtpServers tracer NtpSettings { ntpServers, ntpRequiredNumberOfResults } =
             }
 
 
+-- | Like 'waithCath', but re-throws all non 'IOException's.
+--
+waitCatchIOException :: Async a -> IO (Either IOException a)
+waitCatchIOException a =
+    waitCatch a >>= \case
+      Left err ->
+        case fromException err of
+          Just ioerr -> pure (Left ioerr)
+          Nothing    -> throwIO err
+      Right x -> pure (Right x)
+
+
 -- | Partition 'AddrInfo` into ipv4 and ipv6 addresses.
 --
 partitionAddrInfos :: [AddrInfo] -> ([AddrInfo], [AddrInfo])
@@ -189,8 +201,8 @@ ntpQuery ioManager tracer ntpSettings@NtpSettings { ntpRequiredNumberOfResults }
     withAsync (runProtocol IPv4 v4LocalAddr v4Servers) $ \ipv4Async ->
       withAsync (runProtocol IPv6 v6LocalAddr v6Servers) $ \ipv6Async -> do
         results <- mkResultOrFailure
-                    <$> waitCatch ipv4Async
-                    <*> waitCatch ipv6Async
+                    <$> waitCatchIOException ipv4Async
+                    <*> waitCatchIOException ipv6Async
         traceWith tracer (NtpTraceRunProtocolResults results)
         handleResults (foldMap id results)
   where
@@ -312,7 +324,7 @@ data NtpTrace
     | NtpTraceClientStartQuery
     | NtpTraceNoLocalAddr
     | NtpTraceResult !NtpStatus
-    | NtpTraceRunProtocolResults !(ResultOrFailure SomeException [NtpOffset])
+    | NtpTraceRunProtocolResults !(ResultOrFailure IOException [NtpOffset])
     | NtpTracePacketSent !SockAddr !NtpPacket
     | NtpTracePacketSendError !SockAddr !IOException
     | NtpTracePacketDecodeError !SockAddr !String
