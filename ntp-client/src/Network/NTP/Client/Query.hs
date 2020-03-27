@@ -252,6 +252,10 @@ runNtpQueries ioManager tracer protocol netSettings localAddr destAddrs
     --
     receiver :: Socket -> TVar [NtpOffset] -> IO ()
     receiver socket inQueue = replicateM_ (length destAddrs) $ do
+        -- We don't catch exception here, we let them propagate.  This will
+        -- reach top level handler in 'Network.NTP.Client.ntpClientThread' (see
+        -- 'queryLoop' therein), which will be able to decide for how long to
+        -- pause the the ntp-client.
 #if !defined(mingw32_HOST_OS)
         (bs, _) <- Socket.ByteString.recvFrom socket ntpPacketSize
 #else
