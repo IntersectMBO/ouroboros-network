@@ -154,25 +154,25 @@ ntpQuery ioManager tracer ntpSettings = do
                     <*> waitCatch ipv6Async
         traceWith tracer (NtpTraceRunProtocolResults results)
         handleResults (foldMap id results)
-    where
-        runProtocol :: IPVersion -> Maybe AddrInfo -> [AddrInfo] -> IO [NtpOffset]
-        -- no addresses to sent to
-        runProtocol _protocol _localAddr  []      = return []
-        -- local address is not configured, e.g. no IPv6 or IPv6 gateway.
-        runProtocol _protocol Nothing     _       = return []
-        -- local address is configured, remote address list is non empty
-        runProtocol protocol  (Just addr) servers = do
-           runNtpQueries ioManager tracer protocol ntpSettings addr servers
+  where
+    runProtocol :: IPVersion -> Maybe AddrInfo -> [AddrInfo] -> IO [NtpOffset]
+    -- no addresses to sent to
+    runProtocol _protocol _localAddr  []      = return []
+    -- local address is not configured, e.g. no IPv6 or IPv6 gateway.
+    runProtocol _protocol Nothing     _       = return []
+    -- local address is configured, remote address list is non empty
+    runProtocol protocol  (Just addr) servers = do
+       runNtpQueries ioManager tracer protocol ntpSettings addr servers
 
-        handleResults :: [NtpOffset] -> IO NtpStatus
-        handleResults [] = pure NtpSyncUnavailable
-        handleResults results = case minimumOfThree results of
-          Nothing -> do
-              traceWith tracer NtpTraceReportPolicyQueryFailed
-              return NtpSyncUnavailable
-          Just offset -> do
-              traceWith tracer $ NtpTraceQueryResult $ getNtpOffset offset
-              return $ NtpDrift offset
+    handleResults :: [NtpOffset] -> IO NtpStatus
+    handleResults [] = pure NtpSyncUnavailable
+    handleResults results = case minimumOfThree results of
+      Nothing -> do
+          traceWith tracer NtpTraceReportPolicyQueryFailed
+          return NtpSyncUnavailable
+      Just offset -> do
+          traceWith tracer $ NtpTraceQueryResult $ getNtpOffset offset
+          return $ NtpDrift offset
 
 
 -- | Run an ntp query towards each address
