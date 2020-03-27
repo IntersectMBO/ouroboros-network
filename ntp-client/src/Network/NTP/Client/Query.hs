@@ -155,20 +155,15 @@ ntpQuery ioManager tracer ntpSettings = do
             traceWith tracer NtpTraceNoLocalAddr
             ioError $ userError "no local address IPv4 and IPv6"
         l -> return l
-    (v4Replies, v6Replies) <- concurrently (runProtocol IPv4 v4LocalAddr v4Servers)
-                                           (runProtocol IPv6 v6LocalAddr v6Servers)
-
-    case v4Replies ++ v6Replies of
-        [] -> do
-            traceWith tracer NtpTraceIPv4IPv6NoReplies
-            return NtpSyncUnavailable
-        l -> case minimumOfThree l of
-            Nothing -> do
-                traceWith tracer NtpTraceReportPolicyQueryFailed
-                return NtpSyncUnavailable
-            Just offset -> do
-                traceWith tracer $ NtpTraceQueryResult $ getNtpOffset offset
-                return $ NtpDrift offset
+    withAsync (runProtocol IPv4 v4LocalAddr v4Servers) $ \ipv4Async ->
+      withAsync (runProtocol IPv6 v6LocalAddr v6Servers) $ \ipv6Async -> do
+        results <-
+          (,) <$> waitCatch ipv4Async <*> waitCatch ipv6Async
+        case results of
+          (Right a, Right b) -> handleResults (a ++ b)
+          (Right a, Left _ ) -> handleResults a
+          (Left _ , Right b) -> handleResults b
+          (Left _, Left _  ) -> handleResults []
     where
         runProtocol :: IPVersion -> Maybe AddrInfo -> [AddrInfo] -> IO [NtpOffset]
         -- no addresses to sent to
@@ -187,6 +182,18 @@ ntpQuery ioManager tracer ntpSettings = do
               Right r -> do
                   traceWith tracer $ NtpTraceRunProtocolSuccess protocol
                   return r
+
+        handleResults :: [NtpOffset] -> IO NtpStatus
+        handleResults [] = do
+          traceWith tracer NtpTraceIPv4IPv6NoReplies
+          return NtpSyncUnavailable
+        handleResults results = case minimumOfThree results of
+          Nothing -> do
+              traceWith tracer NtpTraceReportPolicyQueryFailed
+              return NtpSyncUnavailable
+          Just offset -> do
+              traceWith tracer $ NtpTraceQueryResult $ getNtpOffset offset
+              return $ NtpDrift offset
 
 
 -- | Run an ntp query towards each address
@@ -252,8 +259,8 @@ runNtpQueries ioManager tracer protocol netSettings localAddr destAddrs
         case err of
             Right _ -> traceWith tracer $ NtpTracePacketSent protocol
             Left e  -> do
-                traceWith tracer $ NtpTracePacketSentError protocol e
-                ioError e
+              traceWith tracer $ NtpTracePacketSentError protocol e
+              ioError e
         -- delay 100ms between sending requests, this avoids dealing with ntp
         -- results at the same time from various ntp servers, and thus we
         -- should get better results.
