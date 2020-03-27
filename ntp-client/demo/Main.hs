@@ -11,22 +11,28 @@ import           Network.NTP.Client (withNtpClient
                                     , NtpSettings(..)
                                     , NtpClient(..))
 
+import           System.IOManager
+
+
 main :: IO ()
-main = withNtpClient (showTracing stdoutTracer) testSettings runApplication
+main =
+    withIOManager $ \ioManager ->
+      withNtpClient ioManager (showTracing stdoutTracer) testSettings runApplication
   where
     runApplication ntpClient = do
         link $ ntpThread ntpClient  -- propergate any errors in the NTP thread.
-        race_ getLine $ forever $ do
-            -- loose patience and perform an instant query.
-            status <- ntpQueryBlocking ntpClient
-            traceWith (showTracing stdoutTracer) ("main", status)
-            -- sleep 10 seconds
-            threadDelay 10_000_000
+        forever (threadDelay maxBound)
 
 testSettings :: NtpSettings
 testSettings = NtpSettings
-    { ntpServers = ["0.de.pool.ntp.org", "0.europe.pool.ntp.org", "0.pool.ntp.org"
-                   , "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
+    { ntpServers = [ "0.de.pool.ntp.org"
+                   , "0.europe.pool.ntp.org"
+                   , "0.pool.ntp.org"
+                   , "1.pool.ntp.org"
+                   , "2.pool.ntp.org"
+                   , "3.pool.ntp.org"
+                   ]
+    , ntpRequiredNumberOfResults = 5
     , ntpResponseTimeout = fromInteger 1_000_000
-    , ntpPollDelay       = fromInteger 300_000_000
+    , ntpPollDelay       = fromInteger 10_000_000
     }
