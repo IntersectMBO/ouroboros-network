@@ -6,12 +6,11 @@ module Network.NTP.Client (
   , NtpSettings(..)
   , NtpClient(..)
   , NtpStatus(..)
-  -- * 'ntpQuery' runs a single ntp query.
-  --   'ntpQuery' may be useful for testing,etc.., but there should be
-  --   no need to use ntpQuery in combination with 'withNtpClient'.
+  -- ** Low level interface
+  -- *** Running an @ntp@ query
   , ntpQuery
 
-  -- * Logging
+  -- * Logging interface
   , NtpTrace(..)
   , IPVersion(..)
   , ResultOrFailure(..)

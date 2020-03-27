@@ -57,15 +57,18 @@ data NtpSettings = NtpSettings
       -- ^ List of server addresses. At least three servers are needed.
 
     , ntpRequiredNumberOfResults :: Int
-      -- ^ minimum number of results to compute the offset, this should be less
-      -- or equal to the length of 'ntpServers' (each server is send a single
-      -- @ntp@ query).
+      -- ^ Minimum number of results to compute the offset, this should be less
+      -- or equal to the length of 'ntpServers' (we send a single @tnp@ packet
+      -- \/ query to a each server, if the dns name resolves to many addresses
+      -- we pick the first one).
 
     , ntpResponseTimeout         :: Microsecond
-      -- ^ Timeout between sending NTP requests and response collection.
+      -- ^ Timeout for receiving a response from an @ntp@ server.
 
     , ntpPollDelay               :: Microsecond
-      -- ^ How long to wait between two rounds of requests.
+      -- ^ How long to wait between two rounds of requests.  This should be set
+      -- to something of an order of one hour,  @ntp@ servers should not be
+      -- abused.
     }
 
 
@@ -173,6 +176,8 @@ partitionAddrInfos = partitionEithers . mapMaybe fn
 
 
 
+-- | A tag which describes which version of the ip protocol was used.
+--
 data IPVersion = IPv4 | IPv6
     deriving (Eq, Show)
 
@@ -204,11 +209,12 @@ instance Show a => Show (ResultOrFailure a) where
       , " "
       , show e6
       ]
+
 -- | Perform a series of NTP queries: one for each dns name.  Resolve each dns
 -- name, get local addresses: both IPv4 and IPv6 and engage in ntp protocol
 -- towards one ip address per address family per dns name, but only for address
 -- families for which we have a local address.  This is to avoid trying to send
--- IPv4/6 requests if IPv4/6 gateway is not configured.
+-- IPv4\/6 requests if IPv4\/6 gateway is not configured.
 --
 -- It may throw an `IOException`:
 --
