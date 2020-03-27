@@ -26,7 +26,6 @@ import           Data.Void (Void)
 import           System.IOManager
 
 import           Network.NTP.Client.Query
-import           Network.NTP.Client.Trace
 import           Network.NTP.Client.Packet (IPVersion (..))
 
 -- | 'NtpClient' which recieves updates of the wall clcok drift every
@@ -59,7 +58,6 @@ withNtpClient ioManager tracer ntpSettings action = do
         let client = NtpClient
               { ntpGetStatus = readTVar ntpStatus
               , ntpQueryBlocking = do
-                  traceWith tracer NtpTraceTriggerUpdate
                   -- trigger an update, unless an ntp query is not already
                   -- running
                   atomically $ do
@@ -95,16 +93,15 @@ ntpClientThread
 ntpClientThread ioManager tracer ntpSettings ntpStatus = queryLoop initialErrorDelay
   where
     queryLoop :: Int -> IO Void
-    queryLoop errorDelay = (tryIOError $ ntpQuery ioManager tracer ntpSettings) >>= \case
-        Right (status@NtpDrift{}) -> do
+    queryLoop errorDelay = tryIOError (ntpQuery ioManager tracer ntpSettings) >>= \case
+        Right status@NtpDrift{} -> do
             atomically $ writeTVar ntpStatus status
             -- After a successful query the client sleeps
             -- for the time interval set in `ntpPollDelay`.
-            traceWith tracer NtpTraceClientSleeping
             awaitPendingWithTimeout ntpStatus $ fromIntegral $ ntpPollDelay ntpSettings
             queryLoop initialErrorDelay -- Use the initialErrorDelay.
         Right NtpSyncUnavailable -> fastRetry errorDelay
-        Right NtpSyncPending -> error "ntpClientThread: impossible happend"
+        Right NtpSyncPending -> error "ntpClientThread: impossible happened"
         Left err -> do
             traceWith tracer $ NtpTraceIOError err
             fastRetry errorDelay

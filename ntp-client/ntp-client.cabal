@@ -18,7 +18,6 @@ library
   exposed-modules:      Network.NTP.Client
   other-modules:        Network.NTP.Client.Packet
                         Network.NTP.Client.Query
-                        Network.NTP.Client.Trace
   build-depends:        async           >=2.2 && <2.3
                       , base            >=4.9 && <4.13
                       , binary          >=0.8 && <0.9

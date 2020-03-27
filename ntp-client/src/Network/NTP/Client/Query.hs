@@ -9,13 +9,14 @@
 module Network.NTP.Client.Query (
     NtpSettings(..)
   , NtpStatus(..)
+  , NtpTrace(..)
   , ntpQuery
   ) where
 
 import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
-import           Control.Exception (IOException, bracket, catch)
+import           Control.Exception (SomeException, IOException, bracket, catch)
 import           System.IO.Error (userError, ioError)
 import           Control.Monad (foldM, forM_, replicateM_, when)
 import           Control.Tracer
@@ -33,16 +34,18 @@ import qualified Network.Socket.ByteString as Socket.ByteString (recvFrom, sendM
 import qualified System.Win32.Async.Socket.ByteString as Win32.Async
 #endif
 import           System.IOManager
-import           Network.NTP.Client.Packet ( mkNtpPacket
+import           Network.NTP.Client.Packet
+                                    ( NtpPacket
+                                    , mkNtpPacket
                                     , ntpPacketSize
                                     , Microsecond
                                     , NtpOffset (..)
                                     , getCurrentTime
                                     , clockOffsetPure
+                                    , ResultOrFailure
                                     , mkResultOrFailure
                                     , IPVersion (..)
                                     )
-import           Network.NTP.Client.Trace (NtpTrace (..))
 
 -- | Settings of the ntp client.
 --
@@ -106,6 +109,8 @@ lookupNtpServers :: Tracer IO NtpTrace -> NtpSettings -> IO ([SockAddr], [SockAd
 lookupNtpServers tracer NtpSettings { ntpServers, ntpRequiredNumberOfResults } = do
     addrs@(ipv4s, ipv6s) <- foldM fn ([], []) ntpServers
     when (length (ipv4s ++ ipv6s) < ntpRequiredNumberOfResults) $ do
+      -- TODO: this message is useless as it is, it should report addresses we
+      -- could not resolve.
       traceWith tracer $ NtpTraceLookupsFails
       ioError $ userError "lookup NTP servers failed"
     pure addrs
@@ -199,13 +204,12 @@ ntpQuery ioManager tracer ntpSettings@NtpSettings { ntpRequiredNumberOfResults }
        runNtpQueries ioManager tracer protocol ntpSettings addr servers
 
     handleResults :: [NtpOffset] -> IO NtpStatus
-    handleResults results = case minimumOfSome ntpRequiredNumberOfResults results of
-      Nothing -> do
-          traceWith tracer NtpTraceReportPolicyQueryFailed
-          return NtpSyncUnavailable
-      Just offset -> do
-          traceWith tracer $ NtpTraceQueryResult $ getNtpOffset offset
-          return $ NtpDrift offset
+    handleResults results = do
+      let result =
+            maybe NtpSyncUnavailable NtpDrift
+              $ minimumOfSome ntpRequiredNumberOfResults results
+      traceWith tracer (NtpTraceResult result)
+      return result
 
 
 -- | Run an ntp query towards each address
@@ -227,14 +231,11 @@ runNtpQueries ioManager tracer protocol netSettings localAddr destAddrs
     acquire = Socket.socket (addrFamily localAddr) Socket.Datagram Socket.defaultProtocol
 
     release :: Socket -> IO ()
-    release s = do
-        Socket.close s
-        traceWith tracer $ NtpTraceSocketClosed protocol
+    release = Socket.close
 
     action :: Socket -> IO [NtpOffset]
     action socket = do
         associateWithIOManager ioManager (Right socket)
-        traceWith tracer $ NtpTraceSocketOpen protocol
         Socket.setSocketOption socket Socket.ReuseAddr 1
         Socket.bind socket (Socket.addrAddress localAddr)
         inQueue <- atomically $ newTVar []
@@ -284,15 +285,37 @@ runNtpQueries ioManager tracer protocol netSettings localAddr destAddrs
         -- 'queryLoop' therein), which will be able to decide for how long to
         -- pause the the ntp-client.
 #if !defined(mingw32_HOST_OS)
-        (bs, _) <- Socket.ByteString.recvFrom socket ntpPacketSize
+        (bs, senderAddr) <- Socket.ByteString.recvFrom socket ntpPacketSize
 #else
-        (bs, _) <- Win32.Async.recvFrom socket ntpPacketSize
+        (bs, senderAddr) <- Win32.Async.recvFrom socket ntpPacketSize
 #endif
         t <- getCurrentTime
         case decodeOrFail $ LBS.fromStrict bs of
-            Left  (_, _, err) -> traceWith tracer $ NtpTracePacketDecodeError protocol err
+            Left  (_, _, err) -> traceWith tracer $ NtpTracePacketDecodeError senderAddr err
             -- TODO : filter bad packets, i.e. late packets and spoofed packets
             Right (_, _, packet) -> do
-                traceWith tracer $ NtpTracePacketReceived protocol
+                traceWith tracer $ NtpTracePacketReceived senderAddr packet
                 let offset = (clockOffsetPure packet t)
                 atomically $ modifyTVar' inQueue (offset :)
+
+--
+-- Trace
+--
+
+
+data NtpTrace
+    = NtpTraceStartNtpClient
+    | NtpTraceRestartDelay !Int
+    | NtpTraceRestartingClient
+    | NtpTraceIOError !IOError
+    | NtpTraceLookupsFails
+    | NtpTraceClientStartQuery
+    | NtpTraceNoLocalAddr
+    | NtpTraceResult !NtpStatus
+    | NtpTraceRunProtocolResults !(ResultOrFailure SomeException [NtpOffset])
+    | NtpTracePacketSent !SockAddr !NtpPacket
+    | NtpTracePacketSendError !SockAddr !IOException
+    | NtpTracePacketDecodeError !SockAddr !String
+    | NtpTracePacketReceived SockAddr !NtpPacket
+    | NtpTraceWaitingForRepliesTimeout !IPVersion
+    deriving (Show)
