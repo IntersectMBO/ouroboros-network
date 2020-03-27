@@ -101,20 +101,12 @@ resolveHost host = Socket.getAddrInfo (Just hints) (Just host) Nothing
 firstAddr :: Socket.Family -> [AddrInfo] -> Maybe AddrInfo
 firstAddr family l = find ((==) family . addrFamily ) l
 
-setNtpPort :: SockAddr ->  SockAddr
-setNtpPort addr = case addr of
-    (SockAddrInet  _ host)            -> SockAddrInet  ntpPort host
-    (SockAddrInet6 _ flow host scope) -> SockAddrInet6 ntpPort flow host scope
-    sockAddr                          -> sockAddr
-  where
-    ntpPort :: Socket.PortNumber
-    ntpPort = 123
 
 
--- | Resolve dns names
+-- | Resolve dns names, return valid ntp 'SockAddr'es.
 --
-lookupServers :: Tracer IO NtpTrace -> [String] -> IO ([AddrInfo], [AddrInfo])
-lookupServers tracer names = do
+lookupNtpServers :: Tracer IO NtpTrace -> [String] -> IO ([SockAddr], [SockAddr])
+lookupNtpServers tracer names = do
     dests <- forM names $ \server -> do
         addr <- resolveHost server
         case (firstAddr Socket.AF_INET addr, firstAddr Socket.AF_INET6 addr) of
@@ -122,7 +114,18 @@ lookupServers tracer names = do
                 traceWith tracer $ NtpTraceLookupServerFailed server
                 ioError $ userError $ "lookup NTP server failed " ++ server
             l -> return l
-    return (mapMaybe fst dests, mapMaybe snd dests)
+    return ( mapMaybe (fmap (setNtpPort . Socket.addrAddress) . fst) dests
+           , mapMaybe (fmap (setNtpPort . Socket.addrAddress) . snd) dests
+           )
+  where
+    setNtpPort :: SockAddr ->  SockAddr
+    setNtpPort addr = case addr of
+        (SockAddrInet  _ host)            -> SockAddrInet  ntpPort host
+        (SockAddrInet6 _ flow host scope) -> SockAddrInet6 ntpPort flow host scope
+        sockAddr                          -> sockAddr
+      where
+        ntpPort :: Socket.PortNumber
+        ntpPort = 123
 
 -- | Perform a series of NTP queries: one for each dns name.  Resolve each dns
 -- name, get local addresses: both IPv4 and IPv6 and engage in ntp protocol
@@ -142,7 +145,7 @@ ntpQuery
     -> IO NtpStatus
 ntpQuery ioManager tracer ntpSettings = do
     traceWith tracer NtpTraceClientStartQuery
-    (v4Servers,   v6Servers)   <- lookupServers tracer $ ntpServers ntpSettings
+    (v4Servers,   v6Servers)   <- lookupNtpServers tracer $ ntpServers ntpSettings
     localAddrs <- udpLocalAddresses
     (v4LocalAddr, v6LocalAddr) <- case (firstAddr Socket.AF_INET localAddrs, firstAddr Socket.AF_INET6 localAddrs) of
         (Nothing, Nothing) -> do
@@ -157,7 +160,7 @@ ntpQuery ioManager tracer ntpSettings = do
         traceWith tracer (NtpTraceRunProtocolResults results)
         handleResults (foldMap id results)
   where
-    runProtocol :: IPVersion -> Maybe AddrInfo -> [AddrInfo] -> IO [NtpOffset]
+    runProtocol :: IPVersion -> Maybe AddrInfo -> [SockAddr] -> IO [NtpOffset]
     -- no addresses to sent to
     runProtocol _protocol _localAddr  []      = return []
     -- local address is not configured, e.g. no IPv6 or IPv6 gateway.
@@ -186,7 +189,7 @@ runNtpQueries
                    -- addresses
     -> NtpSettings
     -> AddrInfo    -- ^ local address
-    -> [AddrInfo]  -- ^ remote addresses, they are assumed to have the same
+    -> [SockAddr]  -- ^ remote addresses, they are assumed to have the same
                    -- family as the local address
     -> IO [NtpOffset]
 runNtpQueries ioManager tracer protocol netSettings localAddr destAddrs
@@ -213,25 +216,21 @@ runNtpQueries ioManager tracer protocol netSettings localAddr destAddrs
               sendNtpPacket socket addr
               `catch`
               -- catch 'IOException's so we don't bring the loop down;
-              \(e :: IOException) -> traceWith tracer (NtpTracePacketSendError (Socket.addrAddress addr) e)
+              \(e :: IOException) -> traceWith tracer (NtpTracePacketSendError addr e)
             void $ waitAny [timeoutAsync, receiverAsync]
         atomically $ readTVar inQueue
 
     --
-    -- sending thread; send a series of requests: one towards each address
+    -- send a single ntp request towards one of the destination addresses
     --
-    sendNtpPacket :: Socket -> AddrInfo -> IO ()
+    sendNtpPacket :: Socket -> SockAddr -> IO ()
     sendNtpPacket sock addr = do
         p <- mkNtpPacket
 #if !defined(mingw32_HOST_OS)
-        _ <- Socket.ByteString.sendManyTo sock
-                  (LBS.toChunks $ encode p)
-                  (setNtpPort $ Socket.addrAddress addr)
+        _ <- Socket.ByteString.sendManyTo sock (LBS.toChunks $ encode p) addr
 #else
         -- TODO: add `sendManyTo` to `Win32-network`
-        _ <- Win32.Async.sendAllTo sock
-                  (LBS.toStrict $ encode p)
-                  (setNtpPort $ Socket.addrAddress addr)
+        _ <- Win32.Async.sendAllTo sock (LBS.toStrict $ encode p) addr
 #endif
         -- delay 100ms between sending requests, this avoids dealing with ntp
         -- results at the same time from various ntp servers, and thus we
@@ -268,4 +267,4 @@ runNtpQueries ioManager tracer protocol netSettings localAddr destAddrs
             Right (_, _, packet) -> do
                 traceWith tracer $ NtpTracePacketReceived protocol
                 let offset = (clockOffsetPure packet t)
-                atomically $ modifyTVar' inQueue ((:) offset)
+                atomically $ modifyTVar' inQueue (offset :)
