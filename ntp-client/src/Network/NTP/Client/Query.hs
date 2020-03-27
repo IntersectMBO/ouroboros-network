@@ -16,12 +16,13 @@ import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import           Control.Exception (IOException, bracket, catch)
 import           System.IO.Error (userError, ioError)
-import           Control.Monad (forM, forM_, replicateM_)
+import           Control.Monad (foldM, forM_, replicateM_)
 import           Control.Tracer
 import           Data.Binary (decodeOrFail, encode)
+import           Data.Bifunctor (bimap)
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Either (partitionEithers)
 import           Data.Functor (void)
-import           Data.List (find)
 import           Data.Maybe
 import           Network.Socket (Socket, SockAddr (..), AddrInfo (..))
 import qualified Network.Socket as Socket
@@ -98,26 +99,23 @@ resolveHost host = Socket.getAddrInfo (Just hints) (Just host) Nothing
             , addrFlags = [Socket.AI_ADDRCONFIG]
             }
 
-firstAddr :: Socket.Family -> [AddrInfo] -> Maybe AddrInfo
-firstAddr family l = find ((==) family . addrFamily ) l
-
-
-
 -- | Resolve dns names, return valid ntp 'SockAddr'es.
 --
 lookupNtpServers :: Tracer IO NtpTrace -> [String] -> IO ([SockAddr], [SockAddr])
-lookupNtpServers tracer names = do
-    dests <- forM names $ \server -> do
-        addr <- resolveHost server
-        case (firstAddr Socket.AF_INET addr, firstAddr Socket.AF_INET6 addr) of
-            (Nothing, Nothing) -> do
-                traceWith tracer $ NtpTraceLookupServerFailed server
-                ioError $ userError $ "lookup NTP server failed " ++ server
-            l -> return l
-    return ( mapMaybe (fmap (setNtpPort . Socket.addrAddress) . fst) dests
-           , mapMaybe (fmap (setNtpPort . Socket.addrAddress) . snd) dests
-           )
+lookupNtpServers tracer = foldM fn ([], [])
   where
+    fn (as, bs) server = do
+      addrs <- resolveHost server
+      case bimap listToMaybe listToMaybe $ partitionAddrInfos addrs of
+          (Nothing, Nothing) -> do
+              traceWith tracer $ NtpTraceLookupServerFailed server
+              ioError $ userError $ "lookup NTP server failed " ++ server
+          (mipv4, mipv6) ->
+            pure $
+              ( (setNtpPort . Socket.addrAddress <$> maybeToList mipv4) ++ as
+              , (setNtpPort . Socket.addrAddress <$> maybeToList mipv6) ++ bs
+              )
+
     setNtpPort :: SockAddr ->  SockAddr
     setNtpPort addr = case addr of
         (SockAddrInet  _ host)            -> SockAddrInet  ntpPort host
@@ -126,6 +124,18 @@ lookupNtpServers tracer names = do
       where
         ntpPort :: Socket.PortNumber
         ntpPort = 123
+
+
+-- | Partition 'AddrInfo` into ipv4 and ipv6 addresses.
+--
+partitionAddrInfos :: [AddrInfo] -> ([AddrInfo], [AddrInfo])
+partitionAddrInfos = partitionEithers . mapMaybe fn
+  where
+    fn :: AddrInfo -> Maybe (Either AddrInfo AddrInfo)
+    fn a | Socket.addrFamily a == Socket.AF_INET  = Just (Left a)
+         | Socket.addrFamily a == Socket.AF_INET6 = Just (Right a)
+         | otherwise                              = Nothing
+
 
 -- | Perform a series of NTP queries: one for each dns name.  Resolve each dns
 -- name, get local addresses: both IPv4 and IPv6 and engage in ntp protocol
@@ -147,11 +157,16 @@ ntpQuery ioManager tracer ntpSettings = do
     traceWith tracer NtpTraceClientStartQuery
     (v4Servers,   v6Servers)   <- lookupNtpServers tracer $ ntpServers ntpSettings
     localAddrs <- udpLocalAddresses
-    (v4LocalAddr, v6LocalAddr) <- case (firstAddr Socket.AF_INET localAddrs, firstAddr Socket.AF_INET6 localAddrs) of
-        (Nothing, Nothing) -> do
+    (v4LocalAddr, v6LocalAddr)
+      <- case partitionAddrInfos localAddrs of
+          ([], []) -> do
             traceWith tracer NtpTraceNoLocalAddr
             ioError $ userError "no local address IPv4 and IPv6"
-        l -> return l
+          (ipv4s, ipv6s) -> pure $
+            -- head :: [a] -> Maybe a
+            ( listToMaybe ipv4s
+            , listToMaybe ipv6s
+            )
     withAsync (runProtocol IPv4 v4LocalAddr v4Servers) $ \ipv4Async ->
       withAsync (runProtocol IPv6 v6LocalAddr v6Servers) $ \ipv6Async -> do
         results <- mkResultOrFailure
