@@ -1,6 +1,7 @@
 module Network.NTP.Client.Trace where
 
 import           Control.Exception
+import           Network.Socket (SockAddr)
 import           Network.NTP.Client.Packet (IPVersion, Microsecond, NtpOffset, ResultOrFailure)
 
 data NtpTrace
@@ -21,7 +22,7 @@ data NtpTrace
     | NtpTraceSocketOpen !IPVersion
     | NtpTraceSocketClosed !IPVersion
     | NtpTracePacketSent !IPVersion
-    | NtpTracePacketSentError !IPVersion !IOError
+    | NtpTracePacketSendError !SockAddr !IOError
     | NtpTracePacketDecodeError !IPVersion !String
     | NtpTracePacketReceived !IPVersion
     | NtpTraceWaitingForRepliesTimeout !IPVersion

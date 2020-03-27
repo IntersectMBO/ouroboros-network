@@ -3,6 +3,8 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Network.NTP.Client.Query (
     NtpSettings(..)
   , NtpStatus(..)
@@ -12,8 +14,8 @@ module Network.NTP.Client.Query (
 import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
-import           Control.Exception (bracket)
-import           System.IO.Error (tryIOError, userError, ioError)
+import           Control.Exception (IOException, bracket, catch)
+import           System.IO.Error (userError, ioError)
 import           Control.Monad (forM, forM_, replicateM_)
 import           Control.Tracer
 import           Data.Binary (decodeOrFail, encode)
@@ -207,32 +209,30 @@ runNtpQueries ioManager tracer protocol netSettings localAddr destAddrs
         inQueue <- atomically $ newTVar []
         withAsync timeout $ \timeoutAsync ->
           withAsync (receiver socket inQueue) $ \receiverAsync -> do
-            send socket
+            forM_ destAddrs $ \addr ->
+              sendNtpPacket socket addr
+              `catch`
+              -- catch 'IOException's so we don't bring the loop down;
+              \(e :: IOException) -> traceWith tracer (NtpTracePacketSendError (Socket.addrAddress addr) e)
             void $ waitAny [timeoutAsync, receiverAsync]
         atomically $ readTVar inQueue
 
     --
     -- sending thread; send a series of requests: one towards each address
     --
-    send :: Socket -> IO ()
-    send sock = forM_ destAddrs $ \addr -> do
+    sendNtpPacket :: Socket -> AddrInfo -> IO ()
+    sendNtpPacket sock addr = do
         p <- mkNtpPacket
-        err <- tryIOError $
 #if !defined(mingw32_HOST_OS)
-                Socket.ByteString.sendManyTo sock
+        _ <- Socket.ByteString.sendManyTo sock
                   (LBS.toChunks $ encode p)
                   (setNtpPort $ Socket.addrAddress addr)
 #else
-                -- TODO: add `sendManyTo` to `Win32-network`
-                Win32.Async.sendAllTo sock
+        -- TODO: add `sendManyTo` to `Win32-network`
+        _ <- Win32.Async.sendAllTo sock
                   (LBS.toStrict $ encode p)
                   (setNtpPort $ Socket.addrAddress addr)
 #endif
-        case err of
-            Right _ -> traceWith tracer $ NtpTracePacketSent protocol
-            Left e  -> do
-              traceWith tracer $ NtpTracePacketSentError protocol e
-              ioError e
         -- delay 100ms between sending requests, this avoids dealing with ntp
         -- results at the same time from various ntp servers, and thus we
         -- should get better results.
