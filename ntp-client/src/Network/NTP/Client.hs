@@ -27,7 +27,7 @@ import           System.IOManager
 
 import           Network.NTP.Client.Query
 import           Network.NTP.Client.Trace
-
+import           Network.NTP.Client.Packet (IPVersion (..))
 
 -- | 'NtpClient' which recieves updates of the wall clcok drift every
 -- 'ntpPollDelay'.  It also allows to force engaging in ntp protocol.

@@ -44,8 +44,11 @@ import           Network.NTP.Client.Packet ( mkNtpPacket
                                     , Microsecond
                                     , NtpOffset (..)
                                     , getCurrentTime
-                                    , clockOffsetPure)
-import           Network.NTP.Client.Trace (NtpTrace (..), IPVersion (..))
+                                    , clockOffsetPure
+                                    , mkResultOrFailure
+                                    , IPVersion (..)
+                                    )
+import           Network.NTP.Client.Trace (NtpTrace (..))
 
 data NtpSettings = NtpSettings
     { ntpServers         :: [String]
@@ -129,7 +132,6 @@ lookupServers tracer names = do
             l -> return l
     return (mapMaybe fst dests, mapMaybe snd dests)
 
-
 -- | Perform a series of NTP queries: one for each dns name.  Resolve each dns
 -- name, get local addresses: both IPv4 and IPv6 and engage in ntp protocol
 -- towards one ip address per address family per dns name, but only for address
@@ -157,36 +159,23 @@ ntpQuery ioManager tracer ntpSettings = do
         l -> return l
     withAsync (runProtocol IPv4 v4LocalAddr v4Servers) $ \ipv4Async ->
       withAsync (runProtocol IPv6 v6LocalAddr v6Servers) $ \ipv6Async -> do
-        results <-
-          (,) <$> waitCatch ipv4Async <*> waitCatch ipv6Async
-        case results of
-          (Right a, Right b) -> handleResults (a ++ b)
-          (Right a, Left _ ) -> handleResults a
-          (Left _ , Right b) -> handleResults b
-          (Left _, Left _  ) -> handleResults []
+        results <- mkResultOrFailure
+                    <$> waitCatch ipv4Async
+                    <*> waitCatch ipv6Async
+        traceWith tracer (NtpTraceRunProtocolResults results)
+        handleResults (foldMap id results)
     where
         runProtocol :: IPVersion -> Maybe AddrInfo -> [AddrInfo] -> IO [NtpOffset]
         -- no addresses to sent to
         runProtocol _protocol _localAddr  []      = return []
-        -- local address is not configured, e.g. no IPv6   or IPv6 gateway.       
+        -- local address is not configured, e.g. no IPv6 or IPv6 gateway.
         runProtocol _protocol Nothing     _       = return []
         -- local address is configured, remote address list is non empty
         runProtocol protocol  (Just addr) servers = do
-           runNtpQueries ioManager tracer protocol ntpSettings addr servers >>= \case
-              Left err -> do
-                  traceWith tracer $ NtpTraceRunProtocolError protocol err
-                  return []
-              Right [] -> do
-                  traceWith tracer $ NtpTraceRunProtocolNoResult protocol
-                  return []
-              Right r -> do
-                  traceWith tracer $ NtpTraceRunProtocolSuccess protocol
-                  return r
+           runNtpQueries ioManager tracer protocol ntpSettings addr servers
 
         handleResults :: [NtpOffset] -> IO NtpStatus
-        handleResults [] = do
-          traceWith tracer NtpTraceIPv4IPv6NoReplies
-          return NtpSyncUnavailable
+        handleResults [] = pure NtpSyncUnavailable
         handleResults results = case minimumOfThree results of
           Nothing -> do
               traceWith tracer NtpTraceReportPolicyQueryFailed
@@ -207,9 +196,9 @@ runNtpQueries
     -> AddrInfo    -- ^ local address
     -> [AddrInfo]  -- ^ remote addresses, they are assumed to have the same
                    -- family as the local address
-    -> IO (Either IOError [NtpOffset])
+    -> IO [NtpOffset]
 runNtpQueries ioManager tracer protocol netSettings localAddr destAddrs
-    = tryIOError $ bracket acquire release action
+    = bracket acquire release action
   where
     acquire :: IO Socket
     acquire = Socket.socket (addrFamily localAddr) Datagram Socket.defaultProtocol

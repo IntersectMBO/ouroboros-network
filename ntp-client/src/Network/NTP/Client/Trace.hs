@@ -1,9 +1,7 @@
-module Network.NTP.Client.Trace
-where
-import           Network.NTP.Client.Packet (Microsecond)
+module Network.NTP.Client.Trace where
 
-data IPVersion = IPv4 | IPv6
-    deriving (Show)
+import           Control.Exception
+import           Network.NTP.Client.Packet (IPVersion, Microsecond, NtpOffset, ResultOrFailure)
 
 data NtpTrace
     = NtpTraceStartNtpClient
@@ -18,9 +16,8 @@ data NtpTrace
     | NtpTraceIPv4IPv6NoReplies
     | NtpTraceReportPolicyQueryFailed
     | NtpTraceQueryResult !Microsecond
-    | NtpTraceRunProtocolError !IPVersion !IOError
-    | NtpTraceRunProtocolNoResult !IPVersion
-    | NtpTraceRunProtocolSuccess !IPVersion
+    | NtpTraceRunProtocolError !IPVersion !SomeException
+    | NtpTraceRunProtocolResults !(ResultOrFailure  SomeException [NtpOffset])
     | NtpTraceSocketOpen !IPVersion
     | NtpTraceSocketClosed !IPVersion
     | NtpTracePacketSent !IPVersion
