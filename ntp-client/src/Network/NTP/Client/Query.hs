@@ -21,17 +21,7 @@ import qualified Data.ByteString.Lazy as LBS
 import           Data.Functor (void)
 import           Data.List (find)
 import           Data.Maybe
-import           Network.Socket ( AddrInfo
-                                , AddrInfoFlag (AI_ADDRCONFIG, AI_PASSIVE)
-                                , Family (AF_INET, AF_INET6)
-                                , PortNumber
-                                , Socket
-                                , SockAddr (..)
-                                , SocketOption (ReuseAddr)
-                                , SocketType (Datagram)
-                                , addrFamily
-                                , addrFlags
-                                , addrSocketType)
+import           Network.Socket (Socket, SockAddr (..), AddrInfo (..))
 import qualified Network.Socket as Socket
 #if !defined(mingw32_HOST_OS)
 import qualified Network.Socket.ByteString as Socket.ByteString (recvFrom, sendManyTo)
@@ -85,28 +75,28 @@ udpLocalAddresses :: IO [AddrInfo]
 udpLocalAddresses = Socket.getAddrInfo (Just hints) Nothing (Just $ show port)
   where
     hints = Socket.defaultHints
-          { addrFlags = [AI_PASSIVE]
-          , addrSocketType = Datagram
+          { addrFlags = [Socket.AI_PASSIVE]
+          , addrSocketType = Socket.Datagram
           }
     port = Socket.defaultPort
 
--- | Resolve hostname into 'AddrInfo'.  We use 'AI_ADDRCONFIG' so we get IPv4/6
+-- | Resolve hostname into 'AddrInfo'.  We use 'Socket.AI_ADDRCONFIG' so we get IPv4/6
 -- address only if the local.  We don't need 'AI_V4MAPPED' which would be set
 -- by default.
 --
 resolveHost :: String -> IO [AddrInfo]
 resolveHost host = Socket.getAddrInfo (Just hints) (Just host) Nothing
   where
-  -- The library uses AI_ADDRCONFIG as simple test if IPv4 or IPv6 are configured.
-  -- According to the documentation, AI_ADDRCONFIG is not available on all platforms,
+  -- The library uses 'Socket.AI_ADDRCONFIG' as simple test if IPv4 or IPv6 are configured.
+  -- According to the documentation, 'Socket.AI_ADDRCONFIG' is not available on all platforms,
   -- but it is expected to work on win32, Mac OS X and Linux.
   -- TODO: use addrInfoFlagImplemented :: AddrInfoFlag -> Bool to test if the flag is available.
     hints = Socket.defaultHints
-            { addrSocketType = Datagram
-            , addrFlags = [AI_ADDRCONFIG]
+            { addrSocketType = Socket.Datagram
+            , addrFlags = [Socket.AI_ADDRCONFIG]
             }
 
-firstAddr :: Family -> [AddrInfo] -> Maybe AddrInfo
+firstAddr :: Socket.Family -> [AddrInfo] -> Maybe AddrInfo
 firstAddr family l = find ((==) family . addrFamily ) l
 
 setNtpPort :: SockAddr ->  SockAddr
@@ -115,7 +105,7 @@ setNtpPort addr = case addr of
     (SockAddrInet6 _ flow host scope) -> SockAddrInet6 ntpPort flow host scope
     sockAddr                          -> sockAddr
   where
-    ntpPort :: PortNumber
+    ntpPort :: Socket.PortNumber
     ntpPort = 123
 
 
@@ -125,7 +115,7 @@ lookupServers :: Tracer IO NtpTrace -> [String] -> IO ([AddrInfo], [AddrInfo])
 lookupServers tracer names = do
     dests <- forM names $ \server -> do
         addr <- resolveHost server
-        case (firstAddr AF_INET addr, firstAddr AF_INET6 addr) of
+        case (firstAddr Socket.AF_INET addr, firstAddr Socket.AF_INET6 addr) of
             (Nothing, Nothing) -> do
                 traceWith tracer $ NtpTraceLookupServerFailed server
                 ioError $ userError $ "lookup NTP server failed " ++ server
@@ -152,7 +142,7 @@ ntpQuery ioManager tracer ntpSettings = do
     traceWith tracer NtpTraceClientStartQuery
     (v4Servers,   v6Servers)   <- lookupServers tracer $ ntpServers ntpSettings
     localAddrs <- udpLocalAddresses
-    (v4LocalAddr, v6LocalAddr) <- case (firstAddr AF_INET localAddrs, firstAddr AF_INET6 localAddrs) of
+    (v4LocalAddr, v6LocalAddr) <- case (firstAddr Socket.AF_INET localAddrs, firstAddr Socket.AF_INET6 localAddrs) of
         (Nothing, Nothing) -> do
             traceWith tracer NtpTraceNoLocalAddr
             ioError $ userError "no local address IPv4 and IPv6"
@@ -201,7 +191,7 @@ runNtpQueries ioManager tracer protocol netSettings localAddr destAddrs
     = bracket acquire release action
   where
     acquire :: IO Socket
-    acquire = Socket.socket (addrFamily localAddr) Datagram Socket.defaultProtocol
+    acquire = Socket.socket (addrFamily localAddr) Socket.Datagram Socket.defaultProtocol
 
     release :: Socket -> IO ()
     release s = do
@@ -212,7 +202,7 @@ runNtpQueries ioManager tracer protocol netSettings localAddr destAddrs
     action socket = do
         associateWithIOManager ioManager (Right socket)
         traceWith tracer $ NtpTraceSocketOpen protocol
-        Socket.setSocketOption socket ReuseAddr 1
+        Socket.setSocketOption socket Socket.ReuseAddr 1
         Socket.bind socket (Socket.addrAddress localAddr)
         inQueue <- atomically $ newTVar []
         withAsync timeout $ \timeoutT ->
