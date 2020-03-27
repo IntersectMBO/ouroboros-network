@@ -9,7 +9,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Forge (
   ) where
 
 import           Crypto.Random (MonadRandom)
-import qualified Data.Sequence as Seq
+import qualified Data.Sequence.Strict as Seq
 
 import           Cardano.Slotting.Block
 import           Cardano.Slotting.Slot

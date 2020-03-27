@@ -20,6 +20,8 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.Proxy (Proxy (..))
 import           Data.Ratio ((%))
+import           Data.Sequence.Strict (StrictSeq)
+import qualified Data.Sequence.Strict as StrictSeq
 import           Numeric.Natural (Natural)
 
 import           Cardano.Binary (Annotator (..), FullByteString (..), fromCBOR,
@@ -36,10 +38,10 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
                      HashInfo (..))
 
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
+import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
@@ -458,6 +460,14 @@ instance Crypto c => Arbitrary (SL.PoolDistr c) where
     where
       genVal = (,) <$> arbitrary <*> genHash (Proxy @c)
 
+instance Arbitrary a => Arbitrary (SL.StrictMaybe a) where
+  arbitrary = genericArbitraryU
+  shrink    = genericShrink
+
+instance Crypto c => Arbitrary (SL.OBftSlot c) where
+  arbitrary = genericArbitraryU
+  shrink    = genericShrink
+
 instance Arbitrary (SL.NewEpochState TPraosMockCrypto) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
@@ -476,6 +486,10 @@ instance Crypto c => Arbitrary (SL.Stake c) where
 
 instance Arbitrary SL.Url where
   arbitrary = return $ SL.Url $ SL.text64 "text"
+
+instance Arbitrary a => Arbitrary (StrictSeq a) where
+  arbitrary = StrictSeq.toStrict <$> arbitrary
+  shrink = map StrictSeq.toStrict . shrink . StrictSeq.getSeq
 
 instance Arbitrary SL.PoolMetaData where
   arbitrary = (`SL.PoolMetaData` "bytestring") <$> arbitrary
@@ -538,7 +552,7 @@ instance Arbitrary SL.ProtVer where
 instance Arbitrary SL.ActiveSlotCoeff where
   arbitrary = SL.mkActiveSlotCoeff <$> arbitrary
 
-instance Arbitrary (SL.PParams' Maybe) where
+instance Arbitrary (SL.PParams' SL.StrictMaybe) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 
