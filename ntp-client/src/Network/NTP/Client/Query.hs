@@ -86,22 +86,6 @@ udpLocalAddresses = Socket.getAddrInfo (Just hints) Nothing (Just $ show port)
           }
     port = Socket.defaultPort
 
--- | Resolve hostname into 'AddrInfo'.  We use 'Socket.AI_ADDRCONFIG' so we get IPv4/6
--- address only if the local.  We don't need 'AI_V4MAPPED' which would be set
--- by default.
---
-resolveHost :: String -> IO [AddrInfo]
-resolveHost host = Socket.getAddrInfo (Just hints) (Just host) Nothing
-  where
-  -- The library uses 'Socket.AI_ADDRCONFIG' as simple test if IPv4 or IPv6 are configured.
-  -- According to the documentation, 'Socket.AI_ADDRCONFIG' is not available on all platforms,
-  -- but it is expected to work on win32, Mac OS X and Linux.
-  -- TODO: use addrInfoFlagImplemented :: AddrInfoFlag -> Bool to test if the flag is available.
-    hints = Socket.defaultHints
-            { addrSocketType = Socket.Datagram
-            , addrFlags = [Socket.AI_ADDRCONFIG]
-            }
-
 -- | Resolve dns names, return valid ntp 'SockAddr'es.
 --
 lookupNtpServers :: Tracer IO NtpTrace -> [String] -> IO ([SockAddr], [SockAddr])
@@ -112,8 +96,8 @@ lookupNtpServers tracer servers = do
       ioError $ userError "lookup NTP servers failed"
     pure addrs
   where
-    fn (as, bs) server = do
-      addrs <- resolveHost server
+    fn (as, bs) host = do
+      addrs <- Socket.getAddrInfo (Just hints) (Just host) Nothing
       case bimap listToMaybe listToMaybe $ partitionAddrInfos addrs of
           (mipv4, mipv6) ->
             pure $
@@ -130,6 +114,18 @@ lookupNtpServers tracer servers = do
         ntpPort :: Socket.PortNumber
         ntpPort = 123
 
+    -- The library uses 'Socket.AI_ADDRCONFIG' as simple test if IPv4 or IPv6 are configured.
+    -- According to the documentation, 'Socket.AI_ADDRCONFIG' is not available on all platforms,
+    -- but it is expected to work on win32, Mac OS X and Linux.
+    hints =
+      Socket.defaultHints
+            { addrSocketType = Socket.Datagram
+            , addrFlags =
+                if Socket.addrInfoFlagImplemented Socket.AI_ADDRCONFIG
+                  then [Socket.AI_ADDRCONFIG]
+                  else []
+            }
+
 
 -- | Partition 'AddrInfo` into ipv4 and ipv6 addresses.
 --
@@ -140,7 +136,6 @@ partitionAddrInfos = partitionEithers . mapMaybe fn
     fn a | Socket.addrFamily a == Socket.AF_INET  = Just (Left a)
          | Socket.addrFamily a == Socket.AF_INET6 = Just (Right a)
          | otherwise                              = Nothing
-
 
 -- | Perform a series of NTP queries: one for each dns name.  Resolve each dns
 -- name, get local addresses: both IPv4 and IPv6 and engage in ntp protocol
