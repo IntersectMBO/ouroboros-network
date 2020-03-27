@@ -1,3 +1,6 @@
+-- TODO: provide a corrss platform  network bindings using `network` or
+-- `Win32-network`, to get rid of CPP.
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NumericUnderscores  #-}
 module Network.NTP.Client.Query (
@@ -30,7 +33,12 @@ import           Network.Socket ( AddrInfo
                                 , addrFlags
                                 , addrSocketType)
 import qualified Network.Socket as Socket
+#if !defined(mingw32_HOST_OS)
 import qualified Network.Socket.ByteString as Socket.ByteString (recvFrom, sendManyTo)
+#else
+import qualified System.Win32.Async.Socket.ByteString as Win32.Async
+#endif
+import           System.IOManager
 import           Network.NTP.Client.Packet ( mkNtpPacket
                                     , ntpPacketSize
                                     , Microsecond
@@ -133,11 +141,12 @@ lookupServers tracer names = do
 -- * if neither IPv4 nor IPv6 address is configured
 -- * if network I/O errors 
 --
-ntpQuery ::
-       Tracer IO NtpTrace
+ntpQuery
+    :: IOManager
+    -> Tracer IO NtpTrace
     -> NtpSettings
     -> IO NtpStatus
-ntpQuery tracer ntpSettings = do
+ntpQuery ioManager tracer ntpSettings = do
     traceWith tracer NtpTraceClientStartQuery
     (v4Servers,   v6Servers)   <- lookupServers tracer $ ntpServers ntpSettings
     localAddrs <- udpLocalAddresses
@@ -148,6 +157,7 @@ ntpQuery tracer ntpSettings = do
         l -> return l
     (v4Replies, v6Replies) <- concurrently (runProtocol IPv4 v4LocalAddr v4Servers)
                                            (runProtocol IPv6 v6LocalAddr v6Servers)
+
     case v4Replies ++ v6Replies of
         [] -> do
             traceWith tracer NtpTraceIPv4IPv6NoReplies
@@ -167,7 +177,7 @@ ntpQuery tracer ntpSettings = do
         runProtocol _protocol Nothing     _       = return []
         -- local address is configured, remote address list is non empty
         runProtocol protocol  (Just addr) servers = do
-           runNtpQueries tracer protocol ntpSettings addr servers >>= \case
+           runNtpQueries ioManager tracer protocol ntpSettings addr servers >>= \case
               Left err -> do
                   traceWith tracer $ NtpTraceRunProtocolError protocol err
                   return []
@@ -182,7 +192,8 @@ ntpQuery tracer ntpSettings = do
 -- | Run an ntp query towards each address
 --
 runNtpQueries
-    :: Tracer IO NtpTrace
+    :: IOManager
+    -> Tracer IO NtpTrace
     -> IPVersion   -- ^ address family, it must afree with local and remote
                    -- addresses
     -> NtpSettings
@@ -190,7 +201,7 @@ runNtpQueries
     -> [AddrInfo]  -- ^ remote addresses, they are assumed to have the same
                    -- family as the local address
     -> IO (Either IOError [NtpOffset])
-runNtpQueries tracer protocol netSettings localAddr destAddrs
+runNtpQueries ioManager tracer protocol netSettings localAddr destAddrs
     = tryIOError $ bracket acquire release action
   where
     acquire :: IO Socket
@@ -203,8 +214,10 @@ runNtpQueries tracer protocol netSettings localAddr destAddrs
 
     action :: Socket -> IO [NtpOffset]
     action socket = do
+        associateWithIOManager ioManager (Right socket)
         traceWith tracer $ NtpTraceSocketOpen protocol
         Socket.setSocketOption socket ReuseAddr 1
+        Socket.bind socket (Socket.addrAddress localAddr)
         inQueue <- atomically $ newTVar []
         withAsync timeout $ \timeoutT ->
           withAsync (receiver socket inQueue ) $ \receiverT ->
@@ -225,10 +238,17 @@ runNtpQueries tracer protocol netSettings localAddr destAddrs
     send :: Socket -> IO ()
     send sock = forM_ destAddrs $ \addr -> do
         p <- mkNtpPacket
-        err <- tryIOError
-                $ Socket.ByteString.sendManyTo sock
+        err <- tryIOError $
+#if !defined(mingw32_HOST_OS)
+                Socket.ByteString.sendManyTo sock
                   (LBS.toChunks $ encode p)
                   (setNtpPort $ Socket.addrAddress addr)
+#else
+                -- TODO: add `sendManyTo` to `Win32-network`
+                Win32.Async.sendAllTo sock
+                  (LBS.toStrict $ encode p)
+                  (setNtpPort $ Socket.addrAddress addr)
+#endif
         case err of
             Right _ -> traceWith tracer $ NtpTracePacketSent protocol
             Left e  -> do
@@ -253,7 +273,11 @@ runNtpQueries tracer protocol netSettings localAddr destAddrs
     --
     receiver :: Socket -> TVar [NtpOffset] -> IO ()
     receiver socket inQueue = replicateM_ (length destAddrs) $ do
+#if !defined(mingw32_HOST_OS)
         (bs, _) <- Socket.ByteString.recvFrom socket ntpPacketSize
+#else
+        (bs, _) <- Win32.Async.recvFrom socket ntpPacketSize
+#endif
         t <- getCurrentTime
         case decodeOrFail $ LBS.fromStrict bs of
             Left  (_, _, err) -> traceWith tracer $ NtpTracePacketDecodeError protocol err

@@ -23,6 +23,8 @@ import           System.IO.Error (tryIOError)
 import           Control.Tracer
 import           Data.Void (Void)
 
+import           System.IOManager
+
 import           Network.NTP.Client.Query
 import           Network.NTP.Client.Trace
 
@@ -45,11 +47,15 @@ data NtpClient = NtpClient
 -- The 'NtpClient' is terminated when the callback returns.  The application
 -- can 'waitCatch' on 'ntpThread'.
 --
-withNtpClient :: Tracer IO NtpTrace -> NtpSettings -> (NtpClient -> IO a) -> IO a
-withNtpClient tracer ntpSettings action = do
+withNtpClient :: IOManager
+              -> Tracer IO NtpTrace
+              -> NtpSettings
+              -> (NtpClient -> IO a)
+              -> IO a
+withNtpClient ioManager tracer ntpSettings action = do
     traceWith tracer NtpTraceStartNtpClient
     ntpStatus <- newTVarIO NtpSyncPending
-    withAsync (ntpClientThread tracer ntpSettings ntpStatus) $ \tid -> do
+    withAsync (ntpClientThread ioManager tracer ntpSettings ntpStatus) $ \tid -> do
         let client = NtpClient
               { ntpGetStatus = readTVar ntpStatus
               , ntpQueryBlocking = do
@@ -80,15 +86,16 @@ awaitPendingWithTimeout tvar t
 
 -- | ntp client thread which wakes up every 'ntpPollDelay' to make ntp queries.
 -- It can be woken up earlier by setting 'NptStatus' to 'NtpSyncPending'.
-ntpClientThread ::
-       Tracer IO NtpTrace
+ntpClientThread
+    :: IOManager
+    -> Tracer IO NtpTrace
     -> NtpSettings
     -> TVar NtpStatus
     -> IO Void
-ntpClientThread tracer ntpSettings ntpStatus = queryLoop initialErrorDelay
+ntpClientThread ioManager tracer ntpSettings ntpStatus = queryLoop initialErrorDelay
   where
     queryLoop :: Int -> IO Void
-    queryLoop errorDelay = (tryIOError $ ntpQuery tracer ntpSettings) >>= \case
+    queryLoop errorDelay = (tryIOError $ ntpQuery ioManager tracer ntpSettings) >>= \case
         Right (status@NtpDrift{}) -> do
             atomically $ writeTVar ntpStatus status
             -- After a successful query the client sleeps

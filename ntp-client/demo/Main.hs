@@ -11,8 +11,13 @@ import           Network.NTP.Client (withNtpClient
                                     , NtpSettings(..)
                                     , NtpClient(..))
 
+import           System.IOManager
+
+
 main :: IO ()
-main = withNtpClient (showTracing stdoutTracer) testSettings runApplication
+main =
+    withIOManager $ \ioManager ->
+      withNtpClient ioManager (showTracing stdoutTracer) testSettings runApplication
   where
     runApplication ntpClient = do
         link $ ntpThread ntpClient  -- propergate any errors in the NTP thread.
