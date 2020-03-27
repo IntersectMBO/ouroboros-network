@@ -69,8 +69,9 @@ test_golden_Block :: Assertion
 test_golden_Block = goldenTestCBOR
     toCBOR
     exampleBlock
-    [ TkListLen 19
-    , TkBytes "R]\STX\193"
+    [ TkListLen 4
+    , TkListLen 16
+    , TkBytes "2&\SOH9"
     , TkInt 1677861428
     , TkInt 1239952560
     , TkInt 20
@@ -78,12 +79,12 @@ test_golden_Block = goldenTestCBOR
     , TkInt 2
     , TkListLen 2
     , TkInt 1239952560
-    , TkInteger 41946005475178663182620722476359969013
+    , TkInteger 155720561651862627124907358847946323278
     , TkListLen 2
     , TkInt 0
     , TkListLen 2
     , TkInt 1239952560
-    , TkInteger 105192313543810009112138634467866559854
+    , TkInteger 132220243341478360044794887852609007894
     , TkInt 194
     , TkInt 2
     , TkBytes "\159\SYN\n5"
@@ -96,7 +97,7 @@ test_golden_Block = goldenTestCBOR
     , TkInt 0
     , TkInt 0
     , TkListLen 2
-    , TkInteger 205434739841108429842581223023660727856
+    , TkInteger 191398642502988321904034898986188660442
     , TkListLen 3
     , TkInt 42768536
     , TkInt 1
@@ -167,7 +168,7 @@ test_golden_Header = goldenTestCBOR
     toCBOR
     (getHeader exampleBlock)
     [ TkListLen 16
-    , TkBytes "R]\STX\193"
+    , TkBytes "2&\SOH9"
     , TkInt 1677861428
     , TkInt 1239952560
     , TkInt 20
@@ -175,12 +176,12 @@ test_golden_Header = goldenTestCBOR
     , TkInt 2
     , TkListLen 2
     , TkInt 1239952560
-    , TkInteger 41946005475178663182620722476359969013
+    , TkInteger 155720561651862627124907358847946323278
     , TkListLen 2
     , TkInt 0
     , TkListLen 2
     , TkInt 1239952560
-    , TkInteger 105192313543810009112138634467866559854
+    , TkInteger 132220243341478360044794887852609007894
     , TkInt 194
     , TkInt 2
     , TkBytes "\159\SYN\n5"
@@ -193,7 +194,7 @@ test_golden_Header = goldenTestCBOR
     , TkInt 0
     , TkInt 0
     , TkListLen 2
-    , TkInteger 205434739841108429842581223023660727856
+    , TkInteger 191398642502988321904034898986188660442
     , TkListLen 3
     , TkInt 42768536
     , TkInt 1
@@ -204,7 +205,7 @@ test_golden_HeaderHash :: Assertion
 test_golden_HeaderHash = goldenTestCBOR
     toCBOR
     (blockHash exampleBlock)
-    [ TkBytes ")?eL"
+    [ TkBytes "\135\233S4"
     ]
 
 test_golden_GenTx :: Assertion
@@ -459,7 +460,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkListLen 3
     , TkListLen 2
     , TkInt 10
-    , TkBytes "5\246\240\SUB"
+    , TkBytes "\195\213\vX"
     , TkListLen 2
     , TkListLen 1
     , TkInt 0
