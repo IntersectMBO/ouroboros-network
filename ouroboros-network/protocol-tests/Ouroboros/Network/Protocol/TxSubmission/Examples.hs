@@ -141,7 +141,7 @@ txSubmissionClient tracer txId txSize maxUnacked =
           traceWith tracer (EventRecvMsgRequestTxs unackedSeq unackedMap
                                                    remainingTxs txids)
           case [ txid | txid <- txids, txid `Map.notMember` unackedMap ] of
-            [] -> pure (SendMsgReplyTxs txs (const $ pure ()) client')
+            [] -> pure (SendMsgReplyTxs txs (pure client'))
               where
                 txs         = map (unackedMap Map.!) txids
                 client'     = client unackedSeq unackedMap' remainingTxs

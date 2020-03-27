@@ -190,6 +190,6 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} =
               client'      = client unackedSeq unackedMap' lastIdx
 
               -- Trace the transactions to be sent in the response.
-              traceTxsSent = traceWith tracer . TraceTxSubmissionOutboundSendMsgReplyTxs
+              traceTxsSent = traceWith tracer (TraceTxSubmissionOutboundSendMsgReplyTxs txs)
 
-          return $ SendMsgReplyTxs txs traceTxsSent client'
+          return $ SendMsgReplyTxs txs (traceTxsSent >> pure client')

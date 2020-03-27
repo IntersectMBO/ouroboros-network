@@ -53,8 +53,8 @@ directPipelined (TxSubmissionServerPipelined mserver)
     directSender q (SendMsgRequestTxsPipelined txids serverNext)
                    ClientStIdle{recvMsgRequestTxs} = do
       server' <- serverNext
-      SendMsgReplyTxs txs onTxsSent client' <- recvMsgRequestTxs txids
-      _ <- onTxsSent txs
+      SendMsgReplyTxs txs mClient' <- recvMsgRequestTxs txids
+      client' <- mClient'
       directSender (enqueue (CollectTxs txids txs) q) server' client'
 
     directSender q (CollectPipelined (Just server') _) client =
