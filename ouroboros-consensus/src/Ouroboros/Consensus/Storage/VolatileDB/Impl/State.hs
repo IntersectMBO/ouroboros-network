@@ -12,7 +12,8 @@ module Ouroboros.Consensus.Storage.VolatileDB.Impl.State
   , dbIsOpen
   , OpenState (..)
   , ModifyOpenState
-  , modifyOpenState
+  , appendOpenState
+  , writeOpenState
   , withOpenState
   , mkOpenState
   , closeOpenHandles
@@ -31,8 +32,10 @@ import           GHC.Stack
 
 import           Ouroboros.Network.Block (MaxSlotNo (..))
 
-import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Util (whenJust, (.:))
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.MonadSTM.RAWLock (RAWLock)
+import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry (WithTempRegistry,
                      allocateTemp, modifyWithTempRegistry)
 
@@ -50,7 +53,7 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
 
 data VolatileDBEnv m blockId = forall h e. Eq h => VolatileDBEnv {
       hasFS            :: !(HasFS m h)
-    , varInternalState :: !(StrictMVar m (InternalState blockId h))
+    , varInternalState :: !(RAWLock m (InternalState blockId h))
     , maxBlocksPerFile :: !BlocksPerFile
     , parser           :: !(Parser e m blockId)
     , tracer           :: !(Tracer m (TraceEvent e blockId))
@@ -97,32 +100,60 @@ data OpenState blockId h = OpenState {
 type ModifyOpenState m blockId h =
   StateT (OpenState blockId h) (WithTempRegistry (OpenState blockId h) m)
 
+data AppendOrWrite = Append | Write
+
 -- | NOTE: This is safe in terms of throwing FsErrors.
 modifyOpenState
-  :: forall blockId m a. (HasCallStack, IOLike m)
-  => VolatileDBEnv m blockId
+  :: forall blockId m a. (IOLike m, HasCallStack)
+  => AppendOrWrite
+  -> VolatileDBEnv m blockId
   -> (forall h. Eq h => HasFS m h -> ModifyOpenState m blockId h a)
   -> m a
-modifyOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} modSt = do
+modifyOpenState appendOrWrite
+                VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState}
+                modSt = do
     wrapFsError $ modifyWithTempRegistry getSt putSt (modSt hasFS)
   where
-    -- TODO Is uninterruptibleMask_ absolutely necessary here?
+    -- NOTE: we can't use the bracketed variants, as that's incompatible with
+    -- 'modifyWithTempRegistry', which takes a function to put back the state,
+    -- as that must have succeeded before the resources are released from the
+    -- temporary registry.
+    (acquire, release) = case appendOrWrite of
+      Append ->
+        (atomically .  RAWLock.unsafeAcquireAppendAccess,
+         atomically .: RAWLock.unsafeReleaseAppendAccess)
+      Write  ->
+        (RAWLock.unsafeAcquireWriteAccess, RAWLock.unsafeReleaseWriteAccess)
+
     getSt :: m (OpenState blockId h)
-    getSt = uninterruptibleMask_ $ takeMVar varInternalState >>= \case
+    getSt = acquire varInternalState >>= \case
       DbOpen ost -> return ost
       DbClosed   -> do
-        putMVar varInternalState DbClosed
-        throwM $ UserError ClosedDBError
+        release varInternalState DbClosed
+        throwM $ UserError $ ClosedDBError Nothing
 
     putSt :: OpenState blockId h -> ExitCase (OpenState blockId h) -> m ()
-    putSt ost ec = do
-        -- It is crucial to replace the MVar.
-        putMVar varInternalState st'
-        unless (dbIsOpen st') $ closeOpenHandles hasFS ost
+    putSt ost ec = case closeOrRelease of
+        -- We must close the VolatileDB
+        Left ex -> do
+          -- Poison the internal state lock with the exception that caused us
+          -- to close the VolatileDB so the next time somebody accesses the
+          -- VolatileDB, a 'ClosedDBError' containing the exception that
+          -- caused it is thrown.
+          --
+          -- We don't care about the current state, as we were appending or
+          -- writing, which means that the state couldn't have changed in the
+          -- background.
+          _mbCurState <-
+            RAWLock.poison varInternalState $ \_st ->
+              UserError (ClosedDBError (Just ex))
+          closeOpenHandles hasFS ost
+        Right ost' -> release varInternalState (DbOpen ost')
       where
-        st' = case ec of
-          ExitCaseSuccess ost' -> DbOpen ost'
-
+        closeOrRelease :: Either SomeException (OpenState blockId h)
+        closeOrRelease = case ec of
+          ExitCaseSuccess ost'
+            -> Right ost'
           -- When something goes wrong, close the VolatileDB for safety.
           -- Except for user errors, because they stem from incorrect use of
           -- the VolatileDB.
@@ -133,12 +164,37 @@ modifyOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} mod
           -- VolatileDB in a background thread, or that background thread
           -- itself is killed with an async exception, we will shut down the
           -- node anway, so it is safe to close the VolatileDB here.
-          ExitCaseAbort        -> DbClosed
+          ExitCaseAbort
+            -- Only caused by 'throwE' or 'throwError' like functions, which
+            -- we don't use, but we use @IOLike m => m@ here.
+            -> error "impossible"
           ExitCaseException ex
             | Just (UserError {}) <- fromException ex
-            -> DbOpen ost
+            -> Right ost
             | otherwise
-            -> DbClosed
+            -> Left ex
+
+-- | Append to the open state. Reads can happen concurrently with this
+-- operation.
+--
+-- NOTE: This is safe in terms of throwing FsErrors.
+appendOpenState
+  :: forall blockId m a. IOLike m
+  => VolatileDBEnv m blockId
+  -> (forall h. Eq h => HasFS m h -> ModifyOpenState m blockId h a)
+  -> m a
+appendOpenState = modifyOpenState Append
+
+-- | Write to the open state. No reads or appends can concurrently with this
+-- operation.
+--
+-- NOTE: This is safe in terms of throwing FsErrors.
+writeOpenState
+  :: forall blockId m a. IOLike m
+  => VolatileDBEnv m blockId
+  -> (forall h. Eq h => HasFS m h -> ModifyOpenState m blockId h a)
+  -> m a
+writeOpenState = modifyOpenState Write
 
 -- | Perform an action that accesses the internal state of an open database.
 --
@@ -149,7 +205,7 @@ modifyOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} mod
 -- potentially inconsistent state. All other exceptions will leave the
 -- database open.
 withOpenState
-  :: forall blockId m r. (HasCallStack, IOLike m)
+  :: forall blockId m r. IOLike m
   => VolatileDBEnv m blockId
   -> (forall h. HasFS m h -> OpenState blockId h -> m r)
   -> m r
@@ -159,34 +215,52 @@ withOpenState VolatileDBEnv {hasFS = hasFS :: HasFS m h, varInternalState} actio
       Left  e -> throwM e
       Right r -> return r
   where
-    -- TODO #1816: we're locking the state ('takeMVar' vs. 'readMVar') to make
-    -- sure it impossible that a concurrent call to 'garbageCollect' removes
-    -- the file we might try to read from.
     open :: m (OpenState blockId h)
-    open = takeMVar varInternalState >>= \case
-      DbOpen ost -> return ost
-      DbClosed   -> do
-        putMVar varInternalState DbClosed
-        throwM $ UserError ClosedDBError
+    open =
+      atomically (RAWLock.unsafeAcquireReadAccess varInternalState) >>= \case
+        DbOpen ost -> return ost
+        DbClosed   -> do
+          atomically $ RAWLock.unsafeReleaseReadAccess varInternalState
+          throwM $ UserError (ClosedDBError Nothing)
 
     close :: OpenState blockId h
           -> ExitCase (Either VolatileDBError r)
           -> m ()
-    close ost ec = do
-        -- It is crucial to replace the MVar
-        putMVar varInternalState st'
-        when shouldClose $
-          wrapFsError $ closeOpenHandles hasFS ost
+    close ost ec
+        | Just ex <- shouldClose
+        = do
+            -- Poison the internal state lock with the exception that caused
+            -- us to close the VolatileDB so the next time somebody accesses
+            -- the VolatileDB, a 'ClosedDBError' containing the exception that
+            -- caused it is thrown.
+            mbCurState <-
+              RAWLock.poison varInternalState $ \_st ->
+                UserError (ClosedDBError (Just ex))
+            -- Close the open handles
+            wrapFsError $ case mbCurState of
+              -- The handles in the most recent state
+              Just (DbOpen ost') -> closeOpenHandles hasFS ost'
+              -- The state was already closed, which is always followed by
+              -- closing the open handles, so nothing to do.
+              Just DbClosed      -> return ()
+              -- No current value, e.g., we interrupted a thread in a middle
+              -- of a write. Close the last open handles we know about. The
+              -- interrupted thread will clean up its own resources that
+              -- haven't yet made it into the state (thanks to
+              -- 'modifyWithTempRegistry').
+              Nothing            -> closeOpenHandles hasFS ost
+
+        | otherwise
+        = atomically $ RAWLock.unsafeReleaseReadAccess varInternalState
       where
-        st' | shouldClose = DbClosed
-            | otherwise   = DbOpen ost
+        shouldClose :: Maybe SomeException
         shouldClose = case ec of
-          ExitCaseAbort                               -> False
-          ExitCaseException _ex                       -> False
-          ExitCaseSuccess (Right _)                   -> False
+          ExitCaseAbort                                  -> Nothing
+          ExitCaseException _ex                          -> Nothing
+          ExitCaseSuccess (Right _)                      -> Nothing
           -- In case of a VolatileDBError, close when unexpected
-          ExitCaseSuccess (Left (UnexpectedError {})) -> True
-          ExitCaseSuccess (Left (UserError {}))       -> False
+          ExitCaseSuccess (Left ex@(UnexpectedError {})) -> Just (toException ex)
+          ExitCaseSuccess (Left (UserError {}))          -> Nothing
 
     access :: OpenState blockId h -> m r
     access = action hasFS

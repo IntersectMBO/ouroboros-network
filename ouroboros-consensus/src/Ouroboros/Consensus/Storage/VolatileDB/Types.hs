@@ -26,7 +26,7 @@ module Ouroboros.Consensus.Storage.VolatileDB.Types
   , TraceEvent (..)
   ) where
 
-import           Control.Exception (Exception (..))
+import           Control.Exception (Exception (..), SomeException)
 import           Data.Map.Strict (Map)
 import           Data.Set (Set)
 import           Data.Word (Word16, Word32, Word64)
@@ -83,8 +83,12 @@ data VolatileDBError =
     deriving Show
 
 data UserError =
-      ClosedDBError
-    deriving (Show, Eq)
+      ClosedDBError (Maybe SomeException)
+      -- ^ The VolatileDB was closed. In case it was automatically closed
+      -- because an unexpected error was thrown during a read operation or any
+      -- exception was thrown during a write operation, that exception is
+      -- embedded.
+    deriving (Show)
 
 data UnexpectedError =
       FileSystemError FsError
@@ -116,9 +120,13 @@ sameVolatileDBError :: VolatileDBError
                     -> VolatileDBError
                     -> Bool
 sameVolatileDBError e1 e2 = case (e1, e2) of
-    (UserError ue1, UserError ue2)             -> ue1 == ue2
+    (UserError ue1, UserError ue2)             -> sameUserError ue1 ue2
     (UnexpectedError ue1, UnexpectedError ue2) -> sameUnexpectedError ue1 ue2
     _                                          -> False
+
+sameUserError :: UserError -> UserError -> Bool
+sameUserError e1 e2 = case (e1, e2) of
+    (ClosedDBError mbEx1, ClosedDBError mbEx2) -> (show <$> mbEx1) == (show <$> mbEx2)
 
 sameUnexpectedError :: UnexpectedError
                     -> UnexpectedError

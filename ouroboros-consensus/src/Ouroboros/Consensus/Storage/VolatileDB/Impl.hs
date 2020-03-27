@@ -116,6 +116,7 @@ import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Util.IOLike
+import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry (allocateTemp,
                      runWithTempRegistry)
 
@@ -150,7 +151,7 @@ openDB :: ( HasCallStack
        -> m (VolatileDB blockId m)
 openDB VolatileDbArgs {..} = runWithTempRegistry $ do
     ost   <- mkOpenState hasFS parser tracer maxBlocksPerFile
-    stVar <- lift $ newMVar (DbOpen ost)
+    stVar <- lift $ RAWLock.new (DbOpen ost)
     let env = VolatileDBEnv {
             hasFS          = hasFS
           , varInternalState  = stVar
@@ -173,7 +174,8 @@ closeDBImpl :: IOLike m
             => VolatileDBEnv m blockId
             -> m ()
 closeDBImpl VolatileDBEnv { varInternalState, tracer, hasFS } = do
-    mbInternalState <- swapMVar varInternalState DbClosed
+    mbInternalState <-
+      RAWLock.withWriteAccess varInternalState $ \st -> return (DbClosed, st)
     case mbInternalState of
       DbClosed -> traceWith tracer DBAlreadyClosed
       DbOpen ost ->
@@ -244,7 +246,7 @@ putBlockImpl :: forall m blockId. (IOLike m, Ord blockId)
 putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
              blockInfo@BlockInfo { bbid, bslot, bpreBid }
              builder =
-    modifyOpenState env $ \hasFS -> do
+    appendOpenState env $ \hasFS -> do
       OpenState { currentRevMap, currentWriteHandle } <- get
       if Map.member bbid currentRevMap then
         lift $ lift $ traceWith tracer $ BlockAlreadyHere bbid
@@ -298,7 +300,7 @@ garbageCollectImpl :: forall m blockId. (IOLike m, Ord blockId)
                    -> SlotNo
                    -> m ()
 garbageCollectImpl env slot =
-    modifyOpenState env $ \hasFS -> do
+    writeOpenState env $ \hasFS -> do
       files <- gets (sortOn fst . Index.toList . currentMap)
       mapM_ (tryCollectFile hasFS slot) files
       -- Recompute the 'MaxSlotNo' based on the files left in the VolatileDB.
@@ -402,7 +404,7 @@ getterSTM :: forall m blockId a. IOLike m
           -> VolatileDBEnv m blockId
           -> STM m a
 getterSTM fromSt VolatileDBEnv { varInternalState } = do
-    mSt <- readMVarSTM varInternalState
+    mSt <- RAWLock.read varInternalState
     case mSt of
-      DbClosed  -> throwM $ UserError ClosedDBError
+      DbClosed  -> throwM $ UserError $ ClosedDBError Nothing
       DbOpen st -> return $ fromSt st

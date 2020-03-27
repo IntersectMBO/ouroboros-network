@@ -37,11 +37,19 @@ withDB :: (HasCallStack, MonadThrow m)
 withDB openDB = bracket openDB closeDB
 
 data VolatileDB blockId m = VolatileDB {
+      -- | Close the VolatileDB.
+      --
+      -- NOTE: idempotent after a manual closure, but not after an automatic
+      -- closure in case of an 'UnexpectedError'. In that case, closing it
+      -- again will cause a 'ClosedDBError' wrapping the original
+      -- 'UnexpectedError' to be thrown.
       closeDB             :: HasCallStack => m ()
+      -- | Return the request block component for the block with the given
+      -- @blockId@. When not in the VolatileDB, 'Nothing' is returned.
     , getBlockComponent   :: forall b. HasCallStack
-                        => BlockComponent (VolatileDB blockId m) b
-                        -> blockId
-                        -> m (Maybe b)
+                          => BlockComponent (VolatileDB blockId m) b
+                          -> blockId
+                          -> m (Maybe b)
     , putBlock            :: HasCallStack => BlockInfo blockId -> Builder -> m ()
       -- | Return a function that returns the successors of the block with the
       -- given @blockId@.
