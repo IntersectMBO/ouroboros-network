@@ -11,7 +11,7 @@ data NtpTrace
     | NtpTraceRestartingClient
     | NtpTraceClientSleeping
     | NtpTraceIOError !IOError
-    | NtpTraceLookupServerFailed !String
+    | NtpTraceLookupsFails
     | NtpTraceClientStartQuery
     | NtpTraceNoLocalAddr
     | NtpTraceIPv4IPv6NoReplies

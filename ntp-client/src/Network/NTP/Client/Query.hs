@@ -16,7 +16,7 @@ import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import           Control.Exception (IOException, bracket, catch)
 import           System.IO.Error (userError, ioError)
-import           Control.Monad (foldM, forM_, replicateM_)
+import           Control.Monad (foldM, forM_, replicateM_, when)
 import           Control.Tracer
 import           Data.Binary (decodeOrFail, encode)
 import           Data.Bifunctor (bimap)
@@ -62,12 +62,15 @@ data NtpStatus =
     | NtpSyncUnavailable deriving (Eq, Show)
 
 
+minimumNumberOfResults :: Int
+minimumNumberOfResults = 3
+
 -- | Wait for at least three replies and report the minimum of the reported
 -- offsets.
 --
-minimumOfThree :: [NtpOffset] -> Maybe NtpOffset
-minimumOfThree l
-    = if length l >= 3
+minimumOfSome :: [NtpOffset] -> Maybe NtpOffset
+minimumOfSome l
+    = if length l >= minimumNumberOfResults
         then Just $ minimum l
         else Nothing
 
@@ -102,14 +105,16 @@ resolveHost host = Socket.getAddrInfo (Just hints) (Just host) Nothing
 -- | Resolve dns names, return valid ntp 'SockAddr'es.
 --
 lookupNtpServers :: Tracer IO NtpTrace -> [String] -> IO ([SockAddr], [SockAddr])
-lookupNtpServers tracer = foldM fn ([], [])
+lookupNtpServers tracer servers = do
+    addrs@(ipv4s, ipv6s) <- foldM fn ([], []) servers
+    when (length (ipv4s ++ ipv6s) < minimumNumberOfResults) $ do
+      traceWith tracer $ NtpTraceLookupsFails
+      ioError $ userError "lookup NTP servers failed"
+    pure addrs
   where
     fn (as, bs) server = do
       addrs <- resolveHost server
       case bimap listToMaybe listToMaybe $ partitionAddrInfos addrs of
-          (Nothing, Nothing) -> do
-              traceWith tracer $ NtpTraceLookupServerFailed server
-              ioError $ userError $ "lookup NTP server failed " ++ server
           (mipv4, mipv6) ->
             pure $
               ( (setNtpPort . Socket.addrAddress <$> maybeToList mipv4) ++ as
@@ -186,7 +191,7 @@ ntpQuery ioManager tracer ntpSettings = do
 
     handleResults :: [NtpOffset] -> IO NtpStatus
     handleResults [] = pure NtpSyncUnavailable
-    handleResults results = case minimumOfThree results of
+    handleResults results = case minimumOfSome results of
       Nothing -> do
           traceWith tracer NtpTraceReportPolicyQueryFailed
           return NtpSyncUnavailable
