@@ -32,6 +32,7 @@ testSettings :: NtpSettings
 testSettings = NtpSettings
     { ntpServers = ["0.de.pool.ntp.org", "0.europe.pool.ntp.org", "0.pool.ntp.org"
                    , "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
+    , ntpRequiredNumberOfResults = 5
     , ntpResponseTimeout = fromInteger 1_000_000
     , ntpPollDelay       = fromInteger 300_000_000
     }

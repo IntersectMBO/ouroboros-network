@@ -2,6 +2,7 @@
 -- `Win32-network`, to get rid of CPP.
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -43,34 +44,47 @@ import           Network.NTP.Client.Packet ( mkNtpPacket
                                     )
 import           Network.NTP.Client.Trace (NtpTrace (..))
 
+-- | Settings of the ntp client.
+--
 data NtpSettings = NtpSettings
-    { ntpServers         :: [String]
+    { ntpServers                 :: [String]
       -- ^ List of server addresses. At least three servers are needed.
-    , ntpResponseTimeout :: Microsecond
+
+    , ntpRequiredNumberOfResults :: Int
+      -- ^ minimum number of results to compute the offset, this should be less
+      -- or equal to the length of 'ntpServers' (each server is send a single
+      -- @ntp@ query).
+
+    , ntpResponseTimeout         :: Microsecond
       -- ^ Timeout between sending NTP requests and response collection.
-    , ntpPollDelay       :: Microsecond
+
+    , ntpPollDelay               :: Microsecond
       -- ^ How long to wait between two rounds of requests.
     }
 
+
+-- | The Ntp client state: either cached results is availbale, or the ntp
+-- client is engaged in ntp-protocol or there was a failure: e.g. connection
+-- lost, or dns lookups did not return at least `ntpRequiredNumberOfResults`
+-- addresses. 
+--
 data NtpStatus =
       -- | The difference between NTP time and local system time
       NtpDrift !NtpOffset
       -- | NTP client has send requests to the servers
     | NtpSyncPending
       -- | NTP is not available: the client has not received any respond within
-      -- `ntpResponseTimeout` or NTP was not configured.
+      -- `ntpResponseTimeout` from at least `ntpRequiredNumberOfResults`
+      -- servers.
     | NtpSyncUnavailable deriving (Eq, Show)
 
-
-minimumNumberOfResults :: Int
-minimumNumberOfResults = 3
 
 -- | Wait for at least three replies and report the minimum of the reported
 -- offsets.
 --
-minimumOfSome :: [NtpOffset] -> Maybe NtpOffset
-minimumOfSome l
-    = if length l >= minimumNumberOfResults
+minimumOfSome :: Int -> [NtpOffset] -> Maybe NtpOffset
+minimumOfSome threshold l
+    = if length l >= threshold
         then Just $ minimum l
         else Nothing
 
@@ -88,10 +102,10 @@ udpLocalAddresses = Socket.getAddrInfo (Just hints) Nothing (Just $ show port)
 
 -- | Resolve dns names, return valid ntp 'SockAddr'es.
 --
-lookupNtpServers :: Tracer IO NtpTrace -> [String] -> IO ([SockAddr], [SockAddr])
-lookupNtpServers tracer servers = do
-    addrs@(ipv4s, ipv6s) <- foldM fn ([], []) servers
-    when (length (ipv4s ++ ipv6s) < minimumNumberOfResults) $ do
+lookupNtpServers :: Tracer IO NtpTrace -> NtpSettings -> IO ([SockAddr], [SockAddr])
+lookupNtpServers tracer NtpSettings { ntpServers, ntpRequiredNumberOfResults } = do
+    addrs@(ipv4s, ipv6s) <- foldM fn ([], []) ntpServers
+    when (length (ipv4s ++ ipv6s) < ntpRequiredNumberOfResults) $ do
       traceWith tracer $ NtpTraceLookupsFails
       ioError $ userError "lookup NTP servers failed"
     pure addrs
@@ -153,9 +167,9 @@ ntpQuery
     -> Tracer IO NtpTrace
     -> NtpSettings
     -> IO NtpStatus
-ntpQuery ioManager tracer ntpSettings = do
+ntpQuery ioManager tracer ntpSettings@NtpSettings { ntpRequiredNumberOfResults } = do
     traceWith tracer NtpTraceClientStartQuery
-    (v4Servers,   v6Servers)   <- lookupNtpServers tracer $ ntpServers ntpSettings
+    (v4Servers,   v6Servers) <- lookupNtpServers tracer ntpSettings
     localAddrs <- udpLocalAddresses
     (v4LocalAddr, v6LocalAddr)
       <- case partitionAddrInfos localAddrs of
@@ -185,8 +199,7 @@ ntpQuery ioManager tracer ntpSettings = do
        runNtpQueries ioManager tracer protocol ntpSettings addr servers
 
     handleResults :: [NtpOffset] -> IO NtpStatus
-    handleResults [] = pure NtpSyncUnavailable
-    handleResults results = case minimumOfSome results of
+    handleResults results = case minimumOfSome ntpRequiredNumberOfResults results of
       Nothing -> do
           traceWith tracer NtpTraceReportPolicyQueryFailed
           return NtpSyncUnavailable
