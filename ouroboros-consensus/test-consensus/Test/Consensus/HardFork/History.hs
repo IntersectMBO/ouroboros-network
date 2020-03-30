@@ -14,12 +14,12 @@
 module Test.Consensus.HardFork.History (tests) where
 
 import           Control.Monad.Except
+import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Functor.Const
 import           Data.Functor.Identity
 import qualified Data.List as L
-import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
@@ -320,13 +320,13 @@ data EventTime = EventTime {
     }
   deriving (Show)
 
-initTime :: HF.SystemStart -> Eras xs -> EventTime
-initTime (HF.SystemStart start) eras = EventTime {
+initTime :: HF.SystemStart -> Era -> EventTime
+initTime (HF.SystemStart start) firstEra = EventTime {
       eventAbsSlot = SlotNo  0
     , eventEpoch   = EpochNo 0
     , eventRelSlot = 0
     , eventTime    = start
-    , eventEra     = exactlyHead eras
+    , eventEra     = firstEra
     }
 
 -- | Next time slot
@@ -368,40 +368,50 @@ chainTip (Chain xs) = tip . reverse . concat . toList $ xs
 
 -- | Find all confirmed transitions in the chain
 chainTransitions :: Eras xs -> Chain xs -> HF.Transitions xs
-chainTransitions = \eras (Chain chain) -> HF.Transitions $
-      mustBeJust
-    . lessThanNarrow eras
-    . atMostMapMaybe findTransition'
-    . atMostMarkLast
-    $ atMostZipExactly eras chain
+chainTransitions = \(Eras eras) (Chain chain) -> HF.Transitions $
+    shift eras (uncurry findTransition <$> exactlyZipAtMost eras chain)
   where
-    mustBeJust :: Maybe (LessThan xs EpochNo) -> LessThan xs EpochNo
-    mustBeJust (Just e) = e
-    mustBeJust Nothing  = error $ concat [
-          "impossible: we checked that the last epoch contains no transition"
-        ]
-
-    -- Find transition point
+    -- After mapping 'findTransition', for each era on the chain we have
+    -- 'Maybe' a transition point. Those transition points have structure that
+    -- we must recover here:
     --
-    -- Every era on the chain except the last MUST have a transition point
-    -- The last era in the chain /shape/ must NOT have a transition point
-    findTransition' :: ((Era, Events Identity), Bool) -> Maybe EpochNo
-    findTransition' ((era, es), lastEraOnChain) =
-        case (eraIsLast era, lastEraOnChain, findTransition era es) of
-          (True, _, Just e) ->
-            error $ concat [
-                "Unexpected transition "
-              , show e
-              , " in final era "
-              , show era
-              ]
-          (_, False, Nothing) ->
-            error $ concat [
-                "Missing transition in era "
-              , show era
-              ]
-          (_, _, me) ->
-            me
+    -- * The last era cannot have a transition point (i)
+    -- * Unless it is the last era, the last era /on chain/ may or may
+    --   not have a transition point (ii)
+    -- * All other eras on chain /must/ have a transition point (iii)
+    --
+    -- We must also shift the type-level indices: we find the transition points
+    -- in the eras that they occur /in/, but they must be associated with the
+    -- eras that they transition /to/.
+    shift :: Exactly (x ': xs) Era
+          -> AtMost  (x ': xs) (Maybe EpochNo)
+          -> AtMost        xs  EpochNo
+    shift _ AtMostNil =
+        -- No more transitions on the chain
+        AtMostNil
+    shift (ExactlyCons era ExactlyNil) (AtMostCons transition AtMostNil) =
+        -- case (i)
+        case transition of
+          Nothing -> AtMostNil
+          Just t  -> error $ concat [
+                         "Unexpected transition "
+                       , show t
+                       , " in final era "
+                       , show era
+                       ]
+    shift (ExactlyCons _ ExactlyCons{}) (AtMostCons transition AtMostNil) =
+        -- case (ii)
+        case transition of
+          Nothing -> AtMostNil
+          Just t  -> AtMostCons t AtMostNil
+    shift (ExactlyCons era eras@(ExactlyCons{})) (AtMostCons transition ts) =
+        -- case (iii)
+        case transition of
+          Nothing -> error $ concat [
+                         "Missing transition in era "
+                       , show era
+                       ]
+          Just t  -> AtMostCons t (shift eras ts)
 
 -- | Locate transition point in a list of events
 findTransition :: Era -> Events Identity -> Maybe EpochNo
@@ -434,14 +444,9 @@ patchEvents events = map go events
                                     bounds Map.! eventEra time
 
 fromPreChain :: Eras xs -> PreChain -> Chain xs
-fromPreChain eras preChain = Chain $
-    snd <$> exactlyZipList eras grouped'
+fromPreChain (Eras eras) preChain = Chain $
+    snd <$> exactlyZipAtMost eras grouped
   where
-    grouped' :: NonEmpty (Events Identity)
-    grouped' = case grouped of
-                 []   -> [] :| []
-                 e:es -> e  :| es
-
     grouped :: [Events Identity]
     grouped = L.groupBy ((==) `on` (\(t, _, _) -> eventEra t)) preChain
 
@@ -485,10 +490,16 @@ genPreChain start eras shape = do
 --
 -- Therefore, to generate a shorter chain, we must generate a sufficient
 -- number of events, then patch them, and only then can we take a prefix.
-genEvents :: HF.SystemStart -> Eras xs -> HF.Shape xs -> Gen (Events (Const ()))
-genEvents = \start eras (HF.Shape shape) -> sized $ \sz -> do
+genEvents :: HF.SystemStart
+          -> Eras     xs
+          -> HF.Shape xs
+          -> Gen (Events (Const ()))
+genEvents = \start (Eras eras) (HF.Shape shape) -> sized $ \sz -> do
     eventsInFinalEra <- choose (0, fromIntegral sz)
-    go eventsInFinalEra (initTime start eras) NotYet (exactlyZip eras shape)
+    go eventsInFinalEra
+       (initTime start (exactlyHead eras))
+       NotYet
+       (exactlyZip eras shape)
   where
     -- We first construct a 'PreChain' where we decide the moments of the
     -- /announcements/ of the transition points, but not yet the transition
@@ -496,12 +507,12 @@ genEvents = \start eras (HF.Shape shape) -> sized $ \sz -> do
     go :: Word64         -- ^ Number of events in final era
        -> EventTime      -- ^ Current time
        -> CanStartNewEra
-       -> Exactly xs (Era, HF.EraParams)
+       -> Exactly (x ': xs) (Era, HF.EraParams)
        -> Gen (Events (Const ()))
     go 0 _   _        _     = return []
     go n now canStart shape = do
         case shape of
-          ExactlySuc _ shape' | canStartNow && eventRelSlot now == 0 -> do
+          ExactlyCons _ shape'@(ExactlyCons{}) | canStartNow && eventRelSlot now == 0 -> do
             shouldStartNow <- arbitrary
             if shouldStartNow
               then go' n now NotYet    shape'
@@ -515,27 +526,25 @@ genEvents = \start eras (HF.Shape shape) -> sized $ \sz -> do
     go' :: Word64
         -> EventTime
         -> CanStartNewEra
-        -> Exactly xs (Era, HF.EraParams)
+        -> Exactly (x ': xs) (Era, HF.EraParams)
         -> Gen (Events (Const ()))
-    go' n now canStart shape = do
+    go' n now canStart shape@(ExactlyCons (era, params@HF.EraParams{..}) next) = do
         (event, canStart') <- frequency $ concat [
             [ (2, return (Tick, canStart)) ]
 
             -- Avoid starting a count-down if another one is already in process
             -- The final era cannot contain any transitions
           , [ (1, return (Confirm (Const ()), CanStartIf eraSafeZone))
-            | NotYet         <- [canStart]
-            , ExactlySuc _ _ <- [shape]
+            | NotYet          <- [canStart]
+            , ExactlyCons _ _ <- [next]
             ]
           ]
         ((now { eventEra = era }, params, event) :) <$>
           go n' (stepTime params now) canStart' shape
       where
-        (era, params@HF.EraParams{..}) = exactlyHead shape
         n' = if eraIsLast era
                then n - 1
                else n
-
 
 data CanStartNewEra =
     -- | The announcement of the transition hasn't yet happened
@@ -583,7 +592,7 @@ instance Arbitrary ArbitrarySummary where
       summary <- genSummary genEraSummary (HF.initBound start) is
 
       let summaryStart, summaryEnd :: HF.Bound
-          (summaryStart, summaryEnd) = HF.summaryBounds summary
+          (summaryStart, summaryEnd) = summaryBounds summary
 
           summarySlots, summaryEpochs :: Word64
           summarySlots  = HF.countSlots
@@ -689,7 +698,7 @@ instance Arbitrary ArbitrarySummary where
         -- Drop an era /provided/ this doesn't cause of any of the before
         -- horizon values to become past horizon
       , [ ArbitrarySummary { arbitrarySummary = summary', .. }
-        | (Just summary', lastEra) <- [HF.dropLast arbitrarySummary]
+        | Just (summary', lastEra) <- [summaryInit arbitrarySummary]
         , beforeHorizonSlot  < HF.boundSlot  (HF.eraStart lastEra)
         , beforeHorizonEpoch < HF.boundEpoch (HF.eraStart lastEra)
         , beforeHorizonTime  < HF.boundTime  (HF.eraStart lastEra)
@@ -736,14 +745,18 @@ data Era = Era {
      }
   deriving (Show, Eq, Ord)
 
-type Eras xs = Exactly xs Era
+data Eras :: [*] -> * where
+    -- We guarantee to have at least one era
+    Eras :: Exactly (x ': xs) Era -> Eras (x ': xs)
+
+deriving instance Show (Eras xs)
 
 chooseEras :: (forall xs. Eras xs -> Gen a) -> Gen a
 chooseEras k = oneof [
-      k $ ExactlyOne (Era 0 True)
-    , k $ ExactlySuc (Era 0 False) $ ExactlyOne (Era 1 True)
-    , k $ ExactlySuc (Era 0 False) $ ExactlySuc (Era 1 False) $ ExactlyOne (Era 2 True)
-    , k $ ExactlySuc (Era 0 False) $ ExactlySuc (Era 1 False) $ ExactlySuc (Era 2 False) $ ExactlyOne (Era 3 True)
+      k $ Eras $ exactlyOne  (Era 0 True)
+    , k $ Eras $ ExactlyCons (Era 0 False) $ exactlyOne  (Era 1 True)
+    , k $ Eras $ ExactlyCons (Era 0 False) $ ExactlyCons (Era 1 False) $ exactlyOne  (Era 2 True)
+    , k $ Eras $ ExactlyCons (Era 0 False) $ ExactlyCons (Era 1 False) $ ExactlyCons (Era 2 False) $ exactlyOne (Era 3 True)
     ]
 
 {-------------------------------------------------------------------------------
@@ -754,33 +767,29 @@ genSummary :: forall m xs a. Monad m
            => (Era -> a -> m (a, HF.EraSummary))  -- ^ Step
            -> a                                   -- ^ Initial seed
            -> Eras xs -> m (HF.Summary xs)
-genSummary f = \seed eras ->
+genSummary f = \seed (Eras eras) ->
     HF.Summary <$> go seed eras
   where
-    go :: forall xs'. a -> Eras xs' -> m (AtMost xs' HF.EraSummary)
-    go a (ExactlyOne e) = do
-        (_a', eraSummary) <- f e a
-        return $ AtMostOne eraSummary
-    go a (ExactlySuc e es) = do
+    go :: forall xs'. a -> Exactly xs' Era -> m (AtMost xs' HF.EraSummary)
+    go _  ExactlyNil        = return AtMostNil
+    go a (ExactlyCons e es) = do
         (a', eraSummary) <- f e a
         summary          <- go a' es
-        return $ AtMostSuc eraSummary summary
+        return $ AtMostCons eraSummary summary
 
 genShape :: forall m xs a. Monad m
          => (Era -> a -> m (a, HF.EraParams))  -- ^ Step
          -> a                                  -- ^ Initial seed
          -> Eras xs -> m (HF.Shape xs)
-genShape f = \seed eras ->
+genShape f = \seed (Eras eras) ->
     HF.Shape <$> go seed eras
   where
-    go :: forall xs'. a -> Eras xs' -> m (Exactly xs' HF.EraParams)
-    go a (ExactlyOne e) = do
-        (_a', eraParams) <- f e a
-        return $ ExactlyOne eraParams
-    go a (ExactlySuc e es) = do
+    go :: forall xs'. a -> Exactly xs' Era -> m (Exactly xs' HF.EraParams)
+    go _  ExactlyNil        = return ExactlyNil
+    go a (ExactlyCons e es) = do
         (a', eraParams) <- f e a
         shape           <- go a' es
-        return $ ExactlySuc eraParams shape
+        return $ ExactlyCons eraParams shape
 
 {-------------------------------------------------------------------------------
   Shifting time
@@ -835,3 +844,21 @@ resetArbitraryChainStart chain@ArbitraryChain{..} =
   where
     ahead :: NominalDiffTime
     ahead = diffUTCTime (HF.getSystemStart arbitraryChainStart) dawnOfTime
+
+{-------------------------------------------------------------------------------
+  Additional functions on 'Summary' needed for the tests only
+-------------------------------------------------------------------------------}
+
+-- | Lift 'atMostInit' to 'Summary'
+summaryInit :: HF.Summary xs -> Maybe (HF.Summary xs, HF.EraSummary)
+summaryInit (HF.Summary xs) = first HF.Summary <$> atMostInit xs
+
+-- | Outer bounds of the summary
+--
+-- We must always have at least one era but the 'Summary' type does not tell
+-- us that. This function is therefore partial, but used only in the tests.
+summaryBounds :: HF.Summary xs -> (HF.Bound, HF.Bound)
+summaryBounds (HF.Summary summary) =
+    case toList summary of
+      [] -> error "summaryBounds: no eras"
+      ss -> (HF.eraStart (head ss), HF.eraEnd (last ss))

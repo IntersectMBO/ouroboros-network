@@ -5,11 +5,11 @@
 {-# LANGUAGE DerivingVia               #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE KindSignatures            #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE ViewPatterns              #-}
 
 -- | Intended for qualified import
 --
@@ -53,9 +53,7 @@ module Ouroboros.Consensus.HardFork.History (
   , mkUpperBound
     -- ** Summary
   , EraSummary(..)
-  , summaryBounds
     -- ** Summary translations
-  , dropLast
   , ShiftTime(..)
     -- ** Invariants
   , invariantSummary
@@ -75,7 +73,6 @@ import           Data.Foldable (toList)
 import           Data.Functor.Identity
 import qualified Data.List as List
 import           Data.Time
-import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
 
@@ -234,7 +231,7 @@ newtype Shape xs = Shape (Exactly xs EraParams)
 
 -- | There is only one era
 singletonShape :: EraParams -> Shape '[x]
-singletonShape params = Shape (ExactlyOne params)
+singletonShape params = Shape (exactlyOne params)
 
 -- | The exact point of each confirmed hard fork transition
 --
@@ -245,12 +242,17 @@ singletonShape params = Shape (ExactlyOne params)
 -- Any transition listed here must be "certain". How certainty is established is
 -- ledger dependent, but it should imply that this is no longer subject to
 -- rollback.
-newtype Transitions xs = Transitions (LessThan xs EpochNo)
-  deriving (Show)
+data Transitions :: [*] -> * where
+  -- | If the indices are, say, @'[Byron, Shelley, Goguen]@, then we can have
+  -- have at most two transitions: one to Shelley, and one to Goguen. There
+  -- cannot be a transition /to/ the initial ledger.
+  Transitions :: AtMost xs EpochNo -> Transitions (x ': xs)
+
+deriving instance Show (Transitions xs)
 
 -- | No known transitions yet
 transitionsUnknown :: Transitions (x ': xs)
-transitionsUnknown = Transitions LessThanOne
+transitionsUnknown = Transitions AtMostNil
 
 {-------------------------------------------------------------------------------
   Bounds
@@ -295,15 +297,10 @@ mkUpperBound EraParams{..} lo hiEpoch = Bound {
   This is what we use internally for all translations.
 -------------------------------------------------------------------------------}
 
--- | The summary zips 'Shape' with 'Forks', and provides detailed information
--- about the start and end of each era.
-newtype Summary xs = Summary (AtMost xs EraSummary)
-
-deriving instance Show (Summary xs)
-deriving via OnlyCheckIsWHNF "Summary" (Summary xs)
-         instance NoUnexpectedThunks (Summary xs)
-
 -- | Information about a specific era
+--
+-- The 'eraEnd' of the final era in the summary will be determined by the
+-- safe zone considerations discussed above.
 data EraSummary = EraSummary {
       eraStart  :: !Bound     -- ^ Inclusive lower bound
     , eraEnd    :: !Bound     -- ^ Exclusive upper bound
@@ -311,13 +308,22 @@ data EraSummary = EraSummary {
     }
   deriving (Show)
 
+-- | Summary of the /confirmed/ part of the ledger
+--
+-- The summary zips 'Shape' with 'Forks', and provides detailed information
+-- about the start and end of each era.
+newtype Summary xs = Summary (AtMost xs EraSummary)
+
+deriving instance Show (Summary xs)
+deriving via OnlyCheckIsWHNF "Summary" (Summary xs)
+         instance NoUnexpectedThunks (Summary xs)
+
+summaryToList :: Summary xs -> [EraSummary]
+summaryToList (Summary summary) = toList summary
+
 {-------------------------------------------------------------------------------
   Translations (primarily for the benefit of tests)
 -------------------------------------------------------------------------------}
-
--- | Drop the last era
-dropLast :: Summary xs -> (Maybe (Summary xs), EraSummary)
-dropLast (Summary xs) = first (fmap Summary) $ atMostInit xs
 
 class ShiftTime a where
   shiftTime :: NominalDiffTime -> a -> a
@@ -349,29 +355,6 @@ instance ShiftTime UTCTime where
   shiftTime = addUTCTime
 
 {-------------------------------------------------------------------------------
-  Simple 'Summary' queries
--------------------------------------------------------------------------------}
-
-firstEraSummary :: Summary xs -> EraSummary
-firstEraSummary (Summary summary) = atMostHead summary
-
-lastEraSummary :: Summary xs -> EraSummary
-lastEraSummary (Summary summary) = atMostLast summary
-
-summarySystemStart :: Summary xs -> SystemStart
-summarySystemStart = SystemStart . boundTime . eraStart . firstEraSummary
-
-summaryToList :: Summary xs -> [EraSummary]
-summaryToList (Summary summary) = toList summary
-
--- | Inclusive lower bound and exclusive upper bound for the entire summary
-summaryBounds :: Summary xs -> (Bound, Bound)
-summaryBounds summary = (
-      eraStart $ firstEraSummary summary
-    , eraEnd   $ lastEraSummary  summary
-    )
-
-{-------------------------------------------------------------------------------
   Invariants
 -------------------------------------------------------------------------------}
 
@@ -385,7 +368,8 @@ invariantShape = \(Shape shape) ->
   where
     go :: EpochNo -- ^ Lower bound on the start of the era
        -> Exactly xs EraParams -> Except String ()
-    go lowerBound shape = do
+    go _           ExactlyNil                    = return ()
+    go lowerBound (ExactlyCons curParams shape') = do
         nextLowerBound <-
           case safeBeforeEpoch (eraSafeZone curParams) of
             NoLowerBound -> do
@@ -401,21 +385,20 @@ invariantShape = \(Shape shape) ->
                   ]
               return $ e
 
-        case shape of
-          ExactlyOne _        -> return ()
-          ExactlySuc _ shape' -> go nextLowerBound shape'
-      where
-        curParams :: EraParams
-        curParams = exactlyHead shape
+        go nextLowerBound shape'
 
 -- | Check 'Summary' invariants
 invariantSummary :: Summary xs -> Except String ()
-invariantSummary = \s@(Summary summary) ->
-    go (initBound (summarySystemStart s)) summary
+invariantSummary = \(Summary summary) ->
+    -- Pretend the start of the first era is the "end of the previous" one
+    case summary of
+      AtMostNil             -> return ()
+      AtMostCons firstEra _ -> go (eraStart firstEra) summary
   where
     go :: Bound   -- ^ End of the previous era
        -> AtMost xs EraSummary -> Except String ()
-    go prevEnd summary = do
+    go _        AtMostNil                   = return ()
+    go prevEnd (AtMostCons curSummary next) = do
         unless (curStart == prevEnd) $
           throwError $ mconcat [
               "Bounds don't line up: "
@@ -451,13 +434,8 @@ invariantSummary = \s@(Summary summary) ->
             , show curSummary
             ]
 
-        case summary of
-          AtMostOne _      -> return ()
-          AtMostSuc _ next -> go curEnd next
+        go curEnd next
       where
-        curSummary :: EraSummary
-        curSummary = atMostHead summary
-
         curStart, curEnd :: Bound
         curParams        :: EraParams
         EraSummary curStart curEnd curParams = curSummary
@@ -471,7 +449,7 @@ invariantSummary = \s@(Summary summary) ->
                   * getSlotLength (eraSlotLength curParams)
 
 {-------------------------------------------------------------------------------
-  Internal: constructing the summary
+  Constructing the summary
 -------------------------------------------------------------------------------}
 
 newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
@@ -497,23 +475,23 @@ summarize :: SystemStart
           -> Shape       xs
           -> Transitions xs
           -> Summary     xs
-summarize start ledgerTip = \(Shape shape) (Transitions transitions) ->
-    Summary $ go (initBound start) shape transitions
+summarize systemStart ledgerTip = \(Shape shape) (Transitions transitions) ->
+    Summary $ go (initBound systemStart) shape transitions
   where
     go :: Bound
-       -> Exactly  xs EraParams
-       -> LessThan xs EpochNo
-       -> AtMost   xs EraSummary
+       -> Exactly (x ': xs) EraParams   -- params for all eras
+       -> AtMost        xs  EpochNo     -- transitions
+       -> AtMost  (x ': xs) EraSummary
     -- CASE (ii)
     -- NOTE: Ledger tip might be close to the end of this era (or indeed past
     -- it) but this doesn't matter for the summary of /this/ era.
-    go lo (ExactlySuc params ss) (LessThanSuc epoch fs) =
-        AtMostSuc (EraSummary lo hi params) $ go hi ss fs
+    go lo (ExactlyCons params ss) (AtMostCons epoch fs) =
+        AtMostCons (EraSummary lo hi params) $ go hi ss fs
       where
         hi = mkUpperBound params lo epoch
     -- CASE (i) or (iii)
-    go lo (exactlyHead -> params@EraParams{..}) LessThanOne =
-        AtMostOne (EraSummary lo hi params)
+    go lo (ExactlyCons params@EraParams{..} _) AtMostNil =
+        atMostOne $ EraSummary lo hi params
       where
         hi :: Bound
         hi = mkUpperBound params lo
@@ -525,8 +503,6 @@ summarize start ledgerTip = \(Shape shape) (Transitions transitions) ->
              -- era, but the transition to /this/ era is already known, the safe
              -- zone applies from the start of this era (CASE (iii)).
            $ maxMaybeSlot ledgerTip (boundSlot lo)
-    go _ (ExactlyOne _) (LessThanSuc _ fs) =
-        absurd $ lessThanEmpty fs
 
     -- Given the 'SlotNo' of the first /slot/ in which a transition could take
     -- place, compute the first /epoch/ in which this could happen (since
@@ -549,22 +525,6 @@ summarize start ledgerTip = \(Shape shape) (Transitions transitions) ->
     maxMaybeSlot :: WithOrigin SlotNo -> SlotNo -> SlotNo
     maxMaybeSlot Origin = id
     maxMaybeSlot (At s) = max s
-
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
-addSlots  :: Word64 -> SlotNo  -> SlotNo
-addEpochs :: Word64 -> EpochNo -> EpochNo
-
-addSlots  n (SlotNo  x) = SlotNo  (x + n)
-addEpochs n (EpochNo x) = EpochNo (x + n)
-
-countSlots  :: SlotNo  -> SlotNo  -> Word64
-countEpochs :: EpochNo -> EpochNo -> Word64
-
-countSlots  (SlotNo  to) (SlotNo  fr) = assert (to >= fr) $ to - fr
-countEpochs (EpochNo to) (EpochNo fr) = assert (to >= fr) $ to - fr
 
 {-------------------------------------------------------------------------------
   Internal: looking up values in the history
@@ -760,3 +720,19 @@ snapshotEpochInfo summary = EpochInfo {
         case runExcept $ f summary of
           Right a -> Identity $ g a
           Left  e -> throw e
+
+{-------------------------------------------------------------------------------
+  Auxiliary
+-------------------------------------------------------------------------------}
+
+addSlots  :: Word64 -> SlotNo  -> SlotNo
+addEpochs :: Word64 -> EpochNo -> EpochNo
+
+addSlots  n (SlotNo  x) = SlotNo  (x + n)
+addEpochs n (EpochNo x) = EpochNo (x + n)
+
+countSlots  :: SlotNo  -> SlotNo  -> Word64
+countEpochs :: EpochNo -> EpochNo -> Word64
+
+countSlots  (SlotNo  to) (SlotNo  fr) = assert (to >= fr) $ to - fr
+countEpochs (EpochNo to) (EpochNo fr) = assert (to >= fr) $ to - fr
