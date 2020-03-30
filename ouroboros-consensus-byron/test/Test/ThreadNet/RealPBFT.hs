@@ -591,7 +591,7 @@ tests = testGroup "RealPBFT" $
           prop_simple_real_pbft_convergence produceEBBs k testConfig
     ]
     `seq`
-    [ localOption (QuickCheckTests 1000) $
+    [ localOption (QuickCheckTests 10) $
       testProperty "simple convergence" $
           \produceEBBs ->
           -- TODO k > 1 as a workaround for Issue #1511.
