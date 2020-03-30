@@ -23,7 +23,7 @@ import qualified Data.Set as Set
 import           Data.Word (Word16)
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks (..),
+import           Cardano.Prelude (NoUnexpectedThunks (..), forceElemsToWHNF,
                      unsafeNoUnexpectedThunks)
 
 import           Control.Exception (assert)
@@ -362,7 +362,8 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
         --
         -- So we extend bufferedTxs with those txs (so of course they have
         -- no corresponding reply).
-        bufferedTxs' = bufferedTxs st
+        bufferedTxs' = forceElemsToWHNF $
+                       bufferedTxs st
                     <> Map.map (const Nothing) ignoredTxids
 
         -- Check if having decided not to request more txs we can now
