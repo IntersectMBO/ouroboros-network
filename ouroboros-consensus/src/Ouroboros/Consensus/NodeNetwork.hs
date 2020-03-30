@@ -497,9 +497,10 @@ consensusNetworkApps
     => NodeKernel m peer blk
     -> ProtocolTracers m peer localPeer blk failure
     -> ProtocolCodecs blk failure m bytesCS bytesCS bytesBF bytesBF bytesTX bytesLCS bytesLTX bytesLSQ
+    -> Maybe DiffTime -- Workaround for #1882, test cases that can't cope with timeouts
     -> ProtocolHandlers m peer blk
     -> NetworkApplication m peer localPeer bytesCS bytesBF bytesTX bytesLCS bytesLTX bytesLSQ ()
-consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHandlers {..} =
+consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} chainSyncTimeout ProtocolHandlers {..} =
     NetworkApplication {
       naChainSyncClient,
       naChainSyncServer,
@@ -534,7 +535,7 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
           (contramap (TraceLabelPeer them) ptChainSyncTracer)
           pcChainSyncCodec
           (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
-          timeLimitsChainSync
+          (timeLimitsChainSync chainSyncTimeout)
           channel
           $ chainSyncClientPeerPipelined
           $ phChainSyncClient varCandidate
@@ -548,7 +549,7 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
         (contramap (TraceLabelPeer them) ptChainSyncSerialisedTracer)
         pcChainSyncCodecSerialised
         (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
-        timeLimitsChainSync
+        (timeLimitsChainSync chainSyncTimeout)
         channel
         $ chainSyncServerPeer
         $ phChainSyncServer registry
