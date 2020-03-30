@@ -87,11 +87,22 @@ dnsResolve tracer resolver peerStatesVar beforeConnect (DnsSubscriptionTarget do
     ipv4Rsps <- newEmptyTMVarM
     gotIpv6Rsp <- Lazy.newTVarM False
 
-    aid_ipv6 <- async $ resolveAAAA gotIpv6Rsp ipv6Rsps
-    aid_ipv4 <- async $ resolveA gotIpv6Rsp ipv4Rsps
+    -- Though the DNS lib does have its own timeouts, these do not work
+    -- on Windows reliably so as a workaround we add an extra layer
+    -- of timeout on the outside.
+    -- TODO: fix upstream dns lib
+    res <- timeout 20 $ do
+             aid_ipv6 <- async $ resolveAAAA gotIpv6Rsp ipv6Rsps
+             aid_ipv4 <- async $ resolveA gotIpv6Rsp ipv4Rsps
+             rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
+             handleResult ipv6Rsps ipv4Rsps rd_e
+    case res of
+      Nothing -> do
+        -- TODO: the thread timedout, we should trace it
+        return (SubscriptionTarget $ pure Nothing)
+      Just st ->
+        return st
 
-    rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
-    handleResult ipv6Rsps ipv4Rsps rd_e
   where
     handleResult :: StrictTMVar m [Socket.SockAddr]
                  -> StrictTMVar m [Socket.SockAddr]
@@ -323,4 +334,3 @@ instance Show DnsTrace where
     show DnsTraceLookupIPv6First       = "Returning IPv6 address first"
     show (DnsTraceLookupAResult as)    = "Lookup A result: " ++ show as
     show (DnsTraceLookupAAAAResult as) = "Lookup AAAAA result: " ++ show as
-
