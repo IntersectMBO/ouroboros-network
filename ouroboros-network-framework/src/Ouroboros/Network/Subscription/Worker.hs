@@ -243,10 +243,10 @@ subscriptionLoop
     -- outer loop: set new 'conThread' variable, get targets and traverse
     -- through them trying to connect to each addr.
     forever $ do
+      traceWith tr (SubscriptionTraceStart valency)
       start <- getMonotonicTime
       conThreads <- atomically $ newTVar Set.empty
       sTarget <- subscriptionTargets
-      traceWith tr (SubscriptionTraceStart valency)
       innerLoop conThreads valencyVar sTarget
       atomically $ waitValencyCounter valencyVar
 
