@@ -308,10 +308,10 @@ namedPipeSnocket ioManager path = Snocket {
                    (Win32.pIPE_ACCESS_DUPLEX .|. Win32.fILE_FLAG_OVERLAPPED)
                    (Win32.pIPE_TYPE_BYTE .|. Win32.pIPE_READMODE_BYTE)
                    Win32.pIPE_UNLIMITED_INSTANCES
-                   maxBound
-                   maxBound
-                   0
-                   Nothing
+                   65536   -- outbound pipe size
+                   16384   -- inbound pipe size
+                   0       -- default timeout
+                   Nothing -- default security
         associateWithIOManager ioManager (Left hpipe)
           `catch` \(e :: IOException) -> do
             Win32.closeHandle hpipe
@@ -363,10 +363,10 @@ namedPipeSnocket ioManager path = Snocket {
                  (Win32.pIPE_ACCESS_DUPLEX .|. Win32.fILE_FLAG_OVERLAPPED)
                  (Win32.pIPE_TYPE_BYTE .|. Win32.pIPE_READMODE_BYTE)
                  Win32.pIPE_UNLIMITED_INSTANCES
-                 maxBound
-                 maxBound
-                 0
-                 Nothing
+                 65536   -- outbound pipe size
+                 16384   -- inbound pipe size
+                 0       -- default timeout
+                 Nothing -- default security
               `catch` \(e :: IOException) -> do
                  putStrLn $ "accept: " ++ show e
                  throwIO e
