@@ -57,7 +57,6 @@ import           Cardano.Prelude (Natural, NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Network.Block (pointSlot)
-import           Ouroboros.Network.Point (fromWithOrigin)
 
 import qualified Ouroboros.Consensus.Node.State as NodeState
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -333,12 +332,10 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
               } = icn
             prtclState = State.currentPRTCLState cs
             eta0       = prtclStateEta0 prtclState
-            prevHash   = fromWithOrigin emptyChainSeedHash
-                           (prtclStateHash prtclState)
             vkhCold    = SL.hashKey tpraosIsCoreNodeColdVerKey
             t          = leaderThreshold cfg lv vkhCold
-            rho'       = SL.mkSeed SL.seedEta slot eta0 prevHash
-            y'         = SL.mkSeed SL.seedL   slot eta0 prevHash
+            rho'       = SL.mkSeed SL.seedEta slot eta0
+            y'         = SL.mkSeed SL.seedL   slot eta0
         rho <- VRF.evalCertified () rho' tpraosIsCoreNodeSignKeyVRF
         y   <- VRF.evalCertified () y'   tpraosIsCoreNodeSignKeyVRF
         -- First, check whether we're in the overlay schedule
@@ -399,16 +396,6 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
   -- filled; instead we roll back the the block just before it.
   rewindConsensusState TPraosConfig{..} cs rewindTo =
     State.rewind (pointSlot rewindTo) cs
-
-
--- | TODO When starting from an empty chain we don't have a previous hash that
--- we can pass to 'SL.mkSeed'. In that case, we use this hash.
---
--- Note that the VRF checks are skipped for the first block, so the resulting
--- seed won't be used in the end, see
--- <https://github.com/input-output-hk/cardano-ledger-specs/pull/1326>
-emptyChainSeedHash :: forall c. Crypto c => SL.HashHeader c
-emptyChainSeedHash = SL.HashHeader $ coerce $ SL.hash @(HASH c) @Int 0
 
 mkShelleyGlobals :: TPraosParams -> SL.Globals
 mkShelleyGlobals TPraosParams {..} = SL.Globals {

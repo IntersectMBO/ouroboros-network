@@ -195,45 +195,19 @@ instance Crypto c => FromCBOR (Header (ShelleyBlock c)) where
 encodeShelleyBlockWithInfo :: Crypto c => ShelleyBlock c -> BinaryInfo Encoding
 encodeShelleyBlockWithInfo blk = BinaryInfo {
       binaryBlob   = toCBOR blk
-      -- See 'shelleyAddHeaderEnvelope'
-    , headerOffset = 0
+      -- Drop the 'encodeListLen' that precedes the header and the body (= tx
+      -- seq)
+    , headerOffset = 1
       -- TODO When we have annotations in the Shelley decoders, this will
       -- become much cheaper
     , headerSize   = fromIntegral $ Lazy.length (serialize (getHeader blk))
     }
 
 -- | When given the raw header bytes extracted from the block (see
--- 'encodeShelleyBlockWithInfo'), we still need to prepend the correct list
--- length so that we can decode the header with 'fromCBOR':
---
--- > > putStrLn $ prettyHexEnc $ toCBOR blk
--- > 93  # list(19)
--- >    44 ec 7f 7e 7b  # bytes(4)
--- >    1a 20 28 e0 2b  # int(539549739)
--- >    ...
--- >         0a  # integer(10)
--- >    80  # list(0)
--- >    80  # list(0)
--- >    a0  # map(0)
---
--- > > putStrLn $ prettyHexEnc $ toCBOR (getHeader blk)
--- > 90  # list(16)
--- >    44 ec 7f 7e 7b  # bytes(4)
--- >    1a 20 28 e0 2b  # int(539549739)
--- >    ...
--- >          0a  # integer(10)
---
--- Note that the block contains three fields more than the header. For some
--- reason, the header is not nested in the block, but its \"list\"
--- ('encodeListLen') is extended with the three extra fields.
---
--- This function will be given the bytestring corresponding to the encoding of
--- the block with but without the three extra fields that are not part of the
--- header. This function will drop the first byte (\"list length of 19\") and
--- prepend a byte representing a \"list length of 16\" and leave the remainder
--- of the bytestring untouched.
+-- 'encodeShelleyBlockWithInfo'), we have a bytestring exactly corresponding
+-- to the header, no modifications needed.
 shelleyAddHeaderEnvelope :: Lazy.ByteString -> Lazy.ByteString
-shelleyAddHeaderEnvelope = Lazy.cons 0x90 . Lazy.drop 1
+shelleyAddHeaderEnvelope = id
 
 {-------------------------------------------------------------------------------
   Condense
