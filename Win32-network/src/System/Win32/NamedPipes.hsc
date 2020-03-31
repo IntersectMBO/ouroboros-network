@@ -3,8 +3,6 @@
 
 {-# LANGUAGE CPP                #-}
 {-# LANGUAGE BangPatterns       #-}
-{-# LANGUAGE CApiFFI            #-}
-{-# LANGUAGE InterruptibleFFI   #-}
 {-# LANGUAGE MultiWayIf         #-}
 {-# LANGUAGE NumericUnderscores #-}
 
