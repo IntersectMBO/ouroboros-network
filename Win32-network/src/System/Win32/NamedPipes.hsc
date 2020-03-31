@@ -29,10 +29,20 @@ module System.Win32.NamedPipes (
     pIPE_READMODE_MESSAGE,
 
     -- * Named pipe client APIs
+    -- ** create named pipe
     -- | This directly reuses other Win32 file APIs
-    createFile
+    createFile,
+
+    -- ** waiting for named pipe instances
+    waitNamedPipe,
+
+    TimeOut,
+    nMPWAIT_USE_DEFAULT_WAIT,
+    nMPWAIT_WAIT_FOREVER
   ) where
 
+
+import Foreign.C.String (withCString)
 
 import System.Win32.Types
 import System.Win32.File
@@ -147,3 +157,37 @@ foreign import ccall unsafe "windows.h CreateNamedPipeW"
                     -> DWORD
                     -> LPSECURITY_ATTRIBUTES
                     -> IO HANDLE
+
+
+-- | Timeout in milliseconds.
+--
+-- * 'nMPWAIT_USE_DEFAULT_WAIT' indicates that the timeout value passed to
+--   'createNamedPipe' should be used.
+-- * 'nMPWAIT_WAIT_FOREVER' - 'waitNamedPipe' will block forever, until a named
+--   pipe instance is available.
+--
+type TimeOut = DWORD
+#{enum TimeOut,
+ , nMPWAIT_USE_DEFAULT_WAIT = NMPWAIT_USE_DEFAULT_WAIT
+ , nMPWAIT_WAIT_FOREVER     = NMPWAIT_WAIT_FOREVER
+ }
+
+
+-- | Wait until a named pipe instance is available.  If there is no instance at
+-- hand before the timeout, it will error with 'ERROR_SEM_TIMEOUT', i.e.
+-- @invalid argument (The semaphore timeout period has expired)@
+--
+waitNamedPipe :: String  -- ^ pipe name
+              -> TimeOut -- ^ nTimeOut
+              -> IO ()
+waitNamedPipe name timeout =
+    withCString name $ \ c_name ->
+      failIfFalse_  "WaitNamedPipe" $
+        c_WaitNamedPipe c_name timeout
+
+
+-- 'c_WaitNamedPipe' is a blocking call, hence the _safe_ import.
+foreign import ccall safe "windows.h WaitNamedPipeA"
+  c_WaitNamedPipe :: LPCSTR -- lpNamedPipeName
+                  -> DWORD  -- nTimeOut
+                  -> IO BOOL
