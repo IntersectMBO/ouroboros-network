@@ -1,10 +1,10 @@
 #include <fcntl.h>
 #include <windows.h>
 
-{-# LANGUAGE CPP              #-}
-{-# LANGUAGE BangPatterns     #-}
-{-# LANGUAGE CApiFFI          #-}
-{-# LANGUAGE InterruptibleFFI #-}
+{-# LANGUAGE CPP                #-}
+{-# LANGUAGE BangPatterns       #-}
+{-# LANGUAGE MultiWayIf         #-}
+{-# LANGUAGE NumericUnderscores #-}
 
 -- | For full details on the Windows named pipes API see
 -- <https://docs.microsoft.com/en-us/windows/desktop/ipc/named-pipes>
@@ -29,12 +29,23 @@ module System.Win32.NamedPipes (
     pIPE_READMODE_MESSAGE,
 
     -- * Named pipe client APIs
-    -- | This directly reuses other Win32 file APIs
-    createFile
+    -- ** connect to a named pipe
+    connect,
+
+    -- ** waiting for named pipe instances
+    waitNamedPipe,
+
+    TimeOut,
+    nMPWAIT_USE_DEFAULT_WAIT,
+    nMPWAIT_WAIT_FOREVER,
   ) where
 
 
-import System.Win32.Types
+import Control.Exception
+import Control.Monad (when)
+import Foreign.C.String (withCString)
+
+import System.Win32.Types hiding (try)
 import System.Win32.File
 
 -- | The named pipe open mode.
@@ -147,3 +158,99 @@ foreign import ccall unsafe "windows.h CreateNamedPipeW"
                     -> DWORD
                     -> LPSECURITY_ATTRIBUTES
                     -> IO HANDLE
+
+
+-- | Timeout in milliseconds.
+--
+-- * 'nMPWAIT_USE_DEFAULT_WAIT' indicates that the timeout value passed to
+--   'createNamedPipe' should be used.
+-- * 'nMPWAIT_WAIT_FOREVER' - 'waitNamedPipe' will block forever, until a named
+--   pipe instance is available.
+--
+type TimeOut = DWORD
+#{enum TimeOut,
+ , nMPWAIT_USE_DEFAULT_WAIT = NMPWAIT_USE_DEFAULT_WAIT
+ , nMPWAIT_WAIT_FOREVER     = NMPWAIT_WAIT_FOREVER
+ }
+
+
+-- | Wait until a named pipe instance is available.  If there is no instance at
+-- hand before the timeout, it will error with 'ERROR_SEM_TIMEOUT', i.e.
+-- @invalid argument (The semaphore timeout period has expired)@
+--
+-- It returns 'True' if there is an available instance, subusequent
+-- 'createFile' might still fail, if another thread will take turn and connect
+-- before, or if the other end shuts down the name pipe.
+--
+-- It returns 'False' if timeout fired.
+--
+waitNamedPipe :: String  -- ^ pipe name
+              -> TimeOut -- ^ nTimeOut
+              -> IO Bool
+waitNamedPipe name timeout =
+    withCString name $ \ c_name -> do
+      r <- c_WaitNamedPipe c_name timeout
+      e <- getLastError
+      if | r                      -> pure r
+         | e == eRROR_SEM_TIMEOUT -> pure False
+         | otherwise              -> failWith "waitNamedPipe" e
+
+
+-- 'c_WaitNamedPipe' is a blocking call, hence the _safe_ import.
+foreign import ccall safe "windows.h WaitNamedPipeA"
+  c_WaitNamedPipe :: LPCSTR -- lpNamedPipeName
+                  -> DWORD  -- nTimeOut
+                  -> IO BOOL
+
+-- | A reliable connect call, as designed in
+-- <https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipe-client>
+--
+-- The arguments are passed directly to 'createFile'.
+--
+-- Note we pick the more familiar posix naming convention, do not confuse this
+-- function with 'connectNamedPipe' (which corresponds to posix 'accept')
+--
+connect :: String                      -- ^ file name
+        -> AccessMode                  -- ^ dwDesiredAccess
+        -> ShareMode                   -- ^ dwSharedMode
+        -> Maybe LPSECURITY_ATTRIBUTES -- ^ lpSecurityAttributes
+        -> CreateMode                  -- ^ dwCreationDisposition
+        -> FileAttributeOrFlag         -- ^ dwFlagsAndAttributes
+        -> Maybe HANDLE                -- ^ hTemplateFile
+        -> IO HANDLE
+connect fileName dwDesiredAccess dwSharedMode lpSecurityAttributes dwCreationDisposition dwFlagsAndAttributes hTemplateFile = connectLoop
+  where
+    connectLoop = do
+      -- `createFile` checks for `INVALID_HANDLE_VALUE` and retries if this is
+      -- caused by `ERROR_SHARING_VIOLATION`.
+      mh <- try $
+              createFile fileName
+                         dwDesiredAccess
+                         dwSharedMode
+                         lpSecurityAttributes
+                         dwCreationDisposition
+                         dwFlagsAndAttributes
+                         hTemplateFile
+      case mh :: Either IOException HANDLE of
+        Left e -> do
+          -- unfortuntally 'ERROR_PIPE_BUSY' is not part of 'errentry' in
+          -- `libraries/cbits/Win32Utils.c`.
+          errorCode <- getLastError
+          when (errorCode /= eRROR_PIPE_BUSY)
+            $ throwIO e
+          -- all pipe instance were busy, wait 20s and retry; we ignore the
+          -- result
+          _ <- waitNamedPipe fileName 5_000
+          connectLoop
+
+        Right h -> pure h
+
+
+-- | [ERROR_PIPE_BUSY](https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-#ERROR_PIPE_BUSY):
+-- all pipe instances are busy.
+--
+eRROR_PIPE_BUSY :: ErrCode
+eRROR_PIPE_BUSY = #const ERROR_PIPE_BUSY
+
+eRROR_SEM_TIMEOUT :: ErrCode
+eRROR_SEM_TIMEOUT = #const ERROR_SEM_TIMEOUT

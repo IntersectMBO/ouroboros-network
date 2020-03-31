@@ -115,7 +115,7 @@ demo chain0 updates = do
                   maxBound
                   0
                   Nothing
-           <*> Win32.NamedPipes.createFile
+           <*> Win32.NamedPipes.connect
                  pipeName
                  (Win32.gENERIC_READ .|. Win32.gENERIC_WRITE)
                  (Win32.fILE_SHARE_NONE)
