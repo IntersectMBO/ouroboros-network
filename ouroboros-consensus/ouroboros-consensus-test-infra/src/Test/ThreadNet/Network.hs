@@ -759,6 +759,7 @@ runThreadNetwork ThreadNetworkArgs
                   -- node
                   nullDebugProtocolTracers
                   (customProtocolCodecs pInfoConfig)
+                  Nothing
                   (protocolHandlers nodeArgs nodeKernel)
 
       -- In practice, a robust wallet/user can persistently add a transaction

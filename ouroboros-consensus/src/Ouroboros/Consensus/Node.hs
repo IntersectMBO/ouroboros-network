@@ -209,6 +209,8 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
       nodeKernel
       protocolTracers
       (protocolCodecs (getTopLevelConfig nodeKernel) version)
+      (Just 70) -- timeout after waiting this long for the next header
+                -- 70s allows for 3 slots (3 * 20s)
       (protocolHandlers nodeArgs nodeKernel)
 
     mkDiffusionApplications

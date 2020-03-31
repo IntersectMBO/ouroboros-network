@@ -50,16 +50,16 @@ byteLimitsChainSync = ProtocolSizeLimits stateToLimit
 --
 -- `TokIdle`  No timeout
 -- `TokNext TokCanAwait` `longWait` timeout
--- `TokNext TokMustReply` No timeout
--- `TokIntersect` `longWait timeout
-timeLimitsChainSync :: ProtocolTimeLimits (ChainSync header tip)
-timeLimitsChainSync = ProtocolTimeLimits stateToLimit
+-- `TokNext TokMustReply` consensusTimeout timeout
+-- `TokIntersect` `longWait` timeout
+timeLimitsChainSync :: Maybe DiffTime -> ProtocolTimeLimits (ChainSync header tip)
+timeLimitsChainSync consensusTimeout = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header tip).
                     PeerHasAgency pr st -> Maybe DiffTime
     stateToLimit (ClientAgency TokIdle)                = waitForever
     stateToLimit (ServerAgency (TokNext TokCanAwait))  = shortWait
-    stateToLimit (ServerAgency (TokNext TokMustReply)) = waitForever
+    stateToLimit (ServerAgency (TokNext TokMustReply)) = consensusTimeout
     stateToLimit (ServerAgency TokIntersect)           = shortWait
 
 -- | The main CBOR 'Codec' for the 'ChainSync' protocol.
