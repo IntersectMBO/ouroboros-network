@@ -17,6 +17,7 @@ import           Data.List
 import qualified Data.Map as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Text.Read (readMaybe)
 import           Data.Void (Void)
 
 import           Control.Concurrent (threadDelay)
@@ -75,8 +76,12 @@ main = do
     case args of
       "chainsync":"client":_  ->
         case restArgs of
-          []        -> clientChainSync [defaultLocalSocketAddrPath]
-          sockAddrs -> clientChainSync sockAddrs
+          []             -> clientChainSync [defaultLocalSocketAddrPath]
+          [sockAddrOrNr] -> clientChainSync $
+                              case readMaybe sockAddrOrNr of
+                                Just nr -> replicate nr defaultLocalSocketAddrPath
+                                Nothing -> [sockAddrOrNr]
+          sockAddrs      -> clientChainSync sockAddrs
       "chainsync":"server":_          -> do
         let sockAddr = case restArgs of
               addr:_ -> addr
@@ -145,7 +150,8 @@ demoProtocol2 chainSync =
 
 clientChainSync :: [FilePath] -> IO ()
 clientChainSync sockPaths = withIOManager $ \iocp ->
-    forConcurrently_ sockPaths $ \sockPath ->
+    forConcurrently_ (zip [0..] sockPaths) $ \(index, sockPath) -> do
+      threadDelay (50000 * index)
       connectToNode
         (localSnocket iocp sockPath)
         cborTermVersionDataCodec
