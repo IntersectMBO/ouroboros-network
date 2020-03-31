@@ -43,7 +43,6 @@ import           Prelude hiding (read)
 
 import           Data.Dynamic (Dynamic, fromDynamic, toDyn)
 import           Data.Foldable (traverse_)
-import           Data.Functor (void)
 import qualified Data.List as List
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -420,10 +419,12 @@ instance MonadTimer (SimM s) where
                                          else Nothing)
           (\_ -> return Nothing) $
           bracket
-            (void $ fork $ do
+            (fork $ do
                 fired <- atomically $ awaitTimeout t
                 when fired $ throwTo pid (TimeoutException tid))
-            (\_ -> cancelTimeout t)
+            (\pid' -> do
+                  cancelTimeout t
+                  throwTo pid' AsyncCancelled)
             (\_ -> Just <$> action)
 
 newtype TimeoutException = TimeoutException TimeoutId deriving Eq
