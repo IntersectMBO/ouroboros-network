@@ -40,10 +40,6 @@ module System.Win32.NamedPipes (
     TimeOut,
     nMPWAIT_USE_DEFAULT_WAIT,
     nMPWAIT_WAIT_FOREVER,
-
-    -- ** create named pipe
-    -- | This directly reuses other Win32 file APIs
-    createFile
   ) where
 
 
