@@ -323,7 +323,7 @@ namedPipeSnocket ioManager path = Snocket {
 
     -- To connect, simply create a file whose name is the named pipe name.
     , openToConnect  = \(LocalAddress pipeName) -> do
-        hpipe <- Win32.createFile pipeName
+        hpipe <- Win32.connect pipeName
                    (Win32.gENERIC_READ .|. Win32.gENERIC_WRITE )
                    Win32.fILE_SHARE_NONE
                    Nothing
