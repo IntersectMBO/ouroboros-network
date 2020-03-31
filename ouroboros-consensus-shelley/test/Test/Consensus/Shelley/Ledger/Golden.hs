@@ -8,14 +8,16 @@ module Test.Consensus.Shelley.Ledger.Golden (
   , mkDummyHash
   ) where
 
-import           Codec.CBOR.FlatTerm (TermToken (..))
+import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..))
 import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
+import qualified Data.Set as Set
 
 import           Cardano.Binary (toCBOR)
 
-import           Ouroboros.Network.Block (SlotNo (..), blockHash, genesisPoint)
+import           Ouroboros.Network.Block (Point (..), SlotNo (..), blockHash,
+                     genesisPoint)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.HeaderValidation
@@ -27,11 +29,15 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Cardano.Ledger.Shelley.Crypto as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
+import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as STS
 import qualified Shelley.Spec.Ledger.STS.Ledger as STS
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
-import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (ConcreteCrypto)
+import qualified Shelley.Spec.Ledger.TxData as SL
+import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (ConcreteCrypto,
+                     hashKeyVRF)
 import qualified Test.Shelley.Spec.Ledger.Examples.Examples as Examples
 import qualified Test.Shelley.Spec.Ledger.Utils as SL (testGlobals)
 
@@ -45,6 +51,8 @@ import           Test.Tasty.HUnit
 
 import           Test.Util.Golden
 import           Test.Util.Orphans.Arbitrary ()
+
+import           Test.Cardano.Crypto.VRF.Fake (VerKeyVRF (..))
 
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 
@@ -60,10 +68,204 @@ tests = testGroup "Golden tests"
     , testCase "LedgerState"    test_golden_LedgerState
     , testCase "HeaderState"    test_golden_HeaderState
     , testCase "ExtLedgerState" test_golden_ExtLedgerState
-      -- TODO Query and result
+    , testQueries
+    , testResults
     ]
 
 type Block = ShelleyBlock TPraosMockCrypto
+
+testQueries :: TestTree
+testQueries = testGroup "Queries"
+    [ testCase "LedgerTip"
+        $ goldenTestQuery GetLedgerTip tipTerm
+    , testCase "EpochNo"
+        $ goldenTestQuery GetEpochNo echoNoTerm
+    , testCase "NonMyopicMemberRewards"
+        $ goldenTestQuery queryNonMyopicMemberRewards nonMyopicMemberRewardsTerm
+    , testCase "CurrentPParams"
+        $ goldenTestQuery GetCurrentPParams currentPParamsTerm
+    , testCase "ProposedPParamsUpdates"
+        $ goldenTestQuery GetProposedPParamsUpdates proposedPParamsUpdatesTerm
+    , testCase "StakeDistribution"
+        $ goldenTestQuery GetStakeDistribution stakeDistributionTerm
+    ]
+  where
+    tipTerm, echoNoTerm, nonMyopicMemberRewardsTerm, currentPParamsTerm :: FlatTerm
+    proposedPParamsUpdatesTerm, stakeDistributionTerm :: FlatTerm
+
+    tipTerm =
+      [ TkListLen 1
+      , TkInt 0
+      ]
+
+    echoNoTerm =
+      [ TkListLen 1
+      , TkInt 1
+      ]
+
+    nonMyopicMemberRewardsTerm =
+      [ TkListLen 2
+      , TkInt 2
+      , TkTag 258
+      , TkListLen 1
+      , TkListLen 2
+      , TkInt 0
+      , TkBytes "\147\184\133\173"
+      ]
+
+    currentPParamsTerm =
+      [ TkListLen 1
+      , TkInt 3
+      ]
+
+    proposedPParamsUpdatesTerm =
+      [ TkListLen 1
+      , TkInt 4
+      ]
+
+    stakeDistributionTerm =
+      [ TkListLen 1
+      , TkInt 5
+      ]
+
+    queryNonMyopicMemberRewards
+      :: Query Block (NonMyopicMemberRewards TPraosMockCrypto)
+    queryNonMyopicMemberRewards =
+      GetNonMyopicMemberRewards $ Set.singleton $
+        (SL.KeyHashObj . SL.hashKey . SL.vKey) $ SL.KeyPair 0 0
+
+    goldenTestQuery :: Query Block result -> FlatTerm -> Assertion
+    goldenTestQuery = goldenTestCBOR encodeShelleyQuery
+
+testResults :: TestTree
+testResults = testGroup "Results"
+    [ testCase "LedgerTip"
+        $ goldenTestResult GetLedgerTip (Point Origin) [TkListLen 0]
+    , testCase "EpochNo"
+        $ goldenTestResult GetEpochNo 0 [TkInt 0]
+    , testCase "NonMyopicMemberRewards"
+        $ goldenTestResult (GetNonMyopicMemberRewards Set.empty) nonMyopicMemberRewards [TkMapLen 0]
+    , testCase "CurrentPParams"
+        $ goldenTestResult GetCurrentPParams currentPParams currentPParamsTerm
+    , testCase "ProposedPParamsUpdates"
+        $ goldenTestResult GetProposedPParamsUpdates proposedPParamsUpdates proposedPParamsUpdatesTerm
+    , testCase "StakeDistribution"
+        $ goldenTestResult GetStakeDistribution stakeDistribution stakeDistributionTerm
+    ]
+  where
+    nonMyopicMemberRewards :: (NonMyopicMemberRewards TPraosMockCrypto)
+    nonMyopicMemberRewards = NonMyopicMemberRewards Map.empty
+
+    currentPParams :: SL.PParams
+    currentPParams = SL.emptyPParams
+
+    proposedPParamsUpdates :: SL.ProposedPPUpdates TPraosMockCrypto
+    proposedPParamsUpdates = SL.ProposedPPUpdates $ Map.singleton
+      (SL.hashKey 0)
+      (SL.PParams
+        { _minfeeA         = Nothing
+        , _minfeeB         = Nothing
+        , _maxBBSize       = Nothing
+        , _maxTxSize       = Nothing
+        , _maxBHSize       = Nothing
+        , _keyDeposit      = Just 100
+        , _keyMinRefund    = Nothing
+        , _keyDecayRate    = Nothing
+        , _poolDeposit     = Nothing
+        , _poolMinRefund   = Nothing
+        , _poolDecayRate   = Nothing
+        , _eMax            = Nothing
+        , _nOpt            = Nothing
+        , _a0              = Nothing
+        , _rho             = Nothing
+        , _tau             = Nothing
+        , _activeSlotCoeff = Nothing
+        , _d               = Nothing
+        , _extraEntropy    = Nothing
+        , _protocolVersion = Nothing
+        })
+
+    stakeDistribution :: SL.PoolDistr TPraosMockCrypto
+    stakeDistribution = SL.PoolDistr $ Map.singleton
+      (SL.KeyHash $ SL.hash 0)
+      (1, hashKeyVRF $ VerKeyFakeVRF 0)
+
+    currentPParamsTerm :: FlatTerm
+    currentPParamsTerm =
+      [ TkListLen 20
+      , TkInt 0
+      , TkInt 0
+      , TkInt 0
+      , TkInt 2048
+      , TkInt 0
+      , TkInt 0
+      , TkTag 30
+      , TkListLen 2
+      , TkInt 0
+      , TkInt 1
+      , TkTag 30
+      , TkListLen 2
+      , TkInt 0
+      , TkInt 1
+      , TkInt 0
+      , TkTag 30
+      , TkListLen 2
+      , TkInt 0
+      , TkInt 1
+      , TkTag 30
+      , TkListLen 2
+      , TkInt 0
+      , TkInt 1
+      , TkInt 0
+      , TkInt 100
+      , TkTag 30
+      , TkListLen 2
+      , TkInt 0
+      , TkInt 1
+      , TkTag 30
+      , TkListLen 2
+      , TkInt 0
+      , TkInt 1
+      , TkTag 30
+      , TkListLen 2
+      , TkInt 0
+      , TkInt 1
+      , TkTag 30
+      , TkListLen 2
+      , TkInt 0
+      , TkInt 1
+      , TkTag 30
+      , TkListLen 2
+      , TkInt 0
+      , TkInt 1
+      , TkListLen 1
+      , TkInt 0
+      , TkInt 0
+      , TkInt 0
+      ]
+
+    proposedPParamsUpdatesTerm :: FlatTerm
+    proposedPParamsUpdatesTerm =
+      [ TkMapLen 1
+      , TkBytes "\147\184\133\173"
+      , TkMapLen 1
+      , TkInt 5
+      , TkInt 100
+      ]
+
+    stakeDistributionTerm :: FlatTerm
+    stakeDistributionTerm =
+      [ TkMapLen 1
+      , TkBytes "\147\184\133\173"
+      , TkListLen 2
+      , TkListLen 2
+      , TkInt 1
+      , TkInt 1
+      , TkBytes "\147\184\133\173"
+      ]
+
+    goldenTestResult :: Query Block result -> result -> FlatTerm -> Assertion
+    goldenTestResult q = goldenTestCBOR (encodeShelleyResult q)
 
 exampleBlock :: Block
 exampleBlock = mkShelleyBlock Examples.blockEx3B
@@ -931,7 +1133,8 @@ test_golden_HeaderState = goldenTestCBOR
     , TkInt 1
     , TkBytes "\219\193\180\201\NUL\255\228\141W[]\165\198\&8\EOT\SOH%\246]\176\254>$IKv\234\152dW\217\134"
     , TkListLen 0
-    , TkListLen 0]
+    , TkListLen 0
+    ]
 
 exampleHeaderState :: HeaderState Block
 exampleHeaderState = genesisHeaderState st

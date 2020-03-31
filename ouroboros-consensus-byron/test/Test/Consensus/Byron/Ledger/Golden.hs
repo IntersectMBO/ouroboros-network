@@ -6,18 +6,26 @@
 module Test.Consensus.Byron.Ledger.Golden (tests) where
 
 import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.FlatTerm (TermToken (..))
+import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..))
 import           Codec.CBOR.Read (deserialiseFromBytes)
 import           Control.Monad.Except (runExcept)
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Lazy.Char8 as Lazy8
+import qualified Data.Map as Map
 import qualified Data.Sequence.Strict as Seq
+import qualified Data.Set as Set
 
 import           Cardano.Binary (toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC
 import           Cardano.Chain.Genesis (configGenesisHeaderHash)
+import           Cardano.Chain.Update (ApplicationName (..))
+import           Cardano.Chain.Update.Validation.Endorsement
+                     (CandidateProtocolUpdate (..), Endorsement (..))
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
+import           Cardano.Chain.Update.Validation.Registration
+                     (ApplicationVersions, ProtocolUpdateProposals,
+                     SoftwareUpdateProposals)
 
 import           Ouroboros.Network.Block (SlotNo)
 import           Ouroboros.Network.Point (WithOrigin (At))
@@ -39,6 +47,7 @@ import           Test.Util.Golden
 
 import qualified Test.Cardano.Chain.Common.Example as CC
 import qualified Test.Cardano.Chain.Genesis.Dummy as CC
+import qualified Test.Cardano.Chain.Update.Example as CC
 import qualified Test.Cardano.Chain.UTxO.Example as CC
 
 tests :: TestTree
@@ -52,6 +61,8 @@ tests = testGroup "Golden tests"
     , testCase "TxSizeLinear"   test_golden_TxSizeLinear
     , testCase "HeaderState"    test_golden_HeaderState
     , testCase "ExtLedgerState" test_golden_ExtLedgerState
+    , testCase "Query"          test_golden_Query
+    , testCase "Result"         test_golden_Result
     ]
 
 -- | Note that we must use the same value for the 'SecurityParam' as for the
@@ -964,6 +975,188 @@ test_golden_TxSizeLinear = goldenTestCBOR
     exampleTxSizeLinear :: CC.TxSizeLinear
     exampleTxSizeLinear = CC.TxSizeLinear (CC.mkKnownLovelace @155381)
                                           (43.946 :: Rational)
+test_golden_Query :: Assertion
+test_golden_Query = goldenTestCBOR
+    encodeByronQuery
+    GetUpdateInterfaceState
+    [ TkInt 0
+    ]
+
+test_golden_Result :: Assertion
+test_golden_Result = goldenTestCBOR
+    (encodeByronResult GetUpdateInterfaceState)
+    state
+    flatTerm
+  where
+    state :: CC.UPI.State
+    state = CC.UPI.State
+      { CC.UPI.currentEpoch                      = 0
+      , CC.UPI.adoptedProtocolVersion            = CC.exampleProtocolVersion
+      , CC.UPI.adoptedProtocolParameters         = CC.dummyProtocolParameters
+      , CC.UPI.candidateProtocolUpdates          = [candidateProtocolUpdate]
+      , CC.UPI.appVersions                       = applicationVersions
+      , CC.UPI.registeredProtocolUpdateProposals = protocolUpdateProposals
+      , CC.UPI.registeredSoftwareUpdateProposals = softwareUpdateProposals
+      , CC.UPI.confirmedProposals                = Map.singleton CC.exampleUpId 0
+      , CC.UPI.proposalVotes                     = Map.singleton CC.exampleUpId Set.empty
+      , CC.UPI.registeredEndorsements            = Set.singleton endorsement
+      , CC.UPI.proposalRegistrationSlot          = Map.singleton CC.exampleUpId 0
+      }
+
+    candidateProtocolUpdate :: CandidateProtocolUpdate
+    candidateProtocolUpdate = CandidateProtocolUpdate
+      { cpuSlot               = 0
+      , cpuProtocolVersion    = CC.exampleProtocolVersion
+      , cpuProtocolParameters = CC.dummyProtocolParameters
+      }
+
+    applicationVersions :: ApplicationVersions
+    applicationVersions = Map.singleton
+      (ApplicationName "Golden-Test")
+      (0, 0, Map.empty)
+
+    protocolUpdateProposals :: ProtocolUpdateProposals
+    protocolUpdateProposals = Map.singleton
+      CC.exampleUpId
+      (CC.exampleProtocolVersion, CC.exampleProtocolParameters)
+
+    softwareUpdateProposals :: SoftwareUpdateProposals
+    softwareUpdateProposals = Map.singleton
+      CC.exampleUpId
+      ( CC.exampleSoftwareVersion
+      , Map.singleton CC.exampleSystemTag CC.exampleInstallerHash
+      )
+
+    endorsement :: Endorsement
+    endorsement = Endorsement
+      { endorsementProtocolVersion = CC.exampleProtocolVersion
+      , endorsementKeyHash         = CC.exampleKeyHash
+      }
+
+    flatTerm :: FlatTerm
+    flatTerm =
+      [ TkListLen 11
+      , TkInt 0
+      , TkListLen 3
+      , TkInt 1
+      , TkInt 1
+      , TkInt 1
+      , TkListLen 14
+      , TkInt 0
+      , TkInt 7000
+      , TkInt 2000000
+      , TkInt 2000000
+      , TkInt 8192
+      , TkInt 700
+      , TkInt 10000000000000
+      , TkInt 5000000000000
+      , TkInt 1000000000000
+      , TkInt 100000000000000
+      , TkInt 10
+      , TkListLen 3
+      , TkInt 900000000000000
+      , TkInt 600000000000000
+      , TkInt 50000000000000
+      , TkListLen 2
+      , TkInt 0
+      , TkTag 24
+      , TkBytes "\130\ESC\NUL\NUL\141QuOR\NUL\ESC\NUL\NUL\NUL\n;b\190\128"
+      , TkInteger 18446744073709551615
+      , TkListBegin
+      , TkListLen 3
+      , TkInt 0
+      , TkListLen 3
+      , TkInt 1
+      , TkInt 1
+      , TkInt 1
+      , TkListLen 14
+      , TkInt 0
+      , TkInt 7000
+      , TkInt 2000000
+      , TkInt 2000000
+      , TkInt 8192
+      , TkInt 700
+      , TkInt 10000000000000
+      , TkInt 5000000000000
+      , TkInt 1000000000000
+      , TkInt 100000000000000
+      , TkInt 10
+      , TkListLen 3
+      , TkInt 900000000000000
+      , TkInt 600000000000000
+      , TkInt 50000000000000
+      , TkListLen 2
+      , TkInt 0
+      , TkTag 24
+      , TkBytes "\130\ESC\NUL\NUL\141QuOR\NUL\ESC\NUL\NUL\NUL\n;b\190\128"
+      , TkInteger 18446744073709551615
+      , TkBreak
+      , TkMapLen 1
+      , TkString "Golden-Test"
+      , TkListLen 3
+      , TkInt 0
+      , TkInt 0
+      , TkMapLen 0
+      , TkMapLen 1
+      , TkBytes "r#\ESC\141\CAN\213_f7Y\FS-q\252G\164'\156\180f\250PY\210\235\188|\138\DC2 \250\236"
+      , TkListLen 2
+      , TkListLen 3
+      , TkInt 1
+      , TkInt 1
+      , TkInt 1
+      , TkListLen 14
+      , TkInt 999
+      , TkInt 999
+      , TkInt 999
+      , TkInt 999
+      , TkInt 999
+      , TkInt 999
+      , TkInt 99
+      , TkInt 99
+      , TkInt 99
+      , TkInt 99
+      , TkInt 99
+      , TkListLen 3
+      , TkInt 99
+      , TkInt 99
+      , TkInt 99
+      , TkListLen 2
+      , TkInt 0
+      , TkTag 24
+      , TkBytes "\130\ESC\NUL\NUL\NUL\232\153\nF\NUL\ESC\NUL\NUL\NUL\DC1\237\142\194\NUL"
+      , TkInt 99
+      , TkMapLen 1
+      , TkBytes "r#\ESC\141\CAN\213_f7Y\FS-q\252G\164'\156\180f\250PY\210\235\188|\138\DC2 \250\236"
+      , TkListLen 2
+      , TkListLen 2
+      , TkString "Golden"
+      , TkInt 99
+      , TkMapLen 1
+      , TkString "Kmyw4lDSE5S4fSH6"
+      , TkListLen 4
+      , TkBytes "\ETX\ETB\n.u\151\183\183\227\216L\ENQ9\GS\DC3\154b\177W\231\135\134\216\192\130\242\157\207L\DC1\DC3\DC4"
+      , TkBytes "\206\192+A\165\194\&6\ACK\156\179\253?\166X\160\DC3\226\&0\135< \DC3\247\131\192P@7\220\133\149\135"
+      , TkBytes "\ETX\ETB\n.u\151\183\183\227\216L\ENQ9\GS\DC3\154b\177W\231\135\134\216\192\130\242\157\207L\DC1\DC3\DC4"
+      , TkBytes "\ETX\ETB\n.u\151\183\183\227\216L\ENQ9\GS\DC3\154b\177W\231\135\134\216\192\130\242\157\207L\DC1\DC3\DC4"
+      , TkMapLen 1
+      , TkBytes "r#\ESC\141\CAN\213_f7Y\FS-q\252G\164'\156\180f\250PY\210\235\188|\138\DC2 \250\236"
+      , TkInt 0
+      , TkMapLen 1
+      , TkBytes "r#\ESC\141\CAN\213_f7Y\FS-q\252G\164'\156\180f\250PY\210\235\188|\138\DC2 \250\236"
+      , TkTag 258
+      , TkListLen 0
+      , TkTag 258
+      , TkListLen 1
+      , TkListLen 2
+      , TkListLen 3
+      , TkInt 1
+      , TkInt 1
+      , TkInt 1
+      , TkBytes "\180\192\224\129\n\140\212\245\185$\156A\144\a\EOT\179^\209\134 \\p\138@\181\171\172\144"
+      , TkMapLen 1
+      , TkBytes "r#\ESC\141\CAN\213_f7Y\FS-q\252G\164'\156\180f\250PY\210\235\188|\138\DC2 \250\236"
+      , TkInt 0
+      ]
 
 -- | Check whether we can successfully decode the contents of the given file.
 -- This file will typically contain an older serialisation format.
