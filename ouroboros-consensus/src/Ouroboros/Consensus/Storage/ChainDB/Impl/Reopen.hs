@@ -125,6 +125,12 @@ reopen (CDBHandle varState) launchBgTasks = do
         replayed <- LgrDB.reopen cdbLgrDB cdbImmDB lgrReplayTracer
         traceWith cdbTracer $ TraceOpenEvent OpenedLgrDB
 
+        -- Drop scheduled chain selections, because we're not guaranteed that
+        -- these blocks still exist in the VolatileDB.
+        --
+        -- See #1880.
+        atomically $ writeTVar cdbFutureBlocks mempty
+
         curSlot        <- atomically $ getCurrentSlot cdbBlockchainTime
         chainAndLedger <- initialChainSelection
            cdbImmDB

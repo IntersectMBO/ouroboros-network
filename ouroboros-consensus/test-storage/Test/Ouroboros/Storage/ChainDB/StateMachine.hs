@@ -58,7 +58,6 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Cardano.Crypto.DSIGN.Mock
 import           Cardano.Slotting.Slot hiding (At)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -75,17 +74,13 @@ import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
                      (settableBlockchainTime)
 import           Ouroboros.Consensus.Config
-import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (takeLast)
@@ -162,6 +157,8 @@ data Cmd blk it rdr
   | Reopen
     -- Internal
   | RunBgTasks
+    -- Corruption
+  | WipeVolDB
   deriving (Generic, Show, Functor, Foldable, Traversable)
 
 -- = Invalid blocks
@@ -300,15 +297,21 @@ type TestIterator m blk = WithEq (Iterator m blk (AllComponents blk))
 -- | Short-hand
 type TestReader   m blk = WithEq (Reader   m blk (AllComponents blk))
 
+-- | Environment to run commands against the real ChainDB implementation.
+data ChainDBEnv m blk = ChainDBEnv
+  { chainDB    :: ChainDB m blk
+  , internal   :: ChainDB.Internal m blk
+  , registry   :: ResourceRegistry m
+  , varCurSlot :: StrictTVar m SlotNo
+  , varNextId  :: StrictTVar m Id
+  , varVolDbFs :: StrictTVar m MockFS
+  }
+
 run :: forall m blk. (IOLike m, HasHeader blk)
-    => ChainDB          m blk
-    -> ChainDB.Internal m blk
-    -> ResourceRegistry m
-    -> StrictTVar m SlotNo
-    -> StrictTVar m Id
+    => ChainDBEnv m blk
     ->    Cmd     blk (TestIterator m blk) (TestReader m blk)
     -> m (Success blk (TestIterator m blk) (TestReader m blk))
-run chainDB@ChainDB{..} internal registry varCurSlot varNextId = \case
+run ChainDBEnv { chainDB = chainDB@ChainDB{..}, .. } = \case
     AddBlock blk             -> Point               <$> (advanceAndAdd (blockSlot blk) blk)
     AddFutureBlock blk s     -> Point               <$> (advanceAndAdd s               blk)
     GetCurrentChain          -> Chain               <$> atomically getCurrentChain
@@ -331,6 +334,7 @@ run chainDB@ChainDB{..} internal registry varCurSlot varNextId = \case
     Close                    -> Unit                <$> closeDB
     Reopen                   -> Unit                <$> intReopen internal False
     RunBgTasks               -> ignore              <$> runBgTasks internal
+    WipeVolDB                -> Point               <$> wipeVolDB
   where
     mbAllComponents = fmap MbAllComponents . traverse runAllComponentsM
     mbGCedAllComponents = fmap (MbGCedAllComponents . MaybeGCedBlock True) . traverse runAllComponentsM
@@ -349,6 +353,13 @@ run chainDB@ChainDB{..} internal registry varCurSlot varNextId = \case
           atomically $ writeTVar varCurSlot slot
           intScheduledChainSelection internal slot
       addBlock chainDB blk
+
+    wipeVolDB :: m (Point blk)
+    wipeVolDB = do
+      closeDB
+      atomically $ writeTVar varVolDbFs Mock.empty
+      intReopen internal False
+      atomically $ getTipPoint
 
     giveWithEq :: a -> m (WithEq a)
     giveWithEq a =
@@ -485,9 +496,10 @@ runPure cfg = \case
     ReaderForward rdr pts    -> err MbPoint             $ updateE (Model.readerForward rdr pts)
     ReaderClose rdr          -> ok  Unit                $ update_ (Model.readerClose rdr)
     -- TODO can this execute while closed?
-    RunBgTasks               -> ok  Unit                $ update_ (Model.garbageCollect k)
+    RunBgTasks               -> ok  Unit                $ update_ (Model.garbageCollect k . Model.copyToImmDB k)
     Close                    -> openOrClosed            $ update_  Model.closeDB
     Reopen                   -> openOrClosed            $ update_  Model.reopen
+    WipeVolDB                -> ok  Point               $ update  (Model.wipeVolDB cfg)
   where
     k = configSecurityParam cfg
 
@@ -520,15 +532,10 @@ runPure cfg = \case
     openOrClosed f = first (Resp . Right . Unit) . f
 
 runIO :: HasHeader blk
-      => ChainDB          IO blk
-      -> ChainDB.Internal IO blk
-      -> ResourceRegistry IO
-      -> StrictTVar       IO SlotNo
-      -> StrictTVar       IO Id
-      ->     Cmd  blk (WithEq (Iterator IO blk (AllComponents blk))) (WithEq (Reader IO blk (AllComponents blk)))
-      -> IO (Resp blk (WithEq (Iterator IO blk (AllComponents blk))) (WithEq (Reader IO blk (AllComponents blk))))
-runIO db internal registry varCurSlot varNextId cmd =
-    Resp <$> try (run db internal registry varCurSlot varNextId cmd)
+      => ChainDBEnv IO blk
+      ->     Cmd  blk (TestIterator IO blk) (TestReader IO blk)
+      -> IO (Resp blk (TestIterator IO blk) (TestReader IO blk))
+runIO env cmd = Resp <$> try (run env cmd)
 
 {-------------------------------------------------------------------------------
   Collect arguments
@@ -667,6 +674,11 @@ lockstep model@Model {..} cmd (At resp) = Event
         , knownIters   = RE.empty
         , knownReaders = RE.empty
         }
+      WipeVolDB -> model
+        { dbModel      = dbModel'
+        , knownIters   = RE.empty
+        , knownReaders = RE.empty
+        }
       _ -> model
         { dbModel      = dbModel'
         , knownIters   = knownIters `RE.union` newIters
@@ -717,6 +729,7 @@ generator genBlock m@Model {..} = At <$> frequency
 
       -- Internal
     , (if empty then 1 else 10, return RunBgTasks)
+    , (if empty then 1 else 10, return WipeVolDB)
     ]
     -- TODO adjust the frequencies after labelling
   where
@@ -891,16 +904,26 @@ precondition Model {..} (At cmd) =
      -- with iterators that the model allows. So we only test a subset of the
      -- functionality, which does not include error paths.
      Stream from to           -> isValidIterator from to
-     -- Make sure we don't close (and reopen) when there are other chain
+     -- Make sure we don't close (and reopen) when there are other chains
      -- equally preferable or even more preferable (which we can't switch to
      -- because they fork back more than @k@) than the current chain in the
      -- ChainDB. We might pick another one than the current one when
      -- reopening, which would bring us out of sync with the model, for which
      -- reopening is a no-op (no chain selection). See #1533.
-     Close                    -> Not equallyOrMorePreferableFork
+     --
+     -- Similary, don't close (and reopen) when there are future blocks. The
+     -- real implementation will drop the scheduled chain selections for
+     -- those, so it will not automatically run chain selection for them when
+     -- their slot becomes the current slot after reopening. Such blocks will
+     -- only be adopted when a successor of them is added. However, in the
+     -- model, we run chain selection from scratch, so we might adopt one of
+     -- the future blocks when adding another block (that we don't adopt).
+     Close                    -> Not equallyOrMorePreferableFork .&&
+                                 Boolean (Map.null (Model.futureBlocks dbModel))
      -- To be in the future, @blockSlot blk@ must be greater than @slot@.
      AddFutureBlock blk s     -> s .>= Model.currentSlot dbModel .&&
                                  blockSlot blk .> s
+     WipeVolDB                -> Boolean $ Model.isOpen dbModel
      _                        -> Top
   where
     garbageCollectable :: RealPoint blk -> Logic
@@ -929,14 +952,20 @@ precondition Model {..} (At cmd) =
     secParam :: SecurityParam
     secParam = configSecurityParam cfg
 
+    -- TODO #871
     isValidIterator :: StreamFrom blk -> StreamTo blk -> Logic
     isValidIterator from to =
-      case Model.between secParam from to dbModel of
-        Left  _    -> Bot
-        -- All blocks must be valid
-        Right blks -> forall blks $ \blk -> Boolean $
-          Map.notMember (blockHash blk) $
-          forgetFingerprint (Model.invalid dbModel)
+        case Model.between secParam from to' dbModel of
+          Left  _    -> Bot
+          -- All blocks must be valid
+          Right blks -> forall blks $ \blk -> Boolean $
+            Map.notMember (blockHash blk) $
+            forgetFingerprint (Model.invalid dbModel)
+      where
+        -- Include the exclusive bound in the check, as it must be valid too
+        to' = case to of
+          StreamToExclusive pt -> StreamToInclusive pt
+          StreamToInclusive pt -> StreamToInclusive pt
 
 equallyOrMorePreferable :: forall blk. BlockSupportsProtocol blk
                         => TopLevelConfig blk
@@ -979,39 +1008,31 @@ postcondition model cmd resp =
     ev = lockstep model cmd resp
 
 semantics :: forall blk. TestConstraints blk
-          => ChainDB IO blk
-          -> ChainDB.Internal IO blk
-          -> ResourceRegistry IO
-          -> StrictTVar       IO SlotNo
-          -> StrictTVar       IO Id
+          => ChainDBEnv IO blk
           -> At Cmd blk IO Concrete
           -> IO (At Resp blk IO Concrete)
-semantics db internal registry varCurSlot varNextId (At cmd) =
+semantics env (At cmd) =
     At . (bimap (QSM.reference . QSM.Opaque) (QSM.reference . QSM.Opaque)) <$>
-    runIO db internal registry varCurSlot varNextId (bimap QSM.opaque QSM.opaque cmd)
+    runIO env (bimap QSM.opaque QSM.opaque cmd)
 
 -- | The state machine proper
 sm :: TestConstraints blk
-   => ChainDB          IO       blk
-   -> ChainDB.Internal IO       blk
-   -> ResourceRegistry IO
-   -> StrictTVar       IO SlotNo
-   -> StrictTVar       IO Id
-   -> BlockGen              blk IO
+   => ChainDBEnv IO blk
+   -> BlockGen                  blk IO
    -> TopLevelConfig        blk
-   -> ExtLedgerState        blk
-   -> StateMachine (Model   blk IO)
-                   (At Cmd  blk IO)
-                                IO
-                   (At Resp blk IO)
-sm db internal registry varCurSlot varNextId genBlock env initLedger = StateMachine
-  { initModel     = initModel env initLedger
+   -> ExtLedgerState            blk
+   -> StateMachine (Model       blk IO)
+                   (At Cmd      blk IO)
+                                    IO
+                   (At Resp     blk IO)
+sm env genBlock cfg initLedger = StateMachine
+  { initModel     = initModel cfg initLedger
   , transition    = transition
   , precondition  = precondition
   , postcondition = postcondition
   , generator     = Just . generator genBlock
   , shrinker      = shrinker
-  , semantics     = semantics db internal registry varCurSlot varNextId
+  , semantics     = semantics env
   , mock          = mock
   , invariant     = Nothing
   , cleanup       = noCleanup
@@ -1266,60 +1287,17 @@ genBlk chunkInfo Model{..} = frequency
   Top-level tests
 -------------------------------------------------------------------------------}
 
-testCfg :: TopLevelConfig TestBlock
-testCfg = TopLevelConfig {
-      configConsensus = BftConfig
-        { bftParams   = BftParams { bftSecurityParam = k
-                                  , bftNumNodes      = numCoreNodes
-                                  }
-        , bftNodeId   = CoreId (CoreNodeId 0)
-        , bftSignKey  = SignKeyMockDSIGN 0
-        , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
-        }
-    , configLedger = LedgerConfig
-    , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
-    }
-  where
-    slotLengths :: SlotLengths
-    slotLengths = singletonSlotLengths slotLength
+mkTestCfg :: ImmDB.ChunkInfo -> TopLevelConfig TestBlock
+mkTestCfg (ImmDB.UniformChunkSize chunkSize) =
+    mkTestConfig (SecurityParam 2) chunkSize
 
-    slotLength :: SlotLength
-    slotLength = slotLengthFromSec 20
-
-    numCoreNodes :: NumCoreNodes
-    numCoreNodes = NumCoreNodes 1
-
-    eraParams :: HardFork.EraParams
-    eraParams = HardFork.defaultEraParams k slotLength
-
-    k = SecurityParam 2
-
-dbUnused :: ChainDB blk m
-dbUnused = error "ChainDB used during command generation"
-
-internalUnused :: ChainDB.Internal blk m
-internalUnused = error "ChainDB.Internal used during command generation"
-
-registryUnunused :: ResourceRegistry m
-registryUnunused = error "ResourceRegistry used during command generation"
-
-varCurSlotUnused :: StrictTVar m SlotNo
-varCurSlotUnused = error "StrictTVar m SlotNo used during command generation"
-
-varNextIdUnused :: StrictTVar m Id
-varNextIdUnused = error "StrictTVar m Id used during command generation"
+envUnused :: ChainDBEnv m blk
+envUnused = error "ChainDBEnv used during command generation"
 
 smUnused :: ImmDB.ChunkInfo
          -> StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
 smUnused chunkInfo =
-    sm dbUnused
-       internalUnused
-       registryUnunused
-       varCurSlotUnused
-       varNextIdUnused
-       (genBlk chunkInfo)
-       testCfg
-       testInitExtLedger
+    sm envUnused (genBlk chunkInfo) (mkTestCfg chunkInfo) testInitExtLedger
 
 prop_sequential :: SmallChunkInfo -> Property
 prop_sequential (SmallChunkInfo chunkInfo) =
@@ -1328,6 +1306,8 @@ prop_sequential (SmallChunkInfo chunkInfo) =
       -- TODO label tags
       prettyCommands (smUnused chunkInfo) hist prop
   where
+    testCfg = mkTestCfg chunkInfo
+
     test :: QSM.Commands (At Cmd Blk IO) (At Resp Blk IO)
          -> IO
             ( QSM.History (At Cmd Blk IO) (At Resp Blk IO)
@@ -1339,7 +1319,7 @@ prop_sequential (SmallChunkInfo chunkInfo) =
       (tracer, getTrace) <- recordingTracerIORef
       varCurSlot         <- uncheckedNewTVarM 0
       varNextId          <- uncheckedNewTVarM 0
-      fsVars             <- (,,)
+      fsVars@(_, varVolDbFs, _) <- (,,)
         <$> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
@@ -1348,14 +1328,15 @@ prop_sequential (SmallChunkInfo chunkInfo) =
       (db, internal)     <- openDBInternal args False
       withAsync (intAddBlockRunner internal) $ \addBlockAsync -> do
         link addBlockAsync
-        let sm' = sm db
-                     internal
-                     iteratorRegistry
-                     varCurSlot
-                     varNextId
-                     (genBlk chunkInfo)
-                     testCfg
-                     testInitExtLedger
+        let env = ChainDBEnv
+              { chainDB = db
+              , internal
+              , registry = iteratorRegistry
+              , varCurSlot
+              , varNextId
+              , varVolDbFs
+              }
+            sm' = sm env (genBlk chunkInfo) testCfg testInitExtLedger
         (hist, model, res) <- QSM.runCommands' sm' cmds
         cancel addBlockAsync
         trace <- getTrace
@@ -1555,12 +1536,12 @@ _runCmds :: ImmDB.ChunkInfo
 _runCmds chunkInfo cmds = withRegistry $ \registry -> do
     varCurSlot <- uncheckedNewTVarM 0
     varNextId  <- uncheckedNewTVarM 0
-    fsVars <- (,,)
+    fsVars@(_, varVolDbFs, _) <- (,,)
       <$> uncheckedNewTVarM Mock.empty
       <*> uncheckedNewTVarM Mock.empty
       <*> uncheckedNewTVarM Mock.empty
     let args = mkArgs
-          testCfg
+          (mkTestCfg chunkInfo)
           chunkInfo
           testInitExtLedger
           (showTracing stdoutTracer)
@@ -1568,21 +1549,26 @@ _runCmds chunkInfo cmds = withRegistry $ \registry -> do
           varCurSlot
           fsVars
     (db, internal) <- openDBInternal args False
-    evalStateT (mapM (go db internal registry varCurSlot varNextId) cmds) emptyRunCmdState
+    let env = ChainDBEnv
+          { chainDB = db
+          , internal
+          , registry
+          , varCurSlot
+          , varNextId
+          , varVolDbFs
+          }
+    evalStateT (mapM (go env) cmds) emptyRunCmdState
   where
-    go :: ChainDB IO Blk -> ChainDB.Internal IO Blk
-       -> ResourceRegistry IO
-       -> StrictTVar IO SlotNo
-       -> StrictTVar IO Id
+    go :: ChainDBEnv IO Blk
        -> Cmd Blk IteratorId ReaderId
        -> StateT RunCmdState
                  IO
                  (Resp Blk IteratorId ReaderId)
-    go db internal resourceRegistry varCurSlot varNextId cmd = do
-      RunCmdState { rcsKnownIters, rcsKnownReaders} <- get
+    go env cmd = do
+      RunCmdState { rcsKnownIters, rcsKnownReaders } <- get
       let cmd' = At $
             bimap (revLookup rcsKnownIters) (revLookup rcsKnownReaders) cmd
-      resp <- lift $ unAt <$> semantics db internal resourceRegistry varCurSlot varNextId cmd'
+      resp <- lift $ unAt <$> semantics env cmd'
       newIters <- RE.fromList <$>
        mapM (\rdr -> (rdr, ) <$> newIteratorId) (iters resp)
       newReaders <- RE.fromList <$>

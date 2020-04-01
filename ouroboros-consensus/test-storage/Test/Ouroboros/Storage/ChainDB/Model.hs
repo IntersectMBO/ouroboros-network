@@ -29,6 +29,9 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , currentLedger
   , currentSlot
   , lastK
+  , immutableChain
+  , immutableBlockNo
+  , immutableSlotNo
   , tipBlock
   , tipPoint
   , getBlock
@@ -36,7 +39,6 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , getBlockComponentByPoint
   , hasBlock
   , hasBlockByPoint
-  , immutableBlockNo
   , maxSlotNo
   , isOpen
   , invalid
@@ -59,14 +61,19 @@ module Test.Ouroboros.Storage.ChainDB.Model (
     -- * Exported for testing purposes
   , between
   , blocks
+  , volDbBlocks
+  , immDbChain
+  , futureBlocks
   , validChains
   , initLedger
   , garbageCollectable
   , garbageCollectablePoint
   , garbageCollectableIteratorNext
   , garbageCollect
+  , copyToImmDB
   , closeDB
   , reopen
+  , wipeVolDB
   , advanceCurSlot
   , chains
   ) where
@@ -77,7 +84,7 @@ import           Control.Monad.Except (runExcept)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function (on)
 import           Data.Functor.Identity (Identity (..))
-import           Data.List (sortBy)
+import           Data.List (isInfixOf, isPrefixOf, sortBy)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
@@ -121,7 +128,10 @@ type LedgerCursorId = Int
 
 -- | Model of the chain DB
 data Model blk = Model {
-      blocks        :: Map (HeaderHash blk) blk
+      volDbBlocks     :: Map (HeaderHash blk) blk
+      -- ^ The VolatileDB
+    , immDbChain      :: Chain blk
+      -- ^ The ImmutableDB
     , cps           :: CPS.ChainProducerState blk
     , currentLedger :: ExtLedgerState blk
     , initLedger    :: ExtLedgerState blk
@@ -179,11 +189,20 @@ deriving instance
   Queries
 -------------------------------------------------------------------------------}
 
+immDbBlocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
+immDbBlocks Model { immDbChain } = Map.fromList $
+    [ (Block.blockHash blk, blk)
+    | blk <- Chain.toOldestFirst immDbChain
+    ]
+
+blocks :: HasHeader blk => Model blk -> Map (HeaderHash blk) blk
+blocks m = volDbBlocks m <> immDbBlocks m
+
 currentChain :: Model blk -> Chain blk
 currentChain = CPS.producerChain . cps
 
 getBlock :: HasHeader blk => HeaderHash blk -> Model blk -> Maybe blk
-getBlock hash Model{..} = Map.lookup hash blocks
+getBlock hash m = Map.lookup hash (blocks m)
 
 hasBlock :: HasHeader blk => HeaderHash blk -> Model blk -> Bool
 hasBlock hash = isJust . getBlock hash
@@ -224,17 +243,42 @@ lastK (SecurityParam k) f =
     . fmap f
     . currentChain
 
+-- | Return the immutable prefix of the current chain.
+--
+-- This is the longest of the given two chains:
+--
+-- 1. The current chain with the last @k@ blocks dropped.
+-- 2. The chain formed by the blocks in 'immDbChain', i.e., the
+--    \"ImmutableDB\". We need to take this case in consideration because the
+--    VolatileDB might have been wiped.
+--
+-- We need this because we do not allow rolling back more than @k@ blocks, but
+-- the background thread copying blocks from the VolatileDB to the ImmutableDB
+-- might not have caught up yet. This means we cannot use the tip of the
+-- ImmutableDB to know the most recent \"immutable\" block.
+immutableChain
+  :: SecurityParam
+  -> Model blk
+  -> Chain blk
+immutableChain (SecurityParam k) m =
+    maxBy
+      Chain.length
+      (Chain.drop (fromIntegral k) (currentChain m))
+      (immDbChain m)
+  where
+    maxBy f a b
+      | f a >= f b = a
+      | otherwise  = b
+
 -- | The block number of the most recent \"immutable\" block, i.e. the oldest
 -- block we can roll back to. We cannot roll back the block itself.
 --
--- In the real implementation this will correspond to the block number of the
--- block at the tip of the Immutable DB.
+-- Note that this is not necessarily the block at the tip of the ImmutableDB,
+-- because the background thread copying blocks to the ImmutableDB might not
+-- have caught up.
 immutableBlockNo :: HasHeader blk
                  => SecurityParam -> Model blk -> WithOrigin Block.BlockNo
-immutableBlockNo (SecurityParam k) =
-        Chain.headBlockNo
-      . Chain.drop (fromIntegral k)
-      . currentChain
+immutableBlockNo k = Chain.headBlockNo . immutableChain k
 
 -- | The slot number of the most recent \"immutable\" block (see
 -- 'immutableBlockNo').
@@ -245,10 +289,7 @@ immutableSlotNo :: HasHeader blk
                 => SecurityParam
                 -> Model blk
                 -> WithOrigin SlotNo
-immutableSlotNo (SecurityParam k) =
-        Chain.headSlot
-      . Chain.drop (fromIntegral k)
-      . currentChain
+immutableSlotNo k = Chain.headSlot . immutableChain k
 
 -- | Get past ledger state
 --
@@ -287,7 +328,8 @@ getPastLedger cfg p m@Model{..} =
 
 empty :: ExtLedgerState blk -> Model blk
 empty initLedger = Model {
-      blocks        = Map.empty :: Map (HeaderHash blk) blk
+      volDbBlocks   = Map.empty
+    , immDbChain    = Chain.Genesis
     , cps           = CPS.initChainProducerState Chain.Genesis
     , currentLedger = initLedger
     , initLedger    = initLedger
@@ -337,6 +379,9 @@ addBlock cfg blk m
     -- @k@, we ignore it, as we can never switch to it.
   | olderThanK hdr (isEBB hdr) immBlockNo
   = m
+    -- If it's an invalid block we've seen before, ignore it.
+  | isKnownInvalid blk
+  = m
     -- The block is from the future, don't add it now, but remember when to
     -- add it.
   | slot > currentSlot m
@@ -347,7 +392,8 @@ addBlock cfg blk m
     }
   | otherwise
   = Model {
-      blocks        = blocks'
+      volDbBlocks   = volDbBlocks'
+    , immDbChain    = immDbChain m
     , cps           = CPS.switchFork newChain (cps m)
     , currentLedger = newLedger
     , initLedger    = initLedger m
@@ -368,12 +414,16 @@ addBlock cfg blk m
 
     slot = Block.blockSlot blk
 
-    blocks' :: Map (HeaderHash blk) blk
-    blocks' = Map.insert (Block.blockHash blk) blk (blocks m)
+    isKnownInvalid b =
+      Map.member (Block.blockHash b) (forgetFingerprint (invalid m))
+
+    volDbBlocks' :: Map (HeaderHash blk) blk
+    volDbBlocks' = Map.insert (Block.blockHash blk) blk (volDbBlocks m)
 
     invalidBlocks' :: Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)
     candidates     :: [(Chain blk, ExtLedgerState blk)]
-    (invalidBlocks', candidates) = validChains cfg (initLedger m) blocks'
+    (invalidBlocks', candidates) =
+      validChains cfg (initLedger m) (immDbBlocks m <> volDbBlocks')
 
     -- The fingerprint only changes when there are new invalid blocks
     fingerprint'
@@ -383,7 +433,16 @@ addBlock cfg blk m
       = succ fingerprint
     WithFingerprint invalidBlocks fingerprint = invalid m
 
-    currentChainFrag = Chain.toAnchoredFragment (currentChain m)
+    immutableChainHashes =
+        map Block.blockHash
+      . Chain.toOldestFirst
+      . immutableChain secParam
+      $ m
+
+    extendsImmutableChain :: Chain blk -> Bool
+    extendsImmutableChain fork =
+      immutableChainHashes `isPrefixOf`
+      map Block.blockHash (Chain.toOldestFirst fork)
 
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk
@@ -393,11 +452,7 @@ addBlock cfg blk m
           (selectView (configBlock cfg) . getHeader)
           (configConsensus cfg)
           (currentChain m)
-      . filter
-          ( Fragment.forksAtMostKBlocks (maxRollbacks secParam) currentChainFrag
-          . Chain.toAnchoredFragment
-          . fst
-          )
+      . filter (extendsImmutableChain . fst)
       $ candidates
 
 addBlocks :: (LedgerSupportsProtocol blk, ModelSupportsBlock blk)
@@ -726,13 +781,19 @@ between :: forall blk. HasHeader blk
         -> Either (UnknownRange blk) [blk]
 between (SecurityParam k) from to m = do
     fork <- errFork
-    if Fragment.forksAtMostKBlocks k currentFrag fork
+    -- See #871.
+    if partOfCurrentChain fork || Fragment.forksAtMostKBlocks k currentFrag fork
       then return $ Fragment.toOldestFirst fork
            -- We cannot stream from an old fork
       else Left $ ForkTooOld from
   where
     currentFrag :: AnchoredFragment blk
     currentFrag = Chain.toAnchoredFragment (currentChain m)
+
+    partOfCurrentChain :: AnchoredFragment blk -> Bool
+    partOfCurrentChain fork =
+      map Block.blockPoint (Fragment.toOldestFirst fork) `isInfixOf`
+      map Block.blockPoint (Chain.toOldestFirst (currentChain m))
 
     -- A fragment for each possible chain in the database
     fragments :: [AnchoredFragment blk]
@@ -805,26 +866,19 @@ between (SecurityParam k) from to m = do
       StreamFromExclusive GenesisPoint
         -> return frag
 
--- | Is it possible that the given block is no longer in the ChainDB because
--- the garbage collector has collected it?
+-- | Should the given block be garbage collected from the VolatileDB?
 --
--- Note that blocks on the current chain will always remain in the ChainDB as
--- they are copied to the ImmutableDB.
---
--- Blocks not on the current chain can be garbage collected from the
--- VolatileDB when their slot number is older than the slot number of the
--- immutable block (the block @k@ blocks after the current tip).
+-- Blocks can be garbage collected when their slot number is older than the
+-- slot number of the immutable block (the block @k@ blocks after the current
+-- tip).
 garbageCollectable :: forall blk. HasHeader blk
                    => SecurityParam -> Model blk -> blk -> Bool
 garbageCollectable secParam m@Model{..} b =
-    not onCurrentChain && olderThanImmutableSlotNo
-  where
-    onCurrentChain = Chain.pointOnChain (Block.blockPoint b) (currentChain m)
     -- Note: we don't use the block number but the slot number, as the
     -- VolatileDB's garbage collection is in terms of slot numbers.
-    olderThanImmutableSlotNo = At (Block.blockSlot b) < immutableSlotNo secParam m
+    At (Block.blockSlot b) < immutableSlotNo secParam m
 
--- Return 'True' when the model contains the block corresponding to the point
+-- | Return 'True' when the model contains the block corresponding to the point
 -- and the block itself is eligible for garbage collection, i.e. the real
 -- implementation might have garbage collected it.
 --
@@ -854,19 +908,71 @@ garbageCollectableIteratorNext secParam m itId =
 garbageCollect :: forall blk. HasHeader blk
                => SecurityParam -> Model blk -> Model blk
 garbageCollect secParam m@Model{..} = m
-    { blocks = Map.filter (not . collectable) blocks
+    { volDbBlocks = Map.filter (not . collectable) volDbBlocks
     }
     -- TODO what about iterators that will stream garbage collected blocks?
   where
     collectable :: blk -> Bool
     collectable = garbageCollectable secParam m
 
+-- | Copy all blocks on the current chain older than @k@ to the \"mock
+-- ImmutableDB\" ('immDbChain').
+--
+-- Idempotent.
+copyToImmDB :: SecurityParam -> Model blk -> Model blk
+copyToImmDB secParam m = m { immDbChain = immutableChain secParam m }
+
 closeDB :: Model blk -> Model blk
 closeDB m@Model{..} = m
-    { isOpen    = False
-    , cps       = cps { CPS.chainReaders = Map.empty }
-    , iterators = Map.empty
+    { isOpen        = False
+    , cps           = cps { CPS.chainReaders = Map.empty }
+    , iterators     = Map.empty
+    , ledgerCursors = Map.empty
     }
 
 reopen :: Model blk -> Model blk
 reopen m = m { isOpen = True }
+
+wipeVolDB
+  :: forall blk. LedgerSupportsProtocol blk
+  => TopLevelConfig blk
+  -> Model blk
+  -> (Point blk, Model blk)
+wipeVolDB cfg m =
+    (tipPoint m', reopen m')
+  where
+    m' = (closeDB m)
+      { volDbBlocks   = Map.empty
+      , cps           = CPS.switchFork newChain (cps m)
+      , currentLedger = newLedger
+        -- Future blocks were in the VolatileDB, so they're now gone
+      , futureBlocks  = Map.empty
+      , maxSlotNo     = NoMaxSlotNo
+      }
+
+    -- Get the chain ending at the ImmutableDB by doing chain selection on the
+    -- sole candidate (or none) in the ImmutableDB.
+    newChain  :: Chain blk
+    newLedger :: ExtLedgerState blk
+    (newChain, newLedger) =
+        isSameAsImmDbChain
+      $ selectChain
+          (selectView (configBlock cfg) . getHeader)
+          (configConsensus cfg)
+          Chain.genesis
+      $ snd
+      $ validChains cfg (initLedger m) (immDbBlocks m)
+
+    isSameAsImmDbChain = \case
+      Nothing
+        | Chain.null (immDbChain m)
+        -> (Chain.Genesis, initLedger m)
+        | otherwise
+        -> error "Did not select any chain"
+      Just res@(chain, _ledger)
+        | toHashes chain == toHashes (immDbChain m)
+        -> res
+        | otherwise
+        -> error "Did not select the ImmutableDB's chain"
+
+    toHashes = map Block.blockHash . Chain.toOldestFirst
