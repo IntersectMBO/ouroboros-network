@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
@@ -17,8 +18,6 @@ import           Control.Monad.Except
 import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Function (on)
-import           Data.Functor.Const
-import           Data.Functor.Identity
 import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -172,40 +171,37 @@ summarizeInvariant chain =
 
 eventSlotToEpoch :: ArbitraryChain -> Property
 eventSlotToEpoch chain@ArbitraryChain{..} =
-    withArbitraryChainSummary chain $ \summary ->
-      noPastHorizonException $ do
-        (epoch, relSlot) <- HF.slotToEpoch summary eventAbsSlot
-        return $ epoch === eventEpoch .&&. relSlot === eventRelSlot
+    withArbitraryChainSummary chain $ \summary -> noPastHorizonException $ do
+      (epochNo, epochSlot) <- HF.slotToEpoch summary eventTimeSlot
+      return $ epochNo   === eventTimeEpochNo
+          .&&. epochSlot === eventTimeEpochSlot
   where
-    (EventTime{..}, _, _) = arbitraryChainPre !! arbitraryEventIx
+    EventTime{..} = eventTime (arbitraryChainPre !! arbitraryEventIx)
 
 eventEpochToSlot :: ArbitraryChain -> Property
 eventEpochToSlot chain@ArbitraryChain{..} =
-    withArbitraryChainSummary chain $ \summary ->
-      noPastHorizonException $ do
-        (startOfEpoch, EpochSize epochSize) <- HF.epochToSlot summary eventEpoch
-        return $ eventAbsSlot === HF.addSlots eventRelSlot startOfEpoch
-            .&&. eventRelSlot < epochSize
+    withArbitraryChainSummary chain $ \summary -> noPastHorizonException $ do
+      (startOfEpoch, epochSize) <- HF.epochToSlot summary eventTimeEpochNo
+      return $ eventTimeSlot === HF.addSlots eventTimeEpochSlot startOfEpoch
+          .&&. eventTimeEpochSlot < unEpochSize epochSize
   where
-    (EventTime{..}, _, _) = arbitraryChainPre !! arbitraryEventIx
+    EventTime{..} = eventTime (arbitraryChainPre !! arbitraryEventIx)
 
 eventSlotToWallclock :: ArbitraryChain -> Property
 eventSlotToWallclock chain@ArbitraryChain{..} =
-    withArbitraryChainSummary chain $ \summary ->
-      noPastHorizonException $ do
-        (time, _slotLen) <- HF.slotToWallclock summary eventAbsSlot
-        return $ time === eventTime
+    withArbitraryChainSummary chain $ \summary -> noPastHorizonException $ do
+      (time, _slotLen) <- HF.slotToWallclock summary eventTimeSlot
+      return $ time === eventTimeUTC
   where
-    (EventTime{..}, _, _) = arbitraryChainPre !! arbitraryEventIx
+    EventTime{..} = eventTime (arbitraryChainPre !! arbitraryEventIx)
 
 eventWallclockToSlot :: ArbitraryChain -> Property
 eventWallclockToSlot chain@ArbitraryChain{..} =
-    withArbitraryChainSummary chain $ \summary ->
-      noPastHorizonException $ do
-        (slot, inSlot) <- HF.wallclockToSlot summary eventTime
-        return $ slot === eventAbsSlot .&&. inSlot === 0
+    withArbitraryChainSummary chain $ \summary -> noPastHorizonException $ do
+      (slot, inSlot) <- HF.wallclockToSlot summary eventTimeUTC
+      return $ slot === eventTimeSlot .&&. inSlot === 0
   where
-    (EventTime{..}, _, _) = arbitraryChainPre !! arbitraryEventIx
+    EventTime{..} = eventTime (arbitraryChainPre !! arbitraryEventIx)
 
 {-------------------------------------------------------------------------------
   Arbitrary chain
@@ -228,7 +224,11 @@ deriving instance Show ArbitraryChain
 withArbitraryChainSummary :: ArbitraryChain
                           -> (forall xs'. HF.Summary xs' -> a)
                           -> a
-withArbitraryChainSummary ArbitraryChain{arbitraryChainEras = eras :: Eras xs, ..} f =
+withArbitraryChainSummary ArbitraryChain{
+                              arbitraryChainEras = eras :: Eras xs
+                            , ..
+                            }
+                          f =
     f summary
   where
     transitions :: HF.Transitions xs
@@ -294,7 +294,14 @@ instance Arbitrary ArbitraryChain where
 -------------------------------------------------------------------------------}
 
 -- | We don't model a chain as a list of blocks, but rather as a list of events
-data Event f =
+data Event e = Event {
+      eventType      :: EventType e
+    , eventTime      :: EventTime
+    , eventEraParams :: HF.EraParams
+    }
+  deriving (Show, Functor)
+
+data EventType e =
     -- | Nothing of interest happens, time just ticks
     Tick
 
@@ -302,31 +309,36 @@ data Event f =
     --
     -- "Confirmed" here is taken to mean "no longer subject to rollback",
     -- which is the concept that the hard fork history depends on.
-  | Confirm (f EpochNo)
-
-deriving instance Show a => Show (Event (Const a))
-deriving instance Show (Event Identity)
+    --
+    -- For a fully constructed chain, we expect @e@ to be 'EpochNo': the epoch
+    -- in which the transition will take place. During construction however we
+    -- we set this to @()@, and fill in those blanks later.
+  | Confirm e
+  deriving (Show, Functor)
 
 -- | When did an event occur?
 --
 -- NOTE: We don't care about 'BlockNo' here. Our events don't record necessarily
 -- whether a block is actually present in a given slot or not.
 data EventTime = EventTime {
-      eventAbsSlot :: SlotNo
-    , eventEpoch   :: EpochNo
-    , eventRelSlot :: Word64
-    , eventTime    :: UTCTime
-    , eventEra     :: Era
+      eventTimeSlot      :: SlotNo
+    , eventTimeEpochNo   :: EpochNo
+    , eventTimeEpochSlot :: Word64
+    , eventTimeUTC       :: UTCTime
+    , eventTimeEra       :: Era
     }
   deriving (Show)
 
+eventEra :: Event f -> Era
+eventEra = eventTimeEra . eventTime
+
 initTime :: HF.SystemStart -> Era -> EventTime
 initTime (HF.SystemStart start) firstEra = EventTime {
-      eventAbsSlot = SlotNo  0
-    , eventEpoch   = EpochNo 0
-    , eventRelSlot = 0
-    , eventTime    = start
-    , eventEra     = firstEra
+      eventTimeSlot      = SlotNo  0
+    , eventTimeEpochNo   = EpochNo 0
+    , eventTimeEpochSlot = 0
+    , eventTimeUTC       = start
+    , eventTimeEra       = firstEra
     }
 
 -- | Next time slot
@@ -334,19 +346,19 @@ initTime (HF.SystemStart start) firstEra = EventTime {
 -- We assume the era does not change (this is done separately in 'genChain')
 stepTime :: HF.EraParams -> EventTime -> EventTime
 stepTime HF.EraParams{..} EventTime{..} = EventTime{
-      eventAbsSlot = succ eventAbsSlot
-    , eventEpoch   = epoch'
-    , eventRelSlot = relSlot'
-    , eventTime    = addUTCTime (getSlotLength eraSlotLength) eventTime
-    , eventEra     = eventEra
+      eventTimeSlot      = succ eventTimeSlot
+    , eventTimeEpochNo   = epoch'
+    , eventTimeEpochSlot = relSlot'
+    , eventTimeUTC       = addUTCTime (getSlotLength eraSlotLength) eventTimeUTC
+    , eventTimeEra       = eventTimeEra
     }
   where
     epoch'   :: EpochNo
     relSlot' :: Word64
     (epoch', relSlot') =
-        if succ eventRelSlot == unEpochSize eraEpochSize
-          then (succ eventEpoch, 0)
-          else (eventEpoch, succ eventRelSlot)
+        if succ eventTimeEpochSlot == unEpochSize eraEpochSize
+          then (succ eventTimeEpochNo, 0)
+          else (eventTimeEpochNo, succ eventTimeEpochSlot)
 
 {-------------------------------------------------------------------------------
   Chain model
@@ -355,16 +367,16 @@ stepTime HF.EraParams{..} EventTime{..} = EventTime{
 -- | Chain divided into eras
 --
 -- Like 'Summary', we might not have blocks in the chain for all eras.
-newtype Chain xs = Chain (AtMost xs (Events Identity))
+newtype Chain xs = Chain (AtMost xs [Event EpochNo])
   deriving (Show)
 
 -- | Slot at the tip of the chain
 chainTip :: Chain xs -> WithOrigin SlotNo
 chainTip (Chain xs) = tip . reverse . concat . toList $ xs
   where
-    tip :: [(EventTime, HF.EraParams, Event Identity)] -> WithOrigin SlotNo
-    tip []            = Origin
-    tip ((t, _, _):_) = At (eventAbsSlot t)
+    tip :: [Event EpochNo] -> WithOrigin SlotNo
+    tip []    = Origin
+    tip (e:_) = At (eventTimeSlot (eventTime e))
 
 -- | Find all confirmed transitions in the chain
 chainTransitions :: Eras xs -> Chain xs -> HF.Transitions xs
@@ -414,66 +426,58 @@ chainTransitions = \(Eras eras) (Chain chain) -> HF.Transitions $
           Just t  -> AtMostCons t (shift eras ts)
 
 -- | Locate transition point in a list of events
-findTransition :: Era -> Events Identity -> Maybe EpochNo
-findTransition era = mustBeUnique . catMaybes . map isTransition
+findTransition :: Era -> [Event EpochNo] -> Maybe EpochNo
+findTransition era =
+    mustBeUnique . catMaybes . map (isTransition . eventType)
   where
     mustBeUnique :: [EpochNo] -> Maybe EpochNo
     mustBeUnique []  = Nothing
     mustBeUnique [e] = Just e
     mustBeUnique _   = error $ "multiple transition points in " ++ show era
 
-    isTransition :: (EventTime, HF.EraParams, Event Identity) -> Maybe EpochNo
-    isTransition (_, _, Confirm (Identity e)) = Just e
-    isTransition (_, _, Tick)                 = Nothing
+    isTransition :: EventType a -> Maybe a
+    isTransition (Confirm e) = Just e
+    isTransition (Tick)      = Nothing
 
-patchEvents :: Events (Const ()) -> Events Identity
-patchEvents events = map go events
+patchEvents :: [Event ()] -> [Event EpochNo]
+patchEvents events = map (\e -> const (go e) <$> e) events
   where
     bounds :: Map Era (EpochNo, EpochNo)
     bounds = eventsEraBounds events
 
-    go :: (EventTime, HF.EraParams, Event (Const ()))
-       -> (EventTime, HF.EraParams, Event Identity)
-    go (time, params, event) = (time, params, event')
-      where
-        event' :: Event Identity
-        event' =
-          case event of
-            Tick               -> Tick
-            Confirm (Const ()) -> Confirm . Identity $ snd $
-                                    bounds Map.! eventEra time
+    go :: Event () -> EpochNo
+    go = snd . (bounds Map.!) . eventEra
 
 fromPreChain :: Eras xs -> PreChain -> Chain xs
 fromPreChain (Eras eras) preChain = Chain $
     snd <$> exactlyZipAtMost eras grouped
   where
-    grouped :: [Events Identity]
-    grouped = L.groupBy ((==) `on` (\(t, _, _) -> eventEra t)) preChain
+    grouped :: [[Event EpochNo]]
+    grouped = L.groupBy ((==) `on` eventEra) preChain
 
 {-------------------------------------------------------------------------------
   Pre-chain
 -------------------------------------------------------------------------------}
 
-type Events f = [(EventTime, HF.EraParams, Event f)]
-type PreChain = Events Identity
+type PreChain = [Event EpochNo]
 
 -- | Inclusive lower bound and exclusive upper bound for each era
-eventsEraBounds :: Events (Const ()) -> Map Era (EpochNo, EpochNo)
+eventsEraBounds :: [Event ()] -> Map Era (EpochNo, EpochNo)
 eventsEraBounds []    = Map.empty
 eventsEraBounds chain =
       Map.fromList
     . map bounds
-    . L.groupBy ((==) `on` (\(t, _, _) -> eventEra t))
+    . L.groupBy ((==) `on` eventEra)
     $ chain
   where
-    bounds :: Events (Const ()) -> (Era, (EpochNo, EpochNo))
+    bounds :: [Event ()] -> (Era, (EpochNo, EpochNo))
     bounds era = (
-          (\(t, _, _) -> eventEra t) $ head era
+          eventEra $ head era
         , (minimum epochs, succ $ maximum epochs) -- Upper bound is exclusive
         )
       where
         epochs :: [EpochNo]
-        epochs = map (\(t, _, _) -> eventEpoch t) era
+        epochs = map (eventTimeEpochNo . eventTime) era
 
 genPreChain :: HF.SystemStart -> Eras xs -> HF.Shape xs -> Gen PreChain
 genPreChain start eras shape = do
@@ -493,7 +497,7 @@ genPreChain start eras shape = do
 genEvents :: HF.SystemStart
           -> Eras     xs
           -> HF.Shape xs
-          -> Gen (Events (Const ()))
+          -> Gen [Event ()]
 genEvents = \start (Eras eras) (HF.Shape shape) -> sized $ \sz -> do
     eventsInFinalEra <- choose (0, fromIntegral sz)
     go eventsInFinalEra
@@ -508,39 +512,47 @@ genEvents = \start (Eras eras) (HF.Shape shape) -> sized $ \sz -> do
        -> EventTime      -- ^ Current time
        -> CanStartNewEra
        -> Exactly (x ': xs) (Era, HF.EraParams)
-       -> Gen (Events (Const ()))
+       -> Gen [Event ()]
     go 0 _   _        _     = return []
     go n now canStart shape = do
         case shape of
-          ExactlyCons _ shape'@(ExactlyCons{}) | canStartNow && eventRelSlot now == 0 -> do
-            shouldStartNow <- arbitrary
-            if shouldStartNow
-              then go' n now NotYet    shape'
-              else go' n now canStart' shape
-          _otherwise ->
-            go' n now canStart' shape
+          ExactlyCons _ shape'@(ExactlyCons{})
+            | canStartNow && eventTimeEpochSlot now == 0
+            -> do
+              shouldStartNow <- arbitrary
+              if shouldStartNow
+                then go' n now NotYet    shape'
+                else go' n now canStart' shape
+          _otherwise
+            -> go' n now canStart' shape
       where
-        (canStart', canStartNow) = stepCanStartNewEra (eventEpoch now) canStart
+        (canStart', canStartNow) = stepCanStartNewEra
+                                    (eventTimeEpochNo now)
+                                    canStart
 
     -- After having decided whether or not to start a new era
     go' :: Word64
         -> EventTime
         -> CanStartNewEra
         -> Exactly (x ': xs) (Era, HF.EraParams)
-        -> Gen (Events (Const ()))
+        -> Gen [Event ()]
     go' n now canStart shape@(ExactlyCons (era, params@HF.EraParams{..}) next) = do
-        (event, canStart') <- frequency $ concat [
+        (typ, canStart') <- frequency $ concat [
             [ (2, return (Tick, canStart)) ]
 
             -- Avoid starting a count-down if another one is already in process
             -- The final era cannot contain any transitions
-          , [ (1, return (Confirm (Const ()), CanStartIf eraSafeZone))
+          , [ (1, return (Confirm (), CanStartIf eraSafeZone))
             | NotYet          <- [canStart]
             , ExactlyCons _ _ <- [next]
             ]
           ]
-        ((now { eventEra = era }, params, event) :) <$>
-          go n' (stepTime params now) canStart' shape
+        let event = Event {
+                eventType      = typ
+              , eventEraParams = params
+              , eventTime      = now { eventTimeEra = era }
+              }
+        (event :) <$> go n' (stepTime params now) canStart' shape
       where
         n' = if eraIsLast era
                then n - 1
@@ -820,11 +832,11 @@ instance ShiftTime ArbitraryChain where
 instance ShiftTime (Chain xs) where
   shiftTime delta (Chain chain) = Chain $ shiftTime delta <$> chain
 
-instance ShiftTime (EventTime, HF.EraParams, Event f) where
-  shiftTime delta (time, params, event) = (shiftTime delta time, params, event)
+instance ShiftTime (Event f) where
+  shiftTime delta e = e { eventTime = shiftTime delta (eventTime e) }
 
 instance ShiftTime EventTime where
-  shiftTime delta t = t { eventTime = shiftTime delta (eventTime t) }
+  shiftTime delta t = t { eventTimeUTC = shiftTime delta (eventTimeUTC t) }
 
 -- | Reset the system start (during shrinking)
 --
