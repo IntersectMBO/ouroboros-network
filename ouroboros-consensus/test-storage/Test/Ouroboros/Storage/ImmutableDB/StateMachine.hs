@@ -24,7 +24,7 @@ import           Prelude hiding (elem, notElem)
 
 import           Codec.CBOR.Write (toBuilder)
 import           Codec.Serialise (decode)
-import           Control.Monad (forM_, void, when)
+import           Control.Monad (forM_, void)
 import           Data.Bifunctor (first)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Coerce (Coercible, coerce)
@@ -815,10 +815,7 @@ semantics env@ImmutableDBEnv {..} (At cmdErr) =
             truncateAndReopen cmd tipBefore
 
           -- We encountered a simulated error
-          Left (UnexpectedError {}) -> do
-            open <- isOpen db
-            when open $
-              fail "Database still open while it should have been closed"
+          Left (UnexpectedError {}) ->
             truncateAndReopen cmd tipBefore
 
           -- TODO track somewhere which/how many errors were *actually* thrown

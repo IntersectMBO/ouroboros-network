@@ -209,7 +209,6 @@ mkDBRecord :: (IOLike m, Eq hash, NoUnexpectedThunks hash)
            => ImmutableDBEnv m hash -> ImmutableDB hash m
 mkDBRecord dbEnv = ImmutableDB
     { closeDB_                = closeDBImpl                dbEnv
-    , isOpen_                 = isOpenImpl                 dbEnv
     , reopen_                 = reopenImpl                 dbEnv
     , getTip_                 = getTipImpl                 dbEnv
     , getBlockComponent_      = getBlockComponentImpl      dbEnv
@@ -292,10 +291,6 @@ closeDBImpl ImmutableDBEnv { hasFS, tracer, varInternalState } = do
         putMVar varInternalState DbClosed
         cleanUp hasFS openState
         traceWith tracer DBClosed
-
-isOpenImpl :: IOLike m => ImmutableDBEnv m hash -> m Bool
-isOpenImpl ImmutableDBEnv { varInternalState } =
-    dbIsOpen <$> readMVar varInternalState
 
 reopenImpl
   :: forall m hash.

@@ -7,7 +7,6 @@
 module Ouroboros.Consensus.Storage.ImmutableDB.API
   ( ImmutableDB (..)
   , closeDB
-  , isOpen
   , reopen
   , getTip
   , getBlockComponent
@@ -75,10 +74,6 @@ data ImmutableDB hash m = ImmutableDB
       :: HasCallStack => m ()
       -- TODO remove this operation from the public API and expose it using an
       -- internal record so it can be used by 'withDB'.
-
-    -- | Return 'True' when the database is open.
-  , isOpen_
-      :: HasCallStack => m Bool
 
     -- | When the database was closed, manually or because of an
     -- 'Ouroboros.Consensus.Storage.ImmutableDB.Types.UnexpectedError' during an
@@ -315,12 +310,6 @@ closeDB
   => ImmutableDB hash m
   -> m ()
 closeDB = closeDB_
-
-isOpen
-  :: HasCallStack
-  => ImmutableDB hash m
-  -> m Bool
-isOpen = isOpen_
 
 reopen
   :: HasCallStack

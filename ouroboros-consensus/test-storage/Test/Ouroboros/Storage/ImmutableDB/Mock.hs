@@ -28,7 +28,6 @@ openDBMock chunkInfo = do
     immDB :: StrictTVar m (DBModel hash) -> ImmutableDB hash m
     immDB dbVar = ImmutableDB
         { closeDB_                = return ()
-        , isOpen_                 = return True
         , reopen_                 = \_valPol -> void $ update reopenModel
         , getTip_                 = query       $ getTipModel
         , getBlockComponent_      = queryE     .: getBlockComponentModel
