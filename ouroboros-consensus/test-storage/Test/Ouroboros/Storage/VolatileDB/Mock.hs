@@ -22,7 +22,6 @@ openDBMock maxBlocksPerFile = do
     db :: StrictTVar m (DBModel blockId) -> VolatileDB blockId m
     db dbVar = VolatileDB {
           closeDB             = update_   $ closeModel
-        , isOpenDB            = query     $ isOpenModel
         , reOpenDB            = update_   $ reOpenModel
         , getBlockComponent   = queryE   .: getBlockComponentModel
         , putBlock            = updateE_ .: putBlockModel

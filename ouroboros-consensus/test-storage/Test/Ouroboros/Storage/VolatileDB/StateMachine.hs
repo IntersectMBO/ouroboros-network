@@ -113,8 +113,7 @@ type AllComponents =
   )
 
 data Cmd
-    = IsOpen
-    | Close
+    = Close
     | ReOpen
     | GetBlockComponent BlockId
     | PutBlock TestBlock
@@ -234,7 +233,6 @@ runPure = \case
     FilterByPredecessor bids -> ok (Successors  . (<$> bids)) $ queryE    filterByPredecessorModel
     GetBlockInfo bids        -> ok (BlockInfos  . (<$> bids)) $ queryE    getBlockInfoModel
     GarbageCollect slot      -> ok Unit                       $ updateE_ (garbageCollectModel slot)
-    IsOpen                   -> ok Bool                       $ query     isOpenModel
     Close                    -> ok Unit                       $ update_   closeModel
     ReOpen                   -> ok Unit                       $ update_   reOpenModel
     GetMaxSlotNo             -> ok MaxSlot                    $ queryE    getMaxSlotNoModel
@@ -245,8 +243,6 @@ runPure = \case
     Corruption cors          -> ok Unit                       $ update_  (withClosedDB (runCorruptionsModel cors))
     DuplicateBlock {}        -> ok Unit                       $ update_  (withClosedDB noop)
   where
-    query f m = (Right (f m), m)
-
     queryE f m = (f m, m)
 
     update_ f m = (Right (), f m)
@@ -338,7 +334,6 @@ postconditionImpl model cmdErr resp =
 generatorCmdImpl :: Model Symbolic -> Gen Cmd
 generatorCmdImpl Model {..} = frequency
     [ (3, PutBlock <$> genTestBlock)
-    , (1, return IsOpen)
     , (1, return Close)
       -- When the DB is closed, we try to reopen it ASAP.
     , (if open dbModel then 1 else 5, return ReOpen)
@@ -502,7 +497,6 @@ runDB VolatileDBEnv { db, hasFS } cmd = case cmd of
     GetBlockInfo   bids      -> BlockInfos .  (<$> bids) <$> atomically (getBlockInfo db)
     GarbageCollect slot      -> Unit                     <$> garbageCollect db slot
     GetMaxSlotNo             -> MaxSlot                  <$> atomically (getMaxSlotNo db)
-    IsOpen                   -> Bool                     <$> isOpenDB db
     Close                    -> Unit                     <$> closeDB db
     ReOpen                   -> Unit                     <$> reOpenDB db
     Corruption corrs ->

@@ -155,7 +155,6 @@ openDB hasFS parser tracer maxBlocksPerFile = runWithTempRegistry $ do
           }
         volDB = VolatileDB {
             closeDB             = closeDBImpl             env
-          , isOpenDB            = isOpenDBImpl            env
           , reOpenDB            = reOpenDBImpl            env
           , getBlockComponent   = getBlockComponentImpl   env
           , putBlock            = putBlockImpl            env
@@ -175,13 +174,6 @@ closeDBImpl VolatileDBEnv { varInternalState, tracer, hasFS } = do
       DbClosed -> traceWith tracer DBAlreadyClosed
       DbOpen ost ->
         wrapFsError $ closeOpenHandles hasFS ost
-
-isOpenDBImpl :: IOLike m
-             => VolatileDBEnv m blockId
-             -> m Bool
-isOpenDBImpl VolatileDBEnv { varInternalState } = do
-    mSt <- readMVar varInternalState
-    return $ dbIsOpen mSt
 
 -- | Property: @'closeDB' >> 'reOpenDB'@  should be a no-op. This is true
 -- because 'reOpenDB' will always append to the last created file.
