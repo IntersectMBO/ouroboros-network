@@ -3,7 +3,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.Ouroboros.Storage.ImmutableDB.Mock (openDBMock) where
 
-import           Control.Monad (void)
 import           Data.Bifunctor (first)
 import           Data.Tuple (swap)
 
@@ -28,7 +27,6 @@ openDBMock chunkInfo = do
     immDB :: StrictTVar m (DBModel hash) -> ImmutableDB hash m
     immDB dbVar = ImmutableDB
         { closeDB_                = return ()
-        , reopen_                 = \_valPol -> void $ update reopenModel
         , getTip_                 = query       $ getTipModel
         , getBlockComponent_      = queryE     .: getBlockComponentModel
         , getEBBComponent_        = queryE     .: getEBBComponentModel

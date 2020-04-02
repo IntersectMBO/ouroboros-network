@@ -215,7 +215,6 @@ mkDBRecord :: (IOLike m, Eq hash, NoUnexpectedThunks hash)
            => ImmutableDBEnv m hash -> ImmutableDB hash m
 mkDBRecord dbEnv = ImmutableDB
     { closeDB_                = closeDBImpl                dbEnv
-    , reopen_                 = reopenImpl                 dbEnv
     , getTip_                 = getTipImpl                 dbEnv
     , getBlockComponent_      = getBlockComponentImpl      dbEnv
     , getEBBComponent_        = getEBBComponentImpl        dbEnv
@@ -288,36 +287,6 @@ closeDBImpl ImmutableDBEnv { hasFS, tracer, varInternalState } = do
         putMVar varInternalState DbClosed
         cleanUp hasFS openState
         traceWith tracer DBClosed
-
-reopenImpl
-  :: forall m hash.
-     (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash)
-  => ImmutableDBEnv m hash
-  -> ValidationPolicy
-  -> m ()
-reopenImpl ImmutableDBEnv {..} valPol = bracketOnError
-  (takeMVar varInternalState)
-  -- Important: put back the state when an error is thrown, otherwise we have
-  -- an empty TMVar.
-  (putMVar varInternalState) $ \case
-      -- When still open,
-      DbOpen _ -> throwUserError OpenDBError
-
-      -- Closed, so we can try to reopen
-      DbClosed -> runWithTempRegistry $ do
-        currentSlot <- atomically $ getCurrentSlot blockchainTime
-        let validateEnv = ValidateEnv
-              { hasFS       = hasFS
-              , chunkInfo   = chunkInfo
-              , hashInfo    = hashInfo
-              , parser      = chunkFileParser
-              , tracer      = tracer
-              , cacheConfig = cacheConfig
-              , currentSlot = currentSlot
-              }
-        ost <- validateAndReopen validateEnv registry valPol
-        lift $ putMVar varInternalState (DbOpen ost)
-        return ((), ost)
 
 deleteAfterImpl
   :: forall m hash. (HasCallStack, IOLike m)
