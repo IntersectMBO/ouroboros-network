@@ -24,8 +24,6 @@ import           Prelude hiding (elem)
 
 import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad (forM_, replicateM, unless, when)
-import           Control.Monad.State (StateT, evalStateT, get, lift, modify,
-                     put)
 import           Control.Tracer
 import           Data.Bifoldable
 import           Data.Bifunctor
@@ -1524,88 +1522,3 @@ tests :: TestTree
 tests = testGroup "ChainDB q-s-m"
     [ testProperty "sequential" prop_sequential
     ]
-
-{-------------------------------------------------------------------------------
-  Running commands directly
--------------------------------------------------------------------------------}
-
--- | Debugging utility: run some commands against the real implementation.
-_runCmds :: ImmDB.ChunkInfo
-         ->    [Cmd  Blk IteratorId ReaderId]
-         -> IO [Resp Blk IteratorId ReaderId]
-_runCmds chunkInfo cmds = withRegistry $ \registry -> do
-    varCurSlot <- uncheckedNewTVarM 0
-    varNextId  <- uncheckedNewTVarM 0
-    fsVars@(_, varVolDbFs, _) <- (,,)
-      <$> uncheckedNewTVarM Mock.empty
-      <*> uncheckedNewTVarM Mock.empty
-      <*> uncheckedNewTVarM Mock.empty
-    let args = mkArgs
-          (mkTestCfg chunkInfo)
-          chunkInfo
-          testInitExtLedger
-          (showTracing stdoutTracer)
-          registry
-          varCurSlot
-          fsVars
-    (db, internal) <- openDBInternal args False
-    let env = ChainDBEnv
-          { chainDB = db
-          , internal
-          , registry
-          , varCurSlot
-          , varNextId
-          , varVolDbFs
-          }
-    evalStateT (mapM (go env) cmds) emptyRunCmdState
-  where
-    go :: ChainDBEnv IO Blk
-       -> Cmd Blk IteratorId ReaderId
-       -> StateT RunCmdState
-                 IO
-                 (Resp Blk IteratorId ReaderId)
-    go env cmd = do
-      RunCmdState { rcsKnownIters, rcsKnownReaders } <- get
-      let cmd' = At $
-            bimap (revLookup rcsKnownIters) (revLookup rcsKnownReaders) cmd
-      resp <- lift $ unAt <$> semantics env cmd'
-      newIters <- RE.fromList <$>
-       mapM (\rdr -> (rdr, ) <$> newIteratorId) (iters resp)
-      newReaders <- RE.fromList <$>
-        mapM (\rdr -> (rdr, ) <$> newReaderId) (rdrs  resp)
-      let knownIters'   = rcsKnownIters   `RE.union` newIters
-          knownReaders' = rcsKnownReaders `RE.union` newReaders
-          resp'      = bimap (knownIters' RE.!) (knownReaders' RE.!) resp
-      modify $ \s ->
-        s { rcsKnownIters = knownIters', rcsKnownReaders = knownReaders' }
-      return resp'
-
-    revLookup :: Eq a => RefEnv k a r -> a -> Reference k r
-    revLookup env a = head $ RE.reverseLookup (== a) env
-
-    newIteratorId :: forall m. Monad m => StateT RunCmdState m IteratorId
-    newIteratorId = do
-      s@RunCmdState { rcsNextIteratorId } <- get
-      put (s { rcsNextIteratorId = succ rcsNextIteratorId })
-      return rcsNextIteratorId
-
-    newReaderId :: forall m. Monad m => StateT RunCmdState m ReaderId
-    newReaderId = do
-      s@RunCmdState { rcsNextReaderId } <- get
-      put (s { rcsNextReaderId = succ rcsNextReaderId })
-      return rcsNextReaderId
-
-data RunCmdState = RunCmdState
-  { rcsKnownIters     :: KnownIters   Blk IO Concrete
-  , rcsKnownReaders   :: KnownReaders Blk IO Concrete
-  , rcsNextIteratorId :: IteratorId
-  , rcsNextReaderId   :: ReaderId
-  }
-
-emptyRunCmdState :: RunCmdState
-emptyRunCmdState = RunCmdState
-  { rcsKnownIters     = RE.empty
-  , rcsKnownReaders   = RE.empty
-  , rcsNextIteratorId = 0
-  , rcsNextReaderId   = 0
-  }
