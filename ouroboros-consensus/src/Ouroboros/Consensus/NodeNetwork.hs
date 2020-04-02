@@ -18,6 +18,8 @@ module Ouroboros.Consensus.NodeNetwork (
   , ProtocolCodecs (..)
   , protocolCodecs
   , protocolCodecsId
+  , NodeToClientCodecs (..)
+  , nodeToClientCodecs
   , ProtocolTracers
   , ProtocolTracers' (..)
   , nullProtocolTracers
@@ -273,21 +275,45 @@ protocolCodecs cfg version = ProtocolCodecs {
           nodeEncodeGenTx
           nodeDecodeGenTx
 
-    , pcLocalChainSyncCodec =
+    , pcLocalChainSyncCodec    = nodeToClientChainSyncCodec ntcCodecs
+
+    , pcLocalTxSubmissionCodec = nodeToClientTxSubmissionCodec ntcCodecs
+
+    , pcLocalStateQueryCodec   = nodeToClientStateQueryCodec ntcCodecs
+    }
+    where
+       ntcCodecs = nodeToClientCodecs NodeToClientV_1
+
+data NodeToClientCodecs blk failure m bytesLCS bytesLTX bytesLSQ = NodeToClientCodecs {
+    nodeToClientChainSyncCodec    :: Codec (ChainSync (Serialised blk) (Tip blk))
+                                           failure m bytesLCS
+  , nodeToClientTxSubmissionCodec :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))
+                                           failure m bytesLTX
+  , nodeToClientStateQueryCodec   :: Codec (LocalStateQuery blk (Query blk))
+                                           failure m bytesLSQ
+  }
+
+nodeToClientCodecs
+    :: forall m blk. (IOLike m, RunNode blk)
+    => NodeToClientVersion
+    -> NodeToClientCodecs blk DeserialiseFailure m ByteString ByteString ByteString
+nodeToClientCodecs NodeToClientV_1 = NodeToClientCodecs {..}
+  where
+    nodeToClientChainSyncCodec =
         codecChainSyncSerialised
           (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
           (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
           (encodeTip   (nodeEncodeHeaderHash (Proxy @blk)))
           (decodeTip   (nodeDecodeHeaderHash (Proxy @blk)))
 
-    , pcLocalTxSubmissionCodec =
+    nodeToClientTxSubmissionCodec =
         codecLocalTxSubmission
           nodeEncodeGenTx
           nodeDecodeGenTx
           (nodeEncodeApplyTxError (Proxy @blk))
           (nodeDecodeApplyTxError (Proxy @blk))
 
-    , pcLocalStateQueryCodec =
+    nodeToClientStateQueryCodec =
         codecLocalStateQuery
           (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
           (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
@@ -295,7 +321,6 @@ protocolCodecs cfg version = ProtocolCodecs {
           nodeDecodeQuery
           nodeEncodeResult
           nodeDecodeResult
-    }
 
 -- | Id codecs used in tests.
 --
