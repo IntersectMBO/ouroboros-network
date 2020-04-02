@@ -241,6 +241,15 @@ data ChainDB m blk = ChainDB {
       -- another block is pushed to the current chain and the subsequent
       -- time delay expires.
       --
+      -- Note: although blocks are moved from the volatile DB to the immutable
+      -- DB after they have become @k@ deep into the chain, due to data
+      -- corruption the suffix of the chain in the volatile DB might be
+      -- shorter than @k@. The immutable DB /always/ determines the maximum
+      -- rollback, which may therefore be shorter than @k@ under such
+      -- circumstances. In addition, streaming blocks which aren't on the
+      -- current fork is permitted, but the oldest volatile block must fit on
+      -- to the tip of the immutable DB.
+      --
       -- When the given bounds are nonsensical, an 'InvalidIteratorRange' is
       -- thrown.
       --
