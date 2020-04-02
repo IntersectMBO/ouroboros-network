@@ -160,7 +160,6 @@ openDB VolatileDbArgs {..} = runWithTempRegistry $ do
           }
         volDB = VolatileDB {
             closeDB             = closeDBImpl             env
-          , reOpenDB            = reOpenDBImpl            env
           , getBlockComponent   = getBlockComponentImpl   env
           , putBlock            = putBlockImpl            env
           , garbageCollect      = garbageCollectImpl      env
@@ -179,27 +178,6 @@ closeDBImpl VolatileDBEnv { varInternalState, tracer, hasFS } = do
       DbClosed -> traceWith tracer DBAlreadyClosed
       DbOpen ost ->
         wrapFsError $ closeOpenHandles hasFS ost
-
--- | Property: @'closeDB' >> 'reOpenDB'@  should be a no-op. This is true
--- because 'reOpenDB' will always append to the last created file.
-reOpenDBImpl :: ( HasCallStack
-                , IOLike m
-                , Ord blockId
-                )
-             => VolatileDBEnv m blockId
-             -> m ()
-reOpenDBImpl VolatileDBEnv{..} = bracketOnError
-    (takeMVar varInternalState)
-    -- Important: put back the state when an error is thrown, otherwise we have
-    -- an empty TMVar.
-    (putMVar varInternalState) $ \case
-      DbOpen st -> do
-        traceWith tracer DBAlreadyOpen
-        putMVar varInternalState (DbOpen st)
-      DbClosed -> runWithTempRegistry $ do
-        ost <- mkOpenState hasFS parser tracer maxBlocksPerFile
-        lift $ putMVar varInternalState (DbOpen ost)
-        return ((), ost)
 
 getBlockComponentImpl
   :: forall m blockId b. (IOLike m, Ord blockId, HasCallStack)

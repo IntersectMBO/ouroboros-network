@@ -38,7 +38,6 @@ withDB openDB = bracket openDB closeDB
 
 data VolatileDB blockId m = VolatileDB {
       closeDB             :: HasCallStack => m ()
-    , reOpenDB            :: HasCallStack => m ()
     , getBlockComponent   :: forall b. HasCallStack
                         => BlockComponent (VolatileDB blockId m) b
                         -> blockId

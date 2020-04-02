@@ -42,12 +42,13 @@ import           Ouroboros.Network.Point (WithOrigin)
 import qualified Ouroboros.Network.Point as WithOrigin
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
+import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
                      (blockFileParser')
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API (HasFS, hPutAll, withFile)
+import           Ouroboros.Consensus.Storage.FS.API (hPutAll, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
@@ -268,7 +269,8 @@ runPureErr :: DBModel BlockId
            -> (Resp, DBModel BlockId)
 runPureErr dbm (CmdErr cmd _mbErrors) = runPure cmd dbm
 
-sm :: VolatileDBEnv h
+sm :: Eq h
+   => VolatileDBEnv h
    -> DBModel BlockId
    -> StateMachine Model (At CmdErr) IO (At Resp)
 sm env dbm = StateMachine {
@@ -469,12 +471,22 @@ shrinkCmd Model{..} cmd = case cmd of
 -- | Environment to run commands against the real VolatileDB implementation.
 data VolatileDBEnv h = VolatileDBEnv
   { varErrors :: StrictTVar IO Errors
-  , hasFS     :: HasFS IO h
-  , db        :: VolatileDB BlockId IO
+  , varDB     :: StrictMVar IO (VolatileDB BlockId IO)
+  , args      :: VolatileDbArgs IO h BlockId ReadIncrementalErr
   }
 
-semanticsImpl :: VolatileDBEnv h -> At CmdErr Concrete -> IO (At Resp Concrete)
-semanticsImpl env@VolatileDBEnv { db, varErrors }  (At (CmdErr cmd mbErrors)) =
+-- | Opens a new VolatileDB and stores it in 'varDB'.
+--
+-- Does not close the current VolatileDB stored in 'varDB'.
+reopenDB :: Eq h => VolatileDBEnv h -> IO ()
+reopenDB VolatileDBEnv { varDB, args } = do
+    db <- openDB args
+    void $ swapMVar varDB db
+
+semanticsImpl
+  :: Eq h
+  => VolatileDBEnv h -> At CmdErr Concrete -> IO (At Resp Concrete)
+semanticsImpl env@VolatileDBEnv { varDB, varErrors }  (At (CmdErr cmd mbErrors)) =
     At . Resp <$> case mbErrors of
       Nothing     -> tryVolDB (runDB env cmd)
       Just errors -> do
@@ -482,15 +494,15 @@ semanticsImpl env@VolatileDBEnv { db, varErrors }  (At (CmdErr cmd mbErrors)) =
           tryVolDB (runDB env cmd)
         -- As all operations on the VolatileDB are idempotent, close
         -- (idempotent), reopen it, and run the command again.
-        closeDB  db
-        reOpenDB db
+        readMVar varDB >>= closeDB
+        reopenDB env
         tryVolDB (runDB env cmd)
 
-runDB :: HasCallStack
+runDB :: (Eq h, HasCallStack)
       => VolatileDBEnv h
       -> Cmd
       -> IO Success
-runDB VolatileDBEnv { db, hasFS } cmd = case cmd of
+runDB env@VolatileDBEnv { varDB, args } cmd = readMVar varDB >>= \db -> case cmd of
     GetBlockComponent bid    -> MbAllComponents          <$> getBlockComponent db allComponents bid
     PutBlock b               -> Unit                     <$> putBlock db (testBlockToBlockInfo b) (testBlockToBuilder b)
     FilterByPredecessor bids -> Successors .  (<$> bids) <$> atomically (filterByPredecessor db)
@@ -498,7 +510,7 @@ runDB VolatileDBEnv { db, hasFS } cmd = case cmd of
     GarbageCollect slot      -> Unit                     <$> garbageCollect db slot
     GetMaxSlotNo             -> MaxSlot                  <$> atomically (getMaxSlotNo db)
     Close                    -> Unit                     <$> closeDB db
-    ReOpen                   -> Unit                     <$> reOpenDB db
+    ReOpen                   -> Unit                     <$> reopenDB env
     Corruption corrs ->
       withClosedDB $
         forM_ corrs $ \(corr, file) -> corruptFile hasFS corr file
@@ -507,11 +519,13 @@ runDB VolatileDBEnv { db, hasFS } cmd = case cmd of
         withFile hasFS (filePath fileId) (AppendMode AllowExisting) $ \hndl ->
           void $ hPutAll hasFS hndl bytes
   where
+    VolatileDbArgs { hasFS } = args
+
     withClosedDB :: IO () -> IO Success
     withClosedDB action = do
-      closeDB db
+      readMVar varDB >>= closeDB
       action
-      reOpenDB db
+      reopenDB env
       return $ Unit ()
 
 mockImpl :: Model Symbolic -> At CmdErr Symbolic -> GenSym (At Resp Symbolic)
@@ -538,7 +552,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
         $ prop
   where
     dbm = initDBModel testMaxBlocksPerFile
-    smUnused = sm unusedEnv dbm
+    smUnused = sm (unusedEnv @()) dbm
 
     groupIsMember n
       | n < 5     = show n
@@ -564,19 +578,26 @@ test cmds = do
           , parser
           }
 
-    withDB (openDB args) $ \db -> do
-      let env = VolatileDBEnv { varErrors, db, hasFS }
-          sm' = sm env dbm
-      (hist, _model, res) <- QSM.runCommands' sm' cmds
+    (hist, res, trace) <- bracket
+      (openDB args >>= newMVar)
+      -- Note: we might be closing a different VolatileDB than the one we
+      -- opened, as we can reopen it the VolatileDB, swapping the VolatileDB
+      -- in the MVar.
+      (\varDB -> readMVar varDB >>= closeDB)
+      $ \varDB -> do
+        let env = VolatileDBEnv { varErrors, varDB, args }
+            sm' = sm env dbm
+        (hist, _model, res) <- QSM.runCommands' sm' cmds
+        trace <- getTrace
+        return (hist, res, trace)
 
-      trace <- getTrace
-      fs    <- atomically $ readTVar varFs
+    fs <- atomically $ readTVar varFs
 
-      let prop =
-            counterexample ("Trace: " <> unlines (map show trace)) $
-            counterexample ("FS: " <> Mock.pretty fs)              $
-            res === Ok
-      return (hist, prop)
+    let prop =
+          counterexample ("Trace: " <> unlines (map show trace)) $
+          counterexample ("FS: " <> Mock.pretty fs)              $
+          res === Ok
+    return (hist, prop)
   where
     dbm = initDBModel testMaxBlocksPerFile
 
@@ -797,4 +818,4 @@ showLabelledExamples' mReplay numTests focus =
     QSM.showLabelledExamples' smUnused mReplay numTests tag focus
   where
     dbm      = initDBModel testMaxBlocksPerFile
-    smUnused = sm unusedEnv dbm
+    smUnused = sm (unusedEnv @()) dbm
