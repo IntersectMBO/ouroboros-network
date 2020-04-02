@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveFoldable      #-}
 {-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -15,14 +16,16 @@ module Ouroboros.Consensus.Util.Counting (
     -- * Working with 'Exactly'
   , exactlyOne
   , exactlyHead
+  , exactlyTail
   , exactlyZip
-  , exactlyZipAtMost
+  , exactlyZipFoldable
   , exactlyWeaken
-  , exactlyMapStateM
-  , exactlyN
+  , exactlyReplicate
     -- * Working with 'AtMost'
   , atMostOne
   , atMostInit
+  , atMostLast
+  , atMostZipFoldable
   ) where
 
 import qualified Data.Foldable as Foldable
@@ -44,11 +47,13 @@ data AtMost :: [*] -> * -> * where
 deriving instance Show a => Show (AtMost  xs a)
 deriving instance Show a => Show (Exactly xs a)
 
-deriving instance Functor  (Exactly xs)
-deriving instance Foldable (Exactly xs)
+deriving instance Functor     (Exactly xs)
+deriving instance Foldable    (Exactly xs)
+deriving instance Traversable (Exactly xs)
 
-deriving instance Functor  (AtMost xs)
-deriving instance Foldable (AtMost xs)
+deriving instance Functor     (AtMost xs)
+deriving instance Foldable    (AtMost xs)
+deriving instance Traversable (AtMost xs)
 
 {-------------------------------------------------------------------------------
   Working with 'Exactly'
@@ -62,17 +67,21 @@ exactlyOne a = ExactlyCons a ExactlyNil
 exactlyHead :: Exactly (x ': xs) a -> a
 exactlyHead (ExactlyCons a _) = a
 
+-- | Analogue of 'tail'
+exactlyTail :: Exactly (x ': xs) a -> Exactly xs a
+exactlyTail (ExactlyCons _ as) = as
+
 -- | Analogue of 'zip'
 exactlyZip :: Exactly xs a -> Exactly xs b -> Exactly xs (a, b)
 exactlyZip = go
   where
     go :: Exactly xs a -> Exactly xs b -> Exactly xs (a, b)
-    go ExactlyNil ExactlyNil                 = ExactlyNil
+    go ExactlyNil         ExactlyNil         = ExactlyNil
     go (ExactlyCons a as) (ExactlyCons b bs) = ExactlyCons (a, b) $ go as bs
 
 -- | Analogue of 'zip' where the length of second argument is unknown
-exactlyZipAtMost :: Foldable t => Exactly xs a -> t b -> AtMost xs (a, b)
-exactlyZipAtMost = \as bs -> go as (Foldable.toList bs)
+exactlyZipFoldable :: Foldable t => Exactly xs a -> t b -> AtMost xs (a, b)
+exactlyZipFoldable = \as bs -> go as (Foldable.toList bs)
   where
     go :: Exactly xs a -> [b] -> AtMost xs (a, b)
     go _          []             = AtMostNil
@@ -86,25 +95,15 @@ exactlyWeaken = go
     go ExactlyNil         = AtMostNil
     go (ExactlyCons x xs) = AtMostCons x (go xs)
 
-exactlyMapStateM :: forall m xs s a b. Monad m
-                 => (s -> a -> m (s, b))
-                 -> s
-                 -> Exactly xs a -> m (Exactly xs b)
-exactlyMapStateM f = go
+-- | Analogue of 'replicate'
+--
+-- In CPS style because the @xs@ type parameter is not statically known.
+exactlyReplicate :: forall a r. Word -> a -> (forall xs. Exactly xs a -> r) -> r
+exactlyReplicate = go
   where
-    go :: forall xs'. s -> Exactly xs' a -> m (Exactly xs' b)
-    go _ ExactlyNil         = return ExactlyNil
-    go s (ExactlyCons a as) = do
-        (s', b) <- f s a
-        bs      <- go s' as
-        return $ ExactlyCons b bs
-
-exactlyN :: Word -> (forall xs. Exactly xs () -> a) -> a
-exactlyN = go
-  where
-    go :: Word -> (forall xs. Exactly xs () -> a) -> a
-    go 0 k = k ExactlyNil
-    go n k = go (n - 1) $ \xs -> k (ExactlyCons () xs)
+    go :: Word -> a -> (forall xs. Exactly xs a -> r) -> r
+    go 0 _ k = k ExactlyNil
+    go n a k = go (n - 1) a $ \xs -> k (ExactlyCons a xs)
 
 {-------------------------------------------------------------------------------
   Working with 'AtMost'
@@ -126,3 +125,15 @@ atMostInit = go
                              case go as of
                                Nothing        -> (AtMostNil, a)
                                Just (as', a') -> (AtMostCons a as', a')
+
+-- | Analogue of 'last'
+atMostLast :: AtMost xs a -> Maybe a
+atMostLast = fmap snd . atMostInit
+
+atMostZipFoldable :: Foldable t => AtMost xs a -> t b -> AtMost xs (a, b)
+atMostZipFoldable = \as bs -> go as (Foldable.toList bs)
+  where
+    go :: AtMost xs a -> [b] -> AtMost xs (a, b)
+    go AtMostNil         _      = AtMostNil
+    go _                 []     = AtMostNil
+    go (AtMostCons a as) (b:bs) = AtMostCons (a, b) (go as bs)
