@@ -42,7 +42,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB (
   , getMaxSlotNo
   , putBlock
   , closeDB
-  , reopen
   , garbageCollect
     -- * Tracing
   , TraceEvent
@@ -239,9 +238,6 @@ putBlock db@VolDB{..} b = withDB db $ \vol ->
 
 closeDB :: (MonadCatch m, HasCallStack) => VolDB m blk -> m ()
 closeDB db = withDB db VolDB.closeDB
-
-reopen :: (MonadCatch m, HasCallStack) => VolDB m blk -> m ()
-reopen db = withDB db VolDB.reOpenDB
 
 garbageCollect :: MonadCatch m => VolDB m blk -> SlotNo -> m ()
 garbageCollect db slotNo = withDB db $ \vol ->

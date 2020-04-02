@@ -31,7 +31,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
   , streamAfterKnownBlock
     -- * Wrappers
   , closeDB
-  , reopen
   , iteratorNext
   , iteratorHasNext
   , iteratorPeek
@@ -631,10 +630,6 @@ parse db blockOrHeader blockRef bytes =
 
 closeDB :: (MonadCatch m, HasCallStack) => ImmDB m blk -> m ()
 closeDB db = withDB db ImmDB.closeDB
-
-reopen :: (MonadCatch m, HasCallStack) => ImmDB m blk -> m ()
-reopen db = withDB db $ \imm ->
-    ImmDB.reopen imm ImmDB.ValidateMostRecentChunk
 
 -- These wrappers ensure that we correctly rethrow exceptions using 'withDB'.
 
