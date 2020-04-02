@@ -1,21 +1,16 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE ExistentialQuantification  #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures             #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveFunctor             #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TypeOperators             #-}
 
 module Test.Consensus.HardFork.History (tests) where
 
-import           Control.Monad.Except
-import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import qualified Data.List as L
@@ -36,26 +31,12 @@ import           Ouroboros.Consensus.HardFork.History (ShiftTime (..))
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Util.Counting
 
+import           Test.Consensus.HardFork.Infra
 import           Test.Util.Orphans.Arbitrary
 
 tests :: TestTree
 tests = testGroup "HardForkHistory" [
-      testGroup "Summary" [
-          testGroup "Sanity" [
-              testProperty "generator" $ checkGenerator $ \ArbitrarySummary{..} ->
-                checkInvariant HF.invariantSummary arbitrarySummary
-            , testProperty "shrinker"  $ checkShrinker $ \ArbitrarySummary{..} ->
-                checkInvariant HF.invariantSummary arbitrarySummary
-            ]
-        , testGroup "Conversions" [
-              testProperty "roundtripWallclockSlot" roundtripWallclockSlot
-            , testProperty "roundtripSlotWallclock" roundtripSlotWallclock
-            , testProperty "roundtripSlotEpoch"     roundtripSlotEpoch
-            , testProperty "roundtripEpochSlot"     roundtripEpochSlot
-            , testProperty "reportsPastHorizon"     reportsPastHorizon
-            ]
-        ]
-    , testGroup "Chain" [
+      testGroup "Chain" [
           testGroup "Sanity" [
               testProperty "generator" $ checkGenerator $ \ArbitraryChain{..} ->
                 checkInvariant HF.invariantShape arbitraryChainShape
@@ -71,87 +52,6 @@ tests = testGroup "HardForkHistory" [
             ]
         ]
     ]
-
-{-------------------------------------------------------------------------------
-  Sanity checks
-
-  Explicit 'forAll' here since we don't want to assume that the shrinker is
-  correct here.
--------------------------------------------------------------------------------}
-
--- | Test the generator
-checkGenerator :: (Arbitrary a, Show a) => (a -> Property) -> Property
-checkGenerator p = forAll arbitrary $ p
-
--- | Test the shrinker
-checkShrinker :: (Arbitrary a, Show a) => (a -> Property) -> Property
-checkShrinker p = forAll arbitrary $ conjoin . map p . shrink
-
-checkInvariant :: (a -> Except String ()) -> (a -> Property)
-checkInvariant f a =
-    case runExcept (f a) of
-      Left err -> counterexample err $ property False
-      Right () -> property True
-
-{-------------------------------------------------------------------------------
-  Tests using just 'Summary'
--------------------------------------------------------------------------------}
-
-roundtripWallclockSlot :: ArbitrarySummary -> Property
-roundtripWallclockSlot ArbitrarySummary{ arbitrarySummary = summary
-                                       , beforeHorizonTime = time
-                                       } = noPastHorizonException $ do
-    (slot  ,  inSlot ) <- HF.wallclockToSlot summary time
-    (time' , _slotLen) <- HF.slotToWallclock summary slot
-    return $ addUTCTime inSlot time' === time
-
-roundtripSlotWallclock :: ArbitrarySummary -> Property
-roundtripSlotWallclock ArbitrarySummary{ arbitrarySummary  = summary
-                                       , beforeHorizonSlot = slot
-                                       } = noPastHorizonException $ do
-    (time  , _slotLen) <- HF.slotToWallclock summary slot
-    (slot' ,  inSlot ) <- HF.wallclockToSlot summary time
-    return $ slot' === slot .&&. inSlot === 0
-
-roundtripSlotEpoch :: ArbitrarySummary -> Property
-roundtripSlotEpoch ArbitrarySummary{ arbitrarySummary  = summary
-                                   , beforeHorizonSlot = slot
-                                   } = noPastHorizonException $ do
-    (epoch ,  inEpoch  ) <- HF.slotToEpoch summary slot
-    (slot' , _epochSize) <- HF.epochToSlot summary epoch
-    return $ HF.addSlots inEpoch slot' === slot
-
-roundtripEpochSlot :: ArbitrarySummary -> Property
-roundtripEpochSlot ArbitrarySummary{ arbitrarySummary   = summary
-                                   , beforeHorizonEpoch = epoch
-                                   } = noPastHorizonException $ do
-    (slot  , _epochSize) <- HF.epochToSlot summary epoch
-    (epoch',  inEpoch  ) <- HF.slotToEpoch summary slot
-    return $ epoch' === epoch .&&. inEpoch === 0
-
-reportsPastHorizon :: ArbitrarySummary -> Property
-reportsPastHorizon ArbitrarySummary{..} = conjoin [
-      isPastHorizonException $
-        HF.wallclockToSlot arbitrarySummary pastHorizonTime
-    , isPastHorizonException $
-        HF.slotToWallclock arbitrarySummary pastHorizonSlot
-    , isPastHorizonException $
-        HF.slotToEpoch arbitrarySummary pastHorizonSlot
-    , isPastHorizonException $
-        HF.epochToSlot arbitrarySummary pastHorizonEpoch
-    ]
-
-noPastHorizonException :: Except HF.PastHorizonException Property -> Property
-noPastHorizonException mProp =
-    case runExcept mProp of
-      Right prop -> prop
-      Left  ex   -> counterexample ("Unexpected " ++ show ex) $ property False
-
-isPastHorizonException :: Show a => Except HF.PastHorizonException a -> Property
-isPastHorizonException ma =
-    case runExcept ma of
-      Right a -> counterexample ("Unexpected " ++ show a) $ property False
-      Left _  -> property True
 
 {-------------------------------------------------------------------------------
   Properties of summarize
@@ -224,30 +124,17 @@ deriving instance Show ArbitraryChain
 withArbitraryChainSummary :: ArbitraryChain
                           -> (forall xs'. HF.Summary xs' -> a)
                           -> a
-withArbitraryChainSummary ArbitraryChain{
-                              arbitraryChainEras = eras :: Eras xs
-                            , ..
-                            }
-                          f =
-    f summary
-  where
-    transitions :: HF.Transitions xs
-    transitions = chainTransitions eras arbitraryChain
-
-    tip :: WithOrigin SlotNo
-    tip = chainTip arbitraryChain
-
-    summary :: HF.Summary xs
-    summary = HF.summarize
-                arbitraryChainStart
-                tip
-                arbitraryChainShape
-                transitions
+withArbitraryChainSummary ArbitraryChain{..} f =
+    f $ HF.summarize
+          arbitraryChainStart
+          (chainTip arbitraryChain)
+          arbitraryChainShape
+          (chainTransitions arbitraryChainEras arbitraryChain)
 
 instance Arbitrary ArbitraryChain where
   arbitrary = chooseEras $ \eras -> do
       start    <- HF.SystemStart <$> arbitrary
-      shape    <- genShape genParams (EpochNo 0) eras
+      shape    <- HF.Shape <$> erasMapStateM genParams (EpochNo 0) eras
       preChain <- genPreChain start eras shape `suchThat` (not . null)
       eventIx  <- choose (0, length preChain - 1)
       return ArbitraryChain {
@@ -259,8 +146,8 @@ instance Arbitrary ArbitraryChain where
         , arbitraryEventIx      = eventIx
         }
     where
-      genParams :: Era -> EpochNo -> Gen (EpochNo, HF.EraParams)
-      genParams _era startOfThis = do
+      genParams :: EpochNo -> Era -> Gen (EpochNo, HF.EraParams)
+      genParams startOfThis _era = do
           params      <- genEraParams      startOfThis
           startOfNext <- genStartOfNextEra startOfThis params
           return (startOfNext, params)
@@ -579,245 +466,8 @@ stepCanStartNewEra currentEpoch (CanStartIf safeZone) =
     checkEpoch (HF.LowerBound e) = currentEpoch >= e
 
 {-------------------------------------------------------------------------------
-  Arbitrary 'Summary'
-
-  We should be able to show properties of the conversion functions independent
-  of how the 'Summary' that they use is derived.
--------------------------------------------------------------------------------}
-
-data ArbitrarySummary = forall xs. ArbitrarySummary {
-      arbitrarySummaryStart :: HF.SystemStart
-    , arbitrarySummary      :: HF.Summary xs
-    , beforeHorizonTime     :: UTCTime
-    , beforeHorizonSlot     :: SlotNo
-    , beforeHorizonEpoch    :: EpochNo
-    , pastHorizonTime       :: UTCTime
-    , pastHorizonSlot       :: SlotNo
-    , pastHorizonEpoch      :: EpochNo
-    }
-
-deriving instance Show ArbitrarySummary
-
-instance Arbitrary ArbitrarySummary where
-  arbitrary = chooseEras $ \is -> do
-      start   <- HF.SystemStart <$> arbitrary
-      summary <- genSummary genEraSummary (HF.initBound start) is
-
-      let summaryStart, summaryEnd :: HF.Bound
-          (summaryStart, summaryEnd) = summaryBounds summary
-
-          summarySlots, summaryEpochs :: Word64
-          summarySlots  = HF.countSlots
-                            (HF.boundSlot summaryEnd)
-                            (HF.boundSlot summaryStart)
-          summaryEpochs = HF.countEpochs
-                            (HF.boundEpoch summaryEnd)
-                            (HF.boundEpoch summaryStart)
-
-          summaryTimeSpan :: NominalDiffTime
-          summaryTimeSpan = diffUTCTime
-                              (HF.boundTime summaryEnd)
-                              (HF.boundTime summaryStart)
-
-          summaryTimeSpanSeconds :: Double
-          summaryTimeSpanSeconds = realToFrac summaryTimeSpan
-
-      -- Pick arbitrary values before the horizon
-
-      beforeHorizonSlots   <- choose (0, summarySlots  - 1)
-      beforeHorizonEpochs  <- choose (0, summaryEpochs - 1)
-      beforeHorizonSeconds <- choose (0, summaryTimeSpanSeconds)
-                                `suchThat` \x -> x /= summaryTimeSpanSeconds
-
-      let beforeHorizonSlot  :: SlotNo
-          beforeHorizonEpoch :: EpochNo
-          beforeHorizonTime  :: UTCTime
-
-          beforeHorizonSlot  = HF.addSlots
-                                 beforeHorizonSlots
-                                 (HF.boundSlot summaryStart)
-          beforeHorizonEpoch = HF.addEpochs
-                                 beforeHorizonEpochs
-                                 (HF.boundEpoch summaryStart)
-          beforeHorizonTime  = addUTCTime
-                                 (realToFrac beforeHorizonSeconds)
-                                 (HF.boundTime summaryStart)
-
-      -- Pick arbitrary values past the horizon
-
-      pastHorizonSlots   :: Word64 <- choose (0, 10)
-      pastHorizonEpochs  :: Word64 <- choose (0, 10)
-      pastHorizonSeconds :: Double <- choose (0, 10)
-
-      let pastHorizonSlot  :: SlotNo
-          pastHorizonEpoch :: EpochNo
-          pastHorizonTime  :: UTCTime
-
-          pastHorizonSlot  = HF.addSlots
-                                pastHorizonSlots
-                                (HF.boundSlot summaryEnd)
-          pastHorizonEpoch = HF.addEpochs
-                                pastHorizonEpochs
-                                (HF.boundEpoch summaryEnd)
-          pastHorizonTime  = addUTCTime
-                                (realToFrac pastHorizonSeconds)
-                                (HF.boundTime summaryEnd)
-
-      return ArbitrarySummary{
-            arbitrarySummaryStart = start
-          , arbitrarySummary      = summary
-          , beforeHorizonTime
-          , beforeHorizonSlot
-          , beforeHorizonEpoch
-          , pastHorizonTime
-          , pastHorizonSlot
-          , pastHorizonEpoch
-          }
-    where
-      genEraSummary :: Era -> HF.Bound -> Gen (HF.Bound, HF.EraSummary)
-      genEraSummary _era lo = do
-          params <- genEraParams (HF.boundEpoch lo)
-          hi     <- genUpperBound lo params
-          return (hi, HF.EraSummary lo hi params)
-
-      genUpperBound :: HF.Bound -> HF.EraParams -> Gen HF.Bound
-      genUpperBound lo params = do
-          startOfNextEra <- genStartOfNextEra (HF.boundEpoch lo) params
-          return $ HF.mkUpperBound params lo startOfNextEra
-
-  shrink summary@ArbitrarySummary{..} = concat [
-        -- Simplify the system start
-        [ resetArbitrarySummaryStart summary
-        | HF.getSystemStart arbitrarySummaryStart /= dawnOfTime
-        ]
-
-        -- Reduce before-horizon slot
-      , [ summary { beforeHorizonSlot = SlotNo s }
-        | s <- shrink (unSlotNo beforeHorizonSlot)
-        ]
-
-        -- Reduce before-horizon epoch
-      , [ summary { beforeHorizonEpoch = EpochNo e }
-        | e <- shrink (unEpochNo beforeHorizonEpoch)
-        ]
-
-        -- Reduce before-horizon time
-      , [ summary { beforeHorizonTime = t }
-        | t <- shrink beforeHorizonTime
-        , t >= HF.getSystemStart arbitrarySummaryStart
-        ]
-
-        -- Drop an era /provided/ this doesn't cause of any of the before
-        -- horizon values to become past horizon
-      , [ ArbitrarySummary { arbitrarySummary = summary', .. }
-        | Just (summary', lastEra) <- [summaryInit arbitrarySummary]
-        , beforeHorizonSlot  < HF.boundSlot  (HF.eraStart lastEra)
-        , beforeHorizonEpoch < HF.boundEpoch (HF.eraStart lastEra)
-        , beforeHorizonTime  < HF.boundTime  (HF.eraStart lastEra)
-        ]
-      ]
-
--- | Generate 'EpochNo' for the start of the next era
-genStartOfNextEra :: EpochNo ->  HF.EraParams -> Gen EpochNo
-genStartOfNextEra startOfEra HF.EraParams{..} =
-    case HF.safeBeforeEpoch eraSafeZone of
-       HF.LowerBound e -> (\n -> HF.addEpochs n e         ) <$> choose (0, 10)
-       HF.NoLowerBound -> (\n -> HF.addEpochs n startOfEra) <$> choose (1, 10)
-
--- | Generate era parameters
---
--- Need to know the start of the era to generate a valid 'HF.LowerBound'.
--- We do /not/ assume that the 'safeFromTip' must be less than an epoch.
-genEraParams :: EpochNo -> Gen HF.EraParams
-genEraParams startOfEra = do
-    eraEpochSize  <- EpochSize         <$> choose (1, 10)
-    eraSlotLength <- slotLengthFromSec <$> choose (1, 5)
-    eraSafeZone   <- genSafeZone
-    return HF.EraParams{..}
-  where
-    genSafeZone :: Gen HF.SafeZone
-    genSafeZone = do
-        safeFromTip     <- choose (1, 10)
-        safeBeforeEpoch <- genSafeBeforeEpoch
-        return HF.SafeZone{..}
-
-    genSafeBeforeEpoch :: Gen HF.SafeBeforeEpoch
-    genSafeBeforeEpoch = oneof [
-          return HF.NoLowerBound
-        , (\n -> HF.LowerBound (HF.addEpochs n startOfEra)) <$> choose (1, 5)
-        ]
-
-{-------------------------------------------------------------------------------
-  Auxiliary: generate arbitrary type-level indices
--------------------------------------------------------------------------------}
-
-data Era = Era {
-       eraIndex  :: Word64
-     , eraIsLast :: Bool
-     }
-  deriving (Show, Eq, Ord)
-
-data Eras :: [*] -> * where
-    -- We guarantee to have at least one era
-    Eras :: Exactly (x ': xs) Era -> Eras (x ': xs)
-
-deriving instance Show (Eras xs)
-
-chooseEras :: (forall xs. Eras xs -> Gen a) -> Gen a
-chooseEras k = oneof [
-      k $ Eras $ exactlyOne  (Era 0 True)
-    , k $ Eras $ ExactlyCons (Era 0 False) $ exactlyOne  (Era 1 True)
-    , k $ Eras $ ExactlyCons (Era 0 False) $ ExactlyCons (Era 1 False) $ exactlyOne  (Era 2 True)
-    , k $ Eras $ ExactlyCons (Era 0 False) $ ExactlyCons (Era 1 False) $ ExactlyCons (Era 2 False) $ exactlyOne (Era 3 True)
-    ]
-
-{-------------------------------------------------------------------------------
-  Auxiliary: using 'Eras' to generate indexed types
--------------------------------------------------------------------------------}
-
-genSummary :: forall m xs a. Monad m
-           => (Era -> a -> m (a, HF.EraSummary))  -- ^ Step
-           -> a                                   -- ^ Initial seed
-           -> Eras xs -> m (HF.Summary xs)
-genSummary f = \seed (Eras eras) ->
-    HF.Summary <$> go seed eras
-  where
-    go :: forall xs'. a -> Exactly xs' Era -> m (AtMost xs' HF.EraSummary)
-    go _  ExactlyNil        = return AtMostNil
-    go a (ExactlyCons e es) = do
-        (a', eraSummary) <- f e a
-        summary          <- go a' es
-        return $ AtMostCons eraSummary summary
-
-genShape :: forall m xs a. Monad m
-         => (Era -> a -> m (a, HF.EraParams))  -- ^ Step
-         -> a                                  -- ^ Initial seed
-         -> Eras xs -> m (HF.Shape xs)
-genShape f = \seed (Eras eras) ->
-    HF.Shape <$> go seed eras
-  where
-    go :: forall xs'. a -> Exactly xs' Era -> m (Exactly xs' HF.EraParams)
-    go _  ExactlyNil        = return ExactlyNil
-    go a (ExactlyCons e es) = do
-        (a', eraParams) <- f e a
-        shape           <- go a' es
-        return $ ExactlyCons eraParams shape
-
-{-------------------------------------------------------------------------------
   Shifting time
 -------------------------------------------------------------------------------}
-
-instance ShiftTime ArbitrarySummary where
-  shiftTime delta ArbitrarySummary{..} = ArbitrarySummary {
-      arbitrarySummaryStart = shiftTime delta arbitrarySummaryStart
-    , arbitrarySummary      = shiftTime delta arbitrarySummary
-    , beforeHorizonTime     = shiftTime delta beforeHorizonTime
-    , beforeHorizonSlot
-    , beforeHorizonEpoch
-    , pastHorizonTime
-    , pastHorizonSlot
-    , pastHorizonEpoch
-    }
 
 instance ShiftTime ArbitraryChain where
   shiftTime delta ArbitraryChain{..} = ArbitraryChain {
@@ -838,17 +488,6 @@ instance ShiftTime (Event f) where
 instance ShiftTime EventTime where
   shiftTime delta t = t { eventTimeUTC = shiftTime delta (eventTimeUTC t) }
 
--- | Reset the system start (during shrinking)
---
--- Since this brings the system start /back/, we don't care about the past
--- horizon values. 'EpochNo' and 'SlotNo' are also unaffected.
-resetArbitrarySummaryStart :: ArbitrarySummary -> ArbitrarySummary
-resetArbitrarySummaryStart summary@ArbitrarySummary{..} =
-    shiftTime (negate ahead) summary
-  where
-    ahead :: NominalDiffTime
-    ahead = diffUTCTime (HF.getSystemStart arbitrarySummaryStart) dawnOfTime
-
 -- | Reset chain start
 resetArbitraryChainStart :: ArbitraryChain -> ArbitraryChain
 resetArbitraryChainStart chain@ArbitraryChain{..} =
@@ -856,21 +495,3 @@ resetArbitraryChainStart chain@ArbitraryChain{..} =
   where
     ahead :: NominalDiffTime
     ahead = diffUTCTime (HF.getSystemStart arbitraryChainStart) dawnOfTime
-
-{-------------------------------------------------------------------------------
-  Additional functions on 'Summary' needed for the tests only
--------------------------------------------------------------------------------}
-
--- | Lift 'atMostInit' to 'Summary'
-summaryInit :: HF.Summary xs -> Maybe (HF.Summary xs, HF.EraSummary)
-summaryInit (HF.Summary xs) = first HF.Summary <$> atMostInit xs
-
--- | Outer bounds of the summary
---
--- We must always have at least one era but the 'Summary' type does not tell
--- us that. This function is therefore partial, but used only in the tests.
-summaryBounds :: HF.Summary xs -> (HF.Bound, HF.Bound)
-summaryBounds (HF.Summary summary) =
-    case toList summary of
-      [] -> error "summaryBounds: no eras"
-      ss -> (HF.eraStart (head ss), HF.eraEnd (last ss))

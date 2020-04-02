@@ -5,6 +5,7 @@ import           Test.Tasty
 import qualified Test.Consensus.BlockchainTime.SlotLengths (tests)
 import qualified Test.Consensus.BlockchainTime.WallClock (tests)
 import qualified Test.Consensus.HardFork.History (tests)
+import qualified Test.Consensus.HardFork.Summary (tests)
 import qualified Test.Consensus.Mempool (tests)
 import qualified Test.Consensus.MiniProtocol.ChainSync.Client (tests)
 import qualified Test.Consensus.MiniProtocol.LocalStateQuery.Server (tests)
@@ -28,5 +29,6 @@ tests =
   , Test.Consensus.Protocol.PBFT.tests
   , Test.Consensus.ResourceRegistry.tests
   , Test.Consensus.Util.Versioned.tests
+  , Test.Consensus.HardFork.Summary.tests
   , Test.Consensus.HardFork.History.tests
   ]

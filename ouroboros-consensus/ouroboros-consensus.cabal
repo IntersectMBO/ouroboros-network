@@ -261,6 +261,8 @@ test-suite test-consensus
                        Test.Consensus.BlockchainTime.SlotLengths
                        Test.Consensus.BlockchainTime.WallClock
                        Test.Consensus.HardFork.History
+                       Test.Consensus.HardFork.Infra
+                       Test.Consensus.HardFork.Summary
                        Test.Consensus.MiniProtocol.ChainSync.Client
                        Test.Consensus.MiniProtocol.LocalStateQuery.Server
                        Test.Consensus.Mempool

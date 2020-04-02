@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -11,14 +12,17 @@
 module Ouroboros.Consensus.Util.Counting (
     Exactly(..)
   , AtMost(..)
-    -- * Working with 'AtMost'
-  , atMostOne
-  , atMostInit
     -- * Working with 'Exactly'
   , exactlyOne
   , exactlyHead
   , exactlyZip
   , exactlyZipAtMost
+  , exactlyWeaken
+  , exactlyMapStateM
+  , exactlyN
+    -- * Working with 'AtMost'
+  , atMostOne
+  , atMostInit
   ) where
 
 import qualified Data.Foldable as Foldable
@@ -74,6 +78,33 @@ exactlyZipAtMost = \as bs -> go as (Foldable.toList bs)
     go _          []             = AtMostNil
     go ExactlyNil _              = AtMostNil
     go (ExactlyCons a as) (b:bs) = AtMostCons (a, b) $ go as bs
+
+exactlyWeaken :: Exactly xs a -> AtMost xs a
+exactlyWeaken = go
+  where
+    go :: Exactly xs a -> AtMost xs a
+    go ExactlyNil         = AtMostNil
+    go (ExactlyCons x xs) = AtMostCons x (go xs)
+
+exactlyMapStateM :: forall m xs s a b. Monad m
+                 => (s -> a -> m (s, b))
+                 -> s
+                 -> Exactly xs a -> m (Exactly xs b)
+exactlyMapStateM f = go
+  where
+    go :: forall xs'. s -> Exactly xs' a -> m (Exactly xs' b)
+    go _ ExactlyNil         = return ExactlyNil
+    go s (ExactlyCons a as) = do
+        (s', b) <- f s a
+        bs      <- go s' as
+        return $ ExactlyCons b bs
+
+exactlyN :: Word -> (forall xs. Exactly xs () -> a) -> a
+exactlyN = go
+  where
+    go :: Word -> (forall xs. Exactly xs () -> a) -> a
+    go 0 k = k ExactlyNil
+    go n k = go (n - 1) $ \xs -> k (ExactlyCons () xs)
 
 {-------------------------------------------------------------------------------
   Working with 'AtMost'
