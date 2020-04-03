@@ -1228,9 +1228,20 @@ test cacheConfig chunkInfo cmds = do
         btime  = settableBlockchainTime varCurSlot
 
     withRegistry $ \registry -> do
+      let args = ImmutableDbArgs
+            { registry
+            , hasFS
+            , chunkInfo
+            , hashInfo = testHashInfo
+            , tracer
+            , cacheConfig
+            , btime
+            , valPol   = ValidateMostRecentChunk
+            , parser
+            }
+
       bracket
-        (openDBInternal registry hasFS chunkInfo
-           testHashInfo ValidateMostRecentChunk parser tracer cacheConfig btime)
+        (openDBInternal args)
         (closeDB . fst) $ \(db, internal) -> do
 
         let env = ImmutableDBEnv

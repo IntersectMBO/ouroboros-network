@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns  #-}
 {-# LANGUAGE RecordWildCards #-}
 module Test.Ouroboros.Storage.ImmutableDB (tests) where
 
@@ -52,16 +53,18 @@ openTestDB :: (HasCallStack, IOLike m, Eq h)
            => ResourceRegistry m
            -> HasFS m h
            -> m (ImmutableDB Hash m)
-openTestDB registry hasFS = fst <$> openDBInternal
-    registry
-    hasFS
-    fixedChunkInfo
-    testHashInfo
-    ValidateMostRecentChunk
-    parser
-    nullTracer
-    (Index.CacheConfig 2 60)
-    (fixedBlockchainTime maxBound)
+openTestDB registry hasFS =
+    fst <$> openDBInternal ImmutableDbArgs
+      { registry
+      , hasFS
+      , chunkInfo   = fixedChunkInfo
+      , hashInfo    = testHashInfo
+      , tracer      = nullTracer
+      , cacheConfig = Index.CacheConfig 2 60
+      , btime       = fixedBlockchainTime maxBound
+      , valPol      = ValidateMostRecentChunk
+      , parser
+      }
   where
     parser = chunkFileParser hasFS (const <$> S.decode) isEBB getBinaryInfo
       testBlockIsValid

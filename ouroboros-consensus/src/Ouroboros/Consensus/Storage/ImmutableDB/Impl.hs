@@ -86,6 +86,7 @@
 --     index file.
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl
   ( withDB
+  , ImmutableDbArgs (..)
     -- * Internals for testing purposes
   , openDBInternal
   , Internal (..)
@@ -159,23 +160,28 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Parser
 withDB
   :: forall m h hash e a.
      (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash, Eq h)
-  => ResourceRegistry m
-  -> HasFS m h
-  -> ChunkInfo
-  -> HashInfo hash
-  -> ValidationPolicy
-  -> ChunkFileParser e m (BlockSummary hash) hash
-  -> Tracer m (TraceEvent e hash)
-  -> Index.CacheConfig
-  -> BlockchainTime m
+  => ImmutableDbArgs m h hash e
   -> (ImmutableDB hash m -> m a)
   -> m a
-withDB registry hasFS chunkInfo hashInfo valPol parser tracer cacheConfig btime =
-    bracket open closeDB
+withDB args = bracket open closeDB
   where
-    open = fst <$>
-      openDBInternal registry hasFS chunkInfo hashInfo valPol parser tracer
-        cacheConfig btime
+    open = fst <$> openDBInternal args
+
+{------------------------------------------------------------------------------
+  ImmutableDB arguments
+------------------------------------------------------------------------------}
+
+data ImmutableDbArgs m h hash e = ImmutableDbArgs
+    { registry    :: ResourceRegistry m
+    , hasFS       :: HasFS m h
+    , chunkInfo   :: ChunkInfo
+    , hashInfo    :: HashInfo hash
+    , tracer      :: Tracer m (TraceEvent e hash)
+    , cacheConfig :: Index.CacheConfig
+    , btime       :: BlockchainTime m
+    , valPol      :: ValidationPolicy
+    , parser      :: ChunkFileParser e m (BlockSummary hash) hash
+    }
 
 {------------------------------------------------------------------------------
   Exposed internals and/or extra functionality for testing purposes
@@ -226,18 +232,9 @@ mkDBRecord dbEnv = ImmutableDB
 openDBInternal
   :: forall m h hash e.
      (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash, Eq h)
-  => ResourceRegistry m
-  -> HasFS m h
-  -> ChunkInfo
-  -> HashInfo hash
-  -> ValidationPolicy
-  -> ChunkFileParser e m (BlockSummary hash) hash
-  -> Tracer m (TraceEvent e hash)
-  -> Index.CacheConfig
-  -> BlockchainTime m
+  => ImmutableDbArgs m h hash e
   -> m (ImmutableDB hash m, Internal hash m)
-openDBInternal registry hasFS chunkInfo hashInfo valPol parser tracer
-               cacheConfig btime = runWithTempRegistry $ do
+openDBInternal ImmutableDbArgs {..} = runWithTempRegistry $ do
     currentSlot <- atomically $ getCurrentSlot btime
     let validateEnv = ValidateEnv
           { hasFS

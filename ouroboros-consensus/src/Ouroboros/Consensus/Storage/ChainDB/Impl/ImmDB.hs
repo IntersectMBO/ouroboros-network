@@ -221,18 +221,9 @@ withImmDB args = bracket (openDB args) closeDB
 openDB :: (IOLike m, HasHeader blk, GetHeader blk)
        => ImmDbArgs m blk
        -> m (ImmDB m blk)
-openDB ImmDbArgs{..} = do
+openDB ImmDbArgs {..} = do
     createDirectoryIfMissing immHasFS True (mkFsPath [])
-    (immDB, _internal) <- ImmDB.openDBInternal
-      immRegistry
-      immHasFS
-      immChunkInfo
-      immHashInfo
-      immValidation
-      parser
-      immTracer
-      immCacheConfig
-      immBlockchainTime
+    (immDB, _internal) <- ImmDB.openDBInternal args
     return ImmDB
       { immDB     = immDB
       , decHeader = immDecodeHeader
@@ -243,10 +234,20 @@ openDB ImmDbArgs{..} = do
       , addHdrEnv = immAddHdrEnv
       }
   where
+    args = ImmDB.ImmutableDbArgs
+      { registry    = immRegistry
+      , hasFS       = immHasFS
+      , chunkInfo   = immChunkInfo
+      , hashInfo    = immHashInfo
+      , tracer      = immTracer
+      , cacheConfig = immCacheConfig
+      , btime       = immBlockchainTime
+      , valPol      = immValidation
+      , parser      = parser
+      }
     parser = ImmDB.chunkFileParser immHasFS immDecodeBlock (immIsEBB . getHeader)
       -- TODO a more efficient to accomplish this?
       (void . immEncodeBlock) immCheckIntegrity
-
 
 -- | For testing purposes
 mkImmDB :: ImmutableDB (HeaderHash blk) m
