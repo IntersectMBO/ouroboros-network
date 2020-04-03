@@ -97,6 +97,7 @@
 module Ouroboros.Consensus.Storage.VolatileDB.Impl
     ( -- * Opening a database
       openDB
+    , VolatileDbArgs (..)
     ) where
 
 import           Control.Monad
@@ -132,18 +133,22 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
   VolatileDB API
 ------------------------------------------------------------------------------}
 
+data VolatileDbArgs m h blockId e = VolatileDbArgs
+    { hasFS            :: HasFS m h
+    , maxBlocksPerFile :: BlocksPerFile
+    , tracer           :: Tracer m (TraceEvent e blockId)
+    , parser           :: Parser e m blockId
+    }
+
 openDB :: ( HasCallStack
           , IOLike m
           , Ord                blockId
           , NoUnexpectedThunks blockId
           , Eq h
           )
-       => HasFS m h
-       -> Parser e m blockId
-       -> Tracer m (TraceEvent e blockId)
-       -> BlocksPerFile
+       => VolatileDbArgs m h blockId e
        -> m (VolatileDB blockId m)
-openDB hasFS parser tracer maxBlocksPerFile = runWithTempRegistry $ do
+openDB VolatileDbArgs {..} = runWithTempRegistry $ do
     ost   <- mkOpenState hasFS parser tracer maxBlocksPerFile
     stVar <- lift $ newMVar (DbOpen ost)
     let env = VolatileDBEnv {

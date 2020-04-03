@@ -537,7 +537,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
           (tagFilterByPredecessor events)
         $ prop
   where
-    dbm = initDBModel maxBlocksPerFile
+    dbm = initDBModel testMaxBlocksPerFile
     smUnused = sm unusedEnv dbm
 
     groupIsMember n
@@ -557,8 +557,14 @@ test cmds = do
         parser = blockFileParser' hasFS testBlockIsEBB
           testBlockToBinaryInfo (const <$> decode) testBlockIsValid
           ValidateAll
+        args = VolatileDbArgs
+          { hasFS
+          , maxBlocksPerFile = testMaxBlocksPerFile
+          , tracer
+          , parser
+          }
 
-    withDB (openDB hasFS parser tracer maxBlocksPerFile) $ \db -> do
+    withDB (openDB args) $ \db -> do
       let env = VolatileDBEnv { varErrors, db, hasFS }
           sm' = sm env dbm
       (hist, _model, res) <- QSM.runCommands' sm' cmds
@@ -572,10 +578,10 @@ test cmds = do
             res === Ok
       return (hist, prop)
   where
-    dbm = initDBModel maxBlocksPerFile
+    dbm = initDBModel testMaxBlocksPerFile
 
-maxBlocksPerFile :: BlocksPerFile
-maxBlocksPerFile = mkBlocksPerFile 3
+testMaxBlocksPerFile :: BlocksPerFile
+testMaxBlocksPerFile = mkBlocksPerFile 3
 
 unusedEnv :: VolatileDBEnv h
 unusedEnv = error "VolatileDBEnv used during command generation"
@@ -790,5 +796,5 @@ showLabelledExamples' :: Maybe Int
 showLabelledExamples' mReplay numTests focus =
     QSM.showLabelledExamples' smUnused mReplay numTests tag focus
   where
-    dbm      = initDBModel maxBlocksPerFile
+    dbm      = initDBModel testMaxBlocksPerFile
     smUnused = sm unusedEnv dbm

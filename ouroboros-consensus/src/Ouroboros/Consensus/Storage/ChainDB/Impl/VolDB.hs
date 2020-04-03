@@ -177,14 +177,11 @@ defaultArgs fp = VolDbArgs {
     , volValidation     = error "no default for volValidation"
     }
 
-openDB :: (IOLike m, HasHeader blk) => VolDbArgs m blk -> m (VolDB m blk)
+openDB :: forall m blk. (IOLike m, HasHeader blk)
+       => VolDbArgs m blk -> m (VolDB m blk)
 openDB args@VolDbArgs{..} = do
     createDirectoryIfMissing volHasFS True (mkFsPath [])
-    volDB <- VolDB.openDB
-               volHasFS
-               (blockFileParser args)
-               volTracer
-               volBlocksPerFile
+    volDB <- VolDB.openDB volatileDbArgs
     return VolDB
       { volDB     = volDB
       , decHeader = volDecodeHeader
@@ -192,6 +189,13 @@ openDB args@VolDbArgs{..} = do
       , encBlock  = volEncodeBlock
       , addHdrEnv = volAddHdrEnv
       , isEBB     = volIsEBB
+      }
+  where
+    volatileDbArgs = VolDB.VolatileDbArgs
+      { hasFS            = volHasFS
+      , maxBlocksPerFile = volBlocksPerFile
+      , tracer           = volTracer
+      , parser           = blockFileParser args
       }
 
 -- | For testing purposes
