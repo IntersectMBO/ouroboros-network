@@ -884,7 +884,7 @@ test_golden_LedgerState = goldenTestCBOR
     exampleLedgerState = reapplyLedgerBlock
       (ShelleyLedgerConfig SL.testGlobals)
       (mkShelleyBlock newBlock)
-      (ShelleyLedgerState {
+      (TickedLedgerState 0 ShelleyLedgerState {
           ledgerTip    = genesisPoint
         , history      = History.empty
         , shelleyState = STS.chainNes startState

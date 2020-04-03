@@ -71,8 +71,14 @@ instance UpdateLedger ByronSpecBlock where
           (toByronSpecSlotNo       slot)
           (byronSpecLedgerState    state)
 
-  applyLedgerBlock cfg block state = withExcept ByronSpecLedgerError $
-      updateByronSpecLedgerStateNewTip (blockSlot block) <$>
+  applyLedgerBlock cfg block (TickedLedgerState slot state) =
+    withExcept ByronSpecLedgerError $
+      updateByronSpecLedgerStateNewTip slot <$>
+        -- Note that the CHAIN rule also applies the chain tick. So even
+        -- though the ledger we received has already been ticked with
+        -- 'applyChainTick', we do it again as part of CHAIN. This is safe, as
+        -- it is idempotent. If we wanted to avoid the repeated tick, we would
+        -- have to call the subtransitions of CHAIN (except for ticking).
         Rules.liftCHAIN
           (unByronSpecLedgerConfig cfg)
           (byronSpecBlock          block)

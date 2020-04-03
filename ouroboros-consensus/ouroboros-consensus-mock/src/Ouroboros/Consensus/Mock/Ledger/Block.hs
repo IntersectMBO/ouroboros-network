@@ -314,10 +314,10 @@ deriving instance MockProtocolSpecific c ext
 
 updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
                         => SimpleBlock c ext
-                        -> LedgerState (SimpleBlock c ext)
+                        -> TickedLedgerState (SimpleBlock c ext)
                         -> Except (MockError (SimpleBlock c ext))
                                   (LedgerState (SimpleBlock c ext))
-updateSimpleLedgerState b (SimpleLedgerState st) =
+updateSimpleLedgerState b (TickedLedgerState _ (SimpleLedgerState st)) =
     SimpleLedgerState <$> updateMockState b st
 
 updateSimpleUTxO :: Mock.HasMockTxs a

@@ -125,17 +125,17 @@ instance TPraosCrypto c => UpdateLedger (ShelleyBlock c) where
         . ShelleyLedgerState pt history
         $ SL.applyTickTransition globals bhState slotNo
 
-  applyLedgerBlock cfg@(ShelleyLedgerConfig globals) blk st = do
+  applyLedgerBlock (ShelleyLedgerConfig globals) blk tickedLedger = do
+      let TickedLedgerState _ oldSt = tickedLedger
+          ShelleyLedgerState _ history oldShelleyState = oldSt
+          SL.Globals { maxMajorPV } = globals
+          pparams = getPParams oldShelleyState
+          SL.ProtVer majorPV _ = SL._protocolVersion pparams
       -- Do the checks part of the CHAIN transition that are not part of TICK,
       -- PRTCL, or BBODY.
       --
       -- TODO move to a separate function in cardano-ledger-specs that can be
       -- used in @chainTransition@ and here.
-      let SL.Globals { maxMajorPV } = globals
-          ShelleyLedgerState _ history oldShelleyState = st
-          pparams = getPParams oldShelleyState
-          SL.ProtVer majorPV _ = SL._protocolVersion pparams
-
       majorPV <= maxMajorPV ?! ObsoleteNode majorPV maxMajorPV
 
       let maxHeaderSize = SL._maxBHSize pparams
@@ -149,18 +149,13 @@ instance TPraosCrypto c => UpdateLedger (ShelleyBlock c) where
       headerSize <= maxHeaderSize ?! HeaderSizeTooLarge headerSize maxHeaderSize
       bodySize   <= maxBodySize   ?! BodySizeTooLarge   bodySize   maxBodySize
 
-      -- Apply the TICK transition
-      let slot = blockSlot blk
-          tickedShelleyState = shelleyState $ tickedLedgerState $
-            applyChainTick cfg slot st
-
       -- Note: we don't apply the PRTCL transition, we do that in
       -- 'updateConsensusState' (called in 'validateHeader') together with
       -- this function in 'applyExtLedgerState'.
 
       -- Apply the BBODY transition using the ticked state
       newShelleyState <- withExcept BBodyError $
-        SL.applyBlockTransition globals tickedShelleyState (shelleyBlockRaw blk)
+        SL.applyBlockTransition globals oldShelleyState (shelleyBlockRaw blk)
 
       let history'
             -- TODO how expensive is this check?
@@ -170,7 +165,7 @@ instance TPraosCrypto c => UpdateLedger (ShelleyBlock c) where
             | otherwise
             = History.snapOld
                 (SL.securityParameter globals)
-                slot
+                (blockSlot blk)
                 (SL.currentLedgerView oldShelleyState)
                 history
 
