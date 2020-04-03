@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -72,17 +73,17 @@ socketAsMuxBearer sduTimeout_m tracer sd =
                 Nothing -> do
                     traceWith tracer $ Mx.MuxTraceSDUReadTimeoutException
                     throwM $ Mx.MuxError Mx.MuxSDUReadTimeout "Mux SDU Timeout" callStack
-                Just r -> return r
+                Just !r -> return r
 
       recvRem :: BL.ByteString -> IO (Mx.MuxSDU, Time)
-      recvRem h0 = do
+      recvRem !h0 = do
           hbuf <- recvLen' (hdrLenght - fromIntegral (BL.length h0)) [h0]
           case Mx.decodeMuxSDU hbuf of
                Left  e      ->  throwM e
                Right header -> do
                    traceWith tracer $ Mx.MuxTraceRecvHeaderEnd header
                    traceWith tracer $ Mx.MuxTraceRecvPayloadStart (fromIntegral $ Mx.msLength header)
-                   blob <- recvLen' (fromIntegral $ Mx.msLength header) []
+                   !blob <- recvLen' (fromIntegral $ Mx.msLength header) []
 
                    ts <- getMonotonicTime
                    traceWith tracer (Mx.MuxTraceRecvDeltaQObservation header ts)
