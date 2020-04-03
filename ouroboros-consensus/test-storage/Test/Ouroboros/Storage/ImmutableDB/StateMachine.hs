@@ -120,6 +120,7 @@ data Cmd it
   | AppendBlock            SlotNo  Hash TestBlock
   | AppendEBB              EpochNo Hash TestBlock
   | Stream                 (Maybe (SlotNo, Hash)) (Maybe (SlotNo, Hash))
+  | StreamAll
   | IteratorNext           it
   | IteratorPeek           it
   | IteratorHasNext        it
@@ -158,6 +159,7 @@ data Success it
   | Iter            (Either (WrongBoundError Hash) it)
   | IterResult      (IteratorResult AllComponents)
   | IterHasNext     (Maybe (Either EpochNo SlotNo, Hash))
+  | IterResults     [AllComponents]
   | Tip             (ImmTipWithInfo Hash)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
@@ -217,6 +219,7 @@ run ImmutableDBEnv { db, internal, registry, varNextId, varCurSlot, varIters } r
     AppendBlock         s h b  -> Unit            <$> appendBlock            db s (blockNo b) h (toBuilder <$> testBlockToBinaryInfo b)
     AppendEBB           e h b  -> Unit            <$> appendEBB              db e (blockNo b) h (toBuilder <$> testBlockToBinaryInfo b)
     Stream              s e    -> iter            =<< stream                 db registry allComponents s e
+    StreamAll                  -> IterResults     <$> streamAll
     IteratorNext        it     -> IterResult      <$> iteratorNext           (unWithEq it)
     IteratorPeek        it     -> IterResult      <$> iteratorPeek           (unWithEq it)
     IteratorHasNext     it     -> IterHasNext     <$> iteratorHasNext        (unWithEq it)
@@ -264,6 +267,16 @@ run ImmutableDBEnv { db, internal, registry, varNextId, varCurSlot, varIters } r
     giveWithEq a =
       fmap (`WithEq` a) $ atomically $ updateTVar varNextId $ \i -> (succ i, i)
 
+    streamAll :: IO [AllComponents]
+    streamAll =
+      bracket
+        (noWrongBoundError <$> stream db registry allComponents Nothing Nothing)
+        iteratorClose
+        iteratorToList
+
+    noWrongBoundError :: Either (WrongBoundError Hash) a -> a
+    noWrongBoundError (Left e)  = error ("impossible: " <> show e)
+    noWrongBoundError (Right a) = a
 
 {-------------------------------------------------------------------------------
   Instantiating the semantics
@@ -290,6 +303,7 @@ runPure = \case
     AppendBlock         s h b  -> ok Unit            $ updateE_ (appendBlockModel s (blockNo b) h (toBuilder <$> testBlockToBinaryInfo b))
     AppendEBB           e h b  -> ok Unit            $ updateE_ (appendEBBModel   e (blockNo b) h (toBuilder <$> testBlockToBinaryInfo b))
     Stream              s e    -> ok Iter            $ updateEE (streamModel s e)
+    StreamAll                  -> ok IterResults     $ query    (streamAllModel allComponents)
     IteratorNext        it     -> ok IterResult      $ update   (iteratorNextModel it allComponents)
     IteratorPeek        it     -> ok IterResult      $ query    (iteratorPeekModel it allComponents)
     IteratorHasNext     it     -> ok IterHasNext     $ query    (iteratorHasNextModel it)
@@ -526,6 +540,7 @@ generateCmd Model {..} = At <$> frequency
                 let slotNo = slotNoOfEBB dbmChunkInfo epoch
                 return (epoch, mkNextEBB canContainEBB prevBlock slotNo (TestBody 0 True))
             return $ AppendEBB epoch (blockHash ebb) ebb)
+    , (4, return StreamAll)
     , (4, frequency
             -- An iterator with a random and likely invalid range,
             [ (1, Stream
@@ -683,6 +698,7 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
     AppendBlock _slot  _hash _b        -> []
     AppendEBB   _epoch _hash _ebb      -> []
     Stream  _mbStart _mbEnd            -> []
+    StreamAll                          -> []
     GetBlockComponent slot             ->
       [GetBlockComponent slot' | slot' <- shrink slot]
     GetEBBComponent epoch              ->
