@@ -1,5 +1,7 @@
+{-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE TypeApplications  #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 module Test.Consensus.Byron.Ledger.Golden (tests) where
 
@@ -13,6 +15,7 @@ import qualified Data.Sequence.Strict as Seq
 
 import           Cardano.Binary (toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
+import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 
 import           Ouroboros.Network.Block (SlotNo)
@@ -43,6 +46,7 @@ tests = testGroup "Golden tests"
     , testCase "LedgerState"    test_golden_LedgerState
     , testCase "GenTxId"        test_golden_GenTxId
     , testCase "UPIState"       test_golden_UPIState
+    , testCase "TxSizeLinear"   test_golden_TxSizeLinear
     ]
 
 -- | Note that we must use the same value for the 'SecurityParam' as for the
@@ -404,7 +408,8 @@ test_golden_LedgerState = goldenTestCBOR
     , TkListLen 2
     , TkInt 0
     , TkTag 24
-    , TkBytes "\130\ESC\NUL\NUL\141QuOR\NUL\ESC\NUL\NUL\NUL\n>\154\184\NUL"
+      -- This is the serialised form of exampleTxSizeLinear below
+    , TkBytes "\130\ESC\NUL\NUL\141QuOR\NUL\ESC\NUL\NUL\NUL\n;b\190\128"
     , TkInteger 18446744073709551615
     , TkListBegin
     , TkBreak
@@ -513,7 +518,8 @@ test_golden_UPIState = goldenTestCBOR
     , TkListLen 2
     , TkInt 0
     , TkTag 24
-    , TkBytes "\130\ESC\NUL\NUL\141QuOR\NUL\ESC\NUL\NUL\NUL\n>\154\184\NUL"
+      -- This is the serialised form of exampleTxSizeLinear below
+    , TkBytes "\130\ESC\NUL\NUL\141QuOR\NUL\ESC\NUL\NUL\NUL\n;b\190\128"
     , TkInteger 18446744073709551615
     , TkListBegin
     , TkBreak
@@ -528,6 +534,20 @@ test_golden_UPIState = goldenTestCBOR
     ]
   where
     exampleUPIState = CC.UPI.initialState CC.dummyConfig
+
+-- This gets embedded above, but it unclear because of the double serialisation.
+test_golden_TxSizeLinear :: Assertion
+test_golden_TxSizeLinear = goldenTestCBOR
+    toCBOR
+    exampleTxSizeLinear
+    [ TkListLen 2
+    , TkInt 155381000000000
+    , TkInt 43946000000
+    ]
+  where
+    exampleTxSizeLinear :: CC.TxSizeLinear
+    exampleTxSizeLinear = CC.TxSizeLinear (CC.mkKnownLovelace @155381)
+                                          (43.946 :: Rational)
 
 -- | Check whether we can successfully decode the contents of the given file.
 -- This file will typically contain an older serialisation format.
