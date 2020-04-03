@@ -17,15 +17,14 @@ import qualified Data.Set as Set
 
 import           Cardano.Binary (toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
+import           Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Common as CC
-import           Cardano.Chain.Genesis (configGenesisHeaderHash)
-import           Cardano.Chain.Update (ApplicationName (..))
-import           Cardano.Chain.Update.Validation.Endorsement
-                     (CandidateProtocolUpdate (..), Endorsement (..))
+import qualified Cardano.Chain.Genesis as CC.Genesis
+import qualified Cardano.Chain.Update as CC
+import qualified Cardano.Chain.Update.Validation.Endorsement as CC
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
-import           Cardano.Chain.Update.Validation.Registration
-                     (ApplicationVersions, ProtocolUpdateProposals,
-                     SoftwareUpdateProposals)
+import qualified Cardano.Chain.Update.Validation.Registration as CC
+import qualified Cardano.Chain.UTxO as CC
 
 import           Ouroboros.Network.Block (SlotNo)
 import           Ouroboros.Network.Point (WithOrigin (At))
@@ -59,6 +58,9 @@ tests = testGroup "Golden tests"
     , testCase "GenTxId"        test_golden_GenTxId
     , testCase "UPIState"       test_golden_UPIState
     , testCase "TxSizeLinear"   test_golden_TxSizeLinear
+    , testCase "HeaderHash"     test_golden_HeaderHash
+    , testCase "GenTx"          test_golden_GenTx
+    , testCase "ApplyTxErr"     test_golden_ApplyTxErr
     , testCase "HeaderState"    test_golden_HeaderState
     , testCase "ExtLedgerState" test_golden_ExtLedgerState
     , testCase "Query"          test_golden_Query
@@ -523,10 +525,13 @@ exampleHeaderState = (genesisHeaderState S.empty)
   where
     annTip = AnnTip {
         annTipSlotNo  = 0
-      , annTipHash    = ByronHash $ configGenesisHeaderHash CC.dummyConfig
+      , annTipHash    = exampleHeaderHash
       , annTipBlockNo = 0
       , annTipInfo    = IsNotEBB
       }
+
+exampleHeaderHash :: ByronHash
+exampleHeaderHash = ByronHash $ CC.Genesis.configGenesisHeaderHash CC.dummyConfig
 
 test_golden_ExtLedgerState :: Assertion
 test_golden_ExtLedgerState = goldenTestCBOR
@@ -975,6 +980,69 @@ test_golden_TxSizeLinear = goldenTestCBOR
     exampleTxSizeLinear :: CC.TxSizeLinear
     exampleTxSizeLinear = CC.TxSizeLinear (CC.mkKnownLovelace @155381)
                                           (43.946 :: Rational)
+
+test_golden_HeaderHash :: Assertion
+test_golden_HeaderHash = goldenTestCBOR
+    encodeByronHeaderHash
+    exampleHeaderHash
+    [ TkBytes "y\USBV\225Lg\185\ETX\\;\128\160\130j\223q\157\&66\193\142\239\SYN\201\139\132\184\&3r=Q"
+    ]
+
+test_golden_GenTx :: Assertion
+test_golden_GenTx = goldenTestCBOR
+    encodeByronGenTx
+    getTx
+    [ TkListLen 2
+    , TkInt 0
+    , TkListLen 2
+    , TkListLen 3
+    , TkListBegin
+    , TkListLen 2
+    , TkInt 0
+    , TkTag 24
+    , TkBytes "\130X K\168\&9\196 \179\210\189C\149\&0\248\145\202\233\165\212\196\216\DC2\EOTF0\218\199.\142\tb\254\238\204\CAN/"
+    , TkBreak
+    , TkListBegin
+    , TkListLen 2
+    , TkListLen 2
+    , TkTag 24
+    , TkBytes "\131X\FS\170Sr\tZ\170h\r\EM\212\202Ii\131\161Ep\156;\225\139\rL\131\203{\220^\160\NUL"
+    , TkInt 853317774
+    , TkInt 47
+    , TkBreak
+    , TkMapLen 0
+    , TkListLen 1
+    , TkListLen 2
+    , TkInt 0
+    , TkTag 24
+    , TkBytes "\130X@Kmyw4lDSE5S4fSH6etNouiXezCyEjKc3tG4ja0kFjO8qzai26ZMPUEJfEy15ox5kX@h\138\173\133{\199\255\&0\252hb\218\ESC\226\129\244 \198Rq\183j\177\151\130\255@\226\149Z\248\136\EM\195\142\\y\DC3\143(\a:\186\225R\200\130%\139D \160\193\201\253\210l\152\129&\151\252>\NUL"
+    ]
+  where
+    getTx :: GenTx ByronBlock
+    getTx = ByronTx CC.exampleTxId (CC.annotateTxAux CC.exampleTxAux)
+
+test_golden_ApplyTxErr :: Assertion
+test_golden_ApplyTxErr = goldenTestCBOR
+    encodeByronApplyTxError
+    exampleApplyTxErr
+    [ TkListLen 2
+    , TkInt 0
+    , TkListLen 2
+    , TkInt 0
+    , TkListLen 3
+    , TkInt 0
+    , TkString "a"
+    , TkListLen 2
+    , TkInt 0
+    , TkInt 0
+    ]
+  where
+    exampleApplyTxErr =
+        CC.MempoolTxErr
+      $ CC.UTxOValidationTxValidationError
+      $ CC.TxValidationLovelaceError "a"
+      $ CC.LovelaceOverflow 0
+
 test_golden_Query :: Assertion
 test_golden_Query = goldenTestCBOR
     encodeByronQuery
@@ -1003,34 +1071,34 @@ test_golden_Result = goldenTestCBOR
       , CC.UPI.proposalRegistrationSlot          = Map.singleton CC.exampleUpId 0
       }
 
-    candidateProtocolUpdate :: CandidateProtocolUpdate
-    candidateProtocolUpdate = CandidateProtocolUpdate
-      { cpuSlot               = 0
-      , cpuProtocolVersion    = CC.exampleProtocolVersion
-      , cpuProtocolParameters = CC.dummyProtocolParameters
+    candidateProtocolUpdate :: CC.CandidateProtocolUpdate
+    candidateProtocolUpdate = CC.CandidateProtocolUpdate
+      { CC.cpuSlot               = 0
+      , CC.cpuProtocolVersion    = CC.exampleProtocolVersion
+      , CC.cpuProtocolParameters = CC.dummyProtocolParameters
       }
 
-    applicationVersions :: ApplicationVersions
+    applicationVersions :: CC.ApplicationVersions
     applicationVersions = Map.singleton
-      (ApplicationName "Golden-Test")
+      (CC.ApplicationName "Golden-Test")
       (0, 0, Map.empty)
 
-    protocolUpdateProposals :: ProtocolUpdateProposals
+    protocolUpdateProposals :: CC.ProtocolUpdateProposals
     protocolUpdateProposals = Map.singleton
       CC.exampleUpId
       (CC.exampleProtocolVersion, CC.exampleProtocolParameters)
 
-    softwareUpdateProposals :: SoftwareUpdateProposals
+    softwareUpdateProposals :: CC.SoftwareUpdateProposals
     softwareUpdateProposals = Map.singleton
       CC.exampleUpId
       ( CC.exampleSoftwareVersion
       , Map.singleton CC.exampleSystemTag CC.exampleInstallerHash
       )
 
-    endorsement :: Endorsement
-    endorsement = Endorsement
-      { endorsementProtocolVersion = CC.exampleProtocolVersion
-      , endorsementKeyHash         = CC.exampleKeyHash
+    endorsement :: CC.Endorsement
+    endorsement = CC.Endorsement
+      { CC.endorsementProtocolVersion = CC.exampleProtocolVersion
+      , CC.endorsementKeyHash         = CC.exampleKeyHash
       }
 
     flatTerm :: FlatTerm
