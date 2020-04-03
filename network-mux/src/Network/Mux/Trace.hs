@@ -120,27 +120,27 @@ data MuxBearerState = Larval
 --
 data MuxTrace =
       MuxTraceRecvHeaderStart
-    | MuxTraceRecvHeaderEnd MuxSDU
-    | MuxTraceRecvPayloadStart Int
-    | MuxTraceRecvPayloadEnd BL.ByteString
-    | MuxTraceRecvDeltaQObservation MuxSDU Time
-    | MuxTraceRecvDeltaQSample Double Int Int Double Double Double Double String
-    | MuxTraceRecvStart Int
-    | MuxTraceRecvEnd BL.ByteString
-    | MuxTraceSendStart MuxSDU
+    | MuxTraceRecvHeaderEnd !MuxSDU
+    | MuxTraceRecvPayloadStart !Int
+    | MuxTraceRecvPayloadEnd !BL.ByteString
+    | MuxTraceRecvDeltaQObservation !MuxSDU Time
+    | MuxTraceRecvDeltaQSample !Double !Int !Int !Double !Double !Double !Double !String
+    | MuxTraceRecvStart !Int
+    | MuxTraceRecvEnd !BL.ByteString
+    | MuxTraceSendStart !MuxSDU
     | MuxTraceSendEnd
-    | MuxTraceState MuxBearerState
-    | MuxTraceCleanExit MiniProtocolNum MiniProtocolMode
-    | MuxTraceExceptionExit MiniProtocolNum MiniProtocolMode SomeException
-    | MuxTraceChannelRecvStart MiniProtocolNum
-    | MuxTraceChannelRecvEnd MiniProtocolNum BL.ByteString
-    | MuxTraceChannelSendStart MiniProtocolNum BL.ByteString
-    | MuxTraceChannelSendEnd MiniProtocolNum
+    | MuxTraceState !MuxBearerState
+    | MuxTraceCleanExit !MiniProtocolNum !MiniProtocolMode
+    | MuxTraceExceptionExit !MiniProtocolNum !MiniProtocolMode !SomeException
+    | MuxTraceChannelRecvStart !MiniProtocolNum
+    | MuxTraceChannelRecvEnd !MiniProtocolNum !BL.ByteString
+    | MuxTraceChannelSendStart !MiniProtocolNum !BL.ByteString
+    | MuxTraceChannelSendEnd !MiniProtocolNum
     | MuxTraceHandshakeStart
-    | MuxTraceHandshakeClientEnd DiffTime
+    | MuxTraceHandshakeClientEnd !DiffTime
     | MuxTraceHandshakeServerEnd
-    | forall e. Exception e => MuxTraceHandshakeClientError e DiffTime
-    | forall e. Exception e => MuxTraceHandshakeServerError e
+    | forall e. Exception e => MuxTraceHandshakeClientError !e !DiffTime
+    | forall e. Exception e => MuxTraceHandshakeServerError !e
     | MuxTraceSDUReadTimeoutException
 
 instance Show MuxTrace where
