@@ -59,7 +59,7 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize = do
       writeMux sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
-              sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
+              sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
               buf  = Mx.encodeMuxSDU sdu'
           traceWith tracer $ Mx.MuxTraceSendStart sdu'
           atomically $ writeTBQueue writeQueue buf

@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 
 module Network.Mux.Types (
       MiniProtocolLimits (..)
@@ -20,6 +21,12 @@ module Network.Mux.Types (
     , MuxBearer (..)
     , muxBearerAsChannel
     , MuxSDU (..)
+    , MuxSDUHeader (..)
+    , msTimestamp
+    , setTimestamp
+    , msNum
+    , msMode
+    , msLength
     , RemoteClockModel (..)
     , remoteClockPrecision
     ) where
@@ -150,13 +157,35 @@ newtype MiniProtocolIx = MiniProtocolIx Int
 data MiniProtocolMode = ModeInitiator | ModeResponder
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
 
-data MuxSDU = MuxSDU {
-      msTimestamp :: !RemoteClockModel
-    , msNum       :: !MiniProtocolNum
-    , msMode      :: !MiniProtocolMode
-    , msLength    :: !Word16
-    , msBlob      :: !BL.ByteString
+
+data MuxSDUHeader = MuxSDUHeader {
+      mhTimestamp :: !RemoteClockModel
+    , mhNum       :: !MiniProtocolNum
+    , mhMode      :: !MiniProtocolMode
+    , mhLength    :: !Word16
     }
+
+
+data MuxSDU = MuxSDU {
+      msHeader :: {-# UNPACK #-} !MuxSDUHeader
+    , msBlob   :: !BL.ByteString
+    }
+
+msTimestamp :: MuxSDU -> RemoteClockModel
+msTimestamp = mhTimestamp . msHeader
+
+setTimestamp :: MuxSDU -> RemoteClockModel -> MuxSDU
+setTimestamp sdu@MuxSDU { msHeader } mhTimestamp =
+    sdu { msHeader = msHeader { mhTimestamp } } 
+
+msNum :: MuxSDU -> MiniProtocolNum
+msNum = mhNum . msHeader
+
+msMode :: MuxSDU -> MiniProtocolMode
+msMode = mhMode . msHeader
+
+msLength :: MuxSDU -> Word16
+msLength = mhLength . msHeader
 
 
 -- | Low level access to underlying socket or pipe.  There are three smart
@@ -194,10 +223,11 @@ muxBearerAsChannel bearer protocolNum mode =
       wrap :: BL.ByteString -> MuxSDU
       wrap blob = MuxSDU {
             -- it will be filled when the 'MuxSDU' is send by the 'bearer'
-            msTimestamp = RemoteClockModel 0,
-            msNum  = protocolNum,
-            msMode = mode,
-            msLength = fromIntegral $ BL.length blob,
+            msHeader = MuxSDUHeader {
+                mhTimestamp = RemoteClockModel 0,
+                mhNum       = protocolNum,
+                mhMode      = mode,
+                mhLength    = fromIntegral $ BL.length blob
+              },
             msBlob = blob
           }
-

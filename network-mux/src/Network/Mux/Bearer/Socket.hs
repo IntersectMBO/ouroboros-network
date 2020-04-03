@@ -124,7 +124,7 @@ socketAsMuxBearer sduTimeout_m tracer sd =
       writeSocket sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
-              sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
+              sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
               buf  = Mx.encodeMuxSDU sdu'
           traceWith tracer $ Mx.MuxTraceSendStart sdu'
 #if defined(mingw32_HOST_OS)

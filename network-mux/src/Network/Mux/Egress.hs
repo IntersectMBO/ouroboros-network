@@ -175,8 +175,15 @@ processSingleWanton MuxState{egressQueue, bearer} mpc md wanton cnt = do
           modifyTVar cnt (+ 1)
       -- return data to send
       pure frag
-    let sdu = MuxSDU (RemoteClockModel 0)
-                     mpc md (fromIntegral $ BL.length blob) blob
+    let sdu = MuxSDU {
+                msHeader = MuxSDUHeader {
+                    mhTimestamp = (RemoteClockModel 0),
+                    mhNum       = mpc,
+                    mhMode      = md,
+                    mhLength    = fromIntegral $ BL.length blob
+                  },
+                msBlob = blob
+              }
     void $ write bearer sdu
     atomically $ modifyTVar cnt (\a -> a - 1)
     --paceTransmission tNow
