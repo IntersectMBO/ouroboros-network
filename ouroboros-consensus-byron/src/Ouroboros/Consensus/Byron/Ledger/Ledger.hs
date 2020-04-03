@@ -50,7 +50,7 @@ import qualified Cardano.Chain.Update.Validation.Interface as UPI
 import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Chain.ValidationMode as CC
 
-import           Ouroboros.Network.Block (Point (..), SlotNo (..), blockSlot)
+import           Ouroboros.Network.Block (Point (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
@@ -290,16 +290,14 @@ validationErrorImpossible = cantBeError . runExcept
 applyByronBlock :: CC.ValidationMode
                 -> LedgerConfig ByronBlock
                 -> ByronBlock
-                -> LedgerState ByronBlock
+                -> TickedLedgerState ByronBlock
                 -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
 applyByronBlock validationMode
-                fcfg@(ByronLedgerConfig cfg)
-                fblk@(ByronBlock blk _ (ByronHash blkHash))
-                ls = do
-    let TickedLedgerState _slot ls' = applyChainTick fcfg (blockSlot fblk) ls
-    case blk of
-      CC.ABOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash ls'
-      CC.ABOBBoundary blk' -> applyABoundaryBlock        cfg blk'         ls'
+                (ByronLedgerConfig cfg)
+                (ByronBlock blk _ (ByronHash blkHash))
+                (TickedLedgerState _slot ls) = case blk of
+      CC.ABOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash ls
+      CC.ABOBBoundary blk' -> applyABoundaryBlock        cfg blk'         ls
 
 applyABlock :: CC.ValidationMode
             -> Gen.Config

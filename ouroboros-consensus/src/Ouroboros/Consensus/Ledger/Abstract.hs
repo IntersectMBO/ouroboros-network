@@ -81,10 +81,11 @@ class ( HasHeader blk
 
   -- | Apply a block to the ledger state.
   --
-  -- This should apply the /entire/ block (i.e., including 'applyChainTick').
+  -- This is passed the ledger state ticked with the slot of the given block,
+  -- so 'applyChainTick' has already been called.
   applyLedgerBlock :: LedgerConfig blk
                    -> blk
-                   -> LedgerState blk
+                   -> TickedLedgerState blk
                    -> Except (LedgerError blk) (LedgerState blk)
 
   -- | Re-apply a block to the very same ledger state it was applied in before.
@@ -99,7 +100,7 @@ class ( HasHeader blk
   reapplyLedgerBlock :: HasCallStack
                      => LedgerConfig blk
                      -> blk
-                     -> LedgerState blk
+                     -> TickedLedgerState blk
                      -> LedgerState blk
 
   -- | Point of the most recently applied block

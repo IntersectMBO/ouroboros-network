@@ -187,10 +187,10 @@ instance Condense (GenTx ByronBlock) where
   condense = condense . toMempoolPayload
 
 instance Condense (GenTxId ByronBlock) where
-  condense (ByronTxId             i) = "txid: "             <> condense i
-  condense (ByronDlgId            i) = "dlgid: "            <> condense i
-  condense (ByronUpdateProposalId i) = "updateproposalid: " <> condense i
-  condense (ByronUpdateVoteId     i) = "updatevoteid: "     <> condense i
+  condense (ByronTxId             i) = condense i
+  condense (ByronDlgId            i) = condense i
+  condense (ByronUpdateProposalId i) = condense i
+  condense (ByronUpdateVoteId     i) = condense i
 
 instance Show (GenTx ByronBlock) where
   show = condense

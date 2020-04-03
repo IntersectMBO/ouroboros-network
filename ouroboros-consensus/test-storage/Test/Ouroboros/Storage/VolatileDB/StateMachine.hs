@@ -492,11 +492,21 @@ semanticsImpl env@VolatileDBEnv { varDB, varErrors }  (At (CmdErr cmd mbErrors))
       Just errors -> do
         _ <- withErrors varErrors errors $
           tryVolDB (runDB env cmd)
-        -- As all operations on the VolatileDB are idempotent, close
-        -- (idempotent), reopen it, and run the command again.
-        readMVar varDB >>= closeDB
+        -- As all operations on the VolatileDB are idempotent, close (not
+        -- idempotent by default!), reopen it, and run the command again.
+        readMVar varDB >>= idemPotentCloseDB
         reopenDB env
         tryVolDB (runDB env cmd)
+
+idemPotentCloseDB :: VolatileDB BlockId IO -> IO ()
+idemPotentCloseDB db =
+    catchJust
+      isClosedDBError
+      (closeDB db)
+      (const (return ()))
+  where
+    isClosedDBError (UserError (ClosedDBError _)) = Just ()
+    isClosedDBError _                             = Nothing
 
 runDB :: (Eq h, HasCallStack)
       => VolatileDBEnv h
@@ -712,8 +722,8 @@ tag ls = QSM.classify
 
     tagIsClosedError :: EventPred
     tagIsClosedError = predicate $ \ev -> case eventMockResp ev of
-      Resp (Left (UserError ClosedDBError)) -> Left TagClosedError
-      _                                     -> Right tagIsClosedError
+      Resp (Left (UserError (ClosedDBError _))) -> Left TagClosedError
+      _                                         -> Right tagIsClosedError
 
     tagGarbageCollectThenReOpen :: EventPred
     tagGarbageCollectThenReOpen = successful $ \ev _ -> case getCmd ev of

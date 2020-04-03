@@ -94,6 +94,7 @@ library
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.IOLike
                        Ouroboros.Consensus.Util.MonadSTM.NormalForm
+                       Ouroboros.Consensus.Util.MonadSTM.RAWLock
                        Ouroboros.Consensus.Util.MonadSTM.StrictMVar
                        Ouroboros.Consensus.Util.Orphans
                        Ouroboros.Consensus.Util.Random
@@ -268,6 +269,7 @@ test-suite test-consensus
                        Test.Consensus.Node
                        Test.Consensus.Protocol.PBFT
                        Test.Consensus.ResourceRegistry
+                       Test.Consensus.Util.MonadSTM.RAWLock
                        Test.Consensus.Util.Versioned
 
                        -- ouroboros-consensus-mock

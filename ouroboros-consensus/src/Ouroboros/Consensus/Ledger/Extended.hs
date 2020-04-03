@@ -20,7 +20,7 @@ module Ouroboros.Consensus.Ledger.Extended (
   , encodeExtLedgerState
   , decodeExtLedgerState
     -- * Lemmas
-  , lemma_protocoLedgerView_applyLedgerBlock_applyChainTick
+  , lemma_protocoLedgerView_applyLedgerBlock
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -111,7 +111,7 @@ applyExtLedgerState :: (LedgerSupportsProtocol blk, HasCallStack)
                     -> ExtLedgerState blk
                     -> Except (ExtValidationError blk) (ExtLedgerState blk)
 applyExtLedgerState prevApplied cfg blk ExtLedgerState{..} = do
-    let TickedLedgerState { tickedLedgerState } =
+    let tickedLedger@TickedLedgerState { tickedLedgerState } =
           applyChainTick
             (configLedger cfg)
             (blockSlot blk)
@@ -132,15 +132,15 @@ applyExtLedgerState prevApplied cfg blk ExtLedgerState{..} = do
                            applyLedgerBlock
                              (configLedger cfg)
                              blk
-                             ledgerState
+                             tickedLedger
                        BlockPreviouslyApplied -> pure $
                          reapplyLedgerBlock
                            (configLedger cfg)
                            blk
-                           ledgerState
+                           tickedLedger
     return $!
       assertWithMsg
-        (lemma_protocoLedgerView_applyLedgerBlock_applyChainTick
+        (lemma_protocoLedgerView_applyLedgerBlock
           (configLedger cfg)
           blk
           ledgerState)
@@ -156,22 +156,27 @@ foldExtLedgerState prevApplied = repeatedlyM . (applyExtLedgerState prevApplied)
 
 -- | Lemma:
 --
--- > Right st' = runExcept $ applyLedgerBlock cfg blk st ->
+-- > let tickedLedger = applyChainTick cfg (blockSlot blk) st
+-- > in Right st' = runExcept $
+-- >   applyLedgerBlock cfg blk tickedLedger ->
 -- >      protocolLedgerView st'
--- >   == protocolLedgerView (tickedLedgerState (applyChainTick cfg (blockSlot blk) st))
+-- >   == protocolLedgerView (tickedLedgerState tickedLedger)
+--
+-- In other words: 'applyLedgerBlock' doesn't affect the result of
+-- 'protocolLedgerView'.
 --
 -- This should be true for each ledger because consensus depends on it.
-lemma_protocoLedgerView_applyLedgerBlock_applyChainTick
+lemma_protocoLedgerView_applyLedgerBlock
   :: LedgerSupportsProtocol blk
   => LedgerConfig blk
   -> blk
   -> LedgerState blk
   -> Either String ()
-lemma_protocoLedgerView_applyLedgerBlock_applyChainTick cfg blk st
+lemma_protocoLedgerView_applyLedgerBlock cfg blk st
     | Right lhs' <- runExcept lhs
     , lhs' /= rhs
     = Left $ unlines
-      [ "protocolLedgerView . applyLedgerBlock /= protocolLedgerView . applyChainTick"
+      [ "protocolLedgerView /= protocolLedgerView . applyLedgerBlock"
       , show lhs'
       , " /= "
       , show rhs
@@ -179,11 +184,9 @@ lemma_protocoLedgerView_applyLedgerBlock_applyChainTick cfg blk st
     | otherwise
     = Right ()
   where
-    lhs = protocolLedgerView cfg <$> applyLedgerBlock cfg blk st
-    rhs = protocolLedgerView cfg
-        . tickedLedgerState
-        . applyChainTick cfg (blockSlot blk)
-        $ st
+    tickedLedger = applyChainTick cfg (blockSlot blk) st
+    lhs = protocolLedgerView cfg <$> applyLedgerBlock cfg blk tickedLedger
+    rhs = protocolLedgerView cfg  $  tickedLedgerState        tickedLedger
 
 {-------------------------------------------------------------------------------
   Serialisation

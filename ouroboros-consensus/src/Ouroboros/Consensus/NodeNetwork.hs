@@ -120,10 +120,12 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
         -> BlockFetchServer (Serialised blk) m ()
 
     , phTxSubmissionClient
-        :: TxSubmissionClient (GenTxId blk) (GenTx blk) m ()
+        :: peer
+        -> TxSubmissionClient (GenTxId blk) (GenTx blk) m ()
 
     , phTxSubmissionServer
-        :: TxSubmissionServerPipelined (GenTxId blk) (GenTx blk) m ()
+        :: peer
+        -> TxSubmissionServerPipelined (GenTxId blk) (GenTx blk) m ()
 
      -- Handlers for the local node-to-client bundle of mini-protocols
 
@@ -175,14 +177,14 @@ protocolHandlers NodeArgs {btime, cfg, maxClockSkew, tracers, miniProtocolParame
         blockFetchServer
           (blockFetchServerTracer tracers)
           getChainDB
-    , phTxSubmissionClient =
+    , phTxSubmissionClient = \peer ->
         txSubmissionOutbound
-          (txOutboundTracer tracers)
+          (contramap (TraceLabelPeer peer) (txOutboundTracer tracers))
           (txSubmissionMaxUnacked miniProtocolParameters)
           (getMempoolReader getMempool)
-    , phTxSubmissionServer =
+    , phTxSubmissionServer = \peer ->
         txSubmissionInbound
-          (txInboundTracer tracers)
+          (contramap (TraceLabelPeer peer) (txInboundTracer tracers))
           (txSubmissionMaxUnacked miniProtocolParameters)
           (getMempoolReader getMempool)
           (getMempoolWriter getMempool)
@@ -593,7 +595,7 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} chainSyncTi
         (byteLimitsTxSubmission (const 0)) -- TODO: Real Bytelimits, see #1727
         timeLimitsTxSubmission
         channel
-        (txSubmissionClientPeer phTxSubmissionClient)
+        (txSubmissionClientPeer (phTxSubmissionClient them))
 
     naTxSubmissionServer
       :: peer
@@ -606,7 +608,7 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} chainSyncTi
         (byteLimitsTxSubmission (const 0)) -- TODO: Real Bytelimits, see #1727
         timeLimitsTxSubmission
         channel
-        (txSubmissionServerPeerPipelined phTxSubmissionServer)
+        (txSubmissionServerPeerPipelined (phTxSubmissionServer them))
 
     naLocalChainSyncServer
       :: localPeer

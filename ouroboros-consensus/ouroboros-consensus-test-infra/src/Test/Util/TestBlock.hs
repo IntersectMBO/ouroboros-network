@@ -313,7 +313,7 @@ instance UpdateLedger TestBlock where
 
   applyChainTick _ = TickedLedgerState
 
-  applyLedgerBlock _ tb@TestBlock{..} TestLedger{..}
+  applyLedgerBlock _ tb@TestBlock{..} (TickedLedgerState _ TestLedger{..})
     | Block.blockPrevHash tb /= Block.pointHash lastAppliedPoint
     = throwError $ InvalidHash (Block.pointHash lastAppliedPoint) (Block.blockPrevHash tb)
     | not tbValid
