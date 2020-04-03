@@ -51,6 +51,7 @@ module Ouroboros.Consensus.HardFork.History (
   , boundTime
   , initBound
   , mkUpperBound
+  , maxMaybeEpoch
     -- ** Summary
   , EraSummary(..)
     -- ** Summary translations
@@ -186,6 +187,9 @@ defaultEraParams (SecurityParam k) slotLength = EraParams {
 -- | Zone in which it is guaranteed that no hard fork can take place
 data SafeZone = SafeZone {
       -- | Number of slots from the tip of the ledger
+      --
+      -- This should be (at least) the number of slots in which we are
+      -- guaranteed to have @k@ blocks.
       safeFromTip     :: !Word64
 
       -- | Optionally, an 'EpochNo' before which no hard fork can take place
@@ -259,9 +263,6 @@ transitionsUnknown = Transitions AtMostNil
 -------------------------------------------------------------------------------}
 
 -- | Detailed information about the time bounds of an era
---
--- TODO: Document expected relation between 'boundSlot' and 'boundEpoch',
--- and test that 'initBound' and 'mkUpperBound' both establish it.
 data Bound = Bound {
       boundTime  :: !UTCTime
     , boundSlot  :: !SlotNo
@@ -277,7 +278,10 @@ initBound (SystemStart start) = Bound {
     }
 
 -- | Compute upper bound given just the epoch number and era parameters
-mkUpperBound :: EraParams -> Bound -> EpochNo -> Bound
+mkUpperBound :: EraParams
+             -> Bound    -- ^ Lower bound
+             -> EpochNo  -- ^ Upper bound
+             -> Bound
 mkUpperBound EraParams{..} lo hiEpoch = Bound {
       boundTime  = addUTCTime inEraTime  $ boundTime lo
     , boundSlot  = addSlots   inEraSlots $ boundSlot lo
@@ -362,11 +366,15 @@ instance ShiftTime UTCTime where
 --
 -- The only part of the 'Shape' that must make sense is the 'safeBeforeEpoch'
 -- values (they must be strictly increasing).
+--
+-- NOTE: We assume eras cannot be empty. This will be satisfied by any ledger
+-- we are interested in since transitions must be voted on (safe zones will
+-- be non-empty).
 invariantShape :: Shape xs -> Except String ()
 invariantShape = \(Shape shape) ->
     go (EpochNo 0) shape
   where
-    go :: EpochNo -- ^ Lower bound on the start of the era
+    go :: EpochNo -- Lower bound on the start of the era
        -> Exactly xs EraParams -> Except String ()
     go _           ExactlyNil                    = return ()
     go lowerBound (ExactlyCons curParams shape') = do
@@ -401,9 +409,9 @@ invariantSummary = \(Summary summary) ->
     go prevEnd (AtMostCons curSummary next) = do
         unless (curStart == prevEnd) $
           throwError $ mconcat [
-              "Bounds don't line up: "
+              "Bounds don't line up: end of previous era "
             , show prevEnd
-            , " /= "
+            , " /= start of current era "
             , show curStart
             ]
 
@@ -467,9 +475,9 @@ newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
 --
 -- We do this translation /independent/ from the 'minimumPossibleSlotNo'
 -- for a particular ledger. This means that for ledgers where the
--- 'minimumPossibleSlotNo' is not zero (e.g., Shelley sets it to 1), the maximum
--- number of blocks (aka filled slots) in an epoch is just 1 (or more) less
--- than the other epochs.
+-- 'minimumPossibleSlotNo' is not zero (e.g., some ledgers might set it to 1),
+-- the maximum number of blocks (aka filled slots) in an epoch is just 1 (or
+-- more) less than the other epochs.
 summarize :: SystemStart
           -> WithOrigin SlotNo -- ^ Slot at the tip of the ledger
           -> Shape       xs
@@ -478,7 +486,7 @@ summarize :: SystemStart
 summarize systemStart ledgerTip = \(Shape shape) (Transitions transitions) ->
     Summary $ go (initBound systemStart) shape transitions
   where
-    go :: Bound
+    go :: Bound                         -- Lower bound for current era
        -> Exactly (x ': xs) EraParams   -- params for all eras
        -> AtMost        xs  EpochNo     -- transitions
        -> AtMost  (x ': xs) EraSummary
@@ -502,7 +510,27 @@ summarize systemStart ledgerTip = \(Shape shape) (Transitions transitions) ->
              -- ledger tip (CASE (i)). If the ledger tip is in the /previous/
              -- era, but the transition to /this/ era is already known, the safe
              -- zone applies from the start of this era (CASE (iii)).
-           $ maxMaybeSlot ledgerTip (boundSlot lo)
+             --
+             -- NOTE: The upper bound is /exclusive/:
+             --
+             -- o Suppose the ledger tip is at slot 10, and 'safeFromTip' is 2.
+             --   Then we should be able to make accurate predictions for slots
+             --   10 (of course), as well as (the safe zone) slots 11 and 12.
+             --   Since the upper bound is /exclusive/, this means that the
+             --   upper bound becomes 13. (Case i)
+             -- o If the ledger tip is in the previous era (case iii), and the
+             --   start of this era is slot 100, then we should be able to
+             --   give accurate predictions for the first two slots in this era
+             --   (100 and 101), and the upper bound becomes 102.
+             --
+             -- This explains the use of the extra addition ('next') for
+             -- case (i) but not for case (iii).
+           $ max (next ledgerTip) (boundSlot lo)
+
+    -- Upper bound is exclusive, so we count from the /next/ ledger tip
+    next :: WithOrigin SlotNo -> SlotNo
+    next Origin = SlotNo 0
+    next (At s) = succ s
 
     -- Given the 'SlotNo' of the first /slot/ in which a transition could take
     -- place, compute the first /epoch/ in which this could happen (since
@@ -518,13 +546,9 @@ summarize systemStart ledgerTip = \(Shape shape) (Transitions transitions) ->
         slots             = countSlots hiSlot (boundSlot lo)
         (epochs, inEpoch) = slots `divMod` epochSize
 
-    maxMaybeEpoch :: SafeBeforeEpoch -> EpochNo -> EpochNo
-    maxMaybeEpoch NoLowerBound   = id
-    maxMaybeEpoch (LowerBound e) = max e
-
-    maxMaybeSlot :: WithOrigin SlotNo -> SlotNo -> SlotNo
-    maxMaybeSlot Origin = id
-    maxMaybeSlot (At s) = max s
+maxMaybeEpoch :: SafeBeforeEpoch -> EpochNo -> EpochNo
+maxMaybeEpoch NoLowerBound   = id
+maxMaybeEpoch (LowerBound e) = max e
 
 {-------------------------------------------------------------------------------
   Internal: looking up values in the history
@@ -588,7 +612,7 @@ wallclockToSlot summary time =
         EraParams{..} = eraParams
 
         toAbsSlot :: Word64 -> SlotNo
-        toAbsSlot relSlot = SlotNo $ unSlotNo (boundSlot eraStart) + relSlot
+        toAbsSlot relSlot = addSlots relSlot (boundSlot eraStart)
 
         relTime, slotLen :: NominalDiffTime
         relTime = time `diffUTCTime` (boundTime eraStart)
@@ -612,7 +636,7 @@ slotToWallclock summary slot =
         EraParams{..} = eraParams
 
         relSlot :: Word64
-        relSlot = unSlotNo slot - unSlotNo (boundSlot eraStart)
+        relSlot = countSlots slot (boundSlot eraStart)
 
         slotLen :: NominalDiffTime
         slotLen = getSlotLength eraSlotLength
@@ -636,10 +660,10 @@ slotToEpoch summary slot =
         EraParams{..} = eraParams
 
         toAbsEpoch :: Word64 -> EpochNo
-        toAbsEpoch relEpoch = EpochNo $ unEpochNo (boundEpoch eraStart) + relEpoch
+        toAbsEpoch relEpoch = addEpochs relEpoch (boundEpoch eraStart)
 
         relSlot, epochSize :: Word64
-        relSlot   = unSlotNo slot - unSlotNo (boundSlot eraStart)
+        relSlot   = countSlots slot (boundSlot eraStart)
         epochSize = unEpochSize eraEpochSize
 
 -- | Translate 'EpochNo' to the 'SlotNo' of the first slot in that epoch
@@ -653,14 +677,14 @@ epochToSlot summary epoch =
   where
     go :: EraSummary -> (SlotNo, EpochSize)
     go EraSummary{..} = (
-          SlotNo $ unSlotNo (boundSlot eraStart) + relEpoch * epochSize
+          addSlots (relEpoch * epochSize) (boundSlot eraStart)
         , eraEpochSize
         )
       where
         EraParams{..} = eraParams
 
         relEpoch, epochSize :: Word64
-        relEpoch  = unEpochNo epoch - unEpochNo (boundEpoch eraStart)
+        relEpoch  = countEpochs epoch (boundEpoch eraStart)
         epochSize = unEpochSize eraEpochSize
 
 {-------------------------------------------------------------------------------
@@ -725,14 +749,16 @@ snapshotEpochInfo summary = EpochInfo {
   Auxiliary
 -------------------------------------------------------------------------------}
 
-addSlots  :: Word64 -> SlotNo  -> SlotNo
-addEpochs :: Word64 -> EpochNo -> EpochNo
-
+addSlots  :: Word64 -> SlotNo -> SlotNo
 addSlots  n (SlotNo  x) = SlotNo  (x + n)
+
+addEpochs :: Word64 -> EpochNo -> EpochNo
 addEpochs n (EpochNo x) = EpochNo (x + n)
 
-countSlots  :: SlotNo  -> SlotNo  -> Word64
-countEpochs :: EpochNo -> EpochNo -> Word64
+-- | @countSlots to fr@ counts the slots from @fr@ to @to@ (@to >= fr@)
+countSlots :: SlotNo -> SlotNo -> Word64
+countSlots (SlotNo to) (SlotNo fr) = assert (to >= fr) $ to - fr
 
-countSlots  (SlotNo  to) (SlotNo  fr) = assert (to >= fr) $ to - fr
+-- | @countEpochs to fr@ counts the epochs from @fr@ to @to@ (@to >= fr@)
+countEpochs :: EpochNo -> EpochNo -> Word64
 countEpochs (EpochNo to) (EpochNo fr) = assert (to >= fr) $ to - fr

@@ -1,10 +1,11 @@
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE GADTs              #-}
-{-# LANGUAGE KindSignatures     #-}
-{-# LANGUAGE RankNTypes         #-}
-{-# LANGUAGE RecordWildCards    #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeOperators      #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeOperators       #-}
 
 -- | Infrastructure shared by the various 'HardFork' tests
 module Test.Consensus.HardFork.Infra (
@@ -15,6 +16,7 @@ module Test.Consensus.HardFork.Infra (
     -- * Dealing with the 'PastHorizonException'
   , noPastHorizonException
   , isPastHorizonException
+  , isPastHorizonIf
     -- * Generate HardFork shape
   , Era(..)
   , Eras(..)
@@ -26,6 +28,7 @@ module Test.Consensus.HardFork.Infra (
   ) where
 
 import           Control.Monad.Except
+import           Control.Monad.State
 import           Data.Word
 import           Test.QuickCheck
 
@@ -65,13 +68,35 @@ noPastHorizonException :: Except HF.PastHorizonException Property -> Property
 noPastHorizonException mProp =
     case runExcept mProp of
       Right prop -> prop
-      Left  ex   -> counterexample ("Unexpected " ++ show ex) $ property False
+      Left  ex   -> counterexample ("Unexpected " ++ show ex) $
+                      property False
 
 isPastHorizonException :: Show a => Except HF.PastHorizonException a -> Property
 isPastHorizonException ma =
     case runExcept ma of
-      Right a -> counterexample ("Unexpected " ++ show a) $ property False
-      Left _  -> property True
+      Left  _ -> property True
+      Right a -> counterexample ("Unexpected " ++ show a) $
+                   property False
+
+isPastHorizonIf :: Show a
+                => Bool -- ^ Are we expecting an exception?
+                -> Except HF.PastHorizonException a
+                -> (a -> Property)
+                -> Property
+isPastHorizonIf expectException ma p =
+    case (runExcept ma, expectException) of
+      (Left _, True) ->
+        property True
+      (Left ex, False) ->
+        counterexample ("Unexpected exception " ++ show ex) $
+          property False
+      (Right a, True) ->
+        counterexample ("Unexpected value " ++ show a
+                    ++ " (expected PastHorizonException)"
+                       ) $
+          property False
+      (Right a, False) ->
+        p a
 
 {-------------------------------------------------------------------------------
   Generate hard fork shape
@@ -89,10 +114,10 @@ data Eras :: [*] -> * where
 
 deriving instance Show (Eras xs)
 
-chooseEras :: (forall xs. Eras xs -> Gen a) -> Gen a
+chooseEras :: (forall xs. Eras xs -> Gen r) -> Gen r
 chooseEras k = do
     n <- choose (1, 4)
-    exactlyN n $ k . renumber
+    exactlyReplicate n () $ k . renumber
   where
     renumber :: Exactly xs () -> Eras xs
     renumber ExactlyNil      = error "renumber: empty list of eras"
@@ -105,13 +130,12 @@ chooseEras k = do
             ExactlyCons (Era n False) (go (n + 1) e')
 
 erasMapStateM :: Monad m
-              => (s -> Era -> m (s, a))
-              -> s
-              -> Eras xs -> m (Exactly xs a)
-erasMapStateM f s (Eras eras) = exactlyMapStateM f s eras
+              => (Era -> s -> m (a, s))
+              -> Eras xs -> s -> m (Exactly xs a)
+erasMapStateM f (Eras eras) = evalStateT (traverse (StateT . f) eras)
 
 {-------------------------------------------------------------------------------
-  Era-specified generators
+  Era-specific generators
 -------------------------------------------------------------------------------}
 
 -- | Generate era parameters

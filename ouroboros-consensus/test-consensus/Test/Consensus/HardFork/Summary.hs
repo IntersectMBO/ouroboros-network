@@ -115,7 +115,7 @@ instance Arbitrary ArbitrarySummary where
   arbitrary = chooseEras $ \is -> do
       start   <- HF.SystemStart <$> arbitrary
       summary <- HF.Summary . exactlyWeaken <$>
-                   erasMapStateM genEraSummary (HF.initBound start) is
+                   erasMapStateM genEraSummary is (HF.initBound start)
 
       let summaryStart, summaryEnd :: HF.Bound
           (summaryStart, summaryEnd) = summaryBounds summary
@@ -188,11 +188,11 @@ instance Arbitrary ArbitrarySummary where
           , pastHorizonEpoch
           }
     where
-      genEraSummary :: HF.Bound -> Era -> Gen (HF.Bound, HF.EraSummary)
-      genEraSummary lo _era = do
+      genEraSummary :: Era -> HF.Bound -> Gen (HF.EraSummary, HF.Bound)
+      genEraSummary _era lo = do
           params <- genEraParams (HF.boundEpoch lo)
           hi     <- genUpperBound lo params
-          return (hi, HF.EraSummary lo hi params)
+          return (HF.EraSummary lo hi params, hi)
 
       genUpperBound :: HF.Bound -> HF.EraParams -> Gen HF.Bound
       genUpperBound lo params = do
