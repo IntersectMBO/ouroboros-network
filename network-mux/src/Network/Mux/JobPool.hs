@@ -57,7 +57,7 @@ forkJob JobPool{jobsVar, completionQueue} (Job action handler label) =
       jobAsync <- async $ do
         tid <- myThreadId
         labelThread tid label
-        res <- handleJust notAsyncExceptions (return . handler) $
+        !res <- handleJust notAsyncExceptions (return . handler) $
                  restore action
         atomically $ do
           writeTQueue completionQueue res
