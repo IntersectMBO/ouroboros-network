@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DeriveTraversable     #-}
+{-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -23,9 +24,7 @@ module Test.Ouroboros.Storage.ChainDB.StateMachine ( tests ) where
 import           Prelude hiding (elem)
 
 import           Codec.Serialise (Serialise, decode, encode)
-import           Control.Monad (forM_, replicateM, unless, when)
-import           Control.Monad.State (StateT, evalStateT, get, lift, modify,
-                     put)
+import           Control.Monad (forM_, replicateM, void, when)
 import           Control.Tracer
 import           Data.Bifoldable
 import           Data.Bifunctor
@@ -42,6 +41,7 @@ import           Data.Proxy
 import           Data.Sequence.Strict (StrictSeq)
 import           Data.TreeDiff (ToExpr (..))
 import           Data.Typeable
+import           Data.Void (Void)
 import           Data.Word (Word16, Word32)
 import           GHC.Generics (Generic)
 import           GHC.Stack (callStack)
@@ -58,6 +58,7 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 import           Cardano.Slotting.Slot hiding (At)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -84,7 +85,6 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (takeLast)
-import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike hiding (fork)
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -116,7 +116,6 @@ import           Test.Util.ChunkInfo
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
-import           Test.Util.QuickCheck ((=:=))
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
@@ -297,44 +296,79 @@ type TestIterator m blk = WithEq (Iterator m blk (AllComponents blk))
 -- | Short-hand
 type TestReader   m blk = WithEq (Reader   m blk (AllComponents blk))
 
+-- | The current ChainDB instance and things related to it.
+--
+-- When closing and reopening the ChainDB, this record will be replaced in the
+-- 'varDB' field of 'ChainDBEnv' with a new one.
+data ChainDBState m blk = ChainDBState
+    { chainDB       :: ChainDB m blk
+    , internal      :: ChainDB.Internal m blk
+    , addBlockAsync :: Async m Void
+      -- ^ Background thread that adds blocks to the ChainDB
+    }
+  deriving NoUnexpectedThunks via AllowThunk (ChainDBState m blk)
+
 -- | Environment to run commands against the real ChainDB implementation.
 data ChainDBEnv m blk = ChainDBEnv
-  { chainDB    :: ChainDB m blk
-  , internal   :: ChainDB.Internal m blk
+  { varDB      :: StrictMVar m (ChainDBState m blk)
   , registry   :: ResourceRegistry m
   , varCurSlot :: StrictTVar m SlotNo
   , varNextId  :: StrictTVar m Id
   , varVolDbFs :: StrictTVar m MockFS
+  , args       :: ChainDbArgs m blk
+    -- ^ Needed to reopen a ChainDB, i.e., open a new one.
   }
 
-run :: forall m blk. (IOLike m, HasHeader blk)
+open
+  :: (IOLike m, LedgerSupportsProtocol blk)
+  => ChainDbArgs m blk -> m (ChainDBState m blk)
+open args = do
+    (chainDB, internal) <- openDBInternal args False
+    addBlockAsync       <- async (intAddBlockRunner internal)
+    link addBlockAsync
+    return ChainDBState { chainDB, internal, addBlockAsync }
+
+-- PRECONDITION: the ChainDB is closed
+reopen
+  :: (IOLike m, LedgerSupportsProtocol blk) => ChainDBEnv m blk -> m ()
+reopen ChainDBEnv { varDB, args } = do
+    chainDBState <- open args
+    void $ swapMVar varDB chainDBState
+
+close :: IOLike m => ChainDBState m blk -> m ()
+close ChainDBState { chainDB, addBlockAsync } = do
+    cancel addBlockAsync
+    closeDB chainDB
+
+run :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
     => ChainDBEnv m blk
     ->    Cmd     blk (TestIterator m blk) (TestReader m blk)
     -> m (Success blk (TestIterator m blk) (TestReader m blk))
-run ChainDBEnv { chainDB = chainDB@ChainDB{..}, .. } = \case
-    AddBlock blk             -> Point               <$> (advanceAndAdd (blockSlot blk) blk)
-    AddFutureBlock blk s     -> Point               <$> (advanceAndAdd s               blk)
-    GetCurrentChain          -> Chain               <$> atomically getCurrentChain
-    GetCurrentLedger         -> Ledger              <$> atomically getCurrentLedger
-    GetPastLedger pt         -> MbLedger            <$> getPastLedger chainDB pt
-    GetTipBlock              -> MbBlock             <$> getTipBlock
-    GetTipHeader             -> MbHeader            <$> getTipHeader
-    GetTipPoint              -> Point               <$> atomically getTipPoint
-    GetBlockComponent pt     -> mbAllComponents     =<< getBlockComponent allComponents pt
-    GetGCedBlockComponent pt -> mbGCedAllComponents =<< getBlockComponent allComponents pt
-    GetMaxSlotNo             -> MaxSlot             <$> atomically getMaxSlotNo
-    Stream from to           -> iter                =<< stream registry allComponents from to
-    IteratorNext  it         -> IterResult          <$> iteratorNext (unWithEq it)
-    IteratorNextGCed  it     -> iterResultGCed      <$> iteratorNext (unWithEq it)
-    IteratorClose it         -> Unit                <$> iteratorClose (unWithEq it)
-    NewReader                -> reader              =<< newReader registry allComponents
-    ReaderInstruction rdr    -> MbChainUpdate       <$> readerInstruction (unWithEq rdr)
-    ReaderForward rdr pts    -> MbPoint             <$> readerForward (unWithEq rdr) pts
-    ReaderClose rdr          -> Unit                <$> readerClose (unWithEq rdr)
-    Close                    -> Unit                <$> closeDB
-    Reopen                   -> Unit                <$> intReopen internal False
-    RunBgTasks               -> ignore              <$> runBgTasks internal
-    WipeVolDB                -> Point               <$> wipeVolDB
+run env@ChainDBEnv { varDB, .. } cmd =
+    readMVar varDB >>= \st@ChainDBState { chainDB = chainDB@ChainDB{..}, internal } -> case cmd of
+      AddBlock blk             -> Point               <$> (advanceAndAdd st (blockSlot blk) blk)
+      AddFutureBlock blk s     -> Point               <$> (advanceAndAdd st s               blk)
+      GetCurrentChain          -> Chain               <$> atomically getCurrentChain
+      GetCurrentLedger         -> Ledger              <$> atomically getCurrentLedger
+      GetPastLedger pt         -> MbLedger            <$> getPastLedger chainDB pt
+      GetTipBlock              -> MbBlock             <$> getTipBlock
+      GetTipHeader             -> MbHeader            <$> getTipHeader
+      GetTipPoint              -> Point               <$> atomically getTipPoint
+      GetBlockComponent pt     -> mbAllComponents     =<< getBlockComponent allComponents pt
+      GetGCedBlockComponent pt -> mbGCedAllComponents =<< getBlockComponent allComponents pt
+      GetMaxSlotNo             -> MaxSlot             <$> atomically getMaxSlotNo
+      Stream from to           -> iter                =<< stream registry allComponents from to
+      IteratorNext  it         -> IterResult          <$> iteratorNext (unWithEq it)
+      IteratorNextGCed  it     -> iterResultGCed      <$> iteratorNext (unWithEq it)
+      IteratorClose it         -> Unit                <$> iteratorClose (unWithEq it)
+      NewReader                -> reader              =<< newReader registry allComponents
+      ReaderInstruction rdr    -> MbChainUpdate       <$> readerInstruction (unWithEq rdr)
+      ReaderForward rdr pts    -> MbPoint             <$> readerForward (unWithEq rdr) pts
+      ReaderClose rdr          -> Unit                <$> readerClose (unWithEq rdr)
+      Close                    -> Unit                <$> close st
+      Reopen                   -> Unit                <$> reopen env
+      RunBgTasks               -> ignore              <$> runBgTasks internal
+      WipeVolDB                -> Point               <$> wipeVolDB st
   where
     mbAllComponents = fmap MbAllComponents . traverse runAllComponentsM
     mbGCedAllComponents = fmap (MbGCedAllComponents . MaybeGCedBlock True) . traverse runAllComponentsM
@@ -343,9 +377,11 @@ run ChainDBEnv { chainDB = chainDB@ChainDB{..}, .. } = \case
     reader = fmap Rdr . giveWithEq . traverseReader runAllComponentsM
     ignore _ = Unit ()
 
-    advanceAndAdd newCurSlot blk = do
-      open <- atomically isOpen
-      when open $ do
+    advanceAndAdd :: ChainDBState m blk -> SlotNo -> blk -> m (Point blk)
+    advanceAndAdd ChainDBState { chainDB = chainDB@ChainDB { isOpen }, internal }
+                  newCurSlot blk = do
+      dbIsOpen <- atomically isOpen
+      when dbIsOpen $ do
         prevCurSlot <- atomically $ readTVar varCurSlot
         -- Tick each slot and execute the scheduled chain selections for that
         -- slot
@@ -354,11 +390,12 @@ run ChainDBEnv { chainDB = chainDB@ChainDB{..}, .. } = \case
           intScheduledChainSelection internal slot
       addBlock chainDB blk
 
-    wipeVolDB :: m (Point blk)
-    wipeVolDB = do
-      closeDB
+    wipeVolDB :: ChainDBState m blk -> m (Point blk)
+    wipeVolDB st = do
+      close st
       atomically $ writeTVar varVolDbFs Mock.empty
-      intReopen internal False
+      reopen env
+      ChainDB { getTipPoint } <- chainDB <$> readMVar varDB
       atomically $ getTipPoint
 
     giveWithEq :: a -> m (WithEq a)
@@ -495,7 +532,6 @@ runPure cfg = \case
     ReaderInstruction rdr    -> err MbChainUpdate       $ updateE (Model.readerInstruction @Identity rdr allComponents)
     ReaderForward rdr pts    -> err MbPoint             $ updateE (Model.readerForward rdr pts)
     ReaderClose rdr          -> ok  Unit                $ update_ (Model.readerClose rdr)
-    -- TODO can this execute while closed?
     RunBgTasks               -> ok  Unit                $ update_ (Model.garbageCollect k . Model.copyToImmDB k)
     Close                    -> openOrClosed            $ update_  Model.closeDB
     Reopen                   -> openOrClosed            $ update_  Model.reopen
@@ -531,7 +567,7 @@ runPure cfg = \case
     -- Executed whether the ChainDB is open or closed.
     openOrClosed f = first (Resp . Right . Unit) . f
 
-runIO :: HasHeader blk
+runIO :: LedgerSupportsProtocol blk
       => ChainDBEnv IO blk
       ->     Cmd  blk (TestIterator IO blk) (TestReader IO blk)
       -> IO (Resp blk (TestIterator IO blk) (TestReader IO blk))
@@ -725,7 +761,9 @@ generator genBlock m@Model {..} = At <$> frequency
     , (if null readers then 0 else 2, genReaderClose)
 
     , (if empty then 1 else 10, return Close)
-    , (if empty then 1 else 10, return Reopen)
+    , (if Model.isOpen dbModel then
+         (if empty then 1 else 10)
+       else 0, return Reopen)
 
       -- Internal
     , (if empty then 1 else 10, return RunBgTasks)
@@ -920,6 +958,7 @@ precondition Model {..} (At cmd) =
      -- the future blocks when adding another block (that we don't adopt).
      Close                    -> Not equallyOrMorePreferableFork .&&
                                  Boolean (Map.null (Model.futureBlocks dbModel))
+     Reopen                   -> Not $ Boolean (Model.isOpen dbModel)
      -- To be in the future, @blockSlot blk@ must be greater than @slot@.
      AddFutureBlock blk s     -> s .>= Model.currentSlot dbModel .&&
                                  blockSlot blk .> s
@@ -943,7 +982,7 @@ precondition Model {..} (At cmd) =
 
     equallyOrMorePreferableFork :: Logic
     equallyOrMorePreferableFork = exists forks $ \fork ->
-      Boolean (equallyOrMorePreferable cfg curChain fork) .&&
+      Boolean (isEquallyOrMorePreferableThan cfg fork curChain) .&&
       Chain.head curChain ./= Chain.head fork
 
     cfg :: TopLevelConfig blk
@@ -967,27 +1006,24 @@ precondition Model {..} (At cmd) =
           StreamToExclusive pt -> StreamToInclusive pt
           StreamToInclusive pt -> StreamToInclusive pt
 
-equallyOrMorePreferable :: forall blk. BlockSupportsProtocol blk
-                        => TopLevelConfig blk
-                        -> Chain blk -> Chain blk -> Bool
-equallyOrMorePreferable cfg chain1 chain2 =
-    not (preferAnchoredCandidate cfg chain1' chain2')
-  where
-    chain1', chain2' :: AnchoredFragment (Header blk)
-    chain1' = Chain.toAnchoredFragment (getHeader <$> chain1)
-    chain2' = Chain.toAnchoredFragment (getHeader <$> chain2)
-
-equallyPreferable :: forall blk. BlockSupportsProtocol blk
-                  => TopLevelConfig blk
-                  -> Chain blk -> Chain blk -> Bool
-equallyPreferable cfg chain1 chain2 =
-    not (preferAnchoredCandidate cfg chain1' chain2') &&
-    not (preferAnchoredCandidate cfg chain2' chain1')
-  where
-    chain1', chain2' :: AnchoredFragment (Header blk)
-    chain1' = Chain.toAnchoredFragment (getHeader <$> chain1)
-    chain2' = Chain.toAnchoredFragment (getHeader <$> chain2)
-
+-- | Is the first given chain chain equally or more preferable than the second
+-- one?
+isEquallyOrMorePreferableThan
+  :: forall blk. BlockSupportsProtocol blk
+  => TopLevelConfig blk
+  -> Chain blk
+  -> Chain blk
+  -> Bool
+isEquallyOrMorePreferableThan cfg chain1 chain2 =
+    case (Chain.head chain1, Chain.head chain2) of
+      (Nothing,   Nothing)   -> True
+      (Nothing,   Just _)    -> False
+      (Just _,    Nothing)   -> True
+      (Just blk1, Just blk2) -> LT /=
+        compareCandidates
+          (configConsensus cfg)
+          (selectView (configBlock cfg) (getHeader blk1))
+          (selectView (configBlock cfg) (getHeader blk2))
 
 transition :: (TestConstraints blk, Show1 r, Eq1 r)
            => Model   blk m r
@@ -1325,86 +1361,66 @@ prop_sequential (SmallChunkInfo chunkInfo) =
         <*> uncheckedNewTVarM Mock.empty
       let args = mkArgs testCfg chunkInfo testInitExtLedger tracer threadRegistry
             varCurSlot fsVars
-      (db, internal)     <- openDBInternal args False
-      withAsync (intAddBlockRunner internal) $ \addBlockAsync -> do
-        link addBlockAsync
-        let env = ChainDBEnv
-              { chainDB = db
-              , internal
-              , registry = iteratorRegistry
-              , varCurSlot
-              , varNextId
-              , varVolDbFs
-              }
-            sm' = sm env (genBlk chunkInfo) testCfg testInitExtLedger
-        (hist, model, res) <- QSM.runCommands' sm' cmds
-        cancel addBlockAsync
-        trace <- getTrace
-        open <- atomically $ isOpen db
-        unless open $ intReopen internal False
-        -- Copy blocks from our chain to the ImmutableDB, otherwise we might
-        -- pick a longer chain that forked off more than @k@ blocks back when
-        -- restarting
-        runBgTasks internal
 
-        realChain <- toChain db
-        closeDB db
-        -- We already generate a command to test 'reopenDB', but since that
-        -- code path differs slightly from 'openDB', we test that code path
-        -- here too by simply opening the DB from scratch again and comparing
-        -- the resulting chain.
-        (db', _) <- openDBInternal args False
-        realChain' <- toChain db'
-        closeDB db'
+      (hist, model, res, trace) <- bracket
+        (open args >>= newMVar)
+        -- Note: we might be closing a different ChainDB than the one we
+        -- opened, as we can reopen it the ChainDB, swapping the ChainDB in
+        -- the MVar.
+        (\varDB -> readMVar varDB >>= close)
 
-        closeRegistry threadRegistry
+        $ \varDB -> do
+          let env = ChainDBEnv
+                { varDB
+                , registry = iteratorRegistry
+                , varCurSlot
+                , varNextId
+                , varVolDbFs
+                , args
+                }
+              sm' = sm env (genBlk chunkInfo) testCfg testInitExtLedger
+          (hist, model, res) <- QSM.runCommands' sm' cmds
+          trace <- getTrace
+          return (hist, model, res, trace)
 
-        -- 'closeDB' should have closed all open 'Reader's and 'Iterator's,
-        -- freeing up all resources, so there should be no more clean-up
-        -- actions left.
-        --
-        -- Note that this is only true because we're not simulating exceptions
-        -- (yet), in which case there /will be/ clean-up actions left. This is
-        -- exactly the reason for introducing the 'ResourceRegistry' in the
-        -- first place: to clean up resources in case exceptions get thrown.
-        remainingCleanups <- countResources iteratorRegistry
-        closeRegistry iteratorRegistry
+      closeRegistry threadRegistry
 
-        -- Read the final MockFS of each database
-        let (immDbFsVar, volDbFsVar, lgrDbFsVar) = fsVars
-        fses <- atomically $ (,,)
-          <$> readTVar immDbFsVar
-          <*> readTVar volDbFsVar
-          <*> readTVar lgrDbFsVar
+      -- 'closeDB' should have closed all open 'Reader's and 'Iterator's,
+      -- freeing up all resources, so there should be no more clean-up
+      -- actions left.
+      --
+      -- Note that this is only true because we're not simulating exceptions
+      -- (yet), in which case there /will be/ clean-up actions left. This is
+      -- exactly the reason for introducing the 'ResourceRegistry' in the
+      -- first place: to clean up resources in case exceptions get thrown.
+      remainingCleanups <- countResources iteratorRegistry
+      closeRegistry iteratorRegistry
 
-        let modelChain = Model.currentChain $ dbModel model
-            (immDbFs, volDbFs, lgrDbFs) = fses
-            prop =
-              counterexample ("Real  chain: " <> condense realChain)       $
-              counterexample ("Model chain: " <> condense modelChain)      $
-              counterexample ("TraceEvents: " <> unlines (map show trace)) $
-              tabulate "Chain length" [show (Chain.length realChain)]      $
-              tabulate "TraceEvents" (map traceEventName trace)            $
-              res === Ok .&&.
-              counterexample
-                ("Real chain and model chain differ")
-                (realChain =:= modelChain) .&&.
-              prop_trace trace .&&.
-              -- Another equally preferable fork may be selected when opening
-              -- the DB.
-              counterexample
-               ("Real chain after reopening: " <> show realChain' <> "\n" <>
-                "Chain after reopening not equally preferable to previous chain")
-               (equallyPreferable (cdbTopLevelConfig args) realChain realChain') .&&.
-              counterexample "ImmutableDB is leaking file handles"
-                             (Mock.numOpenHandles immDbFs === 0) .&&.
-              counterexample "VolatileDB is leaking file handles"
-                             (Mock.numOpenHandles volDbFs === 0) .&&.
-              counterexample "LedgerDB is leaking file handles"
-                             (Mock.numOpenHandles lgrDbFs === 0) .&&.
-              counterexample "There were registered clean-up actions"
-                             (remainingCleanups === 0)
-        return (hist, prop)
+      -- Read the final MockFS of each database
+      let (immDbFsVar, volDbFsVar, lgrDbFsVar) = fsVars
+      fses <- atomically $ (,,)
+        <$> readTVar immDbFsVar
+        <*> readTVar volDbFsVar
+        <*> readTVar lgrDbFsVar
+
+      let modelChain = Model.currentChain $ dbModel model
+          (immDbFs, volDbFs, lgrDbFs) = fses
+          prop =
+            counterexample ("Model chain: " <> condense modelChain)      $
+            counterexample ("TraceEvents: " <> unlines (map show trace)) $
+            tabulate "Chain length" [show (Chain.length modelChain)]     $
+            tabulate "TraceEvents" (map traceEventName trace)            $
+            res === Ok .&&.
+            prop_trace trace .&&.
+            counterexample "ImmutableDB is leaking file handles"
+                           (Mock.numOpenHandles immDbFs === 0) .&&.
+            counterexample "VolatileDB is leaking file handles"
+                           (Mock.numOpenHandles volDbFs === 0) .&&.
+            counterexample "LedgerDB is leaking file handles"
+                           (Mock.numOpenHandles lgrDbFs === 0) .&&.
+            counterexample "There were registered clean-up actions"
+                           (remainingCleanups === 0)
+      return (hist, prop)
 
 prop_trace :: [TraceEvent Blk] -> Property
 prop_trace trace = invalidBlockNeverValidatedAgain
@@ -1414,8 +1430,13 @@ prop_trace trace = invalidBlockNeverValidatedAgain
     invalidBlockNeverValidatedAgain =
       whenOccurs trace  invalidBlock $ \trace' invalidPoint  ->
       whenOccurs trace' invalidBlock $ \_      invalidPoint' ->
-        counterexample "An invalid block is validated twice" $
-        invalidPoint =/= invalidPoint'
+        -- If the database was reopened in the meantime, we have forgotten
+        -- about the invalid block and might validate it again, that's fine
+        if any isOpened trace' then
+          property True
+        else
+          counterexample "An invalid block is validated twice" $
+          invalidPoint =/= invalidPoint'
 
     invalidBlock :: TraceEvent blk -> Maybe (RealPoint blk)
     invalidBlock = \case
@@ -1425,6 +1446,10 @@ prop_trace trace = invalidBlockNeverValidatedAgain
       where
         extract (ChainDB.InvalidBlock _ pt) = Just pt
         extract _                           = Nothing
+
+    isOpened :: TraceEvent blk -> Bool
+    isOpened (TraceOpenEvent (OpenedDB {})) = True
+    isOpened _                              = False
 
 -- | Given a trace of events, for each event in the trace for which the
 -- predicate yields a @Just a@, call the continuation function with the
@@ -1524,88 +1549,3 @@ tests :: TestTree
 tests = testGroup "ChainDB q-s-m"
     [ testProperty "sequential" prop_sequential
     ]
-
-{-------------------------------------------------------------------------------
-  Running commands directly
--------------------------------------------------------------------------------}
-
--- | Debugging utility: run some commands against the real implementation.
-_runCmds :: ImmDB.ChunkInfo
-         ->    [Cmd  Blk IteratorId ReaderId]
-         -> IO [Resp Blk IteratorId ReaderId]
-_runCmds chunkInfo cmds = withRegistry $ \registry -> do
-    varCurSlot <- uncheckedNewTVarM 0
-    varNextId  <- uncheckedNewTVarM 0
-    fsVars@(_, varVolDbFs, _) <- (,,)
-      <$> uncheckedNewTVarM Mock.empty
-      <*> uncheckedNewTVarM Mock.empty
-      <*> uncheckedNewTVarM Mock.empty
-    let args = mkArgs
-          (mkTestCfg chunkInfo)
-          chunkInfo
-          testInitExtLedger
-          (showTracing stdoutTracer)
-          registry
-          varCurSlot
-          fsVars
-    (db, internal) <- openDBInternal args False
-    let env = ChainDBEnv
-          { chainDB = db
-          , internal
-          , registry
-          , varCurSlot
-          , varNextId
-          , varVolDbFs
-          }
-    evalStateT (mapM (go env) cmds) emptyRunCmdState
-  where
-    go :: ChainDBEnv IO Blk
-       -> Cmd Blk IteratorId ReaderId
-       -> StateT RunCmdState
-                 IO
-                 (Resp Blk IteratorId ReaderId)
-    go env cmd = do
-      RunCmdState { rcsKnownIters, rcsKnownReaders } <- get
-      let cmd' = At $
-            bimap (revLookup rcsKnownIters) (revLookup rcsKnownReaders) cmd
-      resp <- lift $ unAt <$> semantics env cmd'
-      newIters <- RE.fromList <$>
-       mapM (\rdr -> (rdr, ) <$> newIteratorId) (iters resp)
-      newReaders <- RE.fromList <$>
-        mapM (\rdr -> (rdr, ) <$> newReaderId) (rdrs  resp)
-      let knownIters'   = rcsKnownIters   `RE.union` newIters
-          knownReaders' = rcsKnownReaders `RE.union` newReaders
-          resp'      = bimap (knownIters' RE.!) (knownReaders' RE.!) resp
-      modify $ \s ->
-        s { rcsKnownIters = knownIters', rcsKnownReaders = knownReaders' }
-      return resp'
-
-    revLookup :: Eq a => RefEnv k a r -> a -> Reference k r
-    revLookup env a = head $ RE.reverseLookup (== a) env
-
-    newIteratorId :: forall m. Monad m => StateT RunCmdState m IteratorId
-    newIteratorId = do
-      s@RunCmdState { rcsNextIteratorId } <- get
-      put (s { rcsNextIteratorId = succ rcsNextIteratorId })
-      return rcsNextIteratorId
-
-    newReaderId :: forall m. Monad m => StateT RunCmdState m ReaderId
-    newReaderId = do
-      s@RunCmdState { rcsNextReaderId } <- get
-      put (s { rcsNextReaderId = succ rcsNextReaderId })
-      return rcsNextReaderId
-
-data RunCmdState = RunCmdState
-  { rcsKnownIters     :: KnownIters   Blk IO Concrete
-  , rcsKnownReaders   :: KnownReaders Blk IO Concrete
-  , rcsNextIteratorId :: IteratorId
-  , rcsNextReaderId   :: ReaderId
-  }
-
-emptyRunCmdState :: RunCmdState
-emptyRunCmdState = RunCmdState
-  { rcsKnownIters     = RE.empty
-  , rcsKnownReaders   = RE.empty
-  , rcsNextIteratorId = 0
-  , rcsNextReaderId   = 0
-  }

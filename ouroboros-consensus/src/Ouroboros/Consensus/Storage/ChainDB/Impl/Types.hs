@@ -25,7 +25,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , ChainDbEnv (..)
     -- * Exposed internals for testing purposes
   , Internal (..)
-  , intReopen
     -- * Iterator-related
   , IteratorKey (..)
     -- * Reader-related
@@ -105,10 +104,8 @@ getEnv :: forall m blk r. (IOLike m, HasCallStack)
        -> (ChainDbEnv m blk -> m r)
        -> m r
 getEnv (CDBHandle varState) f = atomically (readTVar varState) >>= \case
-    ChainDbOpen    env -> f env
-    ChainDbClosed _env -> throwM $ ClosedDBError callStack
-    -- See the docstring of 'ChainDbReopening'
-    ChainDbReopening   -> error "ChainDB used while reopening"
+    ChainDbOpen env -> f env
+    ChainDbClosed   -> throwM $ ClosedDBError callStack
 
 -- | Variant 'of 'getEnv' for functions taking one argument.
 getEnv1 :: (IOLike m, HasCallStack)
@@ -131,22 +128,12 @@ getEnvSTM :: forall m blk r. (IOLike m, HasCallStack)
           -> (ChainDbEnv m blk -> STM m r)
           -> STM m r
 getEnvSTM (CDBHandle varState) f = readTVar varState >>= \case
-    ChainDbOpen    env -> f env
-    ChainDbClosed _env -> throwM $ ClosedDBError callStack
-    -- See the docstring of 'ChainDbReopening'
-    ChainDbReopening   -> error "ChainDB used while reopening"
+    ChainDbOpen env -> f env
+    ChainDbClosed   -> throwM $ ClosedDBError callStack
 
 data ChainDbState m blk
   = ChainDbOpen   !(ChainDbEnv m blk)
-  | ChainDbClosed !(ChainDbEnv m blk)
-    -- ^ Note: this 'ChainDbEnv' will only be used to reopen the ChainDB.
-  | ChainDbReopening
-    -- ^ The ChainDB is being reopened, this should not be performed
-    -- concurrently with any other operations, including reopening itself.
-    --
-    -- This state can only be reached by the 'intReopen' function, which is an
-    -- internal function only exposed for testing. During normal use of the
-    -- 'ChainDB', it should /never/ be used.
+  | ChainDbClosed
   deriving (Generic, NoUnexpectedThunks)
 
 data ChainDbEnv m blk = CDB
@@ -253,17 +240,7 @@ instance (IOLike m, LedgerSupportsProtocol blk)
 -------------------------------------------------------------------------------}
 
 data Internal m blk = Internal
-  { intReopen_                 :: HasCallStack => Bool -> m ()
-    -- ^ Reopen a closed ChainDB.
-    --
-    -- A no-op if the ChainDB is still open.
-    --
-    -- NOTE: not thread-safe, no other operation should be called on the
-    -- ChainDB at the same time.
-    --
-    -- The 'Bool' arguments indicates whether the background tasks should be
-    -- relaunched after reopening the ChainDB.
-  , intCopyToImmDB             :: m (WithOrigin SlotNo)
+  { intCopyToImmDB             :: m (WithOrigin SlotNo)
     -- ^ Copy the blocks older than @k@ from to the VolatileDB to the
     -- ImmutableDB and update the in-memory chain fragment correspondingly.
     --
@@ -282,10 +259,6 @@ data Internal m blk = Internal
   , intKillBgThreads           :: StrictTVar m (m ())
     -- ^ A handle to kill the background threads.
   }
-
--- | Wrapper around 'intReopen_' to guarantee HasCallStack
-intReopen :: HasCallStack => Internal m blk -> Bool -> m ()
-intReopen = intReopen_
 
 {-------------------------------------------------------------------------------
   Iterator-related
@@ -505,11 +478,6 @@ data TraceOpenEvent blk =
 
     -- | The ChainDB was closed.
   | ClosedDB
-      (Point blk)  -- ^ Immutable tip
-      (Point blk)  -- ^ Tip of the current chain
-
-    -- | The ChainDB was successfully reopened.
-  | ReopenedDB
       (Point blk)  -- ^ Immutable tip
       (Point blk)  -- ^ Tip of the current chain
 

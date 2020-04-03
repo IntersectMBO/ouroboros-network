@@ -119,7 +119,6 @@ library
                        Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Query
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Reader
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.Reopen
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                        Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
                        Ouroboros.Consensus.Storage.Common

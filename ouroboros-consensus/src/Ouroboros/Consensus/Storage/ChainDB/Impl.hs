@@ -1,5 +1,9 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE PatternSynonyms          #-}
+{-# LANGUAGE RecordWildCards          #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
 
 module Ouroboros.Consensus.Storage.ChainDB.Impl (
     -- * Initialization
@@ -21,25 +25,29 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
     -- * Internals for testing purposes
   , openDBInternal
   , Internal (..)
-  , intReopen
   ) where
 
 import           Control.Monad (when)
 import           Control.Tracer
+import           Data.Functor ((<&>))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
+import           GHC.Stack (HasCallStack)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (castPoint)
+import           Ouroboros.Network.Block (pattern BlockPoint,
+                     pattern GenesisPoint, HasHeader, Point, castPoint)
 
-import           Ouroboros.Consensus.Block (toIsEBB)
+import           Ouroboros.Consensus.Block (Header, toIsEBB)
 import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
-import           Ouroboros.Consensus.Storage.ChainDB.API
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as API
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (ChainDbArgs,
                      defaultArgs)
@@ -52,7 +60,6 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor as Ledger
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Reader as Reader
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Reopen as Reopen
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 
@@ -65,7 +72,7 @@ withDB
   => ChainDbArgs m blk
   -> (ChainDB m blk -> m a)
   -> m a
-withDB args = bracket (fst <$> openDBInternal args True) closeDB
+withDB args = bracket (fst <$> openDBInternal args True) API.closeDB
 
 openDB
   :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
@@ -81,7 +88,7 @@ openDBInternal
 openDBInternal args launchBgTasks = do
     immDB <- ImmDB.openDB argsImmDb
     immDbTipPoint <- ImmDB.getPointAtTip immDB
-    let immDbTipChunk = Reopen.chunkIndexOfPoint (Args.cdbChunkInfo args) immDbTipPoint
+    let immDbTipChunk = chunkIndexOfPoint (Args.cdbChunkInfo args) immDbTipPoint
     traceWith tracer $ TraceOpenEvent $ OpenedImmDB immDbTipPoint immDbTipChunk
 
     volDB   <- VolDB.openDB argsVolDb
@@ -147,7 +154,7 @@ openDBInternal args launchBgTasks = do
                   , cdbFutureBlocks    = varFutureBlocks
                   }
     h <- fmap CDBHandle $ newTVarM $ ChainDbOpen env
-    let chainDB = ChainDB
+    let chainDB = API.ChainDB
           { addBlockAsync      = getEnv1    h ChainSel.addBlockAsync
           , getCurrentChain    = getEnvSTM  h Query.getCurrentChain
           , getCurrentLedger   = getEnvSTM  h Query.getCurrentLedger
@@ -164,12 +171,11 @@ openDBInternal args launchBgTasks = do
                 (cdbLgrDB env')
                 (castPoint . AF.anchorPoint <$> Query.getCurrentChain env')
           , getIsInvalidBlock  = getEnvSTM  h Query.getIsInvalidBlock
-          , closeDB            = Reopen.closeDB h
-          , isOpen             = Reopen.isOpen  h
+          , closeDB            = closeDB h
+          , isOpen             = isOpen  h
           }
         testing = Internal
-          { intReopen_                 = Reopen.reopen  h
-          , intCopyToImmDB             = getEnv  h Background.copyToImmDB
+          { intCopyToImmDB             = getEnv  h Background.copyToImmDB
           , intGarbageCollect          = getEnv1 h Background.garbageCollect
           , intUpdateLedgerSnapshots   = getEnv  h Background.updateLedgerSnapshots
           , intScheduledChainSelection = getEnv1 h Background.scheduledChainSelection
@@ -187,3 +193,54 @@ openDBInternal args launchBgTasks = do
   where
     tracer = Args.cdbTracer args
     (argsImmDb, argsVolDb, argsLgrDb, _) = Args.fromChainDbArgs args
+
+
+isOpen :: IOLike m => ChainDbHandle m blk -> STM m Bool
+isOpen (CDBHandle varState) = readTVar varState <&> \case
+    ChainDbClosed    -> False
+    ChainDbOpen _env -> True
+
+closeDB
+  :: forall m blk.
+     ( IOLike m
+     , HasHeader (Header blk)
+     , HasCallStack
+     )
+  => ChainDbHandle m blk -> m ()
+closeDB (CDBHandle varState) = do
+    mbOpenEnv <- atomically $ readTVar varState >>= \case
+      -- Idempotent
+      ChainDbClosed   -> return Nothing
+      ChainDbOpen env -> do
+        writeTVar varState ChainDbClosed
+        return $ Just env
+
+    -- Only when the ChainDB was open
+    whenJust mbOpenEnv $ \cdb@CDB{..} -> do
+
+      Reader.closeAllReaders     cdb
+      Iterator.closeAllIterators cdb
+
+      killBgThreads <- atomically $ readTVar cdbKillBgThreads
+      killBgThreads
+
+      ImmDB.closeDB cdbImmDB
+      VolDB.closeDB cdbVolDB
+
+      chain <- atomically $ readTVar cdbChain
+
+      traceWith cdbTracer $ TraceOpenEvent $ ClosedDB
+        (castPoint $ AF.anchorPoint chain)
+        (castPoint $ AF.headPoint chain)
+
+{-------------------------------------------------------------------------------
+  Auxiliary
+-------------------------------------------------------------------------------}
+
+-- | Lift 'chunkIndexOfSlot' to 'Point'
+--
+-- Returns 'firstChunkNo' in case of 'GenesisPoint'.
+chunkIndexOfPoint :: ImmDB.ChunkInfo -> Point blk -> ImmDB.ChunkNo
+chunkIndexOfPoint chunkInfo = \case
+    GenesisPoint      -> ImmDB.firstChunkNo
+    BlockPoint slot _ -> ImmDB.chunkIndexOfSlot chunkInfo slot

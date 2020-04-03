@@ -59,9 +59,8 @@ getReader
   -> m r
 getReader (CDBHandle varState) readerKey f = do
     env <- atomically $ readTVar varState >>= \case
-      ChainDbClosed _env -> throwM $ ClosedDBError callStack
-      ChainDbReopening   -> error "ChainDB used while reopening"
-      ChainDbOpen env    -> do
+      ChainDbClosed   -> throwM $ ClosedDBError callStack
+      ChainDbOpen env -> do
         readerOpen <- Map.member readerKey <$> readTVar (cdbReaders env)
         if readerOpen
           then return env

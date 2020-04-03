@@ -7,8 +7,6 @@
 module Ouroboros.Consensus.Storage.ImmutableDB.API
   ( ImmutableDB (..)
   , closeDB
-  , isOpen
-  , reopen
   , getTip
   , getBlockComponent
   , getEBBComponent
@@ -64,7 +62,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 --
 -- The database can be explicitly closed, but can also be automatically closed
 -- in case of an 'Ouroboros.Consensus.Storage.ImmutableDB.Types.UnexpectedError'.
--- Use 'reopen' to reopen the database.
 data ImmutableDB hash m = ImmutableDB
   { -- | Close the database.
     --
@@ -75,23 +72,6 @@ data ImmutableDB hash m = ImmutableDB
       :: HasCallStack => m ()
       -- TODO remove this operation from the public API and expose it using an
       -- internal record so it can be used by 'withDB'.
-
-    -- | Return 'True' when the database is open.
-  , isOpen_
-      :: HasCallStack => m Bool
-
-    -- | When the database was closed, manually or because of an
-    -- 'Ouroboros.Consensus.Storage.ImmutableDB.Types.UnexpectedError' during an
-    -- operation, recover using the given 'ValidationPolicy' and reopen it at
-    -- the most recent epoch.
-    --
-    -- During validation, the database will be truncated to the last valid
-    -- block or EBB stored in it. The tip of the database will never point to
-    -- an unfilled slot or missing EBB.
-    --
-    -- Throws an 'OpenDBError' if the database is open.
-  , reopen_
-      :: HasCallStack => ValidationPolicy -> m ()
 
     -- | Return the tip of the database.
     --
@@ -315,18 +295,6 @@ closeDB
   => ImmutableDB hash m
   -> m ()
 closeDB = closeDB_
-
-isOpen
-  :: HasCallStack
-  => ImmutableDB hash m
-  -> m Bool
-isOpen = isOpen_
-
-reopen
-  :: HasCallStack
-  => ImmutableDB hash m
-  -> ValidationPolicy -> m ()
-reopen = reopen_
 
 getTip
   :: HasCallStack

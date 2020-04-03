@@ -97,6 +97,7 @@
 module Ouroboros.Consensus.Storage.VolatileDB.Impl
     ( -- * Opening a database
       openDB
+    , VolatileDbArgs (..)
     ) where
 
 import           Control.Monad
@@ -132,18 +133,22 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
   VolatileDB API
 ------------------------------------------------------------------------------}
 
+data VolatileDbArgs m h blockId e = VolatileDbArgs
+    { hasFS            :: HasFS m h
+    , maxBlocksPerFile :: BlocksPerFile
+    , tracer           :: Tracer m (TraceEvent e blockId)
+    , parser           :: Parser e m blockId
+    }
+
 openDB :: ( HasCallStack
           , IOLike m
           , Ord                blockId
           , NoUnexpectedThunks blockId
           , Eq h
           )
-       => HasFS m h
-       -> Parser e m blockId
-       -> Tracer m (TraceEvent e blockId)
-       -> BlocksPerFile
+       => VolatileDbArgs m h blockId e
        -> m (VolatileDB blockId m)
-openDB hasFS parser tracer maxBlocksPerFile = runWithTempRegistry $ do
+openDB VolatileDbArgs {..} = runWithTempRegistry $ do
     ost   <- mkOpenState hasFS parser tracer maxBlocksPerFile
     stVar <- lift $ newMVar (DbOpen ost)
     let env = VolatileDBEnv {
@@ -155,8 +160,6 @@ openDB hasFS parser tracer maxBlocksPerFile = runWithTempRegistry $ do
           }
         volDB = VolatileDB {
             closeDB             = closeDBImpl             env
-          , isOpenDB            = isOpenDBImpl            env
-          , reOpenDB            = reOpenDBImpl            env
           , getBlockComponent   = getBlockComponentImpl   env
           , putBlock            = putBlockImpl            env
           , garbageCollect      = garbageCollectImpl      env
@@ -175,34 +178,6 @@ closeDBImpl VolatileDBEnv { varInternalState, tracer, hasFS } = do
       DbClosed -> traceWith tracer DBAlreadyClosed
       DbOpen ost ->
         wrapFsError $ closeOpenHandles hasFS ost
-
-isOpenDBImpl :: IOLike m
-             => VolatileDBEnv m blockId
-             -> m Bool
-isOpenDBImpl VolatileDBEnv { varInternalState } = do
-    mSt <- readMVar varInternalState
-    return $ dbIsOpen mSt
-
--- | Property: @'closeDB' >> 'reOpenDB'@  should be a no-op. This is true
--- because 'reOpenDB' will always append to the last created file.
-reOpenDBImpl :: ( HasCallStack
-                , IOLike m
-                , Ord blockId
-                )
-             => VolatileDBEnv m blockId
-             -> m ()
-reOpenDBImpl VolatileDBEnv{..} = bracketOnError
-    (takeMVar varInternalState)
-    -- Important: put back the state when an error is thrown, otherwise we have
-    -- an empty TMVar.
-    (putMVar varInternalState) $ \case
-      DbOpen st -> do
-        traceWith tracer DBAlreadyOpen
-        putMVar varInternalState (DbOpen st)
-      DbClosed -> runWithTempRegistry $ do
-        ost <- mkOpenState hasFS parser tracer maxBlocksPerFile
-        lift $ putMVar varInternalState (DbOpen ost)
-        return ((), ost)
 
 getBlockComponentImpl
   :: forall m blockId b. (IOLike m, Ord blockId, HasCallStack)

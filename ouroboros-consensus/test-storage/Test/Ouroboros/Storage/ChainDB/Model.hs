@@ -90,6 +90,7 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust)
+import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -242,6 +243,26 @@ lastK (SecurityParam k) f =
     . Chain.toAnchoredFragment
     . fmap f
     . currentChain
+
+-- | Actual number of blocks that can be rolled back. Equal to @k@, except
+-- when:
+--
+-- * Near genesis, the chain might not be @k@ blocks long yet.
+-- * After VolatileDB corruption, the whole chain might be >= @k@ blocks, but
+--   the tip of the ImmutableDB might be closer than @k@ blocks away from the
+--   current chain's tip.
+--
+maxActualRollback :: HasHeader blk => SecurityParam -> Model blk -> Word64
+maxActualRollback k m =
+      fromIntegral
+    . length
+    . takeWhile (/= immutableTipPoint)
+    . map Block.blockPoint
+    . Chain.toNewestFirst
+    . currentChain
+    $ m
+  where
+    immutableTipPoint = Chain.headPoint (immutableChain k m)
 
 -- | Return the immutable prefix of the current chain.
 --
@@ -779,10 +800,11 @@ successors = Map.unionsWith Map.union . map single
 between :: forall blk. HasHeader blk
         => SecurityParam -> StreamFrom blk -> StreamTo blk -> Model blk
         -> Either (UnknownRange blk) [blk]
-between (SecurityParam k) from to m = do
+between k from to m = do
     fork <- errFork
     -- See #871.
-    if partOfCurrentChain fork || Fragment.forksAtMostKBlocks k currentFrag fork
+    if partOfCurrentChain fork ||
+       Fragment.forksAtMostKBlocks (maxActualRollback k m) currentFrag fork
       then return $ Fragment.toOldestFirst fork
            -- We cannot stream from an old fork
       else Left $ ForkTooOld from

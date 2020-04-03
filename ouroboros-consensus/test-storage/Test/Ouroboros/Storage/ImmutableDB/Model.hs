@@ -40,6 +40,7 @@ module Test.Ouroboros.Storage.ImmutableDB.Model
   , appendBlockModel
   , appendEBBModel
   , streamModel
+  , streamAllModel
   , iteratorNextModel
   , iteratorPeekModel
   , iteratorHasNextModel
@@ -828,6 +829,27 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
     takeUntilEnd = \case
         Nothing  -> id
         Just end -> takeWhile ((<= end) . fst . fst)
+
+streamAllModel
+  :: forall m hash b.
+     BlockComponent (ImmutableDB hash m) b
+  -> DBModel hash
+  -> [b]
+streamAllModel blockComponent =
+      map toBlockComponent
+    . Map.toAscList
+    . dbmBlobs
+  where
+    toBlockComponent
+      :: ((ChunkSlot, SlotNo),
+          Either (hash, BinaryInfo ByteString) (hash, BinaryInfo ByteString))
+      -> b
+    toBlockComponent ((_chunkSlot, slotNo), ebbOrBlock) =
+        extractBlockComponent hash slotNo isEBB binaryInfo blockComponent
+      where
+        (isEBB, hash, binaryInfo) = case ebbOrBlock of
+          Left  (h, b) -> (IsEBB,    h, b)
+          Right (h, b) -> (IsNotEBB, h, b)
 
 iteratorNextModel
   :: IteratorId
