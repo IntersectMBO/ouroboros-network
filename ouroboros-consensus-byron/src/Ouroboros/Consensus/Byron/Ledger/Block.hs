@@ -34,7 +34,6 @@ module Ouroboros.Consensus.Byron.Ledger.Block (
 import           Data.Binary (Get, Put)
 import qualified Data.Binary.Get as Get
 import qualified Data.Binary.Put as Put
-import qualified Data.ByteArray as ByteArray
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as Strict
 import           Data.FingerTree.Strict (Measured (..))
@@ -80,18 +79,18 @@ byronHashInfo :: HashInfo ByronHash
 byronHashInfo = HashInfo { hashSize, getHash, putHash }
   where
     hashSize :: Word32
-    hashSize = fromIntegral $ CC.hashDigestSize' @Crypto.Blake2b_256
+    hashSize = fromIntegral $ Crypto.hashDigestSize
+                                (error "proxy" :: Crypto.Blake2b_256)
 
     getHash :: Get ByronHash
     getHash = do
       bytes <- Get.getByteString (fromIntegral hashSize)
-      case Crypto.digestFromByteString bytes of
-        Nothing     -> fail "digestFromByteString failed"
-        Just digest -> return $ ByronHash $ CC.AbstractHash digest
+      -- Ok to use unsafe version since we get the right size for the hash
+      return $! ByronHash (CC.unsafeHashFromBytes bytes)
 
     putHash :: ByronHash -> Put
-    putHash (ByronHash (CC.AbstractHash digest)) =
-      Put.putByteString $ ByteArray.convert digest
+    putHash (ByronHash h) =
+      Put.putByteString $ CC.hashToBytes h
 
 {-------------------------------------------------------------------------------
   Block

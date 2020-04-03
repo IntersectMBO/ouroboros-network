@@ -41,7 +41,7 @@ extra-deps:
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: f869bee9b08ba1044b1476737c9d65083e1c6c7f
+    commit: 742a789a520387c6cd30a4ca28bc4fc8588a41c7
     subdirs:
       - binary
       - binary/test
@@ -65,7 +65,7 @@ extra-deps:
   - gray-code-0.3.1
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 512c26a66a6a63278846646b81bf8eadcd4ae99c
+    commit: 53ca3542019824d169378fa36a842eb4659b7ceb
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
