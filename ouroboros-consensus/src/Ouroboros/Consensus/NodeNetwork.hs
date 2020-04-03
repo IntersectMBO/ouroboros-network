@@ -124,7 +124,8 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
         -> TxSubmissionClient (GenTxId blk) (GenTx blk) m ()
 
     , phTxSubmissionServer
-        :: TxSubmissionServerPipelined (GenTxId blk) (GenTx blk) m ()
+        :: peer
+        -> TxSubmissionServerPipelined (GenTxId blk) (GenTx blk) m ()
 
      -- Handlers for the local node-to-client bundle of mini-protocols
 
@@ -181,9 +182,9 @@ protocolHandlers NodeArgs {btime, cfg, maxClockSkew, tracers, miniProtocolParame
           (contramap (TraceLabelPeer peer) (txOutboundTracer tracers))
           (txSubmissionMaxUnacked miniProtocolParameters)
           (getMempoolReader getMempool)
-    , phTxSubmissionServer =
+    , phTxSubmissionServer = \peer ->
         txSubmissionInbound
-          (txInboundTracer tracers)
+          (contramap (TraceLabelPeer peer) (txInboundTracer tracers))
           (txSubmissionMaxUnacked miniProtocolParameters)
           (getMempoolReader getMempool)
           (getMempoolWriter getMempool)
@@ -607,7 +608,7 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} chainSyncTi
         (byteLimitsTxSubmission (const 0)) -- TODO: Real Bytelimits, see #1727
         timeLimitsTxSubmission
         channel
-        (txSubmissionServerPeerPipelined phTxSubmissionServer)
+        (txSubmissionServerPeerPipelined (phTxSubmissionServer them))
 
     naLocalChainSyncServer
       :: localPeer
