@@ -82,12 +82,10 @@ socketAsMuxBearer sduTimeout_m tracer sd =
                Left  e      ->  throwM e
                Right header@Mx.MuxSDU { Mx.msHeader } -> do
                    traceWith tracer $ Mx.MuxTraceRecvHeaderEnd msHeader
-                   traceWith tracer $ Mx.MuxTraceRecvPayloadStart (fromIntegral $ Mx.mhLength msHeader)
                    !blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
 
                    ts <- getMonotonicTime
                    traceWith tracer (Mx.MuxTraceRecvDeltaQObservation msHeader ts)
-                   traceWith tracer $ Mx.MuxTraceRecvPayloadEnd (fromIntegral $ BL.length blob)
                    return (header {Mx.msBlob = blob}, ts)
 
       recvLen' ::  Int64 -> [BL.ByteString] -> IO BL.ByteString

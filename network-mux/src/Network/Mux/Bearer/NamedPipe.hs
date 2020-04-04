@@ -49,11 +49,9 @@ namedPipeAsBearer tracer h =
         Left e -> throwM e
         Right header@Mx.MuxSDU { Mx.msHeader } -> do
           traceWith tracer $ Mx.MuxTraceRecvHeaderEnd msHeader
-          traceWith tracer $ Mx.MuxTraceRecvPayloadStart (fromIntegral $ Mx.msLength header)
           blob <- recvLen' False (fromIntegral $ Mx.mhLength msHeader) []
           ts <- getMonotonicTime
           traceWith tracer (Mx.MuxTraceRecvDeltaQObservation msHeader ts)
-          traceWith tracer $ Mx.MuxTraceRecvPayloadEnd (fromIntegral $ BL.length blob)
           return (header {Mx.msBlob = blob}, ts)
 
     recvLen' :: Bool -> Int64 -> [BL.ByteString] -> IO BL.ByteString

@@ -49,10 +49,8 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize = do
               Left  e      -> throwM e
               Right header -> do
                   traceWith tracer $ Mx.MuxTraceRecvHeaderEnd (Mx.msHeader header)
-                  traceWith tracer $ Mx.MuxTraceRecvPayloadStart $ fromIntegral $ BL.length payload
                   ts <- getMonotonicTime
                   traceWith tracer $ Mx.MuxTraceRecvDeltaQObservation (Mx.msHeader header) ts
-                  traceWith tracer $ Mx.MuxTraceRecvPayloadEnd (fromIntegral $ BL.length payload)
                   return (header {Mx.msBlob = payload}, ts)
 
       writeMux :: Mx.MuxSDU -> m Time

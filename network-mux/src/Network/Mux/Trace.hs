@@ -120,8 +120,6 @@ data MuxBearerState = Larval
 data MuxTrace =
       MuxTraceRecvHeaderStart
     | MuxTraceRecvHeaderEnd !MuxSDUHeader
-    | MuxTraceRecvPayloadStart !Int
-    | MuxTraceRecvPayloadEnd !Int
     | MuxTraceRecvDeltaQObservation !MuxSDUHeader Time
     | MuxTraceRecvDeltaQSample !Double !Int !Int !Double !Double !Double !Double !String
     | MuxTraceRecvStart !Int
@@ -146,8 +144,6 @@ instance Show MuxTrace where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
     show (MuxTraceRecvHeaderEnd MuxSDUHeader { mhTimestamp, mhNum, mhMode, mhLength }) = printf "Bearer Receive Header End: ts: 0x%08x %s %s len %d"
         (unRemoteClockModel mhTimestamp) (show mhNum) (show mhMode) mhLength
-    show (MuxTraceRecvPayloadStart len) = printf "Bearer Receive Body Start: length %d" len
-    show (MuxTraceRecvPayloadEnd len) = printf "Bearer Receive Body End: length %d" len
     show (MuxTraceRecvDeltaQObservation MuxSDUHeader { mhTimestamp, mhLength } ts) = printf "Bearer DeltaQ observation: remote ts %d local ts %s length %d"
         (unRemoteClockModel mhTimestamp) (show ts) mhLength
     show (MuxTraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) = printf "Bearer DeltaQ Sample: duration %.3e packets %d sumBytes %d DeltaQ_S %.3e DeltaQ_VMean %.3e DeltaQ_VVar %.3e DeltaQ_estR %.3e sizeDist %s"
