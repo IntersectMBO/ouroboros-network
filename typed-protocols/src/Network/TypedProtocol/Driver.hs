@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE RankNTypes #-}
@@ -290,8 +291,8 @@ runPipelinedPeerReceiverQueue receiveQueue collectQueue
       let dstate = case (senderDState, receiverDState) of
                        (HasDState t, _) -> t
                        (NoDState,    t) -> t
-      (c, dstate') <- runPipelinedPeerReceiver driver dstate receiver
-      atomically (writeTQueue collectQueue (c, dstate'))
+      x@(!_c, !dstate') <- runPipelinedPeerReceiver driver dstate receiver
+      atomically (writeTQueue collectQueue x)
       go dstate'
 
 
