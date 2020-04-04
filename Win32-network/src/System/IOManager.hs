@@ -1,11 +1,15 @@
 {-# LANGUAGE CPP        #-}
 {-# LANGUAGE RankNTypes #-}
 
+-- we are exporting `Void` with constructors
+{-# OPTIONS_GHC -Wno-dodgy-exports #-}
+
 -- | A shim layer for `Win32-network`'s `IOManager`
 --
 module System.IOManager
   ( WithIOManager
   , IOManager (..)
+  , IOManagerError (..)
   , withIOManager
 
   -- * Deprecated API
@@ -18,6 +22,14 @@ module System.IOManager
 import System.Win32.Types (HANDLE)
 import qualified System.Win32.Async.IOManager as Win32.Async
 import Network.Socket (Socket)
+#else
+import Data.Void (Void)
+#endif
+
+#if defined(mingw32_HOST_OS)
+type IOManagerError = Win32.Async.IOManagerError
+#else
+type IOManagerError = Void
 #endif
 
 -- | This is public api to interact with the io manager; On Windows 'IOManager'

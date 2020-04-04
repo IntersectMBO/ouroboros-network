@@ -15,7 +15,7 @@ module System.Win32.Async.IOManager
       IOCompletionPort
     , associateWithIOCompletionPort
     , withIOManager
-    , IOManagerError (..)
+    , IOManagerError
 
       -- * Low level IOCP interface
     , dequeueCompletionPackets
@@ -141,23 +141,15 @@ withIOManager k =
             -- But note that 'closeIOCopletionPort' will terminate the io-manager
             -- thread (we cover this scenario in the 'test_closeIOCP' test).
             _ <-
-              forkOS
-                $ (void $ do
-                    myThreadId >>= flip labelThread "IOManager"
-                    dequeueCompletionPackets iocp)
-                  `catch`
-                  \(e :: IOException) -> do
-                    -- throw IOExceptoin's back to the thread which started 'IOManager'
-                    throwTo tid (IOManagerError e)
-                    throwIO e
+              forkOS $
+                do
+                  myThreadId >>= flip labelThread "IOManager"
+                  void $ dequeueCompletionPackets iocp
+               `catch` \(e :: IOException) -> do
+                  -- throw IOExceptoin's back to the thread which started 'IOManager'
+                  throwTo tid (IOManagerError e)
+                  throwIO e
             k iocp
-
-
-data IOCompletionException
-    = NullPointerException
-    | NullOverlappedPointer
-    | IOCompoletionError !Win32.ErrCode
-  deriving Show
 
 
 data IOManagerNotification
@@ -170,7 +162,6 @@ data IOManagerNotification
     | IOManagerOperationSuccess !Int           !LPOVERLAPPED
     -- ^ io manager loop received a notification of an erronous IO operation 
 
-instance Exception IOCompletionException
 
 -- | I/O manager which handles completions of I/O operations.  It should run on
 -- a bound thread.  It dereferences the stable pointer which was allocated by
@@ -217,6 +208,13 @@ dequeueCompletionPackets (IOCompletionPort port) = ioManagerLoop
                    -- <https://docs.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getqueuedcompletionstatus#remarks>)
                       pure IOManagerStop
                  | gqcsOverlappedIsNull && errorCode == eRROR_INVALID_HANDLE ->
+                   -- This path is not documented on 'MSDN'; I was only able to
+                   -- reproduce it in some scenarios when closing the iocp
+                   -- handle (which is done by 'withIOManager').  We are not
+                   -- throwing an exception, since this exception would be
+                   -- re-thrown to the application thread when 'withIOManager'
+                   -- exits.
+                   --
                    -- If we don't terminate the dequeueing thread, some of the tests
                    -- will take 10x-100x more time to complete:
                    --
@@ -246,7 +244,7 @@ dequeueCompletionPackets (IOCompletionPort port) = ioManagerLoop
                    -- 'GetLastCompletionStatus' has not dequeued any completion packet
                    -- from the completion port.  Must be the first clause, since if
                    -- this is not true we cannot trust other arguments.
-                      throwIO NullOverlappedPointer
+                      Win32.failWith "dequeueCompletionPackets" errorCode
                  | completionKey /= magicCompletionKey ->
                    -- The completion key does not agree with what we expect, we ignore
                    -- and carry on. The completion key is set when one calls
