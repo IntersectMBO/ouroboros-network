@@ -48,11 +48,11 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize = do
           case Mx.decodeMuxSDU hbuf of
               Left  e      -> throwM e
               Right header -> do
-                  traceWith tracer $ Mx.MuxTraceRecvHeaderEnd header
+                  traceWith tracer $ Mx.MuxTraceRecvHeaderEnd (Mx.msHeader header)
                   traceWith tracer $ Mx.MuxTraceRecvPayloadStart $ fromIntegral $ BL.length payload
                   ts <- getMonotonicTime
-                  traceWith tracer $ Mx.MuxTraceRecvDeltaQObservation header ts
-                  traceWith tracer $ Mx.MuxTraceRecvPayloadEnd payload
+                  traceWith tracer $ Mx.MuxTraceRecvDeltaQObservation (Mx.msHeader header) ts
+                  traceWith tracer $ Mx.MuxTraceRecvPayloadEnd (fromIntegral $ BL.length payload)
                   return (header {Mx.msBlob = payload}, ts)
 
       writeMux :: Mx.MuxSDU -> m Time
@@ -61,7 +61,7 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize = do
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
               buf  = Mx.encodeMuxSDU sdu'
-          traceWith tracer $ Mx.MuxTraceSendStart sdu'
+          traceWith tracer $ Mx.MuxTraceSendStart (Mx.msHeader sdu')
           atomically $ writeTBQueue writeQueue buf
           traceWith tracer $ Mx.MuxTraceSendEnd
           return ts

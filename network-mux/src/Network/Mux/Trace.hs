@@ -14,7 +14,6 @@ module Network.Mux.Trace (
 
 import           Prelude hiding (read)
 
-import qualified Data.ByteString.Lazy as BL
 import           Text.Printf
 
 import           Control.Monad.Class.MonadThrow
@@ -120,21 +119,21 @@ data MuxBearerState = Larval
 --
 data MuxTrace =
       MuxTraceRecvHeaderStart
-    | MuxTraceRecvHeaderEnd !MuxSDU
+    | MuxTraceRecvHeaderEnd !MuxSDUHeader
     | MuxTraceRecvPayloadStart !Int
-    | MuxTraceRecvPayloadEnd !BL.ByteString
-    | MuxTraceRecvDeltaQObservation !MuxSDU Time
+    | MuxTraceRecvPayloadEnd !Int
+    | MuxTraceRecvDeltaQObservation !MuxSDUHeader Time
     | MuxTraceRecvDeltaQSample !Double !Int !Int !Double !Double !Double !Double !String
     | MuxTraceRecvStart !Int
-    | MuxTraceRecvEnd !BL.ByteString
-    | MuxTraceSendStart !MuxSDU
+    | MuxTraceRecvEnd !Int
+    | MuxTraceSendStart !MuxSDUHeader
     | MuxTraceSendEnd
     | MuxTraceState !MuxBearerState
     | MuxTraceCleanExit !MiniProtocolNum !MiniProtocolMode
     | MuxTraceExceptionExit !MiniProtocolNum !MiniProtocolMode !SomeException
     | MuxTraceChannelRecvStart !MiniProtocolNum
-    | MuxTraceChannelRecvEnd !MiniProtocolNum !BL.ByteString
-    | MuxTraceChannelSendStart !MiniProtocolNum !BL.ByteString
+    | MuxTraceChannelRecvEnd !MiniProtocolNum !Int
+    | MuxTraceChannelSendStart !MiniProtocolNum !Int
     | MuxTraceChannelSendEnd !MiniProtocolNum
     | MuxTraceHandshakeStart
     | MuxTraceHandshakeClientEnd !DiffTime
@@ -145,35 +144,27 @@ data MuxTrace =
 
 instance Show MuxTrace where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
-    show (MuxTraceRecvHeaderEnd sdu) = printf "Bearer Receive Header End: ts: 0x%08x %s %s len %d"
-        (unRemoteClockModel $ msTimestamp sdu)
-        (show $ msNum sdu)
-        (show $ msMode sdu)
-        (msLength sdu)
+    show (MuxTraceRecvHeaderEnd MuxSDUHeader { mhTimestamp, mhNum, mhMode, mhLength }) = printf "Bearer Receive Header End: ts: 0x%08x %s %s len %d"
+        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhMode) mhLength
     show (MuxTraceRecvPayloadStart len) = printf "Bearer Receive Body Start: length %d" len
-    show (MuxTraceRecvPayloadEnd blob) = printf "Bearer Receive Body End: length %d" (BL.length blob)
-    show (MuxTraceRecvDeltaQObservation sdu ts) = printf "Bearer DeltaQ observation: remote ts %d local ts %s length %d"
-        (unRemoteClockModel $ msTimestamp sdu)
-        (show ts)
-        (msLength sdu)
+    show (MuxTraceRecvPayloadEnd len) = printf "Bearer Receive Body End: length %d" len
+    show (MuxTraceRecvDeltaQObservation MuxSDUHeader { mhTimestamp, mhLength } ts) = printf "Bearer DeltaQ observation: remote ts %d local ts %s length %d"
+        (unRemoteClockModel mhTimestamp) (show ts) mhLength
     show (MuxTraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) = printf "Bearer DeltaQ Sample: duration %.3e packets %d sumBytes %d DeltaQ_S %.3e DeltaQ_VMean %.3e DeltaQ_VVar %.3e DeltaQ_estR %.3e sizeDist %s"
          d sp so dqs dqvm dqvs estR sdud
     show (MuxTraceRecvStart len) = printf "Bearer Receive Start: length %d" len
-    show (MuxTraceRecvEnd blob) = printf "Bearer Receive End: length %d" (BL.length blob)
-    show (MuxTraceSendStart sdu) = printf "Bearer Send Start: ts: 0x%08x %s %s length %d"
-        (unRemoteClockModel $ msTimestamp sdu)
-        (show $ msNum sdu)
-        (show $ msMode sdu)
-        (BL.length $ msBlob sdu)
+    show (MuxTraceRecvEnd len) = printf "Bearer Receive End: length %d" len
+    show (MuxTraceSendStart MuxSDUHeader { mhTimestamp, mhNum, mhMode, mhLength }) = printf "Bearer Send Start: ts: 0x%08x %s %s length %d"
+        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhMode) mhLength
     show MuxTraceSendEnd = printf "Bearer Send End"
     show (MuxTraceState new) = printf "State: %s" (show new)
     show (MuxTraceCleanExit mid dir) = printf "Miniprotocol %s %s terminated cleanly" (show mid) (show dir)
     show (MuxTraceExceptionExit mid dir e) = printf "Miniprotocol %s %s terminated with exception %s" (show mid) (show dir) (show e)
     show (MuxTraceChannelRecvStart mid) = printf "Channel Receive Start on %s" (show mid)
-    show (MuxTraceChannelRecvEnd mid blob) = printf "Channel Receive End on %s %d" (show mid)
-        (BL.length blob)
-    show (MuxTraceChannelSendStart mid blob) = printf "Channel Send Start on %s %d" (show mid)
-        (BL.length blob)
+    show (MuxTraceChannelRecvEnd mid len) = printf "Channel Receive End on %s %d" (show mid)
+        len
+    show (MuxTraceChannelSendStart mid len) = printf "Channel Send Start on %s %d" (show mid)
+        len
     show (MuxTraceChannelSendEnd mid) = printf "Channel Send End on %s" (show mid)
     show MuxTraceHandshakeStart = "Handshake start"
     show (MuxTraceHandshakeClientEnd duration) = printf "Handshake Client end, duration %s" (show duration)

@@ -382,7 +382,7 @@ muxChannel tracer tq mc md q cnt = do
         -- We send CBOR encoded messages by encoding them into by ByteString
         -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
 
-        traceWith tracer $ MuxTraceChannelSendStart mc encoding
+        traceWith tracer $ MuxTraceChannelSendStart mc (fromIntegral $ BL.length encoding)
 
         atomically $ do
             buf <- readTVar w
@@ -408,7 +408,7 @@ muxChannel tracer tq mc md q cnt = do
                 then retry
                 else writeTVar q BL.empty >> return blob
         -- say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
-        traceWith tracer $ MuxTraceChannelRecvEnd mc blob
+        traceWith tracer $ MuxTraceChannelRecvEnd mc (fromIntegral $ BL.length blob)
         return $ Just blob
 
 traceMuxBearerState :: Tracer m MuxTrace -> MuxBearerState -> m ()

@@ -167,7 +167,7 @@ data MuxSDUHeader = MuxSDUHeader {
 
 
 data MuxSDU = MuxSDU {
-      msHeader :: {-# UNPACK #-} !MuxSDUHeader
+      msHeader :: !MuxSDUHeader
     , msBlob   :: !BL.ByteString
     }
 

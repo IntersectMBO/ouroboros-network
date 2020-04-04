@@ -1,4 +1,6 @@
+{-# LANGUAGE NamedFieldPuns  #-}
 {-# LANGUAGE RecordWildCards #-}
+
 module Network.Mux.DeltaQ.TraceTransformer
   (initDeltaQTracer
   ,initDeltaQTracer')
@@ -32,8 +34,8 @@ dqTracer :: MonadSTM m
          -> Tracer m MuxTrace
 dqTracer sTvar tr = Tracer go
   where
-    go (MuxTraceRecvDeltaQObservation pdu t)
-      = update (msTimestamp pdu) t (fromIntegral $ msLength pdu)
+    go (MuxTraceRecvDeltaQObservation MuxSDUHeader { mhTimestamp, mhLength } t)
+      = update mhTimestamp t (fromIntegral mhLength)
         >>= maybe (return ()) (traceWith tr . formatSample)
     go te@(MuxTraceCleanExit {})
        = emitSample >> traceWith tr te

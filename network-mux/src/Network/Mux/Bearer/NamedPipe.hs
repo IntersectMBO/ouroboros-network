@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Network.Mux.Bearer.NamedPipe
@@ -46,13 +47,13 @@ namedPipeAsBearer tracer h =
       hbuf <- recvLen' True 8 []
       case Mx.decodeMuxSDU hbuf of
         Left e -> throwM e
-        Right header -> do
-          traceWith tracer $ Mx.MuxTraceRecvHeaderEnd header
+        Right header@Mx.MuxSDU { Mx.msHeader } -> do
+          traceWith tracer $ Mx.MuxTraceRecvHeaderEnd msHeader
           traceWith tracer $ Mx.MuxTraceRecvPayloadStart (fromIntegral $ Mx.msLength header)
-          blob <- recvLen' False (fromIntegral $ Mx.msLength header) []
+          blob <- recvLen' False (fromIntegral $ Mx.mhLength msHeader) []
           ts <- getMonotonicTime
-          traceWith tracer (Mx.MuxTraceRecvDeltaQObservation header ts)
-          traceWith tracer $ Mx.MuxTraceRecvPayloadEnd blob
+          traceWith tracer (Mx.MuxTraceRecvDeltaQObservation msHeader ts)
+          traceWith tracer $ Mx.MuxTraceRecvPayloadEnd (fromIntegral $ BL.length blob)
           return (header {Mx.msBlob = blob}, ts)
 
     recvLen' :: Bool -> Int64 -> [BL.ByteString] -> IO BL.ByteString
@@ -69,16 +70,16 @@ namedPipeAsBearer tracer h =
               " closed when reading data, waiting on next header " ++
               show waitingOnNextHeader) callStack
         else do
-          traceWith tracer (Mx.MuxTraceRecvEnd buf)
+          traceWith tracer (Mx.MuxTraceRecvEnd (fromIntegral $ BL.length buf))
           recvLen' False (l - fromIntegral (BL.length buf)) (buf : bufs)
 
     writeNamedPipe :: Mx.MuxSDU -> IO Time
     writeNamedPipe sdu = do
       ts <- getMonotonicTime
       let ts32 = Mx.timestampMicrosecondsLow32Bits ts
-          sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
+          sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
           buf  = Mx.encodeMuxSDU sdu'
-      traceWith tracer $ Mx.MuxTraceSendStart sdu'
+      traceWith tracer $ Mx.MuxTraceSendStart (Mx.msHeader sdu')
       traverse_ (Win32.Async.writeHandle h) (BL.toChunks buf)
         `catch` Mx.handleIOException "writeHandle errored"
       traceWith tracer Mx.MuxTraceSendEnd
