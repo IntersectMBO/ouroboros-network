@@ -39,6 +39,7 @@ import Foreign.Ptr (Ptr, intPtrToPtr, nullPtr)
 import Foreign.StablePtr (deRefStablePtr, freeStablePtr)
 import Foreign.Marshal (alloca, free)
 import Foreign.Storable (Storable (..))
+import GHC.Conc (labelThread)
 
 import           Network.Socket (Socket)
 import qualified Network.Socket as Socket
@@ -141,7 +142,9 @@ withIOManager k =
             -- thread (we cover this scenario in the 'test_closeIOCP' test).
             _ <-
               forkOS
-                $ void $ dequeueCompletionPackets iocp
+                $ (void $ do
+                    myThreadId >>= flip labelThread "IOManager"
+                    dequeueCompletionPackets iocp)
                   `catch`
                   \(e :: IOException) -> do
                     -- throw IOExceptoin's back to the thread which started 'IOManager'
