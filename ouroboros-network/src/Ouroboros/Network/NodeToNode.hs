@@ -100,6 +100,7 @@ import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure)
+import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
@@ -735,6 +736,12 @@ remoteNetworkErrorPolicy = ErrorPolicies {
         , ErrorPolicy
             $ \(_ :: BlockFetchProtocolFailure)
                   -> Just theyBuggyOrEvil
+
+          -- Error thrown by 'IOManager', this is fatal on Windows, and it will
+          -- never fire on other platofrms.
+        , ErrorPolicy
+            $ \(_ :: IOManagerError)
+                  -> Just Throw
         ],
 
       -- Exception raised during connect; suspend connecting to that peer for
@@ -742,6 +749,10 @@ remoteNetworkErrorPolicy = ErrorPolicies {
       epConErrorPolicies = [
           ErrorPolicy $ \(_ :: IOException) -> Just $
             SuspendConsumer shortDelay
+
+        , ErrorPolicy
+            $ \(_ :: IOManagerError)
+                  -> Just Throw
         ]
     }
   where
