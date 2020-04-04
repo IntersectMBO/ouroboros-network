@@ -439,6 +439,12 @@ networkErrorPolicies = ErrorPolicies
                       MuxBearerClosed         -> Just (SuspendPeer shortDelay shortDelay)
                       MuxIOException{}        -> Just (SuspendPeer shortDelay shortDelay)
                       MuxSDUReadTimeout       -> Just (SuspendPeer shortDelay shortDelay)
+
+        -- Error thrown by 'IOManager', this is fatal on Windows, and it will
+        -- never fire on other platofrms.
+      , ErrorPolicy
+          $ \(_ :: IOManagerError)
+                -> Just Throw
       ]
     , epConErrorPolicies = [
         -- If an 'IOException' is thrown by the 'connect' call we suspend the
@@ -446,6 +452,10 @@ networkErrorPolicies = ErrorPolicies
         -- period.
         ErrorPolicy $ \(_ :: IOException) -> Just $
           SuspendPeer shortDelay shortDelay
+
+      , ErrorPolicy
+          $ \(_ :: IOManagerError)
+                -> Just Throw
       ]
     }
   where

@@ -50,14 +50,14 @@ tests =
   , testProperty "sendTo and recvFrom"
       (ioProperty . prop_sendTo_recvFrom)
   , testProperty "PingPong test"
-      $ withMaxSuccess 100 prop_PingPong
+      prop_PingPong
   , testProperty "PingPongPipelined test"
-      $ withMaxSuccess 100 prop_PingPongPipelined
+      prop_PingPongPipelined
   , testGroup "vectored io"
     [ testProperty "PingPong test"
-        $ withMaxSuccess 100 prop_PingPongLazy
+        prop_PingPongLazy
     , testProperty "PingPongPipelined test"
-        $ withMaxSuccess 100 prop_PingPongPipelinedLazy
+        prop_PingPongPipelinedLazy
     ]
   ]
 

@@ -1,11 +1,15 @@
 {-# LANGUAGE CPP        #-}
 {-# LANGUAGE RankNTypes #-}
 
+-- we are exporting `Void` with constructors
+{-# OPTIONS_GHC -Wno-dodgy-exports #-}
+
 -- | A shim layer for `Win32-network`'s `IOManager`
 --
 module System.IOManager
   ( WithIOManager
   , IOManager (..)
+  , IOManagerError (..)
   , withIOManager
 
   -- * Deprecated API
@@ -18,6 +22,14 @@ module System.IOManager
 import System.Win32.Types (HANDLE)
 import qualified System.Win32.Async.IOManager as Win32.Async
 import Network.Socket (Socket)
+#else
+import Data.Void (Void)
+#endif
+
+#if defined(mingw32_HOST_OS)
+type IOManagerError = Win32.Async.IOManagerError
+#else
+type IOManagerError = Void
 #endif
 
 -- | This is public api to interact with the io manager; On Windows 'IOManager'
@@ -50,9 +62,17 @@ type AssociateWithIOCP = IOManager
 type WithIOManager = forall a. (IOManager -> IO a) -> IO a
 
 
--- | 'withIOManger' must be called only once at the top level.  We wrap the
--- 'associateWithIOCompletionPort' in a newtype wrapper since it will be
--- carried arround through the application.
+-- | 'withIOManager' allows to do asynchronous io on Windows hiding the
+-- differences between posix and Win32.
+--
+-- It starts an io manger thread, which should be only one running at a time, so
+-- the best place to call it is very close to the 'main' function and last for
+-- duration of the application.
+--
+-- Async 'IO' operatitions which are using the 'iocp' port should not leak
+-- out-side of 'withIOManager'.  They will be silently cancelled when
+-- 'withIOManager' exists.  In particular one should not return 'IOManager'
+-- from 'withIOManager'.
 --
 withIOManager :: WithIOManager
 #if defined(mingw32_HOST_OS)
