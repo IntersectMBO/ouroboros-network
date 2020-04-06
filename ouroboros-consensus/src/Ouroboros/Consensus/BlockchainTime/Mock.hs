@@ -41,7 +41,6 @@ import           Ouroboros.Consensus.Util.STM
 fixedBlockchainTime :: MonadSTM m => SlotNo -> BlockchainTime m
 fixedBlockchainTime slot = BlockchainTime {
       getCurrentSlot = return slot
-    , onSlotChange_  = \_ _ -> return (return ())
     }
 
 {-------------------------------------------------------------------------------
@@ -54,7 +53,6 @@ fixedBlockchainTime slot = BlockchainTime {
 settableBlockchainTime :: MonadSTM m => StrictTVar m SlotNo -> BlockchainTime m
 settableBlockchainTime varCurSlot = BlockchainTime {
       getCurrentSlot = readTVar varCurSlot
-    , onSlotChange_  = error "unimplemented onSlotChange_"
     }
 
 {-------------------------------------------------------------------------------
@@ -73,10 +71,8 @@ data TestClock =
   deriving (Eq, Generic, NoUnexpectedThunks)
 
 data TestBlockchainTime m = TestBlockchainTime
-  { testBlockchainTimeClone :: ResourceRegistry m -> TestBlockchainTime m
-    -- ^ Create a synchronized clone that uses a different 'ResourceRegistry'
-  , testBlockchainTime      :: BlockchainTime m
-  , testBlockchainTimeDone  :: m ()
+  { testBlockchainTime     :: BlockchainTime m
+  , testBlockchainTimeDone :: m ()
     -- ^ Blocks until the end of the final requested slot.
   }
 
@@ -105,7 +101,7 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
 
     void $ forkLinkedThread registry "TestBlockchainTime" $ loop slotVar doneVar
 
-    return $ clone slotVar doneVar registry
+    return $ clone slotVar doneVar
   where
     loop :: StrictTVar m TestClock -> StrictMVar m () -> m ()
     loop slotVar doneVar = go slotLens numSlots
@@ -124,13 +120,11 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
     clone
       :: StrictTVar m TestClock
       -> StrictMVar m ()
-      -> ResourceRegistry m
       -> TestBlockchainTime m
-    clone slotVar doneVar registry' =
+    clone slotVar doneVar =
         TestBlockchainTime
-          { testBlockchainTimeClone = clone slotVar doneVar
-          , testBlockchainTime      = btime
-          , testBlockchainTimeDone  = readMVar doneVar
+          { testBlockchainTime     = btime
+          , testBlockchainTimeDone = readMVar doneVar
           }
       where
         get :: STM m SlotNo
@@ -143,8 +137,6 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
         btime :: BlockchainTime m
         btime = BlockchainTime {
             getCurrentSlot = get
-          , onSlotChange_  = \label -> fmap cancelThread .
-              onEachChange registry' label Running (Just Initializing) get
           }
 
 -- | Number of slot length changes if running for the specified number of slots

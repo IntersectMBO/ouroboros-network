@@ -38,8 +38,8 @@ prop_chainRoundtrip :: BlockChain -> Property
 prop_chainRoundtrip bc = runSimOrThrow test
   where
     test :: forall s. SimM s Property
-    test = do
-        db <- ChainDB.fromChain openDB (blockChain bc)
+    test = withRegistry $ \registry -> do
+        db <- ChainDB.fromChain (openDB registry) (blockChain bc)
         c' <- ChainDB.toChain db
         return $ blockChain bc === c'
 
@@ -50,7 +50,7 @@ prop_reader bt p = runSimOrThrow test
 
     test :: forall s. SimM s Property
     test = withRegistry $ \registry -> do
-        db       <- openDB
+        db       <- openDB registry
         reader   <- ChainDB.newBlockReader db registry
         chainVar <- uncheckedNewTVarM Genesis
 
@@ -88,9 +88,10 @@ instance Exception InvalidUpdate
   Auxiliary
 -------------------------------------------------------------------------------}
 
-openDB :: forall s. SimM s (ChainDB (SimM s) TestBlock)
-openDB = Mock.openDB
+openDB :: ResourceRegistry (SimM s) -> SimM s (ChainDB (SimM s) TestBlock)
+openDB registry = Mock.openDB
     singleNodeTestConfig
+    registry
     testInitExtLedger
     -- We don't care about time or future here
     (fixedBlockchainTime maxBound)

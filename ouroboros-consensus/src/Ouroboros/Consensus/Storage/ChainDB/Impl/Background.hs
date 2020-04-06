@@ -446,6 +446,7 @@ scheduledChainSelectionRunner
   => ChainDbEnv m blk -> m (m ())
 scheduledChainSelectionRunner cdb@CDB{..} =
     onSlotChange
+      cdbRegistry
       cdbBlockchainTime
       "ChainDB.scheduledChainSelection"
       (scheduledChainSelection cdb)
