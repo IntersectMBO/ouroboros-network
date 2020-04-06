@@ -744,10 +744,10 @@ runThreadNetwork ThreadNetworkArgs
             , maxBlockSize           = NoOverride
             , mempoolCap             = NoMempoolCapacityBytesOverride
             , miniProtocolParameters = MiniProtocolParameters {
-                  chainSyncPipelineingHighMark = 4,
-                  chainSyncPipelineingLowMark  = 2,
-                  blockFetchPipelineingMax     = 10,
-                  txSubmissionMaxUnacked       = 1000 -- TODO ?
+                  chainSyncPipeliningHighMark = 4,
+                  chainSyncPipeliningLowMark  = 2,
+                  blockFetchPipeliningMax     = 10,
+                  txSubmissionMaxUnacked      = 1000 -- TODO ?
                 }
             }
 
