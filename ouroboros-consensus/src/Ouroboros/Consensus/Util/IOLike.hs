@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Util.IOLike (
   , MonadSTMTxExtended(..)
     -- *** MonadFork
   , MonadFork(..) -- TODO: Should we hide this in favour of MonadAsync?
+  , labelThisThread
   , MonadThread(..)
     -- *** MonadAsync
   , MonadAsyncSTM(..)
