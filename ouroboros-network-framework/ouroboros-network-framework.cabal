@@ -66,8 +66,8 @@ library
                      , network-mux     >= 0.1 && < 0.2
                      , contra-tracer
                      , Win32-network   >= 0.1 && < 0.2
-                     , dns
-                     , iproute
+                     , dns                       < 4.0
+                     , iproute         >= 1.7.0 && < 1.8
 
                        -- Used by the handshake protocol for now
                      , serialise       >=0.2 && <0.3
