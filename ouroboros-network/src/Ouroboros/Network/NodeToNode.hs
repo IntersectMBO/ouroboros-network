@@ -148,21 +148,21 @@ data NodeToNodeProtocols appType bytes m a b = NodeToNodeProtocols {
 
 
 data MiniProtocolParameters = MiniProtocolParameters {
-      chainSyncPipelineingHighMark :: !Word32,
+      chainSyncPipeliningHighMark :: !Word32,
       -- ^ high threshold for pipelining (we will never exceed that many
       -- messages pipelined).
 
-      chainSyncPipelineingLowMark  :: !Word32,
-      -- ^ low threshold: if we hit the 'chainSyncPipelineingHighMark' we will
+      chainSyncPipeliningLowMark  :: !Word32,
+      -- ^ low threshold: if we hit the 'chainSyncPipeliningHighMark' we will
       -- listen for responses until there are at most
-      -- 'chainSyncPipelineingLowMark' pipelined message
+      -- 'chainSyncPipeliningLowMark' pipelined message
       --
-      -- Must be smaller than 'chainSyncPipelineingHighMark'.
+      -- Must be smaller than 'chainSyncPipeliningHighMark'.
       --
-      -- Note: 'chainSyncPipelineingLowMark' and 'chainSyncPipelineingLowMark'
+      -- Note: 'chainSyncPipeliningLowMark' and 'chainSyncPipeliningLowMark'
       -- are passed to 'pipelineDecisionLowHighMark'.
 
-      blockFetchPipelineingMax     :: !Word,
+      blockFetchPipeliningMax     :: !Word,
       -- ^ maximal number of pipelined messages in 'block-fetch' mini-protocol.
 
       txSubmissionMaxUnacked       :: !Word16
@@ -172,9 +172,9 @@ data MiniProtocolParameters = MiniProtocolParameters {
 
 defaultMiniProtocolParameters :: MiniProtocolParameters
 defaultMiniProtocolParameters = MiniProtocolParameters {
-      chainSyncPipelineingLowMark  = 200
-    , chainSyncPipelineingHighMark = 300
-    , blockFetchPipelineingMax     = 100
+      chainSyncPipeliningLowMark  = 200
+    , chainSyncPipeliningHighMark = 300
+    , blockFetchPipeliningMax     = 100
     , txSubmissionMaxUnacked       = 10
   }
 
@@ -201,8 +201,8 @@ nodeToNodeProtocols
   -> NodeToNodeProtocols appType bytes m a b
   -> OuroborosApplication appType bytes m a b
 nodeToNodeProtocols MiniProtocolParameters {
-                        chainSyncPipelineingHighMark,
-                        blockFetchPipelineingMax,
+                        chainSyncPipeliningHighMark,
+                        blockFetchPipeliningMax,
                         txSubmissionMaxUnacked
                       }
                     NodeToNodeProtocols {
@@ -293,18 +293,18 @@ nodeToNodeProtocols MiniProtocolParameters {
           --   = 716
           --   ```
           --
-          -- Since chain sync can pipeline up to 'chainSyncPipelineingHighMark' of 'MsgRollForward'
+          -- Since chain sync can pipeline up to 'chainSyncPipeliningHighMark' of 'MsgRollForward'
           -- messages the maximal queue size can be
-          -- @chainSyncPipelineingHighMark * 716@.  The current value of
-          -- 'chainSyncPipelineingHighMark' is '300' thus the upper bound is
+          -- @chainSyncPipeliningHighMark * 716@.  The current value of
+          -- 'chainSyncPipeliningHighMark' is '300' thus the upper bound is
           -- `214.8Kb`)  We add 10% to that for safety.
           --
           maximumIngressQueue = addSafetyMargin $
-            fromIntegral chainSyncPipelineingHighMark * 716
+            fromIntegral chainSyncPipeliningHighMark * 716
         }
 
     blockFetchProtocolLimits = MiniProtocolLimits {
-        -- block-fetch client can pipeline at most 'blockFetchPipelineingMax'
+        -- block-fetch client can pipeline at most 'blockFetchPipeliningMax'
         -- blocks (currently '10').  This is currently hard coded in
         -- 'Ouroboros.Network.BlockFetch.blockFetchLogic' (where
         -- @maxInFlightReqsPerPeer = 10@ is specified).  In the future the
@@ -324,7 +324,7 @@ nodeToNodeProtocols MiniProtocolParameters {
         -- '20Mb'), we add 10% safety margin:
         --
         maximumIngressQueue = addSafetyMargin $
-          fromIntegral blockFetchPipelineingMax * 2_097_154
+          fromIntegral blockFetchPipeliningMax * 2_097_154
       }
 
     txSubmissionProtocolLimits = MiniProtocolLimits {

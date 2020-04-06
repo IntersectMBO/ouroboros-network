@@ -161,8 +161,8 @@ protocolHandlers NodeArgs {btime, cfg, maxClockSkew, tracers, miniProtocolParame
     ProtocolHandlers {
       phChainSyncClient =
         chainSyncClient
-          (pipelineDecisionLowHighMark (chainSyncPipelineingLowMark  miniProtocolParameters)
-                                       (chainSyncPipelineingHighMark miniProtocolParameters))
+          (pipelineDecisionLowHighMark (chainSyncPipeliningLowMark  miniProtocolParameters)
+                                       (chainSyncPipeliningHighMark miniProtocolParameters))
           (chainSyncClientTracer tracers)
           getTopLevelConfig
           btime

@@ -130,8 +130,6 @@ newtype ChunkFileParser e m entry hash = ChunkFileParser
   { runChunkFileParser
       :: forall r.
          FsPath
-      -> SlotNo
-         -- Current slot (wall clock)
       -> [CRC]
          -- The expected checksums are given as input. This list can be empty
          -- when the secondary index file is missing. If the expected checksum

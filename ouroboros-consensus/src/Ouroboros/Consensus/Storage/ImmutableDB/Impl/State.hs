@@ -32,7 +32,6 @@ import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
-import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
@@ -66,7 +65,6 @@ data ImmutableDBEnv m hash = forall h e. Eq h => ImmutableDBEnv
     , tracer           :: !(Tracer m (TraceEvent e hash))
     , registry         :: !(ResourceRegistry m)
     , cacheConfig      :: !Index.CacheConfig
-    , blockchainTime   :: !(BlockchainTime m)
     }
 
 data InternalState m hash h =

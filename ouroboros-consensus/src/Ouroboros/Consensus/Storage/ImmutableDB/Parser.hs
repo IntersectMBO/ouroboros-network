@@ -60,12 +60,6 @@ data ChunkFileError hash =
     -- 'BlockOrEBB' number returned 'False', indicating that the block got
     -- corrupted.
   | ChunkErrCorrupt hash BlockOrEBB
-
-    -- | The block has a slot number greater than the current slot (wall
-    -- clock). This block is in the future, so we must truncate it.
-  | ChunkErrFutureBlock
-      SlotNo  -- ^ Current slot (wall clock)
-      SlotNo  -- ^ Slot number of the block
   deriving (Eq, Show)
 
 -- | Information about a block returned by the parser
@@ -93,12 +87,11 @@ chunkFileParser'
        hash
 chunkFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEBB
                  getBinaryInfo isNotCorrupt =
-    ChunkFileParser $ \fsPath currentSlotNo expectedChecksums k ->
+    ChunkFileParser $ \fsPath expectedChecksums k ->
       Util.CBOR.withStreamIncrementalOffsets hasFS decoder fsPath
         ( k
         . checkIfHashesLineUp
         . checkEntries expectedChecksums
-        . checkFutureSlot currentSlotNo
         . fmap (fmap (first ChunkErrRead))
         )
   where
@@ -107,21 +100,6 @@ chunkFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEB
       let !blk      = mkBlk bs
           !checksum = computeCRC bs
       in (blk, checksum)
-
-    -- | Stop when a block has slot number > the current slot, return
-    -- 'ChunkErrFutureBlock'.
-    checkFutureSlot
-      :: SlotNo  -- ^ Current slot (wall clock).
-      -> Stream (Of (Word64, (Word64, (blk, CRC))))
-                m
-                (Maybe (ChunkFileError hash, Word64))
-      -> Stream (Of (Word64, (Word64, (blk, CRC))))
-                m
-                (Maybe (ChunkFileError hash, Word64))
-    checkFutureSlot currentSlotNo = mapS $ \x@(offset, (_, (blk, _))) ->
-      if getSlotNo blk > currentSlotNo
-      then Left $ Just (ChunkErrFutureBlock currentSlotNo (getSlotNo blk), offset)
-      else Right x
 
     -- | Go over the expected checksums and blocks in parallel. Stop with an
     -- error when a block is corrupt. Yield correct entries along the way.
@@ -266,12 +244,3 @@ mapAccumS0 initAcc updateAcc = mapAccumS Nothing updateAcc'
   where
     updateAcc' :: Maybe s -> a -> Either r (b, Maybe s)
     updateAcc' mbSt = fmap (fmap Just) . maybe initAcc updateAcc mbSt
-
--- | Map over elements of a stream, allowing an early return by returning
--- 'Left'.
-mapS
-  :: Monad m
-  => (a -> Either r b)
-  -> Stream (Of a) m r
-  -> Stream (Of b) m r
-mapS updateAcc = mapAccumS () (\() a -> (, ()) <$> updateAcc a)
