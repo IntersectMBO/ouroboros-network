@@ -177,11 +177,11 @@ muxStart tracer (MuxApplication ptcls) bearer = do
 
     muxerJob tq cnt =
       JobPool.Job (mux cnt MuxState { egressQueue   = tq,  Egress.bearer })
-                  MuxerException
+                  MuxerException "muxer"
 
     demuxerJob tbl =
       JobPool.Job (demux DemuxState { dispatchTable = tbl, Ingress.bearer })
-                  DemuxerException
+                  DemuxerException "demuxer"
 
     miniProtocolInitiatorJob = miniProtocolJob selectInitiator ModeInitiator
     miniProtocolResponderJob = miniProtocolJob selectResponder ModeResponder
@@ -216,6 +216,7 @@ muxStart tracer (MuxApplication ptcls) bearer = do
       where
         job run = JobPool.Job (jobAction run)
                               (MiniProtocolException pnum pix pmode)
+                              ((show pix) ++ "." ++ (show pmode))
 
         jobAction run = do
           chan    <- mkChannel

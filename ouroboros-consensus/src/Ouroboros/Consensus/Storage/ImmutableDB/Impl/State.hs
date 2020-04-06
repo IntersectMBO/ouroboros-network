@@ -155,7 +155,9 @@ getOpenState :: (HasCallStack, IOLike m)
              => ImmutableDBEnv m hash
              -> m (SomePair (HasFS m) (OpenState m hash))
 getOpenState ImmutableDBEnv {..} = do
-    internalState <- readMVar varInternalState
+    -- We use 'readMVarSTM' to read a potentially stale internal state if
+    -- somebody's appending to the ImmutableDB at the same time.
+    internalState <- atomically $ readMVarSTM varInternalState
     case internalState of
        DbClosed         -> throwUserError  ClosedDBError
        DbOpen openState -> return (SomePair hasFS openState)
@@ -244,15 +246,19 @@ withOpenState ImmutableDBEnv { hasFS = hasFS :: HasFS m h, .. } action = do
   where
     HasFS{..} = hasFS
 
+    -- We use 'readMVarSTM' to read a potentially stale internal state if
+    -- somebody's appending to the ImmutableDB at the same time. Reads can
+    -- safely happen concurrently with appends, so this is fine and allows for
+    -- some extra concurrency.
     open :: m (OpenState m hash h)
-    open = readMVar varInternalState >>= \case
+    open = atomically (readMVarSTM varInternalState) >>= \case
       DbOpen ost -> return ost
       DbClosed   -> throwUserError ClosedDBError
 
     -- close doesn't take the state that @open@ returned, because the state
     -- may have been updated by someone else since we got it (remember we're
-    -- using 'readMVar' here, 'takeMVar'). So we need to get the most recent
-    -- state anyway.
+    -- using 'readMVarSTM' here, not 'takeMVar'). So we need to get the most
+    -- recent state anyway.
     close :: ExitCase (Either ImmutableDBError r)
           -> m ()
     close ec = case ec of
