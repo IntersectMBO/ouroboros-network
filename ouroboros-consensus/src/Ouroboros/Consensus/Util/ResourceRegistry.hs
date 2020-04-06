@@ -978,9 +978,10 @@ waitAnyThread ts = snd <$> waitAny (map threadAsync ts)
 -- | Fork a new thread
 forkThread :: forall m a. (IOLike m, HasCallStack)
            => ResourceRegistry m
+           -> String  -- ^ Label for the thread
            -> m a
            -> m (Thread m a)
-forkThread rr body = snd <$>
+forkThread rr label body = snd <$>
     allocate rr (\key -> mkThread key <$> async (body' key)) cancelThread
   where
     mkThread :: ResourceId -> Async m a -> Thread m a
@@ -994,6 +995,7 @@ forkThread rr body = snd <$>
     body' :: ResourceId -> m a
     body' rid = do
         me <- myThreadId
+        labelThread me label
         (registerThread me >> body) `finally` unregisterThread me rid
 
     -- Register the thread
@@ -1073,10 +1075,11 @@ forkThread rr body = snd <$>
 -- caution, however.
 withThread :: IOLike m
            => ResourceRegistry m
+           -> String  -- ^ Label for the thread
            -> m a
            -> (Thread m a -> m b)
            -> m b
-withThread rr body = bracket (forkThread rr body) cancelThread
+withThread rr label body = bracket (forkThread rr label body) cancelThread
 
 -- | Link specified 'Thread' to the (thread that created) the registry
 linkToRegistry :: IOLike m => Thread m a -> m ()
@@ -1086,9 +1089,12 @@ linkToRegistry t = linkTo (registryThread $ threadRegistry t) (threadAsync t)
 --
 -- This function is just a convenience.
 forkLinkedThread :: (IOLike m, HasCallStack)
-                 => ResourceRegistry m -> m a -> m (Thread m a)
-forkLinkedThread rr body = do
-    t <- forkThread rr body
+                 => ResourceRegistry m
+                 -> String  -- ^ Label for the thread
+                 -> m a
+                 -> m (Thread m a)
+forkLinkedThread rr label body = do
+    t <- forkThread rr label body
     -- There is no race condition here between the new thread throwing an
     -- exception and the 'linkToRegistry': if the thread /already/ threw the
     -- exception when we link it, the exception will be raised immediately

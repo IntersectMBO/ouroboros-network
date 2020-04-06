@@ -313,7 +313,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     -- Schedule updates of the client and server chains
     varLastUpdate <- uncheckedNewTVarM 0
-    void $ onSlotChange btime $ \slot -> do
+    void $ onSlotChange btime "scheduled updates" $ \slot -> do
       -- Stop updating the client and server chains when the chain sync client
       -- has thrown an exception, so that at the end, we can read the chains
       -- in the states they were in when the exception was thrown.
@@ -341,7 +341,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         atomically $ writeTVar varLastUpdate slot
 
     -- Connect client to server and run the chain sync protocol
-    onSlot btime startSyncingAt $ do
+    onSlot btime "startSyncing" startSyncingAt $ do
       -- When updates are planned at the same slot that we start syncing, we
       -- wait until these updates are done before we start syncing.
       when (isJust (Map.lookup startSyncingAt clientUpdates) ||
@@ -354,7 +354,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
       -- Don't link the thread (which will cause the exception to be rethrown
       -- in the main thread), just catch the exception and store it, because
       -- we want a "regular ending".
-      void $ forkThread registry $
+      void $ forkThread registry "ChainSyncClient" $
         bracketChainSyncClient
            chainSyncTracer
            chainDbView
@@ -369,7 +369,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
           atomically $ writeTVar varClientException (Just e)
           -- Rethrow, but it will be ignored anyway.
           throwM e
-      void $ forkLinkedThread registry $
+      void $ forkLinkedThread registry "ChainSyncServer" $
         runPeer nullTracer codecChainSyncId serverChannel
                 (chainSyncServerPeer server)
 

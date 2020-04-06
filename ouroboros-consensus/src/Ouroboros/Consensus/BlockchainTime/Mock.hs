@@ -41,7 +41,7 @@ import           Ouroboros.Consensus.Util.STM
 fixedBlockchainTime :: MonadSTM m => SlotNo -> BlockchainTime m
 fixedBlockchainTime slot = BlockchainTime {
       getCurrentSlot = return slot
-    , onSlotChange_  = const (return (return ()))
+    , onSlotChange_  = \_ _ -> return (return ())
     }
 
 {-------------------------------------------------------------------------------
@@ -103,7 +103,7 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
     slotVar <- newTVarM Initializing
     doneVar <- newEmptyMVar ()
 
-    void $ forkLinkedThread registry $ loop slotVar doneVar
+    void $ forkLinkedThread registry "TestBlockchainTime" $ loop slotVar doneVar
 
     return $ clone slotVar doneVar registry
   where
@@ -143,8 +143,8 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
         btime :: BlockchainTime m
         btime = BlockchainTime {
             getCurrentSlot = get
-          , onSlotChange_  = fmap cancelThread .
-              onEachChange registry' Running (Just Initializing) get
+          , onSlotChange_  = \label -> fmap cancelThread .
+              onEachChange registry' label Running (Just Initializing) get
           }
 
 -- | Number of slot length changes if running for the specified number of slots

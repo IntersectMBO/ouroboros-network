@@ -210,7 +210,13 @@ forkSyncStateOnTipPointChange :: forall m blk. (
                               -> MempoolEnv m blk
                               -> m ()
 forkSyncStateOnTipPointChange registry menv =
-    void $ onEachChange registry id Nothing getCurrentTip action
+    void $ onEachChange
+      registry
+      "Mempool.syncStateOnTipPointChange"
+      id
+      Nothing
+      getCurrentTip
+      action
   where
     action :: Point blk -> m ()
     action _tipPoint = void $ implSyncWithLedger menv

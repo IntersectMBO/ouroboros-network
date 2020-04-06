@@ -90,6 +90,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeKernel as NodeKernel
 import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
@@ -356,7 +357,7 @@ runThreadNetwork ThreadNetworkArgs
       --
       -- With such a short transaction (read a few TVars) we assume this runs
       -- 1) before anything else in the slot and 2) once per slot.
-      void $ forkLinkedThread sharedRegistry $ do
+      void $ forkLinkedThread sharedRegistry "instrumentation" $ do
         let NodeInfo{nodeInfoEvents} = nodeInfo
             loop next = do
               (s, bno) <- atomically $ do
@@ -414,9 +415,11 @@ runThreadNetwork ThreadNetworkArgs
       vertexStatusVar
       edgeStatusVars
       nodeInfo =
-        void $ forkLinkedThread sharedRegistry $ do
+        void $ forkLinkedThread sharedRegistry label $ do
           loop 0 tniProtocolInfo NodeRestart restarts0
       where
+        label = "vertex-" <> condense coreNodeId
+
         TestNodeInitialization
            { tniCrucialTxs
            , tniProtocolInfo
@@ -511,7 +514,7 @@ runThreadNetwork ThreadNetworkArgs
          -- ^ valid transactions the node should immediately propagate
       -> m ()
     forkCrucialTxs registry (initialLdgr, getLdgr) mempool txs0 =
-      void $ forkLinkedThread registry $ do
+      void $ forkLinkedThread registry "crucialTxs" $ do
         let getFingerprint :: STM m ([TicketNo], fingerprint)
             getFingerprint = do
               -- NB the following two hypotheticals may happen independently
@@ -549,7 +552,7 @@ runThreadNetwork ThreadNetworkArgs
                    -> Mempool m blk TicketNo
                    -> m ()
     forkTxProducer btime cfg runMonadRandomDict getExtLedger mempool =
-      void $ onSlotChange btime $ \curSlotNo -> do
+      void $ onSlotChange btime "txProducer" $ \curSlotNo -> do
         ledger <- atomically $ ledgerState <$> getExtLedger
         txs    <- runMonadRandom runMonadRandomDict $ \_lift' ->
           testGenTxs numCoreNodes curSlotNo cfg ledger
@@ -885,7 +888,9 @@ forkBothEdges sharedRegistry btime tr vertexStatusVars (node1, node2) = do
 
   let mkDirEdge e1 e2 = do
         v <- uncheckedNewTVarM EDown
-        void $ forkLinkedThread sharedRegistry $ do
+        let label = concat
+              ["directed-edge-", condense (fst e1), "-", condense (fst e2)]
+        void $ forkLinkedThread sharedRegistry label $ do
           directedEdge tr btime v e1 e2
         pure ((fst e1, fst e2), v)
 

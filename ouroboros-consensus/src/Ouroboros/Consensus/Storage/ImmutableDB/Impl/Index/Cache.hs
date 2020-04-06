@@ -386,7 +386,8 @@ newEnv hasFS hashInfo registry tracer cacheConfig chunkInfo chunk = do
     bgThreadVar <- newMVar Nothing
     let cacheEnv = CacheEnv {..}
     mask_ $ modifyMVar_ bgThreadVar $ \_mustBeNothing -> do
-      !bgThread <- forkLinkedThread registry $ expireUnusedChunks cacheEnv
+      !bgThread <- forkLinkedThread registry "ImmutableDB.expireUnusedChunks" $
+        expireUnusedChunks cacheEnv
       return $ Just bgThread
     return cacheEnv
   where
@@ -621,7 +622,8 @@ restart cacheEnv chunk = do
       case mbBgThread of
         Just _  -> throwM $ userError "background thread still running"
         Nothing -> do
-          !bgThread <- forkLinkedThread registry $ expireUnusedChunks cacheEnv
+          !bgThread <- forkLinkedThread registry "ImmutableDB.expireUnusedChunks" $
+            expireUnusedChunks cacheEnv
           return $ Just bgThread
   where
     CacheEnv { hasFS, hashInfo, registry, cacheVar, bgThreadVar, chunkInfo } = cacheEnv

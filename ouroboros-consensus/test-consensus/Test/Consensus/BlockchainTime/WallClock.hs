@@ -272,8 +272,9 @@ testOverrideDelay systemStart slotLength numSlots = do
                 systemStart
                 (focusSlotLengths $ singletonSlotLengths slotLength)
       slotsVar <- uncheckedNewTVarM []
-      cancelCollection <- onSlotChange time $ \slotNo ->
-        atomically $ modifyTVar slotsVar (slotNo :)
+      cancelCollection <-
+        onSlotChange time "testOverrideDelay" $ \slotNo ->
+          atomically $ modifyTVar slotsVar (slotNo :)
       -- Wait to collect the required number of slots
       slots <- atomically $ do
         slots <- readTVar slotsVar

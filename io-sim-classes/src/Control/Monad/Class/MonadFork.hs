@@ -6,6 +6,7 @@
 module Control.Monad.Class.MonadFork
   ( MonadThread (..)
   , MonadFork (..)
+  , labelThisThread
   ) where
 
 import qualified Control.Concurrent as IO
@@ -57,3 +58,7 @@ instance MonadFork m => MonadFork (ReaderT e m) where
                            restore' (ReaderT f) = ReaderT $ restore . f
                        in runReaderT (k restore') e
   throwTo e t = lift (throwTo e t)
+
+-- | Apply the label to the current thread
+labelThisThread :: MonadThread m => String -> m ()
+labelThisThread label = myThreadId >>= \tid -> labelThread tid label

@@ -65,7 +65,7 @@ prop_RAWLock_correctness (TestSetup rawDelays) =
               rawState <- readRAWState rawVars
               modifyTVar varTrace (rawState:)
 
-        threads <- mapM (forkLinkedThread registry) $
+        threads <- mapM (forkLinkedThread registry "testThread") $
           map (runReader   rawLock traceState varReaders)   readerDelays   <>
           map (runAppender rawLock traceState varAppenders) appenderDelays <>
           map (runWriter   rawLock traceState varWriters)   writerDelays

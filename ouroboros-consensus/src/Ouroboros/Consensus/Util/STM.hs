@@ -54,6 +54,7 @@ blockUntilChanged f b getA = do
 -- The thread will be linked to the registry.
 onEachChange :: forall m a b. (IOLike m, Eq b, HasCallStack)
              => ResourceRegistry m
+             -> String    -- ^ Label for the thread
              -> (a -> b)  -- ^ Obtain a fingerprint
              -> Maybe b   -- ^ Optional initial fingerprint
                           -- If 'Nothing', the action is executed once
@@ -61,8 +62,8 @@ onEachChange :: forall m a b. (IOLike m, Eq b, HasCallStack)
              -> STM m a
              -> (a -> m ())
              -> m (Thread m Void)
-onEachChange registry f mbInitB getA notify =
-    forkLinkedThread registry body
+onEachChange registry label f mbInitB getA notify =
+    forkLinkedThread registry label body
   where
     body :: m Void
     body = do
@@ -85,11 +86,12 @@ onEachChange registry f mbInitB getA notify =
 -- The thread will be linked to the registry.
 runWhenJust :: IOLike m
             => ResourceRegistry m
+            -> String  -- ^ Label for the thread
             -> STM m (Maybe a)
             -> (a -> m ())
             -> m ()
-runWhenJust registry getMaybeA action =
-    void $ forkLinkedThread registry $
+runWhenJust registry label getMaybeA action =
+    void $ forkLinkedThread registry label $
       action =<< atomically (blockUntilJust getMaybeA)
 
 blockUntilJust :: MonadSTMTx stm => stm (Maybe a) -> stm a

@@ -314,15 +314,18 @@ linkTo tid = linkToOnly tid (not . isCancel)
 linkToOnly :: forall m a. (MonadAsync m, MonadFork m, MonadMask m)
            => ThreadId m -> (SomeException -> Bool) -> Async m a -> m ()
 linkToOnly tid shouldThrow a = do
-    void $ forkRepeat $ do
+    void $ forkRepeat ("linkToOnly " <> show linkedThreadId) $ do
       r <- waitCatch a
       case r of
         Left e | shouldThrow e -> throwTo tid (exceptionInLinkedThread e)
         _otherwise             -> return ()
   where
+    linkedThreadId :: ThreadId m
+    linkedThreadId = asyncThreadId (Proxy @m) a
+
     exceptionInLinkedThread :: SomeException -> ExceptionInLinkedThread
     exceptionInLinkedThread =
-        ExceptionInLinkedThread (show (asyncThreadId (Proxy @m) a))
+        ExceptionInLinkedThread (show linkedThreadId)
 
 link :: (MonadAsync m, MonadFork m, MonadMask m)
      => Async m a -> m ()
@@ -339,14 +342,14 @@ isCancel e
   | Just AsyncCancelled <- fromException e = True
   | otherwise = False
 
-forkRepeat :: (MonadFork m, MonadMask m) => m a -> m (ThreadId m)
-forkRepeat action =
+forkRepeat :: (MonadFork m, MonadMask m) => String -> m a -> m (ThreadId m)
+forkRepeat label action =
   mask $ \restore ->
     let go = do r <- tryAll (restore action)
                 case r of
                   Left _ -> go
                   _      -> return ()
-    in fork go
+    in fork (labelThisThread label >> go)
 
 tryAll :: MonadCatch m => m a -> m (Either SomeException a)
 tryAll = try

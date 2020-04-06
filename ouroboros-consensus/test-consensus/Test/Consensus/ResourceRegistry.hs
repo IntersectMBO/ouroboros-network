@@ -304,7 +304,7 @@ newThread alive parentReg = \shouldLink -> do
     comms      <- atomically $ newTQueue
     spawned    <- uncheckedNewEmptyMVar (error "no thread spawned yet")
 
-    thread <- forkThread parentReg $
+    thread <- forkThread parentReg "newThread" $
                 withRegistry $ \childReg ->
                   threadBody childReg spawned comms
     case shouldLink of
