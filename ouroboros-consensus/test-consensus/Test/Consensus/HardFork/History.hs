@@ -12,7 +12,6 @@
 
 module Test.Consensus.HardFork.History (tests) where
 
-import           Control.Monad.Except
 import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Function (on)
@@ -73,6 +72,26 @@ tests = testGroup "HardForkHistory" [
     ]
 
 {-------------------------------------------------------------------------------
+  Dealing with the 'PastHorizonException'
+-------------------------------------------------------------------------------}
+
+isPastHorizonIf :: Show a
+                => Bool -- ^ Are we expecting an exception?
+                -> Either HF.PastHorizonException a
+                -> (a -> Property)
+                -> Property
+isPastHorizonIf True  (Left _)  _ = property True
+isPastHorizonIf False (Right a) p = p a
+isPastHorizonIf False (Left ex) _ =
+    counterexample ("Unexpected exception " ++ show ex) $
+      property False
+isPastHorizonIf True (Right a)  _ =
+    counterexample ("Unexpected value " ++ show a
+                ++ " (expected PastHorizonException)"
+                   ) $
+      property False
+
+{-------------------------------------------------------------------------------
   Properties of summarize
 
   TODO: We should strengten these tests: at the moment, the summary is
@@ -89,19 +108,18 @@ summarizeInvariant ArbitraryChain{..} =
 
 testSkeleton :: Show a
              => ArbitraryChain
-             -> (Except HF.PastHorizonException a)
+             -> (forall xs. HF.Query xs a)
              -> (a -> Property)
              -> Property
-testSkeleton ArbitraryChain{..} a p =
-    tabulate "arbitraryEventIx" [eventIxType arbitraryEventIx] $
-    isPastHorizonIf
-      (not $ eventIsPreHorizon arbitraryEventIx)
-      a
-      p
+testSkeleton ArbitraryChain{..} q =
+      tabulate "arbitraryEventIx" [eventIxType arbitraryEventIx]
+    . isPastHorizonIf
+        (not $ eventIsPreHorizon arbitraryEventIx)
+        (HF.runQuery q arbitrarySummary)
 
 eventSlotToEpoch :: ArbitraryChain -> Property
 eventSlotToEpoch chain@ArbitraryChain{..} =
-    testSkeleton chain (HF.slotToEpoch arbitrarySummary eventTimeSlot) $
+    testSkeleton chain (HF.slotToEpoch eventTimeSlot) $
       \(epochNo, epochSlot) -> conjoin [
           epochNo   === eventTimeEpochNo
         , epochSlot === eventTimeEpochSlot
@@ -111,7 +129,7 @@ eventSlotToEpoch chain@ArbitraryChain{..} =
 
 eventEpochToSlot :: ArbitraryChain -> Property
 eventEpochToSlot chain@ArbitraryChain{..} =
-    testSkeleton chain (HF.epochToSlot arbitrarySummary eventTimeEpochNo) $
+    testSkeleton chain (HF.epochToSlot eventTimeEpochNo) $
       \(startOfEpoch, epochSize) -> conjoin [
          eventTimeSlot === HF.addSlots eventTimeEpochSlot startOfEpoch
        , eventTimeEpochSlot `lt` unEpochSize epochSize
@@ -121,7 +139,7 @@ eventEpochToSlot chain@ArbitraryChain{..} =
 
 eventSlotToWallclock :: ArbitraryChain -> Property
 eventSlotToWallclock chain@ArbitraryChain{..} =
-    testSkeleton chain (HF.slotToWallclock arbitrarySummary eventTimeSlot) $
+    testSkeleton chain (HF.slotToWallclock eventTimeSlot) $
       \(time, _slotLen) -> conjoin [
           time === eventTimeUTC
         ]
@@ -130,7 +148,7 @@ eventSlotToWallclock chain@ArbitraryChain{..} =
 
 eventWallclockToSlot :: ArbitraryChain -> Property
 eventWallclockToSlot chain@ArbitraryChain{..} =
-    testSkeleton chain (HF.wallclockToSlot arbitrarySummary time) $
+    testSkeleton chain (HF.wallclockToSlot time) $
       \(slot, inSlot) -> conjoin [
           slot   === eventTimeSlot
         , inSlot === diff

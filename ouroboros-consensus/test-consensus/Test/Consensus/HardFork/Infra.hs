@@ -13,10 +13,6 @@ module Test.Consensus.HardFork.Infra (
     checkGenerator
   , checkShrinker
   , checkInvariant
-    -- * Dealing with the 'PastHorizonException'
-  , noPastHorizonException
-  , isPastHorizonException
-  , isPastHorizonIf
     -- * Generate HardFork shape
   , Era(..)
   , Eras(..)
@@ -59,44 +55,6 @@ checkShrinker p = forAll arbitrary $ conjoin . map p . shrink
 -- | Check invariant
 checkInvariant :: (a -> Except String ()) -> (a -> Property)
 checkInvariant f = expectRight () . runExcept . f
-
-{-------------------------------------------------------------------------------
-  Dealing with the 'PastHorizonException'
--------------------------------------------------------------------------------}
-
-noPastHorizonException :: Except HF.PastHorizonException Property -> Property
-noPastHorizonException mProp =
-    case runExcept mProp of
-      Right prop -> prop
-      Left  ex   -> counterexample ("Unexpected " ++ show ex) $
-                      property False
-
-isPastHorizonException :: Show a => Except HF.PastHorizonException a -> Property
-isPastHorizonException ma =
-    case runExcept ma of
-      Left  _ -> property True
-      Right a -> counterexample ("Unexpected " ++ show a) $
-                   property False
-
-isPastHorizonIf :: Show a
-                => Bool -- ^ Are we expecting an exception?
-                -> Except HF.PastHorizonException a
-                -> (a -> Property)
-                -> Property
-isPastHorizonIf expectException ma p =
-    case (runExcept ma, expectException) of
-      (Left _, True) ->
-        property True
-      (Left ex, False) ->
-        counterexample ("Unexpected exception " ++ show ex) $
-          property False
-      (Right a, True) ->
-        counterexample ("Unexpected value " ++ show a
-                    ++ " (expected PastHorizonException)"
-                       ) $
-          property False
-      (Right a, False) ->
-        p a
 
 {-------------------------------------------------------------------------------
   Generate hard fork shape
