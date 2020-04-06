@@ -519,48 +519,52 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} chainSyncTi
       :: peer
       -> Channel m bytesCS
       -> m ()
-    naChainSyncClient them channel =
+    naChainSyncClient them channel = do
+      labelThisThread "ChainSyncClient"
       void $
-      -- Note that it is crucial that we sync with the fetch client "outside"
-      -- of registering the state for the sync client. This is needed to
-      -- maintain a state invariant required by the block fetch logic: that for
-      -- each candidate chain there is a corresponding block fetch client that
-      -- can be used to fetch blocks for that chain.
-      bracketSyncWithFetchClient
-        (getFetchClientRegistry kernel) them $
-      bracketChainSyncClient
-          (chainSyncClientTracer (getTracers kernel))
-          (chainDbView (getChainDB kernel))
-          (getNodeCandidates kernel)
-          them $ \varCandidate->
-        runPipelinedPeerWithLimits
-          (contramap (TraceLabelPeer them) ptChainSyncTracer)
-          pcChainSyncCodec
-          (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
-          (timeLimitsChainSync chainSyncTimeout)
-          channel
-          $ chainSyncClientPeerPipelined
-          $ phChainSyncClient varCandidate
+        -- Note that it is crucial that we sync with the fetch client "outside"
+        -- of registering the state for the sync client. This is needed to
+        -- maintain a state invariant required by the block fetch logic: that for
+        -- each candidate chain there is a corresponding block fetch client that
+        -- can be used to fetch blocks for that chain.
+        bracketSyncWithFetchClient
+          (getFetchClientRegistry kernel) them $
+        bracketChainSyncClient
+            (chainSyncClientTracer (getTracers kernel))
+            (chainDbView (getChainDB kernel))
+            (getNodeCandidates kernel)
+            them $ \varCandidate->
+          runPipelinedPeerWithLimits
+            (contramap (TraceLabelPeer them) ptChainSyncTracer)
+            pcChainSyncCodec
+            (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
+            (timeLimitsChainSync chainSyncTimeout)
+            channel
+            $ chainSyncClientPeerPipelined
+            $ phChainSyncClient varCandidate
 
     naChainSyncServer
       :: peer
       -> Channel m bytesCS
       -> m ()
-    naChainSyncServer them channel = withRegistry $ \registry ->
-      runPeerWithLimits
-        (contramap (TraceLabelPeer them) ptChainSyncSerialisedTracer)
-        pcChainSyncCodecSerialised
-        (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
-        (timeLimitsChainSync chainSyncTimeout)
-        channel
-        $ chainSyncServerPeer
-        $ phChainSyncServer registry
+    naChainSyncServer them channel = do
+      labelThisThread "ChainSyncServer"
+      withRegistry $ \registry ->
+        runPeerWithLimits
+          (contramap (TraceLabelPeer them) ptChainSyncSerialisedTracer)
+          pcChainSyncCodecSerialised
+          (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
+          (timeLimitsChainSync chainSyncTimeout)
+          channel
+          $ chainSyncServerPeer
+          $ phChainSyncServer registry
 
     naBlockFetchClient
       :: peer
       -> Channel m bytesBF
       -> m ()
-    naBlockFetchClient them channel =
+    naBlockFetchClient them channel = do
+      labelThisThread "BlockFetchClient"
       bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx ->
         runPipelinedPeerWithLimits
           (contramap (TraceLabelPeer them) ptBlockFetchTracer)
@@ -574,21 +578,24 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} chainSyncTi
       :: peer
       -> Channel m bytesBF
       -> m ()
-    naBlockFetchServer them channel = withRegistry $ \registry ->
-      runPeerWithLimits
-        (contramap (TraceLabelPeer them) ptBlockFetchSerialisedTracer)
-        pcBlockFetchCodecSerialised
-        (byteLimitsBlockFetch (const 0)) -- TODO: Real Bytelimits, see #1727
-        timeLimitsBlockFetch
-        channel
-        $ blockFetchServerPeer
-        $ phBlockFetchServer registry
+    naBlockFetchServer them channel = do
+      labelThisThread "BlockFetchServer"
+      withRegistry $ \registry ->
+        runPeerWithLimits
+          (contramap (TraceLabelPeer them) ptBlockFetchSerialisedTracer)
+          pcBlockFetchCodecSerialised
+          (byteLimitsBlockFetch (const 0)) -- TODO: Real Bytelimits, see #1727
+          timeLimitsBlockFetch
+          channel
+          $ blockFetchServerPeer
+          $ phBlockFetchServer registry
 
     naTxSubmissionClient
       :: peer
       -> Channel m bytesTX
       -> m ()
-    naTxSubmissionClient them channel =
+    naTxSubmissionClient them channel = do
+      labelThisThread "TxSubmissionClient"
       runPeerWithLimits
         (contramap (TraceLabelPeer them) ptTxSubmissionTracer)
         pcTxSubmissionCodec
@@ -601,7 +608,8 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} chainSyncTi
       :: peer
       -> Channel m bytesTX
       -> m ()
-    naTxSubmissionServer them channel =
+    naTxSubmissionServer them channel = do
+      labelThisThread "TxSubmissionServer"
       runPipelinedPeerWithLimits
         (contramap (TraceLabelPeer them) ptTxSubmissionTracer)
         pcTxSubmissionCodec
@@ -614,19 +622,22 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} chainSyncTi
       :: localPeer
       -> Channel m bytesLCS
       -> m ()
-    naLocalChainSyncServer them channel = withRegistry $ \registry ->
-      runPeer
-        (contramap (TraceLabelPeer them) ptLocalChainSyncTracer)
-        pcLocalChainSyncCodec
-        channel
-        $ chainSyncServerPeer
-        $ phLocalChainSyncServer registry
+    naLocalChainSyncServer them channel = do
+      labelThisThread "LocalChainSyncServer"
+      withRegistry $ \registry ->
+        runPeer
+          (contramap (TraceLabelPeer them) ptLocalChainSyncTracer)
+          pcLocalChainSyncCodec
+          channel
+          $ chainSyncServerPeer
+          $ phLocalChainSyncServer registry
 
     naLocalTxSubmissionServer
       :: localPeer
       -> Channel m bytesLTX
       -> m ()
-    naLocalTxSubmissionServer them channel =
+    naLocalTxSubmissionServer them channel = do
+      labelThisThread "LocalTxSubmissionServer"
       runPeer
         (contramap (TraceLabelPeer them) ptLocalTxSubmissionTracer)
         pcLocalTxSubmissionCodec
@@ -637,7 +648,8 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} chainSyncTi
       :: localPeer
       -> Channel m bytesLSQ
       -> m ()
-    naLocalStateQueryServer them channel =
+    naLocalStateQueryServer them channel = do
+      labelThisThread "LocalStateQueryServer"
       runPeer
         (contramap (TraceLabelPeer them) ptLocalStateQueryTracer)
         pcLocalStateQueryCodec
