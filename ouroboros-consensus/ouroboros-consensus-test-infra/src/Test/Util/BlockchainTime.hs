@@ -12,12 +12,18 @@ import           Ouroboros.Network.Block (SlotNo)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Util.IOLike
 
-onSlot :: (HasCallStack, IOLike m) => BlockchainTime m -> SlotNo -> m () -> m ()
-onSlot btime slot k = do
+onSlot
+  :: (HasCallStack, IOLike m)
+  => BlockchainTime m
+  -> String
+  -> SlotNo  -- ^ Label for the thread
+  -> m ()
+  -> m ()
+onSlot btime label slot k = do
     startingSlot <- atomically $ getCurrentSlot btime
     when (startingSlot >= slot) $
       throwM $ OnSlotTooLate slot startingSlot
-    void $ onSlotChange btime $ \slot' ->
+    void $ onSlotChange btime label $ \slot' ->
       when (slot == slot') k
 
 data OnSlotException =

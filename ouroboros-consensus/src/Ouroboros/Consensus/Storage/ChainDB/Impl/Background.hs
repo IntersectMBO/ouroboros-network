@@ -52,7 +52,7 @@ import           Ouroboros.Consensus.BlockchainTime (onSlotChange)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Util (whenJust, (.:))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -76,19 +76,19 @@ launchBgTasks
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m ()
 launchBgTasks cdb@CDB{..} replayed = do
-    !addBlockThread <- launch $
+    !addBlockThread <- launch "ChainDB.addBlockRunner" $
       addBlockRunner cdb
     gcSchedule <- newGcSchedule
-    !gcThread <- launch $
+    !gcThread <- launch "ChainDB.gcScheduleRunner" $
       gcScheduleRunner gcSchedule $ garbageCollect cdb
-    !copyAndSnapshotThread <- launch $
+    !copyAndSnapshotThread <- launch "ChainDB.copyAndSnapshotRunner" $
       copyAndSnapshotRunner cdb gcSchedule replayed
     !chainSyncThread <- scheduledChainSelectionRunner cdb
     atomically $ writeTVar cdbKillBgThreads $
       sequence_ [addBlockThread, gcThread, copyAndSnapshotThread, chainSyncThread]
   where
-    launch :: m Void -> m (m ())
-    launch = fmap cancelThread . forkLinkedThread cdbRegistry
+    launch :: String -> m Void -> m (m ())
+    launch = fmap cancelThread .: forkLinkedThread cdbRegistry
 
 {-------------------------------------------------------------------------------
   Copying blocks from the VolatileDB to the ImmutableDB
@@ -445,4 +445,7 @@ scheduledChainSelectionRunner
   :: (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
   => ChainDbEnv m blk -> m (m ())
 scheduledChainSelectionRunner cdb@CDB{..} =
-    onSlotChange cdbBlockchainTime (scheduledChainSelection cdb)
+    onSlotChange
+      cdbBlockchainTime
+      "ChainDB.scheduledChainSelection"
+      (scheduledChainSelection cdb)

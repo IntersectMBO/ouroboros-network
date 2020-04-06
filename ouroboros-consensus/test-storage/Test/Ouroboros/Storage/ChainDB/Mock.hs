@@ -116,7 +116,8 @@ openDB cfg initLedger btime = do
           , ledgerCursorMove  = update . Model.ledgerCursorMove cfg lcId
           }
 
-    void $ onSlotChange btime $ update_ . Model.advanceCurSlot cfg
+    void $ onSlotChange btime "ChainDB.Mock.advanceCurSlot" $
+      update_ . Model.advanceCurSlot cfg
 
     return ChainDB {
         addBlockAsync       = update   . Model.addBlockPromise cfg

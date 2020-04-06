@@ -721,6 +721,7 @@ rejectInvalidBlocks
 rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
     void $ onEachChange
       registry
+      "ChainSync.Client.rejectInvalidBlocks"
       getFingerprint
       Nothing
       getIsInvalidBlock

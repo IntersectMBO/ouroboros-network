@@ -199,7 +199,8 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
 
     -- Run the block fetch logic in the background. This will call
     -- 'addFetchedBlock' whenever a new block is downloaded.
-    void $ forkLinkedThread registry $ blockFetchLogic
+    void $ forkLinkedThread registry "NodeKernel.blockFetchLogic" $
+      blockFetchLogic
         (blockFetchDecisionTracer tracers)
         (blockFetchClientTracer   tracers)
         blockFetchInterface
@@ -358,7 +359,7 @@ forkBlockProduction
     -> BlockProduction m blk
     -> m ()
 forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
-    void $ onSlotChange btime $ withEarlyExit_ . go
+    void $ onSlotChange btime "NodeKernel.blockProduction" $ withEarlyExit_ . go
   where
     RunMonadRandom{..} = runMonadRandomDict
 

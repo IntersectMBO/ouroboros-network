@@ -57,13 +57,14 @@ realBlockchainTime registry tracer start ls = do
     -- Fork thread that continuously updates the current slot
     first   <- fst <$> getWallClockSlot start lsVar
     slotVar <- newTVarM first
-    void $ forkLinkedThread registry $ loop lsVar slotVar first
+    void $ forkLinkedThread registry "realBlockchainTime" $ do
+      loop lsVar slotVar first
 
     -- The API is now a simple STM one
     return BlockchainTime {
         getCurrentSlot = readTVar slotVar
-      , onSlotChange_  = fmap cancelThread .
-          onEachChange registry id (Just first) (readTVar slotVar)
+      , onSlotChange_  = \label -> fmap cancelThread .
+          onEachChange registry label id (Just first) (readTVar slotVar)
       }
   where
     -- In each iteration of the loop, we recompute how long to wait until
