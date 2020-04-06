@@ -28,7 +28,6 @@ module Ouroboros.Network.Subscription.Dns
     ) where
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM (TVar)
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
@@ -108,7 +107,7 @@ dnsResolve tracer getSeed withResolver peerStatesVar beforeConnect (DnsSubscript
     withResolver rs $ \resolver -> do
         ipv6Rsps <- newEmptyTMVarM
         ipv4Rsps <- newEmptyTMVarM
-        gotIpv6Rsp <- Lazy.newTVarM False
+        gotIpv6Rsp <- newTVarM False
 
         -- Though the DNS lib does have its own timeouts, these do not work
         -- on Windows reliably so as a workaround we add an extra layer
@@ -215,7 +214,7 @@ dnsResolve tracer getSeed withResolver peerStatesVar beforeConnect (DnsSubscript
         case r_e of
              Left e  -> do
                  atomically $ putTMVar rspsVar []
-                 atomically $ Lazy.writeTVar gotIpv6RspVar True
+                 atomically $ writeTVar gotIpv6RspVar True
                  traceWith tracer $ DnsTraceLookupAAAAError e
                  return $ Just e
              Right r -> do
@@ -223,10 +222,10 @@ dnsResolve tracer getSeed withResolver peerStatesVar beforeConnect (DnsSubscript
 
                  -- XXX Addresses should be sorted here based on DeltaQueue.
                  atomically $ putTMVar rspsVar r
-                 atomically $ Lazy.writeTVar gotIpv6RspVar True
+                 atomically $ writeTVar gotIpv6RspVar True
                  return Nothing
 
-    resolveA :: Resolver m -> TVar m Bool -> StrictTMVar m [Socket.SockAddr] -> m (Maybe DNS.DNSError)
+    resolveA :: Resolver m -> StrictTVar m Bool -> StrictTMVar m [Socket.SockAddr] -> m (Maybe DNS.DNSError)
     resolveA resolver gotIpv6RspVar rspsVar= do
         r_e <- lookupA resolver domain
         case r_e of
@@ -245,7 +244,7 @@ dnsResolve tracer getSeed withResolver peerStatesVar beforeConnect (DnsSubscript
                  timeoutVar <- registerDelay resolutionDelay
                  atomically $ do
                      timedOut   <- Lazy.readTVar timeoutVar
-                     gotIpv6Rsp <- Lazy.readTVar gotIpv6RspVar
+                     gotIpv6Rsp <- readTVar gotIpv6RspVar
                      check (timedOut || gotIpv6Rsp)
 
                  -- XXX Addresses should be sorted here based on DeltaQueue.
