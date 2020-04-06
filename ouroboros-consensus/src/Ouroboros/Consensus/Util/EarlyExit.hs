@@ -29,6 +29,7 @@ import           Data.Proxy
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
@@ -210,6 +211,10 @@ instance MonadTime m => MonadTime (WithEarlyExit m) where
 
 instance MonadDelay m => MonadDelay (WithEarlyExit m) where
   threadDelay = lift . threadDelay
+
+instance MonadEventlog m => MonadEventlog (WithEarlyExit m) where
+  traceEventM  = lift . traceEventM
+  traceMarkerM = lift . traceMarkerM
 
 {-------------------------------------------------------------------------------
   Finally, the consensus IOLike wrapper

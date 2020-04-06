@@ -298,6 +298,7 @@ newtype OverrideDelay m a = OverrideDelay {
   deriving ( Functor
            , Applicative
            , Monad
+           , MonadEventlog
            , MonadThrow
            , MonadCatch
            , MonadMask
