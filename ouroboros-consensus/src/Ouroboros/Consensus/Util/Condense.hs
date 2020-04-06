@@ -24,6 +24,8 @@ import           Formatting (build, sformat)
 import           Numeric.Natural
 import           Text.Printf (printf)
 
+import           Control.Monad.Class.MonadTime (Time (..))
+
 import           Cardano.Crypto (VerificationKey)
 import           Cardano.Crypto.DSIGN (Ed448DSIGN, MockDSIGN, SigDSIGN,
                      pattern SigEd448DSIGN, pattern SigMockDSIGN,
@@ -200,3 +202,6 @@ instance Condense (SigDSIGN d) => Condense (SigKES (SimpleKES d)) where
 
 instance Condense (Hash h a) where
     condense = show
+
+instance Condense Time where
+    condense (Time dt) = show dt
