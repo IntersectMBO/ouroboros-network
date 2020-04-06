@@ -107,8 +107,6 @@ import           Cardano.Slotting.Block
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
-import           Ouroboros.Consensus.BlockchainTime (BlockchainTime,
-                     getCurrentSlot)
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
@@ -178,7 +176,6 @@ data ImmutableDbArgs m h hash e = ImmutableDbArgs
     , hashInfo    :: HashInfo hash
     , tracer      :: Tracer m (TraceEvent e hash)
     , cacheConfig :: Index.CacheConfig
-    , btime       :: BlockchainTime m
     , valPol      :: ValidationPolicy
     , parser      :: ChunkFileParser e m (BlockSummary hash) hash
     }
@@ -234,7 +231,6 @@ openDBInternal
   => ImmutableDbArgs m h hash e
   -> m (ImmutableDB hash m, Internal hash m)
 openDBInternal ImmutableDbArgs {..} = runWithTempRegistry $ do
-    currentSlot <- atomically $ getCurrentSlot btime
     let validateEnv = ValidateEnv
           { hasFS
           , chunkInfo
@@ -242,7 +238,6 @@ openDBInternal ImmutableDbArgs {..} = runWithTempRegistry $ do
           , parser
           , tracer
           , cacheConfig
-          , currentSlot
           }
     ost <- validateAndReopen validateEnv registry valPol
 
@@ -257,7 +252,6 @@ openDBInternal ImmutableDbArgs {..} = runWithTempRegistry $ do
           , tracer           = tracer
           , registry         = registry
           , cacheConfig      = cacheConfig
-          , blockchainTime   = btime
           }
         db = mkDBRecord dbEnv
         internal = Internal

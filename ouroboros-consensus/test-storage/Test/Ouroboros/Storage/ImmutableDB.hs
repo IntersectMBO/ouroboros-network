@@ -12,7 +12,6 @@ import           Test.Tasty.HUnit
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Block (getHeader)
-import           Ouroboros.Consensus.BlockchainTime.Mock (fixedBlockchainTime)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -61,7 +60,6 @@ openTestDB registry hasFS =
       , hashInfo    = testHashInfo
       , tracer      = nullTracer
       , cacheConfig = Index.CacheConfig 2 60
-      , btime       = fixedBlockchainTime maxBound
       , valPol      = ValidateMostRecentChunk
       , parser
       }

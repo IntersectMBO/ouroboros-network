@@ -63,7 +63,6 @@ data ValidateEnv m hash h e = ValidateEnv
   , parser      :: !(ChunkFileParser e m (BlockSummary hash) hash)
   , tracer      :: !(Tracer m (TraceEvent e hash))
   , cacheConfig :: !Index.CacheConfig
-  , currentSlot :: !SlotNo
   }
 
 -- | Perform validation as per the 'ValidationPolicy' using 'validate' and
@@ -323,7 +322,7 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
     -- expensive integrity check of a block.
     let expectedChecksums = map Secondary.checksum entriesFromSecondaryIndex
     (entriesWithPrevHashes, mbErr) <- lift $
-        runChunkFileParser parser chunkFile currentSlot expectedChecksums $ \entries ->
+        runChunkFileParser parser chunkFile expectedChecksums $ \entries ->
           (\(es :> mbErr) -> (es, mbErr)) <$> S.toList entries
 
     -- Check whether the first block of this chunk fits onto the last block of
