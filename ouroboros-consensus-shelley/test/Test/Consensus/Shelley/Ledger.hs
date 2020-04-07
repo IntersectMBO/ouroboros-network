@@ -34,8 +34,8 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
                      HashInfo (..))
 
-import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.Crypto as SL
+import qualified Shelley.Spec.Ledger.API as SL
+import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
@@ -61,6 +61,7 @@ import qualified Shelley.Spec.Ledger.STS.Utxow as STS
 import qualified Shelley.Spec.Ledger.Tx as SL
 import qualified Shelley.Spec.Ledger.TxData as SL
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
+import qualified Test.Shelley.Spec.Ledger.Generator.Presets as Gen.Preset
 import qualified Test.Shelley.Spec.Ledger.Generator.Update as Gen
 import qualified Test.Shelley.Spec.Ledger.PreSTSGenerator as SL
 
@@ -260,8 +261,9 @@ genHash proxy = mkDummyHash proxy <$> arbitrary
 
 instance Arbitrary Block where
   arbitrary = do
+    let Gen.KeySpace_ { Gen.ksCoreNodes } = Gen.Preset.keySpace
     prevHash         <- unShelleyHash <$> arbitrary
-    allPoolKeys      <- elements (map snd Gen.coreNodeKeys)
+    allPoolKeys      <- elements (map snd ksCoreNodes)
     txs              <- return [] -- arbitrary
     curSlotNo        <- arbitrary
     curBlockNo       <- BlockNo <$> choose (0, 100)

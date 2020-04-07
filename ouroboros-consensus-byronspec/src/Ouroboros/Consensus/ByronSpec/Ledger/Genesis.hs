@@ -21,11 +21,11 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Genesis (
 import           Data.Coerce (coerce)
 import           Data.Set (Set)
 
-import qualified Cardano.Spec.Chain.STS.Rule.Chain as Spec
+import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Control.State.Transition as Spec
-import qualified Ledger.Core as Spec
-import qualified Ledger.Update as Spec
-import qualified Ledger.UTxO as Spec
+import qualified Byron.Spec.Ledger.Core as Spec
+import qualified Byron.Spec.Ledger.Update as Spec
+import qualified Byron.Spec.Ledger.UTxO as Spec
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
 

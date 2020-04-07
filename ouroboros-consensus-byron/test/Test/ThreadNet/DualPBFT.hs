@@ -30,11 +30,11 @@ import           Cardano.Slotting.Slot
 import qualified Cardano.Chain.ProtocolConstants as Impl
 import qualified Cardano.Chain.UTxO as Impl
 
-import qualified Cardano.Spec.Chain.STS.Rule.Chain as Spec
+import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Control.State.Transition.Extended as Spec
 import qualified Control.State.Transition.Generator as Spec.QC
-import qualified Ledger.Core as Spec
-import qualified Ledger.UTxO as Spec
+import qualified Byron.Spec.Ledger.Core as Spec
+import qualified Byron.Spec.Ledger.UTxO as Spec
 
 import qualified Test.Cardano.Chain.Elaboration.UTxO as Spec.Test
 

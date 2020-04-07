@@ -16,10 +16,10 @@ import           Data.Map.Strict (Map)
 import           Data.Maybe (fromMaybe)
 import           Data.Proxy
 
-import qualified Ledger.Core as Spec
-import qualified Ledger.Delegation as Spec
-import qualified Ledger.Update as Spec
-import qualified Ledger.UTxO as Spec
+import qualified Byron.Spec.Ledger.Core as Spec
+import qualified Byron.Spec.Ledger.Delegation as Spec
+import qualified Byron.Spec.Ledger.Update as Spec
+import qualified Byron.Spec.Ledger.UTxO as Spec
 
 import qualified Test.Cardano.Chain.Elaboration.Block as Spec.Test
 import qualified Test.Cardano.Chain.Elaboration.Delegation as Spec.Test

@@ -22,8 +22,8 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
-import qualified Cardano.Ledger.Spec.STS.UTXO as Spec
-import qualified Cardano.Spec.Chain.STS.Rule.Chain as Spec
+import qualified Byron.Spec.Ledger.STS.UTXO as Spec
+import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Control.State.Transition as Spec
 
 import           Ouroboros.Network.Block

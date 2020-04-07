@@ -31,7 +31,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Versioned
 
-import           Cardano.Ledger.Shelley.Crypto
+import           Shelley.Spec.Ledger.Crypto
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
 
 import           Ouroboros.Consensus.Shelley.Protocol.Util (prtclStateSlot)

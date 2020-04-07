@@ -19,12 +19,12 @@ import           Codec.Serialise
 import           Control.Monad.Trans.Except
 import           GHC.Generics (Generic)
 
-import qualified Cardano.Ledger.Spec.STS.UTXO as Spec
-import qualified Cardano.Spec.Chain.STS.Rule.Chain as Spec
+import qualified Byron.Spec.Ledger.STS.UTXO as Spec
+import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Control.State.Transition as Spec
-import qualified Ledger.Delegation as Spec
-import qualified Ledger.Update as Spec
-import qualified Ledger.UTxO as Spec
+import qualified Byron.Spec.Ledger.Delegation as Spec
+import qualified Byron.Spec.Ledger.Update as Spec
+import qualified Byron.Spec.Ledger.UTxO as Spec
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Genesis
                      (ByronSpecGenesis (..))
