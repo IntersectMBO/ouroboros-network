@@ -11,7 +11,7 @@ module Ouroboros.Consensus.Storage.VolatileDB.Impl.Index (
   , lookup
   , insert
   , delete
-  , toList
+  , toAscList
   , elems
   , lastFile
   ) where
@@ -47,8 +47,8 @@ insert path info = modifyIndex (IM.insert path info)
 delete :: FileId -> Index blockId -> Index blockId
 delete path = modifyIndex (IM.delete path)
 
-toList :: Index blockId -> [(FileId, FileInfo blockId)]
-toList (Index mp) = IM.toList mp
+toAscList :: Index blockId -> [(FileId, FileInfo blockId)]
+toAscList (Index mp) = IM.toAscList mp
 
 elems :: Index blockId -> [FileInfo blockId]
 elems (Index mp) = IM.elems mp
