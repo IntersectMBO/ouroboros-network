@@ -310,6 +310,8 @@ garbageCollectImpl env slot = do
 
     when usefulGC $
       writeOpenState env $ \hasFS -> do
+        -- This event will be picked up by ghc-events-analyze
+        lift $ lift $ traceEventM "START garbage collection"
         -- Note that this is /monotonic/: if 'usefulGC' is @True@, then
         -- 'filesToGC' has to be non-empty.
         --
@@ -330,6 +332,7 @@ garbageCollectImpl env slot = do
             currentMaxSlotNo = FileInfo.maxSlotInFiles
               (Index.elems (currentMap st))
           }
+        lift $ lift $ traceEventM "STOP garbage collection"
   where
     -- | Return 'True' if a garbage collection would actually garbage collect
     -- at least one file.
