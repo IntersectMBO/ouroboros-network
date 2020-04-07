@@ -35,6 +35,7 @@ library
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
                        Control.Monad.Class.MonadAsync
+                       Control.Monad.Class.MonadEventlog
                        Control.Monad.Class.MonadFork
                        Control.Monad.Class.MonadSay
                        Control.Monad.Class.MonadST

@@ -35,6 +35,9 @@ module Control.Monad.IOSim (
   selectTraceEventsDynamic,
   selectTraceEventsSay,
   printTraceEventsSay,
+  -- * Eventlog
+  EventlogEvent(..),
+  EventlogMarker(..),
   -- * Low-level API
   execReadTVar
   ) where
@@ -71,6 +74,7 @@ import           Control.Monad.Fail as MonadFail
 
 import           Control.Monad.Class.MonadAsync hiding (Async)
 import qualified Control.Monad.Class.MonadAsync as MonadAsync
+import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
 import qualified Control.Monad.Class.MonadFork as MonadFork
 import           Control.Monad.Class.MonadSay
@@ -435,6 +439,18 @@ instance Show TimeoutException where
 instance Exception TimeoutException where
   toException   = asyncExceptionToException
   fromException = asyncExceptionFromException
+
+-- | Wrapper for Eventlog events so they can be retrieved from the trace with
+-- 'selectTraceEventsDynamic'.
+newtype EventlogEvent = EventlogEvent String
+
+-- | Wrapper for Eventlog markers so they can be retrieved from the trace with
+-- 'selectTraceEventsDynamic'.
+newtype EventlogMarker = EventlogMarker String
+
+instance MonadEventlog (SimM s) where
+  traceEventM = traceM . EventlogEvent
+  traceMarkerM = traceM . EventlogMarker
 
 traceM :: Typeable a => a -> SimM s ()
 traceM x = SimM $ \k -> Output (toDyn x) (k ())
