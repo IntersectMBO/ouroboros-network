@@ -33,6 +33,8 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , decodeShelleyQuery
   , encodeShelleyResult
   , decodeShelleyResult
+  , encodeShelleyExtLedgerState
+  , encodeShelleyHeaderState
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -61,6 +63,7 @@ import           Ouroboros.Consensus.BlockchainTime (singletonSlotLengths)
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Util.Versioned
@@ -341,7 +344,23 @@ infix 1 ?!
 serialisationFormatVersion0 :: VersionNumber
 serialisationFormatVersion0 = 0
 
--- TODO golden tests + serialisation roundtrip tests
+encodeShelleyExtLedgerState :: Crypto c
+                            => ExtLedgerState (ShelleyBlock c)
+                            -> Encoding
+encodeShelleyExtLedgerState = encodeExtLedgerState
+    encodeShelleyLedgerState
+    toCBOR
+    toCBOR
+    toCBOR
+
+encodeShelleyHeaderState :: Crypto c
+                         => HeaderState (ShelleyBlock c)
+                         -> Encoding
+encodeShelleyHeaderState = encodeHeaderState
+    toCBOR
+    toCBOR
+    toCBOR
+
 encodeShelleyLedgerState :: Crypto c => LedgerState (ShelleyBlock c) -> Encoding
 encodeShelleyLedgerState
     ShelleyLedgerState { ledgerTip, history, shelleyState } =
