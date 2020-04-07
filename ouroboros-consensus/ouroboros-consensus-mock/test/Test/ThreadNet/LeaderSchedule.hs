@@ -116,6 +116,7 @@ prop_simple_leader_schedule_convergence
                                         praosSlotLength)
                                       schedule
             , rekeying    = Nothing
+            , txGenExtra  = ()
             }
 
     -- I don't think this value actually matters if we override the leader

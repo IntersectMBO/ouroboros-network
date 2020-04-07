@@ -22,7 +22,7 @@ import           Test.ThreadNet.TxGen
 -------------------------------------------------------------------------------}
 
 instance TxGen (SimpleBlock SimpleMockCrypto ext) where
-  testGenTxs numCoreNodes curSlotNo _cfg ledgerState = do
+  testGenTxs numCoreNodes curSlotNo _cfg () ledgerState = do
       n <- generateBetween 0 20
       -- We don't update the UTxO after each transaction, so some of the
       -- generated transactions could very well be invalid.

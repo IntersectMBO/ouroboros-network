@@ -105,6 +105,7 @@ prop_simple_pbft_convergence
                               params
                               (defaultSimpleBlockConfig k pbftSlotLength)
             , rekeying    = Nothing
+            , txGenExtra  = ()
             }
 
     -- The mock ledger doesn't really care, and neither does BFT.

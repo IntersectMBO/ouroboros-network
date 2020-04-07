@@ -31,10 +31,10 @@ import qualified Cardano.Chain.ProtocolConstants as Impl
 import qualified Cardano.Chain.UTxO as Impl
 
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
-import qualified Control.State.Transition.Extended as Spec
-import qualified Control.State.Transition.Generator as Spec.QC
 import qualified Byron.Spec.Ledger.Core as Spec
 import qualified Byron.Spec.Ledger.UTxO as Spec
+import qualified Control.State.Transition.Extended as Spec
+import qualified Control.State.Transition.Generator as Spec.QC
 
 import qualified Test.Cardano.Chain.Elaboration.UTxO as Spec.Test
 
@@ -161,6 +161,7 @@ setupTestOutput setup@SetupDualPBft{..} =
             setupGenesis
             setupParams
             (Just coreNodeId)
+      , txGenExtra  = ()
       }
 
 -- | Override 'TestConfig'
@@ -297,7 +298,7 @@ realPBftParams ByronSpecGenesis{..} =
 -------------------------------------------------------------------------------}
 
 instance TxGen DualByronBlock where
-  testGenTxs _numCoreNodes curSlotNo cfg = \st -> do
+  testGenTxs _numCoreNodes curSlotNo cfg () = \st -> do
       n <- generateBetween 0 20
       go [] n $ applyChainTick (configLedger cfg) curSlotNo st
     where

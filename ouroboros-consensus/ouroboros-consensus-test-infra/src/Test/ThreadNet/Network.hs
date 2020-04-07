@@ -179,6 +179,7 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
     --
     -- This is temporary: once we have proper support for the hard fork
     -- combinator, 'EpochInfo' must be /derived/ from the current ledger state.
+  , tnaTxGenExtra   :: TxGenExtra blk
   }
 
 {-------------------------------------------------------------------------------
@@ -262,6 +263,7 @@ runThreadNetwork ThreadNetworkArgs
   , tnaSlotLength     = slotLength
   , tnaTopology       = nodeTopology
   , tnaEpochSize      = epochSize
+  , tnaTxGenExtra     = txGenExtra
   } = withRegistry $ \sharedRegistry -> do
     -- This shared registry is used for 'newTestBlockchainTime' and the
     -- network communication threads. Each node will create its own registry
@@ -450,6 +452,7 @@ runThreadNetwork ThreadNetworkArgs
             -- (specifically not the communication threads running the Mini
             -- Protocols, like the ChainSync Client)
             (kernel, app) <- forkNode
+              coreNodeId
               varRNG
               nodeBtime
               nodeRegistry
@@ -553,7 +556,7 @@ runThreadNetwork ThreadNetworkArgs
       void $ onSlotChange registry btime "txProducer" $ \curSlotNo -> do
         ledger <- atomically $ ledgerState <$> getExtLedger
         txs    <- runMonadRandom runMonadRandomDict $ \_lift' ->
-          testGenTxs numCoreNodes curSlotNo cfg ledger
+          testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger
         void $ addTxs mempool txs
 
     mkArgs :: BlockchainTime m
@@ -565,12 +568,13 @@ runThreadNetwork ThreadNetworkArgs
            -> Tracer m (RealPoint blk, BlockNo)
               -- ^ added block tracer
            -> NodeDBs (StrictTVar m MockFS)
+           -> CoreNodeId
            -> ChainDbArgs m blk
     mkArgs
       btime registry
       cfg initLedger
       invalidTracer addTracer
-      nodeDBs = ChainDbArgs
+      nodeDBs _coreNodeId = ChainDbArgs
         { -- Decoders
           cdbDecodeHash           = nodeDecodeHeaderHash     (Proxy @blk)
         , cdbDecodeBlock          = nodeDecodeBlock          bcfg
@@ -605,7 +609,7 @@ runThreadNetwork ThreadNetworkArgs
         , cdbBlockchainTime       = btime
         , cdbAddHdrEnv            = nodeAddHeaderEnvelope (Proxy @blk)
         , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
-          -- Misc
+        -- Misc
         , cdbTracer               = instrumentationTracer <> nullDebugTracer
         , cdbTraceLedger          = nullDebugTracer
         , cdbRegistry             = registry
@@ -627,9 +631,15 @@ runThreadNetwork ThreadNetworkArgs
               -> traceWith addTracer (p, bno)
           _   -> pure ()
 
+    -- | Augment a tracer message with the node which produces it.
+    _decorateId :: CoreNodeId -> Tracer m String -> Tracer m String
+    _decorateId (CoreNodeId cid) = contramap $ \s ->
+        show cid <> " | " <> s
+
     forkNode
       :: HasCallStack
-      => StrictTVar m ChaChaDRG
+      => CoreNodeId
+      -> StrictTVar m ChaChaDRG
       -> BlockchainTime m
       -> ResourceRegistry m
       -> ProtocolInfo blk
@@ -639,7 +649,7 @@ runThreadNetwork ThreadNetworkArgs
       -> m ( NodeKernel m NodeId Void blk
            , LimitedApp m NodeId      blk
            )
-    forkNode varRNG btime registry pInfo nodeInfo txs0 = do
+    forkNode coreNodeId varRNG btime registry pInfo nodeInfo txs0 = do
       let ProtocolInfo{..} = pInfo
 
       let NodeInfo
@@ -658,6 +668,7 @@ runThreadNetwork ThreadNetworkArgs
             invalidTracer
             addTracer
             nodeInfoDBs
+            coreNodeId
       chainDB <- snd <$>
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
 
@@ -1006,12 +1017,13 @@ directedEdgeInner edgeStatusVar
       [ miniProtocol
           (wrapMPEE MPEEChainSyncClient NTN.aChainSyncClient)
           NTN.aChainSyncServer
+        -- TODO do not swallow exceptions from these protocols
       , miniProtocol
-          (wrapMPEE MPEEBlockFetchClient NTN.aBlockFetchClient)
-          (wrapMPEE MPEEBlockFetchServer NTN.aBlockFetchServer)
+          NTN.aBlockFetchClient
+          NTN.aBlockFetchServer
       , miniProtocol
-          (wrapMPEE MPEETxSubmissionClient NTN.aTxSubmissionClient)
-          (wrapMPEE MPEETxSubmissionServer NTN.aTxSubmissionServer)
+          NTN.aTxSubmissionClient
+          NTN.aTxSubmissionServer
       ]
   where
     getApp v = readTVar v >>= \case

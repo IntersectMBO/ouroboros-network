@@ -119,6 +119,7 @@ prop_simple_praos_convergence
                                         praosSecurityParam
                                         praosSlotLength)
             , rekeying    = Nothing
+            , txGenExtra  = ()
             }
 
     -- TODO: Right now mock Praos has an explicit epoch size in its parameters

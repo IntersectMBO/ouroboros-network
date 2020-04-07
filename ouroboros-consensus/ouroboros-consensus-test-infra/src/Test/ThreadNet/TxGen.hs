@@ -1,9 +1,11 @@
+{-# LANGUAGE TypeFamilies #-}
 -- | Transaction generator for testing
 module Test.ThreadNet.TxGen
   ( TxGen (..)
   ) where
 
 import           Cardano.Slotting.Slot (SlotNo)
+import           Data.Kind (Type)
 
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -16,6 +18,11 @@ import           Ouroboros.Consensus.Util.Random
 -------------------------------------------------------------------------------}
 
 class TxGen blk where
+
+  -- | Extra information required to generate transactions
+  type TxGenExtra blk :: Type
+  type TxGenExtra blk = ()
+
   -- | Generate a number of transactions, valid or invalid, that can be
   -- submitted to a node's Mempool.
   --
@@ -27,5 +34,6 @@ class TxGen blk where
              => NumCoreNodes
              -> SlotNo
              -> TopLevelConfig blk
+             -> TxGenExtra blk
              -> LedgerState blk
              -> m [GenTx blk]

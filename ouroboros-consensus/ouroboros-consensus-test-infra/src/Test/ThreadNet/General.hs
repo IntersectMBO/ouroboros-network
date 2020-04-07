@@ -168,6 +168,7 @@ data TestConfigBlock blk = TestConfigBlock
   { forgeEbbEnv :: Maybe (ForgeEbbEnv blk)
   , nodeInfo    :: CoreNodeId -> TestNodeInitialization blk
   , rekeying    :: Maybe (Rekeying blk)
+  , txGenExtra  :: TxGenExtra blk
   }
 
 data Rekeying blk = forall opKey. Rekeying
@@ -216,7 +217,7 @@ runTestNetwork
     , initSeed
     }
   epochSize
-  TestConfigBlock{forgeEbbEnv, nodeInfo, rekeying}
+  TestConfigBlock{forgeEbbEnv, nodeInfo, rekeying, txGenExtra}
   = runSimOrThrow $ do
     let tna = ThreadNetworkArgs
           { tnaForgeEbbEnv    = forgeEbbEnv
@@ -230,6 +231,7 @@ runTestNetwork
           , tnaSlotLength     = slotLength
           , tnaTopology       = nodeTopology
           , tnaEpochSize      = epochSize
+          , tnaTxGenExtra     = txGenExtra
           }
 
     case rekeying of
