@@ -1,6 +1,7 @@
-{-# LANGUAGE DataKinds   #-}
-{-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE RankNTypes  #-}
+{-# LANGUAGE DataKinds      #-}
+{-# LANGUAGE DerivingVia    #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RankNTypes     #-}
 
 module Ouroboros.Consensus.BlockchainTime.API (
     -- * API
@@ -19,6 +20,8 @@ import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 import           Ouroboros.Network.Block (SlotNo)
 
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.STM (onEachChange)
 
 {-------------------------------------------------------------------------------
   API
@@ -32,26 +35,24 @@ import           Ouroboros.Consensus.Util.IOLike
 data BlockchainTime m = BlockchainTime {
       -- | Get current slot
       getCurrentSlot :: STM m SlotNo
-
-      -- | Spawn a thread to run an action each time the slot changes
-      --
-      -- Returns a handle to kill the thread.
-      --
-      -- The thread will be linked to the registry in which the
-      -- 'BlockchainTime' itself was created. The given 'String' will be used
-      -- to label the thread.
-      --
-      -- Use sites should call 'onSlotChange' rather than 'onSlotChange_'.
-    , onSlotChange_  :: HasCallStack => String -> (SlotNo -> m ()) -> m (m ())
     }
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlockchainTime" (BlockchainTime m)
 
--- | Wrapper around 'onSlotChange_' to ensure 'HasCallStack' constraint
+-- | Spawn a thread to run an action each time the slot changes
 --
--- See documentation of 'onSlotChange_'.
-onSlotChange :: HasCallStack
-             => BlockchainTime m -> String -> (SlotNo -> m ()) -> m (m ())
-onSlotChange = onSlotChange_
+-- Returns a handle to kill the thread.
+--
+-- The thread will be linked to the registry in which the 'BlockchainTime'
+-- itself was created.
+onSlotChange :: (IOLike m, HasCallStack)
+             => ResourceRegistry m
+             -> BlockchainTime m
+             -> String            -- ^ Label for the thread
+             -> (SlotNo -> m ())  -- ^ Action to execute
+             -> m (m ())
+onSlotChange registry BlockchainTime{getCurrentSlot} label =
+      fmap cancelThread
+    . onEachChange registry label id Nothing getCurrentSlot
 
 {-------------------------------------------------------------------------------
   Functionality in terms of the abstract API only

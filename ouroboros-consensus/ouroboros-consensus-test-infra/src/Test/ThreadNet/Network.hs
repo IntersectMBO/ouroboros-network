@@ -35,8 +35,8 @@ module Test.ThreadNet.Network (
 import           Codec.CBOR.Read (DeserialiseFailure)
 import qualified Control.Exception as Exn
 import           Control.Monad
-import qualified Control.Monad.Except as Exc
 import           Control.Monad.Class.MonadTimer (MonadTimer)
+import qualified Control.Monad.Except as Exc
 import           Control.Tracer
 import           Crypto.Random (ChaChaDRG)
 import qualified Data.ByteString.Lazy as Lazy
@@ -434,8 +434,7 @@ runThreadNetwork ThreadNetworkArgs
         loop s pInfo nr rs = do
           -- a registry solely for the resources of this specific node instance
           (again, finalChain, finalLdgr) <- withRegistry $ \nodeRegistry -> do
-            let nodeTestBtime = testBlockchainTimeClone sharedTestBtime nodeRegistry
-                nodeBtime     = testBlockchainTime nodeTestBtime
+            let nodeBtime = testBlockchainTime sharedTestBtime
 
             -- change the node's key and prepare a delegation transaction if
             -- the node is restarting because it just rekeyed
@@ -465,7 +464,7 @@ runThreadNetwork ThreadNetworkArgs
             again <- case Map.minViewWithKey rs of
               -- end of test
               Nothing               -> do
-                testBlockchainTimeDone nodeTestBtime
+                testBlockchainTimeDone sharedTestBtime
                 pure Nothing
               -- onset of schedule restart slot
               Just ((s', nr'), rs') -> do
@@ -544,15 +543,16 @@ runThreadNetwork ThreadNetworkArgs
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
     forkTxProducer :: HasCallStack
-                   => BlockchainTime m
+                   => ResourceRegistry m
+                   -> BlockchainTime m
                    -> TopLevelConfig blk
                    -> RunMonadRandom m
                    -> STM m (ExtLedgerState blk)
                       -- ^ How to get the current ledger state
                    -> Mempool m blk TicketNo
                    -> m ()
-    forkTxProducer btime cfg runMonadRandomDict getExtLedger mempool =
-      void $ onSlotChange btime "txProducer" $ \curSlotNo -> do
+    forkTxProducer registry btime cfg runMonadRandomDict getExtLedger mempool =
+      void $ onSlotChange registry btime "txProducer" $ \curSlotNo -> do
         ledger <- atomically $ ledgerState <$> getExtLedger
         txs    <- runMonadRandom runMonadRandomDict $ \_lift' ->
           testGenTxs numCoreNodes curSlotNo cfg ledger
@@ -795,6 +795,7 @@ runThreadNetwork ThreadNetworkArgs
         txs0
 
       forkTxProducer
+        registry
         btime
         pInfoConfig
         -- Uses the same varRNG as the block producer, but we split the RNG

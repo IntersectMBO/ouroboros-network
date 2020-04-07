@@ -25,7 +25,6 @@ import           Ouroboros.Consensus.BlockchainTime.API
 import           Ouroboros.Consensus.BlockchainTime.SlotLengths
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM
 
 -- | Events emitted by 'realBlockchainTime'.
 data TraceBlockchainTimeEvent
@@ -63,8 +62,6 @@ realBlockchainTime registry tracer start ls = do
     -- The API is now a simple STM one
     return BlockchainTime {
         getCurrentSlot = readTVar slotVar
-      , onSlotChange_  = \label -> fmap cancelThread .
-          onEachChange registry label id (Just first) (readTVar slotVar)
       }
   where
     -- In each iteration of the loop, we recompute how long to wait until

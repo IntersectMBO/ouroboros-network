@@ -161,7 +161,7 @@ model = \need (Schedule s) -> runExcept $ go need s (SlotNo 0)
 
     -- If we don't override the delays, everything just works as expected
     go need [] now =
-        return [SlotNo (unSlotNo now + fromIntegral n) | n <- [1 .. need]]
+        return [SlotNo (unSlotNo now + n) | n <- take need [0 ..]]
 
     go need (s:ss) now
       -- Time didn't actually move according to the schedule, 'BlockchainTime'
@@ -170,7 +170,7 @@ model = \need (Schedule s) -> runExcept $ go need s (SlotNo 0)
 
       -- If time did move forward, 'BlockchainTime' should report the next slot
       -- (which might not be the successor of the previous)
-      | now' >  now = (now' :) <$> go (need - 1) ss now'
+      | now' >  now = (now :) <$> go (need - 1) ss now'
 
       -- If time went backwards, we should see an exception
       | otherwise   = throwError (now, now')
@@ -257,7 +257,7 @@ prop_delayNoClockShift =
       now   <- getCurrentTime
       slots <- originalDelay $
                  testOverrideDelay (SystemStart now) (SlotLength 0.1) 5
-      assertEqual "slots" slots [SlotNo n | n <- [1..5]]
+      assertEqual "slots" slots [SlotNo n | n <- [0..4]]
 
 testOverrideDelay :: forall m. (IOLike m, MonadDelay (OverrideDelay m))
                   => SystemStart
@@ -273,7 +273,7 @@ testOverrideDelay systemStart slotLength numSlots = do
                 (focusSlotLengths $ singletonSlotLengths slotLength)
       slotsVar <- uncheckedNewTVarM []
       cancelCollection <-
-        onSlotChange time "testOverrideDelay" $ \slotNo ->
+        onSlotChange registry time "testOverrideDelay" $ \slotNo ->
           atomically $ modifyTVar slotsVar (slotNo :)
       -- Wait to collect the required number of slots
       slots <- atomically $ do
