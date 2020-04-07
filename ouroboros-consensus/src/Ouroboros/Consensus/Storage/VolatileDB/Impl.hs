@@ -104,7 +104,7 @@ import           Control.Monad
 import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer, traceWith)
 import qualified Data.ByteString.Builder as BS
-import           Data.List (foldl', sortOn)
+import           Data.List (foldl')
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
 import           Data.Set (Set)
@@ -285,36 +285,68 @@ putBlockImpl env@VolatileDBEnv{ maxBlocksPerFile, tracer }
           , currentMaxSlotNo   = currentMaxSlotNo `max` MaxSlotNo bslot
           }
 
--- | The approach we follow here is to try to garbage collect each file.
--- For each file we update the fs and then we update the Internal State.
--- If some fs update fails, we are left with an empty Internal State and a
--- subset of the deleted files in fs. Any unexpected failure (power loss,
--- other exceptions) has the same results, since the Internal State will
--- be empty on re-opening. This is ok only if any fs updates leave the fs
--- in a consistent state every moment.
+-- NOTE: the current file is never garbage collected.
+
+-- | Garbage collect all files of which the highest slot is less than the
+-- given slot.
 --
--- This approach works since we always close the Database in case of errors,
--- but we should rethink it if this changes in the future.
+-- We first check whether we actually can garbage collect any file. If we can,
+-- we obtain the more expensive write lock and remove the files that can be
+-- garbage collected. We update the 'InternalState' for each garbage collected
+-- file.
+--
+-- If an exception is thrown while garbage collecting, we close the database.
+-- This means we don't have to worry the file system getting out of sync with
+-- the in-memory indices, as the indices are rebuilt when reopening.
 garbageCollectImpl :: forall m blockId. (IOLike m, Ord blockId)
                    => VolatileDBEnv m blockId
                    -> SlotNo
                    -> m ()
-garbageCollectImpl env slot =
-    writeOpenState env $ \hasFS -> do
-      files <- gets (sortOn fst . Index.toList . currentMap)
-      mapM_ (tryCollectFile hasFS slot) files
-      -- Recompute the 'MaxSlotNo' based on the files left in the VolatileDB.
-      -- This value can never go down, except to 'NoMaxSlotNo' (when we GC
-      -- everything), because a GC can only delete blocks < a slot.
-      modify $ \st -> st {
-          currentMaxSlotNo = FileInfo.maxSlotInFiles
-            (Index.elems (currentMap st))
-        }
+garbageCollectImpl env slot = do
+    -- Check if we can actually GC something using a cheaper read (allowing
+    -- for more concurrency) before obtaining the more expensive exclusive
+    -- write lock.
+    usefulGC <- atomically $ getterSTM gcPossible env
 
--- | For the given file, we garbage collect it if possible, updating the
+    when usefulGC $
+      writeOpenState env $ \hasFS -> do
+        -- Note that this is /monotonic/: if 'usefulGC' is @True@, then
+        -- 'filesToGC' has to be non-empty.
+        --
+        -- Only a single thread performs garbage collection, so no files could
+        -- have been GC'ed in the meantime. The only thing that could have
+        -- happened is that blocks have been appended. If they have been
+        -- appended to the current file, nothing changes, as we never GC the
+        -- current file anyway. If a new file was opened, either we can now GC
+        -- the previous file (increase in the number of files to GC) or not
+        -- (same number of files to GC).
+        filesToGC <- gets getFilesToGC
+        mapM_ (garbageCollectFile hasFS) filesToGC
+        -- Recompute the 'MaxSlotNo' based on the files left in the
+        -- VolatileDB. This value can never go down, except to 'NoMaxSlotNo'
+        -- (when we GC everything), because a GC can only delete blocks < a
+        -- slot.
+        modify $ \st -> st {
+            currentMaxSlotNo = FileInfo.maxSlotInFiles
+              (Index.elems (currentMap st))
+          }
+  where
+    -- | Return 'True' if a garbage collection would actually garbage collect
+    -- at least one file.
+    gcPossible :: OpenState blockId h -> Bool
+    gcPossible = not . null . getFilesToGC
+
+    -- | Return the list of files that can be garbage collected.
+    getFilesToGC :: OpenState blockId h -> [(FileId, FileInfo blockId)]
+    getFilesToGC st = filter canGC . Index.toAscList . currentMap $ st
+      where
+        -- We don't GC the current file. This is unlikely to happen in
+        -- practice anyway, and it makes things simpler.
+        canGC (fileId, fileInfo) =
+          FileInfo.canGC fileInfo slot && fileId /= currentWriteId st
+
+-- | Garbage collect the given file /unconditionally/, updating the
 -- 'OpenState'.
---
--- NOTE: the current file is never garbage collected.
 --
 -- Important to note here is that, every call should leave the file system in
 -- a consistent state, without depending on other calls. We achieve this by
@@ -324,33 +356,29 @@ garbageCollectImpl env slot =
 -- the cached 'currentMaxSlotNo' hasn't been updated yet.
 --
 -- This may throw an FsError.
-tryCollectFile :: forall m h blockId
-               .  (MonadThrow m, Ord blockId)
-               => HasFS m h
-               -> SlotNo
-               -> (FileId, FileInfo blockId)
-               -> ModifyOpenState m blockId h ()
-tryCollectFile hasFS slot (fileId, fileInfo) = do
-    st@OpenState{..} <- get
-    let isCurrentFile = fileId == currentWriteId
+garbageCollectFile
+  :: forall m h blockId. (MonadThrow m, Ord blockId)
+  => HasFS m h
+  -> (FileId, FileInfo blockId)
+  -> ModifyOpenState m blockId h ()
+garbageCollectFile hasFS (fileId, fileInfo) = do
 
-    when (FileInfo.canGC fileInfo slot && not isCurrentFile) $ do
-      -- We don't GC the current file. This is unlikely to happen in practice
-      -- anyway, and it makes things simpler.
-      lift $ lift $ removeFile hasFS $ filePath fileId
+    lift $ lift $ removeFile hasFS $ filePath fileId
 
-      let bids           = FileInfo.blockIds fileInfo
-          currentRevMap' = Map.withoutKeys currentRevMap (Set.fromList bids)
-          deletedPairs   = mapMaybe
-            (\b -> (b,) . bpreBid . ibBlockInfo <$> Map.lookup b currentRevMap)
-            bids
-          succMap'       = foldl' deleteMapSet currentSuccMap deletedPairs
+    st@OpenState { currentMap, currentRevMap, currentSuccMap } <- get
 
-      put st {
-          currentMap     = Index.delete fileId currentMap
-        , currentRevMap  = currentRevMap'
-        , currentSuccMap = succMap'
-        }
+    let bids            = FileInfo.blockIds fileInfo
+        currentRevMap'  = Map.withoutKeys currentRevMap (Set.fromList bids)
+        deletedPairs    = mapMaybe
+          (\b -> (b,) . bpreBid . ibBlockInfo <$> Map.lookup b currentRevMap)
+          bids
+        currentSuccMap' = foldl' deleteMapSet currentSuccMap deletedPairs
+
+    put st {
+        currentMap     = Index.delete fileId currentMap
+      , currentRevMap  = currentRevMap'
+      , currentSuccMap = currentSuccMap'
+      }
 
 filterByPredecessorImpl :: forall m blockId. (IOLike m, Ord blockId)
                         => VolatileDBEnv m blockId
