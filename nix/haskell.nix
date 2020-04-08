@@ -21,6 +21,9 @@ let
     ghc = buildPackages.haskell-nix.compiler.${compiler};
     modules = [
 
+      { packages.Chart-cairo.configureFlags = [ "--extra-lib-dirs=${pkgs.zlib}/lib" ]; }
+      { packages.Chart-cairo.preBuild = "export LD_LIBRARY_PATH=${pkgs.zlib}/lib"; }
+
       # Allow reinstallation of Win32
       { nonReinstallablePkgs =
         [ "rts" "ghc-heap" "ghc-prim" "integer-gmp" "integer-simple" "base"
