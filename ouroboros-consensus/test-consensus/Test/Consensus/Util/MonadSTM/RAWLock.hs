@@ -1,7 +1,4 @@
-{-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
@@ -12,7 +9,6 @@ module Test.Consensus.Util.MonadSTM.RAWLock (tests) where
 import           Control.Exception (throw)
 import           Control.Monad.Except
 import           Data.Time.Clock (picosecondsToDiffTime)
-import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.MonadSTM.RAWLock (RAWLock)
@@ -58,7 +54,7 @@ prop_RAWLock_correctness (TestSetup rawDelays) =
 
       trace <- run $ withRegistry $ \registry -> do
         rawLock  <- RAWLock.new ()
-        varTrace <- newTVarM []
+        varTrace <- uncheckedNewTVarM []
 
         let traceState :: STM m ()
             traceState = do
@@ -181,8 +177,7 @@ data RAW a = RAW
     , appenders :: a
     , writers   :: a
     }
-  deriving stock    (Show, Eq, Functor, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving (Show, Eq, Functor)
 
 type RAWVars m = RAW (StrictTVar m Int)
 
