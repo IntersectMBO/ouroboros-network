@@ -188,8 +188,14 @@ executable db-analyser
                      , mtl
                      , optparse-applicative
 
+                     , containers
+                     , Chart
+                     , Chart-cairo
+                     , hmatrix
+                     , statistics
+                     , vector-space
+
                      , ouroboros-consensus
-                     , ouroboros-consensus-byron
                      , ouroboros-network
 
   default-language:    Haskell2010
