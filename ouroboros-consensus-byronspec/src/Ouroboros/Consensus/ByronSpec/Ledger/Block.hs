@@ -16,8 +16,8 @@ import           Codec.Serialise
 import           Data.FingerTree.Strict (Measured (..))
 import           GHC.Generics (Generic)
 
-import qualified Cardano.Spec.Chain.STS.Block as Spec
-import qualified Ledger.Core as Spec
+import qualified Byron.Spec.Chain.STS.Block as Spec
+import qualified Byron.Spec.Ledger.Core as Spec
 
 import           Ouroboros.Network.Block
 

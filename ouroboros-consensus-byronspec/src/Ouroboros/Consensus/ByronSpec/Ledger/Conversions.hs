@@ -13,8 +13,8 @@ import           Cardano.Slotting.Slot (SlotNo (..))
 
 import           Ouroboros.Network.Block (ChainHash (..), HeaderHash)
 
-import qualified Cardano.Spec.Chain.STS.Block as Spec
-import qualified Ledger.Core as Spec
+import qualified Byron.Spec.Chain.STS.Block as Spec
+import qualified Byron.Spec.Ledger.Core as Spec
 
 {-------------------------------------------------------------------------------
   Spec to consensus

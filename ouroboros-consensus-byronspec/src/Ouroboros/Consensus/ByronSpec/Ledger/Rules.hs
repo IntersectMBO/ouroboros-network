@@ -37,17 +37,17 @@ import           Control.Monad.Trans.Except
 import           Data.Functor.Identity
 import qualified Data.Set as Set
 
-import qualified Cardano.Ledger.Spec.STS.UTXO as Spec
-import qualified Cardano.Ledger.Spec.STS.UTXOW as Spec
-import qualified Cardano.Ledger.Spec.STS.UTXOWS as Spec
-import qualified Cardano.Spec.Chain.STS.Rule.BBody as Spec
-import qualified Cardano.Spec.Chain.STS.Rule.Bupi as Spec
-import qualified Cardano.Spec.Chain.STS.Rule.Chain as Spec
-import qualified Cardano.Spec.Chain.STS.Rule.Epoch as Spec
+import qualified Byron.Spec.Ledger.STS.UTXO as Spec
+import qualified Byron.Spec.Ledger.STS.UTXOW as Spec
+import qualified Byron.Spec.Ledger.STS.UTXOWS as Spec
+import qualified Byron.Spec.Chain.STS.Rule.BBody as Spec
+import qualified Byron.Spec.Chain.STS.Rule.Bupi as Spec
+import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
+import qualified Byron.Spec.Chain.STS.Rule.Epoch as Spec
 import qualified Control.State.Transition as Spec
-import qualified Ledger.Core as Spec
-import qualified Ledger.Delegation as Spec
-import qualified Ledger.Update as Spec
+import qualified Byron.Spec.Ledger.Core as Spec
+import qualified Byron.Spec.Ledger.Delegation as Spec
+import qualified Byron.Spec.Ledger.Update as Spec
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Accessors
 import           Ouroboros.Consensus.ByronSpec.Ledger.Genesis

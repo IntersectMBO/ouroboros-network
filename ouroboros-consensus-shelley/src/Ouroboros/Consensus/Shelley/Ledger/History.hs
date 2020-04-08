@@ -34,7 +34,7 @@ import           Ouroboros.Consensus.Ledger.History (History (..))
 import qualified Ouroboros.Consensus.Ledger.History as History
 import           Ouroboros.Consensus.Util.CBOR (decodeSeq, encodeSeq)
 
-import           Cardano.Ledger.Shelley.API (LedgerView)
+import           Shelley.Spec.Ledger.API (LedgerView)
 
 import           Ouroboros.Consensus.Shelley.Protocol (Crypto)
 

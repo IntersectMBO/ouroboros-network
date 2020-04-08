@@ -124,8 +124,8 @@ test-suite test
                      , ouroboros-consensus-byronspec
 
                        -- ouroboros-consensus-byrondual
-                     , cs-blockchain
-                     , cs-ledger
+                     , byron-spec-chain
+                     , byron-spec-ledger
                      , small-steps
                      , hedgehog
                      , serialise

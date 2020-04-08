@@ -4,7 +4,7 @@
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 module Ouroboros.Consensus.Shelley.Protocol.Crypto (
-    module Cardano.Ledger.Shelley.Crypto
+    module Shelley.Spec.Ledger.Crypto
   , TPraosCrypto
   , TPraosStandardCrypto
   ) where
@@ -24,7 +24,7 @@ import           Cardano.Crypto.VRF.Simple (SimpleVRF)
 
 import           Ouroboros.Consensus.Util.Condense (Condense)
 
-import           Cardano.Ledger.Shelley.Crypto (Crypto (..))
+import           Shelley.Spec.Ledger.Crypto (Crypto (..))
 import           Shelley.Spec.Ledger.BaseTypes (Seed)
 import           Shelley.Spec.Ledger.BlockChain (BHBody)
 import           Shelley.Spec.Ledger.Keys (VKeyES (..))
