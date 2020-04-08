@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
@@ -134,11 +135,14 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
 
   protocolSecurityParam = bftSecurityParam . bftParams
 
+  checkIfCanBeLeader BftConfig{bftNodeId} =
+      case bftNodeId of
+        CoreId{}  -> True
+        RelayId{} -> False  -- Relays are never leaders
+
   checkIsLeader BftConfig{..} (SlotNo n) _l _cs = do
       return $ case bftNodeId of
-                 RelayId _ ->
-                   -- Relays are never leaders
-                   Nothing
+                 RelayId _ -> Nothing
                  CoreId (CoreNodeId i) ->
                    if n `mod` numCoreNodes == i
                      then Just ()

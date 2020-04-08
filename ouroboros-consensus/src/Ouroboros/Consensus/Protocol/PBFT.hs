@@ -259,6 +259,11 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
+  checkIfCanBeLeader PBftConfig{pbftIsLeader} =
+      case pbftIsLeader of
+        PBftIsALeader{}  -> True
+        PBftIsNotALeader -> False
+
   checkIsLeader PBftConfig{pbftIsLeader, pbftParams} (SlotNo n) _l _cs =
       case pbftIsLeader of
         PBftIsNotALeader                           -> return Nothing

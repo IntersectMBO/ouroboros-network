@@ -63,6 +63,8 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
   compareCandidates     WLSConfig{..} = compareCandidates     wlsConfigP
   protocolSecurityParam WLSConfig{..} = protocolSecurityParam wlsConfigP
 
+  checkIfCanBeLeader _ = True -- Conservative approximation
+
   checkIsLeader WLSConfig{..} slot _ _ = return $
     case Map.lookup slot $ getLeaderSchedule wlsConfigSchedule of
         Nothing                           -> Nothing

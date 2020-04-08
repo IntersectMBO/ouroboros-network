@@ -56,6 +56,7 @@ instance (Typeable p, Typeable s, ChainSelection p s)
     type ValidateView   (ModChainSel p s) = ValidateView   p
     type SelectView     (ModChainSel p s) = SelectView'    p
 
+    checkIfCanBeLeader    (McsConsensusConfig cfg) = checkIfCanBeLeader    cfg
     checkIsLeader         (McsConsensusConfig cfg) = checkIsLeader         cfg
     updateConsensusState  (McsConsensusConfig cfg) = updateConsensusState  cfg
     rewindConsensusState  (McsConsensusConfig cfg) = rewindConsensusState  cfg

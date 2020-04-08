@@ -157,6 +157,9 @@ class ( Show (ConsensusState p)
                 -> ConsensusState  p
                 -> m (Maybe (IsLeader p))
 
+  -- | Check if a node is configured such that it can be a leader.
+  checkIfCanBeLeader :: ConsensusConfig p -> Bool
+
   -- | Apply a header
   updateConsensusState :: HasCallStack
                        => ConsensusConfig p
