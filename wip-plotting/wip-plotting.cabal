@@ -1,0 +1,69 @@
+name:                  wip-plotting
+version:               0.1.0.0
+synopsis:              WIP plotting
+-- description:
+license:               Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
+copyright:             2019 Input Output (Hong Kong) Ltd.
+author:                IOHK Engineering Team
+maintainer:            operations@iohk.io
+category:              Network
+build-type:            Simple
+cabal-version:         >=1.10
+
+source-repository head
+  type:     git
+  location: https://github.com/input-output-hk/ouroboros-network
+
+library
+  default-language:    Haskell2010
+
+executable wip-plotting
+  hs-source-dirs:      tools/wip-plotting
+  main-is:             Main.hs
+
+  other-modules:       Sparse
+
+  build-depends:       base
+                     , containers
+                     , Chart
+                     , Chart-cairo
+                     , data-default
+                     , hmatrix
+                     , math-functions
+                     , statistics
+                     , vector
+                     , vector-space
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+
+executable wip-plotting2
+  hs-source-dirs:      tools/wip-plotting2
+  main-is:             Main.hs
+
+  build-depends:       base
+                     , Chart
+                     , Chart-cairo
+                     , colour
+                     , data-default
+                     , math-functions
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists

@@ -36,6 +36,8 @@ let
        io-sim
        io-sim-classes
        ntp-client
+
+       wip-plotting
     ];
 
     # These programs will be available inside the nix-shell.

@@ -19,6 +19,8 @@ packages: ./typed-protocols
           ./ntp-client
           ./Win32-network
 
+          ./wip-plotting
+
 constraints:
   ip < 1.5,
   graphviz == 2999.20.0.3,
