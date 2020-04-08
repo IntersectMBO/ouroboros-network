@@ -33,5 +33,5 @@ instance TPraosCrypto c => BlockSupportsProtocol (ShelleyBlock c) where
 -- TODO correct place for these two?
 type instance Signed (Header (ShelleyBlock c)) = SL.BHBody c
 
-instance SignedHeader (Header (ShelleyBlock c)) where
+instance Crypto c => SignedHeader (Header (ShelleyBlock c)) where
   headerSigned = SL.bhbody . shelleyHeaderRaw

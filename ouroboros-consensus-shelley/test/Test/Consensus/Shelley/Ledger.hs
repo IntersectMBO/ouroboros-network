@@ -22,7 +22,8 @@ import           Data.Proxy (Proxy (..))
 import           Data.Ratio ((%))
 import           Numeric.Natural (Natural)
 
-import           Cardano.Binary (fromCBOR, serialize, toCBOR)
+import           Cardano.Binary (Annotator (..), FullByteString (..), fromCBOR,
+                     serialize, toCBOR)
 
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      HeaderHash, Point, SlotNo (..))
@@ -151,10 +152,10 @@ deriving instance Show SomeResult
 -------------------------------------------------------------------------------}
 
 prop_roundtrip_Block :: Block -> Property
-prop_roundtrip_Block = roundtrip toCBOR fromCBOR
+prop_roundtrip_Block = roundtrip' toCBOR ((. Full) . runAnnotator <$> fromCBOR)
 
 prop_roundtrip_Header :: Header Block -> Property
-prop_roundtrip_Header = roundtrip toCBOR fromCBOR
+prop_roundtrip_Header = roundtrip' toCBOR ((. Full) . runAnnotator <$> fromCBOR)
 
 prop_roundtrip_HeaderHash :: HeaderHash Block -> Property
 prop_roundtrip_HeaderHash = roundtrip toCBOR fromCBOR
@@ -245,12 +246,12 @@ prop_shelleyHashInfo_hashSize h =
 -- | Test that we can detect random bitflips in blocks.
 prop_detectCorruption_Block :: Block -> Corruption -> Property
 prop_detectCorruption_Block =
-    detectCorruption toCBOR (const <$> fromCBOR) verifyBlockIntegrity
+    detectCorruption toCBOR ((. Full) . runAnnotator <$> fromCBOR) verifyBlockIntegrity
 
 -- | Test that we can detect random bitflips in blocks.
 prop_detectCorruption_Header :: Header Block -> Corruption -> Property
 prop_detectCorruption_Header =
-    detectCorruption toCBOR (const <$> fromCBOR) verifyHeaderIntegrity
+    detectCorruption toCBOR ((. Full) . runAnnotator <$> fromCBOR) verifyHeaderIntegrity
 
 {-------------------------------------------------------------------------------
   Generators

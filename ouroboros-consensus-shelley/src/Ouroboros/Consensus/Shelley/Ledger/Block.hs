@@ -38,7 +38,8 @@ import           Data.Proxy (Proxy (..))
 import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..), serialize)
+import           Cardano.Binary (Annotator (..), FromCBOR (..), ToCBOR (..),
+                     serialize)
 import qualified Cardano.Crypto.Hash as Crypto
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
@@ -182,15 +183,15 @@ instance Crypto c => ToCBOR (ShelleyBlock c) where
   -- Don't encode the header hash, we recompute it during deserialisation
   toCBOR = toCBOR . shelleyBlockRaw
 
-instance Crypto c => FromCBOR (ShelleyBlock c) where
-  fromCBOR = mkShelleyBlock <$> fromCBOR
+instance Crypto c => FromCBOR (Annotator (ShelleyBlock c)) where
+  fromCBOR = fmap mkShelleyBlock <$> fromCBOR
 
 instance Crypto c => ToCBOR (Header (ShelleyBlock c)) where
   -- Don't encode the header hash, we recompute it during deserialisation
   toCBOR = toCBOR . shelleyHeaderRaw
 
-instance Crypto c => FromCBOR (Header (ShelleyBlock c)) where
-  fromCBOR = mkShelleyHeader <$> fromCBOR
+instance Crypto c => FromCBOR (Annotator (Header (ShelleyBlock c))) where
+  fromCBOR = fmap mkShelleyHeader <$> fromCBOR
 
 encodeShelleyBlockWithInfo :: Crypto c => ShelleyBlock c -> BinaryInfo Encoding
 encodeShelleyBlockWithInfo blk = BinaryInfo {
@@ -198,8 +199,7 @@ encodeShelleyBlockWithInfo blk = BinaryInfo {
       -- Drop the 'encodeListLen' that precedes the header and the body (= tx
       -- seq)
     , headerOffset = 1
-      -- TODO When we have annotations in the Shelley decoders, this will
-      -- become much cheaper
+      -- The Shelley decoders use annotations, so this is cheap
     , headerSize   = fromIntegral $ Lazy.length (serialize (getHeader blk))
     }
 
