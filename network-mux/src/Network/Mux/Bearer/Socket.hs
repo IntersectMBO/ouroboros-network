@@ -73,7 +73,7 @@ socketAsMuxBearer sduTimeout_m tracer sd =
                 Nothing -> do
                     traceWith tracer $ Mx.MuxTraceSDUReadTimeoutException
                     throwM $ Mx.MuxError Mx.MuxSDUReadTimeout "Mux SDU Timeout" callStack
-                Just !r -> return r
+                Just r -> return r
 
       recvRem :: BL.ByteString -> IO (Mx.MuxSDU, Time)
       recvRem !h0 = do
@@ -84,9 +84,10 @@ socketAsMuxBearer sduTimeout_m tracer sd =
                    traceWith tracer $ Mx.MuxTraceRecvHeaderEnd msHeader
                    !blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
 
-                   ts <- getMonotonicTime
+                   !ts <- getMonotonicTime
+                   let !header' = header {Mx.msBlob = blob}
                    traceWith tracer (Mx.MuxTraceRecvDeltaQObservation msHeader ts)
-                   return (header {Mx.msBlob = blob}, ts)
+                   return (header', ts)
 
       recvLen' ::  Int64 -> [BL.ByteString] -> IO BL.ByteString
       recvLen' 0 bufs = return $ BL.concat $ reverse bufs
