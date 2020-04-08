@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -75,19 +76,18 @@ socketAsMuxBearer sduTimeout_m tracer sd =
                 Just r -> return r
 
       recvRem :: BL.ByteString -> IO (Mx.MuxSDU, Time)
-      recvRem h0 = do
+      recvRem !h0 = do
           hbuf <- recvLen' (hdrLenght - fromIntegral (BL.length h0)) [h0]
           case Mx.decodeMuxSDU hbuf of
                Left  e      ->  throwM e
-               Right header -> do
-                   traceWith tracer $ Mx.MuxTraceRecvHeaderEnd header
-                   traceWith tracer $ Mx.MuxTraceRecvPayloadStart (fromIntegral $ Mx.msLength header)
-                   blob <- recvLen' (fromIntegral $ Mx.msLength header) []
+               Right header@Mx.MuxSDU { Mx.msHeader } -> do
+                   traceWith tracer $ Mx.MuxTraceRecvHeaderEnd msHeader
+                   !blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
 
-                   ts <- getMonotonicTime
-                   traceWith tracer (Mx.MuxTraceRecvDeltaQObservation header ts)
-                   traceWith tracer $ Mx.MuxTraceRecvPayloadEnd blob
-                   return (header {Mx.msBlob = blob}, ts)
+                   !ts <- getMonotonicTime
+                   let !header' = header {Mx.msBlob = blob}
+                   traceWith tracer (Mx.MuxTraceRecvDeltaQObservation msHeader ts)
+                   return (header', ts)
 
       recvLen' ::  Int64 -> [BL.ByteString] -> IO BL.ByteString
       recvLen' 0 bufs = return $ BL.concat $ reverse bufs
@@ -116,16 +116,16 @@ socketAsMuxBearer sduTimeout_m tracer sd =
                       " closed when reading data, waiting on next header " ++
                       show waitingOnNxtHeader) callStack
               else do
-                  traceWith tracer $ Mx.MuxTraceRecvEnd buf
+                  traceWith tracer $ Mx.MuxTraceRecvEnd (fromIntegral $ BL.length buf)
                   return buf
 
       writeSocket :: Mx.MuxSDU -> IO Time
       writeSocket sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
-              sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
+              sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
               buf  = Mx.encodeMuxSDU sdu'
-          traceWith tracer $ Mx.MuxTraceSendStart sdu'
+          traceWith tracer $ Mx.MuxTraceSendStart (Mx.msHeader sdu')
 #if defined(mingw32_HOST_OS)
           Win32.Async.sendAll sd buf
 #else

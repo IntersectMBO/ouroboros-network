@@ -1,3 +1,5 @@
+{-# LANGUAGE NamedFieldPuns #-}
+
 module Network.Mux.Codec where
 
 import qualified Data.Binary.Get as Bin
@@ -46,30 +48,25 @@ decodeMuxSDU :: HasCallStack
 decodeMuxSDU buf =
     case Bin.runGetOrFail dec buf of
          Left  (_, _, e)  -> Left $ MuxError MuxDecodeError e callStack
-         Right (_, _, ph) ->
-             let mode = getMode $ mshNumAndMode ph
-                 num  = MiniProtocolNum (mshNumAndMode ph .&. 0x7fff) in
+         Right (_, _, h) ->
              Right $ MuxSDU {
-                   msTimestamp = mshTimestamp ph
-                 , msNum  = num
-                 , msMode = mode
-                 , msLength = mshLength ph
-                 , msBlob = BL.empty
+                   msHeader = h
+                 , msBlob   = BL.empty
                  }
   where
     dec = do
-        ts <- Bin.getWord32be
-        mid <- Bin.getWord16be
-        len <- Bin.getWord16be
-        return $ MuxSDUHeader (RemoteClockModel ts) mid len
+        mhTimestamp <- RemoteClockModel <$> Bin.getWord32be
+        a <- Bin.getWord16be
+        mhLength <- Bin.getWord16be
+        let mhMode = getMode a
+            mhNum  = MiniProtocolNum (a .&. 0x7fff)
+        return $ MuxSDUHeader {
+            mhTimestamp,
+            mhNum,
+            mhMode,
+            mhLength
+          }
 
     getMode mid =
         if mid .&. 0x8000 == 0 then ModeInitiator
                                else ModeResponder
-
-data MuxSDUHeader = MuxSDUHeader {
-      mshTimestamp  :: !RemoteClockModel
-    , mshNumAndMode :: !Word16
-    , mshLength     :: !Word16
-    }
-

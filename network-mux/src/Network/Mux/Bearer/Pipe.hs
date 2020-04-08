@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -85,13 +86,11 @@ pipeAsMuxBearer tracer channel =
           hbuf <- recvLen' 8 []
           case Mx.decodeMuxSDU hbuf of
               Left e     -> throwM e
-              Right header -> do
-                  traceWith tracer $ Mx.MuxTraceRecvHeaderEnd header
-                  traceWith tracer $ Mx.MuxTraceRecvPayloadStart (fromIntegral $ Mx.msLength header)
-                  blob <- recvLen' (fromIntegral $ Mx.msLength header) []
+              Right header@Mx.MuxSDU { Mx.msHeader } -> do
+                  traceWith tracer $ Mx.MuxTraceRecvHeaderEnd msHeader
+                  blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
                   ts <- getMonotonicTime
-                  traceWith tracer (Mx.MuxTraceRecvDeltaQObservation header ts)
-                  traceWith tracer $ Mx.MuxTraceRecvPayloadEnd blob
+                  traceWith tracer (Mx.MuxTraceRecvDeltaQObservation msHeader ts)
                   return (header {Mx.msBlob = blob}, ts)
 
       recvLen' :: Int -> [BL.ByteString] -> IO BL.ByteString
@@ -103,16 +102,16 @@ pipeAsMuxBearer tracer channel =
           if BL.null buf
               then throwM $ Mx.MuxError Mx.MuxBearerClosed "Pipe closed when reading data" callStack
               else do
-                  traceWith tracer $ Mx.MuxTraceRecvEnd buf
+                  traceWith tracer $ Mx.MuxTraceRecvEnd (fromIntegral $ BL.length buf)
                   recvLen' (l - fromIntegral (BL.length buf)) (buf : bufs)
 
       writePipe :: Mx.MuxSDU -> IO Time
       writePipe sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
-              sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
+              sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
               buf  = Mx.encodeMuxSDU sdu'
-          traceWith tracer $ Mx.MuxTraceSendStart sdu'
+          traceWith tracer $ Mx.MuxTraceSendStart (Mx.msHeader sdu')
           writeHandle channel buf
             `catch` Mx.handleIOException "writeHandle errored"
           traceWith tracer $ Mx.MuxTraceSendEnd

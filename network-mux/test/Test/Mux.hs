@@ -698,7 +698,7 @@ prop_mux_starvation (Uneven response0 response1) =
 
     -- Then look at the message trace to check for starvation.
     trace <- atomically $ readTVar traceHeaderVar
-    let es = map msNum (take 100 (reverse trace))
+    let es = map mhNum (take 100 (reverse trace))
         ls = dropWhile (\e -> e == head es) es
         fair = verifyStarvation ls
     return $ res_short .&&. res_long .&&. fair
@@ -878,10 +878,13 @@ prop_demux_sdu a = do
     writeSdu _ payload | payload == BL.empty = return ()
     writeSdu queue payload = do
         let (!frag, !rest) = BL.splitAt 0xffff payload
-            sdu' = MuxSDU (RemoteClockModel 0)
-                          (MiniProtocolNum 2)
-                           ModeInitiator
-                          (fromIntegral $ BL.length frag) frag
+            sdu' = MuxSDU
+                    (MuxSDUHeader
+                      (RemoteClockModel 0)
+                      (MiniProtocolNum 2)
+                      ModeInitiator
+                      (fromIntegral $ BL.length frag))
+                    frag
             !pkt = encodeMuxSDU (sdu' :: MuxSDU)
 
         atomically $ writeTBQueue queue pkt
