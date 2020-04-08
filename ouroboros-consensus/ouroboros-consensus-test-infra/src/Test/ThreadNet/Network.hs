@@ -1488,9 +1488,9 @@ checkStableNetFingerprint topo (StableNetFingerprint m) =
               [ "a node restart was apparently not instantaneous" ]
           -- TODO confirm via...
           --
-          -- * NodeJoinPlan should suffice for non-Praos
+          -- o NodeJoinPlan should suffice for non-Praos
           --
-          -- * not sure yet about Praos
+          -- o not sure yet about Praos
           RestartExn
             (MPEEChainSyncClient
               CSClient.ForkTooDeep{})
