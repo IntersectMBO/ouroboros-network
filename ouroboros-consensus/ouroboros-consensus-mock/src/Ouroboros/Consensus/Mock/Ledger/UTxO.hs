@@ -29,7 +29,7 @@ module Ouroboros.Consensus.Mock.Ledger.UTxO (
   ) where
 
 import           Codec.Serialise (Serialise (..))
-import           Control.DeepSeq (NFData (..), force)
+import           Control.DeepSeq (NFData (..), rwhnf, force)
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Functor (($>))
@@ -60,7 +60,9 @@ data Expiry
   = DoNotExpire
   | ExpireAtOnsetOf !SlotNo
   deriving stock    (Show, Eq, Ord, Generic)
-  deriving anyclass (Serialise, NFData, NoUnexpectedThunks)
+  deriving anyclass (Serialise, NoUnexpectedThunks)
+
+instance NFData Expiry where rnf = rwhnf
 
 instance Condense Expiry where
   condense = show

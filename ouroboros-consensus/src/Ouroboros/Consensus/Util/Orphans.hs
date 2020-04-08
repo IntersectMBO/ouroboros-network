@@ -11,7 +11,6 @@ module Ouroboros.Consensus.Util.Orphans () where
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.Serialise (Serialise (..))
 import           Control.Concurrent.STM (readTVarIO)
-import           Control.DeepSeq (NFData (..))
 import           Control.Monad.Identity
 import           Control.Monad.Trans
 import           Crypto.Random
@@ -34,8 +33,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader, HeaderHash, Point (..),
-                     SlotNo (..))
+import           Ouroboros.Network.Block (HasHeader, HeaderHash, Point (..))
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import           Ouroboros.Network.Point (WithOrigin (..), blockPointHash,
                      blockPointSlot)
@@ -114,9 +112,3 @@ deriving via OnlyCheckIsWHNF "Decoder" (Decoder s a) instance NoUnexpectedThunks
 deriving via OnlyCheckIsWHNF "Tracer" (Tracer m ev) instance NoUnexpectedThunks (Tracer m ev)
 
 deriving newtype instance NoUnexpectedThunks Time
-
-{-------------------------------------------------------------------------------
-  NFData
--------------------------------------------------------------------------------}
-
-deriving newtype instance NFData SlotNo
