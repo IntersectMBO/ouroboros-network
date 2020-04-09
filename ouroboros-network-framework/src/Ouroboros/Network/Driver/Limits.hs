@@ -7,6 +7,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeInType #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 -- | Drivers for running 'Peer's.
 --
@@ -31,11 +32,14 @@ module Ouroboros.Network.Driver.Limits (
 import Data.Maybe (fromMaybe)
 
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime
 import Control.Monad.Class.MonadTimer
 import Control.Tracer (Tracer (..), traceWith)
 
+import Network.Mux.Timeout
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
 import Network.TypedProtocol.Driver
@@ -67,12 +71,14 @@ instance Exception ProtocolLimitFailure
 driverWithLimits :: forall ps failure bytes m.
                     (MonadThrow m, MonadTimer m, Exception failure)
                  => Tracer m (TraceSendRecv ps)
+                 -> TimeoutFn m
                  -> Codec ps failure m bytes
                  -> ProtocolSizeLimits ps bytes
                  -> ProtocolTimeLimits ps
                  -> Channel m bytes
                  -> Driver ps (Maybe bytes) m
-driverWithLimits tracer Codec{encode, decode}
+driverWithLimits tracer timeout
+                 Codec{encode, decode}
                  ProtocolSizeLimits{sizeLimitForState, dataSize}
                  ProtocolTimeLimits{timeLimitForState}
                  channel@Channel{send} =
@@ -155,7 +161,8 @@ runDecoderWithLimit limit size Channel{recv} =
 
 runPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a .
-     (MonadTimer m, MonadThrow m, Exception failure)
+     (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
+      MonadTime m, MonadTimer m, Exception failure)
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
@@ -164,9 +171,9 @@ runPeerWithLimits
   -> Peer ps pr st m a
   -> m a
 runPeerWithLimits tracer codec slimits tlimits channel peer =
-    fst <$> runPeerWithDriver driver peer (startDState driver)
-  where
-    driver = driverWithLimits tracer codec slimits tlimits channel
+    withTimeoutSerial $ \timeout ->
+    let driver = driverWithLimits tracer timeout codec slimits tlimits channel
+     in fst <$> runPeerWithDriver driver peer (startDState driver)
 
 
 -- | Run a pipelined peer with the given channel via the given codec.
@@ -178,7 +185,8 @@ runPeerWithLimits tracer codec slimits tlimits channel peer =
 --
 runPipelinedPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a.
-     (MonadAsync m, MonadTimer m, MonadThrow m, Exception failure)
+     (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
+      MonadTime m, MonadTimer m, Exception failure)
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
@@ -187,7 +195,7 @@ runPipelinedPeerWithLimits
   -> PeerPipelined ps pr st m a
   -> m a
 runPipelinedPeerWithLimits tracer codec slimits tlimits channel peer =
-    fst <$> runPipelinedPeerWithDriver driver peer (startDState driver)
-  where
-    driver = driverWithLimits tracer codec slimits tlimits channel
+    withTimeoutSerial $ \timeout ->
+    let driver = driverWithLimits tracer timeout codec slimits tlimits channel
+     in fst <$> runPipelinedPeerWithDriver driver peer (startDState driver)
 
