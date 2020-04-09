@@ -68,7 +68,7 @@ import           Ouroboros.Network.Testing.ConcreteBlock
 --
 blockFetchExample1 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadFork m,
-                       MonadCatch m, MonadTime m, MonadTimer m)
+                       MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
                    => Tracer m [TraceLabelPeer Int
                                  (FetchDecision [Point BlockHeader])]
                    -> Tracer m (TraceLabelPeer Int
@@ -187,7 +187,8 @@ exampleFixedPeerGSVs =
 -- Utils to run fetch clients and servers
 --
 
-runFetchClient :: (MonadCatch m, MonadAsync m, MonadFork m, MonadST m, MonadTimer m,
+runFetchClient :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
+                   MonadST m, MonadTime m, MonadTimer m,
                    Ord peerid, Serialise block, Serialise (HeaderHash block))
                 => Tracer m (TraceSendRecv (BlockFetch block))
                 -> FetchClientRegistry peerid header block m
@@ -203,7 +204,8 @@ runFetchClient tracer registry peerid channel client =
   where
     codec = codecBlockFetch encode decode encode decode
 
-runFetchServer :: (MonadThrow m, MonadST m, MonadTimer m,
+runFetchServer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
+                   MonadST m, MonadTime m, MonadTimer m,
                    Serialise block,
                    Serialise (HeaderHash block))
                 => Tracer m (TraceSendRecv (BlockFetch block))
@@ -217,8 +219,8 @@ runFetchServer tracer channel server =
     codec = codecBlockFetch encode decode encode decode
 
 runFetchClientAndServerAsync
-               :: (MonadCatch m, MonadAsync m, MonadFork m, MonadTimer m,
-                   MonadST m, Ord peerid,
+               :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
+                   MonadST m, MonadTime m, MonadTimer m, Ord peerid,
                    Serialise header, Serialise block,
                    Serialise (HeaderHash block))
                 => Tracer m (TraceSendRecv (BlockFetch block))

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE TupleSections       #-}
@@ -27,6 +28,7 @@ import Network.TypedProtocol.ReqResp.Examples
 import Control.Monad (void, replicateM)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTime
 import Control.Monad.Class.MonadTimer
 import Control.Monad.Class.MonadThrow
@@ -96,7 +98,8 @@ timeUnLimitsReqResp = ProtocolTimeLimits stateToLimit
 -- with the given payloads.
 --
 prop_runPeerWithLimits
-  :: forall m. (MonadSTM m, MonadAsync m, MonadCatch m, MonadTimer m)
+  :: forall m. ( MonadAsync m, MonadFork m, MonadMask m,
+                 MonadThrow (STM m), MonadTime m, MonadTimer m)
   => Tracer m (TraceSendRecv (ReqResp String ()))
   -> Word
   -- ^ byte limit
