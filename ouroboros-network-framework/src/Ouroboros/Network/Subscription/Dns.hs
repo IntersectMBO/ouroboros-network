@@ -211,6 +211,10 @@ dnsResolve tracer getSeed withResolver peerStatesVar beforeConnect (DnsSubscript
              Just addrs -> listTargets (Left addrs) (Left a)
              Nothing    -> listTargets (Left a) (Right addrsVar)
 
+    resolveAAAA :: Resolver m
+                -> StrictTVar m Bool
+                -> StrictTMVar m [Socket.SockAddr]
+                -> m (Maybe DNS.DNSError)
     resolveAAAA resolver gotIpv6RspVar rspsVar = do
         r_e <- lookupAAAA resolver domain
         case r_e of
@@ -227,7 +231,10 @@ dnsResolve tracer getSeed withResolver peerStatesVar beforeConnect (DnsSubscript
                  atomically $ writeTVar gotIpv6RspVar True
                  return Nothing
 
-    resolveA :: Resolver m -> StrictTVar m Bool -> StrictTMVar m [Socket.SockAddr] -> m (Maybe DNS.DNSError)
+    resolveA :: Resolver m
+             -> StrictTVar m Bool
+             -> StrictTMVar m [Socket.SockAddr]
+             -> m (Maybe DNS.DNSError)
     resolveA resolver gotIpv6RspVar rspsVar= do
         r_e <- lookupA resolver domain
         case r_e of
