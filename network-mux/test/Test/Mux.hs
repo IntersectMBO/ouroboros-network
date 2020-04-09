@@ -37,6 +37,7 @@ import           Text.Printf
 import qualified System.Random.SplitMix as SM
 
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Strict
@@ -748,6 +749,7 @@ encodeInvalidMuxSDU sdu =
 prop_demux_sdu :: forall m.
                     ( MonadAsync m
                     , MonadCatch m
+                    , MonadFork m
                     , MonadMask m
                     , MonadSay m
                     , MonadST m

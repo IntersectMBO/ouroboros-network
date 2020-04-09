@@ -44,8 +44,11 @@ import           Data.Set (Set)
 import           Control.Applicative
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
 import           GHC.Stack
 
@@ -94,9 +97,13 @@ import qualified Network.Mux.JobPool as JobPool
 muxStart
     :: forall m appType a b.
        ( MonadAsync m
+       , MonadCatch m
+       , MonadFork m
        , MonadSTM m
        , MonadThrow m
        , MonadThrow (STM m)
+       , MonadTime  m
+       , MonadTimer m
        , MonadMask m
        , Eq (Async m ())
        )

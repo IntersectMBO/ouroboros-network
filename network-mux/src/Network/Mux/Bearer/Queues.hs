@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes          #-}
 
 module Network.Mux.Bearer.Queues
   ( queuesAsMuxBearer
@@ -19,6 +20,7 @@ import           Network.Mux.Types (MuxBearer)
 import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Codec as Mx
 import           Network.Mux.Time as Mx
+import qualified Network.Mux.Timeout as Mx
 
 
 queuesAsMuxBearer
@@ -40,8 +42,8 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize = do
         Mx.sduSize = sduSize
       }
     where
-      readMux :: m (Mx.MuxSDU, Time)
-      readMux = do
+      readMux :: Mx.TimeoutFn m -> m (Mx.MuxSDU, Time)
+      readMux _ = do
           traceWith tracer $ Mx.MuxTraceRecvHeaderStart
           buf <- atomically $ readTBQueue readQueue
           let (hbuf, payload) = BL.splitAt 8 buf

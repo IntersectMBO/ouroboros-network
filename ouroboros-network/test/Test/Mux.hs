@@ -14,6 +14,7 @@ module Test.Mux
 import           Codec.Serialise (Serialise (..))
 
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Strict
@@ -77,6 +78,7 @@ testProtocols chainSync =
 demo :: forall m block.
         ( MonadAsync m
         , MonadCatch m
+        , MonadFork m
         , MonadMask m
         , MonadSay m
         , MonadST m
