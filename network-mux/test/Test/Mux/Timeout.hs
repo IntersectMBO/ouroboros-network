@@ -11,6 +11,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
 
 import           Data.Maybe (fromMaybe)
+import           Data.Monoid (All (..), Sum (..))
 import           Data.Functor (($>))
 
 -- TODO: import 'withTimeoutSerial' from `Netowork.Mux.Timeout`
@@ -137,26 +138,35 @@ runSeriesOfTimeoutsExperiment
        , MonadThrow m
        )
     => [(DiffTime, DiffTime)]
-    -> m Bool
+    -> m [Bool]
 runSeriesOfTimeoutsExperiment as =
     withTimeoutSerial $ \timeoutM ->
       foldM
-        (\r x -> (r &&) <$> uncurry (singleExp timeoutM) x)
-        True as
+        (\r x -> (: r) <$> uncurry (singleExp timeoutM) x)
+        [] as
   where
     singleExp timeoutM timeoutDiffTime delay = do
       r <- timeoutM timeoutDiffTime (threadDelay delay $> (timeoutDiffTime >= delay))
-      pure $ fromMaybe (timeoutDiffTime <= delay) r
+      pure $ fromMaybe True r
 
 prop_timeouts_sim :: [(DiffTime, DiffTime)] -> Bool
 prop_timeouts_sim as =
     case runSim $ runSeriesOfTimeoutsExperiment as of
       Left {} -> False
-      Right r -> r
+      Right r -> all id r
 
 
 prop_timeouts_io :: [(DiffTime, DiffTime)] -> Property
 prop_timeouts_io as =
-    ioProperty $
+    ioProperty $ do
       -- the comment in `prop_timeout_io` applies here as well
-      runSeriesOfTimeoutsExperiment as
+      rs <- runSeriesOfTimeoutsExperiment as
+      let rs' = zip rs as
+          -- test result, and number of cases in which we had to ignore the
+          testResult :: Bool; s :: Int;
+          (All testResult, Sum s) =
+            foldMap (\(r, (timeoutDiffTime, delay)) ->
+                      if timeoutDiffTime <= delay
+                        then (All True, Sum (if r then 0 else 1))
+                        else (All r, Sum 0)) rs'
+      pure $ label ("ignored cases: " ++ show s) testResult
