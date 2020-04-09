@@ -80,7 +80,7 @@ data ClientStTxIds blocking txid tx m a where
 
 data ClientStTxs txid tx m a where
   SendMsgReplyTxs   :: [tx]
-                    -> ClientStIdle txid tx m a
+                    -> m (ClientStIdle txid tx m a)
                     -> ClientStTxs  txid tx m a
 
 
@@ -113,5 +113,4 @@ txSubmissionClientPeer (TxSubmissionClient client) =
           SendMsgReplyTxs txs k <- recvMsgRequestTxs txids
           return $ Yield (ClientAgency TokTxs)
                          (MsgReplyTxs txs)
-                         (go k)
-
+                         (Effect $ k >>= return . go)
