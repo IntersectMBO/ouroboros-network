@@ -22,11 +22,16 @@ import qualified Data.ByteString.Lazy as BL
 import           GHC.Stack
 import           Text.Printf
 
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer hiding (timeout)
 
-import           Network.Mux.Types
+import           Network.Mux.Timeout
 import           Network.Mux.Trace
+import           Network.Mux.Types
 
 
 negMiniProtocolMode :: MiniProtocolMode -> MiniProtocolMode
@@ -101,11 +106,14 @@ data MiniProtocolDispatchInfo m =
 
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from
 -- the underlying Mux Bearer and forwards it to the matching ingress queue.
-demux :: (MonadSTM m, MonadThrow m, MonadThrow (STM m), HasCallStack)
+demux :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
+          MonadTimer m, MonadTime m, HasCallStack)
       => DemuxState m -> m void
 demux DemuxState{dispatchTable, bearer} =
+
+  withTimeoutSerial $ \timeout ->
   forever $ do
-    (sdu, _) <- Network.Mux.Types.read bearer
+    (sdu, _) <- Network.Mux.Types.read bearer timeout
     -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msMode sdu)
     --             (BL.length $ msBlob sdu)
     case lookupMiniProtocol dispatchTable (msNum sdu)

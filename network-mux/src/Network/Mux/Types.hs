@@ -4,6 +4,7 @@
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RankNTypes                 #-}
 
 module Network.Mux.Types (
       MiniProtocolLimits (..)
@@ -43,6 +44,7 @@ import qualified Data.ByteString.Lazy as BL
 import           Control.Monad.Class.MonadTime
 
 import           Network.Mux.Channel (Channel(..))
+import           Network.Mux.Timeout (TimeoutFn)
 
 
 newtype RemoteClockModel
@@ -199,7 +201,7 @@ data MuxBearer m = MuxBearer {
     -- | Timestamp and send MuxSDU.
       write   :: MuxSDU -> m Time
     -- | Read a MuxSDU
-    , read    :: m (MuxSDU, Time)
+    , read    :: TimeoutFn m -> m (MuxSDU, Time)
     -- | Return a suitable MuxSDU payload size.
     , sduSize :: Word16
     }
@@ -216,7 +218,7 @@ muxBearerAsChannel
 muxBearerAsChannel bearer protocolNum mode =
       Channel {
         send = \blob -> void $ write bearer (wrap blob),
-        recv = Just . msBlob . fst <$> read bearer
+        recv = Just . msBlob . fst <$> read bearer noTimeout
       }
     where
       -- wrap a 'ByteString' as 'MuxSDU'
@@ -231,3 +233,6 @@ muxBearerAsChannel bearer protocolNum mode =
               },
             msBlob = blob
           }
+
+      noTimeout :: TimeoutFn IO
+      noTimeout _ r = Just <$> r
