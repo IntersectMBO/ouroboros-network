@@ -65,7 +65,7 @@ extra-deps:
   - gray-code-0.3.1
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 1b0d9ff9c7e201f0877ccec2a992c58e2b19c5ec
+    commit: 90b14c056059d0082cb2641f9c77cb1b097be329
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
