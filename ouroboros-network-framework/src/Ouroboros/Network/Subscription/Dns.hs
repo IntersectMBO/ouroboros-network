@@ -28,7 +28,6 @@ module Ouroboros.Network.Subscription.Dns
     ) where
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM (TVar)
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
@@ -67,8 +66,28 @@ data Resolver m = Resolver {
     , lookupAAAA :: DNS.Domain -> m (Either DNS.DNSError [Socket.SockAddr])
     }
 
+withResolver :: Socket.PortNumber -> DNS.ResolvSeed -> (Resolver IO -> IO a) -> IO a
+withResolver port rs k = do
+    DNS.withResolver rs $ \dnsResolver ->
+        k (Resolver
+             (ipv4ToSockAddr port dnsResolver)
+             (ipv6ToSockAddr port dnsResolver))
+  where
+    ipv4ToSockAddr port dnsResolver d = do
+        r <- DNS.lookupA dnsResolver d
+        case r of
+             (Right ips) -> return $ Right $ map (Socket.SockAddrInet (fromIntegral port) .
+                                                  IP.toHostAddress) ips
+             (Left e)    -> return $ Left e
 
-dnsResolve :: forall m s.
+    ipv6ToSockAddr port dnsResolver d = do
+        r <- DNS.lookupAAAA dnsResolver d
+        case r of
+             (Right ips) -> return $ Right $ map (\ip -> Socket.SockAddrInet6 (fromIntegral port) 0 (IP.toHostAddress6 ip) 0) ips
+             (Left e)    -> return $ Left e
+
+
+dnsResolve :: forall a m s.
      ( MonadAsync m
      , MonadSay   m
      , MonadSTM   m
@@ -77,32 +96,36 @@ dnsResolve :: forall m s.
      , MonadThrow m
      )
     => Tracer m DnsTrace
-    -> Resolver m
+    -> m a
+    -> (a -> (Resolver m -> m (SubscriptionTarget m Socket.SockAddr)) -> m (SubscriptionTarget m Socket.SockAddr))
     -> StrictTVar m s
     -> BeforeConnect m s Socket.SockAddr
     -> DnsSubscriptionTarget
     -> m (SubscriptionTarget m Socket.SockAddr)
-dnsResolve tracer resolver peerStatesVar beforeConnect (DnsSubscriptionTarget domain _ _) = do
-    ipv6Rsps <- newEmptyTMVarM
-    ipv4Rsps <- newEmptyTMVarM
-    gotIpv6Rsp <- Lazy.newTVarM False
+dnsResolve tracer getSeed withResolver peerStatesVar beforeConnect (DnsSubscriptionTarget domain _ _) = do
+    rs <- getSeed
+    withResolver rs $ \resolver -> do
+        ipv6Rsps <- newEmptyTMVarM
+        ipv4Rsps <- newEmptyTMVarM
+        gotIpv6Rsp <- newTVarM False
 
-    -- Though the DNS lib does have its own timeouts, these do not work
-    -- on Windows reliably so as a workaround we add an extra layer
-    -- of timeout on the outside.
-    -- TODO: fix upstream dns lib
-    res <- timeout 20 $ do
-             aid_ipv6 <- async $ resolveAAAA gotIpv6Rsp ipv6Rsps
-             aid_ipv4 <- async $ resolveA gotIpv6Rsp ipv4Rsps
-             rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
-             handleResult ipv6Rsps ipv4Rsps rd_e
-    case res of
-      Nothing -> do
-        -- TODO: the thread timedout, we should trace it
-        return (SubscriptionTarget $ pure Nothing)
-      Just st ->
-        return st
-
+        -- Though the DNS lib does have its own timeouts, these do not work
+        -- on Windows reliably so as a workaround we add an extra layer
+        -- of timeout on the outside.
+        -- TODO: Fix upstream dns lib.
+        --       On windows the aid_ipv6 and aid_ipv4 threads are leaked incase
+        --       of an exception in the main thread.
+        res <- timeout 20 $ do
+                 aid_ipv6 <- async $ resolveAAAA resolver gotIpv6Rsp ipv6Rsps
+                 aid_ipv4 <- async $ resolveA resolver gotIpv6Rsp ipv4Rsps
+                 rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
+                 handleResult ipv6Rsps ipv4Rsps rd_e
+        case res of
+          Nothing -> do
+            -- TODO: the thread timedout, we should trace it
+            return (SubscriptionTarget $ pure Nothing)
+          Just st ->
+            return st
   where
     handleResult :: StrictTMVar m [Socket.SockAddr]
                  -> StrictTMVar m [Socket.SockAddr]
@@ -188,12 +211,16 @@ dnsResolve tracer resolver peerStatesVar beforeConnect (DnsSubscriptionTarget do
              Just addrs -> listTargets (Left addrs) (Left a)
              Nothing    -> listTargets (Left a) (Right addrsVar)
 
-    resolveAAAA gotIpv6RspVar rspsVar = do
+    resolveAAAA :: Resolver m
+                -> StrictTVar m Bool
+                -> StrictTMVar m [Socket.SockAddr]
+                -> m (Maybe DNS.DNSError)
+    resolveAAAA resolver gotIpv6RspVar rspsVar = do
         r_e <- lookupAAAA resolver domain
         case r_e of
              Left e  -> do
                  atomically $ putTMVar rspsVar []
-                 atomically $ Lazy.writeTVar gotIpv6RspVar True
+                 atomically $ writeTVar gotIpv6RspVar True
                  traceWith tracer $ DnsTraceLookupAAAAError e
                  return $ Just e
              Right r -> do
@@ -201,11 +228,14 @@ dnsResolve tracer resolver peerStatesVar beforeConnect (DnsSubscriptionTarget do
 
                  -- XXX Addresses should be sorted here based on DeltaQueue.
                  atomically $ putTMVar rspsVar r
-                 atomically $ Lazy.writeTVar gotIpv6RspVar True
+                 atomically $ writeTVar gotIpv6RspVar True
                  return Nothing
 
-    resolveA :: TVar m Bool -> StrictTMVar m [Socket.SockAddr] -> m (Maybe DNS.DNSError)
-    resolveA gotIpv6RspVar rspsVar= do
+    resolveA :: Resolver m
+             -> StrictTVar m Bool
+             -> StrictTMVar m [Socket.SockAddr]
+             -> m (Maybe DNS.DNSError)
+    resolveA resolver gotIpv6RspVar rspsVar= do
         r_e <- lookupA resolver domain
         case r_e of
              Left e  -> do
@@ -223,7 +253,7 @@ dnsResolve tracer resolver peerStatesVar beforeConnect (DnsSubscriptionTarget do
                  timeoutVar <- registerDelay resolutionDelay
                  atomically $ do
                      timedOut   <- Lazy.readTVar timeoutVar
-                     gotIpv6Rsp <- Lazy.readTVar gotIpv6RspVar
+                     gotIpv6Rsp <- readTVar gotIpv6RspVar
                      check (timedOut || gotIpv6Rsp)
 
                  -- XXX Addresses should be sorted here based on DeltaQueue.
@@ -237,14 +267,16 @@ dnsSubscriptionWorker'
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> NetworkMutableState Socket.SockAddr
-    -> Resolver IO
+    -> IO b
+    -> (b -> (Resolver IO -> IO (SubscriptionTarget IO Socket.SockAddr))
+          -> IO (SubscriptionTarget IO Socket.SockAddr))
     -> DnsSubscriptionParams a
     -> Main IO (PeerStates IO Socket.SockAddr) x
     -> (Socket.Socket -> IO a)
     -> IO x
 dnsSubscriptionWorker' snocket subTracer dnsTracer errorPolicyTracer
                        networkState@NetworkMutableState { nmsPeerStates }
-                       resolver
+                       setupResolver resolver
                        SubscriptionParams { spLocalAddresses
                                           , spConnectionAttemptDelay
                                           , spSubscriptionTarget = dst
@@ -260,7 +292,7 @@ dnsSubscriptionWorker' snocket subTracer dnsTracer errorPolicyTracer
                                     , wpSubscriptionTarget =
                                         dnsResolve
                                           (WithDomainName (dstDomain dst) `contramap` dnsTracer)
-                                          resolver nmsPeerStates beforeConnectTx dst
+                                          setupResolver resolver nmsPeerStates beforeConnectTx dst
                                     , wpValency = dstValency dst
                                     , wpSelectAddress = selectSockAddr 
                                     }
@@ -283,31 +315,16 @@ dnsSubscriptionWorker
 dnsSubscriptionWorker snocket subTracer dnsTracer errTrace networkState
                       params@SubscriptionParams { spSubscriptionTarget } k =
     do rs <- DNS.makeResolvSeed DNS.defaultResolvConf
-       DNS.withResolver rs $ \dnsResolver ->
-         dnsSubscriptionWorker'
+       
+       dnsSubscriptionWorker'
            snocket
            subTracer dnsTracer errTrace
            networkState
-           (Resolver
-             (ipv4ToSockAddr (dstPort spSubscriptionTarget) dnsResolver)
-             (ipv6ToSockAddr (dstPort spSubscriptionTarget) dnsResolver))
+           (DNS.makeResolvSeed DNS.defaultResolvConf)
+           (withResolver (dstPort spSubscriptionTarget)) 
            params
            mainTx
            k
-  where
-    ipv4ToSockAddr port dnsResolver d = do
-        r <- DNS.lookupA dnsResolver d
-        case r of
-             (Right ips) -> return $ Right $ map (Socket.SockAddrInet (fromIntegral port) .
-                                                  IP.toHostAddress) ips
-             (Left e)    -> return $ Left e
-
-    ipv6ToSockAddr port dnsResolver d = do
-        r <- DNS.lookupAAAA dnsResolver d
-        case r of
-             (Right ips) -> return $ Right $ map (\ip -> Socket.SockAddrInet6 (fromIntegral port) 0 (IP.toHostAddress6 ip) 0) ips
-             (Left e)    -> return $ Left e
-
 
 data WithDomainName a = WithDomainName {
       wdnDomain :: !DNS.Domain

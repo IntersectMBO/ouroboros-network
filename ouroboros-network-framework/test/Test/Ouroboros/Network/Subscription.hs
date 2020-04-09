@@ -148,6 +148,13 @@ mockResolver lr = Resolver lA lAAAA
         threadDelay (lrIpv6Delay lr)
         return $ lrIpv6Result lr
 
+withMockResolver :: MonadTimer m
+                 => LookupResult
+                 -> (Resolver m -> m a)
+                 -> m a
+withMockResolver lr k = k (mockResolver lr)
+
+
 mockResolverIO :: StrictTMVar IO ()
                -> M.Map (Socket.Family, Word16) Socket.PortNumber
                -> LookupResultIO
@@ -186,6 +193,13 @@ mockResolverIO firstDoneMVar portMap lr = Resolver lA lAAAA
         when (lrioFirst lr == Socket.AF_INET6) $
             atomically $ putTMVar firstDoneMVar ()
         return r
+
+withMockResolverIO :: StrictTMVar IO ()
+                   -> M.Map (Socket.Family, Word16) Socket.PortNumber
+                   -> LookupResultIO
+                   -> (Resolver IO -> IO a)
+                   -> IO a
+withMockResolverIO firstDoneMVar portMap lr k = k (mockResolverIO firstDoneMVar portMap lr)
 
 instance Show LookupResult where
     show a = printf "LookupResult: ipv4: %s delay %s ipv6: %s delay %s rtt %s" (show $ lrIpv4Result a)
@@ -290,9 +304,8 @@ prop_resolv :: forall m.
      -> m Property
 prop_resolv lr =  do
     --say $ printf "%s" $ show lr
-    let resolver = mockResolver lr
     peerStatesVar <- newTVarM ()
-    x <- dnsResolve nullTracer resolver peerStatesVar (\_ _ s -> pure (AllowConnection s)) $ DnsSubscriptionTarget "shelley-1.iohk.example" 1 2
+    x <- dnsResolve nullTracer (return lr) withMockResolver peerStatesVar (\_ _ s -> pure (AllowConnection s)) $ DnsSubscriptionTarget "shelley-1.iohk.example" 1 2
     !res <- checkResult <$> extractResult x []
 
     {-
@@ -427,7 +440,8 @@ prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
       activeTracer
       activeTracer
       networkState
-      (mockResolverIO firstDoneVar serverPortMap lr)
+      (return lr)
+      (withMockResolverIO firstDoneVar serverPortMap)
       SubscriptionParams {
           spLocalAddresses =
             LocalAddresses
@@ -577,7 +591,8 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
           dnsSubscriptionWorker'
             sn activeTracer activeTracer activeTracer
             (NetworkMutableState clientTbl peerStatesVar)
-            (mockResolverIO firstDoneVar serverPortMap lr)
+            (return lr)
+            (withMockResolverIO firstDoneVar serverPortMap)
             SubscriptionParams {
                 spLocalAddresses =
                   LocalAddresses
