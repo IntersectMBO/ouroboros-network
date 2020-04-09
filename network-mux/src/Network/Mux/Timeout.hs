@@ -8,7 +8,11 @@
 -- timeout is active at once. A concurrent implementation would be possible
 -- but is not currently needed.
 --
-module Network.Mux.Timeout (withTimeoutSerial) where
+module Network.Mux.Timeout
+  ( withTimeoutSerial
+  , TimeoutException (..)
+  )
+  where
 
 import Control.Exception (Exception(..), asyncExceptionToException, asyncExceptionFromException)
 import Control.Monad
