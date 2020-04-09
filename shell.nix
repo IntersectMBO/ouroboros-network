@@ -36,6 +36,8 @@ let
        io-sim
        io-sim-classes
        ntp-client
+
+       use-Chart-cairo
     ];
 
     # These programs will be available inside the nix-shell.
