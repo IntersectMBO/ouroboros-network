@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes          #-}
 
 module Network.Mux.Bearer.Socket
   ( socketAsMuxBearer
@@ -16,7 +17,7 @@ import           GHC.Stack
 
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer hiding (timeout)
 
 import qualified Network.Socket as Socket
 #if !defined(mingw32_HOST_OS)
@@ -31,6 +32,7 @@ import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Trace as Mx
 import qualified Network.Mux.Codec as Mx
 import qualified Network.Mux.Time as Mx
+import qualified Network.Mux.Timeout as Mx
 
 
 -- |
@@ -58,17 +60,19 @@ socketAsMuxBearer sduTimeout_m tracer sd =
     where
       hdrLenght = 8
 
-      readSocket :: HasCallStack => IO (Mx.MuxSDU, Time)
-      readSocket = do
+      sduTimeout = case sduTimeout_m of
+                      Just t  -> t
+                      Nothing -> (-1) -- no timeout
+
+      readSocket :: HasCallStack => Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
+      readSocket timeout = do
           traceWith tracer $ Mx.MuxTraceRecvHeaderStart
 
           -- Wait for the first part of the header without any timeout
           h0 <- recvAtMost True hdrLenght
 
           -- Optionally wait at most sduTimeout seconds for the complete SDU.
-          r_m <- case sduTimeout_m of
-                      Just sduTimeout -> timeout sduTimeout $ recvRem h0
-                      Nothing -> Just <$> recvRem h0
+          r_m <- timeout sduTimeout $ recvRem h0
           case r_m of
                 Nothing -> do
                     traceWith tracer $ Mx.MuxTraceSDUReadTimeoutException
