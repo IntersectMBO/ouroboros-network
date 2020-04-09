@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes          #-}
 
@@ -22,7 +23,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime
-import Control.Monad.Class.MonadTimer hiding (timeout)
+import Control.Monad.Class.MonadTimer hiding (timeout, TimeoutState(..))
 
 
 -- | An alternative implementation of 'System.Timeout.timeout' for platforms
@@ -36,7 +37,7 @@ import Control.Monad.Class.MonadTimer hiding (timeout)
 -- @timeout@ can /only do so from one thread at once/.
 --
 withTimeoutSerial
-  :: forall m b. (MonadAsync m, MonadFork m, MonadTime m, MonadTimer m, MonadCatch m)
+  :: forall m b. (MonadAsync m, MonadFork m, MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
   => ((forall a. DiffTime -> m a -> m (Maybe a)) -> m b) -> m b
 withTimeoutSerial body = do
 
@@ -50,14 +51,31 @@ withTimeoutSerial body = do
     -- The @timeout@ action we pass to the body.
     let timeout :: forall a. DiffTime -> m a -> m (Maybe a)
         timeout delay action =
-          bracket
-            (do cancelVar <- newTVarM False
-                now <- getMonotonicTime
-                let !deadline = addTime delay now
-                atomically $ writeTVar timerStateVar (TimerActive deadline cancelVar)
-                return cancelVar)
-            (\cancelVar -> atomically $ writeTVar cancelVar True)
-            (\_ -> fmap Just action)
+          mask $ \restore -> do
+            cancelVar <- newTVarM TimeoutPending
+            now <- getMonotonicTime
+            let !deadline = addTime delay now
+            atomically $ writeTVar timerStateVar (TimerActive deadline cancelVar)
+
+            result <- restore action
+
+            wonRace <- atomically $ do
+              st <- readTVar cancelVar
+              case st of
+                TimeoutPending -> writeTVar cancelVar TimeoutCancelled
+                               >> return True
+                TimeoutFired   -> return False
+                _              -> throwM TimeoutImpossibleTimeoutState
+
+            if wonRace
+              then return (Just result)
+              else atomically $ do
+                     st <- readTVar cancelVar
+                     case st of
+                       TimeoutCancelled -> retry
+                       TimeoutKilled    -> throwM TimeoutImpossibleReachedKilled
+                       _                -> throwM TimeoutImpossibleTimeoutState
+
           `catch` \TimeoutException -> return Nothing
 
     -- Ensure the monitoring thread gets terminated when the body completes
@@ -82,16 +100,37 @@ withTimeoutSerial body = do
         now <- getMonotonicTime
         let delay = diffTime deadline now
         threadDelay delay
-        cancelled <- atomically $ readTVar cancelVar
-        unless cancelled $
+        cancelled <- atomically $ do
+                       st <- readTVar cancelVar
+                       case st of
+                         TimeoutPending   -> writeTVar cancelVar TimeoutFired
+                                          >> return False
+                         TimeoutCancelled -> return True
+                         _                -> throwM TimeoutImpossibleMonitorState
+        unless cancelled $ do
           throwTo tid TimeoutException
+          atomically $ writeTVar cancelVar TimeoutKilled
+ 
 
 data TimerState m = TimerIdle
-                  | TimerActive !Time !(TVar m Bool)
+                  | TimerActive !Time !(TVar m TimeoutState)
+
+data TimeoutState = TimeoutPending
+                  | TimeoutFired
+                  | TimeoutCancelled
+                  | TimeoutKilled
 
 data TimeoutException = TimeoutException deriving Show
 
 instance Exception TimeoutException where
   toException   = asyncExceptionToException
   fromException = asyncExceptionFromException
+
+-- | These are all \"impossible\" errors.
+--
+data TimeoutAssertion = TimeoutImpossibleReachedKilled
+                      | TimeoutImpossibleTimeoutState
+                      | TimeoutImpossibleMonitorState
+  deriving Show
+instance Exception TimeoutAssertion
 
