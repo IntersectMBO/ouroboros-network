@@ -11,7 +11,6 @@ module Ouroboros.Consensus.Node
   ( DiffusionTracers (..)
   , DiffusionArguments (..)
   , run
-  , IsProducer (..)
     -- * Exposed by 'run'
   , RunNode (..)
   , Tracers
@@ -65,6 +64,7 @@ import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.NodeNetwork
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
@@ -82,12 +82,6 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
                      (ledgerDbDefaultParams)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..), mkBlocksPerFile)
-
--- | Whether the node produces blocks or not.
-data IsProducer
-  = IsProducer
-  | IsNotProducer
-  deriving (Eq, Show)
 
 -- | Start a node.
 --
@@ -107,7 +101,6 @@ run
   -> NetworkMagic
   -> FilePath                             -- ^ Database path
   -> ProtocolInfo blk
-  -> IsProducer
   -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
       -- ^ Customise the 'ChainDbArgs'
   -> (NodeArgs IO RemoteConnectionId blk -> NodeArgs IO RemoteConnectionId blk)
@@ -117,7 +110,7 @@ run
      -- layer is initialised.
   -> IO ()
 run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
-    networkMagic dbPath pInfo isProducer customiseChainDbArgs
+    networkMagic dbPath pInfo customiseChainDbArgs
     customiseNodeArgs onNodeKernel = do
     either throwM return =<< checkDbMarker
       hasFS
@@ -172,7 +165,6 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
                 tracers
                 btime
                 chainDB
-                isProducer
         nodeKernel <- initNodeKernel nodeArgs
         onNodeKernel registry nodeKernel
 
@@ -328,9 +320,8 @@ mkNodeArgs
   -> Tracers IO RemoteConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
-  -> IsProducer
   -> NodeArgs IO RemoteConnectionId blk
-mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
+mkNodeArgs registry cfg initState tracers btime chainDB = NodeArgs
     { tracers
     , registry
     , maxClockSkew           = ClockSkew 1
@@ -347,9 +338,12 @@ mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     , miniProtocolParameters = defaultMiniProtocolParameters
     }
   where
-    blockProduction = case isProducer of
-      IsNotProducer -> Nothing
-      IsProducer    -> Just BlockProduction
-                         { produceBlock       = \_lift' -> nodeForgeBlock cfg
-                         , runMonadRandomDict = runMonadRandomIO
-                         }
+    blockProduction
+      | checkIfCanBeLeader (configConsensus cfg)
+      = Just BlockProduction
+               { produceBlock       = \_lift' -> nodeForgeBlock cfg
+               , runMonadRandomDict = runMonadRandomIO
+               }
+      | otherwise
+      = Nothing
+

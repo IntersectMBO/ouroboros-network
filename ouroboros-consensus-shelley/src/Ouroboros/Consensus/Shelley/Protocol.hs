@@ -319,6 +319,11 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
 
+  checkIfCanBeLeader TPraosConfig{tpraosIsCoreNodeOrNot} =
+    case tpraosIsCoreNodeOrNot of
+      TPraosIsACoreNode{}  -> True
+      TPraosIsNotACoreNode -> False
+
   checkIsLeader cfg@TPraosConfig{..} slot lv cs =
     case tpraosIsCoreNodeOrNot of
       TPraosIsNotACoreNode          -> return Nothing
