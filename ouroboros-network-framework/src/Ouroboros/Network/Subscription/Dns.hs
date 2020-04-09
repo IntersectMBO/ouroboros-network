@@ -113,13 +113,11 @@ dnsResolve tracer getSeed withResolver peerStatesVar beforeConnect (DnsSubscript
         -- on Windows reliably so as a workaround we add an extra layer
         -- of timeout on the outside.
         -- TODO: Fix upstream dns lib.
-        --       On windows the aid_ipv6 and aid_ipv4 threads are leaked incase
-        --       of an exception in the main thread.
-        res <- timeout 20 $ do
-                 aid_ipv6 <- async $ resolveAAAA resolver gotIpv6Rsp ipv6Rsps
-                 aid_ipv4 <- async $ resolveA resolver gotIpv6Rsp ipv4Rsps
-                 rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
-                 handleResult ipv6Rsps ipv4Rsps rd_e
+        res <- timeout 20 $
+          withAsync (resolveAAAA resolver gotIpv6Rsp ipv6Rsps) $ \aid_ipv6 ->
+            withAsync (resolveA resolver gotIpv6Rsp ipv4Rsps) $ \aid_ipv4 -> do
+              rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
+              handleResult ipv6Rsps ipv4Rsps rd_e
         case res of
           Nothing -> do
             -- TODO: the thread timedout, we should trace it
