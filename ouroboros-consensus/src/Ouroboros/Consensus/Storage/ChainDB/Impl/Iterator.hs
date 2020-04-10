@@ -136,46 +136,60 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB as VolDB
 --
 -- The ImmutableDB is slot-based instead of point-based, which means that
 -- before we know whether a block in the ImmutableDB matches a given point, we
--- must first read the block at the point's slot to obtain its hash, after
--- which we can then verify whether it matches the hash of the point. This is
--- important for the start and end bounds (both points) of a stream in case
--- they are in the ImmutableDB (i.e., their slots are <= the tip of the
--- ImmutableDB): we must first read the blocks corresponding to the bounds to
--- be sure the range is valid. Note that these reads happen before the first
--- call to 'iteratorNext' (which will trigger a second read of the first
--- block).
+-- must first read the block's hash corresponding to the point's slot from the
+-- (cached) on-disk indices, after which we can then verify whether it matches
+-- the hash of the point. This is important for the start and end bounds (both
+-- points) of a stream in case they are in the ImmutableDB (i.e., their slots
+-- are <= the tip of the ImmutableDB): we must first read the hashes
+-- corresponding to the bounds from the (cached) on-disk indices to be sure
+-- the range is valid. Note that these reads happen before the first call to
+-- 'iteratorNext'.
 --
 -- Note that when streaming to an /exclusive/ bound, the block corresponding
 -- to that bound ('Point') must exist in the ChainDB.
+--
+-- The ImmutableDB will keep the on-disk indices of a chunk of blocks in
+-- memory after the first read so that the next lookup doesn't have to read
+-- from disk. When both bounds are in the same chunk, which will typically be
+-- the case, only checking the first bound will require disk reads, the second
+-- will be cached.
 --
 -- = Costs
 --
 -- Opening an iterator has some costs:
 --
 -- * When blocks have to be streamed from the ImmutableDB: as discussed in
---   \"Bounds checking\", the blocks corresponding to the bounds have to be
---   read from disk.
+--   \"Bounds checking\", the hashes corresponding to the bounds have to be
+--   read from the (cached) on-disk indices.
 --
 -- * When blocks have to be streamed both from the ImmutableDB and the
---   VolatileDB, only the block corresponding to the lower bound will have to
---   be read from the ImmutableDB upfront, as described in the previous bullet
---   point. Note that the block corresponding to the upper bound does not have
---   to be read from disk, since it will be in the VolatileDB, which means
---   that we know its hash already from the in-memory index.
+--   VolatileDB, only the hash of the block corresponding to the lower bound
+--   will have to be read from the ImmutableDB upfront, as described in the
+--   previous bullet point. Note that the hash of the block corresponding to
+--   the upper bound does not have to be read from disk, since it will be in
+--   the VolatileDB, which means that we know its hash already from the
+--   in-memory index.
+--
+-- * When an exclusive lower bound requires streaming from the ImmutableDB,
+--   the block corresponding to that lower bound is read from disk (if the
+--   passed 'BlockComponent' requires reading from disk) because the
+--   ImmutableDB doesn't support exclusive bounds. There is no such cost
+--   attached to an exclusive upper bound. See #548.
 --
 -- In summary:
 --
--- * Only streaming from the VolatileDB: 0 blocks read upfront.
--- * Only streaming from the ImmutableDB: 2 blocks read upfront.
--- * Streaming from both the ImmutableDB and the VolatileDB: 1 block read
---   upfront.
+-- * Only streaming from the VolatileDB: 0 (cached) reads from disk upfront.
+-- * Only streaming from the ImmutableDB: 2 (cached) reads from disk upfront +
+--   1 block read from disk upfront in case of an exclusive lower bound.
+-- * Streaming from both the ImmutableDB and the VolatileDB: 1 (cached) read
+--   from disk upfront + 1 block read from disk upfront in case of an
+--   exclusive lower bound.
 --
 -- Additionally, when we notice during streaming that a block is no longer in
 -- the VolatileDB, we try to see whether it can be streamed from the
--- ImmutableDB instead. Opening such an iterator (with an exclusive bound) has
--- the cost of reading (but not parsing) one extra block from disk, in
--- addition to the block(s) we are actually interested in. This can happen
--- multiple times. See #548.
+-- ImmutableDB instead. Opening such an iterator costs 2 (cached) reads from
+-- disk upfront and 1 block read from disk upfront as it uses an exclusive
+-- lower bound. This can happen multiple times.
 stream
   :: forall m blk b. (IOLike m, HasHeader blk, HasCallStack)
   => ChainDbHandle m blk
