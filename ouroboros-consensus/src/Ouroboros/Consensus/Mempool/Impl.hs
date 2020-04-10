@@ -188,7 +188,7 @@ initMempoolEnv :: ( IOLike m
                -> m (MempoolEnv m blk)
 initMempoolEnv ledgerInterface cfg capacity tracer = do
     st <- atomically $ getCurrentLedgerState ledgerInterface
-    let st' = tickLedgerState cfg TxsForUnknownBlock st
+    let st' = tickLedgerState cfg (TxsForBlockInUnknownSlot st)
     isVar <- newTVarM $ initInternalState zeroTicketNo st'
     return MempoolEnv
       { mpEnvLedger    = ledgerInterface
@@ -333,7 +333,7 @@ implRemoveTxs mpEnv txIds = do
               ((`notElem` toRemove) . txId . txTicketTx)
               (TxSeq.toList isTxs)
           vr = revalidateTxsFor cfg
-            (tickLedgerState cfg TxsForUnknownBlock st)
+            (tickLedgerState cfg (TxsForBlockInUnknownSlot st))
             isLastTicketNo
             txTickets'
           is' = internalStateFromVR vr
@@ -384,18 +384,16 @@ implGetSnapshotFor :: forall m blk.
                       , ValidateEnvelope blk
                       )
                    => MempoolEnv m blk
-                   -> BlockSlot
-                   -> LedgerState blk
+                   -> BlockLedgerState blk
                    -> STM m (MempoolSnapshot blk TicketNo)
-implGetSnapshotFor MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg}
-                   blockSlot ledger =
+implGetSnapshotFor MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg} blockLedgerState =
     updatedSnapshot <$> readTVar mpEnvStateVar
   where
     updatedSnapshot :: InternalState blk -> MempoolSnapshot blk TicketNo
     updatedSnapshot =
           implSnapshotFromIS
         . internalStateFromVR
-        . validateStateFor mpEnvLedgerCfg blockSlot ledger
+        . validateStateFor mpEnvLedgerCfg blockLedgerState
 
 -- | Return the current capacity of the mempool in bytes.
 --
@@ -615,8 +613,8 @@ validateIS :: forall m blk.
            => MempoolEnv m blk
            -> STM m (ValidationResult blk)
 validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} =
-    validateStateFor mpEnvLedgerCfg TxsForUnknownBlock
-      <$> getCurrentLedgerState mpEnvLedger
+    validateStateFor mpEnvLedgerCfg
+      <$> (TxsForBlockInUnknownSlot <$> getCurrentLedgerState mpEnvLedger)
       <*> readTVar mpEnvStateVar
 
 -- | Given a (valid) internal state, validate it against the given ledger
@@ -631,11 +629,10 @@ validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} =
 validateStateFor
   :: forall blk. (ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
   => LedgerConfig     blk
-  -> BlockSlot
-  -> LedgerState      blk
+  -> BlockLedgerState blk
   -> InternalState    blk
   -> ValidationResult blk
-validateStateFor cfg blockSlot st is
+validateStateFor cfg blockLedgerState is
     | isTip    == ledgerTipHash (tickedLedgerState st')
     , isSlotNo == tickedSlotNo st'
     = validationResultFromIS is
@@ -643,7 +640,7 @@ validateStateFor cfg blockSlot st is
     = revalidateTxsFor cfg st' isLastTicketNo (TxSeq.toList isTxs)
   where
     IS { isTxs, isTip, isSlotNo, isLastTicketNo } = is
-    st' = tickLedgerState cfg blockSlot st
+    st' = tickLedgerState cfg blockLedgerState
 
 -- | Revalidate the given transactions (@['TxTicket' ('GenTx' blk)]@) against
 -- the given ticked ledger state.
@@ -666,21 +663,20 @@ revalidateTxsFor cfg st lastTicketNo txTickets =
 -- | Tick the 'LedgerState' using the given 'BlockSlot'.
 tickLedgerState
   :: forall blk. (UpdateLedger blk, ValidateEnvelope blk)
-  => LedgerConfig blk
-  -> BlockSlot
-  -> LedgerState blk
+  => LedgerConfig      blk
+  -> BlockLedgerState  blk
   -> TickedLedgerState blk
-tickLedgerState cfg blockSlot st = applyChainTick cfg slot st
+tickLedgerState _cfg (TxsForBlockInKnownSlot   st) = st
+tickLedgerState  cfg (TxsForBlockInUnknownSlot st) =
+    applyChainTick cfg slot st
   where
-    -- If we don't yet know the slot number, optimistically assume that they
-    -- will be included in a block in the next available slot
+    -- Optimistically assume that the transactions will be included in a block
+    -- in the next available slot
+    --
+    -- TODO: We should use time here instead
+    -- <https://github.com/input-output-hk/ouroboros-network/issues/1298>
+    -- Once we do, the ValidateEnvelope constraint can go.
     slot :: SlotNo
-    slot = case blockSlot of
-      TxsForBlockInSlot s -> s
-      TxsForUnknownBlock  ->
-        -- TODO: We should use time here instead
-        -- <https://github.com/input-output-hk/ouroboros-network/issues/1298>
-        -- Once we do, the ValidateEnvelope constraint can go.
-        case ledgerTipSlot st of
-          Origin -> minimumPossibleSlotNo (Proxy @blk)
-          At s   -> succ s
+    slot = case ledgerTipSlot st of
+             Origin -> minimumPossibleSlotNo (Proxy @blk)
+             At s   -> succ s

@@ -10,7 +10,7 @@
 module Ouroboros.Consensus.Mempool.API (
     Mempool(..)
   , addTxs
-  , BlockSlot(..)
+  , BlockLedgerState(..)
   , MempoolCapacityBytes (..)
   , MempoolSnapshot(..)
   , ApplyTx(..)
@@ -30,7 +30,6 @@ import           Control.Monad.Except
 import           Data.Word (Word32)
 import           GHC.Stack (HasCallStack)
 
-import           Ouroboros.Network.Block (SlotNo)
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -219,9 +218,7 @@ data Mempool m blk idx = Mempool {
       -- the given ledger state
       --
       -- This does not update the state of the mempool.
-    , getSnapshotFor :: BlockSlot
-                     -> LedgerState blk
-                     -> STM m (MempoolSnapshot blk idx)
+    , getSnapshotFor :: BlockLedgerState blk -> STM m (MempoolSnapshot blk idx)
 
       -- | Get the mempool's capacity in bytes.
     , getCapacity    :: STM m MempoolCapacityBytes
@@ -291,7 +288,7 @@ addTxs mempool = \txs -> do
       (added, toAdd) <- tryAddTxs mempool txs
       go (added:acc) toAdd
 
--- | The slot of the block in which the transactions in the mempool will end up
+-- | The ledger state wrt to which we should produce a block
 --
 -- The transactions in the mempool will be part of the body of a block, but a
 -- block consists of a header and a body, and the full validation of a block
@@ -300,12 +297,13 @@ addTxs mempool = \txs -> do
 -- ledger: the update system might be updated, scheduled delegations might be
 -- applied, etc., and such changes should take effect before we validate any
 -- transactions.
-data BlockSlot =
+data BlockLedgerState blk =
     -- | The slot number of the block is known
     --
     -- This will only be the case when we realized that we are the slot leader
-    -- and we are actually producing a block.
-    TxsForBlockInSlot SlotNo
+    -- and we are actually producing a block. It is the caller's responsibilit
+    -- to call 'applyChainTick' and produce the ticked ledger state.
+    TxsForBlockInKnownSlot (TickedLedgerState blk)
 
     -- | The slot number of the block is not yet known
     --
@@ -313,7 +311,7 @@ data BlockSlot =
     -- will end up, we have to make an assumption about which slot number to use
     -- for 'applyChainTick' to prepare the ledger state; we will assume that
     -- they will end up in the slot after the slot at the tip of the ledger.
-  | TxsForUnknownBlock
+  | TxsForBlockInUnknownSlot (LedgerState blk)
 
 -- | Represents the maximum number of bytes worth of transactions that a
 -- 'Mempool' can contain.

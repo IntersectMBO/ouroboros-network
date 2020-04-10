@@ -397,33 +397,46 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
               exitEarly
         let ledger = ledgerState extLedger
 
+        -- Check if we are not too far ahead of the chain
+        --
+        -- TODO: This check is not strictly necessary, but omitting it breaks
+        -- the consensus tests at the moment.
+        -- <https://github.com/input-output-hk/ouroboros-network/issues/1941>
+        case runExcept $ anachronisticProtocolLedgerView
+                           (configLedger cfg)
+                           ledger
+                           (At currentSlot) of
+          Left anachronyFailure -> do
+            -- There are so many empty slots between the tip of our chain and
+            -- the current slot that we cannot get an ledger view anymore
+            -- In principle, this is no problem; we can still produce a block
+            -- (we use the ticked ledger state). However, we probably don't
+            -- /want/ to produce a block in this case; we are most likely
+            -- missing a blocks on our chain.
+            trace $ TraceNoLedgerView currentSlot anachronyFailure
+            exitEarly
+          Right _ ->
+            return ()
+
+        -- Tick the ledger state for the 'SlotNo' we're producing a block for
+        let ticked = applyChainTick (configLedger cfg) currentSlot ledger
+
         -- Check if we are the leader
-        proof <-
-          case runExcept $ anachronisticProtocolLedgerView
-                 (configLedger cfg)
-                 ledger
-                 (At currentSlot) of
-            Right ledgerView -> do
-              mIsLeader :: Maybe (IsLeader (BlockProtocol blk)) <- lift $
-                runMonadRandom $ \_lift' ->
-                  checkIsLeader
-                    (configConsensus cfg)
-                    currentSlot
-                    ledgerView
-                    (headerStateConsensus (headerState extLedger))
-              case mIsLeader of
-                Just p  -> return p
-                Nothing -> do
-                  trace $ TraceNodeNotLeader currentSlot
-                  exitEarly
-            Left err -> do
-              -- There are so many empty slots between the tip of our chain and
-              -- the current slot that we cannot even get an accurate ledger
-              -- view anymore. This is indicative of a serious problem: we are
-              -- not receiving blocks. It is /possible/ it's just due to our
-              -- network connectivity, and we might still get these blocks at
-              -- some point; but we certainly can't produce a block of our own.
-              trace $ TraceNoLedgerView currentSlot err
+        proof <- do
+          let ledgerView = protocolLedgerView
+                             (configLedger cfg)
+                             (tickedLedgerState ticked)
+          mIsLeader :: Maybe (IsLeader (BlockProtocol blk)) <- lift $
+            runMonadRandom $ \_lift' ->
+              checkIsLeader
+                (configConsensus cfg)
+                currentSlot
+                ledgerView
+                (headerStateConsensus (headerState extLedger))
+          case mIsLeader of
+            Just p  -> return p
+            Nothing -> do
+              trace $ TraceNodeNotLeader currentSlot
               exitEarly
 
         -- At this point we have established that we are indeed slot leader
@@ -436,10 +449,10 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
         -- produce a block that fits onto the ledger we got above; if the
         -- ledger in the meantime changes, the block we produce here may or
         -- may not be adopted, but it won't be invalid.
-        mempoolSnapshot <- lift $ atomically $ getSnapshotFor
-                                                 mempool
-                                                 (TxsForBlockInSlot currentSlot)
-                                                 (ledgerState extLedger)
+        mempoolSnapshot <- lift $ atomically $
+                             getSnapshotFor
+                               mempool
+                               (TxsForBlockInKnownSlot ticked)
         let txs = map fst $ snapshotTxsForSize
                               mempoolSnapshot
                               (maxBlockBodySize ledger)
