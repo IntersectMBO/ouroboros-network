@@ -66,7 +66,7 @@ import           Control.Monad.Except
 import           Control.Tracer (Tracer, nullTracer)
 import           Data.Bifunctor
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Functor (($>), (<&>))
+import           Data.Functor ((<&>))
 import           GHC.Stack
 import           System.FilePath ((</>))
 
@@ -473,10 +473,9 @@ stream db registry blockComponent from to = runExceptT $ do
                  m
                  (ImmDB.Iterator (HeaderHash blk) m b)
     openStream start end = ExceptT $
-        bimap toUnknownRange (fmap snd . stopAt to) <$>
-      -- 'stopAt' needs to know the hash of each streamed block, so we \"Get\"
-      -- it in addition to @b@, but we drop it afterwards.
-        openIterator db registry ((,) <$> GetHash <*> blockComponent) start end
+        fmap (first toUnknownRange) $
+        traverse (stopAt to) =<<
+        openIterator db registry blockComponent start end
       where
         toUnknownRange :: ImmDB.WrongBoundError (HeaderHash blk) -> UnknownRange blk
         toUnknownRange e
@@ -494,32 +493,40 @@ stream db registry blockComponent from to = runExceptT $ do
           ImmDB.EmptySlotError slot     -> slot
           ImmDB.WrongHashError slot _ _ -> slot
 
-    -- | The ImmutableDB doesn't support an exclusive end bound, so we stop
-    -- the iterator when it reaches its exclusive end bound.
-    stopAt :: forall a.
-              StreamTo blk
-           -> ImmDB.Iterator (HeaderHash blk) m (HeaderHash blk, a)
-           -> ImmDB.Iterator (HeaderHash blk) m (HeaderHash blk, a)
+    -- | The ImmutableDB doesn't support an exclusive end bound, so we take
+    -- care of that here. We are given an iterator that uses the point of the
+    -- exclusive end bound as its inclusive end bound. We convert the iterator
+    -- into one obeying the exclusive end bound by always looking at the hash
+    -- of the next block to stream (which is cheap).
+    --
+    -- No-op if the end bound is inclusive.
+    stopAt :: StreamTo blk
+           -> ImmDB.Iterator (HeaderHash blk) m b
+           -> m (ImmDB.Iterator (HeaderHash blk) m b)
     stopAt = \case
-      StreamToInclusive _  -> id
-      StreamToExclusive pt -> \it -> it
-          { ImmDB.iteratorNext    = ignoreExclusiveBound <$> ImmDB.iteratorNext it
-          , ImmDB.iteratorPeek    = ignoreExclusiveBound <$> ImmDB.iteratorPeek it
-          , ImmDB.iteratorHasNext = ImmDB.iteratorHasNext it >>= \case
-              Nothing -> return Nothing
-              Just next@(_epochOrSlot, hash)
-                | isEnd hash
-                -> ImmDB.iteratorClose it $> Nothing
-                | otherwise
-                -> return $ Just next
-          }
+      StreamToInclusive _     -> return
+      StreamToExclusive endPt -> \it -> do
+          -- Whenever the iterator is moved to the next block, we check
+          -- whether the next block (cheap with 'ImmDB.iteratorHasNext') is
+          -- the end bound, in which case we close the iterator. All other
+          -- operations on the iterator can remain the same.
+          --
+          -- We must do the check immediately, because the very first block
+          -- might be the exclusive upper bound.
+          closeWhenEndIsNext it
+          return it
+            { ImmDB.iteratorNext =
+                ImmDB.iteratorNext it <* closeWhenEndIsNext it
+            }
         where
-          isEnd hash = realPointHash pt == hash
-          ignoreExclusiveBound = \case
-            ImmDB.IteratorResult (hash, _)
-              | isEnd hash
-              -> ImmDB.IteratorExhausted
-            itRes -> itRes
+          closeWhenEndIsNext it = ImmDB.iteratorHasNext it >>= \case
+            Nothing
+              -> return ()
+            Just (_epochOrSlot, hash)
+              | realPointHash endPt == hash
+              -> ImmDB.iteratorClose it
+              | otherwise
+              -> return ()
 
 -- | Stream headers/blocks after the given point
 --
