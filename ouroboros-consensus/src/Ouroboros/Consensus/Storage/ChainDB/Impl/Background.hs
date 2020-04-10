@@ -1,5 +1,9 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -21,9 +25,14 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Background
   , garbageCollect
     -- * Scheduling garbage collections
   , GcSchedule
+  , GcParams (..)
   , newGcSchedule
   , scheduleGC
+  , computeTimeForGC
   , gcScheduleRunner
+    -- ** Testing
+  , ScheduledGc (..)
+  , dumpGcSchedule
     -- * Adding blocks to the ChainDB
   , addBlockRunner
     -- * Executing scheduled chain selections
@@ -34,17 +43,22 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Background
 import           Control.Exception (assert)
 import           Control.Monad (forM_, forever, unless, void)
 import           Control.Tracer
+import           Data.Foldable (toList)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
+import           Data.Sequence.Strict (StrictSeq (..))
+import qualified Data.Sequence.Strict as Seq
+import           Data.Time.Clock
 import           Data.Void (Void)
 import           Data.Word
+import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader, Point,
-                     SlotNo, blockPoint, pointHash, pointSlot)
+                     SlotNo (..), blockPoint, pointHash, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
@@ -53,6 +67,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust, (.:))
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -265,7 +280,10 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule =
         scheduleGC
           (contramap TraceGCEvent cdbTracer)
           slotNo
-          cdbGcDelay
+          GcParams {
+              gcDelay    = cdbGcDelay
+            , gcInterval = cdbGcInterval
+            }
           gcSchedule
 
 -- | Write a snapshot of the LedgerDB to disk and remove old snapshots
@@ -302,78 +320,184 @@ garbageCollect CDB{..} slotNo = do
   Scheduling garbage collections
 -------------------------------------------------------------------------------}
 
--- | A scheduled garbage collections.
+-- | Scheduled garbage collections
 --
--- Represented as a queue.
+-- When a block has been copied to the ImmutableDB, we schedule a VolatileDB
+-- garbage collection for the slot corresponding to the block in the future.
+-- How far in the future is determined by the 'gcDelay' parameter. The goal is
+-- to allow some overlap so that the write to the ImmutableDB will have been
+-- flushed to disk before the block is removed from the VolatileDB.
 --
--- The background thread will continuously try to pop the first element of the
--- queue. Whenever it manages to pop a @('Time', 'SlotNo')@ off: it first
--- waits until the 'Time' is passed (using 'threadDelay' with the given 'Time'
--- minus the current 'Time') and then performs a garbage collection with the
--- given 'SlotNo'.
+-- We store scheduled garbage collections in a LIFO queue. Since the queue
+-- will be very short (see further down for why) and entries are more often
+-- added (at the block sync speed by a single thread) than removed (once every
+-- 'gcInterval'), we simply use a 'StrictSeq' stored in a 'TVar' to make
+-- reasoning and testing easier. Entries are enqueued at the end (right) and
+-- dequeued from the head (left).
 --
--- The 'Time's in the queue should be monotonically increasing. A fictional
+-- The 'Time's in the queue will be monotonically increasing. A fictional
 -- example (with hh:mm:ss):
 --
 -- > [(16:01:12, SlotNo 1012), (16:04:38, SlotNo 1045), ..]
 --
--- By using 'scheduleGC', monotonicity is practically guaranteed for standard
--- usage. Theoretically, multiple concurrent calls to 'scheduleGC' might
--- violate it, but this won't happen in practice, as it would mean that
--- multiple calls to 'copyToImmDB' (which cannot run concurrent with itself)
--- have finished very short after each other. Even then, the differences will
--- be ignorable (<1s), and actually won't matter at all, as garbage collection
--- timing doesn't have to be precise. In fact, it is exactly the goal to
--- introduce a delay between copying blocks from the ImmutableDB to the
--- VolatileDB and garbage-collecting them from the VolatileDB.
+-- Scheduling a garbage collection with 'scheduleGC' will add an entry to the
+-- end of the queue for the given slot at the time equal to now
+-- ('getMonotonicTime') + the @gcDelay@ rounded to @gcInterval@. Unless the
+-- last entry in the queue was scheduled for the same rounded time, in that
+-- case the new entry replaces the existing entry. The goal of this is to
+-- batch garbage collections so that, when possible, at most one garbage
+-- collection happens every @gcInterval@.
 --
--- If a 'Time' @t@ in the queue /is/ earlier than the 'Time' @t'@ before it in
--- the queue, then the GC scheduled for @t@ will simply be executed at @t'@.
+-- For example, starting with an empty queue and @gcDelay = 5min@ and
+-- @gcInterval = 10s@:
 --
--- All this combined means that a garbage collection scheduled at 'Time' @t@
--- will be performed at @t@ /or/ later (but never earlier), with no hard
--- guarantees about how much later.
+-- At 8:43:22, we schedule a GC for slot 10:
 --
--- How long will this queue be in practice?
+-- > [(8:48:30, SlotNo 10)]
 --
--- If we say a block is produced every 20 seconds, then a new GC is scheduled
--- every 20 seconds. Ignoring start-up, the queue will then be @delay / 20s@
--- entries long. For example, if the delay is 1h, then the queue will be 180
--- entries long, which is acceptable.
+-- The scheduled time is rounded up to the next interval. Next, at 8:43:24, we
+-- schedule a GC for slot 11:
 --
--- In Praos, the slot length decreases, but the number of blocks produced (per
--- time) will remain the same as the density decreases too (more slots, but
--- many of them empty), hence the queue queue length will also remain the
--- same.
-newtype GcSchedule m = GcSchedule (TQueue m (Time, SlotNo))
+-- > [(8:48:30, SlotNo 11)]
+--
+-- Note that the existing entry is replaced with the new one, as they map to
+-- the same @gcInterval@. Instead of two GCs 2 seconds apart, we will only
+-- schedule one GC.
+--
+-- Next, at 8:44:02, we schedule a GC for slot 12:
+--
+-- > [(8:48:30, SlotNo 11), (8:49:10, SlotNo 12)]
+--
+-- Now, a new entry was appended to the queue, as it doesn't map to the same
+-- @gcInterval@ as the last one.
+--
+-- In other words, everything scheduled in the first 10s will be done after
+-- 20s. The bounds are the open-closed interval:
+--
+-- > (now + gcDelay, now + gcDelay + gcInterval]
+--
+-- Whether we're syncing at high speed or downloading blocks as they are
+-- produced, the length of the queue will be at most @⌈gcDelay / gcInterval⌉ +
+-- 1@, e.g., 5min / 10s = 31 entries. The @+ 1@ is needed because we might be
+-- somewhere in the middle of a @gcInterval@.
+--
+-- The background thread will look at head of the queue and wait until that
+-- has 'Time' passed. After the wait, it will pop off the head of the queue
+-- and perform a garbage collection for the 'SlotNo' in the head. Note that
+-- the 'SlotNo' before the wait can be different from the one after the wait,
+-- precisely because of batching.
+newtype GcSchedule m = GcSchedule (StrictTVar m (StrictSeq ScheduledGc))
+
+data ScheduledGc = ScheduledGc {
+      scheduledGcTime :: !Time
+      -- ^ Time at which to run the garbage collection
+    , scheduledGcSlot :: !SlotNo
+      -- ^ For which slot to run the garbage collection
+    }
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
+instance Condense ScheduledGc where
+  condense (ScheduledGc time slot) = condense (time, slot)
+
+data GcParams = GcParams {
+      gcDelay    :: !DiffTime
+      -- ^ How long to wait until performing the GC. See 'cdbsGcDelay'.
+    , gcInterval :: !DiffTime
+      -- ^ The GC interval: the minimum time between two GCs. See
+      -- 'cdbsGcInterval'.
+    }
+  deriving (Show)
 
 newGcSchedule :: IOLike m => m (GcSchedule m)
-newGcSchedule = GcSchedule <$> atomically newTQueue
+newGcSchedule = GcSchedule <$> newTVarM Seq.empty
 
 scheduleGC
   :: forall m blk. IOLike m
   => Tracer m (TraceGCEvent blk)
   -> SlotNo    -- ^ The slot to use for garbage collection
-  -> DiffTime  -- ^ How long to wait until performing the GC
+  -> GcParams
   -> GcSchedule m
   -> m ()
-scheduleGC tracer slotNo delay (GcSchedule queue) = do
-    timeScheduledForGC <- addTime delay <$> getMonotonicTime
-    atomically $ writeTQueue queue (timeScheduledForGC, slotNo)
-    traceWith tracer $ ScheduledGC slotNo delay
+scheduleGC tracer slotNo gcParams (GcSchedule varQueue) = do
+    timeScheduledForGC <- computeTimeForGC gcParams <$> getMonotonicTime
+    atomically $ modifyTVar varQueue $ \case
+      queue' :|> ScheduledGc { scheduledGcTime = lastTimeScheduledForGC }
+        | timeScheduledForGC == lastTimeScheduledForGC
+        -- Same interval, batch it
+        -> queue' :|> ScheduledGc timeScheduledForGC slotNo
+      queue
+        -- Different interval or empty, so append it
+        -> queue  :|> ScheduledGc timeScheduledForGC slotNo
+    traceWith tracer $ ScheduledGC slotNo timeScheduledForGC
+
+computeTimeForGC
+  :: GcParams
+  -> Time  -- ^ Now
+  -> Time  -- ^ The time at which to perform the GC
+computeTimeForGC GcParams { gcDelay, gcInterval } (Time now) =
+    Time $ picosecondsToDiffTime $
+      -- We're rounding up to the nearest interval, because rounding down
+      -- would mean GC'ing too early.
+      roundUpToInterval
+        (diffTimeToPicoseconds gcInterval)
+        (diffTimeToPicoseconds (now + gcDelay))
+
+-- | Round to an interval
+--
+-- PRECONDITION: interval > 0
+--
+-- >    [roundUpToInterval 5 n | n <- [1..15]]
+-- > == [5,5,5,5,5, 10,10,10,10,10, 15,15,15,15,15]
+--
+-- >    roundUpToInterval 5 0
+-- > == 0
+roundUpToInterval :: (Integral a, Integral b) => b -> a -> a
+roundUpToInterval interval x
+    | m == 0
+    = d * fromIntegral interval
+    | otherwise
+    = (d + 1) * fromIntegral interval
+  where
+    (d, m) = x `divMod` fromIntegral interval
 
 gcScheduleRunner
   :: forall m. IOLike m
   => GcSchedule m
   -> (SlotNo -> m ())  -- ^ GC function
   -> m Void
-gcScheduleRunner (GcSchedule queue) runGc = forever $ do
-    (timeScheduledForGC, slotNo) <- atomically $ readTQueue queue
+gcScheduleRunner (GcSchedule varQueue) runGc = forever $ do
+    -- Peek to know how long to wait
+    timeScheduledForGC <- atomically $
+      readTVar varQueue >>= \case
+        Seq.Empty                             -> retry
+        ScheduledGc { scheduledGcTime } :<| _ -> return scheduledGcTime
+
     currentTime <- getMonotonicTime
     let toWait = max 0 (timeScheduledForGC `diffTime` currentTime)
     threadDelay toWait
+
+    -- After waiting, find the slot for which to GC and remove the entry from
+    -- the queue.
+    slotNo <- atomically $
+      readTVar varQueue >>= \case
+        ScheduledGc { scheduledGcSlot } :<| queue' -> do
+          writeTVar varQueue queue'
+          return scheduledGcSlot
+
+        -- Impossible, we peeked at the queue and it contained an entry. We
+        -- are the only one removing entries, so it can't have been removed
+        -- while we were waiting.
+        Seq.Empty -> error "queue empty after waiting"
+
     -- Garbage collection is called synchronously
     runGc slotNo
+
+-- | Return the current contents of the 'GcSchedule' queue without modifying
+-- it.
+--
+-- For testing purposes.
+dumpGcSchedule :: IOLike m => GcSchedule m -> STM m [ScheduledGc]
+dumpGcSchedule (GcSchedule varQueue) = toList <$> readTVar varQueue
 
 {-------------------------------------------------------------------------------
   Adding blocks to the ChainDB
