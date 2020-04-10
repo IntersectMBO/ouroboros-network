@@ -404,8 +404,11 @@ instance MonadDelay (SimM s) where
 
 instance MonadTimer (SimM s) where
   data Timeout (SimM s) = Timeout !(TVar s TimeoutState) !TimeoutId
+                        | NegativeTimeout !TimeoutId
+                        -- ^ a negative timeout
 
   readTimeout (Timeout var _key) = readTVar var
+  readTimeout (NegativeTimeout _key) = pure TimeoutCancelled
 
   newTimeout      d = SimM $ \k -> NewTimeout      d k
   updateTimeout t d = SimM $ \k -> UpdateTimeout t d (k ())
@@ -808,6 +811,18 @@ schedule thread@Thread{
           simstate' = simstate { clocks = Map.insert clockid' clockoff clocks }
       schedule thread' simstate'
 
+    -- we treat negative timers as cancelled ones; for the record we put
+    -- `EventTimerCreated` and `EventTimerCancelled` in the trace; This differs
+    -- from `GHC.Event` behaviour.
+    NewTimeout d k | d < 0 -> do
+      let t       = NegativeTimeout nextTmid
+          expiry  = d `addTime` time
+          thread' = thread { threadControl = ThreadControl (k t) ctl }
+      trace <- schedule thread' simstate { nextTmid = succ nextTmid }
+      return (Trace time tid tlbl (EventTimerCreated nextTmid nextVid expiry) $
+              Trace time tid tlbl (EventTimerCancelled nextTmid) $
+              trace)
+
     NewTimeout d k -> do
       tvar <- execNewTVar nextVid TimeoutPending
       let expiry  = d `addTime` time
@@ -818,6 +833,14 @@ schedule thread@Thread{
                                          , nextVid  = succ nextVid
                                          , nextTmid = succ nextTmid }
       return (Trace time tid tlbl (EventTimerCreated nextTmid nextVid expiry) trace)
+
+    -- we do not follow `GHC.Event` behaviour here; updating a timer to the past
+    -- effectively cancels it.
+    UpdateTimeout (Timeout _tvar tmid) d k | d < 0 -> do
+      let timers' = PSQ.delete tmid timers
+          thread' = thread { threadControl = ThreadControl k ctl }
+      trace <- schedule thread' simstate { timers = timers' }
+      return (Trace time tid tlbl (EventTimerCancelled tmid) trace)
 
     UpdateTimeout (Timeout _tvar tmid) d k -> do
           -- updating an expired timeout is a noop, so it is safe
@@ -830,11 +853,22 @@ schedule thread@Thread{
       trace <- schedule thread' simstate { timers = timers' }
       return (Trace time tid tlbl (EventTimerUpdated tmid expiry) trace)
 
+    -- updating a negative timer is a no-op, unlike in `GHC.Event`.
+    UpdateTimeout (NegativeTimeout _tmid) _d k -> do
+      let thread' = thread { threadControl = ThreadControl k ctl }
+      schedule thread' simstate
+
     CancelTimeout (Timeout _tvar tmid) k -> do
       let timers' = PSQ.delete tmid timers
           thread' = thread { threadControl = ThreadControl k ctl }
       trace <- schedule thread' simstate { timers = timers' }
       return (Trace time tid tlbl (EventTimerCancelled tmid) trace)
+
+    -- cancelling a negative timer is a no-op
+    CancelTimeout (NegativeTimeout _tmid) k -> do
+      -- negative timers are promptly removed from the state
+      let thread' = thread { threadControl = ThreadControl k ctl }
+      schedule thread' simstate
 
     Fork a k -> do
       let tid'     = nextTid
