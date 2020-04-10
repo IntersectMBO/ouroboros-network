@@ -41,7 +41,6 @@ openDBMock chunkInfo = do
                  -> Iterator hash m b
         iterator blockComponent itId = Iterator
           { iteratorNext    = update  $ iteratorNextModel    itId blockComponent
-          , iteratorPeek    = query   $ iteratorPeekModel    itId blockComponent
           , iteratorHasNext = query   $ iteratorHasNextModel itId
           , iteratorClose   = update_ $ iteratorCloseModel   itId
           }

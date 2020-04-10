@@ -224,16 +224,6 @@ data Iterator hash m a = Iterator
     -- 'iteratorClose'.
     iteratorNext    :: HasCallStack => m (IteratorResult a)
 
-    -- | Read the blob the 'Iterator' is currently pointing.
-    --
-    -- This operation is idempotent.
-    --
-    -- The next time 'iteratorNext' is called, the same 'IteratorResult' will
-    -- be returned.
-    --
-    -- Throws a 'ClosedDBError' if the database is closed.
-  , iteratorPeek    :: HasCallStack => m (IteratorResult a)
-
     -- | Return the epoch number (in case of an EBB) or slot number and hash
     -- of the next blob, if there is a next. Return 'Nothing' if not.
     --
@@ -252,7 +242,7 @@ instance NoUnexpectedThunks (Iterator hash m a) where
   whnfNoUnexpectedThunks _ctxt _itr = return NoUnexpectedThunks
 
 -- | Variant of 'traverse' instantiated to @'Iterator' hash m@ that executes
--- the monadic function when calling 'iteratorNext' and 'iteratorPeek'.
+-- the monadic function when calling 'iteratorNext'.
 traverseIterator
   :: Monad m
   => (a -> m b)
@@ -260,7 +250,6 @@ traverseIterator
   -> Iterator hash m b
 traverseIterator f itr = Iterator{
       iteratorNext    = iteratorNext itr >>= traverse f
-    , iteratorPeek    = iteratorPeek itr >>= traverse f
     , iteratorHasNext = iteratorHasNext itr
     , iteratorClose   = iteratorClose itr
     }
