@@ -23,7 +23,8 @@ import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (fromCBOR, toCBOR)
+import           Cardano.Binary (Annotator (..), FullByteString (..), fromCBOR,
+                     toCBOR)
 import           Cardano.Crypto (ProtocolMagicId)
 import           Cardano.Crypto.KES.Class (SignKeyKES)
 import           Cardano.Prelude (Natural)
@@ -318,9 +319,9 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeEncodeQuery          = encodeShelleyQuery
   nodeEncodeResult         = encodeShelleyResult
 
-  nodeDecodeHeader         = \_cfg _version -> const <$> fromCBOR
+  nodeDecodeHeader         = \_cfg _version -> (. Full) . runAnnotator <$> fromCBOR
   nodeDecodeWrappedHeader  = \_cfg _version -> decode
-  nodeDecodeBlock          = \_cfg -> const <$> fromCBOR
+  nodeDecodeBlock          = \_cfg -> (. Full) . runAnnotator <$> fromCBOR
   nodeDecodeGenTx          = fromCBOR
   nodeDecodeGenTxId        = fromCBOR
   nodeDecodeHeaderHash     = \Proxy -> fromCBOR
