@@ -11,7 +11,8 @@ module Test.IOSim
 import           Data.Array
 import           Data.Fixed (Fixed (..), Micro)
 import           Data.Graph
-import           Data.List (sort)
+import           Data.Function (on)
+import           Data.List (sortBy)
 import           Data.Time.Clock (DiffTime, picosecondsToDiffTime)
 
 import           Control.Exception (ArithException (..))
@@ -180,17 +181,17 @@ instance Arbitrary TestMicro where
       genN :: Int -> [Micro] -> Gen [Micro]
       genN 0 rs = return rs
       genN n [] = do
-        r <- genPositiveMicro
+        r <- genMicro
         genN (n - 1) [r]
       genN n rs = do
         r <- frequency
           [ (2, elements rs)
-          , (1, genPositiveMicro)
+          , (1, genMicro)
           ]
         genN (n - 1) (r : rs)
 
-      genPositiveMicro :: Gen Micro
-      genPositiveMicro = MkFixed . getPositive <$> arbitrary
+      genMicro :: Gen Micro
+      genMicro = MkFixed <$> arbitrary
 
   shrink (TestMicro rs) = [ TestMicro rs' | rs' <- shrinkList (const []) rs ]
 
@@ -232,7 +233,15 @@ test_timers xs =
          -- all timers should fire
          (length tr === length xs)
          -- timers should fire in the right order
-      .&&. (sort tr === tr)
+      .&&. (sortBy (on sortFn fst) tr === tr)
+
+    -- timers with negative timeout never fired, so we treat them as they would
+    -- all fired at once at @-∞@.  This is to say that the following function is
+    -- a well defined partial order.
+    sortFn :: DiffTime -> DiffTime -> Ordering
+    sortFn a b | a >= 0 && b >= 0 = a `compare` b
+               | a  < 0 && b  < 0 = EQ
+               | otherwise = a `compare` b
 
 prop_timers_ST :: TestMicro -> Property
 prop_timers_ST (TestMicro xs) =
