@@ -35,12 +35,12 @@ import           Control.Monad.Except
 import           Control.Tracer
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (unsafeNoUnexpectedThunks)
 
@@ -60,6 +60,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Assert (assertWithMsg)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm (checkInvariant)
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -204,12 +205,12 @@ instance ( LedgerSupportsProtocol blk
 -- | State used when the intersection between the candidate and the current
 -- chain is known.
 data KnownIntersectionState blk = KnownIntersectionState
-  { theirFrag        :: !(AnchoredFragment (Header blk))
+  { theirFrag              :: !(AnchoredFragment (Header blk))
     -- ^ The candidate, the synched fragment of their chain.
-  , theirHeaderState :: !(HeaderState blk)
+  , theirHeaderState       :: !(HeaderState blk)
     -- ^ 'HeaderState' corresponding to the tip (most recent block) of
     -- 'theirFrag'.
-  , ourFrag          :: !(AnchoredFragment (Header blk))
+  , ourFrag                :: !(AnchoredFragment (Header blk))
     -- ^ A view of the current chain fragment used to maintain the invariants
     -- with. Note that this might be temporarily out of date w.r.t. the actual
     -- current chain until we update it again.
@@ -220,14 +221,103 @@ data KnownIntersectionState blk = KnownIntersectionState
     -- this follows that both fragments intersect. This also means that
     -- 'theirFrag' forks off within the last @k@ headers/blocks of the
     -- 'ourFrag'.
-  , ourTip           :: !(Our (Tip blk))
+  , ourTip                 :: !(Our (Tip blk))
     -- ^ INVARIANT: must correspond to the tip of 'ourFrag'.
+  , mostRecentIntersection :: !(Point blk)
+    -- ^ The most recent intersection point between 'theirFrag' and 'ourFrag'.
+    -- Note that this is not necessarily the anchor point of both 'theirFrag'
+    -- and 'ourFrag', they might have many more headers in common.
+    --
+    -- INVARIANT:
+    -- > Just 'mostRecentIntersection' == 'AF.intersectionPoint' 'theirFrag' 'ourFrag'
+    --
+    -- It follows from the invariants on 'ourFrag' that this point is within
+    -- the last @k@ headers of the current chain fragment, at time of
+    -- computing the 'KnownIntersectionState'.
   }
   deriving (Generic)
 
 instance ( LedgerSupportsProtocol blk
          ) => NoUnexpectedThunks (KnownIntersectionState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(KnownIntersectionState blk))
+
+checkKnownIntersectionInvariants
+  :: ( HasHeader blk
+     , HasHeader (Header blk)
+     , ConsensusProtocol (BlockProtocol blk)
+     )
+  => ConsensusConfig (BlockProtocol blk)
+  -> KnownIntersectionState blk
+  -> Either String ()
+checkKnownIntersectionInvariants cfg KnownIntersectionState
+                                     { ourFrag
+                                     , theirFrag
+                                     , ourTip
+                                     , mostRecentIntersection
+                                     }
+    -- 'ourFrag' invariants
+    | let nbHeaders = AF.length ourFrag
+          ourAnchorPoint = AF.anchorPoint ourFrag
+    , nbHeaders < fromIntegral k
+    , ourAnchorPoint /= GenesisPoint
+    = throwError $ unwords
+      [ "ourFrag contains fewer than k headers and not close to genesis:"
+      , show nbHeaders
+      , "vs"
+      , show k
+      , "with anchor"
+      , show ourAnchorPoint
+      ]
+
+    | let ourFragAnchor = AF.anchorPoint ourFrag
+          theirFragAnchor = AF.anchorPoint theirFrag
+    , ourFragAnchor /= theirFragAnchor
+    = throwError $ unwords
+      [ "ourFrag and theirFrag have different anchor points:"
+      , show ourFragAnchor
+      , "vs"
+      , show theirFragAnchor
+      ]
+
+    -- 'ourTip' invariant
+    | let ourTipPoint = getTipPoint (unOur ourTip)
+          ourFragTipPoint = castPoint (AF.headPoint ourFrag)
+    , ourTipPoint /= ourFragTipPoint
+    = throwError $ unwords
+      [ "ourTip is not the tip of ourFrag:"
+      , show ourTipPoint
+      , "vs"
+      , show ourFragTipPoint
+      ]
+
+    -- 'mostRecentIntersection' invariant
+    | let actualMostRecentIntersection =
+            castPoint <$> AF.intersectionPoint theirFrag ourFrag
+    , Just mostRecentIntersection /= actualMostRecentIntersection
+    = throwError $ unwords
+      [ "mostRecentIntersection not the most recent intersection"
+      , "of theirFrag and ourFrag:"
+      , show mostRecentIntersection
+      , "vs"
+      , show actualMostRecentIntersection
+      ]
+
+    | otherwise
+    = return ()
+  where
+    SecurityParam k = protocolSecurityParam cfg
+
+assertKnownIntersectionInvariants
+  :: ( HasHeader blk
+     , HasHeader (Header blk)
+     , ConsensusProtocol (BlockProtocol blk)
+     , HasCallStack
+     )
+  => ConsensusConfig (BlockProtocol blk)
+  -> KnownIntersectionState blk
+  -> KnownIntersectionState blk
+assertKnownIntersectionInvariants cfg kis =
+    assertWithMsg (checkKnownIntersectionInvariants cfg kis) kis
 
 -- | Chain sync client
 --
@@ -341,12 +431,14 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
             Nothing     -> disconnect $
               InvalidIntersection intersection ourTip theirTip
         atomically $ writeTVar varCandidate theirFrag
-        let kis = KnownIntersectionState
-              { theirFrag        = theirFrag
-              , theirHeaderState = theirHeaderState
-              , ourFrag          = ourFrag
-              , ourTip           = ourTip
-              }
+        let kis = assertKnownIntersectionInvariants (configConsensus cfg) $
+              KnownIntersectionState
+                { theirFrag              = theirFrag
+                , theirHeaderState       = theirHeaderState
+                , ourFrag                = ourFrag
+                , ourTip                 = ourTip
+                , mostRecentIntersection = intersection
+                }
         continueWithState kis $ nextStep mkPipelineDecision0 Zero theirTip
 
     -- | Look at the current chain fragment that may have been updated in the
@@ -359,6 +451,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
       -> STM m (Maybe (KnownIntersectionState blk))
     intersectsWithCurrentChain kis@KnownIntersectionState
                                { theirFrag
+                               , theirHeaderState
                                , ourFrag
                                } = do
       ourFrag' <- getCurrentChain
@@ -370,7 +463,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
           -- ('rollBackward'), so we have nothing to do.
           return $ Just kis
 
-        | isJust (AF.intersectionPoint ourFrag' theirFrag) ->
+        | Just intersection <- AF.intersectionPoint ourFrag' theirFrag ->
           -- Our current chain changed, but it still intersects with candidate
           -- fragment, so update the 'ourFrag' field and trim to the
           -- candidate fragment to the same anchor point.
@@ -396,11 +489,15 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
            --   point must also.
            Nothing -> error
              "anchor point must be on candidate fragment if they intersect"
-           Just (_, trimmedCandidateFrag) -> return $ Just kis
-             { ourFrag   = ourFrag'
-             , theirFrag = trimmedCandidateFrag
-             , ourTip    = ourTip'
-             }
+           Just (_, trimmedCandidateFrag) -> return $ Just $
+             assertKnownIntersectionInvariants (configConsensus cfg) $
+               KnownIntersectionState
+                 { ourFrag                = ourFrag'
+                 , theirFrag              = trimmedCandidateFrag
+                 , theirHeaderState       = theirHeaderState
+                 , ourTip                 = ourTip'
+                 , mostRecentIntersection = castPoint intersection
+                 }
 
         | otherwise ->
           -- No more intersection with the current chain
@@ -410,8 +507,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
     -- has changed such that it no longer intersects with the candidate, in
     -- which case we initiate the intersection finding part of the protocol.
     --
-    -- Note that this is the only place we check whether our current chain has
-    -- changed.
+    -- This is the main place we check whether our current chain has changed.
+    -- We also check it in 'rollForward' to make sure we have an up-to-date
+    -- intersection before calling 'getLedgerView'.
     nextStep :: MkPipelineDecision
              -> Nat n
              -> Their (Tip blk)
@@ -511,11 +609,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
                      (KnownIntersectionState blk)
                      (ClientPipelinedStIdle n)
     rollForward mkPipelineDecision n hdr theirTip
-              = Stateful $ \kis@KnownIntersectionState
-                  { theirHeaderState
-                  , theirFrag
-                  , ourTip
-                  } -> traceException $ do
+              = Stateful $ \kis -> traceException $ do
       -- Reject the block if invalid
       let hdrHash  = headerHash hdr
           hdrPoint = headerPoint hdr
@@ -525,33 +619,74 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
 
       -- Get the ledger view required to validate the header
       -- NOTE: This will block if we are too far behind.
-      ledgerView <- atomically $ getLedgerView hdr ourTip theirTip
+      mbKisAndLedgerView <- atomically $ do
+        -- Before obtaining a 'LedgerView', we must find the most recent
+        -- intersection with the current chain. Note that this is cheap when
+        -- the chain and candidate haven't changed.
+        mKis' <- intersectsWithCurrentChain kis
+        case mKis' of
+          Nothing -> return Nothing
+          Just kis'@KnownIntersectionState { ourTip, mostRecentIntersection } -> do
+            ledgerView <-
+              getLedgerView hdr mostRecentIntersection ourTip theirTip
+            return $ Just (kis', ledgerView)
 
-      -- Check for clock skew
-      wallclock <- atomically $ getCurrentSlot btime
-      when (fmap unSlotNo (pointSlot hdrPoint) > At (unSlotNo wallclock + maxSkew)) $
-        disconnect $ HeaderExceedsClockSkew hdrPoint wallclock ourTip theirTip
+      case mbKisAndLedgerView of
+        Nothing ->
+          -- Our chain (tip) has changed and it no longer intersects with the
+          -- candidate fragment, so we have to find a new intersection, but
+          -- first drain the pipe.
+          continueWithState ()
+            $ drainThePipe n
+            $ findIntersection NoMoreIntersection
+        Just (kis', ledgerView) -> do
+          -- Our chain still intersects with the candidate fragment and we
+          -- have obtained a 'LedgerView' that we can use to validate @hdr@.
 
-      -- Validate header
-      let expectPrevHash = castHash (AF.headHash theirFrag)
-          actualPrevHash = headerPrevHash hdr
-      when (actualPrevHash /= expectPrevHash) $
-        disconnect $ DoesntFit actualPrevHash expectPrevHash ourTip theirTip
+          let KnownIntersectionState
+                { ourTip, ourFrag, theirHeaderState, theirFrag
+                , mostRecentIntersection
+                } = kis'
 
-      theirHeaderState' <-
-        case runExcept $ validateHeader cfg ledgerView hdr theirHeaderState of
-          Right theirHeaderState' -> return theirHeaderState'
-          Left  vErr              -> disconnect $
-            HeaderError hdrPoint vErr ourTip theirTip
+          -- Check for clock skew
+          wallclock <- atomically $ getCurrentSlot btime
+          when (fmap unSlotNo (pointSlot hdrPoint) > At (unSlotNo wallclock + maxSkew)) $
+            disconnect $ HeaderExceedsClockSkew hdrPoint wallclock ourTip theirTip
 
-      let theirFrag' = theirFrag :> hdr
-          kis' = kis
-            { theirFrag        = theirFrag'
-            , theirHeaderState = theirHeaderState'
-            }
-      atomically $ writeTVar varCandidate theirFrag'
+          -- Validate header
+          let expectPrevHash = castHash (AF.headHash theirFrag)
+              actualPrevHash = headerPrevHash hdr
+          when (actualPrevHash /= expectPrevHash) $
+            disconnect $ DoesntFit actualPrevHash expectPrevHash ourTip theirTip
 
-      continueWithState kis' $ nextStep mkPipelineDecision n theirTip
+          theirHeaderState' <-
+            case runExcept $ validateHeader cfg ledgerView hdr theirHeaderState of
+              Right theirHeaderState' -> return theirHeaderState'
+              Left  vErr              -> disconnect $
+                HeaderError hdrPoint vErr ourTip theirTip
+
+          let theirFrag' = theirFrag :> hdr
+              -- Advance the most recent intersection if we have the same header
+              -- on our fragment too. This is cheaper than recomputing the
+              -- intersection from scratch.
+              mostRecentIntersection'
+                | Just ourSuccessor <-
+                    AF.successorBlock (castPoint mostRecentIntersection) ourFrag
+                , headerHash ourSuccessor == headerHash hdr
+                = headerPoint hdr
+                | otherwise
+                = mostRecentIntersection
+              kis'' = assertKnownIntersectionInvariants (configConsensus cfg) $
+                KnownIntersectionState
+                  { theirFrag              = theirFrag'
+                  , theirHeaderState       = theirHeaderState'
+                  , ourFrag                = ourFrag
+                  , ourTip                 = ourTip
+                  , mostRecentIntersection = mostRecentIntersection'
+                  }
+          atomically $ writeTVar varCandidate theirFrag'
+
+          continueWithState kis'' $ nextStep mkPipelineDecision n theirTip
 
     -- Get the ledger view required to validate the header
     --
@@ -566,10 +701,12 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
     -- @curLedger@ to validate /their/ header, even in the special case
     -- discussed below.
     getLedgerView :: Header blk
+                  -> Point blk  -- ^ The intersection between our and their
+                                -- chain.
                   -> Our (Tip blk)
                   -> Their (Tip blk)
                   -> STM m (LedgerView (BlockProtocol blk))
-    getLedgerView hdr ourTip theirTip = do
+    getLedgerView hdr _intersection ourTip theirTip = do
         curLedger <- ledgerState <$> getCurrentLedger
 
         -- The invariant guarantees us that the intersection of their tip
@@ -597,10 +734,12 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
                       (ClientPipelinedStIdle n)
     rollBackward mkPipelineDecision n intersection
                  theirTip
-               = Stateful $ \kis@KnownIntersectionState
+               = Stateful $ \KnownIntersectionState
                    { theirFrag
                    , theirHeaderState
+                   , ourFrag
                    , ourTip
+                   , mostRecentIntersection
                    } -> traceException $ do
       (theirFrag', theirHeaderState') <- do
         case attemptRollback cfg intersection (theirFrag, theirHeaderState) of
@@ -630,10 +769,25 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
           Nothing     -> disconnect $
             InvalidRollBack intersection ourTip theirTip
 
-      let kis' = kis
-            { theirFrag        = theirFrag'
-            , theirHeaderState = theirHeaderState'
-            }
+      -- We just rolled back to @intersection@, either our most recent
+      -- intersection was after or at @intersection@, in which case
+      -- @intersection@ becomes the new most recent intersection.
+      --
+      -- But if the most recent intersection was /before/ @intersection@,
+      -- then the most recent intersection doesn't change.
+      let mostRecentIntersection'
+            | AF.withinFragmentBounds (castPoint intersection) ourFrag
+            = intersection
+            | otherwise
+            = mostRecentIntersection
+          kis' = assertKnownIntersectionInvariants (configConsensus cfg) $
+            KnownIntersectionState
+              { theirFrag              = theirFrag'
+              , theirHeaderState       = theirHeaderState'
+              , ourFrag                = ourFrag
+              , ourTip                 = ourTip
+              , mostRecentIntersection = mostRecentIntersection'
+              }
       atomically $ writeTVar varCandidate theirFrag'
 
       continueWithState kis' $ nextStep mkPipelineDecision n theirTip
