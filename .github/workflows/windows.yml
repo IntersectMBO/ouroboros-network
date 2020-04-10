@@ -34,8 +34,6 @@ jobs:
         run: choco install -y msys2
       - name: Install GHC
         run: choco install -y ghc --version 8.6.5
-      - name: Install Cabal
-        run: choco install -y cabal --version 3.0.0.0
       - name: Set PATH
         run: |
           [Environment]::GetEnvironmentVariable("Path")
