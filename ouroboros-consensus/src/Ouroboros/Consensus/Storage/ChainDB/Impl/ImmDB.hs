@@ -33,7 +33,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
   , closeDB
   , iteratorNext
   , iteratorHasNext
-  , iteratorPeek
   , iteratorClose
     -- * Tracing
   , TraceEvent
@@ -640,12 +639,6 @@ iteratorHasNext :: (HasCallStack, MonadCatch m)
                 -> ImmDB.Iterator (HeaderHash blk) m a
                 -> m (Maybe (Either EpochNo SlotNo, HeaderHash blk))
 iteratorHasNext db it = withDB db $ const $ ImmDB.iteratorHasNext it
-
-iteratorPeek :: (HasCallStack, MonadCatch m)
-             => ImmDB m blk
-             -> ImmDB.Iterator (HeaderHash blk) m a
-             -> m (ImmDB.IteratorResult a)
-iteratorPeek db it = withDB db $ const $ ImmDB.iteratorPeek it
 
 iteratorClose :: (HasCallStack, MonadCatch m)
               => ImmDB m blk

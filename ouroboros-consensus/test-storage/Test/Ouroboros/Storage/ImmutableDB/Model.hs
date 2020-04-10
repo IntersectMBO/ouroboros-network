@@ -42,7 +42,6 @@ module Test.Ouroboros.Storage.ImmutableDB.Model
   , streamModel
   , streamAllModel
   , iteratorNextModel
-  , iteratorPeekModel
   , iteratorHasNextModel
   , iteratorCloseModel
   ) where
@@ -874,23 +873,6 @@ iteratorNextModel itId blockComponent dbm@DBModel {..} =
           res = IteratorResult $
             extractBlockComponent hash slot isEBB bi blockComponent
 
-          (slot, isEBB) = case epochOrSlot of
-            Left epoch  -> (slotNoOfEBB' dbm epoch, IsEBB)
-            Right slot' -> (slot', IsNotEBB)
-
-iteratorPeekModel
-  :: IteratorId
-  -> BlockComponent (ImmutableDB hash m) b
-  -> DBModel hash
-  -> IteratorResult b
-iteratorPeekModel itId blockComponent dbm@DBModel { dbmIterators } =
-    case Map.lookup itId dbmIterators of
-      Nothing                      -> IteratorExhausted
-      Just (IteratorModel [])      -> IteratorExhausted
-      Just (IteratorModel ((epochOrSlot, hash, bi):_)) ->
-          IteratorResult $
-            extractBlockComponent hash slot isEBB bi blockComponent
-        where
           (slot, isEBB) = case epochOrSlot of
             Left epoch  -> (slotNoOfEBB' dbm epoch, IsEBB)
             Right slot' -> (slot', IsNotEBB)

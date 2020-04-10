@@ -121,7 +121,6 @@ data Cmd it
   | Stream                 (Maybe (SlotNo, Hash)) (Maybe (SlotNo, Hash))
   | StreamAll
   | IteratorNext           it
-  | IteratorPeek           it
   | IteratorHasNext        it
   | IteratorClose          it
   | Reopen                 ValidationPolicy
@@ -227,7 +226,6 @@ run env@ImmutableDBEnv { varDB, varNextId, varIters, args } cmd =
       Stream              s e    -> iter            =<< stream                 db registry allComponents s e
       StreamAll                  -> IterResults     <$> streamAll              db
       IteratorNext        it     -> IterResult      <$> iteratorNext           (unWithEq it)
-      IteratorPeek        it     -> IterResult      <$> iteratorPeek           (unWithEq it)
       IteratorHasNext     it     -> IterHasNext     <$> iteratorHasNext        (unWithEq it)
       IteratorClose       it     -> Unit            <$> iteratorClose'         it
       DeleteAfter tip            -> do
@@ -304,7 +302,6 @@ runPure = \case
     Stream              s e    -> ok Iter            $ updateEE (streamModel s e)
     StreamAll                  -> ok IterResults     $ query    (streamAllModel allComponents)
     IteratorNext        it     -> ok IterResult      $ update   (iteratorNextModel it allComponents)
-    IteratorPeek        it     -> ok IterResult      $ query    (iteratorPeekModel it allComponents)
     IteratorHasNext     it     -> ok IterHasNext     $ query    (iteratorHasNextModel it)
     IteratorClose       it     -> ok Unit            $ update_  (iteratorCloseModel it)
     DeleteAfter tip            -> ok Unit            $ update_  (deleteAfterModel tip)
@@ -563,7 +560,6 @@ generateCmd Model {..} = At <$> frequency
     , (if Map.null dbmIterators then 0 else 8, do
          iter <- elements $ RE.keys knownIters
          frequency [ (4, return $ IteratorNext    iter)
-                   , (4, return $ IteratorPeek    iter)
                    , (4, return $ IteratorHasNext iter)
                    , (1, return $ IteratorClose   iter) ])
     , (1, Reopen <$> genValPol)
@@ -698,7 +694,6 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
       [GetEBBComponent epoch' | epoch' <- shrink epoch]
     GetBlockOrEBBComponent _slot _hash -> []
     IteratorNext    {}                 -> []
-    IteratorPeek    {}                 -> []
     IteratorHasNext {}                 -> []
     IteratorClose   {}                 -> []
     DeleteAfter tip                    ->
@@ -919,8 +914,6 @@ data Tag
 
   | TagErrorDuringIteratorNext
 
-  | TagErrorDuringIteratorPeek
-
   | TagErrorDuringIteratorClose
 
   deriving (Show, Eq)
@@ -999,8 +992,6 @@ tag = QSM.classify
       { At (Stream {}) -> True ; _ -> False }
     , tagErrorDuring TagErrorDuringIteratorNext $ \case
       { At (IteratorNext {}) -> True; _ -> False }
-    , tagErrorDuring TagErrorDuringIteratorPeek $ \case
-      { At (IteratorPeek {}) -> True; _ -> False }
     , tagErrorDuring TagErrorDuringIteratorClose $ \case
        { At (IteratorClose {}) -> True; _ -> False }
     ]

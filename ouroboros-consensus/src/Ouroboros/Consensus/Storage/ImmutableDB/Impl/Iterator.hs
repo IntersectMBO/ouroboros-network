@@ -258,15 +258,13 @@ streamImpl dbEnv registry blockComponent mbStart mbEnd =
     mkEmptyIterator :: Iterator hash m b
     mkEmptyIterator = Iterator
       { iteratorNext    = return IteratorExhausted
-      , iteratorPeek    = return IteratorExhausted
       , iteratorHasNext = return Nothing
       , iteratorClose   = return ()
       }
 
     mkIterator :: IteratorHandle hash m -> Iterator hash m b
     mkIterator ith = Iterator
-      { iteratorNext    = iteratorNextImpl dbEnv ith registry blockComponent True
-      , iteratorPeek    = iteratorNextImpl dbEnv ith registry blockComponent False
+      { iteratorNext    = iteratorNextImpl dbEnv ith registry blockComponent
       , iteratorHasNext = iteratorHasNextImpl    ith
       , iteratorClose   = iteratorCloseImpl      ith
       }
@@ -348,13 +346,12 @@ iteratorNextImpl
   -> IteratorHandle hash m
   -> ResourceRegistry m
   -> BlockComponent (ImmutableDB hash m) b
-  -> Bool  -- ^ Step the iterator after reading iff True
   -> m (IteratorResult b)
 iteratorNextImpl dbEnv it@IteratorHandle
                          { itHasFS = hasFS :: HasFS m h
                          , itIndex = index :: Index m hash h
                          , ..
-                         } registry blockComponent step = do
+                         } registry blockComponent = do
     -- The idea is that if the state is not 'IteratorStateExhausted, then the
     -- head of 'itChunkEntries' is always ready to be read. After reading it
     -- with 'readNextBlock' or 'readNextHeader', 'stepIterator' will advance
@@ -369,7 +366,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
                 (currentChunkOffset st)
               entry = NE.head itChunkEntries
           b <- getBlockComponent itChunkHandle itChunk entry blockComponent
-          when step $ stepIterator curChunkInfo iteratorState
+          stepIterator curChunkInfo iteratorState
           return $ IteratorResult b
   where
     ImmutableDBEnv { chunkInfo } = dbEnv
