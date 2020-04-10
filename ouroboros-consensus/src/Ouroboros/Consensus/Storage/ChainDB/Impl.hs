@@ -145,6 +145,7 @@ openDBInternal args launchBgTasks = do
                   , cdbTraceLedger     = Args.cdbTraceLedger args
                   , cdbRegistry        = Args.cdbRegistry args
                   , cdbGcDelay         = Args.cdbGcDelay args
+                  , cdbGcInterval      = Args.cdbGcInterval args
                   , cdbKillBgThreads   = varKillBgThreads
                   , cdbChunkInfo       = Args.cdbChunkInfo args
                   , cdbIsEBB           = toIsEBB . isJust . Args.cdbIsEBB args

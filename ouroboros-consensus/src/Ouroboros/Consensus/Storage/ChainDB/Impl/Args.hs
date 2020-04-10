@@ -104,6 +104,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
     , cdbTraceLedger          :: Tracer m (LgrDB.LedgerDB blk)
     , cdbRegistry             :: ResourceRegistry m
     , cdbGcDelay              :: DiffTime
+    , cdbGcInterval           :: DiffTime
     , cdbBlocksToAddSize      :: Word
       -- ^ Size of the queue used to store asynchronously added blocks. This
       -- is the maximum number of blocks that could be kept in memory at the
@@ -119,6 +120,15 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
       -- ^ TODO: the ImmutableDB takes a 'ResourceRegistry' too, but we're
       -- using it for ChainDB-specific things. Revisit these arguments.
     , cdbsGcDelay         :: DiffTime
+      -- ^ Delay between copying a block to the ImmutableDB and triggering a
+      -- garbage collection for the corresponding slot on the VolatileDB.
+      --
+      -- The goal of the delay is to ensure that the write to the ImmutableDB
+      -- has been flushed to disk before deleting the block from the
+      -- VolatileDB, so that a crash won't result in the loss of the block.
+    , cdbsGcInterval      :: DiffTime
+      -- ^ Batch all scheduled GCs so that at most one GC happens every
+      -- 'cdbsGcInterval'.
     , cdbsBlockchainTime  :: BlockchainTime m
     , cdbsEncodeHeader    :: Header blk -> Encoding
     , cdbsBlocksToAddSize :: Word
@@ -132,9 +142,25 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
 -- * 'cdbsRegistry'
 -- * 'cdbsBlockchainTime'
 -- * 'cdbsEncodeHeader'
+--
+-- We a 'cdbsGcDelay' of 60 seconds and a 'cdbsGcInterval' of 10 seconds, this
+-- means (see the properties in "Test.Ouroboros.Storage.ChainDB.GcSchedule"):
+--
+-- * The length of the 'GcSchedule' queue is @<= ⌈gcDelay / gcInterval⌉ + 1@,
+--   i.e., @<= 7@.
+-- * The overlap (number of blocks in both the VolatileDB and the ImmutableDB)
+--   is the number of blocks synced in @gcDelay + gcInterval@ = 70s. E.g, when
+--   bulk syncing at 1k-2k blocks/s, this means 70k-140k blocks. During normal
+--   operation, we receive 1 block/20s (for Byron /and/ for Shelley), meaning
+--   at most 4 blocks.
+-- * The unnecessary overlap (the blocks that we haven't GC'ed yet but could
+--   have, because of batching) < the number of blocks sync in @gcInterval@.
+--   E.g., when syncing at 1k-2k blocks/s, this means 10k-20k blocks. During
+--   normal operation, we receive 1 block/20s, meaning at most 1 block.
 defaultSpecificArgs :: ChainDbSpecificArgs m blk
 defaultSpecificArgs = ChainDbSpecificArgs{
-      cdbsGcDelay         = oneHour
+      cdbsGcDelay         = secondsToDiffTime 60
+    , cdbsGcInterval      = secondsToDiffTime 10
     , cdbsBlocksToAddSize = 10
       -- Fields without a default
     , cdbsTracer          = error "no default for cdbsTracer"
@@ -142,8 +168,6 @@ defaultSpecificArgs = ChainDbSpecificArgs{
     , cdbsBlockchainTime  = error "no default for cdbsBlockchainTime"
     , cdbsEncodeHeader    = error "no default for cdbsEncodeHeader"
     }
-  where
-    oneHour = secondsToDiffTime 60 * 60
 
 -- | Default arguments for use within IO
 --
@@ -219,6 +243,7 @@ fromChainDbArgs ChainDbArgs{..} = (
           cdbsTracer          = cdbTracer
         , cdbsRegistry        = cdbRegistry
         , cdbsGcDelay         = cdbGcDelay
+        , cdbsGcInterval      = cdbGcInterval
         , cdbsBlockchainTime  = cdbBlockchainTime
         , cdbsEncodeHeader    = cdbEncodeHeader
         , cdbsBlocksToAddSize = cdbBlocksToAddSize
@@ -277,5 +302,6 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbTraceLedger          = lgrTraceLedger
     , cdbRegistry             = immRegistry
     , cdbGcDelay              = cdbsGcDelay
+    , cdbGcInterval           = cdbsGcInterval
     , cdbBlocksToAddSize      = cdbsBlocksToAddSize
     }
