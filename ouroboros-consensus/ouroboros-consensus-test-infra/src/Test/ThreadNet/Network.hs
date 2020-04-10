@@ -607,11 +607,13 @@ runThreadNetwork ThreadNetworkArgs
         , cdbBlockchainTime       = btime
         , cdbAddHdrEnv            = nodeAddHeaderEnvelope (Proxy @blk)
         , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
-        -- Misc
+          -- Misc
         , cdbTracer               = instrumentationTracer <> nullDebugTracer
         , cdbTraceLedger          = nullDebugTracer
         , cdbRegistry             = registry
+          -- TODO vary these
         , cdbGcDelay              = 0
+        , cdbGcInterval           = 1
         , cdbBlocksToAddSize      = 2
         }
       where

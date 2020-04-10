@@ -284,8 +284,10 @@ mkArgs cfg chunkInfo initLedger tracer registry hashInfo
     , cdbTracer               = tracer
     , cdbTraceLedger          = nullTracer
     , cdbRegistry             = registry
-    , cdbGcDelay              = 0
     , cdbBlocksToAddSize      = 2
+      -- We don't run the background threads, so these are not used
+    , cdbGcDelay              = 1
+    , cdbGcInterval           = 1
     }
   where
     addDummyBinaryInfo :: CBOR.Encoding -> BinaryInfo CBOR.Encoding

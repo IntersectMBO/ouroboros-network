@@ -37,7 +37,6 @@ import           Control.Monad (when)
 import           Control.Tracer (Tracer)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
-import           Data.Time.Clock (secondsToDiffTime)
 
 import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
@@ -306,7 +305,6 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger
     , ChainDB.cdbTracer               = tracer
     , ChainDB.cdbImmValidation        = ValidateMostRecentChunk
     , ChainDB.cdbVolValidation        = NoValidation
-    , ChainDB.cdbGcDelay              = secondsToDiffTime 10
     , ChainDB.cdbBlockchainTime       = btime
     }
   where
