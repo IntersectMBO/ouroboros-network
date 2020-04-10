@@ -51,6 +51,7 @@ import qualified Ouroboros.Network.TxSubmission.Mempool.Reader as MempoolReader
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -401,18 +402,17 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
         -- TODO: This check is not strictly necessary, but omitting it breaks
         -- the consensus tests at the moment.
         -- <https://github.com/input-output-hk/ouroboros-network/issues/1941>
-        case runExcept $ anachronisticProtocolLedgerView
-                           (configLedger cfg)
-                           unticked
-                           (At currentSlot) of
-          Left anachronyFailure -> do
+        case runExcept $ forecastFor
+                           (ledgerViewForecastAtTip (configLedger cfg) unticked)
+                           currentSlot of
+          Left err -> do
             -- There are so many empty slots between the tip of our chain and
             -- the current slot that we cannot get an ledger view anymore
             -- In principle, this is no problem; we can still produce a block
             -- (we use the ticked ledger state). However, we probably don't
             -- /want/ to produce a block in this case; we are most likely
             -- missing a blocks on our chain.
-            trace $ TraceNoLedgerView currentSlot anachronyFailure
+            trace $ TraceNoLedgerView currentSlot err
             exitEarly
           Right _ ->
             return ()
@@ -451,7 +451,7 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
         mempoolSnapshot <- lift $ atomically $
                              getSnapshotFor
                                mempool
-                               (TxsForBlockInKnownSlot ticked)
+                               (ForgeInKnownSlot ticked)
         let txs = map fst $ snapshotTxsForSize
                               mempoolSnapshot
                               (maxBlockBodySize $ tickedLedgerState ticked)

@@ -10,7 +10,7 @@
 module Ouroboros.Consensus.Mempool.API (
     Mempool(..)
   , addTxs
-  , BlockLedgerState(..)
+  , ForgeLedgerState(..)
   , MempoolCapacityBytes (..)
   , MempoolSnapshot(..)
   , ApplyTx(..)
@@ -218,7 +218,7 @@ data Mempool m blk idx = Mempool {
       -- the given ledger state
       --
       -- This does not update the state of the mempool.
-    , getSnapshotFor :: BlockLedgerState blk -> STM m (MempoolSnapshot blk idx)
+    , getSnapshotFor :: ForgeLedgerState blk -> STM m (MempoolSnapshot blk idx)
 
       -- | Get the mempool's capacity in bytes.
     , getCapacity    :: STM m MempoolCapacityBytes
@@ -297,13 +297,13 @@ addTxs mempool = \txs -> do
 -- ledger: the update system might be updated, scheduled delegations might be
 -- applied, etc., and such changes should take effect before we validate any
 -- transactions.
-data BlockLedgerState blk =
+data ForgeLedgerState blk =
     -- | The slot number of the block is known
     --
     -- This will only be the case when we realized that we are the slot leader
     -- and we are actually producing a block. It is the caller's responsibilit
     -- to call 'applyChainTick' and produce the ticked ledger state.
-    TxsForBlockInKnownSlot (TickedLedgerState blk)
+    ForgeInKnownSlot (TickedLedgerState blk)
 
     -- | The slot number of the block is not yet known
     --
@@ -311,7 +311,7 @@ data BlockLedgerState blk =
     -- will end up, we have to make an assumption about which slot number to use
     -- for 'applyChainTick' to prepare the ledger state; we will assume that
     -- they will end up in the slot after the slot at the tip of the ledger.
-  | TxsForBlockInUnknownSlot (LedgerState blk)
+  | ForgeInUnknownSlot (LedgerState blk)
 
 -- | Represents the maximum number of bytes worth of transactions that a
 -- 'Mempool' can contain.

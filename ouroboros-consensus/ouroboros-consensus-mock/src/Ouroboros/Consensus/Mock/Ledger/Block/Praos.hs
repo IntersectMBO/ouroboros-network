@@ -32,6 +32,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.Block
@@ -151,8 +152,8 @@ instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
-  protocolLedgerView               cfg _   =          stakeDist cfg
-  anachronisticProtocolLedgerView_ cfg _ _ = return $ stakeDist cfg
+  protocolLedgerView    cfg _ =                            stakeDist cfg
+  ledgerViewForecastAt_ cfg _ = Just . constantForecastOf (stakeDist cfg)
 
 -- | Praos needs a ledger that can give it the "active stake distribution"
 --

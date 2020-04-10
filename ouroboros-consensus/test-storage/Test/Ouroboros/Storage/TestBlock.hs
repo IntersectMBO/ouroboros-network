@@ -92,6 +92,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Forecast
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -545,10 +546,8 @@ instance ValidateEnvelope TestBlock where
       epochSlots = unEpochSize $ HardFork.eraEpochSize $ testBlockEraParams cfg
 
 instance LedgerSupportsProtocol TestBlock where
-  protocolLedgerView _ _ =
-      ()
-  anachronisticProtocolLedgerView_ _ _ _ =
-      return ()
+  protocolLedgerView _ _ = ()
+  ledgerViewForecastAt_ _ _ = Just . trivialForecast
 
 instance HasHardForkHistory TestBlock where
   type HardForkIndices TestBlock = '[()]

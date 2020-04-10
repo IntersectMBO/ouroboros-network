@@ -55,6 +55,7 @@ import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -692,7 +693,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
     --
     -- To validate the block, we need the consensus chain state (updated using
     -- headers only, and kept as part of the candidate state) and the
-    -- (anachronistic) ledger view. We read the latter as the first thing in
+    -- (forecast) ledger view. We read the latter as the first thing in
     -- the transaction, because we might have to retry the transaction if the
     -- ledger state is too far behind the upstream peer (see below).
     --
@@ -701,29 +702,36 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
     -- @curLedger@ to validate /their/ header, even in the special case
     -- discussed below.
     getLedgerView :: Header blk
-                  -> Point blk  -- ^ The intersection between our and their
-                                -- chain.
-                  -> Our (Tip blk)
-                  -> Their (Tip blk)
+                  -> Point blk   -- ^ Intersection between our and their chain
+                  -> Our (Tip blk)       -- ^ Only to produce an error message
+                  -> Their (Tip blk)     -- ^ Only to produce an error message
                   -> STM m (LedgerView (BlockProtocol blk))
-    getLedgerView hdr _intersection ourTip theirTip = do
+    getLedgerView hdr intersection ourTip theirTip = do
         curLedger <- ledgerState <$> getCurrentLedger
 
         -- The invariant guarantees us that the intersection of their tip
         -- and our tip is within k blocks from our tip. This means that the
-        -- anachronistic ledger view must be available, unless they are
-        -- too far /ahead/ of us. In this case we must simply wait
-        case runExcept $ anachronisticProtocolLedgerView
-              (configLedger cfg)
-              curLedger
-              (pointSlot hdrPoint) of
-          Right lv          -> return lv
-          Left TooFarAhead  -> retry
-          -- unexpected alternative; see comment before this case expression
-          Left TooFarBehind -> disconnect $
-            InvalidRollForward hdrPoint ourTip theirTip
+        -- forecast ledger view must be available, unless
+        --
+        -- (1) they are too far /ahead/ of us, and we must simply wait
+        -- (2) the chain density is so low that despite having @k@ blocks,
+        --     we nonetheless have no ledger view available. This should not
+        --     happen under normal conditions.
+        case ledgerViewForecastAt
+               (configLedger cfg)
+               curLedger
+               (pointSlot intersection) of
+          Nothing -> -- Case (2)
+            disconnect $
+              InvalidRollForward (realPointToPoint hdrPoint) ourTip theirTip
+          Just forecast ->
+            case runExcept $ forecastFor forecast (realPointSlot hdrPoint) of
+              Left OutsideForecastRange{} -> -- Case (1)
+                retry
+              Right lv ->
+                return lv
       where
-        hdrPoint = headerPoint hdr
+        hdrPoint = headerRealPoint hdr
 
     rollBackward :: MkPipelineDecision
                  -> Nat n
@@ -947,9 +955,14 @@ data ChainSyncClientException =
           (Our   (Tip blk))
           (Their (Tip blk))
 
-      -- | The upstream node rolled forward to a point too far in our past.
-      -- This may happen if, during catch-up, our local node has moved too far
-      -- ahead of the upstream node.
+      -- | We were unable to get a ledger view for the intersection point
+      -- between the candidate's chain and our chain.
+      --
+      -- This can only happen in the case of very low density chains, where
+      -- the @k@ blocks on our chain span more than @2k@ slots. Note that
+      -- producing a block on top of a chain while the distance from the tip
+      -- of that chain to the current slot (in terms of wallblock) is very
+      -- large will also result in such a low density chain.
     | forall blk. BlockSupportsProtocol blk =>
         InvalidRollForward
           (Point blk)  -- ^ Roll forward to this header

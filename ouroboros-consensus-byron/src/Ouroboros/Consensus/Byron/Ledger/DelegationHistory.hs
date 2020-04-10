@@ -23,7 +23,6 @@ import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import           Codec.Serialise (decode, encode)
 import           Data.Coerce (coerce)
 import qualified Data.Foldable as Foldable
-import           Data.Sequence.Strict (StrictSeq)
 import qualified Data.Sequence.Strict as Seq
 
 import           Cardano.Binary (enforceSize)
@@ -59,19 +58,6 @@ newtype DelegationHistory = DH (History Delegation.Map)
   deriving stock (Show, Eq)
   deriving newtype (NoUnexpectedThunks)
 
--- | Snapshots strictly after genesis
---
--- More recent snapshots are stored at the end of the sequence.
---
--- Invariant: the (exclusive) upper bound of each snapshot must equal the
--- (inclusive) lower bound of the next.
-type Snapshots = StrictSeq Snapshot
-
--- | Historical snapshot of the delegation state
---
--- See 'DelegationHistory' for details
-type Snapshot = SlotBounded 'IX Delegation.Map
-
 -- | Empty (genesis) delegation history
 empty :: DelegationHistory
 empty = DH History.empty
@@ -93,12 +79,12 @@ find = coerce (History.find @Delegation.Map)
   instance.
 -------------------------------------------------------------------------------}
 
-toLedgerViews :: Snapshots
+toLedgerViews :: History.Snapshots Delegation.Map
               -> [SlotBounded 'IX (PBftLedgerView PBftByronCrypto)]
 toLedgerViews = map (fmap toPBftLedgerView) . Foldable.toList
 
 fromLedgerViews :: [SlotBounded 'IX (PBftLedgerView PBftByronCrypto)]
-                -> Snapshots
+                -> History.Snapshots Delegation.Map
 fromLedgerViews = Seq.fromList . map (fmap fromPBftLedgerView)
 
 encodeDelegationHistory :: DelegationHistory -> Encoding

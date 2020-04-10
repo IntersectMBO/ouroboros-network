@@ -31,6 +31,7 @@ import           Ouroboros.Network.Block (HasHeader (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
@@ -133,8 +134,8 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => LedgerSupportsProtocol (SimplePBftBlock c PBftMockCrypto) where
-  protocolLedgerView               cfg _   =          simpleMockLedgerConfig cfg
-  anachronisticProtocolLedgerView_ cfg _ _ = return $ simpleMockLedgerConfig cfg
+  protocolLedgerView    cfg _ =                            simpleMockLedgerConfig cfg
+  ledgerViewForecastAt_ cfg _ = Just . constantForecastOf (simpleMockLedgerConfig cfg)
 
 {-------------------------------------------------------------------------------
   Serialisation

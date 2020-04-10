@@ -28,6 +28,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
@@ -118,10 +119,8 @@ instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          ) => LedgerSupportsProtocol (SimpleBftBlock c c') where
-  protocolLedgerView _ _ =
-      ()
-  anachronisticProtocolLedgerView_ _ _ _ =
-      return ()
+  protocolLedgerView _ _ = ()
+  ledgerViewForecastAt_ _ _ = Just . trivialForecast
 
 {-------------------------------------------------------------------------------
   Serialisation

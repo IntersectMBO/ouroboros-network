@@ -1,17 +1,20 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Ouroboros.Consensus.Ledger.SupportsProtocol (
     LedgerSupportsProtocol(..)
-  , AnachronyFailure(..)
-  , anachronisticProtocolLedgerView
-  , lemma_protocolLedgerView_anachronistic_applyChainTick
+  , ledgerViewForecastAt
+  , ledgerViewForecastAtTip
+  , lemma_ledgerViewForecastAt_applyChainTick
   ) where
 
 import           Control.Monad.Except
 import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.Block (SlotNo)
-import           Ouroboros.Network.Point
+import           Ouroboros.Network.Point hiding (at)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -27,92 +30,103 @@ class ( BlockSupportsProtocol blk
                      -> LedgerState blk
                      -> LedgerView (BlockProtocol blk)
 
-  -- | Get a ledger view for a specific slot
+  -- | Get a (historical) forecast at the given slot
   --
-  -- Suppose @k = 4@, i.e., we can roll back 4 blocks
+  -- Returns 'Nothing' if the given slot is too far in the past.
+  -- It is an 'error' to call this with a slot in the future.
   --
-  -- >             /-----------\
-  -- >             |           ^
-  -- >             v           |
-  -- >     --*--*--*--*--*--*--*--
-  -- >          |  A           B
-  -- >          |
-  -- >          \- A'
+  -- This forecast can be used to validate headers of blocks within the range
+  -- of the forecast. These blocks do not necessarily need to live on the same
+  -- branch as the current ledger, but the slot at which the forecast is
+  -- obtained must be within @k@ blocks from the tip.
   --
-  -- In other words, this means that we can roll back from point B to point A,
-  -- and then roll forward to any block on any fork from A. Note that we can
-  -- /not/ roll back to any siblings of A (such as A'), as that would require
-  -- us to roll back at least @k + 1@ blocks, which we can't (by definition).
+  -- The range of the forecast should allow to validate a sufficient number of
+  -- headers to validate an alternative chain longer than ours, so that chain
+  -- selection can decide whether or not we prefer the alternative chain to our
+  -- current chain. In addition, it would be helpful, though not essential, if
+  -- we can look further ahead than that, as this would improve sync
+  -- performance.
   --
-  -- Given a ledger state at point B, we should be able to verify any of the
-  -- headers (corresponding to the blocks) at point A or any of its successors
-  -- on any fork, up to some maximum distance from A. This distance can be
-  -- determined by the ledger, though must be at least @k@: we must be able to
-  -- validate any of these past headers, since otherwise we would not be able to
-  -- switch to a fork. It is not essential that the maximum distance extends
-  -- into the future (@> k@), though it is helpful: it means that in the chain
-  -- sync client we can download and validate headers even if they don't fit
-  -- directly onto the tip of our chain.
-  --
-  -- The anachronistic ledger state at point B is precisely the ledger state
-  -- that can be used to validate this set of headers.
-  --
-  -- Invariant: when calling this function with slot @s@ yields a
-  -- 'SlotBounded' @sb@, then @'atSlot' sb@ yields a 'Just'.
-  anachronisticProtocolLedgerView_
-    :: LedgerConfig blk
-    -> LedgerState blk
-    -> WithOrigin SlotNo -- ^ Slot for which you would like a ledger view
-    -> Except AnachronyFailure (LedgerView (BlockProtocol blk))
+  -- NOTE (difference between 'ledgerViewForecastAt' and 'applyChainTick'):
+  -- Both 'ledgerViewForecastAt' and 'applyChainTick' can be used to obtain
+  -- a protocol ledger view for a future slot. The difference between the two
+  -- is that 'applyChainTick' assumes no blocks are present between the current
+  -- ledger tip and the specified 'SlotNo', whereas 'ledgerViewForecastAt'
+  -- cannot make such an assumption. Thus, 'applyChainTick' cannot fail, whereas
+  -- the forecast returned by 'ledgerViewForecastAt' might report an
+  -- 'OutsideForecastRange' for the same 'SlotNo'. We expect the two functions
+  -- to produce the same view whenever the 'SlotNo' /is/ in range, however;
+  -- see 'lemma_ledgerViewForecastAt_applyChainTick'.
+  ledgerViewForecastAt_ :: HasCallStack
+                        => LedgerConfig blk
+                        -> LedgerState blk
+                        -> WithOrigin SlotNo
+                        -> Maybe (Forecast (LedgerView (BlockProtocol blk)))
 
--- | See 'anachronisticProtocolLedgerView'.
-data AnachronyFailure
-  = TooFarAhead
-  | TooFarBehind
-  deriving (Eq,Show)
+-- | Wrapper around 'forecastAt' that checks 'lemma_forecast_chaintic'.
+ledgerViewForecastAt :: forall blk. (LedgerSupportsProtocol blk, HasCallStack)
+                     => LedgerConfig blk
+                     -> LedgerState blk
+                     -> WithOrigin SlotNo
+                     -> Maybe (Forecast (LedgerView (BlockProtocol blk)))
+ledgerViewForecastAt cfg st at =
+    checkLemma <$> ledgerViewForecastAt_ cfg st at
+  where
+    checkLemma :: Forecast (LedgerView (BlockProtocol blk))
+               -> Forecast (LedgerView (BlockProtocol blk))
+    checkLemma forecast = forecast { forecastFor = \for ->
+        assertWithMsg
+          (lemma_ledgerViewForecastAt_applyChainTick cfg st forecast for)
+          (forecastFor forecast for)
+      }
 
--- | Variant of 'anachronisticProtocolLedgerView_' which checks (when
--- assertions are enabled) whether
--- 'lemma_protocolLedgerView_anachronistic_applyChainTick' holds.
+-- | Get a 'Forecast' from the tip of the ledger
 --
--- Use this function instead of 'anachronisticProtocolLedgerView_'.
-anachronisticProtocolLedgerView
-  :: (LedgerSupportsProtocol blk, HasCallStack)
-  => LedgerConfig blk
-  -> LedgerState blk
-  -> WithOrigin SlotNo -- ^ Slot for which you would like a ledger view
-  -> Except AnachronyFailure (LedgerView (BlockProtocol blk))
-anachronisticProtocolLedgerView cfg st slot =
-    assertWithMsg
-      (lemma_protocolLedgerView_anachronistic_applyChainTick cfg st slot)
-      (anachronisticProtocolLedgerView_ cfg st slot)
-
--- | Lemma:
+-- This is currently only used in block production, and as an indirect way to
+-- avoid block production when the wall clock is too far ahead of the ledger.
 --
--- > for all (At s) >= ledgerTipSlot st,
--- >   Right st' = anachronisticProtocolLedgerView_ cfg st (At s) ->
--- >   st' == protocolLedgerView cfg (tickedLedgerState (applyChainTick cfg s st))
+-- TODO: If/when we remove that check, we can probably remove this function.
+-- <https://github.com/input-output-hk/ouroboros-network/issues/1941>
+ledgerViewForecastAtTip :: LedgerSupportsProtocol blk
+                        => LedgerConfig blk
+                        -> LedgerState blk
+                        -> Forecast (LedgerView (BlockProtocol blk))
+ledgerViewForecastAtTip cfg st =
+    case ledgerViewForecastAt cfg st (ledgerTipSlot st) of
+      Just forecast -> forecast
+      Nothing       -> error "ledgerViewForecastAtTip: impossible"
+
+-- | Relation between 'ledgerViewForecastAt' and 'applyChainTick'
+--
+-- For all slots @s@ such that @At s >= ledgerTip st@, if
+--
+-- >    predictionFor (ledgerViewForecastAt cfg st at) s
+-- > == Right view
+--
+-- then
+--
+-- >    protocolLedgerView cfg (tickedLedgerState (applyChainTick cfg s st))
+-- > == view
 --
 -- This should be true for each ledger because consensus depends on it.
-lemma_protocolLedgerView_anachronistic_applyChainTick
+lemma_ledgerViewForecastAt_applyChainTick
   :: LedgerSupportsProtocol blk
   => LedgerConfig blk
   -> LedgerState blk
-  -> WithOrigin SlotNo -- ^ Slot for which you would like a ledger view
+  -> Forecast (LedgerView (BlockProtocol blk))
+  -> SlotNo
   -> Either String ()
-lemma_protocolLedgerView_anachronistic_applyChainTick cfg st slot
-    | slot >= ledgerTipSlot st
-    , At s <- slot
-    , let lhs = anachronisticProtocolLedgerView_ cfg st slot
-          rhs =
-              protocolLedgerView cfg
-            . tickedLedgerState
-            . applyChainTick cfg s
-            $ st
+lemma_ledgerViewForecastAt_applyChainTick cfg st forecast for
+    | At for >= ledgerTipSlot st
+    , let lhs = forecastFor forecast for
+          rhs = protocolLedgerView cfg
+              . tickedLedgerState
+              . applyChainTick cfg for
+              $ st
     , Right lhs' <- runExcept lhs
     , lhs' /= rhs
     = Left $ unlines
-      [ "anachronisticProtocolLedgerView /= protocolLedgerView . applyChainTick:"
+      [ "ledgerViewForecastAt /= protocolLedgerView . applyChainTick:"
       , show lhs'
       , " /= "
       , show rhs

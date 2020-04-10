@@ -43,6 +43,7 @@ library
                        Ouroboros.Consensus.BlockchainTime.SlotLengths
                        Ouroboros.Consensus.BlockchainTime.WallClock
                        Ouroboros.Consensus.Config
+                       Ouroboros.Consensus.Forecast
                        Ouroboros.Consensus.HardFork.History
                        Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract

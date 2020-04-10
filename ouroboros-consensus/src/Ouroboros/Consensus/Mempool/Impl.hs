@@ -188,7 +188,7 @@ initMempoolEnv :: ( IOLike m
                -> m (MempoolEnv m blk)
 initMempoolEnv ledgerInterface cfg capacity tracer = do
     st <- atomically $ getCurrentLedgerState ledgerInterface
-    let st' = tickLedgerState cfg (TxsForBlockInUnknownSlot st)
+    let st' = tickLedgerState cfg (ForgeInUnknownSlot st)
     isVar <- newTVarM $ initInternalState zeroTicketNo st'
     return MempoolEnv
       { mpEnvLedger    = ledgerInterface
@@ -333,7 +333,7 @@ implRemoveTxs mpEnv txIds = do
               ((`notElem` toRemove) . txId . txTicketTx)
               (TxSeq.toList isTxs)
           vr = revalidateTxsFor cfg
-            (tickLedgerState cfg (TxsForBlockInUnknownSlot st))
+            (tickLedgerState cfg (ForgeInUnknownSlot st))
             isLastTicketNo
             txTickets'
           is' = internalStateFromVR vr
@@ -384,7 +384,7 @@ implGetSnapshotFor :: forall m blk.
                       , ValidateEnvelope blk
                       )
                    => MempoolEnv m blk
-                   -> BlockLedgerState blk
+                   -> ForgeLedgerState blk
                    -> STM m (MempoolSnapshot blk TicketNo)
 implGetSnapshotFor MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg} blockLedgerState =
     updatedSnapshot <$> readTVar mpEnvStateVar
@@ -614,7 +614,7 @@ validateIS :: forall m blk.
            -> STM m (ValidationResult blk)
 validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} =
     validateStateFor mpEnvLedgerCfg
-      <$> (TxsForBlockInUnknownSlot <$> getCurrentLedgerState mpEnvLedger)
+      <$> (ForgeInUnknownSlot <$> getCurrentLedgerState mpEnvLedger)
       <*> readTVar mpEnvStateVar
 
 -- | Given a (valid) internal state, validate it against the given ledger
@@ -629,7 +629,7 @@ validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} =
 validateStateFor
   :: forall blk. (ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
   => LedgerConfig     blk
-  -> BlockLedgerState blk
+  -> ForgeLedgerState blk
   -> InternalState    blk
   -> ValidationResult blk
 validateStateFor cfg blockLedgerState is
@@ -664,10 +664,10 @@ revalidateTxsFor cfg st lastTicketNo txTickets =
 tickLedgerState
   :: forall blk. (UpdateLedger blk, ValidateEnvelope blk)
   => LedgerConfig      blk
-  -> BlockLedgerState  blk
+  -> ForgeLedgerState  blk
   -> TickedLedgerState blk
-tickLedgerState _cfg (TxsForBlockInKnownSlot   st) = st
-tickLedgerState  cfg (TxsForBlockInUnknownSlot st) =
+tickLedgerState _cfg (ForgeInKnownSlot   st) = st
+tickLedgerState  cfg (ForgeInUnknownSlot st) =
     applyChainTick cfg slot st
   where
     -- Optimistically assume that the transactions will be included in a block

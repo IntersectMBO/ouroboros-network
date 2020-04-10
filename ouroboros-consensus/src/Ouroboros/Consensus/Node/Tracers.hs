@@ -23,6 +23,7 @@ import           Ouroboros.Network.TxSubmission.Outbound
                      (TraceTxSubmissionOutbound)
 
 import           Ouroboros.Consensus.Block (Header)
+import           Ouroboros.Consensus.Forecast (OutsideForecastRange)
 import           Ouroboros.Consensus.BlockchainTime (TraceBlockchainTimeEvent)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTx, GenTxId,
@@ -186,10 +187,8 @@ data TraceForgeEvent blk tx
   -- This will only happen if there are many missing blocks between the tip of
   -- our chain and the current slot.
   --
-  -- As a sanity check, we record also the failure returned by
-  -- 'anachronisticProtocolLedgerView', although we expect this to be
-  -- 'TooFarAhead', never 'TooFarBehind'.
-  | TraceNoLedgerView SlotNo AnachronyFailure
+  -- We record also the failure returned by 'forecastFor'.
+  | TraceNoLedgerView SlotNo OutsideForecastRange
 
   -- | Leadership check failed: the current chain contains a block from a slot
   -- /after/ the current slot
