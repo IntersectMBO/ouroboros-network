@@ -361,7 +361,7 @@ implSyncWithLedger :: ( IOLike m
                    => MempoolEnv m blk -> m (MempoolSnapshot blk TicketNo)
 implSyncWithLedger mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} = do
     (removed, mempoolSize, snapshot) <- atomically $ do
-      vr <- validateIS mpEnv TxsForUnknownBlock
+      vr <- validateIS mpEnv
       writeTVar mpEnvStateVar (internalStateFromVR vr)
       -- The size of the mempool /after/ removing invalid transactions.
       mempoolSize <- getMempoolSize mpEnv
@@ -613,10 +613,9 @@ validateIS :: forall m blk.
               , ValidateEnvelope blk
               )
            => MempoolEnv m blk
-           -> BlockSlot
            -> STM m (ValidationResult blk)
-validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} blockSlot =
-    validateStateFor mpEnvLedgerCfg blockSlot
+validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} =
+    validateStateFor mpEnvLedgerCfg TxsForUnknownBlock
       <$> getCurrentLedgerState mpEnvLedger
       <*> readTVar mpEnvStateVar
 
