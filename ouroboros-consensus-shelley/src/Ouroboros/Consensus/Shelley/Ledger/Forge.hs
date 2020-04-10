@@ -17,8 +17,7 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Network.Block (castHash)
 
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.Abstract (ledgerTipHash)
-import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.State (NodeState)
 import qualified Ouroboros.Consensus.Node.State as NodeState
 
@@ -35,18 +34,18 @@ forgeShelleyBlock
   :: (MonadRandom m, TPraosCrypto c)
   => TopLevelConfig (ShelleyBlock c)
   -> NodeState.Update m (NodeState (ShelleyBlock c))
-  -> SlotNo                           -- ^ Current slot
-  -> BlockNo                          -- ^ Current block number
-  -> ExtLedgerState (ShelleyBlock c)  -- ^ Ledger
-  -> [GenTx (ShelleyBlock c)]         -- ^ Txs to add in the block
-  -> TPraosProof c                    -- ^ Leader proof ('IsLeader')
+  -> BlockNo                             -- ^ Current block number
+  -> TickedLedgerState (ShelleyBlock c)  -- ^ Current ledger
+  -> [GenTx (ShelleyBlock c)]            -- ^ Txs to add in the block
+  -> TPraosProof c                       -- ^ Leader proof ('IsLeader')
   -> m (ShelleyBlock c)
-forgeShelleyBlock cfg updateNodeState curSlot curNo extLedger txs isLeader = do
+forgeShelleyBlock cfg updateNodeState curNo tickedLedger txs isLeader = do
     tpraosFields <-
       forgeTPraosFields updateNodeState isLeader kesPeriod mkBhBody
     return $ mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
   where
     TPraosConfig { tpraosParams } = configConsensus cfg
+    curSlot = tickedSlotNo tickedLedger
 
     -- The current KES period
     kesPeriod :: SL.KESPeriod
@@ -62,8 +61,8 @@ forgeShelleyBlock cfg updateNodeState curSlot curNo extLedger txs isLeader = do
         toShelleyPrevHash
       . castHash
       . ledgerTipHash
-      . ledgerState
-      $ extLedger
+      . tickedLedgerState
+      $ tickedLedger
 
     mkBhBody toSign = SL.BHBody {
           bheaderPrev    = prevHash

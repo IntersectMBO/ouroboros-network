@@ -120,10 +120,9 @@ data BlockProduction m blk = BlockProduction {
                    -- effects; this is primarily useful for tests.
 
                    -> Update n (NodeState blk)
-                   -> SlotNo             -- Current slot
-                   -> BlockNo            -- Current block number
-                   -> ExtLedgerState blk -- Current ledger state
-                   -> [GenTx blk]        -- Contents of the mempool
+                   -> BlockNo               -- Current block number
+                   -> TickedLedgerState blk -- Current ledger state
+                   -> [GenTx blk]           -- Contents of the mempool
                    -> IsLeader (BlockProtocol blk) -- Proof we are leader
                    -> n blk
 
@@ -395,7 +394,7 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
             Nothing -> do
               trace $ TraceNoLedgerState currentSlot bcPrevPoint
               exitEarly
-        let ledger = ledgerState extLedger
+        let unticked = ledgerState extLedger
 
         -- Check if we are not too far ahead of the chain
         --
@@ -404,7 +403,7 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
         -- <https://github.com/input-output-hk/ouroboros-network/issues/1941>
         case runExcept $ anachronisticProtocolLedgerView
                            (configLedger cfg)
-                           ledger
+                           unticked
                            (At currentSlot) of
           Left anachronyFailure -> do
             -- There are so many empty slots between the tip of our chain and
@@ -419,7 +418,7 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
             return ()
 
         -- Tick the ledger state for the 'SlotNo' we're producing a block for
-        let ticked = applyChainTick (configLedger cfg) currentSlot ledger
+        let ticked = applyChainTick (configLedger cfg) currentSlot unticked
 
         -- Check if we are the leader
         proof <- do
@@ -455,16 +454,15 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
                                (TxsForBlockInKnownSlot ticked)
         let txs = map fst $ snapshotTxsForSize
                               mempoolSnapshot
-                              (maxBlockBodySize ledger)
+                              (maxBlockBodySize $ tickedLedgerState ticked)
 
         -- Actually produce the block
         newBlock <- lift $ runMonadRandom $ \lift' ->
           produceBlock
             lift'
             (updateFromTVar (castStrictTVar varState))
-            currentSlot
             bcBlockNo
-            extLedger
+            ticked
             txs
             proof
         trace $ TraceForgedBlock
