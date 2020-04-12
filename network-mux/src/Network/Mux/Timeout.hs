@@ -1,8 +1,10 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | An alternative implementation of 'System.Timeout.timeout' for platforms
 -- (i.e. Windows) where the standard implementation is too expensive.
@@ -24,7 +26,7 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer (MonadTimer, threadDelay)
+import           Control.Monad.Class.MonadTimer (MonadTimer, registerDelay)
 import qualified Control.Monad.Class.MonadTimer as MonadTimer
 import           Control.Exception (Exception(..),
                    asyncExceptionToException, asyncExceptionFromException)
@@ -112,49 +114,76 @@ withTimeoutSerialAlternative
   => (TimeoutFn m -> m b) -> m b
 withTimeoutSerialAlternative body = do
 
-    -- A channel shared between the timeouts and the monitoring thread.
-    monitorChan <- newTVarM MonitorChanEmpty
+    -- State shared between the timeouts and the monitoring thread.
+    monitorState <- newMonitorState
 
     -- Run the monitoring thread but ensure it terminates when the body is done.
-    withAsync (monitoringThread monitorChan) $ \_ ->
+    withAsync (monitoringThread monitorState) $ \_ ->
 
       -- Run the body and pass it the @timeout@ function.
-      body (timeout monitorChan)
+      body (timeout monitorState)
 
 
--- | This is essentially a @Maybe@, and our use of this with a 'TVar' is much
--- like a 'TMVar', but not exactly the same since the write side overwrites.
+-- | The state shared between the timeouts and the monitoring thread.
 --
-data MonitorChan m = MonitorChanEmpty
-                   | MonitorChanFull
+data MonitorState m =
+     MonitorState {
+       -- written by timeout combinator, read and reset by monitoring thread
+       nextTimeoutVar :: !(TVar m (NextTimeout m)),
+
+       -- written by monitoring thread, read by timeout combinator
+       curDeadlineVar :: !(TVar m Time),
+
+       -- written by timeout combinator, read and reset by monitoring thread
+       deadlineResetVar :: !(TVar m Bool)
+     }
+
+data NextTimeout m = NoNextTimeout
+                   | NextTimeout
                        !(ThreadId m)           -- Which thread to interrupt
                        !Time                   -- When to interrupt it
                        !(TVar m TimeoutState)  -- Synchronisation state
 
 
--- | A non-blocking write\/overwrite.
---
-overwriteMonitorChan :: MonadSTM m
-                     => TVar m (MonitorChan m)
-                     -> ThreadId m
-                     -> Time
-                     -> TVar m TimeoutState
-                     -> m ()
-overwriteMonitorChan chanvar !tid !deadline !stateVar =
-    atomically $ writeTVar chanvar (MonitorChanFull tid deadline stateVar)
+newMonitorState :: MonadSTM m => m (MonitorState m)
+newMonitorState = do
+    nextTimeoutVar   <- newTVarM NoNextTimeout
+    curDeadlineVar   <- newTVarM (Time 0)
+    deadlineResetVar <- newTVarM False
+    return MonitorState{..}
 
--- | Like a normal 'takeTMVar' on the read side, so can block.
+
+-- | An update to the shared monitor state to set a new timer.
 --
-readMonitorChan :: MonadSTM m
-                => TVar m (MonitorChan m)
-                -> m (ThreadId m, Time, TVar m TimeoutState)
-readMonitorChan chanvar =
+setNewTimer :: MonadSTM m
+            => MonitorState m
+            -> ThreadId m
+            -> Time
+            -> TVar m TimeoutState
+            -> m ()
+setNewTimer MonitorState{nextTimeoutVar, curDeadlineVar, deadlineResetVar}
+            !tid !deadline !stateVar =
     atomically $ do
-      chan <- readTVar chanvar
-      case chan of
-        MonitorChanEmpty -> retry
-        MonitorChanFull tid deadline stateVar -> do
-          writeTVar chanvar MonitorChanEmpty
+      writeTVar nextTimeoutVar (NextTimeout tid deadline stateVar)
+      curDeadline <- readTVar curDeadlineVar
+      when (deadline < curDeadline) $
+        writeTVar deadlineResetVar True
+
+
+-- | A potentially blocking wait read side, so can block.
+--
+readNextTimeout :: MonadSTM m
+                => MonitorState m
+                -> m (ThreadId m, Time, TVar m TimeoutState)
+readNextTimeout MonitorState{nextTimeoutVar, curDeadlineVar, deadlineResetVar} = do
+    atomically $ do
+      nextTimeout <- readTVar nextTimeoutVar
+      case nextTimeout of
+        NoNextTimeout -> retry
+        NextTimeout tid deadline stateVar -> do
+          writeTVar nextTimeoutVar NoNextTimeout
+          writeTVar curDeadlineVar deadline
+          writeTVar deadlineResetVar False
           return (tid, deadline, stateVar)
 
 
@@ -187,11 +216,11 @@ instance Exception TimeoutException where
 timeout :: forall m a.
            (MonadFork m, MonadTime m, MonadTimer m,
             MonadMask m, MonadThrow (STM m))
-        => TVar m (MonitorChan m)
+        => MonitorState m
         -> DiffTime -> m a -> m (Maybe a)
-timeout _           delay action | delay <  0 = Just <$> action
-timeout _           delay _      | delay == 0 = return Nothing
-timeout monitorChan delay action =
+timeout _            delay action | delay <  0 = Just <$> action
+timeout _            delay _      | delay == 0 = return Nothing
+timeout monitorState delay action =
 
     -- We have to be very careful with async exceptions of course.
     mask $ \restore -> do
@@ -202,7 +231,7 @@ timeout monitorChan delay action =
       timeoutStateVar <- newTVarM TimeoutPending
       now <- getMonotonicTime
       let deadline = addTime delay now
-      overwriteMonitorChan monitorChan tid deadline timeoutStateVar
+      setNewTimer monitorState tid deadline timeoutStateVar
 
       -- Now we unmask exceptions to run the action. If we get the timeout
       -- exception then we drop straight down to the outer 'catch' handler.
@@ -269,18 +298,22 @@ timeout monitorChan delay action =
 monitoringThread :: (MonadFork m, MonadSTM m,
                      MonadTime m, MonadTimer m,
                      MonadThrow m, MonadThrow (STM m))
-                 => TVar m (MonitorChan m) -> m ()
-monitoringThread monitorChan =
+                 => MonitorState m -> m ()
+monitoringThread monitorState@MonitorState{deadlineResetVar} =
   forever $ do
     -- Grab the next timeout to consider
-    (tid, deadline, timeoutStateVar) <- readMonitorChan monitorChan
+    (tid, deadline, timeoutStateVar) <- readNextTimeout monitorState
 
     -- Work out how long to wait for and do so. For already-expired timeouts
-    -- this is in the past, leading to a negative delay, which is handled by
-    -- 'threadDelay' as a no-op.
+    -- this is in the past, leading to a negative delay.
     now <- getMonotonicTime
     let delay = diffTime deadline now
-    threadDelay delay
+    when (delay > 0) $ do
+      timerExpired <- registerDelay delay
+      atomically $
+        (readTVar timerExpired >>= check)
+          `orElse`
+        (readTVar deadlineResetVar >>= check)
 
     -- Having woken up, we check to see if we need to send the timeout
     -- exception. If the timeoutStateVar we grabbed is still in the pending
