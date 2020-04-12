@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Network.Mux.Bearer.NamedPipe
   ( namedPipeAsBearer ) where
@@ -22,6 +23,7 @@ import qualified Network.Mux.Types as Mx
 import           Network.Mux.Trace (MuxTrace)
 import qualified Network.Mux.Trace as Mx
 import qualified Network.Mux.Time as Mx
+import qualified Network.Mux.Timeout as Mx
 import qualified Network.Mux.Codec as Mx
 
 import           System.Win32               (HANDLE)
@@ -41,8 +43,8 @@ namedPipeAsBearer tracer h =
         Mx.sduSize = 24576
       }
   where
-    readNamedPipe :: HasCallStack => IO (Mx.MuxSDU, Time)
-    readNamedPipe = do
+    readNamedPipe :: HasCallStack => Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
+    readNamedPipe _ = do
       traceWith tracer Mx.MuxTraceRecvHeaderStart
       hbuf <- recvLen' True 8 []
       case Mx.decodeMuxSDU hbuf of

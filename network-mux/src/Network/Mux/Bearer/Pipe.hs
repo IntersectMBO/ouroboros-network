@@ -35,6 +35,7 @@ import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Trace as Mx
 import qualified Network.Mux.Codec as Mx
 import qualified Network.Mux.Time as Mx
+import qualified Network.Mux.Timeout as Mx
 
 
 -- | Abstraction over various types of handles.  We provide two instances:
@@ -80,8 +81,8 @@ pipeAsMuxBearer tracer channel =
           Mx.sduSize = 32768
         }
     where
-      readPipe :: HasCallStack => IO (Mx.MuxSDU, Time)
-      readPipe = do
+      readPipe :: HasCallStack => Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
+      readPipe _ = do
           traceWith tracer $ Mx.MuxTraceRecvHeaderStart
           hbuf <- recvLen' 8 []
           case Mx.decodeMuxSDU hbuf of
