@@ -207,7 +207,7 @@ schedulingToleranceIO :: SchedulingTolerance
 schedulingToleranceIO =
     SchedulingTolerance {
       negativeSchedulingTolerance = 0.001,
-      positiveSchedulingTolerance = 0.2
+      positiveSchedulingTolerance = 1.0
     }
 
 
