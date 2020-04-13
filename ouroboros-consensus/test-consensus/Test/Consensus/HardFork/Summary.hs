@@ -1,5 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
@@ -44,51 +45,66 @@ tests = testGroup "HardForkHistory" [
     ]
 
 {-------------------------------------------------------------------------------
+  Dealing with the 'PastHorizonException'
+-------------------------------------------------------------------------------}
+
+noPastHorizonException :: ArbitrarySummary
+                       -> (forall xs. HF.Query xs Property)
+                       -> Property
+noPastHorizonException ArbitrarySummary{..} p =
+    case HF.runQuery p arbitrarySummary of
+      Right prop -> prop
+      Left  ex   -> counterexample ("Unexpected " ++ show ex) $
+                      property False
+
+isPastHorizonException :: Show a
+                       => ArbitrarySummary
+                       -> (forall xs. HF.Query xs a)
+                       -> Property
+isPastHorizonException ArbitrarySummary{..} ma =
+    case HF.runQuery ma arbitrarySummary of
+      Left  _ -> property True
+      Right a -> counterexample ("Unexpected " ++ show a) $
+                   property False
+
+{-------------------------------------------------------------------------------
   Tests using just 'Summary'
 -------------------------------------------------------------------------------}
 
 roundtripWallclockSlot :: ArbitrarySummary -> Property
-roundtripWallclockSlot ArbitrarySummary{ arbitrarySummary = summary
-                                       , beforeHorizonTime = time
-                                       } = noPastHorizonException $ do
-    (slot  ,  inSlot ) <- HF.wallclockToSlot summary time
-    (time' , _slotLen) <- HF.slotToWallclock summary slot
-    return $ addUTCTime inSlot time' === time
+roundtripWallclockSlot s@ArbitrarySummary{beforeHorizonTime = time} =
+    noPastHorizonException s $ do
+      (slot  ,  inSlot ) <- HF.wallclockToSlot time
+      (time' , _slotLen) <- HF.slotToWallclock slot
+      return $ addUTCTime inSlot time' === time
 
 roundtripSlotWallclock :: ArbitrarySummary -> Property
-roundtripSlotWallclock ArbitrarySummary{ arbitrarySummary  = summary
-                                       , beforeHorizonSlot = slot
-                                       } = noPastHorizonException $ do
-    (time  , _slotLen) <- HF.slotToWallclock summary slot
-    (slot' ,  inSlot ) <- HF.wallclockToSlot summary time
-    return $ slot' === slot .&&. inSlot === 0
+roundtripSlotWallclock s@ArbitrarySummary{beforeHorizonSlot = slot} =
+    noPastHorizonException s $ do
+      (time  , _slotLen) <- HF.slotToWallclock slot
+      (slot' ,  inSlot ) <- HF.wallclockToSlot time
+      return $ slot' === slot .&&. inSlot === 0
 
 roundtripSlotEpoch :: ArbitrarySummary -> Property
-roundtripSlotEpoch ArbitrarySummary{ arbitrarySummary  = summary
-                                   , beforeHorizonSlot = slot
-                                   } = noPastHorizonException $ do
-    (epoch ,  inEpoch  ) <- HF.slotToEpoch summary slot
-    (slot' , _epochSize) <- HF.epochToSlot summary epoch
-    return $ HF.addSlots inEpoch slot' === slot
+roundtripSlotEpoch s@ArbitrarySummary{beforeHorizonSlot = slot} =
+    noPastHorizonException s $ do
+      (epoch ,  inEpoch  ) <- HF.slotToEpoch slot
+      (slot' , _epochSize) <- HF.epochToSlot epoch
+      return $ HF.addSlots inEpoch slot' === slot
 
 roundtripEpochSlot :: ArbitrarySummary -> Property
-roundtripEpochSlot ArbitrarySummary{ arbitrarySummary   = summary
-                                   , beforeHorizonEpoch = epoch
-                                   } = noPastHorizonException $ do
-    (slot  , _epochSize) <- HF.epochToSlot summary epoch
-    (epoch',  inEpoch  ) <- HF.slotToEpoch summary slot
-    return $ epoch' === epoch .&&. inEpoch === 0
+roundtripEpochSlot s@ArbitrarySummary{beforeHorizonEpoch = epoch} =
+    noPastHorizonException s $ do
+      (slot  , _epochSize) <- HF.epochToSlot epoch
+      (epoch',  inEpoch  ) <- HF.slotToEpoch slot
+      return $ epoch' === epoch .&&. inEpoch === 0
 
 reportsPastHorizon :: ArbitrarySummary -> Property
-reportsPastHorizon ArbitrarySummary{..} = conjoin [
-      isPastHorizonException $
-        HF.wallclockToSlot arbitrarySummary pastHorizonTime
-    , isPastHorizonException $
-        HF.slotToWallclock arbitrarySummary pastHorizonSlot
-    , isPastHorizonException $
-        HF.slotToEpoch arbitrarySummary pastHorizonSlot
-    , isPastHorizonException $
-        HF.epochToSlot arbitrarySummary pastHorizonEpoch
+reportsPastHorizon s@ArbitrarySummary{..} = conjoin [
+      isPastHorizonException s $ HF.wallclockToSlot pastHorizonTime
+    , isPastHorizonException s $ HF.slotToWallclock pastHorizonSlot
+    , isPastHorizonException s $ HF.slotToEpoch     pastHorizonSlot
+    , isPastHorizonException s $ HF.epochToSlot     pastHorizonEpoch
     ]
 
 {-------------------------------------------------------------------------------

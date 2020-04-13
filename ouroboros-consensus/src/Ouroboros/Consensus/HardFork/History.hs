@@ -1,15 +1,18 @@
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE DeriveAnyClass            #-}
-{-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE DerivingStrategies        #-}
-{-# LANGUAGE DerivingVia               #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE GADTs                     #-}
-{-# LANGUAGE KindSignatures            #-}
-{-# LANGUAGE RecordWildCards           #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeOperators              #-}
 
 -- | Intended for qualified import
 --
@@ -31,8 +34,12 @@ module Ouroboros.Consensus.HardFork.History (
   , Summary(..)    -- Non-opaque only for the benefit of tests
   , SystemStart(..)
   , summarize
-    -- * Conversions
+    -- * Queries
   , PastHorizonException(..)
+  , Query -- Opaque
+  , runQuery
+  , runQueryThrow
+  , runQueryPure
   , wallclockToSlot
   , slotToWallclock
   , slotToEpoch
@@ -40,6 +47,9 @@ module Ouroboros.Consensus.HardFork.History (
     -- * Support for 'EpochInfo'
   , summaryToEpochInfo
   , snapshotEpochInfo
+    -- * Caching
+  , RunWithCachedSummary(..)
+  , runWithCachedSummary
     -- * Exported only for the benefit of tests
     -- ** Bounds
     --
@@ -68,6 +78,7 @@ module Ouroboros.Consensus.HardFork.History (
 
 import           Control.Exception (Exception (..), assert, throw)
 import           Control.Monad.Except
+import           Control.Monad.Reader
 import           Data.Bifunctor
 import           Data.Fixed (divMod')
 import           Data.Foldable (toList)
@@ -77,7 +88,8 @@ import           Data.Time
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..),
+                     UseIsNormalForm (..))
 import           Cardano.Slotting.EpochInfo.API
 import           Cardano.Slotting.Slot
 
@@ -460,8 +472,12 @@ invariantSummary = \(Summary summary) ->
   Constructing the summary
 -------------------------------------------------------------------------------}
 
+-- | System start
+--
+-- Slots are counted from the system start.
 newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
-  deriving (Show)
+  deriving (Eq, Show)
+  deriving NoUnexpectedThunks via UseIsNormalForm SystemStart
 
 -- | Construct hard fork 'Summary'
 --
@@ -594,16 +610,41 @@ deriving instance Show PastHorizonException
 instance Exception PastHorizonException
 
 {-------------------------------------------------------------------------------
+  Very thin layer for dealing with Queries
+-------------------------------------------------------------------------------}
+
+newtype Query (xs :: [*]) a = Query {
+      unQuery :: ReaderT (Summary xs) (Except PastHorizonException) a
+    }
+  deriving newtype (
+      Functor
+    , Applicative
+    , Monad
+    , MonadReader (Summary xs)
+    , MonadError PastHorizonException
+    )
+
+mkQuery :: (Summary xs -> Except PastHorizonException a) -> Query xs a
+mkQuery = Query . ReaderT
+
+runQuery :: Query xs a -> Summary xs -> Either PastHorizonException a
+runQuery = (runExcept .) . runReaderT . unQuery
+
+runQueryThrow :: MonadThrow m => Query xs a -> Summary xs -> m a
+runQueryThrow q = either throwM return . runQuery q
+
+runQueryPure :: Query xs a -> Summary xs -> a
+runQueryPure q = either throw id . runQuery q
+
+{-------------------------------------------------------------------------------
   Conversion between wallclock and slots
 -------------------------------------------------------------------------------}
 
 -- | Translate 'UTCTime' to 'SlotNo'
 --
 -- Additionally returns the time spent in this slot.
-wallclockToSlot :: Summary xs
-                -> UTCTime
-                -> Except PastHorizonException (SlotNo, NominalDiffTime)
-wallclockToSlot summary time =
+wallclockToSlot :: UTCTime -> Query xs (SlotNo, NominalDiffTime)
+wallclockToSlot time = mkQuery $ \summary ->
     go <$> find summary (ContainsTime time)
   where
     go :: EraSummary -> (SlotNo, NominalDiffTime)
@@ -621,10 +662,8 @@ wallclockToSlot summary time =
 -- | Translate 'SlotNo' to the 'UTCTime' at the start of that slot
 --
 -- Additionally returns the length of the slot.
-slotToWallclock :: Summary xs
-                -> SlotNo
-                -> Except PastHorizonException (UTCTime, SlotLength)
-slotToWallclock summary slot =
+slotToWallclock :: SlotNo -> Query xs (UTCTime, SlotLength)
+slotToWallclock slot = mkQuery $ \summary ->
     go <$> find summary (ContainsSlot slot)
   where
     go :: EraSummary -> (UTCTime, SlotLength)
@@ -648,10 +687,8 @@ slotToWallclock summary slot =
 -- | Translate 'SlotNo' to its corresponding 'EpochNo'
 --
 -- Additionally returns the relative slot within this epoch
-slotToEpoch :: Summary xs
-            -> SlotNo
-            -> Except PastHorizonException (EpochNo, Word64)
-slotToEpoch summary slot =
+slotToEpoch :: SlotNo -> Query xs (EpochNo, Word64)
+slotToEpoch slot = mkQuery $ \summary ->
     go <$> find summary (ContainsSlot slot)
   where
     go :: EraSummary -> (EpochNo, Word64)
@@ -669,10 +706,8 @@ slotToEpoch summary slot =
 -- | Translate 'EpochNo' to the 'SlotNo' of the first slot in that epoch
 --
 -- Additionally returns the size of the epoch.
-epochToSlot :: Summary xs
-            -> EpochNo
-            -> Except PastHorizonException (SlotNo, EpochSize)
-epochToSlot summary epoch =
+epochToSlot :: EpochNo -> Query xs (SlotNo, EpochSize)
+epochToSlot epoch = mkQuery $ \summary ->
     go <$> find summary (ContainsEpoch epoch)
   where
     go :: EraSummary -> (SlotNo, EpochSize)
@@ -688,6 +723,40 @@ epochToSlot summary epoch =
         epochSize = unEpochSize eraEpochSize
 
 {-------------------------------------------------------------------------------
+  Caching the summary
+-------------------------------------------------------------------------------}
+
+data RunWithCachedSummary xs m = RunWithCachedSummary {
+      cachedRunQuery :: forall a. Query xs a -> STM m a
+    }
+
+-- | Cache the 'Summary'
+--
+-- Whenever the action requires the 'Summary', we use the cached value rather
+-- than computing it every time. If the action throws a 'PastHorizonException'
+-- with the cached summary, we construct a new summary at that point and try
+-- again. We do not catch the exception the second time: if the action still
+-- throws an exception with the updated summary, it indicates a bug in the
+-- caller (trying to look ahead too far).
+runWithCachedSummary :: forall m xs. (MonadSTM m, MonadThrow (STM m))
+                     => STM m (Summary xs)
+                     -> m (RunWithCachedSummary xs m)
+runWithCachedSummary getSummary = do
+    initSummary <- atomically getSummary
+    var <- newTVarM initSummary
+    return $ RunWithCachedSummary { cachedRunQuery = go var }
+  where
+    go :: StrictTVar m (Summary xs) -> Query xs a -> STM m a
+    go var q = do
+        summary <- readTVar var
+        case runQuery q summary of
+          Right a             -> return a
+          Left  PastHorizon{} -> do
+            summary' <- getSummary
+            writeTVar var summary'
+            runQueryThrow q summary'
+
+{-------------------------------------------------------------------------------
   Translation to EpochInfo
 -------------------------------------------------------------------------------}
 
@@ -696,35 +765,17 @@ epochToSlot summary epoch =
 -- When a particular request fails with a 'PastHorizon' error, we ask for an
 -- updated summary, in the hope that the ledger state has advanced. If the query
 -- /still/ fails with that updated summary, the error is thrown as an exception.
-summaryToEpochInfo :: forall m xs. (MonadSTM m, MonadThrow m)
-                   => STM m (Summary xs) -> m (EpochInfo m)
-summaryToEpochInfo getSummary = do
-    initSummary <- atomically getSummary
-    var <- newTVarM initSummary
-    return $ mkInfo var
+summaryToEpochInfo :: forall m xs. (MonadSTM m, MonadThrow (STM m))
+                   => STM m (Summary xs) -> m (EpochInfo (STM m))
+summaryToEpochInfo =
+    fmap go . runWithCachedSummary
   where
-    mkInfo :: StrictTVar m (Summary xs) -> EpochInfo m
-    mkInfo var = EpochInfo {
-          epochInfoSize  = withSummary var snd . flip epochToSlot
-        , epochInfoFirst = withSummary var fst . flip epochToSlot
-        , epochInfoEpoch = withSummary var fst . flip slotToEpoch
+    go :: RunWithCachedSummary xs m -> EpochInfo (STM m)
+    go RunWithCachedSummary{..} = EpochInfo {
+          epochInfoSize  = \epoch -> cachedRunQuery (snd <$> epochToSlot epoch)
+        , epochInfoFirst = \epoch -> cachedRunQuery (fst <$> epochToSlot epoch)
+        , epochInfoEpoch = \slot  -> cachedRunQuery (fst <$> slotToEpoch slot)
         }
-
-    withSummary :: StrictTVar m (Summary xs)
-                -> (a -> b)
-                -> (Summary xs -> Except PastHorizonException a)
-                -> m b
-    withSummary var g f = do
-        summary <- atomically $ readTVar var
-        case runExcept $ f summary of
-          Right a -> return (g a)
-          Left  _ -> do
-            -- Perhaps the ledger has advanced. Ask for a new summary
-            summary' <- atomically $ getSummary
-            atomically $ writeTVar var summary'
-            case runExcept $ f summary' of
-              Right a -> return (g a)
-              Left  e -> throwM e
 
 -- | Construct an 'EpochInfo' for a /snapshot/ of the ledger state
 --
@@ -732,18 +783,13 @@ summaryToEpochInfo getSummary = do
 -- error as a /pure/ exception. Such an exception would indicate a bug.
 snapshotEpochInfo :: forall xs. Summary xs -> EpochInfo Identity
 snapshotEpochInfo summary = EpochInfo {
-      epochInfoSize  = throwPastHorizon snd . flip epochToSlot
-    , epochInfoFirst = throwPastHorizon fst . flip epochToSlot
-    , epochInfoEpoch = throwPastHorizon fst . flip slotToEpoch
+      epochInfoSize  = \epoch -> runQueryPure' (snd <$> epochToSlot epoch)
+    , epochInfoFirst = \epoch -> runQueryPure' (fst <$> epochToSlot epoch)
+    , epochInfoEpoch = \slot  -> runQueryPure' (fst <$> slotToEpoch slot)
     }
   where
-    throwPastHorizon :: (a -> b)
-                     -> (Summary xs -> Except PastHorizonException a)
-                     -> Identity b
-    throwPastHorizon g f =
-        case runExcept $ f summary of
-          Right a -> Identity $ g a
-          Left  e -> throw e
+    runQueryPure' :: Query xs a -> Identity a
+    runQueryPure' = Identity . flip runQueryPure summary
 
 {-------------------------------------------------------------------------------
   Auxiliary
