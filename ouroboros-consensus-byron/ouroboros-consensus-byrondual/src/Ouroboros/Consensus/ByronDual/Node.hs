@@ -183,13 +183,15 @@ pb :: Proxy ByronBlock
 pb = Proxy
 
 instance HasNetworkProtocolVersion DualByronBlock where
-  type NetworkProtocolVersion DualByronBlock =
-       NetworkProtocolVersion ByronBlock
+  type NodeToNodeVersion   DualByronBlock = NodeToNodeVersion   ByronBlock
+  type NodeToClientVersion DualByronBlock = NodeToClientVersion ByronBlock
 
-  supportedNetworkProtocolVersions _ = supportedNetworkProtocolVersions pb
-  mostRecentNetworkProtocolVersion _ = mostRecentNetworkProtocolVersion pb
-  nodeToNodeProtocolVersion        _ = nodeToNodeProtocolVersion        pb
-  nodeToClientProtocolVersion      _ = nodeToClientProtocolVersion      pb
+  supportedNodeToNodeVersions   _ = supportedNodeToNodeVersions   pb
+  supportedNodeToClientVersions _ = supportedNodeToClientVersions pb
+  mostRecentNodeToNodeVersion   _ = mostRecentNodeToNodeVersion   pb
+  mostRecentNodeToClientVersion _ = mostRecentNodeToClientVersion pb
+  nodeToNodeProtocolVersion     _ = nodeToNodeProtocolVersion     pb
+  nodeToClientProtocolVersion   _ = nodeToClientProtocolVersion   pb
 
 instance RunNode DualByronBlock where
   nodeForgeBlock = forgeDualByronBlock
@@ -251,10 +253,18 @@ instance RunNode DualByronBlock where
 
   -- Encoders
   nodeEncodeBlockWithInfo  = const $ encodeDualBlockWithInfo encodeByronBlockWithInfo
-  nodeEncodeHeader         = \cfg version -> nodeEncodeHeader        (dualTopLevelConfigMain cfg) version . dualHeaderMain
-  nodeEncodeWrappedHeader  = \cfg version -> nodeEncodeWrappedHeader (dualTopLevelConfigMain cfg) version . dualWrappedMain
-  nodeEncodeLedgerState    = const $ encodeDualLedgerState   encodeByronLedgerState
-  nodeEncodeApplyTxError   = const $ encodeDualGenTxErr      encodeByronApplyTxError
+  nodeEncodeHeader         = \cfg version ->
+                                  nodeEncodeHeader
+                                    (dualBlockConfigMain cfg)
+                                    (castSerialisationVersion version)
+                                . dualHeaderMain
+  nodeEncodeWrappedHeader  = \cfg version ->
+                                  nodeEncodeWrappedHeader
+                                    (dualBlockConfigMain cfg)
+                                    (castSerialisationAcrossNetwork version)
+                                . dualWrappedMain
+  nodeEncodeLedgerState    = encodeDualLedgerState encodeByronLedgerState
+  nodeEncodeApplyTxError   = const $ encodeDualGenTxErr encodeByronApplyTxError
   nodeEncodeHeaderHash     = const $ encodeByronHeaderHash
   nodeEncodeGenTx          = encodeDualGenTx   encodeByronGenTx
   nodeEncodeGenTxId        = encodeDualGenTxId encodeByronGenTxId
@@ -264,12 +274,20 @@ instance RunNode DualByronBlock where
 
   -- Decoders
   nodeDecodeBlock          = decodeDualBlock  . decodeByronBlock   . extractEpochSlots
-  nodeDecodeHeader         = \cfg -> fmap (DualHeader .) . nodeDecodeHeader        (dualTopLevelConfigMain cfg)
-  nodeDecodeWrappedHeader  = \cfg -> fmap rewrapMain     . nodeDecodeWrappedHeader (dualTopLevelConfigMain cfg)
+  nodeDecodeHeader         = \cfg version ->
+                               (DualHeader .) <$>
+                                 nodeDecodeHeader
+                                   (dualBlockConfigMain cfg)
+                                   (castSerialisationVersion version)
+  nodeDecodeWrappedHeader  = \cfg version ->
+                               rewrapMain <$>
+                                 nodeDecodeWrappedHeader
+                                   (dualBlockConfigMain cfg)
+                                   (castSerialisationAcrossNetwork version)
   nodeDecodeGenTx          = decodeDualGenTx   decodeByronGenTx
   nodeDecodeGenTxId        = decodeDualGenTxId decodeByronGenTxId
   nodeDecodeHeaderHash     = const $ decodeByronHeaderHash
-  nodeDecodeLedgerState    = const $ decodeDualLedgerState decodeByronLedgerState
+  nodeDecodeLedgerState    = decodeDualLedgerState decodeByronLedgerState
   nodeDecodeApplyTxError   = const $ decodeDualGenTxErr    decodeByronApplyTxError
   nodeDecodeConsensusState = \_proxy cfg ->
                                 let k = configSecurityParam cfg
@@ -277,8 +295,8 @@ instance RunNode DualByronBlock where
   nodeDecodeQuery          = error "DualByron.nodeDecodeQuery"
   nodeDecodeResult         = \case {}
 
-extractEpochSlots :: TopLevelConfig DualByronBlock -> EpochSlots
-extractEpochSlots = Byron.extractEpochSlots . dualTopLevelConfigMain
+extractEpochSlots :: BlockConfig DualByronBlock -> EpochSlots
+extractEpochSlots = Byron.extractEpochSlots . dualBlockConfigMain
 
 {-------------------------------------------------------------------------------
   The headers for DualByronBlock and ByronBlock are identical, so we can

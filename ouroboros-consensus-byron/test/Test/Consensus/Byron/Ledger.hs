@@ -101,19 +101,17 @@ prop_roundtrip_Block :: ByronBlock -> Property
 prop_roundtrip_Block b =
     roundtrip' encodeByronBlock (decodeByronBlock epochSlots) b
 
-prop_roundtrip_Header :: SerialisationVersion ByronNetworkProtocolVersion
+prop_roundtrip_Header :: SerialisationVersion ByronBlock
                       -> Header ByronBlock -> Property
 prop_roundtrip_Header v h =
+    not (isNodeToClientVersion v) ==>
     roundtrip'
       (encodeByronHeader v)
       (decodeByronHeader epochSlots v)
       h'
   where
     h' = case v of
-           SentAcrossNetwork ByronNetworkProtocolVersion1 ->
-             -- This is a lossy format
-             h { byronHeaderBlockSizeHint = fakeByronBlockSizeHint }
-           SentAcrossNetwork ByronNetworkProtocolVersion2 ->
+           SerialisedAcrossNetwork (SerialisedNodeToNode ByronNodeToNodeVersion1) ->
              -- This is a lossy format
              h { byronHeaderBlockSizeHint = fakeByronBlockSizeHint }
            _otherwise ->
@@ -355,14 +353,23 @@ instance Arbitrary CC.UPI.State where
     <*> pure mempty -- TODO Endorsement is not exported
     <*> arbitrary
 
-instance Arbitrary (SerialisationVersion ByronNetworkProtocolVersion) where
-  arbitrary = elements $ SerialisedToDisk : map SentAcrossNetwork versions
+instance Arbitrary (SerialisationVersion ByronBlock) where
+  arbitrary =
+      elements $ concat [
+          [SerialisedToDisk]
+        , map (SerialisedAcrossNetwork . SerialisedNodeToNode)   nodeToNode
+        , map (SerialisedAcrossNetwork . SerialisedNodeToClient) nodeToClient
+        ]
     where
-      -- We enumerate /all/ versions here, not just the ones returned by
+      -- We enumerate /all/ nodeToNode here, not just the ones returned by
       -- 'supportedNetworkProtocolVersions', which may be fewer.
       -- We might want to reconsider that later.
-      versions :: [ByronNetworkProtocolVersion]
-      versions = [minBound .. maxBound]
+
+      nodeToNode :: [ByronNodeToNodeVersion]
+      nodeToNode = [minBound .. maxBound]
+
+      nodeToClient :: [ByronNodeToClientVersion]
+      nodeToClient = [minBound .. maxBound]
 
 {-------------------------------------------------------------------------------
   Orphans

@@ -126,40 +126,47 @@ decodeByronBlock epochSlots =
       Lazy.toStrict . slice theBytes <$> it
 
 -- | Encode a header
-encodeByronHeader :: SerialisationVersion ByronNetworkProtocolVersion
+encodeByronHeader :: SerialisationVersion ByronBlock
                   -> Header ByronBlock -> Encoding
 encodeByronHeader = \case
     SerialisedToDisk ->
-      -- Version 2 is compatible with 'byronAddHeaderEnvelope'
+      -- Sending with size is compatible with 'byronAddHeaderEnvelope'
       -- (Moreover, version 1 is lossy)
-      encodeByronHeader $
-        SentAcrossNetwork ByronNetworkProtocolVersion2
-    SentAcrossNetwork ByronNetworkProtocolVersion1 ->
-      encodeUnsizedHeader . fst . splitSizeHint
-    SentAcrossNetwork ByronNetworkProtocolVersion2 ->
-      encodeUnsizedHeader . fst . splitSizeHint
-    SentAcrossNetwork ByronNetworkProtocolVersion3 ->
-      uncurry (flip encodeSizedHeader) . splitSizeHint
+      encWithSize
+    SerialisedAcrossNetwork (SerialisedNodeToNode ByronNodeToNodeVersion1) ->
+      encWithoutSize
+    SerialisedAcrossNetwork (SerialisedNodeToNode ByronNodeToNodeVersion2) ->
+      encWithSize
+    SerialisedAcrossNetwork (SerialisedNodeToClient _) ->
+      -- See 'Ouroboros.Consensus.Network.NodeToClient.defaultCodecs'
+      -- for the encoders/decoders used for node-to-client communication
+      error "encodeByronHeader: not used"
+  where
+    encWithoutSize, encWithSize :: Header ByronBlock -> Encoding
+    encWithoutSize = encodeUnsizedHeader . fst . splitSizeHint
+    encWithSize    = uncurry (flip encodeSizedHeader) . splitSizeHint
 
 -- | Inverse of 'encodeByronHeader'
 decodeByronHeader :: CC.EpochSlots
-                  -> SerialisationVersion ByronNetworkProtocolVersion
+                  -> SerialisationVersion ByronBlock
                   -> Decoder s (Lazy.ByteString -> Header ByronBlock)
 decodeByronHeader epochSlots = \case
     SerialisedToDisk ->
-      -- Version 2 is compatible with 'byronAddHeaderEnvelope'
+      -- Sending with size is compatible with 'byronAddHeaderEnvelope'
       -- (Moreover, version 1 is lossy)
-      decodeByronHeader epochSlots $
-        SentAcrossNetwork ByronNetworkProtocolVersion3
-    SentAcrossNetwork ByronNetworkProtocolVersion1 ->
-      (flip joinSizeHint fakeByronBlockSizeHint .) <$>
-        decodeUnsizedHeader epochSlots
-    SentAcrossNetwork ByronNetworkProtocolVersion2 ->
-      (flip joinSizeHint fakeByronBlockSizeHint .) <$>
-        decodeUnsizedHeader epochSlots
-    SentAcrossNetwork ByronNetworkProtocolVersion3 ->
-      const . uncurry (flip joinSizeHint) <$>
-        decodeSizedHeader epochSlots
+      decWithSize
+    SerialisedAcrossNetwork (SerialisedNodeToNode ByronNodeToNodeVersion1) ->
+      decWithoutSize
+    SerialisedAcrossNetwork (SerialisedNodeToNode ByronNodeToNodeVersion2) ->
+      decWithSize
+    SerialisedAcrossNetwork (SerialisedNodeToClient _) ->
+      error "decodeByronHeader: not used"
+  where
+    decWithoutSize, decWithSize :: Decoder s (Lazy.ByteString -> Header ByronBlock)
+    decWithoutSize = (flip joinSizeHint fakeByronBlockSizeHint .) <$>
+                       decodeUnsizedHeader epochSlots
+    decWithSize    = const . uncurry (flip joinSizeHint) <$>
+                       decodeSizedHeader epochSlots
 
 -- | Encode wrapped header
 --
@@ -169,28 +176,36 @@ decodeByronHeader epochSlots = \case
 -- If we are using version 2, there is nothing to do.
 --
 -- For either version we add a CBOR-in-CBOR wrapper.
-encodeWrappedByronHeader :: ByronNetworkProtocolVersion
+encodeWrappedByronHeader :: SerialisationAcrossNetwork ByronBlock
                          -> Serialised (Header ByronBlock) -> Encoding
 encodeWrappedByronHeader = \case
-    ByronNetworkProtocolVersion1 ->
-      encode . dropEncodedSize
-    ByronNetworkProtocolVersion2 ->
-      encode . dropEncodedSize
-    ByronNetworkProtocolVersion3 ->
-      encode
+    SerialisedNodeToNode ByronNodeToNodeVersion1 ->
+      encWithoutSize
+    SerialisedNodeToNode ByronNodeToNodeVersion2 ->
+      encWithSize
+    SerialisedNodeToClient _ ->
+      error "encodeWrappedByronHeader: not used"
+  where
+    encWithoutSize, encWithSize :: Serialised (Header ByronBlock) -> Encoding
+    encWithoutSize = encode . dropEncodedSize
+    encWithSize    = encode
 
 -- | Decode wrapped header
 --
 -- See 'encodeWrappedByronHeader' for details.
-decodeWrappedByronHeader :: ByronNetworkProtocolVersion
+decodeWrappedByronHeader :: SerialisationAcrossNetwork ByronBlock
                          -> Decoder s (Serialised (Header ByronBlock))
 decodeWrappedByronHeader = \case
-    ByronNetworkProtocolVersion1 ->
-      fakeEncodedSize <$> decode
-    ByronNetworkProtocolVersion2 ->
-      fakeEncodedSize <$> decode
-    ByronNetworkProtocolVersion3 ->
-      decode
+    SerialisedNodeToNode ByronNodeToNodeVersion1 ->
+      decWithoutSize
+    SerialisedNodeToNode ByronNodeToNodeVersion2 ->
+      decWithSize
+    SerialisedNodeToClient _ ->
+      error "decodeWrappedByronHeader: not used"
+  where
+    decWithoutSize, decWithSize :: Decoder s (Serialised (Header ByronBlock))
+    decWithoutSize = fakeEncodedSize <$> decode
+    decWithSize    = decode
 
 -- | When given the raw header bytes extracted from the block, i.e., the
 -- header annotation of 'CC.AHeader' or 'CC.ABoundaryHdr', we still need to

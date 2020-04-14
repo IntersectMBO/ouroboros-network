@@ -350,18 +350,21 @@ withImmDB :: FilePath
           -> IO a
 withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
   where
+    bcfg = configBlock cfg
+    pb   = Proxy @ByronBlock
+
     args :: ImmDbArgs IO ByronBlock
     args = (defaultArgs fp) {
-          immDecodeHash     = nodeDecodeHeaderHash    (Proxy @ByronBlock)
-        , immDecodeBlock    = nodeDecodeBlock         cfg
-        , immDecodeHeader   = nodeDecodeHeader        cfg SerialisedToDisk
-        , immEncodeHash     = nodeEncodeHeaderHash    (Proxy @ByronBlock)
-        , immEncodeBlock    = nodeEncodeBlockWithInfo cfg
+          immDecodeHash     = nodeDecodeHeaderHash    pb
+        , immDecodeBlock    = nodeDecodeBlock         bcfg
+        , immDecodeHeader   = nodeDecodeHeader        bcfg SerialisedToDisk
+        , immEncodeHash     = nodeEncodeHeaderHash    pb
+        , immEncodeBlock    = nodeEncodeBlockWithInfo bcfg
         , immChunkInfo      = chunkInfo
-        , immHashInfo       = nodeHashInfo            (Proxy @ByronBlock)
+        , immHashInfo       = nodeHashInfo            pb
         , immValidation     = ValidateMostRecentChunk
         , immIsEBB          = nodeIsEBB
         , immCheckIntegrity = nodeCheckIntegrity      cfg
-        , immAddHdrEnv      = nodeAddHeaderEnvelope   (Proxy @ByronBlock)
+        , immAddHdrEnv      = nodeAddHeaderEnvelope   pb
         , immRegistry       = registry
         }

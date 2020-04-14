@@ -59,10 +59,14 @@ library
                        Ouroboros.Consensus.MiniProtocol.ChainSync.Server
                        Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
                        Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
+                       Ouroboros.Consensus.Network.NodeToClient
+                       Ouroboros.Consensus.Network.NodeToNode
                        Ouroboros.Consensus.Node
                        Ouroboros.Consensus.Node.DbMarker
                        Ouroboros.Consensus.Node.ErrorPolicy
                        Ouroboros.Consensus.Node.Exit
+                       Ouroboros.Consensus.NodeId
+                       Ouroboros.Consensus.NodeKernel
                        Ouroboros.Consensus.Node.LedgerDerivedInfo
                        Ouroboros.Consensus.Node.NetworkProtocolVersion
                        Ouroboros.Consensus.Node.ProtocolInfo
@@ -70,9 +74,6 @@ library
                        Ouroboros.Consensus.Node.Run
                        Ouroboros.Consensus.Node.State
                        Ouroboros.Consensus.Node.Tracers
-                       Ouroboros.Consensus.NodeId
-                       Ouroboros.Consensus.NodeKernel
-                       Ouroboros.Consensus.NodeNetwork
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.LeaderSchedule

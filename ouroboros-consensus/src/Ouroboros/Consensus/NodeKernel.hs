@@ -79,7 +79,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 -------------------------------------------------------------------------------}
 
 -- | Interface against running relay node
-data NodeKernel m peer blk = NodeKernel {
+data NodeKernel m remotePeer localPeer blk = NodeKernel {
       -- | The 'ChainDB' of the node
       getChainDB             :: ChainDB m blk
 
@@ -90,13 +90,13 @@ data NodeKernel m peer blk = NodeKernel {
     , getTopLevelConfig      :: TopLevelConfig blk
 
       -- | The fetch client registry, used for the block fetch clients.
-    , getFetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
+    , getFetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
 
       -- | Read the current candidates
-    , getNodeCandidates      :: StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
+    , getNodeCandidates      :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
 
       -- | The node's tracers
-    , getTracers             :: Tracers m peer blk
+    , getTracers             :: Tracers m remotePeer localPeer blk
     }
 
 -- | Callbacks required to produce blocks
@@ -158,8 +158,8 @@ data MempoolCapacityBytesOverride
     -- ^ Use the following 'MempoolCapacityBytes'.
 
 -- | Arguments required when initializing a node
-data NodeArgs m peer blk = NodeArgs {
-      tracers                :: Tracers m peer blk
+data NodeArgs m remotePeer localPeer blk = NodeArgs {
+      tracers                :: Tracers m remotePeer localPeer blk
     , registry               :: ResourceRegistry m
     , maxClockSkew           :: ClockSkew
     , cfg                    :: TopLevelConfig blk
@@ -176,14 +176,14 @@ data NodeArgs m peer blk = NodeArgs {
     }
 
 initNodeKernel
-    :: forall m peer blk.
+    :: forall m remotePeer localPeer blk.
        ( IOLike m
        , RunNode blk
-       , NoUnexpectedThunks peer
-       , Ord peer
+       , NoUnexpectedThunks remotePeer
+       , Ord remotePeer
        )
-    => NodeArgs m peer blk
-    -> m (NodeKernel m peer blk)
+    => NodeArgs m remotePeer localPeer blk
+    -> m (NodeKernel m remotePeer localPeer blk)
 initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
                              , blockProduction, chainDB, initChainDB
                              , miniProtocolParameters } = do
@@ -228,29 +228,29 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
   Internal node components
 -------------------------------------------------------------------------------}
 
-data InternalState m peer blk = IS {
-      tracers             :: Tracers m peer blk
+data InternalState m remotePeer localPeer blk = IS {
+      tracers             :: Tracers m remotePeer localPeer blk
     , cfg                 :: TopLevelConfig blk
     , registry            :: ResourceRegistry m
     , btime               :: BlockchainTime m
     , chainDB             :: ChainDB m blk
-    , blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
-    , fetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
-    , varCandidates       :: StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
+    , blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
+    , fetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
+    , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
     , varState            :: StrictTVar m (NodeState blk)
     , mempool             :: Mempool m blk TicketNo
     }
 
 initInternalState
-    :: forall m peer blk.
+    :: forall m remotePeer localPeer blk.
        ( IOLike m
        , LedgerSupportsProtocol blk
-       , Ord peer
-       , NoUnexpectedThunks peer
+       , Ord remotePeer
+       , NoUnexpectedThunks remotePeer
        , RunNode blk
        )
-    => NodeArgs m peer blk
-    -> m (InternalState m peer blk)
+    => NodeArgs m remotePeer localPeer blk
+    -> m (InternalState m remotePeer localPeer blk)
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              blockFetchSize, blockMatchesHeader, btime,
                              initState, mempoolCap } = do
@@ -276,10 +276,10 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
 
     fetchClientRegistry <- newFetchClientRegistry
 
-    let getCandidates :: STM m (Map peer (AnchoredFragment (Header blk)))
+    let getCandidates :: STM m (Map remotePeer (AnchoredFragment (Header blk)))
         getCandidates = readTVar varCandidates >>= traverse readTVar
 
-        blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
+        blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
         blockFetchInterface = initBlockFetchConsensusInterface
           cfg chainDB getCandidates blockFetchSize blockMatchesHeader btime
 
@@ -352,10 +352,10 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
     compareCandidateChains = compareAnchoredCandidates cfg
 
 forkBlockProduction
-    :: forall m peer blk.
+    :: forall m remotePeer localPeer blk.
        (IOLike m, RunNode blk)
     => MaxBlockSizeOverride
-    -> InternalState m peer blk
+    -> InternalState m remotePeer localPeer blk
     -> BlockProduction m blk
     -> m ()
 forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =

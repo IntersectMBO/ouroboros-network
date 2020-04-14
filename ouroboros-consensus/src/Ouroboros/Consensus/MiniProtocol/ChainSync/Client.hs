@@ -21,6 +21,7 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
   , bracketChainSyncClient
   , ChainSyncClientException (..)
   , ChainDbView (..)
+  , defaultChainDbView
   , ClockSkew (..)
   , Our (..)
   , Their (..)
@@ -65,7 +66,9 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..),
                      onEachChange)
 
-import           Ouroboros.Consensus.Storage.ChainDB (InvalidBlockReason)
+import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
+                     InvalidBlockReason)
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 
 -- | Clock skew: the number of slots the chain of an upstream node may be
 -- ahead of the current slot (according to 'BlockchainTime').
@@ -86,6 +89,15 @@ data ChainDbView m blk = ChainDbView
   , getOurTip         :: STM m (Tip blk)
   , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
   }
+
+defaultChainDbView :: (IOLike m, HasHeader (Header blk))
+                   => ChainDB m blk -> ChainDbView m blk
+defaultChainDbView chainDB = ChainDbView
+    { getCurrentChain   = ChainDB.getCurrentChain   chainDB
+    , getCurrentLedger  = ChainDB.getCurrentLedger  chainDB
+    , getOurTip         = ChainDB.getCurrentTip     chainDB
+    , getIsInvalidBlock = ChainDB.getIsInvalidBlock chainDB
+    }
 
 -- newtype wrappers to avoid confusing our tip with their tip.
 newtype Their a = Their { unTheir :: a }
