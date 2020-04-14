@@ -656,6 +656,7 @@ networkErrorPolicies = ErrorPolicies
                       MuxBearerClosed         -> Just (SuspendPeer shortDelay shortDelay)
                       MuxIOException{}        -> Just (SuspendPeer shortDelay shortDelay)
                       MuxSDUReadTimeout       -> Just (SuspendPeer shortDelay shortDelay)
+                      MuxSDUWriteTimeout      -> Just (SuspendPeer shortDelay shortDelay)
 
         -- Error thrown by 'IOManager', this is fatal on Windows, and it will
         -- never fire on other platofrms.

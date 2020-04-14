@@ -106,8 +106,8 @@ pipeAsMuxBearer tracer channel =
                   traceWith tracer $ Mx.MuxTraceRecvEnd (fromIntegral $ BL.length buf)
                   recvLen' (l - fromIntegral (BL.length buf)) (buf : bufs)
 
-      writePipe :: Mx.MuxSDU -> IO Time
-      writePipe sdu = do
+      writePipe :: Mx.TimeoutFn IO -> Mx.MuxSDU -> IO Time
+      writePipe _ sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)

@@ -199,7 +199,7 @@ msLength = mhLength . msHeader
 --
 data MuxBearer m = MuxBearer {
     -- | Timestamp and send MuxSDU.
-      write   :: MuxSDU -> m Time
+      write   :: TimeoutFn m -> MuxSDU -> m Time
     -- | Read a MuxSDU
     , read    :: TimeoutFn m -> m (MuxSDU, Time)
     -- | Return a suitable MuxSDU payload size.
@@ -217,7 +217,7 @@ muxBearerAsChannel
   -> Channel IO
 muxBearerAsChannel bearer protocolNum mode =
       Channel {
-        send = \blob -> void $ write bearer (wrap blob),
+        send = \blob -> void $ write bearer noTimeout (wrap blob),
         recv = Just . msBlob . fst <$> read bearer noTimeout
       }
     where
