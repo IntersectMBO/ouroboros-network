@@ -174,8 +174,6 @@ nodeToClientProtocols NodeToClientProtocols {
         miniProtocolRun    = localStateQueryProtocol
       }
 
-  -- TODO: provide sensible limits
-  -- https://github.com/input-output-hk/ouroboros-network/issues/575
 maximumMiniProtocolLimits :: MiniProtocolLimits
 maximumMiniProtocolLimits =
     MiniProtocolLimits {
@@ -352,8 +350,6 @@ withServer sn tracers networkState addr versions errPolicies =
 
 -- | A specialised version of 'withServer' which can only communicate using
 -- 'NodeToClientV_1' version of the protocol.
---
--- TODO: do not leak 'Snocket' abstraction, specialise it to 'Socket's and pipes.
 --
 withServer_V1
   :: ( HasResponder appType ~ True
