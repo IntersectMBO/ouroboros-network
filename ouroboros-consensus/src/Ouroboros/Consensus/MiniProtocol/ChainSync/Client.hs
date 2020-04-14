@@ -42,6 +42,8 @@ import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
+import           Cardano.Prelude (unsafeNoUnexpectedThunks)
+
 import           Network.TypedProtocol.Pipelined
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -59,8 +61,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm (checkInvariant,
-                     unsafeNoThunks)
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm (checkInvariant)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..),
                      onEachChange)
@@ -758,7 +759,8 @@ newtype Stateful m blk s st = Stateful (s -> m (Consensus st blk m))
 
 continueWithState :: forall m blk s st. NoUnexpectedThunks s
                   => s -> Stateful m blk s st -> m (Consensus st blk m)
-continueWithState !s (Stateful f) = checkInvariant (unsafeNoThunks s) $ f s
+continueWithState !s (Stateful f) =
+    checkInvariant (unsafeNoUnexpectedThunks s) $ f s
 
 {-------------------------------------------------------------------------------
   Exception
