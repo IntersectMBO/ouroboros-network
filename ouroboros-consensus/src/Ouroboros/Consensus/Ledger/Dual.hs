@@ -24,7 +24,6 @@ module Ouroboros.Consensus.Ledger.Dual (
   , DualLedgerError(..)
   , DualGenTxErr(..)
     -- * Lifted functions
-  , dualExtLedgerStateMain
   , dualExtValidationErrorMain
   , dualTopLevelConfigMain
     -- * Type class family instances
@@ -349,13 +348,6 @@ deriving instance ( Eq (LedgerState m)
   Utilities for working with the extended ledger state
 -------------------------------------------------------------------------------}
 
-dualExtLedgerStateMain :: ExtLedgerState (DualBlock m a)
-                       -> ExtLedgerState m
-dualExtLedgerStateMain ExtLedgerState{..} = ExtLedgerState{
-      ledgerState = dualLedgerStateMain ledgerState
-    , headerState = castHeaderState     headerState
-    }
-
 dualExtValidationErrorMain :: ExtValidationError (DualBlock m a)
                            -> ExtValidationError m
 dualExtValidationErrorMain = \case
@@ -388,8 +380,8 @@ instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
         (dualLedgerConfigMain cfg)
         (dualLedgerStateMain  state)
 
-  anachronisticProtocolLedgerView_ cfg state =
-      anachronisticProtocolLedgerView_
+  ledgerViewForecastAt_ cfg state =
+      ledgerViewForecastAt_
         (dualLedgerConfigMain cfg)
         (dualLedgerStateMain  state)
 

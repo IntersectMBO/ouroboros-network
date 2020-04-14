@@ -35,7 +35,6 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.PBFT
 
@@ -50,9 +49,8 @@ forgeByronBlock
   :: forall m. (MonadRandom m, HasCallStack)
   => TopLevelConfig ByronBlock
   -> Update m (NodeState ByronBlock)
-  -> SlotNo                          -- ^ Current slot
   -> BlockNo                         -- ^ Current block number
-  -> ExtLedgerState ByronBlock       -- ^ Ledger
+  -> TickedLedgerState ByronBlock    -- ^ Current ledger
   -> [GenTx ByronBlock]              -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto  -- ^ Leader proof ('IsLeader')
   -> m ByronBlock
@@ -128,13 +126,12 @@ forgeRegularBlock
   :: forall m. (MonadRandom m, HasCallStack)
   => TopLevelConfig ByronBlock
   -> Update m (NodeState ByronBlock)
-  -> SlotNo                            -- ^ Current slot
   -> BlockNo                           -- ^ Current block number
-  -> ExtLedgerState ByronBlock         -- ^ Ledger
+  -> TickedLedgerState ByronBlock      -- ^ Current ledger
   -> [GenTx ByronBlock]                -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto    -- ^ Leader proof ('IsLeader')
   -> m ByronBlock
-forgeRegularBlock cfg _updateState curSlot curNo extLedger txs isLeader = do
+forgeRegularBlock cfg _updateState curNo tickedLedger txs isLeader = do
     ouroborosPayload <-
       forgePBftFields
         (mkByronContextDSIGN (configBlock cfg))
@@ -142,6 +139,9 @@ forgeRegularBlock cfg _updateState curSlot curNo extLedger txs isLeader = do
         (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload
   where
+    curSlot :: SlotNo
+    curSlot = tickedSlotNo tickedLedger
+
     byronConfig :: BlockConfig ByronBlock
     byronConfig = configBlock cfg
 
@@ -187,7 +187,7 @@ forgeRegularBlock cfg _updateState curSlot curNo extLedger txs isLeader = do
     proof = CC.Block.mkProof body
 
     prevHeaderHash :: CC.Block.HeaderHash
-    prevHeaderHash = case ledgerTipHash (ledgerState extLedger) of
+    prevHeaderHash = case ledgerTipHash (tickedLedgerState tickedLedger) of
       GenesisHash             -> error
         "the first block on the Byron chain must be an EBB"
       BlockHash (ByronHash h) -> h

@@ -42,7 +42,7 @@ import           Data.Type.Equality ((:~:) (Refl))
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot
+import           Cardano.Slotting.Slot hiding (at)
 
 import           Cardano.Binary (fromCBOR, toCBOR)
 import qualified Cardano.Chain.Block as CC
@@ -58,6 +58,7 @@ import qualified Ouroboros.Network.Point as Point
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Forecast
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -197,40 +198,49 @@ instance LedgerSupportsProtocol ByronBlock where
   -- D. ([3], [4])
   --
   -- Then take the delegation state from in current ledger state, and apply the
-  -- updates that should be applied. The resulting delegation state must be
-  -- given the following validity bounds:
+  -- updates that should be applied.
   --
-  -- * The lower bound will be the slot number of the last update that was
-  --   applied, or the upper bound of the last historical snapshot if no
-  --   updates needed to be applied. If there are no historical snapshots,
-  --   then the lower bound is genesis (the history is only empty if the
-  --   delegation state never changed).
-  -- * The upper bound will be the slot number of the first update that was
-  --   not yet applied; if no such update is known, it will be set to the
-  --   the maximum upper bound @(NOW + 2k)@.
-  --
-  -- TODO: verify that the sdSlot of ScheduledDelegation is the slot at which
-  -- it becomes active (i.e., that delegation should be applied /in/ that slot)
-  -- i.e., that delegate is allowed to issue a block in that very same slot.
-  anachronisticProtocolLedgerView_ cfg (ByronLedgerState ls ss) slot =
-      case History.find slot ss of
-        Just sb -> return $ toPBftLedgerView sb -- Case (A)
-        Nothing -- Case (B), (C) or (D)
-          | slot <  At maxLo -> throwError TooFarBehind -- lower bound is inclusive
-          | slot >= At maxHi -> throwError TooFarAhead  -- upper bound is exclusive
-          | otherwise        -> case slot of
-              Origin -> throwError TooFarBehind -- this should be unreachable
-              At s -> return $ toPBftLedgerView $
-                CC.previewDelegationMap (toByronSlotNo s) ls
+  -- NOTE: These forecasts are used to validate headers from blocks that
+  -- potentially live on different chains. We can do this, because the
+  -- delegation state (delegation map and scheduled delegations) at the
+  -- intersection point A between our chain and that chain applies equally to
+  -- /any/ chain starting at that intersection point (only slot numbers are
+  -- relevant). It does however mean that we must limit the range of the
+  -- forecast to @2k@ slots /from the intersection/ point; if we don't, there
+  -- could be delegation certificates present on the other chain that we do not
+  -- know about and that could have taken effect.
+  ledgerViewForecastAt_ cfg (ByronLedgerState ls ss) at = do
+      guard (at >= minLo)
+      return $ Forecast at $ \for ->
+        case History.find (At for) ss of
+          Just sb -> return $ toPBftLedgerView sb -- Case (A)
+          Nothing -> do
+            -- Case (B), (C) or (D): the delegation map in the current state
+            -- applies, modulo pending delegations (which will get applied by
+            -- 'previewDelegationMap').
+            when (for >= maxHi) $
+              throwError $ OutsideForecastRange {
+                  outsideForecastAt     = at
+                , outsideForecastMaxFor = maxHi
+                , outsideForecastFor    = for
+                }
+            return $ toPBftLedgerView $
+                       CC.previewDelegationMap (toByronSlotNo for) ls
     where
       SecurityParam k = genesisSecurityParam (unByronLedgerConfig cfg)
+      tip             = fromByronSlotNo $ CC.cvsLastSlot ls
 
-      now, maxHi, maxLo :: SlotNo
-      now   = fromByronSlotNo $ CC.cvsLastSlot ls
-      maxLo = SlotNo $ if (2 * k) > unSlotNo now
-                        then 0
-                        else unSlotNo now - (2 * k)
-      maxHi = SlotNo $ unSlotNo now + (2 * k)
+      -- The lower bound is inclusive
+      minLo :: WithOrigin SlotNo
+      minLo = if (2 * k) > unSlotNo tip
+                then Origin
+                else At (SlotNo $ unSlotNo tip - (2 * k))
+
+      -- The upper bound is exclusive
+      maxHi :: SlotNo
+      maxHi = case at of
+                Origin -> SlotNo $ 2 * k
+                At s   -> SlotNo $ unSlotNo s + 1 + (2 * k)
 
 instance HasHardForkHistory ByronBlock where
   type HardForkIndices ByronBlock = '[()]

@@ -85,6 +85,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Forecast
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -334,7 +335,7 @@ instance ValidateEnvelope TestBlock where
 
 instance LedgerSupportsProtocol TestBlock where
   protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView_ _ _ _ = return ()
+  ledgerViewForecastAt_ _ _ = Just . trivialForecast
 
 instance HasHardForkHistory TestBlock where
   type HardForkIndices TestBlock = '[()]

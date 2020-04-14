@@ -12,6 +12,8 @@
 -- Intended for qualified import
 module Ouroboros.Consensus.Ledger.History (
     History (..)
+  , Snapshots
+  , Snapshot
   , empty
   , snapOld
   , find
@@ -42,7 +44,7 @@ import           Ouroboros.Consensus.Util (firstJust)
 --
 -- In some ledgers, it is required to store some historical snapshots of some
 -- piece of data to support the implementation of
--- 'anachronisticProtocolLedgerView'. This data type is a template to track
+-- 'ledgerViewForecastAt'. This data type is a template to track
 -- some form of /state/ that requires historical snapshots in the ledger
 -- state. If the description below fits the bill, you can use the 'History'
 -- type to track your /state/:

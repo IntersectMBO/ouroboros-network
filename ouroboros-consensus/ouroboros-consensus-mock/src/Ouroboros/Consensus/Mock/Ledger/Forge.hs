@@ -18,7 +18,6 @@ import           Ouroboros.Network.Block (BlockNo, SlotNo)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Node.State
@@ -27,24 +26,26 @@ import           Ouroboros.Consensus.Protocol.Abstract
 forgeSimple :: forall c m ext. (MonadRandom m, RunMockBlock c ext)
             => TopLevelConfig (SimpleBlock c ext)
             -> Update m (NodeState (SimpleBlock c ext))
-            -> SlotNo                             -- ^ Current slot
-            -> BlockNo                            -- ^ Current block number
-            -> ExtLedgerState (SimpleBlock c ext) -- ^ Current ledger
-            -> [GenTx (SimpleBlock c ext)]        -- ^ Txs to add in the block
+            -> BlockNo                               -- ^ Current block number
+            -> TickedLedgerState (SimpleBlock c ext) -- ^ Current ledger
+            -> [GenTx (SimpleBlock c ext)]           -- ^ Txs to include
             -> IsLeader (BlockProtocol (SimpleBlock c ext))
             -> m (SimpleBlock c ext)
-forgeSimple cfg updateState curSlot curBlock extLedger txs proof = do
+forgeSimple cfg updateState curBlock tickedLedger txs proof = do
     forgeExt cfg updateState proof $ SimpleBlock {
         simpleHeader = mkSimpleHeader encode stdHeader ()
       , simpleBody   = body
       }
   where
+    curSlot :: SlotNo
+    curSlot = tickedSlotNo tickedLedger
+
     body :: SimpleBody
     body = SimpleBody { simpleTxs = map simpleGenTx txs }
 
     stdHeader :: SimpleStdHeader c ext
     stdHeader = SimpleStdHeader {
-          simplePrev      = ledgerTipHash (ledgerState extLedger)
+          simplePrev      = ledgerTipHash (tickedLedgerState tickedLedger)
         , simpleSlotNo    = curSlot
         , simpleBlockNo   = curBlock
         , simpleBodyHash  = hash body

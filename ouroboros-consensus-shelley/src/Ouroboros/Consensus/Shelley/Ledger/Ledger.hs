@@ -45,7 +45,6 @@ import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad.Except
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
-import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import           Data.Type.Equality ((:~:) (Refl))
 import           GHC.Generics (Generic)
@@ -53,13 +52,13 @@ import           GHC.Generics (Generic)
 import           Cardano.Binary (enforceSize, fromCBOR, toCBOR)
 import           Cardano.Prelude (Natural, NoUnexpectedThunks (..),
                      OnlyCheckIsWHNF (..))
-import           Cardano.Slotting.Slot (EpochNo, WithOrigin (..),
-                     fromWithOrigin)
+import           Cardano.Slotting.Slot (EpochNo, WithOrigin (..))
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.BlockchainTime (singletonSlotLengths)
+import           Ouroboros.Consensus.Forecast
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -191,42 +190,42 @@ instance TPraosCrypto c => UpdateLedger (ShelleyBlock c) where
 instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
   protocolLedgerView _cfg = SL.currentLedgerView . shelleyState
 
-  anachronisticProtocolLedgerView_ cfg ledgerState slot =
-      case History.find slot history of
-        Just lv -> return lv
-        Nothing
-          | slot <  At maxLo
-          -> throwError TooFarBehind -- lower bound is inclusive
-          | slot >= At maxHi
-          -> throwError TooFarAhead  -- upper bound is exclusive
-          | otherwise
-          -> -- If 'futureLedgerView' fails, it is a bug
-             return $ either (error "futureLedgerView failed") id $
-             SL.futureLedgerView globals shelleyState forSlot
+  ledgerViewForecastAt_ cfg ledgerState at = do
+      guard (at >= minLo)
+      return $ Forecast at $ \for ->
+        case History.find (At for) history of
+          Just lv -> return lv
+          Nothing -> do
+            when (for >= maxHi) $
+              throwError $ OutsideForecastRange {
+                  outsideForecastAt     = at
+                , outsideForecastMaxFor = maxHi
+                , outsideForecastFor    = for
+                }
+            -- 'futureLedgerView' imposes its own bounds, but those bounds are
+            -- set assuming that we are looking forward from the " current "
+            -- ledger state ('shelleyState'), not from the intersection point
+            -- ('at'). Those bounds could /exceed/ the 'maxHi' we have computed,
+            -- but should never be /less/.
+            return $ either (error "futureLedgerView failed") id $
+                       SL.futureLedgerView globals shelleyState for
     where
-      ShelleyLedgerState { ledgerTip , history , shelleyState } =
-        ledgerState
-
+      ShelleyLedgerState {history , shelleyState} = ledgerState
       ShelleyLedgerConfig globals = cfg
+      k   = SL.securityParameter globals
+      tip = ledgerTipSlot ledgerState
 
-      k = SL.securityParameter globals
+      -- Inclusive lower bound
+      minLo :: WithOrigin SlotNo
+      minLo = case tip of
+                At (SlotNo s) | s >= (2 * k) -> At (SlotNo (s - (2 * k)))
+                _otherwise                   -> Origin
 
-      now, maxHi, maxLo :: SlotNo
-      maxLo = SlotNo $ if (2 * k) > unSlotNo now
-                        then 0
-                        else unSlotNo now - (2 * k)
-      maxHi = SlotNo $ unSlotNo now + (2 * k)
-      -- The slot of the last block last applied to the ledger, /now/
-      -- according to the ledger.
-      now   = fromWithOrigin
-        (minimumPossibleSlotNo (Proxy @(ShelleyBlock c)))
-        (pointSlot ledgerTip)
-
-      -- The slot for which we want to get a 'ProtocolLedgerView'
-      forSlot :: SlotNo
-      forSlot = fromWithOrigin
-        (minimumPossibleSlotNo (Proxy @(ShelleyBlock c)))
-        slot
+      -- Exclusive upper bound
+      maxHi :: SlotNo
+      maxHi = case at of
+                Origin -> SlotNo $ 2 * k
+                At s   -> SlotNo $ unSlotNo s + 1 + (2 * k)
 
 instance HasHardForkHistory (ShelleyBlock c) where
   type HardForkIndices (ShelleyBlock c) = '[()]

@@ -8,6 +8,7 @@
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -663,11 +664,13 @@ runThreadNetwork ThreadNetworkArgs
 
       let blockProduction :: BlockProduction m blk
           blockProduction = BlockProduction {
-              produceBlock       = \lift' upd currentSlot currentBno extLdgSt txs prf -> do
+              produceBlock       = \lift' upd currentBno tickedLdgSt txs prf -> do
+                let currentSlot = tickedSlotNo tickedLdgSt
+
                 -- the typical behavior, which doesn't add a Just-In-Time EBB
                 let forgeWithoutEBB =
                       nodeForgeBlock pInfoConfig upd
-                        currentSlot currentBno extLdgSt txs prf
+                        currentBno tickedLdgSt txs prf
 
                 case mbForgeEbbEnv of
                   Nothing          -> forgeWithoutEBB
@@ -679,7 +682,7 @@ runThreadNetwork ThreadNetworkArgs
                             SlotNo numer    = currentSlot
                             EpochSize denom = epochSize
 
-                    let p = ledgerTipPoint $ ledgerState extLdgSt
+                    let p = ledgerTipPoint $ tickedLedgerState tickedLdgSt
                     let mSlot = pointSlot p
                     if (At ebbSlot <= mSlot) then forgeWithoutEBB else do
                       -- the EBB is needed
@@ -700,22 +703,26 @@ runThreadNetwork ThreadNetworkArgs
                                   ebbSlot ebbBno (pointHash p)
 
                       -- fail if the EBB is invalid
-                      let apply = applyExtLedgerState BlockNotPreviouslyApplied
-                      extLdgSt' <- case Exc.runExcept $ apply pInfoConfig ebb extLdgSt of
-                        Left e   -> Exn.throw $ JitEbbError e
-                        Right st -> pure st
+                      -- if it is valid, we retick to the /same/ slot
+                      let apply = applyLedgerBlock (configLedger pInfoConfig)
+                      tickedLdgSt' <- case Exc.runExcept $ apply ebb tickedLdgSt of
+                        Left e   -> Exn.throw $ JitEbbError @blk e
+                        Right st -> pure $ applyChainTick
+                                            (configLedger pInfoConfig)
+                                            currentSlot
+                                            st
 
                       -- forge the block usings the ledger state that includes
                       -- the EBB
                       blk <- nodeForgeBlock pInfoConfig upd
-                        currentSlot currentBno extLdgSt' txs prf
+                        currentBno tickedLdgSt' txs prf
 
                       -- /if the new block is valid/, add the EBB to the
                       -- ChainDB
                       --
                       -- If the new block is invalid, then adding the EBB would
                       -- be premature in some scenarios.
-                      case Exc.runExcept $ apply pInfoConfig blk extLdgSt' of
+                      case Exc.runExcept $ apply blk tickedLdgSt' of
                         -- ASSUMPTION: If it's invalid with the EBB,
                         -- it will be invalid without the EBB.
                         Left{}  -> forgeWithoutEBB
@@ -1323,8 +1330,8 @@ instance Exception MiniProtocolFatalException
 -- | Our scheme for Just-In-Time EBBs makes some assumptions
 --
 data JitEbbError blk
-  = JitEbbError (ExtValidationError blk)
+  = JitEbbError (LedgerError blk)
     -- ^ we were unable to extend the ledger state with the JIT EBB
-  deriving (Show)
 
+deriving instance LedgerSupportsProtocol blk => Show (JitEbbError blk)
 instance LedgerSupportsProtocol blk => Exception (JitEbbError blk)
