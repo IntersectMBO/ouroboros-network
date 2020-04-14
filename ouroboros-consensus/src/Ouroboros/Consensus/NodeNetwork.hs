@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -297,7 +298,9 @@ nodeToClientCodecs
     :: forall m blk. (IOLike m, RunNode blk)
     => NodeToClientVersion
     -> NodeToClientCodecs blk DeserialiseFailure m ByteString ByteString ByteString
-nodeToClientCodecs NodeToClientV_1 = NodeToClientCodecs {..}
+nodeToClientCodecs = \case
+    NodeToClientV_1 -> NodeToClientCodecs {..}
+    NodeToClientV_2 -> NodeToClientCodecs {..}
   where
     nodeToClientChainSyncCodec =
         codecChainSyncSerialised
@@ -497,18 +500,20 @@ responderNetworkApplication miniProtocolParameters NetworkApplication {..} them 
 --
 localResponderNetworkApplication
   :: NetworkApplication m peer localPeer bytes bytes bytes bytes bytes bytes a
+  -> NodeToClientVersion
   -> localPeer
   -> OuroborosApplication ResponderApp bytes m Void a
-localResponderNetworkApplication NetworkApplication {..} peer =
+localResponderNetworkApplication NetworkApplication {..} version peer =
     nodeToClientProtocols
       NodeToClientProtocols {
           localChainSyncProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (naLocalChainSyncServer peer))),
           localTxSubmissionProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (naLocalTxSubmissionServer peer))),
-          localQueryProtocol =
+          localStateQueryProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (naLocalStateQueryServer peer)))
         }
+      version
 
 
 -- | Example function which creates consensus mux applications, this is useful

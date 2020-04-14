@@ -232,11 +232,14 @@ run tracers protocolTracers chainDbTracer diffusionTracers diffusionArguments
          ]
      , daLocalResponderApplication = combineVersions [
            simpleSingletonVersions
-             (nodeToClientProtocolVersion (Proxy @blk) version)
+             nodeToClientVersion
              nodeToClientVersionData
              (DictVersion nodeToClientCodecCBORTerm)
-             (localResponderNetworkApplication $ networkApps version)
+             (localResponderNetworkApplication
+               (networkApps version)
+               nodeToClientVersion)
          | version <- supportedNetworkProtocolVersions (Proxy @blk)
+         , let nodeToClientVersion = nodeToClientProtocolVersion (Proxy @blk) version
          ]
      , daErrorPolicies = consensusErrorPolicy (Proxy @blk)
      }
