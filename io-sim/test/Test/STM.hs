@@ -256,13 +256,14 @@ data TxResult =
 -- | An immutable snapshot of a 'Value' where the current values of the mutable
 -- variables are captured and included.
 --
+-- 'ImmValVar' is an evidence that it was the value within in a mutable
+-- variable; the identity of the variable is forgotten.
+--
 data ImmValue where
 
     ImmValUnit ::             ImmValue
     ImmValInt  :: Int      -> ImmValue
     ImmValVar  :: ImmValue -> ImmValue
-    -- ^ This means it was the value within in a mutable variable, but the
-    -- identity of the variable is forgotten.
   deriving (Eq, Show)
 
 -- | In the execution in real STM transactions are aborted by throwing an
