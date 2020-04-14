@@ -10,15 +10,19 @@
 #      (the default is './haddocks')
 # $2 - weahter to re-build haddocjs with `cabal haddock` command or a component name
 #      (the default is true)
+# $3 - cabal build directory
+#      (the default is "dist-newstyle")
 
 set -euo pipefail
 
 OUTPUT_DIR=${1:-"./haddocks"}
 REGENERATE=${2:-"true"}
+BUILD_DIR=${3:-"dist-newstyle"}
 
 GHC_VERSION=$(ghc --numeric-version)
 
 HADDOCK_OPTS=(
+    --builddir "${BUILD_DIR}"
     --disable-optimization
     --haddock-all
     --haddock-html
@@ -38,9 +42,9 @@ elif [ ${REGENERATE} != "false" ]; then
 fi
 
 # copy the new docs
-for dir in $(ls "dist-newstyle/build/x86_64-linux/ghc-${GHC_VERSION}"); do
+for dir in $(ls "${BUILD_DIR}/build/x86_64-linux/ghc-${GHC_VERSION}"); do
   package=$(echo "${dir}" | sed 's/-[0-9]\+\(\.[0-9]\+\)*//')
-  cp -r "dist-newstyle/build/x86_64-linux/ghc-${GHC_VERSION}/${dir}/noopt/doc/html/${package}" ${OUTPUT_DIR}
+  cp -r "${BUILD_DIR}/build/x86_64-linux/ghc-${GHC_VERSION}/${dir}/noopt/doc/html/${package}" ${OUTPUT_DIR}
 done
 
 # --read-interface options
