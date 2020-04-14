@@ -318,8 +318,8 @@ prop_socket_recv_error f rerr =
                 (runAccept $ accept snocket sd)
                 (\(sd', _, _) -> Socket.close sd')
                 $ \(sd', _, _) -> do
-                  let timeout = if rerr == SDUTimeout then Just 0.10
-                                                      else Nothing
+                  let timeout = if rerr == SDUTimeout then 0.10
+                                                      else (-1) -- No timeout
                   let bearer = Mx.socketAsMuxBearer timeout nullTracer sd'
                   Mx.muxStart nullTracer (toApplication app) bearer
           )

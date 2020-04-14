@@ -244,7 +244,7 @@ socketSnocket ioManager = Snocket {
     , listen   = \s -> Socket.listen s 8
     , accept   = berkeleyAccept ioManager
     , close    = Socket.close
-    , toBearer = Mx.socketAsMuxBearer $ Just sduTimeout
+    , toBearer = Mx.socketAsMuxBearer sduTimeout
     }
   where
 
@@ -403,7 +403,7 @@ localSnocket ioManager _ = Snocket {
     , open          = openSocket
     , openToConnect = \addr -> openSocket LocalFamily
     , close         = Socket.close
-    , toBearer      = Mx.socketAsMuxBearer Nothing
+    , toBearer      = Mx.socketAsMuxBearer (-1) -- Negative values means no timeout.
     }
   where
     toLocalAddress :: SockAddr -> LocalAddress

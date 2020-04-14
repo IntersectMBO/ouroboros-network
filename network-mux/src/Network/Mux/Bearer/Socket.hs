@@ -47,11 +47,11 @@ import qualified Network.Mux.Timeout as Mx
 -- 'MuxError'.
 --
 socketAsMuxBearer
-  :: Maybe DiffTime
+  :: DiffTime
   -> Tracer IO Mx.MuxTrace
   -> Socket.Socket
   -> MuxBearer IO
-socketAsMuxBearer sduTimeout_m tracer sd =
+socketAsMuxBearer sduTimeout tracer sd =
       Mx.MuxBearer {
         Mx.read    = readSocket,
         Mx.write   = writeSocket,
@@ -59,10 +59,6 @@ socketAsMuxBearer sduTimeout_m tracer sd =
       }
     where
       hdrLenght = 8
-
-      sduTimeout = case sduTimeout_m of
-                      Just t  -> t
-                      Nothing -> (-1) -- no timeout
 
       readSocket :: HasCallStack => Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
       readSocket timeout = do
