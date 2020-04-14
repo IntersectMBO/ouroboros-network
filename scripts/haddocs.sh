@@ -21,16 +21,24 @@ BUILD_DIR=${3:-"dist-newstyle"}
 
 GHC_VERSION=$(ghc --numeric-version)
 
+
+# we don't include `--use-index` option, because then quickjump data is not
+# generated.  This is not ideal, but there is no way to generate only top level
+# `doc-index.html` file.  With this approach we get:
+# * `doc-index.json` and `doc-index.html` per package
+# * we can generate top level `doc-index.json` (which will only work at the top
+#   level).
+# * we could ammend package level `doc-index.json` files, but it's enough ...
+#   this should be fixed upstream.
 HADDOCK_OPTS=(
     --builddir "${BUILD_DIR}"
     --disable-optimization
     --haddock-all
     --haddock-html
+    --haddock-quickjump
     --haddock-hyperlink-source
-    --haddock-option "--quickjump"
     --haddock-option "--show-all"
     --haddock-option "--use-unicode"
-    --haddock-option "--use-index=\"../doc-index.html\""
     --haddock-option "--use-contents=\"../index.html\""
   )
 
@@ -54,10 +62,27 @@ interface_options () {
   done
 }
 
-haddock -o ${OUTPUT_DIR} \
+# Generate top level index using interface files
+#
+haddock \
+  -o ${OUTPUT_DIR} \
   --title "ouroboros-network" \
   --package-name "Ouroboros-Network & Ouroboros-Consensus" \
   --gen-index \
   --gen-contents \
+  --quickjump \
   --prolog ./scripts/prolog \
   $(interface_options)
+
+# Assemble a toplevel `doc-index.json` from package level ones.
+#
+echo "[]" > "${OUTPUT_DIR}/doc-index.json"
+for file in $(ls $OUTPUT_DIR/*/doc-index.json); do
+  project=$(basename $(dirname $file));
+  jq -s \
+    ".[0] + [.[1][] | (. + {link: (\"${project}/\" + .link)}) ]" \
+    "${OUTPUT_DIR}/doc-index.json" \
+    ${file} \
+    > /tmp/doc-index.json
+  mv /tmp/doc-index.json "${OUTPUT_DIR}/doc-index.json"
+done

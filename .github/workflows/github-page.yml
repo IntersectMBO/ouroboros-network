@@ -17,6 +17,10 @@ jobs:
       - name: Set PATH
         run: |
           echo "::add-path::$HOME/.cabal/bin"
+      - name: Install jq
+        run: |
+          apt-get update
+          apt-get install -y jq
       - name: Install cabal-plan
         run: |
           mkdir -p $HOME/.cabal/bin
