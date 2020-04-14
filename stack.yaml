@@ -41,7 +41,7 @@ extra-deps:
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 42c57fed487b61c13a68a1600a6675ad987822d0
+    commit: f1a9a7420f6894ff66d17c6b2e44491905b8f928
     subdirs:
       - binary
       - binary/test
@@ -49,7 +49,7 @@ extra-deps:
       - slotting
 
   - git: https://github.com/input-output-hk/cardano-ledger-specs
-    commit: 5c5854be017f75c703b11c1aad4b765f511ee70e
+    commit: 9f96b7462a41d449826a4cc5f93dad395354cfe6
     subdirs:
       - byron/chain/executable-spec
       - byron/ledger/executable-spec
@@ -65,7 +65,7 @@ extra-deps:
   - gray-code-0.3.1
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 90b14c056059d0082cb2641f9c77cb1b097be329
+    commit: 357ed656ad81fcddb401ceb656d6c2a6a177a0fa
     subdirs:
       - cardano-ledger
       - cardano-ledger/test

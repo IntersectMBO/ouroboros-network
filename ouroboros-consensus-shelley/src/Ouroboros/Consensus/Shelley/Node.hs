@@ -218,7 +218,7 @@ protocolInfoShelley genesis protVer mbCredentials =
     runShelleyBase :: SL.ShelleyBase a -> a
     runShelleyBase sb = runReader sb shelleyGlobals
 
-    oSched :: Map SlotNo (Maybe (SL.GenKeyHash c))
+    oSched :: Map SlotNo (SL.OBftSlot c)
     oSched = runShelleyBase $
       SL.overlaySchedule
         initialEpochNo

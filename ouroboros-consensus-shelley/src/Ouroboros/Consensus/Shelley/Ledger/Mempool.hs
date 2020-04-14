@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -94,6 +95,11 @@ instance Crypto c => ToCBOR (GenTx (ShelleyBlock c)) where
 
 instance Crypto c => FromCBOR (GenTx (ShelleyBlock c)) where
   fromCBOR = mkShelleyTx <$> fromCBOR
+
+-- TODO: the above instance needs to be updated but it's not immediately
+-- obvious to me how.
+-- It currently relies on an instance FromCBOR (SL.Tx crypto)
+-- but the ledger now provides the instance FromCBOR (Annotator (Tx crypto))
 
 {-------------------------------------------------------------------------------
   Pretty-printing
