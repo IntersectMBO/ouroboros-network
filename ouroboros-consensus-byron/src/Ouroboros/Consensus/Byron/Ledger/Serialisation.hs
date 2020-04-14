@@ -137,6 +137,8 @@ encodeByronHeader = \case
     SentAcrossNetwork ByronNetworkProtocolVersion1 ->
       encodeUnsizedHeader . fst . splitSizeHint
     SentAcrossNetwork ByronNetworkProtocolVersion2 ->
+      encodeUnsizedHeader . fst . splitSizeHint
+    SentAcrossNetwork ByronNetworkProtocolVersion3 ->
       uncurry (flip encodeSizedHeader) . splitSizeHint
 
 -- | Inverse of 'encodeByronHeader'
@@ -148,11 +150,14 @@ decodeByronHeader epochSlots = \case
       -- Version 2 is compatible with 'byronAddHeaderEnvelope'
       -- (Moreover, version 1 is lossy)
       decodeByronHeader epochSlots $
-        SentAcrossNetwork ByronNetworkProtocolVersion2
+        SentAcrossNetwork ByronNetworkProtocolVersion3
     SentAcrossNetwork ByronNetworkProtocolVersion1 ->
       (flip joinSizeHint fakeByronBlockSizeHint .) <$>
         decodeUnsizedHeader epochSlots
     SentAcrossNetwork ByronNetworkProtocolVersion2 ->
+      (flip joinSizeHint fakeByronBlockSizeHint .) <$>
+        decodeUnsizedHeader epochSlots
+    SentAcrossNetwork ByronNetworkProtocolVersion3 ->
       const . uncurry (flip joinSizeHint) <$>
         decodeSizedHeader epochSlots
 
@@ -170,6 +175,8 @@ encodeWrappedByronHeader = \case
     ByronNetworkProtocolVersion1 ->
       encode . dropEncodedSize
     ByronNetworkProtocolVersion2 ->
+      encode . dropEncodedSize
+    ByronNetworkProtocolVersion3 ->
       encode
 
 -- | Decode wrapped header
@@ -181,6 +188,8 @@ decodeWrappedByronHeader = \case
     ByronNetworkProtocolVersion1 ->
       fakeEncodedSize <$> decode
     ByronNetworkProtocolVersion2 ->
+      fakeEncodedSize <$> decode
+    ByronNetworkProtocolVersion3 ->
       decode
 
 -- | When given the raw header bytes extracted from the block, i.e., the

@@ -113,6 +113,9 @@ prop_roundtrip_Header v h =
            SentAcrossNetwork ByronNetworkProtocolVersion1 ->
              -- This is a lossy format
              h { byronHeaderBlockSizeHint = fakeByronBlockSizeHint }
+           SentAcrossNetwork ByronNetworkProtocolVersion2 ->
+             -- This is a lossy format
+             h { byronHeaderBlockSizeHint = fakeByronBlockSizeHint }
            _otherwise ->
              h
 
