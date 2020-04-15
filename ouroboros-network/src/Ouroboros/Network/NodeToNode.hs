@@ -397,7 +397,7 @@ nodeToNodeProtocols MiniProtocolParameters {
 -- | Enumeration of node to node protocol versions.
 --
 data NodeToNodeVersion = NodeToNodeV_1
-  deriving (Eq, Ord, Enum, Show, Typeable)
+  deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 instance Serialise NodeToNodeVersion where
     encode NodeToNodeV_1 = CBOR.encodeWord 1
@@ -405,7 +405,7 @@ instance Serialise NodeToNodeVersion where
       tag <- CBOR.decodeWord
       case tag of
         1 -> return NodeToNodeV_1
-        _ -> fail "decode NodeToNodeVersion: unknown tag"
+        _ -> fail ("decode NodeToNodeVersion: unknown tag " ++ show tag)
 
 -- | Version data for NodeToNode protocol v1
 --

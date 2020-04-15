@@ -49,6 +49,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
+import           Data.Void (Void)
 import           GHC.Stack
 
 import           Cardano.Slotting.EpochInfo
@@ -63,9 +64,6 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
-import           Ouroboros.Network.Protocol.ChainSync.Type
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 import           Ouroboros.Network.Protocol.TxSubmission.Type
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
@@ -82,14 +80,13 @@ import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.Server as BFServer
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ClockSkew (..))
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server (Tip)
+import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeKernel as NodeKernel
-import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
@@ -209,7 +206,7 @@ data VertexStatus m blk
   | VFalling
     -- ^ The vertex has a node instance, but it is about to transition to
     -- 'VDown' as soon as its edges transition to 'EDown'.
-  | VUp !(NodeKernel m NodeId blk) !(LimitedApp m NodeId blk)
+  | VUp !(NodeKernel m NodeId Void blk) !(LimitedApp m NodeId blk)
     -- ^ The vertex currently has a node instance, with these handles.
 
 -- | A directed /edge/ denotes the \"operator of a node-to-node connection\";
@@ -576,16 +573,16 @@ runThreadNetwork ThreadNetworkArgs
       nodeDBs = ChainDbArgs
         { -- Decoders
           cdbDecodeHash           = nodeDecodeHeaderHash     (Proxy @blk)
-        , cdbDecodeBlock          = nodeDecodeBlock          cfg
-        , cdbDecodeHeader         = nodeDecodeHeader         cfg SerialisedToDisk
-        , cdbDecodeLedger         = nodeDecodeLedgerState    cfg
+        , cdbDecodeBlock          = nodeDecodeBlock          bcfg
+        , cdbDecodeHeader         = nodeDecodeHeader         bcfg SerialisedToDisk
+        , cdbDecodeLedger         = nodeDecodeLedgerState
         , cdbDecodeConsensusState = nodeDecodeConsensusState (Proxy @blk) cfg
         , cdbDecodeTipInfo        = nodeDecodeTipInfo        (Proxy @blk)
           -- Encoders
         , cdbEncodeHash           = nodeEncodeHeaderHash     (Proxy @blk)
-        , cdbEncodeBlock          = nodeEncodeBlockWithInfo  cfg
-        , cdbEncodeHeader         = nodeEncodeHeader         cfg SerialisedToDisk
-        , cdbEncodeLedger         = nodeEncodeLedgerState    cfg
+        , cdbEncodeBlock          = nodeEncodeBlockWithInfo  bcfg
+        , cdbEncodeHeader         = nodeEncodeHeader         bcfg SerialisedToDisk
+        , cdbEncodeLedger         = nodeEncodeLedgerState
         , cdbEncodeConsensusState = nodeEncodeConsensusState (Proxy @blk) cfg
         , cdbEncodeTipInfo        = nodeEncodeTipInfo        (Proxy @blk)
           -- HasFS instances
@@ -618,6 +615,8 @@ runThreadNetwork ThreadNetworkArgs
         , cdbBlocksToAddSize      = 2
         }
       where
+        bcfg = configBlock cfg
+
         -- prop_general relies on this tracer
         instrumentationTracer = Tracer $ \case
           ChainDB.TraceAddBlockEvent
@@ -637,8 +636,8 @@ runThreadNetwork ThreadNetworkArgs
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
-      -> m ( NodeKernel m NodeId blk
-           , LimitedApp m NodeId blk
+      -> m ( NodeKernel m NodeId Void blk
+           , LimitedApp m NodeId      blk
            )
     forkNode varRNG btime registry pInfo nodeInfo txs0 = do
       let ProtocolInfo{..} = pInfo
@@ -765,14 +764,14 @@ runThreadNetwork ThreadNetworkArgs
 
       nodeKernel <- initNodeKernel nodeArgs
       let mempool = getMempool nodeKernel
-      let app = consensusNetworkApps
+      let app = NTN.mkApps
                   nodeKernel
                   -- these tracers report every message sent/received by this
                   -- node
                   nullDebugProtocolTracers
-                  (customProtocolCodecs pInfoConfig)
+                  (customNodeToNodeCodecs pInfoConfig)
                   Nothing
-                  (protocolHandlers nodeArgs nodeKernel)
+                  (NTN.mkHandlers nodeArgs nodeKernel)
 
       -- In practice, a robust wallet/user can persistently add a transaction
       -- until it appears on the chain. This thread adds robustness for the
@@ -815,49 +814,37 @@ runThreadNetwork ThreadNetworkArgs
 
       return (nodeKernel, LimitedApp app)
 
-    customProtocolCodecs
+    customNodeToNodeCodecs
       :: TopLevelConfig blk
-      -> ProtocolCodecs blk CodecError m
+      -> NTN.Codecs blk CodecError m
            Lazy.ByteString
            Lazy.ByteString
            Lazy.ByteString
            Lazy.ByteString
            (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
-           (AnyMessage (ChainSync (Serialised blk) (Tip blk)))
-           (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
-           (AnyMessage (LocalStateQuery blk (Query blk)))
-    customProtocolCodecs cfg = ProtocolCodecs
-        { pcChainSyncCodec =
+    customNodeToNodeCodecs cfg = NTN.Codecs
+        { cChainSyncCodec =
             mapFailureCodec CodecBytesFailure $
-            pcChainSyncCodec binaryProtocolCodecs
-        , pcChainSyncCodecSerialised =
+              NTN.cChainSyncCodec binaryProtocolCodecs
+        , cChainSyncCodecSerialised =
             mapFailureCodec CodecBytesFailure $
-            pcChainSyncCodecSerialised binaryProtocolCodecs
-        , pcBlockFetchCodec =
+              NTN.cChainSyncCodecSerialised binaryProtocolCodecs
+        , cBlockFetchCodec =
             mapFailureCodec CodecBytesFailure $
-            pcBlockFetchCodec binaryProtocolCodecs
-        , pcBlockFetchCodecSerialised =
+              NTN.cBlockFetchCodec binaryProtocolCodecs
+        , cBlockFetchCodecSerialised =
             mapFailureCodec CodecBytesFailure $
-            pcBlockFetchCodecSerialised binaryProtocolCodecs
-        , pcTxSubmissionCodec =
+              NTN.cBlockFetchCodecSerialised binaryProtocolCodecs
+        , cTxSubmissionCodec =
             mapFailureCodec CodecIdFailure $
-            pcTxSubmissionCodec protocolCodecsId
-        , pcLocalChainSyncCodec =
-            mapFailureCodec CodecIdFailure $
-            pcLocalChainSyncCodec protocolCodecsId
-        , pcLocalTxSubmissionCodec =
-            mapFailureCodec CodecIdFailure $
-            pcLocalTxSubmissionCodec protocolCodecsId
-        , pcLocalStateQueryCodec =
-            mapFailureCodec CodecIdFailure $
-            pcLocalStateQueryCodec protocolCodecsId
+              NTN.cTxSubmissionCodec NTN.identityCodecs
         }
       where
-        binaryProtocolCodecs = protocolCodecs cfg
-                                 (mostRecentNetworkProtocolVersion (Proxy @blk))
+        binaryProtocolCodecs = NTN.defaultCodecs (configBlock cfg)
+                                 (mostRecentNodeToNodeVersion (Proxy @blk))
 
--- | Sum of 'CodecFailure' (from 'protocolCodecsId') and 'DeserialiseFailure'
--- (from 'protocolCodecs').
+-- | Sum of 'CodecFailure' (from @identityCodecs@) and 'DeserialiseFailure'
+-- (from @defaultCodecs@).
 data CodecError
   = CodecIdFailure    CodecFailure
   | CodecBytesFailure DeserialiseFailure
@@ -989,17 +976,17 @@ directedEdgeInner edgeStatusVar
     atomically $ writeTVar edgeStatusVar EUp
 
     let miniProtocol ::
-             (forall unused1 unused2 unused3.
-                LimitedApp' m NodeId blk unused1 unused2 unused3
+             (  LimitedApp' m NodeId blk
              -> NodeId
              -> Channel m msg
-             -> m ())
+             -> m ()
+             )
             -- ^ client action to run on node1
-          -> (forall unused1 unused2 unused3.
-                LimitedApp' m NodeId blk unused1 unused2 unused3
+          -> (  LimitedApp' m NodeId blk
              -> NodeId
              -> Channel m msg
-             -> m ())
+             -> m ()
+             )
              -- ^ server action to run on node2
           -> m (m (), m ())
         miniProtocol client server = do
@@ -1017,14 +1004,14 @@ directedEdgeInner edgeStatusVar
         pure (watcher vertexStatusVar1, watcher vertexStatusVar2)
         NE.:|
       [ miniProtocol
-          (wrapMPEE MPEEChainSyncClient naChainSyncClient)
-          naChainSyncServer
+          (wrapMPEE MPEEChainSyncClient NTN.aChainSyncClient)
+          NTN.aChainSyncServer
       , miniProtocol
-          (wrapMPEE MPEEBlockFetchClient naBlockFetchClient)
-          (wrapMPEE MPEEBlockFetchServer naBlockFetchServer)
+          (wrapMPEE MPEEBlockFetchClient NTN.aBlockFetchClient)
+          (wrapMPEE MPEEBlockFetchServer NTN.aBlockFetchServer)
       , miniProtocol
-          (wrapMPEE MPEETxSubmissionClient naTxSubmissionClient)
-          (wrapMPEE MPEETxSubmissionServer naTxSubmissionServer)
+          (wrapMPEE MPEETxSubmissionClient NTN.aTxSubmissionClient)
+          (wrapMPEE MPEETxSubmissionServer NTN.aTxSubmissionServer)
       ]
   where
     getApp v = readTVar v >>= \case
@@ -1203,7 +1190,7 @@ nullDebugTracers ::
      , LedgerSupportsProtocol blk
      , TracingConstraints blk
      )
-  => Tracers m peer blk
+  => Tracers m peer Void blk
 nullDebugTracers = nullTracers `asTypeOf` showTracers debugTracer
 
 -- | Occurs throughout in positions that might be useful for debugging.
@@ -1212,11 +1199,10 @@ nullDebugProtocolTracers ::
      , HasHeader blk
      , TracingConstraints blk
      , Show peer
-     , Show localPeer
      )
-  => ProtocolTracers m peer localPeer blk failure
+  => NTN.Tracers m peer blk failure
 nullDebugProtocolTracers =
-  nullProtocolTracers `asTypeOf` showProtocolTracers debugTracer
+  NTN.nullTracers `asTypeOf` NTN.showTracers debugTracer
 
 -- These constraints are when using @showTracer(s) debugTracer@ instead of
 -- @nullTracer(s)@.
@@ -1254,14 +1240,13 @@ withAsyncsWaitAny = go [] . NE.toList
 --
 -- Used internal to this module, essentially as an abbreviation.
 data LimitedApp m peer blk =
-   forall unused1 unused2 unused3.
-   LimitedApp (LimitedApp' m peer blk unused1 unused2 unused3)
+   LimitedApp (LimitedApp' m peer blk)
 
 -- | Argument of 'LimitedApp' data constructor
 --
 -- Used internal to this module, essentially as an abbreviation.
-type LimitedApp' m peer blk unused1 unused2 unused3 =
-    NetworkApplication m peer peer
+type LimitedApp' m peer blk =
+    NTN.Apps m peer
         -- The 'ChainSync' and 'BlockFetch' protocols use @'Serialised' x@ for
         -- the servers and @x@ for the clients. Since both have to match to be
         -- sent across a channel, we can't use @'AnyMessage' ..@, instead, we
@@ -1270,9 +1255,6 @@ type LimitedApp' m peer blk unused1 unused2 unused3 =
         Lazy.ByteString
         Lazy.ByteString
         (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
-        unused1 -- the local node-to-client channel types
-        unused2
-        unused3
         ()
 
 {-------------------------------------------------------------------------------

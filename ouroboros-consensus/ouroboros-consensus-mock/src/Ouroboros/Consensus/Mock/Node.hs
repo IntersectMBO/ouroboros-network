@@ -71,7 +71,7 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeEncodeGenTx           =       encode
   nodeEncodeGenTxId         =       encode
   nodeEncodeHeaderHash      = const encode
-  nodeEncodeLedgerState     = const encode
+  nodeEncodeLedgerState     = encode
   nodeEncodeConsensusState  = const mockEncodeConsensusState
   nodeEncodeApplyTxError    = const encode
   nodeEncodeTipInfo         = const encode
@@ -84,7 +84,7 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeDecodeGenTx           =       decode
   nodeDecodeGenTxId         =       decode
   nodeDecodeHeaderHash      = const decode
-  nodeDecodeLedgerState     = const decode
+  nodeDecodeLedgerState     = decode
   nodeDecodeConsensusState  = const mockDecodeConsensusState
   nodeDecodeApplyTxError    = const decode
   nodeDecodeTipInfo         = const decode

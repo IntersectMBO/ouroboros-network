@@ -48,10 +48,10 @@ import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 
-import           Shelley.Spec.Ledger.Crypto (HASH)
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
+import           Shelley.Spec.Ledger.Crypto (HASH)
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
@@ -312,7 +312,7 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeEncodeGenTx          = toCBOR
   nodeEncodeGenTxId        = toCBOR
   nodeEncodeHeaderHash     = \Proxy -> toCBOR
-  nodeEncodeLedgerState    = \_cfg -> encodeShelleyLedgerState
+  nodeEncodeLedgerState    = encodeShelleyLedgerState
   nodeEncodeConsensusState = \Proxy _cfg -> toCBOR
   nodeEncodeApplyTxError   = \Proxy -> toCBOR
   nodeEncodeTipInfo        = \Proxy -> toCBOR
@@ -325,7 +325,7 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeDecodeGenTx          = fromCBOR
   nodeDecodeGenTxId        = fromCBOR
   nodeDecodeHeaderHash     = \Proxy -> fromCBOR
-  nodeDecodeLedgerState    = \_cfg -> decodeShelleyLedgerState
+  nodeDecodeLedgerState    = decodeShelleyLedgerState
   nodeDecodeConsensusState = \Proxy _cfg -> fromCBOR
   nodeDecodeApplyTxError   = \Proxy -> fromCBOR
   nodeDecodeTipInfo        = \Proxy -> fromCBOR

@@ -41,83 +41,86 @@ import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
   All tracers of a node bundled together
 -------------------------------------------------------------------------------}
 
-data Tracers' peer blk f = Tracers
+data Tracers' remotePeer localPeer blk f = Tracers
   { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk)
   , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent blk (Header blk))
   , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk blk)
-  , blockFetchDecisionTracer      :: f [TraceLabelPeer peer (FetchDecision [Point (Header blk)])]
-  , blockFetchClientTracer        :: f (TraceLabelPeer peer (TraceFetchClientState (Header blk)))
+  , blockFetchDecisionTracer      :: f [TraceLabelPeer remotePeer (FetchDecision [Point (Header blk)])]
+  , blockFetchClientTracer        :: f (TraceLabelPeer remotePeer (TraceFetchClientState (Header blk)))
   , blockFetchServerTracer        :: f (TraceBlockFetchServerEvent blk)
-  , txInboundTracer               :: f (TraceLabelPeer peer (TraceTxSubmissionInbound  (GenTxId blk) (GenTx blk)))
-  , txOutboundTracer              :: f (TraceLabelPeer peer (TraceTxSubmissionOutbound (GenTxId blk) (GenTx blk)))
+  , txInboundTracer               :: f (TraceLabelPeer remotePeer (TraceTxSubmissionInbound  (GenTxId blk) (GenTx blk)))
+  , txOutboundTracer              :: f (TraceLabelPeer remotePeer (TraceTxSubmissionOutbound (GenTxId blk) (GenTx blk)))
   , localTxSubmissionServerTracer :: f (TraceLocalTxSubmissionServerEvent blk)
   , mempoolTracer                 :: f (TraceEventMempool blk)
   , forgeTracer                   :: f (TraceForgeEvent blk (GenTx blk))
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
   }
 
-instance (forall a. Semigroup (f a)) => Semigroup (Tracers' peer blk f) where
+instance (forall a. Semigroup (f a))
+      => Semigroup (Tracers' remotePeer localPeer blk f) where
   l <> r = Tracers
-    { chainSyncClientTracer         = f chainSyncClientTracer
-    , chainSyncServerHeaderTracer   = f chainSyncServerHeaderTracer
-    , chainSyncServerBlockTracer    = f chainSyncServerBlockTracer
-    , blockFetchDecisionTracer      = f blockFetchDecisionTracer
-    , blockFetchClientTracer        = f blockFetchClientTracer
-    , blockFetchServerTracer        = f blockFetchServerTracer
-    , txInboundTracer               = f txInboundTracer
-    , txOutboundTracer              = f txOutboundTracer
-    , localTxSubmissionServerTracer = f localTxSubmissionServerTracer
-    , mempoolTracer                 = f mempoolTracer
-    , forgeTracer                   = f forgeTracer
-    , blockchainTimeTracer          = f blockchainTimeTracer
-    }
+      { chainSyncClientTracer         = f chainSyncClientTracer
+      , chainSyncServerHeaderTracer   = f chainSyncServerHeaderTracer
+      , chainSyncServerBlockTracer    = f chainSyncServerBlockTracer
+      , blockFetchDecisionTracer      = f blockFetchDecisionTracer
+      , blockFetchClientTracer        = f blockFetchClientTracer
+      , blockFetchServerTracer        = f blockFetchServerTracer
+      , txInboundTracer               = f txInboundTracer
+      , txOutboundTracer              = f txOutboundTracer
+      , localTxSubmissionServerTracer = f localTxSubmissionServerTracer
+      , mempoolTracer                 = f mempoolTracer
+      , forgeTracer                   = f forgeTracer
+      , blockchainTimeTracer          = f blockchainTimeTracer
+      }
     where
-      f :: forall a. Semigroup a => (Tracers' peer blk f -> a) -> a
+      f :: forall a. Semigroup a
+        => (Tracers' remotePeer localPeer blk f -> a) -> a
       f prj = prj l <> prj r
 
 -- | A record of 'Tracer's for the node.
-type Tracers m peer blk = Tracers' peer blk (Tracer m)
+type Tracers m remotePeer localPeer blk =
+     Tracers'  remotePeer localPeer blk (Tracer m)
 
 -- | Use a 'nullTracer' for each of the 'Tracer's in 'Tracers'
-nullTracers :: Monad m => Tracers m peer blk
+nullTracers :: Monad m => Tracers m remotePeer localPeer blk
 nullTracers = Tracers
-  { chainSyncClientTracer         = nullTracer
-  , chainSyncServerHeaderTracer   = nullTracer
-  , chainSyncServerBlockTracer    = nullTracer
-  , blockFetchDecisionTracer      = nullTracer
-  , blockFetchClientTracer        = nullTracer
-  , blockFetchServerTracer        = nullTracer
-  , txInboundTracer               = nullTracer
-  , txOutboundTracer              = nullTracer
-  , localTxSubmissionServerTracer = nullTracer
-  , mempoolTracer                 = nullTracer
-  , forgeTracer                   = nullTracer
-  , blockchainTimeTracer          = nullTracer
-  }
+    { chainSyncClientTracer         = nullTracer
+    , chainSyncServerHeaderTracer   = nullTracer
+    , chainSyncServerBlockTracer    = nullTracer
+    , blockFetchDecisionTracer      = nullTracer
+    , blockFetchClientTracer        = nullTracer
+    , blockFetchServerTracer        = nullTracer
+    , txInboundTracer               = nullTracer
+    , txOutboundTracer              = nullTracer
+    , localTxSubmissionServerTracer = nullTracer
+    , mempoolTracer                 = nullTracer
+    , forgeTracer                   = nullTracer
+    , blockchainTimeTracer          = nullTracer
+    }
 
 showTracers :: ( Show blk
                , Show (GenTx blk)
                , Show (GenTxId blk)
                , Show (ApplyTxErr blk)
                , Show (Header blk)
-               , Show peer
+               , Show remotePeer
                , LedgerSupportsProtocol blk
                )
-            => Tracer m String -> Tracers m peer blk
+            => Tracer m String -> Tracers m remotePeer localPeer blk
 showTracers tr = Tracers
-  { chainSyncClientTracer         = showTracing tr
-  , chainSyncServerHeaderTracer   = showTracing tr
-  , chainSyncServerBlockTracer    = showTracing tr
-  , blockFetchDecisionTracer      = showTracing tr
-  , blockFetchClientTracer        = showTracing tr
-  , blockFetchServerTracer        = showTracing tr
-  , txInboundTracer               = showTracing tr
-  , txOutboundTracer              = showTracing tr
-  , localTxSubmissionServerTracer = showTracing tr
-  , mempoolTracer                 = showTracing tr
-  , forgeTracer                   = showTracing tr
-  , blockchainTimeTracer          = showTracing tr
-  }
+    { chainSyncClientTracer         = showTracing tr
+    , chainSyncServerHeaderTracer   = showTracing tr
+    , chainSyncServerBlockTracer    = showTracing tr
+    , blockFetchDecisionTracer      = showTracing tr
+    , blockFetchClientTracer        = showTracing tr
+    , blockFetchServerTracer        = showTracing tr
+    , txInboundTracer               = showTracing tr
+    , txOutboundTracer              = showTracing tr
+    , localTxSubmissionServerTracer = showTracing tr
+    , mempoolTracer                 = showTracing tr
+    , forgeTracer                   = showTracing tr
+    , blockchainTimeTracer          = showTracing tr
+    }
 
 {-------------------------------------------------------------------------------
   Specific tracers

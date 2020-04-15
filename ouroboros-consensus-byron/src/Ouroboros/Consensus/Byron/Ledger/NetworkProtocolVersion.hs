@@ -3,31 +3,47 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion (
-    ByronNetworkProtocolVersion(..)
+    ByronNodeToNodeVersion(..)
+  , ByronNodeToClientVersion(..)
   ) where
 
-import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..))
+import qualified Ouroboros.Network.NodeToClient as N
+import qualified Ouroboros.Network.NodeToNode as N
 
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
 
-data ByronNetworkProtocolVersion =
+data ByronNodeToNodeVersion =
     -- | We send headers without a size hint
-    ByronNetworkProtocolVersion1
+    ByronNodeToNodeVersion1
 
     -- | We send headers /with/ a size hint
-  | ByronNetworkProtocolVersion2
+  | ByronNodeToNodeVersion2
+  deriving (Show, Eq, Ord, Enum, Bounded)
+
+data ByronNodeToClientVersion =
+    -- | No local state query protocol
+    ByronNodeToClientVersion1
+
+    -- | Use local state query protocol
+  | ByronNodeToClientVersion2
   deriving (Show, Eq, Ord, Enum, Bounded)
 
 instance HasNetworkProtocolVersion ByronBlock where
-  type NetworkProtocolVersion ByronBlock = ByronNetworkProtocolVersion
+  type NodeToNodeVersion   ByronBlock = ByronNodeToNodeVersion
+  type NodeToClientVersion ByronBlock = ByronNodeToClientVersion
 
-  supportedNetworkProtocolVersions _ = [ByronNetworkProtocolVersion1]
-  mostRecentNetworkProtocolVersion _ = ByronNetworkProtocolVersion1
+  supportedNodeToNodeVersions   _ = [ ByronNodeToNodeVersion1 ]
+  supportedNodeToClientVersions _ = [ ByronNodeToClientVersion1
+                                    , ByronNodeToClientVersion2
+                                    ]
 
-  nodeToNodeProtocolVersion _ ByronNetworkProtocolVersion1 = NodeToNodeV_1
-  nodeToNodeProtocolVersion _ ByronNetworkProtocolVersion2 = error "version 2 not yet supported"
+  mostRecentNodeToNodeVersion   _ = ByronNodeToNodeVersion1
+  mostRecentNodeToClientVersion _ = ByronNodeToClientVersion2
 
-  nodeToClientProtocolVersion _ ByronNetworkProtocolVersion1 = NodeToClientV_1
-  nodeToClientProtocolVersion _ ByronNetworkProtocolVersion2 = error "version 2 not yet supported"
+  nodeToNodeProtocolVersion _ ByronNodeToNodeVersion1 = N.NodeToNodeV_1
+  nodeToNodeProtocolVersion _ ByronNodeToNodeVersion2 = error "version 2 not yet supported"
+
+  nodeToClientProtocolVersion _ ByronNodeToClientVersion1 = N.NodeToClientV_1
+  nodeToClientProtocolVersion _ ByronNodeToClientVersion2 = N.NodeToClientV_2

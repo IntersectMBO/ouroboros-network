@@ -9,6 +9,7 @@ import qualified Test.ChainFragment (tests)
 import qualified Test.ChainProducerState (tests)
 import qualified Test.Pipe (tests)
 import qualified Test.PeerState (tests)
+import qualified Test.Version (tests)
 import qualified Test.Ouroboros.Network.MockNode (tests)
 import qualified Test.Ouroboros.Network.BlockFetch (tests)
 import qualified Ouroboros.Network.Protocol.ChainSync.Test (tests)
@@ -41,6 +42,7 @@ tests =
   , Ouroboros.Network.Protocol.Handshake.Test.tests
 
     -- network logic
+  , Test.Version.tests
   , Test.Pipe.tests
   , Test.Socket.tests
   , Test.PeerState.tests
