@@ -217,8 +217,11 @@ copyToImmDB CDB{..} = withCopyLock $ do
 -- 'copyToImmDB'). Once that is complete,
 --
 -- * We periodically take a snapshot of the LgrDB (depending on its config).
---   NOTE: This implies we do not take a snapshot of the LgrDB if the chain
---   hasn't changed, irrespective of the LgrDB policy.
+--   When enough blocks (depending on its config) have been replayed during
+--   startup, a snapshot of the replayed LgrDB will be written to disk at the
+--   start of this function.
+--   NOTE: After this initial snapshot we do not take a snapshot of the LgrDB
+--   until the chain has changed again, irrespective of the LgrDB policy.
 -- * Schedule GC of the VolDB ('scheduleGC') for the 'SlotNo' of the most
 --   recent block that was copied.
 --
@@ -244,8 +247,13 @@ copyAndSnapshotRunner
   -> GcSchedule m
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m Void
-copyAndSnapshotRunner cdb@CDB{..} gcSchedule =
-    loop Nothing
+copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
+    if onDiskShouldTakeSnapshot Nothing replayed then do
+      updateLedgerSnapshots cdb
+      now <- getMonotonicTime
+      loop (Just now) 0
+    else
+      loop Nothing replayed
   where
     SecurityParam k      = configSecurityParam cdbTopLevelConfig
     LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy cdbLgrDB
