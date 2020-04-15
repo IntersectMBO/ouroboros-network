@@ -40,5 +40,6 @@ pureHasFS = HasFS {
     , doesDirectoryExist       = Mock.doesDirectoryExist
     , doesFileExist            = Mock.doesFileExist
     , removeFile               = Mock.removeFile
+    , renameFile               = Mock.renameFile
     , mkFsErrorPath            = fsToFsErrorPathUnmounted
     }

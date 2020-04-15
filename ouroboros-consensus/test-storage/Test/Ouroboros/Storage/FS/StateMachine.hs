@@ -122,6 +122,7 @@ data Cmd fp h =
   | DoesDirectoryExist (PathExpr fp)
   | DoesFileExist      (PathExpr fp)
   | RemoveFile         (PathExpr fp)
+  | RenameFile         (PathExpr fp) (PathExpr fp)
   deriving (Generic, Show, Functor, Foldable, Traversable)
 
 deriving instance SOP.Generic         (Cmd fp h)
@@ -165,16 +166,27 @@ run hasFS@HasFS{..} = go
     go (Put      h bs          ) = Word64     <$> hPutSomeChecked hasFS h bs
     go (Truncate h sz          ) = Unit       <$> hTruncate h sz
     go (GetSize  h             ) = Word64     <$> hGetSize  h
-    go (ListDirectory      pe  ) = withPE pe (const Strings) $ listDirectory
-    go (DoesDirectoryExist pe  ) = withPE pe (const Bool)    $ doesDirectoryExist
-    go (DoesFileExist      pe  ) = withPE pe (const Bool)    $ doesFileExist
-    go (RemoveFile         pe  ) = withPE pe (const Unit)    $ removeFile
+    go (ListDirectory      pe  ) = withPE  pe      (const Strings) $ listDirectory
+    go (DoesDirectoryExist pe  ) = withPE  pe      (const Bool)    $ doesDirectoryExist
+    go (DoesFileExist      pe  ) = withPE  pe      (const Bool)    $ doesFileExist
+    go (RemoveFile         pe  ) = withPE  pe      (const Unit)    $ removeFile
+    go (RenameFile     pe1 pe2 ) = withPEs pe1 pe2 (\_ _ -> Unit)  $ renameFile
 
     withPE :: PathExpr FsPath
            -> (FsPath -> a -> Success FsPath (Handle h))
            -> (FsPath -> m a)
            -> m (Success FsPath (Handle h))
     withPE pe r f = let fp = evalPathExpr pe in r fp <$> f fp
+
+    withPEs :: PathExpr FsPath
+            -> PathExpr FsPath
+            -> (FsPath -> FsPath -> a -> Success FsPath (Handle h))
+            -> (FsPath -> FsPath -> m a)
+            -> m (Success FsPath (Handle h))
+    withPEs pe1 pe2 r f =
+      let fp1 = evalPathExpr pe1
+          fp2 = evalPathExpr pe2
+      in r fp1 fp2 <$> f fp1 fp2
 
 
 {-------------------------------------------------------------------------------
@@ -442,6 +454,7 @@ generator Model{..} = oneof $ concat [
         , fmap At $ DoesDirectoryExist <$> genPathExpr
         , fmap At $ DoesFileExist      <$> genPathExpr
         , fmap At $ RemoveFile         <$> genPathExpr
+        , fmap At $ RenameFile         <$> genPathExpr <*> genPathExpr
         ]
 
     withHandle :: [Gen (Cmd :@ Symbolic)]
@@ -788,6 +801,12 @@ data Tag =
   -- > DoesFileExist fe
   | TagRemoveFile
 
+  -- | Rename a file
+  --
+  -- > _ <- Open fe1 WriteMode
+  -- > RenameFile fe2 fe2
+  | TagRenameFile
+
   -- | Put truncate and Get
   --
   -- > Put ..
@@ -903,6 +922,7 @@ tag = QSM.classify [
     , tagDoesDirectoryExistOK
     , tagDoesDirectoryExistKO
     , tagRemoveFile Set.empty
+    , tagRenameFile
     , tagPutTruncateGet Map.empty Set.empty
     , tagClosedTwice Set.empty
     , tagOpenReadThenWrite Set.empty
@@ -1170,6 +1190,12 @@ tag = QSM.classify [
               fp = evalPathExpr fe
         _otherwise -> Right $ tagRemoveFile removed
 
+    tagRenameFile :: EventPred
+    tagRenameFile = successful $ \ev@Event{..} _suc ->
+      case eventMockCmd ev of
+        RenameFile {} -> Left TagRenameFile
+        _otherwise    -> Right tagRenameFile
+
     tagClosedTwice :: Set HandleMock -> EventPred
     tagClosedTwice closed = successful $ \ev@Event{..} _suc ->
       case eventMockCmd ev of
@@ -1383,6 +1409,7 @@ instance (Condense fp, Condense h) => Condense (Cmd fp h) where
       go (DoesDirectoryExist fp)   = ["doesDirectoryExist", condense fp]
       go (DoesFileExist fp)        = ["doesFileExist", condense fp]
       go (RemoveFile fp)           = ["removeFile", condense fp]
+      go (RenameFile fp1 fp2)      = ["renameFile", condense fp1, condense fp2]
 
 instance Condense1 r => Condense (Cmd :@ r) where
   condense (At cmd) = condense cmd

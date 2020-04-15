@@ -55,6 +55,7 @@ simHasFS var = HasFS {
     , doesDirectoryExist       = sim  .  Mock.doesDirectoryExist
     , doesFileExist            = sim  .  Mock.doesFileExist
     , removeFile               = sim  .  Mock.removeFile
+    , renameFile               = sim  .: Mock.renameFile
     , mkFsErrorPath            = fsToFsErrorPathUnmounted
     }
   where
