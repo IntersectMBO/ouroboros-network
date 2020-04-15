@@ -10,6 +10,7 @@
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
   ( -- * Utilities
     Two (..)
+  , renderFile
   , fsPathChunkFile
   , fsPathPrimaryIndexFile
   , fsPathSecondaryIndexFile
@@ -63,7 +64,7 @@ data Two a = Two a a
   deriving (Functor, Foldable, Traversable)
 
 fsPathChunkFile :: ChunkNo -> FsPath
-fsPathChunkFile = renderFile "epoch"
+fsPathChunkFile = renderFile "chunk"
 
 fsPathPrimaryIndexFile :: ChunkNo -> FsPath
 fsPathPrimaryIndexFile = renderFile "primary"
@@ -80,8 +81,8 @@ renderFile fileType (ChunkNo chunk) = fsPathFromList [name]
 -- | Parse the prefix and chunk number from the filename of an index or chunk
 -- file.
 --
--- > parseDBFile "00001.epoch"
--- Just ("epoch", 1)
+-- > parseDBFile "00001.chunk"
+-- Just ("chunk", 1)
 -- > parseDBFile "00012.primary"
 -- Just ("primary", 12)
 parseDBFile :: String -> Maybe (String, ChunkNo)
@@ -96,7 +97,7 @@ dbFilesOnDisk = foldl' categorise mempty
   where
     categorise fs@(!chunk, !primary, !secondary) file =
       case parseDBFile file of
-        Just ("epoch",     n) -> (Set.insert n chunk, primary, secondary)
+        Just ("chunk",     n) -> (Set.insert n chunk, primary, secondary)
         Just ("primary",   n) -> (chunk, Set.insert n primary, secondary)
         Just ("secondary", n) -> (chunk, primary, Set.insert n secondary)
         _                     -> fs

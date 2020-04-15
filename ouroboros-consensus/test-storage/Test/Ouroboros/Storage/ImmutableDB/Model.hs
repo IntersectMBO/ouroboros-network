@@ -449,7 +449,7 @@ findCorruptionRollBackPoint :: FileCorruption -> FsPath -> DBModel hash
                             -> RollBackPoint
 findCorruptionRollBackPoint corr file dbm =
     case (Text.unpack . snd <$> fsPathSplit file) >>= parseDBFile of
-      Just ("epoch",      chunk) -> findChunkCorruptionRollBackPoint corr chunk dbm
+      Just ("chunk",      chunk) -> findChunkCorruptionRollBackPoint corr chunk dbm
       -- Index files are always recoverable
       Just ("primary",   _chunk) -> DontRollBack
       Just ("secondary", _chunk) -> DontRollBack

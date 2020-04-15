@@ -40,6 +40,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Types
 import           Control.Exception (Exception (..))
 import           Data.Binary (Get, Put)
 import           Data.List.NonEmpty (NonEmpty)
+import           Data.Text (Text)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, prettyCallStack)
@@ -350,6 +351,9 @@ data TraceEvent e hash
     | InvalidSecondaryIndex ChunkNo
     | RewritePrimaryIndex   ChunkNo
     | RewriteSecondaryIndex ChunkNo
+    | Migrating Text
+      -- ^ Performing a migration of the on-disk files
+
       -- Delete after
     | DeletingAfter (ImmTipWithInfo hash)
       -- Closing the DB

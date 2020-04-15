@@ -5,6 +5,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
   ( validateAndReopen
   , ValidateEnv (..)
@@ -14,11 +15,11 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (unless, when)
+import           Control.Monad (forM_, unless, when)
 import           Control.Monad.Except (ExceptT, lift, runExceptT, throwError)
 import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Functor (($>))
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe, mapMaybe)
 import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)
 import           Streaming (Of (..))
@@ -80,7 +81,7 @@ validateAndReopen
      -- ^ Not used for validation, only used to open a new index
   -> ValidationPolicy
   -> WithTempRegistry (OpenState m hash h) m (OpenState m hash h)
-validateAndReopen validateEnv registry valPol = do
+validateAndReopen validateEnv registry valPol = wrapFsError $ do
     (chunk, tip) <- lift $ validate validateEnv valPol
     index        <- lift $ cachedIndex
                       hasFS
@@ -108,6 +109,8 @@ validateAndReopen validateEnv registry valPol = do
 
 -- | Execute the 'ValidationPolicy'.
 --
+-- Migrates first.
+--
 -- NOTE: we don't use a 'ResourceRegistry' to allocate file handles in,
 -- because validation happens on startup, so when an exception is thrown, the
 -- database hasn't even been opened and the node will shut down. In which case
@@ -119,6 +122,10 @@ validate
   -> ValidationPolicy
   -> m (ChunkNo, ImmTipWithInfo hash)
 validate validateEnv@ValidateEnv{ hasFS } valPol = do
+
+    -- First migrate any old files before validating them
+    migrate validateEnv
+
     filesInDBFolder <- listDirectory (mkFsPath [])
     let (chunkFiles, _, _) = dbFilesOnDisk filesInDBFolder
     case Set.lookupMax chunkFiles of
@@ -501,3 +508,71 @@ reconstructPrimaryIndex chunkInfo HashInfo { hashSize } shouldBeFinalised
                                   + Secondary.entrySize hashSize
               in backfilled ++ secondaryOffset
                : go (nextRelativeSlot relSlot) secondaryOffset relSlots'
+
+
+{------------------------------------------------------------------------------
+  Migration
+------------------------------------------------------------------------------}
+
+-- | Migrate the files in the database to the latest version.
+--
+-- We always migrate the database to the latest version before opening it. If
+-- a migration was unsuccessful, an error is thrown and the database is not
+-- opened. User intervention will be needed before the database can be
+-- reopened, as without it, the same error will be thrown when reopening the
+-- database the next time.
+--
+-- For example, when during a migration we have to rename a file A to B, but
+-- we don't have permissions to do so, we require user intervention.
+--
+-- We have the following versions, from current to oldest:
+--
+-- * Current version:
+--
+--   - Chunk files are named "XXXXX.chunk" where "XXXXX" is the chunk/epoch
+--     number padded with zeroes to five decimals. A chunk file stores the
+--     blocks in that chunk sequentially. Empty slots are skipped.
+--
+--   - Primary index files are named "XXXXX.primary". See 'PrimaryIndex' for
+--     more information.
+--
+--   - Secondary index files are named "XXXXX.secondary". See
+--     'Secondary.Entry' for more information.
+--
+-- * The only difference with the version after it was that chunk files were
+--   named "XXXXX.epoch" instead of "XXXXX.chunk". The contents of all files
+--   remain identical because we chose the chunk size to be equal to the Byron
+--   epoch size and allowed EBBs in the chunk.
+--
+-- We don't include versions before the first release, as we don't have to
+-- migrate from them.
+--
+-- Note that primary index files also contain a version number, but since the
+-- binary format hasn't changed yet, this version number hasn't been changed
+-- yet.
+--
+-- Implementation note: as currently the sole migration we need to be able to
+-- perform only requires renaming files, we keep it simple for now.
+migrate :: (IOLike m, HasCallStack) => ValidateEnv m hash h e -> m ()
+migrate ValidateEnv { hasFS, tracer } = do
+    filesInDBFolder <- listDirectory (mkFsPath [])
+    -- Any old "XXXXX.epoch" files
+    let epochFileChunkNos :: [(FsPath, ChunkNo)]
+        epochFileChunkNos =
+          mapMaybe
+            (\file -> (mkFsPath [file],) <$> isEpochFile file)
+            (Set.toAscList filesInDBFolder)
+
+    unless (null epochFileChunkNos) $ do
+      traceWith tracer $ Migrating ".epoch files to .chunk files"
+      forM_ epochFileChunkNos $ \(epochFile, chunk) ->
+        renameFile epochFile (fsPathChunkFile chunk)
+  where
+    HasFS { listDirectory, renameFile } = hasFS
+
+    isEpochFile :: String -> Maybe ChunkNo
+    isEpochFile s = case parseDBFile s of
+      Just (prefix, chunk)
+        | prefix == "epoch"
+        -> Just (chunk)
+      _ -> Nothing

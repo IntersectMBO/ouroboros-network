@@ -71,7 +71,9 @@ import           Ouroboros.Network.Block (BlockNo (..), HasHeader (..),
 import qualified Ouroboros.Network.Block as Block
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath)
+import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
+import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath,
+                     mkFsPath)
 import           Ouroboros.Consensus.Storage.ImmutableDB hiding
                      (BlockOrEBB (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmDB
@@ -123,6 +125,7 @@ data Cmd it
   | IteratorHasNext        it
   | IteratorClose          it
   | Reopen                 ValidationPolicy
+  | Migrate                ValidationPolicy
   | DeleteAfter            (ImmTipWithInfo Hash)
   | Corruption             Corruption
   deriving (Generic, Show, Functor, Foldable, Traversable)
@@ -235,6 +238,12 @@ run env@ImmutableDBEnv { varDB, varNextId, varIters, args } cmd =
         closeDB db
         reopen env valPol
         Tip <$> getTip db
+      Migrate valPol -> do
+        closeOpenIterators varIters
+        closeDB db
+        unmigrate hasFS
+        reopen env valPol
+        Tip <$> getTip db
       Corruption (MkCorruption corrs) -> do
         closeOpenIterators varIters
         closeDB db
@@ -274,6 +283,15 @@ run env@ImmutableDBEnv { varDB, varNextId, varIters, args } cmd =
     noWrongBoundError (Left e)  = error ("impossible: " <> show e)
     noWrongBoundError (Right a) = a
 
+-- | To test migration from "XXXXX.epoch" to "XXXXX.chunk" do the opposite
+-- renaming, i.e., /unmigrate/ while the database is closed. When the database
+-- is reopened, it should trigger the migration code.
+unmigrate :: Monad m => HasFS m h -> m ()
+unmigrate HasFS { listDirectory, renameFile } = do
+    (chunkFiles, _, _) <- dbFilesOnDisk <$> listDirectory (mkFsPath [])
+    forM_ chunkFiles $ \chunk ->
+      renameFile (fsPathChunkFile chunk) (renderFile "epoch" chunk)
+
 {-------------------------------------------------------------------------------
   Instantiating the semantics
 -------------------------------------------------------------------------------}
@@ -306,6 +324,7 @@ runPure = \case
     DeleteAfter tip            -> ok Unit            $ update_  (deleteAfterModel tip)
     Corruption corr            -> ok Tip             $ update   (simulateCorruptions (getCorruptions corr))
     Reopen _                   -> ok Tip             $ update    reopenModel
+    Migrate _                  -> ok Tip             $ update    reopenModel
   where
     query  f m = (Right (f m), m)
     queryE f m = (f m, m)
@@ -563,6 +582,8 @@ generateCmd Model {..} = At <$> frequency
                    , (1, return $ IteratorClose   iter) ])
     , (1, Reopen <$> genValPol)
 
+    , (1, Migrate <$> genValPol)
+
     , (4, DeleteAfter <$> genTip)
 
       -- Only if there are files on disk can we generate commands that corrupt
@@ -702,6 +723,7 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
     DeleteAfter tip                    ->
       [DeleteAfter tip' | tip' <- shrinkTip tip]
     Reopen {}                          -> []
+    Migrate {}                         -> []
     Corruption corr                    ->
       [Corruption corr' | corr' <- shrinkCorruption corr]
   where
@@ -903,6 +925,8 @@ data Tag
 
   | TagCorruption
 
+  | TagMigrate
+
   | TagErrorDuringAppendBlock
 
   | TagErrorDuringAppendEBB
@@ -983,6 +1007,7 @@ tag = QSM.classify
     , tagIteratorStreamedN Map.empty
     , tagIteratorWithoutBounds
     , tagCorruption
+    , tagMigrate
     , tagErrorDuring TagErrorDuringAppendBlock $ \case
       { At (AppendBlock {}) -> True; _ -> False }
     , tagErrorDuring TagErrorDuringAppendEBB $ \case
@@ -1077,6 +1102,14 @@ tag = QSM.classify
       { predApply = \ev -> case eventCmdNoErr ev of
           At (Corruption {}) -> Left  TagCorruption
           _                  -> Right tagCorruption
+      , predFinish = Nothing
+      }
+
+    tagMigrate :: EventPred m
+    tagMigrate = Predicate
+      { predApply = \ev -> case eventCmdNoErr ev of
+          At (Migrate {}) -> Left  TagMigrate
+          _               -> Right tagMigrate
       , predFinish = Nothing
       }
 

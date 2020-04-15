@@ -119,7 +119,7 @@ main = do
       putStrLn $ "Writing to " ++ show dbDir
       for_ (sort epochFiles) $ \f -> do
         putStrLn $ "Converting file " ++ show f
-        convertEpochFile (EpochSlots epochSlots) f dbDir'
+        convertChunkFile (EpochSlots epochSlots) f dbDir'
     Validate
       { dbDir
       , configFile
@@ -139,16 +139,16 @@ main = do
           Left err     -> throwIO $ MkConfigError err
           Right config -> validateChainDb dbDir' config onlyImmDB verbose
 
-convertEpochFile
+convertChunkFile
   :: EpochSlots
   -> Path Abs File -- ^ Input
   -> Path Abs Dir -- ^ Ouput directory
   -> IO (Either CC.ParseError ())
-convertEpochFile es inFile outDir = do
+convertChunkFile es inFile outDir = do
     createDirIfMissing True dbDir
-    -- Old filename format is XXXXX.dat, new is XXXXX.epoch
+    -- Old filename format is XXXXX.epoch, new is XXXXX.chunk
     outFileName <- parseRelFile (toFilePath (filename inFile))
-    outFile <- (dbDir </> outFileName) -<.> "epoch"
+    outFile <- (dbDir </> outFileName) -<.> "chunk"
     IO.withFile (toFilePath outFile) IO.WriteMode $ \h ->
       runResourceT $ runExceptT $ S.mapM_ (liftIO . BS.hPut h) . S.map encode $ inStream
   where
