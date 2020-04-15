@@ -43,6 +43,7 @@ library
                        Ouroboros.Consensus.Config
                        Ouroboros.Consensus.Forecast
                        Ouroboros.Consensus.Fragment.Validated
+                       Ouroboros.Consensus.HardFork.Abstract
                        Ouroboros.Consensus.HardFork.History
                        Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract
