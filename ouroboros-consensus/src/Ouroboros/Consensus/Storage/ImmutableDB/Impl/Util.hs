@@ -60,10 +60,50 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 data Two a = Two a a
   deriving (Functor, Foldable, Traversable)
 
+-- | Opposite of 'parseDBFile'.
 renderFile :: Text -> ChunkNo -> FsPath
 renderFile fileType (ChunkNo chunk) = fsPathFromList [name]
   where
     name = T.justifyRight 5 '0' (T.pack (show chunk)) <> "." <> fileType
+
+-- | Parse the prefix and chunk number from the filename of an index or chunk
+-- file.
+--
+-- > parseDBFile "00001.epoch"
+-- Just ("epoch", 1)
+-- > parseDBFile "00012.primary"
+-- Just ("primary", 12)
+parseDBFile :: String -> Maybe (String, ChunkNo)
+parseDBFile s = case T.splitOn "." $ T.pack s of
+    [n, ext] -> (T.unpack ext,) . ChunkNo <$> readMaybe (T.unpack n)
+    _        -> Nothing
+
+-- | Go through all files, making three sets: the set of chunk files, primary
+-- index files, and secondary index files, discarding all others.
+dbFilesOnDisk :: Set String -> (Set ChunkNo, Set ChunkNo, Set ChunkNo)
+dbFilesOnDisk = foldl' categorise mempty
+  where
+    categorise fs@(!chunk, !primary, !secondary) file =
+      case parseDBFile file of
+        Just ("epoch",     n) -> (Set.insert n chunk, primary, secondary)
+        Just ("primary",   n) -> (chunk, Set.insert n primary, secondary)
+        Just ("secondary", n) -> (chunk, primary, Set.insert n secondary)
+        _                     -> fs
+
+-- | Remove all chunk and index starting from the given chunk (included).
+removeFilesStartingFrom :: (HasCallStack, Monad m)
+                        => HasFS m h
+                        -> ChunkNo
+                        -> m ()
+removeFilesStartingFrom HasFS { removeFile, listDirectory } chunk = do
+    filesInDBFolder <- listDirectory (mkFsPath [])
+    let (chunkFiles, primaryFiles, secondaryFiles) = dbFilesOnDisk filesInDBFolder
+    forM_ (takeWhile (>= chunk) (Set.toDescList chunkFiles)) $ \e ->
+      removeFile (renderFile "epoch" e)
+    forM_ (takeWhile (>= chunk) (Set.toDescList primaryFiles)) $ \i ->
+      removeFile (renderFile "primary" i)
+    forM_ (takeWhile (>= chunk) (Set.toDescList secondaryFiles)) $ \i ->
+      removeFile (renderFile "secondary" i)
 
 throwUserError :: (MonadThrow m, HasCallStack) => UserError -> m a
 throwUserError e = throwM $ UserError e callStack
@@ -84,18 +124,6 @@ wrapFsError = handle $ throwUnexpectedError . FileSystemError
 -- it may thrown.
 tryImmDB :: MonadCatch m => m a -> m (Either ImmutableDBError a)
 tryImmDB = try . wrapFsError
-
--- | Parse the prefix and chunk number from the filename of an index or chunk
--- file.
---
--- > parseDBFile "00001.epoch"
--- Just ("epoch", 1)
--- > parseDBFile "00012.primary"
--- Just ("primary", 12)
-parseDBFile :: String -> Maybe (String, ChunkNo)
-parseDBFile s = case T.splitOn "." $ T.pack s of
-    [n, ext] -> (T.unpack ext,) . ChunkNo <$> readMaybe (T.unpack n)
-    _        -> Nothing
 
 -- | Check whether the given iterator range is valid.
 --
@@ -136,33 +164,6 @@ validateIteratorRange chunkInfo tip mbStart mbEnd = runExceptT $ do
     isNewerThanTip slot = case tip of
       Origin -> True
       At b   -> slot > slotNoOfBlockOrEBB chunkInfo b
-
--- | Go through all files, making three sets: the set of chunk files, primary
--- index files, and secondary index files, discarding all others.
-dbFilesOnDisk :: Set String -> (Set ChunkNo, Set ChunkNo, Set ChunkNo)
-dbFilesOnDisk = foldl' categorise mempty
-  where
-    categorise fs@(!chunk, !primary, !secondary) file =
-      case parseDBFile file of
-        Just ("epoch",     n) -> (Set.insert n chunk, primary, secondary)
-        Just ("primary",   n) -> (chunk, Set.insert n primary, secondary)
-        Just ("secondary", n) -> (chunk, primary, Set.insert n secondary)
-        _                     -> fs
-
--- | Remove all chunk and index starting from the given chunk (included).
-removeFilesStartingFrom :: (HasCallStack, Monad m)
-                        => HasFS m h
-                        -> ChunkNo
-                        -> m ()
-removeFilesStartingFrom HasFS { removeFile, listDirectory } chunk = do
-    filesInDBFolder <- listDirectory (mkFsPath [])
-    let (chunkFiles, primaryFiles, secondaryFiles) = dbFilesOnDisk filesInDBFolder
-    forM_ (takeWhile (>= chunk) (Set.toDescList chunkFiles)) $ \e ->
-      removeFile (renderFile "epoch" e)
-    forM_ (takeWhile (>= chunk) (Set.toDescList primaryFiles)) $ \i ->
-      removeFile (renderFile "primary" i)
-    forM_ (takeWhile (>= chunk) (Set.toDescList secondaryFiles)) $ \i ->
-      removeFile (renderFile "secondary" i)
 
 -- | Wrapper around 'Get.runGetOrFail' that throws an 'InvalidFileError' when
 -- it failed or when there was unconsumed input.
