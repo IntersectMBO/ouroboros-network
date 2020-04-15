@@ -10,7 +10,9 @@
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
   ( -- * Utilities
     Two (..)
-  , renderFile
+  , fsPathChunkFile
+  , fsPathPrimaryIndexFile
+  , fsPathSecondaryIndexFile
   , throwUserError
   , throwUnexpectedError
   , wrapFsError
@@ -60,6 +62,15 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 data Two a = Two a a
   deriving (Functor, Foldable, Traversable)
 
+fsPathChunkFile :: ChunkNo -> FsPath
+fsPathChunkFile = renderFile "epoch"
+
+fsPathPrimaryIndexFile :: ChunkNo -> FsPath
+fsPathPrimaryIndexFile = renderFile "primary"
+
+fsPathSecondaryIndexFile :: ChunkNo -> FsPath
+fsPathSecondaryIndexFile = renderFile "secondary"
+
 -- | Opposite of 'parseDBFile'.
 renderFile :: Text -> ChunkNo -> FsPath
 renderFile fileType (ChunkNo chunk) = fsPathFromList [name]
@@ -99,11 +110,11 @@ removeFilesStartingFrom HasFS { removeFile, listDirectory } chunk = do
     filesInDBFolder <- listDirectory (mkFsPath [])
     let (chunkFiles, primaryFiles, secondaryFiles) = dbFilesOnDisk filesInDBFolder
     forM_ (takeWhile (>= chunk) (Set.toDescList chunkFiles)) $ \e ->
-      removeFile (renderFile "epoch" e)
+      removeFile (fsPathChunkFile e)
     forM_ (takeWhile (>= chunk) (Set.toDescList primaryFiles)) $ \i ->
-      removeFile (renderFile "primary" i)
+      removeFile (fsPathPrimaryIndexFile i)
     forM_ (takeWhile (>= chunk) (Set.toDescList secondaryFiles)) $ \i ->
-      removeFile (renderFile "secondary" i)
+      removeFile (fsPathSecondaryIndexFile i)
 
 throwUserError :: (MonadThrow m, HasCallStack) => UserError -> m a
 throwUserError e = throwM $ UserError e callStack

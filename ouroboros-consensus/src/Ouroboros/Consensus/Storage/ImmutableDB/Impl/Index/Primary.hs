@@ -70,8 +70,8 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..),
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
-import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
-                     runGet)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
+                     (fsPathPrimaryIndexFile, runGet)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
                      (ImmutableDBError (..), UnexpectedError (..))
 
@@ -206,7 +206,7 @@ readOffsets hasFS@HasFS { hGetSize } chunk toRead =
             then Just secondaryOffset
             else Nothing
   where
-    primaryIndexFile = renderFile "primary" chunk
+    primaryIndexFile = fsPathPrimaryIndexFile chunk
     nbBytes          = secondaryOffsetSize * 2
 
     get :: Get (SecondaryOffset, SecondaryOffset)
@@ -230,7 +230,7 @@ readFirstFilledSlot hasFS@HasFS { hSeek, hGetSome } chunkInfo chunk =
       hSeek pHnd AbsoluteSeek skip
       go pHnd $ NextRelativeSlot (firstBlockOrEBB chunkInfo chunk)
   where
-    primaryIndexFile = renderFile "primary" chunk
+    primaryIndexFile = fsPathPrimaryIndexFile chunk
 
     -- | Skip the version number and the first offset, which is always 0.
     skip = fromIntegral (sizeOf currentVersionNumber)
@@ -285,7 +285,7 @@ load hasFS chunk =
     withFile hasFS primaryIndexFile ReadMode $ \pHnd ->
       hGetAll hasFS pHnd >>= runGet primaryIndexFile get
   where
-    primaryIndexFile = renderFile "primary" chunk
+    primaryIndexFile = fsPathPrimaryIndexFile chunk
 
     -- TODO incremental?
     get :: Get PrimaryIndex
@@ -327,7 +327,7 @@ write hasFS@HasFS { hTruncate } chunk (MkPrimaryIndex _ offsets) =
         -- Hopefully the intermediary list is fused away
         foldMap putSecondaryOffset (V.toList offsets)
   where
-    primaryIndexFile = renderFile "primary" chunk
+    primaryIndexFile = fsPathPrimaryIndexFile chunk
 
 -- | Truncate the primary index so that the given 'RelativeSlot' will be the
 -- last slot (filled or not) in the primary index, unless the primary index
@@ -356,7 +356,7 @@ truncateToSlotFS hasFS@HasFS { hTruncate, hGetSize } chunk relSlot =
       when (offset < size) $ hTruncate pHnd offset
   where
     slot             = assertRelativeSlotInChunk chunk relSlot
-    primaryIndexFile = renderFile "primary" chunk
+    primaryIndexFile = fsPathPrimaryIndexFile chunk
     offset           = fromIntegral (sizeOf currentVersionNumber)
                      + (slot + 2) * secondaryOffsetSize
 
@@ -402,7 +402,7 @@ open hasFS@HasFS { hOpen, hClose } chunk allowExisting = do
           putSecondaryOffset 0
       return pHnd
   where
-    primaryIndexFile = renderFile "primary" chunk
+    primaryIndexFile = fsPathPrimaryIndexFile chunk
 
 -- | Append the given 'SecondaryOffset' to the end of the file (passed as a
 -- handle).

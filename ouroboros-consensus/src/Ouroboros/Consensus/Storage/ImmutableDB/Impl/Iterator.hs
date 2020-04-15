@@ -417,7 +417,7 @@ iteratorNextImpl dbEnv it@IteratorHandle
       where
         Secondary.Entry { blockOffset, checksum, blockOrEBB } = entry
         offset    = AbsOffset $ Secondary.unBlockOffset blockOffset
-        chunkFile = renderFile "epoch" chunk
+        chunkFile = fsPathChunkFile chunk
 
     -- | We don't rely on the position of the handle, we always use
     -- 'hGetExactlyAt', i.e. @pread@ for reading from a given offset.
@@ -550,7 +550,7 @@ iteratorStateForChunk hasFS index registry
     -- will be closed in case of an exception.
     (key, eHnd) <- allocate
       registry
-      (\_key -> hOpen (renderFile "epoch" chunk) ReadMode)
+      (\_key -> hOpen (fsPathChunkFile chunk) ReadMode)
       hClose
 
     -- If the last entry in @entries@ corresponds to the last block in the

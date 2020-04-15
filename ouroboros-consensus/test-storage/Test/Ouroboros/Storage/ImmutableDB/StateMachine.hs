@@ -81,8 +81,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl as ImmDB
                      (Internal (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
-import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
-                     tryImmDB)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Consensus.Storage.ImmutableDB.Parser (ChunkFileError,
                      chunkFileParser)
 
@@ -666,9 +665,13 @@ generateCmd Model {..} = At <$> frequency
 -- created. For each epoch an epoch, primary index, and secondary index file.
 getDBFiles :: DBModel Hash -> [FsPath]
 getDBFiles dbm =
-    [ renderFile fileType epoch
-    | epoch <- chunksBetween firstChunkNo (dbmCurrentChunk dbm)
-    , fileType <- ["epoch", "primary", "secondary"]
+    [ file
+    | chunk <- chunksBetween firstChunkNo (dbmCurrentChunk dbm)
+    , file  <-
+      [ fsPathChunkFile chunk
+      , fsPathPrimaryIndexFile chunk
+      , fsPathSecondaryIndexFile chunk
+      ]
     ]
 
 {-------------------------------------------------------------------------------

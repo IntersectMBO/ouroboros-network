@@ -113,9 +113,9 @@ mkOpenState
   -> AllowExisting
   -> WithTempRegistry (OpenState m hash h) m (OpenState m hash h)
 mkOpenState hasFS@HasFS{..} index chunk tip existing = do
-    eHnd <- allocateHandle currentChunkHandle     $ hOpen (renderFile "epoch"     chunk) appendMode
-    pHnd <- allocateHandle currentPrimaryHandle   $ Index.openPrimaryIndex index  chunk  existing
-    sHnd <- allocateHandle currentSecondaryHandle $ hOpen (renderFile "secondary" chunk) appendMode
+    eHnd <- allocateHandle currentChunkHandle     $ hOpen (fsPathChunkFile          chunk) appendMode
+    pHnd <- allocateHandle currentPrimaryHandle   $ Index.openPrimaryIndex index    chunk  existing
+    sHnd <- allocateHandle currentSecondaryHandle $ hOpen (fsPathSecondaryIndexFile chunk) appendMode
     chunkOffset     <- lift $ hGetSize eHnd
     secondaryOffset <- lift $ hGetSize sHnd
     return OpenState

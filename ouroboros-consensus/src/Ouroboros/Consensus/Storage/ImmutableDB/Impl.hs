@@ -350,7 +350,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { tracer } newTip =
               withFile hasFS chunkFile (AppendMode AllowExisting) $ \eHnd ->
                 hTruncate hasFS eHnd offset
             where
-              chunkFile = renderFile "epoch" chunk
+              chunkFile = fsPathChunkFile chunk
               offset    = unBlockOffset (Secondary.blockOffset entry)
                         + fromIntegral size
 
@@ -513,7 +513,7 @@ extractBlockComponent hasFS chunkInfo chunk curChunkInfo (entry, blockSize) = \c
       , blockOrEBB
       } = entry
     CurrentChunkInfo curChunk curChunkOffset = curChunkInfo
-    chunkFile = renderFile "epoch" chunk
+    chunkFile = fsPathChunkFile chunk
 
 getBlockOrEBBComponentImpl
   :: forall m hash b. (HasCallStack, IOLike m, Eq hash)

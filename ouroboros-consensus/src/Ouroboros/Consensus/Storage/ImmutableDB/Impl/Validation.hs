@@ -388,9 +388,9 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
 
       return $ summaryToTipInfo <$> lastMaybe summary
   where
-    chunkFile          = renderFile "epoch"     chunk
-    primaryIndexFile   = renderFile "primary"   chunk
-    secondaryIndexFile = renderFile "secondary" chunk
+    chunkFile          = fsPathChunkFile          chunk
+    primaryIndexFile   = fsPathPrimaryIndexFile   chunk
+    secondaryIndexFile = fsPathSecondaryIndexFile chunk
 
     HasFS { hTruncate, doesFileExist } = hasFS
 
