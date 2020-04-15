@@ -10,6 +10,7 @@
 --
 module Ouroboros.Network.NodeToClient (
     nodeToClientProtocols
+  , versionedNodeToClientProtocols
   , NodeToClientProtocols (..)
   , NodeToClientVersion (..)
   , NodeToClientVersionData (..)
@@ -180,6 +181,26 @@ maximumMiniProtocolLimits =
     MiniProtocolLimits {
       maximumIngressQueue = 0xffffffff
     }
+
+
+
+-- | 'Versions' containing a single version of 'nodeToClientProtocols'.
+--
+versionedNodeToClientProtocols
+    :: NodeToClientVersion
+    -> NodeToClientVersionData
+    -> NodeToClientProtocols appType bytes m a b
+    -> Versions NodeToClientVersion
+                DictVersion
+                (ConnectionId LocalAddress ->
+                   OuroborosApplication appType bytes m a b)
+versionedNodeToClientProtocols versionNumber versionData protocols =
+    simpleSingletonVersions
+      versionNumber
+      versionData
+      (DictVersion nodeToClientCodecCBORTerm)
+      (const $ nodeToClientProtocols protocols versionNumber)
+
 
 -- | Enumeration of node to client protocol versions.
 --
