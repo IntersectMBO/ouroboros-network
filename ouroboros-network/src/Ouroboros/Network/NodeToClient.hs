@@ -72,6 +72,7 @@ module Ouroboros.Network.NodeToClient (
 
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
+import           Data.Bits (setBit, clearBit, testBit)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor.Identity (Identity (..))
 import           Data.Functor.Contravariant (contramap)
@@ -186,17 +187,30 @@ data NodeToClientVersion
     = NodeToClientV_1
     | NodeToClientV_2
     -- ^ added local-query mini-protocol
-  deriving (Eq, Ord, Enum, Show, Typeable)
+  deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
+-- | We set 16ths bit to distinguish `NodeToNodeVersion` and
+-- `NodeToClientVersion`.  This way connectin wrong protocol suite will fail
+-- during `Handshake` negotation
+--
+-- This is done in backward compatible way, so `NodeToClientV_1` encoding is not
+-- changed.
+--
 instance Serialise NodeToClientVersion where
     encode NodeToClientV_1 = CBOR.encodeWord 1
-    encode NodeToClientV_2 = CBOR.encodeWord 2
+    encode NodeToClientV_2 = CBOR.encodeWord (2 `setBit` nodeToClientVersionBit)
     decode = do
       tag <- CBOR.decodeWord
-      case tag of
-        1 -> return NodeToClientV_1
-        2 -> return NodeToClientV_2
-        _ -> fail "decode NodeToClientVersion: unknown tag"
+      case ( tag `clearBit` nodeToClientVersionBit
+           , tag `testBit`  nodeToClientVersionBit
+           ) of
+        (1, False) -> return NodeToClientV_1
+        (2, True)  -> return NodeToClientV_2
+        _ -> fail ("decode NodeToClientVersion: unknown tag: " ++ show tag)
+
+
+nodeToClientVersionBit :: Int
+nodeToClientVersionBit = 15
 
 -- | Version data for NodeToClient protocol v1
 --
