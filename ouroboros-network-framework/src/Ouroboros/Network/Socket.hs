@@ -85,6 +85,7 @@ import           Control.Tracer
 
 import qualified Network.Mux as Mx
 import Network.Mux.DeltaQ.TraceTransformer
+import           Network.Mux.Timeout (withTimeoutSerial)
 import qualified Network.Mux.Types as Mx
 import           Network.Mux.Types (MuxBearer)
 
@@ -161,6 +162,31 @@ handshakeProtocolNum :: MiniProtocolNum
 handshakeProtocolNum = MiniProtocolNum 0
 
 -- |
+-- Timeout for the complete handshake exchange.
+handshakeTimeout :: DiffTime
+handshakeTimeout = 10 -- 10 seconds
+
+-- | Wrapper around initiator and responder errors experienced by tryHandshake.
+data HandshakeException a =
+    HandshakeProtocolLimit ProtocolLimitFailure
+  | HandshakeProtocolError a
+  | HanshakeTimeout
+
+
+-- | Try to complete either initiator or responder side of the Handshake protocol
+-- within `handshakeTimeout` seconds.
+tryHandshake ::  IO (Either a r) -> IO (Either (HandshakeException a) r)
+tryHandshake doHanshake = do
+    mapp <- withTimeoutSerial $ \timeout -> timeout handshakeTimeout $ try doHanshake
+    case mapp of
+         Nothing -> return $ Left HanshakeTimeout
+         Just (Left (err :: ProtocolLimitFailure)) ->
+             return $ Left $ HandshakeProtocolLimit err
+         Just (Right (Left err)) ->
+             return $ Left $ HandshakeProtocolError err
+         Just (Right (Right r)) -> return $ Right r
+
+-- |
 -- Connect to a remote node.  It is using bracket to enclose the underlying
 -- socket acquisition.  This implies that when the continuation exits the
 -- underlying bearer will get closed.
@@ -231,25 +257,32 @@ connectToNode' sn versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHands
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
     let bearer = Snocket.toBearer sn muxTracer sd
     ts_start <- getMonotonicTime
-    mapp <- try $ runPeerWithLimits
+ 
+    app_e <- tryHandshake (runPeerWithLimits
               (contramap (Mx.WithMuxBearer connectionId) nctHandshakeTracer)
               codecHandshake
               byteLimitsHandshake
               timeLimitsHandshake
               (fromChannel (Mx.muxBearerAsChannel bearer handshakeProtocolNum Mx.ModeInitiator))
-              (handshakeClientPeer versionDataCodec versions)
+              (handshakeClientPeer versionDataCodec versions))
     ts_end <- getMonotonicTime
+    case app_e of
+         Left HanshakeTimeout -> do
+             traceWith muxTracer $ Mx.MuxTraceHandshakeClientError ExceededTimeLimit
+                 (diffTime ts_end ts_start)
+             throwIO ExceededTimeLimit
 
-    case mapp of
-         Left (errDrv :: ProtocolLimitFailure)-> do
-            traceWith muxTracer $ Mx.MuxTraceHandshakeClientError errDrv (diffTime ts_end ts_start)
-            throwIO errDrv
-         Right (Left err) -> do
-            traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
-            throwIO err
-         Right (Right app) -> do
-            traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-            Mx.muxStart muxTracer (toApplication (app connectionId)) bearer
+         Left (HandshakeProtocolLimit err) -> do
+             traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
+             throwIO err
+
+         Left (HandshakeProtocolError err) -> do
+             traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
+             throwIO err
+
+         Right app -> do
+             traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
+             Mx.muxStart muxTracer (toApplication (app connectionId)) bearer
 
 
 -- Wraps a Socket inside a Snocket and calls connectToNode'
@@ -343,25 +376,33 @@ beginConnection sn muxTracer handshakeTracer versionDataCodec acceptVersion fn t
         let bearer :: MuxBearer IO
             bearer = Snocket.toBearer sn muxTracer' sd
         traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
-        mapp <- try $ runPeerWithLimits
-                (contramap (Mx.WithMuxBearer peerid) handshakeTracer)
+
+        app_e <- tryHandshake (runPeerWithLimits
+            (contramap (Mx.WithMuxBearer peerid) handshakeTracer)
                 codecHandshake
                 byteLimitsHandshake
                 timeLimitsHandshake
                 (fromChannel (Mx.muxBearerAsChannel bearer handshakeProtocolNum Mx.ModeResponder))
-                (handshakeServerPeer versionDataCodec acceptVersion versions)
-        case mapp of
-          Left (errDrv :: ProtocolLimitFailure) -> do
-            traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError errDrv
-            throwIO errDrv
-          Right (Left err) -> do
-            traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
-            throwIO err
-          Right (Right mkapp) ->
-            case mkapp peerid of
-              SomeResponderApplication app -> do
-                traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
-                Mx.muxStart muxTracer' (toApplication app) bearer
+                (handshakeServerPeer versionDataCodec acceptVersion versions))
+
+        case app_e of
+             Left HanshakeTimeout -> do
+                 traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError ExceededTimeLimit
+                 throwIO ExceededTimeLimit
+
+             Left (HandshakeProtocolLimit err) -> do
+                 traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
+                 throwIO err
+
+             Left (HandshakeProtocolError err) -> do
+                 traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
+                 throwIO err
+
+             Right mkapp -> do
+                 case mkapp peerid of
+                      SomeResponderApplication app -> do
+                          traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
+                          Mx.muxStart muxTracer' (toApplication app) bearer
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 
 mkListeningSocket

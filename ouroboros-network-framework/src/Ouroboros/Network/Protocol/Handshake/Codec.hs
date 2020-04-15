@@ -51,13 +51,14 @@ byteLimitsHandshake = ProtocolSizeLimits stateToLimit (fromIntegral . BL.length)
     stateToLimit (ServerAgency TokConfirm) = maxTransmissionUnit
 
 -- Time limits
+-- We don't use a per-state timeout, instead there is an overall timeout
+-- for the complete handshake protocol exchange.
 timeLimitsHandshake :: ProtocolTimeLimits (Handshake vNumber CBOR.Term)
 timeLimitsHandshake = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (pr :: PeerRole) (st  :: Handshake vNumber CBOR.Term).
                     PeerHasAgency pr st -> Maybe DiffTime
-    stateToLimit (ClientAgency TokPropose) = shortWait
-    stateToLimit (ServerAgency TokConfirm) = shortWait
+    stateToLimit _ = Nothing
 
 
 -- |
