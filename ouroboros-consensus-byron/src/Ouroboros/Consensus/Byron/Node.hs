@@ -138,7 +138,7 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
                                   Nothing   -> PBftIsNotALeader
                                   Just cred -> PBftIsALeader $ pbftLeaderOrNot cred
               }
-          , configLedger = ByronLedgerConfig genesisConfig
+          , configLedger = genesisConfig
           , configBlock  = byronConfig
           }
       , pInfoInitLedger = ExtLedgerState {

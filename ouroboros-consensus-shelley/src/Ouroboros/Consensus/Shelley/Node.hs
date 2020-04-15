@@ -40,6 +40,7 @@ import           Ouroboros.Consensus.BlockchainTime (SlotLength, SystemStart)
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -156,7 +157,7 @@ protocolInfoShelley genesis protVer mbCredentials =
     shelleyGlobals = mkShelleyGlobals tpraosParams
 
     ledgerConfig :: LedgerConfig (ShelleyBlock c)
-    ledgerConfig = ShelleyLedgerConfig shelleyGlobals
+    ledgerConfig = shelleyGlobals
 
     SecurityParam k = sgSecurityParam genesis
 

@@ -50,6 +50,7 @@ data family ConsensusConfig p :: *
 class ( Show (ConsensusState p)
       , Show (ValidationErr  p)
       , Show (LedgerView     p)
+      , Eq   (ConsensusState p)
       , Eq   (ValidationErr  p)
       , Eq   (LedgerView     p)
       , NoUnexpectedThunks (ConsensusConfig p)

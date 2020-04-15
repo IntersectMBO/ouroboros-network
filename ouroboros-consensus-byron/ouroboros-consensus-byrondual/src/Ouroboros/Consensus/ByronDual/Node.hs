@@ -39,6 +39,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Consensus.HeaderValidation
 
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -80,7 +81,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
                                   Just nid -> PBftIsALeader $ pbftIsLeader nid
               }
           , configLedger = DualLedgerConfig {
-                dualLedgerConfigMain = ByronLedgerConfig concreteGenesis
+                dualLedgerConfigMain = concreteGenesis
               , dualLedgerConfigAux  = abstractConfig
               }
           , configBlock = DualBlockConfig {
@@ -118,7 +119,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     abstractConfig :: LedgerConfig ByronSpecBlock
     concreteConfig :: BlockConfig ByronBlock
 
-    abstractConfig = ByronSpecLedgerConfig abstractGenesis
+    abstractConfig = abstractGenesis
     concreteConfig = mkByronConfig
                        concreteGenesis
                        protocolVersion

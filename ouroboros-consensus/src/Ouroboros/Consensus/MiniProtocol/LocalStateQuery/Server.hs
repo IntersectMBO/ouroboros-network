@@ -13,9 +13,8 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 import           Ouroboros.Network.Block (Point)
 
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerState (..),
-                     QueryLedger (..))
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB (LedgerCursor (..),

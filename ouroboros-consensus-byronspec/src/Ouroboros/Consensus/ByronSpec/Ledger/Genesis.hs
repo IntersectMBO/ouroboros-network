@@ -1,4 +1,6 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia        #-}
+{-# LANGUAGE RecordWildCards    #-}
 
 -- | Genesis config for the spec
 --
@@ -21,11 +23,13 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Genesis (
 import           Data.Coerce (coerce)
 import           Data.Set (Set)
 
+import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
+
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
-import qualified Control.State.Transition as Spec
 import qualified Byron.Spec.Ledger.Core as Spec
 import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Byron.Spec.Ledger.UTxO as Spec
+import qualified Control.State.Transition as Spec
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
 
@@ -40,7 +44,8 @@ data ByronSpecGenesis = ByronSpecGenesis {
     , byronSpecGenesisInitPParams   :: Spec.PParams
     , byronSpecGenesisSecurityParam :: Spec.BlockCount
     }
-  deriving (Show)
+  deriving stock (Show)
+  deriving NoUnexpectedThunks via AllowThunk ByronSpecGenesis
 
 modPBftThreshold :: (Double -> Double)
                  -> ByronSpecGenesis -> ByronSpecGenesis

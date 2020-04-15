@@ -1,21 +1,21 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Instances requires for consensus/ledger integration
 module Ouroboros.Consensus.Byron.Ledger.Ledger (
     -- * Ledger integration
-    LedgerConfig(..)
-  , LedgerState(..)
+    LedgerState(..)
   , Query(..)
   , initByronLedgerState
     -- * Serialisation
@@ -77,30 +77,20 @@ import           Ouroboros.Consensus.Byron.Ledger.HeaderValidation ()
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation
 
-instance UpdateLedger ByronBlock where
-
-  data LedgerState ByronBlock = ByronLedgerState {
-        byronLedgerState       :: !CC.ChainValidationState
-      , byronDelegationHistory :: !DelegationHistory
-      }
-    deriving (Eq, Show, Generic, NoUnexpectedThunks)
-
-  type LedgerError ByronBlock = CC.ChainValidationError
-
-  newtype LedgerConfig ByronBlock = ByronLedgerConfig {
-        unByronLedgerConfig :: Gen.Config
-      }
-    deriving (Generic, NoUnexpectedThunks)
+instance IsLedger (LedgerState ByronBlock) where
+  type LedgerErr (LedgerState ByronBlock) = CC.ChainValidationError
+  type LedgerCfg (LedgerState ByronBlock) = Gen.Config
 
   applyChainTick cfg slotNo ByronLedgerState{..} =
       TickedLedgerState slotNo ByronLedgerState {
           byronDelegationHistory = byronDelegationHistory
         , byronLedgerState       = CC.applyChainTick
-                                      (unByronLedgerConfig cfg)
+                                      cfg
                                       (toByronSlotNo slotNo)
                                       byronLedgerState
         }
 
+instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
   applyLedgerBlock = applyByronBlock validationMode
     where
       validationMode = CC.fromBlockValidationMode CC.BlockValidation
@@ -119,6 +109,13 @@ instance UpdateLedger ByronBlock where
         Right hdrHash -> Point (Point.block slot (ByronHash hdrHash))
           where
             slot = fromByronSlotNo (CC.cvsLastSlot state)
+
+instance UpdateLedger ByronBlock where
+  data LedgerState ByronBlock = ByronLedgerState {
+        byronLedgerState       :: !CC.ChainValidationState
+      , byronDelegationHistory :: !DelegationHistory
+      }
+    deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 initByronLedgerState :: Gen.Config
                      -> Maybe CC.UTxO -- ^ Optionally override UTxO
@@ -227,7 +224,7 @@ instance LedgerSupportsProtocol ByronBlock where
             return $ toPBftLedgerView $
                        CC.previewDelegationMap (toByronSlotNo for) ls
     where
-      SecurityParam k = genesisSecurityParam (unByronLedgerConfig cfg)
+      SecurityParam k = genesisSecurityParam cfg
       tip             = fromByronSlotNo $ CC.cvsLastSlot ls
 
       -- The lower bound is inclusive
@@ -308,7 +305,7 @@ applyByronBlock :: CC.ValidationMode
                 -> TickedLedgerState ByronBlock
                 -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
 applyByronBlock validationMode
-                (ByronLedgerConfig cfg)
+                cfg
                 (ByronBlock blk _ (ByronHash blkHash))
                 (TickedLedgerState _slot ls) = case blk of
       CC.ABOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash ls

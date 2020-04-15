@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -18,7 +19,6 @@
 
 module Ouroboros.Consensus.Shelley.Ledger.Ledger (
     ShelleyLedgerError (..)
-  , LedgerConfig (..)
   , LedgerState (..)
   , UpdateLedger (..)
   , QueryLedger (..)
@@ -95,29 +95,24 @@ data ShelleyLedgerError c
 
 instance NoUnexpectedThunks (ShelleyLedgerError c)
 
-instance TPraosCrypto c => UpdateLedger (ShelleyBlock c) where
-  data LedgerState (ShelleyBlock c) = ShelleyLedgerState {
-        ledgerTip    :: !(Point (ShelleyBlock c))
-      , history      :: !(History.LedgerViewHistory c)
-      , shelleyState :: !(SL.ShelleyState c)
-      }
-    deriving (Eq, Show, Generic, NoUnexpectedThunks)
+-- TODO: Turn this orphan into a proper instance upstream
+deriving via OnlyCheckIsWHNF "SL.Globals" SL.Globals
+         instance NoUnexpectedThunks SL.Globals
 
-  type LedgerError (ShelleyBlock c) = ShelleyLedgerError c
-
-  newtype LedgerConfig (ShelleyBlock c) = ShelleyLedgerConfig SL.Globals
-    deriving (Generic)
-    deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LedgerConfig ShelleyBlock" SL.Globals
-    -- TODO normal form
+instance TPraosCrypto c => IsLedger (LedgerState (ShelleyBlock c)) where
+  type LedgerErr (LedgerState (ShelleyBlock c)) = ShelleyLedgerError c
+  type LedgerCfg (LedgerState (ShelleyBlock c)) = SL.Globals
 
   applyChainTick
-    (ShelleyLedgerConfig globals)
+    globals
     slotNo
     (ShelleyLedgerState pt history bhState) =
       TickedLedgerState slotNo
         . ShelleyLedgerState pt history
         $ SL.applyTickTransition globals bhState slotNo
 
+instance TPraosCrypto c
+      => ApplyBlock (LedgerState (ShelleyBlock c)) (ShelleyBlock c) where
   -- Note: in the Shelley ledger, the @CHAIN@ rule is used to apply a whole
   -- block. In consensus, we split up the application of a block to the ledger
   -- into separate steps that are performed together by 'applyExtLedgerState':
@@ -128,7 +123,7 @@ instance TPraosCrypto c => UpdateLedger (ShelleyBlock c) where
   --    - 'updateConsensusState': executes the @PRTCL@ transition
   -- + 'applyLedgerBlock': executes the @BBODY@ transition
   --
-  applyLedgerBlock (ShelleyLedgerConfig globals)
+  applyLedgerBlock globals
                    blk
                    TickedLedgerState {
                        tickedLedgerState = ShelleyLedgerState {
@@ -169,10 +164,18 @@ instance TPraosCrypto c => UpdateLedger (ShelleyBlock c) where
 
   ledgerTipPoint = ledgerTip
 
+instance TPraosCrypto c => UpdateLedger (ShelleyBlock c) where
+  data LedgerState (ShelleyBlock c) = ShelleyLedgerState {
+        ledgerTip    :: !(Point (ShelleyBlock c))
+      , history      :: !(History.LedgerViewHistory c)
+      , shelleyState :: !(SL.ShelleyState c)
+      }
+    deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
 instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
   protocolLedgerView _cfg = SL.currentLedgerView . shelleyState
 
-  ledgerViewForecastAt_ cfg ledgerState at = do
+  ledgerViewForecastAt_ globals ledgerState at = do
       guard (at >= minLo)
       return $ Forecast at $ \for ->
         case History.find (At for) history of
@@ -193,7 +196,6 @@ instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
                        SL.futureLedgerView globals shelleyState for
     where
       ShelleyLedgerState {history , shelleyState} = ledgerState
-      ShelleyLedgerConfig globals = cfg
       k   = SL.securityParameter globals
       tip = ledgerTipSlot ledgerState
 
@@ -254,7 +256,7 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
     GetStakeDistribution
       :: Query (ShelleyBlock c) (SL.PoolDistr c)
 
-  answerQuery (ShelleyLedgerConfig globals) query st = case query of
+  answerQuery globals query st = case query of
     GetLedgerTip -> ledgerTip st
     GetEpochNo -> SL.nesEL $ shelleyState st
     GetNonMyopicMemberRewards creds -> NonMyopicMemberRewards $
@@ -315,9 +317,8 @@ instance Crypto c => ValidateEnvelope (ShelleyBlock c) where
       defaultValidateEnvelope oldTip hdr
       -- ... perform the @chainChecks@ that are part of the @CHAIN@ rule.
       withExcept OtherHeaderEnvelopeError $
-        SL.chainChecks globals pparams (shelleyHeaderRaw hdr)
+        SL.chainChecks (configLedger cfg) pparams (shelleyHeaderRaw hdr)
     where
-      ShelleyLedgerConfig globals = configLedger cfg
       pparams = SL.lvProtParams ledgerView
 
 -- TODO fix thunks in cardano-ledger-specs

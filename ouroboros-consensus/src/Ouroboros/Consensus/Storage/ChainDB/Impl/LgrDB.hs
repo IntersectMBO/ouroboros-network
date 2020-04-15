@@ -240,20 +240,12 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
     apply :: blk
           -> ExtLedgerState blk
           -> Either (ExtValidationError blk) (ExtLedgerState blk)
-    apply = runExcept .: applyExtLedgerState
-                           BlockNotPreviouslyApplied
-                           lgrTopLevelConfig
+    apply = runExcept .: tickThenApply lgrTopLevelConfig
 
     reapply :: blk
             -> ExtLedgerState blk
             -> ExtLedgerState blk
-    reapply b l = case runExcept (applyExtLedgerState
-                                    BlockPreviouslyApplied
-                                    lgrTopLevelConfig
-                                    b
-                                    l) of
-      Left  e  -> error $ "reapply failed: " <> show e
-      Right l' -> l'
+    reapply = tickThenReapply lgrTopLevelConfig
 
     lgrDbConf :: LgrDBConf m blk
     lgrDbConf = LedgerDbConf {

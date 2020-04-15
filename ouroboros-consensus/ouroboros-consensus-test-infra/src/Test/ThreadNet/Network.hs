@@ -807,7 +807,7 @@ runThreadNetwork ThreadNetworkArgs
         , do
             -- time matters, because some transaction expire
             now <- getCurrentSlot btime
-            p <- (ledgerTipPoint . ledgerState) <$> ChainDB.getCurrentLedger chainDB
+            p <- (ledgerTipPoint' (Proxy @blk) . ledgerState) <$> ChainDB.getCurrentLedger chainDB
             pure (At now, p)
         )
         mempool

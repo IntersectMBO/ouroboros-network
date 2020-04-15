@@ -27,7 +27,6 @@ module Test.Util.TestBlock (
   , TestBlockError(..)
   , Header(..)
   , BlockConfig(..)
-  , LedgerConfig(..)
   , Query(..)
   , firstBlock
   , successorBlock
@@ -297,23 +296,13 @@ instance BlockSupportsProtocol TestBlock where
       signKey :: Block.SlotNo -> SignKeyDSIGN MockDSIGN
       signKey (SlotNo n) = SignKeyMockDSIGN $ fromIntegral (n `mod` numCore)
 
-instance UpdateLedger TestBlock where
-  newtype LedgerState TestBlock =
-      TestLedger {
-          -- The ledger state simply consists of the last applied block
-          lastAppliedPoint :: Point TestBlock
-        }
-    deriving stock   (Show, Eq, Generic)
-    deriving newtype (Serialise, NoUnexpectedThunks)
-
-  data LedgerConfig TestBlock = LedgerConfig
-    deriving stock    (Generic)
-    deriving anyclass (NoUnexpectedThunks)
-
-  type LedgerError TestBlock = TestBlockError
+instance IsLedger (LedgerState TestBlock) where
+  type LedgerCfg (LedgerState TestBlock) = ()
+  type LedgerErr (LedgerState TestBlock) = TestBlockError
 
   applyChainTick _ = TickedLedgerState
 
+instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyLedgerBlock _ tb@TestBlock{..} (TickedLedgerState _ TestLedger{..})
     | Block.blockPrevHash tb /= Block.pointHash lastAppliedPoint
     = throwError $ InvalidHash (Block.pointHash lastAppliedPoint) (Block.blockPrevHash tb)
@@ -325,6 +314,15 @@ instance UpdateLedger TestBlock where
   reapplyLedgerBlock _ tb _ = TestLedger (Chain.blockPoint tb)
 
   ledgerTipPoint = lastAppliedPoint
+
+instance UpdateLedger TestBlock where
+  newtype LedgerState TestBlock =
+      TestLedger {
+          -- The ledger state simply consists of the last applied block
+          lastAppliedPoint :: Point TestBlock
+        }
+    deriving stock   (Show, Eq, Generic)
+    deriving newtype (Serialise, NoUnexpectedThunks)
 
 instance HasAnnTip TestBlock where
   -- Use defaults
@@ -379,7 +377,7 @@ singleNodeTestConfig = TopLevelConfig {
         , bftSignKey  = SignKeyMockDSIGN 0
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
-    , configLedger = LedgerConfig
+    , configLedger = ()
     , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
     }
   where

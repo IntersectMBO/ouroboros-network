@@ -31,7 +31,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
@@ -208,15 +207,10 @@ initLgrDB k chain = do
     conf :: LgrDBConf m TestBlock
     conf = LedgerDbConf
       { ldbConfGenesis = return testInitExtLedger
-      , ldbConfApply   = runExcept .:
-          applyExtLedgerState BlockNotPreviouslyApplied cfg
-      , ldbConfReapply = (mustBeRight . runExcept) .:
-          applyExtLedgerState BlockPreviouslyApplied    cfg
+      , ldbConfApply   = runExcept .: tickThenApply cfg
+      , ldbConfReapply = tickThenReapply cfg
       , ldbConfResolve = return . (blockMapping Map.!)
       }
-
-    mustBeRight (Left e)  = error $ "impossible: " <> show e
-    mustBeRight (Right a) = a
 
     genesisLedgerDB = LgrDB.ledgerDbFromGenesis params testInitExtLedger
 
@@ -248,7 +242,7 @@ testCfg securityParam = TopLevelConfig {
         , bftSignKey  = SignKeyMockDSIGN 0
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
-    , configLedger = LedgerConfig
+    , configLedger = ()
     , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
     }
   where

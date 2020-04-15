@@ -106,6 +106,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -327,14 +328,7 @@ getPastLedger cfg p m@Model{..} =
       [] | p /= Block.genesisPoint ->
         Nothing
       _otherwise ->
-        -- Re-applying previously validated blocks shouldn't result in an error
-        case runExcept $ foldExtLedgerState
-                           BlockPreviouslyApplied
-                           cfg
-                           prefix
-                           initLedger of
-          Left err -> error $ "getPastLedger: unexpected error " ++ show err
-          Right l  -> Just l
+        Just $ refoldLedger cfg prefix initLedger
   where
     prefix :: [blk]
     prefix = reverse
@@ -711,7 +705,7 @@ validate cfg initLedger chain =
        -> ValidationResult blk
     go ledger validPrefix bs = case bs of
       []    -> ValidChain validPrefix ledger
-      b:bs' -> case runExcept (applyExtLedgerState BlockNotPreviouslyApplied cfg b ledger) of
+      b:bs' -> case runExcept (tickThenApply cfg b ledger) of
         Right ledger' -> go ledger' (validPrefix :> b) bs'
         Left  e       -> InvalidChain e (fmap blockRealPoint (b NE.:| bs'))
                            validPrefix ledger

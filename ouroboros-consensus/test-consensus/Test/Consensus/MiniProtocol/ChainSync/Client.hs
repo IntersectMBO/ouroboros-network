@@ -53,6 +53,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended hiding (ledgerState)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -415,7 +416,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                           , (CoreId (CoreNodeId 1), VerKeyMockDSIGN 1)
                           ]
           }
-      , configLedger = LedgerConfig
+      , configLedger = ()
       , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
       }
 
@@ -457,14 +458,13 @@ updateClientState cfg chain ledgerState chainUpdates =
       Just bs -> (chain', ledgerState')
         where
           chain'       = foldl' (flip Chain.addBlock) chain bs
-          ledgerState' = runValidate $
-            foldExtLedgerState BlockNotPreviouslyApplied cfg bs ledgerState
+          ledgerState' = runValidate $ foldLedger cfg bs ledgerState
       Nothing
       -- There was a roll back in the updates, so validate the chain from
       -- scratch
         | Just chain' <- Chain.applyChainUpdates (toChainUpdates chainUpdates) chain
         -> let ledgerState' = runValidate $
-                 foldExtLedgerState BlockNotPreviouslyApplied cfg (Chain.toOldestFirst chain') testInitExtLedger
+                 foldLedger cfg (Chain.toOldestFirst chain') testInitExtLedger
            in (chain', ledgerState')
         | otherwise
         -> error "Client chain update failed"

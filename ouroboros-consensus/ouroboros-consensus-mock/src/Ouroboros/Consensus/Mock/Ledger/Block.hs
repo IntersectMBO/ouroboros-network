@@ -41,7 +41,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , MockProtocolSpecific(..)
     -- * 'UpdateLedger'
   , LedgerState(..)
-  , LedgerConfig(..)
+  , SimpleLedgerConfig(..)
   , updateSimpleLedgerState
   , genesisSimpleLedgerState
     -- * 'ApplyTx' (mempool support)
@@ -285,21 +285,23 @@ class ( SimpleCrypto c
   Update the ledger
 -------------------------------------------------------------------------------}
 
-instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext) where
-  newtype LedgerState (SimpleBlock c ext) = SimpleLedgerState {
-        simpleLedgerState :: MockState (SimpleBlock c ext)
-      }
-    deriving stock   (Generic, Show, Eq)
-    deriving newtype (Serialise, NoUnexpectedThunks)
+data SimpleLedgerConfig c ext = SimpleLedgerConfig {
+      simpleMockLedgerConfig :: MockLedgerConfig c ext
+    }
+  deriving stock (Generic)
 
-  data LedgerConfig (SimpleBlock c ext) = SimpleLedgerConfig {
-        simpleMockLedgerConfig :: MockLedgerConfig c ext
-      }
-    deriving stock (Generic)
+deriving instance MockProtocolSpecific c ext => Show               (SimpleLedgerConfig c ext)
+deriving instance MockProtocolSpecific c ext => NoUnexpectedThunks (SimpleLedgerConfig c ext)
 
-  type LedgerError (SimpleBlock c ext) = MockError (SimpleBlock c ext)
+instance MockProtocolSpecific c ext
+      => IsLedger (LedgerState (SimpleBlock c ext)) where
+  type LedgerCfg (LedgerState (SimpleBlock c ext)) = SimpleLedgerConfig c ext
+  type LedgerErr (LedgerState (SimpleBlock c ext)) = MockError (SimpleBlock c ext)
 
   applyChainTick _ = TickedLedgerState
+
+instance MockProtocolSpecific c ext
+      => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
   applyLedgerBlock _cfg = updateSimpleLedgerState
   reapplyLedgerBlock _cfg = (mustSucceed . runExcept) .: updateSimpleLedgerState
     where
@@ -307,10 +309,12 @@ instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext) where
       mustSucceed (Right st)  = st
   ledgerTipPoint (SimpleLedgerState st) = mockTip st
 
-deriving instance MockProtocolSpecific c ext
-               => Show (LedgerConfig (SimpleBlock c ext))
-deriving instance MockProtocolSpecific c ext
-               => NoUnexpectedThunks (LedgerConfig (SimpleBlock c ext))
+instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext) where
+  newtype LedgerState (SimpleBlock c ext) = SimpleLedgerState {
+        simpleLedgerState :: MockState (SimpleBlock c ext)
+      }
+    deriving stock   (Generic, Show, Eq)
+    deriving newtype (Serialise, NoUnexpectedThunks)
 
 updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
                         => SimpleBlock c ext
