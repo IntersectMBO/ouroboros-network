@@ -10,7 +10,6 @@
 --
 module Ouroboros.Network.NodeToClient (
     nodeToClientProtocols
-  , versionedNodeToClientProtocols
   , NodeToClientProtocols (..)
   , NodeToClientVersion (..)
   , NodeToClientVersionData (..)
@@ -52,6 +51,15 @@ module Ouroboros.Network.NodeToClient (
   , LocalSnocket
   , localSnocket
   , LocalAddress
+
+    -- * Versions
+  , Versions (..)
+  , versionedNodeToClientProtocols
+  , simpleSingletonVersions
+  , foldMapVersions
+  , combineVersions
+  , foldMapVersions'
+  , combineVersions'
 
   -- * Re-exports
   , ConnectionId (..)

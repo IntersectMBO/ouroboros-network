@@ -46,7 +46,8 @@ import           Ouroboros.Network.NodeToClient (DictVersion (..),
                      nodeToClientCodecCBORTerm)
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
                      NodeToNodeVersionData (..), RemoteConnectionId,
-                     defaultMiniProtocolParameters, nodeToNodeCodecCBORTerm)
+                     defaultMiniProtocolParameters, nodeToNodeCodecCBORTerm,
+                     combineVersions')
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -253,7 +254,7 @@ run RunNodeArgs{..} = do
       -> DiffusionApplications
     mkDiffusionApplications miniProtocolParams ntnApps ntcApps =
       DiffusionApplications {
-          daResponderApplication = combineVersions [
+          daResponderApplication = combineVersions' [
               simpleSingletonVersions
                 version'
                 nodeToNodeVersionData
@@ -262,7 +263,7 @@ run RunNodeArgs{..} = do
             | version <- supportedNodeToNodeVersions (Proxy @blk)
             , let version' = nodeToNodeProtocolVersion (Proxy @blk) version
             ]
-        , daInitiatorApplication = combineVersions [
+        , daInitiatorApplication = combineVersions' [
               simpleSingletonVersions
                 version'
                 nodeToNodeVersionData
@@ -271,7 +272,7 @@ run RunNodeArgs{..} = do
             | version <- supportedNodeToNodeVersions (Proxy @blk)
             , let version' = nodeToNodeProtocolVersion (Proxy @blk) version
             ]
-        , daLocalResponderApplication = combineVersions [
+        , daLocalResponderApplication = combineVersions' [
               simpleSingletonVersions
                 version'
                 nodeToClientVersionData
@@ -282,9 +283,6 @@ run RunNodeArgs{..} = do
             ]
         , daErrorPolicies = consensusErrorPolicy (Proxy @blk)
         }
-
-    combineVersions :: Semigroup a => [a] -> a
-    combineVersions = foldr1 (<>)
 
 openChainDB
   :: forall blk. RunNode blk
