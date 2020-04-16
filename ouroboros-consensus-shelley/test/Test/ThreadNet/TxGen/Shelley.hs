@@ -12,7 +12,7 @@ module Test.ThreadNet.TxGen.Shelley
 import           Control.Monad.Except (runExcept)
 import           Crypto.Number.Generate (generateBetween, generateMax)
 import           Crypto.Random (MonadRandom)
-import qualified Data.Sequence as Seq
+import qualified Data.Sequence.Strict as Seq
 
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract

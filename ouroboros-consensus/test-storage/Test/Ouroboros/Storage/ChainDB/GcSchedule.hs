@@ -334,7 +334,7 @@ runGcSchedule gcParams blocks = runSimOrThrow test
   where
     test :: IOLike m => m (Trace GcQueue, GcGarbageCollections)
     test = do
-      varGCs <- newTVarM (GcGarbageCollections [])
+      varGCs <- uncheckedNewTVarM (GcGarbageCollections [])
       gcSchedule <- Impl.newGcSchedule
       withAsync (gcThread varGCs gcSchedule) $ \asyncGcThread -> do
         link asyncGcThread

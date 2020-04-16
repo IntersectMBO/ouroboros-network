@@ -15,6 +15,11 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
+{-# OPTIONS_GHC -fno-strictness #-}
+-- NOTE: With @-fstrictness@ optimisation (enabled by default for -O1), we get
+-- an unexplained thunk in 'KnownIntersectionState' and thus a space leak. See
+-- #1356.
+
 module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
     Consensus
   , chainSyncClient

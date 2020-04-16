@@ -69,6 +69,7 @@ import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
+import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
 
@@ -357,11 +358,11 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
             -> Nothing
 
           -- This is a non-active slot; nobody may produce a block
-          Just Nothing -> Nothing
+          Just SL.NonActiveSlot -> Nothing
 
           -- The given genesis key has authority to produce a block in this
           -- slot. Check whether we're its delegate.
-          Just (Just gkhash) -> case Map.lookup gkhash dlgMap of
+          Just (SL.ActiveSlot gkhash) -> case Map.lookup gkhash dlgMap of
               Just dlgHash | dlgHash == vkhCold -> Just TPraosProof {
                   tpraosEta        = coerce rho
                   -- Note that this leader value is not checked for slots in

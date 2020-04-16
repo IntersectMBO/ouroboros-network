@@ -251,7 +251,7 @@ data instance BlockConfig TestBlock = TestBlockConfig {
       -- | Era parameters
       --
       -- TODO: This should obsolete 'testBlockSlotLengths' (#1637)
-    , testBlockEraParams :: HardFork.EraParams
+    , testBlockEraParams :: !HardFork.EraParams
 
       -- | Number of core nodes
       --
