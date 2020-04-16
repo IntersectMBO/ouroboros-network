@@ -178,9 +178,9 @@ defaultCodecs _cfg _version = Codecs {
 -- / deserialise blocks in /chain-sync/ protocol.
 --
 clientCodecs :: forall m blk. (RunNode blk, MonadST m)
-              => BlockConfig         blk
-              -> NodeToClientVersion blk
-              -> ClientCodecs blk m
+             => BlockConfig         blk
+             -> NodeToClientVersion blk
+             -> ClientCodecs blk m
 clientCodecs cfg _version = Codecs {
       cChainSyncCodec =
         codecChainSync
