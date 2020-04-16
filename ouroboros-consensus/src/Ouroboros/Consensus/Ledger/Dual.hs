@@ -367,9 +367,9 @@ instance Bridge m a => HasAnnTip (DualBlock m a) where
 
 instance Bridge m a => ValidateEnvelope (DualBlock m a) where
   type OtherHeaderEnvelopeError (DualBlock m a) = OtherHeaderEnvelopeError m
-  validateEnvelope cfg t =
+  validateEnvelope cfg ledgerView t =
         withExcept castHeaderEnvelopeError
-      . validateEnvelope (dualBlockConfigMain cfg) (castAnnTip <$> t)
+      . validateEnvelope (dualTopLevelConfigMain cfg) ledgerView (castAnnTip <$> t)
       . dualHeaderMain
 
   firstBlockNo          _ = firstBlockNo          (Proxy @m)

@@ -500,7 +500,7 @@ instance ValidateEnvelope TestBlock where
   -- 'validateEnvelope' and block production use it.
   firstBlockNo _ = error "unused"
 
-  validateEnvelope cfg oldTip hdr = do
+  validateEnvelope cfg _ledgerView oldTip hdr = do
       when (actualBlockNo /= expectedBlockNo) $
         throwError $ UnexpectedBlockNo expectedBlockNo actualBlockNo
       when (actualSlotNo < expectedSlotNo) $
@@ -545,10 +545,16 @@ instance ValidateEnvelope TestBlock where
       nextBlockNo (At (_       , b)) _     = succ b
 
       canBeEBB :: SlotNo -> Bool
-      canBeEBB (SlotNo s) = testBlockEBBsAllowed cfg && s `mod` epochSlots == 0
+      canBeEBB (SlotNo s) = testBlockEBBsAllowed (configBlock cfg)
+                         && s `mod` epochSlots == 0
 
       epochSlots :: Word64
-      epochSlots = unEpochSize $ HardFork.eraEpochSize $ testBlockEraParams cfg
+      epochSlots =
+          unEpochSize
+        . HardFork.eraEpochSize
+        . testBlockEraParams
+        . configBlock
+        $ cfg
 
 instance LedgerSupportsProtocol TestBlock where
   protocolLedgerView _ _ = ()

@@ -19,6 +19,7 @@ import qualified Cardano.Chain.Slotting as CC
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
@@ -41,7 +42,7 @@ data ByronOtherHeaderEnvelopeError =
 instance ValidateEnvelope ByronBlock where
   type OtherHeaderEnvelopeError ByronBlock = ByronOtherHeaderEnvelopeError
 
-  validateEnvelope cfg oldTip hdr = do
+  validateEnvelope cfg _ledgerView oldTip hdr = do
       when (actualBlockNo /= expectedBlockNo) $
         throwError $ UnexpectedBlockNo expectedBlockNo actualBlockNo
       when (actualSlotNo < expectedSlotNo) $
@@ -88,4 +89,4 @@ instance ValidateEnvelope ByronBlock where
       canBeEBB (SlotNo s) = s `mod` epochSlots == 0
 
       epochSlots :: Word64
-      epochSlots = CC.unEpochSlots $ byronEpochSlots cfg
+      epochSlots = CC.unEpochSlots $ byronEpochSlots $ configBlock cfg
