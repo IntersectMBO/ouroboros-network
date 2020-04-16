@@ -132,7 +132,7 @@ data Codecs blk e m bCS bTX bSQ = Codecs {
 -- Implementation mode: currently none of the consensus encoders/decoders do
 -- anything different based on the version, so @_version@ is unused; it's just
 -- that not all codecs are used, depending on the version number.
-defaultCodecs :: forall m blk. (IOLike m, RunNode blk)
+defaultCodecs :: forall m blk. (RunNode blk, MonadST m)
               => BlockConfig         blk
               -> NodeToClientVersion blk
               -> Codecs blk DeserialiseFailure m ByteString ByteString ByteString
