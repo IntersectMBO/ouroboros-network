@@ -44,6 +44,7 @@ module Test.Ouroboros.Storage.TestBlock (
   , TestBlockError(..)
   , LedgerConfig(..)
   , testInitExtLedger
+  , TestBlockOtherHeaderEnvelopeError(..)
   , mkTestConfig
     -- * Corruptions
   , Corruptions
@@ -72,7 +73,6 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import           Data.Maybe (maybeToList)
-import qualified Data.Text as T
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
@@ -489,7 +489,13 @@ instance HasAnnTip TestBlock where
   type TipInfo TestBlock = IsEBB
   getTipInfo = thIsEBB . unTestHeader
 
+data TestBlockOtherHeaderEnvelopeError =
+    UnexpectedEBBInSlot !SlotNo
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
 instance ValidateEnvelope TestBlock where
+  type OtherHeaderEnvelopeError TestBlock = TestBlockOtherHeaderEnvelopeError
+
   -- Not used in the storage tests, only the default implementation of
   -- 'validateEnvelope' and block production use it.
   firstBlockNo _ = error "unused"
@@ -502,8 +508,7 @@ instance ValidateEnvelope TestBlock where
       when (actualPrevHash /= expectedPrevHash) $
         throwError $ UnexpectedPrevHash expectedPrevHash actualPrevHash
       when (fromIsEBB newIsEBB && not (canBeEBB actualSlotNo)) $
-        throwError $ OtherEnvelopeError . T.pack $
-          "Unexpected EBB in slot " ++ show actualSlotNo
+        throwError $ OtherHeaderEnvelopeError $ UnexpectedEBBInSlot actualSlotNo
     where
       newIsEBB :: IsEBB
       newIsEBB = thIsEBB (unTestHeader hdr)

@@ -1,4 +1,6 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE TypeFamilies   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -6,9 +8,10 @@ module Ouroboros.Consensus.Byron.Ledger.HeaderValidation () where
 
 import           Control.Arrow ((&&&))
 import           Control.Monad.Except
-import qualified Data.Text as T
 import           Data.Word
+import           GHC.Generics (Generic)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot (WithOrigin (..), withOrigin)
 
 import qualified Cardano.Chain.Slotting as CC
@@ -31,7 +34,13 @@ instance HasAnnTip ByronBlock where
   type TipInfo ByronBlock = IsEBB
   getTipInfo = byronHeaderIsEBB
 
+data ByronOtherHeaderEnvelopeError =
+    UnexpectedEBBInSlot !SlotNo
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
 instance ValidateEnvelope ByronBlock where
+  type OtherHeaderEnvelopeError ByronBlock = ByronOtherHeaderEnvelopeError
+
   validateEnvelope cfg oldTip hdr = do
       when (actualBlockNo /= expectedBlockNo) $
         throwError $ UnexpectedBlockNo expectedBlockNo actualBlockNo
@@ -40,8 +49,7 @@ instance ValidateEnvelope ByronBlock where
       when (actualPrevHash /= expectedPrevHash) $
         throwError $ UnexpectedPrevHash expectedPrevHash actualPrevHash
       when (fromIsEBB newIsEBB && not (canBeEBB actualSlotNo)) $
-        throwError $ OtherEnvelopeError . T.pack $
-          "Unexpected EBB in slot " ++ show actualSlotNo
+        throwError $ OtherHeaderEnvelopeError $ UnexpectedEBBInSlot actualSlotNo
     where
       newIsEBB :: IsEBB
       newIsEBB = byronHeaderIsEBB hdr

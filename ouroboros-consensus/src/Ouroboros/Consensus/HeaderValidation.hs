@@ -51,7 +51,8 @@ import           Data.Foldable (toList)
 import           Data.Proxy
 import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>), Empty))
 import qualified Data.Sequence.Strict as Seq
-import           Data.Text (Text)
+import           Data.Typeable (Typeable)
+import           Data.Void (Void)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (enforceSize)
@@ -242,20 +243,20 @@ data HeaderEnvelopeError blk =
   | UnexpectedPrevHash !(ChainHash blk) !(ChainHash blk)
 
     -- | Block specific envelope error
-    --
-    -- We record this simply as Text to avoid yet another type family;
-    -- we can't really pattern match on this anyway.
-  | OtherEnvelopeError !Text
+  | OtherHeaderEnvelopeError !(OtherHeaderEnvelopeError blk)
   deriving (Generic)
 
-deriving instance BlockSupportsProtocol blk => Eq                 (HeaderEnvelopeError blk)
-deriving instance BlockSupportsProtocol blk => Show               (HeaderEnvelopeError blk)
-deriving instance BlockSupportsProtocol blk => NoUnexpectedThunks (HeaderEnvelopeError blk)
+deriving instance (ValidateEnvelope blk) => Eq   (HeaderEnvelopeError blk)
+deriving instance (ValidateEnvelope blk) => Show (HeaderEnvelopeError blk)
+deriving instance (ValidateEnvelope blk, Typeable blk)
+               => NoUnexpectedThunks (HeaderEnvelopeError blk)
 
-castHeaderEnvelopeError :: HeaderHash blk ~ HeaderHash blk'
+castHeaderEnvelopeError :: ( HeaderHash blk ~ HeaderHash blk'
+                           , OtherHeaderEnvelopeError blk ~ OtherHeaderEnvelopeError blk'
+                           )
                         => HeaderEnvelopeError blk -> HeaderEnvelopeError blk'
 castHeaderEnvelopeError = \case
-    OtherEnvelopeError err             -> OtherEnvelopeError err
+    OtherHeaderEnvelopeError err       -> OtherHeaderEnvelopeError err
     UnexpectedBlockNo  expected actual -> UnexpectedBlockNo  expected  actual
     UnexpectedSlotNo   expected actual -> UnexpectedSlotNo   expected  actual
     UnexpectedPrevHash expected actual -> UnexpectedPrevHash expected' actual'
@@ -264,7 +265,16 @@ castHeaderEnvelopeError = \case
         actual'   = castHash actual
 
 -- | Validate header envelope (block, slot, hash)
-class HasAnnTip blk => ValidateEnvelope blk where
+class ( HasAnnTip blk
+      , Eq                 (OtherHeaderEnvelopeError blk)
+      , Show               (OtherHeaderEnvelopeError blk)
+      , NoUnexpectedThunks (OtherHeaderEnvelopeError blk))
+   => ValidateEnvelope blk where
+
+  -- | A block-specific error that 'validateEnvelope' can return.
+  type OtherHeaderEnvelopeError blk :: *
+  type OtherHeaderEnvelopeError blk = Void
+
   -- | Validate the header envelope
   validateEnvelope :: BlockConfig blk
                    -> WithOrigin (AnnTip blk)
@@ -350,14 +360,19 @@ data HeaderError blk =
   | HeaderEnvelopeError !(HeaderEnvelopeError blk)
   deriving (Generic)
 
-deriving instance BlockSupportsProtocol blk => Eq                 (HeaderError blk)
-deriving instance BlockSupportsProtocol blk => Show               (HeaderError blk)
-deriving instance BlockSupportsProtocol blk => NoUnexpectedThunks (HeaderError blk)
+deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
+               => Eq                 (HeaderError blk)
+deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
+               => Show               (HeaderError blk)
+deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
+               => NoUnexpectedThunks (HeaderError blk)
 
 castHeaderError :: (   ValidationErr (BlockProtocol blk )
                      ~ ValidationErr (BlockProtocol blk')
                    ,   HeaderHash blk
                      ~ HeaderHash blk'
+                   ,   OtherHeaderEnvelopeError blk
+                     ~ OtherHeaderEnvelopeError blk'
                    )
                 => HeaderError blk -> HeaderError blk'
 castHeaderError (HeaderProtocolError e) = HeaderProtocolError e
