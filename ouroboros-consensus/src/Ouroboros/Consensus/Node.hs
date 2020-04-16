@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE MonadComprehensions #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -47,7 +48,7 @@ import           Ouroboros.Network.NodeToClient (DictVersion (..),
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
                      NodeToNodeVersionData (..), RemoteConnectionId,
                      defaultMiniProtocolParameters, nodeToNodeCodecCBORTerm,
-                     combineVersions')
+                     combineVersions)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -254,7 +255,7 @@ run RunNodeArgs{..} = do
       -> DiffusionApplications
     mkDiffusionApplications miniProtocolParams ntnApps ntcApps =
       DiffusionApplications {
-          daResponderApplication = combineVersions' [
+          daResponderApplication = combineVersions [
               simpleSingletonVersions
                 version'
                 nodeToNodeVersionData
@@ -263,7 +264,7 @@ run RunNodeArgs{..} = do
             | version <- supportedNodeToNodeVersions (Proxy @blk)
             , let version' = nodeToNodeProtocolVersion (Proxy @blk) version
             ]
-        , daInitiatorApplication = combineVersions' [
+        , daInitiatorApplication = combineVersions [
               simpleSingletonVersions
                 version'
                 nodeToNodeVersionData
@@ -272,7 +273,7 @@ run RunNodeArgs{..} = do
             | version <- supportedNodeToNodeVersions (Proxy @blk)
             , let version' = nodeToNodeProtocolVersion (Proxy @blk) version
             ]
-        , daLocalResponderApplication = combineVersions' [
+        , daLocalResponderApplication = combineVersions [
               simpleSingletonVersions
                 version'
                 nodeToClientVersionData

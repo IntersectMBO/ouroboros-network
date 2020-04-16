@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Node.NetworkProtocolVersion
   ) where
 
 import           Data.Proxy
+import           Data.List.NonEmpty (NonEmpty (..))
 
 import qualified Ouroboros.Network.NodeToClient as N
 import qualified Ouroboros.Network.NodeToNode as N
@@ -36,11 +37,11 @@ class ( Show (NodeToNodeVersion   blk)
 
   -- | Enumerate all supported node-to-node versions
   supportedNodeToNodeVersions
-    :: Proxy blk -> [NodeToNodeVersion blk]
+    :: Proxy blk -> NonEmpty (NodeToNodeVersion blk)
 
   -- | Enumerate all supported node-to-client versions
   supportedNodeToClientVersions
-    :: Proxy blk -> [NodeToClientVersion blk]
+    :: Proxy blk -> NonEmpty (NodeToClientVersion blk)
 
   -- | The most recent node-to-node version
   mostRecentNodeToNodeVersion
@@ -65,13 +66,13 @@ class ( Show (NodeToNodeVersion   blk)
 
   default supportedNodeToNodeVersions
     :: NodeToNodeVersion blk ~ ()
-    => Proxy blk -> [NodeToNodeVersion blk]
-  supportedNodeToNodeVersions _ = [()]
+    => Proxy blk -> NonEmpty (NodeToNodeVersion blk)
+  supportedNodeToNodeVersions _ = () :| []
 
   default supportedNodeToClientVersions
     :: NodeToClientVersion blk ~ ()
-    => Proxy blk -> [NodeToClientVersion blk]
-  supportedNodeToClientVersions _ = [()]
+    => Proxy blk -> NonEmpty (NodeToClientVersion blk)
+  supportedNodeToClientVersions _ = () :| []
 
   default mostRecentNodeToNodeVersion
     :: NodeToNodeVersion blk ~ ()

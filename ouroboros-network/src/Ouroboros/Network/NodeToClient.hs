@@ -59,8 +59,6 @@ module Ouroboros.Network.NodeToClient (
   , simpleSingletonVersions
   , foldMapVersions
   , combineVersions
-  , foldMapVersions'
-  , combineVersions'
 
   -- * Re-exports
   , ConnectionId (..)

@@ -7,6 +7,8 @@ module Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion (
   , ByronNodeToClientVersion(..)
   ) where
 
+import           Data.List.NonEmpty (NonEmpty (..))
+
 import qualified Ouroboros.Network.NodeToClient as N
 import qualified Ouroboros.Network.NodeToNode as N
 
@@ -34,10 +36,10 @@ instance HasNetworkProtocolVersion ByronBlock where
   type NodeToNodeVersion   ByronBlock = ByronNodeToNodeVersion
   type NodeToClientVersion ByronBlock = ByronNodeToClientVersion
 
-  supportedNodeToNodeVersions   _ = [ ByronNodeToNodeVersion1 ]
-  supportedNodeToClientVersions _ = [ ByronNodeToClientVersion1
-                                    , ByronNodeToClientVersion2
-                                    ]
+  supportedNodeToNodeVersions   _ = ByronNodeToNodeVersion1
+                                  :| []
+  supportedNodeToClientVersions _ = ByronNodeToClientVersion1
+                                  :| [ ByronNodeToClientVersion2 ]
 
   mostRecentNodeToNodeVersion   _ = ByronNodeToNodeVersion1
   mostRecentNodeToClientVersion _ = ByronNodeToClientVersion2
