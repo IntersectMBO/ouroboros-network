@@ -12,9 +12,14 @@ module Ouroboros.Consensus.Network.NodeToClient (
     Handlers (..)
   , mkHandlers
     -- * Codecs
-  , Codecs (..)
+  , Codecs' (..)
+  , Codecs
+  , DefaultCodecs
+  , ClientCodecs
   , defaultCodecs
+  , clientCodecs
   , identityCodecs
+    -- * ClientCodecs
     -- * Tracers
   , Tracers
   , Tracers' (..)
@@ -110,11 +115,18 @@ mkHandlers NodeArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
 -------------------------------------------------------------------------------}
 
 -- | Node-to-client protocol codecs needed to run 'Handlers'.
-data Codecs blk e m bCS bTX bSQ = Codecs {
-      cChainSyncCodec    :: Codec (ChainSync (Serialised blk) (Tip blk))           e m bCS
+data Codecs' blk serialisedBlk e m bCS bTX bSQ = Codecs {
+      cChainSyncCodec    :: Codec (ChainSync serialisedBlk (Tip blk))              e m bCS
     , cTxSubmissionCodec :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)) e m bTX
     , cStateQueryCodec   :: Codec (LocalStateQuery blk (Query blk))                e m bSQ
     }
+
+type Codecs blk e m bCS bTX bSQ =
+    Codecs' blk (Serialised blk) e m bCS bTX bSQ
+type DefaultCodecs blk m =
+    Codecs' blk (Serialised blk) DeserialiseFailure m ByteString ByteString ByteString
+type ClientCodecs blk  m =
+    Codecs' blk blk DeserialiseFailure m ByteString ByteString ByteString
 
 -- | Protocol codecs for the node-to-client protocols
 --
@@ -135,7 +147,7 @@ data Codecs blk e m bCS bTX bSQ = Codecs {
 defaultCodecs :: forall m blk. (RunNode blk, MonadST m)
               => BlockConfig         blk
               -> NodeToClientVersion blk
-              -> Codecs blk DeserialiseFailure m ByteString ByteString ByteString
+              -> DefaultCodecs blk m
 defaultCodecs _cfg _version = Codecs {
       cChainSyncCodec =
         codecChainSyncSerialised
@@ -160,6 +172,42 @@ defaultCodecs _cfg _version = Codecs {
           nodeEncodeResult
           nodeDecodeResult
     }
+
+
+-- | Protocol codecs for the node-to-client protocols which serialise
+-- / deserialise blocks in /chain-sync/ protocol.
+--
+clientCodecs :: forall m blk. (RunNode blk, MonadST m)
+              => BlockConfig         blk
+              -> NodeToClientVersion blk
+              -> ClientCodecs blk m
+clientCodecs cfg _version = Codecs {
+      cChainSyncCodec =
+        codecChainSync
+          (wrapCBORinCBOR   (nodeEncodeBlock cfg))
+          (unwrapCBORinCBOR (nodeDecodeBlock cfg))
+          (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
+          (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
+          (encodeTip   (nodeEncodeHeaderHash (Proxy @blk)))
+          (decodeTip   (nodeDecodeHeaderHash (Proxy @blk)))
+
+    , cTxSubmissionCodec =
+        codecLocalTxSubmission
+          nodeEncodeGenTx
+          nodeDecodeGenTx
+          (nodeEncodeApplyTxError (Proxy @blk))
+          (nodeDecodeApplyTxError (Proxy @blk))
+
+    , cStateQueryCodec =
+        codecLocalStateQuery
+          (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
+          (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
+          nodeEncodeQuery
+          nodeDecodeQuery
+          nodeEncodeResult
+          nodeDecodeResult
+    }
+
 
 -- | Identity codecs used in tests.
 identityCodecs :: (Monad m, QueryLedger blk)
