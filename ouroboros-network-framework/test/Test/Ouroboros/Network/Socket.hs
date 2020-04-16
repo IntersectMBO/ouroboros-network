@@ -54,6 +54,9 @@ import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import qualified Network.Mux as Mx (MuxError(..), MuxErrorType(..), muxStart)
 import qualified Network.Mux.Bearer.Socket as Mx (socketAsMuxBearer)
+import           Network.Mux.Types ( MiniProtocolMode (..) , MuxSDU (..), MuxSDUHeader (..)
+                                   , RemoteClockModel (..), write)
+import           Network.Mux.Timeout
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -90,6 +93,8 @@ tests =
 #endif
   , after AllFinish LAST_IP_TEST $
     testProperty "socket error during receive"           (withMaxSuccess 10 prop_socket_recv_error)
+  , after AllFinish LAST_IP_TEST $
+    testProperty "socket error during send"              (withMaxSuccess 10 prop_socket_send_error)
   , after AllFinish "socket close during receive" $
     testProperty "socket client connection failure"      prop_socket_client_connect_error
   ]
@@ -266,10 +271,10 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
             cnt <- readTVar cntVar
             unless (cnt == 0) retry
 
-data RecvErrorType = SocketClosed | SDUTimeout deriving (Eq, Show)
+data RecvErrorType = RecvSocketClosed | RecvSDUTimeout deriving (Eq, Show)
 
 instance Arbitrary RecvErrorType where
-    arbitrary = oneof [pure SocketClosed, pure SDUTimeout]
+    arbitrary = oneof [pure RecvSocketClosed, pure RecvSDUTimeout]
 
 -- |
 -- Verify that we raise the correct exception in case a socket closes or a timeout during
@@ -318,8 +323,8 @@ prop_socket_recv_error f rerr =
                 (runAccept $ accept snocket sd)
                 (\(sd', _, _) -> Socket.close sd')
                 $ \(sd', _, _) -> do
-                  let timeout = if rerr == SDUTimeout then 0.10
-                                                      else (-1) -- No timeout
+                  let timeout = if rerr == RecvSDUTimeout then 0.10
+                                                          else (-1) -- No timeout
                   let bearer = Mx.socketAsMuxBearer timeout nullTracer sd'
                   Mx.muxStart nullTracer (toApplication app) bearer
           )
@@ -335,8 +340,8 @@ prop_socket_recv_error f rerr =
           Socket.sendAll sd' $ BL.singleton 0xa
 #endif
 
-          if rerr == SocketClosed then Socket.close sd'
-                                  else threadDelay 0.2
+          if rerr == RecvSocketClosed then Socket.close sd'
+                                      else threadDelay 0.2
 
           res <- waitCatch muxAsync
           result <- case res of
@@ -344,14 +349,103 @@ prop_socket_recv_error f rerr =
                   case fromException e of
                         Just me -> return $
                             case Mx.errorType me of
-                                 Mx.MuxBearerClosed   -> rerr === SocketClosed
-                                 Mx.MuxSDUReadTimeout -> rerr === SDUTimeout
-                                 _                    -> property False
+                                 Mx.MuxBearerClosed -> rerr ===RecvSocketClosed
+                                 MuxSDUReadTimeout  -> rerr === RecvSDUTimeout
+                                 _                  -> property False
                         Nothing -> return $ counterexample (show e) False
               Right _ -> return $ property False
 
-          when (rerr /= SocketClosed) $ Socket.close sd'
+          when (rerr /= RecvSocketClosed) $ Socket.close sd'
           return result
+
+data SendErrorType = SendSocketClosed | SendSDUTimeout deriving (Eq, Show)
+
+instance Arbitrary SendErrorType where
+    arbitrary = oneof [pure SendSocketClosed, pure SendSDUTimeout]
+
+-- |
+-- Verify that we raise the correct exception in case a socket closes or a timeout during
+-- a write.
+prop_socket_send_error :: SendErrorType
+                       -> Property
+prop_socket_send_error rerr =
+    ioProperty $
+    withIOManager $ \iomgr -> do
+
+    let snocket :: SocketSnocket
+        snocket = socketSnocket iomgr
+
+    bracket
+      (open snocket (SocketFamily Socket.AF_INET))
+      (close snocket)
+      $ \sd -> do
+        -- bind the socket
+        muxAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+        Socket.setSocketOption sd Socket.ReuseAddr 1
+        Socket.bind sd (Socket.addrAddress muxAddress)
+        Socket.listen sd 1
+
+        withAsync
+          (
+              -- accept a connection and start mux on it
+              bracket
+                (runAccept $ accept snocket sd)
+                (\(sd', _, _) -> Socket.close sd')
+                (\(sd', _, _) ->
+                  let sduTimeout = if rerr == SendSDUTimeout then 0.10
+                                                             else (-1) -- No timeout
+                      bearer = Mx.socketAsMuxBearer sduTimeout nullTracer sd'
+                      blob = BL.pack $ replicate 0xffff 0xa5 in
+                  withTimeoutSerial $ \timeout ->
+                    -- send maximum mux sdus until we've filled the window.
+                    replicateM 100 $ do
+                      void $ write bearer timeout (wrap blob ModeResponder (MiniProtocolNum 0))
+                )
+
+          )
+          $ \muxAsync -> do
+
+
+          sd' <- openToConnect snocket (Socket.addrAddress muxAddress)
+          -- connect to muxAddress
+          _ <- connect snocket sd' (Socket.addrAddress muxAddress)
+
+#if defined(mingw32_HOST_OS)
+          Win32.Async.sendAll sd' $ BL.singleton 0xa
+#else
+          Socket.sendAll sd' $ BL.singleton 0xa
+#endif
+
+          if rerr ==SendSocketClosed then Socket.close sd'
+                                     else threadDelay 0.2
+
+          res <- waitCatch muxAsync
+          result <- case res of
+              Left e  ->
+                  case fromException e of
+                        Just me -> return $
+                            case Mx.errorType me of
+                                 Mx.MuxIOException _ -> rerr === SendSocketClosed
+                                 MuxSDUWriteTimeout  -> rerr === SendSDUTimeout
+                                 _                   -> property False
+                        Nothing -> return $ counterexample (show e) False
+              Right _ -> return $ property False
+
+          when (rerr /= SendSocketClosed) $ Socket.close sd'
+          return result
+  where
+      -- wrap a 'ByteString' as 'MuxSDU'
+      wrap :: BL.ByteString -> MiniProtocolMode -> MiniProtocolNum -> MuxSDU
+      wrap blob mode protocolNum = MuxSDU {
+            -- it will be filled when the 'MuxSDU' is send by the 'bearer'
+            msHeader = MuxSDUHeader {
+                mhTimestamp = RemoteClockModel 0,
+                mhNum       = protocolNum,
+                mhMode      = mode,
+                mhLength    = fromIntegral $ BL.length blob
+              },
+            msBlob = blob
+          }
 
 prop_socket_client_connect_error :: (Int -> Int -> (Int, Int))
                                  -> [Int]
