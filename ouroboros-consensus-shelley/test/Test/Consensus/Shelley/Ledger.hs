@@ -262,7 +262,7 @@ genHash proxy = mkDummyHash proxy <$> arbitrary
 
 instance Arbitrary Block where
   arbitrary = do
-    let Gen.KeySpace_ { Gen.ksCoreNodes } = Gen.Preset.keySpace
+    let Gen.KeySpace_ { Gen.ksCoreNodes } = Gen.geKeySpace Gen.Preset.genEnv
     prevHash         <- unShelleyHash <$> arbitrary
     allPoolKeys      <- elements (map snd ksCoreNodes)
     txs              <- return [] -- arbitrary
@@ -517,7 +517,7 @@ instance Arbitrary (SL.EpochState TPraosMockCrypto) where
     <*> arbitrary
 
 instance Arbitrary SL.PParams where
-  arbitrary = Gen.genPParams
+  arbitrary = Gen.genPParams (Gen.geConstants Gen.Preset.genEnv)
 
 instance Crypto c => Arbitrary (SL.GenDelegs c) where
   arbitrary = SL.GenDelegs <$> arbitrary

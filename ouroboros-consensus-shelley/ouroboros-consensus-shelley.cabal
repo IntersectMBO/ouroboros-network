@@ -92,6 +92,7 @@ test-suite test
                      , cryptonite        >=0.25  && <0.26
                      , generic-random
                      , hedgehog-quickcheck
+                     , mtl
                      , QuickCheck
                      , time
                      , tasty

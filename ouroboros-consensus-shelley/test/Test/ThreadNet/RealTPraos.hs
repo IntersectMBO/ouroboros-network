@@ -1,7 +1,10 @@
+{-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE PatternSynonyms          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TypeFamilies             #-}
 module Test.ThreadNet.RealTPraos (
     tests
   ) where
@@ -22,7 +25,8 @@ import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
 import           Cardano.Crypto.KES.Class (SignKeyKES, deriveVerKeyKES,
                      genKeyKES)
-import           Cardano.Crypto.VRF.Class (SignKeyVRF, genKeyVRF)
+import           Cardano.Crypto.VRF.Class (SignKeyVRF, deriveVerKeyVRF,
+                     genKeyVRF)
 import           Cardano.Slotting.Slot (EpochSize (..))
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
@@ -41,17 +45,23 @@ import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
 
+import qualified Shelley.Spec.Ledger.Coin as SL
 import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
+import qualified Shelley.Spec.Ledger.TxData as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto (DSIGN)
 
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
-import           Test.ThreadNet.TxGen.Shelley ()
+import qualified Test.Shelley.Spec.Ledger.Generator.Constants as Gen
+import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
+import qualified Test.Shelley.Spec.Ledger.Generator.Presets as Gen.Presets
+import           Test.ThreadNet.TxGen.Shelley (ShelleyTxGenExtra (..))
 
 tests :: TestTree
 tests = testGroup "RealTPraos"
@@ -95,7 +105,24 @@ prop_simple_real_tpraos_convergence k
                   genesisConfig
                   (coreNodes !! fromIntegral nid)
             , rekeying    = Nothing
+            , txGenExtra  = ShelleyTxGenExtra $ Gen.GenEnv keySpace constants
             }
+
+    constants :: Gen.Constants
+    constants = Gen.defaultConstants
+      { Gen.frequencyMIRCert = 0
+      }
+
+    keySpace :: Gen.KeySpace
+    keySpace = Gen.KeySpace
+        (cnkiCoreNode <$> cn)
+        (ksKeyPairs <> (cnkiKeyPair <$> cn))
+        ksMSigScripts
+        ksVRFKeyPairs
+      where
+        cn = coreNodeKeys <$> coreNodes
+        Gen.KeySpace_ { ksKeyPairs, ksMSigScripts, ksVRFKeyPairs } =
+          Gen.Presets.keySpace constants
 
     initialKESPeriod :: SL.KESPeriod
     initialKESPeriod = SL.KESPeriod 0
@@ -117,10 +144,45 @@ prop_simple_real_tpraos_convergence k
 data CoreNode c = CoreNode {
       cnGenesisKey  :: !(SignKeyDSIGN (SL.DSIGN c))
     , cnDelegateKey :: !(SignKeyDSIGN (SL.DSIGN c))
+      -- ^ Cold delegate key. The hash of the corresponding verification
+      -- (public) key will be used as the payment credential.
+    , cnStakingKey  :: !(SignKeyDSIGN (SL.DSIGN c))
+      -- ^ The hash of the corresponding verification (public) key will be
+      -- used as the staking credential.
     , cnVRF         :: !(SignKeyVRF   (SL.VRF   c))
     , cnKES         :: !(SignKeyKES   (SL.KES   c))
     , cnOCert       :: !(SL.OCert               c)
     }
+
+data CoreNodeKeyInfo = CoreNodeKeyInfo
+  { cnkiKeyPair
+      ::  ( SL.KeyPair 'SL.Regular TPraosMockCrypto
+          , SL.KeyPair 'SL.Regular TPraosMockCrypto
+          )
+  , cnkiCoreNode :: (SL.KeyPair 'SL.Genesis TPraosMockCrypto, Gen.AllPoolKeys)
+  }
+
+coreNodeKeys
+  :: CoreNode TPraosMockCrypto
+  -> CoreNodeKeyInfo
+coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey, cnVRF, cnKES}
+  = CoreNodeKeyInfo
+      { cnkiCoreNode =
+          ( mkDSIGNKeyPair cnGenesisKey
+          , Gen.AllPoolKeys
+            { Gen.cold = mkDSIGNKeyPair cnDelegateKey
+            , Gen.vrf  = mkVRFKeyPair cnVRF
+            , Gen.hot  = [(SL.KESPeriod 100, mkKESKeyPair cnKES)]
+            , Gen.hk   = SL.hashKey (SL.DiscVKey $ deriveVerKeyDSIGN cnDelegateKey)
+            }
+          )
+      , cnkiKeyPair = (mkDSIGNKeyPair cnDelegateKey, mkDSIGNKeyPair cnStakingKey)
+      }
+  where
+    mkDSIGNKeyPair k = SL.KeyPair (SL.DiscVKey $ deriveVerKeyDSIGN k)
+                                  (SL.SKey k)
+    mkVRFKeyPair k = (k, deriveVerKeyVRF k)
+    mkKESKeyPair k = (SL.SKeyES k, SL.VKeyES $ deriveVerKeyKES k)
 
 genCoreNode
   :: (MonadRandom m, TPraosCrypto c)
@@ -130,6 +192,7 @@ genCoreNode
 genCoreNode maxKESEvolutions startKESPeriod = do
     genKey <- genKeyDSIGN
     delKey <- genKeyDSIGN
+    stkKey <- genKeyDSIGN
     vrfKey <- genKeyVRF
     kesKey <- genKeyKES (fromIntegral maxKESEvolutions)
     let kesPub = SL.VKeyES $ deriveVerKeyKES kesKey
@@ -146,6 +209,7 @@ genCoreNode maxKESEvolutions startKESPeriod = do
     return CoreNode {
         cnGenesisKey  = genKey
       , cnDelegateKey = delKey
+      , cnStakingKey  = stkKey
       , cnVRF         = vrfKey
       , cnKES         = kesKey
       , cnOCert       = ocert
@@ -172,13 +236,21 @@ mkGenesisConfig k maxKESEvolutions coreNodes = ShelleyGenesis {
     , sgSlotLength            = tpraosSlotLength
     , sgUpdateQuorum          = 1  -- TODO
     , sgMaxMajorPV            = 1000 -- TODO
-    , sgMaxLovelaceSupply     = 1000 -- TODO
-    , sgMaxBodySize           = 1000 -- TODO
+    , sgMaxLovelaceSupply     = maxLovelaceSupply
+    , sgMaxBodySize           = 10000 -- TODO
     , sgMaxHeaderSize         = 1000 -- TODO
     , sgGenDelegs             = coreNodesToGenesisMapping
-    , sgInitialFunds          = Map.empty -- TODO
+    , sgInitialFunds          = initialFunds
     }
   where
+    initialLovelacePerCoreNode :: Word64
+    initialLovelacePerCoreNode = 1000
+
+     -- TODO
+    maxLovelaceSupply :: Word64
+    maxLovelaceSupply =
+      fromIntegral (length coreNodes) * initialLovelacePerCoreNode
+
     coreNodesToGenesisMapping :: Map (SL.GenKeyHash c) (SL.KeyHash c)
     coreNodesToGenesisMapping  = Map.fromList
       [ ( SL.GenKeyHash $ SL.hash $ deriveVerKeyDSIGN cnGenesisKey
@@ -186,6 +258,19 @@ mkGenesisConfig k maxKESEvolutions coreNodes = ShelleyGenesis {
         )
       | CoreNode { cnGenesisKey, cnDelegateKey } <- coreNodes
       ]
+
+    initialFunds :: Map (SL.Addr c) SL.Coin
+    initialFunds = Map.fromList
+      [ (addr, coin)
+      | CoreNode { cnDelegateKey, cnStakingKey } <- coreNodes
+      , let addr = SL.AddrBase
+              (mkCredential cnDelegateKey)
+              (mkCredential cnStakingKey)
+            coin = SL.Coin $ fromIntegral initialLovelacePerCoreNode
+      ]
+
+    mkCredential :: SignKeyDSIGN (DSIGN c) -> SL.Credential c
+    mkCredential = SL.KeyHashObj . SL.hashKey . SL.VKey . deriveVerKeyDSIGN
 
 mkProtocolRealTPraos
   :: forall c. Crypto c

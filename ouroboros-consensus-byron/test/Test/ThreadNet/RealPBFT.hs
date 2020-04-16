@@ -780,6 +780,7 @@ prop_simple_real_pbft_convergence produceEBBs k
                   withSeed initSeed $   -- seems fine to reuse seed for this
                   sequence $ let ms = Crypto.genKeyDSIGN Stream.:< ms in ms
               }
+            , txGenExtra = ()
             }
 
     -- Byron has a hard-coded relation between k and the size of an epoch
