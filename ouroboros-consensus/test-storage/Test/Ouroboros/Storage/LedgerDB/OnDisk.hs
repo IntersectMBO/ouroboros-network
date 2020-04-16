@@ -551,7 +551,6 @@ dbConf :: forall m t. (IOLike m, LUT t)
        => StandaloneDB m t -> LedgerDbConf' m t
 dbConf DB{..} = LedgerDbConf {..}
   where
-    ldbConfGenesis = return ledgerGenesis
     ldbConfApply   = ledgerApply
     ldbConfReapply = \b l -> case ledgerApply b l of
                                Left err -> error $ unexpectedLedgerError err
@@ -661,6 +660,7 @@ runDB standalone@DB{..} cmd =
             S.decode
             (dbLgrParams dbEnv)
             conf
+            (return ledgerGenesis)
             streamAPI
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
         return $ Restored (fromInitLog initLog, ledgerDbCurrent db)

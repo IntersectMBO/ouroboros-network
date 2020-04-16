@@ -834,8 +834,7 @@ newtype DemoErr    = DE (Int, Int)    deriving (Show)
 
 demoConf :: LedgerDbConf Identity DemoLedger DemoRef DemoBlock DemoErr
 demoConf = LedgerDbConf {
-      ldbConfGenesis = Identity $ DL ('a', 0)
-    , ldbConfResolve = \(DR b) -> Identity (DB b)
+      ldbConfResolve = \(DR b) -> Identity (DB b)
     , ldbConfApply   = \(DB r@(_, n)) (DL (_, l)) ->
         if n > l then Right $ DL r
                  else Left  $ DE (n, l)

@@ -206,8 +206,7 @@ initLgrDB k chain = do
 
     conf :: LgrDBConf m TestBlock
     conf = LedgerDbConf
-      { ldbConfGenesis = return testInitExtLedger
-      , ldbConfApply   = runExcept .: tickThenApply cfg
+      { ldbConfApply   = runExcept .: tickThenApply cfg
       , ldbConfReapply = tickThenReapply cfg
       , ldbConfResolve = return . (blockMapping Map.!)
       }

@@ -409,7 +409,7 @@ applyMany :: [Block] -> Ledger -> Ledger
 applyMany = repeatedly apply
 
 callbacks :: PureLedgerDbConf Ledger Block
-callbacks = pureLedgerDbConf initLedger apply
+callbacks = pureLedgerDbConf apply
 
 {-------------------------------------------------------------------------------
   Orphan Arbitrary instances

@@ -23,14 +23,8 @@ import           Ouroboros.Consensus.Util ((.:))
 
 -- | Callbacks required by the ledger DB
 data LedgerDbConf m l r b e = LedgerDbConf {
-      -- | Get the genesis ledger
-      --
-      -- This is monadic because constructing the ledger state involves reading
-      -- configuration files etc. It is also rarely called.
-      ldbConfGenesis :: m l
-
       -- | Apply a block (passed by value)
-    , ldbConfApply   :: b -> l -> Either e l
+      ldbConfApply   :: b -> l -> Either e l
 
       -- | Apply a previously applied block
       --
@@ -66,10 +60,9 @@ data LedgerDbConf m l r b e = LedgerDbConf {
 -- | Ledger callbacks with no errors and where blocks are always passed by value
 type PureLedgerDbConf l b = LedgerDbConf Identity l b b Void
 
-pureLedgerDbConf :: l -> (b -> l -> l) -> PureLedgerDbConf l b
-pureLedgerDbConf l f = LedgerDbConf {
-      ldbConfGenesis = Identity l
-    , ldbConfResolve = Identity
+pureLedgerDbConf :: (b -> l -> l) -> PureLedgerDbConf l b
+pureLedgerDbConf f = LedgerDbConf {
+      ldbConfResolve = Identity
     , ldbConfApply   = Right .: f
     , ldbConfReapply = f
     }

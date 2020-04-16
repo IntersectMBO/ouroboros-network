@@ -249,8 +249,7 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
 
     lgrDbConf :: LgrDBConf m blk
     lgrDbConf = LedgerDbConf {
-        ldbConfGenesis = lgrGenesis
-      , ldbConfApply   = apply
+        ldbConfApply   = apply
       , ldbConfReapply = reapply
       , ldbConfResolve = getBlock
       }
@@ -284,6 +283,7 @@ initFromDisk LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure $ do
         (decodeRealPoint lgrDecodeHash)
         lgrParams
         lgrDbConf
+        lgrGenesis
         (streamAPI immDB)
     return (db, replayed)
   where

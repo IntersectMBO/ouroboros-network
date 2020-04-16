@@ -164,9 +164,18 @@ initLedgerDB :: forall m h l r b e. (IOLike m, HasCallStack)
              -> (forall s. Decoder s r)
              -> LedgerDbParams
              -> LedgerDbConf m l r b e
+             -> m l -- ^ Genesis ledger state
              -> StreamAPI m r b
              -> m (InitLog r, LedgerDB l r, Word64)
-initLedgerDB replayTracer tracer hasFS decLedger decRef params conf streamAPI = do
+initLedgerDB replayTracer
+             tracer
+             hasFS
+             decLedger
+             decRef
+             params
+             conf
+             getGenesisLedger
+             streamAPI = do
     snapshots <- listSnapshots hasFS
     tryNewestFirst id snapshots
   where
@@ -176,7 +185,7 @@ initLedgerDB replayTracer tracer hasFS decLedger decRef params conf streamAPI = 
     tryNewestFirst acc [] = do
         -- We're out of snapshots. Start at genesis
         traceWith replayTracer $ ReplayFromGenesis ()
-        initDb <- ledgerDbFromGenesis params <$> ldbConfGenesis conf
+        initDb <- ledgerDbFromGenesis params <$> getGenesisLedger
         ml     <- runExceptT $ initStartingWith replayTracer conf streamAPI initDb
         case ml of
           Left _  -> error "invariant violation: invalid current chain"
