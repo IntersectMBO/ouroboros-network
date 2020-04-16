@@ -16,6 +16,7 @@
 --
 module Ouroboros.Network.Protocol.LocalStateQuery.Type where
 
+import           Data.Kind (Type)
 import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Block (Point, StandardHash)
 
@@ -26,7 +27,7 @@ import           Ouroboros.Network.Block (Point, StandardHash)
 -- It is parametrised over the type of block (for points), the type of queries
 -- and query results.
 --
-data LocalStateQuery block query where
+data LocalStateQuery block (query :: Type -> Type) where
 
   -- | The client has agency. It can ask to acquire a state or terminate.
   --

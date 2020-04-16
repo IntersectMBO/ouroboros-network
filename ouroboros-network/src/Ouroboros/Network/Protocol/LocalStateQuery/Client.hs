@@ -21,13 +21,14 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Client (
 
 import           Control.Monad (forever)
 import           Control.Monad.Class.MonadTimer
+import           Data.Kind (Type)
 import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Block (Point)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 
-newtype LocalStateQueryClient block query m a = LocalStateQueryClient {
+newtype LocalStateQueryClient block (query :: Type -> Type) m a = LocalStateQueryClient {
       runLocalStateQueryClient :: m (ClientStIdle block query m a)
     }
 
@@ -94,7 +95,7 @@ data ClientStQuerying block query m a result = ClientStQuerying {
 -- client side of the 'LocalStateQuery' protocol.
 --
 localStateQueryClientPeer
-  :: forall block query m a.
+  :: forall block (query :: Type -> Type) m a.
      Monad m
   => LocalStateQueryClient block query m a
   -> Peer (LocalStateQuery block query) AsClient StIdle m a
