@@ -215,3 +215,6 @@ shelleyAddHeaderEnvelope = id
 
 instance Crypto c => Condense (ShelleyBlock c) where
   condense = show . shelleyBlockRaw
+
+instance Crypto c => Condense (Header (ShelleyBlock c)) where
+  condense = show . shelleyHeaderRaw
