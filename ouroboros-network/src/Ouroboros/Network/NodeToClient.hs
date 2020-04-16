@@ -43,6 +43,7 @@ module Ouroboros.Network.NodeToClient (
   -- * Re-exported clients
   , chainSyncClientNull
   , localTxSubmissionClientNull
+  , localStateQueryClientNull
 
   -- * Re-exported network interface
   , IOManager (..)
@@ -51,6 +52,13 @@ module Ouroboros.Network.NodeToClient (
   , LocalSnocket
   , localSnocket
   , LocalAddress
+
+    -- * Versions
+  , Versions (..)
+  , versionedNodeToClientProtocols
+  , simpleSingletonVersions
+  , foldMapVersions
+  , combineVersions
 
   -- * Re-exports
   , ConnectionId (..)
@@ -95,6 +103,7 @@ import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Tracers
 import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
+import           Ouroboros.Network.Protocol.LocalStateQuery.Client (localStateQueryClientNull)
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import qualified Ouroboros.Network.Protocol.Handshake.Version as V
@@ -180,6 +189,26 @@ maximumMiniProtocolLimits =
     MiniProtocolLimits {
       maximumIngressQueue = 0xffffffff
     }
+
+
+
+-- | 'Versions' containing a single version of 'nodeToClientProtocols'.
+--
+versionedNodeToClientProtocols
+    :: NodeToClientVersion
+    -> NodeToClientVersionData
+    -> NodeToClientProtocols appType bytes m a b
+    -> Versions NodeToClientVersion
+                DictVersion
+                (ConnectionId LocalAddress ->
+                   OuroborosApplication appType bytes m a b)
+versionedNodeToClientProtocols versionNumber versionData protocols =
+    simpleSingletonVersions
+      versionNumber
+      versionData
+      (DictVersion nodeToClientCodecCBORTerm)
+      (const $ nodeToClientProtocols protocols versionNumber)
+
 
 -- | Enumeration of node to client protocol versions.
 --

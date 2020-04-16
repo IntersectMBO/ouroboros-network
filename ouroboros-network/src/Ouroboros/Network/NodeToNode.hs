@@ -54,6 +54,12 @@ module Ouroboros.Network.NodeToNode (
   , dnsSubscriptionWorker
   , dnsSubscriptionWorker_V1
 
+    -- ** Versions
+  , Versions (..)
+  , simpleSingletonVersions
+  , foldMapVersions
+  , combineVersions
+
   -- * Re-exports
   , ConnectionId (..)
   , RemoteConnectionId

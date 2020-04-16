@@ -22,10 +22,16 @@ module Ouroboros.Network.Protocol.Handshake.Version
   -- * Simple or no versioning
   , simpleSingletonVersions
   , unversionedProtocol
+  , foldMapVersions
+  , combineVersions
+  , foldMapVersions'
+  , combineVersions'
   ) where
 
 import Data.Map (Map)
 import Data.Text (Text)
+import           Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Text as T
 import qualified Data.Map as Map
 import Data.Typeable ((:~:)(Refl), Typeable, eqT)
@@ -71,6 +77,35 @@ instance Functor (Versions vNum extra) where
 
 data Sigma f where
   Sigma :: !t -> !(f t) -> Sigma f
+
+
+-- | Useful for folding a non-empty list of `Versions`.
+--
+-- A 'foldMap' version for 'Semigroup's which is restricted to 'Versions'.
+--
+foldMapVersions :: Ord vNum
+                => (x -> Versions vNum extra r)
+                -> NonEmpty x
+                -> Versions vNum extra r
+foldMapVersions f = foldMapVersions' f . NonEmpty.toList
+
+combineVersions :: Ord vNum
+                => NonEmpty (Versions vNum extra r)
+                -> Versions vNum extra r
+combineVersions = foldMapVersions id
+
+foldMapVersions' :: Ord vNum
+                 => (x -> Versions vNum extra r)
+                 -> [x] -- ^ a non empty list of 'Versions'
+                 -> Versions vNum extra r
+foldMapVersions' f [x] = f x
+foldMapVersions' f (x : xs) = f x <> foldMapVersions' f xs
+
+combineVersions' :: Ord vNum
+                 => [Versions vNum extra r]
+                 -- ^ non empty list of 'Versions'
+                 -> Versions vNum extra r
+combineVersions' = foldMapVersions' id
 
 
 -- |

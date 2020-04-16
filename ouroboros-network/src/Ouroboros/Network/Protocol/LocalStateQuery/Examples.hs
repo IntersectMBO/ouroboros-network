@@ -24,7 +24,7 @@ localStateQueryClient
   => [(Point block, query result)]
   -> LocalStateQueryClient block query m
                            [(Point block, Either AcquireFailure result)]
-localStateQueryClient = LocalStateQueryClient . goIdle []
+localStateQueryClient = LocalStateQueryClient . pure . goIdle []
   where
     goIdle
       :: [(Point block, Either AcquireFailure result)]  -- ^ Accumulator

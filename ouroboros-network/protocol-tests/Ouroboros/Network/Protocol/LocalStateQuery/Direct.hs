@@ -13,8 +13,10 @@ direct
   => LocalStateQueryClient block query m a
   -> LocalStateQueryServer block query m b
   -> m (a, b)
-direct (LocalStateQueryClient client) (LocalStateQueryServer mserver) =
-    mserver >>= directIdle client
+direct (LocalStateQueryClient mclient) (LocalStateQueryServer mserver) = do
+    client <- mclient
+    server <- mserver
+    directIdle client server
   where
     directIdle
       :: ClientStIdle block query m a

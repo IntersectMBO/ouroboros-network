@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE MonadComprehensions #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -46,7 +47,8 @@ import           Ouroboros.Network.NodeToClient (DictVersion (..),
                      nodeToClientCodecCBORTerm)
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
                      NodeToNodeVersionData (..), RemoteConnectionId,
-                     defaultMiniProtocolParameters, nodeToNodeCodecCBORTerm)
+                     defaultMiniProtocolParameters, nodeToNodeCodecCBORTerm,
+                     combineVersions)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -282,9 +284,6 @@ run RunNodeArgs{..} = do
             ]
         , daErrorPolicies = consensusErrorPolicy (Proxy @blk)
         }
-
-    combineVersions :: Semigroup a => [a] -> a
-    combineVersions = foldr1 (<>)
 
 openChainDB
   :: forall blk. RunNode blk
