@@ -43,6 +43,7 @@ module Ouroboros.Network.NodeToClient (
   -- * Re-exported clients
   , chainSyncClientNull
   , localTxSubmissionClientNull
+  , localStateQueryClientNull
 
   -- * Re-exported network interface
   , IOManager (..)
@@ -104,6 +105,7 @@ import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Tracers
 import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
+import           Ouroboros.Network.Protocol.LocalStateQuery.Client (localStateQueryClientNull)
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import qualified Ouroboros.Network.Protocol.Handshake.Version as V
