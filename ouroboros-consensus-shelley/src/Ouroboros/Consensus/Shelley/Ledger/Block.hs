@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -159,7 +160,9 @@ instance Crypto c => StandardHash (ShelleyBlock c)
 
 instance Crypto c => HasAnnTip (ShelleyBlock c)
 
-instance Crypto c => ValidateEnvelope (ShelleyBlock c)
+-- The 'ValidateEnvelope' instance lives in the
+-- "Ouroboros.Consensus.Shelley.Ledger.Ledger" module because of the
+-- dependency on the 'LedgerConfig'.
 
 {-------------------------------------------------------------------------------
   Conversions
