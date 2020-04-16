@@ -1,6 +1,8 @@
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -40,10 +42,10 @@ module Ouroboros.Network.NodeToClient (
   , ncSubscriptionWorker_V1
   , ncSubscriptionWorker_V2
 
-  -- * Re-exported clients
-  , chainSyncClientNull
-  , localTxSubmissionClientNull
-  , localStateQueryClientNull
+  -- * Null Protocol Peers
+  , chainSyncPeerNull
+  , localStateQueryPeerNull
+  , localTxSubmissionPeerNull
 
   -- * Re-exported network interface
   , IOManager (..)
@@ -51,7 +53,7 @@ module Ouroboros.Network.NodeToClient (
   , withIOManager
   , LocalSnocket
   , localSnocket
-  , LocalAddress
+  , LocalAddress (..)
 
     -- * Versions
   , Versions (..)
@@ -78,12 +80,15 @@ module Ouroboros.Network.NodeToClient (
   , HandshakeTr
   ) where
 
-import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
+import qualified Control.Concurrent.Async as Async
+import           Control.Monad (forever)
+import           Control.Monad.Class.MonadTimer
 import           Data.Bits (setBit, clearBit, testBit)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor.Identity (Identity (..))
 import           Data.Functor.Contravariant (contramap)
+import           Data.Kind (Type)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Time.Clock
@@ -93,6 +98,8 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
+
+import           Network.TypedProtocol (Peer, PeerRole (AsClient))
 import           Network.Mux (WithMuxBearer (..))
 
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
@@ -101,9 +108,12 @@ import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Tracers
-import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
-import           Ouroboros.Network.Protocol.LocalStateQuery.Client (localStateQueryClientNull)
+import qualified Ouroboros.Network.Protocol.ChainSync.Type   as ChainSync
+import           Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
+import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Type   as LocalTxSubmission
+import           Ouroboros.Network.Protocol.LocalTxSubmission.Client as LocalTxSubmission
+import qualified Ouroboros.Network.Protocol.LocalStateQuery.Type   as LocalStateQuery
+import           Ouroboros.Network.Protocol.LocalStateQuery.Client as LocalStateQuery
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import qualified Ouroboros.Network.Protocol.Handshake.Version as V
@@ -673,3 +683,35 @@ networkErrorPolicies = ErrorPolicies
     shortDelay = 20 -- seconds
 
 type LocalConnectionId = ConnectionId LocalAddress
+
+--
+-- Null Protocol Peers
+--
+
+chainSyncPeerNull
+    :: forall (header :: Type) (tip :: Type) m a. MonadTimer m
+    => Peer (ChainSync.ChainSync header tip)
+            AsClient ChainSync.StIdle m a
+chainSyncPeerNull =
+    ChainSync.chainSyncClientPeer
+      (ChainSync.ChainSyncClient untilTheCowsComeHome )
+
+localStateQueryPeerNull
+    :: forall (block :: Type) (query :: Type -> Type) m a. MonadTimer m
+    => Peer (LocalStateQuery.LocalStateQuery block query)
+            AsClient LocalStateQuery.StIdle m a
+localStateQueryPeerNull =
+    LocalStateQuery.localStateQueryClientPeer
+      (LocalStateQuery.LocalStateQueryClient untilTheCowsComeHome)
+
+localTxSubmissionPeerNull
+    :: forall (tx :: Type) (reject :: Type) m a. MonadTimer m
+    => Peer (LocalTxSubmission.LocalTxSubmission tx reject)
+            AsClient LocalTxSubmission.StIdle m a
+localTxSubmissionPeerNull =
+    LocalTxSubmission.localTxSubmissionClientPeer
+      (LocalTxSubmission.LocalTxSubmissionClient untilTheCowsComeHome)
+
+-- ;)
+untilTheCowsComeHome :: MonadTimer m => m a
+untilTheCowsComeHome = forever $ threadDelay 43200 {- day in seconds -}

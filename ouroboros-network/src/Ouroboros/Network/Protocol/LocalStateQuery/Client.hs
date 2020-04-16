@@ -36,6 +36,8 @@ localStateQueryClientNull :: MonadTimer m => LocalStateQueryClient block query m
 localStateQueryClientNull =
     LocalStateQueryClient $ forever $ threadDelay 43200 {- day in seconds -}
 
+{-# DEPRECATED localStateQueryClientNull "Use Ouroboros.Network.NodeToClient.localStateQueryPeerNull" #-}
+
 -- | In the 'StIdle' protocol state, the client has agency and must send:
 --
 --  * a request to acquire a state
