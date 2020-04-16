@@ -32,6 +32,7 @@ module Ouroboros.Consensus.HeaderValidation (
   , HeaderEnvelopeError(..)
   , castHeaderEnvelopeError
   , ValidateEnvelope(..)
+  , defaultValidateEnvelope
     -- * Errors
   , HeaderError(..)
   , castHeaderError
@@ -286,35 +287,55 @@ class HasAnnTip blk => ValidateEnvelope blk where
                            -> WithOrigin (AnnTip blk)
                            -> Header blk
                            -> Except (HeaderEnvelopeError blk) ()
-  validateEnvelope _cfg oldTip hdr = do
-      when (actualBlockNo /= expectedBlockNo) $
-        throwError $ UnexpectedBlockNo expectedBlockNo actualBlockNo
-      when (actualSlotNo < expectedSlotNo) $
-        throwError $ UnexpectedSlotNo expectedSlotNo actualSlotNo
-      when (actualPrevHash /= expectedPrevHash) $
-        throwError $ UnexpectedPrevHash expectedPrevHash actualPrevHash
-    where
-      actualSlotNo   :: SlotNo
-      actualBlockNo  :: BlockNo
-      actualPrevHash :: ChainHash blk
+  validateEnvelope _cfg = defaultValidateEnvelope
 
-      actualSlotNo   =            blockSlot     hdr
-      actualBlockNo  =            blockNo       hdr
-      actualPrevHash = castHash $ blockPrevHash hdr
+-- | Default implementation for 'validateEnvelope'.
+--
+-- Is provided as a separate function to make it easier to extend the
+-- 'validateEnvelope' implemention with checks on top of the default ones.
+--
+-- Using the other members of 'ValidateEnvelope', it checks:
+--
+-- * whether block numbers are /strictly increasing/, starting from
+--  'firstBlockNo'.
+-- * whether slot number are /increasing/, starting from
+--  'minimumPossibleSlotNo'.
+-- * whether the previous hash matches the hash of the previous header
+defaultValidateEnvelope
+  :: forall blk. (HasHeader (Header blk), ValidateEnvelope blk)
+  => WithOrigin (AnnTip blk)
+  -> Header blk
+  -> Except (HeaderEnvelopeError blk) ()
+defaultValidateEnvelope oldTip hdr = do
+    when (actualBlockNo /= expectedBlockNo) $
+      throwError $ UnexpectedBlockNo expectedBlockNo actualBlockNo
+    when (actualSlotNo < expectedSlotNo) $
+      throwError $ UnexpectedSlotNo expectedSlotNo actualSlotNo
+    when (actualPrevHash /= expectedPrevHash) $
+      throwError $ UnexpectedPrevHash expectedPrevHash actualPrevHash
+  where
+    actualSlotNo   :: SlotNo
+    actualBlockNo  :: BlockNo
+    actualPrevHash :: ChainHash blk
 
-      expectedSlotNo   :: SlotNo           -- Lower bound only
-      expectedBlockNo  :: BlockNo
-      expectedPrevHash :: ChainHash blk
+    actualSlotNo   =            blockSlot     hdr
+    actualBlockNo  =            blockNo       hdr
+    actualPrevHash = castHash $ blockPrevHash hdr
 
-      (expectedSlotNo, expectedBlockNo, expectedPrevHash) =
-          case oldTip of
-            At (AnnTip s h b _) -> ( succ s, succ b, BlockHash h )
-            Origin              -> ( minimumPossibleSlotNo proxy
-                                   , firstBlockNo          proxy
-                                   , GenesisHash
-                                   )
-        where
-          proxy = Proxy @blk
+    expectedSlotNo   :: SlotNo           -- Lower bound only
+    expectedBlockNo  :: BlockNo
+    expectedPrevHash :: ChainHash blk
+
+    (expectedSlotNo, expectedBlockNo, expectedPrevHash) =
+        case oldTip of
+          At (AnnTip s h b _) -> ( succ s, succ b, BlockHash h )
+          Origin              -> ( minimumPossibleSlotNo proxy
+                                 , firstBlockNo          proxy
+                                 , GenesisHash
+                                 )
+      where
+        proxy = Proxy @blk
+
 
 {-------------------------------------------------------------------------------
   Errors
