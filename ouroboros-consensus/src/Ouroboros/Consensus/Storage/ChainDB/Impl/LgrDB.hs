@@ -37,15 +37,15 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , getDiskPolicy
     -- * Validation
   , validate
-  , ValidateResult
+  , ValidateResult(..)
     -- * Garbage collect points of previously applied blocks
   , garbageCollectPrevApplied
     -- * Re-exports
+  , ExceededRollback(..)
+  , LedgerDB.AnnLedgerError(..)
   , LedgerDbParams(..)
   , DiskPolicy (..)
   , DiskSnapshot
-  , LedgerDB.PushManyResult (..)
-  , LedgerDB.SwitchResult (..)
   , TraceEvent (..)
   , TraceReplayEvent (..)
     -- * Exported for testing purposes
@@ -94,8 +94,8 @@ import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Consensus.Storage.LedgerDB.Conf
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Apply (..),
-                     LedgerDbParams (..), RefOrVal (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
+                     ExceededRollback (..), LedgerDbParams (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot,
                      NextBlock (..), StreamAPI (..), TraceEvent (..),
@@ -111,7 +111,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 
 -- | Thin wrapper around the ledger database
 data LgrDB m blk = LgrDB {
-      conf           :: !(LgrDBConf m blk)
+      conf           :: !(LgrDBConf blk)
     , varDB          :: !(StrictTVar m (LedgerDB blk))
       -- ^ INVARIANT: the tip of the 'LedgerDB' is always in sync with the tip
       -- of the current chain of the ChainDB.
@@ -125,6 +125,8 @@ data LgrDB m blk = LgrDB {
       -- When a garbage-collection is performed on the VolatileDB, the points
       -- of the blocks eligible for garbage-collection should be removed from
       -- this set.
+    , resolveBlock   :: RealPoint blk -> m blk
+      -- ^ Read a block from disk
     , args           :: !(LgrDbArgs m blk)
       -- ^ The arguments used to open the 'LgrDB'. Needed for 'reopen'ing the
       -- 'LgrDB'.
@@ -138,8 +140,7 @@ deriving instance (IOLike m, LedgerSupportsProtocol blk)
 type LedgerDB blk = LedgerDB.LedgerDB (ExtLedgerState blk) (RealPoint blk)
 
 -- | Shorter synonym for the instantiated 'LedgerDbConf'.
-type LgrDBConf m blk =
-  LedgerDbConf m (ExtLedgerState blk) (RealPoint blk) blk (ExtValidationError blk)
+type LgrDBConf blk = LedgerDbConf (ExtLedgerState blk) blk (ExtValidationError blk)
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -232,6 +233,7 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
             conf           = lgrDbConf
           , varDB          = varDB
           , varPrevApplied = varPrevApplied
+          , resolveBlock   = getBlock
           , args           = args
           }
       , replayed
@@ -247,11 +249,10 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
             -> ExtLedgerState blk
     reapply = tickThenReapply lgrTopLevelConfig
 
-    lgrDbConf :: LgrDBConf m blk
+    lgrDbConf :: LgrDBConf blk
     lgrDbConf = LedgerDbConf {
         ldbConfApply   = apply
       , ldbConfReapply = reapply
-      , ldbConfResolve = getBlock
       }
 
 -- | Reopen the ledger DB
@@ -270,7 +271,7 @@ reopen LgrDB{..} immDB replayTracer = do
 initFromDisk :: forall blk m. (IOLike m, HasHeader blk, HasCallStack)
              => LgrDbArgs m blk
              -> Tracer m (TraceReplayEvent (RealPoint blk) ())
-             -> LgrDBConf m blk
+             -> LgrDBConf   blk
              -> ImmDB     m blk
              -> m (LedgerDB blk, Word64)
 initFromDisk LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure $ do
@@ -295,12 +296,13 @@ initFromDisk LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure $ do
                               lgrDecodeTipInfo
 
 -- | For testing purposes
-mkLgrDB :: LgrDBConf m blk
+mkLgrDB :: LgrDBConf blk
         -> StrictTVar m (LedgerDB blk)
         -> StrictTVar m (Set (RealPoint blk))
+        -> (RealPoint blk -> m blk)
         -> LgrDbArgs m blk
         -> LgrDB m blk
-mkLgrDB conf varDB varPrevApplied args = LgrDB {..}
+mkLgrDB conf varDB varPrevApplied resolveBlock args = LgrDB {..}
 
 {-------------------------------------------------------------------------------
   TraceReplayEvent decorator
@@ -334,9 +336,10 @@ getCurrentState LgrDB{..} = LedgerDB.ledgerDbCurrent <$> readTVar varDB
 
 getPastState :: (IOLike m, UpdateLedger blk)
              => LgrDB m blk -> Point blk -> m (Maybe (ExtLedgerState blk))
-getPastState LgrDB{..} p =
-        LedgerDB.ledgerDbPast conf (pointToWithOriginRealPoint p)
-    =<< atomically (readTVar varDB)
+getPastState LgrDB{..} p = do
+    db <- atomically $ readTVar varDB
+    LedgerDB.defaultResolveBlocks resolveBlock $
+      LedgerDB.ledgerDbPast conf (pointToWithOriginRealPoint p) db
 
 -- | PRECONDITION: The new 'LedgerDB' must be the result of calling either
 -- 'LedgerDB.ledgerDbSwitch' or 'LedgerDB.ledgerDbPushMany' on the current
@@ -376,8 +379,16 @@ getDiskPolicy LgrDB{ args = LgrDbArgs{..} } = lgrDiskPolicy
   Validation
 -------------------------------------------------------------------------------}
 
-type ValidateResult blk =
-  LedgerDB.SwitchResult (ExtValidationError blk) (ExtLedgerState blk) (RealPoint blk) 'False
+type AnnLedgerError blk =
+       LedgerDB.AnnLedgerError
+         (ExtLedgerState     blk)
+         (RealPoint          blk)
+         (ExtValidationError blk)
+
+data ValidateResult blk =
+    ValidateSuccessful       (LedgerDB       blk)
+  | ValidateLedgerError      (AnnLedgerError blk)
+  | ValidateExceededRollBack ExceededRollback
 
 validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
          => LgrDB m blk
@@ -389,29 +400,48 @@ validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
          -> [Header blk]
          -> m (ValidateResult blk)
 validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
-    blocks <- toBlocks hdrs <$> atomically (readTVar varPrevApplied)
-    res <- LedgerDB.ledgerDbSwitch conf numRollbacks blocks ledgerDB
+    aps <- mkAps hdrs <$> atomically (readTVar varPrevApplied)
+    res <- fmap rewrap $ LedgerDB.defaultResolveWithErrors resolveBlock $
+             LedgerDB.ledgerDbSwitch conf numRollbacks aps ledgerDB
     atomically $ modifyTVar varPrevApplied $
       addPoints (validBlockPoints res (map headerRealPoint hdrs))
     return res
   where
-    toBlocks :: [Header blk]
-             -> Set (RealPoint blk)
-             -> [(Apply 'False, RefOrVal (RealPoint blk) blk)]
-    toBlocks hdrs prevApplied =
-      [ ( if Set.member (headerRealPoint hdr) prevApplied
-          then Reapply else Apply
-        , toRefOrVal $ BlockCache.toHeaderOrBlock hdr blockCache)
-      | hdr <- hdrs ]
+    rewrap :: Either (AnnLedgerError blk) (Either  ExceededRollback (LedgerDB blk))
+           -> ValidateResult blk
+    rewrap (Left         e)  = ValidateLedgerError      e
+    rewrap (Right (Left  e)) = ValidateExceededRollBack e
+    rewrap (Right (Right l)) = ValidateSuccessful       l
+
+    mkAps :: forall n r l e b. (
+               r ~ RealPoint          blk
+             , l ~ ExtLedgerState     blk
+             , e ~ ExtValidationError blk
+             , b ~                    blk
+             )
+          => [Header blk]
+          -> Set r
+          -> [Ap n l r b e ( LedgerDB.ResolvesBlocks r b n
+                           , LedgerDB.ThrowsLedgerError l r e n
+                           )]
+    mkAps hdrs prevApplied =
+      [ case ( Set.member (headerRealPoint hdr) prevApplied
+             , BlockCache.lookup (headerHash hdr) blockCache
+             ) of
+          (False, Nothing)  ->          ApplyRef   (headerRealPoint hdr)
+          (True,  Nothing)  -> Weaken $ ReapplyRef (headerRealPoint hdr)
+          (False, Just blk) -> Weaken $ ApplyVal   (blockRealPoint blk) blk
+          (True,  Just blk) -> Weaken $ ReapplyVal (blockRealPoint blk) blk
+      | hdr <- hdrs
+      ]
 
     -- | Based on the 'ValidateResult', return the hashes corresponding to
     -- valid blocks.
-    validBlockPoints :: ValidateResult blk
-                     -> ([RealPoint blk] -> [RealPoint blk])
+    validBlockPoints :: ValidateResult blk -> [RealPoint blk] -> [RealPoint blk]
     validBlockPoints = \case
-      LedgerDB.MaximumRollbackExceeded _ _                              -> const []
-      LedgerDB.RollbackSuccessful (LedgerDB.ValidBlocks _)              -> id
-      LedgerDB.RollbackSuccessful (LedgerDB.InvalidBlock _ lastValid _) -> takeWhile (/= lastValid)
+      ValidateExceededRollBack _ -> const []
+      ValidateSuccessful       _ -> id
+      ValidateLedgerError      e -> takeWhile (/= LedgerDB.annLedgerErrRef e)
 
     addPoints :: [RealPoint blk]
               -> Set (RealPoint blk) -> Set (RealPoint blk)
@@ -470,12 +500,3 @@ wrapFailure k = catch k rethrow
   where
     rethrow :: FsError -> m x
     rethrow err = throwM $ LgrDbFailure err
-
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
-toRefOrVal :: (HasHeader blk, HasHeader (Header blk))
-           => Either (Header blk) blk -> RefOrVal (RealPoint blk) blk
-toRefOrVal (Left  hdr) = Ref (headerRealPoint hdr)
-toRefOrVal (Right blk) = Val (blockRealPoint  blk) blk

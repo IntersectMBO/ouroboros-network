@@ -5,24 +5,16 @@
 
 module Ouroboros.Consensus.Storage.LedgerDB.Conf (
     LedgerDbConf(..)
-    -- * Support for tests
-  , PureLedgerDbConf
-  , pureLedgerDbConf
   ) where
 
-import           Data.Functor.Identity
-import           Data.Void
-
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
-
-import           Ouroboros.Consensus.Util ((.:))
 
 {-------------------------------------------------------------------------------
   Callbacks required by the ledger DB
 -------------------------------------------------------------------------------}
 
 -- | Callbacks required by the ledger DB
-data LedgerDbConf m l r b e = LedgerDbConf {
+data LedgerDbConf l b e = LedgerDbConf {
       -- | Apply a block (passed by value)
       ldbConfApply   :: b -> l -> Either e l
 
@@ -38,31 +30,5 @@ data LedgerDbConf m l r b e = LedgerDbConf {
       -- We do not have sufficient context in the ledger DB to /verify/ that
       -- when we reapply a block we are applying it to the correct ledger.
     , ldbConfReapply :: b -> l -> l
-
-      -- | Resolve a block
-      --
-      -- Resolving a block reference to the actual block lives in @m@ because
-      -- it might need to read the block from disk (and can therefore not be
-      -- done inside an STM transaction).
-      --
-      -- NOTE: The ledger DB will only ask the 'ChainDB' for blocks it knows
-      -- must exist. If the 'ChainDB' is unable to fulfill the request, data
-      -- corruption must have happened and the 'ChainDB' should trigger
-      -- validation mode.
-    , ldbConfResolve :: r -> m b
     }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LedgerDbConf" (LedgerDbConf m l r b e)
-
-{-------------------------------------------------------------------------------
-  Support for tests
--------------------------------------------------------------------------------}
-
--- | Ledger callbacks with no errors and where blocks are always passed by value
-type PureLedgerDbConf l b = LedgerDbConf Identity l b b Void
-
-pureLedgerDbConf :: (b -> l -> l) -> PureLedgerDbConf l b
-pureLedgerDbConf f = LedgerDbConf {
-      ldbConfResolve = Identity
-    , ldbConfApply   = Right .: f
-    , ldbConfReapply = f
-    }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LedgerDbConf" (LedgerDbConf l b e)

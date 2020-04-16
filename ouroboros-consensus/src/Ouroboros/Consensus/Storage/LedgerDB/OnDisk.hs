@@ -163,7 +163,7 @@ initLedgerDB :: forall m h l r b e. (IOLike m, HasCallStack)
              -> (forall s. Decoder s l)
              -> (forall s. Decoder s r)
              -> LedgerDbParams
-             -> LedgerDbConf m l r b e
+             -> LedgerDbConf l b e
              -> m l -- ^ Genesis ledger state
              -> StreamAPI m r b
              -> m (InitLog r, LedgerDB l r, Word64)
@@ -234,7 +234,7 @@ initFromSnapshot :: forall m h l r b e. (IOLike m, HasCallStack)
                  -> (forall s. Decoder s l)
                  -> (forall s. Decoder s r)
                  -> LedgerDbParams
-                 -> LedgerDbConf m l r b e
+                 -> LedgerDbConf l b e
                  -> StreamAPI m r b
                  -> DiskSnapshot
                  -> ExceptT (InitFailure r) m (WithOrigin r, LedgerDB l r, Word64)
@@ -248,7 +248,7 @@ initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
 initStartingWith :: forall m l r b e. (Monad m, HasCallStack)
                  => Tracer m (TraceReplayEvent r ())
-                 -> LedgerDbConf m l r b e
+                 -> LedgerDbConf l b e
                  -> StreamAPI m r b
                  -> LedgerDB l r
                  -> ExceptT (InitFailure r) m (LedgerDB l r, Word64)
@@ -261,7 +261,7 @@ initStartingWith tracer conf@LedgerDbConf{..} streamAPI initDb = do
     push :: (r, b) -> (LedgerDB l r, Word64) -> m (LedgerDB l r, Word64)
     push (r, b) !(!db, !replayed) = do
         traceWith tracer (ReplayedBlock r ())
-        (, replayed + 1) <$> ledgerDbReapply conf (Val r b) db
+        (, replayed + 1) <$> ledgerDbPush conf (ReapplyVal r b) db
 
 {-------------------------------------------------------------------------------
   Write to disk

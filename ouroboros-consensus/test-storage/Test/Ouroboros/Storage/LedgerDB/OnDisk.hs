@@ -36,7 +36,7 @@ import           Control.Monad.Except (Except, runExcept, throwError)
 import           Control.Monad.State (StateT (..))
 import qualified Control.Monad.State as State
 import           Control.Tracer (nullTracer)
-import           Data.Bifunctor (first)
+import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Functor.Classes
 import qualified Data.List as L
@@ -145,11 +145,12 @@ genBlocks n l = do b <- genBlock l
   where
     invalidBlock = "genBlocks: genBlock produced invalid block"
 
-type LedgerDbConf' m t = LedgerDbConf m (LedgerSt t) (BlockRef t) (BlockVal t) (LedgerErr t)
+type LedgerDbConf'   t = LedgerDbConf   (LedgerSt t)              (BlockVal t) (LedgerErr t)
+type AnnLedgerError' t = AnnLedgerError (LedgerSt t) (BlockRef t)              (LedgerErr t)
 type LedgerDB'       t = LedgerDB       (LedgerSt t) (BlockRef t)
 type StreamAPI'    m t = StreamAPI    m              (BlockRef t) (BlockVal t)
 type NextBlock'      t = NextBlock                   (BlockRef t) (BlockVal t)
-type BlockInfo'      t = (Apply 'False,     RefOrVal (BlockRef t) (BlockVal t))
+-- type BlockInfo'      t = (Apply 'False,     RefOrVal (BlockRef t) (BlockVal t))
 type Tip'            t = WithOrigin                  (BlockRef t)
 
 {-------------------------------------------------------------------------------
@@ -536,26 +537,24 @@ data StandaloneDB m t = DB {
       --
       -- Invariant: all references @r@ here must be present in 'dbBlocks'.
     , dbState  :: StrictTVar m ([BlockRef t], LedgerDB (LedgerSt t) (BlockRef t))
+
+      -- | Resolve blocks
+    , dbResolve :: ResolveBlock m (BlockRef t) (BlockVal t)
     }
 
-initStandaloneDB :: (IOLike m, LUT t) => DbEnv m -> m (StandaloneDB m t)
+initStandaloneDB :: forall m t. (IOLike m, LUT t)
+                 => DbEnv m -> m (StandaloneDB m t)
 initStandaloneDB dbEnv@DbEnv{..} = do
     dbBlocks <- uncheckedNewTVarM Map.empty
     dbState  <- uncheckedNewTVarM (initChain, initDB)
+
+    let dbResolve :: ResolveBlock m (BlockRef t) (BlockVal t)
+        dbResolve r = atomically $ getBlock r <$> readTVar dbBlocks
+
     return DB{..}
   where
     initChain = []
     initDB    = ledgerDbFromGenesis dbLgrParams ledgerGenesis
-
-dbConf :: forall m t. (IOLike m, LUT t)
-       => StandaloneDB m t -> LedgerDbConf' m t
-dbConf DB{..} = LedgerDbConf {..}
-  where
-    ldbConfApply   = ledgerApply
-    ldbConfReapply = \b l -> case ledgerApply b l of
-                               Left err -> error $ unexpectedLedgerError err
-                               Right l' -> l'
-    ldbConfResolve = \r -> atomically $ getBlock r <$> readTVar dbBlocks
 
     getBlock :: BlockRef t -> Map (BlockRef t) (BlockVal t) -> BlockVal t
     getBlock = Map.findWithDefault (error blockNotFound)
@@ -567,6 +566,14 @@ dbConf DB{..} = LedgerDbConf {..}
         , "block in dbChain not in dbBlocks, "
         , "or LedgerDB not re-initialized after chain truncation"
         ]
+
+dbConf :: forall m t. LUT t => StandaloneDB m t -> LedgerDbConf' t
+dbConf DB{..} = LedgerDbConf {..}
+  where
+    ldbConfApply   = ledgerApply
+    ldbConfReapply = \b l -> case ledgerApply b l of
+                               Left err -> error $ unexpectedLedgerError err
+                               Right l' -> l'
 
     unexpectedLedgerError :: Show e => e -> String
     unexpectedLedgerError err = concat [
@@ -637,16 +644,17 @@ runDB standalone@DB{..} cmd =
     go _ (Push b) = do
         atomically $ modifyTVar dbBlocks $
           uncurry Map.insert (refValPair b)
-        upd (push b) $ ledgerDbPush conf (new b)
+        upd (push b) $ \db ->
+          fmap (first annLedgerErr') $
+            defaultThrowLedgerErrors $
+              ledgerDbPush conf (ApplyVal (blockRef b) b) db
     go _ (Switch n bs) = do
         atomically $ modifyTVar dbBlocks $
           repeatedly (uncurry Map.insert) (map refValPair bs)
-        upd (switch n bs) $
-          -- We don't currently test the case where the LedgerDB cannot support
-          -- the full rollback range. See also
-          -- <https://github.com/input-output-hk/ouroboros-network/issues/1025>
-            fmap (either (Left . fromJust) Right . switchResultToEither)
-          . ledgerDbSwitch conf n (map new bs)
+        upd (switch n bs) $ \db ->
+          fmap (bimap annLedgerErr' ignoreExceedRollback) $
+            defaultResolveWithErrors dbResolve $
+              ledgerDbSwitch conf n (map (\b -> ApplyVal (blockRef b) b) bs) db
     go hasFS Snap = do
         (_, db) <- atomically $ readTVar dbState
         Snapped <$> takeSnapshot nullTracer hasFS S.encode S.encode db
@@ -687,8 +695,15 @@ runDB standalone@DB{..} cmd =
     switch 0 bs = (reverse (map blockRef bs) ++)
     switch n bs = switch 0 bs . drop (fromIntegral n)
 
-    new :: BlockVal t -> BlockInfo' t
-    new b = (Apply, uncurry Val (refValPair b))
+    annLedgerErr' :: AnnLedgerError' t -> LedgerErr t
+    annLedgerErr' = annLedgerErr
+
+    -- We don't currently test the case where the LedgerDB cannot support
+    -- the full rollback range. See also
+    -- <https://github.com/input-output-hk/ouroboros-network/issues/1025>
+    ignoreExceedRollback :: Either ExceededRollback a -> a
+    ignoreExceedRollback (Left  _) = error "unexpected ExceededRollback"
+    ignoreExceedRollback (Right a) = a
 
     upd :: ([BlockRef t] -> [BlockRef t])
         -> (LedgerDB' t -> m (Either (LedgerErr t) (LedgerDB' t)))

@@ -840,13 +840,13 @@ validateCandidate
 validateCandidate lgrDB tracer cfg varInvalid blockCache
                   (ChainAndLedger curChain curLedger) candSuffix =
     LgrDB.validate lgrDB curLedger blockCache rollback newBlocks >>= \case
-      LgrDB.MaximumRollbackExceeded supported _ -> do
+      LgrDB.ValidateExceededRollBack (LgrDB.ExceededRollback{rollbackMaximum}) -> do
         trace $ CandidateExceedsRollback
-          supported
+          rollbackMaximum
           (csRollback candSuffix)
           (csSuffix   candSuffix)
         return Nothing
-      LgrDB.RollbackSuccessful (LgrDB.InvalidBlock e pt ledger') -> do
+      LgrDB.ValidateLedgerError (LgrDB.AnnLedgerError ledger' pt e) -> do
         let lastValid  = castPoint $ LgrDB.currentPoint ledger'
             candidate' = fromMaybe
               (error "cannot rollback to point on fragment") $
@@ -864,7 +864,7 @@ validateCandidate lgrDB tracer cfg varInvalid blockCache
           else do
             trace (InvalidCandidate (csSuffix candSuffix))
             return Nothing
-      LgrDB.RollbackSuccessful (LgrDB.ValidBlocks ledger') -> do
+      LgrDB.ValidateSuccessful ledger' -> do
         trace (ValidCandidate (csSuffix candSuffix))
         return $ Just $ mkChainAndLedger candidate ledger'
   where

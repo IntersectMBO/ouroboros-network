@@ -181,17 +181,20 @@ initLgrDB
 initLgrDB k chain = do
     varDB          <- newTVarM genesisLedgerDB
     varPrevApplied <- newTVarM mempty
-    let lgrDB = mkLgrDB conf varDB varPrevApplied args
+    let lgrDB = mkLgrDB conf varDB varPrevApplied resolve args
     LgrDB.validate lgrDB genesisLedgerDB BlockCache.empty 0
       (map getHeader (Chain.toOldestFirst chain)) >>= \case
-        LgrDB.MaximumRollbackExceeded {} ->
-          error "rollback was 0"
-        LgrDB.RollbackSuccessful (LgrDB.InvalidBlock {}) ->
-          error "there were no invalid blocks"
-        LgrDB.RollbackSuccessful (LgrDB.ValidBlocks ledgerDB') -> do
+        LgrDB.ValidateExceededRollBack _ ->
+          error "impossible: rollback was 0"
+        LgrDB.ValidateLedgerError _ ->
+          error "impossible: there were no invalid blocks"
+        LgrDB.ValidateSuccessful ledgerDB' -> do
           atomically $ LgrDB.setCurrent lgrDB ledgerDB'
           return lgrDB
   where
+    resolve :: RealPoint TestBlock -> m TestBlock
+    resolve = return . (blockMapping Map.!)
+
     blockMapping :: Map (RealPoint TestBlock) TestBlock
     blockMapping = Map.fromList
       [(blockRealPoint b, b) | b <- Chain.toOldestFirst chain]
@@ -204,11 +207,10 @@ initLgrDB k chain = do
 
     cfg = testCfg k
 
-    conf :: LgrDBConf m TestBlock
+    conf :: LgrDBConf TestBlock
     conf = LedgerDbConf
       { ldbConfApply   = runExcept .: tickThenApply cfg
       , ldbConfReapply = tickThenReapply cfg
-      , ldbConfResolve = return . (blockMapping Map.!)
       }
 
     genesisLedgerDB = LgrDB.ledgerDbFromGenesis params testInitExtLedger

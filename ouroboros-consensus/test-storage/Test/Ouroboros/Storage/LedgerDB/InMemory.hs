@@ -26,7 +26,6 @@ import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 
-import           Ouroboros.Consensus.Storage.LedgerDB.Conf
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
 import           Test.Util.QuickCheck

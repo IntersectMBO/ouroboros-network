@@ -11,7 +11,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
   , singleton
   , cacheBlock
   , lookup
-  , toHeaderOrBlock
   ) where
 
 import           Prelude hiding (lookup)
@@ -20,9 +19,6 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 
 import           Ouroboros.Network.Block (HasHeader (..), HeaderHash)
-
-import           Ouroboros.Consensus.Block (Header, headerHash)
-
 
 newtype BlockCache blk = BlockCache (Map (HeaderHash blk) blk)
 
@@ -37,12 +33,3 @@ cacheBlock blk (BlockCache cache) = BlockCache (Map.insert (blockHash blk) blk c
 
 lookup :: HasHeader blk => HeaderHash blk -> BlockCache blk -> Maybe blk
 lookup hash (BlockCache cache) = Map.lookup hash cache
-
-toHeaderOrBlock
-  :: (HasHeader blk, HasHeader (Header blk))
-  => Header blk -> BlockCache blk -> Either (Header blk) blk
-toHeaderOrBlock hdr blockCache
-    | Just blk <- lookup (headerHash hdr) blockCache
-    = Right blk
-    | otherwise
-    = Left hdr
