@@ -1161,6 +1161,7 @@ deriving instance ToExpr (AnnTip Blk)
 deriving instance ToExpr (LedgerState Blk)
 deriving instance ToExpr (HeaderState Blk)
 deriving instance ToExpr (HeaderError Blk)
+deriving instance ToExpr TestBlockOtherHeaderEnvelopeError
 deriving instance ToExpr (HeaderEnvelopeError Blk)
 deriving instance ToExpr BftValidationErr
 deriving instance ToExpr (ExtValidationError Blk)

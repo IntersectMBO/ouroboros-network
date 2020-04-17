@@ -1,4 +1,6 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE TypeFamilies   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -6,9 +8,10 @@ module Ouroboros.Consensus.Byron.Ledger.HeaderValidation () where
 
 import           Control.Arrow ((&&&))
 import           Control.Monad.Except
-import qualified Data.Text as T
 import           Data.Word
+import           GHC.Generics (Generic)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot (WithOrigin (..), withOrigin)
 
 import qualified Cardano.Chain.Slotting as CC
@@ -16,6 +19,7 @@ import qualified Cardano.Chain.Slotting as CC
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
@@ -31,8 +35,14 @@ instance HasAnnTip ByronBlock where
   type TipInfo ByronBlock = IsEBB
   getTipInfo = byronHeaderIsEBB
 
+data ByronOtherHeaderEnvelopeError =
+    UnexpectedEBBInSlot !SlotNo
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
 instance ValidateEnvelope ByronBlock where
-  validateEnvelope cfg oldTip hdr = do
+  type OtherHeaderEnvelopeError ByronBlock = ByronOtherHeaderEnvelopeError
+
+  validateEnvelope cfg _ledgerView oldTip hdr = do
       when (actualBlockNo /= expectedBlockNo) $
         throwError $ UnexpectedBlockNo expectedBlockNo actualBlockNo
       when (actualSlotNo < expectedSlotNo) $
@@ -40,8 +50,7 @@ instance ValidateEnvelope ByronBlock where
       when (actualPrevHash /= expectedPrevHash) $
         throwError $ UnexpectedPrevHash expectedPrevHash actualPrevHash
       when (fromIsEBB newIsEBB && not (canBeEBB actualSlotNo)) $
-        throwError $ OtherEnvelopeError . T.pack $
-          "Unexpected EBB in slot " ++ show actualSlotNo
+        throwError $ OtherHeaderEnvelopeError $ UnexpectedEBBInSlot actualSlotNo
     where
       newIsEBB :: IsEBB
       newIsEBB = byronHeaderIsEBB hdr
@@ -80,4 +89,4 @@ instance ValidateEnvelope ByronBlock where
       canBeEBB (SlotNo s) = s `mod` epochSlots == 0
 
       epochSlots :: Word64
-      epochSlots = CC.unEpochSlots $ byronEpochSlots cfg
+      epochSlots = CC.unEpochSlots $ byronEpochSlots $ configBlock cfg

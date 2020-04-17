@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -18,6 +19,7 @@ import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.IntPSQ (IntPSQ)
 import qualified Data.IntPSQ as PSQ
+import           Data.Void (Void)
 
 import           Control.Tracer (Tracer)
 
@@ -112,3 +114,6 @@ deriving via OnlyCheckIsWHNF "Decoder" (Decoder s a) instance NoUnexpectedThunks
 deriving via OnlyCheckIsWHNF "Tracer" (Tracer m ev) instance NoUnexpectedThunks (Tracer m ev)
 
 deriving newtype instance NoUnexpectedThunks Time
+
+-- TODO move to cardano-prelude
+deriving anyclass instance NoUnexpectedThunks Void

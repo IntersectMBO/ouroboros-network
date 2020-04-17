@@ -965,7 +965,7 @@ data ChainSyncClientException =
           (Their (Tip blk))
 
       -- | Header validation threw an error.
-    | forall blk. BlockSupportsProtocol blk =>
+    | forall blk. (BlockSupportsProtocol blk, ValidateEnvelope blk) =>
         HeaderError
           (Point blk)  -- ^ Invalid header
           (HeaderError blk)

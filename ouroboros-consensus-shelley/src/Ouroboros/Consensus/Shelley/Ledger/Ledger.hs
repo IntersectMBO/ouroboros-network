@@ -50,14 +50,14 @@ import           Data.Type.Equality ((:~:) (Refl))
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (enforceSize, fromCBOR, toCBOR)
-import           Cardano.Prelude (Natural, NoUnexpectedThunks (..),
-                     OnlyCheckIsWHNF (..))
+import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 import           Cardano.Slotting.Slot (EpochNo, WithOrigin (..))
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.BlockchainTime (singletonSlotLengths)
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
@@ -67,14 +67,15 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Util.Versioned
 
+import qualified Control.State.Transition as STS
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
+import qualified Shelley.Spec.Ledger.STS.Chain as STS
 import qualified Shelley.Spec.Ledger.TxData as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
@@ -90,16 +91,6 @@ import           Ouroboros.Consensus.Shelley.Protocol
 data ShelleyLedgerError c
   = TickError  !(SL.TickTransitionError  c)
   | BBodyError !(SL.BlockTransitionError c)
-    -- TODO the three exceptions below are duplicated from CHAIN
-  | ObsoleteNode
-      Natural  -- ^ Current major protocol version
-      Natural  -- ^ Maximum major protocol version
-  | HeaderSizeTooLarge
-      Natural  -- ^ Size of the header
-      Natural  -- ^ Maximum size of a header
-  | BodySizeTooLarge
-      Natural  -- ^ Size of the block body
-      Natural  -- ^ Maximum size of a block body
   deriving (Eq, Generic, Show)
 
 instance NoUnexpectedThunks (ShelleyLedgerError c)
@@ -127,33 +118,24 @@ instance TPraosCrypto c => UpdateLedger (ShelleyBlock c) where
         . ShelleyLedgerState pt history
         $ SL.applyTickTransition globals bhState slotNo
 
-  applyLedgerBlock (ShelleyLedgerConfig globals) blk tickedLedger = do
-      let TickedLedgerState _ oldSt = tickedLedger
-          ShelleyLedgerState _ history oldShelleyState = oldSt
-          SL.Globals { maxMajorPV } = globals
-          pparams = getPParams oldShelleyState
-          SL.ProtVer majorPV _ = SL._protocolVersion pparams
-      -- Do the checks part of the CHAIN transition that are not part of TICK,
-      -- PRTCL, or BBODY.
-      --
-      -- TODO move to a separate function in cardano-ledger-specs that can be
-      -- used in @chainTransition@ and here.
-      majorPV <= maxMajorPV ?! ObsoleteNode majorPV maxMajorPV
-
-      let maxHeaderSize = SL._maxBHSize pparams
-          maxBodySize   = SL._maxBBSize pparams
-          header        = shelleyHeaderRaw $ getHeader blk
-          headerBody    = SL.bhbody header
-          headerSize    = fromIntegral $ SL.bHeaderSize header
-          -- Note: the header (body) contains the size of the block body
-          bodySize      = SL.hBbsize headerBody
-
-      headerSize <= maxHeaderSize ?! HeaderSizeTooLarge headerSize maxHeaderSize
-      bodySize   <= maxBodySize   ?! BodySizeTooLarge   bodySize   maxBodySize
-
-      -- Note: we don't apply the PRTCL transition, we do that in
-      -- 'updateConsensusState' (called in 'validateHeader') together with
-      -- this function in 'applyExtLedgerState'.
+  -- Note: in the Shelley ledger, the @CHAIN@ rule is used to apply a whole
+  -- block. In consensus, we split up the application of a block to the ledger
+  -- into separate steps that are performed together by 'applyExtLedgerState':
+  --
+  -- + 'applyChainTick': executes the @TICK@ transition
+  -- + 'validateHeader':
+  --    - 'validateEnvelope': executes the @chainChecks@
+  --    - 'updateConsensusState': executes the @PRTCL@ transition
+  -- + 'applyLedgerBlock': executes the @BBODY@ transition
+  --
+  applyLedgerBlock (ShelleyLedgerConfig globals)
+                   blk
+                   TickedLedgerState {
+                       tickedLedgerState = ShelleyLedgerState {
+                           history
+                         , shelleyState = oldShelleyState
+                         }
+                     } = do
 
       -- Apply the BBODY transition using the ticked state
       newShelleyState <- withExcept BBodyError $
@@ -321,6 +303,29 @@ instance Crypto c => ShowQuery (Query (ShelleyBlock c)) where
   showResult GetStakeDistribution           = show
 
 {-------------------------------------------------------------------------------
+  ValidateEnvelope
+-------------------------------------------------------------------------------}
+
+instance Crypto c => ValidateEnvelope (ShelleyBlock c) where
+  type OtherHeaderEnvelopeError (ShelleyBlock c) =
+    STS.PredicateFailure (STS.CHAIN c)
+
+  validateEnvelope cfg ledgerView oldTip hdr = do
+      -- In addition to the default 'validateEnvelope' ...
+      defaultValidateEnvelope oldTip hdr
+      -- ... perform the @chainChecks@ that are part of the @CHAIN@ rule.
+      withExcept OtherHeaderEnvelopeError $
+        SL.chainChecks globals pparams (shelleyHeaderRaw hdr)
+    where
+      ShelleyLedgerConfig globals = configLedger cfg
+      pparams = SL.lvProtParams ledgerView
+
+-- TODO fix thunks in cardano-ledger-specs
+deriving
+  via OnlyCheckIsWHNF "OtherHeaderEnvelopError Shelley" (STS.PredicateFailure (STS.CHAIN c))
+  instance NoUnexpectedThunks (STS.PredicateFailure (STS.CHAIN c))
+
+{-------------------------------------------------------------------------------
   Auxiliary
 -------------------------------------------------------------------------------}
 
@@ -329,12 +334,6 @@ getPParams = SL.esPp . SL.nesEs
 
 getProposedPPUpdates :: SL.ShelleyState c -> SL.ProposedPPUpdates c
 getProposedPPUpdates = SL._ppups . SL._utxoState . SL.esLState . SL.nesEs
-
--- | The \"oh noes?!\" operator.
-(?!) :: MonadError e m => Bool -> e -> m ()
-True  ?! _ = return ()
-False ?! e = throwError e
-infix 1 ?!
 
 {-------------------------------------------------------------------------------
   Serialisation

@@ -32,6 +32,7 @@ module Ouroboros.Consensus.HeaderValidation (
   , HeaderEnvelopeError(..)
   , castHeaderEnvelopeError
   , ValidateEnvelope(..)
+  , defaultValidateEnvelope
     -- * Errors
   , HeaderError(..)
   , castHeaderError
@@ -50,7 +51,8 @@ import           Data.Foldable (toList)
 import           Data.Proxy
 import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>), Empty))
 import qualified Data.Sequence.Strict as Seq
-import           Data.Text (Text)
+import           Data.Typeable (Typeable)
+import           Data.Void (Void)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (enforceSize)
@@ -241,20 +243,20 @@ data HeaderEnvelopeError blk =
   | UnexpectedPrevHash !(ChainHash blk) !(ChainHash blk)
 
     -- | Block specific envelope error
-    --
-    -- We record this simply as Text to avoid yet another type family;
-    -- we can't really pattern match on this anyway.
-  | OtherEnvelopeError !Text
+  | OtherHeaderEnvelopeError !(OtherHeaderEnvelopeError blk)
   deriving (Generic)
 
-deriving instance BlockSupportsProtocol blk => Eq                 (HeaderEnvelopeError blk)
-deriving instance BlockSupportsProtocol blk => Show               (HeaderEnvelopeError blk)
-deriving instance BlockSupportsProtocol blk => NoUnexpectedThunks (HeaderEnvelopeError blk)
+deriving instance (ValidateEnvelope blk) => Eq   (HeaderEnvelopeError blk)
+deriving instance (ValidateEnvelope blk) => Show (HeaderEnvelopeError blk)
+deriving instance (ValidateEnvelope blk, Typeable blk)
+               => NoUnexpectedThunks (HeaderEnvelopeError blk)
 
-castHeaderEnvelopeError :: HeaderHash blk ~ HeaderHash blk'
+castHeaderEnvelopeError :: ( HeaderHash blk ~ HeaderHash blk'
+                           , OtherHeaderEnvelopeError blk ~ OtherHeaderEnvelopeError blk'
+                           )
                         => HeaderEnvelopeError blk -> HeaderEnvelopeError blk'
 castHeaderEnvelopeError = \case
-    OtherEnvelopeError err             -> OtherEnvelopeError err
+    OtherHeaderEnvelopeError err       -> OtherHeaderEnvelopeError err
     UnexpectedBlockNo  expected actual -> UnexpectedBlockNo  expected  actual
     UnexpectedSlotNo   expected actual -> UnexpectedSlotNo   expected  actual
     UnexpectedPrevHash expected actual -> UnexpectedPrevHash expected' actual'
@@ -263,9 +265,19 @@ castHeaderEnvelopeError = \case
         actual'   = castHash actual
 
 -- | Validate header envelope (block, slot, hash)
-class HasAnnTip blk => ValidateEnvelope blk where
+class ( HasAnnTip blk
+      , Eq                 (OtherHeaderEnvelopeError blk)
+      , Show               (OtherHeaderEnvelopeError blk)
+      , NoUnexpectedThunks (OtherHeaderEnvelopeError blk))
+   => ValidateEnvelope blk where
+
+  -- | A block-specific error that 'validateEnvelope' can return.
+  type OtherHeaderEnvelopeError blk :: *
+  type OtherHeaderEnvelopeError blk = Void
+
   -- | Validate the header envelope
-  validateEnvelope :: BlockConfig blk
+  validateEnvelope :: TopLevelConfig blk
+                   -> LedgerView (BlockProtocol blk)
                    -> WithOrigin (AnnTip blk)
                    -> Header blk
                    -> Except (HeaderEnvelopeError blk) ()
@@ -282,39 +294,60 @@ class HasAnnTip blk => ValidateEnvelope blk where
   minimumPossibleSlotNo _ = SlotNo 0
 
   default validateEnvelope :: HasHeader (Header blk)
-                           => BlockConfig blk
+                           => TopLevelConfig blk
+                           -> LedgerView (BlockProtocol blk)
                            -> WithOrigin (AnnTip blk)
                            -> Header blk
                            -> Except (HeaderEnvelopeError blk) ()
-  validateEnvelope _cfg oldTip hdr = do
-      when (actualBlockNo /= expectedBlockNo) $
-        throwError $ UnexpectedBlockNo expectedBlockNo actualBlockNo
-      when (actualSlotNo < expectedSlotNo) $
-        throwError $ UnexpectedSlotNo expectedSlotNo actualSlotNo
-      when (actualPrevHash /= expectedPrevHash) $
-        throwError $ UnexpectedPrevHash expectedPrevHash actualPrevHash
-    where
-      actualSlotNo   :: SlotNo
-      actualBlockNo  :: BlockNo
-      actualPrevHash :: ChainHash blk
+  validateEnvelope _cfg _ledgerView = defaultValidateEnvelope
 
-      actualSlotNo   =            blockSlot     hdr
-      actualBlockNo  =            blockNo       hdr
-      actualPrevHash = castHash $ blockPrevHash hdr
+-- | Default implementation for 'validateEnvelope'.
+--
+-- Is provided as a separate function to make it easier to extend the
+-- 'validateEnvelope' implemention with checks on top of the default ones.
+--
+-- Using the other members of 'ValidateEnvelope', it checks:
+--
+-- * whether block numbers are /strictly increasing/, starting from
+--  'firstBlockNo'.
+-- * whether slot number are /increasing/, starting from
+--  'minimumPossibleSlotNo'.
+-- * whether the previous hash matches the hash of the previous header
+defaultValidateEnvelope
+  :: forall blk. (HasHeader (Header blk), ValidateEnvelope blk)
+  => WithOrigin (AnnTip blk)
+  -> Header blk
+  -> Except (HeaderEnvelopeError blk) ()
+defaultValidateEnvelope oldTip hdr = do
+    when (actualBlockNo /= expectedBlockNo) $
+      throwError $ UnexpectedBlockNo expectedBlockNo actualBlockNo
+    when (actualSlotNo < expectedSlotNo) $
+      throwError $ UnexpectedSlotNo expectedSlotNo actualSlotNo
+    when (actualPrevHash /= expectedPrevHash) $
+      throwError $ UnexpectedPrevHash expectedPrevHash actualPrevHash
+  where
+    actualSlotNo   :: SlotNo
+    actualBlockNo  :: BlockNo
+    actualPrevHash :: ChainHash blk
 
-      expectedSlotNo   :: SlotNo           -- Lower bound only
-      expectedBlockNo  :: BlockNo
-      expectedPrevHash :: ChainHash blk
+    actualSlotNo   =            blockSlot     hdr
+    actualBlockNo  =            blockNo       hdr
+    actualPrevHash = castHash $ blockPrevHash hdr
 
-      (expectedSlotNo, expectedBlockNo, expectedPrevHash) =
-          case oldTip of
-            At (AnnTip s h b _) -> ( succ s, succ b, BlockHash h )
-            Origin              -> ( minimumPossibleSlotNo proxy
-                                   , firstBlockNo          proxy
-                                   , GenesisHash
-                                   )
-        where
-          proxy = Proxy @blk
+    expectedSlotNo   :: SlotNo           -- Lower bound only
+    expectedBlockNo  :: BlockNo
+    expectedPrevHash :: ChainHash blk
+
+    (expectedSlotNo, expectedBlockNo, expectedPrevHash) =
+        case oldTip of
+          At (AnnTip s h b _) -> ( succ s, succ b, BlockHash h )
+          Origin              -> ( minimumPossibleSlotNo proxy
+                                 , firstBlockNo          proxy
+                                 , GenesisHash
+                                 )
+      where
+        proxy = Proxy @blk
+
 
 {-------------------------------------------------------------------------------
   Errors
@@ -329,14 +362,19 @@ data HeaderError blk =
   | HeaderEnvelopeError !(HeaderEnvelopeError blk)
   deriving (Generic)
 
-deriving instance BlockSupportsProtocol blk => Eq                 (HeaderError blk)
-deriving instance BlockSupportsProtocol blk => Show               (HeaderError blk)
-deriving instance BlockSupportsProtocol blk => NoUnexpectedThunks (HeaderError blk)
+deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
+               => Eq                 (HeaderError blk)
+deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
+               => Show               (HeaderError blk)
+deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
+               => NoUnexpectedThunks (HeaderError blk)
 
 castHeaderError :: (   ValidationErr (BlockProtocol blk )
                      ~ ValidationErr (BlockProtocol blk')
                    ,   HeaderHash blk
                      ~ HeaderHash blk'
+                   ,   OtherHeaderEnvelopeError blk
+                     ~ OtherHeaderEnvelopeError blk'
                    )
                 => HeaderError blk -> HeaderError blk'
 castHeaderError (HeaderProtocolError e) = HeaderProtocolError e
@@ -386,7 +424,7 @@ validateHeader :: (BlockSupportsProtocol blk, ValidateEnvelope blk)
                -> Except (HeaderError blk) (HeaderState blk)
 validateHeader cfg ledgerView hdr st = do
     withExcept HeaderEnvelopeError $
-      validateEnvelope (configBlock cfg) (headerStateTip st) hdr
+      validateEnvelope cfg ledgerView (headerStateTip st) hdr
     consensusState' <- withExcept HeaderProtocolError $
                          updateConsensusState
                            (configConsensus cfg)
