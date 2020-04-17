@@ -11,7 +11,9 @@ module Test.Util.Corruption
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Read (deserialiseFromBytes)
+import           Codec.CBOR.Term (Term)
 import           Codec.CBOR.Write (toLazyByteString)
+import           Codec.Serialise (deserialise)
 import qualified Data.ByteString.Lazy as Lazy
 
 import           Test.QuickCheck
@@ -50,15 +52,28 @@ detectCorruption
   -> a
   -> Corruption
   -> Property
-detectCorruption enc dec isValid a cor = case deserialiseFromBytes dec bs of
-    Right (_, mkA')
-        | not (isValid a')
-        -> label "corruption detected" $ property True
-        | otherwise
-        -> label "corruption not detected" $
-           counterexample ("Corruption not detected: " <> show a') False
-      where
-        a' = mkA' bs
-    Left _ -> label "corruption detected by decoder" $ property True
+detectCorruption enc dec isValid a cor =
+    case deserialiseFromBytes dec corruptBytes of
+      Right (leftover, mkA')
+          | not (Lazy.null leftover)
+          -> label "corruption detected by decoder" $ property True
+          | not (isValid a')
+          -> label "corruption detected" $ property True
+          | otherwise
+          -> counterexample
+               ("Corruption not detected: " <> show a')
+           $ counterexample
+               ("Original bytes: " <> show origBytes)
+           $ counterexample
+               ("Corrupt bytes: " <> show corruptBytes)
+           $ counterexample
+               ("Original CBOR: " <> show (deserialise origBytes :: Term))
+           $ counterexample
+               ("Corrupt CBOR: " <> show (deserialise corruptBytes :: Term))
+             False
+        where
+          a' = mkA' corruptBytes
+      Left _ -> label "corruption detected by decoder" $ property True
   where
-    bs = applyCorruption cor $ toLazyByteString (enc a)
+    origBytes    = toLazyByteString (enc a)
+    corruptBytes = applyCorruption cor origBytes
