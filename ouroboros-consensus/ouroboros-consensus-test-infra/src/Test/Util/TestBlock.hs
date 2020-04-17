@@ -43,6 +43,7 @@ module Test.Util.TestBlock (
   , treeToChains
   , treePreferredChain
     -- * Ledger infrastructure
+  , testInitLedger
   , testInitExtLedger
   , singleNodeTestConfig
     -- * Support for tests
