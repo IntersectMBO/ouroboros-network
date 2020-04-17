@@ -4,7 +4,9 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Byron.Ledger.HeaderValidation () where
+module Ouroboros.Consensus.Byron.Ledger.HeaderValidation (
+    ByronOtherHeaderEnvelopeError(..)
+  ) where
 
 import           Control.Arrow ((&&&))
 import           Control.Monad.Except

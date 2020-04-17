@@ -13,7 +13,7 @@ import           Ouroboros.Consensus.Byron.Ledger.Config as X
 import           Ouroboros.Consensus.Byron.Ledger.DelegationHistory as X
                      (DelegationHistory)
 import           Ouroboros.Consensus.Byron.Ledger.Forge as X
-import           Ouroboros.Consensus.Byron.Ledger.HeaderValidation as X ()
+import           Ouroboros.Consensus.Byron.Ledger.HeaderValidation as X
 import           Ouroboros.Consensus.Byron.Ledger.Integrity as X
 import           Ouroboros.Consensus.Byron.Ledger.Ledger as X
 import           Ouroboros.Consensus.Byron.Ledger.Mempool as X
