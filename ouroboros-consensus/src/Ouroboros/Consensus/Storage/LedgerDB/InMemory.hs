@@ -365,6 +365,10 @@ data AnnLedgerError l r = AnnLedgerError {
     , annLedgerErr    :: LedgerErr l
     }
 
+-- | Monads in which we can resolve blocks
+--
+-- To guide type inference, we insist that we must be able to infer the type
+-- of the block we are resolving from the type of the monad.
 class Monad m => ResolvesBlocks r b m | m -> b where
   resolveBlock :: r -> m b
 
@@ -462,6 +466,10 @@ applyBlock cfg ap db = case ap of
     l :: l
     l = ledgerDbCurrent db
 
+-- | Short-hand for re-applying a block that we have by reference
+--
+-- This is not defined in terms of 'applyBlock' because we don't need the
+-- full ledger DB here (because we never throw any errors).
 reapplyRef :: forall m l b r. (ResolvesBlocks r b m, ApplyBlock l b)
            => LedgerCfg l -> r -> l -> m l
 reapplyRef cfg r l = (flip (tickThenReapply cfg) l) <$> resolveBlock r

@@ -94,7 +94,7 @@ class ( -- Requirements on the ledger state itself
   -- that as soon as a certain slot was reached, /any/ block would be invalid.
   --
   -- PRECONDITION: The slot number must be strictly greater than the slot at
-  -- the tip of the ledger.
+  -- the tip of the ledger (except for EBBs, obviously..).
   applyChainTick :: LedgerCfg l -> SlotNo -> l -> TickedLedger l
 
 -- | Ledger state with the chain tick function already applied

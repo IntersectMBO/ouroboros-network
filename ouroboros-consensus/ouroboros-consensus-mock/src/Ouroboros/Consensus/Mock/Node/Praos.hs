@@ -40,7 +40,7 @@ protocolInfoPraos numCoreNodes nid params cfg =
               , praosInitialStake = genesisStakeDist addrDist
               , praosVerKeys      = verKeys
               }
-          , configLedger = SimpleLedgerConfig addrDist
+          , configLedger = addrDist
           , configBlock  = cfg
           }
       , pInfoInitLedger = ExtLedgerState {

@@ -41,7 +41,6 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , MockProtocolSpecific(..)
     -- * 'UpdateLedger'
   , LedgerState(..)
-  , SimpleLedgerConfig(..)
   , updateSimpleLedgerState
   , genesisSimpleLedgerState
     -- * 'ApplyTx' (mempool support)
@@ -285,17 +284,9 @@ class ( SimpleCrypto c
   Update the ledger
 -------------------------------------------------------------------------------}
 
-data SimpleLedgerConfig c ext = SimpleLedgerConfig {
-      simpleMockLedgerConfig :: MockLedgerConfig c ext
-    }
-  deriving stock (Generic)
-
-deriving instance MockProtocolSpecific c ext => Show               (SimpleLedgerConfig c ext)
-deriving instance MockProtocolSpecific c ext => NoUnexpectedThunks (SimpleLedgerConfig c ext)
-
 instance MockProtocolSpecific c ext
       => IsLedger (LedgerState (SimpleBlock c ext)) where
-  type LedgerCfg (LedgerState (SimpleBlock c ext)) = SimpleLedgerConfig c ext
+  type LedgerCfg (LedgerState (SimpleBlock c ext)) = MockLedgerConfig       c ext
   type LedgerErr (LedgerState (SimpleBlock c ext)) = MockError (SimpleBlock c ext)
 
   applyChainTick _ = TickedLedgerState

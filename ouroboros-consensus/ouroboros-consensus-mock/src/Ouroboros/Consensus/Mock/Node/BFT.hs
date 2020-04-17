@@ -38,7 +38,7 @@ protocolInfoBft numCoreNodes nid securityParam cfg =
                   | n <- enumCoreNodes numCoreNodes
                   ]
               }
-          , configLedger = SimpleLedgerConfig ()
+          , configLedger = ()
           , configBlock  = cfg
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)

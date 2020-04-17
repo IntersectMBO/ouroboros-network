@@ -385,7 +385,7 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
       addPoints (validBlockPoints res (map headerRealPoint hdrs))
     return res
   where
-    rewrap :: Either (AnnLedgerError blk) (Either  ExceededRollback (LedgerDB blk))
+    rewrap :: Either (AnnLedgerError blk) (Either ExceededRollback (LedgerDB blk))
            -> ValidateResult blk
     rewrap (Left         e)  = ValidateLedgerError      e
     rewrap (Right (Left  e)) = ValidateExceededRollBack e
