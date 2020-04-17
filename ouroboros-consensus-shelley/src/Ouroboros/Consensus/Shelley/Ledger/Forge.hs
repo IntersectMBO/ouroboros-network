@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Forge (
     forgeShelleyBlock
   ) where
 
+import           Control.Exception
 import           Crypto.Random (MonadRandom)
 import qualified Data.Sequence.Strict as Seq
 
@@ -27,6 +28,7 @@ import qualified Shelley.Spec.Ledger.OCert as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
+import           Ouroboros.Consensus.Shelley.Ledger.Integrity
 import           Ouroboros.Consensus.Shelley.Ledger.Mempool
 import           Ouroboros.Consensus.Shelley.Protocol
 
@@ -42,15 +44,18 @@ forgeShelleyBlock
 forgeShelleyBlock cfg updateNodeState curNo tickedLedger txs isLeader = do
     tpraosFields <-
       forgeTPraosFields updateNodeState isLeader kesPeriod mkBhBody
-    return $ mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
+    let blk = mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
+    return $ assert (verifyBlockIntegrity tpraosSlotsPerKESPeriod blk) blk
+
   where
-    TPraosConfig { tpraosParams } = configConsensus cfg
+    TPraosConfig { tpraosParams = TPraosParams { tpraosSlotsPerKESPeriod } } =
+      configConsensus cfg
     curSlot = tickedSlotNo tickedLedger
 
     -- The current KES period
     kesPeriod :: SL.KESPeriod
     kesPeriod = SL.KESPeriod $ fromIntegral $
-      unSlotNo curSlot `div` tpraosSlotsPerKESPeriod tpraosParams
+      unSlotNo curSlot `div` tpraosSlotsPerKESPeriod
 
     body = SL.TxSeq $ Seq.fromList $ (\(ShelleyTx _ tx) -> tx) <$> txs
 

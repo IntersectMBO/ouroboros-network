@@ -302,7 +302,10 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeBlockEncodingOverhead = const 1 -- Single list tag.
   -- Check this isn't altered by the TxWits stuff
 
-  nodeCheckIntegrity = const verifyBlockIntegrity
+  nodeCheckIntegrity cfg = verifyBlockIntegrity tpraosSlotsPerKESPeriod
+    where
+      TPraosParams { tpraosSlotsPerKESPeriod } =
+        tpraosParams $ configConsensus cfg
 
   nodeAddHeaderEnvelope _ _isEBB _blockSize = shelleyAddHeaderEnvelope
 
