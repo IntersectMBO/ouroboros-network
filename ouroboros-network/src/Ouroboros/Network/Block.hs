@@ -83,11 +83,7 @@ import           GHC.Generics (Generic)
 -- TODO: it should be exported from 'Cardano.Prelude'
 import           Control.Tracer (contramap)
 
-import           Cardano.Binary ( Size
-                                , Case (..)
-                                , szCases
-                                , szGreedy
-                                )
+import           Cardano.Binary (Case (..), Size, szCases, szGreedy)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Block
@@ -171,6 +167,7 @@ castHash (BlockHash b) = BlockHash b
 newtype Point block = Point
     { getPoint :: WithOrigin (Point.Block SlotNo (HeaderHash block))
     }
+  deriving (Generic)
 
 deriving newtype instance StandardHash block => Eq   (Point block)
 deriving newtype instance StandardHash block => Ord  (Point block)

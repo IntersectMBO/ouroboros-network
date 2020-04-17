@@ -43,6 +43,7 @@ module Test.Util.TestBlock (
   , treeToChains
   , treePreferredChain
     -- * Ledger infrastructure
+  , lastAppliedBlock
   , testInitLedger
   , testInitExtLedger
   , singleNodeTestConfig
@@ -67,6 +68,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
+import           Data.TreeDiff (ToExpr)
 import           Data.Type.Equality ((:~:) (Refl))
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -102,6 +104,8 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
 import           Ouroboros.Consensus.Storage.ImmutableDB (HashInfo (..))
+
+import           Test.Util.Orphans.ToExpr ()
 
 {-------------------------------------------------------------------------------
   Test infrastructure: test block
@@ -146,7 +150,7 @@ newtype TestHash = UnsafeTestHash {
       unTestHash :: NonEmpty Word64
     }
   deriving stock   (Generic)
-  deriving newtype (Eq, Ord, Serialise)
+  deriving newtype (Eq, Ord, Serialise, ToExpr)
   deriving anyclass NoUnexpectedThunks
 
 pattern TestHash :: NonEmpty Word64 -> TestHash
@@ -195,8 +199,8 @@ data TestBlock = TestBlock {
       -- ^ Note that when generating a 'TestBlock', you must make sure that
       -- blocks with the same 'TestHash' have the same value for 'tbValid'.
     }
-  deriving stock    (Show, Eq, Generic)
-  deriving anyclass (Serialise, NoUnexpectedThunks)
+  deriving stock    (Show, Eq, Ord, Generic)
+  deriving anyclass (Serialise, NoUnexpectedThunks, ToExpr)
 
 instance GetHeader TestBlock where
   newtype Header TestBlock = TestHeader { testHeader :: TestBlock }
@@ -323,7 +327,18 @@ instance UpdateLedger TestBlock where
           lastAppliedPoint :: Point TestBlock
         }
     deriving stock   (Show, Eq, Generic)
-    deriving newtype (Serialise, NoUnexpectedThunks)
+    deriving newtype (Serialise, NoUnexpectedThunks, ToExpr)
+
+-- | Last applied block
+--
+-- Returns 'Nothing' if the ledger is empty.
+lastAppliedBlock :: LedgerState TestBlock -> Maybe TestBlock
+lastAppliedBlock (TestLedger p) = go p
+  where
+    -- We can only have applied valid blocks
+    go :: Point TestBlock -> Maybe TestBlock
+    go Block.GenesisPoint           = Nothing
+    go (Block.BlockPoint slot hash) = Just $ TestBlock hash slot True
 
 instance HasAnnTip TestBlock where
   -- Use defaults

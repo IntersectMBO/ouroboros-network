@@ -1103,7 +1103,6 @@ instance CommandNames (At Cmd blk m) where
 
 deriving instance Generic ReaderNext
 deriving instance Generic IteratorId
-deriving instance Generic (Point blk)
 deriving instance Generic (Chain blk)
 deriving instance Generic (ChainProducerState blk)
 deriving instance Generic (ReaderState blk)

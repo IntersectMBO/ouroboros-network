@@ -46,6 +46,7 @@ library
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
+                       Test.Util.Orphans.ToExpr
                        Test.Util.QSM
                        Test.Util.QuickCheck
                        Test.Util.Random

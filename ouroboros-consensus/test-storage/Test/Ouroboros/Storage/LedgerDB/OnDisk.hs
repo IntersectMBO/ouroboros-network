@@ -64,6 +64,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Cardano.Slotting.Slot (WithOrigin)
 import qualified Cardano.Slotting.Slot as S
 
+import qualified Ouroboros.Consensus.Ledger.Abstract as Lgr
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
@@ -78,6 +79,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
 import qualified Test.Util.FS.Sim.MockFS as MockFS
 import           Test.Util.FS.Sim.STM
 import           Test.Util.Range
+import           Test.Util.TestBlock
 
 -- For the Arbitrary instance of 'MemPolicy'
 import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
@@ -158,30 +160,33 @@ type Tip'            t = WithOrigin                  (BlockRef t)
 -------------------------------------------------------------------------------}
 
 instance LUT 'LedgerSimple where
-  data LedgerSt 'LedgerSimple = SimpleLedger Int
+  newtype LedgerSt 'LedgerSimple = SimpleLedger (Lgr.LedgerState TestBlock)
     deriving (Show, Eq, Generic, Serialise, ToExpr)
 
-  data BlockVal 'LedgerSimple = SimpleBlock Int
+  newtype BlockVal 'LedgerSimple = SimpleBlock TestBlock
     deriving (Show, Eq, Generic, Serialise, ToExpr)
 
-  type LedgerErr 'LedgerSimple = (Int, Int)
-  type BlockRef  'LedgerSimple = Int
+  type LedgerErr 'LedgerSimple = Lgr.LedgerErr (Lgr.LedgerState TestBlock)
+  type BlockRef  'LedgerSimple = TestBlock
 
   ledgerGenesis :: LedgerSt 'LedgerSimple
-  ledgerGenesis = SimpleLedger 0
+  ledgerGenesis = SimpleLedger testInitLedger
 
   ledgerApply :: BlockVal 'LedgerSimple
               -> LedgerSt 'LedgerSimple
               -> Either (LedgerErr 'LedgerSimple) (LedgerSt 'LedgerSimple)
   ledgerApply (SimpleBlock b) (SimpleLedger l) =
-      if b > l then Right (SimpleLedger b)
-               else Left (b, l)
+      fmap SimpleLedger $ runExcept $
+        Lgr.tickThenApply () b l
 
   blockRef :: BlockVal 'LedgerSimple -> BlockRef 'LedgerSimple
   blockRef (SimpleBlock b) = b
 
   genBlock :: LedgerSt 'LedgerSimple -> Gen (BlockVal 'LedgerSimple)
-  genBlock (SimpleLedger l) = return $ SimpleBlock (l + 1)
+  genBlock (SimpleLedger l) = return $ SimpleBlock $
+     case lastAppliedBlock l of
+       Nothing -> firstBlock 0
+       Just b  -> successorBlock b
 
 {-------------------------------------------------------------------------------
   Commands
@@ -890,7 +895,6 @@ instance Traversable t => Rank2.Traversable (At t) where
       lift f (QSM.Reference x) = QSM.Reference <$> f x
 
 instance LUT t => ToExpr (Model t Concrete)
-instance ToExpr a => ToExpr (WithOrigin a)
 instance ToExpr SecurityParam
 instance ToExpr LedgerDbParams
 
