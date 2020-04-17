@@ -116,34 +116,34 @@ class ( Show      (BlockRef  t)
       , Show      (LedgerErr t)
       , Typeable t
       ) => LUT (t :: LedgerUnderTest) where
-  data family LedgerSt  t :: *
+  type family LedgerSt  t :: *
   type family LedgerErr t :: *
-  data family BlockVal  t :: *
+  type family BlockVal  t :: *
   type family BlockRef  t :: *
 
   -- | Genesis value
-  ledgerGenesis :: LedgerSt t
+  ledgerGenesis :: Proxy t -> LedgerSt t
 
   -- | Apply ledger rules
-  ledgerApply   :: BlockVal t -> LedgerSt t -> Either (LedgerErr t) (LedgerSt t)
+  ledgerApply   :: Proxy t -> BlockVal t -> LedgerSt t -> Either (LedgerErr t) (LedgerSt t)
 
   -- | Compute reference to a block
-  blockRef      :: BlockVal t -> BlockRef t
+  blockRef      :: Proxy t -> BlockVal t -> BlockRef t
 
   -- | Produce new block, given current ledger and tip
-  genBlock      :: LedgerSt t -> Gen (BlockVal t)
+  genBlock      :: Proxy t -> LedgerSt t -> Gen (BlockVal t)
 
-refValPair :: LUT t => BlockVal t -> (BlockRef t, BlockVal t)
-refValPair b = (blockRef b, b)
+refValPair :: LUT t => Proxy t -> BlockVal t -> (BlockRef t, BlockVal t)
+refValPair p b = (blockRef p b, b)
 
-genBlocks :: LUT t => Word64 -> LedgerSt t -> Gen [BlockVal t]
-genBlocks 0 _ = return []
-genBlocks n l = do b <- genBlock l
-                   case ledgerApply b l of
-                     Left  _  -> error invalidBlock
-                     Right l' -> do
-                       bs <- genBlocks (n - 1) l'
-                       return (b:bs)
+genBlocks :: LUT t => Proxy t -> Word64 -> LedgerSt t -> Gen [BlockVal t]
+genBlocks _ 0 _ = return []
+genBlocks p n l = do b <- genBlock p l
+                     case ledgerApply p b l of
+                       Left  _  -> error invalidBlock
+                       Right l' -> do
+                         bs <- genBlocks p (n - 1) l'
+                         return (b:bs)
   where
     invalidBlock = "genBlocks: genBlock produced invalid block"
 
@@ -160,30 +160,27 @@ type Tip'            t = WithOrigin                  (BlockRef t)
 -------------------------------------------------------------------------------}
 
 instance LUT 'LedgerSimple where
-  newtype LedgerSt 'LedgerSimple = SimpleLedger (Lgr.LedgerState TestBlock)
-    deriving (Show, Eq, Generic, Serialise, ToExpr)
-
-  newtype BlockVal 'LedgerSimple = SimpleBlock TestBlock
-    deriving (Show, Eq, Generic, Serialise, ToExpr)
-
+  type LedgerSt  'LedgerSimple = Lgr.LedgerState TestBlock
   type LedgerErr 'LedgerSimple = Lgr.LedgerErr (Lgr.LedgerState TestBlock)
+  type BlockVal  'LedgerSimple = TestBlock
   type BlockRef  'LedgerSimple = TestBlock
 
-  ledgerGenesis :: LedgerSt 'LedgerSimple
-  ledgerGenesis = SimpleLedger testInitLedger
+  ledgerGenesis :: Proxy 'LedgerSimple -> LedgerSt 'LedgerSimple
+  ledgerGenesis _ = testInitLedger
 
-  ledgerApply :: BlockVal 'LedgerSimple
+  ledgerApply :: Proxy 'LedgerSimple
+              -> BlockVal 'LedgerSimple
               -> LedgerSt 'LedgerSimple
               -> Either (LedgerErr 'LedgerSimple) (LedgerSt 'LedgerSimple)
-  ledgerApply (SimpleBlock b) (SimpleLedger l) =
-      fmap SimpleLedger $ runExcept $
-        Lgr.tickThenApply () b l
+  ledgerApply _ b = runExcept . Lgr.tickThenApply () b
 
-  blockRef :: BlockVal 'LedgerSimple -> BlockRef 'LedgerSimple
-  blockRef (SimpleBlock b) = b
+  blockRef :: Proxy 'LedgerSimple
+           -> BlockVal 'LedgerSimple -> BlockRef 'LedgerSimple
+  blockRef _ b = b
 
-  genBlock :: LedgerSt 'LedgerSimple -> Gen (BlockVal 'LedgerSimple)
-  genBlock (SimpleLedger l) = return $ SimpleBlock $
+  genBlock :: Proxy 'LedgerSimple
+           -> LedgerSt 'LedgerSimple -> Gen (BlockVal 'LedgerSimple)
+  genBlock _ l = return $
      case lastAppliedBlock l of
        Nothing -> firstBlock 0
        Just b  -> successorBlock b
@@ -319,10 +316,10 @@ data SnapState = SnapOk | SnapCorrupted Corruption
 mockInit :: LedgerDbParams -> Mock t
 mockInit = Mock [] Map.empty S.Origin 1
 
-mockCurrent :: LUT t => Mock t -> LedgerSt t
+mockCurrent :: forall t. LUT t => Mock t -> LedgerSt t
 mockCurrent Mock{..} =
     case mockLedger of
-      []       -> ledgerGenesis
+      []       -> ledgerGenesis (Proxy @t)
       (_, l):_ -> l
 
 mockChainLength :: Mock t -> Word64
@@ -396,7 +393,10 @@ mockInitLog Mock{..} = go (Map.toDescList mockSnaps)
               else MockTooRecent    snap mr $ go snaps
 
     onChain :: BlockRef t -> Bool
-    onChain r = any (\(b, _l) -> blockRef b == r) mockLedger
+    onChain r = any (\(b, _l) -> blockRef p b == r) mockLedger
+
+    p :: Proxy t
+    p = Proxy
 
 applyMockLog :: forall t. MockInitLog t MockSnap -> Mock t -> Mock t
 applyMockLog = go
@@ -424,11 +424,14 @@ applyMockLog = go
 mockMaxRollback :: forall t. LUT t => Mock t -> Word64
 mockMaxRollback Mock{..} = go mockLedger
   where
+    p :: Proxy t
+    p = Proxy
+
     go :: MockLedger t -> Word64
     go ((b, _l):bs)
-      | S.At (blockRef b) == mockRestore = 0
-      | otherwise                        = 1 + go bs
-    go []                                = 0
+      | S.At (blockRef p b) == mockRestore = 0
+      | otherwise                          = 1 + go bs
+    go []                                  = 0
 
 {-------------------------------------------------------------------------------
   Interpreter
@@ -438,6 +441,9 @@ runMock :: forall t. LUT t
         => Cmd t MockSnap -> Mock t -> (Resp t MockSnap, Mock t)
 runMock = first Resp .: go
   where
+    p :: Proxy t
+    p = Proxy
+
     go :: Cmd t MockSnap -> Mock t -> (Success t MockSnap, Mock t)
     go Current       mock = (Ledger (cur (mockLedger mock)), mock)
     go (Push b)      mock = first MaybeErr $ mockUpdateLedger (push b)      mock
@@ -459,7 +465,7 @@ runMock = first Resp .: go
                           -> [(BlockVal t, LedgerSt t)] -- old to new
                           -> [(BlockVal t, LedgerSt t)]
         blocksAfterAnchor S.Origin = id
-        blocksAfterAnchor (S.At r) = tail . dropWhile ((/= r) . blockRef . fst)
+        blocksAfterAnchor (S.At r) = tail . dropWhile ((/= r) . blockRef p . fst)
 
         -- The snapshot that the real implementation will write to disk
         --
@@ -474,7 +480,7 @@ runMock = first Resp .: go
           | n == 0    = mockRestore mock
           | otherwise = case drop (n - 1) blocks of
                           []       -> error "snapped: impossible"
-                          (b, _):_ -> S.At (blockRef b)
+                          (b, _):_ -> S.At (blockRef p b)
           where
             blocks = blocksAfterAnchor (mockRestore mock) (reverse (mockLedger mock))
             n      = ledgerDbCountToPrune (mockParams mock) (length blocks)
@@ -495,7 +501,7 @@ runMock = first Resp .: go
     push :: BlockVal t -> StateT (MockLedger t) (Except (LedgerErr t)) ()
     push b = do
         ls <- State.get
-        case ledgerApply b (cur ls) of
+        case ledgerApply p b (cur ls) of
           Left  err -> throwError err
           Right l'  -> State.put ((b, l'):ls)
 
@@ -507,7 +513,7 @@ runMock = first Resp .: go
         mapM_ push bs
 
     cur :: MockLedger t -> LedgerSt t
-    cur []         = ledgerGenesis
+    cur []         = ledgerGenesis p
     cur ((_, l):_) = l
 
 {-------------------------------------------------------------------------------
@@ -559,7 +565,10 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     return DB{..}
   where
     initChain = []
-    initDB    = ledgerDbFromGenesis dbLgrParams ledgerGenesis
+    initDB    = ledgerDbFromGenesis dbLgrParams (ledgerGenesis p)
+
+    p :: Proxy t
+    p = Proxy
 
     getBlock :: BlockRef t -> Map (BlockRef t) (BlockVal t) -> BlockVal t
     getBlock = Map.findWithDefault (error blockNotFound)
@@ -575,8 +584,11 @@ initStandaloneDB dbEnv@DbEnv{..} = do
 dbConf :: forall m t. LUT t => StandaloneDB m t -> LedgerDbConf' t
 dbConf DB{..} = LedgerDbConf {..}
   where
-    ldbConfApply   = ledgerApply
-    ldbConfReapply = \b l -> case ledgerApply b l of
+    p :: Proxy t
+    p = Proxy
+
+    ldbConfApply   = ledgerApply p
+    ldbConfReapply = \b l -> case ledgerApply p b l of
                                Left err -> error $ unexpectedLedgerError err
                                Right l' -> l'
 
@@ -643,23 +655,26 @@ runDB standalone@DB{..} cmd =
     conf      = dbConf      standalone
     streamAPI = dbStreamAPI standalone
 
+    p :: Proxy t
+    p = Proxy
+
     go :: HasFS m fh -> Cmd t DiskSnapshot -> m (Success t DiskSnapshot)
     go _ Current =
         atomically $ (Ledger . ledgerDbCurrent . snd) <$> readTVar dbState
     go _ (Push b) = do
         atomically $ modifyTVar dbBlocks $
-          uncurry Map.insert (refValPair b)
+          uncurry Map.insert (refValPair p b)
         upd (push b) $ \db ->
           fmap (first annLedgerErr') $
             defaultThrowLedgerErrors $
-              ledgerDbPush conf (ApplyVal (blockRef b) b) db
+              ledgerDbPush conf (ApplyVal (blockRef p b) b) db
     go _ (Switch n bs) = do
         atomically $ modifyTVar dbBlocks $
-          repeatedly (uncurry Map.insert) (map refValPair bs)
+          repeatedly (uncurry Map.insert) (map (refValPair p) bs)
         upd (switch n bs) $ \db ->
           fmap (bimap annLedgerErr' ignoreExceedRollback) $
             defaultResolveWithErrors dbResolve $
-              ledgerDbSwitch conf n (map (\b -> ApplyVal (blockRef b) b) bs) db
+              ledgerDbSwitch conf n (map (\b -> ApplyVal (blockRef p b) b) bs) db
     go hasFS Snap = do
         (_, db) <- atomically $ readTVar dbState
         Snapped <$> takeSnapshot nullTracer hasFS S.encode S.encode db
@@ -673,7 +688,7 @@ runDB standalone@DB{..} cmd =
             S.decode
             (dbLgrParams dbEnv)
             conf
-            (return ledgerGenesis)
+            (return $ ledgerGenesis p)
             streamAPI
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
         return $ Restored (fromInitLog initLog, ledgerDbCurrent db)
@@ -694,10 +709,10 @@ runDB standalone@DB{..} cmd =
         go hasFS Restore
 
     push :: BlockVal t -> [BlockRef t] -> [BlockRef t]
-    push b = (blockRef b:)
+    push b = (blockRef p b:)
 
     switch :: Word64 -> [BlockVal t] -> [BlockRef t] -> [BlockRef t]
-    switch 0 bs = (reverse (map blockRef bs) ++)
+    switch 0 bs = (reverse (map (blockRef p) bs) ++)
     switch n bs = switch 0 bs . drop (fromIntegral n)
 
     annLedgerErr' :: AnnLedgerError' t -> LedgerErr t
@@ -800,10 +815,13 @@ generator lgrDbParams (Model mock hs) = Just $ QC.oneof $ concat [
         else [(At . uncurry Corrupt) <$> QC.elements possibleCorruptions]
     ]
   where
+    p :: Proxy t
+    p = Proxy
+
     withoutRef :: [Gen (Cmd t :@ Symbolic)]
     withoutRef = [
           fmap At $ return Current
-        , fmap At $ Push <$> genBlock (mockCurrent mock)
+        , fmap At $ Push <$> genBlock p (mockCurrent mock)
         , fmap At $ do
             let maxRollback = minimum [
                     mockMaxRollback mock
@@ -812,7 +830,7 @@ generator lgrDbParams (Model mock hs) = Just $ QC.oneof $ concat [
             numRollback  <- QC.choose (0, maxRollback)
             numNewBlocks <- QC.choose (numRollback, numRollback + 2)
             let afterRollback = mockRollback numRollback mock
-            Switch numRollback <$> genBlocks numNewBlocks (mockCurrent afterRollback)
+            Switch numRollback <$> genBlocks p numNewBlocks (mockCurrent afterRollback)
         , fmap At $ return Snap
         , fmap At $ return Restore
         , fmap At $ Drop <$> QC.choose (0, mockChainLength mock)
