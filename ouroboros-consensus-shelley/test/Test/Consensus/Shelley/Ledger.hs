@@ -22,6 +22,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Ratio ((%))
 import           Data.Sequence.Strict (StrictSeq)
 import qualified Data.Sequence.Strict as StrictSeq
+import           Data.Word (Word64)
 import           Numeric.Natural (Natural)
 
 import           Cardano.Binary (Annotator (..), FullByteString (..), fromCBOR,
@@ -111,8 +112,9 @@ tests = testGroup "Shelley"
   , testHashInfo (Proxy @TPraosMockCrypto)     "Mock crypto"
 
   , testGroup "Integrity"
-      $ const [] $ -- TODO these tests are disabled awaiting #1821
-      [ testProperty "detect corruption in blocks"  prop_detectCorruption_Block
+      [ testProperty "generate non-corrupt blocks"  prop_blockIntegrity
+      , testProperty "generate non-corrupt headers" prop_headerIntegrity
+      , testProperty "detect corruption in blocks"  prop_detectCorruption_Block
       , testProperty "detect corruption in headers" prop_detectCorruption_Header
       ]
 
@@ -245,15 +247,34 @@ prop_shelleyHashInfo_hashSize h =
   Integrity
 -------------------------------------------------------------------------------}
 
+-- TODO test with real crypto
+
+testTPraosSlotsPerKESPeriod :: Word64
+testTPraosSlotsPerKESPeriod = maxBound
+
+-- | Test that the block we generate pass the 'verifyBlockIntegrity' check
+prop_blockIntegrity :: Block -> Bool
+prop_blockIntegrity = verifyBlockIntegrity testTPraosSlotsPerKESPeriod
+
+-- | Test that the block we generate pass the 'verifyHeaderIntegrity' check
+prop_headerIntegrity :: Header Block -> Bool
+prop_headerIntegrity = verifyHeaderIntegrity testTPraosSlotsPerKESPeriod
+
 -- | Test that we can detect random bitflips in blocks.
 prop_detectCorruption_Block :: Block -> Corruption -> Property
 prop_detectCorruption_Block =
-    detectCorruption toCBOR ((. Full) . runAnnotator <$> fromCBOR) verifyBlockIntegrity
+    detectCorruption
+      toCBOR
+      ((. Full) . runAnnotator <$> fromCBOR)
+      (verifyBlockIntegrity testTPraosSlotsPerKESPeriod)
 
 -- | Test that we can detect random bitflips in blocks.
 prop_detectCorruption_Header :: Header Block -> Corruption -> Property
 prop_detectCorruption_Header =
-    detectCorruption toCBOR ((. Full) . runAnnotator <$> fromCBOR) verifyHeaderIntegrity
+    detectCorruption
+      toCBOR
+      ((. Full) . runAnnotator <$> fromCBOR)
+      (verifyHeaderIntegrity testTPraosSlotsPerKESPeriod)
 
 {-------------------------------------------------------------------------------
   Generators
@@ -268,14 +289,14 @@ instance Arbitrary Block where
     prevHash         <- unShelleyHash <$> arbitrary
     allPoolKeys      <- elements (map snd ksCoreNodes)
     txs              <- return [] -- arbitrary
-    curSlotNo        <- arbitrary
+    curSlotNo        <- SlotNo  <$> choose (0, 10)
     curBlockNo       <- BlockNo <$> choose (0, 100)
     epochNonce       <- arbitrary
     blockNonce       <- Gen.NatNonce . fromIntegral <$> choose (1, 100 :: Int)
     praosLeaderValue <- arbitrary
-    let kesPeriod       = 10
-        keyRegKesPeriod = 10
-        ocert           = Gen.mkOCert allPoolKeys 10 (SL.KESPeriod kesPeriod)
+    let kesPeriod       = 1
+        keyRegKesPeriod = 1
+        ocert           = Gen.mkOCert allPoolKeys 1 (SL.KESPeriod kesPeriod)
     return $ mkShelleyBlock $ Gen.mkBlock
       prevHash
       allPoolKeys
