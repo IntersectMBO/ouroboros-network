@@ -12,6 +12,7 @@
 {-# LANGUAGE RecordWildCards        #-}
 {-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE TypeApplications       #-}
+{-# LANGUAGE TypeFamilies           #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
      -- * LedgerDB proper
@@ -82,6 +83,7 @@ import           GHC.Stack (HasCallStack)
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot
 
+import           Ouroboros.Consensus.Block.RealPoint
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
@@ -590,6 +592,23 @@ prune db@LedgerDB{..} =
     toPrune :: Int
     toPrune = ledgerDbCountToPrune ledgerDbParams (Seq.length ledgerDbBlocks)
 
+-- | Push an updated ledger state
+pushLedgerState :: l  -- ^ Updated ledger state
+                -> r  -- ^ Reference to the applied block
+                -> LedgerDB l r -> LedgerDB l r
+pushLedgerState current' ref db@LedgerDB{..}  = prune $ db {
+      ledgerDbCurrent = current'
+    , ledgerDbBlocks  = blocks'
+    }
+  where
+    LedgerDbParams{..} = ledgerDbParams
+
+    newPos  = fromIntegral (Seq.length ledgerDbBlocks) + 1
+    blocks' = ledgerDbBlocks
+           |> if newPos `safeMod` ledgerDbSnapEvery == 0
+                then CpSShot ref current'
+                else CpBlock ref
+
 {-------------------------------------------------------------------------------
   Internal: rolling back
 -------------------------------------------------------------------------------}
@@ -714,23 +733,9 @@ data ExceededRollback = ExceededRollback {
 ledgerDbPush :: forall m c l r b. (ApplyBlock l b, Monad m, c)
              => LedgerCfg l
              -> Ap m l r b c -> LedgerDB l r -> m (LedgerDB l r)
-ledgerDbPush cfg ap db@LedgerDB{..} =
-    go <$> applyBlock cfg ap db
-  where
-    LedgerDbParams{..} = ledgerDbParams
-
-    go :: l -> LedgerDB l r
-    go current' =
-       prune $ db {
-           ledgerDbCurrent = current'
-         , ledgerDbBlocks  = blocks'
-         }
-      where
-        newPos  = fromIntegral (Seq.length ledgerDbBlocks) + 1
-        blocks' = ledgerDbBlocks
-               |> if newPos `safeMod` ledgerDbSnapEvery == 0
-                    then CpSShot (apRef ap) current'
-                    else CpBlock (apRef ap)
+ledgerDbPush cfg ap db =
+    (\current' -> pushLedgerState current' (apRef ap) db) <$>
+      applyBlock cfg ap db
 
 -- | Push a bunch of blocks (oldest first)
 ledgerDbPushMany :: (ApplyBlock l b, Monad m, c)
@@ -755,6 +760,36 @@ ledgerDbSwitch cfg numRollbacks newBlocks db = do
           }
       Just db' ->
         Right <$> ledgerDbPushMany cfg newBlocks db'
+
+{-------------------------------------------------------------------------------
+  The LedgerDB itself behaves like a ledger
+-------------------------------------------------------------------------------}
+
+instance ( IsLedger l
+           -- Required superclass constraints of 'IsLedger'
+         , Show               r
+         , Eq                 r
+         , NoUnexpectedThunks r
+         ) => IsLedger (LedgerDB l r) where
+  type LedgerCfg (LedgerDB l r) = LedgerCfg l
+  type LedgerErr (LedgerDB l r) = LedgerErr l
+
+  applyChainTick cfg slot db =
+      TickedLedgerState slot $ db { ledgerDbCurrent = l' }
+    where
+      TickedLedgerState _slot l' = applyChainTick cfg slot (ledgerDbCurrent db)
+
+instance ApplyBlock l blk => ApplyBlock (LedgerDB l (RealPoint blk)) blk where
+  applyLedgerBlock cfg blk (TickedLedgerState slot db) = do
+      fmap (\current' -> pushLedgerState current' (blockRealPoint blk) db) $
+        applyLedgerBlock cfg blk $
+          TickedLedgerState slot (ledgerDbCurrent db)
+  reapplyLedgerBlock cfg blk (TickedLedgerState slot db) =
+      (\current' -> pushLedgerState current' (blockRealPoint blk) db) $
+        reapplyLedgerBlock cfg blk $
+          TickedLedgerState slot (ledgerDbCurrent db)
+  ledgerTipPoint =
+      ledgerTipPoint . ledgerDbCurrent
 
 {-------------------------------------------------------------------------------
   Suppor for testing
