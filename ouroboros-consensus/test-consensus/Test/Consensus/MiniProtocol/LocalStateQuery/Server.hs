@@ -5,7 +5,6 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.MiniProtocol.LocalStateQuery.Server (tests) where
 
-import           Control.Monad.Except (runExcept)
 import           Control.Tracer (nullTracer)
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -36,18 +35,15 @@ import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Protocol.BFT
-import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor as LedgerCursor
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
-                     (LedgerDbParams (..), LgrDB, LgrDBConf, LgrDbArgs (..),
-                     mkLgrDB)
+                     (LedgerDbParams (..), LgrDB, LgrDbArgs (..), mkLgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.FS.API (HasFS)
-import           Ouroboros.Consensus.Storage.LedgerDB.Conf (LedgerDbConf (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
                      (ledgerDbFromGenesis)
 
@@ -181,7 +177,7 @@ initLgrDB
 initLgrDB k chain = do
     varDB          <- newTVarM genesisLedgerDB
     varPrevApplied <- newTVarM mempty
-    let lgrDB = mkLgrDB conf varDB varPrevApplied resolve args
+    let lgrDB = mkLgrDB varDB varPrevApplied resolve args
     LgrDB.validate lgrDB genesisLedgerDB BlockCache.empty 0
       (map getHeader (Chain.toOldestFirst chain)) >>= \case
         LgrDB.ValidateExceededRollBack _ ->
@@ -206,12 +202,6 @@ initLgrDB k chain = do
       }
 
     cfg = testCfg k
-
-    conf :: LgrDBConf TestBlock
-    conf = LedgerDbConf
-      { ldbConfApply   = runExcept .: tickThenApply cfg
-      , ldbConfReapply = tickThenReapply cfg
-      }
 
     genesisLedgerDB = LgrDB.ledgerDbFromGenesis params testInitExtLedger
 

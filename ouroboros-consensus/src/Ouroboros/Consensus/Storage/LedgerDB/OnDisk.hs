@@ -47,6 +47,7 @@ import           Text.Read (readMaybe)
 
 import           Cardano.Slotting.Slot
 
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      readIncremental)
 import           Ouroboros.Consensus.Util.IOLike
@@ -54,7 +55,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
-import           Ouroboros.Consensus.Storage.LedgerDB.Conf
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
@@ -156,14 +156,14 @@ data InitLog r =
 -- /compute/ all subsequent ones. This is important, because the ledger states
 -- obtained in this way will (hopefully) share much of their memory footprint
 -- with their predecessors.
-initLedgerDB :: forall m h l r b e. (IOLike m, HasCallStack)
+initLedgerDB :: forall m h l r b. (IOLike m, ApplyBlock l b, HasCallStack)
              => Tracer m (TraceReplayEvent r ())
              -> Tracer m (TraceEvent r)
              -> HasFS m h
              -> (forall s. Decoder s l)
              -> (forall s. Decoder s r)
              -> LedgerDbParams
-             -> LedgerDbConf l b e
+             -> LedgerCfg l
              -> m l -- ^ Genesis ledger state
              -> StreamAPI m r b
              -> m (InitLog r, LedgerDB l r, Word64)
@@ -228,13 +228,13 @@ data InitFailure r =
 -- If the chain DB or ledger layer reports an error, the whole thing is aborted
 -- and an error is returned. This should not throw any errors itself (ignoring
 -- unexpected exceptions such as asynchronous exceptions, of course).
-initFromSnapshot :: forall m h l r b e. (IOLike m, HasCallStack)
+initFromSnapshot :: forall m h l r b. (IOLike m, ApplyBlock l b, HasCallStack)
                  => Tracer m (TraceReplayEvent r ())
                  -> HasFS m h
                  -> (forall s. Decoder s l)
                  -> (forall s. Decoder s r)
                  -> LedgerDbParams
-                 -> LedgerDbConf l b e
+                 -> LedgerCfg l
                  -> StreamAPI m r b
                  -> DiskSnapshot
                  -> ExceptT (InitFailure r) m (WithOrigin r, LedgerDB l r, Word64)
@@ -246,13 +246,13 @@ initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
     return (csTip initSS, initDB, replayed)
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
-initStartingWith :: forall m l r b e. (Monad m, HasCallStack)
+initStartingWith :: forall m l r b. (Monad m, ApplyBlock l b, HasCallStack)
                  => Tracer m (TraceReplayEvent r ())
-                 -> LedgerDbConf l b e
+                 -> LedgerCfg l
                  -> StreamAPI m r b
                  -> LedgerDB l r
                  -> ExceptT (InitFailure r) m (LedgerDB l r, Word64)
-initStartingWith tracer conf@LedgerDbConf{..} streamAPI initDb = do
+initStartingWith tracer conf streamAPI initDb = do
     streamAll streamAPI (ledgerDbTip initDb)
       InitFailureTooRecent
       (initDb, 0)

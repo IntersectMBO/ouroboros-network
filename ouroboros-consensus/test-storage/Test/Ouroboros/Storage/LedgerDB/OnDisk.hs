@@ -45,7 +45,6 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.Proxy
 import           Data.TreeDiff (ToExpr (..))
-import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 
@@ -72,7 +71,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
-import           Ouroboros.Consensus.Storage.LedgerDB.Conf
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
 
@@ -100,29 +98,26 @@ tests = testGroup "OnDisk" [
 -- | Type level description of the ledger model
 data LedgerUnderTest = LedgerSimple
 
-class ( Show      (BlockRef  t)
-      , Ord       (BlockRef  t)
-      , Serialise (BlockRef  t)
-      , ToExpr    (BlockRef  t)
-      , Typeable  (BlockRef  t)
-      , Show      (BlockVal  t)
-      , Eq        (BlockVal  t)
-      , ToExpr    (BlockVal  t)
-      , Eq        (LedgerSt  t)
-      , Show      (LedgerSt  t)
-      , Serialise (LedgerSt  t)
-      , ToExpr    (LedgerSt  t)
-      , Eq        (LedgerErr t)
-      , Show      (LedgerErr t)
-      , Typeable t
+class ( Lgr.ApplyBlock (LedgerSt t) (BlockVal t)
+      , Eq     (BlockVal t)
+      , Ord    (BlockRef t)
+      , Show   (BlockVal t)
+      , Show   (BlockRef t)
+      , ToExpr (BlockVal t)
+      , ToExpr (BlockRef t)
+      , ToExpr (LedgerSt t)
+      , Serialise (LedgerSt t)
+      , Serialise (BlockRef t)
       ) => LUT (t :: LedgerUnderTest) where
-  type family LedgerSt  t :: *
-  type family LedgerErr t :: *
-  type family BlockVal  t :: *
-  type family BlockRef  t :: *
+  type family LedgerSt t :: *
+  type family BlockVal t :: *
+  type family BlockRef t :: *
 
   -- | Genesis value
   ledgerGenesis :: Proxy t -> LedgerSt t
+
+  -- | Config
+  ledgerConfig  :: Proxy t -> Lgr.LedgerCfg (LedgerSt t)
 
   -- | Apply ledger rules
   ledgerApply   :: Proxy t -> BlockVal t -> LedgerSt t -> Either (LedgerErr t) (LedgerSt t)
@@ -132,6 +127,8 @@ class ( Show      (BlockRef  t)
 
   -- | Produce new block, given current ledger and tip
   genBlock      :: Proxy t -> LedgerSt t -> Gen (BlockVal t)
+
+type LedgerErr t = Lgr.LedgerErr (LedgerSt t)
 
 refValPair :: LUT t => Proxy t -> BlockVal t -> (BlockRef t, BlockVal t)
 refValPair p b = (blockRef p b, b)
@@ -147,12 +144,10 @@ genBlocks p n l = do b <- genBlock p l
   where
     invalidBlock = "genBlocks: genBlock produced invalid block"
 
-type LedgerDbConf'   t = LedgerDbConf   (LedgerSt t)              (BlockVal t) (LedgerErr t)
-type AnnLedgerError' t = AnnLedgerError (LedgerSt t) (BlockRef t)              (LedgerErr t)
+type AnnLedgerError' t = AnnLedgerError (LedgerSt t) (BlockRef t)
 type LedgerDB'       t = LedgerDB       (LedgerSt t) (BlockRef t)
 type StreamAPI'    m t = StreamAPI    m              (BlockRef t) (BlockVal t)
 type NextBlock'      t = NextBlock                   (BlockRef t) (BlockVal t)
--- type BlockInfo'      t = (Apply 'False,     RefOrVal (BlockRef t) (BlockVal t))
 type Tip'            t = WithOrigin                  (BlockRef t)
 
 {-------------------------------------------------------------------------------
@@ -160,30 +155,18 @@ type Tip'            t = WithOrigin                  (BlockRef t)
 -------------------------------------------------------------------------------}
 
 instance LUT 'LedgerSimple where
-  type LedgerSt  'LedgerSimple = Lgr.LedgerState TestBlock
-  type LedgerErr 'LedgerSimple = Lgr.LedgerErr (Lgr.LedgerState TestBlock)
-  type BlockVal  'LedgerSimple = TestBlock
-  type BlockRef  'LedgerSimple = TestBlock
+  type LedgerSt 'LedgerSimple = Lgr.LedgerState TestBlock
+  type BlockVal 'LedgerSimple = TestBlock
+  type BlockRef 'LedgerSimple = TestBlock
 
-  ledgerGenesis :: Proxy 'LedgerSimple -> LedgerSt 'LedgerSimple
-  ledgerGenesis _ = testInitLedger
-
-  ledgerApply :: Proxy 'LedgerSimple
-              -> BlockVal 'LedgerSimple
-              -> LedgerSt 'LedgerSimple
-              -> Either (LedgerErr 'LedgerSimple) (LedgerSt 'LedgerSimple)
-  ledgerApply _ b = runExcept . Lgr.tickThenApply () b
-
-  blockRef :: Proxy 'LedgerSimple
-           -> BlockVal 'LedgerSimple -> BlockRef 'LedgerSimple
-  blockRef _ b = b
-
-  genBlock :: Proxy 'LedgerSimple
-           -> LedgerSt 'LedgerSimple -> Gen (BlockVal 'LedgerSimple)
-  genBlock _ l = return $
-     case lastAppliedBlock l of
-       Nothing -> firstBlock 0
-       Just b  -> successorBlock b
+  ledgerGenesis _   = testInitLedger
+  ledgerConfig  _   = ()
+  ledgerApply   _ b = runExcept . Lgr.tickThenApply () b
+  blockRef      _ b = b
+  genBlock      _ l = return $
+                        case lastAppliedBlock l of
+                          Nothing -> firstBlock 0
+                          Just b  -> successorBlock b
 
 {-------------------------------------------------------------------------------
   Commands
@@ -551,6 +534,9 @@ data StandaloneDB m t = DB {
 
       -- | Resolve blocks
     , dbResolve :: ResolveBlock m (BlockRef t) (BlockVal t)
+
+      -- | Ledger config
+    , dbLedgerCfg :: Lgr.LedgerCfg (LedgerSt t)
     }
 
 initStandaloneDB :: forall m t. (IOLike m, LUT t)
@@ -561,6 +547,9 @@ initStandaloneDB dbEnv@DbEnv{..} = do
 
     let dbResolve :: ResolveBlock m (BlockRef t) (BlockVal t)
         dbResolve r = atomically $ getBlock r <$> readTVar dbBlocks
+
+        dbLedgerCfg :: Lgr.LedgerCfg (LedgerSt t)
+        dbLedgerCfg = ledgerConfig p
 
     return DB{..}
   where
@@ -579,24 +568,6 @@ initStandaloneDB dbEnv@DbEnv{..} = do
         , "invariant violation: "
         , "block in dbChain not in dbBlocks, "
         , "or LedgerDB not re-initialized after chain truncation"
-        ]
-
-dbConf :: forall m t. LUT t => StandaloneDB m t -> LedgerDbConf' t
-dbConf DB{..} = LedgerDbConf {..}
-  where
-    p :: Proxy t
-    p = Proxy
-
-    ldbConfApply   = ledgerApply p
-    ldbConfReapply = \b l -> case ledgerApply p b l of
-                               Left err -> error $ unexpectedLedgerError err
-                               Right l' -> l'
-
-    unexpectedLedgerError :: Show e => e -> String
-    unexpectedLedgerError err = concat [
-          "dbConf: "
-        , "unexpected ledger state error in ldbConfReapply: "
-        , show err
         ]
 
 dbStreamAPI :: forall m t. (IOLike m, LUT t)
@@ -652,7 +623,6 @@ runDB standalone@DB{..} cmd =
     case dbEnv of
       DbEnv{dbHasFS} -> Resp <$> go dbHasFS cmd
   where
-    conf      = dbConf      standalone
     streamAPI = dbStreamAPI standalone
 
     p :: Proxy t
@@ -667,14 +637,14 @@ runDB standalone@DB{..} cmd =
         upd (push b) $ \db ->
           fmap (first annLedgerErr') $
             defaultThrowLedgerErrors $
-              ledgerDbPush conf (ApplyVal (blockRef p b) b) db
+              ledgerDbPush dbLedgerCfg (ApplyVal (blockRef p b) b) db
     go _ (Switch n bs) = do
         atomically $ modifyTVar dbBlocks $
           repeatedly (uncurry Map.insert) (map (refValPair p) bs)
         upd (switch n bs) $ \db ->
           fmap (bimap annLedgerErr' ignoreExceedRollback) $
             defaultResolveWithErrors dbResolve $
-              ledgerDbSwitch conf n (map (\b -> ApplyVal (blockRef p b) b) bs) db
+              ledgerDbSwitch dbLedgerCfg n (map (\b -> ApplyVal (blockRef p b) b) bs) db
     go hasFS Snap = do
         (_, db) <- atomically $ readTVar dbState
         Snapped <$> takeSnapshot nullTracer hasFS S.encode S.encode db
@@ -687,7 +657,7 @@ runDB standalone@DB{..} cmd =
             S.decode
             S.decode
             (dbLgrParams dbEnv)
-            conf
+            dbLedgerCfg
             (return $ ledgerGenesis p)
             streamAPI
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))

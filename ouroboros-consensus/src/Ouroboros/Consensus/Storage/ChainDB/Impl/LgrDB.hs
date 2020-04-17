@@ -49,13 +49,11 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , TraceEvent (..)
   , TraceReplayEvent (..)
     -- * Exported for testing purposes
-  , LgrDBConf
   , mkLgrDB
   ) where
 
 import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
-import           Control.Monad.Except (runExcept)
 import           Control.Tracer
 import           Data.Bifunctor (second)
 import           Data.Foldable (foldl')
@@ -80,7 +78,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -91,7 +88,6 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (FsError,
                      MountPoint (..), mkFsPath)
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 
-import           Ouroboros.Consensus.Storage.LedgerDB.Conf
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
@@ -111,8 +107,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 
 -- | Thin wrapper around the ledger database
 data LgrDB m blk = LgrDB {
-      conf           :: !(LgrDBConf blk)
-    , varDB          :: !(StrictTVar m (LedgerDB blk))
+      varDB          :: !(StrictTVar m (LedgerDB blk))
       -- ^ INVARIANT: the tip of the 'LedgerDB' is always in sync with the tip
       -- of the current chain of the ChainDB.
     , varPrevApplied :: !(StrictTVar m (Set (RealPoint blk)))
@@ -138,9 +133,6 @@ deriving instance (IOLike m, LedgerSupportsProtocol blk)
 
 -- | Shorter synonym for the instantiated 'LedgerDB.LedgerDB'.
 type LedgerDB blk = LedgerDB.LedgerDB (ExtLedgerState blk) (RealPoint blk)
-
--- | Shorter synonym for the instantiated 'LedgerDbConf'.
-type LgrDBConf blk = LedgerDbConf (ExtLedgerState blk) blk (ExtValidationError blk)
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -225,35 +217,18 @@ openDB :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
        -> m (LgrDB m blk, Word64)
 openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
     createDirectoryIfMissing lgrHasFS True (mkFsPath [])
-    (db, replayed) <- initFromDisk args replayTracer lgrDbConf immDB
+    (db, replayed) <- initFromDisk args replayTracer immDB
     (varDB, varPrevApplied) <-
       (,) <$> newTVarM db <*> newTVarM Set.empty
     return (
         LgrDB {
-            conf           = lgrDbConf
-          , varDB          = varDB
+            varDB          = varDB
           , varPrevApplied = varPrevApplied
           , resolveBlock   = getBlock
           , args           = args
           }
       , replayed
       )
-  where
-    apply :: blk
-          -> ExtLedgerState blk
-          -> Either (ExtValidationError blk) (ExtLedgerState blk)
-    apply = runExcept .: tickThenApply lgrTopLevelConfig
-
-    reapply :: blk
-            -> ExtLedgerState blk
-            -> ExtLedgerState blk
-    reapply = tickThenReapply lgrTopLevelConfig
-
-    lgrDbConf :: LgrDBConf blk
-    lgrDbConf = LedgerDbConf {
-        ldbConfApply   = apply
-      , ldbConfReapply = reapply
-      }
 
 -- | Reopen the ledger DB
 --
@@ -264,17 +239,16 @@ reopen :: (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
        -> Tracer m (TraceReplayEvent (RealPoint blk) ())
        -> m Word64
 reopen LgrDB{..} immDB replayTracer = do
-    (db, replayed) <- initFromDisk args replayTracer conf immDB
+    (db, replayed) <- initFromDisk args replayTracer immDB
     atomically $ writeTVar varDB db
     return replayed
 
-initFromDisk :: forall blk m. (IOLike m, HasHeader blk, HasCallStack)
+initFromDisk :: forall blk m. (IOLike m, HasCallStack, LedgerSupportsProtocol blk)
              => LgrDbArgs m blk
              -> Tracer m (TraceReplayEvent (RealPoint blk) ())
-             -> LgrDBConf   blk
              -> ImmDB     m blk
              -> m (LedgerDB blk, Word64)
-initFromDisk LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure $ do
+initFromDisk LgrDbArgs{..} replayTracer immDB = wrapFailure $ do
     (_initLog, db, replayed) <-
       LedgerDB.initLedgerDB
         replayTracer
@@ -283,7 +257,7 @@ initFromDisk LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure $ do
         decodeExtLedgerState'
         (decodeRealPoint lgrDecodeHash)
         lgrParams
-        lgrDbConf
+        lgrTopLevelConfig
         lgrGenesis
         (streamAPI immDB)
     return (db, replayed)
@@ -296,13 +270,12 @@ initFromDisk LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure $ do
                               lgrDecodeTipInfo
 
 -- | For testing purposes
-mkLgrDB :: LgrDBConf blk
-        -> StrictTVar m (LedgerDB blk)
+mkLgrDB :: StrictTVar m (LedgerDB blk)
         -> StrictTVar m (Set (RealPoint blk))
         -> (RealPoint blk -> m blk)
         -> LgrDbArgs m blk
         -> LgrDB m blk
-mkLgrDB conf varDB varPrevApplied resolveBlock args = LgrDB {..}
+mkLgrDB varDB varPrevApplied resolveBlock args = LgrDB {..}
 
 {-------------------------------------------------------------------------------
   TraceReplayEvent decorator
@@ -334,12 +307,15 @@ getCurrent LgrDB{..} = readTVar varDB
 getCurrentState :: IOLike m => LgrDB m blk -> STM m (ExtLedgerState blk)
 getCurrentState LgrDB{..} = LedgerDB.ledgerDbCurrent <$> readTVar varDB
 
-getPastState :: (IOLike m, UpdateLedger blk)
+getPastState :: (IOLike m, UpdateLedger blk, LedgerSupportsProtocol blk)
              => LgrDB m blk -> Point blk -> m (Maybe (ExtLedgerState blk))
 getPastState LgrDB{..} p = do
     db <- atomically $ readTVar varDB
     LedgerDB.defaultResolveBlocks resolveBlock $
-      LedgerDB.ledgerDbPast conf (pointToWithOriginRealPoint p) db
+      LedgerDB.ledgerDbPast
+        (lgrTopLevelConfig args)
+        (pointToWithOriginRealPoint p)
+        db
 
 -- | PRECONDITION: The new 'LedgerDB' must be the result of calling either
 -- 'LedgerDB.ledgerDbSwitch' or 'LedgerDB.ledgerDbPushMany' on the current
@@ -379,11 +355,9 @@ getDiskPolicy LgrDB{ args = LgrDbArgs{..} } = lgrDiskPolicy
   Validation
 -------------------------------------------------------------------------------}
 
-type AnnLedgerError blk =
-       LedgerDB.AnnLedgerError
-         (ExtLedgerState     blk)
-         (RealPoint          blk)
-         (ExtValidationError blk)
+type AnnLedgerError blk = LedgerDB.AnnLedgerError
+                             (ExtLedgerState blk)
+                             (RealPoint      blk)
 
 data ValidateResult blk =
     ValidateSuccessful       (LedgerDB       blk)
@@ -402,7 +376,11 @@ validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
 validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
     aps <- mkAps hdrs <$> atomically (readTVar varPrevApplied)
     res <- fmap rewrap $ LedgerDB.defaultResolveWithErrors resolveBlock $
-             LedgerDB.ledgerDbSwitch conf numRollbacks aps ledgerDB
+             LedgerDB.ledgerDbSwitch
+               (lgrTopLevelConfig args)
+               numRollbacks
+               aps
+               ledgerDB
     atomically $ modifyTVar varPrevApplied $
       addPoints (validBlockPoints res (map headerRealPoint hdrs))
     return res
@@ -413,17 +391,16 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
     rewrap (Right (Left  e)) = ValidateExceededRollBack e
     rewrap (Right (Right l)) = ValidateSuccessful       l
 
-    mkAps :: forall n r l e b. (
-               r ~ RealPoint          blk
-             , l ~ ExtLedgerState     blk
-             , e ~ ExtValidationError blk
-             , b ~                    blk
+    mkAps :: forall n r l b. (
+               r ~ RealPoint      blk
+             , l ~ ExtLedgerState blk
+             , b ~                blk
              )
           => [Header blk]
           -> Set r
-          -> [Ap n l r b e ( LedgerDB.ResolvesBlocks r b n
-                           , LedgerDB.ThrowsLedgerError l r e n
-                           )]
+          -> [Ap n l r b ( LedgerDB.ResolvesBlocks r b n
+                         , LedgerDB.ThrowsLedgerError l r n
+                         )]
     mkAps hdrs prevApplied =
       [ case ( Set.member (headerRealPoint hdr) prevApplied
              , BlockCache.lookup (headerHash hdr) blockCache

@@ -3,12 +3,18 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Util.Orphans.NoUnexpectedThunks () where
 
+import           Data.Void
+
 import           Control.Monad.IOSim
 import           Control.Monad.ST.Lazy
 import           Control.Monad.ST.Unsafe (unsafeSTToIO)
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
+
+-- TODO: This could move to cardano-prelude
+instance NoUnexpectedThunks Void where
+  whnfNoUnexpectedThunks _ = absurd
 
 -- | Just like the IO instance, we don't actually check anything here
 instance NoUnexpectedThunks (SimM s a) where
