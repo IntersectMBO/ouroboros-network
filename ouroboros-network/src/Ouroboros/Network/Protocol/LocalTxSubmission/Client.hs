@@ -25,7 +25,7 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Client (
   , localTxSubmissionClientPeer
 
       -- * Null local tx submission client
-    , localTxSubmissionClientNull
+  , localTxSubmissionClientNull
   ) where
 
 import           Control.Monad (forever)
@@ -45,6 +45,8 @@ newtype LocalTxSubmissionClient tx reject m a = LocalTxSubmissionClient {
 localTxSubmissionClientNull :: MonadTimer m => LocalTxSubmissionClient tx reject m a
 localTxSubmissionClientNull =
     LocalTxSubmissionClient $ forever $ threadDelay 43200 {- day in seconds -}
+
+{-# DEPRECATED localTxSubmissionClientNull "Use Ouroboros.Network.NodeToClient.localTxSubmissionPeerNull" #-}
 
 -- | The client side of the local transaction submission protocol.
 --

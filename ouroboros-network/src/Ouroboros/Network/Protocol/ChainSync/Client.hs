@@ -47,6 +47,8 @@ newtype ChainSyncClient header tip m a = ChainSyncClient {
 chainSyncClientNull :: MonadTimer m => ChainSyncClient header tip m a
 chainSyncClientNull = ChainSyncClient $ forever $ threadDelay 43200 {- one day in seconds -}
 
+{-# DEPRECATED chainSyncClientNull "Use Ouroboros.Network.NodeToClient.chainSyncPeerNull" #-}
+
 -- | In the 'StIdle' protocol state, the server does not have agency and can choose to
 -- send a request next, or a find intersection message.
 --

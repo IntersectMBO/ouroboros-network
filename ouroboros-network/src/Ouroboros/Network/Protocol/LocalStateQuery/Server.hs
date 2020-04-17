@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -16,13 +17,14 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Server (
     , localStateQueryServerPeer
     ) where
 
+import           Data.Kind (Type)
 import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Block (Point)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 
-newtype LocalStateQueryServer block query m a = LocalStateQueryServer {
+newtype LocalStateQueryServer block (query :: Type -> Type) m a = LocalStateQueryServer {
       runLocalStateQueryServer :: m (ServerStIdle block query m a)
     }
 
@@ -88,7 +90,7 @@ data ServerStQuerying block query m a result where
 -- side of the 'LocalStateQuery' protocol.
 --
 localStateQueryServerPeer
-  :: forall block query m a.
+  :: forall block (query :: Type -> Type) m a.
      Monad m
   => LocalStateQueryServer block query m a
   -> Peer (LocalStateQuery block query) AsServer StIdle m a
