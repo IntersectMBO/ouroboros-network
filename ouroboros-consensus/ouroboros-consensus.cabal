@@ -147,7 +147,6 @@ library
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
                        Ouroboros.Consensus.Storage.ImmutableDB.Parser
                        Ouroboros.Consensus.Storage.ImmutableDB.Types
-                       Ouroboros.Consensus.Storage.LedgerDB.Conf
                        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
@@ -298,6 +297,7 @@ test-suite test-consensus
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
+                       Test.Util.Orphans.ToExpr
                        Test.Util.QSM
                        Test.Util.QuickCheck
                        Test.Util.Range
@@ -404,6 +404,7 @@ test-suite test-storage
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
+                       Test.Util.Orphans.ToExpr
                        Test.Util.QuickCheck
                        Test.Util.Range
                        Test.Util.RefEnv

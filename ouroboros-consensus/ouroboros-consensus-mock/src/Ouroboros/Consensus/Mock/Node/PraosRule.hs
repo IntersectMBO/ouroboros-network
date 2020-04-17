@@ -46,7 +46,7 @@ protocolInfoPraosRule numCoreNodes
                 }
             , wlsConfigNodeId   = nid
             }
-        , configLedger = SimpleLedgerConfig ()
+        , configLedger = ()
         , configBlock  = cfg
         }
     , pInfoInitLedger = ExtLedgerState

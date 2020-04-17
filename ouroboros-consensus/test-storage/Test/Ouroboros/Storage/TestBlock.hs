@@ -42,7 +42,6 @@ module Test.Ouroboros.Storage.TestBlock (
   , testBlockToLazyByteString
     -- * Ledger
   , TestBlockError(..)
-  , LedgerConfig(..)
   , testInitExtLedger
   , TestBlockOtherHeaderEnvelopeError(..)
   , mkTestConfig
@@ -454,24 +453,13 @@ data TestBlockError =
   | InvalidBlock
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
-instance UpdateLedger TestBlock where
-  data LedgerState TestBlock =
-      TestLedger {
-          -- The ledger state simply consists of the last applied block
-          lastAppliedPoint :: !(Point TestBlock)
-        , lastAppliedHash  :: !(ChainHash TestBlock)
-        }
-    deriving stock    (Show, Eq, Generic)
-    deriving anyclass (Serialise, NoUnexpectedThunks)
-
-  data LedgerConfig TestBlock = LedgerConfig
-    deriving stock    (Generic)
-    deriving anyclass (NoUnexpectedThunks)
-
-  type LedgerError TestBlock = TestBlockError
+instance IsLedger (LedgerState TestBlock) where
+  type LedgerCfg (LedgerState TestBlock) = ()
+  type LedgerErr (LedgerState TestBlock) = TestBlockError
 
   applyChainTick _ = TickedLedgerState
 
+instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyLedgerBlock _ tb@TestBlock{..} (TickedLedgerState _ TestLedger{..})
     | blockPrevHash tb /= lastAppliedHash
     = throwError $ InvalidHash lastAppliedHash (blockPrevHash tb)
@@ -484,6 +472,16 @@ instance UpdateLedger TestBlock where
     TestLedger (Chain.blockPoint tb) (BlockHash (blockHash tb))
 
   ledgerTipPoint = lastAppliedPoint
+
+instance UpdateLedger TestBlock where
+  data LedgerState TestBlock =
+      TestLedger {
+          -- The ledger state simply consists of the last applied block
+          lastAppliedPoint :: !(Point TestBlock)
+        , lastAppliedHash  :: !(ChainHash TestBlock)
+        }
+    deriving stock    (Show, Eq, Generic)
+    deriving anyclass (Serialise, NoUnexpectedThunks)
 
 instance HasAnnTip TestBlock where
   type TipInfo TestBlock = IsEBB
@@ -590,7 +588,7 @@ mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
           , bftSignKey  = SignKeyMockDSIGN 0
           , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
           }
-      , configLedger = LedgerConfig
+      , configLedger = ()
       , configBlock  = TestBlockConfig {
             testBlockSlotLengths  = slotLengths
           , testBlockEraParams    = eraParams

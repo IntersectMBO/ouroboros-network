@@ -20,6 +20,7 @@ import           Ouroboros.Network.Block (Point (..), SlotNo (..), blockHash,
                      genesisPoint)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -1039,7 +1040,7 @@ test_golden_LedgerState = goldenTestCBOR
 
 exampleLedgerState :: LedgerState Block
 exampleLedgerState = reapplyLedgerBlock
-    (ShelleyLedgerConfig SL.testGlobals)
+    SL.testGlobals
     (mkShelleyBlock newBlock)
     (TickedLedgerState 0 ShelleyLedgerState {
         ledgerTip    = genesisPoint

@@ -27,7 +27,6 @@ module Test.Util.TestBlock (
   , TestBlockError(..)
   , Header(..)
   , BlockConfig(..)
-  , LedgerConfig(..)
   , Query(..)
   , firstBlock
   , successorBlock
@@ -44,6 +43,8 @@ module Test.Util.TestBlock (
   , treeToChains
   , treePreferredChain
     -- * Ledger infrastructure
+  , lastAppliedBlock
+  , testInitLedger
   , testInitExtLedger
   , singleNodeTestConfig
     -- * Support for tests
@@ -67,6 +68,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
+import           Data.TreeDiff (ToExpr)
 import           Data.Type.Equality ((:~:) (Refl))
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -102,6 +104,8 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
 import           Ouroboros.Consensus.Storage.ImmutableDB (HashInfo (..))
+
+import           Test.Util.Orphans.ToExpr ()
 
 {-------------------------------------------------------------------------------
   Test infrastructure: test block
@@ -146,7 +150,7 @@ newtype TestHash = UnsafeTestHash {
       unTestHash :: NonEmpty Word64
     }
   deriving stock   (Generic)
-  deriving newtype (Eq, Ord, Serialise)
+  deriving newtype (Eq, Ord, Serialise, ToExpr)
   deriving anyclass NoUnexpectedThunks
 
 pattern TestHash :: NonEmpty Word64 -> TestHash
@@ -195,8 +199,8 @@ data TestBlock = TestBlock {
       -- ^ Note that when generating a 'TestBlock', you must make sure that
       -- blocks with the same 'TestHash' have the same value for 'tbValid'.
     }
-  deriving stock    (Show, Eq, Generic)
-  deriving anyclass (Serialise, NoUnexpectedThunks)
+  deriving stock    (Show, Eq, Ord, Generic)
+  deriving anyclass (Serialise, NoUnexpectedThunks, ToExpr)
 
 instance GetHeader TestBlock where
   newtype Header TestBlock = TestHeader { testHeader :: TestBlock }
@@ -297,23 +301,13 @@ instance BlockSupportsProtocol TestBlock where
       signKey :: Block.SlotNo -> SignKeyDSIGN MockDSIGN
       signKey (SlotNo n) = SignKeyMockDSIGN $ fromIntegral (n `mod` numCore)
 
-instance UpdateLedger TestBlock where
-  newtype LedgerState TestBlock =
-      TestLedger {
-          -- The ledger state simply consists of the last applied block
-          lastAppliedPoint :: Point TestBlock
-        }
-    deriving stock   (Show, Eq, Generic)
-    deriving newtype (Serialise, NoUnexpectedThunks)
-
-  data LedgerConfig TestBlock = LedgerConfig
-    deriving stock    (Generic)
-    deriving anyclass (NoUnexpectedThunks)
-
-  type LedgerError TestBlock = TestBlockError
+instance IsLedger (LedgerState TestBlock) where
+  type LedgerCfg (LedgerState TestBlock) = ()
+  type LedgerErr (LedgerState TestBlock) = TestBlockError
 
   applyChainTick _ = TickedLedgerState
 
+instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyLedgerBlock _ tb@TestBlock{..} (TickedLedgerState _ TestLedger{..})
     | Block.blockPrevHash tb /= Block.pointHash lastAppliedPoint
     = throwError $ InvalidHash (Block.pointHash lastAppliedPoint) (Block.blockPrevHash tb)
@@ -325,6 +319,26 @@ instance UpdateLedger TestBlock where
   reapplyLedgerBlock _ tb _ = TestLedger (Chain.blockPoint tb)
 
   ledgerTipPoint = lastAppliedPoint
+
+instance UpdateLedger TestBlock where
+  newtype LedgerState TestBlock =
+      TestLedger {
+          -- The ledger state simply consists of the last applied block
+          lastAppliedPoint :: Point TestBlock
+        }
+    deriving stock   (Show, Eq, Generic)
+    deriving newtype (Serialise, NoUnexpectedThunks, ToExpr)
+
+-- | Last applied block
+--
+-- Returns 'Nothing' if the ledger is empty.
+lastAppliedBlock :: LedgerState TestBlock -> Maybe TestBlock
+lastAppliedBlock (TestLedger p) = go p
+  where
+    -- We can only have applied valid blocks
+    go :: Point TestBlock -> Maybe TestBlock
+    go Block.GenesisPoint           = Nothing
+    go (Block.BlockPoint slot hash) = Just $ TestBlock hash slot True
 
 instance HasAnnTip TestBlock where
   -- Use defaults
@@ -379,7 +393,7 @@ singleNodeTestConfig = TopLevelConfig {
         , bftSignKey  = SignKeyMockDSIGN 0
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
-    , configLedger = LedgerConfig
+    , configLedger = ()
     , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
     }
   where

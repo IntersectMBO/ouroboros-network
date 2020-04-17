@@ -33,6 +33,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.Block
@@ -164,7 +165,7 @@ instance ( SimpleCrypto c
 -- may not be worth it; it would be a bit of work, and after we have integrated
 -- the Shelley rules, we'll have a proper instance anyway.
 stakeDist :: LedgerConfig (SimplePraosBlock c c') -> StakeDist
-stakeDist cfg = equalStakeDist (simpleMockLedgerConfig cfg)
+stakeDist = equalStakeDist
 
 {-------------------------------------------------------------------------------
   Serialisation

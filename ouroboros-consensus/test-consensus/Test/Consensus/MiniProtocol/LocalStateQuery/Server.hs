@@ -5,7 +5,6 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.MiniProtocol.LocalStateQuery.Server (tests) where
 
-import           Control.Monad.Except (runExcept)
 import           Control.Tracer (nullTracer)
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -31,24 +30,20 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Protocol.BFT
-import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LedgerCursor as LedgerCursor
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
-                     (LedgerDbParams (..), LgrDB, LgrDBConf, LgrDbArgs (..),
-                     mkLgrDB)
+                     (LedgerDbParams (..), LgrDB, LgrDbArgs (..), mkLgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.FS.API (HasFS)
-import           Ouroboros.Consensus.Storage.LedgerDB.Conf (LedgerDbConf (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
                      (ledgerDbFromGenesis)
 
@@ -182,17 +177,20 @@ initLgrDB
 initLgrDB k chain = do
     varDB          <- newTVarM genesisLedgerDB
     varPrevApplied <- newTVarM mempty
-    let lgrDB = mkLgrDB conf varDB varPrevApplied args
+    let lgrDB = mkLgrDB varDB varPrevApplied resolve args
     LgrDB.validate lgrDB genesisLedgerDB BlockCache.empty 0
       (map getHeader (Chain.toOldestFirst chain)) >>= \case
-        LgrDB.MaximumRollbackExceeded {} ->
-          error "rollback was 0"
-        LgrDB.RollbackSuccessful (LgrDB.InvalidBlock {}) ->
-          error "there were no invalid blocks"
-        LgrDB.RollbackSuccessful (LgrDB.ValidBlocks ledgerDB') -> do
+        LgrDB.ValidateExceededRollBack _ ->
+          error "impossible: rollback was 0"
+        LgrDB.ValidateLedgerError _ ->
+          error "impossible: there were no invalid blocks"
+        LgrDB.ValidateSuccessful ledgerDB' -> do
           atomically $ LgrDB.setCurrent lgrDB ledgerDB'
           return lgrDB
   where
+    resolve :: RealPoint TestBlock -> m TestBlock
+    resolve = return . (blockMapping Map.!)
+
     blockMapping :: Map (RealPoint TestBlock) TestBlock
     blockMapping = Map.fromList
       [(blockRealPoint b, b) | b <- Chain.toOldestFirst chain]
@@ -204,19 +202,6 @@ initLgrDB k chain = do
       }
 
     cfg = testCfg k
-
-    conf :: LgrDBConf m TestBlock
-    conf = LedgerDbConf
-      { ldbConfGenesis = return testInitExtLedger
-      , ldbConfApply   = runExcept .:
-          applyExtLedgerState BlockNotPreviouslyApplied cfg
-      , ldbConfReapply = (mustBeRight . runExcept) .:
-          applyExtLedgerState BlockPreviouslyApplied    cfg
-      , ldbConfResolve = return . (blockMapping Map.!)
-      }
-
-    mustBeRight (Left e)  = error $ "impossible: " <> show e
-    mustBeRight (Right a) = a
 
     genesisLedgerDB = LgrDB.ledgerDbFromGenesis params testInitExtLedger
 
@@ -248,7 +233,7 @@ testCfg securityParam = TopLevelConfig {
         , bftSignKey  = SignKeyMockDSIGN 0
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
-    , configLedger = LedgerConfig
+    , configLedger = ()
     , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
     }
   where

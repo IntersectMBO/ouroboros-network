@@ -36,7 +36,7 @@ import           Control.Monad.Except (Except, runExcept, throwError)
 import           Control.Monad.State (StateT (..))
 import qualified Control.Monad.State as State
 import           Control.Tracer (nullTracer)
-import           Data.Bifunctor (first)
+import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Functor.Classes
 import qualified Data.List as L
@@ -45,7 +45,6 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.Proxy
 import           Data.TreeDiff (ToExpr (..))
-import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 
@@ -64,6 +63,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Cardano.Slotting.Slot (WithOrigin)
 import qualified Cardano.Slotting.Slot as S
 
+import qualified Ouroboros.Consensus.Ledger.Abstract as Lgr
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
@@ -71,13 +71,13 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
-import           Ouroboros.Consensus.Storage.LedgerDB.Conf
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
 
 import qualified Test.Util.FS.Sim.MockFS as MockFS
 import           Test.Util.FS.Sim.STM
 import           Test.Util.Range
+import           Test.Util.TestBlock
 
 -- For the Arbitrary instance of 'MemPolicy'
 import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
@@ -98,58 +98,56 @@ tests = testGroup "OnDisk" [
 -- | Type level description of the ledger model
 data LedgerUnderTest = LedgerSimple
 
-class ( Show      (BlockRef  t)
-      , Ord       (BlockRef  t)
-      , Serialise (BlockRef  t)
-      , ToExpr    (BlockRef  t)
-      , Typeable  (BlockRef  t)
-      , Show      (BlockVal  t)
-      , Eq        (BlockVal  t)
-      , ToExpr    (BlockVal  t)
-      , Eq        (LedgerSt  t)
-      , Show      (LedgerSt  t)
-      , Serialise (LedgerSt  t)
-      , ToExpr    (LedgerSt  t)
-      , Eq        (LedgerErr t)
-      , Show      (LedgerErr t)
-      , Typeable t
+class ( Lgr.ApplyBlock (LedgerSt t) (BlockVal t)
+      , Eq     (BlockVal t)
+      , Ord    (BlockRef t)
+      , Show   (BlockVal t)
+      , Show   (BlockRef t)
+      , ToExpr (BlockVal t)
+      , ToExpr (BlockRef t)
+      , ToExpr (LedgerSt t)
+      , Serialise (LedgerSt t)
+      , Serialise (BlockRef t)
       ) => LUT (t :: LedgerUnderTest) where
-  data family LedgerSt  t :: *
-  type family LedgerErr t :: *
-  data family BlockVal  t :: *
-  type family BlockRef  t :: *
+  type family LedgerSt t :: *
+  type family BlockVal t :: *
+  type family BlockRef t :: *
 
   -- | Genesis value
-  ledgerGenesis :: LedgerSt t
+  ledgerGenesis :: Proxy t -> LedgerSt t
+
+  -- | Config
+  ledgerConfig  :: Proxy t -> Lgr.LedgerCfg (LedgerSt t)
 
   -- | Apply ledger rules
-  ledgerApply   :: BlockVal t -> LedgerSt t -> Either (LedgerErr t) (LedgerSt t)
+  ledgerApply   :: Proxy t -> BlockVal t -> LedgerSt t -> Either (LedgerErr t) (LedgerSt t)
 
   -- | Compute reference to a block
-  blockRef      :: BlockVal t -> BlockRef t
+  blockRef      :: Proxy t -> BlockVal t -> BlockRef t
 
   -- | Produce new block, given current ledger and tip
-  genBlock      :: LedgerSt t -> Gen (BlockVal t)
+  genBlock      :: Proxy t -> LedgerSt t -> Gen (BlockVal t)
 
-refValPair :: LUT t => BlockVal t -> (BlockRef t, BlockVal t)
-refValPair b = (blockRef b, b)
+type LedgerErr t = Lgr.LedgerErr (LedgerSt t)
 
-genBlocks :: LUT t => Word64 -> LedgerSt t -> Gen [BlockVal t]
-genBlocks 0 _ = return []
-genBlocks n l = do b <- genBlock l
-                   case ledgerApply b l of
-                     Left  _  -> error invalidBlock
-                     Right l' -> do
-                       bs <- genBlocks (n - 1) l'
-                       return (b:bs)
+refValPair :: LUT t => Proxy t -> BlockVal t -> (BlockRef t, BlockVal t)
+refValPair p b = (blockRef p b, b)
+
+genBlocks :: LUT t => Proxy t -> Word64 -> LedgerSt t -> Gen [BlockVal t]
+genBlocks _ 0 _ = return []
+genBlocks p n l = do b <- genBlock p l
+                     case ledgerApply p b l of
+                       Left  _  -> error invalidBlock
+                       Right l' -> do
+                         bs <- genBlocks p (n - 1) l'
+                         return (b:bs)
   where
     invalidBlock = "genBlocks: genBlock produced invalid block"
 
-type LedgerDbConf' m t = LedgerDbConf m (LedgerSt t) (BlockRef t) (BlockVal t) (LedgerErr t)
+type AnnLedgerError' t = AnnLedgerError (LedgerSt t) (BlockRef t)
 type LedgerDB'       t = LedgerDB       (LedgerSt t) (BlockRef t)
 type StreamAPI'    m t = StreamAPI    m              (BlockRef t) (BlockVal t)
 type NextBlock'      t = NextBlock                   (BlockRef t) (BlockVal t)
-type BlockInfo'      t = (Apply 'False,     RefOrVal (BlockRef t) (BlockVal t))
 type Tip'            t = WithOrigin                  (BlockRef t)
 
 {-------------------------------------------------------------------------------
@@ -157,30 +155,18 @@ type Tip'            t = WithOrigin                  (BlockRef t)
 -------------------------------------------------------------------------------}
 
 instance LUT 'LedgerSimple where
-  data LedgerSt 'LedgerSimple = SimpleLedger Int
-    deriving (Show, Eq, Generic, Serialise, ToExpr)
+  type LedgerSt 'LedgerSimple = Lgr.LedgerState TestBlock
+  type BlockVal 'LedgerSimple = TestBlock
+  type BlockRef 'LedgerSimple = TestBlock
 
-  data BlockVal 'LedgerSimple = SimpleBlock Int
-    deriving (Show, Eq, Generic, Serialise, ToExpr)
-
-  type LedgerErr 'LedgerSimple = (Int, Int)
-  type BlockRef  'LedgerSimple = Int
-
-  ledgerGenesis :: LedgerSt 'LedgerSimple
-  ledgerGenesis = SimpleLedger 0
-
-  ledgerApply :: BlockVal 'LedgerSimple
-              -> LedgerSt 'LedgerSimple
-              -> Either (LedgerErr 'LedgerSimple) (LedgerSt 'LedgerSimple)
-  ledgerApply (SimpleBlock b) (SimpleLedger l) =
-      if b > l then Right (SimpleLedger b)
-               else Left (b, l)
-
-  blockRef :: BlockVal 'LedgerSimple -> BlockRef 'LedgerSimple
-  blockRef (SimpleBlock b) = b
-
-  genBlock :: LedgerSt 'LedgerSimple -> Gen (BlockVal 'LedgerSimple)
-  genBlock (SimpleLedger l) = return $ SimpleBlock (l + 1)
+  ledgerGenesis _   = testInitLedger
+  ledgerConfig  _   = ()
+  ledgerApply   _ b = runExcept . Lgr.tickThenApply () b
+  blockRef      _ b = b
+  genBlock      _ l = return $
+                        case lastAppliedBlock l of
+                          Nothing -> firstBlock 0
+                          Just b  -> successorBlock b
 
 {-------------------------------------------------------------------------------
   Commands
@@ -313,10 +299,10 @@ data SnapState = SnapOk | SnapCorrupted Corruption
 mockInit :: LedgerDbParams -> Mock t
 mockInit = Mock [] Map.empty S.Origin 1
 
-mockCurrent :: LUT t => Mock t -> LedgerSt t
+mockCurrent :: forall t. LUT t => Mock t -> LedgerSt t
 mockCurrent Mock{..} =
     case mockLedger of
-      []       -> ledgerGenesis
+      []       -> ledgerGenesis (Proxy @t)
       (_, l):_ -> l
 
 mockChainLength :: Mock t -> Word64
@@ -390,7 +376,10 @@ mockInitLog Mock{..} = go (Map.toDescList mockSnaps)
               else MockTooRecent    snap mr $ go snaps
 
     onChain :: BlockRef t -> Bool
-    onChain r = any (\(b, _l) -> blockRef b == r) mockLedger
+    onChain r = any (\(b, _l) -> blockRef p b == r) mockLedger
+
+    p :: Proxy t
+    p = Proxy
 
 applyMockLog :: forall t. MockInitLog t MockSnap -> Mock t -> Mock t
 applyMockLog = go
@@ -418,11 +407,14 @@ applyMockLog = go
 mockMaxRollback :: forall t. LUT t => Mock t -> Word64
 mockMaxRollback Mock{..} = go mockLedger
   where
+    p :: Proxy t
+    p = Proxy
+
     go :: MockLedger t -> Word64
     go ((b, _l):bs)
-      | S.At (blockRef b) == mockRestore = 0
-      | otherwise                        = 1 + go bs
-    go []                                = 0
+      | S.At (blockRef p b) == mockRestore = 0
+      | otherwise                          = 1 + go bs
+    go []                                  = 0
 
 {-------------------------------------------------------------------------------
   Interpreter
@@ -432,6 +424,9 @@ runMock :: forall t. LUT t
         => Cmd t MockSnap -> Mock t -> (Resp t MockSnap, Mock t)
 runMock = first Resp .: go
   where
+    p :: Proxy t
+    p = Proxy
+
     go :: Cmd t MockSnap -> Mock t -> (Success t MockSnap, Mock t)
     go Current       mock = (Ledger (cur (mockLedger mock)), mock)
     go (Push b)      mock = first MaybeErr $ mockUpdateLedger (push b)      mock
@@ -453,7 +448,7 @@ runMock = first Resp .: go
                           -> [(BlockVal t, LedgerSt t)] -- old to new
                           -> [(BlockVal t, LedgerSt t)]
         blocksAfterAnchor S.Origin = id
-        blocksAfterAnchor (S.At r) = tail . dropWhile ((/= r) . blockRef . fst)
+        blocksAfterAnchor (S.At r) = tail . dropWhile ((/= r) . blockRef p . fst)
 
         -- The snapshot that the real implementation will write to disk
         --
@@ -468,7 +463,7 @@ runMock = first Resp .: go
           | n == 0    = mockRestore mock
           | otherwise = case drop (n - 1) blocks of
                           []       -> error "snapped: impossible"
-                          (b, _):_ -> S.At (blockRef b)
+                          (b, _):_ -> S.At (blockRef p b)
           where
             blocks = blocksAfterAnchor (mockRestore mock) (reverse (mockLedger mock))
             n      = ledgerDbCountToPrune (mockParams mock) (length blocks)
@@ -489,7 +484,7 @@ runMock = first Resp .: go
     push :: BlockVal t -> StateT (MockLedger t) (Except (LedgerErr t)) ()
     push b = do
         ls <- State.get
-        case ledgerApply b (cur ls) of
+        case ledgerApply p b (cur ls) of
           Left  err -> throwError err
           Right l'  -> State.put ((b, l'):ls)
 
@@ -501,7 +496,7 @@ runMock = first Resp .: go
         mapM_ push bs
 
     cur :: MockLedger t -> LedgerSt t
-    cur []         = ledgerGenesis
+    cur []         = ledgerGenesis p
     cur ((_, l):_) = l
 
 {-------------------------------------------------------------------------------
@@ -536,27 +531,33 @@ data StandaloneDB m t = DB {
       --
       -- Invariant: all references @r@ here must be present in 'dbBlocks'.
     , dbState  :: StrictTVar m ([BlockRef t], LedgerDB (LedgerSt t) (BlockRef t))
+
+      -- | Resolve blocks
+    , dbResolve :: ResolveBlock m (BlockRef t) (BlockVal t)
+
+      -- | Ledger config
+    , dbLedgerCfg :: Lgr.LedgerCfg (LedgerSt t)
     }
 
-initStandaloneDB :: (IOLike m, LUT t) => DbEnv m -> m (StandaloneDB m t)
+initStandaloneDB :: forall m t. (IOLike m, LUT t)
+                 => DbEnv m -> m (StandaloneDB m t)
 initStandaloneDB dbEnv@DbEnv{..} = do
     dbBlocks <- uncheckedNewTVarM Map.empty
     dbState  <- uncheckedNewTVarM (initChain, initDB)
+
+    let dbResolve :: ResolveBlock m (BlockRef t) (BlockVal t)
+        dbResolve r = atomically $ getBlock r <$> readTVar dbBlocks
+
+        dbLedgerCfg :: Lgr.LedgerCfg (LedgerSt t)
+        dbLedgerCfg = ledgerConfig p
+
     return DB{..}
   where
     initChain = []
-    initDB    = ledgerDbFromGenesis dbLgrParams ledgerGenesis
+    initDB    = ledgerDbFromGenesis dbLgrParams (ledgerGenesis p)
 
-dbConf :: forall m t. (IOLike m, LUT t)
-       => StandaloneDB m t -> LedgerDbConf' m t
-dbConf DB{..} = LedgerDbConf {..}
-  where
-    ldbConfGenesis = return ledgerGenesis
-    ldbConfApply   = ledgerApply
-    ldbConfReapply = \b l -> case ledgerApply b l of
-                               Left err -> error $ unexpectedLedgerError err
-                               Right l' -> l'
-    ldbConfResolve = \r -> atomically $ getBlock r <$> readTVar dbBlocks
+    p :: Proxy t
+    p = Proxy
 
     getBlock :: BlockRef t -> Map (BlockRef t) (BlockVal t) -> BlockVal t
     getBlock = Map.findWithDefault (error blockNotFound)
@@ -567,13 +568,6 @@ dbConf DB{..} = LedgerDbConf {..}
         , "invariant violation: "
         , "block in dbChain not in dbBlocks, "
         , "or LedgerDB not re-initialized after chain truncation"
-        ]
-
-    unexpectedLedgerError :: Show e => e -> String
-    unexpectedLedgerError err = concat [
-          "dbConf: "
-        , "unexpected ledger state error in ldbConfReapply: "
-        , show err
         ]
 
 dbStreamAPI :: forall m t. (IOLike m, LUT t)
@@ -629,25 +623,28 @@ runDB standalone@DB{..} cmd =
     case dbEnv of
       DbEnv{dbHasFS} -> Resp <$> go dbHasFS cmd
   where
-    conf      = dbConf      standalone
     streamAPI = dbStreamAPI standalone
+
+    p :: Proxy t
+    p = Proxy
 
     go :: HasFS m fh -> Cmd t DiskSnapshot -> m (Success t DiskSnapshot)
     go _ Current =
         atomically $ (Ledger . ledgerDbCurrent . snd) <$> readTVar dbState
     go _ (Push b) = do
         atomically $ modifyTVar dbBlocks $
-          uncurry Map.insert (refValPair b)
-        upd (push b) $ ledgerDbPush conf (new b)
+          uncurry Map.insert (refValPair p b)
+        upd (push b) $ \db ->
+          fmap (first annLedgerErr') $
+            defaultThrowLedgerErrors $
+              ledgerDbPush dbLedgerCfg (ApplyVal (blockRef p b) b) db
     go _ (Switch n bs) = do
         atomically $ modifyTVar dbBlocks $
-          repeatedly (uncurry Map.insert) (map refValPair bs)
-        upd (switch n bs) $
-          -- We don't currently test the case where the LedgerDB cannot support
-          -- the full rollback range. See also
-          -- <https://github.com/input-output-hk/ouroboros-network/issues/1025>
-            fmap (either (Left . fromJust) Right . switchResultToEither)
-          . ledgerDbSwitch conf n (map new bs)
+          repeatedly (uncurry Map.insert) (map (refValPair p) bs)
+        upd (switch n bs) $ \db ->
+          fmap (bimap annLedgerErr' ignoreExceedRollback) $
+            defaultResolveWithErrors dbResolve $
+              ledgerDbSwitch dbLedgerCfg n (map (\b -> ApplyVal (blockRef p b) b) bs) db
     go hasFS Snap = do
         (_, db) <- atomically $ readTVar dbState
         Snapped <$> takeSnapshot nullTracer hasFS S.encode S.encode db
@@ -660,7 +657,8 @@ runDB standalone@DB{..} cmd =
             S.decode
             S.decode
             (dbLgrParams dbEnv)
-            conf
+            dbLedgerCfg
+            (return $ ledgerGenesis p)
             streamAPI
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
         return $ Restored (fromInitLog initLog, ledgerDbCurrent db)
@@ -681,14 +679,21 @@ runDB standalone@DB{..} cmd =
         go hasFS Restore
 
     push :: BlockVal t -> [BlockRef t] -> [BlockRef t]
-    push b = (blockRef b:)
+    push b = (blockRef p b:)
 
     switch :: Word64 -> [BlockVal t] -> [BlockRef t] -> [BlockRef t]
-    switch 0 bs = (reverse (map blockRef bs) ++)
+    switch 0 bs = (reverse (map (blockRef p) bs) ++)
     switch n bs = switch 0 bs . drop (fromIntegral n)
 
-    new :: BlockVal t -> BlockInfo' t
-    new b = (Apply, uncurry Val (refValPair b))
+    annLedgerErr' :: AnnLedgerError' t -> LedgerErr t
+    annLedgerErr' = annLedgerErr
+
+    -- We don't currently test the case where the LedgerDB cannot support
+    -- the full rollback range. See also
+    -- <https://github.com/input-output-hk/ouroboros-network/issues/1025>
+    ignoreExceedRollback :: Either ExceededRollback a -> a
+    ignoreExceedRollback (Left  _) = error "unexpected ExceededRollback"
+    ignoreExceedRollback (Right a) = a
 
     upd :: ([BlockRef t] -> [BlockRef t])
         -> (LedgerDB' t -> m (Either (LedgerErr t) (LedgerDB' t)))
@@ -780,10 +785,13 @@ generator lgrDbParams (Model mock hs) = Just $ QC.oneof $ concat [
         else [(At . uncurry Corrupt) <$> QC.elements possibleCorruptions]
     ]
   where
+    p :: Proxy t
+    p = Proxy
+
     withoutRef :: [Gen (Cmd t :@ Symbolic)]
     withoutRef = [
           fmap At $ return Current
-        , fmap At $ Push <$> genBlock (mockCurrent mock)
+        , fmap At $ Push <$> genBlock p (mockCurrent mock)
         , fmap At $ do
             let maxRollback = minimum [
                     mockMaxRollback mock
@@ -792,7 +800,7 @@ generator lgrDbParams (Model mock hs) = Just $ QC.oneof $ concat [
             numRollback  <- QC.choose (0, maxRollback)
             numNewBlocks <- QC.choose (numRollback, numRollback + 2)
             let afterRollback = mockRollback numRollback mock
-            Switch numRollback <$> genBlocks numNewBlocks (mockCurrent afterRollback)
+            Switch numRollback <$> genBlocks p numNewBlocks (mockCurrent afterRollback)
         , fmap At $ return Snap
         , fmap At $ return Restore
         , fmap At $ Drop <$> QC.choose (0, mockChainLength mock)
@@ -875,7 +883,6 @@ instance Traversable t => Rank2.Traversable (At t) where
       lift f (QSM.Reference x) = QSM.Reference <$> f x
 
 instance LUT t => ToExpr (Model t Concrete)
-instance ToExpr a => ToExpr (WithOrigin a)
 instance ToExpr SecurityParam
 instance ToExpr LedgerDbParams
 

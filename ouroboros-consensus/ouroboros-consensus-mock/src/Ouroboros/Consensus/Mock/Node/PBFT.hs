@@ -37,7 +37,7 @@ protocolInfoMockPBFT params cfg nid =
                    , pbftDlgCert    = (verKey nid, verKey nid)
                    }
                }
-          , configLedger = SimpleLedgerConfig ledgerView
+          , configLedger = ledgerView
           , configBlock  = cfg
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)

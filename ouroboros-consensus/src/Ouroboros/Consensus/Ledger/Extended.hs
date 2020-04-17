@@ -1,21 +1,21 @@
-{-# LANGUAGE CPP                  #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 module Ouroboros.Consensus.Ledger.Extended (
     -- * Extended ledger state
-    BlockPreviouslyApplied(..)
-  , ExtLedgerState(..)
+    ExtLedgerState(..)
   , ExtValidationError(..)
-  , applyExtLedgerState
-  , foldExtLedgerState
     -- * Serialisation
   , encodeExtLedgerState
   , decodeExtLedgerState
@@ -29,7 +29,6 @@ import           Control.Monad.Except
 import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
-import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
@@ -41,7 +40,6 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util (repeatedlyM)
 import           Ouroboros.Consensus.Util.Assert
 
 {-------------------------------------------------------------------------------
@@ -79,81 +77,6 @@ deriving instance ( LedgerSupportsProtocol blk
                   , Eq (ConsensusState (BlockProtocol blk))
                   ) => Eq (ExtLedgerState blk)
 
-data BlockPreviouslyApplied =
-    BlockPreviouslyApplied
-  -- ^ The block has been previously applied and validated against the given
-  -- ledger state and no block validations should be performed.
-  | BlockNotPreviouslyApplied
-  -- ^ The block has not been previously applied to the given ledger state and
-  -- all block validations should be performed.
-
--- | Update the extended ledger state
---
--- Updating the extended state happens in 3 steps:
---
--- * We call 'applyChainTick' to process any changes that happen at epoch
---   boundaries.
--- * We call 'applyLedgerBlock' to process the block itself; this looks at both
---   the header and the body of the block, but /only/ involves the ledger,
---   not the consensus chain state.
--- * Finally, we pass the updated ledger view to then update the consensus
---   chain state.
---
--- Note: for Byron, this currently deviates from the spec. We apply scheduled
--- updates /before/ checking the signature, but the spec does this the other
--- way around. This means that in the spec delegation updates scheduled for
--- slot @n@ are really only in effect at slot @n+1@.
--- See <https://github.com/input-output-hk/cardano-ledger-specs/issues/1007>
-applyExtLedgerState :: (LedgerSupportsProtocol blk, HasCallStack)
-                    => BlockPreviouslyApplied
-                    -> TopLevelConfig blk
-                    -> blk
-                    -> ExtLedgerState blk
-                    -> Except (ExtValidationError blk) (ExtLedgerState blk)
-applyExtLedgerState prevApplied cfg blk ExtLedgerState{..} = do
-    let tickedLedger@TickedLedgerState { tickedLedgerState } =
-          applyChainTick
-            (configLedger cfg)
-            (blockSlot blk)
-            ledgerState
-        ledgerView =
-          protocolLedgerView
-            (configLedger cfg)
-            tickedLedgerState
-    headerState' <- withExcept ExtValidationErrorHeader $
-                      validateHeader
-                        cfg
-                        ledgerView
-                        (getHeader blk)
-                        headerState
-    ledgerState' <- case prevApplied of
-                       BlockNotPreviouslyApplied ->
-                         withExcept ExtValidationErrorLedger $
-                           applyLedgerBlock
-                             (configLedger cfg)
-                             blk
-                             tickedLedger
-                       BlockPreviouslyApplied -> pure $
-                         reapplyLedgerBlock
-                           (configLedger cfg)
-                           blk
-                           tickedLedger
-    return $!
-      assertWithMsg
-        (lemma_protocoLedgerView_applyLedgerBlock
-          (configLedger cfg)
-          blk
-          ledgerState)
-        (ExtLedgerState ledgerState' headerState')
-
-foldExtLedgerState :: (LedgerSupportsProtocol blk, HasCallStack)
-                   => BlockPreviouslyApplied
-                   -> TopLevelConfig blk
-                   -> [blk] -- ^ Blocks to apply, oldest first
-                   -> ExtLedgerState blk
-                   -> Except (ExtValidationError blk) (ExtLedgerState blk)
-foldExtLedgerState prevApplied = repeatedlyM . (applyExtLedgerState prevApplied)
-
 -- | Lemma:
 --
 -- > let tickedLedger = applyChainTick cfg (blockSlot blk) st
@@ -187,6 +110,76 @@ lemma_protocoLedgerView_applyLedgerBlock cfg blk st
     tickedLedger = applyChainTick cfg (blockSlot blk) st
     lhs = protocolLedgerView cfg <$> applyLedgerBlock cfg blk tickedLedger
     rhs = protocolLedgerView cfg  $  tickedLedgerState        tickedLedger
+
+{-------------------------------------------------------------------------------
+  The extended ledger can behave like a ledger
+-------------------------------------------------------------------------------}
+
+instance ( IsLedger (LedgerState  blk)
+         , LedgerSupportsProtocol blk
+         )
+      => IsLedger (ExtLedgerState blk) where
+  type LedgerCfg (ExtLedgerState blk) = TopLevelConfig     blk
+  type LedgerErr (ExtLedgerState blk) = ExtValidationError blk
+
+  applyChainTick cfg slot (ExtLedgerState ledger header) =
+      TickedLedgerState slot $
+        ExtLedgerState ledger' header
+    where
+      TickedLedgerState _slot ledger' =
+          applyChainTick (configLedger cfg) slot ledger
+
+instance ( LedgerSupportsProtocol blk
+         ) => ApplyBlock (ExtLedgerState blk) blk where
+  applyLedgerBlock cfg blk (TickedLedgerState {
+                                tickedSlotNo      = slot
+                              , tickedLedgerState = ExtLedgerState lgr hdr
+                              }) = do
+      hdr' <- withExcept ExtValidationErrorHeader $
+                validateHeader
+                  cfg
+                  ledgerView
+                  (getHeader blk)
+                  hdr
+      lgr' <- withExcept ExtValidationErrorLedger $
+                applyLedgerBlock
+                  (configLedger cfg)
+                  blk
+                  (TickedLedgerState slot lgr)
+
+      return $!
+        assertWithMsg
+          (lemma_protocoLedgerView_applyLedgerBlock (configLedger cfg) blk lgr)
+          (ExtLedgerState lgr' hdr')
+    where
+      ledgerView :: LedgerView (BlockProtocol blk)
+      ledgerView = protocolLedgerView (configLedger cfg) lgr
+
+  reapplyLedgerBlock cfg blk (TickedLedgerState {
+                                tickedSlotNo      = slot
+                              , tickedLedgerState = ExtLedgerState lgr hdr
+                              }) =
+      ExtLedgerState {
+          ledgerState = reapplyLedgerBlock
+                          (configLedger cfg)
+                          blk
+                          (TickedLedgerState slot lgr)
+        , headerState = cantBeError $
+                         validateHeader
+                           cfg
+                           ledgerView
+                           (getHeader blk)
+                           hdr
+        }
+    where
+      cantBeError :: Except e a -> a
+      cantBeError = either (error "reapplyLedgerBlock: impossible") id
+                  . runExcept
+
+      ledgerView :: LedgerView (BlockProtocol blk)
+      ledgerView = protocolLedgerView (configLedger cfg) lgr
+
+  ledgerTipPoint = ledgerTipPoint . ledgerState
 
 {-------------------------------------------------------------------------------
   Serialisation

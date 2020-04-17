@@ -348,8 +348,8 @@ genTx cfg st = HH.choice [
     cfg' :: ByronSpecGenesis
     st'  :: Spec.State Spec.CHAIN
 
-    cfg' = unByronSpecLedgerConfig $ dualLedgerConfigAux (configLedger cfg)
-    st'  = byronSpecLedgerState    $ dualLedgerStateAux st
+    cfg' = dualLedgerConfigAux (configLedger cfg)
+    st'  = byronSpecLedgerState $ dualLedgerStateAux st
 
     bridge :: ByronSpecBridge
     bridge = dualLedgerStateBridge st

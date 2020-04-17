@@ -43,9 +43,9 @@ instance ApplyTx ByronSpecBlock where
   applyTx cfg tx (TickedLedgerState slot st) =
       (TickedLedgerState slot . updateByronSpecLedgerStateKeepTip st) <$>
         GenTx.apply
-          (unByronSpecLedgerConfig cfg)
-          (unByronSpecGenTx        tx)
-          (byronSpecLedgerState    st)
+          cfg
+          (unByronSpecGenTx     tx)
+          (byronSpecLedgerState st)
 
   -- Byron spec doesn't have multiple validation modes
   reapplyTx = applyTx

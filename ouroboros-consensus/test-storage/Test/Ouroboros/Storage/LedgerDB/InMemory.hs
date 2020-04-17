@@ -23,13 +23,14 @@ import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 
-import           Ouroboros.Consensus.Storage.LedgerDB.Conf
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
 import           Test.Util.QuickCheck
+import           Test.Util.TestBlock
 
 tests :: TestTree
 tests = testGroup "InMemory" [
@@ -70,15 +71,15 @@ prop_serialise_ChainSummary (Trivial summary) = prop_serialise summary
 
 prop_genesisCurrent :: LedgerDbParams -> Property
 prop_genesisCurrent params =
-    ledgerDbCurrent genSnaps === initLedger
+    ledgerDbCurrent genSnaps === testInitLedger
   where
-    genSnaps = ledgerDbFromGenesis params initLedger
+    genSnaps = ledgerDbFromGenesis params testInitLedger
 
 prop_genesisLength :: LedgerDbParams -> Property
 prop_genesisLength params =
    ledgerDbChainLength genSnaps === 0
   where
-    genSnaps = ledgerDbFromGenesis params initLedger
+    genSnaps = ledgerDbFromGenesis params testInitLedger
 
 {-------------------------------------------------------------------------------
   Verifying shape of the Ledger DB
@@ -111,10 +112,13 @@ verifyShape snapEvery = \ss ->
 prop_pushIncrementsLength :: ChainSetup -> Property
 prop_pushIncrementsLength setup@ChainSetup{..} =
     classify (chainSetupSaturated setup) "saturated" $
-          ledgerDbChainLength (ledgerDbPush' callbacks blockInfo csPushed)
+          ledgerDbChainLength (ledgerDbPush' () nextBlock csPushed)
       === ledgerDbChainLength csPushed + 1
   where
-    blockInfo = Block maxBound 0
+    nextBlock :: TestBlock
+    nextBlock = case lastMaybe csChain of
+                  Nothing -> firstBlock 0
+                  Just b  -> successorBlock b
 
 prop_lengthMatchesNumBlocks :: ChainSetup -> Property
 prop_lengthMatchesNumBlocks setup@ChainSetup{..} =
@@ -131,32 +135,32 @@ prop_pushExpectedLedger :: ChainSetup -> Property
 prop_pushExpectedLedger setup@ChainSetup{..} =
     classify (chainSetupSaturated setup) "saturated" $
       conjoin [
-          l === applyMany (expectedChain o) initLedger
+          l === refoldLedger () (expectedChain o) testInitLedger
         | (o, l) <- ledgerDbSnapshots csPushed
         ]
   where
-    expectedChain :: Word64 -> [Block]
+    expectedChain :: Word64 -> [TestBlock]
     expectedChain o = take (fromIntegral (csNumBlocks - o)) csChain
 
 prop_pastLedger :: ChainSetup -> Property
 prop_pastLedger setup@ChainSetup{..} =
     classify (chainSetupSaturated setup) "saturated"    $
     classify withinReach                 "within reach" $
-          ledgerDbPast' callbacks tip csPushed
+          ledgerDbPast' () tip csPushed
       === if withinReach
             then Just (ledgerDbCurrent afterPrefix)
             else Nothing
   where
-    prefix :: [Block]
+    prefix :: [TestBlock]
     prefix = take (fromIntegral csPrefixLen) csChain
 
-    tip :: WithOrigin Block
+    tip :: WithOrigin TestBlock
     tip = case prefix of
             []         -> Origin
             _otherwise -> At (last prefix)
 
-    afterPrefix :: LedgerDB Ledger Block
-    afterPrefix = ledgerDbPushMany' callbacks prefix csGenSnaps
+    afterPrefix :: LedgerDB (LedgerState TestBlock) TestBlock
+    afterPrefix = ledgerDbPushMany' () prefix csGenSnaps
 
     -- Maximum rollback can be at most k + snapEvery
     -- See 'prop_snapshotsMaxRollback'
@@ -169,7 +173,7 @@ prop_pastLedger setup@ChainSetup{..} =
 
 prop_maxRollbackGenesisZero :: LedgerDbParams -> Property
 prop_maxRollbackGenesisZero params =
-        ledgerDbMaxRollback (ledgerDbFromGenesis params (Ledger []))
+        ledgerDbMaxRollback (ledgerDbFromGenesis params testInitLedger)
     === 0
 
 prop_snapshotsMaxRollback :: ChainSetup -> Property
@@ -188,7 +192,7 @@ prop_snapshotsMaxRollback setup@ChainSetup{..} =
 prop_switchSameChain :: SwitchSetup -> Property
 prop_switchSameChain setup@SwitchSetup{..} =
     classify (switchSetupSaturated setup) "saturated" $
-          ledgerDbSwitch' callbacks ssNumRollback blockInfo csPushed
+          ledgerDbSwitch' () ssNumRollback blockInfo csPushed
       === Just csPushed
   where
     ChainSetup{csPushed} = ssChainSetup
@@ -205,11 +209,11 @@ prop_switchExpectedLedger :: SwitchSetup -> Property
 prop_switchExpectedLedger setup@SwitchSetup{..} =
     classify (switchSetupSaturated setup) "saturated" $
       conjoin [
-          l === applyMany (expectedChain o) initLedger
+          l === refoldLedger () (expectedChain o) testInitLedger
         | (o, l) <- ledgerDbSnapshots ssSwitched
         ]
   where
-    expectedChain :: Word64 -> [Block]
+    expectedChain :: Word64 -> [TestBlock]
     expectedChain o = take (fromIntegral (ssNumBlocks - o)) ssChain
 
 -- | Check 'prop_pastLedger' still holds after switching to a fork
@@ -217,21 +221,21 @@ prop_pastAfterSwitch :: SwitchSetup -> Property
 prop_pastAfterSwitch setup@SwitchSetup{..} =
     classify (switchSetupSaturated setup) "saturated"    $
     classify withinReach                  "within reach" $
-          ledgerDbPast' callbacks tip ssSwitched
+          ledgerDbPast' () tip ssSwitched
       === if withinReach
             then Just (ledgerDbCurrent afterPrefix)
             else Nothing
   where
-    prefix :: [Block]
+    prefix :: [TestBlock]
     prefix = take (fromIntegral ssPrefixLen) ssChain
 
-    tip :: WithOrigin Block
+    tip :: WithOrigin TestBlock
     tip = case prefix of
             []         -> Origin
             _otherwise -> At (last prefix)
 
-    afterPrefix :: LedgerDB Ledger Block
-    afterPrefix = ledgerDbPushMany' callbacks prefix (csGenSnaps ssChainSetup)
+    afterPrefix :: LedgerDB (LedgerState TestBlock) TestBlock
+    afterPrefix = ledgerDbPushMany' () prefix (csGenSnaps ssChainSetup)
 
     -- Maximum rollback can be at most k + snapEvery
     -- See 'prop_snapshotsMaxRollback'
@@ -258,13 +262,13 @@ data ChainSetup = ChainSetup {
     , csPrefixLen :: Word64
 
       -- | Derived: genesis snapshots
-    , csGenSnaps  :: LedgerDB Ledger Block
+    , csGenSnaps  :: LedgerDB (LedgerState TestBlock) TestBlock
 
       -- | Derived: the actual blocks that got applied (old to new)
-    , csChain     :: [Block]
+    , csChain     :: [TestBlock]
 
       -- | Derived: the snapshots after all blocks were applied
-    , csPushed    :: LedgerDB Ledger Block
+    , csPushed    :: LedgerDB (LedgerState TestBlock) TestBlock
     }
   deriving (Show)
 
@@ -290,16 +294,16 @@ data SwitchSetup = SwitchSetup {
     , ssNumBlocks   :: Word64
 
       -- | Derived: the blocks that were removed
-    , ssRemoved     :: [Block]
+    , ssRemoved     :: [TestBlock]
 
       -- | Derived: the new blocks themselves
-    , ssNewBlocks   :: [Block]
+    , ssNewBlocks   :: [TestBlock]
 
       -- | Derived: the full chain after switching to this fork
-    , ssChain       :: [Block]
+    , ssChain       :: [TestBlock]
 
       -- | Derived; the snapshots after the switch was performed
-    , ssSwitched    :: LedgerDB Ledger Block
+    , ssSwitched    :: LedgerDB (LedgerState TestBlock) TestBlock
     }
   deriving (Show)
 
@@ -310,9 +314,10 @@ mkTestSetup :: LedgerDbParams -> Word64 -> Word64 -> ChainSetup
 mkTestSetup csParams csNumBlocks csPrefixLen =
     ChainSetup {..}
   where
-    csGenSnaps = ledgerDbFromGenesis csParams initLedger
-    csChain    = mkChain csNumBlocks 0
-    csPushed   = ledgerDbPushMany' callbacks csChain csGenSnaps
+    csGenSnaps = ledgerDbFromGenesis csParams testInitLedger
+    csChain    = take (fromIntegral csNumBlocks) $
+                   iterate successorBlock (firstBlock 0)
+    csPushed   = ledgerDbPushMany' () csChain csGenSnaps
 
 mkRollbackSetup :: ChainSetup -> Word64 -> Word64 -> Word64 -> SwitchSetup
 mkRollbackSetup ssChainSetup ssNumRollback ssNumNew ssPrefixLen =
@@ -322,13 +327,18 @@ mkRollbackSetup ssChainSetup ssNumRollback ssNumNew ssPrefixLen =
 
     ssNumBlocks = csNumBlocks - ssNumRollback + ssNumNew
     ssRemoved   = takeLast ssNumRollback csChain
-    ssNewBlocks = drop (fromIntegral (csNumBlocks - ssNumRollback)) $
-                    mkChain ssNumBlocks 1
+    ssNewBlocks = let afterRollback      = dropLast ssNumRollback csChain
+                      firstAfterRollback =
+                        case lastMaybe afterRollback of
+                          Nothing -> firstBlock 1
+                          Just b  -> modifyFork (+ 1) $ successorBlock b
+                  in take (fromIntegral ssNumNew) $
+                        iterate successorBlock firstAfterRollback
     ssChain     = concat [
                          take (fromIntegral (csNumBlocks - ssNumRollback)) csChain
                        , ssNewBlocks
                        ]
-    ssSwitched  = fromJust $ ledgerDbSwitch' callbacks ssNumRollback ssNewBlocks csPushed
+    ssSwitched  = fromJust $ ledgerDbSwitch' () ssNumRollback ssNewBlocks csPushed
 
 instance Arbitrary ChainSetup where
   arbitrary = do
@@ -374,42 +384,6 @@ instance Arbitrary SwitchSetup where
         | ssNumRollback' <- shrink ssNumRollback
         ]
       ]
-
--- | Block
---
--- For the purposes of the tests of the ledger DB, we don't really care what's
--- inside blocks; we simply mark blocks with their position in the chain and
--- the number of the fork. For example,
---
--- > Block 2 0
---
--- is the second block in the chain, on fork 0.
-data Block = Block Word64 Word64
-  deriving (Show, Eq)
-
-mkChain :: Word64 -> Word64 -> [Block]
-mkChain numBlocks fork = [Block i fork | i <- [1 .. numBlocks]]
-
--- | "Free" ledger
---
--- This ledger is free in that we don't interpret in any way the " blocks " that
--- we apply, we merely record them.
-newtype Ledger = Ledger [Block]
-  deriving (Show, Eq)
-
-initLedger :: Ledger
-initLedger = Ledger []
-
--- | Apply a block
-apply :: Block -> Ledger -> Ledger
-apply b (Ledger bs) = Ledger (b:bs)
-
--- | Apply a list of blocks (old to new)
-applyMany :: [Block] -> Ledger -> Ledger
-applyMany = repeatedly apply
-
-callbacks :: PureLedgerDbConf Ledger Block
-callbacks = pureLedgerDbConf initLedger apply
 
 {-------------------------------------------------------------------------------
   Orphan Arbitrary instances

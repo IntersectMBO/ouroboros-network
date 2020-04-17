@@ -1,14 +1,18 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE BangPatterns           #-}
+{-# LANGUAGE ConstraintKinds        #-}
+{-# LANGUAGE DeriveAnyClass         #-}
+{-# LANGUAGE DeriveGeneric          #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs                  #-}
+{-# LANGUAGE KindSignatures         #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE QuantifiedConstraints  #-}
+{-# LANGUAGE RankNTypes             #-}
+{-# LANGUAGE RecordWildCards        #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE TypeApplications       #-}
+{-# LANGUAGE TypeFamilies           #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
      -- * LedgerDB proper
@@ -25,17 +29,20 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
    , ledgerDbCurrent
    , ledgerDbTip
    , ledgerDbAnchor
-     -- ** Result types
-   , PushManyResult (..)
-   , SwitchResult(..)
      -- ** Past ledger states
    , ledgerDbPast
+     -- ** Running updates
+   , Ap(..)
+   , AnnLedgerError(..)
+   , ResolveBlock
+   , ResolvesBlocks(..)
+   , ThrowsLedgerError(..)
+   , defaultThrowLedgerErrors
+   , defaultResolveBlocks
+   , defaultResolveWithErrors
      -- ** Updates
-   , Apply(..)
-   , Err
-   , RefOrVal(..)
+   , ExceededRollback(..)
    , ledgerDbPush
-   , ledgerDbReapply
    , ledgerDbSwitch
      -- * Exports for the benefit of tests
      -- ** Additional queries
@@ -50,9 +57,6 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
    , ledgerDbPushMany'
    , ledgerDbSwitch'
    , ledgerDbPast'
-     -- ** Simplifying the result types
-   , pushManyResultToEither
-   , switchResultToEither
    ) where
 
 import           Prelude hiding (mod, (/))
@@ -64,13 +68,14 @@ import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Enc
 import           Control.Monad ((>=>))
-import           Control.Monad.Except (ExceptT (..), runExceptT)
-import           Data.Bifunctor
+import           Control.Monad.Except hiding (ap)
+import           Control.Monad.Reader hiding (ap)
 import           Data.Foldable (toList)
 import           Data.Functor.Identity
+import           Data.Kind (Constraint)
+import           Data.Proxy
 import           Data.Sequence.Strict (StrictSeq ((:|>), Empty), (|>))
 import qualified Data.Sequence.Strict as Seq
-import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
@@ -78,12 +83,12 @@ import           GHC.Stack (HasCallStack)
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot
 
+import           Ouroboros.Consensus.Block.RealPoint
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
                      encodeWithOrigin)
-
-import           Ouroboros.Consensus.Storage.LedgerDB.Conf
 
 {-------------------------------------------------------------------------------
   Ledger DB types
@@ -294,50 +299,6 @@ cpBlock (CpBlock r)   = r
 cpBlock (CpSShot r _) = r
 
 {-------------------------------------------------------------------------------
-  Block info
--------------------------------------------------------------------------------}
-
--- | Has a block previously been applied?
---
--- In addition to the term level value, we also reflect at the type level
--- whether the block has been previously applied. This allows us to be more
--- precise when we apply blocks: re-applying previously applied blocks cannot
--- result in ledger errors.
-data Apply :: Bool -> * where
-    -- | This block was previously applied
-    --
-    -- If we reapply a previously applied block, we /must/ reapply it to the
-    -- very same state. This means that we cannot have any errors.
-    --
-    -- This constructor is polymorphic: this allows us to be conservative at
-    -- the type level ("this may result in a ledger error") whilst still marking
-    -- a block as previously applied ("don't bother checking for errors"). This
-    -- is useful for example when we have a bunch of blocks, some of which have
-    -- been previously applied and some of which have not. Applying all of them
-    -- could definitely result in a ledger error, even if we skip checks for
-    -- some of them.
-    Reapply :: Apply pa
-
-    -- | Not previously applied
-    --
-    -- All checks must be performed
-    Apply :: Apply 'False
-
--- | Error we get from applying a block
---
--- If the block was previously applied, we can't get any errors.
-type family Err (ap :: Bool) (e :: *) :: * where
-  Err 'True  e = Void
-  Err 'False e = e
-
--- | Pass a block by value or by reference
-data RefOrVal r b = Ref r | Val r b
-
-ref :: RefOrVal r b -> r
-ref (Ref r  ) = r
-ref (Val r _) = r
-
-{-------------------------------------------------------------------------------
   Chain summary
 -------------------------------------------------------------------------------}
 
@@ -374,34 +335,144 @@ ledgerDbFromGenesis :: LedgerDbParams -> l -> LedgerDB l r
 ledgerDbFromGenesis params = ledgerDbWithAnchor params . genesisChainSummary
 
 {-------------------------------------------------------------------------------
-  Internal: derived functions in terms of 'BlockInfo'
+  Compute signature
+
+  Depending on the parameters (apply by value or by reference, previously
+  applied or not) we get different signatures.
 -------------------------------------------------------------------------------}
 
--- | Apply block to the given ledger state
+-- | Resolve a block
 --
--- Forces the new ledger to WHNF.
-applyBlock :: forall m l r b e ap. Monad m
-           => LedgerDbConf m l r b e
-           -> (Apply ap, RefOrVal r b)
-           -> l -> ExceptT (Err ap e) m l
-applyBlock LedgerDbConf{..} (pa, rb) l = ExceptT $
-    case rb of
-      Ref  r   -> apply pa <$> ldbConfResolve r
-      Val _r b -> return $ apply pa b
-  where
-    -- Tie evaluation of the 'Either' to evaluation of the ledger state
-    apply :: Apply ap -> b -> Either (Err ap e) l
-    apply Reapply b = Right $! ldbConfReapply b l
-    apply Apply   b = case ldbConfApply b l of
-                        Left err -> Left err
-                        Right l' -> Right $! l'
+-- Resolving a block reference to the actual block lives in @m@ because
+-- it might need to read the block from disk (and can therefore not be
+-- done inside an STM transaction).
+--
+-- NOTE: The ledger DB will only ask the 'ChainDB' for blocks it knows
+-- must exist. If the 'ChainDB' is unable to fulfill the request, data
+-- corruption must have happened and the 'ChainDB' should trigger
+-- validation mode.
+type ResolveBlock m r b = r -> m b
 
--- | Reapply previously applied block
-reapplyBlock :: forall m l r b e. Monad m
-             => LedgerDbConf m l r b e -> RefOrVal r b -> l -> m l
-reapplyBlock cfg b = fmap mustBeRight
-                   . runExceptT
-                   . applyBlock cfg (Reapply @'True, b)
+-- | Annotated ledger errors
+data AnnLedgerError l r = AnnLedgerError {
+      -- | The ledger DB just /before/ this block was applied
+      annLedgerState  :: LedgerDB l r
+
+      -- | Reference to the block that had the error
+    , annLedgerErrRef :: r
+
+      -- | The ledger error itself
+    , annLedgerErr    :: LedgerErr l
+    }
+
+-- | Monads in which we can resolve blocks
+--
+-- To guide type inference, we insist that we must be able to infer the type
+-- of the block we are resolving from the type of the monad.
+class Monad m => ResolvesBlocks r b m | m -> b where
+  resolveBlock :: r -> m b
+
+instance Monad m => ResolvesBlocks r b (ReaderT (ResolveBlock m r b) m) where
+  resolveBlock r = ReaderT $ \f -> f r
+
+defaultResolveBlocks :: ResolveBlock m r b
+                     -> ReaderT (ResolveBlock m r b) m a
+                     -> m a
+defaultResolveBlocks = flip runReaderT
+
+-- Quite a specific instance so we can satisfy the fundep
+instance Monad m
+      => ResolvesBlocks r b (ExceptT e (ReaderT (ResolveBlock m r b) m)) where
+  resolveBlock = lift . resolveBlock
+
+class Monad m => ThrowsLedgerError l r m where
+  throwLedgerError :: LedgerDB l r -> r -> LedgerErr l -> m a
+
+defaultThrowLedgerErrors :: ExceptT (AnnLedgerError l r) m a
+                         -> m (Either (AnnLedgerError l r) a)
+defaultThrowLedgerErrors = runExceptT
+
+defaultResolveWithErrors :: ResolveBlock m r b
+                         -> ExceptT (AnnLedgerError l r)
+                                    (ReaderT (ResolveBlock m r b) m)
+                                    a
+                         -> m (Either (AnnLedgerError l r) a)
+defaultResolveWithErrors resolve =
+      defaultResolveBlocks resolve
+    . defaultThrowLedgerErrors
+
+instance Monad m => ThrowsLedgerError l r (ExceptT (AnnLedgerError l r) m) where
+  throwLedgerError l r e = throwError $ AnnLedgerError l r e
+
+-- | 'Ap' is used to pass information about blocks to ledger DB updates
+--
+-- The constructors serve two purposes:
+--
+-- * Specify the various parameters
+--   a. Are we passing the block by value or by reference?
+--   b. Are we applying or reapplying the block?
+--
+-- * Compute the constraint @c@ on the monad @m@ in order to run the query:
+--   a. If we are passing a block by reference, we must be able to resolve it.
+--   b. If we are applying rather than reapplying, we might have ledger errors.
+data Ap :: (* -> *) -> * -> * -> * -> Constraint -> * where
+  ReapplyVal :: r -> b -> Ap m l r b ()
+  ApplyVal   :: r -> b -> Ap m l r b (                       ThrowsLedgerError l r m)
+  ReapplyRef :: r      -> Ap m l r b (ResolvesBlocks  r b m)
+  ApplyRef   :: r      -> Ap m l r b (ResolvesBlocks  r b m, ThrowsLedgerError l r m)
+
+  -- | 'Weaken' increases the constraint on the monad @m@.
+  --
+  -- This is primarily useful when combining multiple 'Ap's in a single
+  -- homogeneous structure.
+  Weaken :: (c' => c) => Ap m l r b c -> Ap m l r b c'
+
+{-------------------------------------------------------------------------------
+  Internal utilities for 'Ap'
+-------------------------------------------------------------------------------}
+
+apRef :: Ap m l r b c -> r
+apRef (ReapplyVal r _) = r
+apRef (ApplyVal   r _) = r
+apRef (ReapplyRef r  ) = r
+apRef (ApplyRef   r  ) = r
+apRef (Weaken     ap)  = apRef ap
+
+-- | Apply block to the current ledger state
+--
+-- We take in the entire 'LedgerDB' because we record that as part of errors.
+applyBlock :: forall m c l r b. (ApplyBlock l b, Monad m, c)
+           => LedgerCfg l
+           -> Ap m l r b c
+           -> LedgerDB l r -> m l
+applyBlock cfg ap db = case ap of
+    ReapplyVal _r b ->
+      return $
+        tickThenReapply cfg b l
+    ApplyVal r b ->
+      either (throwLedgerError db r) return $ runExcept $
+        tickThenApply cfg b l
+    ReapplyRef r  -> do
+      b <- resolveBlock r
+      return $
+        tickThenReapply cfg b l
+    ApplyRef r -> do
+      b <- resolveBlock r
+      either (throwLedgerError db r) return $ runExcept $
+        tickThenApply cfg b l
+    Weaken ap' ->
+      applyBlock cfg ap' db
+  where
+    l :: l
+    l = ledgerDbCurrent db
+
+-- | Short-hand for re-applying a block that we have by reference
+--
+-- This is not defined in terms of 'applyBlock' because we don't need the
+-- full ledger DB here (because we never throw any errors).
+reapplyRef :: forall m l b r. (ResolvesBlocks r b m, ApplyBlock l b)
+           => LedgerCfg l -> r -> l -> m l
+reapplyRef cfg r l = (flip (tickThenReapply cfg) l) <$> resolveBlock r
 
 {-------------------------------------------------------------------------------
   Queries
@@ -445,48 +516,6 @@ ledgerDbIsSaturated LedgerDB{..} =
   where
     LedgerDbParams{..} = ledgerDbParams
     SecurityParam k    = ledgerDbSecurityParam
-
-{-------------------------------------------------------------------------------
-  Result types
--------------------------------------------------------------------------------}
-
--- | The result of 'ledgerDbPushMany', i.e. when validating a number of new
--- blocks.
---
--- About the boolean type index: if all blocks given to 'ledgerDbPushMany' are
--- 'Reapply', and so @ap ~ 'True@, then the result /must/ be 'ValidBlocks'.
-data PushManyResult e l r :: Bool -> * where
-  -- | A block is invalid. We return the 'LedgerDB' corresponding to the block
-  -- before it. We also return the validation error and include a reference to
-  -- the invalid block.
-  InvalidBlock :: e -> r -> LedgerDB l r -> PushManyResult e l r 'False
-
-  -- | All blocks were valid, a 'LedgerDB' corresponding to the last valid
-  -- block is returned.
-  ValidBlocks ::            LedgerDB l r -> PushManyResult e l r ap
-
--- | The result of 'ledgerDbSwitch', i.e. when validating a fork of the
--- current chain.
---
--- First, we roll back @m@ blocks and then apply @n@ new blocks. We do not
--- verify in the ledger DB that the new chain is longer; this will be the
--- responsibility `preferCandidate`. Note however that if it is shorter, the
--- maximum rollback we can support might be less than @k@.
-data SwitchResult e l r :: Bool -> * where
-  -- | Exceeded maximum rollback supported by the current ledger DB state
-  --
-  -- Under normal circumstances this will not arise. It can really only happen
-  -- in the presence of data corruption (or when switching to a shorter fork,
-  -- but that is disallowed by all currently known Ouroboros protocols).
-  --
-  -- NOTE: This can happen whether or not the blocks have been previously
-  -- applied, hence this constructor is polymorphic in @ap@.
-  --
-  -- Records both the supported and the requested rollback.
-  MaximumRollbackExceeded :: Word64 -> Word64 -> SwitchResult e l r ap
-
-  -- | The result of pushing the blocks in the suffix with 'ledgerDbPushMany'.
-  RollbackSuccessful      :: PushManyResult e l r ap -> SwitchResult e l r ap
 
 {-------------------------------------------------------------------------------
   Internal updates
@@ -571,6 +600,23 @@ prune db@LedgerDB{..} =
     toPrune :: Int
     toPrune = ledgerDbCountToPrune ledgerDbParams (Seq.length ledgerDbBlocks)
 
+-- | Push an updated ledger state
+pushLedgerState :: l  -- ^ Updated ledger state
+                -> r  -- ^ Reference to the applied block
+                -> LedgerDB l r -> LedgerDB l r
+pushLedgerState current' ref db@LedgerDB{..}  = prune $ db {
+      ledgerDbCurrent = current'
+    , ledgerDbBlocks  = blocks'
+    }
+  where
+    LedgerDbParams{..} = ledgerDbParams
+
+    newPos  = fromIntegral (Seq.length ledgerDbBlocks) + 1
+    blocks' = ledgerDbBlocks
+           |> if newPos `safeMod` ledgerDbSnapEvery == 0
+                then CpSShot ref current'
+                else CpBlock ref
+
 {-------------------------------------------------------------------------------
   Internal: rolling back
 -------------------------------------------------------------------------------}
@@ -580,8 +626,8 @@ prune db@LedgerDB{..} =
 -- Given a list of checkpoints, find the most recent checkpoint that has a
 -- associated ledger state, compute the list of blocks that should be applied
 -- on top of that ledger state, then reapply those blocks from old to new.
-ledgerAfter :: forall m l r b e. Monad m
-            => LedgerDbConf m l r b e
+ledgerAfter :: forall m l r b. (ApplyBlock l b, ResolvesBlocks r b m)
+            => LedgerCfg l
             -> ChainSummary l r
             -> StrictSeq (Checkpoint l r)
             -> m l
@@ -598,11 +644,11 @@ ledgerAfter cfg anchor blocks' =
 
     computeCurrent :: [r] -> l -> m l
     computeCurrent []     = return
-    computeCurrent (r:rs) = reapplyBlock cfg (Ref r) >=> computeCurrent rs
+    computeCurrent (r:rs) = reapplyRef cfg r >=> computeCurrent rs
 
 -- | Reconstruct ledger DB from a list of checkpoints
-reconstructFrom :: forall m l r b e. Monad m
-                => LedgerDbConf m l r b e
+reconstructFrom :: forall m l r b. (ApplyBlock l b, ResolvesBlocks r b m)
+                => LedgerCfg l
                 -> LedgerDbParams
                 -> ChainSummary l r
                 -> StrictSeq (Checkpoint l r)
@@ -619,13 +665,14 @@ reconstructFrom cfg params anchor blocks =
         }
 
 -- | Generalization of rollback using a function on the checkpoints
-rollbackTo :: Monad m
-           => LedgerDbConf m l r b e
+rollbackTo :: (ApplyBlock l b, ResolvesBlocks r b m)
+           => LedgerCfg l
            -> (   ChainSummary l r
                -> StrictSeq (Checkpoint l r)
                -> Maybe (StrictSeq (Checkpoint l r))
               )
-           -> LedgerDB l r -> m (Maybe (LedgerDB l r))
+           -> LedgerDB l r
+           -> m (Maybe (LedgerDB l r))
 rollbackTo cfg f (LedgerDB _current blocks anchor params) =
     case f anchor blocks of
       Nothing      -> return Nothing
@@ -634,9 +681,11 @@ rollbackTo cfg f (LedgerDB _current blocks anchor params) =
 -- | Rollback
 --
 -- Returns 'Nothing' if maximum rollback is exceeded.
-rollback :: forall m l r b e. Monad m
-         => LedgerDbConf m l r b e
-         -> Word64 -> LedgerDB l r -> m (Maybe (LedgerDB l r))
+rollback :: forall m l r b. (ApplyBlock l b, ResolvesBlocks r b m)
+         => LedgerCfg l
+         -> Word64
+         -> LedgerDB l r
+         -> m (Maybe (LedgerDB l r))
 rollback _   0 db = return $ Just db
 rollback cfg n db = rollbackTo cfg (\_anchor -> go) db
   where
@@ -653,10 +702,11 @@ rollback cfg n db = rollbackTo cfg (\_anchor -> go) db
 -- | Get past ledger state
 --
 -- This may have to re-apply blocks, and hence read from disk.
-ledgerDbPast :: forall m l r b e. (Monad m, Eq r)
-             => LedgerDbConf m l r b e
+ledgerDbPast :: forall m l r b. (ApplyBlock l b, ResolvesBlocks r b m, Eq r)
+             => LedgerCfg l
              -> WithOrigin r
-             -> LedgerDB l r -> m (Maybe l)
+             -> LedgerDB l r
+             -> m (Maybe l)
 ledgerDbPast cfg tip db
   | ledgerDbTip db == tip = return $ Just (ledgerDbCurrent db)
   | otherwise             = fmap ledgerDbCurrent <$> rollbackTo cfg go db
@@ -676,123 +726,110 @@ ledgerDbPast cfg tip db
   Updates
 -------------------------------------------------------------------------------}
 
--- | Push a block
+-- | Exceeded maximum rollback supported by the current ledger DB state
 --
--- @O(1)@. Computes the new ledger state, and prunes the ledger DB if needed.
-ledgerDbPush :: forall m l r b e ap. Monad m
-             => LedgerDbConf m l r b e
-             -> (Apply ap, RefOrVal r b)
-             -> LedgerDB l r
-             -> m (Either (Err ap e) (LedgerDB l r))
-ledgerDbPush cfg (pa, new) db@LedgerDB{..} = runExceptT $ do
-    !current' <- applyBlock cfg (pa, new) ledgerDbCurrent
-    let newPos  = fromIntegral (Seq.length ledgerDbBlocks) + 1
-        blocks' = ledgerDbBlocks
-               |> if newPos `safeMod` ledgerDbSnapEvery == 0
-                    then CpSShot (ref new) current'
-                    else CpBlock (ref new)
-    return $ prune (db {
-        ledgerDbCurrent = current'
-      , ledgerDbBlocks  = blocks'
-      })
-  where
-    LedgerDbParams{..} = ledgerDbParams
+-- Under normal circumstances this will not arise. It can really only happen
+-- in the presence of data corruption (or when switching to a shorter fork,
+-- but that is disallowed by all currently known Ouroboros protocols).
+--
+-- Records both the supported and the requested rollback.
+data ExceededRollback = ExceededRollback {
+      rollbackMaximum   :: Word64
+    , rollbackRequested :: Word64
+    }
 
-ledgerDbReapply :: Monad m
-                => LedgerDbConf m l r b e
-                -> RefOrVal r b -> LedgerDB l r -> m (LedgerDB l r)
-ledgerDbReapply cfg b = fmap mustBeRight . ledgerDbPush cfg (Reapply @'True, b)
+ledgerDbPush :: forall m c l r b. (ApplyBlock l b, Monad m, c)
+             => LedgerCfg l
+             -> Ap m l r b c -> LedgerDB l r -> m (LedgerDB l r)
+ledgerDbPush cfg ap db =
+    (\current' -> pushLedgerState current' (apRef ap) db) <$>
+      applyBlock cfg ap db
 
 -- | Push a bunch of blocks (oldest first)
-ledgerDbPushMany :: forall ap m l r b e. Monad m
-                 => LedgerDbConf m l r b e
-                 -> [(Apply ap, RefOrVal r b)]
-                 -> LedgerDB l r
-                 -> m (PushManyResult e l r ap)
-ledgerDbPushMany cfg = flip go
-  where
-    go :: LedgerDB l r
-       -> [(Apply ap, RefOrVal r b)]
-       -> m (PushManyResult e l r ap)
-    go l = \case
-      [] -> return $ ValidBlocks l
-      b@(ap, rov):bs -> case ap of
-        Apply   -> ledgerDbPush cfg b l >>= \case
-          Left  e  -> return $ InvalidBlock e (ref rov) l
-          Right l' -> go l' bs
-        -- We have Reapply @'False, so 'ledgerDbPush' returns a non-Void
-        -- error, but we know it can't happen, so just use Reapply @'True.
-        Reapply -> ledgerDbPush cfg (Reapply @'True, rov) l >>= \case
-          Left  e  -> absurd e
-          Right l' -> go l' bs
+ledgerDbPushMany :: (ApplyBlock l b, Monad m, c)
+                 => LedgerCfg l
+                 -> [Ap m l r b c] -> LedgerDB l r -> m (LedgerDB l r)
+ledgerDbPushMany = repeatedlyM . ledgerDbPush
 
 -- | Switch to a fork
-ledgerDbSwitch :: Monad m
-               => LedgerDbConf m l r b e
-               -> Word64                      -- ^ How many blocks to roll back
-               -> [(Apply ap, RefOrVal r b)]  -- ^ New blocks to apply
+ledgerDbSwitch :: (ApplyBlock l b, ResolvesBlocks r b m, c)
+               => LedgerCfg l
+               -> Word64          -- ^ How many blocks to roll back
+               -> [Ap m l r b c]  -- ^ New blocks to apply
                -> LedgerDB l r
-               -> m (SwitchResult e l r ap)
+               -> m (Either ExceededRollback (LedgerDB l r))
 ledgerDbSwitch cfg numRollbacks newBlocks db = do
     mRolledBack <- rollback cfg numRollbacks db
     case mRolledBack of
       Nothing ->
-        return $ MaximumRollbackExceeded (ledgerDbMaxRollback db) numRollbacks
+        return $ Left $ ExceededRollback {
+            rollbackMaximum   = ledgerDbMaxRollback db
+          , rollbackRequested = numRollbacks
+          }
       Just db' ->
-        RollbackSuccessful <$> ledgerDbPushMany cfg newBlocks db'
+        Right <$> ledgerDbPushMany cfg newBlocks db'
 
 {-------------------------------------------------------------------------------
-  Pure variations (primarily for testing)
+  The LedgerDB itself behaves like a ledger
 -------------------------------------------------------------------------------}
 
-fromEither :: Identity (Either Void l) -> l
-fromEither = mustBeRight . runIdentity
+instance ( IsLedger l
+           -- Required superclass constraints of 'IsLedger'
+         , Show               r
+         , Eq                 r
+         , NoUnexpectedThunks r
+         ) => IsLedger (LedgerDB l r) where
+  type LedgerCfg (LedgerDB l r) = LedgerCfg l
+  type LedgerErr (LedgerDB l r) = LedgerErr l
 
-pureBlock :: b -> (Apply 'False, RefOrVal b b)
-pureBlock b = (Apply, Val b b)
+  applyChainTick cfg slot db =
+      TickedLedgerState slot $ db { ledgerDbCurrent = l' }
+    where
+      TickedLedgerState _slot l' = applyChainTick cfg slot (ledgerDbCurrent db)
 
-ledgerDbPush' :: PureLedgerDbConf l b -> b -> LedgerDB l b -> LedgerDB l b
-ledgerDbPush' cfg b = fromEither . ledgerDbPush cfg (pureBlock b)
-
-ledgerDbPushMany' :: PureLedgerDbConf l b -> [b] -> LedgerDB l b -> LedgerDB l b
-ledgerDbPushMany' cfg bs = fromPushManyResult . ledgerDbPushMany cfg (map pureBlock bs)
-
-ledgerDbSwitch' :: PureLedgerDbConf l b -> Word64 -> [b] -> LedgerDB l b -> Maybe (LedgerDB l b)
-ledgerDbSwitch' cfg n bs = fromSwitchResult . ledgerDbSwitch cfg n (map pureBlock bs)
-
-ledgerDbPast' :: Eq b => PureLedgerDbConf l b -> WithOrigin b -> LedgerDB l b -> Maybe l
-ledgerDbPast' cfg tip = runIdentity . ledgerDbPast cfg tip
+instance ApplyBlock l blk => ApplyBlock (LedgerDB l (RealPoint blk)) blk where
+  applyLedgerBlock cfg blk (TickedLedgerState slot db) = do
+      fmap (\current' -> pushLedgerState current' (blockRealPoint blk) db) $
+        applyLedgerBlock cfg blk $
+          TickedLedgerState slot (ledgerDbCurrent db)
+  reapplyLedgerBlock cfg blk (TickedLedgerState slot db) =
+      (\current' -> pushLedgerState current' (blockRealPoint blk) db) $
+        reapplyLedgerBlock cfg blk $
+          TickedLedgerState slot (ledgerDbCurrent db)
+  ledgerTipPoint =
+      ledgerTipPoint . ledgerDbCurrent
 
 {-------------------------------------------------------------------------------
-  Auxiliary functions used for the pure wrappers above
+  Suppor for testing
 -------------------------------------------------------------------------------}
 
-fromPushManyResult :: Identity (PushManyResult Void l b 'False) -> LedgerDB l b
-fromPushManyResult = mustBeRight . pushManyResultToEither . runIdentity
+pureBlock :: b -> Ap m l b b ()
+pureBlock b = ReapplyVal b b
 
-fromSwitchResult :: Identity (SwitchResult Void l b 'False) -> Maybe (LedgerDB l b)
-fromSwitchResult = mightBeLeft . switchResultToEither . runIdentity
-  where
-    mightBeLeft :: Either (Maybe Void) a -> Maybe a
-    mightBeLeft (Left Nothing)  = Nothing
-    mightBeLeft (Left (Just v)) = absurd v
-    mightBeLeft (Right a)       = Just a
+triviallyResolve :: forall b a. Proxy b
+                 -> Reader (ResolveBlock Identity b b) a -> a
+triviallyResolve _ = runIdentity . defaultResolveBlocks return
 
-pushManyResultToEither :: PushManyResult e l r ap
-                       -> Either (Err ap e) (LedgerDB l r)
-pushManyResultToEither = \case
-    InvalidBlock e _ _ -> Left e
-    ValidBlocks      l -> Right l
+ledgerDbPush' :: ApplyBlock l b
+              => LedgerCfg l -> b -> LedgerDB l b -> LedgerDB l b
+ledgerDbPush' cfg b = runIdentity . ledgerDbPush cfg (pureBlock b)
 
--- | Translate 'SwtichResult' to 'Either'
---
--- Returns @Left Nothing@ in case of 'MaximumRollbackExceeded'. Note that this
--- may happen whether or not we have applied the b
-switchResultToEither :: SwitchResult e l r ap
-                     -> Either (Maybe (Err ap e)) (LedgerDB l r)
-switchResultToEither = \case
-    MaximumRollbackExceeded _ _ -> Left Nothing
-    RollbackSuccessful pm       -> first Just $ pushManyResultToEither pm
+ledgerDbPushMany' :: ApplyBlock l b
+                  => LedgerCfg l -> [b] -> LedgerDB l b -> LedgerDB l b
+ledgerDbPushMany' cfg bs = runIdentity . ledgerDbPushMany cfg (map pureBlock bs)
+
+ledgerDbSwitch' :: forall l b. ApplyBlock l b
+                => LedgerCfg l
+                -> Word64 -> [b] -> LedgerDB l b -> Maybe (LedgerDB l b)
+ledgerDbSwitch' cfg n bs db =
+    case triviallyResolve (Proxy @b) $
+           ledgerDbSwitch cfg n (map pureBlock bs) db of
+      Left  ExceededRollback{} -> Nothing
+      Right db'                -> Just db'
+
+ledgerDbPast' :: forall l b. (ApplyBlock l b, Eq b)
+              => LedgerCfg l -> WithOrigin b -> LedgerDB l b -> Maybe l
+ledgerDbPast' cfg tip = triviallyResolve (Proxy @b) . ledgerDbPast cfg tip
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -821,55 +858,6 @@ decodeChainSummary decodeLedger decodeRef = do
     csLength <- Dec.decodeWord64
     csLedger <- decodeLedger
     return ChainSummary{..}
-
-{-------------------------------------------------------------------------------
-  Demo
--------------------------------------------------------------------------------}
-
-type Branch     = Char
-newtype DemoLedger = DL (Branch, Int) deriving (Show)
-newtype DemoBlock  = DB (Branch, Int) deriving (Show)
-newtype DemoRef    = DR (Branch, Int) deriving (Show)
-newtype DemoErr    = DE (Int, Int)    deriving (Show)
-
-demoConf :: LedgerDbConf Identity DemoLedger DemoRef DemoBlock DemoErr
-demoConf = LedgerDbConf {
-      ldbConfGenesis = Identity $ DL ('a', 0)
-    , ldbConfResolve = \(DR b) -> Identity (DB b)
-    , ldbConfApply   = \(DB r@(_, n)) (DL (_, l)) ->
-        if n > l then Right $ DL r
-                 else Left  $ DE (n, l)
-    , ldbConfReapply = \(DB r@(_, n)) (DL (_, l)) ->
-        if n > l then DL r
-                 else error "ledgerDbReapply: block applied in wrong state"
-    }
-
-demoParams :: LedgerDbParams
-demoParams = LedgerDbParams {
-      ledgerDbSnapEvery     = 4
-    , ledgerDbSecurityParam = SecurityParam 6
-    }
-
-db0 :: LedgerDB DemoLedger DemoRef
-db0 = ledgerDbFromGenesis demoParams (DL ('a', 0))
-
-_demo :: [LedgerDB DemoLedger DemoRef]
-_demo = db0 : go 1 8 db0
-  where
-    go :: Int -> Int -> LedgerDB DemoLedger DemoRef -> [LedgerDB DemoLedger DemoRef]
-    go n m db =
-      if n > m then
-        let blockInfos = [ (Apply, Val (DR ('b', n-1)) (DB ('b', n-1)))
-                         , (Apply, Val (DR ('b', n-0)) (DB ('b', n-0)))
-                         ]
-        in case runIdentity $ ledgerDbSwitch demoConf 1 blockInfos db of
-          RollbackSuccessful (ValidBlocks db') -> [db']
-          _                                    -> error "unexpected outcome"
-      else
-        let blockInfo = (Apply, Val (DR ('a', n)) (DB ('a', n)))
-        in case runIdentity $ ledgerDbPush demoConf blockInfo db of
-          Right db' -> db' : go (n + 1) m db'
-          _         -> error "unexpected outcome"
 
 {-------------------------------------------------------------------------------
   Auxiliary

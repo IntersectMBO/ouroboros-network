@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Ledger.Dual (
     -- * Pair types
   , DualBlock(..)
   , DualHeader
+  , DualLedgerConfig(..)
   , DualLedgerError(..)
   , DualGenTxErr(..)
     -- * Lifted functions
@@ -30,7 +31,6 @@ module Ouroboros.Consensus.Ledger.Dual (
   , Header(..)
   , BlockConfig(..)
   , LedgerState(..)
-  , LedgerConfig(..)
   , GenTx(..)
   , TxId(..)
     -- * Serialisation
@@ -255,22 +255,15 @@ deriving instance ( Eq (LedgerError m)
   Update the ledger
 -------------------------------------------------------------------------------}
 
-instance Bridge m a => UpdateLedger (DualBlock m a) where
+data DualLedgerConfig m a = DualLedgerConfig {
+      dualLedgerConfigMain :: LedgerConfig m
+    , dualLedgerConfigAux  :: LedgerConfig a
+    }
+  deriving NoUnexpectedThunks via AllowThunk (DualLedgerConfig m a)
 
-  data LedgerState (DualBlock m a) = DualLedgerState {
-        dualLedgerStateMain   :: LedgerState m
-      , dualLedgerStateAux    :: LedgerState a
-      , dualLedgerStateBridge :: BridgeLedger m a
-      }
-    deriving NoUnexpectedThunks via AllowThunk (LedgerState (DualBlock m a))
-
-  data LedgerConfig (DualBlock m a) = DualLedgerConfig {
-        dualLedgerConfigMain :: LedgerConfig m
-      , dualLedgerConfigAux  :: LedgerConfig a
-      }
-    deriving NoUnexpectedThunks via AllowThunk (LedgerConfig (DualBlock m a))
-
-  type LedgerError (DualBlock m a) = DualLedgerError m a
+instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
+  type LedgerCfg (LedgerState (DualBlock m a)) = DualLedgerConfig m a
+  type LedgerErr (LedgerState (DualBlock m a)) = DualLedgerError   m a
 
   applyChainTick DualLedgerConfig{..}
                  slot
@@ -294,6 +287,7 @@ instance Bridge m a => UpdateLedger (DualBlock m a) where
                   slot
                   dualLedgerStateAux
 
+instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) where
   applyLedgerBlock DualLedgerConfig{..}
                    block@DualBlock{..}
                    (TickedLedgerState slot DualLedgerState{..}) = do
@@ -333,7 +327,17 @@ instance Bridge m a => UpdateLedger (DualBlock m a) where
                                     dualLedgerStateBridge
       }
 
-  ledgerTipPoint = castPoint . ledgerTipPoint . dualLedgerStateMain
+  ledgerTipPoint = castPoint
+                 . (ledgerTipPoint :: LedgerState m -> Point m)
+                 . dualLedgerStateMain
+
+instance Bridge m a => UpdateLedger (DualBlock m a) where
+  data LedgerState (DualBlock m a) = DualLedgerState {
+        dualLedgerStateMain   :: LedgerState m
+      , dualLedgerStateAux    :: LedgerState a
+      , dualLedgerStateBridge :: BridgeLedger m a
+      }
+    deriving NoUnexpectedThunks via AllowThunk (LedgerState (DualBlock m a))
 
 deriving instance ( Show (LedgerState m)
                   , Show (LedgerState a)
