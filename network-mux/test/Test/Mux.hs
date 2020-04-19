@@ -354,9 +354,12 @@ prop_mux_snd_recv messages = ioProperty $ do
 -- side and a MiniProtocolDescription for the server side for a RequestResponce
 -- protocol.
 --
-setupMiniReqRsp :: IO ()              -- | Action performed by responder before processing the response
-                -> StrictTVar IO Int  -- | Total number of miniprotocols.
-                -> DummyTrace         -- | Trace of messages
+setupMiniReqRsp :: IO ()
+                -- ^ Action performed by responder before processing the response
+                -> StrictTVar IO Int
+                -- ^ Total number of miniprotocols.
+                -> DummyTrace
+                -- ^ Trace of messages
                 -> IO ( IO Bool
                       , Channel IO -> IO ()
                       , Channel IO -> IO ()

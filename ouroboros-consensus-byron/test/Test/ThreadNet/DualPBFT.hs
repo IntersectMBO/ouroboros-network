@@ -221,18 +221,18 @@ instance Arbitrary SetupDualPBft where
         -- The number of slots is a parameter to everything else we generate
         -- also, so we have to be careful:
         --
-        -- * The CHAIN environment just uses the number of slots to optimize
-        --   some test parameter, for instance to guarantee that the test
-        --   contains epoch boundaries. Once we have a failing test case,
-        --   reducing the number of slots won't affect that.
-        -- * The PBFT parameters are derived from the genesis (which in turn
-        --   derives from the number of slots), but really only depends on
-        --   @k@ and the number of genesis keys, so we can shrink the number of
-        --   slots independently from the PBFT parameters.
-        -- * The TestConfig /does/ depend on the number of slots quite a lot,
-        --   but we already have a shrinker 'shrinkTestConfigSlotsOnly' for
-        --   the test config that does precisely this: reduce the number of
-        --   slots and readjust the rest.
+        --   * The CHAIN environment just uses the number of slots to optimize
+        --     some test parameter, for instance to guarantee that the test
+        --     contains epoch boundaries. Once we have a failing test case,
+        --     reducing the number of slots won't affect that.
+        --   * The PBFT parameters are derived from the genesis (which in turn
+        --     derives from the number of slots), but really only depends on
+        --     @k@ and the number of genesis keys, so we can shrink the number of
+        --     slots independently from the PBFT parameters.
+        --   * The TestConfig /does/ depend on the number of slots quite a lot,
+        --     but we already have a shrinker 'shrinkTestConfigSlotsOnly' for
+        --     the test config that does precisely this: reduce the number of
+        --     slots and readjust the rest.
         --
         -- Therefore here we can just piggy-back on 'shrinkTestConfigSlotsOnly'.
         [ setupOverrideConfig config' setup

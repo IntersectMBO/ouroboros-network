@@ -112,7 +112,8 @@ tests =
         [
           testProperty "Resolve (Sim)"      prop_resolv_sim
         --, testProperty "Resolve (IO)"      _prop_resolv_io
-        -- ^ takes about 10 minutes to run due to delays in realtime.
+        -- the above tests takes about 10 minutes to run due to delays in
+        -- realtime.
         , testProperty "Resolve Subscribe (IO)" prop_sub_io
         , testProperty "Send Recive with Dns worker (IO)" prop_send_recv
         , testProperty "Send Recieve with IP worker, Initiator and responder (IO)"

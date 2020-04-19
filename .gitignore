@@ -46,3 +46,5 @@ stack.yaml.local
 doc/*.fdb_latexmk
 doc/*.fls
 doc/*.synctex.gz
+
+haddocks/

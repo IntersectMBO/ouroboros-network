@@ -1,0 +1,72 @@
+name: "Haddock documentation"
+
+on:
+  schedule:
+    - cron:  '0 0 * * *'
+
+
+# based on: https://github.com/haskell/cabal/blob/master/.github/workflows/linux.yml
+
+jobs:
+  haddocks:
+    name: "Haddocks"
+    runs-on: ubuntu-18.04
+    container:
+      image: phadej/ghc:8.6.5-bionic
+    steps:
+      - name: Set PATH
+        run: |
+          echo "::add-path::$HOME/.cabal/bin"
+      - name: Install jq
+        run: |
+          apt-get update
+          apt-get install -y jq
+      - name: Install cabal-plan
+        run: |
+          mkdir -p $HOME/.cabal/bin
+          curl -sL https://github.com/haskell-hvr/cabal-plan/releases/download/v0.6.2.0/cabal-plan-0.6.2.0-x86_64-linux.xz > cabal-plan.xz
+          echo "de73600b1836d3f55e32d80385acc055fd97f60eaa0ab68a755302685f5d81bc  cabal-plan.xz" | sha256sum -c -
+          xz -d < cabal-plan.xz > $HOME/.cabal/bin/cabal-plan
+          rm -f cabal-plan.xz
+          chmod a+x $HOME/.cabal/bin/cabal-plan
+      # Cache cabal-store
+      - name: cache cabal store
+        uses: actions/cache@v1
+        with:
+          path: ~/.cabal/store
+          key: cabal-store-8.6.5
+      - name: Update Hackage index
+        run: cabal v2-update
+
+      # checkout git repository
+      - name: checkout ouroboros-network repository
+        run: |
+          git clone --depth 1 https://github.com/${{ github.repository }}.git .
+          git fetch origin ${{ github.ref }}:temporary-ci-branch
+          git checkout ${{ github.sha }}
+          git config --local user.email "marcin.szamotulski@iohk.io"
+          git config --local user.name  ${{ github.actor }}
+
+      # Cache dist-newstyle directory
+      - name: cache dist-newstyle
+        uses: actions/cache@v1
+        with:
+          path: dist-newstyle
+          key: dist-newstyle
+
+      - name: Build Haddock Documentation 🔧
+        run: |
+          mkdir ./haddocks
+          ./scripts/haddocs.sh ./haddocks
+
+      - name: Deploy to gh-pages 🚀
+        run: |
+          git fetch origin gh-pages:gh-pages
+          git checkout gh-pages
+          cp -r ./haddocks/* ./
+          rm -rf haddocks
+          git add -A
+          git commit -m "Deployed haddocks"
+          git push https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}.git HEAD:gh-pages
+
+

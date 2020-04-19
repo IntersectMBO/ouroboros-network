@@ -1,0 +1,66 @@
+= Ouroboros-Network Repository Hackage Documentation
+
+[skip to module list](#module-list)
+
+This site contains Haskell documentation of
+
+* __Ouroboros-Network__  - networking component of the Haskell implementation of Ouroboros protocols
+* __Ouroboros-Consensus__ - Ouroboros Consensus family of protocol which integrate with `Ouroboros-Network`
+
+== Module Structure And Network Components
+
+* __IOSim & Monad Classes__
+
+    * __[io-sim](io-sim/Control-Monad-IOSim.html)__ - `IOSim` moand which
+      allows us to test networking code in simulation.
+    * __[io-sim-classes](#n.2.1.1)__ - abstract classes under 'Control.Monad.Class' which
+      allow to use real `IO` or the `SimIO` monad in a polymorphic way.
+
+* __Network__ - low level networking libraries, independent of our choices
+
+    * __Win32-network__
+    * __[typed-protocols](typed-protocols/Network-TypedProtocol.html)__
+    * __[network-mux](network-mux/Network-Mux.html)__
+
+* __Ouroboros.Network__
+
+    * __ouroboros-network-framework__ - our instantiations and implementation
+      of servers, clients, abstractions for working with named pipes and unix
+      sockets.  These are higher level components, which don't dependent on
+      ouroboros protocols, but build a solid foundation for the networking
+      library
+
+    * __ouroboros-network__ - networking library which supports /Ouroboros family
+        of protocols/. It includes:
+
+          * /Implementations, type level specifications, and api of all the protocols:/
+
+              * __[ChainSync](ouroboros-network/Ouroboros-Network-Protocol-ChainSync-Type.html)__
+              * __[BlockFetch](ouroboros-network/Ouroboros-Network-Protocol-BlockFetch-Type.html)__
+              * __[TxSubmission](ouroboros-network/Ouroboros-Network-Protocol-TxSubmission-Type.html)__
+              * __[LocalTxSubmission](ouroboros-network/Ouroboros-Network-Protocol-LocalTxSubmission-Type.html)__
+              * __[LocalStateQuery](ouroboros-network/Ouroboros-Network-Protocol-LocalStateQuery-Type.html)__
+              * __[LocalTxMonitor](ouroboros-network/Ouroboros-Network-Protocol-LocalTxMonitor-Type.html)__
+              * __[Handshake](ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type.html)__
+          
+         * /Block chain related data structures that the networking code needs
+           to be aware of:/
+
+              * __[Block](ouroboros-network/Ouroboros-Network-Block.html)__
+              * __[ChainFramgent](ouroboros-network/Ouroboros-Network-ChainFragment.html)__
+              * __[AnchoredFragment](ouroboros-network/Ouroboros-Network-AnchoredFragment.html)__
+
+         * /Network applications:/
+
+              * __[Block Fetch Application](ouroboros-network/Ouroboros-Network-BlockFetch.html)__
+              * __Tx Submission Applications__:
+
+                  * __[inbound](ouroboros-network/Ouroboros-Network-TxSubmission-Inbound.html)__
+                  * __[outbound](ouroboros-network/Ouroboros-Network-TxSubmission-Outbound.html)__
+
+              * __[Peer Selection](ouroboros-network/Ouroboros-Network-PeerSelection-Governor.html)__
+              * __[Data Diffusion](ouroboros-network/Ouroboros-Network-Diffusion.html)__ which combines all the pieces for supporting
+                a [node](https://github.com://input-output-hk/cardano-node)
+              * __[NodeToNode API](ouroboros-network/Ouroboros-Network-NodeToNode.html)__
+              * __[NodeToClient API](ouroboros-network/Ouroboros-Network-NodeToClient.html)__
+      

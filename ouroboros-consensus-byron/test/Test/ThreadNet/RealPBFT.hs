@@ -1045,7 +1045,7 @@ genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
             -- viable, which assumes that the invariant would be satisfied if
             -- all nodes join in slot 0. For uninterrupted round-robin, that
             -- merely requires @n * floor (k * t) >= k@. (TODO Does that
-            -- *always* suffice?)
+            -- __always__ suffice?)
         let check s' =
                 Ref.viable params sentinel
                     (NodeJoinPlan (Map.insert nid s' m))
