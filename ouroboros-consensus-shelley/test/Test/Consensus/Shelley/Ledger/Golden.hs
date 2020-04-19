@@ -280,8 +280,8 @@ test_golden_Block = goldenTestCBOR
     toCBOR
     exampleBlock
     [ TkListLen 4
-    , TkListLen 16
-    , TkBytes "2&\SOH9"
+    , TkListLen 16             -- Block header, as in test_golden_Header below
+    , TkBytes "\229Yo*"
     , TkInt 1677861428
     , TkInt 1239952560
     , TkInt 20
@@ -297,7 +297,7 @@ test_golden_Block = goldenTestCBOR
     , TkInteger 132220243341478360044794887852609007894
     , TkInt 194
     , TkInt 2
-    , TkBytes "\159\SYN\n5"
+    , TkBytes "t\199G\187"
     , TkInt 42768536
     , TkInt 0
     , TkInt 0
@@ -307,11 +307,11 @@ test_golden_Block = goldenTestCBOR
     , TkInt 0
     , TkInt 0
     , TkListLen 2
-    , TkInteger 191398642502988321904034898986188660442
+    , TkInteger 1904422759189137543741070836800193328
     , TkListLen 3
     , TkInt 42768536
     , TkInt 1
-    , TkInt 10
+    , TkInt 10                 -- End of block header
     , TkListLen 1
     , TkMapLen 5
     , TkInt 0
@@ -378,33 +378,33 @@ test_golden_Header = goldenTestCBOR
     toCBOR
     (getHeader exampleBlock)
     [ TkListLen 16
-    , TkBytes "2&\SOH9"
-    , TkInt 1677861428
-    , TkInt 1239952560
-    , TkInt 20
-    , TkListLen 2
+    , TkBytes "\229Yo*"     -- #1 prev hash
+    , TkInt 1677861428      -- #2 cold vk
+    , TkInt 1239952560      -- #3 vrf vk
+    , TkInt 20              -- #4 slotNo
+    , TkListLen 2           -- #5 VRF nonce
     , TkInt 2
     , TkListLen 2
     , TkInt 1239952560
     , TkInteger 155720561651862627124907358847946323278
-    , TkListLen 2
+    , TkListLen 2           -- #6 VRF leader
     , TkInt 0
     , TkListLen 2
     , TkInt 1239952560
     , TkInteger 132220243341478360044794887852609007894
-    , TkInt 194
-    , TkInt 2
-    , TkBytes "\159\SYN\n5"
-    , TkInt 42768536
-    , TkInt 0
-    , TkInt 0
-    , TkListLen 2
+    , TkInt 194             -- #7 body size
+    , TkInt 2               -- #8 block no
+    , TkBytes "t\199G\187"  -- #9 body hash
+    , TkInt 42768536        -- #10 op cert: vkey hot
+    , TkInt 0               -- #11 op cert: counter
+    , TkInt 0               -- #12 op cert: KES period
+    , TkListLen 2           -- #13 op cert: sigma
     , TkBytes "5\\\211K"
     , TkInt 1677861428
-    , TkInt 0
-    , TkInt 0
-    , TkListLen 2
-    , TkInteger 191398642502988321904034898986188660442
+    , TkInt 0               -- #14 protVer major
+    , TkInt 0               -- #15 protVer minor
+    , TkListLen 2           -- #16 header sig
+    , TkInteger 1904422759189137543741070836800193328
     , TkListLen 3
     , TkInt 42768536
     , TkInt 1
@@ -415,7 +415,7 @@ test_golden_HeaderHash :: Assertion
 test_golden_HeaderHash = goldenTestCBOR
     toCBOR
     (blockHash exampleBlock)
-    [ TkBytes "\135\233S4"
+    [ TkBytes "[8\SI3"
     ]
 
 test_golden_GenTx :: Assertion
@@ -670,7 +670,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkListLen 3
     , TkListLen 2
     , TkInt 10
-    , TkBytes "\195\213\vX"
+    , TkBytes "\133\&3\DC1\170"
     , TkListLen 2
     , TkListLen 1
     , TkInt 0
@@ -1117,7 +1117,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkListLen 3
     , TkListLen 2
     , TkInt 10
-    , TkBytes "\195\213\vX"
+    , TkBytes "\133\&3\DC1\170"
     , TkListLen 2
     , TkListLen 1
     , TkInt 0
