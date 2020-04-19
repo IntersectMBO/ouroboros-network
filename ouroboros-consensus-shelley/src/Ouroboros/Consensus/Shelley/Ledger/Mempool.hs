@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -22,8 +23,11 @@ import           Data.Foldable (toList)
 import qualified Data.Sequence as Seq
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..),
+                     FullByteString (..), Annotator (..))
 import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..))
+
+import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API
@@ -38,6 +42,7 @@ import qualified Shelley.Spec.Ledger.UTxO as SL
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
 import           Ouroboros.Consensus.Shelley.Protocol
+
 
 type ShelleyTxId c = SL.TxId c
 
@@ -90,10 +95,11 @@ instance Crypto c => HasTxs (ShelleyBlock c) where
 instance Crypto c => ToCBOR (GenTx (ShelleyBlock c)) where
   -- No need to encode the 'TxId', it's just a hash of the 'SL.TxBody' inside
   -- 'SL.Tx', so it can be recomputed.
-  toCBOR (ShelleyTx _txid tx) = toCBOR tx
+  toCBOR (ShelleyTx _txid tx) = wrapCBORinCBOR toCBOR tx
 
 instance Crypto c => FromCBOR (GenTx (ShelleyBlock c)) where
-  fromCBOR = mkShelleyTx <$> fromCBOR
+  fromCBOR = fmap mkShelleyTx $ unwrapCBORinCBOR
+    $ (. Full) . runAnnotator <$> fromCBOR
 
 {-------------------------------------------------------------------------------
   Pretty-printing

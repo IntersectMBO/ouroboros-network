@@ -263,9 +263,8 @@ mkGenesisConfig k maxKESEvolutions coreNodes = ShelleyGenesis {
     initialFunds = Map.fromList
       [ (addr, coin)
       | CoreNode { cnDelegateKey, cnStakingKey } <- coreNodes
-      , let addr = SL.AddrBase
-              (mkCredential cnDelegateKey)
-              (mkCredential cnStakingKey)
+      , let addr = SL.Addr (mkCredential cnDelegateKey)
+                           (SL.StakeRefBase (mkCredential cnStakingKey))
             coin = SL.Coin $ fromIntegral initialLovelacePerCoreNode
       ]
 
