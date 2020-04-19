@@ -419,7 +419,7 @@ test_golden_HeaderHash = goldenTestCBOR
     ]
 
 test_golden_GenTx :: Assertion
-test_golden_GenTx = goldenTestCBOR
+test_golden_GenTx = goldenTestCBORInCBOR
     toCBOR
     exampleGenTx
     [ TkListLen 3
