@@ -50,7 +50,7 @@ import           Data.Type.Equality ((:~:) (Refl))
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (enforceSize, fromCBOR, toCBOR)
-import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Cardano.Slotting.Slot (EpochNo, WithOrigin (..))
 
 import           Ouroboros.Network.Block
@@ -94,10 +94,6 @@ data ShelleyLedgerError c
   deriving (Eq, Generic, Show)
 
 instance NoUnexpectedThunks (ShelleyLedgerError c)
-
--- TODO: Turn this orphan into a proper instance upstream
-deriving via OnlyCheckIsWHNF "SL.Globals" SL.Globals
-         instance NoUnexpectedThunks SL.Globals
 
 instance TPraosCrypto c => IsLedger (LedgerState (ShelleyBlock c)) where
   type LedgerErr (LedgerState (ShelleyBlock c)) = ShelleyLedgerError c
@@ -320,11 +316,6 @@ instance Crypto c => ValidateEnvelope (ShelleyBlock c) where
         SL.chainChecks (configLedger cfg) pparams (shelleyHeaderRaw hdr)
     where
       pparams = SL.lvProtParams ledgerView
-
--- TODO fix thunks in cardano-ledger-specs
-deriving
-  via OnlyCheckIsWHNF "OtherHeaderEnvelopError Shelley" (STS.PredicateFailure (STS.CHAIN c))
-  instance NoUnexpectedThunks (STS.PredicateFailure (STS.CHAIN c))
 
 {-------------------------------------------------------------------------------
   Auxiliary

@@ -36,7 +36,7 @@ flags:
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: eb340f88c0d52b973c0e80bf98a8152097a056c0
+    commit: cda172dac4428058ebcb832673f379c9f92d411e
     subdirs:
       - contra-tracer
 
@@ -49,7 +49,7 @@ extra-deps:
       - slotting
 
   - git: https://github.com/input-output-hk/cardano-ledger-specs
-    commit: b0f4b024962eb834af55151697c8da72b6df4df8
+    commit: d5e09ed2f379b04c338f3aebc1b8ca337425a812
     subdirs:
       - byron/chain/executable-spec
       - byron/ledger/executable-spec
