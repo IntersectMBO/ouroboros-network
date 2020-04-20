@@ -414,23 +414,22 @@ forward
   -> [Point blk]
   -> m (Maybe (Point blk))
 forward registry varReader blockComponent CDB{..} = \pts -> do
-    -- The current state of the reader doesn't matter, the given @pts@ could
-    -- be in the current chain fragment or in the ImmutableDB.
-
     -- NOTE: we don't use 'Query.getCurrentChain', which only returns the last
     -- @k@ headers, because we want to see the headers that have not yet been
     -- written to the ImmutableDB too.
-    curChain         <- atomically $ readTVar cdbChain
+    (curChain, readerState) <- atomically $
+      (,) <$> readTVar cdbChain <*> readTVar varReader
     slotNoAtImmDBTip <- ImmDB.getSlotNoAtTip cdbImmDB
-    findFirstPointOnChain curChain slotNoAtImmDBTip pts
+    findFirstPointOnChain curChain readerState slotNoAtImmDBTip pts
   where
     findFirstPointOnChain
       :: HasCallStack
       => AnchoredFragment (Header blk)
+      -> ReaderState m blk b
       -> WithOrigin SlotNo
       -> [Point blk]
       -> m (Maybe (Point blk))
-    findFirstPointOnChain curChain slotNoAtImmDBTip = \case
+    findFirstPointOnChain curChain readerState slotNoAtImmDBTip = \case
       []     -> return Nothing
       pt:pts
         | AF.withinFragmentBounds (castPoint pt) curChain
@@ -440,17 +439,55 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
           return $ Just pt
 
         | otherwise
-        -> do
-          inImmDB <- case pointToWithOriginRealPoint pt of
-            Origin -> return True -- Genesis is always "in" the ImmutableDB
-            At pt' -> ImmDB.hasBlock cdbImmDB pt'
-          if inImmDB
-            then do
-              immIt <- ImmDB.streamAfterKnownBlock cdbImmDB registry
-                ((,) <$> getPoint <*> blockComponent) pt
-              updateState $ ReaderInImmDB (RollBackTo pt) immIt
-              return $ Just pt
-            else findFirstPointOnChain curChain slotNoAtImmDBTip pts
+        -- Not in the in-memory chain fragment, so older than @k@, hence it
+        -- should be in the ImmutableDB. If not, then the point is not on our
+        -- chain.
+        --
+        -- We try to avoid IO (in the ImmutableDB) as much as possible by
+        -- checking whether the requested point corresponds to the current
+        -- state of the reader.
+        -> case readerState of
+            ReaderInit
+              | pt == genesisPoint
+              -- The 'ReaderInit' state is equivalent to @'RollBackTo'
+              -- 'genesisPoint'@, so the state doesn't have to change when
+              -- requesting a rollback to genesis.
+              -> return $ Just pt
+
+            ReaderInImmDB rollState immIt
+              | rollState == RollBackTo pt
+              -- If we already have to roll back to the given point in the
+              -- ImmutableDB, the state doesn't have to change, saving us from
+              -- checking whether the point is in the ImmutableDB (cached disk
+              -- reads), closing, and opening the same ImmutableDB iterator.
+              -> return $ Just pt
+
+              | rollState == RollForwardFrom pt
+              -- If we're already rolling forward from the given point in the
+              -- ImmutableDB, we can reuse the open ImmutableDB iterator,
+              -- saving the same costs as in the comment above. We do have to
+              -- update the state from 'RollForwardFrom' to 'RollBackTo'.
+              -> do
+                atomically $ writeTVar varReader $
+                  ReaderInImmDB (RollBackTo pt) immIt
+                return $ Just pt
+
+            _otherwise -> case pointToWithOriginRealPoint pt of
+              -- Genesis is always "in" the ImmutableDB
+              Origin -> do
+                updateState ReaderInit
+                return $ Just pt
+
+              At pt' -> do
+                inImmDB <- ImmDB.hasBlock cdbImmDB pt'
+                if inImmDB then do
+                  immIt <- ImmDB.streamAfterKnownBlock cdbImmDB registry
+                    ((,) <$> getPoint <*> blockComponent) pt
+                  updateState $ ReaderInImmDB (RollBackTo pt) immIt
+                  return $ Just pt
+                else
+                  -- The point is not in the current chain, try the next point
+                  findFirstPointOnChain curChain readerState slotNoAtImmDBTip pts
 
     -- | Update the state of the reader to the given state. If the current
     -- state is 'ReaderInImmDB', close the ImmutableDB iterator to avoid
