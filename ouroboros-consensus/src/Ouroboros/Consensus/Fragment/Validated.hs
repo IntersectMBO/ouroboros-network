@@ -41,7 +41,12 @@ invariant :: forall l blk. ApplyBlock l blk
           => ValidatedFragment l blk -> Either String ()
 invariant ValidatedFragment{..}
     | ledgerTip /= headPoint
-    = Left $ show ledgerTip ++ " /= " ++ show headPoint
+    = Left $ concat [
+          "ledger tip "
+        , show ledgerTip
+        , " /= head point "
+        , show headPoint
+        ]
     | otherwise
     = Right ()
   where
