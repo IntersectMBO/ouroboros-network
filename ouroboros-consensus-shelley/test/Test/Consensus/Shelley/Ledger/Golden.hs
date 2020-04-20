@@ -939,107 +939,78 @@ test_golden_LedgerState = goldenTestCBOR
     , TkMapLen 0
     , TkListLen 0
     , TkMapLen 0
-    , TkMapLen 50
+    , TkMapLen 7
+    , TkBytes "\SO\152\236\221"
+    , TkListBegin
     , TkInt 0
-    , TkBytes "\SO\152\236\221"
-    , TkInt 2
-    , TkBytes "!Mlu"
-    , TkInt 4
-    , TkBytes "Sk\188V"
-    , TkInt 6
-    , TkBytes "r\198Y\SO"
-    , TkInt 8
-    , TkBytes "\135\151\&0\144"
-    , TkInt 10
-    , TkBytes "\195\232\167\212"
-    , TkInt 12
-    , TkBytes "\246\216G\149"
     , TkInt 14
-    , TkBytes "\SO\152\236\221"
-    , TkInt 16
-    , TkBytes "!Mlu"
-    , TkInt 18
-    , TkBytes "Sk\188V"
-    , TkInt 20
-    , TkBytes "r\198Y\SO"
-    , TkInt 22
-    , TkBytes "\135\151\&0\144"
-    , TkInt 24
-    , TkBytes "\195\232\167\212"
-    , TkInt 26
-    , TkBytes "\246\216G\149"
     , TkInt 28
-    , TkBytes "\SO\152\236\221"
-    , TkInt 30
-    , TkBytes "!Mlu"
-    , TkInt 32
-    , TkBytes "Sk\188V"
-    , TkInt 34
-    , TkBytes "r\198Y\SO"
-    , TkInt 36
-    , TkBytes "\135\151\&0\144"
-    , TkInt 38
-    , TkBytes "\195\232\167\212"
-    , TkInt 40
-    , TkBytes "\246\216G\149"
     , TkInt 42
-    , TkBytes "\SO\152\236\221"
-    , TkInt 44
-    , TkBytes "!Mlu"
-    , TkInt 46
-    , TkBytes "Sk\188V"
-    , TkInt 48
-    , TkBytes "r\198Y\SO"
-    , TkInt 50
-    , TkBytes "\135\151\&0\144"
-    , TkInt 52
-    , TkBytes "\195\232\167\212"
-    , TkInt 54
-    , TkBytes "\246\216G\149"
     , TkInt 56
-    , TkBytes "\SO\152\236\221"
-    , TkInt 58
-    , TkBytes "!Mlu"
-    , TkInt 60
-    , TkBytes "Sk\188V"
-    , TkInt 62
-    , TkBytes "r\198Y\SO"
-    , TkInt 64
-    , TkBytes "\135\151\&0\144"
-    , TkInt 66
-    , TkBytes "\195\232\167\212"
-    , TkInt 68
-    , TkBytes "\246\216G\149"
     , TkInt 70
-    , TkBytes "\SO\152\236\221"
-    , TkInt 72
-    , TkBytes "!Mlu"
-    , TkInt 74
-    , TkBytes "Sk\188V"
-    , TkInt 76
-    , TkBytes "r\198Y\SO"
-    , TkInt 78
-    , TkBytes "\135\151\&0\144"
-    , TkInt 80
-    , TkBytes "\195\232\167\212"
-    , TkInt 82
-    , TkBytes "\246\216G\149"
     , TkInt 84
-    , TkBytes "\SO\152\236\221"
-    , TkInt 86
-    , TkBytes "!Mlu"
-    , TkInt 88
-    , TkBytes "Sk\188V"
-    , TkInt 90
-    , TkBytes "r\198Y\SO"
-    , TkInt 92
-    , TkBytes "\135\151\&0\144"
-    , TkInt 94
-    , TkBytes "\195\232\167\212"
-    , TkInt 96
-    , TkBytes "\246\216G\149"
     , TkInt 98
-    , TkBytes "\SO\152\236\221"
+    , TkBreak
+    , TkBytes "!Mlu"
+    , TkListBegin
+    , TkInt 2
+    , TkInt 16
+    , TkInt 30
+    , TkInt 44
+    , TkInt 58
+    , TkInt 72
+    , TkInt 86
+    , TkBreak
+    , TkBytes "Sk\188V"
+    , TkListBegin
+    , TkInt 4
+    , TkInt 18
+    , TkInt 32
+    , TkInt 46
+    , TkInt 60
+    , TkInt 74
+    , TkInt 88
+    , TkBreak
+    , TkBytes "r\198Y\SO"
+    , TkListBegin
+    , TkInt 6
+    , TkInt 20
+    , TkInt 34
+    , TkInt 48
+    , TkInt 62
+    , TkInt 76
+    , TkInt 90
+    , TkBreak
+    , TkBytes "\135\151\&0\144"
+    , TkListBegin
+    , TkInt 8
+    , TkInt 22
+    , TkInt 36
+    , TkInt 50
+    , TkInt 64
+    , TkInt 78
+    , TkInt 92
+    , TkBreak
+    , TkBytes "\195\232\167\212"
+    , TkListBegin
+    , TkInt 10
+    , TkInt 24
+    , TkInt 38
+    , TkInt 52
+    , TkInt 66
+    , TkInt 80
+    , TkInt 94
+    , TkBreak
+    , TkBytes "\246\216G\149"
+    , TkListBegin
+    , TkInt 12
+    , TkInt 26
+    , TkInt 40
+    , TkInt 54
+    , TkInt 68
+    , TkInt 82
+    , TkInt 96
+    , TkBreak
     ]
 
 exampleLedgerState :: LedgerState Block
@@ -1384,107 +1355,78 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkMapLen 0
     , TkListLen 0
     , TkMapLen 0
-    , TkMapLen 50
+    , TkMapLen 7
+    , TkBytes "\SO\152\236\221"
+    , TkListBegin
     , TkInt 0
-    , TkBytes "\SO\152\236\221"
-    , TkInt 2
-    , TkBytes "!Mlu"
-    , TkInt 4
-    , TkBytes "Sk\188V"
-    , TkInt 6
-    , TkBytes "r\198Y\SO"
-    , TkInt 8
-    , TkBytes "\135\151\&0\144"
-    , TkInt 10
-    , TkBytes "\195\232\167\212"
-    , TkInt 12
-    , TkBytes "\246\216G\149"
     , TkInt 14
-    , TkBytes "\SO\152\236\221"
-    , TkInt 16
-    , TkBytes "!Mlu"
-    , TkInt 18
-    , TkBytes "Sk\188V"
-    , TkInt 20
-    , TkBytes "r\198Y\SO"
-    , TkInt 22
-    , TkBytes "\135\151\&0\144"
-    , TkInt 24
-    , TkBytes "\195\232\167\212"
-    , TkInt 26
-    , TkBytes "\246\216G\149"
     , TkInt 28
-    , TkBytes "\SO\152\236\221"
-    , TkInt 30
-    , TkBytes "!Mlu"
-    , TkInt 32
-    , TkBytes "Sk\188V"
-    , TkInt 34
-    , TkBytes "r\198Y\SO"
-    , TkInt 36
-    , TkBytes "\135\151\&0\144"
-    , TkInt 38
-    , TkBytes "\195\232\167\212"
-    , TkInt 40
-    , TkBytes "\246\216G\149"
     , TkInt 42
-    , TkBytes "\SO\152\236\221"
-    , TkInt 44
-    , TkBytes "!Mlu"
-    , TkInt 46
-    , TkBytes "Sk\188V"
-    , TkInt 48
-    , TkBytes "r\198Y\SO"
-    , TkInt 50
-    , TkBytes "\135\151\&0\144"
-    , TkInt 52
-    , TkBytes "\195\232\167\212"
-    , TkInt 54
-    , TkBytes "\246\216G\149"
     , TkInt 56
-    , TkBytes "\SO\152\236\221"
-    , TkInt 58
-    , TkBytes "!Mlu"
-    , TkInt 60
-    , TkBytes "Sk\188V"
-    , TkInt 62
-    , TkBytes "r\198Y\SO"
-    , TkInt 64
-    , TkBytes "\135\151\&0\144"
-    , TkInt 66
-    , TkBytes "\195\232\167\212"
-    , TkInt 68
-    , TkBytes "\246\216G\149"
     , TkInt 70
-    , TkBytes "\SO\152\236\221"
-    , TkInt 72
-    , TkBytes "!Mlu"
-    , TkInt 74
-    , TkBytes "Sk\188V"
-    , TkInt 76
-    , TkBytes "r\198Y\SO"
-    , TkInt 78
-    , TkBytes "\135\151\&0\144"
-    , TkInt 80
-    , TkBytes "\195\232\167\212"
-    , TkInt 82
-    , TkBytes "\246\216G\149"
     , TkInt 84
-    , TkBytes "\SO\152\236\221"
-    , TkInt 86
-    , TkBytes "!Mlu"
-    , TkInt 88
-    , TkBytes "Sk\188V"
-    , TkInt 90
-    , TkBytes "r\198Y\SO"
-    , TkInt 92
-    , TkBytes "\135\151\&0\144"
-    , TkInt 94
-    , TkBytes "\195\232\167\212"
-    , TkInt 96
-    , TkBytes "\246\216G\149"
     , TkInt 98
-    , TkBytes "\SO\152\236\221"
+    , TkBreak
+    , TkBytes "!Mlu"
+    , TkListBegin
+    , TkInt 2
+    , TkInt 16
+    , TkInt 30
+    , TkInt 44
+    , TkInt 58
+    , TkInt 72
+    , TkInt 86
+    , TkBreak
+    , TkBytes "Sk\188V"
+    , TkListBegin
+    , TkInt 4
+    , TkInt 18
+    , TkInt 32
+    , TkInt 46
+    , TkInt 60
+    , TkInt 74
+    , TkInt 88
+    , TkBreak
+    , TkBytes "r\198Y\SO"
+    , TkListBegin
+    , TkInt 6
+    , TkInt 20
+    , TkInt 34
+    , TkInt 48
+    , TkInt 62
+    , TkInt 76
+    , TkInt 90
+    , TkBreak
+    , TkBytes "\135\151\&0\144"
+    , TkListBegin
+    , TkInt 8
+    , TkInt 22
+    , TkInt 36
+    , TkInt 50
+    , TkInt 64
+    , TkInt 78
+    , TkInt 92
+    , TkBreak
+    , TkBytes "\195\232\167\212"
+    , TkListBegin
+    , TkInt 10
+    , TkInt 24
+    , TkInt 38
+    , TkInt 52
+    , TkInt 66
+    , TkInt 80
+    , TkInt 94
+    , TkBreak
+    , TkBytes "\246\216G\149"
+    , TkListBegin
+    , TkInt 12
+    , TkInt 26
+    , TkInt 40
+    , TkInt 54
+    , TkInt 68
+    , TkInt 82
+    , TkInt 96
+    , TkBreak
     , TkListLen 3
     , TkListLen 2
     , TkInt 0
