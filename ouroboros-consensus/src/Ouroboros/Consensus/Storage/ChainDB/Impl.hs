@@ -40,6 +40,7 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
 
 import           Ouroboros.Consensus.Block (Header, toIsEBB)
 import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
+import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
@@ -115,8 +116,8 @@ openDBInternal args launchBgTasks = do
       varInvalid
       curSlot
 
-    let chain  = ChainSel.clChain  chainAndLedger
-        ledger = ChainSel.clLedger chainAndLedger
+    let chain  = VF.validatedFragment chainAndLedger
+        ledger = VF.validatedLedger   chainAndLedger
         cfg    = Args.cdbTopLevelConfig args
 
     atomically $ LgrDB.setCurrent lgrDB ledger
