@@ -42,6 +42,7 @@ library
                        Ouroboros.Consensus.BlockchainTime.WallClock
                        Ouroboros.Consensus.Config
                        Ouroboros.Consensus.Forecast
+                       Ouroboros.Consensus.Fragment.InFuture
                        Ouroboros.Consensus.Fragment.Validated
                        Ouroboros.Consensus.HardFork.Abstract
                        Ouroboros.Consensus.HardFork.History
