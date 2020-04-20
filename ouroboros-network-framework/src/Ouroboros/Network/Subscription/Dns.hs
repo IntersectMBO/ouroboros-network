@@ -39,6 +39,7 @@ import qualified Data.IP as IP
 import           Data.Void (Void)
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
+import           System.IO.Error
 import           Text.Printf
 
 import           Ouroboros.Network.ErrorPolicy
@@ -89,6 +90,7 @@ withResolver port rs k = do
 
 dnsResolve :: forall a m s.
      ( MonadAsync m
+     , MonadCatch m
      , MonadSay   m
      , MonadSTM   m
      , MonadTime  m
@@ -103,29 +105,42 @@ dnsResolve :: forall a m s.
     -> DnsSubscriptionTarget
     -> m (SubscriptionTarget m Socket.SockAddr)
 dnsResolve tracer getSeed withResolver peerStatesVar beforeConnect (DnsSubscriptionTarget domain _ _) = do
-    rs <- getSeed
-    withResolver rs $ \resolver -> do
-        ipv6Rsps <- newEmptyTMVarM
-        ipv4Rsps <- newEmptyTMVarM
-        gotIpv6Rsp <- newTVarM False
+    rs_e <- (Right <$> getSeed) `catches`
+        [ mkHandler (\ (e :: DNS.DNSError) ->
+            return (Left $ toException e) :: m (Either SomeException a))
+        -- On windows getSeed fails with BadConfiguration if the network is down.
+        , mkHandler (\ (e :: IOError) ->
+            return (Left $ toException e) :: m (Either SomeException a))
+        -- On OSX getSeed can fail with IOError if all network devices are down.
+        ]
+    case rs_e of
+         Left e -> do
+             traceWith tracer $ DnsTraceLookupException e
+             return $ listSubscriptionTarget []
 
-        -- Though the DNS lib does have its own timeouts, these do not work
-        -- on Windows reliably so as a workaround we add an extra layer
-        -- of timeout on the outside.
-        -- TODO: Fix upstream dns lib.
-        --       On windows the aid_ipv6 and aid_ipv4 threads are leaked incase
-        --       of an exception in the main thread.
-        res <- timeout 20 $ do
-                 aid_ipv6 <- async $ resolveAAAA resolver gotIpv6Rsp ipv6Rsps
-                 aid_ipv4 <- async $ resolveA resolver gotIpv6Rsp ipv4Rsps
-                 rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
-                 handleResult ipv6Rsps ipv4Rsps rd_e
-        case res of
-          Nothing -> do
-            -- TODO: the thread timedout, we should trace it
-            return (SubscriptionTarget $ pure Nothing)
-          Just st ->
-            return st
+         Right rs -> do
+             withResolver rs $ \resolver -> do
+                 ipv6Rsps <- newEmptyTMVarM
+                 ipv4Rsps <- newEmptyTMVarM
+                 gotIpv6Rsp <- newTVarM False
+
+                 -- Though the DNS lib does have its own timeouts, these do not work
+                 -- on Windows reliably so as a workaround we add an extra layer
+                 -- of timeout on the outside.
+                 -- TODO: Fix upstream dns lib.
+                 --       On windows the aid_ipv6 and aid_ipv4 threads are leaked incase
+                 --       of an exception in the main thread.
+                 res <- timeout 20 $ do
+                          aid_ipv6 <- async $ resolveAAAA resolver gotIpv6Rsp ipv6Rsps
+                          aid_ipv4 <- async $ resolveA resolver gotIpv6Rsp ipv4Rsps
+                          rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
+                          handleResult ipv6Rsps ipv4Rsps rd_e
+                 case res of
+                   Nothing -> do
+                     -- TODO: the thread timedout, we should trace it
+                     return (SubscriptionTarget $ pure Nothing)
+                   Just st ->
+                     return st
   where
     handleResult :: StrictTMVar m [Socket.SockAddr]
                  -> StrictTMVar m [Socket.SockAddr]

@@ -295,6 +295,7 @@ permCheck a b = L.sort a == L.sort b
 
 prop_resolv :: forall m.
      ( MonadAsync m
+     , MonadCatch m
      , MonadSay   m
      , MonadSTM   m
      , MonadTime  m
