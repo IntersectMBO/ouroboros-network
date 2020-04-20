@@ -55,6 +55,8 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   -- ^ 'IOException' thrown by 
                   | MuxSDUReadTimeout
                   -- ^ thrown when reading of a single SDU takes too long
+                  | MuxSDUWriteTimeout
+                  -- ^ thrown when writing a single SDU takes too long
                   deriving (Show, Eq)
 
 instance Exception MuxError where
@@ -139,6 +141,7 @@ data MuxTrace =
     | forall e. Exception e => MuxTraceHandshakeClientError !e !DiffTime
     | forall e. Exception e => MuxTraceHandshakeServerError !e
     | MuxTraceSDUReadTimeoutException
+    | MuxTraceSDUWriteTimeoutException
 
 instance Show MuxTrace where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
@@ -170,4 +173,5 @@ instance Show MuxTrace where
         printf "Handshake Client Error %s duration %s" (take 256 $ show e) (show duration)
     show (MuxTraceHandshakeServerError e) = printf "Handshake Server Error %s" (show e)
     show MuxTraceSDUReadTimeoutException = "Timed out reading SDU"
+    show MuxTraceSDUWriteTimeoutException = "Timed out writing SDU"
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -17,9 +18,15 @@ module Network.Mux.Egress (
 import           Control.Monad
 import qualified Data.ByteString.Lazy as BL
 
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer hiding (timeout)
 
 import           Network.Mux.Types
+import           Network.Mux.Timeout
 
 -- $servicingsSemantics
 -- = Desired Servicing Semantics
@@ -138,14 +145,22 @@ newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
 -- shared FIFO that contains the items of work. This is processed so
 -- that each active demand gets a `maxSDU`s work of data processed
 -- each time it gets to the front of the queue
-mux :: MonadSTM m
+mux
+    :: ( MonadAsync m
+       , MonadFork m
+       , MonadMask m
+       , MonadThrow (STM m)
+       , MonadTimer m
+       , MonadTime m
+       )
     => StrictTVar m Int
     -> MuxState m
     -> m void
 mux cnt muxstate@MuxState{egressQueue} =
+    withTimeoutSerial $ \timeout ->
     forever $ do
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
-      processSingleWanton muxstate mpc md d cnt
+      processSingleWanton muxstate timeout mpc md d cnt
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
@@ -153,12 +168,13 @@ mux cnt muxstate@MuxState{egressQueue} =
 -- first.
 processSingleWanton :: MonadSTM m
                     => MuxState m
+                    -> TimeoutFn m
                     -> MiniProtocolNum
                     -> MiniProtocolMode
                     -> Wanton m
                     -> StrictTVar m Int
                     -> m ()
-processSingleWanton MuxState{egressQueue, bearer} mpc md wanton cnt = do
+processSingleWanton MuxState{egressQueue, bearer} timeout mpc md wanton cnt = do
     blob <- atomically $ do
       -- extract next SDU
       d <- readTVar (want wanton)
@@ -184,6 +200,6 @@ processSingleWanton MuxState{egressQueue, bearer} mpc md wanton cnt = do
                   },
                 msBlob = blob
               }
-    void $ write bearer sdu
+    void $ write bearer timeout sdu
     atomically $ modifyTVar cnt (\a -> a - 1)
     --paceTransmission tNow

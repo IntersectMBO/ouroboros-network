@@ -55,8 +55,8 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize = do
                   traceWith tracer $ Mx.MuxTraceRecvDeltaQObservation (Mx.msHeader header) ts
                   return (header {Mx.msBlob = payload}, ts)
 
-      writeMux :: Mx.MuxSDU -> m Time
-      writeMux sdu = do
+      writeMux :: Mx.TimeoutFn m -> Mx.MuxSDU -> m Time
+      writeMux _ sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)

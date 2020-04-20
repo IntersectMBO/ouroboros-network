@@ -47,11 +47,11 @@ import qualified Network.Mux.Timeout as Mx
 -- 'MuxError'.
 --
 socketAsMuxBearer
-  :: Maybe DiffTime
+  :: DiffTime
   -> Tracer IO Mx.MuxTrace
   -> Socket.Socket
   -> MuxBearer IO
-socketAsMuxBearer sduTimeout_m tracer sd =
+socketAsMuxBearer sduTimeout tracer sd =
       Mx.MuxBearer {
         Mx.read    = readSocket,
         Mx.write   = writeSocket,
@@ -59,10 +59,6 @@ socketAsMuxBearer sduTimeout_m tracer sd =
       }
     where
       hdrLenght = 8
-
-      sduTimeout = case sduTimeout_m of
-                      Just t  -> t
-                      Nothing -> (-1) -- no timeout
 
       readSocket :: HasCallStack => Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
       readSocket timeout = do
@@ -123,19 +119,25 @@ socketAsMuxBearer sduTimeout_m tracer sd =
                   traceWith tracer $ Mx.MuxTraceRecvEnd (fromIntegral $ BL.length buf)
                   return buf
 
-      writeSocket :: Mx.MuxSDU -> IO Time
-      writeSocket sdu = do
+      writeSocket :: Mx.TimeoutFn IO -> Mx.MuxSDU -> IO Time
+      writeSocket timeout sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
               buf  = Mx.encodeMuxSDU sdu'
           traceWith tracer $ Mx.MuxTraceSendStart (Mx.msHeader sdu')
+          r <- timeout sduTimeout $
 #if defined(mingw32_HOST_OS)
-          Win32.Async.sendAll sd buf
+              Win32.Async.sendAll sd buf
 #else
-          Socket.sendAll sd buf
+              Socket.sendAll sd buf
 #endif
-            `catch` Mx.handleIOException "sendAll errored"
-          traceWith tracer $ Mx.MuxTraceSendEnd
-          return ts
+              `catch` Mx.handleIOException "sendAll errored"
+          case r of
+               Nothing -> do
+                    traceWith tracer $ Mx.MuxTraceSDUWriteTimeoutException
+                    throwM $ Mx.MuxError Mx.MuxSDUWriteTimeout "Mux SDU Timeout" callStack
+               Just _ -> do
+                   traceWith tracer $ Mx.MuxTraceSendEnd
+                   return ts
 
