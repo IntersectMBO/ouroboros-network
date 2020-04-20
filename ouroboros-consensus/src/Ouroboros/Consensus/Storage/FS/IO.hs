@@ -66,6 +66,8 @@ ioHasFS mount = HasFS {
         Dir.createDirectoryIfMissing createParent (root fp)
     , removeFile = \fp -> rethrowFsError fp $
         Dir.removeFile (root fp)
+    , renameFile = \fp1 fp2 -> rethrowFsError fp1 $
+        Dir.renameFile (root fp1) (root fp2)
     , mkFsErrorPath = fsToFsErrorPath mount
     }
   where

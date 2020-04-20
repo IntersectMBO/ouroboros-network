@@ -73,8 +73,9 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as P
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
                      (BlockSize (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
-import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
-                     throwUnexpectedError)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
+                     (fsPathChunkFile, fsPathPrimaryIndexFile,
+                     fsPathSecondaryIndexFile, throwUnexpectedError)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types (HashInfo (..),
                      TraceCacheEvent (..), UnexpectedError (..),
                      WithBlockSize (..))
@@ -498,7 +499,7 @@ readSecondaryIndex hasFS@HasFS { hGetSize } hashInfo chunk firstIsEBB = do
     Secondary.readAllEntries hasFS hashInfo secondaryOffset
       chunk stopCondition chunkFileSize firstIsEBB
   where
-    chunkFile = renderFile "epoch" chunk
+    chunkFile = fsPathChunkFile chunk
     -- Read from the start
     secondaryOffset = 0
     -- Don't stop until the end
@@ -528,7 +529,7 @@ loadCurrentChunkInfo hasFS chunkInfo hashInfo chunk = do
     else
       return $ emptyCurrentChunkInfo chunk
   where
-    primaryIndexFile = renderFile "primary" chunk
+    primaryIndexFile = fsPathPrimaryIndexFile chunk
 
 loadPastChunkInfo
   :: (HasCallStack, IOLike m)
@@ -770,7 +771,7 @@ readEntries cacheEnv@CacheEnv { hashInfo } chunk toRead =
     -- likely, so we mention that file in the error message.
     noEntry :: SecondaryOffset -> m a
     noEntry secondaryOffset = throwUnexpectedError $ InvalidFileError
-      (renderFile "secondary" chunk)
+      (fsPathSecondaryIndexFile chunk)
       ("no entry missing for " <> show secondaryOffset)
       callStack
 

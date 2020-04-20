@@ -48,8 +48,8 @@ import           Ouroboros.Consensus.Storage.FS.CRC
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (SecondaryOffset)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (renderFile,
-                     runGet, runGetWithUnconsumed)
+import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
+                     (fsPathSecondaryIndexFile, runGet, runGetWithUnconsumed)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types (BlockOrEBB (..),
                      HashInfo (..), WithBlockSize (..))
 
@@ -197,7 +197,7 @@ readEntries hasFS HashInfo { hashSize, getHash } chunk toRead =
             runGet secondaryIndexFile (getEntry isEBB getHash)
           return (entry, LastEntry)
   where
-    secondaryIndexFile = renderFile "secondary" chunk
+    secondaryIndexFile = fsPathSecondaryIndexFile chunk
     nbBytes            = fromIntegral $ entrySize hashSize
     nbBlockOffsetBytes = fromIntegral (sizeOf (blockOffset (error "blockOffset")))
     HasFS { hGetSize } = hasFS
@@ -223,7 +223,7 @@ readAllEntries hasFS HashInfo { getHash } secondaryOffset chunk stopAfter
       bl <- hGetAllAt hasFS sHnd (AbsOffset (fromIntegral secondaryOffset))
       go isEBB bl [] Nothing
   where
-    secondaryIndexFile = renderFile "secondary" chunk
+    secondaryIndexFile = fsPathSecondaryIndexFile chunk
 
     go :: IsEBB  -- ^ Interpret the next entry as an EBB?
        -> Lazy.ByteString
@@ -299,7 +299,7 @@ truncateToEntry hasFS HashInfo { hashSize } chunk secondaryOffset =
     withFile hasFS secondaryIndexFile (AppendMode AllowExisting) $ \sHnd ->
       hTruncate sHnd offset
   where
-    secondaryIndexFile  = renderFile "secondary" chunk
+    secondaryIndexFile  = fsPathSecondaryIndexFile chunk
     HasFS { hTruncate } = hasFS
     offset              = fromIntegral (secondaryOffset + entrySize hashSize)
 
@@ -317,5 +317,5 @@ writeAllEntries hasFS hashInfo chunk entries =
       hTruncate sHnd 0
       mapM_ (appendEntry hasFS hashInfo sHnd) entries
   where
-    secondaryIndexFile  = renderFile "secondary" chunk
+    secondaryIndexFile  = fsPathSecondaryIndexFile chunk
     HasFS { hTruncate } = hasFS

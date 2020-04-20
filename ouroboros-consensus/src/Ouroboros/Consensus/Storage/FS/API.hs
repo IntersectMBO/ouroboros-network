@@ -134,6 +134,11 @@ data HasFS m h = HasFS {
     -- | Remove the file (which must exist)
   , removeFile               :: HasCallStack => FsPath -> m ()
 
+    -- | Rename the file (which must exist) from the first path to the second
+    -- path. If there is already a file at the latter path, it is replaced by
+    -- the new one.
+  , renameFile                 :: HasCallStack => FsPath -> FsPath -> m ()
+
     -- | Useful for better error reporting
   , mkFsErrorPath            :: FsPath -> FsErrorPath
   }

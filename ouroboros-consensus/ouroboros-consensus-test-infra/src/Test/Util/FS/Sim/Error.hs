@@ -243,6 +243,7 @@ data Errors = Errors
   , doesDirectoryExistE       :: ErrorStream
   , doesFileExistE            :: ErrorStream
   , removeFileE               :: ErrorStream
+  , renameFileE               :: ErrorStream
   }
 
 -- | Return 'True' if all streams are empty ('null').
@@ -262,6 +263,7 @@ allNull Errors {..} = null dumpStateE
                    && null doesDirectoryExistE
                    && null doesFileExistE
                    && null removeFileE
+                   && null renameFileE
 
 
 instance Show Errors where
@@ -292,6 +294,7 @@ instance Show Errors where
         , s "doesDirectoryExistE"       doesDirectoryExistE
         , s "doesFileExistE"            doesFileExistE
         , s "removeFileE"               removeFileE
+        , s "renameFileE"               renameFileE
         ]
 
 instance Semigroup Errors where
@@ -311,6 +314,7 @@ instance Semigroup Errors where
       , doesDirectoryExistE       = combine doesDirectoryExistE
       , doesFileExistE            = combine doesFileExistE
       , removeFileE               = combine removeFileE
+      , renameFileE               = combine renameFileE
       }
     where
       combine :: (Errors -> Stream a) -> Stream a
@@ -339,6 +343,7 @@ simpleErrors es = Errors
     , doesDirectoryExistE       = es
     , doesFileExistE            = es
     , removeFileE               = es
+    , renameFileE               = es
     }
 
 -- | Generator for 'Errors' that allows some things to be disabled.
@@ -391,6 +396,9 @@ genErrors genPartialWrites genSubstituteWithJunk = do
     removeFileE    <- streamGen 3
       [ FsInsufficientPermissions, FsResourceAlreadyInUse
       , FsResourceDoesNotExist, FsResourceInappropriateType ]
+    renameFileE    <- streamGen 3
+      [ FsInsufficientPermissions, FsResourceAlreadyInUse
+      , FsResourceDoesNotExist, FsResourceInappropriateType ]
     return Errors {..}
 
 instance Arbitrary Errors where
@@ -412,6 +420,7 @@ instance Arbitrary Errors where
       , (\s' -> err { doesDirectoryExistE = s' })       <$> dropLast doesDirectoryExistE
       , (\s' -> err { doesFileExistE = s' })            <$> dropLast doesFileExistE
       , (\s' -> err { removeFileE = s' })               <$> dropLast removeFileE
+      , (\s' -> err { renameFileE = s' })               <$> dropLast renameFileE
       ]
     where
       dropLast :: Stream a -> Maybe (Stream a)
@@ -473,6 +482,9 @@ mkSimErrorHasFS fsVar errorsVar =
         , removeFile               = \p ->
             withErr errorsVar p (removeFile p) "removeFile"
             removeFileE (\e es -> es { removeFileE = e })
+        , renameFile               = \p1 p2 ->
+            withErr errorsVar p1 (renameFile p1 p2) "renameFile"
+            renameFileE (\e es -> es { renameFileE = e })
         , mkFsErrorPath = fsToFsErrorPathUnmounted
         }
 

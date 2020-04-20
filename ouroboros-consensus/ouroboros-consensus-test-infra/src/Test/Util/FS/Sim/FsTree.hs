@@ -28,6 +28,7 @@ module Test.Util.FS.Sim.FsTree (
   , createDirIfMissing
   , createDirWithParents
   , removeFile
+  , renameFile
     -- * Pretty-printing
   , pretty
   ) where
@@ -250,6 +251,17 @@ removeFile fp =
     alterFileMaybe fp Left errNotExist (const (Right Nothing))
   where
     errNotExist = Left (FsMissing fp (pathLast fp :| []))
+
+-- | Rename the file (which must exist) from the first path to the second
+-- path. If there is already a file at the latter path, it is replaced by the
+-- new one.
+renameFile :: FsPath -> FsPath -> FsTree a -> Either FsTreeError (FsTree a)
+renameFile fpOld fpNew tree = do
+    oldF  <- getFile fpOld tree
+    -- Remove the old file
+    tree' <- removeFile fpOld tree
+    -- Overwrite the new file with the old one
+    alterFile fpNew Left (Right oldF) (const (Right oldF)) tree'
 
 {-------------------------------------------------------------------------------
   Pretty-printing
