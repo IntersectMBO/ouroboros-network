@@ -4,6 +4,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 -- | Readers
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Reader
@@ -15,7 +16,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Reader
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Exception (assert)
-import           Control.Monad (sequence_)
+import           Control.Monad (join)
 import           Control.Tracer (contramap, traceWith)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor ((<&>))
@@ -455,15 +456,14 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
     -- state is 'ReaderInImmDB', close the ImmutableDB iterator to avoid
     -- leaking the file handles.
     updateState :: ReaderState m blk b -> m ()
-    updateState newReaderState = do
-      mbCloseImmIt <- atomically $ do
-        mbCloseImmIt <- readTVar varReader <&> \case
-          ReaderInImmDB _ immIt -> Just (ImmDB.iteratorClose cdbImmDB immIt)
-          ReaderInit            -> Nothing
-          ReaderInMem   _       -> Nothing
-        writeTVar varReader newReaderState
-        return mbCloseImmIt
-      sequence_ mbCloseImmIt
+    updateState newReaderState = join $ atomically $
+      updateTVar varReader $ \readerState ->
+        (newReaderState, ) $ case readerState of
+          -- Return a continuation (that we'll 'join') that closes the
+          -- previous iterator.
+          ReaderInImmDB _ immIt -> ImmDB.iteratorClose cdbImmDB immIt
+          ReaderInit            -> return ()
+          ReaderInMem   _       -> return ()
 
 -- | Update the given 'ReaderState' to account for switching the current
 -- chain to the given fork (which might just be an extension of the
