@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -11,6 +12,8 @@ module Ouroboros.Network.Protocol.Handshake.Codec
 
   , byteLimitsHandshake
   , timeLimitsHandshake
+
+  , unversionedHandshakeCodec
 
   , encodeRefuseReason
   , decodeRefuseReason
@@ -209,3 +212,23 @@ decodeRefuseReason versionNumberCodec = do
           Left e        -> fail $ "decode Refused: unknonwn version: " ++ show e
           Right vNumber -> Refused vNumber <$> CBOR.decodeString
       _ -> fail $ "decode RefuseReason: unknown tag " ++ show tag
+
+
+-- | 'Handshake' codec used in various tests.
+--
+unversionedHandshakeCodec :: ( MonadST m
+                            , MonadThrow m
+                            )
+                         => Codec (Handshake UnversionedProtocol CBOR.Term)
+                                  CBOR.DeserialiseFailure m ByteString
+unversionedHandshakeCodec = codecHandshake unversionedProtocolCodec
+  where
+    unversionedProtocolCodec :: CodecCBORTerm (String, Maybe Int) UnversionedProtocol
+    unversionedProtocolCodec = CodecCBORTerm { encodeTerm, decodeTerm }
+      where
+        encodeTerm UnversionedProtocol = CBOR.TInt 1
+        decodeTerm (CBOR.TInt 1) = Right UnversionedProtocol
+        decodeTerm (CBOR.TInt n) = Left ("decode UnversionedProtocol: unknown tag", Just n)
+        decodeTerm _             = Left ("decode UnversionedProtocol: deserialisation failure", Nothing)
+
+

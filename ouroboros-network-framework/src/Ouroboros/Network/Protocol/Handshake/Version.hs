@@ -21,11 +21,15 @@ module Ouroboros.Network.Protocol.Handshake.Version
 
   -- * Simple or no versioning
   , simpleSingletonVersions
-  , unversionedProtocol
   , foldMapVersions
   , combineVersions
   , foldMapVersions'
   , combineVersions'
+
+  -- * No Versioning
+  -- exposed for tests
+  , UnversionedProtocol (..)
+  , unversionedProtocol
   ) where
 
 import Data.Map (Map)
@@ -237,13 +241,6 @@ simpleSingletonVersions vNum vData extra r =
 data UnversionedProtocol = UnversionedProtocol
   deriving (Eq, Ord, Enum, Show)
 
-instance Serialise UnversionedProtocol where
-    encode UnversionedProtocol = CBOR.encodeWord 1
-    decode = do
-      tag <- CBOR.decodeWord
-      case tag of
-        1 -> return UnversionedProtocol
-        _ -> fail "decode UnversionedProtocol: expected version 1"
 
 data UnversionedProtocolData = UnversionedProtocolData
   deriving (Eq, Show)
@@ -251,6 +248,7 @@ data UnversionedProtocolData = UnversionedProtocolData
 instance Acceptable UnversionedProtocolData where
   acceptableVersion UnversionedProtocolData
                     UnversionedProtocolData = Accept
+
 
 unversionedProtocolDataCodec :: CodecCBORTerm Text UnversionedProtocolData
 unversionedProtocolDataCodec = CodecCBORTerm {encodeTerm, decodeTerm}
@@ -261,6 +259,7 @@ unversionedProtocolDataCodec = CodecCBORTerm {encodeTerm, decodeTerm}
       decodeTerm :: CBOR.Term -> Either Text UnversionedProtocolData
       decodeTerm CBOR.TNull = Right UnversionedProtocolData
       decodeTerm t          = Left $ T.pack $ "unexpected term: " ++ show t
+
 
 -- | Make a 'Versions' for an unversioned protocol. Only use this for
 -- tests and demos where proper versioning is excessive.
