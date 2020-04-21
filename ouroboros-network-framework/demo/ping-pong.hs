@@ -29,6 +29,7 @@ import Ouroboros.Network.Mux
 import Ouroboros.Network.ErrorPolicy
 import Ouroboros.Network.IOManager
 
+import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Handshake.Version
 
@@ -101,6 +102,7 @@ clientPingPong pipelined =
     withIOManager $ \iomgr ->
     connectToNode
       (localSnocket iomgr defaultLocalSocketAddrPath)
+      unversionedHandshakeCodec
       cborTermVersionDataCodec
       nullNetworkConnectTracers
       (unversionedProtocol (\_peerid -> app))
@@ -140,6 +142,7 @@ serverPingPong =
       networkState
       (AcceptedConnectionsLimit maxBound maxBound 0)
       defaultLocalSocketAddr
+      unversionedHandshakeCodec
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptableVersion)
       (unversionedProtocol (\_peerid -> SomeResponderApplication app))
@@ -194,6 +197,7 @@ clientPingPong2 =
     withIOManager $ \iomgr ->
     connectToNode
       (localSnocket iomgr defaultLocalSocketAddrPath)
+      unversionedHandshakeCodec
       cborTermVersionDataCodec
       nullNetworkConnectTracers
       (unversionedProtocol (\_peerid -> app))
@@ -246,6 +250,7 @@ serverPingPong2 =
       networkState
       (AcceptedConnectionsLimit maxBound maxBound 0)
       defaultLocalSocketAddr
+      unversionedHandshakeCodec
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptableVersion)
       (unversionedProtocol (\_peerid -> SomeResponderApplication app))
