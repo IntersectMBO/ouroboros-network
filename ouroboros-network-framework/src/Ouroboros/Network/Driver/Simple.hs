@@ -28,6 +28,7 @@ module Ouroboros.Network.Driver.Simple (
   -- * Connected peers
   -- TODO: move these to a test lib
   runConnectedPeers,
+  runConnectedPeersAsymmetric,
   runConnectedPeersPipelined,
   ) where
 
@@ -196,6 +197,31 @@ runConnectedPeers createChannels tracer codec client server =
   where
     tracerClient = contramap ((,) AsClient) tracer
     tracerServer = contramap ((,) AsServer) tracer
+
+
+-- Run the same protocol with different codes.  This is useful for testing
+-- 'Hanshake' protocol which knows how to decode different versions.
+--
+runConnectedPeersAsymmetric
+    :: (MonadSTM m, MonadAsync m, MonadCatch m,
+       Exception failure)
+    => m (Channel m bytes, Channel m bytes)
+    -> Tracer m (PeerRole, TraceSendRecv ps)
+    -> Codec ps failure m bytes
+    -> Codec ps failure m bytes
+    -> Peer ps pr st m a
+    -> Peer ps (FlipAgency pr) st m b
+    -> m (a, b)
+runConnectedPeersAsymmetric createChannels tracer codec codec' client server =
+    createChannels >>= \(clientChannel, serverChannel) ->
+
+    runPeer tracerClient codec  clientChannel client
+      `concurrently`
+    runPeer tracerServer codec' serverChannel server
+  where
+    tracerClient = contramap ((,) AsClient) tracer
+    tracerServer = contramap ((,) AsServer) tracer
+
 
 runConnectedPeersPipelined :: (MonadSTM m, MonadAsync m, MonadCatch m,
                                Exception failure)

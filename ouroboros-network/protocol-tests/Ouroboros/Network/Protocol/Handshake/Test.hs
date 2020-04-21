@@ -15,7 +15,7 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable, cast)
 import           Data.List (nub)
-import           Data.Maybe (isJust)
+import           Data.Maybe (fromMaybe, isJust)
 import qualified Data.Map as Map
 import           GHC.Generics
 
@@ -38,7 +38,9 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver
-import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import           Ouroboros.Network.Driver.Simple ( runConnectedPeers
+                                                 , runConnectedPeersAsymmetric
+                                                 )
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Codec
@@ -60,16 +62,19 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Protocol.Handshake"
-  [ testProperty "connect"             prop_connect
-  , testProperty "channel ST"          prop_channel_ST
-  , testProperty "channel IO"          prop_channel_IO
-  , testProperty "pipe IO"             prop_pipe_IO
-  , testProperty "codec RefuseReason"  prop_codec_RefuseReason
-  , testProperty "codec"               prop_codec_Handshake
-  , testProperty "codec 2-splits"      prop_codec_splits2_Handshake
-  , testProperty "codec 3-splits"    $ withMaxSuccess 30
-                                       prop_codec_splits3_Handshake
-  , testProperty "codec cbor"          prop_codec_cbor
+  [ testProperty "connect"               prop_connect
+  , testProperty "channel ST"            prop_channel_ST
+  , testProperty "channel IO"            prop_channel_IO
+  , testProperty "pipe IO"               prop_pipe_IO
+  , testProperty "channel asymmetric ST" prop_channel_asymmetric_ST
+  , testProperty "channel asymmetric IO" prop_channel_asymmetric_IO
+  , testProperty "pipe asymmetric IO"    prop_pipe_asymmetric_IO
+  , testProperty "codec RefuseReason"    prop_codec_RefuseReason
+  , testProperty "codec"                 prop_codec_Handshake
+  , testProperty "codec 2-splits"        prop_codec_splits2_Handshake
+  , testProperty "codec 3-splits"      $ withMaxSuccess 30
+                                         prop_codec_splits3_Handshake
+  , testProperty "codec cbor"            prop_codec_cbor
   , testGroup "Generators"
     [ testProperty "ArbitraryVersions" $
         checkCoverage prop_arbitrary_ArbitraryVersions
@@ -446,6 +451,99 @@ prop_channel_IO (ArbitraryVersions clientVersions serverVersions) =
 prop_pipe_IO :: ArbitraryVersions -> Property
 prop_pipe_IO (ArbitraryVersions clientVersions serverVersions) =
     ioProperty (prop_channel createPipeConnectedChannels clientVersions serverVersions)
+
+--
+-- Asymmetric tests
+--
+
+
+-- | Run a simple handshake client and server using connected channels.
+-- The server can only decode a subset of versions send by client.
+-- This test is using a fixed serverver 'Versions' which can only accept
+-- a single version 'Version_1' (it cannot decode any other version).
+--
+prop_channel_asymmetric
+    :: ( MonadAsync m
+       , MonadCatch m
+       , MonadST m
+       )
+    => m (Channel m ByteString, Channel m ByteString)
+    -> Versions VersionNumber DictVersion Bool
+    -- ^ client versions
+    -> m Property
+prop_channel_asymmetric createChannels clientVersions = do
+    (clientRes', serverRes') <-
+      runConnectedPeersAsymmetric
+        createChannels
+        nullTracer
+        versionNumberHandshakeCodec
+        (codecHandshake versionNumberCodec')
+        (handshakeClientPeer
+          cborTermVersionDataCodec
+          clientVersions)
+        (handshakeServerPeer
+          cborTermVersionDataCodec
+          (\(DictVersion _) -> acceptableVersion)
+          serverVersions)
+    pure $
+      case (clientRes', serverRes') of
+        (Right c, Right s) ->      Just c === clientRes
+                              .&&. Just s === serverRes
+        (Left{}, Left{})   -> property True
+        _                  -> property False
+
+  where
+    -- server versions
+    serverVersions :: Versions VersionNumber DictVersion Bool
+    serverVersions =
+      Versions
+        $ Map.singleton
+            Version_1
+            (Sigma
+              (Data_1 True)
+              (Version (Application (==))
+              (DictVersion data1CodecCBORTerm)))
+
+    -- This codec does not know how to decode 'Version_0' and 'Version_2'.
+    versionNumberCodec' :: CodecCBORTerm (String, Maybe Int) VersionNumber
+    versionNumberCodec' = CodecCBORTerm { encodeTerm, decodeTerm }
+      where
+        encodeTerm Version_1 = CBOR.TInt 1
+        encodeTerm _         = error "server encoder error"
+
+        decodeTerm (CBOR.TInt 1) = Right Version_1
+        decodeTerm (CBOR.TInt n) = Left ("unknown version", Just n)
+        decodeTerm _             = Left ("unknown tag", Nothing)
+
+    (serverRes, clientRes) =
+      pureHandshake
+        (\(DictVersion _) -> Dict)
+        (\(DictVersion _) vData vData' -> acceptableVersion vData vData' == Accept)
+        serverVersions
+        clientVersions
+
+
+
+-- | Run 'prop_channel' in the simulation monad.
+--
+prop_channel_asymmetric_ST :: ArbitraryVersions -> Property
+prop_channel_asymmetric_ST (ArbitraryVersions clientVersions _serverVersions) =
+    runSimOrThrow (prop_channel_asymmetric createConnectedChannels clientVersions)
+
+
+-- | Run 'prop_channel' in the IO monad.
+--
+prop_channel_asymmetric_IO :: ArbitraryVersions -> Property
+prop_channel_asymmetric_IO (ArbitraryVersions clientVersions _serverVersions) =
+    ioProperty (prop_channel_asymmetric createConnectedChannels clientVersions)
+
+
+-- | Run 'prop_channel' in the IO monad using local pipes.
+--
+prop_pipe_asymmetric_IO :: ArbitraryVersions -> Property
+prop_pipe_asymmetric_IO (ArbitraryVersions clientVersions _serverVersions) =
+    ioProperty (prop_channel_asymmetric createPipeConnectedChannels clientVersions)
+
 
 --
 -- Codec tests
