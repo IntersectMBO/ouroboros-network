@@ -11,23 +11,26 @@ module Ouroboros.Network.Protocol.Handshake.Codec
 
   , byteLimitsHandshake
   , timeLimitsHandshake
+
+  , encodeRefuseReason
+  , decodeRefuseReason
   ) where
 
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
-import           Control.Monad (unless)
+import           Control.Monad (unless, replicateM)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
+import           Data.Either (partitionEithers)
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Maybe (mapMaybe)
 
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Term     as CBOR
-import           Codec.Serialise (Serialise)
-import qualified Codec.Serialise     as CBOR
 
 import           Ouroboros.Network.Codec hiding (encode, decode)
 import           Ouroboros.Network.Driver.Limits
@@ -77,7 +80,6 @@ codecHandshake
      , MonadST m
      , Ord vNumber
      , Enum vNumber
-     , Serialise vNumber
      , Show vNumber
      , Show failure
      )
@@ -110,7 +112,7 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encode decode
       encode (ServerAgency TokConfirm) (MsgRefuse vReason) =
            CBOR.encodeListLen 2
         <> CBOR.encodeWord 2
-        <> CBOR.encode vReason
+        <> encodeRefuseReason versionNumberCodec vReason
 
       -- decode a map checking the assumption that
       --  * keys are different
@@ -155,7 +157,55 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encode decode
               Left e -> fail ("codecHandshake.MsgAcceptVersion: not recognized version: " ++ show e)
               Right vNumber ->
                 SomeMessage . MsgAcceptVersion vNumber <$> CBOR.decodeTerm
-          (ServerAgency TokConfirm, 2) -> SomeMessage . MsgRefuse <$> CBOR.decode
+          (ServerAgency TokConfirm, 2) ->
+            SomeMessage . MsgRefuse <$> decodeRefuseReason versionNumberCodec
 
           (ClientAgency TokPropose, _) -> fail "codecHandshake.Propose: unexpected key"
           (ServerAgency TokConfirm, _) -> fail "codecHandshake.Confirm: unexpected key"
+
+
+encodeRefuseReason :: CodecCBORTerm fail vNumber
+                   -> RefuseReason vNumber
+                   -> CBOR.Encoding
+encodeRefuseReason versionNumberCodec (VersionMismatch vs _) =
+         CBOR.encodeListLen 2
+      <> CBOR.encodeWord 0
+      <> CBOR.encodeListLen (fromIntegral $ length vs)
+      <> foldMap (CBOR.encodeTerm . encodeTerm versionNumberCodec) vs
+encodeRefuseReason versionNumberCodec (HandshakeDecodeError vNumber vError) =
+         CBOR.encodeListLen 3
+      <> CBOR.encodeWord 1
+      <> CBOR.encodeTerm (encodeTerm versionNumberCodec vNumber)
+      <> CBOR.encodeString vError
+encodeRefuseReason versionNumberCodec (Refused vNumber vReason) =
+         CBOR.encodeListLen 3
+      <> CBOR.encodeWord 2
+      <> CBOR.encodeTerm (encodeTerm versionNumberCodec vNumber)
+      <> CBOR.encodeString vReason
+
+
+decodeRefuseReason :: Show failure
+                   => CodecCBORTerm (failure, Maybe Int) vNumber
+                   -> CBOR.Decoder s (RefuseReason vNumber)
+decodeRefuseReason versionNumberCodec = do
+    _ <- CBOR.decodeListLen
+    tag <- CBOR.decodeWord
+    case tag of
+      0 -> do
+        len <- CBOR.decodeListLen
+        rs <- replicateM len
+                (decodeTerm versionNumberCodec <$> CBOR.decodeTerm)
+        case partitionEithers rs of
+          (errs, vNumbers) -> 
+            pure $ VersionMismatch vNumbers (mapMaybe snd errs)
+      1 -> do
+        v <- decodeTerm versionNumberCodec <$> CBOR.decodeTerm
+        case v of
+          Left e        -> fail $ "decode HandshakeDecodeError: unknow version: " ++ show e
+          Right vNumber -> HandshakeDecodeError vNumber <$> CBOR.decodeString
+      2 -> do
+        v <- decodeTerm versionNumberCodec <$> CBOR.decodeTerm
+        case v of
+          Left e        -> fail $ "decode Refused: unknonwn version: " ++ show e
+          Right vNumber -> Refused vNumber <$> CBOR.decodeString
+      _ -> fail $ "decode RefuseReason: unknown tag " ++ show tag
