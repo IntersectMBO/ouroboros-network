@@ -42,6 +42,7 @@ import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Examples   as ReqResp
 
+import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 
@@ -585,6 +586,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         (NetworkMutableState tbl peerStatesVar)
         (AcceptedConnectionsLimit maxBound maxBound 0)
         (Socket.addrAddress responderAddr)
+        unversionedHandshakeCodec
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptableVersion)
         (unversionedProtocol (\_peerid -> SomeResponderApplication responderApp))
@@ -608,6 +610,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
             (\_ -> waitSiblingSTM siblingVar)
             (connectToNodeSocket
                 iocp
+                unversionedHandshakeCodec
                 cborTermVersionDataCodec
                 nullNetworkConnectTracers
                 (unversionedProtocol (\_peerid -> initiatorApp)))
@@ -724,6 +727,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
         (NetworkMutableState tbl stVar)
         (AcceptedConnectionsLimit maxBound maxBound 0)
         responderAddr
+        unversionedHandshakeCodec
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptableVersion)
         (unversionedProtocol (\_peerid -> SomeResponderApplication (appX rrcfg)))
@@ -743,6 +747,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
           (NetworkMutableState tbl stVar)
           (AcceptedConnectionsLimit maxBound maxBound 0)
           responderAddr
+          unversionedHandshakeCodec
           cborTermVersionDataCodec
           (\(DictVersion _) -> acceptableVersion)
           (unversionedProtocol (\_peerid -> SomeResponderApplication (appX rrcfg)))
@@ -767,6 +772,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
               (\_ -> waitSiblingSTM (rrcSiblingVar rrcfg))
               (connectToNodeSocket
                   iocp
+                  unversionedHandshakeCodec
                   cborTermVersionDataCodec
                   nullNetworkConnectTracers
                   (unversionedProtocol (\_peerid -> appX rrcfg)))
@@ -837,6 +843,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
               }
             (connectToNodeSocket
                 iocp
+                unversionedHandshakeCodec
                 cborTermVersionDataCodec
                 nullNetworkConnectTracers
                 (unversionedProtocol (\_peerid -> appReq)))
@@ -857,6 +864,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
             (NetworkMutableState tbl stVar)
             (AcceptedConnectionsLimit maxBound maxBound 0)
             (Socket.addrAddress addr)
+            unversionedHandshakeCodec
             cborTermVersionDataCodec
             (\(DictVersion _) -> acceptableVersion)
             (unversionedProtocol (\_peerid -> SomeResponderApplication appRsp))
