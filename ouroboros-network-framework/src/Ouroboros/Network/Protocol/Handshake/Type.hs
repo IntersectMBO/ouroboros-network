@@ -160,14 +160,16 @@ instance (Typeable vNumber, Show vNumber)
 -- | Codec for version data ('vData' in code) exchanged by the handshake
 -- protocol.
 --
-data VersionDataCodec extra bites = VersionDataCodec {
-    encodeData :: forall vData. extra vData -> vData -> bites,
+data VersionDataCodec extra bytes = VersionDataCodec {
+    encodeData :: forall vData. extra vData -> vData -> bytes,
     -- ^ encoder of 'vData' which has access to 'extra vData' which can bring
     -- extra instances into the scope (by means of pattern matching on a GADT).
-    decodeData :: forall vData. extra vData -> bites -> Either Text vData
+    decodeData :: forall vData. extra vData -> bytes -> Either Text vData
     -- ^ decoder of 'vData'.
   }
 
+-- TODO: remove this from top level API, this is the only way we encode or
+-- decode version data.
 cborTermVersionDataCodec :: VersionDataCodec DictVersion CBOR.Term
 cborTermVersionDataCodec = VersionDataCodec {
       encodeData = \(DictVersion codec) -> encodeTerm codec,
