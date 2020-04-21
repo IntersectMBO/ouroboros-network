@@ -77,7 +77,7 @@ driverWithLimits :: forall ps failure bytes m.
                  -> ProtocolTimeLimits ps
                  -> Channel m bytes
                  -> Driver ps (Maybe bytes) m
-driverWithLimits tracer timeout
+driverWithLimits tracer timeoutFn
                  Codec{encode, decode}
                  ProtocolSizeLimits{sizeLimitForState, dataSize}
                  ProtocolTimeLimits{timeLimitForState}
@@ -100,7 +100,7 @@ driverWithLimits tracer timeout
       decoder <- decode stok
       let sizeLimit = sizeLimitForState stok
           timeLimit = fromMaybe (-1) (timeLimitForState stok)
-      result  <- timeout timeLimit $
+      result  <- timeoutFn timeLimit $
                    runDecoderWithLimit sizeLimit dataSize
                                        channel trailing decoder
       case result of
@@ -171,8 +171,8 @@ runPeerWithLimits
   -> Peer ps pr st m a
   -> m a
 runPeerWithLimits tracer codec slimits tlimits channel peer =
-    withTimeoutSerial $ \timeout ->
-    let driver = driverWithLimits tracer timeout codec slimits tlimits channel
+    withTimeoutSerial $ \timeoutFn ->
+    let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
      in fst <$> runPeerWithDriver driver peer (startDState driver)
 
 
@@ -195,7 +195,7 @@ runPipelinedPeerWithLimits
   -> PeerPipelined ps pr st m a
   -> m a
 runPipelinedPeerWithLimits tracer codec slimits tlimits channel peer =
-    withTimeoutSerial $ \timeout ->
-    let driver = driverWithLimits tracer timeout codec slimits tlimits channel
+    withTimeoutSerial $ \timeoutFn ->
+    let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
      in fst <$> runPipelinedPeerWithDriver driver peer (startDState driver)
 

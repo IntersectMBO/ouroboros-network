@@ -27,18 +27,15 @@ module Ouroboros.Network.Server.Socket
 
 import Control.Exception (SomeException (..), IOException, mask, mask_, finally, onException, try)
 import Control.Concurrent.Async (Async)
-import Control.Monad.Class.MonadTime (MonadTime (..))
-import Control.Monad.Class.MonadTimer (MonadDelay (..))
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM (STM)
 import qualified Control.Concurrent.STM as STM
-import Control.Monad (forM_, join, when)
-import Control.Monad.Class.MonadTime (DiffTime, Time, diffTime, getMonotonicTime)
+import Control.Monad (forM_, join)
+import Control.Monad.Class.MonadTime (Time, getMonotonicTime)
 import Control.Tracer (Tracer, traceWith)
 import Data.Foldable (traverse_)
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Word (Word32)
 
 import Ouroboros.Network.ErrorPolicy (CompleteApplicationResult (..), WithAddr, ErrorPolicyTrace)
 import Ouroboros.Network.Server.RateLimiting

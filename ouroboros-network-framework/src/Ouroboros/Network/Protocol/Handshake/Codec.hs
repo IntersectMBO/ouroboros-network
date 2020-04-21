@@ -36,8 +36,6 @@ import           Ouroboros.Network.Codec
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
-import           Ouroboros.Network.Protocol.Limits
 
 -- |
 -- We assume that a TCP segment size of 1440 bytes with initial window of size
@@ -86,14 +84,15 @@ codecHandshake
      )
   => CodecCBORTerm (failure, Maybe Int) vNumber
   -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure m ByteString
-codecHandshake versionNumberCodec = mkCodecCborLazyBS encode decode
+codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
     where
-      encode :: forall (pr :: PeerRole) st st'.
-                PeerHasAgency pr st
-             -> Message (Handshake vNumber CBOR.Term) st st'
-             -> CBOR.Encoding
+      encodeMsg
+        :: forall (pr :: PeerRole) st st'.
+           PeerHasAgency pr st
+        -> Message (Handshake vNumber CBOR.Term) st st'
+        -> CBOR.Encoding
 
-      encode (ClientAgency TokPropose) (MsgProposeVersions vs) =
+      encodeMsg (ClientAgency TokPropose) (MsgProposeVersions vs) =
         let vs' = Map.toAscList vs
         in
            CBOR.encodeListLen 2
@@ -104,13 +103,13 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encode decode
                    | (vNumber, vParams) <- vs'
                    ]
 
-      encode (ServerAgency TokConfirm) (MsgAcceptVersion vNumber vParams) =
+      encodeMsg (ServerAgency TokConfirm) (MsgAcceptVersion vNumber vParams) =
            CBOR.encodeListLen 3
         <> CBOR.encodeWord 1
         <> CBOR.encodeTerm (encodeTerm versionNumberCodec vNumber)
         <> CBOR.encodeTerm vParams
 
-      encode (ServerAgency TokConfirm) (MsgRefuse vReason) =
+      encodeMsg (ServerAgency TokConfirm) (MsgRefuse vReason) =
            CBOR.encodeListLen 2
         <> CBOR.encodeWord 2
         <> encodeRefuseReason versionNumberCodec vReason
@@ -138,10 +137,10 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encode decode
               $ fail "codecHandshake.Propose: unordered version"
             decodeMap (pred l) next ((vNumber, vParams) : vs)
 
-      decode :: forall (pr :: PeerRole) s (st :: Handshake vNumber CBOR.Term).
-                PeerHasAgency pr st
-             -> CBOR.Decoder s (SomeMessage st)
-      decode stok = do
+      decodeMsg :: forall (pr :: PeerRole) s (st :: Handshake vNumber CBOR.Term).
+                   PeerHasAgency pr st
+                -> CBOR.Decoder s (SomeMessage st)
+      decodeMsg stok = do
         _ <- CBOR.decodeListLen
         key <- CBOR.decodeWord
         case (stok, key) of

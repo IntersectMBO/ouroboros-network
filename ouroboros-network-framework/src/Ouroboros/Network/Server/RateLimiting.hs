@@ -18,7 +18,7 @@ import           Control.Monad (when)
 import           Control.Tracer (Tracer, traceWith)
 
 import           Data.Word
-import           Data.Typeable (Typeable (..))
+import           Data.Typeable (Typeable)
 import           Text.Printf
 
 
@@ -126,8 +126,8 @@ runConnectionRateLimits tracer
         traceWith tracer (ServerTraceAcceptConnectionHardLimit limit)
         start <- getMonotonicTime
         atomically $ do
-          numberOfConnections <- numberOfConnectionsSTM
-          check (numberOfConnections < fromIntegral limit)
+          numberOfConnections' <- numberOfConnectionsSTM
+          check (numberOfConnections' < fromIntegral limit)
         end <- getMonotonicTime
         let remainingDelay = end `diffTime` start - acceptedConnectionsDelay
         when (remainingDelay > 0)

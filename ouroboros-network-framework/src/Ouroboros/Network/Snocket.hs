@@ -25,9 +25,11 @@ module Ouroboros.Network.Snocket
 import           Control.Exception
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadTime (DiffTime)
-import           Control.Tracer (Tracer, contramap)
-import           Network.Socket ( Family (AF_UNIX)
-                                , Socket
+import           Control.Tracer (Tracer)
+#if !defined(mingw32_HOST_OS)
+import           Network.Socket ( Family (AF_UNIX) )
+#endif
+import           Network.Socket ( Socket
                                 , SockAddr (..)
                                 )
 import qualified Network.Socket as Socket
@@ -401,7 +403,7 @@ localSnocket ioManager _ = Snocket {
     , listen        = flip Socket.listen 1
     , accept        = fmapAccept toLocalAddress . (berkeleyAccept ioManager)
     , open          = openSocket
-    , openToConnect = \addr -> openSocket LocalFamily
+    , openToConnect = \_addr -> openSocket LocalFamily
     , close         = Socket.close
     , toBearer      = Mx.socketAsMuxBearer (-1) -- Negative values means no timeout.
     }
