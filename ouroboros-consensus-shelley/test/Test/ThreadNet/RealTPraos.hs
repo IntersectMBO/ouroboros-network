@@ -4,6 +4,7 @@
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE PatternSynonyms          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 module Test.ThreadNet.RealTPraos (
     tests
@@ -13,6 +14,8 @@ import           Control.Monad (replicateM)
 import           Data.List ((!!))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.Sequence.Strict as Seq
+import qualified Data.Set as Set
 import           Data.Time (Day (..), UTCTime (..))
 import           Data.Word (Word64)
 
@@ -45,6 +48,7 @@ import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
 
+import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
 import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
@@ -228,7 +232,7 @@ mkGenesisConfig k maxKESEvolutions coreNodes = ShelleyGenesis {
     , sgNetworkMagic          = NetworkMagic 0
     , sgProtocolMagicId       = ProtocolMagicId 0
     , sgActiveSlotsCoeff      = 0.5 -- TODO 1 is not accepted by 'mkActiveSlotCoeff'
-    , sgDecentralisationParam = 1
+    , sgDecentralisationParam = 0
     , sgSecurityParam         = k
     , sgEpochLength           = EpochSize (10 * maxRollbacks k)
     , sgSlotsPerKESPeriod     = 10 -- TODO
@@ -241,6 +245,7 @@ mkGenesisConfig k maxKESEvolutions coreNodes = ShelleyGenesis {
     , sgMaxHeaderSize         = 1000 -- TODO
     , sgGenDelegs             = coreNodesToGenesisMapping
     , sgInitialFunds          = initialFunds
+    , sgStaking               = initialStake
     }
   where
     initialLovelacePerCoreNode :: Word64
@@ -267,6 +272,39 @@ mkGenesisConfig k maxKESEvolutions coreNodes = ShelleyGenesis {
                            (SL.StakeRefBase (mkCredential cnStakingKey))
             coin = SL.Coin $ fromIntegral initialLovelacePerCoreNode
       ]
+
+    -- In this initial stake, each core node delegates its stake to itself.
+    initialStake :: ShelleyGenesisStaking c
+    initialStake = ShelleyGenesisStaking
+      { sgsPools = Map.fromList
+          [ (pk, pp)
+          | pp@(SL.PoolParams { _poolPubKey = pk }) <- Map.elems coreNodeToPoolMapping
+          ]
+      , sgsStake = Map.map SL._poolPubKey coreNodeToPoolMapping
+      }
+      where
+        coreNodeToPoolMapping :: Map (SL.KeyHash c) (SL.PoolParams c)
+          = Map.fromList
+            [ ( SL.KeyHash $ SL.hash $ deriveVerKeyDSIGN cnStakingKey
+              , SL.PoolParams
+                { SL._poolPubKey = poolHash
+                , SL._poolVrf = vrfHash
+                  -- Each core node pledges its full stake to the pool.
+                , SL._poolPledge = SL.Coin $ fromIntegral initialLovelacePerCoreNode
+                , SL._poolCost = SL.Coin 1
+                , SL._poolMargin = SL.UnsafeUnitInterval 0
+                  -- Reward accounts live in a separate "namespace" to other
+                  -- accounts, so it should be fine to use the same address.
+                , SL._poolRAcnt = SL.RewardAcnt $ mkCredential cnDelegateKey
+                , SL._poolOwners = Set.singleton poolHash
+                , SL._poolRelays = Seq.empty
+                , SL._poolMD = SL.SNothing
+                }
+              )
+            | CoreNode { cnDelegateKey, cnStakingKey, cnVRF } <- coreNodes
+            , let poolHash = SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
+            , let vrfHash = SL.hashKeyVRF @c $ deriveVerKeyVRF cnVRF
+            ]
 
     mkCredential :: SignKeyDSIGN (DSIGN c) -> SL.Credential c
     mkCredential = SL.KeyHashObj . SL.hashKey . SL.VKey . deriveVerKeyDSIGN
