@@ -15,7 +15,6 @@ module Ouroboros.Network.Protocol.Handshake.Version
   , Acceptable (..)
   , Dict (..)
   , DictVersion (..)
-  , CodecCBORTerm (..)
   , pickVersions
   , VersionMismatch (..)
 
@@ -37,6 +36,8 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
+import           Ouroboros.Network.CodecCBORTerm
+
 
 -- Description of versions.
 --
@@ -51,8 +52,9 @@ import qualified Codec.CBOR.Term as CBOR
 -- | The set of versions supported by the local agent are described by a map
 -- keyed on the version identifier.
 --
--- If one needs to combine multiple versions the simplest way is to use the
--- 'Semigroup' instance.
+-- If one needs to combine multiple versions the simplest way is to use
+-- one of the combinators: 'foldMapVersions', 'combineVersions' or the
+-- 'Semigroup' instance directly:
 --
 -- >
 -- > fold $ (simpleSingletonVersions ...)
@@ -141,11 +143,6 @@ data DictVersion vData where
                  => CodecCBORTerm Text vData
                  -> DictVersion vData
 
-data CodecCBORTerm fail a = CodecCBORTerm
-  { encodeTerm :: a -> CBOR.Term
-  , decodeTerm :: CBOR.Term -> Either fail a
-  }
-
 -- | Pick the version with the highest version number (by `Ord vNum`) common
 -- in both maps.
 --
@@ -179,37 +176,6 @@ pickVersions isTypeable lversions rversions = case Map.toDescList commonVersions
   where
   commonVersions = getVersions lversions `intersect` getVersions rversions
   intersect = Map.intersectionWith (,)
-
--- Examples commented out because of unused definition warnings.
-
-{-
-import Data.Functor.Const (Const (..))
-
-exApplication1 :: Application (IO ()) ()
-exApplication1 = Application $ \localUnit remoteUnit ->
-  putStrLn "Application 1 does nothing"
-
-exVersion1 :: Version (Const ()) (IO ()) ()
-exVersion1 = Version exApplication1 (Const ())
-
-newtype Magic = Magic { getMagic :: Word32 }
-  deriving (Show, Eq)
-
-exApplication2 :: Application (IO ()) Magic
-exApplication2 = Application $ \localMagic remoteMagic ->
-  if localMagic == remoteMagic
-  then putStrLn "Magic is consistent"
-  else putStrLn "Magic is inconsistent"
-
-exVersion2 :: Version (Const ()) (IO ()) Magic
-exVersion2 = Version exApplication2 (Const ())
-
-exVersions :: Versions (Const ()) (IO ())
-exVersions = Versions $ Map.fromList
-  [ (0, Sigma () exVersion1)
-  , (1, Sigma (Magic 42) exVersion2)
-  ]
--}
 
 --
 -- Simple version negotation

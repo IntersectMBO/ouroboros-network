@@ -50,6 +50,7 @@ import qualified Codec.CBOR.Term     as CBOR
 
 import           Network.TypedProtocol.Core
 
+import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Protocol.Handshake.Version
 
 -- |

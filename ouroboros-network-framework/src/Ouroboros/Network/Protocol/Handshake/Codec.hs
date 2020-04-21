@@ -33,6 +33,7 @@ import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Term     as CBOR
 
 import           Ouroboros.Network.Codec
+import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
