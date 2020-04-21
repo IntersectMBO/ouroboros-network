@@ -39,9 +39,8 @@ import Ouroboros.Network.Protocol.ChainSync.Test ()
 import Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetch)
 import Ouroboros.Network.Protocol.BlockFetch.Test ()
 import Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
-import Ouroboros.Network.Protocol.Handshake.Codec (codecHandshake)
 import Ouroboros.Network.Protocol.Handshake.Type as Handshake
-import Ouroboros.Network.Protocol.Handshake.Test (VersionNumber)
+import Ouroboros.Network.Protocol.Handshake.Test (VersionNumber, versionNumberHandshakeCodec)
 import Ouroboros.Network.Protocol.TxSubmission.Codec (codecTxSubmission)
 import Ouroboros.Network.Protocol.TxSubmission.Type as TxSubmission
 import Ouroboros.Network.Protocol.TxSubmission.Test (TxId, Tx)
@@ -115,8 +114,10 @@ prop_specTxSubmission = prop_CDDLSpec (4, codecTS)
 prop_specLocalTxSubmission :: AnyMessageAndAgency LT -> Property
 prop_specLocalTxSubmission = prop_CDDLSpec (6, codecLT)
 
+-- TODO: this test should use 'nodeToNodeHandshakeCodec' and
+-- 'nodeToClientHandshakeCodec'
 prop_specHandshake :: AnyMessageAndAgency HS -> Property
-prop_specHandshake = prop_CDDLSpec (5, codecHandshake)
+prop_specHandshake = prop_CDDLSpec (5, versionNumberHandshakeCodec)
 
 prop_CDDLSpec :: (Word, MonoCodec ps) -> AnyMessageAndAgency ps -> Property
 prop_CDDLSpec (tagWord, codec) (AnyMessageAndAgency agency msg)
@@ -257,7 +258,8 @@ decodeMsg (tag, input) = case tag of
             , runBlockFetch (ServerAgency BlockFetch.TokStreaming)
             ]
 
-        runHandshake = run (codecHandshake :: MonoCodec HS)
+        -- Use 'nodeToNodeHandshakeCodec' and 'nodeToClientHandshakeCodec'
+        runHandshake = run (versionNumberHandshakeCodec :: MonoCodec HS)
         handshakeParsers = [
               runHandshake (ClientAgency TokPropose)
             , runHandshake (ServerAgency TokConfirm)
