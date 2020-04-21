@@ -59,8 +59,8 @@ import           Network.Mux.Types ( MiniProtocolMode (..) , MuxSDU (..), MuxSDU
 import           Network.Mux.Timeout
 
 import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version
-import           Ouroboros.Network.Protocol.Handshake.Codec
 
 import           Test.QuickCheck
 import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)

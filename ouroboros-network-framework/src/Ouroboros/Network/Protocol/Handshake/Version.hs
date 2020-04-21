@@ -25,24 +25,17 @@ module Ouroboros.Network.Protocol.Handshake.Version
   , combineVersions
   , foldMapVersions'
   , combineVersions'
-
-  -- * No Versioning
-  -- exposed for tests
-  , UnversionedProtocol (..)
-  , unversionedProtocol
   ) where
 
-import Data.Map (Map)
-import Data.Text (Text)
+import           Data.Map (Map)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
-import qualified Data.Text as T
+import           Data.Text (Text)
 import qualified Data.Map as Map
-import Data.Typeable ((:~:)(Refl), Typeable, eqT)
+import           Data.Typeable ((:~:)(Refl), Typeable, eqT)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
-import Codec.Serialise (Serialise(..))
 
 
 -- Description of versions.
@@ -234,37 +227,3 @@ simpleSingletonVersions vNum vData extra r =
   Versions
     $ Map.singleton vNum
         (Sigma vData (Version (Application $ \_ _ -> r) extra))
-
--- | Version negotiation for an unversioned protocol. Only use this for
--- tests and demos where proper versioning is excessive.
---
-data UnversionedProtocol = UnversionedProtocol
-  deriving (Eq, Ord, Enum, Show)
-
-
-data UnversionedProtocolData = UnversionedProtocolData
-  deriving (Eq, Show)
-
-instance Acceptable UnversionedProtocolData where
-  acceptableVersion UnversionedProtocolData
-                    UnversionedProtocolData = Accept
-
-
-unversionedProtocolDataCodec :: CodecCBORTerm Text UnversionedProtocolData
-unversionedProtocolDataCodec = CodecCBORTerm {encodeTerm, decodeTerm}
-    where
-      encodeTerm :: UnversionedProtocolData -> CBOR.Term
-      encodeTerm UnversionedProtocolData = CBOR.TNull
-
-      decodeTerm :: CBOR.Term -> Either Text UnversionedProtocolData
-      decodeTerm CBOR.TNull = Right UnversionedProtocolData
-      decodeTerm t          = Left $ T.pack $ "unexpected term: " ++ show t
-
-
--- | Make a 'Versions' for an unversioned protocol. Only use this for
--- tests and demos where proper versioning is excessive.
---
-unversionedProtocol :: app -> Versions UnversionedProtocol DictVersion app
-unversionedProtocol =
-    simpleSingletonVersions UnversionedProtocol UnversionedProtocolData
-                            (DictVersion unversionedProtocolDataCodec)

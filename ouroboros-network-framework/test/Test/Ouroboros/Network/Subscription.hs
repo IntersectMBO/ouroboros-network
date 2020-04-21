@@ -42,8 +42,8 @@ import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Examples   as ReqResp
 
-import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version
 
 import           Ouroboros.Network.Driver

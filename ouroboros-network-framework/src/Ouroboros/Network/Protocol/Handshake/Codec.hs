@@ -2,7 +2,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -12,8 +11,6 @@ module Ouroboros.Network.Protocol.Handshake.Codec
 
   , byteLimitsHandshake
   , timeLimitsHandshake
-
-  , unversionedHandshakeCodec
 
   , encodeRefuseReason
   , decodeRefuseReason
@@ -35,7 +32,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Term     as CBOR
 
-import           Ouroboros.Network.Codec hiding (encode, decode)
+import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -212,23 +209,3 @@ decodeRefuseReason versionNumberCodec = do
           Left e        -> fail $ "decode Refused: unknonwn version: " ++ show e
           Right vNumber -> Refused vNumber <$> CBOR.decodeString
       _ -> fail $ "decode RefuseReason: unknown tag " ++ show tag
-
-
--- | 'Handshake' codec used in various tests.
---
-unversionedHandshakeCodec :: ( MonadST m
-                            , MonadThrow m
-                            )
-                         => Codec (Handshake UnversionedProtocol CBOR.Term)
-                                  CBOR.DeserialiseFailure m ByteString
-unversionedHandshakeCodec = codecHandshake unversionedProtocolCodec
-  where
-    unversionedProtocolCodec :: CodecCBORTerm (String, Maybe Int) UnversionedProtocol
-    unversionedProtocolCodec = CodecCBORTerm { encodeTerm, decodeTerm }
-      where
-        encodeTerm UnversionedProtocol = CBOR.TInt 1
-        decodeTerm (CBOR.TInt 1) = Right UnversionedProtocol
-        decodeTerm (CBOR.TInt n) = Left ("decode UnversionedProtocol: unknown tag", Just n)
-        decodeTerm _             = Left ("decode UnversionedProtocol: deserialisation failure", Nothing)
-
-
