@@ -254,26 +254,22 @@ instructionHelper registry varReader blockComponent encodeHeader fromMaybeSTM CD
       -- convert to the right block component.
       Right fupdate -> headerUpdateToBlockComponentUpdate fupdate
       -- We were in the 'ReaderInImmDB' state or we need to switch to it.
-      Left (rollState, mbImmIt) -> case rollState of
-        RollForwardFrom pt -> do
-          immIt <- case mbImmIt of
-            Just immIt -> return immIt
-            -- We were in the 'ReaderInMem' state but have to switch to the
-            -- 'ReaderInImmDB' state.
-            Nothing    -> do
-              trace $ ReaderNoLongerInMem rollState
-              ImmDB.streamAfterKnownBlock cdbImmDB registry
-                ((,) <$> getPoint <*> blockComponent) pt
-          rollForwardImmDB immIt pt
-        RollBackTo      pt -> do
-          case mbImmIt of
-            Just immIt -> ImmDB.iteratorClose cdbImmDB immIt
-            Nothing    -> trace $ ReaderNoLongerInMem rollState
-          immIt' <- ImmDB.streamAfterKnownBlock cdbImmDB registry
-            ((,) <$> getPoint <*> blockComponent) pt
-          let readerState' = ReaderInImmDB (RollForwardFrom pt) immIt'
-          atomically $ writeTVar varReader readerState'
-          return $ pure $ RollBack pt
+      Left (rollState, mbImmIt) -> do
+        immIt <- case mbImmIt of
+          Just immIt -> return immIt
+          -- We were in the 'ReaderInMem' state but have to switch to the
+          -- 'ReaderInImmDB' state.
+          Nothing    -> do
+            trace $ ReaderNoLongerInMem rollState
+            ImmDB.streamAfterKnownBlock cdbImmDB registry
+              ((,) <$> getPoint <*> blockComponent)
+              (readerRollStatePoint rollState)
+        case rollState of
+          RollForwardFrom pt -> rollForwardImmDB immIt pt
+          RollBackTo      pt -> do
+            let readerState' = ReaderInImmDB (RollForwardFrom pt) immIt
+            atomically $ writeTVar varReader readerState'
+            return $ pure $ RollBack pt
   where
     trace = traceWith (contramap TraceReaderEvent cdbTracer)
 
