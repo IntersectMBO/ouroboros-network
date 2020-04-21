@@ -54,6 +54,7 @@ import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version
 
 import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
@@ -154,10 +155,11 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
       threadDelay (50000 * index)
       connectToNode
         (localSnocket iocp sockPath)
+        unversionedHandshakeCodec
         cborTermVersionDataCodec
         nullNetworkConnectTracers
         (simpleSingletonVersions
-           (0::Int)
+           UnversionedProtocol
            (NodeToNodeVersionData $ NetworkMagic 0)
            (DictVersion nodeToNodeCodecCBORTerm)
            (\_peerid -> app))
@@ -186,10 +188,11 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
       networkState
       (AcceptedConnectionsLimit maxBound maxBound 0)
       (localAddressFromPath sockAddr)
+      unversionedHandshakeCodec
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptableVersion)
       (simpleSingletonVersions
-        (0::Int)
+        UnversionedProtocol
         (NodeToNodeVersionData $ NetworkMagic 0)
         (DictVersion nodeToNodeCodecCBORTerm)
         (\_peerid -> SomeResponderApplication app))
@@ -356,10 +359,11 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                     [ async $
                         connectToNode
                           (localSnocket iocp defaultLocalSocketAddrPath)
+                          unversionedHandshakeCodec
                           cborTermVersionDataCodec
                           nullNetworkConnectTracers
                           (simpleSingletonVersions
-                            (0 :: Int)
+                            UnversionedProtocol
                             (NodeToNodeVersionData (NetworkMagic 0))
                             (DictVersion nodeToNodeCodecCBORTerm)
                             app)
@@ -404,10 +408,11 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
       networkState
       (AcceptedConnectionsLimit maxBound maxBound 0)
       (localAddressFromPath sockAddr)
+      unversionedHandshakeCodec
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptableVersion)
       (simpleSingletonVersions
-        (0::Int)
+        UnversionedProtocol
         (NodeToNodeVersionData $ NetworkMagic 0)
         (DictVersion nodeToNodeCodecCBORTerm)
         (\_peerid -> SomeResponderApplication app))
