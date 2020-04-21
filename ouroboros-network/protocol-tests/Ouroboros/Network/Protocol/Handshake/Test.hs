@@ -412,10 +412,19 @@ prop_channel createChannels clientVersions serverVersions =
           cborTermVersionDataCodec
           (\(DictVersion _) -> acceptableVersion)
           serverVersions)
-    return $
-           maybe False id clientRes === either (const False) id clientRes'
-      .&&.
-           maybe False id serverRes === either (const False) id serverRes'
+    pure $
+      case (clientRes', serverRes') of
+        -- buth succeeded, we just check that the application (which is
+        -- a boolean value) is the one that was put inside 'Version'
+        (Right c, Right s) -> Just c === clientRes
+                         .&&. Just s === serverRes
+
+        -- both failed
+        (Left{}, Left{})   -> property True
+
+        -- it should not happen that one protocol succeeds and the other end
+        -- fails
+        _                  -> property False
 
 
 -- | Run 'prop_channel' in the simulation monad.
