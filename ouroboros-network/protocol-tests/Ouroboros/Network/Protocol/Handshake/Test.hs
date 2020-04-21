@@ -550,20 +550,36 @@ prop_pipe_asymmetric_IO (ArbitraryVersions clientVersions _serverVersions) =
 --
 
 instance Eq (AnyMessage (Handshake VersionNumber CBOR.Term)) where
-  AnyMessage (MsgProposeVersions vs)          == AnyMessage (MsgProposeVersions vs')  = vs == vs'
+  AnyMessage (MsgProposeVersions vs) == AnyMessage (MsgProposeVersions vs')
+    = vs == vs'
+
   AnyMessage (MsgAcceptVersion vNumber vParams) == AnyMessage (MsgAcceptVersion vNumber' vParams')
-                                                                                      = vNumber == vNumber' && vParams == vParams'
-  AnyMessage (MsgRefuse vReason)              == AnyMessage (MsgRefuse vReason')      = vReason == vReason'
-  _                                           == _                                    = False
+    = vNumber == vNumber' && vParams == vParams'
+
+  AnyMessage (MsgRefuse vReason) == AnyMessage (MsgRefuse vReason')
+    = vReason == vReason'
+
+  _ == _ = False
 
 instance Show (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) where
   show (AnyMessageAndAgency _ msg) = show msg
 
 instance Arbitrary (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) where
   arbitrary = oneof
-    [ AnyMessageAndAgency (ClientAgency TokPropose) . MsgProposeVersions . fmap (\(Sigma vData (Version _ (DictVersion codec))) -> encodeTerm codec vData) . getVersions <$> genVersions
-    , AnyMessageAndAgency (ServerAgency TokConfirm) . uncurry MsgAcceptVersion <$> genValidVersion'
-    , AnyMessageAndAgency (ServerAgency TokConfirm) . MsgRefuse . runArbitraryRefuseReason <$> arbitrary
+    [     AnyMessageAndAgency (ClientAgency TokPropose)
+        . MsgProposeVersions
+        . fmap (\(Sigma vData (Version _ (DictVersion codec))) -> encodeTerm codec vData)
+        . getVersions
+      <$> genVersions
+
+    ,     AnyMessageAndAgency (ServerAgency TokConfirm)
+        . uncurry MsgAcceptVersion
+      <$> genValidVersion'
+
+    ,     AnyMessageAndAgency (ServerAgency TokConfirm)
+        . MsgRefuse
+        . runArbitraryRefuseReason
+      <$> arbitrary
     ]
     where
       genValidVersion' :: Gen (VersionNumber, CBOR.Term)
