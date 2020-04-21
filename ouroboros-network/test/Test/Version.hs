@@ -4,14 +4,11 @@
 --
 module Test.Version (tests) where
 
-import           Data.Proxy (Proxy (..))
-import           Codec.Serialise (Serialise,
-                                  DeserialiseFailure,
-                                  serialise,
-                                  deserialiseOrFail)
-
-import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..))
-import           Ouroboros.Network.NodeToNode   (NodeToNodeVersion)
+import           Ouroboros.Network.CodecCBORTerm
+import           Ouroboros.Network.NodeToClient ( NodeToClientVersion (..)
+                                                , nodeToClientVersionCodec
+                                                )
+import           Ouroboros.Network.NodeToNode   ( nodeToNodeVersionCodec )
 
 import           Test.Tasty (TestTree,
                              testGroup)
@@ -23,64 +20,81 @@ tests =
   testGroup "Ouroboros.Network.Protocol.Handshake.Version"
     [ testGroup "NodeToClientVersion"
       [ testCase "NodeToClientVersion round-trip codec property"
-                 (roundTripPropAll (Proxy :: Proxy NodeToClientVersion))
+                 (roundTripPropAll nodeToClientVersionCodec)
       , testCase "NodeToClientVersion should not deserialise as NodeToNode"
                  (crossFailurePropAll
-                   (Proxy :: Proxy NodeToNodeVersion)
+                   nodeToClientVersionCodec
+                   nodeToNodeVersionCodec
                    ([NodeToClientV_2 .. maxBound] :: [NodeToClientVersion]))
       ]
     , testGroup "NodeToNodeVersion"
       [ testCase "NodeToNodeVersion round-trip codec property"
-                 (roundTripPropAll (Proxy :: Proxy NodeToNodeVersion))
+                 (roundTripPropAll nodeToNodeVersionCodec)
       -- TODO: enable this test when `NodeToClientV_1` is removed:
       {--
         - , testCase "NodeToNodeVersion should not deserialise as NodeToClient"
         -            (crossFailurePropAll
-        -              (Proxy :: Proxy NodeToClientVersion)
+        -              nodeToNodeVersionCodec
+        -              nodeToClientVersionCodec
         -              ([minBound .. maxBound] :: [NodeToNodeVersion]))
         --}
       ]
     ]
 
 
-roundTripProp :: (Serialise a, Eq a, Show a)
-              => a -> Assertion
-roundTripProp a =
-    Right a @=? deserialiseOrFail (serialise a)
+roundTripProp :: ( Eq a
+                 , Show a
+                 , Eq failure
+                 , Show failure
+                 )
+              => CodecCBORTerm failure a
+              -> a -> Assertion
+roundTripProp codec a =
+    Right a @=? decodeTerm codec (encodeTerm codec a)
 
 
 -- Using `Monoid` instance of `IO ()`
 roundTripPropAll
-    :: forall a.
-       ( Serialise a
+    :: forall failure a.
+       ( Eq a
        , Enum a
        , Bounded a
-       , Eq a
        , Show a
+       , Eq failure
+       , Show failure
        )
-    => Proxy a -> Assertion
-roundTripPropAll _ =
-    foldMap roundTripProp ([minBound..maxBound] :: [a])
+    => CodecCBORTerm failure a -> Assertion
+roundTripPropAll codec =
+    foldMap (roundTripProp codec) ([minBound..maxBound] :: [a])
 
 
 crossFailureProp
-    :: forall a b.
-       ( Serialise a, Show a, 
-         Serialise b, Show b
+    :: forall failure a b.
+       ( Show a
+       , Show b
+       , Eq failure
+       , Show failure
        )
-    => Proxy b -> a -> Assertion
-crossFailureProp _ a =
-    case deserialiseOrFail (serialise a) :: Either DeserialiseFailure b of
-      Right (b :: b) -> assertFailure (show a ++ "should not deserialise as " ++ show b)
-      Left  _        -> pure ()
+    => CodecCBORTerm failure a
+    -> CodecCBORTerm failure b
+    -> a
+    -> Assertion
+crossFailureProp codecA codecB a =
+    case decodeTerm codecB (encodeTerm codecA a) of
+      Right b -> assertFailure (show a ++ "should not deserialise as " ++ show b)
+      Left  _ -> pure ()
 
 
 crossFailurePropAll
-    :: forall a b.
-       ( Serialise a, Show a,
-         Serialise b, Show b )
-    => Proxy b
+    :: forall failure a b.
+       ( Show a
+       , Show b
+       , Eq failure
+       , Show failure
+       )
+    => CodecCBORTerm failure a
+    -> CodecCBORTerm failure b
     -> [a]
     -> Assertion
-crossFailurePropAll = foldMap . crossFailureProp
+crossFailurePropAll codecA codecB = foldMap (crossFailureProp codecA codecB)
 
