@@ -176,7 +176,10 @@ protocolInfoShelley genesis protVer mbCredentials =
     tpraosParams = TPraosParams {
         tpraosEpochInfo         = epochInfo
       , tpraosSlotsPerKESPeriod = sgSlotsPerKESPeriod genesis
-      , tpraosLeaderF           = sgActiveSlotsCoeff  genesis
+      , tpraosLeaderF           = SL.mkActiveSlotCoeff
+                                . SL.truncateUnitInterval
+                                . toRational
+                                $ sgActiveSlotsCoeff  genesis
       , tpraosSecurityParam     = sgSecurityParam     genesis
       , tpraosMaxKESEvo         = sgMaxKESEvolutions  genesis
       , tpraosQuorum            = sgUpdateQuorum      genesis

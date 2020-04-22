@@ -47,7 +47,6 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.DSIGN.Class (VerKeyDSIGN)
-import           Cardano.Crypto.Hash.Class (HashAlgorithm (..))
 import           Cardano.Crypto.KES.Class (SignKeyKES, SignedKES, signedKES)
 import qualified Cardano.Crypto.KES.Class as KES
 import           Cardano.Crypto.VRF.Class (CertifiedVRF, SignKeyVRF, VerKeyVRF,
@@ -252,7 +251,7 @@ data TPraosParams = TPraosParams {
       -- of slots in which blocks should be issued. This can be interpreted as
       -- the probability that a party holding all the stake will be elected as
       -- leader for a given slot.
-    , tpraosLeaderF           :: !Double
+    , tpraosLeaderF           :: !SL.ActiveSlotCoeff
       -- | See 'Globals.securityParameter'.
     , tpraosSecurityParam     :: !SecurityParam
       -- | Maximum number of KES iterations, see 'Globals.maxKESEvo'.
@@ -339,7 +338,6 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
             prtclState = State.currentPRTCLState cs
             eta0       = prtclStateEta0 prtclState
             vkhCold    = SL.hashKey tpraosIsCoreNodeColdVerKey
-            t          = leaderThreshold cfg lv vkhCold
             rho'       = SL.mkSeed SL.seedEta slot eta0
             y'         = SL.mkSeed SL.seedL   slot eta0
         rho <- VRF.evalCertified () rho' tpraosIsCoreNodeSignKeyVRF
@@ -347,7 +345,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
         -- First, check whether we're in the overlay schedule
         return $ case Map.lookup slot (SL.lvOverlaySched lv) of
           Nothing
-            | fromIntegral (VRF.certifiedNatural y) < t
+            | meetsLeaderThreshold cfg lv vkhCold y
               -- Slot isn't in the overlay schedule, so we're in Praos
             -> Just TPraosProof {
                  tpraosEta        = coerce rho
@@ -420,22 +418,27 @@ mkShelleyGlobals TPraosParams {..} = SL.Globals {
   where
     SecurityParam k = tpraosSecurityParam
 
-phi :: ConsensusConfig (TPraos c) -> Rational -> Double
-phi TPraosConfig { tpraosParams } r =
-    1 - (1 - tpraosLeaderF) ** fromRational r
+-- | Check whether this node meets the leader threshold to issue a block.
+meetsLeaderThreshold
+  :: forall c. TPraosCrypto c
+  => ConsensusConfig (TPraos c)
+  -> LedgerView (TPraos c)
+  -> SL.KeyHash c
+  -> CertifiedVRF (VRF c) SL.Seed
+  -> Bool
+meetsLeaderThreshold
+  TPraosConfig { tpraosParams }
+  SL.LedgerView { lvPoolDistr }
+  keyHash
+  certNat
+    = SL.checkVRFValue
+        (VRF.certifiedNatural certNat)
+        r
+        (tpraosLeaderF tpraosParams)
   where
-    TPraosParams { tpraosLeaderF } = tpraosParams
-
-leaderThreshold :: forall c. TPraosCrypto c
-                => ConsensusConfig (TPraos c)
-                -> LedgerView (TPraos c)
-                -> SL.KeyHash c  -- ^ Key hash of the pool
-                -> Double
-leaderThreshold cfg ledgerView keyHash =
-    2 ^ (byteCount (Proxy @(HASH c)) * 8) * phi cfg a
-  where
-    SL.PoolDistr poolDistr = SL.lvPoolDistr ledgerView
-    a = maybe 0 fst $ Map.lookup keyHash poolDistr
+    SL.PoolDistr poolDistr = lvPoolDistr
+    r = maybe 0 fst
+        $ Map.lookup keyHash poolDistr
 
 {-------------------------------------------------------------------------------
   Condense
