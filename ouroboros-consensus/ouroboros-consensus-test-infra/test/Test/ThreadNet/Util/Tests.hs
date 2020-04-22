@@ -5,7 +5,6 @@ module Test.ThreadNet.Util.Tests (
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
@@ -13,6 +12,7 @@ import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Time
 
 tests :: TestTree
 tests = testGroup "Test.ThreadNet.Util.Tests" $

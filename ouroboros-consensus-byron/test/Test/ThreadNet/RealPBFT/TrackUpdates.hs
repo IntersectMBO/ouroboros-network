@@ -39,7 +39,6 @@ import qualified Cardano.Crypto.DSIGN as Crypto
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
-import           Ouroboros.Consensus.BlockchainTime.Mock (NumSlots (..))
 import           Ouroboros.Consensus.Config (TopLevelConfig (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
                      ProtocolInfo (..))
@@ -51,12 +50,14 @@ import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 
-import qualified Test.ThreadNet.Ref.PBFT as Ref
 import           Test.ThreadNet.Network (TestNodeInitialization (..))
+import qualified Test.ThreadNet.Ref.PBFT as Ref
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.ThreadNet.RealPBFT.ProtocolInfo
+
+import           Test.Util.Time
 
 -- | The expectation and observation regarding whether the hard-fork proposal
 -- successfully updated the protocol version

@@ -75,8 +75,7 @@ import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime.Mock
-                     (settableBlockchainTime)
+import           Ouroboros.Consensus.BlockchainTime.API (settableBlockchainTime)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract

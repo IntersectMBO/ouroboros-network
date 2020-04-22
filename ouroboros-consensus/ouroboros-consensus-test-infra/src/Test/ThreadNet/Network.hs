@@ -70,7 +70,6 @@ import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended

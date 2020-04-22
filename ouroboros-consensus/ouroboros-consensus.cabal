@@ -38,7 +38,6 @@ library
                        Ouroboros.Consensus.Block.SupportsProtocol
                        Ouroboros.Consensus.BlockchainTime
                        Ouroboros.Consensus.BlockchainTime.API
-                       Ouroboros.Consensus.BlockchainTime.Mock
                        Ouroboros.Consensus.BlockchainTime.SlotLength
                        Ouroboros.Consensus.BlockchainTime.SlotLengths
                        Ouroboros.Consensus.BlockchainTime.WallClock
@@ -306,6 +305,7 @@ test-suite test-consensus
                        Test.Util.SOP
                        Test.Util.Split
                        Test.Util.TestBlock
+                       Test.Util.Time
                        Test.Util.Tracer
 
   build-depends:       base
@@ -411,6 +411,7 @@ test-suite test-storage
                        Test.Util.RefEnv
                        Test.Util.SOP
                        Test.Util.TestBlock
+                       Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WithEq
 

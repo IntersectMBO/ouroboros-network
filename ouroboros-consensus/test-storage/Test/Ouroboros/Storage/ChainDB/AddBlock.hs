@@ -28,7 +28,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
-import           Ouroboros.Consensus.BlockchainTime.Mock
+import           Ouroboros.Consensus.BlockchainTime.API (fixedBlockchainTime)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util (chunks)

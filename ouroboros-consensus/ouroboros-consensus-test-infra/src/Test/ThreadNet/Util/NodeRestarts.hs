@@ -14,11 +14,11 @@ import           Test.QuickCheck
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
-import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Util.Condense
 
 import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.Util.Time
 
 data NodeRestart
   = NodeRekey
