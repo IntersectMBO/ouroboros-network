@@ -1,14 +1,10 @@
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE DerivingVia    #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RankNTypes     #-}
 
 module Ouroboros.Consensus.BlockchainTime.API (
-    -- * API
     BlockchainTime(..)
   , onSlotChange
-    -- * Functionality in terms of the abstract API only
-  , blockUntilSlot
   ) where
 
 import           GHC.Stack
@@ -38,6 +34,10 @@ data BlockchainTime m = BlockchainTime {
     }
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlockchainTime" (BlockchainTime m)
 
+{-------------------------------------------------------------------------------
+  Derived functionality
+-------------------------------------------------------------------------------}
+
 -- | Spawn a thread to run an action each time the slot changes
 --
 -- Returns a handle to kill the thread.
@@ -53,23 +53,3 @@ onSlotChange :: (IOLike m, HasCallStack)
 onSlotChange registry BlockchainTime{getCurrentSlot} label =
       fmap cancelThread
     . onEachChange registry label id Nothing getCurrentSlot
-
-{-------------------------------------------------------------------------------
-  Functionality in terms of the abstract API only
--------------------------------------------------------------------------------}
-
--- | Block until the specified slot
---
--- Returns 'True' immediately if the requested slot is already over, else
--- blocks as requested and then returns 'False'
-blockUntilSlot :: IOLike m
-               => BlockchainTime m
-               -> SlotNo
-               -> m Bool
-blockUntilSlot btime slot = atomically $ do
-    now <- getCurrentSlot btime
-    if now > slot then
-      return True
-    else do
-      check $ now == slot
-      return False

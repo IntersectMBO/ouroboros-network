@@ -113,6 +113,7 @@ import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
 import           Test.Util.Random
+import           Test.Util.Time
 import           Test.Util.Tracer
 
 -- | How to forge an EBB
@@ -279,8 +280,6 @@ runThreadNetwork ThreadNetworkArgs
                          sharedRegistry
                          numSlots
                          (singletonSlotLengths slotLength)
-    let sharedBtime = testBlockchainTime sharedTestBtime
-
     -- This function is organized around the notion of a network of nodes as a
     -- simple graph with no loops. The graph topology is determined by
     -- @nodeTopology@.
@@ -315,7 +314,7 @@ runThreadNetwork ThreadNetworkArgs
       forM uedges $ \uedge -> do
         forkBothEdges
           sharedRegistry
-          sharedBtime
+          sharedTestBtime
           -- traces when/why the mini protocol instances start and stop
           nullDebugTracer
           vertexStatusVars
@@ -331,7 +330,7 @@ runThreadNetwork ThreadNetworkArgs
 
       -- the vertex cannot create its first node instance until the
       -- 'NodeJoinPlan' allows
-      tooLate <- blockUntilSlot sharedBtime joinSlot
+      tooLate <- blockUntilSlot sharedTestBtime joinSlot
       when tooLate $ do
         error $ "unsatisfiable nodeJoinPlan: " ++ show coreNodeId
 
@@ -361,7 +360,7 @@ runThreadNetwork ThreadNetworkArgs
         let NodeInfo{nodeInfoEvents} = nodeInfo
             loop next = do
               (s, bno) <- atomically $ do
-                s <- getCurrentSlot sharedBtime
+                s <- testBlockchainTimeSlot sharedTestBtime
                 check $ s >= next
                 readTVar vertexStatusVar >>= \case
                   VUp kernel _ -> do
@@ -434,8 +433,6 @@ runThreadNetwork ThreadNetworkArgs
         loop s pInfo nr rs = do
           -- a registry solely for the resources of this specific node instance
           (again, finalChain, finalLdgr) <- withRegistry $ \nodeRegistry -> do
-            let nodeBtime = testBlockchainTime sharedTestBtime
-
             -- change the node's key and prepare a delegation transaction if
             -- the node is restarting because it just rekeyed
             tni' <- case (nr, mbRekeyM) of
@@ -470,7 +467,7 @@ runThreadNetwork ThreadNetworkArgs
               -- onset of schedule restart slot
               Just ((s', nr'), rs') -> do
                 -- wait until the node should stop
-                tooLate <- blockUntilSlot nodeBtime s'
+                tooLate <- blockUntilSlot sharedTestBtime s'
                 when tooLate $ do
                   error $ "unsatisfiable nodeRestarts: "
                     ++ show (coreNodeId, s')
@@ -882,7 +879,7 @@ data RestartCause
 forkBothEdges
   :: (IOLike m, HasCallStack)
   => ResourceRegistry m
-  -> BlockchainTime m
+  -> TestBlockchainTime m
   -> Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
   -> Map CoreNodeId (VertexStatusVar m blk)
   -> (CoreNodeId, CoreNodeId)
@@ -929,7 +926,7 @@ forkBothEdges sharedRegistry btime tr vertexStatusVars (node1, node2) = do
 directedEdge ::
   forall m blk. IOLike m
   => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
-  -> BlockchainTime m
+  -> TestBlockchainTime m
   -> EdgeStatusVar m
   -> (CoreNodeId, VertexStatusVar m blk)
   -> (CoreNodeId, VertexStatusVar m blk)
@@ -946,7 +943,7 @@ directedEdge tr btime edgeStatusVar client server =
           RestartNode  -> pure ()
           RestartExn e -> do
             -- "error policy": restart at beginning of next slot
-            s <- atomically $ getCurrentSlot btime
+            s <- atomically $ testBlockchainTimeSlot btime
             let s' = succ s
             traceWith tr (s, MiniProtocolDelayed, e)
             void $ blockUntilSlot btime s'
