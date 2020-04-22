@@ -16,7 +16,7 @@ import           Cardano.Binary (ToCBOR)
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import           Cardano.Crypto.DSIGN.Ed25519 (Ed25519DSIGN)
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
-import           Cardano.Crypto.Hash.SHA256 (SHA256)
+import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
 import           Cardano.Crypto.KES.Class
 import qualified Cardano.Crypto.KES.Class as KES
 import           Cardano.Crypto.KES.Simple
@@ -54,6 +54,6 @@ instance Crypto TPraosStandardCrypto where
   type DSIGN TPraosStandardCrypto = Ed25519DSIGN
   type KES   TPraosStandardCrypto = SimpleKES Ed448DSIGN
   type VRF   TPraosStandardCrypto = SimpleVRF
-  type HASH  TPraosStandardCrypto = SHA256
+  type HASH  TPraosStandardCrypto = Blake2b_256
 
 instance TPraosCrypto TPraosStandardCrypto
