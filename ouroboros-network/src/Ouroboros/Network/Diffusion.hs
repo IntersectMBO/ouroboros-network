@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP            #-}
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes     #-}
@@ -18,6 +19,7 @@ module Ouroboros.Network.Diffusion
   where
 
 import qualified Control.Concurrent.Async as Async
+import           Control.Exception
 import           Control.Tracer (Tracer)
 import           Data.Functor (void)
 import           Data.Void (Void)
@@ -27,7 +29,7 @@ import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (SockAddr, AddrInfo)
 import qualified Network.Socket as Socket
 
-import           Ouroboros.Network.Snocket (LocalAddress, SocketSnocket, LocalSnocket)
+import           Ouroboros.Network.Snocket (LocalAddress, SocketSnocket)
 import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -78,10 +80,10 @@ data DiffusionTracers = DiffusionTracers {
 -- | Network Node argumets
 --
 data DiffusionArguments = DiffusionArguments {
-      daAddresses    :: [AddrInfo]
-      -- ^ diffusion addresses
-    , daLocalAddress :: FilePath
-      -- ^ address for local clients
+      daAddresses    :: Either [Socket.Socket] [AddrInfo]
+      -- ^ sockets ready to accept connections or diffusion addresses
+    , daLocalAddress :: Either Socket.Socket FilePath
+      -- ^ AF_UNIX socket ready to accept connections or address for local clients
     , daIpProducers  :: IPSubscriptionTarget
       -- ^ ip subscription addresses
     , daDnsProducers :: [DnsSubscriptionTarget]
@@ -123,6 +125,12 @@ data DiffusionApplications = DiffusionApplications {
       -- ^ error policies
     }
 
+data DiffusionFailure = UnsupportedLocalSocketType
+                      | UnsupportedReadySocket -- Windows only
+  deriving (Eq, Show)
+
+instance Exception DiffusionFailure
+
 runDataDiffusion
     :: DiffusionTracers
     -> DiffusionArguments 
@@ -142,15 +150,15 @@ runDataDiffusion tracers
         snocket :: SocketSnocket
         snocket = Snocket.socketSnocket iocp
 
-        -- snocket for local clients connected using Unix socket or named pipe.
-        -- we currently don't support remotely connected local clients.  If we
-        -- need to we can add another adress for local clients.
-        localSnocket :: LocalSnocket
-        localSnocket = Snocket.localSnocket iocp daLocalAddress
+        daAddresses' = case daAddresses of
+                            Left sds -> map Left sds
+                            Right as -> map (Right . Socket.addrAddress) as
 
     -- networking mutable state
     networkState <- newNetworkMutableState
     networkLocalState <- newNetworkMutableState
+
+    lias <- getInitiatorLocalAddresses snocket
 
     void $
       -- clean state thread
@@ -160,16 +168,16 @@ runDataDiffusion tracers
         Async.withAsync (cleanNetworkMutableState networkLocalState) $ \cleanLocalNetworkStateThread ->
 
           -- fork server for local clients
-          Async.withAsync (runLocalServer localSnocket networkLocalState) $ \_ ->
+          Async.withAsync (runLocalServer iocp networkLocalState) $ \_ ->
 
             -- fork servers for remote peers
-            withAsyncs (runServer snocket networkState . Socket.addrAddress <$> daAddresses) $ \_ ->
+            withAsyncs (runServer snocket networkState <$> daAddresses') $ \_ ->
 
               -- fork ip subscription
-              Async.withAsync (runIpSubscriptionWorker snocket networkState) $ \_ ->
+              Async.withAsync (runIpSubscriptionWorker snocket networkState lias) $ \_ ->
 
                 -- fork dns subscriptions
-                withAsyncs (runDnsSubscriptionWorker snocket networkState <$> daDnsProducers) $ \_ ->
+                withAsyncs (runDnsSubscriptionWorker snocket networkState lias <$> daDnsProducers) $ \_ ->
 
                   -- If any other threads throws 'cleanNetowrkStateThread' and
                   -- 'cleanLocalNetworkStateThread' threads will will finish.
@@ -188,63 +196,127 @@ runDataDiffusion tracers
                      , dtAcceptPolicyTracer
                      } = tracers
 
-    initiatorLocalAddresses :: LocalAddresses SockAddr
-    initiatorLocalAddresses = LocalAddresses
-      { laIpv4 =
-          -- IPv4 address
-          --
-          -- We can't share portnumber with our server since we run separate
-          -- 'MuxInitiatorApplication' and 'MuxResponderApplication'
-          -- applications instead of a 'MuxInitiatorAndResponderApplication'.
-          -- This means we don't utilise full duplex connection.
-          if any (\ai -> Socket.addrFamily ai == Socket.AF_INET) daAddresses
-            then Just (Socket.SockAddrInet 0 0)
-            else Nothing
-      , laIpv6 =
-          -- IPv6 address
-          if any (\ai -> Socket.addrFamily ai == Socket.AF_INET6) daAddresses
-            then Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0)
-            else Nothing
-      , laUnix = Nothing
-      }
+    --
+    -- We can't share portnumber with our server since we run separate
+    -- 'MuxInitiatorApplication' and 'MuxResponderApplication'
+    -- applications instead of a 'MuxInitiatorAndResponderApplication'.
+    -- This means we don't utilise full duplex connection.
+    getInitiatorLocalAddresses :: SocketSnocket -> IO (LocalAddresses SockAddr)
+    getInitiatorLocalAddresses sn =
+      case daAddresses of
+           Left sds -> do
+               sockAddrs <- mapM (Snocket.getLocalAddr sn) sds
+
+               return $ LocalAddresses
+                 { laIpv4 = anyIPv4Addr sockAddrs
+                 , laIpv6 = anyIPv6Addr sockAddrs
+                 , laUnix = Nothing
+                 }
+           Right as ->
+             return $ LocalAddresses
+               { laIpv4 = anyIPv4Addr $ map Socket.addrAddress as
+               , laIpv6 = anyIPv6Addr $ map Socket.addrAddress as
+               , laUnix = Nothing
+               }
+      where
+        -- Return an IPv4 address with an emphemeral portnumber if we use IPv4
+        anyIPv4Addr :: [SockAddr] -> Maybe SockAddr
+        anyIPv4Addr [] = Nothing
+        anyIPv4Addr ((Socket.SockAddrInet _ _) : _) = Just (Socket.SockAddrInet 0 0)
+        anyIPv4Addr (_ : sas) = anyIPv4Addr sas
+
+        -- Return an IPv6 address with an emphemeral portnumber if we use IPv6
+        anyIPv6Addr :: [SockAddr] -> Maybe SockAddr
+        anyIPv6Addr [] = Nothing
+        anyIPv6Addr ((Socket.SockAddrInet6 _ _ _ _ ) : _) = Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0)
+        anyIPv6Addr (_ : sas) = anyIPv6Addr sas
 
     remoteErrorPolicy, localErrorPolicy :: ErrorPolicies
     remoteErrorPolicy = NodeToNode.remoteNetworkErrorPolicy <> daErrorPolicies
     localErrorPolicy  = NodeToNode.localNetworkErrorPolicy <> daErrorPolicies
 
-    runLocalServer :: LocalSnocket -> NetworkMutableState LocalAddress -> IO Void
-    runLocalServer sn networkLocalState =
-      NodeToClient.withServer
-        sn
-        (NetworkServerTracers
-          dtMuxLocalTracer
-          dtHandshakeLocalTracer
-          dtLocalErrorPolicyTracer
-          dtAcceptPolicyTracer)
-        networkLocalState
-        (Snocket.localAddressFromPath daLocalAddress)
-        (daLocalResponderApplication applications)
-        localErrorPolicy
+    runLocalServer :: IOManager
+                   -> NetworkMutableState LocalAddress
+                   -> IO Void
+    runLocalServer iocp networkLocalState =
+      bracket
+        (
+          case daLocalAddress of
+#if defined(mingw32_HOST_OS)
+               -- Windows uses named pipes so can't take advantage of existing sockets
+               Left _ -> throwIO UnsupportedReadySocket
+#else
+               Left sd -> do
+                   a <- Socket.getSocketName sd
+                   case a of
+                        (Socket.SockAddrUnix path) ->
+                          return (sd, Snocket.localSnocket iocp path)
+                        _                          ->
+                            -- TODO: This should be logged.
+                            throwIO UnsupportedLocalSocketType
+#endif
+               Right a -> do
+                   let sn = Snocket.localSnocket iocp a
+                   sd <- Snocket.open sn (Snocket.addrFamily sn $ Snocket.localAddressFromPath a)
+                   return (sd, sn)
+        )
+        (\(sd,sn) -> Snocket.close sn sd) -- We close the socket here, even if it was provided for us.
+        (\(sd,sn) -> do
 
-    runServer :: SocketSnocket -> NetworkMutableState SockAddr -> SockAddr -> IO Void
+          case daLocalAddress of
+               Left _ -> pure () -- If a socket was provided it should be ready to accept
+               Right a -> do
+                 Snocket.bind sn sd $ Snocket.localAddressFromPath a
+                 Snocket.listen sn sd
+
+          NodeToClient.withServer
+            sn
+            (NetworkServerTracers
+              dtMuxLocalTracer
+              dtHandshakeLocalTracer
+              dtLocalErrorPolicyTracer
+              dtAcceptPolicyTracer)
+            networkLocalState
+            sd
+            (daLocalResponderApplication applications)
+            localErrorPolicy
+         )
+
+    runServer :: SocketSnocket -> NetworkMutableState SockAddr -> Either Socket.Socket SockAddr -> IO Void
     runServer sn networkState address =
-      NodeToNode.withServer
-        sn
-        (NetworkServerTracers
-          dtMuxTracer
-          dtHandshakeTracer
-          dtErrorPolicyTracer
-          dtAcceptPolicyTracer)
-        networkState
-        daAcceptedConnectionsLimit
-        address
-        (daResponderApplication applications)
-        remoteErrorPolicy
+      bracket
+        (
+          case address of
+               Left sd -> return sd
+               Right a -> Snocket.open sn (Snocket.addrFamily sn a)
+        )
+        (Snocket.close sn) -- We close the socket here, even if it was provided for us.
+        (\sd -> do
 
+          case address of
+               Left _ -> pure () -- If a socket was provided it should be ready to accept
+               Right a -> do
+                 Snocket.bind sn sd a
+                 Snocket.listen sn sd
+
+          NodeToNode.withServer
+            sn
+            (NetworkServerTracers
+              dtMuxTracer
+              dtHandshakeTracer
+              dtErrorPolicyTracer
+              dtAcceptPolicyTracer)
+            networkState
+            daAcceptedConnectionsLimit
+            sd
+            (daResponderApplication applications)
+            remoteErrorPolicy
+        )
     runIpSubscriptionWorker :: SocketSnocket
                             -> NetworkMutableState SockAddr
+                            -> LocalAddresses SockAddr
                             -> IO Void
-    runIpSubscriptionWorker sn networkState = NodeToNode.ipSubscriptionWorker
+    runIpSubscriptionWorker sn networkState la = NodeToNode.ipSubscriptionWorker
       sn
       (NetworkSubscriptionTracers
         dtMuxTracer
@@ -253,7 +325,7 @@ runDataDiffusion tracers
         dtIpSubscriptionTracer)
       networkState
       SubscriptionParams
-        { spLocalAddresses         = initiatorLocalAddresses
+        { spLocalAddresses         = la
         , spConnectionAttemptDelay = const Nothing
         , spErrorPolicies          = remoteErrorPolicy
         , spSubscriptionTarget     = daIpProducers
@@ -262,9 +334,10 @@ runDataDiffusion tracers
 
     runDnsSubscriptionWorker :: SocketSnocket
                              -> NetworkMutableState SockAddr
+                             -> LocalAddresses SockAddr
                              -> DnsSubscriptionTarget
                              -> IO Void
-    runDnsSubscriptionWorker sn networkState dnsProducer = NodeToNode.dnsSubscriptionWorker
+    runDnsSubscriptionWorker sn networkState la dnsProducer = NodeToNode.dnsSubscriptionWorker
       sn
       (NetworkDNSSubscriptionTracers
         dtMuxTracer
@@ -274,7 +347,7 @@ runDataDiffusion tracers
         dtDnsResolverTracer)
       networkState
       SubscriptionParams
-        { spLocalAddresses         = initiatorLocalAddresses
+        { spLocalAddresses         = la
         , spConnectionAttemptDelay = const Nothing
         , spErrorPolicies          = remoteErrorPolicy
         , spSubscriptionTarget     = dnsProducer

@@ -511,19 +511,19 @@ withServer
   -> NetworkServerTracers Socket.SockAddr NodeToNodeVersion
   -> NetworkMutableState Socket.SockAddr
   -> AcceptedConnectionsLimit
-  -> Socket.SockAddr
+  -> Socket.Socket
   -> Versions NodeToNodeVersion DictVersion
               (ConnectionId Socket.SockAddr ->
                  OuroborosApplication appType BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
-withServer sn tracers networkState acceptedConnectionsLimit addr versions errPolicies =
-  withServerNode
+withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolicies =
+  withServerNode'
     sn
     tracers
     networkState
     acceptedConnectionsLimit
-    addr
+    sd
     nodeToNodeHandshakeCodec
     cborTermVersionDataCodec
     (\(DictVersion _) -> acceptableVersion)
@@ -540,15 +540,15 @@ withServer_V1
   -> NetworkServerTracers Socket.SockAddr NodeToNodeVersion
   -> NetworkMutableState Socket.SockAddr
   -> AcceptedConnectionsLimit
-  -> Socket.SockAddr
+  -> Socket.Socket
   -> NodeToNodeVersionData
   -> (ConnectionId Socket.SockAddr ->
         OuroborosApplication appType BL.ByteString IO x y)
   -> ErrorPolicies
   -> IO Void
-withServer_V1 sn tracers networkState acceptedConnectionsLimit addr versionData application =
+withServer_V1 sn tracers networkState acceptedConnectionsLimit sd versionData application =
     withServer
-      sn tracers networkState acceptedConnectionsLimit addr
+      sn tracers networkState acceptedConnectionsLimit sd
       (simpleSingletonVersions
           NodeToNodeV_1
           versionData

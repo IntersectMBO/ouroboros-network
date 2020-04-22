@@ -404,19 +404,19 @@ withServer
   => LocalSnocket
   -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
-  -> LocalAddress
+  -> LocalFD
   -> Versions NodeToClientVersion DictVersion
               (ConnectionId LocalAddress ->
                  OuroborosApplication appType BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
-withServer sn tracers networkState addr versions errPolicies =
-  withServerNode
+withServer sn tracers networkState sd versions errPolicies =
+  withServerNode'
     sn
     tracers
     networkState
     (AcceptedConnectionsLimit maxBound maxBound 0)
-    addr
+    sd
     nodeToClientHandshakeCodec
     cborTermVersionDataCodec
     (\(DictVersion _) -> acceptableVersion)
@@ -433,7 +433,7 @@ withServer_V1
   => LocalSnocket
   -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
-  -> LocalAddress
+  -> LocalFD
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
@@ -444,9 +444,9 @@ withServer_V1
   -- 'OuroborosInitiatorAndResponderApplication'.
   -> ErrorPolicies
   -> IO Void
-withServer_V1 sn tracers networkState addr versionData application =
+withServer_V1 sn tracers networkState sd versionData application =
     withServer
-      sn tracers networkState addr
+      sn tracers networkState sd
       (simpleSingletonVersions
         NodeToClientV_1
         versionData
@@ -465,7 +465,7 @@ withServer_V2
   => LocalSnocket
   -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
-  -> LocalAddress
+  -> LocalFD
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
@@ -480,9 +480,9 @@ withServer_V2
   -- 'LocalStateQuery' mini-protocol.
   -> ErrorPolicies
   -> IO Void
-withServer_V2 sn tracers networkState addr versionData application_V1 application_V2 =
+withServer_V2 sn tracers networkState sd versionData application_V1 application_V2 =
     withServer
-      sn tracers networkState addr
+      sn tracers networkState sd
       (
           simpleSingletonVersions
             NodeToClientV_1
