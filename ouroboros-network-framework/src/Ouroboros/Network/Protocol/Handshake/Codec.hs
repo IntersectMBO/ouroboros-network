@@ -11,26 +11,32 @@ module Ouroboros.Network.Protocol.Handshake.Codec
 
   , byteLimitsHandshake
   , timeLimitsHandshake
+
+  , encodeRefuseReason
+  , decodeRefuseReason
   ) where
 
 import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
-import           Control.Monad (unless)
+import           Control.Monad (unless, replicateM)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
+import           Data.Either (partitionEithers)
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Maybe (mapMaybe)
 
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Term     as CBOR
-import           Codec.Serialise (Serialise)
-import qualified Codec.Serialise     as CBOR
 
-import           Ouroboros.Network.Codec hiding (encode, decode)
+import           Ouroboros.Network.Codec
+import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Limits
 
 -- |
@@ -69,16 +75,18 @@ timeLimitsHandshake = ProtocolTimeLimits stateToLimit
 -- a single TCP segment.
 --
 codecHandshake
-  :: forall vNumber m.
+  :: forall vNumber m failure.
      ( Monad m
+     , MonadThrow m
      , MonadST m
      , Ord vNumber
      , Enum vNumber
-     , Serialise vNumber
      , Show vNumber
+     , Show failure
      )
-  => Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure m ByteString
-codecHandshake = mkCodecCborLazyBS encode decode
+  => CodecCBORTerm (failure, Maybe Int) vNumber
+  -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure m ByteString
+codecHandshake versionNumberCodec = mkCodecCborLazyBS encode decode
     where
       encode :: forall (pr :: PeerRole) st st'.
                 PeerHasAgency pr st
@@ -91,7 +99,7 @@ codecHandshake = mkCodecCborLazyBS encode decode
            CBOR.encodeListLen 2
         <> CBOR.encodeWord 0
         <> CBOR.encodeMapLen (fromIntegral $ length vs')
-        <> mconcat [    CBOR.encode vNumber
+        <> mconcat [    CBOR.encodeTerm (encodeTerm versionNumberCodec vNumber)
                      <> CBOR.encodeTerm vParams
                    | (vNumber, vParams) <- vs'
                    ]
@@ -99,13 +107,13 @@ codecHandshake = mkCodecCborLazyBS encode decode
       encode (ServerAgency TokConfirm) (MsgAcceptVersion vNumber vParams) =
            CBOR.encodeListLen 3
         <> CBOR.encodeWord 1
-        <> CBOR.encode vNumber
+        <> CBOR.encodeTerm (encodeTerm versionNumberCodec vNumber)
         <> CBOR.encodeTerm vParams
 
       encode (ServerAgency TokConfirm) (MsgRefuse vReason) =
            CBOR.encodeListLen 2
         <> CBOR.encodeWord 2
-        <> CBOR.encode vReason
+        <> encodeRefuseReason versionNumberCodec vReason
 
       -- decode a map checking the assumption that
       --  * keys are different
@@ -117,12 +125,18 @@ codecHandshake = mkCodecCborLazyBS encode decode
                 -> CBOR.Decoder s (Map vNumber CBOR.Term)
       decodeMap 0  _     !vs = return $ Map.fromDistinctAscList $ reverse vs
       decodeMap !l !prev !vs = do
-        vNumber <- CBOR.decode
-        let next = Just vNumber
-        unless (next > prev)
-          $ fail "codecHandshake.Propose: unordered version"
+        vNumberTerm <- CBOR.decodeTerm
         vParams <- CBOR.decodeTerm
-        decodeMap (pred l) next ((vNumber,vParams) : vs)
+        case decodeTerm versionNumberCodec vNumberTerm of
+          -- error when decoding un-recognized version; skip the version
+          -- TODO: include error in the dictionary
+          Left _        -> decodeMap (pred l) prev vs
+
+          Right vNumber -> do
+            let next = Just vNumber
+            unless (next > prev)
+              $ fail "codecHandshake.Propose: unordered version"
+            decodeMap (pred l) next ((vNumber, vParams) : vs)
 
       decode :: forall (pr :: PeerRole) s (st :: Handshake vNumber CBOR.Term).
                 PeerHasAgency pr st
@@ -135,9 +149,64 @@ codecHandshake = mkCodecCborLazyBS encode decode
             l  <- CBOR.decodeMapLen
             vMap <- decodeMap l Nothing []
             pure $ SomeMessage $ MsgProposeVersions vMap
-          (ServerAgency TokConfirm, 1) ->
-            SomeMessage <$> (MsgAcceptVersion <$> CBOR.decode <*> CBOR.decodeTerm)
-          (ServerAgency TokConfirm, 2) -> SomeMessage . MsgRefuse <$> CBOR.decode
+          (ServerAgency TokConfirm, 1) -> do
+            v <- decodeTerm versionNumberCodec <$> CBOR.decodeTerm
+            case v of
+              -- at this stage we can throw exception when decoding
+              -- version number: 'MsgAcceptVersion' must send us back
+              -- version which we know how to decode
+              Left e -> fail ("codecHandshake.MsgAcceptVersion: not recognized version: " ++ show e)
+              Right vNumber ->
+                SomeMessage . MsgAcceptVersion vNumber <$> CBOR.decodeTerm
+          (ServerAgency TokConfirm, 2) ->
+            SomeMessage . MsgRefuse <$> decodeRefuseReason versionNumberCodec
 
           (ClientAgency TokPropose, _) -> fail "codecHandshake.Propose: unexpected key"
           (ServerAgency TokConfirm, _) -> fail "codecHandshake.Confirm: unexpected key"
+
+
+encodeRefuseReason :: CodecCBORTerm fail vNumber
+                   -> RefuseReason vNumber
+                   -> CBOR.Encoding
+encodeRefuseReason versionNumberCodec (VersionMismatch vs _) =
+         CBOR.encodeListLen 2
+      <> CBOR.encodeWord 0
+      <> CBOR.encodeListLen (fromIntegral $ length vs)
+      <> foldMap (CBOR.encodeTerm . encodeTerm versionNumberCodec) vs
+encodeRefuseReason versionNumberCodec (HandshakeDecodeError vNumber vError) =
+         CBOR.encodeListLen 3
+      <> CBOR.encodeWord 1
+      <> CBOR.encodeTerm (encodeTerm versionNumberCodec vNumber)
+      <> CBOR.encodeString vError
+encodeRefuseReason versionNumberCodec (Refused vNumber vReason) =
+         CBOR.encodeListLen 3
+      <> CBOR.encodeWord 2
+      <> CBOR.encodeTerm (encodeTerm versionNumberCodec vNumber)
+      <> CBOR.encodeString vReason
+
+
+decodeRefuseReason :: Show failure
+                   => CodecCBORTerm (failure, Maybe Int) vNumber
+                   -> CBOR.Decoder s (RefuseReason vNumber)
+decodeRefuseReason versionNumberCodec = do
+    _ <- CBOR.decodeListLen
+    tag <- CBOR.decodeWord
+    case tag of
+      0 -> do
+        len <- CBOR.decodeListLen
+        rs <- replicateM len
+                (decodeTerm versionNumberCodec <$> CBOR.decodeTerm)
+        case partitionEithers rs of
+          (errs, vNumbers) -> 
+            pure $ VersionMismatch vNumbers (mapMaybe snd errs)
+      1 -> do
+        v <- decodeTerm versionNumberCodec <$> CBOR.decodeTerm
+        case v of
+          Left e        -> fail $ "decode HandshakeDecodeError: unknow version: " ++ show e
+          Right vNumber -> HandshakeDecodeError vNumber <$> CBOR.decodeString
+      2 -> do
+        v <- decodeTerm versionNumberCodec <$> CBOR.decodeTerm
+        case v of
+          Left e        -> fail $ "decode Refused: unknonwn version: " ++ show e
+          Right vNumber -> Refused vNumber <$> CBOR.decodeString
+      _ -> fail $ "decode RefuseReason: unknown tag " ++ show tag

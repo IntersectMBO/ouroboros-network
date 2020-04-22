@@ -15,30 +15,28 @@ module Ouroboros.Network.Protocol.Handshake.Version
   , Acceptable (..)
   , Dict (..)
   , DictVersion (..)
-  , CodecCBORTerm (..)
   , pickVersions
   , VersionMismatch (..)
 
   -- * Simple or no versioning
   , simpleSingletonVersions
-  , unversionedProtocol
   , foldMapVersions
   , combineVersions
   , foldMapVersions'
   , combineVersions'
   ) where
 
-import Data.Map (Map)
-import Data.Text (Text)
+import           Data.Map (Map)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
-import qualified Data.Text as T
+import           Data.Text (Text)
 import qualified Data.Map as Map
-import Data.Typeable ((:~:)(Refl), Typeable, eqT)
+import           Data.Typeable ((:~:)(Refl), Typeable, eqT)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
-import Codec.Serialise (Serialise(..))
+
+import           Ouroboros.Network.CodecCBORTerm
 
 
 -- Description of versions.
@@ -54,8 +52,9 @@ import Codec.Serialise (Serialise(..))
 -- | The set of versions supported by the local agent are described by a map
 -- keyed on the version identifier.
 --
--- If one needs to combine multiple versions the simplest way is to use the
--- 'Semigroup' instance.
+-- If one needs to combine multiple versions the simplest way is to use
+-- one of the combinators: 'foldMapVersions', 'combineVersions' or the
+-- 'Semigroup' instance directly:
 --
 -- >
 -- > fold $ (simpleSingletonVersions ...)
@@ -144,11 +143,6 @@ data DictVersion vData where
                  => CodecCBORTerm Text vData
                  -> DictVersion vData
 
-data CodecCBORTerm fail a = CodecCBORTerm
-  { encodeTerm :: a -> CBOR.Term
-  , decodeTerm :: CBOR.Term -> Either fail a
-  }
-
 -- | Pick the version with the highest version number (by `Ord vNum`) common
 -- in both maps.
 --
@@ -183,37 +177,6 @@ pickVersions isTypeable lversions rversions = case Map.toDescList commonVersions
   commonVersions = getVersions lversions `intersect` getVersions rversions
   intersect = Map.intersectionWith (,)
 
--- Examples commented out because of unused definition warnings.
-
-{-
-import Data.Functor.Const (Const (..))
-
-exApplication1 :: Application (IO ()) ()
-exApplication1 = Application $ \localUnit remoteUnit ->
-  putStrLn "Application 1 does nothing"
-
-exVersion1 :: Version (Const ()) (IO ()) ()
-exVersion1 = Version exApplication1 (Const ())
-
-newtype Magic = Magic { getMagic :: Word32 }
-  deriving (Show, Eq)
-
-exApplication2 :: Application (IO ()) Magic
-exApplication2 = Application $ \localMagic remoteMagic ->
-  if localMagic == remoteMagic
-  then putStrLn "Magic is consistent"
-  else putStrLn "Magic is inconsistent"
-
-exVersion2 :: Version (Const ()) (IO ()) Magic
-exVersion2 = Version exApplication2 (Const ())
-
-exVersions :: Versions (Const ()) (IO ())
-exVersions = Versions $ Map.fromList
-  [ (0, Sigma () exVersion1)
-  , (1, Sigma (Magic 42) exVersion2)
-  ]
--}
-
 --
 -- Simple version negotation
 --
@@ -230,42 +193,3 @@ simpleSingletonVersions vNum vData extra r =
   Versions
     $ Map.singleton vNum
         (Sigma vData (Version (Application $ \_ _ -> r) extra))
-
--- | Version negotiation for an unversioned protocol. Only use this for
--- tests and demos where proper versioning is excessive.
---
-data UnversionedProtocol = UnversionedProtocol
-  deriving (Eq, Ord, Enum, Show)
-
-instance Serialise UnversionedProtocol where
-    encode UnversionedProtocol = CBOR.encodeWord 1
-    decode = do
-      tag <- CBOR.decodeWord
-      case tag of
-        1 -> return UnversionedProtocol
-        _ -> fail "decode UnversionedProtocol: expected version 1"
-
-data UnversionedProtocolData = UnversionedProtocolData
-  deriving (Eq, Show)
-
-instance Acceptable UnversionedProtocolData where
-  acceptableVersion UnversionedProtocolData
-                    UnversionedProtocolData = Accept
-
-unversionedProtocolDataCodec :: CodecCBORTerm Text UnversionedProtocolData
-unversionedProtocolDataCodec = CodecCBORTerm {encodeTerm, decodeTerm}
-    where
-      encodeTerm :: UnversionedProtocolData -> CBOR.Term
-      encodeTerm UnversionedProtocolData = CBOR.TNull
-
-      decodeTerm :: CBOR.Term -> Either Text UnversionedProtocolData
-      decodeTerm CBOR.TNull = Right UnversionedProtocolData
-      decodeTerm t          = Left $ T.pack $ "unexpected term: " ++ show t
-
--- | Make a 'Versions' for an unversioned protocol. Only use this for
--- tests and demos where proper versioning is excessive.
---
-unversionedProtocol :: app -> Versions UnversionedProtocol DictVersion app
-unversionedProtocol =
-    simpleSingletonVersions UnversionedProtocol UnversionedProtocolData
-                            (DictVersion unversionedProtocolDataCodec)

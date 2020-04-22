@@ -38,6 +38,7 @@ import           Codec.Serialise (DeserialiseFailure)
 import           Control.Monad (when)
 import           Control.Tracer (Tracer)
 import           Data.ByteString.Lazy (ByteString)
+import           Data.List.NonEmpty (NonEmpty)
 import           Data.Proxy (Proxy (..))
 
 import           Ouroboros.Network.Diffusion
@@ -121,6 +122,14 @@ data RunNodeArgs blk = RunNodeArgs {
       -- | Customise the 'NodeArgs'
     , rnCustomiseNodeArgs :: NodeArgs IO RemoteConnectionId LocalConnectionId blk
                           -> NodeArgs IO RemoteConnectionId LocalConnectionId blk
+
+      -- | node-to-node protocol versions to run.
+      --
+    , rnNodeToNodeVersions   :: NonEmpty (NodeToNodeVersion blk)
+
+      -- | node-to-client protocol versions to run.
+      --
+    , rnNodeToClientVersions :: NonEmpty (NodeToClientVersion blk)
 
       -- | Hook called after the initialisation of the 'NodeKernel'
       --
@@ -261,7 +270,7 @@ run RunNodeArgs{..} = do
                 nodeToNodeVersionData
                 (DictVersion nodeToNodeCodecCBORTerm)
                 (NTN.responder miniProtocolParams version' $ ntnApps version)
-            | version <- supportedNodeToNodeVersions (Proxy @blk)
+            | version <- rnNodeToNodeVersions
             , let version' = nodeToNodeProtocolVersion (Proxy @blk) version
             ]
         , daInitiatorApplication = combineVersions [
@@ -270,7 +279,7 @@ run RunNodeArgs{..} = do
                 nodeToNodeVersionData
                 (DictVersion nodeToNodeCodecCBORTerm)
                 (NTN.initiator miniProtocolParams version' $ ntnApps version)
-            | version <- supportedNodeToNodeVersions (Proxy @blk)
+            | version <- rnNodeToNodeVersions
             , let version' = nodeToNodeProtocolVersion (Proxy @blk) version
             ]
         , daLocalResponderApplication = combineVersions [
@@ -279,7 +288,7 @@ run RunNodeArgs{..} = do
                 nodeToClientVersionData
                 (DictVersion nodeToClientCodecCBORTerm)
                 (NTC.responder version' $ ntcApps version)
-            | version <- supportedNodeToClientVersions (Proxy @blk)
+            | version <- rnNodeToClientVersions
             , let version' = nodeToClientProtocolVersion (Proxy @blk) version
             ]
         , daErrorPolicies = consensusErrorPolicy (Proxy @blk)

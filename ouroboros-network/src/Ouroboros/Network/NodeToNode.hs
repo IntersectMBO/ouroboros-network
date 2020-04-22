@@ -18,7 +18,6 @@ module Ouroboros.Network.NodeToNode (
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
   , DictVersion (..)
-  , nodeToNodeCodecCBORTerm
 
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
@@ -59,6 +58,10 @@ module Ouroboros.Network.NodeToNode (
   , simpleSingletonVersions
   , foldMapVersions
   , combineVersions
+    -- *** Codecs
+  , nodeToNodeHandshakeCodec
+  , nodeToNodeVersionCodec
+  , nodeToNodeCodecCBORTerm
 
   -- * Re-exports
   , ConnectionId (..)
@@ -89,6 +92,9 @@ module Ouroboros.Network.NodeToNode (
 
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
+import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadThrow
+
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int (Int64)
 import           Data.Time.Clock (DiffTime)
@@ -97,13 +103,13 @@ import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           Data.Word
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
-import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Network.Mux (WithMuxBearer (..))
 import qualified Network.Socket as Socket
 
+import           Ouroboros.Network.Codec
+import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure)
 import           Ouroboros.Network.IOManager
@@ -111,6 +117,7 @@ import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import qualified Ouroboros.Network.Protocol.Handshake.Version as V
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
@@ -405,13 +412,27 @@ nodeToNodeProtocols MiniProtocolParameters {
 data NodeToNodeVersion = NodeToNodeV_1
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
-instance Serialise NodeToNodeVersion where
-    encode NodeToNodeV_1 = CBOR.encodeWord 1
-    decode = do
-      tag <- CBOR.decodeWord
-      case tag of
-        1 -> return NodeToNodeV_1
-        _ -> fail ("decode NodeToNodeVersion: unknown tag " ++ show tag)
+nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
+nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
+  where
+    encodeTerm NodeToNodeV_1  = CBOR.TInt 1
+
+    decodeTerm (CBOR.TInt 1) = Right NodeToNodeV_1
+    decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
+                                        <> T.pack (show n)
+                                    , Just n
+                                    )
+    decodeTerm _ = Left ( T.pack "decode NodeToNodeVersion: unexpected term"
+                        , Nothing)
+
+-- | 'Hanshake' codec for the @node-to-node@ protocol suite.
+--
+nodeToNodeHandshakeCodec :: ( MonadST    m
+                            , MonadThrow m
+                            )
+                         => Codec (Handshake NodeToNodeVersion CBOR.Term)
+                                  CBOR.DeserialiseFailure m BL.ByteString
+nodeToNodeHandshakeCodec = codecHandshake nodeToNodeVersionCodec
 
 -- | Version data for NodeToNode protocol v1
 --
@@ -450,7 +471,7 @@ connectTo
   -> Socket.SockAddr
   -> IO ()
 connectTo sn =
-    connectToNode sn cborTermVersionDataCodec
+    connectToNode sn nodeToNodeHandshakeCodec cborTermVersionDataCodec
 
 
 -- | Like 'connectTo' but specific to 'NodeToNodeV_1'.
@@ -503,6 +524,7 @@ withServer sn tracers networkState acceptedConnectionsLimit addr versions errPol
     networkState
     acceptedConnectionsLimit
     addr
+    nodeToNodeHandshakeCodec
     cborTermVersionDataCodec
     (\(DictVersion _) -> acceptableVersion)
     (fmap (SomeResponderApplication .) versions)
@@ -569,6 +591,7 @@ ipSubscriptionWorker
         subscriptionParams
         (connectToNode'
           sn
+          nodeToNodeHandshakeCodec
           cborTermVersionDataCodec
           (NetworkConnectTracers nsMuxTracer nsHandshakeTracer)
           versions)
@@ -643,6 +666,7 @@ dnsSubscriptionWorker
       subscriptionParams
       (connectToNode'
         sn
+        nodeToNodeHandshakeCodec
         cborTermVersionDataCodec
         (NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer)
         versions)
@@ -703,7 +727,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
           -- producer, as it's likely that the other side of the connection
           -- will return grabage as well.
         , ErrorPolicy
-            $ \(_ :: DeserialiseFailure)
+            $ \(_ :: CBOR.DeserialiseFailure)
                   -> Just theyBuggyOrEvil
 
           -- the connection was unexpectedly closed, we suspend the peer for
@@ -793,7 +817,7 @@ localNetworkErrorPolicy = ErrorPolicies {
 
           -- deserialisation failure
         , ErrorPolicy
-            $ \(_ :: DeserialiseFailure) -> Nothing
+            $ \(_ :: CBOR.DeserialiseFailure) -> Nothing
 
           -- the connection was unexpectedly closed, we suspend the peer for
           -- a 'shortDelay'

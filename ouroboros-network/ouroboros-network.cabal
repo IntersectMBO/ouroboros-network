@@ -287,6 +287,8 @@ test-suite test-cddl
                        cborg,
                        containers,
                        contra-tracer,
+                       directory,
+                       filepath,
                        fingertree,
                        hashable,
                        io-sim,

@@ -59,6 +59,7 @@ import           Network.Mux.Types ( MiniProtocolMode (..) , MuxSDU (..), MuxSDU
 import           Network.Mux.Timeout
 
 import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version
 
 import           Test.QuickCheck
@@ -239,6 +240,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
         networkState
         (AcceptedConnectionsLimit maxBound maxBound 0)
         responderAddr
+        unversionedHandshakeCodec
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptableVersion)
         (unversionedProtocol (\_peerid -> SomeResponderApplication responderApp))
@@ -246,6 +248,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
         $ \_ _ -> do
           connectToNode
             snocket
+            unversionedHandshakeCodec
             cborTermVersionDataCodec
             (NetworkConnectTracers activeMuxTracer nullTracer)
             (unversionedProtocol (\_peerid -> initiatorApp))
@@ -477,6 +480,7 @@ prop_socket_client_connect_error _ xs =
     (res :: Either IOException Bool)
       <- try $ False <$ connectToNode
         (socketSnocket iomgr)
+        unversionedHandshakeCodec
         cborTermVersionDataCodec
         nullNetworkConnectTracers
         (unversionedProtocol (\_peerid -> app))

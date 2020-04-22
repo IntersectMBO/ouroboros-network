@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DataKinds #-}
@@ -17,6 +18,9 @@ import qualified Data.ByteString.Internal as BSI
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy.Char8 as Char8 (lines, unpack)
 import Data.List (intercalate)
+
+import System.Directory (doesDirectoryExist)
+import System.FilePath
 
 import Test.QuickCheck
 import Test.Tasty (defaultMain, TestTree, testGroup, adjustOption)
@@ -39,9 +43,8 @@ import Ouroboros.Network.Protocol.ChainSync.Test ()
 import Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetch)
 import Ouroboros.Network.Protocol.BlockFetch.Test ()
 import Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
-import Ouroboros.Network.Protocol.Handshake.Codec (codecHandshake)
 import Ouroboros.Network.Protocol.Handshake.Type as Handshake
-import Ouroboros.Network.Protocol.Handshake.Test (VersionNumber)
+import Ouroboros.Network.Protocol.Handshake.Test (VersionNumber, versionNumberHandshakeCodec)
 import Ouroboros.Network.Protocol.TxSubmission.Codec (codecTxSubmission)
 import Ouroboros.Network.Protocol.TxSubmission.Type as TxSubmission
 import Ouroboros.Network.Protocol.TxSubmission.Test (TxId, Tx)
@@ -50,10 +53,6 @@ import Ouroboros.Network.Protocol.LocalTxSubmission.Type as LocalTxSubmission
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test as LocalTxSubmission (Tx, Reject)
 
 
--- These files must be in place:
-specFile :: FilePath
-specFile = "test/messages.cddl"
-
 cddlTool :: FilePath
 cddlTool = "cddl"
 
@@ -61,21 +60,26 @@ diag2cborTool :: FilePath
 diag2cborTool = "diag2cbor.rb"
 
 main :: IO ()
-main = defaultMain tests
+main = do
+    a <- doesDirectoryExist "ouroboros-network"
+    let specPath =
+          if a then "ouroboros-network" </> "test" </> "messages.cddl"
+               else "test" </> "messages.cddl"
+    defaultMain (tests specPath)
 
-tests :: TestTree
-tests =
+tests :: FilePath -> TestTree
+tests specPath =
   adjustOption (const $ QuickCheckMaxSize 10) $ testGroup "messages.cddl-spec"
   [
 -- These tests call the CDDL-tool to parse an arbitray message.
 -- The parser of the CDDL-tool is slow (exponential runtime & space).
-    testProperty "encode ChainSync"             prop_specCS
-  , testProperty "encode BlockFetch"            prop_specBF
-  , testProperty "encode TxSubmission"          prop_specTxSubmission
-  , testProperty "encode Handshake"             prop_specHandshake
-  , testProperty "encode local Tx submission"   prop_specLocalTxSubmission
+    testProperty "encode ChainSync"             (prop_specCS specPath)
+  , testProperty "encode BlockFetch"            (prop_specBF specPath)
+  , testProperty "encode TxSubmission"          (prop_specTxSubmission specPath)
+  , testProperty "encode Handshake"             (prop_specHandshake specPath)
+  , testProperty "encode local Tx submission"   (prop_specLocalTxSubmission specPath)
   -- Test the parsers with CDDL-generated messages.
-  , testProperty "generate and decode" $ ioProperty $ generateAndDecode 100 specFile
+  , testProperty "generate and decode" $ ioProperty $ generateAndDecode 100 specPath
   ]
 
 -- The concrete/monomorphic types used for the test.
@@ -103,26 +107,30 @@ codecTS = codecTxSubmission Serialise.encode Serialise.decode Serialise.encode S
 codecLT :: MonoCodec LT
 codecLT = codecLocalTxSubmission Serialise.encode Serialise.decode Serialise.encode Serialise.decode
 
-prop_specCS :: AnyMessageAndAgency CS -> Property
-prop_specCS = prop_CDDLSpec (0, codecCS)
+prop_specCS :: FilePath -> AnyMessageAndAgency CS -> Property
+prop_specCS specPath = prop_CDDLSpec specPath (0, codecCS)
 
-prop_specBF :: AnyMessageAndAgency BF -> Property
-prop_specBF = prop_CDDLSpec (3, codecBF)
+prop_specBF :: FilePath -> AnyMessageAndAgency BF -> Property
+prop_specBF specPath = prop_CDDLSpec specPath (3, codecBF)
 
-prop_specTxSubmission :: AnyMessageAndAgency TS -> Property
-prop_specTxSubmission = prop_CDDLSpec (4, codecTS)
+prop_specTxSubmission :: FilePath -> AnyMessageAndAgency TS -> Property
+prop_specTxSubmission specPath = prop_CDDLSpec specPath (4, codecTS)
 
-prop_specLocalTxSubmission :: AnyMessageAndAgency LT -> Property
-prop_specLocalTxSubmission = prop_CDDLSpec (6, codecLT)
+prop_specLocalTxSubmission :: FilePath -> AnyMessageAndAgency LT -> Property
+prop_specLocalTxSubmission specPath = prop_CDDLSpec specPath (6, codecLT)
 
-prop_specHandshake :: AnyMessageAndAgency HS -> Property
-prop_specHandshake = prop_CDDLSpec (5, codecHandshake)
+-- TODO: this test should use 'nodeToNodeHandshakeCodec' and
+-- 'nodeToClientHandshakeCodec'
+prop_specHandshake :: FilePath -> AnyMessageAndAgency HS -> Property
+prop_specHandshake specPath = prop_CDDLSpec specPath (5, versionNumberHandshakeCodec)
 
-prop_CDDLSpec :: (Word, MonoCodec ps) -> AnyMessageAndAgency ps -> Property
-prop_CDDLSpec (tagWord, codec) (AnyMessageAndAgency agency msg)
+prop_CDDLSpec :: FilePath -- ^ "messages.cddl" spec file path
+              -> (Word, MonoCodec ps)
+              -> AnyMessageAndAgency ps -> Property
+prop_CDDLSpec specPath (tagWord, codec) (AnyMessageAndAgency agency msg)
     = ioProperty $ do
 --         print $ BSL.unpack wrappedMsg
-         validateCBOR specFile wrappedMsg
+         validateCBOR specPath wrappedMsg
     where
         innerBS = encode codec agency msg
         body = case deserialiseFromBytes decodeTerm innerBS of
@@ -257,7 +265,8 @@ decodeMsg (tag, input) = case tag of
             , runBlockFetch (ServerAgency BlockFetch.TokStreaming)
             ]
 
-        runHandshake = run (codecHandshake :: MonoCodec HS)
+        -- Use 'nodeToNodeHandshakeCodec' and 'nodeToClientHandshakeCodec'
+        runHandshake = run (versionNumberHandshakeCodec :: MonoCodec HS)
         handshakeParsers = [
               runHandshake (ClientAgency TokPropose)
             , runHandshake (ServerAgency TokConfirm)

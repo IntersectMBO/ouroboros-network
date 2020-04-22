@@ -46,14 +46,11 @@ import           Data.List (intersect)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term     as CBOR
-import           Codec.Serialise (Serialise)
-import qualified Codec.Serialise     as CBOR
 
 import           Network.TypedProtocol.Core
 
+import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Protocol.Handshake.Version
 
 -- |
@@ -70,43 +67,22 @@ data Handshake vNumber vParams where
 -- Reasons by which a server can refuse proposed version.
 --
 data RefuseReason vNumber
-  -- |
-  -- All of the prosed versions where not known to the server.
-  = VersionMismatch [vNumber]
-  -- |
-  -- The server failed to decode version parameters.
+  -- | All of the prosed versions where not known to the server.
+  -- Since the server sends all versions that it can knows about, some of them
+  -- we might not be able to decode, so we include raw tags @[Int]@.
+  --
+  = VersionMismatch [vNumber] [Int]
+
+  -- | The server failed to decode version parameters.
+  --
   | HandshakeDecodeError vNumber Text
-  -- |
-  -- The server refused to run the proposed version parameters
+
+  -- | The server refused to run the proposed version parameters
+  --
   | Refused vNumber Text
   deriving (Eq, Show)
 
 instance (Typeable vNumber, Show vNumber) => Exception (RefuseReason vNumber)
-
-instance Serialise vNumber => Serialise (RefuseReason vNumber) where
-    encode (VersionMismatch vs) =
-         CBOR.encodeListLen 2
-      <> CBOR.encodeWord 0
-      <> CBOR.encode vs
-    encode (HandshakeDecodeError vNumber vError) =
-         CBOR.encodeListLen 3
-      <> CBOR.encodeWord 1
-      <> CBOR.encode vNumber
-      <> CBOR.encodeString vError
-    encode (Refused vNumber vReason) =
-         CBOR.encodeListLen 3
-      <> CBOR.encodeWord 2
-      <> CBOR.encode vNumber
-      <> CBOR.encodeString vReason
-
-    decode = do
-      _ <- CBOR.decodeListLen
-      tag <- CBOR.decodeWord
-      case tag of
-        0 -> VersionMismatch <$> CBOR.decode
-        1 -> HandshakeDecodeError <$> CBOR.decode <*> CBOR.decodeString
-        2 -> Refused <$> CBOR.decode <*> CBOR.decodeString
-        _ -> fail $ "decode RefuseReason: unknown tag " ++ show tag
 
 
 instance Protocol (Handshake vNumber vParams) where
@@ -184,14 +160,16 @@ instance (Typeable vNumber, Show vNumber)
 -- | Codec for version data ('vData' in code) exchanged by the handshake
 -- protocol.
 --
-data VersionDataCodec extra bites = VersionDataCodec {
-    encodeData :: forall vData. extra vData -> vData -> bites,
+data VersionDataCodec extra bytes = VersionDataCodec {
+    encodeData :: forall vData. extra vData -> vData -> bytes,
     -- ^ encoder of 'vData' which has access to 'extra vData' which can bring
     -- extra instances into the scope (by means of pattern matching on a GADT).
-    decodeData :: forall vData. extra vData -> bites -> Either Text vData
+    decodeData :: forall vData. extra vData -> bytes -> Either Text vData
     -- ^ decoder of 'vData'.
   }
 
+-- TODO: remove this from top level API, this is the only way we encode or
+-- decode version data.
 cborTermVersionDataCodec :: VersionDataCodec DictVersion CBOR.Term
 cborTermVersionDataCodec = VersionDataCodec {
       encodeData = \(DictVersion codec) -> encodeTerm codec,
@@ -255,7 +233,7 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData} accVersion version
         -- different types.
         case map fst (Map.toDescList vMap) `intersect` map fst (Map.toDescList (getVersions versions)) of
           [] ->
-            let vReason = VersionMismatch $ Map.keys $ getVersions versions
+            let vReason = VersionMismatch (Map.keys $ getVersions versions) []
             in Yield (ServerAgency TokConfirm)
                      (MsgRefuse vReason)
                      (Done TokDone (Left vReason))

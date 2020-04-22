@@ -7,20 +7,27 @@
 module Ouroboros.Network.Protocol.Handshake.Test where
 
 import           Control.Monad.ST (runST)
+
 import           Data.Bool (bool)
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable, cast)
 import           Data.List (nub)
-import           Data.Maybe (isJust)
+import           Data.Maybe (fromMaybe, isJust)
 import qualified Data.Map as Map
 import           GHC.Generics
+
+import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Term as CBOR
 
 import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow (MonadCatch)
+import           Control.Monad.Class.MonadThrow ( MonadCatch
+                                                , MonadThrow
+                                                )
 import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Proofs
@@ -29,16 +36,22 @@ import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
+import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver
-import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import           Ouroboros.Network.Driver.Simple ( runConnectedPeers
+                                                 , runConnectedPeersAsymmetric
+                                                 )
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Codec
+import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version
 
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Term as CBOR
+import qualified Codec.CBOR.Term     as CBOR
+import qualified Codec.CBOR.Read     as CBOR
+import qualified Codec.CBOR.Write    as CBOR
 import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise     as CBOR
 
@@ -49,16 +62,19 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Protocol.Handshake"
-  [ testProperty "connect"             prop_connect
-  , testProperty "channel ST"          prop_channel_ST
-  , testProperty "channel IO"          prop_channel_IO
-  , testProperty "pipe IO"             prop_pipe_IO
-  , testProperty "codec RefuseReason"  prop_codec_RefuseReason
-  , testProperty "codec"               prop_codec_Handshake
-  , testProperty "codec 2-splits"      prop_codec_splits2_Handshake
-  , testProperty "codec 3-splits"    $ withMaxSuccess 30
-                                       prop_codec_splits3_Handshake
-  , testProperty "codec cbor"          prop_codec_cbor
+  [ testProperty "connect"               prop_connect
+  , testProperty "channel ST"            prop_channel_ST
+  , testProperty "channel IO"            prop_channel_IO
+  , testProperty "pipe IO"               prop_pipe_IO
+  , testProperty "channel asymmetric ST" prop_channel_asymmetric_ST
+  , testProperty "channel asymmetric IO" prop_channel_asymmetric_IO
+  , testProperty "pipe asymmetric IO"    prop_pipe_asymmetric_IO
+  , testProperty "codec RefuseReason"    prop_codec_RefuseReason
+  , testProperty "codec"                 prop_codec_Handshake
+  , testProperty "codec 2-splits"        prop_codec_splits2_Handshake
+  , testProperty "codec 3-splits"      $ withMaxSuccess 30
+                                         prop_codec_splits3_Handshake
+  , testProperty "codec cbor"            prop_codec_cbor
   , testGroup "Generators"
     [ testProperty "ArbitraryVersions" $
         checkCoverage prop_arbitrary_ArbitraryVersions
@@ -89,18 +105,26 @@ data VersionNumber
 instance Arbitrary VersionNumber where
   arbitrary = elements [minBound .. maxBound]
 
-instance Serialise VersionNumber where
-  encode Version_0 = CBOR.encodeWord 0
-  encode Version_1 = CBOR.encodeWord 1
-  encode Version_2 = CBOR.encodeWord 2
+versionNumberCodec :: CodecCBORTerm (String, Maybe Int) VersionNumber
+versionNumberCodec = CodecCBORTerm { encodeTerm, decodeTerm }
+  where
+    encodeTerm Version_0 = CBOR.TInt 0
+    encodeTerm Version_1 = CBOR.TInt 1
+    encodeTerm Version_2 = CBOR.TInt 2
 
-  decode = do
-    x <- CBOR.decodeWord
-    case x of
-      0 -> return Version_0
-      1 -> return Version_1
-      2 -> return Version_2
-      _ -> fail "decode VersionNumber: wrong tag"
+    decodeTerm (CBOR.TInt 0) = Right Version_0
+    decodeTerm (CBOR.TInt 1) = Right Version_1
+    decodeTerm (CBOR.TInt 2) = Right Version_2
+    decodeTerm (CBOR.TInt n) = Left ("unknown version", Just n)
+    decodeTerm _              = Left ("unknown tag", Nothing)
+
+
+versionNumberHandshakeCodec :: ( MonadST    m
+                               , MonadThrow m
+                               )
+                            => Codec (Handshake VersionNumber CBOR.Term)
+                                      CBOR.DeserialiseFailure m ByteString
+versionNumberHandshakeCodec = codecHandshake versionNumberCodec
 
 -- |
 -- Data Associated with @'Version_0'@
@@ -385,7 +409,7 @@ prop_channel createChannels clientVersions serverVersions =
   in do
     (clientRes', serverRes') <-
       runConnectedPeers
-        createChannels nullTracer codecHandshake
+        createChannels nullTracer versionNumberHandshakeCodec
         (handshakeClientPeer
           cborTermVersionDataCodec
           clientVersions)
@@ -393,10 +417,19 @@ prop_channel createChannels clientVersions serverVersions =
           cborTermVersionDataCodec
           (\(DictVersion _) -> acceptableVersion)
           serverVersions)
-    return $
-           maybe False id clientRes === either (const False) id clientRes'
-      .&&.
-           maybe False id serverRes === either (const False) id serverRes'
+    pure $
+      case (clientRes', serverRes') of
+        -- buth succeeded, we just check that the application (which is
+        -- a boolean value) is the one that was put inside 'Version'
+        (Right c, Right s) -> Just c === clientRes
+                         .&&. Just s === serverRes
+
+        -- both failed
+        (Left{}, Left{})   -> property True
+
+        -- it should not happen that one protocol succeeds and the other end
+        -- fails
+        _                  -> property False
 
 
 -- | Run 'prop_channel' in the simulation monad.
@@ -420,24 +453,133 @@ prop_pipe_IO (ArbitraryVersions clientVersions serverVersions) =
     ioProperty (prop_channel createPipeConnectedChannels clientVersions serverVersions)
 
 --
+-- Asymmetric tests
+--
+
+
+-- | Run a simple handshake client and server using connected channels.
+-- The server can only decode a subset of versions send by client.
+-- This test is using a fixed serverver 'Versions' which can only accept
+-- a single version 'Version_1' (it cannot decode any other version).
+--
+prop_channel_asymmetric
+    :: ( MonadAsync m
+       , MonadCatch m
+       , MonadST m
+       )
+    => m (Channel m ByteString, Channel m ByteString)
+    -> Versions VersionNumber DictVersion Bool
+    -- ^ client versions
+    -> m Property
+prop_channel_asymmetric createChannels clientVersions = do
+    (clientRes', serverRes') <-
+      runConnectedPeersAsymmetric
+        createChannels
+        nullTracer
+        versionNumberHandshakeCodec
+        (codecHandshake versionNumberCodec')
+        (handshakeClientPeer
+          cborTermVersionDataCodec
+          clientVersions)
+        (handshakeServerPeer
+          cborTermVersionDataCodec
+          (\(DictVersion _) -> acceptableVersion)
+          serverVersions)
+    pure $
+      case (clientRes', serverRes') of
+        (Right c, Right s) ->      Just c === clientRes
+                              .&&. Just s === serverRes
+        (Left{}, Left{})   -> property True
+        _                  -> property False
+
+  where
+    -- server versions
+    serverVersions :: Versions VersionNumber DictVersion Bool
+    serverVersions =
+      Versions
+        $ Map.singleton
+            Version_1
+            (Sigma
+              (Data_1 True)
+              (Version (Application (==))
+              (DictVersion data1CodecCBORTerm)))
+
+    -- This codec does not know how to decode 'Version_0' and 'Version_2'.
+    versionNumberCodec' :: CodecCBORTerm (String, Maybe Int) VersionNumber
+    versionNumberCodec' = CodecCBORTerm { encodeTerm, decodeTerm }
+      where
+        encodeTerm Version_1 = CBOR.TInt 1
+        encodeTerm _         = error "server encoder error"
+
+        decodeTerm (CBOR.TInt 1) = Right Version_1
+        decodeTerm (CBOR.TInt n) = Left ("unknown version", Just n)
+        decodeTerm _             = Left ("unknown tag", Nothing)
+
+    (serverRes, clientRes) =
+      pureHandshake
+        (\(DictVersion _) -> Dict)
+        (\(DictVersion _) vData vData' -> acceptableVersion vData vData' == Accept)
+        serverVersions
+        clientVersions
+
+
+
+-- | Run 'prop_channel' in the simulation monad.
+--
+prop_channel_asymmetric_ST :: ArbitraryVersions -> Property
+prop_channel_asymmetric_ST (ArbitraryVersions clientVersions _serverVersions) =
+    runSimOrThrow (prop_channel_asymmetric createConnectedChannels clientVersions)
+
+
+-- | Run 'prop_channel' in the IO monad.
+--
+prop_channel_asymmetric_IO :: ArbitraryVersions -> Property
+prop_channel_asymmetric_IO (ArbitraryVersions clientVersions _serverVersions) =
+    ioProperty (prop_channel_asymmetric createConnectedChannels clientVersions)
+
+
+-- | Run 'prop_channel' in the IO monad using local pipes.
+--
+prop_pipe_asymmetric_IO :: ArbitraryVersions -> Property
+prop_pipe_asymmetric_IO (ArbitraryVersions clientVersions _serverVersions) =
+    ioProperty (prop_channel_asymmetric createPipeConnectedChannels clientVersions)
+
+
+--
 -- Codec tests
 --
 
 instance Eq (AnyMessage (Handshake VersionNumber CBOR.Term)) where
-  AnyMessage (MsgProposeVersions vs)          == AnyMessage (MsgProposeVersions vs')  = vs == vs'
+  AnyMessage (MsgProposeVersions vs) == AnyMessage (MsgProposeVersions vs')
+    = vs == vs'
+
   AnyMessage (MsgAcceptVersion vNumber vParams) == AnyMessage (MsgAcceptVersion vNumber' vParams')
-                                                                                      = vNumber == vNumber' && vParams == vParams'
-  AnyMessage (MsgRefuse vReason)              == AnyMessage (MsgRefuse vReason')      = vReason == vReason'
-  _                                           == _                                    = False
+    = vNumber == vNumber' && vParams == vParams'
+
+  AnyMessage (MsgRefuse vReason) == AnyMessage (MsgRefuse vReason')
+    = vReason == vReason'
+
+  _ == _ = False
 
 instance Show (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) where
   show (AnyMessageAndAgency _ msg) = show msg
 
 instance Arbitrary (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) where
   arbitrary = oneof
-    [ AnyMessageAndAgency (ClientAgency TokPropose) . MsgProposeVersions . fmap (\(Sigma vData (Version _ (DictVersion codec))) -> encodeTerm codec vData) . getVersions <$> genVersions
-    , AnyMessageAndAgency (ServerAgency TokConfirm) . uncurry MsgAcceptVersion <$> genValidVersion'
-    , AnyMessageAndAgency (ServerAgency TokConfirm) . MsgRefuse . runArbitraryRefuseReason <$> arbitrary
+    [     AnyMessageAndAgency (ClientAgency TokPropose)
+        . MsgProposeVersions
+        . fmap (\(Sigma vData (Version _ (DictVersion codec))) -> encodeTerm codec vData)
+        . getVersions
+      <$> genVersions
+
+    ,     AnyMessageAndAgency (ServerAgency TokConfirm)
+        . uncurry MsgAcceptVersion
+      <$> genValidVersion'
+
+    ,     AnyMessageAndAgency (ServerAgency TokConfirm)
+        . MsgRefuse
+        . runArbitraryRefuseReason
+      <$> arbitrary
     ]
     where
       genValidVersion' :: Gen (VersionNumber, CBOR.Term)
@@ -455,7 +597,10 @@ newtype ArbitraryRefuseReason = ArbitraryRefuseReason {
 
 instance Arbitrary ArbitraryRefuseReason where
     arbitrary = ArbitraryRefuseReason <$> oneof
-      [ VersionMismatch <$> arbitrary
+      [ VersionMismatch
+          <$> arbitrary
+          -- this argument is not supposed to be sent, only received:
+          <*> pure []
       , HandshakeDecodeError <$> arbitrary <*> arbitraryText
       , Refused <$> arbitrary <*> arbitraryText
       ]
@@ -463,32 +608,42 @@ instance Arbitrary ArbitraryRefuseReason where
         arbitraryText = T.pack <$> arbitrary
 
 
+--
+--  TODO: these tests should be moved to 'ouroboros-network-framework'
+--
+
+-- TODO: we are not testing the cases where we decode version numbers that we do
+-- not know about.
 prop_codec_RefuseReason
   :: ArbitraryRefuseReason
   -> Bool
 prop_codec_RefuseReason (ArbitraryRefuseReason vReason) = 
-  CBOR.deserialise (CBOR.serialise vReason) == vReason
+  case CBOR.deserialiseFromBytes
+        (decodeRefuseReason versionNumberCodec)
+        (CBOR.toLazyByteString $ encodeRefuseReason versionNumberCodec vReason) of
+    Left _ -> False
+    Right (bytes, vReason') -> BL.null bytes && vReason' == vReason
 
 prop_codec_Handshake
   :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
   -> Bool
 prop_codec_Handshake msg =
-  runST (prop_codecM codecHandshake msg)
+  runSimOrThrow (prop_codecM (codecHandshake versionNumberCodec) msg)
 
 prop_codec_splits2_Handshake
   :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
   -> Bool
 prop_codec_splits2_Handshake msg =
-  runST (prop_codec_splitsM splits2 codecHandshake msg)
+  runSimOrThrow (prop_codec_splitsM splits2 (codecHandshake versionNumberCodec) msg)
 
 prop_codec_splits3_Handshake
   :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
   -> Bool
 prop_codec_splits3_Handshake msg =
-  runST (prop_codec_splitsM splits3 codecHandshake msg)
+  runSimOrThrow (prop_codec_splitsM splits3 (codecHandshake versionNumberCodec) msg)
 
 prop_codec_cbor
   :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
   -> Bool
 prop_codec_cbor msg =
-  runST (prop_codec_cborM codecHandshake msg)
+  runSimOrThrow (prop_codec_cborM (codecHandshake versionNumberCodec) msg)

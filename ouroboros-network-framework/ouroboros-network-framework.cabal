@@ -21,6 +21,7 @@ extra-source-files:  CHANGELOG.md
 
 library
   exposed-modules:     Ouroboros.Network.Codec
+                       Ouroboros.Network.CodecCBORTerm
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Driver
                        Ouroboros.Network.Driver.Simple
@@ -32,6 +33,7 @@ library
                        Ouroboros.Network.Protocol.Handshake.Type
                        Ouroboros.Network.Protocol.Handshake.Codec
                        Ouroboros.Network.Protocol.Handshake.Version
+                       Ouroboros.Network.Protocol.Handshake.Unversioned
                        Ouroboros.Network.Protocol.Limits
 
                        Ouroboros.Network.Server.ConnectionTable
