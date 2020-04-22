@@ -15,7 +15,7 @@ import           Numeric.Natural
 import           Cardano.Binary (ToCBOR)
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
-import           Cardano.Crypto.Hash.SHA256 (SHA256)
+import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
 import           Cardano.Crypto.KES.Class
 import qualified Cardano.Crypto.KES.Class as KES
 import           Cardano.Crypto.KES.Simple
@@ -24,9 +24,9 @@ import           Cardano.Crypto.VRF.Simple (SimpleVRF)
 
 import           Ouroboros.Consensus.Util.Condense (Condense)
 
-import           Shelley.Spec.Ledger.Crypto (Crypto (..))
 import           Shelley.Spec.Ledger.BaseTypes (Seed)
 import           Shelley.Spec.Ledger.BlockChain (BHBody)
+import           Shelley.Spec.Ledger.Crypto (Crypto (..))
 import           Shelley.Spec.Ledger.Keys (VKeyES (..))
 import           Shelley.Spec.Ledger.OCert (KESPeriod)
 import           Shelley.Spec.Ledger.TxData (TxBody)
@@ -53,6 +53,6 @@ instance Crypto TPraosStandardCrypto where
   type DSIGN TPraosStandardCrypto = Ed448DSIGN
   type KES   TPraosStandardCrypto = SimpleKES Ed448DSIGN
   type VRF   TPraosStandardCrypto = SimpleVRF
-  type HASH  TPraosStandardCrypto = SHA256
+  type HASH  TPraosStandardCrypto = Blake2b_256
 
 instance TPraosCrypto TPraosStandardCrypto
