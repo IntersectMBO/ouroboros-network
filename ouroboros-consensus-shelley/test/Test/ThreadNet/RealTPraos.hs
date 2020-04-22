@@ -72,11 +72,16 @@ tests = testGroup "RealTPraos"
     [ testProperty "simple convergence" $
           forAll (SecurityParam <$> elements [5, 10])
             $ \k ->
+          -- TODO it would be good to test this with intermediate values, but at
+          -- the moment the test sometimes fails if we do this.
+          -- > choose (0,1)
+          forAll (elements [0,1])
+            $ \d ->
           forAllShrink
               (genRealTPraosTestConfig k)
               shrinkRealTPraosTestConfig
             $ \testConfig ->
-          prop_simple_real_tpraos_convergence k testConfig
+          prop_simple_real_tpraos_convergence k d testConfig
     ]
 
 tpraosSlotLength :: SlotLength
@@ -84,9 +89,10 @@ tpraosSlotLength = slotLengthFromSec 2
 
 prop_simple_real_tpraos_convergence
   :: SecurityParam
+  -> Double -- Decentralisation parameter
   -> TestConfig
   -> Property
-prop_simple_real_tpraos_convergence k
+prop_simple_real_tpraos_convergence k d
   testConfig@TestConfig{numCoreNodes = NumCoreNodes n, initSeed} =
     prop_general PropGeneralArgs
       { pgaBlockProperty          = const $ property True
@@ -140,7 +146,7 @@ prop_simple_real_tpraos_convergence k
       genCoreNode maxKESEvolution initialKESPeriod
 
     genesisConfig :: ShelleyGenesis TPraosMockCrypto
-    genesisConfig = mkGenesisConfig k maxKESEvolution coreNodes
+    genesisConfig = mkGenesisConfig k d maxKESEvolution coreNodes
 
     epochSize :: EpochSize
     epochSize = sgEpochLength genesisConfig
@@ -224,15 +230,16 @@ genCoreNode maxKESEvolutions startKESPeriod = do
 mkGenesisConfig
   :: forall c. TPraosCrypto c
   => SecurityParam
+  -> Double -- ^ Decentralisation param
   -> Word64  -- ^ Max KES evolutions
   -> [CoreNode c]
   -> ShelleyGenesis c
-mkGenesisConfig k maxKESEvolutions coreNodes = ShelleyGenesis {
+mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
       sgStartTime             = SystemStart $ UTCTime (ModifiedJulianDay 0) 0
     , sgNetworkMagic          = NetworkMagic 0
     , sgProtocolMagicId       = ProtocolMagicId 0
     , sgActiveSlotsCoeff      = 0.5 -- TODO 1 is not accepted by 'mkActiveSlotCoeff'
-    , sgDecentralisationParam = 0
+    , sgDecentralisationParam = d
     , sgSecurityParam         = k
     , sgEpochLength           = EpochSize (10 * maxRollbacks k)
     , sgSlotsPerKESPeriod     = 10 -- TODO
