@@ -454,7 +454,7 @@ runThreadNetwork ThreadNetworkArgs
             (kernel, app) <- forkNode
               coreNodeId
               varRNG
-              nodeBtime
+              sharedTestBtime
               nodeRegistry
               pInfo'
               nodeInfo
@@ -559,7 +559,7 @@ runThreadNetwork ThreadNetworkArgs
           testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger
         void $ addTxs mempool txs
 
-    mkArgs :: BlockchainTime m
+    mkArgs :: TestBlockchainTime m
            -> ResourceRegistry m
            -> TopLevelConfig blk
            -> ExtLedgerState blk
@@ -606,7 +606,7 @@ runThreadNetwork ThreadNetworkArgs
         , cdbIsEBB                = nodeIsEBB
         , cdbCheckIntegrity       = nodeCheckIntegrity cfg
         , cdbGenesis              = return initLedger
-        , cdbBlockchainTime       = btime
+        , cdbBlockchainTime       = testBlockchainTime btime
         , cdbAddHdrEnv            = nodeAddHeaderEnvelope (Proxy @blk)
         , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
         -- Misc
@@ -640,7 +640,7 @@ runThreadNetwork ThreadNetworkArgs
       :: HasCallStack
       => CoreNodeId
       -> StrictTVar m ChaChaDRG
-      -> BlockchainTime m
+      -> TestBlockchainTime m
       -> ResourceRegistry m
       -> ProtocolInfo blk
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
@@ -660,7 +660,7 @@ runThreadNetwork ThreadNetworkArgs
       -- prop_general relies on these tracers
       let invalidTracer = (nodeEventsInvalids nodeInfoEvents)
           addTracer = Tracer $ \(p, bno) -> do
-            s <- atomically $ getCurrentSlot btime
+            s <- atomically $ testBlockchainTimeSlot btime
             traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno)
       let chainDbArgs = mkArgs
             btime registry
@@ -757,7 +757,7 @@ runThreadNetwork ThreadNetworkArgs
             , maxClockSkew           = ClockSkew 1
             , cfg                    = pInfoConfig
             , initState              = pInfoInitState
-            , btime
+            , btime                  = testBlockchainTime btime
             , chainDB
             , initChainDB            = nodeInitChainDB
             , blockProduction        = Just blockProduction
@@ -806,7 +806,7 @@ runThreadNetwork ThreadNetworkArgs
         ( (Origin, GenesisPoint)
         , do
             -- time matters, because some transaction expire
-            now <- getCurrentSlot btime
+            now <- testBlockchainTimeSlot btime
             p <- (ledgerTipPoint' (Proxy @blk) . ledgerState) <$> ChainDB.getCurrentLedger chainDB
             pure (At now, p)
         )
@@ -815,7 +815,7 @@ runThreadNetwork ThreadNetworkArgs
 
       forkTxProducer
         registry
-        btime
+        (testBlockchainTime btime)
         pInfoConfig
         -- Uses the same varRNG as the block producer, but we split the RNG
         -- each time, so this is fine.

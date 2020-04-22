@@ -13,6 +13,7 @@ module Ouroboros.Consensus.BlockchainTime.Mock (
   , NumSlots(..)
   , TestClock(..)
   , TestBlockchainTime(..)
+  , testBlockchainTime
   , newTestBlockchainTime
   , countSlotLengthChanges
   ) where
@@ -71,10 +72,15 @@ data TestClock =
   deriving (Eq, Generic, NoUnexpectedThunks)
 
 data TestBlockchainTime m = TestBlockchainTime
-  { testBlockchainTime     :: BlockchainTime m
+  { testBlockchainTimeSlot :: STM m SlotNo
   , testBlockchainTimeDone :: m ()
     -- ^ Blocks until the end of the final requested slot.
   }
+
+testBlockchainTime :: TestBlockchainTime m -> BlockchainTime m
+testBlockchainTime t = BlockchainTime {
+      getCurrentSlot = testBlockchainTimeSlot t
+    }
 
 -- | Construct new blockchain time that ticks at the specified slot duration
 --
@@ -123,7 +129,7 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
       -> TestBlockchainTime m
     clone slotVar doneVar =
         TestBlockchainTime
-          { testBlockchainTime     = btime
+          { testBlockchainTimeSlot = get
           , testBlockchainTimeDone = readMVar doneVar
           }
       where
@@ -133,11 +139,6 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
                     Initializing -> Nothing
                     Running slot -> Just slot)
             <$> readTVar slotVar
-
-        btime :: BlockchainTime m
-        btime = BlockchainTime {
-            getCurrentSlot = get
-          }
 
 -- | Number of slot length changes if running for the specified number of slots
 countSlotLengthChanges :: NumSlots -> SlotLengths -> Word64
