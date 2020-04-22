@@ -228,12 +228,7 @@ protocolInfoShelley genesis protVer mbCredentials =
 
     pparams :: SL.PParams
     pparams = SL.emptyPParams {
-        SL._activeSlotCoeff =
-            SL.mkActiveSlotCoeff
-          . SL.truncateUnitInterval
-          . realToFrac
-          $ sgActiveSlotsCoeff genesis
-      , SL._d =
+        SL._d =
             SL.truncateUnitInterval
           . realToFrac
           $ sgDecentralisationParam genesis

@@ -22,7 +22,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Ratio ((%))
 import           Data.Sequence.Strict (StrictSeq)
 import qualified Data.Sequence.Strict as StrictSeq
-import           Data.Word (Word64)
+import           Data.Word (Word64, Word8)
 import           Numeric.Natural (Natural)
 
 import           Cardano.Binary (Annotator (..), FullByteString (..), fromCBOR,
@@ -506,7 +506,7 @@ instance Crypto c => Arbitrary (SL.Stake c) where
   arbitrary = SL.Stake <$> arbitrary
 
 instance Arbitrary SL.Url where
-  arbitrary = return $ SL.Url $ SL.text64 "text"
+  arbitrary = return $ SL.mkUrl "text"
 
 instance Arbitrary a => Arbitrary (StrictSeq a) where
   arbitrary = StrictSeq.toStrict <$> arbitrary
@@ -514,6 +514,22 @@ instance Arbitrary a => Arbitrary (StrictSeq a) where
 
 instance Arbitrary SL.PoolMetaData where
   arbitrary = (`SL.PoolMetaData` "bytestring") <$> arbitrary
+
+instance Arbitrary SL.Port where
+  arbitrary = fromIntegral @Word8 @SL.Port <$> arbitrary
+
+instance Arbitrary SL.IPv4 where
+  arbitrary = SL.mkIPv4 <$> arbitrary
+
+instance Arbitrary SL.IPv6 where
+  arbitrary = SL.mkIPv6 <$> arbitrary
+
+instance Arbitrary SL.DnsName where
+  arbitrary = pure $ SL.mkDnsName "foo.example.com"
+
+instance Arbitrary SL.StakePoolRelay where
+  arbitrary = genericArbitraryU
+  shrink    = genericShrink
 
 instance Crypto c => Arbitrary (SL.PoolParams c) where
   arbitrary = SL.PoolParams

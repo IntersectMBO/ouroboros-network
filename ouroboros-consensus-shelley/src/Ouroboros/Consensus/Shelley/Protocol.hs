@@ -415,6 +415,7 @@ mkShelleyGlobals TPraosParams {..} = SL.Globals {
     , quorum            = tpraosQuorum
     , maxMajorPV        = tpraosMaxMajorPV
     , maxLovelaceSupply = tpraosMaxLovelaceSupply
+    , activeSlotCoeff   = tpraosLeaderF
     }
   where
     SecurityParam k = tpraosSecurityParam
