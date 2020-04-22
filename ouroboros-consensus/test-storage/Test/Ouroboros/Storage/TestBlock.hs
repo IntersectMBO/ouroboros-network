@@ -202,7 +202,7 @@ instance HasHeader (Header TestBlock) where
   blockInvariant = const True
 
 data instance BlockConfig TestBlock = TestBlockConfig {
-      testBlockSlotLengths  :: !SlotLengths
+      testBlockSlotLength  :: !SlotLength
 
       -- | Era parameters
       --
@@ -564,7 +564,7 @@ instance HasHardForkHistory TestBlock where
   hardForkTransitions _ _ = HardFork.transitionsUnknown
 
 instance LedgerDerivedInfo TestBlock where
-  knownSlotLengths = testBlockSlotLengths
+  knownSlotLengths = singletonSlotLengths . testBlockSlotLength
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint GenesisHash
@@ -590,16 +590,13 @@ mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
           }
       , configLedger = ()
       , configBlock  = TestBlockConfig {
-            testBlockSlotLengths  = slotLengths
+            testBlockSlotLength   = slotLength
           , testBlockEraParams    = eraParams
           , testBlockEBBsAllowed  = chunkCanContainEBB
           , testBlockNumCoreNodes = numCoreNodes
           }
       }
   where
-    slotLengths :: SlotLengths
-    slotLengths = singletonSlotLengths slotLength
-
     slotLength :: SlotLength
     slotLength = slotLengthFromSec 20
 

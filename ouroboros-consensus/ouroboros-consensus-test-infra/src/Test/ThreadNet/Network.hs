@@ -278,7 +278,7 @@ runThreadNetwork ThreadNetworkArgs
     sharedTestBtime <- newTestBlockchainTime
                          sharedRegistry
                          numSlots
-                         (singletonSlotLengths slotLength)
+                         slotLength
     -- This function is organized around the notion of a network of nodes as a
     -- simple graph with no loops. The graph topology is determined by
     -- @nodeTopology@.
