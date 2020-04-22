@@ -32,9 +32,6 @@ import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Text (Text)
 import qualified Data.Map as Map
 import           Data.Typeable ((:~:)(Refl), Typeable, eqT)
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Term as CBOR
 
 import           Ouroboros.Network.CodecCBORTerm
 
@@ -99,6 +96,7 @@ foldMapVersions' :: Ord vNum
                  -> Versions vNum extra r
 foldMapVersions' f [x] = f x
 foldMapVersions' f (x : xs) = f x <> foldMapVersions' f xs
+foldMapVersions' _ []  = error "foldMapVersion': invariant violation"
 
 combineVersions' :: Ord vNum
                  => [Versions vNum extra r]

@@ -39,7 +39,6 @@ import qualified Data.IP as IP
 import           Data.Void (Void)
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
-import           System.IO.Error
 import           Text.Printf
 
 import           Ouroboros.Network.ErrorPolicy
@@ -71,17 +70,17 @@ withResolver :: Socket.PortNumber -> DNS.ResolvSeed -> (Resolver IO -> IO a) -> 
 withResolver port rs k = do
     DNS.withResolver rs $ \dnsResolver ->
         k (Resolver
-             (ipv4ToSockAddr port dnsResolver)
-             (ipv6ToSockAddr port dnsResolver))
+             (ipv4ToSockAddr dnsResolver)
+             (ipv6ToSockAddr dnsResolver))
   where
-    ipv4ToSockAddr port dnsResolver d = do
+    ipv4ToSockAddr dnsResolver d = do
         r <- DNS.lookupA dnsResolver d
         case r of
              (Right ips) -> return $ Right $ map (Socket.SockAddrInet (fromIntegral port) .
                                                   IP.toHostAddress) ips
              (Left e)    -> return $ Left e
 
-    ipv6ToSockAddr port dnsResolver d = do
+    ipv6ToSockAddr dnsResolver d = do
         r <- DNS.lookupAAAA dnsResolver d
         case r of
              (Right ips) -> return $ Right $ map (\ip -> Socket.SockAddrInet6 (fromIntegral port) 0 (IP.toHostAddress6 ip) 0) ips
@@ -104,7 +103,7 @@ dnsResolve :: forall a m s.
     -> BeforeConnect m s Socket.SockAddr
     -> DnsSubscriptionTarget
     -> m (SubscriptionTarget m Socket.SockAddr)
-dnsResolve tracer getSeed withResolver peerStatesVar beforeConnect (DnsSubscriptionTarget domain _ _) = do
+dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscriptionTarget domain _ _) = do
     rs_e <- (Right <$> getSeed) `catches`
         [ mkHandler (\ (e :: DNS.DNSError) ->
             return (Left $ toException e) :: m (Either SomeException a))
@@ -119,7 +118,7 @@ dnsResolve tracer getSeed withResolver peerStatesVar beforeConnect (DnsSubscript
              return $ listSubscriptionTarget []
 
          Right rs -> do
-             withResolver rs $ \resolver -> do
+             withResolverFn rs $ \resolver -> do
                  ipv6Rsps <- newEmptyTMVarM
                  ipv4Rsps <- newEmptyTMVarM
                  gotIpv6Rsp <- newTVarM False
@@ -329,17 +328,15 @@ dnsSubscriptionWorker
     -> IO Void
 dnsSubscriptionWorker snocket subTracer dnsTracer errTrace networkState
                       params@SubscriptionParams { spSubscriptionTarget } k =
-    do rs <- DNS.makeResolvSeed DNS.defaultResolvConf
-       
-       dnsSubscriptionWorker'
-           snocket
-           subTracer dnsTracer errTrace
-           networkState
-           (DNS.makeResolvSeed DNS.defaultResolvConf)
-           (withResolver (dstPort spSubscriptionTarget)) 
-           params
-           mainTx
-           k
+   dnsSubscriptionWorker'
+       snocket
+       subTracer dnsTracer errTrace
+       networkState
+       (DNS.makeResolvSeed DNS.defaultResolvConf)
+       (withResolver (dstPort spSubscriptionTarget)) 
+       params
+       mainTx
+       k
 
 data WithDomainName a = WithDomainName {
       wdnDomain :: !DNS.Domain
