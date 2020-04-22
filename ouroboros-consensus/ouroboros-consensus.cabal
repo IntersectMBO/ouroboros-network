@@ -62,6 +62,7 @@ library
                        Ouroboros.Consensus.Network.NodeToClient
                        Ouroboros.Consensus.Network.NodeToNode
                        Ouroboros.Consensus.Node
+                       Ouroboros.Consensus.Node.DbLock
                        Ouroboros.Consensus.Node.DbMarker
                        Ouroboros.Consensus.Node.ErrorPolicy
                        Ouroboros.Consensus.Node.Exit

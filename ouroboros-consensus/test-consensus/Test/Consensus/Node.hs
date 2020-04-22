@@ -1,21 +1,20 @@
+{-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Test.Consensus.Node (tests) where
 
 import           Data.Bifunctor (second)
 import qualified Data.Map.Strict as Map
-import qualified Data.Text as T
 import           System.Directory (getTemporaryDirectory)
-import           System.FilePath ((</>))
 import           System.IO.Temp (withTempDirectory)
 
-import           Control.Monad.Class.MonadThrow (try)
+import           Control.Monad.Class.MonadThrow (Exception, throwM, try)
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Cardano.Crypto (ProtocolMagicId (..))
 
+import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
-import           Ouroboros.Consensus.Util.ResourceRegistry (withRegistry)
 
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
@@ -38,7 +37,7 @@ tests = testGroup "Node"
       , testCase "corrupt"      test_checkProtocolMagicId_corrupt
       , testCase "empty"        test_checkProtocolMagicId_empty
       ]
-    , testCase "lockDbMarkerFile" test_lockDbMarkerFile
+    , testCase "lockDb"         test_lockDb
     ]
 
 {-------------------------------------------------------------------------------
@@ -132,35 +131,33 @@ test_checkProtocolMagicId_empty = res @?= Left e
     e = CorruptDbMarker fullPath
 
 {-------------------------------------------------------------------------------
-  lockDbMarkerFile
+  lockDb
 -------------------------------------------------------------------------------}
 
-test_lockDbMarkerFile :: Assertion
-test_lockDbMarkerFile = withTempDir $ \dbPath -> do
-    let mount = MountPoint dbPath
-    -- Create the DB marker file
-    checkDbMarker (ioHasFS mount) mountPoint expectedProtocolMagicId >>=
-      (@?= Right ())
+test_lockDb :: Assertion
+test_lockDb = withTempDir $ \dbPath -> do
+    let hasFS     = ioHasFS $ MountPoint dbPath
+        withLock  = withLockDB hasFS dbPath
+        touchLock = withLock $ return ()
 
     -- Lock it once
-    withRegistry $ \registry -> do
-      tryL (lockDbMarkerFile registry dbPath) >>=
+    tryL touchLock >>=
         (@?= (Right ()))
 
-      -- Try to lock it again. This should fail.
-      tryL (lockDbMarkerFile registry dbPath) >>=
-        (@?= (Left (DbLocked (dbPath </> T.unpack dbMarkerFile))))
-
-    -- Unlock it now by closing the 'ResourceRegistry'.
-    -- We must be able to lock it again now.
-    withRegistry $ \registry ->
-      tryL (lockDbMarkerFile registry dbPath) >>=
+    -- Raise an exception. The lock should get cleaned.
+    _ <- tryT (withLock $ throwM TestException)
+    tryL touchLock >>=
         (@?= (Right ()))
-    -- And finally unlock it.
+
   where
     withTempDir k = do
       sysTmpDir <- getTemporaryDirectory
       withTempDirectory sysTmpDir "ouroboros-network-test" k
 
-    tryL :: IO a -> IO (Either DbMarkerError a)
+    tryL :: IO a -> IO (Either DbLocked a)
     tryL = try
+
+    tryT :: IO a -> IO (Either TestException a)
+    tryT = try
+
+data TestException = TestException deriving (Show, Eq, Exception)

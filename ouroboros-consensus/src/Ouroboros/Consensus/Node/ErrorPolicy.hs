@@ -21,6 +21,7 @@ import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (BlockFetchServerException)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ChainSyncClientException (..))
+import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
 import           Ouroboros.Consensus.Node.Run (RunNode (nodeExceptionIsFatal))
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -57,6 +58,7 @@ consensusErrorPolicy pb = ErrorPolicies {
           -- arising from disk I/O (shutdownNode) and those arising from
           -- network failures (SuspendConsumer).
           ErrorPolicy $ \(_ :: DbMarkerError)    -> Just shutdownNode
+        , ErrorPolicy $ \(_ :: DbLocked)         -> Just shutdownNode
         , ErrorPolicy $ \(_ :: ChainDbFailure)   -> Just shutdownNode
           -- The three exceptions below will always be wrapped in a
           -- 'ChainDbFailure', but we include them in the policy just in case.
