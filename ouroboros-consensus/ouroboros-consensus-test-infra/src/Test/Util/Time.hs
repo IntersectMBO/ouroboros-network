@@ -1,21 +1,16 @@
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Consensus.BlockchainTime.Mock (
-    -- * Fixed time
-    fixedBlockchainTime
-    -- * Settable time
-  , settableBlockchainTime
-    -- * Testing time
-  , NumSlots(..)
-  , TestClock(..)
-  , TestBlockchainTime(..)
-  , testBlockchainTime
+module Test.Util.Time (
+    NumSlots(..)
+  , TestBlockchainTime -- opaque
+  , testBlockchainTimeSlot
+  , testBlockchainTimeDone
   , newTestBlockchainTime
-  , countSlotLengthChanges
+  , blockUntilSlot
+  , testBlockchainTime
   ) where
 
 import           Control.Monad
@@ -24,8 +19,7 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-
-import           Ouroboros.Network.Block (SlotNo (..))
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Util.IOLike
@@ -33,31 +27,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 
 {-------------------------------------------------------------------------------
-  Fixed time
--------------------------------------------------------------------------------}
-
--- | A 'BlockchainTime' that is fixed to the given slot.
---
--- 'onSlotChange_' does nothing.
-fixedBlockchainTime :: MonadSTM m => SlotNo -> BlockchainTime m
-fixedBlockchainTime slot = BlockchainTime {
-      getCurrentSlot = return slot
-    }
-
-{-------------------------------------------------------------------------------
-  Settable time
--------------------------------------------------------------------------------}
-
--- | The current slot can be changed by modifying the given 'StrictTVar'.
---
--- 'onSlotChange_' is not implemented and will return an 'error'.
-settableBlockchainTime :: MonadSTM m => StrictTVar m SlotNo -> BlockchainTime m
-settableBlockchainTime varCurSlot = BlockchainTime {
-      getCurrentSlot = readTVar varCurSlot
-    }
-
-{-------------------------------------------------------------------------------
-  Testing time
+  Test blockchain time
 -------------------------------------------------------------------------------}
 
 -- | Number of slots
@@ -99,9 +69,9 @@ newTestBlockchainTime
     :: forall m. (IOLike m, HasCallStack)
     => ResourceRegistry m
     -> NumSlots           -- ^ Number of slots
-    -> SlotLengths        -- ^ Slot duration
+    -> SlotLength         -- ^ Slot duration
     -> m (TestBlockchainTime m)
-newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
+newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
     slotVar <- newTVarM Initializing
     doneVar <- newEmptyMVar ()
 
@@ -110,18 +80,17 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
     return $ clone slotVar doneVar
   where
     loop :: StrictTVar m TestClock -> StrictMVar m () -> m ()
-    loop slotVar doneVar = go slotLens numSlots
+    loop slotVar doneVar = go numSlots
       where
         -- count off each requested slot
-        go :: SlotLengths -> Word64 -> m ()
-        go _  0 = putMVar doneVar () -- signal the end of the final slot
-        go ls n = do
+        go :: Word64 -> m ()
+        go 0 = putMVar doneVar () -- signal the end of the final slot
+        go n = do
             atomically $ modifyTVar slotVar $ Running . \case
               Initializing -> SlotNo 0
               Running slot -> succ slot
-            let (SlotLength delay, ls') = tickSlotLengths ls
-            threadDelay (nominalDelay delay)
-            go ls' (n - 1)
+            threadDelay (nominalDelay (getSlotLength slotLen))
+            go (n - 1)
 
     clone
       :: StrictTVar m TestClock
@@ -140,15 +109,18 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
                     Running slot -> Just slot)
             <$> readTVar slotVar
 
--- | Number of slot length changes if running for the specified number of slots
-countSlotLengthChanges :: NumSlots -> SlotLengths -> Word64
-countSlotLengthChanges = \(NumSlots n) -> go n
-  where
-    go :: Word64 -> SlotLengths -> Word64
-    go limit (SlotLengths _ mNext) =
-        case mNext of
-          Nothing                      -> 0
-          Just (SegmentLength n, next) ->
-            if limit > n
-              then 1 + go (limit - n) next
-              else 0
+-- | Block until the specified slot
+--
+-- Returns 'True' immediately if the requested slot is already over, else
+-- blocks as requested and then returns 'False'
+blockUntilSlot :: IOLike m
+               => TestBlockchainTime m
+               -> SlotNo
+               -> m Bool
+blockUntilSlot btime slot = atomically $ do
+    now <- testBlockchainTimeSlot btime
+    if now > slot then
+      return True
+    else do
+      check $ now == slot
+      return False

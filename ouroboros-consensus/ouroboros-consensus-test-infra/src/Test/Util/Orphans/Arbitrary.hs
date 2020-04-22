@@ -20,7 +20,6 @@ import           Test.QuickCheck hiding (Fixed (..))
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ClockSkew (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -29,6 +28,8 @@ import           Ouroboros.Consensus.Util.Random (Seed (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
+
+import           Test.Util.Time
 
 minNumCoreNodes :: Word64
 minNumCoreNodes = 2

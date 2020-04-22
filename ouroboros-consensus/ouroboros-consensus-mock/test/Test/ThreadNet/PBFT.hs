@@ -17,7 +17,6 @@ import           Ouroboros.Network.Block (SlotNo (..), blockSlot)
 import           Ouroboros.Network.MockChain.Chain (foldChain)
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.BlockchainTime.Mock (NumSlots (..))
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError (..))
 import           Ouroboros.Consensus.Mock.Ledger.Block
@@ -43,6 +42,7 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.SimpleBlock
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Time
 
 tests :: TestTree
 tests = testGroup "PBFT" $

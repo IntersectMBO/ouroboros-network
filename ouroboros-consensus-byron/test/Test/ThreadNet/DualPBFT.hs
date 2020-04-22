@@ -39,7 +39,6 @@ import qualified Control.State.Transition.Generator as Spec.QC
 import qualified Test.Cardano.Chain.Elaboration.UTxO as Spec.Test
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.BlockchainTime.Mock (NumSlots (..))
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
@@ -66,6 +65,8 @@ import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
+
+import           Test.Util.Time
 
 tests :: TestTree
 tests = testGroup "DualPBFT" [

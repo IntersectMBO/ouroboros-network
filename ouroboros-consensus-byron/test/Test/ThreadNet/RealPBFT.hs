@@ -37,7 +37,6 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError (..))
@@ -80,6 +79,7 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Shrink (andId, dropId)
 import qualified Test.Util.Stream as Stream
+import           Test.Util.Time
 
 import           Test.ThreadNet.RealPBFT.ProtocolInfo
 import           Test.ThreadNet.RealPBFT.TrackUpdates

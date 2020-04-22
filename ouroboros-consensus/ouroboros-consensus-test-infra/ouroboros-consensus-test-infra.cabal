@@ -53,14 +53,14 @@ library
                        Test.Util.Range
                        Test.Util.RefEnv
                        Test.Util.Roundtrip
-                       Test.Util.SOP
                        Test.Util.Shrink
+                       Test.Util.SOP
                        Test.Util.Split
                        Test.Util.Stream
                        Test.Util.TestBlock
+                       Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WithEq
-
 
   build-depends:       base              >=4.9 && <4.13
                      , base16-bytestring

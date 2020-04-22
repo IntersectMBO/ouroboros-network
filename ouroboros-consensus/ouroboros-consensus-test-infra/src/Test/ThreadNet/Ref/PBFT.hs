@@ -39,7 +39,6 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
-import           Ouroboros.Consensus.BlockchainTime.Mock (NumSlots (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
@@ -50,6 +49,7 @@ import           Test.ThreadNet.Util.NodeJoinPlan
 
 import           Test.Util.InvertedMap (InvertedMap)
 import qualified Test.Util.InvertedMap as InvertedMap
+import           Test.Util.Time
 
 oneK :: Num a => PBftParams -> a
 oneK PBftParams{pbftSecurityParam} =

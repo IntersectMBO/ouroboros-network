@@ -50,7 +50,6 @@ import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type (ChainSync)
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -71,6 +70,7 @@ import           Test.Util.BlockchainTime
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
+import           Test.Util.Time
 import           Test.Util.Tracer (recordingTracerTVar)
 
 {-------------------------------------------------------------------------------
@@ -264,7 +264,7 @@ runChainSync
 runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     (ServerUpdates serverUpdates) startSyncingAt = withRegistry $ \registry -> do
 
-    testBtime <- newTestBlockchainTime registry numSlots slotLengths
+    testBtime <- newTestBlockchainTime registry numSlots slotLength
     let btime = testBlockchainTime testBtime
 
     -- Set up the client
@@ -396,9 +396,6 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
   where
     k = maxRollbacks securityParam
 
-    slotLengths :: SlotLengths
-    slotLengths = singletonSlotLengths slotLength
-
     slotLength :: SlotLength
     slotLength = slotLengthFromSec 20
 
@@ -417,7 +414,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                           ]
           }
       , configLedger = ()
-      , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
+      , configBlock  = TestBlockConfig slotLength eraParams numCoreNodes
       }
 
     eraParams :: HardFork.EraParams

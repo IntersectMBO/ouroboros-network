@@ -250,7 +250,7 @@ instance Condense (ChainHash TestBlock) where
   condense (BlockHash h) = show h
 
 data instance BlockConfig TestBlock = TestBlockConfig {
-      testBlockSlotLengths :: !SlotLengths
+      testBlockSlotLength :: !SlotLength
 
       -- | Era parameters
       --
@@ -357,7 +357,7 @@ instance HasHardForkHistory TestBlock where
   hardForkTransitions _ _ = HardFork.transitionsUnknown
 
 instance LedgerDerivedInfo TestBlock where
-  knownSlotLengths = testBlockSlotLengths
+  knownSlotLengths = singletonSlotLengths . testBlockSlotLength
 
 instance QueryLedger TestBlock where
   data Query TestBlock result where
@@ -394,12 +394,9 @@ singleNodeTestConfig = TopLevelConfig {
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = ()
-    , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
+    , configBlock  = TestBlockConfig slotLength eraParams numCoreNodes
     }
   where
-    slotLengths :: SlotLengths
-    slotLengths = singletonSlotLengths slotLength
-
     slotLength :: SlotLength
     slotLength = slotLengthFromSec 20
 

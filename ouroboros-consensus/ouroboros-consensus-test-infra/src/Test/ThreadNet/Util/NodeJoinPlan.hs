@@ -19,11 +19,12 @@ import           Test.QuickCheck
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
-import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
+
+import           Test.Util.Time
 
 {-------------------------------------------------------------------------------
   Node Join Plans

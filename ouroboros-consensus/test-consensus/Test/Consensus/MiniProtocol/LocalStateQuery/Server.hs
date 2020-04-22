@@ -234,12 +234,9 @@ testCfg securityParam = TopLevelConfig {
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = ()
-    , configBlock  = TestBlockConfig slotLengths eraParams numCoreNodes
+    , configBlock  = TestBlockConfig slotLength eraParams numCoreNodes
     }
   where
-    slotLengths :: SlotLengths
-    slotLengths = singletonSlotLengths slotLength
-
     slotLength :: SlotLength
     slotLength = slotLengthFromSec 20
 

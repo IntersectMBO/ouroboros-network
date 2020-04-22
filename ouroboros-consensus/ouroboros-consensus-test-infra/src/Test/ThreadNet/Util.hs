@@ -36,7 +36,6 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
-import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
@@ -52,6 +51,7 @@ import           Test.ThreadNet.Util.Expectations (NumBlocks (..),
                      determineForkLength)
 import           Test.ThreadNet.Util.HasCreator
 import           Test.ThreadNet.Util.NodeJoinPlan (NodeJoinPlan)
+import           Test.Util.Time
 
 {-------------------------------------------------------------------------------
   Chain properties
