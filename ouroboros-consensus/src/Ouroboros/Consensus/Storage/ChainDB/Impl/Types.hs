@@ -336,6 +336,11 @@ data ReaderState m blk b
     --
     -- Note that the iterator includes 'Point blk' in addition to @b@, as it
     -- is needed to keep track of where the iterator is.
+    --
+    -- INVARIANT: for all @ReaderInImmDB rollState immIt@: the predecessor of
+    -- the next block streamed by @immIt@ must be the block identified by
+    -- @readerRollStatePoint rollState@. In other words: the iterator is
+    -- positioned /on/ @readerRollStatePoint rollState@.
   | ReaderInMem   !(ReaderRollState blk)
     -- ^ The 'Reader' is reading from the in-memory current chain fragment.
   deriving (Generic, NoUnexpectedThunks)
@@ -343,9 +348,11 @@ data ReaderState m blk b
 -- | Similar to 'Ouroboros.Network.MockChain.ProducerState.ReaderState'.
 data ReaderRollState blk
   = RollBackTo      !(Point blk)
-    -- ^ The reader should roll back to this point.
+    -- ^ We don't know at which point the user is, but the next message we'll
+    -- send is to roll back to this point.
   | RollForwardFrom !(Point blk)
-    -- ^ The reader should roll forward from this point.
+    -- ^ We know that the reader is at this point and the next message we'll
+    -- send is to roll forward to the point /after/ this point on our chain.
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 -- | Get the point the 'ReaderRollState' should roll back to or roll forward
