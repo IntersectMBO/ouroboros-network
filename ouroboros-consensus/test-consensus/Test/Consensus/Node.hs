@@ -5,7 +5,9 @@ module Test.Consensus.Node (tests) where
 
 import           Data.Bifunctor (second)
 import qualified Data.Map.Strict as Map
+import qualified Data.Text as T
 import           System.Directory (getTemporaryDirectory)
+import           System.FilePath ((</>))
 import           System.IO.Temp (withTempDirectory)
 
 import           Control.Monad.Class.MonadThrow (Exception, throwM, try)
@@ -140,14 +142,22 @@ test_lockDb = withTempDir $ \dbPath -> do
         withLock  = withLockDB hasFS dbPath
         touchLock = withLock $ return ()
 
-    -- Lock it once
+    -- Lock and unlock it
     tryL touchLock >>=
         (@?= (Right ()))
 
-    -- Raise an exception. The lock should get cleaned.
+    -- Raise an exception. The lock should get released.
     _ <- tryT (withLock $ throwM TestException)
+    -- Test that the lock was released by acquiring it again
     tryL touchLock >>=
         (@?= (Right ()))
+
+    -- While holding the lock, try to acquire it again, which should fail
+    tryL (withLock $ tryL touchLock) >>=
+        -- The outer 'Right' means that the first call to 'withLock'
+        -- succeeded, the inner 'Left' means that the second call to
+        -- 'touchLock' failed.
+        (@?= Right (Left (DbLocked (dbPath </> T.unpack dbLockFile))))
 
   where
     withTempDir k = do
