@@ -148,7 +148,7 @@ data RunNodeArgs blk = RunNodeArgs {
 --
 -- This function runs forever unless an exception is thrown.
 run :: forall blk. RunNode blk => RunNodeArgs blk -> IO ()
-run RunNodeArgs{..} = withLockDB hasFS rnDatabasePath $ do
+run RunNodeArgs{..} = withLockDB hasFS mountPoint $ do
     either throwM return =<< checkDbMarker
       hasFS
       mountPoint
