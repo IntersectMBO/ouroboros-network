@@ -57,7 +57,7 @@ import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.ThreadNet.RealPBFT.ProtocolInfo
 
-import           Test.Util.Time
+import           Test.Util.WrappedClock (NumSlots (..))
 
 -- | The expectation and observation regarding whether the hard-fork proposal
 -- successfully updated the protocol version

@@ -49,7 +49,7 @@ data CurrentSlot =
     -- lack the information necessary to translate the current 'UTCTime' into a
     -- 'SlotNo'. This should only be the case during syncing.
   | CurrentSlotUnknown
-  deriving stock    (Generic)
+  deriving stock    (Generic, Show)
   deriving anyclass (NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------

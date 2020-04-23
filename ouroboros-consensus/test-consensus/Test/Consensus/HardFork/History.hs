@@ -149,9 +149,11 @@ eventSlotToWallclock chain@ArbitraryChain{..} =
 eventWallclockToSlot :: ArbitraryChain -> Property
 eventWallclockToSlot chain@ArbitraryChain{..} =
     testSkeleton chain (HF.wallclockToSlot time) $
-      \(slot, inSlot) -> conjoin [
-          slot   === eventTimeSlot
-        , inSlot === diff
+      \(slot, inSlot, timeSpent) -> conjoin [
+          slot               === eventTimeSlot
+        , inSlot             === diff
+        , inSlot + timeSpent === (getSlotLength . HF.eraSlotLength $
+                                    eventEraParams arbitraryEvent)
         ]
   where
     EventTime{..} = eventTime arbitraryEvent

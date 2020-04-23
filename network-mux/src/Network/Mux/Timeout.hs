@@ -50,7 +50,7 @@ type TimeoutFn m = forall a. DiffTime -> m a -> m (Maybe a)
 --
 withTimeoutSerial, withTimeoutSerialNative
   :: forall m b. (MonadAsync m, MonadFork m,
-                  MonadTime m, MonadTimer m,
+                  MonadMonotonicTime m, MonadTimer m,
                   MonadMask m, MonadThrow (STM m))
   => (TimeoutFn m -> m b) -> m b
 
@@ -109,7 +109,7 @@ withTimeoutSerialNative body = body MonadTimer.timeout
 --
 withTimeoutSerialAlternative
   :: forall m b. (MonadAsync m, MonadFork m,
-                  MonadTime m, MonadTimer m,
+                  MonadMonotonicTime m, MonadTimer m,
                   MonadMask m, MonadThrow (STM m))
   => (TimeoutFn m -> m b) -> m b
 withTimeoutSerialAlternative body = do
@@ -221,7 +221,7 @@ instance Exception TimeoutException where
 -- | The @timeout@ action we pass to the body in 'withTimeoutSerial'.
 --
 timeout :: forall m a.
-           (MonadFork m, MonadTime m, MonadTimer m,
+           (MonadFork m, MonadMonotonicTime m, MonadTimer m,
             MonadMask m, MonadThrow (STM m))
         => MonitorState m
         -> DiffTime -> m a -> m (Maybe a)
@@ -303,7 +303,7 @@ timeout monitorState delay action =
 
 
 monitoringThread :: (MonadFork m, MonadSTM m,
-                     MonadTime m, MonadTimer m,
+                     MonadMonotonicTime m, MonadTimer m,
                      MonadThrow m, MonadThrow (STM m))
                  => MonitorState m -> m ()
 monitoringThread monitorState@MonitorState{deadlineResetVar} =
@@ -368,4 +368,3 @@ data TimeoutAssertion = TimeoutImpossibleReachedTerminated
   deriving Show
 
 instance Exception TimeoutAssertion
-

@@ -67,12 +67,12 @@ import           Ouroboros.Consensus.Storage.Common
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Util.Condense
 
@@ -155,7 +155,7 @@ class (
       , GetHeader              m
       , HasHeader     (Header  m)
       , LedgerSupportsProtocol m
-      , LedgerDerivedInfo      m
+      , HasHardForkHistory     m
       , ApplyTx                m
       , HasTxId (GenTx         m)
       , Show (ApplyTxErr       m)
@@ -401,11 +401,6 @@ instance Bridge m a => HasHardForkHistory (DualBlock m a) where
       hardForkTransitions
         (dualLedgerConfigMain cfg)
         (dualLedgerStateMain  state)
-
-instance Bridge m a => LedgerDerivedInfo (DualBlock m a) where
-  knownSlotLength cfg =
-      knownSlotLength
-        (dualBlockConfigMain cfg)
 
 {-------------------------------------------------------------------------------
   Querying the ledger

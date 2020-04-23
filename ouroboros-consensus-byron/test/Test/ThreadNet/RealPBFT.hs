@@ -80,7 +80,7 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Shrink (andId, dropId)
 import qualified Test.Util.Stream as Stream
-import           Test.Util.Time
+import           Test.Util.WrappedClock (NumSlots (..))
 
 import           Test.ThreadNet.RealPBFT.ProtocolInfo
 import           Test.ThreadNet.RealPBFT.TrackUpdates

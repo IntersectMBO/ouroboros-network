@@ -38,8 +38,10 @@ library
                        Ouroboros.Consensus.Block.SupportsProtocol
                        Ouroboros.Consensus.BlockchainTime
                        Ouroboros.Consensus.BlockchainTime.API
-                       Ouroboros.Consensus.BlockchainTime.Simple
-                       Ouroboros.Consensus.BlockchainTime.WallClock
+                       Ouroboros.Consensus.BlockchainTime.WallClock.HardFork
+                       Ouroboros.Consensus.BlockchainTime.WallClock.Simple
+                       Ouroboros.Consensus.BlockchainTime.WallClock.Types
+                       Ouroboros.Consensus.BlockchainTime.WallClock.Util
                        Ouroboros.Consensus.Config
                        Ouroboros.Consensus.Forecast
                        Ouroboros.Consensus.Fragment.Diff
@@ -72,7 +74,6 @@ library
                        Ouroboros.Consensus.Node.Exit
                        Ouroboros.Consensus.NodeId
                        Ouroboros.Consensus.NodeKernel
-                       Ouroboros.Consensus.Node.LedgerDerivedInfo
                        Ouroboros.Consensus.Node.NetworkProtocolVersion
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.Recovery
@@ -299,6 +300,7 @@ test-suite test-consensus
                        Test.Util.FS.Sim.MockFS
                        Test.Util.FS.Sim.Pure
                        Test.Util.FS.Sim.STM
+                       Test.Util.LogicalClock
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
@@ -310,8 +312,8 @@ test-suite test-consensus
                        Test.Util.SOP
                        Test.Util.Split
                        Test.Util.TestBlock
-                       Test.Util.Time
                        Test.Util.Tracer
+                       Test.Util.WrappedClock
 
   build-depends:       base
                      , cardano-binary
@@ -405,6 +407,7 @@ test-suite test-storage
                        Test.Util.FS.Sim.MockFS
                        Test.Util.FS.Sim.Pure
                        Test.Util.FS.Sim.STM
+                       Test.Util.LogicalClock
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
@@ -414,9 +417,9 @@ test-suite test-storage
                        Test.Util.RefEnv
                        Test.Util.SOP
                        Test.Util.TestBlock
-                       Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WithEq
+                       Test.Util.WrappedClock
 
   build-depends:       base
                      , bifunctors

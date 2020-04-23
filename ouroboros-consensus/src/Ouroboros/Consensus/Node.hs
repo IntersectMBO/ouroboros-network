@@ -61,7 +61,6 @@ import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
-import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Recovery
@@ -160,17 +159,11 @@ run RunNodeArgs{..} = withLockDB hasFS mountPoint $ do
       (nodeProtocolMagicId (Proxy @blk) cfg)
     withRegistry $ \registry -> do
 
-      btime <- simpleBlockchainTime
-        registry
-        (blockchainTimeTracer rnTraceConsensus)
-        (nodeStartTime (Proxy @blk) cfg)
-        slotLength
-
       let inFuture :: CheckInFuture IO blk
           inFuture = InFuture.reference
                        cfg
-                       (nodeStartTime (Proxy @blk) cfg)
                        rnMaxClockSkew
+                       (defaultSystemTime $ nodeStartTime (Proxy @blk) cfg)
 
       -- When we shut down cleanly, we create a marker file so that the next
       -- time we start, we know we don't have to validate the contents of the
@@ -205,6 +198,13 @@ run RunNodeArgs{..} = withLockDB hasFS mountPoint $ do
             customiseChainDbArgs')
           ChainDB.closeDB
 
+        btime <- hardForkBlockchainTime
+                   registry
+                   (blockchainTimeTracer rnTraceConsensus)
+                   (defaultSystemTime (nodeStartTime (Proxy @blk) cfg))
+                   cfg
+                   (ledgerState <$> ChainDB.getCurrentLedger chainDB)
+
         let nodeArgs = rnCustomiseNodeArgs $
               mkNodeArgs
                 registry
@@ -229,7 +229,6 @@ run RunNodeArgs{..} = withLockDB hasFS mountPoint $ do
   where
     mountPoint              = MountPoint rnDatabasePath
     hasFS                   = ioHasFS mountPoint
-    slotLength              = knownSlotLength (configBlock cfg)
     nodeToNodeVersionData   = NodeToNodeVersionData   { networkMagic = rnNetworkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnNetworkMagic }
 

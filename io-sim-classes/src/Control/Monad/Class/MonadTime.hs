@@ -1,6 +1,7 @@
 
 module Control.Monad.Class.MonadTime (
     MonadTime(..)
+  , MonadMonotonicTime(..)
   , Time(..)
   , diffTime
   , addTime
@@ -31,29 +32,29 @@ addTime :: DiffTime -> Time -> Time
 addTime d (Time t) = Time (d + t)
 
 
-class Monad m => MonadTime m where
-
+class Monad m => MonadMonotonicTime m where
   -- | Time in a monotonic clock, with high precision. The epoch for this
   -- clock is arbitrary and does not correspond to any wall clock or calendar.
   --
   getMonotonicTime :: m Time
 
+class MonadMonotonicTime m => MonadTime m where
   -- | Wall clock time.
   --
   getCurrentTime   :: m UTCTime
-
 
 --
 -- Instances for IO
 --
 
-instance MonadTime IO where
+instance MonadMonotonicTime IO where
   getMonotonicTime =
       fmap conv getMonotonicNSec
     where
       conv :: Word64 -> Time
       conv = Time . Time.picosecondsToDiffTime . (* 1000) . toInteger
 
+instance MonadTime IO where
   getCurrentTime = Time.getCurrentTime
 
 foreign import ccall unsafe "getMonotonicNSec"
@@ -63,6 +64,8 @@ foreign import ccall unsafe "getMonotonicNSec"
 -- Instance for ReaderT
 --
 
-instance MonadTime m => MonadTime (ReaderT r m) where
+instance MonadMonotonicTime m => MonadMonotonicTime (ReaderT r m) where
   getMonotonicTime = lift getMonotonicTime
+
+instance MonadTime m => MonadTime (ReaderT r m) where
   getCurrentTime   = lift getCurrentTime

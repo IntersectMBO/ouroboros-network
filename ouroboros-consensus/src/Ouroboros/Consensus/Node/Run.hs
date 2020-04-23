@@ -29,12 +29,12 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Exit (ExitReason)
-import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -49,7 +49,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
 -------------------------------------------------------------------------------}
 
 class ( LedgerSupportsProtocol    blk
-      , LedgerDerivedInfo         blk
+      , HasHardForkHistory        blk
       , ApplyTx                   blk
       , HasTxId            (GenTx blk)
       , QueryLedger               blk

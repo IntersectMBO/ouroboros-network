@@ -52,6 +52,7 @@ module Ouroboros.Consensus.HardFork.History (
   , snapshotEpochInfo
     -- * Caching
   , RunWithCachedSummary(..)
+  , cachedRunQueryThrow
   , runWithCachedSummary
     -- * Exported only for the benefit of tests
     -- ** Bounds
@@ -86,7 +87,6 @@ import           Data.Fixed (divMod')
 import           Data.Foldable (toList)
 import           Data.Functor.Identity
 import qualified Data.List as List
-import           Data.Maybe (fromMaybe)
 import           Data.Time
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -95,7 +95,7 @@ import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalFormNamed (..))
 import           Cardano.Slotting.EpochInfo.API
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.IOLike
@@ -211,12 +211,18 @@ data EraParams = EraParams {
 
 -- | Default 'EraParams'
 --
--- We set the epoch size to @10k@ slots and the safe zone to @2k@ slots.
+-- We set
+--
+-- * epoch size to @10k@ slots
+-- * the safe zone to @2k@ slots
+-- * the upper bound to 'UnsafeUnbounded'
+--
+-- This is primarily useful for tests.
 defaultEraParams :: SecurityParam -> SlotLength -> EraParams
 defaultEraParams (SecurityParam k) slotLength = EraParams {
       eraEpochSize  = EpochSize (k * 10)
     , eraSlotLength = slotLength
-    , eraSafeZone   = SafeZone (k * 2) NoLowerBound
+    , eraSafeZone   = SafeZone (k * 2) UnsafeUnbounded
     }
 
 -- | Zone in which it is guaranteed that no hard fork can take place
@@ -276,7 +282,7 @@ data SafeBeforeEpoch =
   deriving stock    (Show, Generic)
   deriving anyclass (NoUnexpectedThunks)
 
--- | The shape of the chain
+-- | The shape of the chain (old to new)
 --
 -- The shape determines how many hard forks we expect as well as the parameters
 -- for each era. The type argument is a type-level list containing one entry
@@ -293,7 +299,7 @@ newtype Shape xs = Shape (Exactly xs EraParams)
 singletonShape :: EraParams -> Shape '[x]
 singletonShape params = Shape (exactlyOne params)
 
--- | The exact point of each confirmed hard fork transition
+-- | The exact point of each confirmed hard fork transition (old to new)
 --
 -- Unlike the 'Shape' of the chain, which is statically known, the 'Transitions'
 -- are derived from the state of the ledger (hard fork transition points only
@@ -392,7 +398,7 @@ data EraEnd =
 -- about the start and end of each era.
 
 -- We have at most one summary for each era, and at least one
-newtype Summary xs = Summary (NonEmptyAtMost xs EraSummary)
+newtype Summary xs = Summary (NonEmpty xs EraSummary)
   deriving (Show)
 
 -- WHNF is sufficient, because the counting types are all strict
@@ -403,23 +409,16 @@ deriving via UseIsNormalFormNamed "Summary" (Summary xs)
   Basic API for 'Summary'
 -------------------------------------------------------------------------------}
 
-summaryToList :: Summary xs -> [EraSummary]
-summaryToList (Summary summary) = toList summary
-
 -- | Outer bounds of the summary
 summaryBounds :: Summary xs -> (Bound, EraEnd)
-summaryBounds (Summary (NonEmptyAtMost firstEra xs)) =
-    (eraStart firstEra, eraEnd lastEra)
-  where
-    lastEra :: EraSummary
-    lastEra = fromMaybe firstEra $ atMostLast xs
+summaryBounds (Summary summary) =
+    (eraStart (nonEmptyHead summary), eraEnd (nonEmptyLast summary))
 
 -- | Analogue of 'Data.List.init' for 'Summary' (i.e., split off the final era)
 --
 -- This is primarily useful for tests.
 summaryInit :: Summary xs -> (Maybe (Summary xs), EraSummary)
-summaryInit (Summary summary) = first (fmap Summary) $
-                                  nonEmptyAtMostInit summary
+summaryInit (Summary summary) = first (fmap Summary) $ nonEmptyInit summary
 
 -- | Construct 'Summary' with an exact number of 'EraSummary'
 --
@@ -505,9 +504,9 @@ invariantShape = \(Shape shape) ->
 
 -- | Check 'Summary' invariants
 invariantSummary :: Summary xs -> Except String ()
-invariantSummary = \summary@(Summary (NonEmptyAtMost firstEra _)) ->
+invariantSummary = \(Summary summary) ->
     -- Pretend the start of the first era is the "end of the previous" one
-    go (eraStart firstEra) (summaryToList summary)
+    go (eraStart (nonEmptyHead summary)) (toList summary)
   where
     go :: Bound   -- ^ End of the previous era
        -> [EraSummary] -> Except String ()
@@ -596,20 +595,20 @@ summarize :: SystemStart
 summarize systemStart ledgerTip = \(Shape shape) (Transitions transitions) ->
     Summary $ go (initBound systemStart) shape transitions
   where
-    go :: Bound                                -- Lower bound for current era
-       -> Exactly        (x ': xs) EraParams   -- params for all eras
-       -> AtMost               xs  EpochNo     -- transitions
-       -> NonEmptyAtMost (x ': xs) EraSummary
+    go :: Bound                          -- Lower bound for current era
+       -> Exactly  (x ': xs) EraParams   -- params for all eras
+       -> AtMost         xs  EpochNo     -- transitions
+       -> NonEmpty (x ': xs) EraSummary
     -- CASE (ii)
     -- NOTE: Ledger tip might be close to the end of this era (or indeed past
     -- it) but this doesn't matter for the summary of /this/ era.
     go lo (ExactlyCons params ss) (AtMostCons epoch fs) =
-        nonEmptyAtMostCons (EraSummary lo (EraEnd hi) params) $ go hi ss fs
+        NonEmptyCons (EraSummary lo (EraEnd hi) params) $ go hi ss fs
       where
         hi = mkUpperBound params lo epoch
     -- CASE (i) or (iii)
     go lo (ExactlyCons params@EraParams{..} _) AtMostNil =
-        nonEmptyAtMostOne (EraSummary lo hi params)
+        NonEmptyOne (EraSummary lo hi params)
       where
         hi :: EraEnd
         hi = mkEraEnd params lo
@@ -684,24 +683,19 @@ eval condition EraSummary{..} =
                        EraUnbounded -> f eraStart <= x
 
 find :: Summary xs -> Condition -> Except PastHorizonException EraSummary
-find summary condition =
-    case List.find (eval condition) (summaryToList summary) of
-      Nothing -> throwError $ PastHorizon summary condition
+find summary@(Summary eras)  condition =
+    case List.find (eval condition) (toList eras) of
+      Nothing -> throwError $ PastHorizon (summaryBounds summary) condition
       Just s  -> return s
 
-data PastHorizonException =
-    -- | We tried to convert something that is past the horizon
-    --
-    -- That is, we tried to convert something that is past the point in time
-    -- beyond which we lack information due to uncertainty about the next
-    -- hard fork.
-    --
-    -- We record both the hard fork summary and the thing that we are looking
-    -- for. Although both of these are internal types that can strictly speaking
-    -- leak out of the API through this exception, they are provided here
-    -- merely for debugging: if this exception is ever raised, it indicates
-    -- a bug somewhere.
-    forall xs. PastHorizon (Summary xs) Condition
+-- | We tried to convert something that is past the horizon
+--
+-- That is, we tried to convert something that is past the point in time
+-- beyond which we lack information due to uncertainty about the next
+-- hard fork.
+--
+-- We record the condition we were looking for and the bounds on the summary.
+data PastHorizonException = PastHorizon (Bound, EraEnd) Condition
 
 deriving instance Show PastHorizonException
 instance Exception PastHorizonException
@@ -739,13 +733,15 @@ runQueryPure q = either throw id . runQuery q
 
 -- | Translate 'UTCTime' to 'SlotNo'
 --
--- Additionally returns the time spent in this slot.
-wallclockToSlot :: UTCTime -> Query xs (SlotNo, NominalDiffTime)
+-- Additionally returns the time spent and time left in this slot.
+wallclockToSlot :: UTCTime -> Query xs (SlotNo, NominalDiffTime, NominalDiffTime)
 wallclockToSlot time = mkQuery $ \summary ->
     go <$> find summary (ContainsTime time)
   where
-    go :: EraSummary -> (SlotNo, NominalDiffTime)
-    go EraSummary{..} = first toAbsSlot $ relTime `divMod'` slotLen
+    go :: EraSummary -> (SlotNo, NominalDiffTime, NominalDiffTime)
+    go EraSummary{..} =
+        let (relSlot, timeSpent) = relTime `divMod'` slotLen
+        in (toAbsSlot relSlot, timeSpent, slotLen - timeSpent)
       where
         EraParams{..} = eraParams
 
@@ -823,19 +819,32 @@ epochToSlot epoch = mkQuery $ \summary ->
   Caching the summary
 -------------------------------------------------------------------------------}
 
+-- | Stateful abstraction to execute queries
 data RunWithCachedSummary xs m = RunWithCachedSummary {
-      cachedRunQuery :: forall a. Query xs a -> STM m a
+      -- | Run the specified query
+      --
+      -- If the query fails with a 'PastHorizonException', it will update its
+      -- internal state (compute a new summary) and try again. If that /still/
+      -- fails, the 'PastHorizonException' is returned.
+      --
+      -- See also 'cachedRunQueryThrow'.
+      cachedRunQuery :: forall a. Query xs a
+                     -> STM m (Either PastHorizonException a)
     }
 
--- | Cache the 'Summary'
+-- | Wrapper around 'cachedRunQuery' which throws the 'PastHorizonException'
 --
--- Whenever the action requires the 'Summary', we use the cached value rather
--- than computing it every time. If the action throws a 'PastHorizonException'
--- with the cached summary, we construct a new summary at that point and try
--- again. We do not catch the exception the second time: if the action still
--- throws an exception with the updated summary, it indicates a bug in the
--- caller (trying to look ahead too far).
-runWithCachedSummary :: forall m xs. (MonadSTM m, MonadThrow (STM m))
+-- This is useful for callers who know that their queries should not be past
+-- the horizon (and it would be a bug if they were).
+cachedRunQueryThrow :: (MonadSTM m, MonadThrow (STM m))
+                    => RunWithCachedSummary xs m -> Query xs a -> STM m a
+cachedRunQueryThrow run qry = either throwM return =<< cachedRunQuery run qry
+
+-- | Construct 'RunWithCachedSummary' given action that computes the summary
+--
+-- Most use cases will probably construct this action from an action that reads
+-- the ledger state and then computes the summary from that.
+runWithCachedSummary :: forall m xs. MonadSTM m
                      => STM m (Summary xs)
                      -> m (RunWithCachedSummary xs m)
 runWithCachedSummary getSummary = do
@@ -843,15 +852,16 @@ runWithCachedSummary getSummary = do
     var <- newTVarM initSummary
     return $ RunWithCachedSummary { cachedRunQuery = go var }
   where
-    go :: StrictTVar m (Summary xs) -> Query xs a -> STM m a
+    go :: StrictTVar m (Summary xs)
+       -> Query xs a -> STM m (Either PastHorizonException a)
     go var q = do
         summary <- readTVar var
         case runQuery q summary of
-          Right a             -> return a
+          Right a             -> return (Right a)
           Left  PastHorizon{} -> do
             summary' <- getSummary
             writeTVar var summary'
-            runQueryThrow q summary'
+            return $ runQuery q summary'
 
 {-------------------------------------------------------------------------------
   Translation to EpochInfo
@@ -868,10 +878,10 @@ summaryToEpochInfo =
     fmap go . runWithCachedSummary
   where
     go :: RunWithCachedSummary xs m -> EpochInfo (STM m)
-    go RunWithCachedSummary{..} = EpochInfo {
-          epochInfoSize  = \epoch -> cachedRunQuery (snd <$> epochToSlot epoch)
-        , epochInfoFirst = \epoch -> cachedRunQuery (fst <$> epochToSlot epoch)
-        , epochInfoEpoch = \slot  -> cachedRunQuery (fst <$> slotToEpoch slot)
+    go run = EpochInfo {
+          epochInfoSize  = \e -> cachedRunQueryThrow run (snd <$> epochToSlot e)
+        , epochInfoFirst = \e -> cachedRunQueryThrow run (fst <$> epochToSlot e)
+        , epochInfoEpoch = \s -> cachedRunQueryThrow run (fst <$> slotToEpoch s)
         }
 
 -- | Construct an 'EpochInfo' for a /snapshot/ of the ledger state
@@ -880,9 +890,9 @@ summaryToEpochInfo =
 -- error as a /pure/ exception. Such an exception would indicate a bug.
 snapshotEpochInfo :: forall xs. Summary xs -> EpochInfo Identity
 snapshotEpochInfo summary = EpochInfo {
-      epochInfoSize  = \epoch -> runQueryPure' (snd <$> epochToSlot epoch)
-    , epochInfoFirst = \epoch -> runQueryPure' (fst <$> epochToSlot epoch)
-    , epochInfoEpoch = \slot  -> runQueryPure' (fst <$> slotToEpoch slot)
+      epochInfoSize  = \e -> runQueryPure' (snd <$> epochToSlot e)
+    , epochInfoFirst = \e -> runQueryPure' (fst <$> epochToSlot e)
+    , epochInfoEpoch = \s -> runQueryPure' (fst <$> slotToEpoch s)
     }
   where
     runQueryPure' :: Query xs a -> Identity a

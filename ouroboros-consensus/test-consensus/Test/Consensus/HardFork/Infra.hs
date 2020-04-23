@@ -95,21 +95,21 @@ erasMapStateM f (Eras eras) = evalStateT (traverse (StateT . f) eras)
 
 erasUnfoldAtMost :: forall m xs a. Monad m
                  => (Era -> HF.Bound -> m (a, HF.EraEnd))
-                 -> Eras xs -> HF.Bound -> m (NonEmptyAtMost xs a)
+                 -> Eras xs -> HF.Bound -> m (NonEmpty xs a)
 erasUnfoldAtMost f (Eras eras) = go eras
   where
     go :: forall x xs'.
           Exactly (x ': xs') Era
        -> HF.Bound
-       -> m (NonEmptyAtMost (x ': xs') a)
+       -> m (NonEmpty (x ': xs') a)
     go (ExactlyCons e es) s = do
         (a, ms) <- f e s
         case ms of
-          HF.EraUnbounded -> return $ nonEmptyAtMostOne a
+          HF.EraUnbounded -> return $ NonEmptyOne a
           HF.EraEnd s'    ->
             case es of
-              ExactlyCons{} -> nonEmptyAtMostCons a <$> go es s'
-              ExactlyNil    -> return $ nonEmptyAtMostOne a
+              ExactlyCons{} -> NonEmptyCons a <$> go es s'
+              ExactlyNil    -> return $ NonEmptyOne a
 
 {-------------------------------------------------------------------------------
   Era-specific generators

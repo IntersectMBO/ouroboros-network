@@ -66,7 +66,7 @@ import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
-import           Test.Util.Time
+import           Test.Util.WrappedClock (NumSlots (..))
 
 tests :: TestTree
 tests = testGroup "DualPBFT" [

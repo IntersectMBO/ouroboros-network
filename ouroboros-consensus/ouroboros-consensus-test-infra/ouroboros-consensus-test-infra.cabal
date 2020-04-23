@@ -42,6 +42,7 @@ library
                        Test.Util.FS.Sim.STM
                        Test.Util.Golden
                        Test.Util.InvertedMap
+                       Test.Util.LogicalClock
                        Test.Util.MockChain
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike
@@ -58,9 +59,9 @@ library
                        Test.Util.Split
                        Test.Util.Stream
                        Test.Util.TestBlock
-                       Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WithEq
+                       Test.Util.WrappedClock
 
   build-depends:       base              >=4.9 && <4.13
                      , base16-bytestring

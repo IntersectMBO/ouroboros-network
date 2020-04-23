@@ -381,9 +381,10 @@ instance MonadST (SimM s) where
 liftST :: StrictST.ST s a -> SimM s a
 liftST action = SimM $ \k -> LiftST action k
 
-instance MonadTime (SimM s) where
-
+instance MonadMonotonicTime (SimM s) where
   getMonotonicTime = SimM $ \k -> GetMonoTime k
+
+instance MonadTime (SimM s) where
   getCurrentTime   = SimM $ \k -> GetWallTime k
 
 -- | Set the current wall clock time for the thread's clock domain.
@@ -407,7 +408,7 @@ instance MonadTimer (SimM s) where
                         | NegativeTimeout !TimeoutId
                         -- ^ a negative timeout
 
-  readTimeout (Timeout var _key) = readTVar var
+  readTimeout (Timeout var _key)     = readTVar var
   readTimeout (NegativeTimeout _key) = pure TimeoutCancelled
 
   newTimeout      d = SimM $ \k -> NewTimeout      d k

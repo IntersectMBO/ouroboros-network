@@ -22,9 +22,6 @@ class HasHardForkHistory blk where
                 -> HardFork.Shape (HardForkIndices blk)
 
   -- | Ledger-dependent hard fork transitions
-  --
-  -- TODO: This should eventually obsolete 'knownSlotLengths'
-  -- TODO: This should eventually address #1205
   hardForkTransitions :: LedgerConfig blk
                       -> LedgerState blk
                       -> HardFork.Transitions (HardForkIndices blk)

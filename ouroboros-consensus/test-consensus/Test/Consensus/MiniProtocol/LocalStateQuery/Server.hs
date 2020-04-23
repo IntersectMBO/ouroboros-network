@@ -234,7 +234,7 @@ testCfg securityParam = TopLevelConfig {
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = ()
-    , configBlock  = TestBlockConfig slotLength eraParams numCoreNodes
+    , configBlock  = TestBlockConfig eraParams numCoreNodes
     }
   where
     slotLength :: SlotLength
@@ -245,7 +245,6 @@ testCfg securityParam = TopLevelConfig {
 
     eraParams :: HardFork.EraParams
     eraParams = HardFork.defaultEraParams securityParam slotLength
-
 
 {-------------------------------------------------------------------------------
   Orphans

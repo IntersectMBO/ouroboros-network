@@ -29,22 +29,12 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 
-import           Test.Util.Time
-
 minNumCoreNodes :: Word64
 minNumCoreNodes = 2
-
-minNumSlots :: Word64
-minNumSlots = 1
 
 instance Arbitrary NumCoreNodes where
   arbitrary = NumCoreNodes <$> choose (minNumCoreNodes, 5)
   shrink (NumCoreNodes n) = NumCoreNodes <$> (filter (>= minNumCoreNodes) $ shrink n)
-
--- TODO: We shouldn't really pick the number of slots independent from k
-instance Arbitrary NumSlots where
-  arbitrary = NumSlots <$> choose (minNumSlots, 100)
-  shrink (NumSlots n) = NumSlots <$> (filter (>= minNumSlots) $ shrink n)
 
 -- | Picks time span between 0 seconds and (roughly) 50 years
 instance Arbitrary NominalDiffTime where

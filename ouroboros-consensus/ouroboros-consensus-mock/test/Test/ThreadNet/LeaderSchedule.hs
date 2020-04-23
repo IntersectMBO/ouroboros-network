@@ -37,7 +37,7 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.SimpleBlock
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Time
+import           Test.Util.WrappedClock (NumSlots (..))
 
 tests :: TestTree
 tests = testGroup "LeaderSchedule"

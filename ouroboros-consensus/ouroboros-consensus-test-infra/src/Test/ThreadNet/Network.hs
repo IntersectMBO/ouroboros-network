@@ -71,7 +71,6 @@ import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
-import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -79,7 +78,6 @@ import           Ouroboros.Consensus.Mempool
 import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.Server as BFServer
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
-import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -111,9 +109,11 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
+import qualified Test.Util.LogicalClock as LogicalClock
 import           Test.Util.Random
-import           Test.Util.Time
 import           Test.Util.Tracer
+import           Test.Util.WrappedClock (NumSlots (..), WrappedClock (..))
+import qualified Test.Util.WrappedClock as WrappedClock
 
 -- | How to forge an EBB
 --
@@ -275,10 +275,7 @@ runThreadNetwork ThreadNetworkArgs
     -- from the wrong thread. To stop the network, wait for all the nodes'
     -- blockchain times to be done and then kill the main thread of each node,
     -- which should terminate all other threads it spawned.
-    sharedTestBtime <- newTestBlockchainTime
-                         sharedRegistry
-                         numSlots
-                         slotLength
+    clock <- WrappedClock.new sharedRegistry numSlots slotLength
     -- This function is organized around the notion of a network of nodes as a
     -- simple graph with no loops. The graph topology is determined by
     -- @nodeTopology@.
@@ -313,7 +310,7 @@ runThreadNetwork ThreadNetworkArgs
       forM uedges $ \uedge -> do
         forkBothEdges
           sharedRegistry
-          sharedTestBtime
+          clock
           -- traces when/why the mini protocol instances start and stop
           nullDebugTracer
           vertexStatusVars
@@ -329,7 +326,7 @@ runThreadNetwork ThreadNetworkArgs
 
       -- the vertex cannot create its first node instance until the
       -- 'NodeJoinPlan' allows
-      tooLate <- blockUntilSlot sharedTestBtime joinSlot
+      tooLate <- WrappedClock.blockUntilSlot clock joinSlot
       when tooLate $ do
         error $ "unsatisfiable nodeJoinPlan: " ++ show coreNodeId
 
@@ -343,7 +340,7 @@ runThreadNetwork ThreadNetworkArgs
             ]
       forkVertex
         varRNG
-        sharedTestBtime
+        clock
         sharedRegistry
         coreNodeId
         vertexStatusVar
@@ -359,7 +356,7 @@ runThreadNetwork ThreadNetworkArgs
         let NodeInfo{nodeInfoEvents} = nodeInfo
             loop next = do
               (s, bno) <- atomically $ do
-                s <- testBlockchainTimeSlot sharedTestBtime
+                s <- WrappedClock.getCurrentSlot clock
                 check $ s >= next
                 readTVar vertexStatusVar >>= \case
                   VUp kernel _ -> do
@@ -373,7 +370,7 @@ runThreadNetwork ThreadNetworkArgs
       return (coreNodeId, vertexStatusVar, readNodeInfo)
 
     -- Wait for the last slot to end
-    testBlockchainTimeDone sharedTestBtime
+    WrappedClock.waitUntilDone clock
 
     -- Collect all nodes' final chains
     vertexInfos <-
@@ -398,7 +395,7 @@ runThreadNetwork ThreadNetworkArgs
 
     forkVertex
       :: StrictTVar m ChaChaDRG
-      -> TestBlockchainTime m
+      -> WrappedClock m
       -> ResourceRegistry m
       -> CoreNodeId
       -> VertexStatusVar m blk
@@ -407,7 +404,7 @@ runThreadNetwork ThreadNetworkArgs
       -> m ()
     forkVertex
       varRNG
-      sharedTestBtime
+      clock
       sharedRegistry
       coreNodeId
       vertexStatusVar
@@ -450,7 +447,7 @@ runThreadNetwork ThreadNetworkArgs
             (kernel, app) <- forkNode
               coreNodeId
               varRNG
-              sharedTestBtime
+              clock
               nodeRegistry
               pInfo'
               nodeInfo
@@ -461,12 +458,12 @@ runThreadNetwork ThreadNetworkArgs
             again <- case Map.minViewWithKey rs of
               -- end of test
               Nothing               -> do
-                testBlockchainTimeDone sharedTestBtime
+                WrappedClock.waitUntilDone clock
                 pure Nothing
               -- onset of schedule restart slot
               Just ((s', nr'), rs') -> do
                 -- wait until the node should stop
-                tooLate <- blockUntilSlot sharedTestBtime s'
+                tooLate <- WrappedClock.blockUntilSlot clock s'
                 when tooLate $ do
                   error $ "unsatisfiable nodeRestarts: "
                     ++ show (coreNodeId, s')
@@ -541,21 +538,21 @@ runThreadNetwork ThreadNetworkArgs
     -- the mempool.
     forkTxProducer :: HasCallStack
                    => ResourceRegistry m
-                   -> TestBlockchainTime m
+                   -> WrappedClock m
                    -> TopLevelConfig blk
                    -> RunMonadRandom m
                    -> STM m (ExtLedgerState blk)
                       -- ^ How to get the current ledger state
                    -> Mempool m blk TicketNo
                    -> m ()
-    forkTxProducer registry btime cfg runMonadRandomDict getExtLedger mempool =
-      void $ onSlotChange registry btime "txProducer" $ \curSlotNo -> do
+    forkTxProducer registry clock cfg runMonadRandomDict getExtLedger mempool =
+      void $ WrappedClock.onSlotChange registry clock "txProducer" $ \curSlotNo -> do
         ledger <- atomically $ ledgerState <$> getExtLedger
         txs    <- runMonadRandom runMonadRandomDict $ \_lift' ->
           testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger
         void $ addTxs mempool txs
 
-    mkArgs :: TestBlockchainTime m
+    mkArgs :: WrappedClock m
            -> ResourceRegistry m
            -> TopLevelConfig blk
            -> ExtLedgerState blk
@@ -567,7 +564,7 @@ runThreadNetwork ThreadNetworkArgs
            -> CoreNodeId
            -> ChainDbArgs m blk
     mkArgs
-      btime registry
+      clock registry
       cfg initLedger
       invalidTracer addTracer
       nodeDBs _coreNodeId = ChainDbArgs
@@ -602,9 +599,9 @@ runThreadNetwork ThreadNetworkArgs
         , cdbIsEBB                = nodeIsEBB
         , cdbCheckIntegrity       = nodeCheckIntegrity cfg
         , cdbGenesis              = return initLedger
-        , cdbCheckInFuture        = InFuture.miracle
-                                      (testBlockchainTimeSlot btime)
-                                      1 -- One slot clock skew
+        , cdbCheckInFuture        = LogicalClock.checkInFuture
+                                      cfg
+                                      (unwrapLogicalClock clock)
         , cdbAddHdrEnv            = nodeAddHeaderEnvelope (Proxy @blk)
         , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
         -- Misc
@@ -638,7 +635,7 @@ runThreadNetwork ThreadNetworkArgs
       :: HasCallStack
       => CoreNodeId
       -> StrictTVar m ChaChaDRG
-      -> TestBlockchainTime m
+      -> WrappedClock m
       -> ResourceRegistry m
       -> ProtocolInfo blk
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
@@ -647,7 +644,7 @@ runThreadNetwork ThreadNetworkArgs
       -> m ( NodeKernel m NodeId Void blk
            , LimitedApp m NodeId      blk
            )
-    forkNode coreNodeId varRNG btime registry pInfo nodeInfo txs0 = do
+    forkNode coreNodeId varRNG clock registry pInfo nodeInfo txs0 = do
       let ProtocolInfo{..} = pInfo
 
       let NodeInfo
@@ -658,10 +655,10 @@ runThreadNetwork ThreadNetworkArgs
       -- prop_general relies on these tracers
       let invalidTracer = (nodeEventsInvalids nodeInfoEvents)
           addTracer = Tracer $ \(p, bno) -> do
-            s <- atomically $ testBlockchainTimeSlot btime
+            s <- atomically $ WrappedClock.getCurrentSlot clock
             traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno)
       let chainDbArgs = mkArgs
-            btime registry
+            clock registry
             pInfoConfig pInfoInitLedger
             invalidTracer
             addTracer
@@ -742,19 +739,27 @@ runThreadNetwork ThreadNetworkArgs
             , runMonadRandomDict = runMonadRandomWithTVar varRNG
             }
 
-      -- prop_general relies on these tracers
-      let instrumentationTracers = nullTracers
-            { forgeTracer = nodeEventsForges nodeInfoEvents
-            }
+      let -- prop_general relies on these tracers
+          instrumentationTracers = nullTracers
+                { forgeTracer = nodeEventsForges nodeInfoEvents
+                }
+
+          -- traces the node's local events other than those from the -- ChainDB
+          tracers = instrumentationTracers <> nullDebugTracers
+
+      btime <- LogicalClock.hardForkBlockchainTime
+                 registry
+                 (blockchainTimeTracer tracers)
+                 (unwrapLogicalClock clock)
+                 pInfoConfig
+                 (ledgerState <$> ChainDB.getCurrentLedger chainDB)
+
       let nodeArgs = NodeArgs
-            { tracers             =
-                -- traces the node's local events other than those from the
-                -- ChainDB
-                instrumentationTracers <> nullDebugTracers
+            { tracers
             , registry
             , cfg                    = pInfoConfig
             , initState              = pInfoInitState
-            , btime                  = testBlockchainTime btime
+            , btime
             , chainDB
             , initChainDB            = nodeInitChainDB
             , blockProduction        = Just blockProduction
@@ -769,12 +774,6 @@ runThreadNetwork ThreadNetworkArgs
                   txSubmissionMaxUnacked      = 1000 -- TODO ?
                 }
             }
-
-      unless (knownSlotLength (configBlock pInfoConfig) == slotLength) $
-        error $ "Inconsistent slot lengths: "
-             ++ show (knownSlotLength (configBlock pInfoConfig))
-             ++ " /= "
-             ++ show slotLength
 
       nodeKernel <- initNodeKernel nodeArgs
       let mempool = getMempool nodeKernel
@@ -809,7 +808,7 @@ runThreadNetwork ThreadNetworkArgs
         ( (Origin, GenesisPoint)
         , do
             -- time matters, because some transaction expire
-            now <- testBlockchainTimeSlot btime
+            now <- WrappedClock.getCurrentSlot clock
             p <- (ledgerTipPoint' (Proxy @blk) . ledgerState) <$> ChainDB.getCurrentLedger chainDB
             pure (At now, p)
         )
@@ -818,7 +817,7 @@ runThreadNetwork ThreadNetworkArgs
 
       forkTxProducer
         registry
-        btime
+        clock
         pInfoConfig
         -- Uses the same varRNG as the block producer, but we split the RNG
         -- each time, so this is fine.
@@ -885,12 +884,12 @@ data RestartCause
 forkBothEdges
   :: (IOLike m, HasCallStack)
   => ResourceRegistry m
-  -> TestBlockchainTime m
+  -> WrappedClock m
   -> Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
   -> Map CoreNodeId (VertexStatusVar m blk)
   -> (CoreNodeId, CoreNodeId)
   -> m [((CoreNodeId, CoreNodeId), EdgeStatusVar m)]
-forkBothEdges sharedRegistry btime tr vertexStatusVars (node1, node2) = do
+forkBothEdges sharedRegistry clock tr vertexStatusVars (node1, node2) = do
   let endpoint1 = mkEndpoint node1
       endpoint2 = mkEndpoint node2
       mkEndpoint node = case Map.lookup node vertexStatusVars of
@@ -902,7 +901,7 @@ forkBothEdges sharedRegistry btime tr vertexStatusVars (node1, node2) = do
         let label = concat
               ["directed-edge-", condense (fst e1), "-", condense (fst e2)]
         void $ forkLinkedThread sharedRegistry label $ do
-          directedEdge tr btime v e1 e2
+          directedEdge tr clock v e1 e2
         pure ((fst e1, fst e2), v)
 
   ev12 <- mkDirEdge endpoint1 endpoint2
@@ -932,12 +931,12 @@ forkBothEdges sharedRegistry btime tr vertexStatusVars (node1, node2) = do
 directedEdge ::
   forall m blk. IOLike m
   => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
-  -> TestBlockchainTime m
+  -> WrappedClock m
   -> EdgeStatusVar m
   -> (CoreNodeId, VertexStatusVar m blk)
   -> (CoreNodeId, VertexStatusVar m blk)
   -> m ()
-directedEdge tr btime edgeStatusVar client server =
+directedEdge tr clock edgeStatusVar client server =
     loop
   where
     loop = do
@@ -949,10 +948,10 @@ directedEdge tr btime edgeStatusVar client server =
           RestartNode  -> pure ()
           RestartExn e -> do
             -- "error policy": restart at beginning of next slot
-            s <- atomically $ testBlockchainTimeSlot btime
+            s <- atomically $ WrappedClock.getCurrentSlot clock
             let s' = succ s
             traceWith tr (s, MiniProtocolDelayed, e)
-            void $ blockUntilSlot btime s'
+            void $ WrappedClock.blockUntilSlot clock s'
             traceWith tr (s', MiniProtocolRestarting, e)
         loop
       where

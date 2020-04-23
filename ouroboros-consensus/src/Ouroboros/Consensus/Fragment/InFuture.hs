@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Intended for qualified import
@@ -34,7 +35,7 @@ import           Ouroboros.Network.AnchoredFragment
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime.WallClock
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
@@ -103,24 +104,20 @@ clockSkewInSeconds = ClockSkew . secondsToNominalDiffTime
   Reference implementation
 -------------------------------------------------------------------------------}
 
-reference :: forall m blk. (
-               MonadTime m
-             , UpdateLedger       blk
-             , HasHardForkHistory blk
-             )
+reference :: forall m blk. (Monad m, UpdateLedger blk, HasHardForkHistory blk)
           => TopLevelConfig blk
-          -> SystemStart
           -> ClockSkew
+          -> SystemTime m
           -> CheckInFuture m blk
-reference cfg start (ClockSkew clockSkew) = CheckInFuture {
+reference cfg (ClockSkew clockSkew) SystemTime{..} = CheckInFuture {
       checkInFuture = \validated -> do
-        now <- getCurrentTime
+        now <- systemTimeCurrent
         -- Since we have the ledger state /after/ the fragment, the derived
         -- summary can be used to check all of the blocks in the fragment
         return $
           checkFragment
             (HF.summarize
-               start
+               systemTimeStart
                (ledgerTipSlot
                   (VF.validatedLedger validated))
                (hardForkShape
