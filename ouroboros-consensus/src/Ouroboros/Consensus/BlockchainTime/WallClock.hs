@@ -9,7 +9,6 @@ module Ouroboros.Consensus.BlockchainTime.WallClock (
     -- * Low-level API (exported primarily for testing)
   , getWallClockSlot
   , waitUntilNextSlot
-  , nominalDelay
   ) where
 
 import           Control.Exception (Exception)
@@ -25,6 +24,7 @@ import           Ouroboros.Consensus.BlockchainTime.API
 import           Ouroboros.Consensus.BlockchainTime.SlotLengths
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.Time
 
 -- | Events emitted by 'realBlockchainTime'.
 data TraceBlockchainTimeEvent
@@ -142,10 +142,3 @@ data SystemClockMovedBackException =
   deriving (Show)
 
 instance Exception SystemClockMovedBackException
-
-{-------------------------------------------------------------------------------
-  Auxiliary: conversions
--------------------------------------------------------------------------------}
-
-nominalDelay :: NominalDiffTime -> DiffTime
-nominalDelay = realToFrac

@@ -102,8 +102,9 @@ library
                        Ouroboros.Consensus.Util.Random
                        Ouroboros.Consensus.Util.RedundantConstraints
                        Ouroboros.Consensus.Util.ResourceRegistry
-                       Ouroboros.Consensus.Util.STM
                        Ouroboros.Consensus.Util.Singletons
+                       Ouroboros.Consensus.Util.STM
+                       Ouroboros.Consensus.Util.Time
                        Ouroboros.Consensus.Util.TraceSize
                        Ouroboros.Consensus.Util.Versioned
 
