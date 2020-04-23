@@ -20,6 +20,7 @@ import           Test.QuickCheck hiding (Fixed (..))
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.SlotLengths
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ClockSkew (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo

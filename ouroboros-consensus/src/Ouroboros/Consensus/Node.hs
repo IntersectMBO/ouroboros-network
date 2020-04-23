@@ -159,7 +159,7 @@ run RunNodeArgs{..} = do
         registry
         (blockchainTimeTracer rnTraceConsensus)
         (nodeStartTime (Proxy @blk) cfg)
-        (focusSlotLengths slotLengths)
+        slotLength
 
       -- When we shut down cleanly, we create a marker file so that the next
       -- time we start, we know we don't have to validate the contents of the
@@ -218,7 +218,7 @@ run RunNodeArgs{..} = do
   where
     mountPoint              = MountPoint rnDatabasePath
     hasFS                   = ioHasFS mountPoint
-    slotLengths             = knownSlotLengths (configBlock cfg)
+    slotLength              = knownSlotLength (configBlock cfg)
     nodeToNodeVersionData   = NodeToNodeVersionData   { networkMagic = rnNetworkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnNetworkMagic }
 

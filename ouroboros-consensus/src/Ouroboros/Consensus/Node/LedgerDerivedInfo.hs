@@ -8,7 +8,7 @@ module Ouroboros.Consensus.Node.LedgerDerivedInfo (
   ) where
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.WallClock
 import           Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
 
@@ -38,7 +38,7 @@ class HasHardForkHistory blk => LedgerDerivedInfo blk where
   --
   -- TODO: This should take the LedgerState as argument
   -- <https://github.com/input-output-hk/ouroboros-network/issues/1637>
-  knownSlotLengths :: BlockConfig blk -> SlotLengths
+  knownSlotLength :: BlockConfig blk -> SlotLength
 
   -- TODO: This should have a function for epoch lengths
   -- <https://github.com/input-output-hk/ouroboros-network/issues/1205>

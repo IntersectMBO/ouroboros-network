@@ -31,9 +31,9 @@ simpleBlockchainTime :: forall m. IOLike m
                      => ResourceRegistry m
                      -> Tracer m TraceBlockchainTimeEvent
                      -> SystemStart
-                     -> FocusedSlotLengths
+                     -> SlotLength
                      -> m (BlockchainTime m)
-simpleBlockchainTime registry tracer start ls = do
+simpleBlockchainTime registry tracer start slotLen = do
     now   <- getCurrentTime
     lsVar <- newTVarM ls
 
@@ -54,6 +54,9 @@ simpleBlockchainTime registry tracer start ls = do
         getCurrentSlot = readTVar slotVar
       }
   where
+    ls :: FocusedSlotLengths
+    ls = focusSlotLengths (singletonSlotLengths slotLen)
+
     -- In each iteration of the loop, we recompute how long to wait until
     -- the next slot. This minimizes clock skew.
     loop :: StrictTVar m FocusedSlotLengths

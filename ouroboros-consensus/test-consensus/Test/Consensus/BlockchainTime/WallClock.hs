@@ -30,6 +30,7 @@ import           Cardano.Slotting.Slot (SlotNo (..))
 import           Control.Monad.IOSim
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.SlotLengths
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -270,7 +271,7 @@ testOverrideDelay systemStart slotLength numSlots = do
                 registry
                 nullTracer
                 systemStart
-                (focusSlotLengths $ singletonSlotLengths slotLength)
+                slotLength
       slotsVar <- uncheckedNewTVarM []
       cancelCollection <-
         onKnownSlotChange registry time "testOverrideDelay" $ \slotNo ->

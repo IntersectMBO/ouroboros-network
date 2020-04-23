@@ -56,7 +56,6 @@ import           Cardano.Slotting.Slot (EpochNo, WithOrigin (..))
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
-import           Ouroboros.Consensus.BlockchainTime (singletonSlotLengths)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -218,8 +217,7 @@ instance HasHardForkHistory (ShelleyBlock c) where
   hardForkTransitions _ _ = HardFork.transitionsUnknown
 
 instance LedgerDerivedInfo (ShelleyBlock c) where
-  knownSlotLengths =
-    singletonSlotLengths . HardFork.eraSlotLength . shelleyEraParams
+  knownSlotLength = HardFork.eraSlotLength . shelleyEraParams
 
 {-------------------------------------------------------------------------------
   QueryLedger

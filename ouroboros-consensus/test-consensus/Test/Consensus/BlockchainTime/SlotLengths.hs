@@ -11,6 +11,7 @@ import           Test.Tasty.QuickCheck
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.SlotLengths
 
 import           Test.Util.Orphans.Arbitrary (SmallDiffTime (..))
 import           Test.Util.QuickCheck

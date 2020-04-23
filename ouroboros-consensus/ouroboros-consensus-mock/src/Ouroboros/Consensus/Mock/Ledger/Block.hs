@@ -246,7 +246,7 @@ instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
 -------------------------------------------------------------------------------}
 
 data instance BlockConfig (SimpleBlock c ext) = SimpleBlockConfig {
-      simpleBlockSlotLengths :: !SlotLengths
+      simpleBlockSlotLength :: !SlotLength
 
       -- TODO: This should obsolete 'simpleBlockSlotLengths' (#1637)
     , simpleBlockEraParams :: !HardFork.EraParams
@@ -257,8 +257,8 @@ defaultSimpleBlockConfig :: SecurityParam
                          -> SlotLength
                          -> BlockConfig (SimpleBlock c ext)
 defaultSimpleBlockConfig k slotLength = SimpleBlockConfig {
-      simpleBlockSlotLengths = singletonSlotLengths slotLength
-    , simpleBlockEraParams   = HardFork.defaultEraParams k slotLength
+      simpleBlockSlotLength = slotLength
+    , simpleBlockEraParams  = HardFork.defaultEraParams k slotLength
     }
 
 instance HasHardForkHistory (SimpleBlock c ext) where
@@ -267,7 +267,7 @@ instance HasHardForkHistory (SimpleBlock c ext) where
   hardForkTransitions _ _ = HardFork.transitionsUnknown
 
 instance LedgerDerivedInfo (SimpleBlock c ext) where
-  knownSlotLengths = simpleBlockSlotLengths
+  knownSlotLength = simpleBlockSlotLength
 
 {-------------------------------------------------------------------------------
   Protocol specific constraints

@@ -357,7 +357,7 @@ instance HasHardForkHistory TestBlock where
   hardForkTransitions _ _ = HardFork.transitionsUnknown
 
 instance LedgerDerivedInfo TestBlock where
-  knownSlotLengths = singletonSlotLengths . testBlockSlotLength
+  knownSlotLength = testBlockSlotLength
 
 instance QueryLedger TestBlock where
   data Query TestBlock result where
