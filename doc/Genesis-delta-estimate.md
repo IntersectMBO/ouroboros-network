@@ -95,6 +95,10 @@ estimates would both require knowing the PMF/CMF of `1 <= div(C1',C2) <= k+1`
 for network latency/delay/etc to transfer `n`-many blocks, or some further
 estimates thereof.
 
+(TODO Simlar to the mitigation option mentioned in Discussion 3 below, we could
+adjust the fetch logic thread to also fetch blocks from chains that are "just
+as good" as the local node's selected chain.)
+
 # Example 2
 
 There is another factor.
