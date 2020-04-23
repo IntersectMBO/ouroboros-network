@@ -4,13 +4,22 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Util.Time (
-    NumSlots(..)
-  , TestBlockchainTime -- opaque
+    -- * Test blockchain time API
+    TestBlockchainTime -- opaque
   , testBlockchainTimeSlot
   , testBlockchainTimeDone
+    -- * Construction
+  , NumSlots(..)
   , newTestBlockchainTime
-  , blockUntilSlot
+    -- * Alternative constructors
+  , fixedBlockchainTime
+    -- * Derived funtionality
   , testBlockchainTime
+  , blockUntilSlot
+  , onSlotChange
+    -- * Executing an action once
+  , OnSlotException(..)
+  , onSlot
   ) where
 
 import           Control.Monad
@@ -30,6 +39,26 @@ import           Ouroboros.Consensus.Util.STM
   Test blockchain time
 -------------------------------------------------------------------------------}
 
+-- | Test blockchain time
+--
+-- Unlike the real 'BlockchainTime' API, the 'TestBlockchainTime' API /always/
+-- knows what the current 'SlotNo' is.
+--
+-- In addition, 'TestBlockchainTime' defines a /maximum/ number of slots that
+-- the system will run for, and offers an API for waiting until that slot.
+--
+-- TODO: We will eventually need to generalize the tests also so that they do
+-- not rely on knowing the time.
+data TestBlockchainTime m = TestBlockchainTime
+  { testBlockchainTimeSlot :: STM m SlotNo
+  , testBlockchainTimeDone :: m ()
+    -- ^ Blocks until the end of the final requested slot.
+  }
+
+{-------------------------------------------------------------------------------
+  Construction
+-------------------------------------------------------------------------------}
+
 -- | Number of slots
 newtype NumSlots = NumSlots Word64
   deriving (Show)
@@ -40,17 +69,6 @@ data TestClock =
     -- ^ This phase has a non-zero but negligible duration.
   | Running !SlotNo
   deriving (Eq, Generic, NoUnexpectedThunks)
-
-data TestBlockchainTime m = TestBlockchainTime
-  { testBlockchainTimeSlot :: STM m SlotNo
-  , testBlockchainTimeDone :: m ()
-    -- ^ Blocks until the end of the final requested slot.
-  }
-
-testBlockchainTime :: TestBlockchainTime m -> BlockchainTime m
-testBlockchainTime t = BlockchainTime {
-      getCurrentSlot = testBlockchainTimeSlot t
-    }
 
 -- | Construct new blockchain time that ticks at the specified slot duration
 --
@@ -109,6 +127,29 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
                     Running slot -> Just slot)
             <$> readTVar slotVar
 
+{-------------------------------------------------------------------------------
+  Alternative constructors
+
+  TODO: These should be gone after
+  <https://github.com/input-output-hk/ouroboros-network/pull/1989>.
+-------------------------------------------------------------------------------}
+
+-- | 'TestBlockchainTime' that is stuck on the given slot
+fixedBlockchainTime :: MonadSTM m => SlotNo -> TestBlockchainTime m
+fixedBlockchainTime slot = TestBlockchainTime {
+      testBlockchainTimeSlot = return slot
+    , testBlockchainTimeDone = error "fixedBlockchainTime: never done"
+    }
+
+{-------------------------------------------------------------------------------
+  Derived functionality
+-------------------------------------------------------------------------------}
+
+testBlockchainTime :: TestBlockchainTime m -> BlockchainTime m
+testBlockchainTime t = BlockchainTime {
+      getCurrentSlot = testBlockchainTimeSlot t
+    }
+
 -- | Block until the specified slot
 --
 -- Returns 'True' immediately if the requested slot is already over, else
@@ -124,3 +165,41 @@ blockUntilSlot btime slot = atomically $ do
     else do
       check $ now == slot
       return False
+
+-- | Variant on 'onKnownSlotChange'
+onSlotChange :: (IOLike m, HasCallStack)
+             => ResourceRegistry m
+             -> TestBlockchainTime m
+             -> String            -- ^ Label for the thread
+             -> (SlotNo -> m ())  -- ^ Action to execute
+             -> m (m ())
+onSlotChange registry btime label =
+      fmap cancelThread
+    . onEachChange registry label id Nothing (testBlockchainTimeSlot btime)
+
+{-------------------------------------------------------------------------------
+  Executing an action once
+-------------------------------------------------------------------------------}
+
+-- | Run the specified action once when the specified slot is reached
+onSlot :: (HasCallStack, IOLike m)
+       => ResourceRegistry m
+       -> TestBlockchainTime m
+       -> String -- ^ Label for the thread
+       -> SlotNo
+       -> m ()
+       -> m ()
+onSlot registry btime label slot k = do
+    startingSlot <- atomically $ testBlockchainTimeSlot btime
+    when (startingSlot >= slot) $
+      throwM $ OnSlotTooLate slot startingSlot
+    void $ onSlotChange registry btime label $ \slot' ->
+      when (slot == slot') k
+
+data OnSlotException =
+    -- | An action was scheduled via 'onSlot' for a slot in the past.
+    -- First slot is requested, second slot is current as of raising.
+    OnSlotTooLate SlotNo SlotNo
+  deriving (Eq, Show)
+
+instance Exception OnSlotException

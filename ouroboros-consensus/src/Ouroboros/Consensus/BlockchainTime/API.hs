@@ -4,9 +4,8 @@
 
 module Ouroboros.Consensus.BlockchainTime.API (
     BlockchainTime(..)
-  , onSlotChange
+  , onKnownSlotChange
     -- * Testing
-  , fixedBlockchainTime
   , settableBlockchainTime
   ) where
 
@@ -41,17 +40,18 @@ data BlockchainTime m = BlockchainTime {
 
 -- | Spawn a thread to run an action each time the slot changes
 --
--- Returns a handle to kill the thread.
+-- The action will not be called until the current slot becomes known
+-- (if the tip of our ledger is too far away from the current wallclock time,
+-- we may not know what the current 'SlotId' is).
 --
--- The thread will be linked to the registry in which the 'BlockchainTime'
--- itself was created.
-onSlotChange :: (IOLike m, HasCallStack)
-             => ResourceRegistry m
-             -> BlockchainTime m
-             -> String            -- ^ Label for the thread
-             -> (SlotNo -> m ())  -- ^ Action to execute
-             -> m (m ())
-onSlotChange registry BlockchainTime{getCurrentSlot} label =
+-- Returns a handle to kill the thread.
+onKnownSlotChange :: (IOLike m, HasCallStack)
+                  => ResourceRegistry m
+                  -> BlockchainTime m
+                  -> String            -- ^ Label for the thread
+                  -> (SlotNo -> m ())  -- ^ Action to execute
+                  -> m (m ())
+onKnownSlotChange registry BlockchainTime{getCurrentSlot} label =
       fmap cancelThread
     . onEachChange registry label id Nothing getCurrentSlot
 
@@ -61,14 +61,6 @@ onSlotChange registry BlockchainTime{getCurrentSlot} label =
   TODO: these will go after
   <https://github.com/input-output-hk/ouroboros-network/pull/1989>
 -------------------------------------------------------------------------------}
-
--- | A 'BlockchainTime' that is fixed to the given slot.
---
--- 'onSlotChange_' does nothing.
-fixedBlockchainTime :: MonadSTM m => SlotNo -> BlockchainTime m
-fixedBlockchainTime slot = BlockchainTime {
-      getCurrentSlot = return slot
-    }
 
 -- | The current slot can be changed by modifying the given 'StrictTVar'.
 --
