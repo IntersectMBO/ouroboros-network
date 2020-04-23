@@ -541,7 +541,7 @@ runThreadNetwork ThreadNetworkArgs
     -- the mempool.
     forkTxProducer :: HasCallStack
                    => ResourceRegistry m
-                   -> BlockchainTime m
+                   -> TestBlockchainTime m
                    -> TopLevelConfig blk
                    -> RunMonadRandom m
                    -> STM m (ExtLedgerState blk)
@@ -811,7 +811,7 @@ runThreadNetwork ThreadNetworkArgs
 
       forkTxProducer
         registry
-        (testBlockchainTime btime)
+        btime
         pInfoConfig
         -- Uses the same varRNG as the block producer, but we split the RNG
         -- each time, so this is fine.

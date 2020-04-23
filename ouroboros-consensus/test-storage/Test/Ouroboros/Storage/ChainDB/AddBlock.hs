@@ -28,7 +28,6 @@ import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
-import           Ouroboros.Consensus.BlockchainTime.API (fixedBlockchainTime)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util (chunks)
@@ -59,6 +58,7 @@ import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.SOP
 import           Test.Util.TestBlock
+import           Test.Util.Time
 
 import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock (..))
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
@@ -275,7 +275,7 @@ mkArgs cfg chunkInfo initLedger tracer registry hashInfo
     , cdbHashInfo             = hashInfo
     , cdbIsEBB                = const Nothing
     , cdbCheckIntegrity       = const True
-    , cdbBlockchainTime       = fixedBlockchainTime maxBound
+    , cdbBlockchainTime       = testBlockchainTime (fixedBlockchainTime maxBound)
     , cdbGenesis              = return initLedger
     , cdbAddHdrEnv            = \_ _ -> id
     , cdbImmDbCacheConfig     = Index.CacheConfig 2 60

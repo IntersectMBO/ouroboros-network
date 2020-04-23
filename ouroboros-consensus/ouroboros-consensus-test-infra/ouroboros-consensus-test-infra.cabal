@@ -32,7 +32,6 @@ library
                        Test.ThreadNet.Util.NodeTopology
 
                        Test.Util.Blob
-                       Test.Util.BlockchainTime
                        Test.Util.ChunkInfo
                        Test.Util.Corruption
                        Test.Util.FS.Sim.Error

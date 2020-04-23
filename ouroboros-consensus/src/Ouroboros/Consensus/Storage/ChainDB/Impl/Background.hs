@@ -62,7 +62,7 @@ import           Ouroboros.Network.Block (ChainHash (..), HasHeader, Point,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime (onSlotChange)
+import           Ouroboros.Consensus.BlockchainTime (onKnownSlotChange)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -577,7 +577,7 @@ scheduledChainSelectionRunner
   :: (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
   => ChainDbEnv m blk -> m (m ())
 scheduledChainSelectionRunner cdb@CDB{..} =
-    onSlotChange
+    onKnownSlotChange
       cdbRegistry
       cdbBlockchainTime
       "ChainDB.scheduledChainSelection"

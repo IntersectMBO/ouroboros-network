@@ -66,7 +66,6 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
-import           Test.Util.BlockchainTime
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
@@ -265,7 +264,6 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     (ServerUpdates serverUpdates) startSyncingAt = withRegistry $ \registry -> do
 
     testBtime <- newTestBlockchainTime registry numSlots slotLength
-    let btime = testBlockchainTime testBtime
 
     -- Set up the client
     varCandidates      <- uncheckedNewTVarM Map.empty
@@ -277,7 +275,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     -- at the final state of each candidate.
     varFinalCandidates <- uncheckedNewTVarM Map.empty
 
-    (tracer, getTrace) <- first (addSlotNo btime) <$> recordingTracerTVar
+    (tracer, getTrace) <- first (addSlotNo testBtime) <$> recordingTracerTVar
     let chainSyncTracer = contramap Left  tracer
         protocolTracer  = contramap Right tracer
 
@@ -303,7 +301,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                    (pipelineDecisionLowHighMark 10 20)
                    chainSyncTracer
                    (nodeCfg clientId)
-                   btime
+                   (testBlockchainTime testBtime)
                    maxClockSkew
                    chainDbView
 
@@ -314,7 +312,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     -- Schedule updates of the client and server chains
     varLastUpdate <- uncheckedNewTVarM 0
-    void $ onSlotChange registry btime "scheduled updates" $ \slot -> do
+    void $ onSlotChange registry testBtime "scheduled updates" $ \slot -> do
       -- Stop updating the client and server chains when the chain sync client
       -- has thrown an exception, so that at the end, we can read the chains
       -- in the states they were in when the exception was thrown.
@@ -342,7 +340,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         atomically $ writeTVar varLastUpdate slot
 
     -- Connect client to server and run the chain sync protocol
-    onSlot registry btime "startSyncing" startSyncingAt $ do
+    onSlot registry testBtime "startSyncing" startSyncingAt $ do
       -- When updates are planned at the same slot that we start syncing, we
       -- wait until these updates are done before we start syncing.
       when (isJust (Map.lookup startSyncingAt clientUpdates) ||
@@ -432,11 +430,11 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
       , startSyncingAt
       ]
 
-    addSlotNo :: forall ev. BlockchainTime m
+    addSlotNo :: forall ev. TestBlockchainTime m
               -> Tracer m (SlotNo, ev)
               -> Tracer m ev
     addSlotNo btime tr = Tracer $ \ev -> do
-      slot <- atomically $ getCurrentSlot btime
+      slot <- atomically $ testBlockchainTimeSlot btime
       traceWith tr (slot, ev)
 
 getAddBlock :: ChainUpdate -> Maybe TestBlock

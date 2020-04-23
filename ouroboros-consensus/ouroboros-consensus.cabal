@@ -289,7 +289,6 @@ test-suite test-consensus
                        Ouroboros.Consensus.Mock.Protocol.Praos
 
                        -- ouroboros-consensus-test-infra
-                       Test.Util.BlockchainTime
                        Test.Util.FS.Sim.FsTree
                        Test.Util.FS.Sim.MockFS
                        Test.Util.FS.Sim.Pure

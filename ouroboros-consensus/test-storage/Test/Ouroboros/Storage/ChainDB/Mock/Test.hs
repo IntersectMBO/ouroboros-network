@@ -15,7 +15,6 @@ import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
-import           Ouroboros.Consensus.BlockchainTime.API (fixedBlockchainTime)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -24,6 +23,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
+import           Test.Util.Time
 
 import qualified Test.Ouroboros.Storage.ChainDB.Mock as Mock
 import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock (..))

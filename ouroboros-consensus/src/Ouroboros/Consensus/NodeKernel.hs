@@ -359,7 +359,7 @@ forkBlockProduction
     -> BlockProduction m blk
     -> m ()
 forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
-    void $ onSlotChange registry btime "NodeKernel.blockProduction" $
+    void $ onKnownSlotChange registry btime "NodeKernel.blockProduction" $
       withEarlyExit_ . go
   where
     RunMonadRandom{..} = runMonadRandomDict
