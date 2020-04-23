@@ -2,8 +2,8 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Consensus.BlockchainTime.WallClock (
-    realBlockchainTime
+module Ouroboros.Consensus.BlockchainTime.Simple (
+    simpleBlockchainTime
   , TraceBlockchainTimeEvent(..)
   , SystemClockMovedBackException(..)
     -- * Low-level API (exported primarily for testing)
@@ -26,7 +26,7 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.Time
 
--- | Events emitted by 'realBlockchainTime'.
+-- | Events emitted by 'simpleBlockchainTime'.
 data TraceBlockchainTimeEvent
   = TraceStartTimeInTheFuture SystemStart NominalDiffTime
     -- ^ The start time of the blockchain time is in the future. We have to
@@ -35,15 +35,15 @@ data TraceBlockchainTimeEvent
 
 -- | Real blockchain time
 --
--- WARNING: if the start time is in the future, 'realBlockchainTime' will
+-- WARNING: if the start time is in the future, 'simpleBlockchainTime' will
 -- block until the start time has come.
-realBlockchainTime :: forall m. IOLike m
-                   => ResourceRegistry m
-                   -> Tracer m TraceBlockchainTimeEvent
-                   -> SystemStart
-                   -> FocusedSlotLengths
-                   -> m (BlockchainTime m)
-realBlockchainTime registry tracer start ls = do
+simpleBlockchainTime :: forall m. IOLike m
+                     => ResourceRegistry m
+                     -> Tracer m TraceBlockchainTimeEvent
+                     -> SystemStart
+                     -> FocusedSlotLengths
+                     -> m (BlockchainTime m)
+simpleBlockchainTime registry tracer start ls = do
     now   <- getCurrentTime
     lsVar <- newTVarM ls
 
@@ -56,7 +56,7 @@ realBlockchainTime registry tracer start ls = do
     -- Fork thread that continuously updates the current slot
     first   <- fst <$> getWallClockSlot start lsVar
     slotVar <- newTVarM first
-    void $ forkLinkedThread registry "realBlockchainTime" $ do
+    void $ forkLinkedThread registry "simpleBlockchainTime" $ do
       loop lsVar slotVar first
 
     -- The API is now a simple STM one

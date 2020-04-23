@@ -1,6 +1,6 @@
+{-# LANGUAGE MonadComprehensions #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
-{-# LANGUAGE MonadComprehensions #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -48,8 +48,8 @@ import           Ouroboros.Network.NodeToClient (DictVersion (..),
                      nodeToClientCodecCBORTerm)
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
                      NodeToNodeVersionData (..), RemoteConnectionId,
-                     defaultMiniProtocolParameters, nodeToNodeCodecCBORTerm,
-                     combineVersions)
+                     combineVersions, defaultMiniProtocolParameters,
+                     nodeToNodeCodecCBORTerm)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -155,7 +155,7 @@ run RunNodeArgs{..} = do
     withRegistry $ \registry -> do
 
       lockDbMarkerFile registry rnDatabasePath
-      btime <- realBlockchainTime
+      btime <- simpleBlockchainTime
         registry
         (blockchainTimeTracer rnTraceConsensus)
         (nodeStartTime (Proxy @blk) cfg)

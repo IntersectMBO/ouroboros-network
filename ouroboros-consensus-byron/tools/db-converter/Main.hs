@@ -167,7 +167,7 @@ validateChainDb
   -> IO ()
 validateChainDb dbDir genesisConfig onlyImmDB verbose =
     withRegistry $ \registry -> do
-      btime <- realBlockchainTime
+      btime <- simpleBlockchainTime
         registry
         nullTracer
         (nodeStartTime (Proxy @ByronBlock) cfg)

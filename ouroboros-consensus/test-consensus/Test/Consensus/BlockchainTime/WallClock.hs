@@ -266,7 +266,7 @@ testOverrideDelay :: forall m. (IOLike m, MonadDelay (OverrideDelay m))
                   -> OverrideDelay m [SlotNo]
 testOverrideDelay systemStart slotLength numSlots = do
     result <- withRegistry $ \registry -> do
-      time <- realBlockchainTime
+      time <- simpleBlockchainTime
                 registry
                 nullTracer
                 systemStart
