@@ -146,9 +146,9 @@ fixedBlockchainTime slot = TestBlockchainTime {
   Derived functionality
 -------------------------------------------------------------------------------}
 
-testBlockchainTime :: TestBlockchainTime m -> BlockchainTime m
+testBlockchainTime :: MonadSTM m => TestBlockchainTime m -> BlockchainTime m
 testBlockchainTime t = BlockchainTime {
-      getCurrentSlot = testBlockchainTimeSlot t
+      getCurrentSlot = CurrentSlot <$> testBlockchainTimeSlot t
     }
 
 -- | Block until the specified slot

@@ -53,7 +53,7 @@ simpleBlockchainTime registry tracer start slotLen = do
 
     -- The API is now a simple STM one
     return BlockchainTime {
-        getCurrentSlot = readTVar slotVar
+        getCurrentSlot = CurrentSlot <$> readTVar slotVar
       }
   where
     -- In each iteration of the loop, we recompute how long to wait until

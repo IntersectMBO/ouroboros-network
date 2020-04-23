@@ -310,23 +310,27 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
 
     readFetchMode :: STM m FetchMode
     readFetchMode = do
-      curSlot      <- getCurrentSlot btime
-      curChainSlot <- AF.headSlot <$> ChainDB.getCurrentChain chainDB
-      let slotsBehind = case curChainSlot of
-            -- There's nothing in the chain. If the current slot is 0, then
-            -- we're 1 slot behind.
-            Origin  -> unSlotNo curSlot + 1
-            At slot -> unSlotNo curSlot - unSlotNo slot
-          maxBlocksBehind = 5
-          -- Convert from blocks to slots. This is more or less the @f@
-          -- parameter, the frequency of blocks. TODO should be 10 for Praos,
-          -- so make this part of 'OuroborosTag'.
-          blocksToSlots = 1
-      return $ if slotsBehind < maxBlocksBehind * blocksToSlots
-       -- When the current chain is near to "now", use deadline mode, when it
-       -- is far away, use bulk sync mode.
-        then FetchModeDeadline
-        else FetchModeBulkSync
+      mCurSlot <- getCurrentSlot btime
+      case mCurSlot of
+        -- The current chain's tip far away from "now", so use bulk sync mode.
+        CurrentSlotUnknown  -> return FetchModeBulkSync
+        CurrentSlot curSlot -> do
+          curChainSlot <- AF.headSlot <$> ChainDB.getCurrentChain chainDB
+          let slotsBehind = case curChainSlot of
+                -- There's nothing in the chain. If the current slot is 0, then
+                -- we're 1 slot behind.
+                Origin  -> unSlotNo curSlot + 1
+                At slot -> unSlotNo curSlot - unSlotNo slot
+              maxBlocksBehind = 5
+              -- Convert from blocks to slots. This is more or less the @f@
+              -- parameter, the frequency of blocks. TODO should be 10 for
+              -- Praos, so make this part of 'OuroborosTag'.
+              blocksToSlots = 1
+          return $ if slotsBehind < maxBlocksBehind * blocksToSlots
+            -- When the current chain is near to "now", use deadline mode,
+            -- when it is far away, use bulk sync mode.
+            then FetchModeDeadline
+            else FetchModeBulkSync
 
     readFetchedBlocks :: STM m (Point blk -> Bool)
     readFetchedBlocks = ChainDB.getIsFetched chainDB
