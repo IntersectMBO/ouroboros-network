@@ -9,16 +9,19 @@ module Ouroboros.Consensus.BlockchainTime.Simple (
   ) where
 
 import           Control.Monad
+import           Data.Bifunctor
+import           Data.Fixed (divMod')
 import           Data.Time (NominalDiffTime, diffUTCTime)
 import           Data.Void
 
+import           Cardano.Slotting.Slot
 import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.Block (SlotNo)
 
 import           Ouroboros.Consensus.BlockchainTime.API
-import           Ouroboros.Consensus.BlockchainTime.SlotLengths
 import           Ouroboros.Consensus.BlockchainTime.WallClock
+
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.Time
@@ -34,8 +37,7 @@ simpleBlockchainTime :: forall m. IOLike m
                      -> SlotLength
                      -> m (BlockchainTime m)
 simpleBlockchainTime registry tracer start slotLen = do
-    now   <- getCurrentTime
-    lsVar <- newTVarM ls
+    now <- getCurrentTime
 
     -- Wait until system start if necessary
     when (getSystemStart start > now) $ do
@@ -44,45 +46,63 @@ simpleBlockchainTime registry tracer start slotLen = do
       threadDelay (nominalDelay delay)
 
     -- Fork thread that continuously updates the current slot
-    first   <- fst <$> getWallClockSlot start lsVar
-    slotVar <- newTVarM first
-    void $ forkLinkedThread registry "simpleBlockchainTime" $ do
-      loop lsVar slotVar first
+    firstSlot <- fst <$> getWallClockSlot start slotLen
+    slotVar   <- newTVarM firstSlot
+    void $ forkLinkedThread registry "simpleBlockchainTime" $
+             loop slotVar firstSlot
 
     -- The API is now a simple STM one
     return BlockchainTime {
         getCurrentSlot = readTVar slotVar
       }
   where
-    ls :: FocusedSlotLengths
-    ls = focusSlotLengths (singletonSlotLengths slotLen)
-
     -- In each iteration of the loop, we recompute how long to wait until
     -- the next slot. This minimizes clock skew.
-    loop :: StrictTVar m FocusedSlotLengths
-         -> StrictTVar m SlotNo
+    loop :: StrictTVar m SlotNo
          -> SlotNo
          -> m Void
-    loop lsVar slotVar = go
+    loop slotVar = go
       where
         go :: SlotNo -> m Void
         go current = do
-          next <- waitUntilNextSlot start lsVar current
+          next <- waitUntilNextSlot start slotLen current
           atomically $ writeTVar slotVar next
           go next
 
 {-------------------------------------------------------------------------------
-  Stateful wrappers around Ouroboros.Consensus.BlockchainTime.SlotLengths
+  Pure calculations
+-------------------------------------------------------------------------------}
+
+slotFromUTCTime :: SystemStart
+                -> SlotLength
+                -> UTCTime
+                -> (SlotNo, NominalDiffTime)
+slotFromUTCTime (SystemStart start) slotLen now =
+    first SlotNo $ relTime `divMod'` getSlotLength slotLen
+  where
+    relTime :: NominalDiffTime
+    relTime = now `diffUTCTime` start
+
+delayUntilNextSlot :: SystemStart
+                   -> SlotLength
+                   -> UTCTime
+                   -> NominalDiffTime
+delayUntilNextSlot start slotLen now =
+    getSlotLength slotLen - timeSpent
+  where
+    (_curSlot, timeSpent) = slotFromUTCTime start slotLen now
+
+{-------------------------------------------------------------------------------
+  Stateful wrappers around the pure calculations
 -------------------------------------------------------------------------------}
 
 -- | Get current slot and time spent in that slot
 getWallClockSlot :: IOLike m
                  => SystemStart
-                 -> StrictTVar m FocusedSlotLengths
+                 -> SlotLength
                  -> m (SlotNo, NominalDiffTime)
-getWallClockSlot start lsVar = do
-    now <- getCurrentTime
-    atomically $ updateTVar lsVar $ slotFromUTCTime start now
+getWallClockSlot start slotLen =
+    slotFromUTCTime start slotLen <$> getCurrentTime
 
 -- | Wait until the next slot
 --
@@ -94,13 +114,13 @@ getWallClockSlot start lsVar = do
 -- due to the clock change, should not be considered immutable anymore.
 waitUntilNextSlot :: IOLike m
                   => SystemStart
-                  -> StrictTVar m FocusedSlotLengths
+                  -> SlotLength
                   -> SlotNo    -- ^ Current slot number
                   -> m SlotNo
-waitUntilNextSlot start lsVar oldCurrent = do
-    now                <- getCurrentTime
-    (delay, _nextSlot) <- atomically $ updateTVar lsVar $
-                                        delayUntilNextSlot start now
+waitUntilNextSlot start slotLen oldCurrent = do
+    now <- getCurrentTime
+
+    let delay = delayUntilNextSlot start slotLen now
     threadDelay (nominalDelay delay)
 
     -- At this point we expect to be in 'nextSlot', but the actual now-current
@@ -117,11 +137,11 @@ waitUntilNextSlot start lsVar oldCurrent = do
     --   a slot number /before/ the old current slot. In that case, we throw
     --   an exception (see discussion above).
 
-    (newCurrent, _timeInNewCurrent) <- getWallClockSlot start lsVar
+    (newCurrent, _timeInNewCurrent) <- getWallClockSlot start slotLen
 
     if | newCurrent > oldCurrent ->
            return newCurrent
        | newCurrent == oldCurrent ->
-           waitUntilNextSlot start lsVar oldCurrent
+           waitUntilNextSlot start slotLen oldCurrent
        | otherwise ->
            throwM $ SystemClockMovedBack now oldCurrent newCurrent
