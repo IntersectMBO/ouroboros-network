@@ -21,7 +21,6 @@ module Ouroboros.Consensus.BlockchainTime.SlotLengths (
   , slotToDiffTime
   , slotFromDiffTime
     -- * Wrappers using absolute system start time
-  , SystemStart(..)
   , slotToUTCTime
   , slotFromUTCTime
   , delayUntilNextSlot
@@ -39,12 +38,11 @@ import           Data.Fixed
 import           Data.Time
 import           Data.Word
 
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..),
-                     UseIsNormalForm (..))
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
-import           Ouroboros.Consensus.BlockchainTime.SlotLength
+import           Ouroboros.Consensus.BlockchainTime.WallClock
 
 {-------------------------------------------------------------------------------
   Composable slot lengths
@@ -382,13 +380,6 @@ slotFromDiffTime absTime = modifySnd go . refocusAtTime absTime
 {-------------------------------------------------------------------------------
   Wrappers using absolute system start time
 -------------------------------------------------------------------------------}
-
--- | System start
---
--- Slots are counted from the system start.
-newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
-  deriving (Eq, Show)
-  deriving NoUnexpectedThunks via UseIsNormalForm SystemStart
 
 -- | Wrapper around 'slotToDiffTime' that takes system start into account
 slotToUTCTime :: SystemStart

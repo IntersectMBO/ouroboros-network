@@ -30,7 +30,7 @@ import qualified Cardano.Chain.Update as CC
 
 import           Ouroboros.Network.Block (ChainHash (..), HeaderHash)
 
-import           Ouroboros.Consensus.BlockchainTime.SlotLength
+import           Ouroboros.Consensus.BlockchainTime.WallClock
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract

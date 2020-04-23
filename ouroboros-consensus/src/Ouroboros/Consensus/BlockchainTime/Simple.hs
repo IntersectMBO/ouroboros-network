@@ -1,17 +1,13 @@
 {-# LANGUAGE MultiWayIf          #-}
-{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.BlockchainTime.Simple (
     simpleBlockchainTime
-  , TraceBlockchainTimeEvent(..)
-  , SystemClockMovedBackException(..)
     -- * Low-level API (exported primarily for testing)
   , getWallClockSlot
   , waitUntilNextSlot
   ) where
 
-import           Control.Exception (Exception)
 import           Control.Monad
 import           Data.Time (NominalDiffTime, diffUTCTime)
 import           Data.Void
@@ -22,16 +18,10 @@ import           Ouroboros.Network.Block (SlotNo)
 
 import           Ouroboros.Consensus.BlockchainTime.API
 import           Ouroboros.Consensus.BlockchainTime.SlotLengths
+import           Ouroboros.Consensus.BlockchainTime.WallClock
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.Time
-
--- | Events emitted by 'simpleBlockchainTime'.
-data TraceBlockchainTimeEvent
-  = TraceStartTimeInTheFuture SystemStart NominalDiffTime
-    -- ^ The start time of the blockchain time is in the future. We have to
-    -- block (for 'NominalDiffTime') until that time comes.
-  deriving (Show)
 
 -- | Real blockchain time
 --
@@ -132,13 +122,3 @@ waitUntilNextSlot start lsVar oldCurrent = do
            waitUntilNextSlot start lsVar oldCurrent
        | otherwise ->
            throwM $ SystemClockMovedBack now oldCurrent newCurrent
-
-data SystemClockMovedBackException =
-    -- | The system clock got moved back so far that the slot number decreased
-    --
-    -- We record the time at which we discovered the clock change, the slot
-    -- number before the clock change, and the slot number after the change.
-    SystemClockMovedBack UTCTime SlotNo SlotNo
-  deriving (Show)
-
-instance Exception SystemClockMovedBackException
