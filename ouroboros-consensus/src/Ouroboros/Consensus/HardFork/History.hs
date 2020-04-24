@@ -34,6 +34,9 @@ module Ouroboros.Consensus.HardFork.History (
   , Summary(..)    -- Non-opaque only for the benefit of tests
   , SystemStart(..)
   , summarize
+  , summaryBounds
+  , summaryInit
+  , summaryWithExactly
     -- * Queries
   , PastHorizonException(..)
   , Query -- Opaque
@@ -84,6 +87,7 @@ import           Data.Fixed (divMod')
 import           Data.Foldable (toList)
 import           Data.Functor.Identity
 import qualified Data.List as List
+import           Data.Maybe (fromMaybe)
 import           Data.Time
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -328,14 +332,46 @@ data EraSummary = EraSummary {
 --
 -- The summary zips 'Shape' with 'Forks', and provides detailed information
 -- about the start and end of each era.
-newtype Summary xs = Summary (AtMost xs EraSummary)
+data Summary xs where
+  -- | We have at most one summary for each era, and at least one
+  Summary :: EraSummary -> AtMost xs EraSummary -> Summary (x ': xs)
 
 deriving instance Show (Summary xs)
 deriving via OnlyCheckIsWHNF "Summary" (Summary xs)
          instance NoUnexpectedThunks (Summary xs)
 
+{-------------------------------------------------------------------------------
+  Basic API for 'Summary'
+-------------------------------------------------------------------------------}
+
 summaryToList :: Summary xs -> [EraSummary]
-summaryToList (Summary summary) = toList summary
+summaryToList (Summary x xs) = x : toList xs
+
+summaryCons :: EraSummary -> Summary xs -> Summary (x ': xs)
+summaryCons x (Summary x' xs') = Summary x (AtMostCons x' xs')
+
+-- | Outer bounds of the summary
+summaryBounds :: Summary xs -> (Bound, Bound)
+summaryBounds (Summary firstEra xs) =
+    (eraStart firstEra, eraEnd lastEra)
+  where
+    lastEra :: EraSummary
+    lastEra = fromMaybe firstEra $ atMostLast xs
+
+-- | Analogue of 'Data.List.init' for 'Summary' (i.e., split off the final era)
+--
+-- This is primarily useful for tests.
+summaryInit :: Summary xs -> (Maybe (Summary xs), EraSummary)
+summaryInit (Summary x xs) =
+    case atMostInit xs of
+      Just (xs', final) -> (Just (Summary x xs'), final)
+      Nothing           -> (Nothing, x)
+
+-- | Construct 'Summary' with an exact number of 'EraSummary'
+--
+-- Primarily useful for tests.
+summaryWithExactly :: Exactly (x ': xs) EraSummary -> Summary (x ': xs)
+summaryWithExactly (ExactlyCons x xs) = Summary x (exactlyWeaken xs)
 
 {-------------------------------------------------------------------------------
   Translations (primarily for the benefit of tests)
@@ -351,7 +387,9 @@ instance ShiftTime a => ShiftTime [a] where
   shiftTime = map . shiftTime
 
 instance ShiftTime (Summary xs) where
-  shiftTime delta (Summary summary) = Summary $ shiftTime delta <$> summary
+  shiftTime delta (Summary x xs) = Summary
+                                     (shiftTime delta  $  x)
+                                     (shiftTime delta <$> xs)
 
 instance ShiftTime EraSummary where
   shiftTime delta EraSummary{..} = EraSummary{
@@ -409,16 +447,14 @@ invariantShape = \(Shape shape) ->
 
 -- | Check 'Summary' invariants
 invariantSummary :: Summary xs -> Except String ()
-invariantSummary = \(Summary summary) ->
+invariantSummary = \summary@(Summary firstEra _) ->
     -- Pretend the start of the first era is the "end of the previous" one
-    case summary of
-      AtMostNil             -> return ()
-      AtMostCons firstEra _ -> go (eraStart firstEra) summary
+    go (eraStart firstEra) (summaryToList summary)
   where
     go :: Bound   -- ^ End of the previous era
-       -> AtMost xs EraSummary -> Except String ()
-    go _        AtMostNil                   = return ()
-    go prevEnd (AtMostCons curSummary next) = do
+       -> [EraSummary] -> Except String ()
+    go _       []                  = return ()
+    go prevEnd (curSummary : next) = do
         unless (curStart == prevEnd) $
           throwError $ mconcat [
               "Bounds don't line up: end of previous era "
@@ -500,22 +536,22 @@ summarize :: SystemStart
           -> Transitions xs
           -> Summary     xs
 summarize systemStart ledgerTip = \(Shape shape) (Transitions transitions) ->
-    Summary $ go (initBound systemStart) shape transitions
+    go (initBound systemStart) shape transitions
   where
     go :: Bound                         -- Lower bound for current era
        -> Exactly (x ': xs) EraParams   -- params for all eras
        -> AtMost        xs  EpochNo     -- transitions
-       -> AtMost  (x ': xs) EraSummary
+       -> Summary (x ': xs)
     -- CASE (ii)
     -- NOTE: Ledger tip might be close to the end of this era (or indeed past
     -- it) but this doesn't matter for the summary of /this/ era.
     go lo (ExactlyCons params ss) (AtMostCons epoch fs) =
-        AtMostCons (EraSummary lo hi params) $ go hi ss fs
+        summaryCons (EraSummary lo hi params) $ go hi ss fs
       where
         hi = mkUpperBound params lo epoch
     -- CASE (i) or (iii)
     go lo (ExactlyCons params@EraParams{..} _) AtMostNil =
-        atMostOne $ EraSummary lo hi params
+        Summary (EraSummary lo hi params) AtMostNil
       where
         hi :: Bound
         hi = mkUpperBound params lo

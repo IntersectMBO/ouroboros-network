@@ -1,4 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
@@ -7,8 +8,6 @@
 
 module Test.Consensus.HardFork.Summary (tests) where
 
-import           Data.Bifunctor
-import           Data.Foldable (toList)
 import           Data.Time
 import           Data.Word
 
@@ -20,7 +19,6 @@ import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.HardFork.History (ShiftTime (..))
 import qualified Ouroboros.Consensus.HardFork.History as HF
-import           Ouroboros.Consensus.Util.Counting
 
 import           Test.Consensus.HardFork.Infra
 import           Test.Util.Orphans.Arbitrary
@@ -128,13 +126,13 @@ data ArbitrarySummary = forall xs. ArbitrarySummary {
 deriving instance Show ArbitrarySummary
 
 instance Arbitrary ArbitrarySummary where
-  arbitrary = chooseEras $ \is -> do
+  arbitrary = chooseEras $ \is@(Eras _) -> do
       start   <- HF.SystemStart <$> arbitrary
-      summary <- HF.Summary . exactlyWeaken <$>
+      summary <- HF.summaryWithExactly <$>
                    erasMapStateM genEraSummary is (HF.initBound start)
 
       let summaryStart, summaryEnd :: HF.Bound
-          (summaryStart, summaryEnd) = summaryBounds summary
+          (summaryStart, summaryEnd) = HF.summaryBounds summary
 
           summarySlots, summaryEpochs :: Word64
           summarySlots  = HF.countSlots
@@ -240,7 +238,7 @@ instance Arbitrary ArbitrarySummary where
         -- Drop an era /provided/ this doesn't cause of any of the before
         -- horizon values to become past horizon
       , [ ArbitrarySummary { arbitrarySummary = summary', .. }
-        | Just (summary', lastEra) <- [summaryInit arbitrarySummary]
+        | (Just summary', lastEra) <- [HF.summaryInit arbitrarySummary]
         , beforeHorizonSlot  < HF.boundSlot  (HF.eraStart lastEra)
         , beforeHorizonEpoch < HF.boundEpoch (HF.eraStart lastEra)
         , beforeHorizonTime  < HF.boundTime  (HF.eraStart lastEra)
@@ -273,21 +271,3 @@ resetArbitrarySummaryStart summary@ArbitrarySummary{..} =
   where
     ahead :: NominalDiffTime
     ahead = diffUTCTime (HF.getSystemStart arbitrarySummaryStart) dawnOfTime
-
-{-------------------------------------------------------------------------------
-  Additional functions on 'Summary' needed for the tests only
--------------------------------------------------------------------------------}
-
--- | Lift 'atMostInit' to 'Summary'
-summaryInit :: HF.Summary xs -> Maybe (HF.Summary xs, HF.EraSummary)
-summaryInit (HF.Summary xs) = first HF.Summary <$> atMostInit xs
-
--- | Outer bounds of the summary
---
--- We must always have at least one era but the 'Summary' type does not tell
--- us that. This function is therefore partial, but used only in the tests.
-summaryBounds :: HF.Summary xs -> (HF.Bound, HF.Bound)
-summaryBounds (HF.Summary summary) =
-    case toList summary of
-      [] -> error "summaryBounds: no eras"
-      ss -> (HF.eraStart (head ss), HF.eraEnd (last ss))
