@@ -30,7 +30,7 @@ import           Test.QuickCheck
 
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.BlockchainTime.WallClock
+import           Ouroboros.Consensus.BlockchainTime
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Util.Counting
 

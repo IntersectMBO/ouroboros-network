@@ -26,7 +26,7 @@ import           Test.Tasty.QuickCheck
 
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.BlockchainTime.WallClock
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.HardFork.History (ShiftTime (..))
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Util (nTimes)

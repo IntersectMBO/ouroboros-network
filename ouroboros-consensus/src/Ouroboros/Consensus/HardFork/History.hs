@@ -95,7 +95,7 @@ import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 import           Cardano.Slotting.EpochInfo.API
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.BlockchainTime.WallClock
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.IOLike

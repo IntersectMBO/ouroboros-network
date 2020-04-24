@@ -23,7 +23,7 @@ import           Ouroboros.Network.TxSubmission.Outbound
                      (TraceTxSubmissionOutbound)
 
 import           Ouroboros.Consensus.Block (Header)
-import           Ouroboros.Consensus.BlockchainTime.WallClock
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Forecast (OutsideForecastRange)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTx, GenTxId,
