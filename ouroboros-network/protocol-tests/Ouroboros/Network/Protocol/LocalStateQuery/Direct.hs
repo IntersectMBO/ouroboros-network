@@ -33,9 +33,9 @@ direct (LocalStateQueryClient mclient) (LocalStateQueryServer mserver) = do
       :: ClientStAcquiring block query m a
       -> ServerStAcquiring block query m b
       -> m (a, b)
-    directAcquiring ClientStAcquiring{recvMsgAcquired} (SendMsgAcquired server') =
-      let client' = recvMsgAcquired
-      in directAcquired client' server'
+    directAcquiring ClientStAcquiring{recvMsgAcquired} (SendMsgAcquired server') = do
+      client' <- recvMsgAcquired
+      directAcquired client' server'
     directAcquiring ClientStAcquiring{recvMsgFailure} (SendMsgFailure failure server') = do
       client' <- recvMsgFailure failure
       directIdle client' server'

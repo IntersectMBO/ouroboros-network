@@ -60,7 +60,7 @@ data ClientStIdle block query (m :: Type -> Type) a where
 -- It must be prepared to handle either.
 --
 data ClientStAcquiring block query m a = ClientStAcquiring {
-      recvMsgAcquired :: ClientStAcquired block query m a,
+      recvMsgAcquired :: m (ClientStAcquired block query m a),
 
       recvMsgFailure  :: AcquireFailure
                       -> m (ClientStIdle  block query m a)
@@ -122,7 +122,7 @@ localStateQueryClientPeer (LocalStateQueryClient handler) =
       -> Peer (LocalStateQuery block query) AsClient StAcquiring m a
     handleStAcquiring ClientStAcquiring{recvMsgAcquired, recvMsgFailure} =
       Await (ServerAgency TokAcquiring) $ \req -> case req of
-        MsgAcquired        -> handleStAcquired recvMsgAcquired
+        MsgAcquired        -> Effect $ handleStAcquired <$> recvMsgAcquired
         MsgFailure failure -> Effect $ handleStIdle <$> recvMsgFailure failure
 
     handleStAcquired
