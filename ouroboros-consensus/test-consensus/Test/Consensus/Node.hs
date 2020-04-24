@@ -1,32 +1,42 @@
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Test.Consensus.Node (tests) where
 
 import           Data.Bifunctor (second)
+import           Data.Functor ((<&>))
 import qualified Data.Map.Strict as Map
-import qualified Data.Text as T
+import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 import           System.Directory (getTemporaryDirectory)
-import           System.FilePath ((</>))
 import           System.IO.Temp (withTempDirectory)
 
-import           Control.Monad.Class.MonadThrow (try)
+import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Cardano.Crypto (ProtocolMagicId (..))
 
+import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
-import           Ouroboros.Consensus.Util.ResourceRegistry (withRegistry)
+import           Ouroboros.Consensus.Util.FileLock (FileLock, ioFileLock)
+import           Ouroboros.Consensus.Util.IOLike
 
+import           Ouroboros.Consensus.Storage.FS.API (HasFS)
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 
 import           Test.Tasty
 import           Test.Tasty.HUnit
+import           Test.Tasty.QuickCheck
 
+import           Test.Util.FileLock
 import           Test.Util.FS.Sim.FsTree (FsTree (..))
 import           Test.Util.FS.Sim.MockFS (Files)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (runSimFS)
+import           Test.Util.QuickCheck (ge)
 
 tests :: TestTree
 tests = testGroup "Node"
@@ -38,7 +48,11 @@ tests = testGroup "Node"
       , testCase "corrupt"      test_checkProtocolMagicId_corrupt
       , testCase "empty"        test_checkProtocolMagicId_empty
       ]
-    , testCase "lockDbMarkerFile" test_lockDbMarkerFile
+    , testGroup "lockDb"
+      [ testProperty "reacquire a released lock"   prop_reacquire_lock
+      , testCase     "acquire a held lock"         test_acquire_held_lock
+      , testProperty "wait to acquire a held lock" prop_wait_to_acquire_lock
+      ]
     ]
 
 {-------------------------------------------------------------------------------
@@ -132,35 +146,157 @@ test_checkProtocolMagicId_empty = res @?= Left e
     e = CorruptDbMarker fullPath
 
 {-------------------------------------------------------------------------------
-  lockDbMarkerFile
+  lockDb
 -------------------------------------------------------------------------------}
 
-test_lockDbMarkerFile :: Assertion
-test_lockDbMarkerFile = withTempDir $ \dbPath -> do
-    let mount = MountPoint dbPath
-    -- Create the DB marker file
-    checkDbMarker (ioHasFS mount) mountPoint expectedProtocolMagicId >>=
-      (@?= Right ())
+-- | We use the mock lock to test whether we can release and reacquire the
+-- lock, because the real lock might release lazily, causing the reacquisition
+-- to fail.
+prop_reacquire_lock :: ReleaseDelay -> Property
+prop_reacquire_lock (ReleaseDelay releaseDelay) =
+    runSimOrThrow $ fmap fst $ runSimFS Mock.empty $ \hasFS -> do
+      fileLock <- mockFileLock (Just releaseDelay)
+      -- Lock and unlock it
+      touchLock hasFS fileLock
 
-    -- Lock it once
-    withRegistry $ \registry -> do
-      tryL (lockDbMarkerFile registry dbPath) >>=
-        (@?= (Right ()))
-
-      -- Try to lock it again. This should fail.
-      tryL (lockDbMarkerFile registry dbPath) >>=
-        (@?= (Left (DbLocked (dbPath </> T.unpack dbMarkerFile))))
-
-    -- Unlock it now by closing the 'ResourceRegistry'.
-    -- We must be able to lock it again now.
-    withRegistry $ \registry ->
-      tryL (lockDbMarkerFile registry dbPath) >>=
-        (@?= (Right ()))
-    -- And finally unlock it.
+      -- Lock and unlock it again, which might fail:
+      tryL (touchLock hasFS fileLock) <&> \case
+        -- If we failed to obtain the lock, it must be because the release
+        -- delay we simulate is greater than or equal to the timeout
+        Left  _  -> label "timed out" $ releaseDelay `ge` timeout
+        Right () -> property True
   where
+    timeout = secondsToDiffTime 2
+
+    touchLock :: (IOLike m, MonadTimer m) => HasFS m h -> FileLock m -> m ()
+    touchLock hasFS fileLock =
+      withLockDB_
+        fileLock
+        hasFS
+        mountPoint
+        dbLockFsPath
+        timeout
+        (return ())
+
+-- | Test with a real lock that while holding the lock, we cannot reacquire
+-- it.
+test_acquire_held_lock :: Assertion
+test_acquire_held_lock = withTempDir $ \dbPath -> do
+    let dbMountPoint = MountPoint dbPath
+        hasFS        = ioHasFS dbMountPoint
+
+    -- While holding the lock, try to acquire it again, which should fail
+    res <-
+      tryL $ withLock hasFS dbMountPoint (secondsToDiffTime 0) $
+               tryL $ withLock hasFS dbMountPoint (millisecondsToDiffTime 10) $
+                        return ()
+
+    -- The outer 'Right' means that the first call to 'withLock'
+    -- succeeded, the inner 'Left' means that the second call to
+    -- 'touchLock' failed.
+    res @?= (Left (DbLocked (fsToFilePath dbMountPoint dbLockFsPath)))
+  where
+    withTempDir :: (FilePath -> IO a) -> IO a
     withTempDir k = do
       sysTmpDir <- getTemporaryDirectory
       withTempDirectory sysTmpDir "ouroboros-network-test" k
 
-    tryL :: IO a -> IO (Either DbMarkerError a)
-    tryL = try
+    withLock :: HasFS IO h -> MountPoint -> DiffTime -> IO a -> IO a
+    withLock hasFS dbMountPoint lockTimeout =
+      withLockDB_
+        ioFileLock
+        hasFS
+        dbMountPoint
+        dbLockFsPath
+        lockTimeout
+
+tryL :: MonadCatch m => m a -> m (Either DbLocked a)
+tryL = try
+
+-- | Test that we can acquire and already held lock by waiting for it.
+--
+-- Property:
+--   A maximum delay of MAX can cope with any hold up of ACTUAL < MAX.
+--
+--   Note that we exclude ACTUAL == MAX, as it is \"racy\".
+--
+prop_wait_to_acquire_lock :: ActualAndMaxDelay -> Property
+prop_wait_to_acquire_lock ActualAndMaxDelay { actualDelay, maxDelay } =
+    runSimOrThrow $ fmap fst $ runSimFS Mock.empty $ \hasFS -> do
+      -- We don't simulate delayed releases because the test depends on
+      -- precise timing.
+      fileLock <- mockFileLock Nothing
+
+      -- Hold the lock for 'actualDelay' and then signal we have released it
+      let bgThread =
+            -- The lock will not be held, so just use the default parameters
+            -- to acquire it
+            withLock hasFS fileLock dbLockTimeout $
+              -- Hold the lock for ACTUAL
+              threadDelay actualDelay
+
+      withAsync bgThread $ \asyncBgThread -> do
+        link asyncBgThread
+        -- Try to obtain the held lock, waiting MAX for it
+        --
+        -- The test will fail when an exception is thrown below because it
+        -- timed out while waiting on the lock.
+        withLock hasFS fileLock maxDelay $
+          return $ property True
+  where
+    withLock
+      :: (IOLike m, MonadTimer m)
+      => HasFS m h
+      -> FileLock m
+      -> DiffTime
+      -> m a
+      -> m a
+    withLock hasFS fileLock timeout =
+      withLockDB_
+        fileLock
+        hasFS
+        mountPoint
+        dbLockFsPath
+        timeout
+
+{-------------------------------------------------------------------------------
+  Generators
+-------------------------------------------------------------------------------}
+
+-- | Simulate lazy releasing of the lock, as done by Linux and Windows.
+newtype ReleaseDelay = ReleaseDelay DiffTime
+  deriving (Eq, Show)
+
+instance Arbitrary ReleaseDelay where
+  arbitrary =
+    ReleaseDelay . millisecondsToDiffTime <$> choose (0, 5000)
+  shrink (ReleaseDelay t) =
+    [ReleaseDelay (fromRational t') | t' <- shrink (toRational t)]
+
+-- | Invariant: @actualDelay < maxDelay@
+data ActualAndMaxDelay = ActualAndMaxDelay {
+      actualDelay :: DiffTime
+    , maxDelay    :: DiffTime
+    }
+  deriving (Eq, Show)
+
+instance Arbitrary ActualAndMaxDelay where
+    arbitrary = do
+        maxDelayMs    <- choose (1, 2000)
+        actualDelayMs <- choose (0, maxDelayMs - 1)
+        return ActualAndMaxDelay {
+            actualDelay = millisecondsToDiffTime actualDelayMs
+          , maxDelay    = millisecondsToDiffTime maxDelayMs
+          }
+
+    shrink (ActualAndMaxDelay actualDelay maxDelay) =
+      [ ActualAndMaxDelay actualDelay' maxDelay
+      | actualDelay' <- fromRational <$> shrink (toRational actualDelay)
+      ] <>
+      [ ActualAndMaxDelay actualDelay maxDelay
+      | maxDelay' <- fromRational <$> shrink (toRational maxDelay)
+      , actualDelay < maxDelay'
+      ]
+
+millisecondsToDiffTime :: Integer -> DiffTime
+millisecondsToDiffTime = (/ 1000) . secondsToDiffTime

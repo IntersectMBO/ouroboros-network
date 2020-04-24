@@ -52,9 +52,7 @@
 -- = Concurrency
 --
 -- The same database should not be opened multiple times concurrently.
---
--- TODO Should we ensure this with a lock file?
--- https://hackage.haskell.org/package/filelock-0.1.1.2/docs/System-FileLock.html
+-- This is ensured by the file lock of the ChainDB.
 --
 -- The database can have multiple readers, but should only have one writer.
 --

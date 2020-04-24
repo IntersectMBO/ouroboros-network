@@ -62,6 +62,7 @@ library
                        Ouroboros.Consensus.Network.NodeToClient
                        Ouroboros.Consensus.Network.NodeToNode
                        Ouroboros.Consensus.Node
+                       Ouroboros.Consensus.Node.DbLock
                        Ouroboros.Consensus.Node.DbMarker
                        Ouroboros.Consensus.Node.ErrorPolicy
                        Ouroboros.Consensus.Node.Exit
@@ -92,6 +93,7 @@ library
                        Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.Counting
                        Ouroboros.Consensus.Util.EarlyExit
+                       Ouroboros.Consensus.Util.FileLock
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.IOLike
                        Ouroboros.Consensus.Util.MonadSTM.NormalForm
@@ -288,6 +290,7 @@ test-suite test-consensus
                        Ouroboros.Consensus.Mock.Protocol.Praos
 
                        -- ouroboros-consensus-test-infra
+                       Test.Util.FileLock
                        Test.Util.FS.Sim.FsTree
                        Test.Util.FS.Sim.MockFS
                        Test.Util.FS.Sim.Pure

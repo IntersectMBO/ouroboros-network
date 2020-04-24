@@ -58,6 +58,7 @@ import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ClockSkew (..))
 import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
+import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
 import           Ouroboros.Consensus.Node.LedgerDerivedInfo
@@ -147,14 +148,13 @@ data RunNodeArgs blk = RunNodeArgs {
 --
 -- This function runs forever unless an exception is thrown.
 run :: forall blk. RunNode blk => RunNodeArgs blk -> IO ()
-run RunNodeArgs{..} = do
+run RunNodeArgs{..} = withLockDB hasFS mountPoint $ do
     either throwM return =<< checkDbMarker
       hasFS
       mountPoint
       (nodeProtocolMagicId (Proxy @blk) cfg)
     withRegistry $ \registry -> do
 
-      lockDbMarkerFile registry rnDatabasePath
       btime <- simpleBlockchainTime
         registry
         (blockchainTimeTracer rnTraceConsensus)
