@@ -17,6 +17,7 @@ import           Test.Tasty.QuickCheck
 
 import           Cardano.Slotting.Slot
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.HardFork.History (ShiftTime (..))
 import qualified Ouroboros.Consensus.HardFork.History as HF
 
@@ -113,7 +114,7 @@ reportsPastHorizon s@ArbitrarySummary{..} = conjoin [
 -------------------------------------------------------------------------------}
 
 data ArbitrarySummary = forall xs. ArbitrarySummary {
-      arbitrarySummaryStart :: HF.SystemStart
+      arbitrarySummaryStart :: SystemStart
     , arbitrarySummary      :: HF.Summary xs
     , beforeHorizonTime     :: UTCTime
     , beforeHorizonSlot     :: SlotNo
@@ -127,7 +128,7 @@ deriving instance Show ArbitrarySummary
 
 instance Arbitrary ArbitrarySummary where
   arbitrary = chooseEras $ \is@(Eras _) -> do
-      start   <- HF.SystemStart <$> arbitrary
+      start   <- SystemStart <$> arbitrary
       summary <- HF.summaryWithExactly <$>
                    erasMapStateM genEraSummary is (HF.initBound start)
 
@@ -216,7 +217,7 @@ instance Arbitrary ArbitrarySummary where
   shrink summary@ArbitrarySummary{..} = concat [
         -- Simplify the system start
         [ resetArbitrarySummaryStart summary
-        | HF.getSystemStart arbitrarySummaryStart /= dawnOfTime
+        | getSystemStart arbitrarySummaryStart /= dawnOfTime
         ]
 
         -- Reduce before-horizon slot
@@ -232,7 +233,7 @@ instance Arbitrary ArbitrarySummary where
         -- Reduce before-horizon time
       , [ summary { beforeHorizonTime = t }
         | t <- shrink beforeHorizonTime
-        , t >= HF.getSystemStart arbitrarySummaryStart
+        , t >= getSystemStart arbitrarySummaryStart
         ]
 
         -- Drop an era /provided/ this doesn't cause of any of the before
@@ -270,4 +271,4 @@ resetArbitrarySummaryStart summary@ArbitrarySummary{..} =
     shiftTime (negate ahead) summary
   where
     ahead :: NominalDiffTime
-    ahead = diffUTCTime (HF.getSystemStart arbitrarySummaryStart) dawnOfTime
+    ahead = diffUTCTime (getSystemStart arbitrarySummaryStart) dawnOfTime

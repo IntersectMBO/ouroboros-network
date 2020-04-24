@@ -403,8 +403,8 @@ instance Bridge m a => HasHardForkHistory (DualBlock m a) where
         (dualLedgerStateMain  state)
 
 instance Bridge m a => LedgerDerivedInfo (DualBlock m a) where
-  knownSlotLengths cfg =
-      knownSlotLengths
+  knownSlotLength cfg =
+      knownSlotLength
         (dualBlockConfigMain cfg)
 
 {-------------------------------------------------------------------------------

@@ -564,7 +564,7 @@ instance HasHardForkHistory TestBlock where
   hardForkTransitions _ _ = HardFork.transitionsUnknown
 
 instance LedgerDerivedInfo TestBlock where
-  knownSlotLengths = singletonSlotLengths . testBlockSlotLength
+  knownSlotLength = testBlockSlotLength
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint GenesisHash

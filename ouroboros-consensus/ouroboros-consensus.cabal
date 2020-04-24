@@ -38,8 +38,7 @@ library
                        Ouroboros.Consensus.Block.SupportsProtocol
                        Ouroboros.Consensus.BlockchainTime
                        Ouroboros.Consensus.BlockchainTime.API
-                       Ouroboros.Consensus.BlockchainTime.SlotLength
-                       Ouroboros.Consensus.BlockchainTime.SlotLengths
+                       Ouroboros.Consensus.BlockchainTime.Simple
                        Ouroboros.Consensus.BlockchainTime.WallClock
                        Ouroboros.Consensus.Config
                        Ouroboros.Consensus.Forecast
@@ -102,8 +101,9 @@ library
                        Ouroboros.Consensus.Util.Random
                        Ouroboros.Consensus.Util.RedundantConstraints
                        Ouroboros.Consensus.Util.ResourceRegistry
-                       Ouroboros.Consensus.Util.STM
                        Ouroboros.Consensus.Util.Singletons
+                       Ouroboros.Consensus.Util.STM
+                       Ouroboros.Consensus.Util.Time
                        Ouroboros.Consensus.Util.TraceSize
                        Ouroboros.Consensus.Util.Versioned
 
@@ -259,8 +259,7 @@ test-suite test-consensus
   hs-source-dirs:      test-consensus ouroboros-consensus-test-infra/src ouroboros-consensus-mock/src
   main-is:             Main.hs
   other-modules:
-                       Test.Consensus.BlockchainTime.SlotLengths
-                       Test.Consensus.BlockchainTime.WallClock
+                       Test.Consensus.BlockchainTime.Simple
                        Test.Consensus.HardFork.History
                        Test.Consensus.HardFork.Infra
                        Test.Consensus.HardFork.Summary

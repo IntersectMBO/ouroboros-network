@@ -32,7 +32,6 @@ module Ouroboros.Consensus.HardFork.History (
   , transitionsUnknown
     -- * Summary
   , Summary(..)    -- Non-opaque only for the benefit of tests
-  , SystemStart(..)
   , summarize
   , summaryBounds
   , summaryInit
@@ -92,12 +91,11 @@ import           Data.Time
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..),
-                     UseIsNormalForm (..))
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 import           Cardano.Slotting.EpochInfo.API
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.BlockchainTime.SlotLength
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.IOLike
@@ -507,13 +505,6 @@ invariantSummary = \summary@(Summary firstEra _) ->
 {-------------------------------------------------------------------------------
   Constructing the summary
 -------------------------------------------------------------------------------}
-
--- | System start
---
--- Slots are counted from the system start.
-newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
-  deriving (Eq, Show)
-  deriving NoUnexpectedThunks via UseIsNormalForm SystemStart
 
 -- | Construct hard fork 'Summary'
 --

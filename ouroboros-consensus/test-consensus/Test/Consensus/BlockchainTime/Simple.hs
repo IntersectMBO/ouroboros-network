@@ -10,7 +10,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Test.Consensus.BlockchainTime.WallClock (tests) where
+module Test.Consensus.BlockchainTime.Simple (tests) where
 
 import           Control.Exception (SomeException, fromException)
 import           Control.Monad.Except
@@ -84,15 +84,11 @@ prop_delayNextSlot TestDelayIO{..} =
     test :: IO ()
     test = do
         tdioStart  <- pickSystemStart
-        lsVar      <- mkLsVar
-        atStart    <- fst <$> getWallClockSlot  tdioStart lsVar
-        nextSlot   <-         waitUntilNextSlot tdioStart lsVar atStart
-        afterDelay <- fst <$> getWallClockSlot  tdioStart lsVar
+        atStart    <- fst <$> getWallClockSlot  tdioStart tdioSlotLen
+        nextSlot   <-         waitUntilNextSlot tdioStart tdioSlotLen atStart
+        afterDelay <- fst <$> getWallClockSlot  tdioStart tdioSlotLen
         assertEqual "atStart + 1" (atStart + 1) afterDelay
         assertEqual "nextSlot"    nextSlot      afterDelay
-
-    mkLsVar :: IO (StrictTVar IO FocusedSlotLengths)
-    mkLsVar = newTVarM $ focusSlotLengths (singletonSlotLengths tdioSlotLen)
 
     pickSystemStart :: IO SystemStart
     pickSystemStart = pick <$> getCurrentTime
@@ -266,11 +262,11 @@ testOverrideDelay :: forall m. (IOLike m, MonadDelay (OverrideDelay m))
                   -> OverrideDelay m [SlotNo]
 testOverrideDelay systemStart slotLength numSlots = do
     result <- withRegistry $ \registry -> do
-      time <- realBlockchainTime
+      time <- simpleBlockchainTime
                 registry
                 nullTracer
                 systemStart
-                (focusSlotLengths $ singletonSlotLengths slotLength)
+                slotLength
       slotsVar <- uncheckedNewTVarM []
       cancelCollection <-
         onKnownSlotChange registry time "testOverrideDelay" $ \slotNo ->

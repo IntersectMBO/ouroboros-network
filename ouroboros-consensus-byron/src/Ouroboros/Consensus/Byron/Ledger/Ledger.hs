@@ -57,7 +57,6 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Forecast
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
@@ -268,10 +267,9 @@ instance HasHardForkHistory ByronBlock where
   hardForkTransitions _ _ = HardFork.transitionsUnknown
 
 instance LedgerDerivedInfo ByronBlock where
-  knownSlotLengths = singletonSlotLengths
-                   . fromByronSlotLength
-                   . genesisSlotLength
-                   . byronGenesisConfig
+  knownSlotLength = fromByronSlotLength
+                  . genesisSlotLength
+                  . byronGenesisConfig
 
 {-------------------------------------------------------------------------------
   Auxiliary

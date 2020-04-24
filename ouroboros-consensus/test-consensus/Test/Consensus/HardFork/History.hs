@@ -26,7 +26,7 @@ import           Test.Tasty.QuickCheck
 
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.BlockchainTime.SlotLength
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.HardFork.History (ShiftTime (..))
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Util (nTimes)
@@ -167,7 +167,7 @@ eventWallclockToSlot chain@ArbitraryChain{..} =
 -------------------------------------------------------------------------------}
 
 data ArbitraryParams xs = ArbitraryParams {
-      arbitraryChainStart  :: HF.SystemStart
+      arbitraryChainStart  :: SystemStart
     , arbitraryChainEvents :: [Event]
     , arbitraryChainEras   :: Eras     xs
     , arbitraryChainShape  :: HF.Shape xs
@@ -313,7 +313,7 @@ deriving instance Show ArbitraryChain
 
 instance Arbitrary ArbitraryChain where
   arbitrary = chooseEras $ \eras -> do
-      start  <- HF.SystemStart <$> arbitrary
+      start  <- SystemStart <$> arbitrary
       shape  <- HF.Shape <$> erasMapStateM genParams eras (EpochNo 0)
       events <- genEvents start eras shape `suchThat` (not . null)
       split  <- choose (0, length events - 1)
@@ -344,7 +344,7 @@ instance Arbitrary ArbitraryChain where
   shrink c@ArbitraryChain{..} = concat [
         -- Simplify the system start
         [ resetArbitraryChainStart c
-        | HF.getSystemStart arbitraryChainStart /= dawnOfTime
+        | getSystemStart arbitraryChainStart /= dawnOfTime
         ]
 
         -- Pick an earlier event
@@ -406,8 +406,8 @@ data EventTime = EventTime {
     }
   deriving (Show)
 
-initEventTime :: HF.SystemStart -> EventTime
-initEventTime (HF.SystemStart start) = EventTime {
+initEventTime :: SystemStart -> EventTime
+initEventTime (SystemStart start) = EventTime {
       eventTimeSlot      = SlotNo  0
     , eventTimeEpochNo   = EpochNo 0
     , eventTimeEpochSlot = 0
@@ -549,7 +549,7 @@ stepTime typ Time{..} =
     reachedNextEra :: EpochNo -> Bool
     reachedNextEra e = eventTimeEpochNo timeEvent' == e
 
-genEvents :: HF.SystemStart -> Eras xs -> HF.Shape xs -> Gen [Event]
+genEvents :: SystemStart -> Eras xs -> HF.Shape xs -> Gen [Event]
 genEvents = \start (Eras eras) (HF.Shape shape) -> sized $ \sz -> do
     go sz Time {
         timeEvent   = initEventTime start
@@ -736,4 +736,4 @@ resetArbitraryChainStart chain@ArbitraryChain{..} =
     ArbitraryParams{..} = arbitraryParams
 
     ahead :: NominalDiffTime
-    ahead = diffUTCTime (HF.getSystemStart arbitraryChainStart) dawnOfTime
+    ahead = diffUTCTime (getSystemStart arbitraryChainStart) dawnOfTime

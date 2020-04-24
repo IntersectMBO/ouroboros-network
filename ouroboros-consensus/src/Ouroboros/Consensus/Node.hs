@@ -1,6 +1,6 @@
+{-# LANGUAGE MonadComprehensions #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
-{-# LANGUAGE MonadComprehensions #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -48,8 +48,8 @@ import           Ouroboros.Network.NodeToClient (DictVersion (..),
                      nodeToClientCodecCBORTerm)
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
                      NodeToNodeVersionData (..), RemoteConnectionId,
-                     defaultMiniProtocolParameters, nodeToNodeCodecCBORTerm,
-                     combineVersions)
+                     combineVersions, defaultMiniProtocolParameters,
+                     nodeToNodeCodecCBORTerm)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -155,11 +155,11 @@ run RunNodeArgs{..} = do
     withRegistry $ \registry -> do
 
       lockDbMarkerFile registry rnDatabasePath
-      btime <- realBlockchainTime
+      btime <- simpleBlockchainTime
         registry
         (blockchainTimeTracer rnTraceConsensus)
         (nodeStartTime (Proxy @blk) cfg)
-        (focusSlotLengths slotLengths)
+        slotLength
 
       -- When we shut down cleanly, we create a marker file so that the next
       -- time we start, we know we don't have to validate the contents of the
@@ -218,7 +218,7 @@ run RunNodeArgs{..} = do
   where
     mountPoint              = MountPoint rnDatabasePath
     hasFS                   = ioHasFS mountPoint
-    slotLengths             = knownSlotLengths (configBlock cfg)
+    slotLength              = knownSlotLength (configBlock cfg)
     nodeToNodeVersionData   = NodeToNodeVersionData   { networkMagic = rnNetworkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnNetworkMagic }
 

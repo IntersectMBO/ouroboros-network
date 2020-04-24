@@ -167,11 +167,11 @@ validateChainDb
   -> IO ()
 validateChainDb dbDir genesisConfig onlyImmDB verbose =
     withRegistry $ \registry -> do
-      btime <- realBlockchainTime
+      btime <- simpleBlockchainTime
         registry
         nullTracer
         (nodeStartTime (Proxy @ByronBlock) cfg)
-        (focusSlotLengths $ singletonSlotLengths slotLength)
+        slotLength
       let chainDbArgs = mkChainDbArgs registry btime
           (immDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
       if onlyImmDB then

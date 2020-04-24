@@ -34,6 +34,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
+import           Ouroboros.Consensus.Util.Time
 
 {-------------------------------------------------------------------------------
   Test blockchain time

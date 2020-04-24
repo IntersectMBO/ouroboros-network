@@ -135,37 +135,6 @@ instance Arbitrary Seed where
 
     shrink = const []
 
-
-{-------------------------------------------------------------------------------
-  SlotLengths
--------------------------------------------------------------------------------}
-
-instance Arbitrary SlotLengths where
-  arbitrary = slotLengthsFromList <$> arbitrary <*> arbitrary
-  shrink (SlotLengths l ls) = concat [
-        -- Shrink the slot length in this segment
-        [ SlotLengths l' ls
-        | l' <- shrink l
-        ]
-
-        -- Shrink the tail
-      , [ SlotLengths l ls'
-        | ls' <- shrink ls
-        ]
-
-        -- Drop the head
-      , [ ls'
-        | Just (_, ls') <- [ls]
-        ]
-      ]
-
-instance Arbitrary SegmentLength where
-  -- No point choosing very large segments (not interested in testing overflow)
-  -- Segments of length 0 make no sense (important for 'tickSlotLengths').
-  arbitrary = SegmentLength <$> choose (1, 1000)
-  shrink (SegmentLength l) = SegmentLength <$> shrink l
-
-
 {-------------------------------------------------------------------------------
   SmallDiffTime
 -------------------------------------------------------------------------------}
