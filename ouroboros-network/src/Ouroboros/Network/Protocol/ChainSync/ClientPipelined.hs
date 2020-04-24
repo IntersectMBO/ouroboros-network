@@ -66,9 +66,9 @@ data ClientPipelinedStIdle n header point tip  m a where
       -> ClientPipelinedStIdle      Z header point tip m a
 
     CollectResponse
-      :: Maybe (ClientPipelinedStIdle (S n) header point tip m a)
-      -> ClientStNext                    n  header point tip m a
-      -> ClientPipelinedStIdle        (S n) header point tip m a
+      :: Maybe (m (ClientPipelinedStIdle (S n) header point tip m a))
+      -> ClientStNext                       n  header point tip m a
+      -> ClientPipelinedStIdle           (S n) header point tip m a
 
     SendMsgDone
       :: a
@@ -241,7 +241,7 @@ chainSyncClientPeerSender n@(Succ n')
                               }) =
 
     SenderCollect
-      (chainSyncClientPeerSender n <$> mStIdle)
+      (SenderEffect . fmap (chainSyncClientPeerSender n) <$> mStIdle)
       (\instr -> SenderEffect $ chainSyncClientPeerSender n' <$> collect instr)
     where
       collect (RollForward header point) =
