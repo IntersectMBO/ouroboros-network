@@ -125,6 +125,14 @@ There is another factor.
 The only idea I have for mitigating such a cascade that linearly inflates `Δ`
 is to refine the ChainSync server.
 
+> [NJD] I am not certain that this is a reasonable scenario. Operational 
+  nodes will have a mimimum connection valency than 2 and they will actively
+  work to maintain that (likely to be 5 to 7 range as a minimum of "hot"
+  connections - ones that they subscribe to for updates). There will also
+  be some level of "is there an eclipse trying to be be performed on me"
+  detection that would have triggered a long time before `k` slots of gap
+  would start to be approached. [\NJD]
+
 Currently, the ChainSync server provides the local node's selected chain's
 headers to its peers' ChainSync clients. So N2 cannot begin diffusing any
 prefix of C1' to N3 until N2 has selected the full C1'. And it can't do so
