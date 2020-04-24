@@ -39,17 +39,17 @@ import           Data.Void (Void)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.BlockFetch.Client (
-                   BlockFetchClient, blockFetchClient)
+import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient,
+                     blockFetchClient)
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToNode hiding (NodeToNodeVersion(..))
-import qualified Ouroboros.Network.NodeToNode as N (NodeToNodeVersion(..))
+import           Ouroboros.Network.NodeToNode hiding (NodeToNodeVersion (..))
+import qualified Ouroboros.Network.NodeToNode as N (NodeToNodeVersion (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
-import           Ouroboros.Network.Protocol.BlockFetch.Server (
-                   BlockFetchServer, blockFetchServerPeer)
+import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
+                     blockFetchServerPeer)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch (..))
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec

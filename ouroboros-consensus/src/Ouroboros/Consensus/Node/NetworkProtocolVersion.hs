@@ -16,8 +16,8 @@ module Ouroboros.Consensus.Node.NetworkProtocolVersion
   , castSerialisationAcrossNetwork
   ) where
 
-import           Data.Proxy
 import           Data.List.NonEmpty (NonEmpty (..))
+import           Data.Proxy
 
 import qualified Ouroboros.Network.NodeToClient as N
 import qualified Ouroboros.Network.NodeToNode as N

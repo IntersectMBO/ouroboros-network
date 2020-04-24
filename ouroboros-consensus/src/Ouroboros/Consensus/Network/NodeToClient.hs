@@ -43,8 +43,9 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToClient hiding (NodeToClientVersion(..))
-import qualified Ouroboros.Network.NodeToClient as N (NodeToClientVersion(..))
+import           Ouroboros.Network.NodeToClient hiding
+                     (NodeToClientVersion (..))
+import qualified Ouroboros.Network.NodeToClient as N (NodeToClientVersion (..))
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type

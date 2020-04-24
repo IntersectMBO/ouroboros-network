@@ -23,8 +23,8 @@ import           Data.Foldable (toList)
 import qualified Data.Sequence as Seq
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..),
-                     FullByteString (..), Annotator (..))
+import           Cardano.Binary (Annotator (..), FromCBOR (..),
+                     FullByteString (..), ToCBOR (..))
 import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..))
 
 import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
