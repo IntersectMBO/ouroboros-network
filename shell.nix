@@ -39,7 +39,7 @@ let
     ];
 
     # These programs will be available inside the nix-shell.
-    buildInputs = with haskellPackages; [
+    buildInputs = (with haskellPackages; [
       cabal-install
       ghcid
       hlint
@@ -49,7 +49,8 @@ let
       pkgconfig
       sqlite-interactive
       git
-    ];
+    ])
+    ++ [(pkgs.callPackage ./nix/stylish-haskell.nix {})];
 
     # Prevents cabal from choosing alternate plans, so that
     # *all* dependencies are provided by Nix.
