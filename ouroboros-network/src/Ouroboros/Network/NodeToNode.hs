@@ -137,7 +137,7 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , DnsTrace (..)
                                                     , WithDomainName (..)
                                                     )
-import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
+import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..), SubscriberError)
 import           Ouroboros.Network.Snocket
 
 -- The Handshake tracer types are simply terrible.
@@ -784,6 +784,12 @@ remoteNetworkErrorPolicy = ErrorPolicies {
         , ErrorPolicy
             $ \(_ :: IOManagerError)
                   -> Just Throw
+        , ErrorPolicy
+          -- Multiple connection attempts are run in parallel and the last to
+          -- finish are cancelled. There may be nothing wrong with the peer,
+          -- it could just be slow to respond.
+          $ \(_ :: SubscriberError)
+                -> Just (SuspendConsumer veryShortDelay)
         ]
     }
   where
@@ -798,6 +804,9 @@ remoteNetworkErrorPolicy = ErrorPolicies {
 
     shortDelay :: DiffTime
     shortDelay = 20 -- seconds
+
+    veryShortDelay :: DiffTime
+    veryShortDelay = 1 -- seconds
 
 -- | Error policy for local clients.  This is equivalent to
 -- 'nullErrorPolicies', but explicit in the errors which can be catched.
