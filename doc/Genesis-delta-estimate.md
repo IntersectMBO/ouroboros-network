@@ -148,6 +148,30 @@ In the 2020 April 21 calls, Neil Davies had mentioned a couple other scenarios
 to consider.
 
  * network partition on the order of days, eg undersea cable cut
+ > [NJD]Our approach to this is to "ensure" (e.g. get large scale / multiple 
+   stakepool operators) to "circle" the world - this is the current
+   approach in the federated setting. By having fixed interconnects 
+   between say Frankfurt, Singapore and Ohio that ensures that (in the
+   absence of major failures) the traffic goes both east and west. 
+ >    
+ > IP routing will "recover" but, as we saw this week (AWS S3 issues /
+   github performance etc) with a US cable cut, many services are implicitly
+   dependent on worst case service bounds (on the delay and loss of their
+   packet exchanges) and do not degrade gracefully under such conditions.
+ >  
+ > My main concern here is not the steady state, but the dynamics, we can 
+   quantify this during initial deployments by use of suitable tracing and
+   analysis. Gut feeling is that our design/implementation should cope - but
+   we need to build in the verification. A lot of these gross failures that 
+   are seen in large scale services have short term failures that are not 
+   captured or just plain ignored. Best intution is that this is a sort of 
+   condensation phenomena that needs to be tracked for long term stablity.
+ >       
+ > A decentralised system does not have the fallback that there is a single
+   management entity that can "fix" issues - and that is the fallback situtation
+   for all the current players in the larger scale internet.
+   [/NJD]
+       
 
  * network partition on the order of minutes, eg BGP (?) reroute.
 
