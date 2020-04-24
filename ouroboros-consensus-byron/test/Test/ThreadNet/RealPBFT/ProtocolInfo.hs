@@ -19,9 +19,9 @@ import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 
-import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
+import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import           Ouroboros.Consensus.Byron.Node

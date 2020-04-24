@@ -29,7 +29,7 @@ module Ouroboros.Consensus.Mock.Ledger.UTxO (
   ) where
 
 import           Codec.Serialise (Serialise (..))
-import           Control.DeepSeq (NFData (..), rwhnf, force)
+import           Control.DeepSeq (NFData (..), force, rwhnf)
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Functor (($>))

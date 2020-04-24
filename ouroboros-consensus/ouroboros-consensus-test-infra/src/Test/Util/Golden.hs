@@ -7,14 +7,14 @@ module Test.Util.Golden
   , goldenTestCBORInCBOR
   ) where
 
+import qualified Data.ByteString as BS
 import           Data.List (intercalate)
 import           Data.TreeDiff (ToExpr, ansiWlEditExpr, ediff)
-import qualified Data.ByteString as BS
 
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..))
 import qualified Codec.CBOR.FlatTerm as CBOR
-import qualified Codec.CBOR.Read     as CBOR
+import qualified Codec.CBOR.Read as CBOR
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)

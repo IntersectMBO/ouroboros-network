@@ -62,9 +62,9 @@ import qualified Ouroboros.Consensus.Node.State as NodeState
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense
 
-import qualified Shelley.Spec.Ledger.API as SL
 import           Control.State.Transition.Extended (applySTS)
 import qualified Control.State.Transition.Extended as STS
+import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL

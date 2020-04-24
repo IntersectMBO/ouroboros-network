@@ -793,12 +793,11 @@ removeFile fp =
 renameFile :: CanSimFS m => FsPath -> FsPath -> m ()
 renameFile fpOld fpNew =
     modifyMockFS $ \fs -> if
-      | fpOld `S.member` openFilePaths fs
-      -> throwError $ errRenameOpenFile fpOld
-      | fpNew `S.member` openFilePaths fs
-      -> throwError $ errRenameOpenFile fpNew
-      | otherwise
-      -> do
+      | fpOld `S.member` openFilePaths fs ->
+        throwError $ errRenameOpenFile fpOld
+      | fpNew `S.member` openFilePaths fs ->
+        throwError $ errRenameOpenFile fpNew
+      | otherwise -> do
         files' <- checkFsTree $ FS.renameFile fpOld fpNew (mockFiles fs)
         return ((), fs { mockFiles = files' })
   where
