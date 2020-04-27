@@ -63,8 +63,6 @@ onKnownSlotChange registry BlockchainTime{getCurrentSlot} label =
 -------------------------------------------------------------------------------}
 
 -- | The current slot can be changed by modifying the given 'StrictTVar'.
---
--- 'onSlotChange_' is not implemented and will return an 'error'.
 settableBlockchainTime :: MonadSTM m => StrictTVar m SlotNo -> BlockchainTime m
 settableBlockchainTime varCurSlot = BlockchainTime {
       getCurrentSlot = readTVar varCurSlot
