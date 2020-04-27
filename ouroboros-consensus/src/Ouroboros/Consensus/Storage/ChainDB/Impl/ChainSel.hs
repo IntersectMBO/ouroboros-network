@@ -919,7 +919,7 @@ validateCandidate lgrDB tracer cfg varInvalid blockCache
 -------------------------------------------------------------------------------}
 
 -- | Instantiate 'ValidatedFragment' in the way that chain selection requires
-type ChainAndLedger blk = ValidatedFragment (LgrDB.LedgerDB blk) blk
+type ChainAndLedger blk = ValidatedFragment blk (LgrDB.LedgerDB blk)
 
 -- | Auxiliary data type for 'cdbAddBlock' for a candidate suffix.
 --
