@@ -62,17 +62,14 @@ newtype NumSlots = NumSlots Word64
 
 -- | Construct new blockchain time that ticks at the specified slot duration
 --
+-- ASSUMPTION: numSlots must be >0
+--
 -- NOTE: This is just one way to construct time. We can of course also connect
 -- this to the real time (if we are in IO), or indeed to a manual tick
 -- (in a demo).
 --
 -- NOTE: The number of slots is only there to make sure we terminate the
 -- thread (otherwise the system will keep waiting).
---
--- NOTE: Any code not passed to 'onSlotChange' may start running \"before\" the
--- first slot @SlotNo 0@, i.e. during 'Initializing'. This is likely only
--- appropriate for initialization code etc. In contrast, the argument to
--- 'onSlotChange' is blocked at least until @SlotNo 0@ begins.
 newTestBlockchainTime
     :: forall m. (IOLike m, HasCallStack)
     => ResourceRegistry m
@@ -80,33 +77,37 @@ newTestBlockchainTime
     -> SlotLength         -- ^ Slot duration
     -> m (TestBlockchainTime m)
 newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
-    slotVar <- newTVarM (SlotNo 0)
+    let s0 :: SlotNo
+        s0 = SlotNo 0
+
+        sentinel :: SlotNo
+        sentinel = SlotNo numSlots
+
+    -- if there are to be no slots, then there should be no SlotNo 0,
+    -- and this function always provides a SlotNo 0
+    when (s0 >= sentinel) $ error "newTestBlockchainTime: NumSlots 0!"
+
     doneVar <- newEmptyMVar ()
+    slotVar <- newTVarM s0
 
-    void $ forkLinkedThread registry "TestBlockchainTime" $ loop slotVar doneVar
-
-    return $ clone slotVar doneVar
-  where
-    loop :: StrictTVar m SlotNo -> StrictMVar m () -> m ()
-    loop slotVar doneVar = go numSlots
-      where
-        -- count off each requested slot
-        go :: Word64 -> m ()
-        go 0 = putMVar doneVar () -- signal the end of the final slot
-        go n = do
+    -- Because the test begins at the onset of the first slot, there will be
+    -- one fewer tick than there are slots (unless there are zero slots).
+    let doTicksFrom :: SlotNo -> m ()
+        doTicksFrom s = do
             threadDelay (nominalDelay (getSlotLength slotLen))
-            atomically $ modifyTVar slotVar $ succ
-            go (n - 1)
+            let s' = succ s
+            when (s' < sentinel) $ do
+              atomically $ writeTVar slotVar s'
+              doTicksFrom s'
 
-    clone
-      :: StrictTVar m SlotNo
-      -> StrictMVar m ()
-      -> TestBlockchainTime m
-    clone slotVar doneVar =
-        TestBlockchainTime
-          { testBlockchainTimeSlot = readTVar slotVar
-          , testBlockchainTimeDone = readMVar doneVar
-          }
+    void $ forkLinkedThread registry "TestBlockchainTime" $ do
+      doTicksFrom s0
+      putMVar doneVar ()   -- signal the end of the final slot
+
+    return TestBlockchainTime
+      { testBlockchainTimeDone = readMVar doneVar
+      , testBlockchainTimeSlot = readTVar slotVar
+      }
 
 {-------------------------------------------------------------------------------
   Alternative constructors
