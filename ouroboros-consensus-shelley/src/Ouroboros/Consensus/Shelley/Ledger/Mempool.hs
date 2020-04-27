@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -49,9 +50,8 @@ type ShelleyTxId c = SL.TxId c
 instance TPraosCrypto c => ApplyTx (ShelleyBlock c) where
 
   data GenTx (ShelleyBlock c) = ShelleyTx !(ShelleyTxId c) !(SL.Tx c)
-    deriving (Eq, Generic)
-    -- TODO
-    deriving (NoUnexpectedThunks) via UseIsNormalForm (GenTx (ShelleyBlock c))
+    deriving stock    (Eq, Generic)
+    deriving anyclass (NoUnexpectedThunks)
 
   type ApplyTxErr (ShelleyBlock c) = SL.ApplyTxError c
 
