@@ -64,7 +64,6 @@ library
                        Ouroboros.Network.PeerSelection.Types
                        Ouroboros.Network.PeerSelection.KnownPeers
                        Ouroboros.Network.PeerSelection.RootPeersDNS
-                       Ouroboros.Network.PeerSelection.JobPool
                        Ouroboros.Network.PeerSelection.Governor
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.ClientPipelined

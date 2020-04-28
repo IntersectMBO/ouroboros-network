@@ -19,13 +19,13 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Set (Set)
 
+import           Control.Concurrent.JobPool (JobPool)
+import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
-import qualified Ouroboros.Network.PeerSelection.JobPool as JobPool
-import           Ouroboros.Network.PeerSelection.JobPool (JobPool)
 import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.Governor.ActivePeers (jobDemoteActivePeer)

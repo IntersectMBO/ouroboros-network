@@ -54,7 +54,6 @@ library
                        Network.Mux.Codec
                        Network.Mux.Egress
                        Network.Mux.Ingress
-                       Network.Mux.JobPool
                        Network.Mux.Time
                        Network.Mux.Timeout
                        Network.Mux.Types
@@ -66,6 +65,7 @@ library
                        Network.Mux.DeltaQ.TraceStatsSupport
                        Network.Mux.DeltaQ.TraceTransformer
                        Network.Mux.DeltaQ.TraceTypes
+                       Control.Concurrent.JobPool
   if os(windows)
     exposed-modules:
                        Network.Mux.Bearer.NamedPipe

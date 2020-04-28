@@ -35,6 +35,8 @@ import           Data.Void (Void)
 import           Data.Semigroup (Min(..))
 
 import           Control.Applicative (Alternative((<|>)))
+import qualified Control.Concurrent.JobPool as JobPool
+import           Control.Concurrent.JobPool (JobPool)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM
@@ -44,8 +46,6 @@ import           Control.Tracer (Tracer(..), traceWith)
 import           Control.Exception (assert)
 
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
-import qualified Ouroboros.Network.PeerSelection.JobPool    as JobPool
-import           Ouroboros.Network.PeerSelection.JobPool (JobPool)
 import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers      as ActivePeers
 import qualified Ouroboros.Network.PeerSelection.Governor.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.KnownPeers       as KnownPeers

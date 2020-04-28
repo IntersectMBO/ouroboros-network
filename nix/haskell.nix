@@ -43,6 +43,7 @@ let
         packages.typed-protocols-examples.configureFlags = [ "--ghc-option=-Werror" ];
         packages.io-sim.configureFlags = [ "--ghc-option=-Werror" ];
         packages.io-sim-classes.configureFlags = [ "--ghc-option=-Werror" ];
+        packages.job-pool.configureFlags = [ "--ghc-option=-Werror" ];
         packages.Win32-network.configureFlags = [ "--ghc-option=-Werror" ];
         packages.network-mux.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ntp-client.configureFlags = [ "--ghc-option=-Werror" ];

@@ -13,12 +13,12 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Concurrent.JobPool (Job(..))
 import           Control.Exception (SomeException)
 
 import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo(..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
-import           Ouroboros.Network.PeerSelection.JobPool (Job(..))
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
@@ -103,7 +103,7 @@ jobPromoteWarmPeer :: forall peeraddr peerconn m.
                    -> Job m (Completion m peeraddr peerconn)
 jobPromoteWarmPeer PeerSelectionActions{activatePeerConnection}
                    peeraddr peerconn =
-    Job job handler
+    Job job handler "promoteWarmPeer"
   where
     handler :: SomeException -> Completion m peeraddr peerconn
     handler e =
@@ -210,7 +210,7 @@ jobDemoteActivePeer :: forall peeraddr peerconn m.
                     -> Job m (Completion m peeraddr peerconn)
 jobDemoteActivePeer PeerSelectionActions{deactivatePeerConnection}
                     peeraddr peerconn =
-    Job job handler
+    Job job handler "demoteActivePeer"
   where
     handler :: SomeException -> Completion m peeraddr peerconn
     handler e =

@@ -13,6 +13,7 @@ import           Data.Semigroup (Min(..))
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
+import           Control.Concurrent.JobPool (Job(..))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
@@ -21,7 +22,6 @@ import           Control.Exception (Exception(..), SomeException)
 
 import           Ouroboros.Network.PeerSelection.Types
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
-import           Ouroboros.Network.PeerSelection.JobPool (Job(..))
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
@@ -108,7 +108,7 @@ jobGossip :: forall m peeraddr peerconn.
           -> Job m (Completion m peeraddr peerconn)
 jobGossip PeerSelectionActions{requestPeerGossip}
            PeerSelectionPolicy{..} =
-    \peers -> Job (jobPhase1 peers) (handler peers)
+    \peers -> Job (jobPhase1 peers) (handler peers) "gossipPhase1"
   where
     handler :: [peeraddr] -> SomeException -> Completion m peeraddr peerconn
     handler peers e =
@@ -182,7 +182,8 @@ jobGossip PeerSelectionActions{requestPeerGossip}
                                                    - length peerResults
                             },
             decisionJobs  = [Job (jobPhase2 peersRemaining gossipsRemaining)
-                                 (handler peersRemaining)]
+                                 (handler peersRemaining)
+                                 "gossipPhase2"]
           }
 
     jobPhase2 :: [peeraddr] -> [Async m [peeraddr]]

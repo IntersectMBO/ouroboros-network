@@ -14,6 +14,7 @@ import qualified Data.Set as Set
 import           Data.Set (Set)
 
 import           Control.Applicative (Alternative((<|>)))
+import           Control.Concurrent.JobPool (Job)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert, SomeException)
@@ -22,7 +23,6 @@ import           GHC.Stack
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers, KnownPeerInfo(..))
 import           Ouroboros.Network.PeerSelection.Types
-import           Ouroboros.Network.PeerSelection.JobPool (Job)
 
 
 -- | A peer pick policy is an action that picks a subset of elements from a
