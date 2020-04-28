@@ -159,43 +159,43 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: bda15b9fa712bf9063ff7312dddef6f8d70e3f8e
-  --sha256: 138sbsfyhp1wm8yhiiafqzhi6sfcpp1xkwpyd28qckj2mxf8z6n0
+  tag: d10508f3094fa8c429ce371255129fbc9e9418a0
+  --sha256: 1q3qaq23br1zfxw7n1jb2l2hcfa0gyh2f3asi8xqrwj1dffkr2ls
   subdir: semantics/executable-spec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: bda15b9fa712bf9063ff7312dddef6f8d70e3f8e
-  --sha256: 138sbsfyhp1wm8yhiiafqzhi6sfcpp1xkwpyd28qckj2mxf8z6n0
+  tag: d10508f3094fa8c429ce371255129fbc9e9418a0
+  --sha256: 1q3qaq23br1zfxw7n1jb2l2hcfa0gyh2f3asi8xqrwj1dffkr2ls
   subdir: byron/ledger/executable-spec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: bda15b9fa712bf9063ff7312dddef6f8d70e3f8e
-  --sha256: 138sbsfyhp1wm8yhiiafqzhi6sfcpp1xkwpyd28qckj2mxf8z6n0
+  tag: d10508f3094fa8c429ce371255129fbc9e9418a0
+  --sha256: 1q3qaq23br1zfxw7n1jb2l2hcfa0gyh2f3asi8xqrwj1dffkr2ls
   subdir: byron/chain/executable-spec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: bda15b9fa712bf9063ff7312dddef6f8d70e3f8e
-  --sha256: 138sbsfyhp1wm8yhiiafqzhi6sfcpp1xkwpyd28qckj2mxf8z6n0
+  tag: d10508f3094fa8c429ce371255129fbc9e9418a0
+  --sha256: 1q3qaq23br1zfxw7n1jb2l2hcfa0gyh2f3asi8xqrwj1dffkr2ls
   subdir: shelley/chain-and-ledger/dependencies/non-integer
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: bda15b9fa712bf9063ff7312dddef6f8d70e3f8e
-  --sha256: 138sbsfyhp1wm8yhiiafqzhi6sfcpp1xkwpyd28qckj2mxf8z6n0
+  tag: d10508f3094fa8c429ce371255129fbc9e9418a0
+  --sha256: 1q3qaq23br1zfxw7n1jb2l2hcfa0gyh2f3asi8xqrwj1dffkr2ls
   subdir: shelley/chain-and-ledger/executable-spec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: bda15b9fa712bf9063ff7312dddef6f8d70e3f8e
-  --sha256: 138sbsfyhp1wm8yhiiafqzhi6sfcpp1xkwpyd28qckj2mxf8z6n0
+  tag: d10508f3094fa8c429ce371255129fbc9e9418a0
+  --sha256: 1q3qaq23br1zfxw7n1jb2l2hcfa0gyh2f3asi8xqrwj1dffkr2ls
   subdir: shelley/chain-and-ledger/executable-spec/test
 
 source-repository-package
