@@ -512,13 +512,13 @@ peerSelectionGovernorLoop tracer debugTracer
                      -> Guarded (STM m) (Decision m peeraddr peerconn)
     guardedDecisions now st =
       -- All the alternative non-blocking internal decisions.
-         RootPeers.belowTarget        actions        st now
-      <> KnownPeers.belowTarget       actions policy st now
-      <> KnownPeers.aboveTarget               policy st
-      <> EstablishedPeers.belowTarget actions policy st
-      <> EstablishedPeers.aboveTarget actions policy st
-      <> ActivePeers.belowTarget      actions policy st
-      <> ActivePeers.aboveTarget      actions policy st
+         RootPeers.belowTarget        actions now        st
+      <> KnownPeers.belowTarget       actions now policy st
+      <> KnownPeers.aboveTarget                   policy st
+      <> EstablishedPeers.belowTarget actions     policy st
+      <> EstablishedPeers.aboveTarget actions     policy st
+      <> ActivePeers.belowTarget      actions     policy st
+      <> ActivePeers.aboveTarget      actions     policy st
 
       -- All the alternative potentially-blocking decisions.
       <> Monitor.targetPeers          actions st

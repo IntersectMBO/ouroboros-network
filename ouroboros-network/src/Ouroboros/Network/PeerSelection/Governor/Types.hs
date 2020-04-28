@@ -342,6 +342,16 @@ data Decision m peeraddr peerconn = Decision {
        decisionJobs  :: [Job m (Completion m peeraddr peerconn)]
      }
 
+
+-- | Type alias for function types which are used to create governor decisions.
+-- Allmost all decisions are following this pattern.
+--
+type MkGuardedDecision peeraddr peerconn m
+     = PeerSelectionPolicy peeraddr m
+    -> PeerSelectionState peeraddr peerconn
+    -> Guarded (STM m) (Decision m peeraddr peerconn)
+
+
 newtype Completion m peeraddr peerconn =
         Completion (PeerSelectionState peeraddr peerconn
                  -> Time -> Decision m peeraddr peerconn)

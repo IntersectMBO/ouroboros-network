@@ -32,11 +32,9 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 
 belowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
-            -> PeerSelectionPolicy peeraddr m
-            -> PeerSelectionState peeraddr peerconn
             -> Time
-            -> Guarded (STM m) (Decision m peeraddr peerconn)
-belowTarget actions
+            -> MkGuardedDecision peeraddr peerconn m
+belowTarget actions now
             policy@PeerSelectionPolicy {
               policyMaxInProgressGossipReqs,
               policyPickKnownPeersForGossip,
@@ -49,7 +47,6 @@ belowTarget actions
                           targetNumberOfKnownPeers
                         }
             }
-            now
     -- Are we under target for number of known peers?
   | numKnownPeers < targetNumberOfKnownPeers
 
@@ -237,9 +234,7 @@ jobGossip PeerSelectionActions{requestPeerGossip}
 
 
 aboveTarget :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionPolicy peeraddr m
-            -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (Decision m peeraddr peerconn)
+            => MkGuardedDecision peeraddr peerconn m
 aboveTarget PeerSelectionPolicy {
               policyPickColdPeersToForget
             }

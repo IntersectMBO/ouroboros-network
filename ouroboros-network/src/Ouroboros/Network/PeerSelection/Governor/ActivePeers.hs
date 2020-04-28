@@ -30,9 +30,7 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 belowTarget :: forall peeraddr peerconn m.
                (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
-            -> PeerSelectionPolicy peeraddr m
-            -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (Decision m peeraddr peerconn)
+            -> MkGuardedDecision peeraddr peerconn m
 belowTarget actions
             PeerSelectionPolicy {
               policyPickWarmPeersToPromote
@@ -144,9 +142,7 @@ jobPromoteWarmPeer PeerSelectionActions{activatePeerConnection}
 aboveTarget :: forall peeraddr peerconn m.
                (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
-            -> PeerSelectionPolicy peeraddr m
-            -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (Decision m peeraddr peerconn)
+            -> MkGuardedDecision peeraddr peerconn m
 aboveTarget actions
             PeerSelectionPolicy {
               policyPickHotPeersToDemote

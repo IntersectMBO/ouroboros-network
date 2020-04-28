@@ -25,10 +25,11 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 
 belowTarget :: (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
-            -> PeerSelectionState peeraddr peerconn
             -> Time
+            -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (Decision m peeraddr peerconn)
 belowTarget actions
+            now
             st@PeerSelectionState {
               localRootPeers,
               publicRootPeers,
@@ -38,7 +39,6 @@ belowTarget actions
                           targetNumberOfRootPeers
                         }
             }
-            now
     -- Are we under target for number of root peers?
   | maxExtraRootPeers > 0
 
