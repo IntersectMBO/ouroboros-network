@@ -119,3 +119,23 @@ or with `nix`
 ```
 nix-build -A haskellPackages.ouroboros-consensus-test-infra.checks.test
 ```
+
+## Formatting
+
+The consensus team uses `stylish-haskell` >= 0.11.0.0 to format its code. This
+is enforced by CI.
+
+Either enable editor integration or run the following command to manually
+format all of the consensus code (but not the network code):
+
+```bash
+stylish-haskell -i `git ls-files -- 'ouroboros-consensus*/*.hs' | grep -v Setup.hs`
+```
+
+Alternatively, call the script used by CI itself:
+https://github.com/input-output-hk/ouroboros-network/blob/master/scripts/buildkite/check-stylish.sh
+
+```bash
+./scripts/buildkite/check-stylish.sh
+```
+
