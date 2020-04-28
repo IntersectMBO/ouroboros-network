@@ -96,6 +96,12 @@ library
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
+  other-modules:       Ouroboros.Network.PeerSelection.Governor.ActivePeers
+                       Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
+                       Ouroboros.Network.PeerSelection.Governor.KnownPeers
+                       Ouroboros.Network.PeerSelection.Governor.Monitor
+                       Ouroboros.Network.PeerSelection.Governor.RootPeers
+                       Ouroboros.Network.PeerSelection.Governor.Types
 
   default-language:    Haskell2010
   other-extensions:    BangPatterns,

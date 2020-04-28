@@ -402,4 +402,3 @@ sampleAdvertisedPeers _ _ _ = []
 -- in a relatively stable way, that's mostly insensitive to additions or
 -- deletions
 -}
-
