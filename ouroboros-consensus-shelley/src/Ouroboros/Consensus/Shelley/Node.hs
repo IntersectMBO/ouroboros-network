@@ -279,12 +279,14 @@ protocolInfoShelley genesis protVer mbCredentials =
 
     genesisUtxO :: SL.UTxO c
     genesisUtxO = SL.UTxO $ Map.fromList
-        [ (magicTxIn, txOut)
-        | (addr, amount) <- Map.toList (sgInitialFunds genesis)
+        [ (magicTxIn idx, txOut)
+        | ((addr, amount), idx) <- Map.toList (sgInitialFunds genesis) `zip` [0 ..]
         , let txOut = SL.TxOut addr amount
         ]
       where
-        -- TODO
+        -- Note that the ID for this transaction is completely arbitrary; the
+        -- initial UTxO is magical not due to its ID, but due to being included
+        -- in the initial ledger state.
         magicTxInId =
             SL.TxId
           . coerce
@@ -293,7 +295,7 @@ protocolInfoShelley genesis protVer mbCredentials =
             @ByteString
             "In the beginning"
 
-        magicTxIn = SL.TxIn magicTxInId 0
+        magicTxIn = SL.TxIn magicTxInId
 
     -- Register the initial staking.
     --
