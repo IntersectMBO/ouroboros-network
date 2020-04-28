@@ -8,12 +8,12 @@
 ############################################################################
 
 # The project sources
-{ ouroroboros-network ? { outPath = ./.; rev = "abcdef"; }
+{ ouroboros-network ? { outPath = ./.; rev = "abcdef"; }
 
 # Function arguments to pass to the project
 , projectArgs ? {
     config = { allowUnfree = false; inHydra = true; };
-    gitrev = ouroroboros-network.rev;
+    gitrev = ouroboros-network.rev;
   }
 
 # The systems that the jobset will be built for.
@@ -38,8 +38,8 @@
 with (import pkgs.iohkNix.release-lib) {
   inherit pkgs;
   inherit supportedSystems supportedCrossSystems scrubJobs projectArgs;
-  packageSet = import ouroroboros-network;
-  gitrev = ouroroboros-network.rev;
+  packageSet = import ouroboros-network;
+  gitrev = ouroboros-network.rev;
 };
 
 with pkgs.lib;

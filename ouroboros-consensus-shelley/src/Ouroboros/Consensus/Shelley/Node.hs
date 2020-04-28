@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric            #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE DuplicateRecordFields    #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
@@ -8,8 +9,10 @@
 module Ouroboros.Consensus.Shelley.Node (
     protocolInfoShelley
   , ShelleyGenesis (..)
+  , ShelleyGenesisStaking (..)
   , TPraosLeaderCredentials (..)
   , SL.ProtVer
+  , emptyGenesisStaking
   ) where
 
 import           Codec.Serialise (decode, encode)
@@ -53,10 +56,13 @@ import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
 import           Shelley.Spec.Ledger.Crypto (HASH)
+import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
+import qualified Shelley.Spec.Ledger.EpochBoundary as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL
+import qualified Shelley.Spec.Ledger.STS.NewEpoch as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as SL
 import qualified Shelley.Spec.Ledger.TxData as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
@@ -77,6 +83,37 @@ data TPraosLeaderCredentials c = TPraosLeaderCredentials {
     --   change.
     tpraosLeaderCredentialsSignKey    :: SignKeyKES (KES c)
   , tpraosLeaderCredentialsIsCoreNode :: TPraosIsCoreNode c
+  }
+
+-- | Genesis Shelley staking configuration.
+--
+-- This allows us to configure some initial stake pools and delegation to them,
+-- in order to test Praos in a static configuration, without requiring on-chain
+-- registration and delegation.
+--
+-- For simplicity, pools defined in the genesis staking do not pay deposits for
+-- their registration.
+data ShelleyGenesisStaking c = ShelleyGenesisStaking {
+    -- | Pools to register
+    --
+    --   The key in this map is the hash of the public key of the _pool_. This
+    --   need not correspond to any payment or staking key, but must correspond
+    --   to the cold key held by 'TPraosIsCoreNode'.
+    sgsPools :: !(Map (SL.KeyHash c) (SL.PoolParams c))
+    -- | Stake-holding key hash credentials and the pools to delegate that stake
+    -- to. We require the raw staking key hash in order to:
+    --
+    -- - Avoid pointer addresses, which would be tricky when there's no slot or
+    --   transaction to point to.
+    -- - Avoid script credentials.
+  , sgsStake :: !(Map (SL.KeyHash c) (SL.KeyHash c))
+  } deriving (Eq, Show, Generic)
+
+-- | Empty genesis staking
+emptyGenesisStaking :: ShelleyGenesisStaking c
+emptyGenesisStaking = ShelleyGenesisStaking
+  { sgsPools = Map.empty
+  , sgsStake = Map.empty
   }
 
 -- | Shelley genesis information
@@ -103,6 +140,7 @@ data ShelleyGenesis c = ShelleyGenesis {
     , sgMaxHeaderSize         :: !Natural
     , sgGenDelegs             :: !(Map (SL.GenKeyHash c) (SL.KeyHash c))
     , sgInitialFunds          :: !(Map (SL.Addr c) SL.Coin)
+    , sgStaking               :: !(ShelleyGenesisStaking c)
     }
   deriving (Eq, Show, Generic)
 
@@ -138,7 +176,10 @@ protocolInfoShelley genesis protVer mbCredentials =
     tpraosParams = TPraosParams {
         tpraosEpochInfo         = epochInfo
       , tpraosSlotsPerKESPeriod = sgSlotsPerKESPeriod genesis
-      , tpraosLeaderF           = sgActiveSlotsCoeff  genesis
+      , tpraosLeaderF           = SL.mkActiveSlotCoeff
+                                . SL.truncateUnitInterval
+                                . toRational
+                                $ sgActiveSlotsCoeff  genesis
       , tpraosSecurityParam     = sgSecurityParam     genesis
       , tpraosMaxKESEvo         = sgMaxKESEvolutions  genesis
       , tpraosQuorum            = sgUpdateQuorum      genesis
@@ -198,7 +239,7 @@ protocolInfoShelley genesis protVer mbCredentials =
     initialEpochNo = 0
 
     initShelleyState :: SL.ChainState c
-    initShelleyState = SL.initialShelleyState
+    initShelleyState = registerGenesisStaking $ SL.initialShelleyState
       Origin
       initialEpochNo
       genesisUtxO
@@ -228,12 +269,7 @@ protocolInfoShelley genesis protVer mbCredentials =
 
     pparams :: SL.PParams
     pparams = SL.emptyPParams {
-        SL._activeSlotCoeff =
-            SL.mkActiveSlotCoeff
-          . SL.truncateUnitInterval
-          . realToFrac
-          $ sgActiveSlotsCoeff genesis
-      , SL._d =
+        SL._d =
             SL.truncateUnitInterval
           . realToFrac
           $ sgDecentralisationParam genesis
@@ -258,6 +294,68 @@ protocolInfoShelley genesis protVer mbCredentials =
             "In the beginning"
 
         magicTxIn = SL.TxIn magicTxInId 0
+
+    -- Register the initial staking.
+    --
+    -- This function embodies a little more logic than ideal. We might want to
+    -- move it into `cardano-ledger-specs.`
+    registerGenesisStaking :: SL.ChainState c -> SL.ChainState c
+    registerGenesisStaking cs@(SL.ChainState {chainNes = oldChainNes} ) = cs
+        { SL.chainNes = newChainNes }
+      where
+        ShelleyGenesisStaking { sgsPools, sgsStake } = sgStaking genesis
+        oldEpochState = SL.nesEs $ oldChainNes
+        oldLedgerState = SL.esLState oldEpochState
+        oldDPState = SL._delegationState oldLedgerState
+
+        -- Note that this is only applicable in the initial configuration where
+        -- there is no existing stake distribution, since it would completely
+        -- overwrite any such thing.
+        newPoolDistr = SL.calculatePoolDistr initSnapShot
+
+        newChainNes = oldChainNes
+          { SL.nesEs = newEpochState
+          , SL.nesPd = newPoolDistr
+          }
+        newEpochState = oldEpochState
+          { SL.esLState = newLedgerState }
+        newLedgerState = oldLedgerState
+          { SL._delegationState = newDPState }
+        newDPState = oldDPState
+          { SL._dstate = newDState
+          , SL._pstate = newPState
+          }
+        -- New delegation state. Since we're using base addresses, we only care
+        -- about updating the '_delegations' field.
+        --
+        -- See STS DELEG for details
+        newDState :: SL.DState c
+        newDState = (SL._dstate oldDPState) {
+          SL._delegations = Map.mapKeys SL.KeyHashObj sgsStake
+        }
+
+        -- We consider pools as having been registered in slot 0
+        -- See STS POOL for details
+        newPState :: SL.PState c
+        newPState = (SL._pstate oldDPState) {
+          SL._stPools = SL.StakePools $ Map.map (const $ SlotNo 0) $ sgsPools
+        , SL._pParams = sgsPools
+        }
+
+        -- The new stake distribution is made on the basis of a snapshot taken
+        -- during the previous epoch. We create a "fake" snapshot in order to
+        -- establish an initial stake distribution.
+        initSnapShot = SL.SnapShot
+          { SL._stake = SL.Stake . Map.mapKeys addrKeyHash $ sgInitialFunds genesis
+          , SL._delegations = Map.mapKeys SL.KeyHashObj sgsStake
+          , SL._poolParams = sgsPools
+          }
+          where
+            addrKeyHash (SL.AddrBootstrap kh) = SL.KeyHashObj kh
+            addrKeyHash (SL.Addr _ sr) = case sr of
+              SL.StakeRefBase kh -> kh
+              _ -> error "Pointer stake addresses not allowed in initial snapshot"
+
 
 {-------------------------------------------------------------------------------
   RunNode instance
