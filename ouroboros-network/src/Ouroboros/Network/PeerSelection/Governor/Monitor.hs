@@ -8,10 +8,10 @@
 -- * monitoring connections
 --
 module Ouroboros.Network.PeerSelection.Governor.Monitor
-  ( changedTargets
-  , jobCompleted
-  , monitorConnections
-  , changedLocalRootPeers
+  ( targetPeers
+  , jobs
+  , connections
+  , localRoots
   ) where
 
 import           Data.Map.Strict (Map)
@@ -31,15 +31,15 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.Governor.ActivePeers (jobDemoteActivePeer)
 
 
-changedTargets :: MonadSTM m
-               => PeerSelectionActions peeraddr peerconn m
-               -> PeerSelectionState peeraddr peerconn
-               -> Guarded (STM m) (Decision m peeraddr peerconn)
-changedTargets PeerSelectionActions{readPeerSelectionTargets}
-               st@PeerSelectionState{
-                 localRootPeers,
-                 targets
-               } =
+targetPeers :: MonadSTM m
+            => PeerSelectionActions peeraddr peerconn m
+            -> PeerSelectionState peeraddr peerconn
+            -> Guarded (STM m) (Decision m peeraddr peerconn)
+targetPeers PeerSelectionActions{readPeerSelectionTargets}
+            st@PeerSelectionState{
+              localRootPeers,
+              targets
+            } =
     Guarded Nothing $ do
       targets' <- readPeerSelectionTargets
       check (targets' /= targets)
@@ -61,12 +61,12 @@ changedTargets PeerSelectionActions{readPeerSelectionTargets}
       }
 
 
-jobCompleted :: MonadSTM m
-             => JobPool m (Completion m peeraddr peerconn)
-             -> PeerSelectionState peeraddr peerconn
-             -> Time
-             -> Guarded (STM m) (Decision m peeraddr peerconn)
-jobCompleted jobPool st now =
+jobs :: MonadSTM m
+     => JobPool m (Completion m peeraddr peerconn)
+     -> PeerSelectionState peeraddr peerconn
+     -> Time
+     -> Guarded (STM m) (Decision m peeraddr peerconn)
+jobs jobPool st now =
     -- This case is simple because the job pool returns a 'Completion' which is
     -- just a function from the current state to a new 'Decision'.
     Guarded Nothing $ do
@@ -74,19 +74,19 @@ jobCompleted jobPool st now =
       return $! completion st now
 
 
-monitorConnections :: forall m peeraddr peerconn.
-                      (MonadSTM m, Ord peeraddr)
-                   => PeerSelectionActions peeraddr peerconn m
-                   -> PeerSelectionState peeraddr peerconn
-                   -> Guarded (STM m) (Decision m peeraddr peerconn)
-monitorConnections PeerSelectionActions{monitorPeerConnection}
-                   st@PeerSelectionState {
-                     activePeers,
-                     establishedPeers,
-                     establishedStatus,
-                     inProgressDemoteHot,
-                     inProgressDemoteWarm
-                   } =
+connections :: forall m peeraddr peerconn.
+               (MonadSTM m, Ord peeraddr)
+            => PeerSelectionActions peeraddr peerconn m
+            -> PeerSelectionState peeraddr peerconn
+            -> Guarded (STM m) (Decision m peeraddr peerconn)
+connections PeerSelectionActions{monitorPeerConnection}
+            st@PeerSelectionState {
+              activePeers,
+              establishedPeers,
+              establishedStatus,
+              inProgressDemoteHot,
+              inProgressDemoteWarm
+            } =
     Guarded Nothing $ do
       establishedStatus' <- traverse monitorPeerConnection establishedPeers
       let demotions = asynchronousDemotions establishedStatus
@@ -136,21 +136,21 @@ monitorConnections PeerSelectionActions{monitorPeerConnection}
 --
 
 
-changedLocalRootPeers :: forall peeraddr peerconn m.
-                         (MonadSTM m, Ord peeraddr)
-                      => PeerSelectionActions peeraddr peerconn m
-                      -> PeerSelectionState peeraddr peerconn
-                      -> Guarded (STM m) (Decision m peeraddr peerconn)
-changedLocalRootPeers actions@PeerSelectionActions{readLocalRootPeers}
-                      st@PeerSelectionState{
-                        localRootPeers,
-                        publicRootPeers,
-                        knownPeers,
-                        establishedPeers,
-                        activePeers,
-                        inProgressDemoteHot,
-                        targets = PeerSelectionTargets{targetNumberOfKnownPeers}
-                      } =
+localRoots :: forall peeraddr peerconn m.
+              (MonadSTM m, Ord peeraddr)
+           => PeerSelectionActions peeraddr peerconn m
+           -> PeerSelectionState peeraddr peerconn
+           -> Guarded (STM m) (Decision m peeraddr peerconn)
+localRoots actions@PeerSelectionActions{readLocalRootPeers}
+           st@PeerSelectionState{
+             localRootPeers,
+             publicRootPeers,
+             knownPeers,
+             establishedPeers,
+             activePeers,
+             inProgressDemoteHot,
+             targets = PeerSelectionTargets{targetNumberOfKnownPeers}
+           } =
     Guarded Nothing $ do
       -- We have to enforce the invariant that the number of root peers is
       -- not more than the target number of known peers. It's unlikely in

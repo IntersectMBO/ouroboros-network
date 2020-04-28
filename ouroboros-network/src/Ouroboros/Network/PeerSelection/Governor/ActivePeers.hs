@@ -2,8 +2,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.PeerSelection.Governor.ActivePeers
-  ( activePeersBelowTarget
-  , activePeersAboveTarget
+  ( belowTarget
+  , aboveTarget
 
   , jobDemoteActivePeer
   ) where
@@ -27,26 +27,26 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 --
 
 
-activePeersBelowTarget :: forall peeraddr peerconn m.
-                          (MonadSTM m, Ord peeraddr)
-                       => PeerSelectionActions peeraddr peerconn m
-                       -> PeerSelectionPolicy peeraddr m
-                       -> PeerSelectionState peeraddr peerconn
-                       -> Guarded (STM m) (Decision m peeraddr peerconn)
-activePeersBelowTarget actions
-                       PeerSelectionPolicy {
-                         policyPickWarmPeersToPromote
-                       }
-                       st@PeerSelectionState {
-                         knownPeers,
-                         establishedPeers,
-                         activePeers,
-                         inProgressPromoteWarm,
-                         inProgressDemoteWarm,
-                         targets = PeerSelectionTargets {
-                                     targetNumberOfActivePeers
-                                   }
-                       }
+belowTarget :: forall peeraddr peerconn m.
+               (MonadSTM m, Ord peeraddr)
+            => PeerSelectionActions peeraddr peerconn m
+            -> PeerSelectionPolicy peeraddr m
+            -> PeerSelectionState peeraddr peerconn
+            -> Guarded (STM m) (Decision m peeraddr peerconn)
+belowTarget actions
+            PeerSelectionPolicy {
+              policyPickWarmPeersToPromote
+            }
+            st@PeerSelectionState {
+              knownPeers,
+              establishedPeers,
+              activePeers,
+              inProgressPromoteWarm,
+              inProgressDemoteWarm,
+              targets = PeerSelectionTargets {
+                          targetNumberOfActivePeers
+                        }
+            }
     -- Are we below the target for number of active peers?
   | numActivePeers + numPromoteInProgress < targetNumberOfActivePeers
 
@@ -141,25 +141,25 @@ jobPromoteWarmPeer PeerSelectionActions{activatePeerConnection}
 -- Active peers above target
 --
 
-activePeersAboveTarget :: forall peeraddr peerconn m.
-                          (MonadSTM m, Ord peeraddr)
-                       => PeerSelectionActions peeraddr peerconn m
-                       -> PeerSelectionPolicy peeraddr m
-                       -> PeerSelectionState peeraddr peerconn
-                       -> Guarded (STM m) (Decision m peeraddr peerconn)
-activePeersAboveTarget actions
-                       PeerSelectionPolicy {
-                         policyPickHotPeersToDemote
-                       }
-                       st@PeerSelectionState {
-                         knownPeers,
-                         establishedPeers,
-                         activePeers,
-                         inProgressDemoteHot,
-                         targets = PeerSelectionTargets {
-                                     targetNumberOfActivePeers
-                                   }
-                       }
+aboveTarget :: forall peeraddr peerconn m.
+               (MonadSTM m, Ord peeraddr)
+            => PeerSelectionActions peeraddr peerconn m
+            -> PeerSelectionPolicy peeraddr m
+            -> PeerSelectionState peeraddr peerconn
+            -> Guarded (STM m) (Decision m peeraddr peerconn)
+aboveTarget actions
+            PeerSelectionPolicy {
+              policyPickHotPeersToDemote
+            }
+            st@PeerSelectionState {
+              knownPeers,
+              establishedPeers,
+              activePeers,
+              inProgressDemoteHot,
+              targets = PeerSelectionTargets {
+                          targetNumberOfActivePeers
+                        }
+            }
     -- Are we above the target for number of active peers?
     -- Or more precisely, how many active peers could we demote?
   | let numActivePeers, numPeersToDemote :: Int

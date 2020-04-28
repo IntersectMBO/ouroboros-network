@@ -4,8 +4,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.PeerSelection.Governor.KnownPeers
-  ( knownPeersBelowTarget
-  , knownPeersAboveTarget
+  ( belowTarget
+  , aboveTarget
   ) where
 
 import           Data.Maybe (fromMaybe)
@@ -30,26 +30,26 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 --
 
 
-knownPeersBelowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr)
-                      => PeerSelectionActions peeraddr peerconn m
-                      -> PeerSelectionPolicy peeraddr m
-                      -> PeerSelectionState peeraddr peerconn
-                      -> Time
-                      -> Guarded (STM m) (Decision m peeraddr peerconn)
-knownPeersBelowTarget actions
-                      policy@PeerSelectionPolicy {
-                        policyMaxInProgressGossipReqs,
-                        policyPickKnownPeersForGossip,
-                        policyGossipRetryTime
-                      }
-                      st@PeerSelectionState {
-                        knownPeers,
-                        inProgressGossipReqs,
-                        targets = PeerSelectionTargets {
-                                    targetNumberOfKnownPeers
-                                  }
-                      }
-                      now
+belowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr)
+            => PeerSelectionActions peeraddr peerconn m
+            -> PeerSelectionPolicy peeraddr m
+            -> PeerSelectionState peeraddr peerconn
+            -> Time
+            -> Guarded (STM m) (Decision m peeraddr peerconn)
+belowTarget actions
+            policy@PeerSelectionPolicy {
+              policyMaxInProgressGossipReqs,
+              policyPickKnownPeersForGossip,
+              policyGossipRetryTime
+            }
+            st@PeerSelectionState {
+              knownPeers,
+              inProgressGossipReqs,
+              targets = PeerSelectionTargets {
+                          targetNumberOfKnownPeers
+                        }
+            }
+            now
     -- Are we under target for number of known peers?
   | numKnownPeers < targetNumberOfKnownPeers
 
@@ -235,24 +235,24 @@ jobGossip PeerSelectionActions{requestPeerGossip}
 --
 
 
-knownPeersAboveTarget :: (MonadSTM m, Ord peeraddr)
-                      => PeerSelectionPolicy peeraddr m
-                      -> PeerSelectionState peeraddr peerconn
-                      -> Guarded (STM m) (Decision m peeraddr peerconn)
-knownPeersAboveTarget PeerSelectionPolicy {
-                        policyPickColdPeersToForget
-                      }
-                      st@PeerSelectionState {
-                        localRootPeers,
-                        publicRootPeers,
-                        knownPeers,
-                        establishedPeers,
-                        inProgressPromoteCold,
-                        targets = PeerSelectionTargets {
-                                    targetNumberOfKnownPeers,
-                                    targetNumberOfRootPeers
-                                  }
-                      }
+aboveTarget :: (MonadSTM m, Ord peeraddr)
+            => PeerSelectionPolicy peeraddr m
+            -> PeerSelectionState peeraddr peerconn
+            -> Guarded (STM m) (Decision m peeraddr peerconn)
+aboveTarget PeerSelectionPolicy {
+              policyPickColdPeersToForget
+            }
+            st@PeerSelectionState {
+              localRootPeers,
+              publicRootPeers,
+              knownPeers,
+              establishedPeers,
+              inProgressPromoteCold,
+              targets = PeerSelectionTargets {
+                          targetNumberOfKnownPeers,
+                          targetNumberOfRootPeers
+                        }
+            }
     -- Are we above the target for number of known peers?
   | numKnownPeers > targetNumberOfKnownPeers
 

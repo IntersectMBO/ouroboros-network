@@ -2,8 +2,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
-  ( establishedPeersBelowTarget
-  , establishedPeersAboveTarget
+  ( belowTarget
+  , aboveTarget
   ) where
 
 import           Data.Semigroup (Min(..))
@@ -26,24 +26,24 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 --
 
 
-establishedPeersBelowTarget :: forall peeraddr peerconn m.
-                               (MonadSTM m, Ord peeraddr)
-                            => PeerSelectionActions peeraddr peerconn m
-                            -> PeerSelectionPolicy peeraddr m
-                            -> PeerSelectionState peeraddr peerconn
-                            -> Guarded (STM m) (Decision m peeraddr peerconn)
-establishedPeersBelowTarget actions
-                            PeerSelectionPolicy {
-                              policyPickColdPeersToPromote
-                            }
-                            st@PeerSelectionState {
-                              knownPeers,
-                              establishedPeers,
-                              inProgressPromoteCold,
-                              targets = PeerSelectionTargets {
-                                          targetNumberOfEstablishedPeers
-                                        }
-                            }
+belowTarget :: forall peeraddr peerconn m.
+               (MonadSTM m, Ord peeraddr)
+            => PeerSelectionActions peeraddr peerconn m
+            -> PeerSelectionPolicy peeraddr m
+            -> PeerSelectionState peeraddr peerconn
+            -> Guarded (STM m) (Decision m peeraddr peerconn)
+belowTarget actions
+            PeerSelectionPolicy {
+              policyPickColdPeersToPromote
+            }
+            st@PeerSelectionState {
+              knownPeers,
+              establishedPeers,
+              inProgressPromoteCold,
+              targets = PeerSelectionTargets {
+                          targetNumberOfEstablishedPeers
+                        }
+            }
     -- Are we below the target for number of established peers?
   | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
 
@@ -147,26 +147,26 @@ jobPromoteColdPeer PeerSelectionActions{establishPeerConnection} peeraddr =
 --
 
 
-establishedPeersAboveTarget :: forall peeraddr peerconn m.
-                               (MonadSTM m, Ord peeraddr)
-                            => PeerSelectionActions peeraddr peerconn m
-                            -> PeerSelectionPolicy peeraddr m
-                            -> PeerSelectionState peeraddr peerconn
-                            -> Guarded (STM m) (Decision m peeraddr peerconn)
-establishedPeersAboveTarget actions
-                            PeerSelectionPolicy {
-                              policyPickWarmPeersToDemote
-                            }
-                            st@PeerSelectionState {
-                              knownPeers,
-                              establishedPeers,
-                              activePeers,
-                              inProgressDemoteWarm,
-                              inProgressPromoteWarm,
-                              targets = PeerSelectionTargets {
-                                          targetNumberOfEstablishedPeers
-                                        }
-                            }
+aboveTarget :: forall peeraddr peerconn m.
+               (MonadSTM m, Ord peeraddr)
+            => PeerSelectionActions peeraddr peerconn m
+            -> PeerSelectionPolicy peeraddr m
+            -> PeerSelectionState peeraddr peerconn
+            -> Guarded (STM m) (Decision m peeraddr peerconn)
+aboveTarget actions
+            PeerSelectionPolicy {
+              policyPickWarmPeersToDemote
+            }
+            st@PeerSelectionState {
+              knownPeers,
+              establishedPeers,
+              activePeers,
+              inProgressDemoteWarm,
+              inProgressPromoteWarm,
+              targets = PeerSelectionTargets {
+                          targetNumberOfEstablishedPeers
+                        }
+            }
     -- Are we above the target for number of established peers?
     -- Or more precisely, how many established peers could we demote?
     -- We only want to pick established peers that are not active, since for

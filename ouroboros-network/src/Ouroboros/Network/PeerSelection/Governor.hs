@@ -46,11 +46,11 @@ import           Control.Exception (assert)
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.JobPool    as JobPool
 import           Ouroboros.Network.PeerSelection.JobPool (JobPool)
-import           Ouroboros.Network.PeerSelection.Governor.ActivePeers
-import           Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
-import           Ouroboros.Network.PeerSelection.Governor.KnownPeers
-import           Ouroboros.Network.PeerSelection.Governor.Monitor
-import           Ouroboros.Network.PeerSelection.Governor.RootPeers
+import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers      as ActivePeers
+import qualified Ouroboros.Network.PeerSelection.Governor.EstablishedPeers as EstablishedPeers
+import qualified Ouroboros.Network.PeerSelection.Governor.KnownPeers       as KnownPeers
+import qualified Ouroboros.Network.PeerSelection.Governor.Monitor          as Monitor   
+import qualified Ouroboros.Network.PeerSelection.Governor.RootPeers        as RootPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
@@ -512,19 +512,19 @@ peerSelectionGovernorLoop tracer debugTracer
                      -> Guarded (STM m) (Decision m peeraddr peerconn)
     guardedDecisions now st =
       -- All the alternative non-blocking internal decisions.
-         rootPeersBelowTarget        actions        st now
-      <> knownPeersBelowTarget       actions policy st now
-      <> knownPeersAboveTarget               policy st
-      <> establishedPeersBelowTarget actions policy st
-      <> establishedPeersAboveTarget actions policy st
-      <> activePeersBelowTarget      actions policy st
-      <> activePeersAboveTarget      actions policy st
+         RootPeers.belowTarget        actions        st now
+      <> KnownPeers.belowTarget       actions policy st now
+      <> KnownPeers.aboveTarget               policy st
+      <> EstablishedPeers.belowTarget actions policy st
+      <> EstablishedPeers.aboveTarget actions policy st
+      <> ActivePeers.belowTarget      actions policy st
+      <> ActivePeers.aboveTarget      actions policy st
 
       -- All the alternative potentially-blocking decisions.
-      <> changedTargets                actions st
-      <> changedLocalRootPeers         actions st
-      <> jobCompleted                  jobPool st now
-      <> monitorConnections            actions st
+      <> Monitor.targetPeers          actions st
+      <> Monitor.localRoots           actions st
+      <> Monitor.jobs                 jobPool st now
+      <> Monitor.connections          actions st
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 
