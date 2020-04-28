@@ -11,8 +11,17 @@ influences our estimate for the papers' `Δ` parameter.
 Here is a paraphrased quote from a 2020 April 21 phone call with Peter Gaži and
 Alexander Russell.
 
-> If a(n honest) leader is about to forge in slot `s+Δ`, it must have already
-  had the opportunity to select every (honest) block forged as of slot `s`.
+> If a(n honest) leader is about to forge a block at the onset of slot `s+Δ`,
+  it must have already had the opportunity to select every (honest) block
+  forged as of the onset of slot `s`.
+
+I don't know if this is consistent with other presentations, but here I intend
+for `Δ=1` to correspond to the _synchronous_ case, in which alls blocks from
+one slot will have been considered for selection by the next slot's leaders
+before they lead. If we intead were to use `Δ=0` for synchronous case, then
+we'd have to strew `+1`s thoughout.
+
+In other words, we assume `Δ>0`.
 
 We also have the addendum that Edsko and Peter identified during our broad call
 earlier that same day.
@@ -22,12 +31,12 @@ earlier that same day.
 
 (You can probably skip to Example 1 now, if you like.)
 
-And these are the relevant excerpts of [the Genesis
+For quick reference, I've collated the relevant excerpts of [the Genesis
 paper](https://eprint.iacr.org/2018/378) that mention "delay", though they seem
 less helpful for this document's purposes than the above.
 
 > More specifically, we will describe a parameter called `Delay` (a function of
-  the network delay `∆`) that determines the time sufficient for a party with
+  the network delay `Δ`) that determines the time sufficient for a party with
   access to all resources to become fully synchronized with the state of the
   protocol.
 
@@ -35,7 +44,7 @@ less helpful for this document's purposes than the above.
   all its resources for a sufficiently long interval and has maintained
   connectivity to these resources ... until the current time. Formally, here,
   "sufficiently long" refers to `Delay`-many rounds [ie slots], where `Delay`
-  is a parameter of the ledger that depends on the network delay [ie `∆`].
+  is a parameter of the ledger that depends on the network delay [ie `Δ`].
 
 > [The statement of Theorem 3 considers only a `Delay` of `2Δ`.]
 
@@ -43,10 +52,14 @@ less helpful for this document's purposes than the above.
   the theorem statements, as this is exactly the time until the a newly joining
   party will have received a synchronizing chain and all honest transactions
   that were sent out (and still are valid) before this party joined the network
-  (note that the round-trip time is just 2∆).
+  (note that the round-trip time is just 2Δ).
 
-> ∆ [is] maximum message delay in slots [note well that a message in the paper
+> Δ [is] maximum message delay in slots [note well that a message in the paper
   consists of an entire chain]
+
+(I'm not sure whether it does, but note that if the paper takes synchrony to
+mean `Δ=0` -- whereas we here use `Δ=1` for that -- then the paper might
+consider synchrony to imply `k*Δ=Δ`.)
 
 # Example 1
 
