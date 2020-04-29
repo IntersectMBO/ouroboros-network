@@ -514,7 +514,7 @@ runPure cfg = \case
     GetTipPoint              -> ok  Point               $ query    Model.tipPoint
     GetBlockComponent pt     -> err MbAllComponents     $ query   (Model.getBlockComponentByPoint @Identity allComponents pt)
     GetGCedBlockComponent pt -> err mbGCedAllComponents $ query   (Model.getBlockComponentByPoint @Identity allComponents pt)
-    GetMaxSlotNo             -> ok  MaxSlot             $ query    Model.maxSlotNo
+    GetMaxSlotNo             -> ok  MaxSlot             $ query    Model.getMaxSlotNo
     Stream from to           -> err iter                $ updateE (Model.stream k from to)
     IteratorNext  it         -> ok  IterResult          $ update  (Model.iteratorNext @Identity it allComponents)
     IteratorNextGCed it      -> ok  iterResultGCed      $ update  (Model.iteratorNext @Identity it allComponents)

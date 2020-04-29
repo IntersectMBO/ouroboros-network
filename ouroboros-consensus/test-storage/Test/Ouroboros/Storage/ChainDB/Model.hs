@@ -40,7 +40,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , getBlockComponentByPoint
   , hasBlock
   , hasBlockByPoint
-  , maxSlotNo
+  , getMaxSlotNo
   , isOpen
   , invalid
   , getPastLedger
@@ -139,9 +139,6 @@ data Model blk = Model {
     , currentSlot   :: SlotNo
     , maxClockSkew  :: Word64
       -- ^ Max clock skew in terms of slots. A static configuration parameter.
-    , maxSlotNo     :: MaxSlotNo
-      -- ^ We can't calculate this from 'blocks', so we
-      -- track it separately.
     , isOpen        :: Bool
       -- ^ While the model tracks whether it is closed or not, the queries and
       -- other functions in this module ignore this for simplicity. The mock
@@ -203,6 +200,9 @@ tipBlock = Chain.head . currentChain
 
 tipPoint :: HasHeader blk => Model blk -> Point blk
 tipPoint = maybe Block.genesisPoint Block.blockPoint . tipBlock
+
+getMaxSlotNo :: HasHeader blk => Model blk -> MaxSlotNo
+getMaxSlotNo = foldMap (MaxSlotNo . Block.blockSlot) . volDbBlocks
 
 lastK :: HasHeader a
       => SecurityParam
@@ -326,7 +326,6 @@ empty initLedger maxClockSkew = Model {
     , invalid       = Map.empty
     , currentSlot   = 0
     , maxClockSkew  = maxClockSkew
-    , maxSlotNo     = NoMaxSlotNo
     , isOpen        = True
     }
 
@@ -361,7 +360,6 @@ addBlock cfg blk m
     , invalid       = invalid'
     , currentSlot   = currentSlot  m
     , maxClockSkew  = maxClockSkew m
-    , maxSlotNo     = maxSlotNo m `max` MaxSlotNo slot
     , isOpen        = True
     }
   where
@@ -370,8 +368,6 @@ addBlock cfg blk m
     immBlockNo = immutableBlockNo secParam m
 
     hdr = getHeader blk
-
-    slot = Block.blockSlot blk
 
     isKnownInvalid b = Map.member (Block.blockHash b) (invalid m)
 
@@ -950,7 +946,6 @@ wipeVolDB cfg m =
       { volDbBlocks   = Map.empty
       , cps           = CPS.switchFork newChain (cps m)
       , currentLedger = newLedger
-      , maxSlotNo     = NoMaxSlotNo
       }
 
     -- Get the chain ending at the ImmutableDB by doing chain selection on the
