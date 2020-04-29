@@ -31,6 +31,10 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.Governor.ActivePeers (jobDemoteActivePeer)
 
 
+-- | Monitor 'PeerSelectionTargets', if they change, we just need to update
+-- 'PeerSelectionState', since we return it in a 'Decision' action it will be
+-- picked by the governor's 'peerSelectionGovernorLoop'.
+--
 targetPeers :: MonadSTM m
             => PeerSelectionActions peeraddr peerconn m
             -> PeerSelectionState peeraddr peerconn
@@ -61,6 +65,8 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
       }
 
 
+-- | Await for the first result from 'JobPool' and return its 'Decision'.
+--
 jobs :: MonadSTM m
      => JobPool m (Completion m peeraddr peerconn)
      -> PeerSelectionState peeraddr peerconn
@@ -74,6 +80,8 @@ jobs jobPool st now =
       return $! completion st now
 
 
+-- | Monitor connections.
+--
 connections :: forall m peeraddr peerconn.
                (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
@@ -136,6 +144,8 @@ connections PeerSelectionActions{monitorPeerConnection}
 --
 
 
+-- | Monitor local roots using 'readLocalRootPeers' 'STM' action.
+--
 localRoots :: forall peeraddr peerconn m.
               (MonadSTM m, Ord peeraddr)
            => PeerSelectionActions peeraddr peerconn m

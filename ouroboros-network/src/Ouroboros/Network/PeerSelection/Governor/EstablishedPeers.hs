@@ -26,6 +26,9 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 --
 
 
+-- | If we are below the target of /warm peers/ we promote /cold peers/
+-- according to 'policyPickColdPeersToPromote'.
+--
 belowTarget :: forall peeraddr peerconn m.
                (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
@@ -145,6 +148,9 @@ jobPromoteColdPeer PeerSelectionActions{establishPeerConnection} peeraddr =
 --
 
 
+-- | If we are above the target of /established peers/ we demote some of the
+-- /warm peers/ to the cold state, according to 'policyPickWarmPeersToDemote'.
+--
 aboveTarget :: forall peeraddr peerconn m.
                (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m

@@ -30,6 +30,9 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 --
 
 
+-- | If we are below the target of /known peers/ we gossip (if we are above the
+-- gossip request threashold).
+--
 belowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
             -> Time
@@ -233,6 +236,11 @@ jobGossip PeerSelectionActions{requestPeerGossip}
 --
 
 
+-- | If we are above the target of /known peers/ (i.e. /cold/, /warm/ and /hot/
+-- combined), we drop some of the /cold peers/ but we protect the
+-- 'targetNumberOfRootPeers' (from combined sets of /local/ and /public root/
+-- peers). 'policyPickColdPeersToForget' policy is used to pick the peers.
+--
 aboveTarget :: (MonadSTM m, Ord peeraddr)
             => MkGuardedDecision peeraddr peerconn m
 aboveTarget PeerSelectionPolicy {
