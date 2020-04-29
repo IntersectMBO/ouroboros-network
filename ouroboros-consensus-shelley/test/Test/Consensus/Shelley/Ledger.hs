@@ -651,5 +651,8 @@ instance Eq (Some (Query Block)) where
   Some GetProposedPParamsUpdates == _ = False
   Some GetStakeDistribution == Some GetStakeDistribution = True
   Some GetStakeDistribution == _ = False
+  Some (GetFilteredUTxO addrs) == Some (GetFilteredUTxO addrs') =
+    addrs == addrs'
+  Some (GetFilteredUTxO _) == _ = False
 
 deriving instance Show (Some (Query Block))
