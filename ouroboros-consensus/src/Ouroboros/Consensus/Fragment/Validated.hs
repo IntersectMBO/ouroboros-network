@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Fragment.Validated (
     ValidatedFragment -- Opaque
   , validatedFragment
   , validatedLedger
+  , validatedTip
   , new
   ) where
 
@@ -38,6 +39,9 @@ data ValidatedFragment blk l = ValidatedFragment {
     , validatedLedger   :: !l
     }
   deriving (Functor)
+
+validatedTip :: HasHeader (Header blk) => ValidatedFragment blk l -> Point blk
+validatedTip = castPoint . AF.headPoint . validatedFragment
 
 invariant :: forall l blk. ApplyBlock l blk
           => ValidatedFragment blk l -> Either String ()
