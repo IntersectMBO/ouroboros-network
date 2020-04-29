@@ -8,7 +8,9 @@ module Ouroboros.Consensus.BlockchainTime.WallClock (
     -- * System start
     SystemStart(..)
     -- * Slot length
-  , SlotLength(..)
+  , SlotLength -- Opaque
+  , getSlotLength
+  , mkSlotLength
     -- ** Conversions
   , slotLengthFromSec
   , slotLengthToSec
@@ -47,6 +49,10 @@ newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
 newtype SlotLength = SlotLength { getSlotLength :: NominalDiffTime }
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
+-- | Constructor for 'SlotLength'
+mkSlotLength :: NominalDiffTime -> SlotLength
+mkSlotLength = SlotLength
+
 slotLengthFromSec :: Integer -> SlotLength
 slotLengthFromSec = slotLengthFromMillisec . (* 1000)
 
@@ -54,7 +60,7 @@ slotLengthToSec :: SlotLength -> Integer
 slotLengthToSec = (`div` 1000) . slotLengthToMillisec
 
 slotLengthFromMillisec :: Integer -> SlotLength
-slotLengthFromMillisec = SlotLength . conv
+slotLengthFromMillisec = mkSlotLength . conv
   where
     -- Explicit type annotation here means that /if/ we change the precision,
     -- we are forced to reconsider this code.

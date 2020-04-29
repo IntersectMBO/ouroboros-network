@@ -66,7 +66,7 @@ data TestDelayIO = TestDelayIO {
 instance Arbitrary TestDelayIO where
   arbitrary = do
       tdioStart'  <- arbitrary
-      tdioSlotLen <- slotLengthFromMillisec <$> choose (1, 1_000)
+      tdioSlotLen <- slotLengthFromMillisec <$> choose (100, 1_000)
       return TestDelayIO{..}
 
 -- | Just as a sanity check, also run the tests in IO
@@ -230,7 +230,7 @@ prop_delayClockShift schedule =
 
     testResult :: Either Failure [SlotNo]
     testResult = overrideDelay dawnOfTime schedule $
-        testOverrideDelay (SystemStart dawnOfTime) (SlotLength 1) numSlots
+        testOverrideDelay (SystemStart dawnOfTime) (slotLengthFromSec 1) numSlots
 
     checkException :: SlotNo -> SlotNo -> SomeException -> Property
     checkException before after e
@@ -252,7 +252,7 @@ prop_delayNoClockShift =
     withMaxSuccess 1 $ ioProperty $ do
       now   <- getCurrentTime
       slots <- originalDelay $
-                 testOverrideDelay (SystemStart now) (SlotLength 0.1) 5
+                 testOverrideDelay (SystemStart now) (slotLengthFromMillisec 100) 5
       assertEqual "slots" slots [SlotNo n | n <- [0..4]]
 
 testOverrideDelay :: forall m. (IOLike m, MonadDelay (OverrideDelay m))

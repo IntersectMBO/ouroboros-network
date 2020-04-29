@@ -592,7 +592,7 @@ tests = testGroup "RealPBFT" $
     ]
   where
     defaultSlotLength :: SlotLength
-    defaultSlotLength = SlotLength 1
+    defaultSlotLength = slotLengthFromSec 1
 
 prop_deterministicPlan :: PBftParams -> NumSlots -> NumCoreNodes -> Property
 prop_deterministicPlan params numSlots numCoreNodes =
