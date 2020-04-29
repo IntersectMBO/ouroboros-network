@@ -80,6 +80,7 @@ import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ClockSkew (..))
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
+import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -768,6 +769,12 @@ runThreadNetwork ThreadNetworkArgs
                   txSubmissionMaxUnacked      = 1000 -- TODO ?
                 }
             }
+
+      unless (knownSlotLength (configBlock pInfoConfig) == slotLength) $
+        error $ "Inconsistent slot lengths: "
+             ++ show (knownSlotLength (configBlock pInfoConfig))
+             ++ " /= "
+             ++ show slotLength
 
       nodeKernel <- initNodeKernel nodeArgs
       let mempool = getMempool nodeKernel
