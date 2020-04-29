@@ -107,8 +107,21 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
 
     -- 'Spec.Test.abEnvToCfg' ignores the UTxO, because the Byron genesis
     -- data doesn't contain a UTxO, but only a 'UTxOConfiguration'.
+    --
+    -- It also ignores the slot length (the Byron spec does not talk about
+    -- slot lengths at all) so we have to set this ourselves.
     concreteGenesis :: Impl.Config
-    concreteGenesis = Spec.Test.abEnvToCfg $ Genesis.toChainEnv abstractGenesis
+    concreteGenesis = translated {
+          Impl.configGenesisData = configGenesisData {
+              Impl.gdProtocolParameters = protocolParameters {
+                   Impl.ppSlotDuration = byronSpecGenesisSlotLength
+                }
+            }
+        }
+      where
+        translated = Spec.Test.abEnvToCfg $ Genesis.toChainEnv abstractGenesis
+        configGenesisData  = Impl.configGenesisData translated
+        protocolParameters = Impl.gdProtocolParameters configGenesisData
 
     initAbstractState :: LedgerState ByronSpecBlock
     initConcreteState :: LedgerState ByronBlock

@@ -9,6 +9,7 @@ module Ouroboros.Consensus.Byron.Ledger.Conversions (
     -- * From @ouroboros-consensus@ to @cardano-ledger@
   , toByronSlotNo
   , toByronBlockCount
+  , toByronSlotLength
     -- * Extract info from the genesis config
   , genesisSecurityParam
   , genesisNumCoreNodes
@@ -69,6 +70,10 @@ toByronSlotNo = coerce
 
 toByronBlockCount :: SecurityParam -> CC.BlockCount
 toByronBlockCount (SecurityParam k) = CC.BlockCount k
+
+toByronSlotLength :: SlotLength -> Natural
+toByronSlotLength = (fromIntegral :: Integer -> Natural)
+                  . slotLengthToMillisec
 
 {-------------------------------------------------------------------------------
   Extract info from genesis

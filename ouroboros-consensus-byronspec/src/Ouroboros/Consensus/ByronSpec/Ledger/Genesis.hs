@@ -22,6 +22,7 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Genesis (
 
 import           Data.Coerce (coerce)
 import           Data.Set (Set)
+import           Numeric.Natural (Natural)
 
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
@@ -43,6 +44,14 @@ data ByronSpecGenesis = ByronSpecGenesis {
     , byronSpecGenesisInitUtxo      :: Spec.UTxO
     , byronSpecGenesisInitPParams   :: Spec.PParams
     , byronSpecGenesisSecurityParam :: Spec.BlockCount
+
+      -- | Slot length
+      --
+      -- The Byron spec itself does not talk about slot length at all. Here we
+      -- record it primarily to support the relation between the spec and the
+      -- real implementation. For this reason we choose the same representation
+      -- as the real PBFT does ('ppSlotDuration' in 'ProtocolParameters').
+    , byronSpecGenesisSlotLength    :: Natural
     }
   deriving stock (Show)
   deriving NoUnexpectedThunks via AllowThunk ByronSpecGenesis
@@ -148,8 +157,9 @@ toChainEnv ByronSpecGenesis{..} = disableConsensusChecks (
 -- a concept of a genesis config, and instead the CHAIN environment fulfills
 -- that role. In order to be able to reuse the test generators, we therefore
 -- also define a translation in the opposite direction.
-fromChainEnv :: Spec.Environment Spec.CHAIN -> ByronSpecGenesis
-fromChainEnv ( _currentSlot
+fromChainEnv :: Natural -> Spec.Environment Spec.CHAIN -> ByronSpecGenesis
+fromChainEnv byronSpecGenesisSlotLength
+             ( _currentSlot
              , byronSpecGenesisInitUtxo
              , byronSpecGenesisDelegators
              , byronSpecGenesisInitPParams

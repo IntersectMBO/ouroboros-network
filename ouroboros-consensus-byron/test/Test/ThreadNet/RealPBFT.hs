@@ -56,6 +56,7 @@ import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochNumber (..), unEpochSlots)
+import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 import qualified Cardano.Crypto.DSIGN as Crypto
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
@@ -620,11 +621,14 @@ prop_setup_coreNodeId numCoreNodes coreNodeId =
 
     params :: PBftParams
     params = realPBftParams dummyK numCoreNodes
-    dummyK = SecurityParam 10   -- not really used
+
+    -- not really used
+    dummyK       = SecurityParam 10
+    dummySlotLen = slotLengthFromSec 20
 
     genesisConfig  :: Genesis.Config
     genesisSecrets :: Genesis.GeneratedSecrets
-    (genesisConfig, genesisSecrets) = generateGenesisConfig params
+    (genesisConfig, genesisSecrets) = generateGenesisConfig dummySlotLen params
 
 expectedBlockRejection
   :: SecurityParam
@@ -701,6 +705,7 @@ prop_simple_real_pbft_convergence produceEBBs k
     , nodeTopology
     , nodeRestarts
     , initSeed
+    , slotLength
     } =
     tabulate "produce EBBs" [show produceEBBs] $
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
@@ -878,7 +883,7 @@ prop_simple_real_pbft_convergence produceEBBs k
 
     genesisConfig  :: Genesis.Config
     genesisSecrets :: Genesis.GeneratedSecrets
-    (genesisConfig, genesisSecrets) = generateGenesisConfig params
+    (genesisConfig, genesisSecrets) = generateGenesisConfig slotLength params
 
 byronForgeEbbEnv :: ForgeEbbEnv ByronBlock
 byronForgeEbbEnv = ForgeEbbEnv
@@ -955,8 +960,10 @@ pbftSlotLength = slotLengthFromSec 20
 -- Instead of using 'Dummy.dummyConfig', which hard codes the number of rich
 -- men (= CoreNodes for us) to 4, we generate a dummy config with the given
 -- number of rich men.
-generateGenesisConfig :: PBftParams -> (Genesis.Config, Genesis.GeneratedSecrets)
-generateGenesisConfig params =
+generateGenesisConfig :: SlotLength
+                      -> PBftParams
+                      -> (Genesis.Config, Genesis.GeneratedSecrets)
+generateGenesisConfig slotLen params =
     either (error . show) id $
       Crypto.deterministic "this is fake entropy for testing" $
         runExceptT $
@@ -968,14 +975,19 @@ generateGenesisConfig params =
 
     spec :: Genesis.GenesisSpec
     spec = Dummy.dummyGenesisSpec
-      { Genesis.gsInitializer = Dummy.dummyGenesisInitializer
-        { Genesis.giTestBalance =
-            (Genesis.giTestBalance Dummy.dummyGenesisInitializer)
-              -- The nodes are the richmen
-              { Genesis.tboRichmen = fromIntegral numCoreNodes }
+        { Genesis.gsInitializer = Dummy.dummyGenesisInitializer
+          { Genesis.giTestBalance =
+              (Genesis.giTestBalance Dummy.dummyGenesisInitializer)
+                -- The nodes are the richmen
+                { Genesis.tboRichmen = fromIntegral numCoreNodes }
+          }
+        , Genesis.gsK = Common.BlockCount $ maxRollbacks pbftSecurityParam
+        , Genesis.gsProtocolParameters = gsProtocolParameters
+          { Update.ppSlotDuration = toByronSlotLength slotLen
+          }
         }
-      , Genesis.gsK = Common.BlockCount $ maxRollbacks pbftSecurityParam
-      }
+      where
+        gsProtocolParameters = Genesis.gsProtocolParameters Dummy.dummyGenesisSpec
 
 {-------------------------------------------------------------------------------
   Generating node join plans that ensure sufficiently dense chains
