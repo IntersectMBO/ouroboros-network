@@ -25,6 +25,7 @@ module Ouroboros.Network.Socket (
     , AcceptedConnectionsLimit (..)
     , ConnectionId (..)
     , withServerNode
+    , withServerNode'
     , connectToNode
     , connectToNodeSocket
     , connectToNode'
@@ -592,23 +593,8 @@ runServerThread NetworkServerTracers { nstMuxTracer
         AllowConnection st'    -> pure $ AcceptConnection st' (ConnectionId sockAddr connAddr) versions
         DisallowConnection st' -> pure $ RejectConnection st' (ConnectionId sockAddr connAddr)
 
-
--- |
--- Run a server application.  It will listen on the given address for incoming
--- connection.  The server thread runs using @withAsync@ function, which means
--- that it will terminate when the callback terminates or throws an exception.
---
--- TODO: we should track connections in the state and refuse connections from
--- peers we are already connected to.  This is also the right place to ban
--- connection from peers which missbehaved.
---
--- The server will run handshake protocol on each incoming connection.  We
--- assume that each versin negotiation message should fit into
--- @'maxTransmissionUnit'@ (~5k bytes).
---
--- Note: it will open a socket in the current thread and pass it to the spawned
--- thread which runs the server.  This makes it useful for testing, where we
--- need to guarantee that a socket is open before we try to connect to it.
+-- | Run a server application. It will listen on the given address for incoming
+-- connection, otherwise like withServerNode'.
 withServerNode
     :: forall vNumber extra t fd addr b.
        ( Ord vNumber
@@ -636,8 +622,85 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode sn tracers networkState acceptedConnectionsLimit addr handshakeCodec versionDataCodec acceptVersion versions errorPolicies k =
-    bracket (mkListeningSocket sn (Just addr) (Snocket.addrFamily sn addr)) (Snocket.close sn) $ \sd -> do
+withServerNode sn
+               tracers
+               networkState
+               acceptedConnectionsLimit
+               addr
+               handshakeCodec
+               versionDataCodec
+               acceptVersion
+               versions
+               errorPolicies
+               k =
+    bracket (mkListeningSocket sn (Just addr) (Snocket.addrFamily sn addr)) (Snocket.close sn) $ \sd ->
+      withServerNode'
+        sn
+        tracers
+        networkState
+        acceptedConnectionsLimit
+        sd
+        handshakeCodec
+        versionDataCodec
+        acceptVersion
+        versions
+        errorPolicies
+        k
+
+-- |
+-- Run a server application on the provided socket. The socket must be ready to accept connections.
+-- The server thread runs using @withAsync@ function, which means
+-- that it will terminate when the callback terminates or throws an exception.
+--
+-- TODO: we should track connections in the state and refuse connections from
+-- peers we are already connected to.  This is also the right place to ban
+-- connection from peers which missbehaved.
+--
+-- The server will run handshake protocol on each incoming connection.  We
+-- assume that each versin negotiation message should fit into
+-- @'maxTransmissionUnit'@ (~5k bytes).
+--
+-- Note: it will open a socket in the current thread and pass it to the spawned
+-- thread which runs the server.  This makes it useful for testing, where we
+-- need to guarantee that a socket is open before we try to connect to it.
+withServerNode'
+    :: forall vNumber extra t fd addr b.
+       ( Ord vNumber
+       , Enum vNumber
+       , Typeable vNumber
+       , Show vNumber
+       , Ord addr
+       )
+    => Snocket IO fd addr
+    -> NetworkServerTracers addr vNumber
+    -> NetworkMutableState addr
+    -> AcceptedConnectionsLimit
+    -> fd
+    -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
+    -> VersionDataCodec extra CBOR.Term
+    -> (forall vData. extra vData -> vData -> vData -> Accept)
+    -> Versions vNumber extra
+                (ConnectionId addr -> SomeResponderApplication BL.ByteString IO b)
+    -- ^ The mux application that will be run on each incoming connection from
+    -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
+    -- returned, the connection will run a full duplex set of mini-protocols.
+    -> ErrorPolicies
+    -> (addr -> Async Void -> IO t)
+    -- ^ callback which takes the @Async@ of the thread that is running the server.
+    -- Note: the server thread will terminate when the callback returns or
+    -- throws an exception.
+    -> IO t
+withServerNode' sn
+                tracers
+                networkState
+                acceptedConnectionsLimit
+                sd
+                handshakeCodec
+                versionDataCodec
+                acceptVersion
+                versions
+                errorPolicies
+                k = do
       addr' <- Snocket.getLocalAddr sn sd
       withAsync
         (runServerThread
