@@ -8,6 +8,7 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -54,18 +55,17 @@ module Ouroboros.Consensus.HardFork.History (
   , runWithCachedSummary
     -- * Exported only for the benefit of tests
     -- ** Bounds
-    --
-    -- TODO: Document expected relation between 'boundSlot' and 'boundEpoch',
-    -- and test that 'initBound' and 'mkUpperBound' both establish it.
   , Bound -- Still opaque, even for tests. Has internal invariants.
   , boundEpoch
   , boundSlot
   , boundTime
   , initBound
   , mkUpperBound
+  , mkEraEnd
   , maxMaybeEpoch
     -- ** Summary
   , EraSummary(..)
+  , EraEnd(..)
     -- ** Summary translations
   , ShiftTime(..)
     -- ** Invariants
@@ -91,7 +91,7 @@ import           Data.Time
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
+import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalFormNamed (..))
 import           Cardano.Slotting.EpochInfo.API
 import           Cardano.Slotting.Slot
 
@@ -231,6 +231,27 @@ data SafeBeforeEpoch =
     -- reduce the frequency with which 'summaryToEpochInfo' must update its
     -- summary of the hard fork history.
   | LowerBound !EpochNo
+
+    -- | Pretend the transition to the next era will not take place.
+    --
+    -- This constructor is marked as unsafe because it effectively extends
+    -- the safe zone of this era indefinitely into the future. This means that
+    -- we might reach invalid conclusions when doing
+    --
+    -- * slot to time conversions for blocks that are past the actual safe zone
+    -- * time to slot conversions for the current time, when behind in syncing
+    --
+    -- This is safe when the code is simply not yet ready to transition to the
+    -- next era, because in that case, we can be sure that blocks that come in
+    -- are still from this era. It also means that we can always /produce/ a
+    -- block, no matter how far ahead of the current ledger we are.
+    --
+    -- If the code is ready for the transition, just awaiting an update
+    -- proposal, then 'LowerBound' can be used instead.
+    --
+    -- This constructor can be regarded as an " extreme " version of
+    -- 'LowerBound', and can be used for similar reasons.
+  | UnsafeUnbounded
   deriving stock    (Show, Generic)
   deriving anyclass (NoUnexpectedThunks)
 
@@ -291,6 +312,13 @@ initBound (SystemStart start) = Bound {
     , boundEpoch = EpochNo 0
     }
 
+-- | Version of 'mkUpperBound' when the upper bound may not be known
+mkEraEnd :: EraParams
+         -> Bound          -- ^ Lower bound
+         -> Maybe EpochNo  -- ^ Upper bound
+         -> EraEnd
+mkEraEnd params lo = maybe EraUnbounded (EraEnd . mkUpperBound params lo)
+
 -- | Compute upper bound given just the epoch number and era parameters
 mkUpperBound :: EraParams
              -> Bound    -- ^ Lower bound
@@ -321,21 +349,33 @@ mkUpperBound EraParams{..} lo hiEpoch = Bound {
 -- safe zone considerations discussed above.
 data EraSummary = EraSummary {
       eraStart  :: !Bound     -- ^ Inclusive lower bound
-    , eraEnd    :: !Bound     -- ^ Exclusive upper bound
+    , eraEnd    :: !EraEnd    -- ^ Exclusive upper bound
     , eraParams :: !EraParams -- ^ Active parameters
     }
+  deriving (Show)
+
+-- | Exclusive upper bound on the era
+data EraEnd =
+    -- | Bounded era
+    EraEnd !Bound
+
+    -- | Unbounded era
+    --
+    -- This arises from the use of 'UnsafeUnbounded'.
+  | EraUnbounded
   deriving (Show)
 
 -- | Summary of the /confirmed/ part of the ledger
 --
 -- The summary zips 'Shape' with 'Forks', and provides detailed information
 -- about the start and end of each era.
-data Summary xs where
-  -- | We have at most one summary for each era, and at least one
-  Summary :: EraSummary -> AtMost xs EraSummary -> Summary (x ': xs)
 
-deriving instance Show (Summary xs)
-deriving via OnlyCheckIsWHNF "Summary" (Summary xs)
+-- We have at most one summary for each era, and at least one
+newtype Summary xs = Summary (NonEmptyAtMost xs EraSummary)
+  deriving (Show)
+
+-- WHNF is sufficient, because the counting types are all strict
+deriving via UseIsNormalFormNamed "Summary" (Summary xs)
          instance NoUnexpectedThunks (Summary xs)
 
 {-------------------------------------------------------------------------------
@@ -343,14 +383,11 @@ deriving via OnlyCheckIsWHNF "Summary" (Summary xs)
 -------------------------------------------------------------------------------}
 
 summaryToList :: Summary xs -> [EraSummary]
-summaryToList (Summary x xs) = x : toList xs
-
-summaryCons :: EraSummary -> Summary xs -> Summary (x ': xs)
-summaryCons x (Summary x' xs') = Summary x (AtMostCons x' xs')
+summaryToList (Summary summary) = toList summary
 
 -- | Outer bounds of the summary
-summaryBounds :: Summary xs -> (Bound, Bound)
-summaryBounds (Summary firstEra xs) =
+summaryBounds :: Summary xs -> (Bound, EraEnd)
+summaryBounds (Summary (NonEmptyAtMost firstEra xs)) =
     (eraStart firstEra, eraEnd lastEra)
   where
     lastEra :: EraSummary
@@ -360,16 +397,14 @@ summaryBounds (Summary firstEra xs) =
 --
 -- This is primarily useful for tests.
 summaryInit :: Summary xs -> (Maybe (Summary xs), EraSummary)
-summaryInit (Summary x xs) =
-    case atMostInit xs of
-      Just (xs', final) -> (Just (Summary x xs'), final)
-      Nothing           -> (Nothing, x)
+summaryInit (Summary summary) = first (fmap Summary) $
+                                  nonEmptyAtMostInit summary
 
 -- | Construct 'Summary' with an exact number of 'EraSummary'
 --
 -- Primarily useful for tests.
 summaryWithExactly :: Exactly (x ': xs) EraSummary -> Summary (x ': xs)
-summaryWithExactly (ExactlyCons x xs) = Summary x (exactlyWeaken xs)
+summaryWithExactly = Summary . exactlyWeakenNonEmpty
 
 {-------------------------------------------------------------------------------
   Translations (primarily for the benefit of tests)
@@ -385,9 +420,7 @@ instance ShiftTime a => ShiftTime [a] where
   shiftTime = map . shiftTime
 
 instance ShiftTime (Summary xs) where
-  shiftTime delta (Summary x xs) = Summary
-                                     (shiftTime delta  $  x)
-                                     (shiftTime delta <$> xs)
+  shiftTime delta (Summary summary) = Summary $ shiftTime delta <$> summary
 
 instance ShiftTime EraSummary where
   shiftTime delta EraSummary{..} = EraSummary{
@@ -395,6 +428,10 @@ instance ShiftTime EraSummary where
     , eraEnd    = shiftTime delta eraEnd
     , eraParams = eraParams
     }
+
+instance ShiftTime EraEnd where
+  shiftTime delta (EraEnd bound) = EraEnd (shiftTime delta bound)
+  shiftTime _     EraUnbounded   = EraUnbounded
 
 instance ShiftTime Bound where
   shiftTime delta Bound{..} = Bound {
@@ -428,7 +465,9 @@ invariantShape = \(Shape shape) ->
     go lowerBound (ExactlyCons curParams shape') = do
         nextLowerBound <-
           case safeBeforeEpoch (eraSafeZone curParams) of
-            NoLowerBound -> do
+            NoLowerBound ->
+              return $ addEpochs 1 lowerBound
+            UnsafeUnbounded ->
               return $ addEpochs 1 lowerBound
             LowerBound e -> do
               unless (e > lowerBound) $
@@ -445,7 +484,7 @@ invariantShape = \(Shape shape) ->
 
 -- | Check 'Summary' invariants
 invariantSummary :: Summary xs -> Except String ()
-invariantSummary = \summary@(Summary firstEra _) ->
+invariantSummary = \summary@(Summary (NonEmptyAtMost firstEra _)) ->
     -- Pretend the start of the first era is the "end of the previous" one
     go (eraStart firstEra) (summaryToList summary)
   where
@@ -461,46 +500,53 @@ invariantSummary = \summary@(Summary firstEra _) ->
             , show curStart
             ]
 
-        unless (boundEpoch curEnd > boundEpoch curStart) $
-          throwError "Empty era"
+        case mCurEnd of
+          EraUnbounded ->
+            unless (null next) $
+              throwError "Unbounded non-final era"
+          EraEnd curEnd -> do
+            let epochsInEra, slotsInEra :: Word64
+                epochsInEra = countEpochs (boundEpoch curEnd) (boundEpoch curStart)
+                slotsInEra  = epochsInEra * unEpochSize (eraEpochSize curParams)
 
-        case safeBeforeEpoch (eraSafeZone curParams) of
-          NoLowerBound -> return ()
-          LowerBound e ->
-              unless (boundEpoch curEnd >= e) $
-                throwError $ mconcat [
-                    "Invalid upper epoch bound "
-                  , show (boundEpoch curStart)
-                  , " (should be greater than "
-                  , show e
-                  , ")"
-                  ]
+                timeInEra :: NominalDiffTime
+                timeInEra = fromIntegral slotsInEra
+                          * getSlotLength (eraSlotLength curParams)
 
-        unless (boundSlot curEnd == addSlots slotsInEra (boundSlot curStart)) $
-          throwError $ mconcat [
-              "Invalid final boundSlot in "
-            , show curSummary
-            ]
+            unless (boundEpoch curEnd > boundEpoch curStart) $
+              throwError "Empty era"
 
-        unless (boundTime curEnd == addUTCTime timeInEra (boundTime curStart)) $
-          throwError $ mconcat [
-              "Invalid final boundTime in "
-            , show curSummary
-            ]
+            case safeBeforeEpoch (eraSafeZone curParams) of
+              NoLowerBound    -> return ()
+              UnsafeUnbounded -> return ()
+              LowerBound e    ->
+                unless (boundEpoch curEnd >= e) $
+                  throwError $ mconcat [
+                      "Invalid upper epoch bound "
+                    , show (boundEpoch curStart)
+                    , " (should be greater than "
+                    , show e
+                    , ")"
+                    ]
 
-        go curEnd next
+            unless (boundSlot curEnd == addSlots slotsInEra (boundSlot curStart)) $
+              throwError $ mconcat [
+                  "Invalid final boundSlot in "
+                , show curSummary
+                ]
+
+            unless (boundTime curEnd == addUTCTime timeInEra (boundTime curStart)) $
+              throwError $ mconcat [
+                  "Invalid final boundTime in "
+                , show curSummary
+                ]
+
+            go curEnd next
       where
-        curStart, curEnd :: Bound
-        curParams        :: EraParams
-        EraSummary curStart curEnd curParams = curSummary
-
-        epochsInEra, slotsInEra :: Word64
-        epochsInEra = countEpochs (boundEpoch curEnd) (boundEpoch curStart)
-        slotsInEra  = epochsInEra * unEpochSize (eraEpochSize curParams)
-
-        timeInEra :: NominalDiffTime
-        timeInEra = fromIntegral slotsInEra
-                  * getSlotLength (eraSlotLength curParams)
+        curStart  :: Bound
+        mCurEnd   :: EraEnd
+        curParams :: EraParams
+        EraSummary curStart mCurEnd curParams = curSummary
 
 {-------------------------------------------------------------------------------
   Constructing the summary
@@ -527,25 +573,25 @@ summarize :: SystemStart
           -> Transitions xs
           -> Summary     xs
 summarize systemStart ledgerTip = \(Shape shape) (Transitions transitions) ->
-    go (initBound systemStart) shape transitions
+    Summary $ go (initBound systemStart) shape transitions
   where
-    go :: Bound                         -- Lower bound for current era
-       -> Exactly (x ': xs) EraParams   -- params for all eras
-       -> AtMost        xs  EpochNo     -- transitions
-       -> Summary (x ': xs)
+    go :: Bound                                -- Lower bound for current era
+       -> Exactly        (x ': xs) EraParams   -- params for all eras
+       -> AtMost               xs  EpochNo     -- transitions
+       -> NonEmptyAtMost (x ': xs) EraSummary
     -- CASE (ii)
     -- NOTE: Ledger tip might be close to the end of this era (or indeed past
     -- it) but this doesn't matter for the summary of /this/ era.
     go lo (ExactlyCons params ss) (AtMostCons epoch fs) =
-        summaryCons (EraSummary lo hi params) $ go hi ss fs
+        nonEmptyAtMostCons (EraSummary lo (EraEnd hi) params) $ go hi ss fs
       where
         hi = mkUpperBound params lo epoch
     -- CASE (i) or (iii)
     go lo (ExactlyCons params@EraParams{..} _) AtMostNil =
-        Summary (EraSummary lo hi params) AtMostNil
+        nonEmptyAtMostOne (EraSummary lo hi params)
       where
-        hi :: Bound
-        hi = mkUpperBound params lo
+        hi :: EraEnd
+        hi = mkEraEnd params lo
            . maxMaybeEpoch (safeBeforeEpoch eraSafeZone)
            . slotToEpochBound params lo
            . addSlots (safeFromTip eraSafeZone)
@@ -589,9 +635,10 @@ summarize systemStart ledgerTip = \(Shape shape) (Transitions transitions) ->
         slots             = countSlots hiSlot (boundSlot lo)
         (epochs, inEpoch) = slots `divMod` epochSize
 
-maxMaybeEpoch :: SafeBeforeEpoch -> EpochNo -> EpochNo
-maxMaybeEpoch NoLowerBound   = id
-maxMaybeEpoch (LowerBound e) = max e
+maxMaybeEpoch :: SafeBeforeEpoch -> EpochNo -> Maybe EpochNo
+maxMaybeEpoch NoLowerBound    e = Just $ e
+maxMaybeEpoch (LowerBound e') e = Just $ max e' e
+maxMaybeEpoch UnsafeUnbounded _ = Nothing
 
 {-------------------------------------------------------------------------------
   Internal: looking up values in the history
@@ -611,7 +658,9 @@ eval condition EraSummary{..} =
       ContainsEpoch x -> boundEpoch `contains` x
   where
     contains :: Ord a => (Bound -> a) -> a -> Bool
-    f `contains` x = f eraStart <= x && x < f eraEnd
+    f `contains` x = case eraEnd of
+                       EraEnd end   -> f eraStart <= x && x < f end
+                       EraUnbounded -> f eraStart <= x
 
 find :: Summary xs -> Condition -> Except PastHorizonException EraSummary
 find summary condition =

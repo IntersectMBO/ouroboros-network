@@ -16,7 +16,7 @@ import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import qualified Data.List as L
-import           Data.Maybe (catMaybes)
+import           Data.Maybe (catMaybes, fromMaybe)
 import           Data.Time
 import           Data.Word
 
@@ -333,7 +333,12 @@ instance Arbitrary ArbitraryChain where
       genParams _era startOfThis = do
           params      <- genEraParams      startOfThis
           startOfNext <- genStartOfNextEra startOfThis params
-          return (params, startOfNext)
+          -- If startOfNext is 'Nothing', we used 'UnsafeUnbounded' for this
+          -- era. This means we should not be generating any events for any
+          -- succeeding eras, but to determine the /shape/ of the eras, and
+          -- set subsequent lower bounds, we just need to make sure that we
+          -- generate a valid shape: the next era must start after this one.
+          return (params, fromMaybe (succ startOfThis) startOfNext)
 
       genDiffTime :: SlotLength -> Gen NominalDiffTime
       genDiffTime s = realToFrac <$> choose (0, s') `suchThat` (/= s')
@@ -523,7 +528,7 @@ fromEvents (Eras eras) events = Chain $
 -- | Time used during event generation
 data Time = forall x xs. Time {
       timeEvent   :: EventTime
-    , timeNextEra :: Maybe EpochNo
+    , timeNextEra :: Maybe EpochNo -- ^ Start of the epoch (if already decided)
     , timeEras    :: Exactly (x ': xs) (Era, HF.EraParams)
     }
 
@@ -560,9 +565,11 @@ genEvents = \start (Eras eras) (HF.Shape shape) -> sized $ \sz -> do
     go :: Int -> Time -> Gen [Event]
     go 0 _             = return []
     go n time@Time{..} = do
-        typ <- frequency [
-            (2, return Tick)
-          , (if canTransition then 1 else 0, Confirm <$> pickStartOfNextEra)
+        typ <- frequency $ concat [
+            [(2, return Tick)]
+          , case canTransition of
+              Nothing        -> []
+              Just pickStart -> [(1, Confirm <$> pickStart)]
           ]
         let event = Event {
                 eventType      = typ
@@ -576,15 +583,28 @@ genEvents = \start (Eras eras) (HF.Shape shape) -> sized $ \sz -> do
         eraParams :: HF.EraParams
         (era, eraParams) = exactlyHead timeEras
 
-        canTransition :: Bool
-        canTransition =
-            case (timeNextEra, exactlyTail timeEras) of
-              (Nothing, ExactlyCons{}) -> True
-              _otherwise               -> False
+        canTransition :: Maybe (Gen EpochNo)
+        canTransition
+          | Just _ <- timeNextEra =
+              -- We already generated a transition
+              Nothing
+          | ExactlyNil <- exactlyTail timeEras =
+              -- We are in the final era
+              Nothing
+          | Nothing <- mNextLo =
+              -- This era is 'UnsafeUnbounded'
+             Nothing
+          | Just lo <- mNextLo =
+              Just (pickStartOfNextEra lo)
 
-        pickStartOfNextEra :: Gen EpochNo
-        pickStartOfNextEra =
-            (\d -> HF.addEpochs d lo) <$> choose (0, 10)
+        -- Lower bound on the start of the next era
+        mNextLo :: Maybe EpochNo
+        mNextLo =
+            HF.maxMaybeEpoch
+              (HF.safeBeforeEpoch (HF.eraSafeZone eraParams))
+              (if eventTimeEpochSlot afterSafeZone == 0
+                 then eventTimeEpochNo afterSafeZone
+                 else eventTimeEpochNo afterSafeZone + 1)
           where
             -- The 'EventTime' of the first event after the safe zone
             -- (The @+ 1@ here is required because the first step is to skip
@@ -595,13 +615,8 @@ genEvents = \start (Eras eras) (HF.Shape shape) -> sized $ \sz -> do
                               (HF.safeFromTip (HF.eraSafeZone eraParams) + 1)
                               timeEvent
 
-            -- Lower bound on the start of the next era
-            lo :: EpochNo
-            lo = HF.maxMaybeEpoch
-                   (HF.safeBeforeEpoch (HF.eraSafeZone eraParams))
-                   (if eventTimeEpochSlot afterSafeZone == 0
-                      then eventTimeEpochNo afterSafeZone
-                      else eventTimeEpochNo afterSafeZone + 1)
+        pickStartOfNextEra :: EpochNo -> Gen EpochNo
+        pickStartOfNextEra lo = (\d -> HF.addEpochs d lo) <$> choose (0, 10)
 
 {-------------------------------------------------------------------------------
   Safe zone
@@ -682,6 +697,7 @@ splitSafeZone tipEpoch = \(mTransition, safeZone) events ->
 
     before :: EpochNo -> HF.SafeBeforeEpoch -> Bool
     before _ HF.NoLowerBound    = False
+    before _ HF.UnsafeUnbounded = True
     before e (HF.LowerBound e') = e < e'
 
     -- Example. Suppose
