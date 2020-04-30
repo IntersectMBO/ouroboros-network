@@ -1,6 +1,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE NumericUnderscores        #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -100,10 +101,18 @@ roundtripEpochSlot s@ArbitrarySummary{beforeHorizonEpoch = epoch} =
 
 reportsPastHorizon :: ArbitrarySummary -> Property
 reportsPastHorizon s@ArbitrarySummary{..} = conjoin [
-      isPastHorizonException s $ HF.wallclockToSlot pastHorizonTime
-    , isPastHorizonException s $ HF.slotToWallclock pastHorizonSlot
-    , isPastHorizonException s $ HF.slotToEpoch     pastHorizonSlot
-    , isPastHorizonException s $ HF.epochToSlot     pastHorizonEpoch
+      case mPastHorizonTime of
+        Just x  -> isPastHorizonException s $ HF.wallclockToSlot x
+        Nothing -> property True
+    , case mPastHorizonSlot of
+        Just x  -> isPastHorizonException s $ HF.slotToWallclock x
+        Nothing -> property True
+    , case mPastHorizonSlot of
+        Just x  -> isPastHorizonException s $ HF.slotToEpoch     x
+        Nothing -> property True
+    , case mPastHorizonEpoch of
+        Just x  -> isPastHorizonException s $ HF.epochToSlot     x
+        Nothing -> property True
     ]
 
 {-------------------------------------------------------------------------------
@@ -119,9 +128,9 @@ data ArbitrarySummary = forall xs. ArbitrarySummary {
     , beforeHorizonTime     :: UTCTime
     , beforeHorizonSlot     :: SlotNo
     , beforeHorizonEpoch    :: EpochNo
-    , pastHorizonTime       :: UTCTime
-    , pastHorizonSlot       :: SlotNo
-    , pastHorizonEpoch      :: EpochNo
+    , mPastHorizonTime      :: Maybe UTCTime
+    , mPastHorizonSlot      :: Maybe SlotNo
+    , mPastHorizonEpoch     :: Maybe EpochNo
     }
 
 deriving instance Show ArbitrarySummary
@@ -129,90 +138,126 @@ deriving instance Show ArbitrarySummary
 instance Arbitrary ArbitrarySummary where
   arbitrary = chooseEras $ \is@(Eras _) -> do
       start   <- SystemStart <$> arbitrary
-      summary <- HF.summaryWithExactly <$>
-                   erasMapStateM genEraSummary is (HF.initBound start)
+      summary <- HF.Summary  <$> erasUnfoldAtMost
+                                   genEraSummary
+                                   is
+                                   (HF.initBound start)
 
-      let summaryStart, summaryEnd :: HF.Bound
-          (summaryStart, summaryEnd) = HF.summaryBounds summary
+      let summaryStart :: HF.Bound
+          mSummaryEnd  :: HF.EraEnd
+          (summaryStart, mSummaryEnd) = HF.summaryBounds summary
 
-          summarySlots, summaryEpochs :: Word64
-          summarySlots  = HF.countSlots
-                            (HF.boundSlot summaryEnd)
-                            (HF.boundSlot summaryStart)
-          summaryEpochs = HF.countEpochs
-                            (HF.boundEpoch summaryEnd)
-                            (HF.boundEpoch summaryStart)
+      case mSummaryEnd of
+        HF.EraUnbounded -> do
+          -- Don't pick /too/ large numbers to avoid overflow
+          beforeHorizonSlots   <- choose (0,   100_000_000)
+          beforeHorizonEpochs  <- choose (0,     1_000_000)
+          beforeHorizonSeconds <- choose (0, 1_000_000_000)
 
-          summaryTimeSpan :: NominalDiffTime
-          summaryTimeSpan = diffUTCTime
-                              (HF.boundTime summaryEnd)
-                              (HF.boundTime summaryStart)
+          let beforeHorizonSlot  :: SlotNo
+              beforeHorizonEpoch :: EpochNo
+              beforeHorizonTime  :: UTCTime
 
-          summaryTimeSpanSeconds :: Double
-          summaryTimeSpanSeconds = realToFrac summaryTimeSpan
+              beforeHorizonSlot  = HF.addSlots
+                                     beforeHorizonSlots
+                                     (HF.boundSlot summaryStart)
+              beforeHorizonEpoch = HF.addEpochs
+                                     beforeHorizonEpochs
+                                     (HF.boundEpoch summaryStart)
+              beforeHorizonTime  = addUTCTime
+                                     (realToFrac (beforeHorizonSeconds :: Double))
+                                     (HF.boundTime summaryStart)
 
-      -- Pick arbitrary values before the horizon
+          return ArbitrarySummary{
+                arbitrarySummaryStart = start
+              , arbitrarySummary      = summary
+              , beforeHorizonTime
+              , beforeHorizonSlot
+              , beforeHorizonEpoch
+              , mPastHorizonTime      = Nothing
+              , mPastHorizonSlot      = Nothing
+              , mPastHorizonEpoch     = Nothing
+              }
 
-      beforeHorizonSlots   <- choose (0, summarySlots  - 1)
-      beforeHorizonEpochs  <- choose (0, summaryEpochs - 1)
-      beforeHorizonSeconds <- choose (0, summaryTimeSpanSeconds)
-                                `suchThat` \x -> x /= summaryTimeSpanSeconds
-
-      let beforeHorizonSlot  :: SlotNo
-          beforeHorizonEpoch :: EpochNo
-          beforeHorizonTime  :: UTCTime
-
-          beforeHorizonSlot  = HF.addSlots
-                                 beforeHorizonSlots
-                                 (HF.boundSlot summaryStart)
-          beforeHorizonEpoch = HF.addEpochs
-                                 beforeHorizonEpochs
-                                 (HF.boundEpoch summaryStart)
-          beforeHorizonTime  = addUTCTime
-                                 (realToFrac beforeHorizonSeconds)
-                                 (HF.boundTime summaryStart)
-
-      -- Pick arbitrary values past the horizon
-
-      pastHorizonSlots   :: Word64 <- choose (0, 10)
-      pastHorizonEpochs  :: Word64 <- choose (0, 10)
-      pastHorizonSeconds :: Double <- choose (0, 10)
-
-      let pastHorizonSlot  :: SlotNo
-          pastHorizonEpoch :: EpochNo
-          pastHorizonTime  :: UTCTime
-
-          pastHorizonSlot  = HF.addSlots
-                                pastHorizonSlots
+        HF.EraEnd summaryEnd -> do
+          let summarySlots, summaryEpochs :: Word64
+              summarySlots  = HF.countSlots
                                 (HF.boundSlot summaryEnd)
-          pastHorizonEpoch = HF.addEpochs
-                                pastHorizonEpochs
+                                (HF.boundSlot summaryStart)
+              summaryEpochs = HF.countEpochs
                                 (HF.boundEpoch summaryEnd)
-          pastHorizonTime  = addUTCTime
-                                (realToFrac pastHorizonSeconds)
-                                (HF.boundTime summaryEnd)
+                                (HF.boundEpoch summaryStart)
 
-      return ArbitrarySummary{
-            arbitrarySummaryStart = start
-          , arbitrarySummary      = summary
-          , beforeHorizonTime
-          , beforeHorizonSlot
-          , beforeHorizonEpoch
-          , pastHorizonTime
-          , pastHorizonSlot
-          , pastHorizonEpoch
-          }
+              summaryTimeSpan :: NominalDiffTime
+              summaryTimeSpan = diffUTCTime
+                                  (HF.boundTime summaryEnd)
+                                  (HF.boundTime summaryStart)
+
+              summaryTimeSpanSeconds :: Double
+              summaryTimeSpanSeconds = realToFrac summaryTimeSpan
+
+          -- Pick arbitrary values before the horizon
+
+          beforeHorizonSlots   <- choose (0, summarySlots  - 1)
+          beforeHorizonEpochs  <- choose (0, summaryEpochs - 1)
+          beforeHorizonSeconds <- choose (0, summaryTimeSpanSeconds)
+                                    `suchThat` \x -> x /= summaryTimeSpanSeconds
+
+          let beforeHorizonSlot  :: SlotNo
+              beforeHorizonEpoch :: EpochNo
+              beforeHorizonTime  :: UTCTime
+
+              beforeHorizonSlot  = HF.addSlots
+                                     beforeHorizonSlots
+                                     (HF.boundSlot summaryStart)
+              beforeHorizonEpoch = HF.addEpochs
+                                     beforeHorizonEpochs
+                                     (HF.boundEpoch summaryStart)
+              beforeHorizonTime  = addUTCTime
+                                     (realToFrac beforeHorizonSeconds)
+                                     (HF.boundTime summaryStart)
+
+          -- Pick arbitrary values past the horizon
+
+          pastHorizonSlots   :: Word64 <- choose (0, 10)
+          pastHorizonEpochs  :: Word64 <- choose (0, 10)
+          pastHorizonSeconds :: Double <- choose (0, 10)
+
+          let pastHorizonSlot  :: SlotNo
+              pastHorizonEpoch :: EpochNo
+              pastHorizonTime  :: UTCTime
+
+              pastHorizonSlot  = HF.addSlots
+                                    pastHorizonSlots
+                                    (HF.boundSlot summaryEnd)
+              pastHorizonEpoch = HF.addEpochs
+                                    pastHorizonEpochs
+                                    (HF.boundEpoch summaryEnd)
+              pastHorizonTime  = addUTCTime
+                                    (realToFrac pastHorizonSeconds)
+                                    (HF.boundTime summaryEnd)
+
+          return ArbitrarySummary{
+                arbitrarySummaryStart = start
+              , arbitrarySummary      = summary
+              , beforeHorizonTime
+              , beforeHorizonSlot
+              , beforeHorizonEpoch
+              , mPastHorizonTime      = Just pastHorizonTime
+              , mPastHorizonSlot      = Just pastHorizonSlot
+              , mPastHorizonEpoch     = Just pastHorizonEpoch
+              }
     where
-      genEraSummary :: Era -> HF.Bound -> Gen (HF.EraSummary, HF.Bound)
+      genEraSummary :: Era -> HF.Bound -> Gen (HF.EraSummary, HF.EraEnd)
       genEraSummary _era lo = do
           params <- genEraParams (HF.boundEpoch lo)
           hi     <- genUpperBound lo params
           return (HF.EraSummary lo hi params, hi)
 
-      genUpperBound :: HF.Bound -> HF.EraParams -> Gen HF.Bound
+      genUpperBound :: HF.Bound -> HF.EraParams -> Gen HF.EraEnd
       genUpperBound lo params = do
           startOfNextEra <- genStartOfNextEra (HF.boundEpoch lo) params
-          return $ HF.mkUpperBound params lo startOfNextEra
+          return $ HF.mkEraEnd params lo startOfNextEra
 
   shrink summary@ArbitrarySummary{..} = concat [
         -- Simplify the system start
@@ -257,9 +302,9 @@ instance ShiftTime ArbitrarySummary where
     , beforeHorizonTime     = shiftTime delta beforeHorizonTime
     , beforeHorizonSlot
     , beforeHorizonEpoch
-    , pastHorizonTime
-    , pastHorizonSlot
-    , pastHorizonEpoch
+    , mPastHorizonTime      = shiftTime delta <$> mPastHorizonTime
+    , mPastHorizonSlot
+    , mPastHorizonEpoch
     }
 
 -- | Reset the system start (during shrinking)

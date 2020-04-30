@@ -18,6 +18,7 @@ module Test.Consensus.HardFork.Infra (
   , Eras(..)
   , chooseEras
   , erasMapStateM
+  , erasUnfoldAtMost
     -- * Era-specified generators
   , genEraParams
   , genStartOfNextEra
@@ -92,6 +93,24 @@ erasMapStateM :: Monad m
               -> Eras xs -> s -> m (Exactly xs a)
 erasMapStateM f (Eras eras) = evalStateT (traverse (StateT . f) eras)
 
+erasUnfoldAtMost :: forall m xs a. Monad m
+                 => (Era -> HF.Bound -> m (a, HF.EraEnd))
+                 -> Eras xs -> HF.Bound -> m (NonEmptyAtMost xs a)
+erasUnfoldAtMost f (Eras eras) = go eras
+  where
+    go :: forall x xs'.
+          Exactly (x ': xs') Era
+       -> HF.Bound
+       -> m (NonEmptyAtMost (x ': xs') a)
+    go (ExactlyCons e es) s = do
+        (a, ms) <- f e s
+        case ms of
+          HF.EraUnbounded -> return $ nonEmptyAtMostOne a
+          HF.EraEnd s'    ->
+            case es of
+              ExactlyCons{} -> nonEmptyAtMostCons a <$> go es s'
+              ExactlyNil    -> return $ nonEmptyAtMostOne a
+
 {-------------------------------------------------------------------------------
   Era-specific generators
 -------------------------------------------------------------------------------}
@@ -117,11 +136,13 @@ genEraParams startOfEra = do
     genSafeBeforeEpoch = oneof [
           return HF.NoLowerBound
         , (\n -> HF.LowerBound (HF.addEpochs n startOfEra)) <$> choose (1, 5)
+        , return HF.UnsafeUnbounded
         ]
 
 -- | Generate 'EpochNo' for the start of the next era
-genStartOfNextEra :: EpochNo ->  HF.EraParams -> Gen EpochNo
+genStartOfNextEra :: EpochNo ->  HF.EraParams -> Gen (Maybe EpochNo)
 genStartOfNextEra startOfEra HF.EraParams{..} =
     case HF.safeBeforeEpoch eraSafeZone of
-       HF.LowerBound e -> (\n -> HF.addEpochs n e         ) <$> choose (0, 10)
-       HF.NoLowerBound -> (\n -> HF.addEpochs n startOfEra) <$> choose (1, 10)
+       HF.LowerBound e    -> (\n -> Just $ HF.addEpochs n e         ) <$> choose (0, 10)
+       HF.NoLowerBound    -> (\n -> Just $ HF.addEpochs n startOfEra) <$> choose (1, 10)
+       HF.UnsafeUnbounded -> return Nothing
