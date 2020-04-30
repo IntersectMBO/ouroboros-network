@@ -139,3 +139,9 @@ https://github.com/input-output-hk/ouroboros-network/blob/master/scripts/buildki
 ./scripts/buildkite/check-stylish.sh
 ```
 
+When using Nix, you can use the following command, which will build and use
+the right version of `stylish-haskell`.
+
+```bash
+nix-shell --run ./scripts/buildkite/check-stylish.sh
+```
