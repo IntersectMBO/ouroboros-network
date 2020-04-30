@@ -42,8 +42,10 @@ library
                        Ouroboros.Consensus.BlockchainTime.WallClock
                        Ouroboros.Consensus.Config
                        Ouroboros.Consensus.Forecast
+                       Ouroboros.Consensus.Fragment.Diff
                        Ouroboros.Consensus.Fragment.InFuture
                        Ouroboros.Consensus.Fragment.Validated
+                       Ouroboros.Consensus.Fragment.ValidatedDiff
                        Ouroboros.Consensus.HardFork.Abstract
                        Ouroboros.Consensus.HardFork.History
                        Ouroboros.Consensus.HeaderValidation
@@ -376,8 +378,6 @@ test-suite test-storage
                        Test.Ouroboros.Storage.ChainDB.AddBlock
                        Test.Ouroboros.Storage.ChainDB.Iterator
                        Test.Ouroboros.Storage.ChainDB.GcSchedule
-                       Test.Ouroboros.Storage.ChainDB.Mock
-                       Test.Ouroboros.Storage.ChainDB.Mock.Test
                        Test.Ouroboros.Storage.ChainDB.Model
                        Test.Ouroboros.Storage.ChainDB.Model.Test
                        Test.Ouroboros.Storage.ChainDB.StateMachine

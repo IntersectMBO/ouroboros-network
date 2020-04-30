@@ -471,8 +471,8 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
 
         -- Add the block to the chain DB
         result <- lift $ ChainDB.addBlockAsync chainDB newBlock
-        -- Block until we have performed chain selection for the block
-        curTip <- lift $ atomically $ ChainDB.chainSelectionPerformed result
+        -- Block until we have processed the block
+        curTip <- lift $ atomically $ ChainDB.blockProcessed result
 
         -- Check whether we adopted our block
         when (curTip /= blockPoint newBlock) $ do

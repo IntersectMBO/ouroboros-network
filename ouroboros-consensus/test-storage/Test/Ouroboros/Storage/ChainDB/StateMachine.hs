@@ -24,7 +24,7 @@ module Test.Ouroboros.Storage.ChainDB.StateMachine ( tests ) where
 import           Prelude hiding (elem)
 
 import           Codec.Serialise (Serialise, decode, encode)
-import           Control.Monad (forM_, replicateM, void, when)
+import           Control.Monad (replicateM, void)
 import           Control.Tracer
 import           Data.Bifoldable
 import           Data.Bifunctor
@@ -42,7 +42,7 @@ import           Data.Sequence.Strict (StrictSeq)
 import           Data.TreeDiff (ToExpr (..))
 import           Data.Typeable
 import           Data.Void (Void)
-import           Data.Word (Word16, Word32)
+import           Data.Word (Word16, Word32, Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (callStack)
 
@@ -75,8 +75,8 @@ import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime (settableBlockchainTime)
 import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -127,8 +127,13 @@ import           Test.Util.WithEq
 
 -- | Commands
 data Cmd blk it rdr
-  = AddBlock              blk
-  | AddFutureBlock        blk SlotNo -- ^ The current slot number
+  = AddBlock       blk
+    -- ^ Advance the current slot to the block's slot (unless smaller than the
+    -- current slot) and add the block.
+  | AddFutureBlock blk SlotNo
+    -- ^ Advance the current slot to the given slot, which is guaranteed to be
+    -- smaller than the block's slot number (such that the block is from the
+    -- future) and larger or equal to the current slot, and add the block.
   | GetCurrentChain
   | GetCurrentLedger
   | GetPastLedger         (Point blk)
@@ -186,25 +191,6 @@ data Cmd blk it rdr
 -- containing known invalid blocks and needlessly validating them, which is
 -- something we are testing in 'prop_trace', see
 -- 'invalidBlockNeverValidatedAgain'.
-
--- = Blocks from the future
---
--- In the real implementation, blocks from the future are added to the
--- VolatileDB directly, but the chain selection triggered by that block is
--- scheduled for the slot of the block.
---
--- This means the implementation relies on the 'BlockchainTime'. In the tests,
--- we advance the slot number only when a new block is added, as that is the
--- only mutation of the ChainDB. Whenever a new block is added, the current
--- slot number is advanced to the slot of that block (unless that slot is in
--- the past). Blocks from the future include an extra slot number, which is
--- treated as the current slot number while adding the block. This slot number
--- must be >= the actual current slot number.
---
--- Whenever we advance the current slot number, we trigger the corresponding
--- scheduled chain selections in the real implementation. For the model, we
--- call 'Model.advanceCurSlot' which adds the blocks to the model stored in
--- 'Model.futureBlocks' which are no longer in the future.
 
 deriving instance SOP.Generic         (Cmd blk it rdr)
 deriving instance SOP.HasDatatypeInfo (Cmd blk it rdr)
@@ -377,16 +363,8 @@ run env@ChainDBEnv { varDB, .. } cmd =
     ignore _ = Unit ()
 
     advanceAndAdd :: ChainDBState m blk -> SlotNo -> blk -> m (Point blk)
-    advanceAndAdd ChainDBState { chainDB = chainDB@ChainDB { isOpen }, internal }
-                  newCurSlot blk = do
-      dbIsOpen <- atomically isOpen
-      when dbIsOpen $ do
-        prevCurSlot <- atomically $ readTVar varCurSlot
-        -- Tick each slot and execute the scheduled chain selections for that
-        -- slot
-        forM_ [prevCurSlot + 1..newCurSlot] $ \slot -> do
-          atomically $ writeTVar varCurSlot slot
-          intScheduledChainSelection internal slot
+    advanceAndAdd ChainDBState { chainDB } newCurSlot blk = do
+      atomically $ modifyTVar varCurSlot (max newCurSlot)
       addBlock chainDB blk
 
     wipeVolDB :: ChainDBState m blk -> m (Point blk)
@@ -487,6 +465,20 @@ instance (Eq blk, Eq (Header blk), StandardHash blk)
         _                                            -> False
 
 {-------------------------------------------------------------------------------
+  Max clock skew
+-------------------------------------------------------------------------------}
+
+-- | Max clock skew in number of slots
+newtype MaxClockSkew = MaxClockSkew Word64
+  deriving (Eq, Show)
+
+instance Arbitrary MaxClockSkew where
+  arbitrary = MaxClockSkew <$> choose (0, 3)
+  -- We're only interested in 0 or 1
+  shrink (MaxClockSkew 0) = []
+  shrink (MaxClockSkew _) = MaxClockSkew <$> [0, 1]
+
+{-------------------------------------------------------------------------------
   Instantiating the semantics
 -------------------------------------------------------------------------------}
 
@@ -540,7 +532,7 @@ runPure cfg = \case
 
     advanceAndAdd slot blk m = (Model.tipPoint m', m')
       where
-        m' = Model.addBlock cfg blk $ Model.advanceCurSlot cfg slot m
+        m' = Model.addBlock cfg blk $ Model.advanceCurSlot slot m
 
     iter = either UnknownRange Iter
     mbGCedAllComponents = MbGCedAllComponents . MaybeGCedBlock False
@@ -615,9 +607,10 @@ deriving instance (TestConstraints blk, Show1 r) => Show (Model blk m r)
 -- | Initial model
 initModel :: TopLevelConfig blk
           -> ExtLedgerState blk
+          -> MaxClockSkew
           -> Model blk m r
-initModel cfg initLedger = Model
-  { dbModel      = Model.empty initLedger
+initModel cfg initLedger (MaxClockSkew maxClockSkew) = Model
+  { dbModel      = Model.empty initLedger maxClockSkew
   , knownIters   = RE.empty
   , knownReaders = RE.empty
   , modelConfig  = QSM.Opaque cfg
@@ -947,16 +940,7 @@ precondition Model {..} (At cmd) =
      -- ChainDB. We might pick another one than the current one when
      -- reopening, which would bring us out of sync with the model, for which
      -- reopening is a no-op (no chain selection). See #1533.
-     --
-     -- Similary, don't close (and reopen) when there are future blocks. The
-     -- real implementation will drop the scheduled chain selections for
-     -- those, so it will not automatically run chain selection for them when
-     -- their slot becomes the current slot after reopening. Such blocks will
-     -- only be adopted when a successor of them is added. However, in the
-     -- model, we run chain selection from scratch, so we might adopt one of
-     -- the future blocks when adding another block (that we don't adopt).
-     Close                    -> Not equallyOrMorePreferableFork .&&
-                                 Boolean (Map.null (Model.futureBlocks dbModel))
+     Close                    -> Not equallyOrMorePreferableFork
      Reopen                   -> Not $ Boolean (Model.isOpen dbModel)
      -- To be in the future, @blockSlot blk@ must be greater than @slot@.
      AddFutureBlock blk s     -> s .>= Model.currentSlot dbModel .&&
@@ -977,7 +961,7 @@ precondition Model {..} (At cmd) =
 
     forks :: [Chain blk]
     (_, forks) = map fst <$>
-      Model.validChains cfg (Model.initLedger dbModel) (Model.blocks dbModel)
+      Model.validChains cfg dbModel (Model.blocks dbModel)
 
     equallyOrMorePreferableFork :: Logic
     equallyOrMorePreferableFork = exists forks $ \fork ->
@@ -997,8 +981,7 @@ precondition Model {..} (At cmd) =
           Left  _    -> Bot
           -- All blocks must be valid
           Right blks -> forall blks $ \blk -> Boolean $
-            Map.notMember (blockHash blk) $
-            forgetFingerprint (Model.invalid dbModel)
+            Map.notMember (blockHash blk) $ Model.invalid dbModel
       where
         -- Include the exclusive bound in the check, as it must be valid too
         to' = case to of
@@ -1054,14 +1037,15 @@ semantics env (At cmd) =
 sm :: TestConstraints blk
    => ChainDBEnv IO blk
    -> BlockGen                  blk IO
-   -> TopLevelConfig        blk
+   -> TopLevelConfig            blk
    -> ExtLedgerState            blk
+   -> MaxClockSkew
    -> StateMachine (Model       blk IO)
                    (At Cmd      blk IO)
                                     IO
                    (At Resp     blk IO)
-sm env genBlock cfg initLedger = StateMachine
-  { initModel     = initModel cfg initLedger
+sm env genBlock cfg initLedger maxClockSkew = StateMachine
+  { initModel     = initModel cfg initLedger maxClockSkew
   , transition    = transition
   , precondition  = precondition
   , postcondition = postcondition
@@ -1329,17 +1313,24 @@ mkTestCfg (ImmDB.UniformChunkSize chunkSize) =
 envUnused :: ChainDBEnv m blk
 envUnused = error "ChainDBEnv used during command generation"
 
-smUnused :: ImmDB.ChunkInfo
+smUnused :: MaxClockSkew
+         -> ImmDB.ChunkInfo
          -> StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
-smUnused chunkInfo =
-    sm envUnused (genBlk chunkInfo) (mkTestCfg chunkInfo) testInitExtLedger
+smUnused maxClockSkew chunkInfo =
+    sm
+      envUnused
+      (genBlk chunkInfo)
+      (mkTestCfg chunkInfo)
+      testInitExtLedger
+      maxClockSkew
 
-prop_sequential :: SmallChunkInfo -> Property
-prop_sequential (SmallChunkInfo chunkInfo) =
-    forAllCommands (smUnused chunkInfo) Nothing $ \cmds -> QC.monadicIO $ do
-      (hist, prop) <- QC.run $ test cmds
-      -- TODO label tags
-      prettyCommands (smUnused chunkInfo) hist prop
+prop_sequential :: MaxClockSkew -> SmallChunkInfo -> Property
+prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
+    forAllCommands (smUnused maxClockSkew chunkInfo) Nothing $ \cmds ->
+      QC.monadicIO $ do
+        (hist, prop) <- QC.run $ test cmds
+        -- TODO label tags
+        prettyCommands (smUnused maxClockSkew chunkInfo) hist prop
   where
     testCfg = mkTestCfg chunkInfo
 
@@ -1358,8 +1349,8 @@ prop_sequential (SmallChunkInfo chunkInfo) =
         <$> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
-      let args = mkArgs testCfg chunkInfo testInitExtLedger tracer threadRegistry
-            varCurSlot fsVars
+      let args = mkArgs testCfg maxClockSkew chunkInfo testInitExtLedger tracer
+            threadRegistry varCurSlot fsVars
 
       (hist, model, res, trace) <- bracket
         (open args >>= newMVar)
@@ -1377,7 +1368,7 @@ prop_sequential (SmallChunkInfo chunkInfo) =
                 , varVolDbFs
                 , args
                 }
-              sm' = sm env (genBlk chunkInfo) testCfg testInitExtLedger
+              sm' = sm env (genBlk chunkInfo) testCfg testInitExtLedger maxClockSkew
           (hist, model, res) <- QSM.runCommands' sm' cmds
           trace <- getTrace
           return (hist, model, res, trace)
@@ -1482,6 +1473,7 @@ traceEventName = \case
 
 mkArgs :: IOLike m
        => TopLevelConfig Blk
+       -> MaxClockSkew
        -> ImmDB.ChunkInfo
        -> ExtLedgerState Blk
        -> Tracer m (TraceEvent Blk)
@@ -1490,7 +1482,7 @@ mkArgs :: IOLike m
        -> (StrictTVar m MockFS, StrictTVar m MockFS, StrictTVar m MockFS)
           -- ^ ImmutableDB, VolatileDB, LedgerDB
        -> ChainDbArgs m Blk
-mkArgs cfg chunkInfo initLedger tracer registry varCurSlot
+mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varCurSlot
        (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
     { -- Decoders
       cdbDecodeHash           = decode
@@ -1532,7 +1524,9 @@ mkArgs cfg chunkInfo initLedger tracer registry varCurSlot
     , cdbIsEBB                = testHeaderEpochNoIfEBB chunkInfo
     , cdbCheckIntegrity       = testBlockIsValid
     , cdbGenesis              = return initLedger
-    , cdbBlockchainTime       = settableBlockchainTime varCurSlot
+    , cdbCheckInFuture        = InFuture.miracle
+                                  (readTVar varCurSlot)
+                                  maxClockSkew
     , cdbAddHdrEnv            = \_ _ -> id
     , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
 

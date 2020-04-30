@@ -7,7 +7,6 @@ import           Test.Tasty
 import qualified Test.Ouroboros.Storage.ChainDB.AddBlock as AddBlock
 import qualified Test.Ouroboros.Storage.ChainDB.GcSchedule as GcSchedule
 import qualified Test.Ouroboros.Storage.ChainDB.Iterator as Iterator
-import qualified Test.Ouroboros.Storage.ChainDB.Mock.Test as Mock
 import qualified Test.Ouroboros.Storage.ChainDB.Model.Test as Model
 import qualified Test.Ouroboros.Storage.ChainDB.StateMachine as StateMachine
 
@@ -17,6 +16,5 @@ tests = testGroup "ChainDB" [
     , Iterator.tests
     , GcSchedule.tests
     , Model.tests
-    , Mock.tests
     , StateMachine.tests
     ]

@@ -48,6 +48,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , DiskSnapshot
   , TraceEvent (..)
   , TraceReplayEvent (..)
+  , LedgerDB.ledgerDbCurrent
     -- * Exported for testing purposes
   , mkLgrDB
   ) where

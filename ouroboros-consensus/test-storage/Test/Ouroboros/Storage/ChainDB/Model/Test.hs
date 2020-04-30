@@ -47,7 +47,7 @@ addBlocks blks = M.addBlocks cfg blks m
   where
     cfg = singleNodeTestConfig
     -- Set the current slot to 'maxBound' so that no block is in the future
-    m   = M.advanceCurSlot cfg maxBound (M.empty testInitExtLedger)
+    m   = M.advanceCurSlot maxBound (M.empty testInitExtLedger 0)
 
 prop_getBlock_addBlock :: BlockTree -> Permutation -> Property
 prop_getBlock_addBlock bt p =

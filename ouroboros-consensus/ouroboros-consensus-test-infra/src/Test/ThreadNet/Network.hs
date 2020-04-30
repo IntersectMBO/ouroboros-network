@@ -71,6 +71,7 @@ import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -601,7 +602,9 @@ runThreadNetwork ThreadNetworkArgs
         , cdbIsEBB                = nodeIsEBB
         , cdbCheckIntegrity       = nodeCheckIntegrity cfg
         , cdbGenesis              = return initLedger
-        , cdbBlockchainTime       = testBlockchainTime btime
+        , cdbCheckInFuture        = InFuture.miracle
+                                      (testBlockchainTimeSlot btime)
+                                      1 -- One slot clock skew
         , cdbAddHdrEnv            = nodeAddHeaderEnvelope (Proxy @blk)
         , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
         -- Misc

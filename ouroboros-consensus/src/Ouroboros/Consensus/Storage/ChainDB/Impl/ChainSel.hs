@@ -21,36 +21,35 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
   ) where
 
 import           Control.Exception (assert)
+import           Control.Monad (unless)
 import           Control.Monad.Except
 import           Control.Monad.Trans.State.Strict
 import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Foldable (foldl')
 import           Data.Function (on)
-import           Data.List (sortBy)
+import           Data.List (partition, sortBy)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe, isJust, mapMaybe)
+import           Data.Maybe (isJust, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
-
-import           Cardano.Prelude (forceElemsToWHNF)
 
 import           Ouroboros.Network.AnchoredFragment (Anchor,
                      AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (BlockNo, HasHeader (..), HeaderHash,
-                     Point, SlotNo, castHash, castPoint, pointHash)
+import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..))
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture (..))
+import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -58,6 +57,11 @@ import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
 
+import           Ouroboros.Consensus.Fragment.Diff (ChainDiff (..))
+import qualified Ouroboros.Consensus.Fragment.Diff as Diff
+import           Ouroboros.Consensus.Fragment.ValidatedDiff
+                     (ValidatedChainDiff (..))
+import qualified Ouroboros.Consensus.Fragment.ValidatedDiff as ValidatedDiff
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      InvalidBlockReason (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
@@ -86,9 +90,11 @@ initialChainSelection
   -> Tracer m (TraceEvent blk)
   -> TopLevelConfig blk
   -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
-  -> SlotNo -- ^ Current slot
+  -> StrictTVar m (FutureBlocks blk)
+  -> CheckInFuture m blk
   -> m (ChainAndLedger blk)
-initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
+initialChainSelection immDB volDB lgrDB tracer cfg varInvalid varFutureBlocks
+                      futureCheck = do
     -- We follow the steps from section "## Initialization" in ChainDB.md
 
     i :: Anchor blk <- ImmDB.getAnchorForTip immDB
@@ -107,9 +113,26 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
     case NE.nonEmpty (filter (preferAnchoredCandidate cfg curChain) chains) of
       -- If there are no candidates, no chain selection is needed
       Nothing      -> return curChainAndLedger
-      Just chains' -> fromMaybe curChainAndLedger <$>
+      Just chains' -> maybe curChainAndLedger toChainAndLedger <$>
         chainSelection' curChainAndLedger chains'
   where
+    -- | Turn the 'ValidatedChainDiff' into a 'ChainAndLedger'.
+    --
+    -- The rollback of the 'ChainDiff' must be empty, as the suffix starts
+    -- from the tip of the ImmutableDB, and we can't roll back past that tip.
+    -- This is guaranteed by the fact that all constructed candidates start
+    -- from this tip.
+    toChainAndLedger
+      :: ValidatedChainDiff blk (LgrDB.LedgerDB blk)
+      -> ChainAndLedger blk
+    toChainAndLedger (ValidatedChainDiff chainDiff ledger) =
+      case chainDiff of
+        ChainDiff rollback suffix
+          | rollback == 0
+          -> VF.new suffix ledger
+          | otherwise
+          -> error "constructed an initial chain with rollback"
+
     -- | Use the VolatileDB to construct all chains starting from the tip of
     -- the ImmutableDB.
     constructChains :: Anchor blk -- ^ Tip of the ImmutableDB, @i@
@@ -126,8 +149,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
                                  m
                                  (AnchoredFragment (Header blk))
         constructChain hashes =
-          AF.fromOldestFirst (AF.castAnchor i) .
-          takeWhile ((<= curSlot) . blockSlot) <$>
+          AF.fromOldestFirst (AF.castAnchor i) <$>
           mapM (getKnownHeaderThroughCache volDB) (NE.toList hashes)
 
     -- | Perform chain selection (including validation) on the given
@@ -142,23 +164,27 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
                        -- @i@.
                     -> NonEmpty (AnchoredFragment (Header blk))
                        -- ^ Candidates anchored at @i@
-                    -> m (Maybe (ChainAndLedger blk))
+                    -> m (Maybe (ValidatedChainDiff blk (LgrDB.LedgerDB blk)))
     chainSelection' curChainAndLedger candidates =
-      assert (all ((LgrDB.currentPoint ledger ==) .
-                   castPoint . AF.anchorPoint)
-                  candidates) $
-      assert (all (preferAnchoredCandidate cfg curChain) candidates) $
-      chainSelection
-        lgrDB
-        (contramap (TraceInitChainSelEvent . InitChainSelValidation) tracer)
-        cfg
-        varInvalid
-        BlockCache.empty
-        curChainAndLedger
-        (fmap (mkCandidateSuffix 0) candidates)
+        assert (all ((LgrDB.currentPoint ledger ==) .
+                     castPoint . AF.anchorPoint)
+                    candidates) $
+        assert (all (preferAnchoredCandidate cfg curChain) candidates) $
+        chainSelection chainSelEnv (Diff.extend <$> candidates)
       where
         curChain = VF.validatedFragment curChainAndLedger
         ledger   = VF.validatedLedger   curChainAndLedger
+        chainSelEnv = ChainSelEnv
+          { lgrDB
+          , cfg
+          , varInvalid
+          , varFutureBlocks
+          , futureCheck
+          , blockCache = BlockCache.empty
+          , curChainAndLedger
+          , trace = traceWith
+              (contramap (TraceInitChainSelEvent . InitChainSelValidation) tracer)
+          }
 
 -- | Add a block to the ChainDB, /asynchronously/.
 --
@@ -209,9 +235,6 @@ addBlockSync
   -> BlockToAdd m blk
   -> m ()
 addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
-    -- No need to be in the same STM transaction
-    curSlot <- atomically $ getCurrentSlot cdbBlockchainTime
-
     (isMember, invalid, curChain) <- atomically $ (,,)
       <$> VolDB.getIsMember               cdbVolDB
       <*> (forgetFingerprint <$> readTVar cdbInvalid)
@@ -222,39 +245,43 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
 
     -- We follow the steps from section "## Adding a block" in ChainDB.md
 
+    -- Note: we call 'chainSelectionForFutureBlocks' in all branches instead
+    -- of once, before branching, because we want to do it /after/ writing the
+    -- block to the VolatileDB and delivering the 'varBlockWrittenToDisk'
+    -- promise, as this is the promise the BlockFetch client waits for.
+    -- Otherwise, the BlockFetch client would have to wait for
+    -- 'chainSelectionForFutureBlocks'.
+
     -- ### Ignore
     if
       | olderThanK hdr (cdbIsEBB hdr) immBlockNo -> do
         trace $ IgnoreBlockOlderThanK (blockRealPoint b)
         deliverPromises False curTip
+        chainSelectionForFutureBlocks cdb BlockCache.empty
 
       | isMember (blockHash b) -> do
         trace $ IgnoreBlockAlreadyInVolDB (blockRealPoint b)
         deliverPromises True curTip
+        chainSelectionForFutureBlocks cdb BlockCache.empty
 
       | Just (InvalidBlockInfo reason _) <- Map.lookup (blockHash b) invalid -> do
         trace $ IgnoreInvalidBlock (blockRealPoint b) reason
         deliverPromises False curTip
-
-      -- ### Store but schedule chain selection
-      | blockSlot b > curSlot -> do
-        VolDB.putBlock cdbVolDB b
-        trace $ AddedBlockToVolDB (blockRealPoint b) (blockNo b) (cdbIsEBB hdr)
-        atomically $ putTMVar varBlockWrittenToDisk True
-        atomically $ putTMVar varBlockProcessed curTip
-        -- We'll fill in 'varChainSelectionPerformed' when the scheduled chain
-        -- selection is performed.
-        trace $ BlockInTheFuture (blockRealPoint b) curSlot
-        scheduleChainSelection curSlot (blockSlot b)
+        chainSelectionForFutureBlocks cdb BlockCache.empty
 
       -- The remaining cases
       | otherwise -> do
         VolDB.putBlock cdbVolDB b
         trace $ AddedBlockToVolDB (blockRealPoint b) (blockNo b) (cdbIsEBB hdr)
         atomically $ putTMVar varBlockWrittenToDisk True
-        newTip <- chainSelectionForBlock cdb (BlockCache.singleton b) hdr
+
+        let blockCache = BlockCache.singleton b
+        -- Do chain selection for future blocks before chain selection for the
+        -- new block. When some future blocks are now older than the current
+        -- block, we will do chain selection in a more chronological order.
+        chainSelectionForFutureBlocks cdb blockCache
+        newTip <- chainSelectionForBlock cdb blockCache hdr
         atomically $ putTMVar varBlockProcessed newTip
-        atomically $ putTMVar varChainSelectionPerformed newTip
   where
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
@@ -268,23 +295,6 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
     deliverPromises writtenToDisk tip = atomically $ do
       putTMVar varBlockWrittenToDisk      writtenToDisk
       putTMVar varBlockProcessed          tip
-      putTMVar varChainSelectionPerformed tip
-
-    scheduleChainSelection
-      :: SlotNo  -- ^ Current slot number
-      -> SlotNo  -- ^ Slot number of the block
-      -> m ()
-    scheduleChainSelection curSlot slot = do
-      nbScheduled <- atomically $ updateTVar cdbFutureBlocks $ \futureBlocks ->
-        let futureBlockToAdd = FutureBlockToAdd hdr varChainSelectionPerformed
-            futureBlocks' = Map.insertWith strictAppend slot
-              (forceElemsToWHNF (futureBlockToAdd NE.:| [])) futureBlocks
-            nbScheduled   = fromIntegral $ sum $ length <$> Map.elems futureBlocks
-        in (futureBlocks', nbScheduled)
-      trace $ ScheduledChainSelection (headerPoint hdr) curSlot nbScheduled
-
-    strictAppend :: (Semigroup (t a), Foldable t) => t a -> t a -> t a
-    strictAppend x y = forceElemsToWHNF (x <> y)
 
 -- | Return 'True' when the given header should be ignored when adding it
 -- because it is too old, i.e., we wouldn't be able to switch to a chain
@@ -318,6 +328,24 @@ olderThanK hdr isEBB immBlockNo
     = At bNo <= immBlockNo
   where
     bNo = blockNo hdr
+
+chainSelectionForFutureBlocks
+  :: (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
+  => ChainDbEnv m blk -> BlockCache blk -> m ()
+chainSelectionForFutureBlocks cdb@CDB{..} blockCache = do
+    -- Get 'cdbFutureBlocks' and empty the map in the TVar. It will be
+    -- repopulated with the blocks that are still from the future (but not the
+    -- ones no longer from the future) during chain selection for those
+    -- blocks.
+    futureBlockHeaders <- atomically $ do
+      futureBlocks <- readTVar cdbFutureBlocks
+      writeTVar cdbFutureBlocks Map.empty
+      return $ Map.elems futureBlocks
+    forM_ futureBlockHeaders $ \hdr -> do
+      trace $ ChainSelectionForFutureBlock (headerRealPoint hdr)
+      chainSelectionForBlock cdb blockCache hdr
+  where
+    trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
 
 -- | Trigger chain selection for the given block.
 --
@@ -363,8 +391,6 @@ chainSelectionForBlock
   -> Header blk
   -> m (Point blk)
 chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
-    curSlot <- atomically $ getCurrentSlot cdbBlockchainTime
-
     (invalid, succsOf, predecessor, curChain, tipPoint, ledgerDB)
       <- atomically $ (,,,,,)
           <$> (forgetFingerprint <$> readTVar cdbInvalid)
@@ -392,7 +418,6 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
         succsOf'     = ignoreInvalidSuc cdb invalid succsOf
 
     -- The preconditions
-    assert (blockSlot hdr <= curSlot)  $ return ()
     assert (isJust $ predecessor (headerHash hdr)) $ return ()
 
     if
@@ -411,12 +436,12 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
       | pointHash tipPoint == castHash (blockPrevHash hdr) -> do
         -- ### Add to current chain
         trace (TryAddToCurrentChain p)
-        addToCurrentChain succsOf' curChainAndLedger curSlot
+        addToCurrentChain succsOf' curChainAndLedger
 
       | Just hashes <- VolDB.isReachable predecessor' i p -> do
         -- ### Switch to a fork
         trace (TrySwitchToAFork p hashes)
-        switchToAFork succsOf' curChainAndLedger hashes curSlot
+        switchToAFork succsOf' curChainAndLedger hashes
 
       | otherwise -> do
         -- ### Store but don't change the current chain
@@ -436,17 +461,28 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
 
+    mkChainSelEnv :: ChainAndLedger blk -> ChainSelEnv m blk
+    mkChainSelEnv curChainAndLedger = ChainSelEnv
+      { lgrDB             = cdbLgrDB
+      , cfg               = cdbTopLevelConfig
+      , varInvalid        = cdbInvalid
+      , varFutureBlocks   = cdbFutureBlocks
+      , futureCheck       = cdbCheckInFuture
+      , blockCache        = blockCache
+      , curChainAndLedger = curChainAndLedger
+      , trace             =
+          traceWith (contramap (TraceAddBlockEvent . AddBlockValidation) cdbTracer)
+      }
+
     -- | PRECONDITION: the header @hdr@ (and block @b@) fit onto the end of
     -- the current chain.
     addToCurrentChain :: HasCallStack
                       => (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
                       -> ChainAndLedger blk
                          -- ^ The current chain and ledger
-                      -> SlotNo
-                         -- ^ The current slot
                       -> m (Point blk)
     addToCurrentChain succsOf curChainAndLedger
-                      curSlot = assert (AF.validExtension curChain hdr) $ do
+                    = assert (AF.validExtension curChain hdr) $ do
         let suffixesAfterB = VolDB.candidates succsOf (realPointToPoint p)
 
         -- Fragments that are anchored at @curHead@, i.e. suffixes of the
@@ -461,17 +497,15 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
             -- up the headers /after/ b, so they won't be on the current
             -- chain.
             flip evalStateT Map.empty $ forM suffixesAfterB' $ \hashes -> do
-              -- Ignore headers/blocks from the future
-              hdrs <- fmap (takeWhile ((<= curSlot) . blockSlot)) $
-                mapM (getKnownHeaderThroughCache cdbVolDB) $
-                NE.toList hashes
+              hdrs <- mapM (getKnownHeaderThroughCache cdbVolDB) $
+                        NE.toList hashes
               return $ AF.fromOldestFirst curHead (hdr : hdrs)
 
-        let candidateSuffixes = NE.nonEmpty
+        let chainDiffs = NE.nonEmpty
               $ NE.filter ( preferAnchoredCandidate cdbTopLevelConfig curChain
-                          . csSuffix
+                          . Diff.getSuffix
                           )
-              $ fmap (mkCandidateSuffix 0) candidates
+              $ fmap Diff.extend candidates
         -- All candidates are longer than the current chain, so they will be
         -- preferred over it, /unless/ the block we just added is an EBB,
         -- which has the same 'BlockNo' as the block before it, so when
@@ -485,17 +519,19 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
         -- candidate preferred over the current chain. In this case, the
         -- candidate will be a two-block (the EBB and the new block)
         -- extension of the current chain.
-        case candidateSuffixes of
-          Nothing                 -> return curTip
-          Just candidateSuffixes' ->
-            chainSelection' curChainAndLedger candidateSuffixes' >>= \case
-              Nothing                -> return curTip
-              Just newChainAndLedger ->
-                trySwitchTo newChainAndLedger (AddedToCurrentChain p)
+        case chainDiffs of
+          Nothing          -> return curTip
+          Just chainDiffs' ->
+            chainSelection chainSelEnv chainDiffs' >>= \case
+              Nothing                 ->
+                return curTip
+              Just validatedChainDiff ->
+                switchTo validatedChainDiff (AddedToCurrentChain p)
       where
-        curChain = VF.validatedFragment curChainAndLedger
-        curHead  = AF.headAnchor curChain
-        curTip   = castPoint $ AF.headPoint curChain
+        chainSelEnv = mkChainSelEnv curChainAndLedger
+        curChain    = VF.validatedFragment curChainAndLedger
+        curTip      = castPoint $ AF.headPoint curChain
+        curHead     = AF.headAnchor curChain
 
     -- | We have found a path of hashes to the new block through the
     -- VolatileDB. We try to extend this path by looking for forks that start
@@ -507,11 +543,8 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
                      -- ^ The current chain (anchored at @i@) and ledger
                   -> NonEmpty (HeaderHash blk)
                      -- ^ An uninterrupted path of hashes @(i,b]@.
-                  -> SlotNo
-                     -- ^ The current slot
                   -> m (Point blk)
-    switchToAFork succsOf curChainAndLedger hashes
-                  curSlot = do
+    switchToAFork succsOf curChainAndLedger hashes = do
         let suffixesAfterB = VolDB.candidates succsOf (realPointToPoint p)
             initCache      = Map.insert (headerHash hdr) hdr (cacheHeaders curChain)
         -- Fragments that are anchored at @i@.
@@ -519,91 +552,49 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
           case NE.nonEmpty suffixesAfterB of
             -- If there are no suffixes after @b@, just use the fragment that
             -- ends in @b@ as the sole candidate.
-            Nothing              -> (NE.:| []) <$> constructFork curSlot i hashes []
-            Just suffixesAfterB' -> mapM (constructFork curSlot i hashes . NE.toList)
+            Nothing              -> (NE.:| []) <$> constructFork i hashes []
+            Just suffixesAfterB' -> mapM (constructFork i hashes . NE.toList)
                                          suffixesAfterB'
-        let candidateSuffixes =
+        let chainDiffs =
                 -- The suffixes all fork off from the current chain within @k@
                 -- blocks, so it satisfies the precondition of
                 -- 'preferCandidate'.
-                filter (preferAnchoredCandidate cdbTopLevelConfig curChain . csSuffix)
-              . mapMaybe (intersectCandidateSuffix curChain)
+                filter
+                  (preferAnchoredCandidate cdbTopLevelConfig curChain .
+                   Diff.getSuffix)
+              . mapMaybe (Diff.diff curChain)
               $ NE.toList candidates
 
-        case NE.nonEmpty candidateSuffixes of
+        case NE.nonEmpty chainDiffs of
           -- No candidates preferred over the current chain
-          Nothing                 -> return curTip
-          Just candidateSuffixes' ->
-            chainSelection' curChainAndLedger candidateSuffixes' >>= \case
-              Nothing                -> return curTip
-              Just newChainAndLedger ->
-                trySwitchTo newChainAndLedger (SwitchedToAFork p)
+          Nothing          -> return curTip
+          Just chainDiffs' ->
+            chainSelection chainSelEnv chainDiffs' >>= \case
+              Nothing                 ->
+                return curTip
+              Just validatedChainDiff ->
+                switchTo validatedChainDiff (SwitchedToAFork p)
       where
-        curChain = VF.validatedFragment curChainAndLedger
-        curTip   = castPoint $ AF.headPoint curChain
-        i        = AF.castAnchor $ anchor curChain
+        chainSelEnv = mkChainSelEnv curChainAndLedger
+        curChain    = VF.validatedFragment curChainAndLedger
+        curTip      = castPoint $ AF.headPoint curChain
+        i           = AF.castAnchor $ anchor curChain
 
-    -- | 'chainSelection' partially applied to the parameters from the
-    -- 'ChainDbEnv'.
-    chainSelection'
-      :: ChainAndLedger blk              -- ^ The current chain and ledger
-      -> NonEmpty (CandidateSuffix blk)  -- ^ Candidates
-      -> m (Maybe (ChainAndLedger blk))
-    chainSelection' = chainSelection
-      cdbLgrDB
-      (contramap (TraceAddBlockEvent . AddBlockValidation) cdbTracer)
-      cdbTopLevelConfig
-      cdbInvalid
-      blockCache
-
-    -- | Try to swap the current (chain) fragment with the given candidate
-    -- fragment. The 'LgrDB.LedgerDB' is updated in the same transaction.
+    -- | Try to apply the given 'ChainDiff' on the current chain fragment. The
+    -- 'LgrDB.LedgerDB' is updated in the same transaction.
     --
-    -- Note that the current chain might have changed in the meantime. We only
-    -- switch when the new chain is preferred over the current chain.
+    -- Note that we /cannot/ have switched to a different current chain in the
+    -- meantime, since this function will only be called by a single
+    -- background thread.
     --
-    -- * Remember that we started with the @k@ most recent headers from the
-    --   current chain.
-    --
-    --   - In the common case, the candidate will be one block longer than
-    --     @k@, i.e. the new block that was appended to the current chain.
-    --   - In some cases, it might be a few blocks longer, because the new
-    --     block allowed us to append a few more blocks that we previously got
-    --     to the chain.
-    --   - In some cases, we have added one or more blocks to it, after
-    --     rolling a few back (less or equal to the number we added to it),
-    --     i.e. we switch to a short fork.
-    --   - In exceptional cases, it will be exactly @k@ long, when we switch
-    --     to a fork of the same length.
-    --   - In exceptional cases, it will be much longer than @k@, i.e. when we
-    --     have added a block that connects a much longer fork to the current
-    --     chain.
-    --
-    -- * The current chain might be longer than @k@ because the background
-    --   thread might not have written all blocks yet to the ImmutableDB.
-    --
-    -- If there's no concurrency, i.e., no concurrent calls to 'addBlock',
-    -- then it must be that current chain and the candidate chain intersect
-    -- within the last @k@ blocks (of the current chain).
-    --
-    -- If there is no such intersection, it must be that the current chain has
-    -- /concurrently/ changed so much that the fragment is no longer within
-    -- the last @k@ blocks of the current chain, and we are no longer
-    -- interested in this candidate anymore.
-    --
-    -- If there is an intersection, we compare the candidate fragment to the
-    -- current chain, and, if it is preferred, install it as the current
-    -- chain.
-    --
-    -- In case the current chain was changed in the background, it must either
-    -- have been done before we added our block to the VolatileDB or after. If
-    -- it was before, we know of the other block. If it was done after, they
-    -- must know of our block. In either case, somebody computed candidates
-    -- with knowledge of both blocks, so we're safe. See See "### Concurrency"
-    -- in ChainDB.md for more details.
-    trySwitchTo
+    -- It /is/ possible that the background thread copying headers older than
+    -- @k@ from the VolatileDB to the ImmutableDB has removed some headers
+    -- from the beginning of the current chain fragment, but does not affect
+    -- us, as we cannot roll back more than @k@ headers anyway.
+    switchTo
       :: HasCallStack
-      => ChainAndLedger blk  -- ^ Chain and ledger to switch to
+      => ValidatedChainDiff blk (LgrDB.LedgerDB blk)
+         -- ^ Chain and ledger to switch to
       -> (    AnchoredFragment (Header blk)
            -> AnchoredFragment (Header blk)
            -> TraceAddBlockEvent blk
@@ -611,47 +602,32 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
          -- ^ Given the previous chain and the new chain, return the event
          -- to trace when we switched to the new chain.
       -> m (Point blk)
-    trySwitchTo newChainAndLedger mkTraceEvent = do
-      (curChain, switched) <- atomically $ do
-        curChain <- readTVar cdbChain
-        case AF.intersect curChain newChain of
-          Just (curChainPrefix, _newChainPrefix, curChainSuffix, newChainSuffix)
-            | fromIntegral (AF.length curChainSuffix) <= k
-            , preferAnchoredCandidate cdbTopLevelConfig curChain newChain
-            -> do
-              -- The current chain might still contain some old headers that
-              -- have not yet been written to the ImmutableDB. We must make
-              -- sure to prepend these headers to the new chain so that we
-              -- still know what the full chain is.
-              let newChain' = fromMaybe
-                    (error "postcondition of intersect violated") $
-                    AF.join curChainPrefix newChainSuffix
-              writeTVar cdbChain newChain'
+    switchTo (ValidatedChainDiff chainDiff newLedger) mkTraceEvent = do
+        (curChain, newChain) <- atomically $ do
+          curChain <- readTVar cdbChain
+          case Diff.apply curChain chainDiff of
+            -- Impossible, as described in the docstring
+            Nothing       ->
+              error "chainDiff doesn't fit onto current chain"
+            Just newChain -> do
+              writeTVar cdbChain newChain
               LgrDB.setCurrent cdbLgrDB newLedger
 
               -- Update the readers
+              --
               -- 'Reader.switchFork' needs to know the intersection point
               -- (@ipoint@) between the old and the current chain.
-              let ipoint = castPoint $ AF.anchorPoint newChainSuffix
+              let ipoint = Diff.getAnchorPoint chainDiff
               readerHandles <- Map.elems <$> readTVar cdbReaders
               forM_ readerHandles $ \readerHandle ->
-                rhSwitchFork readerHandle ipoint newChain'
+                rhSwitchFork readerHandle ipoint newChain
 
-              return (curChain, True)
-          -- The chain must be changed in the meantime such that our chain is
-          -- no longer preferred.
-          _ -> return (curChain, False)
-      if switched then do
+              return (curChain, newChain)
+
         trace $ mkTraceEvent curChain newChain
         traceWith cdbTraceLedger newLedger
-        return $ castPoint $ AF.headPoint newChain
-      else do
-        trace $ ChainChangedInBg curChain newChain
-        return $ castPoint $ AF.headPoint curChain
-      where
-        newChain  = VF.validatedFragment newChainAndLedger
-        newLedger = VF.validatedLedger   newChainAndLedger
 
+        return $ castPoint $ AF.headPoint newChain
 
     -- | Build a cache from the headers in the fragment.
     cacheHeaders :: AnchoredFragment (Header blk)
@@ -678,8 +654,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     -- are actually on the current chain, so when possible, we reuse these
     -- headers instead of reading them from disk.
     constructFork
-      :: SlotNo                     -- ^ Current slot
-      -> Anchor blk                 -- ^ Tip of ImmutableDB @i@
+      :: Anchor blk                 -- ^ Tip of ImmutableDB @i@
       -> NonEmpty (HeaderHash blk)  -- ^ Hashes of @(i,b]@
       -> [HeaderHash blk]           -- ^ Suffix @s@, hashes of @(b,?]@
       -> StateT (Map (HeaderHash blk) (Header blk))
@@ -687,9 +662,8 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
                 (AnchoredFragment (Header blk))
          -- ^ Fork, anchored at @i@, contains (the header of) @b@ and ends
          -- with the suffix @s@.
-    constructFork curSlot i hashes suffixHashes
-      = fmap (AF.fromOldestFirst (AF.castAnchor i)
-      .       takeWhile ((<= curSlot) . blockSlot))
+    constructFork i hashes suffixHashes
+      = fmap (AF.fromOldestFirst (AF.castAnchor i))
       $ mapM (getKnownHeaderThroughCache cdbVolDB)
       $ NE.toList hashes <> suffixHashes
 
@@ -710,46 +684,53 @@ getKnownHeaderThroughCache volDB hash = gets (Map.lookup hash) >>= \case
     modify (Map.insert hash hdr)
     return hdr
 
+-- | Environment used by 'chainSelection' and related functions.
+data ChainSelEnv m blk = ChainSelEnv
+    { lgrDB             :: LgrDB m blk
+    , trace             :: TraceValidationEvent blk -> m ()
+    , cfg               :: TopLevelConfig blk
+    , varInvalid        :: StrictTVar m (WithFingerprint (InvalidBlocks blk))
+    , varFutureBlocks   :: StrictTVar m (FutureBlocks blk)
+    , futureCheck       :: CheckInFuture m blk
+    , blockCache        :: BlockCache blk
+    , curChainAndLedger :: ChainAndLedger blk
+    }
+
 -- | Perform chain selection with the given candidates. If a validated
 -- candidate was chosen to replace the current chain, return it along with the
 -- corresponding ledger.
 --
 -- PRECONDITION: all candidates must be preferred over the current chain.
 --
--- PRECONDITION: the candidate suffixes must fit on the (given) current chain.
+-- PRECONDITION: the candidate chain diffs must fit on the (given) current
+-- chain.
 chainSelection
   :: forall m blk.
      ( IOLike m
      , LedgerSupportsProtocol blk
      , HasCallStack
      )
-  => LgrDB m blk
-  -> Tracer m (TraceValidationEvent blk)
-  -> TopLevelConfig blk
-  -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
-  -> BlockCache blk
-  -> ChainAndLedger blk              -- ^ The current chain and ledger
-  -> NonEmpty (CandidateSuffix blk)  -- ^ Candidates
-  -> m (Maybe (ChainAndLedger blk))
-     -- ^ The (valid) chain and corresponding LedgerDB that was selected, or
-     -- 'Nothing' if there is no valid chain preferred over the current
-     -- chain.
-chainSelection lgrDB tracer cfg varInvalid blockCache
-               curChainAndLedger candidates =
-  assert (all (preferAnchoredCandidate cfg curChain . csSuffix) candidates) $
-  assert (all (isJust . fitCandidateSuffixOn curChain) candidates) $
-    go (sortCandidates (NE.toList candidates))
+  => ChainSelEnv m blk
+  -> NonEmpty (ChainDiff blk)
+  -> m (Maybe (ValidatedChainDiff blk (LgrDB.LedgerDB blk)))
+     -- ^ The (valid) chain diff and corresponding LedgerDB that was selected,
+     -- or 'Nothing' if there is no valid chain diff preferred over the
+     -- current chain.
+chainSelection chainSelEnv chainDiffs =
+    assert (all (preferAnchoredCandidate cfg curChain . Diff.getSuffix)
+                chainDiffs) $
+    assert (all (isJust . Diff.apply curChain)
+                chainDiffs) $
+    go (sortCandidates (NE.toList chainDiffs))
   where
+    ChainSelEnv { cfg, curChainAndLedger, varInvalid, varFutureBlocks } =
+      chainSelEnv
+
     curChain = VF.validatedFragment curChainAndLedger
 
-    sortCandidates :: [CandidateSuffix blk] -> [CandidateSuffix blk]
+    sortCandidates :: [ChainDiff blk] -> [ChainDiff blk]
     sortCandidates =
-      sortBy (flip (compareAnchoredCandidates cfg) `on` csSuffix)
-
-    validate :: ChainAndLedger  blk  -- ^ Current chain and ledger
-             -> CandidateSuffix blk  -- ^ Candidate fragment
-             -> m (Maybe (ChainAndLedger blk))
-    validate = validateCandidate lgrDB tracer cfg varInvalid blockCache
+      sortBy (flip (compareAnchoredCandidates cfg) `on` Diff.getSuffix)
 
     -- 1. Take the first candidate from the list of sorted candidates
     -- 2. Validate it
@@ -759,45 +740,56 @@ chainSelection lgrDB tracer cfg varInvalid blockCache
     --    - If it is valid, but is a prefix of the original ->
     --        add it to the list, sort it and go to 1. See the comment
     --        [Ouroboros] below.
-    go :: [CandidateSuffix blk] -> m (Maybe (ChainAndLedger blk))
-    go []                                           = return Nothing
-    go (cand@(CandidateSuffix _ candSuffix):cands') =
-      validate curChainAndLedger cand >>= \case
-        Nothing -> do
-          cands'' <- truncateInvalidCandidates cands'
-          go (sortCandidates cands'')
-        Just newChainAndLedger
-            | validatedHead == AF.headPoint candSuffix
-              -- Unchanged candidate
-            -> return $ Just newChainAndLedger
-            | otherwise
-              -- Prefix of the candidate because it contained invalid blocks.
-              -- Note that the spec says go back to candidate selection, see
-              -- [^whyGoBack], because there might still be some candidates
-              -- that contain the same invalid block. To simplify the control
-              -- flow, We do it differently: instead of recomputing the
-              -- candidates taking invalid blocks into account, we just
-              -- truncate the remaining candidates that contain invalid
-              -- blocks.
-            -> do
-              cands'' <- truncateInvalidCandidates cands'
-              go (sortCandidates (candSuffix':cands''))
-          where
-            candChain     = VF.validatedFragment newChainAndLedger
-            validatedHead = AF.headPoint candChain
-            candSuffix'   = rollbackCandidateSuffix
-              (castPoint validatedHead) cand
+    go :: [ChainDiff blk] -> m (Maybe (ValidatedChainDiff blk (LgrDB.LedgerDB blk)))
+    go []            = return Nothing
+    go (candidate:candidates0) =
+      validateCandidate chainSelEnv candidate >>= \case
+        InsufficientSuffix -> do
+          candidates1 <- truncateRejectedBlocks candidates0
+          go (sortCandidates candidates1)
+        FullyValid validatedCandidate@(ValidatedChainDiff candidate' _) ->
+          -- The entire candidate is valid
+          assert (Diff.getTip candidate == Diff.getTip candidate') $
+          return $ Just validatedCandidate
+        ValidPrefix candidate' -> do
+          -- Prefix of the candidate because it contained rejected blocks
+          -- (invalid blocks and/or blocks from the future). Note that the
+          -- spec says go back to candidate selection, see [^whyGoBack],
+          -- because there might still be some candidates that contain the
+          -- same rejected block. To simplify the control flow, we do it
+          -- differently: instead of recomputing the candidates taking
+          -- rejected blocks into account, we just truncate the remaining
+          -- candidates that contain rejected blocks.
+          candidates1 <- truncateRejectedBlocks candidates0
+          -- Only include the prefix if it is still preferred over the current
+          -- chain. When the candidate is now empty because of the truncation,
+          -- it will be dropped here, as it will not be preferred over the
+          -- current chain.
+          let candidates2
+                | preferAnchoredCandidate cfg curChain (Diff.getSuffix candidate')
+                = candidate':candidates1
+                | otherwise
+                = candidates1
+          go (sortCandidates candidates2)
 
-    -- | Truncate the given (remaining) candidates that contain invalid
+    -- | Truncate the given (remaining) candidates that contain rejected
     -- blocks. Discard them if they are truncated so much that they are no
     -- longer preferred over the current chain.
-    truncateInvalidCandidates :: [CandidateSuffix blk]
-                              -> m [CandidateSuffix blk]
-    truncateInvalidCandidates cands = do
-      isInvalid <- flip Map.member . forgetFingerprint <$>
-        atomically (readTVar varInvalid)
-      return $ filter (preferAnchoredCandidate cfg curChain . csSuffix)
-             $ mapMaybe (truncateInvalidCandidate isInvalid) cands
+    --
+    -- A block is rejected if:
+    --
+    -- * It is invalid (present in 'varInvalid', i.e., 'cdbInvalid').
+    -- * It is from the future (present in 'varFutureBlocks', i.e.,
+    --   'cdbFutureBlocks').
+    truncateRejectedBlocks :: [ChainDiff blk] -> m [ChainDiff blk]
+    truncateRejectedBlocks cands = do
+      (invalid, futureBlocks) <-
+        atomically $ (,) <$> readTVar varInvalid <*> readTVar varFutureBlocks
+      let isRejected hdr =
+               Map.member (headerHash hdr) (forgetFingerprint invalid)
+            || Map.member (headerHash hdr) futureBlocks
+      return $ filter (preferAnchoredCandidate cfg curChain . Diff.getSuffix)
+             $ mapMaybe (Diff.takeWhileOldest (not . isRejected)) cands
 
     -- [Ouroboros]
     --
@@ -816,209 +808,203 @@ chainSelection lgrDB tracer cfg varInvalid blockCache
     -- into account during chain selection: they might correspond to the good
     -- peer's valid chain.
 
--- | Validate a candidate and return a 'ChainAndLedger' for it, i.e. a
--- validated fragment along with a ledger corresponding to its tip (most
--- recent block).
+-- | Result of 'validateCandidate'.
+data ValidationResult blk =
+      -- | The entire candidate fragment was valid. No blocks were from the
+      -- future.
+      FullyValid (ValidatedChainDiff blk (LgrDB.LedgerDB blk))
+
+      -- | The candidate fragment contained invalid blocks and/or blocks from
+      -- the future that had to be truncated from the fragment.
+    | ValidPrefix (ChainDiff blk)
+
+      -- | After truncating the invalid blocks or blocks from the future from
+      -- the 'ChainDiff', it no longer contains enough blocks in its suffix to
+      -- compensate for the number of blocks it wants to roll back.
+    | InsufficientSuffix
+
+-- | Validate a candidate by applying its blocks to the ledger, and return a
+-- 'ValidatedChainDiff' for it, i.e., a chain diff along with a ledger
+-- corresponding to its tip (the most recent block).
 --
--- PRECONDITION: the candidate suffix must fit onto the given current chain.
+-- PRECONDITION: the candidate (chain diff) must fit onto the given current
+-- chain.
 --
--- If all blocks in the fragment are valid, then the fragment in the returned
--- 'ChainAndLedger' is the same as the given candidate suffix fitted on top of
--- the current chain ('fitCandidateSuffixOn').
+-- If all blocks in the fragment are valid, then the chain diff in the
+-- returned 'ValidatedChainDiff' is the same as the given candidate chain
+-- diff.
 --
 -- If a block in the fragment is invalid, then the fragment in the returned
--- 'ChainAndLedger' is a prefix of the given candidate fragment (upto the last
--- valid block), if that fragment is still preferred ('preferCandidate') over
--- the current chain, if not, 'Nothing' is returned.
+-- 'ValidatedChainDiff' is a prefix of the given candidate chain diff (upto
+-- the last valid block).
 --
--- Returns 'Nothing' if this candidate requires a rollback we cannot support.
-validateCandidate
+-- Returns 'Nothing' if after truncating the invalid blocks from the
+-- candidate, it no longer has enough new blocks to compensate for the
+-- required roll back.
+ledgerValidateCandidate
   :: forall m blk.
      ( IOLike m
      , LedgerSupportsProtocol blk
      , HasCallStack
      )
-  => LgrDB m blk
-  -> Tracer m (TraceValidationEvent blk)
-  -> TopLevelConfig blk
-  -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
-  -> BlockCache blk
-  -> ChainAndLedger  blk                   -- ^ Current chain and ledger
-  -> CandidateSuffix blk                   -- ^ Candidate fragment
-  -> m (Maybe (ChainAndLedger blk))
-validateCandidate lgrDB tracer cfg varInvalid blockCache
-                  curChainAndLedger candSuffix =
+  => ChainSelEnv m blk
+  -> ChainDiff blk
+  -> m (Maybe (ValidatedChainDiff blk (LgrDB.LedgerDB blk)))
+ledgerValidateCandidate chainSelEnv chainDiff@(ChainDiff rollback suffix) =
     LgrDB.validate lgrDB curLedger blockCache rollback newBlocks >>= \case
-      LgrDB.ValidateExceededRollBack (LgrDB.ExceededRollback{rollbackMaximum}) -> do
-        trace $ CandidateExceedsRollback
-          rollbackMaximum
-          (csRollback candSuffix)
-          (csSuffix   candSuffix)
-        return Nothing
+      LgrDB.ValidateExceededRollBack {} ->
+        -- Impossible: we asked the LgrDB to roll back past the immutable tip,
+        -- which is impossible, since the candidates we construct must connect
+        -- to the immutable tip.
+        error "found candidate requiring rolling back past the immutable tip"
+
       LgrDB.ValidateLedgerError (LgrDB.AnnLedgerError ledger' pt e) -> do
-        let lastValid  = castPoint $ LgrDB.currentPoint ledger'
-            candidate' = fromMaybe
-              (error "cannot rollback to point on fragment") $
-              AF.rollback lastValid candidate
-        addInvalidBlocks (mkNewInvalidBlocks e pt)
+        let lastValid = LgrDB.currentPoint ledger'
         trace (InvalidBlock e pt)
+        addInvalidBlock e pt
+        case Diff.truncate lastValid chainDiff of
+          -- After truncating the invalid blocks on the fragment, it no longer
+          -- contains enough blocks to compensate for the rollback.
+          Nothing -> return Nothing
 
-        -- The candidate is now a prefix of the original candidate, and might be
-        -- shorter than (or as long as) the current chain. We must check again
-        -- whether it is preferred over the current chain.
-        if preferAnchoredCandidate cfg curChain candidate'
-          then do
-            trace (ValidCandidate (csSuffix candSuffix))
-            return $ Just $ VF.new candidate' ledger'
-          else do
-            trace (InvalidCandidate (csSuffix candSuffix))
-            return Nothing
+          Just chainDiff' -> do
+            trace (ValidCandidate (Diff.getSuffix chainDiff'))
+            return $ Just $ ValidatedDiff.new chainDiff' ledger'
+
       LgrDB.ValidateSuccessful ledger' -> do
-        trace (ValidCandidate (csSuffix candSuffix))
-        return $ Just $ VF.new candidate ledger'
+        trace (ValidCandidate suffix)
+        return $ Just $ ValidatedDiff.new chainDiff ledger'
   where
-    curChain  = VF.validatedFragment curChainAndLedger
-    curLedger = VF.validatedLedger   curChainAndLedger
-    trace     = traceWith tracer
+    ChainSelEnv { lgrDB, trace, curChainAndLedger, blockCache, varInvalid } =
+      chainSelEnv
 
-    CandidateSuffix rollback suffix = candSuffix
+    curLedger :: LgrDB.LedgerDB blk
+    curLedger = VF.validatedLedger curChainAndLedger
+
+    newBlocks :: [Header blk]
     newBlocks = AF.toOldestFirst suffix
-    candidate = fromMaybe
-      (error "candidate suffix doesn't fit on the current chain") $
-      fitCandidateSuffixOn curChain candSuffix
 
-    -- | Add the given map of invalid points to 'cdbInvalid' and change its
-    -- fingerprint.
-    addInvalidBlocks :: InvalidBlocks blk -> m ()
-    addInvalidBlocks invalidBlocksInCand = atomically $
+    -- | Record the invalid block in 'cdbInvalid' and change its fingerprint.
+    addInvalidBlock :: ExtValidationError blk -> RealPoint blk -> m ()
+    addInvalidBlock e (RealPoint slot hash) = atomically $
       modifyTVar varInvalid $ \(WithFingerprint invalid fp) ->
-        WithFingerprint (Map.union invalid invalidBlocksInCand) (succ fp)
+        WithFingerprint
+          (Map.insert hash (InvalidBlockInfo (ValidationError e) slot) invalid)
+          (succ fp)
 
-    -- | Make an 'InvalidBlocks' for all the points after the given point
-    -- (inclusive) in the candidate fragment that can be added to
-    -- 'cdbInvalid'.
-    --
-    -- PRECONDITON: the given point is on the candidate fragment.
-    mkNewInvalidBlocks :: HasCallStack
-                       => ExtValidationError blk
-                       -> RealPoint blk
-                       -> InvalidBlocks blk
-    mkNewInvalidBlocks e pt@(RealPoint slot hash) =
-      case AF.splitAfterPoint suffix (realPointToPoint pt) of
-        Nothing           -> error "point not on fragment"
-        Just (_, afterPt) ->
-          Map.insert hash (InvalidBlockInfo (ValidationError e) slot) $
-          Map.fromList
-            [ (blockHash hdr, InvalidBlockInfo reason (blockSlot hdr))
-            | hdr <- AF.toOldestFirst afterPt
-            , let reason = InChainAfterInvalidBlock pt e
-            ]
+-- | Truncate any future headers from the candidate 'ValidatedChainDiff'.
+--
+-- Future headers that don't exceed the clock skew
+-- ('inFutureExceedsClockSkew') are added to 'cdbFutureBlocks'.
+--
+-- Future headers that exceed the clock skew are added to 'cdbInvalid' with
+-- 'InFutureExceedsClockSkew' as the reason.
+--
+-- When truncation happened, 'Left' is returned, otherwise 'Right'. If too
+-- many blocks have been truncated such that the invariant of 'ChainDiff' no
+-- longer holds, 'Nothing' is returned.
+futureCheckCandidate
+  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
+  => ChainSelEnv m blk
+  -> ValidatedChainDiff blk (LgrDB.LedgerDB blk)
+  -> m (Maybe (Either (ChainDiff blk)
+                      (ValidatedChainDiff blk (LgrDB.LedgerDB blk))))
+futureCheckCandidate chainSelEnv validatedChainDiff =
+    checkInFuture futureCheck validatedSuffix >>= \case
+
+      (suffix', []) ->
+        -- If no headers are in the future, then the fragment must be untouched
+        assert (AF.headPoint suffix == AF.headPoint suffix') $
+        return $ Just $ Right validatedChainDiff
+
+      (suffix', inFuture) -> do
+        let (exceedClockSkew, inNearFuture) =
+              partition InFuture.inFutureExceedsClockSkew inFuture
+        -- Record future blocks
+        unless (null inNearFuture) $ do
+          let futureHeaders = InFuture.inFutureHeader <$> inNearFuture
+              futureBlocks  = Map.fromList
+                [ (headerHash hdr, hdr) | hdr <- futureHeaders ]
+          atomically $ modifyTVar varFutureBlocks $ flip Map.union futureBlocks
+          -- Trace the original @suffix@, as it contains the headers from the
+          -- future
+          trace $ CandidateContainsFutureBlocks suffix futureHeaders
+
+        -- Record any blocks exceeding the clock skew as invalid
+        unless (null exceedClockSkew) $ do
+          let invalidHeaders = InFuture.inFutureHeader <$> exceedClockSkew
+              invalidBlocks  = Map.fromList
+                [ (headerHash hdr, info)
+                | hdr <- invalidHeaders
+                , let reason = InFutureExceedsClockSkew (headerRealPoint hdr)
+                      info   = InvalidBlockInfo reason (blockSlot hdr)
+                ]
+          atomically $ modifyTVar varInvalid $ \(WithFingerprint invalid fp) ->
+            WithFingerprint (Map.union invalid invalidBlocks) (succ fp)
+          trace $
+            CandidateContainsFutureBlocksExceedingClockSkew
+              -- Trace the original @suffix@, as it contains the headers
+              -- from the future
+              suffix
+              invalidHeaders
+
+        -- Truncate the original 'ChainDiff' to match the truncated
+        -- 'AnchoredFragment'.
+        return $
+          Left <$> Diff.truncate (castPoint (AF.headPoint suffix')) chainDiff
+  where
+    ChainSelEnv { trace, varInvalid, varFutureBlocks, futureCheck } =
+      chainSelEnv
+
+    ValidatedChainDiff chainDiff@(ChainDiff _ suffix) _ = validatedChainDiff
+
+    validatedSuffix :: ValidatedFragment blk (LedgerState blk)
+    validatedSuffix =
+      ledgerState . LgrDB.ledgerDbCurrent <$>
+      ValidatedDiff.toValidatedFragment validatedChainDiff
+
+-- | Validate a candidate chain using 'ledgerValidate' and 'futureCheck'.
+validateCandidate
+  :: ( IOLike m
+     , LedgerSupportsProtocol blk
+     , HasCallStack
+     )
+  => ChainSelEnv m blk
+  -> ChainDiff blk
+  -> m (ValidationResult blk)
+validateCandidate chainSelEnv chainDiff =
+    ledgerValidateCandidate chainSelEnv chainDiff >>= \case
+      Nothing                 -> return InsufficientSuffix
+      Just validatedChainDiff ->
+        futureCheckCandidate chainSelEnv validatedChainDiff >>= \case
+          Nothing
+              -> return InsufficientSuffix
+          Just (Left chainDiff')
+              -> return $ ValidPrefix chainDiff'
+          Just (Right validatedChainDiff')
+              | AF.length (Diff.getSuffix chainDiff) ==
+                AF.length (Diff.getSuffix chainDiff')
+                -- No truncation
+              -> return $ FullyValid validatedChainDiff'
+              | otherwise
+                -- In case of invalid blocks but no blocks from the future, we
+                -- throw away the ledger corresponding to the truncated
+                -- fragment and will have to validate it again, even when it's
+                -- the sole candidate.
+              -> return $ ValidPrefix chainDiff'
+            where
+              chainDiff' = ValidatedDiff.getChainDiff validatedChainDiff'
 
 {-------------------------------------------------------------------------------
-  Auxiliary data types for 'cdbAddBlock'
+  'ChainAndLedger'
 -------------------------------------------------------------------------------}
 
--- | Instantiate 'ValidatedFragment' in the way that chain selection requires
+-- | Instantiate 'ValidatedFragment' in the way that chain selection requires.
 type ChainAndLedger blk = ValidatedFragment blk (LgrDB.LedgerDB blk)
-
--- | Auxiliary data type for 'cdbAddBlock' for a candidate suffix.
---
--- INVARIANT: the length of the suffix must always be >= the rollback
-data CandidateSuffix blk = CandidateSuffix
-  { csRollback :: !Word64
-    -- ^ The number of headers to roll back the current chain
-  , csSuffix   :: !(AnchoredFragment (Header blk))
-    -- ^ The new headers to add after rolling back the current chain.
-  }
-
-deriving instance (HasHeader blk, Eq (Header blk))
-               => Eq   (CandidateSuffix blk)
-deriving instance (HasHeader blk, Show (Header blk))
-               => Show (CandidateSuffix blk)
-
-mkCandidateSuffix :: HasHeader (Header blk)
-                  => Word64
-                  -> AnchoredFragment (Header blk)
-                  -> CandidateSuffix blk
-mkCandidateSuffix rollback suffix =
-    assert (fromIntegral (AF.length suffix) >= rollback) $
-    CandidateSuffix rollback suffix
-
--- | Fit the candidate suffix on a chain after first rolling back the given
--- chain.
---
--- If the given chain is the current chain on which the candidate is based, a
--- 'Just' will be returned. The returned candidate fragment will have the same
--- anchor point as the given chain.
-fitCandidateSuffixOn :: HasHeader (Header blk)
-                     => AnchoredFragment (Header blk)
-                     -> CandidateSuffix  blk
-                     -> Maybe (AnchoredFragment (Header blk))
-fitCandidateSuffixOn curChain (CandidateSuffix rollback suffix) =
-    AF.join (AF.dropNewest (fromIntegral rollback) curChain) suffix
-
--- | Roll back the candidate suffix to the given point.
---
--- PRECONDITION: the given point must correspond to one of the new headers of
--- the candidate suffix ('csSuffix').
---
--- PRECONDITION: the length of the suffix rolled back to the given point must
--- be >= the rollback ('csRollback').
-rollbackCandidateSuffix :: (HasHeader (Header blk), HasCallStack)
-                        => Point           blk
-                        -> CandidateSuffix blk
-                        -> CandidateSuffix blk
-rollbackCandidateSuffix pt (CandidateSuffix rollback suffix)
-    | Just suffix' <- AF.rollback (castPoint pt) suffix
-    = mkCandidateSuffix rollback suffix'
-    | otherwise
-    = error "rollback point not on the candidate suffix"
-
--- | Calculate the candidate suffix of a fork of the current chain.
---
--- If the candidate fragment is shorter than the current chain, 'Nothing' is
--- returned (this would violate the invariant of 'CandidateSuffix').
---
--- PRECONDITION: the candidate fragment must intersect with the current chain
--- fragment.
-intersectCandidateSuffix
-  :: (HasHeader (Header blk), HasCallStack)
-  => AnchoredFragment (Header blk)  -- ^ Current chain
-  -> AnchoredFragment (Header blk)  -- ^ Candidate chain
-  -> Maybe (CandidateSuffix   blk)  -- ^ Candidate suffix
-intersectCandidateSuffix curChain candChain =
-  case AF.intersect curChain candChain of
-    Just (_curChainPrefix, _candPrefix, curChainSuffix, candSuffix)
-      -> let rollback = AF.length curChainSuffix
-         in if AF.length candSuffix >= rollback
-            then Just $ mkCandidateSuffix (fromIntegral rollback) candSuffix
-            else Nothing
-    -- Precondition violated.
-    _ -> error "candidate fragment doesn't intersect with current chain"
-
--- | If any invalid blocks occur in the candidate suffix, truncate it so that
--- it only contains valid blocks.
---
--- If the suffix becomes too short, return 'Nothing'.
-truncateInvalidCandidate
-  :: HasHeader (Header blk)
-  => (HeaderHash blk -> Bool)  -- ^ Check whether a block is invalid
-  -> CandidateSuffix blk
-  -> Maybe (CandidateSuffix blk)
-truncateInvalidCandidate isInvalid (CandidateSuffix rollback suffix)
-    | truncatedLength >= rollback
-    , truncatedLength > 0 -- No point in having an empty suffix
-    = Just $ mkCandidateSuffix rollback truncated
-    | otherwise
-    = Nothing
-  where
-    truncatedLength = fromIntegral (AF.length truncated)
-    truncated = AF.takeWhileOldest (not . isInvalid . blockHash) suffix
 
 {-------------------------------------------------------------------------------
   Helpers
 -------------------------------------------------------------------------------}
-
 
 -- | Wrap a @getter@ function so that it returns 'Nothing' for invalid blocks.
 ignoreInvalid

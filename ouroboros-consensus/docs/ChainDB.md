@@ -207,8 +207,8 @@ The initialization of the chain DB proceeds as follows.
     validate each candidate chain fragment, starting with `L` each
     time[^ledgerState]. As soon as we find a candidate that is valid, we adopt
     it as our current chain. If we find a candidate that is _invalid_, we mark
-    the invalid block and all its successors as invalid[^invalidSuccessors],
-    and go back[^whyGoBack] to step (2).
+    the invalid block[^invalidSuccessors], and go back[^whyGoBack] to step
+    (2).
 
 [^ledgerState]: We make no attempt to share ledger states between candidates,
 even if they share a common prefix, trading runtime performance for lower memory
@@ -218,9 +218,19 @@ pressure.
 invalid because (1) those blocks may also exist in other candidates and (2) we
 do not know how the valid prefixes of those candidates should now be ordered.
 
-[^invalidSuccessors]: The chain sync client also depends on this information to
-terminate connections to nodes that produce invalid blocks, so it is important
-to mark _all_ invalid blocks.
+[^invalidSuccessors]: We do not need to also mark the successors of the
+invalid block as invalid. The chain sync client will use this information to
+terminate connections to nodes with a chain that contains an invalid block.
+Say the node has the following chain:
+```
+A -> I -> C
+```
+where `I` is an invalid block. It is impossible for there to be a candidate
+chain containing `C`, but not `I`, which means that it is not necessary to
+also mark `C` (and any other successors) as invalid. Proof: every chain sync
+candidate fragment is anchored at a point on _our_ chain, and since `I` is
+invalid, we will never adopt `I`. So if a candidate fragment contains `C` and
+is anchored on our chain, it must also contain `I`.
 
 [^selectThenValidate]: Technically speaking we should _first_ validate all
 chains, and then apply selection only to the valid chains. We run chain selection

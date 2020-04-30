@@ -24,7 +24,6 @@ import           Data.Bifunctor (first)
 import qualified Data.ByteString as BS
 import           Data.Foldable (for_)
 import           Data.List (sort)
-import           Data.Proxy (Proxy (..))
 import qualified Data.Text as Text
 import           Data.Time (UTCTime)
 import           Data.Typeable (Typeable)
@@ -48,10 +47,9 @@ import           Cardano.Crypto (Hash, RequiresNetworkMagic (..),
                      decodeAbstractHash)
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import qualified Ouroboros.Consensus.Node as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
-import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike (atomically)
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -62,7 +60,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 
-import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import           Ouroboros.Consensus.Byron.Node
 
@@ -167,12 +164,7 @@ validateChainDb
   -> IO ()
 validateChainDb dbDir genesisConfig onlyImmDB verbose =
     withRegistry $ \registry -> do
-      btime <- simpleBlockchainTime
-        registry
-        nullTracer
-        (nodeStartTime (Proxy @ByronBlock) cfg)
-        slotLength
-      let chainDbArgs = mkChainDbArgs registry btime
+      let chainDbArgs = mkChainDbArgs registry InFuture.dontCheck
           (immDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
       if onlyImmDB then
         ImmDB.withImmDB immDbArgs $ \immDB -> do
@@ -183,8 +175,6 @@ validateChainDb dbDir genesisConfig onlyImmDB verbose =
           chainDbTipPoint <- atomically $ ChainDB.getTipPoint chainDB
           putStrLn $ "DB tip: " ++ condense chainDbTipPoint
   where
-    -- This converts the old chain, which has a 20s slot length.
-    slotLength = slotLengthFromSec 20
     ProtocolInfo { pInfoInitLedger = initLedger, pInfoConfig = cfg } =
       protocolInfoByron
         genesisConfig

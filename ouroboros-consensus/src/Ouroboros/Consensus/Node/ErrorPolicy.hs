@@ -107,6 +107,9 @@ consensusErrorPolicy pb = ErrorPolicies {
               InvalidIntersection{} -> Just theyBuggyOrEvil
               NoMoreIntersection{}  -> Just distantPeer
               DoesntFit{}           -> Just theyBuggyOrEvil
+              -- A block so far in the future that it exceeds the max clock
+              -- skew is also considered to be invalid
+              -- ('InFutureExceedsClockSkew' constructor).
               InvalidBlock{}        -> Just theyBuggyOrEvil
 
           -- Dispatch on nested exception

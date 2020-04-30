@@ -5,8 +5,6 @@
 module Ouroboros.Consensus.BlockchainTime.API (
     BlockchainTime(..)
   , onKnownSlotChange
-    -- * Testing
-  , settableBlockchainTime
   ) where
 
 import           GHC.Stack
@@ -54,18 +52,3 @@ onKnownSlotChange :: (IOLike m, HasCallStack)
 onKnownSlotChange registry BlockchainTime{getCurrentSlot} label =
       fmap cancelThread
     . onEachChange registry label id Nothing getCurrentSlot
-
-{-------------------------------------------------------------------------------
-  Test infrastructure
-
-  TODO: these will go after
-  <https://github.com/input-output-hk/ouroboros-network/pull/1989>
--------------------------------------------------------------------------------}
-
--- | The current slot can be changed by modifying the given 'StrictTVar'.
---
--- 'onSlotChange_' is not implemented and will return an 'error'.
-settableBlockchainTime :: MonadSTM m => StrictTVar m SlotNo -> BlockchainTime m
-settableBlockchainTime varCurSlot = BlockchainTime {
-      getCurrentSlot = readTVar varCurSlot
-    }
