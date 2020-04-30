@@ -34,6 +34,7 @@ HADDOCK_OPTS=(
     --builddir "${BUILD_DIR}"
     --disable-optimization
     --haddock-all
+    --haddock-internal
     --haddock-html
     --haddock-quickjump
     --haddock-hyperlink-source
@@ -47,6 +48,10 @@ if [ ${REGENERATE} == "true" ]; then
   cabal haddock "${HADDOCK_OPTS[@]}" all
 elif [ ${REGENERATE} != "false" ]; then
   cabal haddock "${HADDOCK_OPTS[@]}" ${REGENERATE}
+fi
+
+if [[ !( -d ${OUTPUT_DIR} ) ]]; then
+  mkdir -p ${OUTPUT_DIR}
 fi
 
 # copy the new docs
