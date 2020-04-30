@@ -45,7 +45,6 @@ import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.State
@@ -69,6 +68,7 @@ import qualified Shelley.Spec.Ledger.UTxO as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
+import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Protocol
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (KES)
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
@@ -360,9 +360,6 @@ protocolInfoShelley genesis protVer mbCredentials =
 {-------------------------------------------------------------------------------
   RunNode instance
 -------------------------------------------------------------------------------}
-
-instance HasNetworkProtocolVersion (ShelleyBlock c) where
-  -- Use defaults
 
 instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeForgeBlock = forgeShelleyBlock
