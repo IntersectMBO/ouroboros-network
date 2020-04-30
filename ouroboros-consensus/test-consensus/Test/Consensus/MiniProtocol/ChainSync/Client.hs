@@ -81,8 +81,6 @@ tests = testGroup "ChainSyncClient"
     [ testProperty "chainSync"                 $ prop_chainSync
     , testProperty "joinUpdates/spreadUpdates" $ prop_joinUpdates_spreadUpdates k
     , testProperty "genChainUpdates"           $ prop_genChainUpdates           k updatesToGenerate
-    , testProperty "genUpdateSchedule slots do not extend in the future" $
-      prop_genUpdateSchedule_notInFuture k
     ]
   where
     k = SecurityParam 3
@@ -132,7 +130,7 @@ prop_chainSync ChainSyncClientSetup {..} =
     k = maxRollbacks securityParam
 
     (clientChain, serverChain, synchedFragment, mbEx, events) = runSimOrThrow $
-      runChainSync securityParam maxClockSkew clientUpdates serverUpdates
+      runChainSync securityParam clientUpdates serverUpdates
                    startSlot
 
     clientFragment = AF.anchorNewest k $ Chain.toAnchoredFragment clientChain
@@ -250,7 +248,6 @@ type TraceEvent = (SlotNo, Either
 runChainSync
     :: forall m. IOLike m
     => SecurityParam
-    -> ClockSkew
     -> ClientUpdates
     -> ServerUpdates
     -> SlotNo  -- ^ Start chain syncing at this slot.
@@ -260,7 +257,7 @@ runChainSync
        -- ^ (The final client chain, the final server chain, the synced
        --    candidate fragment, exception thrown by the chain sync client,
        --    the traced ChainSync and protocol events)
-runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
+runChainSync securityParam (ClientUpdates clientUpdates)
     (ServerUpdates serverUpdates) startSyncingAt = withRegistry $ \registry -> do
 
     testBtime <- newTestBlockchainTime registry numSlots slotLength
@@ -301,8 +298,6 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                    (pipelineDecisionLowHighMark 10 20)
                    chainSyncTracer
                    (nodeCfg clientId)
-                   (testBlockchainTime testBtime)
-                   maxClockSkew
                    chainDbView
 
     -- Set up the server
@@ -478,7 +473,6 @@ updateClientState cfg chain ledgerState chainUpdates =
 -- | Bundle dependent arguments for test generation
 data ChainSyncClientSetup = ChainSyncClientSetup
   { securityParam :: SecurityParam
-  , maxClockSkew  :: ClockSkew
   , clientUpdates :: ClientUpdates
     -- ^ Depends on 'securityParam' and 'clientUpdates'
   , serverUpdates :: ServerUpdates
@@ -490,12 +484,11 @@ data ChainSyncClientSetup = ChainSyncClientSetup
 instance Arbitrary ChainSyncClientSetup where
   arbitrary = do
     securityParam  <- SecurityParam <$> choose (2, 5)
-    maxClockSkew   <- arbitrary
     clientUpdates0 <- evalStateT
-      (ClientUpdates <$> genUpdateSchedule securityParam maxClockSkew)
+      (ClientUpdates <$> genUpdateSchedule securityParam)
       emptyUpdateState
     serverUpdates  <- evalStateT
-      (ServerUpdates <$> genUpdateSchedule securityParam maxClockSkew)
+      (ServerUpdates <$> genUpdateSchedule securityParam)
       emptyUpdateState
     let clientUpdates = removeLateClientUpdates serverUpdates clientUpdates0
         maxStartSlot  = unSlotNo $ maximum
@@ -539,7 +532,6 @@ instance Show ChainSyncClientSetup where
   show ChainSyncClientSetup {..} = unlines
       [ "ChainSyncClientSetup:"
       , "securityParam: " <> show (maxRollbacks securityParam)
-      , "maxClockSkew: "  <> show (unClockSkew maxClockSkew)
       , "clientUpdates:"
       , ppUpdates (getClientUpdates clientUpdates) <> "--"
       , "serverUpdates:"
@@ -573,14 +565,14 @@ removeLateClientUpdates (ServerUpdates sus)
 -------------------------------------------------------------------------------}
 
 genUpdateSchedule
-  :: SecurityParam -> ClockSkew
+  :: SecurityParam
   -> StateT ChainUpdateState Gen (Schedule [ChainUpdate])
-genUpdateSchedule securityParam maxClockSkew = do
+genUpdateSchedule securityParam = do
     cus  <- get
     cus' <- lift $ genChainUpdates securityParam 10 cus
     put cus'
     let chainUpdates = getChainUpdates cus'
-    lift $ spreadUpdates maxClockSkew chainUpdates
+    lift $ spreadUpdates chainUpdates
 
 -- | Repeatedly remove the last entry (highest SlotNo)
 shrinkUpdateSchedule :: Schedule [ChainUpdate]
@@ -600,18 +592,16 @@ shrinkUpdateSchedule = unfoldr (fmap (\(_, m) -> (m, m)) . Map.maxView)
 --
 -- Each roll back of @x@ blocks will be immediately followed (in the same
 -- slot) by adding @y@ blocks, where @y >= x@.
-spreadUpdates :: ClockSkew
-              -> [ChainUpdate]
+spreadUpdates :: [ChainUpdate]
               -> Gen (Schedule [ChainUpdate])
-spreadUpdates (ClockSkew maxClockSkew) = go Map.empty 1
+spreadUpdates = go Map.empty 1
   where
     go !schedule slot updates
       | null updates = return schedule
       | otherwise    = do
         nbUpdates <- frequency [ (2, return 0), (1, choose (1, 5)) ]
-        let maxSlot = SlotNo (unSlotNo slot + maxClockSkew)
-            (updates', tooFarInTheFuture) =
-              span ((<= maxSlot) . chainUpdateHighestSlotNo) updates
+        let (updates', tooFarInTheFuture) =
+              span ((<= slot) . chainUpdateHighestSlotNo) updates
             (this, rest) = splitAt nbUpdates updates'
         go (Map.insert slot this schedule) (succ slot) (rest <> tooFarInTheFuture)
 
@@ -619,31 +609,16 @@ spreadUpdates (ClockSkew maxClockSkew) = go Map.empty 1
 joinUpdates :: Schedule [ChainUpdate] -> [ChainUpdate]
 joinUpdates = concatMap snd . Map.toAscList
 
-prop_joinUpdates_spreadUpdates :: SecurityParam -> ClockSkew -> Property
-prop_joinUpdates_spreadUpdates securityParam maxClockSkew =
+prop_joinUpdates_spreadUpdates :: SecurityParam -> Property
+prop_joinUpdates_spreadUpdates securityParam =
     forAll genUpdatesAndSpread $ \(updates, spread) ->
       joinUpdates spread === updates
   where
     genUpdatesAndSpread = do
       updates <- getChainUpdates <$>
                  genChainUpdates securityParam updatesToGenerate emptyUpdateState
-      spread  <- spreadUpdates maxClockSkew updates
+      spread  <- spreadUpdates updates
       return (updates, spread)
-
--- | Test that we don't generate updates that add blocks with slots that are
--- too far in the future.
-prop_genUpdateSchedule_notInFuture :: SecurityParam -> ClockSkew -> Property
-prop_genUpdateSchedule_notInFuture securityParam maxClockSkew =
-    forAll genUpdateSchedule' $ \updates -> conjoin
-      [ unSlotNo (chainUpdateHighestSlotNo chainUpdate) <= unSlotNo slot + maxSkew
-      | (slot, chainUpdates) <- Map.toAscList updates
-      , chainUpdate          <- chainUpdates
-      ]
-  where
-    genUpdateSchedule' = evalStateT
-      (genUpdateSchedule securityParam maxClockSkew)
-      emptyUpdateState
-    maxSkew = unClockSkew maxClockSkew
 
 {-------------------------------------------------------------------------------
   Generating ChainUpdates

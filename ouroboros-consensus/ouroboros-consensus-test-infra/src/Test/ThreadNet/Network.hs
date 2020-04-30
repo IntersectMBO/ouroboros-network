@@ -76,8 +76,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.Server as BFServer
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
-                     (ClockSkew (..))
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.LedgerDerivedInfo
@@ -751,7 +749,6 @@ runThreadNetwork ThreadNetworkArgs
                 -- ChainDB
                 instrumentationTracers <> nullDebugTracers
             , registry
-            , maxClockSkew           = ClockSkew 1
             , cfg                    = pInfoConfig
             , initState              = pInfoInitState
             , btime                  = testBlockchainTime btime

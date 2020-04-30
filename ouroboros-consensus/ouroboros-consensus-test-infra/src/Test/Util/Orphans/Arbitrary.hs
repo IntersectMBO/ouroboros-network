@@ -20,8 +20,8 @@ import           Test.QuickCheck hiding (Fixed (..))
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
-                     (ClockSkew (..))
+import           Ouroboros.Consensus.Fragment.InFuture (ClockSkew)
+import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util.Random (Seed (..))
 
@@ -121,8 +121,18 @@ instance Arbitrary ChunkSlot where
   shrink    = genericShrink
 
 instance Arbitrary ClockSkew where
-  arbitrary = ClockSkew <$> choose (0, 5)
-  shrink (ClockSkew n) = [ ClockSkew n' | n' <- shrink n ]
+  arbitrary = InFuture.clockSkewInSeconds <$> choose (0, 5)
+  shrink skew = concat [
+     -- Shrink to some simple values, including 0
+     -- (it would be useful to know if a test fails only when having non-zero
+     -- clock skew)
+       [ skew0 | skew0 < skew ]
+     , [ skew1 | skew1 < skew ]
+     ]
+    where
+      skew0, skew1 :: ClockSkew
+      skew0 = InFuture.clockSkewInSeconds 0
+      skew1 = InFuture.clockSkewInSeconds 1
 
 {-------------------------------------------------------------------------------
   Crypto

@@ -58,7 +58,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Node.Tracers
@@ -161,7 +160,6 @@ data MempoolCapacityBytesOverride
 data NodeArgs m remotePeer localPeer blk = NodeArgs {
       tracers                :: Tracers m remotePeer localPeer blk
     , registry               :: ResourceRegistry m
-    , maxClockSkew           :: ClockSkew
     , cfg                    :: TopLevelConfig blk
     , initState              :: NodeState blk
     , btime                  :: BlockchainTime m

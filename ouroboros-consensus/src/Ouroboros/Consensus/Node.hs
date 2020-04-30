@@ -54,8 +54,6 @@ import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
-                     (ClockSkew (..))
 import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.DbLock
@@ -374,7 +372,6 @@ mkNodeArgs
 mkNodeArgs registry cfg initState tracers btime chainDB = NodeArgs
     { tracers
     , registry
-    , maxClockSkew           = ClockSkew 1
     , cfg
     , initState
     , btime

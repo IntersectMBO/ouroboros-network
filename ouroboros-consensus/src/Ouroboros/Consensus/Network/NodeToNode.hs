@@ -124,7 +124,7 @@ mkHandlers
   -> NodeKernel m remotePeer localPeer blk
   -> Handlers   m remotePeer           blk
 mkHandlers
-      NodeArgs {btime, maxClockSkew, miniProtocolParameters}
+      NodeArgs {miniProtocolParameters}
       NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers} =
     Handlers {
         hChainSyncClient =
@@ -134,8 +134,6 @@ mkHandlers
               (chainSyncPipeliningHighMark miniProtocolParameters))
             (Node.chainSyncClientTracer tracers)
             getTopLevelConfig
-            btime
-            maxClockSkew
             (defaultChainDbView getChainDB)
       , hChainSyncServer =
           chainSyncHeadersServer
