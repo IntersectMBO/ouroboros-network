@@ -73,7 +73,7 @@ prop_simple_pbft_convergence :: SecurityParam
                              -> TestConfig
                              -> Property
 prop_simple_pbft_convergence
-  k testConfig@TestConfig{numCoreNodes, numSlots, nodeJoinPlan} =
+  k testConfig@TestConfig{numCoreNodes, numSlots, nodeJoinPlan, slotLength} =
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
     prop_asSimulated .&&.
     prop_general PropGeneralArgs
@@ -103,7 +103,7 @@ prop_simple_pbft_convergence
             , nodeInfo    = plainTestNodeInitialization .
                             protocolInfoMockPBFT
                               params
-                              (defaultSimpleBlockConfig k pbftSlotLength)
+                              (defaultSimpleBlockConfig k slotLength)
             , rekeying    = Nothing
             , txGenExtra  = ()
             }
@@ -149,9 +149,6 @@ prop_simple_pbft_convergence
             foldChain snoc id nodeOutputFinalChain [] :: [SlotNo]
           where
             snoc acc blk = acc . (blockSlot blk :)
-
-pbftSlotLength :: SlotLength
-pbftSlotLength = slotLengthFromSec 20
 
 type Blk = SimpleBlock SimpleMockCrypto
              (SimplePBftExt SimpleMockCrypto PBftMockCrypto)

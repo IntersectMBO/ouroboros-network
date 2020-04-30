@@ -65,7 +65,9 @@ instance Arbitrary SlotLength where
 
   -- Try to shrink the slot length to just "1", for tests where the slot length
   -- really doesn't matter very much
-  shrink (SlotLength n) = if n /= 1 then [SlotLength 1] else []
+  shrink slotLen = if slotLen /= oneSec then [oneSec] else []
+    where
+      oneSec = slotLengthFromSec 1
 
 deriving via UTCTime         instance Arbitrary SystemStart
 deriving via Positive Word64 instance Arbitrary SlotNo

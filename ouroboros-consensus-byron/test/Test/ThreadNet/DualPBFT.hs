@@ -196,9 +196,10 @@ setupExpectedRejections setup@SetupDualPBft{..} rejection =
 instance Arbitrary SetupDualPBft where
   arbitrary = do
       numSlots <- arbitrary
-      genesis  <- genSpecGenesis numSlots
+      slotLen  <- arbitrary
+      genesis  <- genSpecGenesis slotLen numSlots
       let params = realPBftParams genesis
-      config <- genDualPBFTTestConfig numSlots params
+      config <- genDualPBFTTestConfig slotLen numSlots params
       return SetupDualPBft {
           setupGenesis = adjustGenesis params genesis
         , setupConfig  = config
@@ -247,8 +248,8 @@ instance Arbitrary SetupDualPBft where
 -- trace (independent of its length) contains multiple epochs, which is why
 -- this wants to know the chain length; we don't know that a-priority, but we
 -- do know the number of slots, and will use that as a stand-in.
-genSpecGenesis :: NumSlots -> Gen ByronSpecGenesis
-genSpecGenesis (NumSlots numSlots) = fmap fromEnv . hedgehog $
+genSpecGenesis :: SlotLength -> NumSlots -> Gen ByronSpecGenesis
+genSpecGenesis slotLen (NumSlots numSlots) = fmap fromEnv . hedgehog $
     -- Convert Hedgehog generator to QuickCheck one
     -- Unfortunately, this does mean we lose any shrinking.
     Spec.QC.envGen @Spec.CHAIN numSlots
@@ -260,7 +261,7 @@ genSpecGenesis (NumSlots numSlots) = fmap fromEnv . hedgehog $
     -- transactions, and produce empty blocks only).
     fromEnv :: Spec.Environment Spec.CHAIN -> ByronSpecGenesis
     fromEnv = Genesis.modUtxoValues (* 10000)
-            . Genesis.fromChainEnv
+            . Genesis.fromChainEnv (toByronSlotLength slotLen)
 
 -- | Generate test config
 --
@@ -269,17 +270,17 @@ genSpecGenesis (NumSlots numSlots) = fmap fromEnv . hedgehog $
 -- TODO: Once we produce all kinds of transactions, we will need to rethink
 -- rekeys/restarts (but might not be trivial, as we do not generate the blocks
 -- upfront..).
-genDualPBFTTestConfig :: NumSlots
+genDualPBFTTestConfig :: SlotLength
+                      -> NumSlots
                       -> PBftParams
                       -> Gen TestConfig
-genDualPBFTTestConfig numSlots params = do
+genDualPBFTTestConfig slotLength numSlots params = do
     nodeJoinPlan <- RealPBFT.genRealPBFTNodeJoinPlan params numSlots
     nodeTopology <- genNodeTopology (pbftNumNodes params)
     initSeed     <- arbitrary
 
     return TestConfig {
           nodeRestarts = noRestarts
-        , slotLength   = slotLengthFromSec 20
         , numCoreNodes = pbftNumNodes params
         , ..
         }
