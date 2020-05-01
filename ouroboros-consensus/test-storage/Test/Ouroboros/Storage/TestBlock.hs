@@ -92,12 +92,12 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
+import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -202,12 +202,8 @@ instance HasHeader (Header TestBlock) where
   blockInvariant = const True
 
 data instance BlockConfig TestBlock = TestBlockConfig {
-      testBlockSlotLength  :: !SlotLength
-
       -- | Era parameters
-      --
-      -- TODO: This should obsolete 'testBlockSlotLengths' (#1637)
-    , testBlockEraParams    :: !HardFork.EraParams
+      testBlockEraParams    :: !HardFork.EraParams
 
       -- | Whether the test block can be EBBs or not. This can vary per test
       -- case. It will be used by 'validateEnvelope' to forbid EBBs 'False'.
@@ -563,9 +559,6 @@ instance HasHardForkHistory TestBlock where
   hardForkShape           = HardFork.singletonShape . testBlockEraParams
   hardForkTransitions _ _ = HardFork.transitionsUnknown
 
-instance LedgerDerivedInfo TestBlock where
-  knownSlotLength = testBlockSlotLength
-
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint GenesisHash
 
@@ -590,8 +583,7 @@ mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
           }
       , configLedger = ()
       , configBlock  = TestBlockConfig {
-            testBlockSlotLength   = slotLength
-          , testBlockEraParams    = eraParams
+            testBlockEraParams    = eraParams
           , testBlockEBBsAllowed  = chunkCanContainEBB
           , testBlockNumCoreNodes = numCoreNodes
           }

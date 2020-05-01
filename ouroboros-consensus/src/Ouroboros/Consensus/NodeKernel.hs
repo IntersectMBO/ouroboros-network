@@ -58,7 +58,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Node.Tracers
@@ -161,7 +160,6 @@ data MempoolCapacityBytesOverride
 data NodeArgs m remotePeer localPeer blk = NodeArgs {
       tracers                :: Tracers m remotePeer localPeer blk
     , registry               :: ResourceRegistry m
-    , maxClockSkew           :: ClockSkew
     , cfg                    :: TopLevelConfig blk
     , initState              :: NodeState blk
     , btime                  :: BlockchainTime m
@@ -312,23 +310,27 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
 
     readFetchMode :: STM m FetchMode
     readFetchMode = do
-      curSlot      <- getCurrentSlot btime
-      curChainSlot <- AF.headSlot <$> ChainDB.getCurrentChain chainDB
-      let slotsBehind = case curChainSlot of
-            -- There's nothing in the chain. If the current slot is 0, then
-            -- we're 1 slot behind.
-            Origin  -> unSlotNo curSlot + 1
-            At slot -> unSlotNo curSlot - unSlotNo slot
-          maxBlocksBehind = 5
-          -- Convert from blocks to slots. This is more or less the @f@
-          -- parameter, the frequency of blocks. TODO should be 10 for Praos,
-          -- so make this part of 'OuroborosTag'.
-          blocksToSlots = 1
-      return $ if slotsBehind < maxBlocksBehind * blocksToSlots
-       -- When the current chain is near to "now", use deadline mode, when it
-       -- is far away, use bulk sync mode.
-        then FetchModeDeadline
-        else FetchModeBulkSync
+      mCurSlot <- getCurrentSlot btime
+      case mCurSlot of
+        -- The current chain's tip far away from "now", so use bulk sync mode.
+        CurrentSlotUnknown  -> return FetchModeBulkSync
+        CurrentSlot curSlot -> do
+          curChainSlot <- AF.headSlot <$> ChainDB.getCurrentChain chainDB
+          let slotsBehind = case curChainSlot of
+                -- There's nothing in the chain. If the current slot is 0, then
+                -- we're 1 slot behind.
+                Origin  -> unSlotNo curSlot + 1
+                At slot -> unSlotNo curSlot - unSlotNo slot
+              maxBlocksBehind = 5
+              -- Convert from blocks to slots. This is more or less the @f@
+              -- parameter, the frequency of blocks. TODO should be 10 for
+              -- Praos, so make this part of 'OuroborosTag'.
+              blocksToSlots = 1
+          return $ if slotsBehind < maxBlocksBehind * blocksToSlots
+            -- When the current chain is near to "now", use deadline mode,
+            -- when it is far away, use bulk sync mode.
+            then FetchModeDeadline
+            else FetchModeBulkSync
 
     readFetchedBlocks :: STM m (Point blk -> Bool)
     readFetchedBlocks = ChainDB.getIsFetched chainDB
@@ -473,8 +475,8 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
 
         -- Add the block to the chain DB
         result <- lift $ ChainDB.addBlockAsync chainDB newBlock
-        -- Block until we have performed chain selection for the block
-        curTip <- lift $ atomically $ ChainDB.chainSelectionPerformed result
+        -- Block until we have processed the block
+        curTip <- lift $ atomically $ ChainDB.blockProcessed result
 
         -- Check whether we adopted our block
         when (curTip /= blockPoint newBlock) $ do

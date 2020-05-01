@@ -342,7 +342,7 @@ instance DB (ChainDB m blk) where
 -------------------------------------------------------------------------------}
 
 data AddBlockPromise m blk = AddBlockPromise
-    { blockWrittenToDisk      :: STM m Bool
+    { blockWrittenToDisk :: STM m Bool
       -- ^ Use this 'STM' transaction to wait until the block has been written
       -- to disk.
       --
@@ -355,30 +355,22 @@ data AddBlockPromise m blk = AddBlockPromise
       -- NOTE: Even when the result is 'False', 'getIsFetched' might still
       -- return 'True', e.g., the block was older than @k@, but it has been
       -- downloaded and stored on disk before.
-    , blockProcessed          :: STM m (Point blk)
+    , blockProcessed     :: STM m (Point blk)
       -- ^ Use this 'STM' transaction to wait until the block has been
       -- processed: the block has been written to disk and chain selection has
-      -- been performed for the block, /unless/ the block's slot is in the
-      -- future.
+      -- been performed for the block, /unless/ the block is from the future.
       --
       -- The ChainDB's tip after chain selection is returned. When this tip
       -- doesn't match the added block, it doesn't necessarily mean the block
       -- wasn't adopted. We might have adopted a longer chain of which the
       -- added block is a part, but not the tip.
       --
-      -- NOTE: When the block's slot is in the future, chain selection for the
-      -- block won't be performed until the block's slot becomes the current
-      -- slot, which might take some time. For that reason, this transaction
-      -- will not wait for chain selection of a block from a future slot. It
-      -- will return the current tip of the ChainDB after writing the block to
-      -- disk. See 'chainSelectionPerformed' in case you /do/ want to wait.
-    , chainSelectionPerformed :: STM m (Point blk)
-      -- ^ Variant of 'blockProcessed' that waits until chain selection has
-      -- been performed for the block, even when the block's slot is in the
-      -- future. This can block for a long time.
-      --
-      -- In case the block's slot was not in the future, this is equivalent to
-      -- 'blockProcessed'.
+      -- NOTE: When the block is from the future, chain selection for the
+      -- block won't be performed until the block is no longer in the future,
+      -- which might take some time. For that reason, this transaction will
+      -- not wait for chain selection of a block from the future. It will
+      -- return the current tip of the ChainDB after writing the block to
+      -- disk.
     }
 
 -- | Add a block synchronously: wait until the block has been written to disk
@@ -656,11 +648,15 @@ getPastLedger chainDB pt = do
 -- | The reason why a block is invalid.
 data InvalidBlockReason blk
   = ValidationError !(ExtValidationError blk)
-    -- ^ The ledger found the block to be invalid with the following reason.
-  | InChainAfterInvalidBlock !(RealPoint blk) !(ExtValidationError blk)
-    -- ^ The block occurs in a chain after block that was found to be invalid
-    -- by the ledger. The point and reason corresponding to the original
-    -- invalid block are stored.
+    -- ^ The ledger found the block to be invalid.
+  | InFutureExceedsClockSkew !(RealPoint blk)
+    -- ^ The block's slot is in the future, exceeding the allowed clock skew.
+    --
+    -- Possible causes, order by decreasing likelihood:
+    --
+    -- 1. Our clock is behind (significantly more likely than the others)
+    -- 2. Their clock is ahead
+    -- 3. It's intentional, i.e., an attack
   deriving (Eq, Show, Generic)
 
 instance LedgerSupportsProtocol blk

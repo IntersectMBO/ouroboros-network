@@ -51,7 +51,7 @@ import           Test.ThreadNet.Util.Expectations (NumBlocks (..),
                      determineForkLength)
 import           Test.ThreadNet.Util.HasCreator
 import           Test.ThreadNet.Util.NodeJoinPlan (NodeJoinPlan)
-import           Test.Util.Time
+import           Test.Util.WrappedClock (NumSlots (..))
 
 {-------------------------------------------------------------------------------
   Chain properties

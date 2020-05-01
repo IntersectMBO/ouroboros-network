@@ -39,7 +39,6 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, Point, castPoint)
 
 import           Ouroboros.Consensus.Block (Header, toIsEBB)
-import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (whenJust)
@@ -104,9 +103,10 @@ openDBInternal args launchBgTasks = do
                             (Query.getAnyKnownBlock immDB volDB)
     traceWith tracer $ TraceOpenEvent OpenedLgrDB
 
-    varInvalid <- newTVarM (WithFingerprint Map.empty (Fingerprint 0))
+    varInvalid      <- newTVarM (WithFingerprint Map.empty (Fingerprint 0))
+    varFutureBlocks <- newTVarM Map.empty
 
-    curSlot        <- atomically $ getCurrentSlot (Args.cdbBlockchainTime args)
+
     chainAndLedger <- ChainSel.initialChainSelection
       immDB
       volDB
@@ -114,7 +114,8 @@ openDBInternal args launchBgTasks = do
       tracer
       (Args.cdbTopLevelConfig args)
       varInvalid
-      curSlot
+      varFutureBlocks
+      (Args.cdbCheckInFuture args)
 
     let chain  = VF.validatedFragment chainAndLedger
         ledger = VF.validatedLedger   chainAndLedger
@@ -128,7 +129,6 @@ openDBInternal args launchBgTasks = do
     varNextReaderKey   <- newTVarM (ReaderKey   0)
     varCopyLock        <- newMVar  ()
     varKillBgThreads   <- newTVarM $ return ()
-    varFutureBlocks    <- newTVarM Map.empty
     blocksToAdd        <- newBlocksToAdd (Args.cdbBlocksToAddSize args)
 
     let env = CDB { cdbImmDB           = immDB
@@ -151,7 +151,7 @@ openDBInternal args launchBgTasks = do
                   , cdbChunkInfo       = Args.cdbChunkInfo args
                   , cdbIsEBB           = toIsEBB . isJust . Args.cdbIsEBB args
                   , cdbCheckIntegrity  = Args.cdbCheckIntegrity args
-                  , cdbBlockchainTime  = Args.cdbBlockchainTime args
+                  , cdbCheckInFuture   = Args.cdbCheckInFuture args
                   , cdbBlocksToAdd     = blocksToAdd
                   , cdbFutureBlocks    = varFutureBlocks
                   }
@@ -180,7 +180,6 @@ openDBInternal args launchBgTasks = do
           { intCopyToImmDB             = getEnv  h Background.copyToImmDB
           , intGarbageCollect          = getEnv1 h Background.garbageCollect
           , intUpdateLedgerSnapshots   = getEnv  h Background.updateLedgerSnapshots
-          , intScheduledChainSelection = getEnv1 h Background.scheduledChainSelection
           , intAddBlockRunner          = getEnv  h Background.addBlockRunner
           , intKillBgThreads           = varKillBgThreads
           }

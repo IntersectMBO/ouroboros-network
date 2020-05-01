@@ -17,6 +17,7 @@ import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Control.Tracer
 import           Data.Fixed
+import           Data.Time (UTCTime)
 import           Data.Time.Calendar as Time
 import qualified Data.Time.Clock as Time
 import           Test.QuickCheck hiding (Fixed)
@@ -27,6 +28,7 @@ import           Test.Tasty.QuickCheck hiding (Fixed)
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 import           Cardano.Slotting.Slot (SlotNo (..))
 
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim
 
 import           Ouroboros.Consensus.BlockchainTime
@@ -84,9 +86,10 @@ prop_delayNextSlot TestDelayIO{..} =
     test :: IO ()
     test = do
         tdioStart  <- pickSystemStart
-        atStart    <- fst <$> getWallClockSlot  tdioStart tdioSlotLen
-        nextSlot   <-         waitUntilNextSlot tdioStart tdioSlotLen atStart
-        afterDelay <- fst <$> getWallClockSlot  tdioStart tdioSlotLen
+        let time = defaultSystemTime tdioStart
+        atStart    <- fst <$> getWallClockSlot  time tdioSlotLen
+        nextSlot   <-         waitUntilNextSlot time tdioSlotLen atStart
+        afterDelay <- fst <$> getWallClockSlot  time tdioSlotLen
         assertEqual "atStart + 1" (atStart + 1) afterDelay
         assertEqual "nextSlot"    nextSlot      afterDelay
 
@@ -255,7 +258,7 @@ prop_delayNoClockShift =
                  testOverrideDelay (SystemStart now) (slotLengthFromMillisec 100) 5
       assertEqual "slots" slots [SlotNo n | n <- [0..4]]
 
-testOverrideDelay :: forall m. (IOLike m, MonadDelay (OverrideDelay m))
+testOverrideDelay :: forall m. (IOLike m, MonadTime m, MonadDelay (OverrideDelay m))
                   => SystemStart
                   -> SlotLength
                   -> Int  -- ^ Number of slots to collect
@@ -265,7 +268,7 @@ testOverrideDelay systemStart slotLength numSlots = do
       time <- simpleBlockchainTime
                 registry
                 nullTracer
-                systemStart
+                (defaultSystemTime systemStart)
                 slotLength
       slotsVar <- uncheckedNewTVarM []
       cancelCollection <-
@@ -299,6 +302,7 @@ newtype OverrideDelay m a = OverrideDelay {
            , MonadCatch
            , MonadMask
            , MonadSTM
+           , MonadMonotonicTime
            , MonadTime
            , MonadThread
            , MonadFork

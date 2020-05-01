@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -11,6 +12,7 @@ module Ouroboros.Consensus.Fragment.Validated (
     ValidatedFragment -- Opaque
   , validatedFragment
   , validatedLedger
+  , validatedTip
   , new
   ) where
 
@@ -29,16 +31,20 @@ import           Ouroboros.Consensus.Util.Assert
 -- INVARIANT:
 --
 -- > AF.headPoint validatedFragment == ledgerTipPoint validatedLedger
-data ValidatedFragment l blk = ValidatedFragment {
-    -- | Chain fragment
-    validatedFragment :: !(AnchoredFragment (Header blk))
+data ValidatedFragment blk l = ValidatedFragment {
+      -- | Chain fragment
+      validatedFragment :: !(AnchoredFragment (Header blk))
 
-    -- | Ledger after after validation
-  , validatedLedger   :: !l
-  }
+      -- | Ledger after after validation
+    , validatedLedger   :: !l
+    }
+  deriving (Functor)
+
+validatedTip :: HasHeader (Header blk) => ValidatedFragment blk l -> Point blk
+validatedTip = castPoint . AF.headPoint . validatedFragment
 
 invariant :: forall l blk. ApplyBlock l blk
-          => ValidatedFragment l blk -> Either String ()
+          => ValidatedFragment blk l -> Either String ()
 invariant ValidatedFragment{..}
     | ledgerTip /= headPoint
     = Left $ concat [
@@ -58,12 +64,12 @@ invariant ValidatedFragment{..}
 new :: forall l blk. (ApplyBlock l blk, HasCallStack)
     => AnchoredFragment (Header blk)
     -> l
-    -> ValidatedFragment l blk
+    -> ValidatedFragment blk l
 new fragment ledger =
     assertWithMsg (invariant validated) $
       validated
   where
-    validated :: ValidatedFragment l blk
+    validated :: ValidatedFragment blk l
     validated = ValidatedFragment {
           validatedFragment = fragment
         , validatedLedger   = ledger

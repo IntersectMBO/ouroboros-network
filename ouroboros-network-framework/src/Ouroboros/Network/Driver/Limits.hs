@@ -162,7 +162,7 @@ runDecoderWithLimit limit size Channel{recv} =
 runPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a .
      (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-      MonadTime m, MonadTimer m, Exception failure)
+      MonadMonotonicTime m, MonadTimer m, Exception failure)
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
@@ -186,7 +186,7 @@ runPeerWithLimits tracer codec slimits tlimits channel peer =
 runPipelinedPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a.
      (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-      MonadTime m, MonadTimer m, Exception failure)
+      MonadMonotonicTime m, MonadTimer m, Exception failure)
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
@@ -198,4 +198,3 @@ runPipelinedPeerWithLimits tracer codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
     let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
      in fst <$> runPipelinedPeerWithDriver driver peer (startDState driver)
-

@@ -49,7 +49,7 @@ import           Test.ThreadNet.Util.NodeJoinPlan
 
 import           Test.Util.InvertedMap (InvertedMap)
 import qualified Test.Util.InvertedMap as InvertedMap
-import           Test.Util.Time
+import           Test.Util.WrappedClock (NumSlots (..))
 
 oneK :: Num a => PBftParams -> a
 oneK PBftParams{pbftSecurityParam} =

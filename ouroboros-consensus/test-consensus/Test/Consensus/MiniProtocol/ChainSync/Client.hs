@@ -14,7 +14,7 @@ import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import           Data.Bifunctor (first)
 import           Data.Foldable (foldl')
-import           Data.List (intercalate, span, unfoldr)
+import           Data.List (intercalate, unfoldr)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust)
@@ -66,10 +66,11 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
+import           Test.Util.LogicalClock (LogicalClock, NumTicks (..), Tick (..))
+import qualified Test.Util.LogicalClock as LogicalClock
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
-import           Test.Util.Time
 import           Test.Util.Tracer (recordingTracerTVar)
 
 {-------------------------------------------------------------------------------
@@ -81,8 +82,6 @@ tests = testGroup "ChainSyncClient"
     [ testProperty "chainSync"                 $ prop_chainSync
     , testProperty "joinUpdates/spreadUpdates" $ prop_joinUpdates_spreadUpdates k
     , testProperty "genChainUpdates"           $ prop_genChainUpdates           k updatesToGenerate
-    , testProperty "genUpdateSchedule slots do not extend in the future" $
-      prop_genUpdateSchedule_notInFuture k
     ]
   where
     k = SecurityParam 3
@@ -132,8 +131,8 @@ prop_chainSync ChainSyncClientSetup {..} =
     k = maxRollbacks securityParam
 
     (clientChain, serverChain, synchedFragment, mbEx, events) = runSimOrThrow $
-      runChainSync securityParam maxClockSkew clientUpdates serverUpdates
-                   startSlot
+      runChainSync securityParam clientUpdates serverUpdates
+                   startTick
 
     clientFragment = AF.anchorNewest k $ Chain.toAnchoredFragment clientChain
 
@@ -181,18 +180,17 @@ clientId = CoreNodeId 0
 serverId :: CoreNodeId
 serverId = CoreNodeId 1
 
--- | Using slots as times, a schedule plans updates to a chain on certain
--- slots.
+-- | A schedule plans updates to a chain on certain times.
 --
 -- TODO Note that a schedule can't express delays between the messages sent
 -- over the chain sync protocol. Generating such delays may expose more (most
 -- likely concurrency-related) bugs.
-type Schedule a = Map SlotNo [ChainUpdate]
+type Schedule a = Map Tick [ChainUpdate]
 
--- | Return the last slot at which an update is planned, if no updates are
+-- | Return the last tick at which an update is planned, if no updates are
 -- planned, return 0.
-lastSlot :: Schedule a -> SlotNo
-lastSlot = fromMaybe (SlotNo 0) . maxKey
+lastTick :: Schedule a -> Tick
+lastTick = fromMaybe (Tick 0) . maxKey
   where
     maxKey :: forall k v. Map k v -> Maybe k
     maxKey = fmap (fst . fst) . Map.maxViewWithKey
@@ -207,11 +205,6 @@ toChainUpdates = concatMap $ \case
     SwitchFork pt bs -> Chain.RollBack pt : map Chain.AddBlock bs
     AddBlock b       -> Chain.AddBlock b  : []
 
-chainUpdateHighestSlotNo :: ChainUpdate -> SlotNo
-chainUpdateHighestSlotNo cu = tbSlot $ case cu of
-    AddBlock b      -> b
-    SwitchFork _ bs -> last bs
-
 newtype ClientUpdates =
   ClientUpdates { getClientUpdates :: Schedule [ChainUpdate] }
   deriving (Show)
@@ -220,18 +213,18 @@ newtype ServerUpdates =
   ServerUpdates { getServerUpdates :: Schedule [ChainUpdate] }
   deriving (Show)
 
-type TraceEvent = (SlotNo, Either
+type TraceEvent = (Tick, Either
   (TraceChainSyncClientEvent TestBlock)
   (TraceSendRecv (ChainSync (Header TestBlock) (Tip TestBlock))))
 
 -- | We have a client and a server chain that both start at genesis. At
--- certain slots, we apply updates to both of these chains to simulate changes
+-- certain times, we apply updates to both of these chains to simulate changes
 -- to the chains.
 --
--- At a certain slot, we start the chain sync protocol with a \"real\" chain
+-- At a certain time, we start the chain sync protocol with a \"real\" chain
 -- sync client and the example chain sync server. The chain sync client will
 -- start to maintain a candidate fragment that is following the server chain.
--- Note that if client and/or server updates are scheduled at the same slot as
+-- Note that if client and/or server updates are scheduled at the same time as
 -- the start of the syncing, then those updates are applied before syncing
 -- starts.
 --
@@ -245,25 +238,24 @@ type TraceEvent = (SlotNo, Either
 -- more chain updates are applied so the state at the time of the exception is
 -- returned.
 --
--- Note that updates that are scheduled before the slot at which we start
+-- Note that updates that are scheduled before the time at which we start
 -- syncing help generate different chains to start syncing from.
 runChainSync
     :: forall m. IOLike m
     => SecurityParam
-    -> ClockSkew
     -> ClientUpdates
     -> ServerUpdates
-    -> SlotNo  -- ^ Start chain syncing at this slot.
+    -> Tick  -- ^ Start chain syncing at this time
     -> m (Chain TestBlock, Chain TestBlock,
           AnchoredFragment TestBlock, Maybe ChainSyncClientException,
           [TraceEvent])
        -- ^ (The final client chain, the final server chain, the synced
        --    candidate fragment, exception thrown by the chain sync client,
        --    the traced ChainSync and protocol events)
-runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
+runChainSync securityParam (ClientUpdates clientUpdates)
     (ServerUpdates serverUpdates) startSyncingAt = withRegistry $ \registry -> do
 
-    testBtime <- newTestBlockchainTime registry numSlots slotLength
+    clock <- LogicalClock.new registry numTicks
 
     -- Set up the client
     varCandidates      <- uncheckedNewTVarM Map.empty
@@ -275,7 +267,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     -- at the final state of each candidate.
     varFinalCandidates <- uncheckedNewTVarM Map.empty
 
-    (tracer, getTrace) <- first (addSlotNo testBtime) <$> recordingTracerTVar
+    (tracer, getTrace) <- first (addTick clock) <$> recordingTracerTVar
     let chainSyncTracer = contramap Left  tracer
         protocolTracer  = contramap Right tracer
 
@@ -301,8 +293,6 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                    (pipelineDecisionLowHighMark 10 20)
                    chainSyncTracer
                    (nodeCfg clientId)
-                   (testBlockchainTime testBtime)
-                   maxClockSkew
                    chainDbView
 
     -- Set up the server
@@ -312,21 +302,21 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     -- Schedule updates of the client and server chains
     varLastUpdate <- uncheckedNewTVarM 0
-    void $ onSlotChange registry testBtime "scheduled updates" $ \slot -> do
+    void $ LogicalClock.onEachTick registry clock "scheduled updates" $ \tick -> do
       -- Stop updating the client and server chains when the chain sync client
       -- has thrown an exception, so that at the end, we can read the chains
       -- in the states they were in when the exception was thrown.
       stop <- fmap isJust $ atomically $ readTVar varClientException
       unless stop $ do
         -- Client
-        whenJust (Map.lookup slot clientUpdates) $ \chainUpdates ->
+        whenJust (Map.lookup tick clientUpdates) $ \chainUpdates ->
           atomically $ do
             (chain, ledger) <- readTVar varClientState
             writeTVar varClientState $
               updateClientState (nodeCfg clientId) chain ledger chainUpdates
 
         -- Server
-        whenJust (Map.lookup slot serverUpdates) $ \chainUpdates ->
+        whenJust (Map.lookup tick serverUpdates) $ \chainUpdates ->
           atomically $ do
             chainProducerState <- readTVar varChainProducerState
             case CPS.applyChainUpdates
@@ -337,11 +327,11 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
               Nothing                  ->
                 error $ "Invalid chainUpdates: " <> show chainUpdates <>
                         " for " <> show (chainState chainProducerState)
-        atomically $ writeTVar varLastUpdate slot
+        atomically $ writeTVar varLastUpdate tick
 
     -- Connect client to server and run the chain sync protocol
-    onSlot registry testBtime "startSyncing" startSyncingAt $ do
-      -- When updates are planned at the same slot that we start syncing, we
+    LogicalClock.onTick registry clock "startSyncing" startSyncingAt $ do
+      -- When updates are planned at the same time that we start syncing, we
       -- wait until these updates are done before we start syncing.
       when (isJust (Map.lookup startSyncingAt clientUpdates) ||
             isJust (Map.lookup startSyncingAt serverUpdates)) $
@@ -372,8 +362,8 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         runPeer nullTracer codecChainSyncId serverChannel
                 (chainSyncServerPeer server)
 
-    testBlockchainTimeDone testBtime
-    -- Wait a random amount of time after the final slot for the chain sync
+    LogicalClock.waitUntilDone clock
+    -- Wait a random amount of time after the final tick for the chain sync
     -- to finish
     threadDelay 2000
 
@@ -412,7 +402,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                           ]
           }
       , configLedger = ()
-      , configBlock  = TestBlockConfig slotLength eraParams numCoreNodes
+      , configBlock  = TestBlockConfig eraParams numCoreNodes
       }
 
     eraParams :: HardFork.EraParams
@@ -421,21 +411,19 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     numCoreNodes :: NumCoreNodes
     numCoreNodes = NumCoreNodes 2
 
-    -- | Take the last slot at which a client or server update is planned, or
-    -- the slot at which syncing starts, and add one to it
-    numSlots :: NumSlots
-    numSlots = NumSlots $ unSlotNo $ succ $ maximum
-      [ lastSlot clientUpdates
-      , lastSlot serverUpdates
+    numTicks :: NumTicks
+    numTicks = LogicalClock.sufficientTimeFor
+      [ lastTick clientUpdates
+      , lastTick serverUpdates
       , startSyncingAt
       ]
 
-    addSlotNo :: forall ev. TestBlockchainTime m
-              -> Tracer m (SlotNo, ev)
-              -> Tracer m ev
-    addSlotNo btime tr = Tracer $ \ev -> do
-      slot <- atomically $ testBlockchainTimeSlot btime
-      traceWith tr (slot, ev)
+    addTick :: forall ev. LogicalClock m
+            -> Tracer m (Tick, ev)
+            -> Tracer m ev
+    addTick clock tr = Tracer $ \ev -> do
+      tick <- atomically $ LogicalClock.getCurrentTick clock
+      traceWith tr (tick, ev)
 
 getAddBlock :: ChainUpdate -> Maybe TestBlock
 getAddBlock (AddBlock b)    = Just b
@@ -478,76 +466,75 @@ updateClientState cfg chain ledgerState chainUpdates =
 -- | Bundle dependent arguments for test generation
 data ChainSyncClientSetup = ChainSyncClientSetup
   { securityParam :: SecurityParam
-  , maxClockSkew  :: ClockSkew
   , clientUpdates :: ClientUpdates
     -- ^ Depends on 'securityParam' and 'clientUpdates'
   , serverUpdates :: ServerUpdates
     -- ^ Depends on 'securityParam' and 'clientUpdates'
-  , startSlot     :: SlotNo
+  , startTick     :: Tick
     -- ^ Depends on 'clientUpdates' and 'serverUpdates'
   }
 
 instance Arbitrary ChainSyncClientSetup where
   arbitrary = do
     securityParam  <- SecurityParam <$> choose (2, 5)
-    maxClockSkew   <- arbitrary
     clientUpdates0 <- evalStateT
-      (ClientUpdates <$> genUpdateSchedule securityParam maxClockSkew)
+      (ClientUpdates <$> genUpdateSchedule securityParam)
       emptyUpdateState
     serverUpdates  <- evalStateT
-      (ServerUpdates <$> genUpdateSchedule securityParam maxClockSkew)
+      (ServerUpdates <$> genUpdateSchedule securityParam)
       emptyUpdateState
     let clientUpdates = removeLateClientUpdates serverUpdates clientUpdates0
-        maxStartSlot  = unSlotNo $ maximum
-          [ 1
-          , lastSlot (getClientUpdates clientUpdates) - 1
-          , lastSlot (getServerUpdates serverUpdates) - 1 ]
-    startSlot <- SlotNo <$> choose (1, maxStartSlot)
+        maxStartTick  = maximum
+          [ Tick 1
+          , lastTick (getClientUpdates clientUpdates) - 1
+          , lastTick (getServerUpdates serverUpdates) - 1
+          ]
+    startTick <- choose (1, maxStartTick)
     return ChainSyncClientSetup {..}
   shrink cscs@ChainSyncClientSetup {..} =
-    -- We don't shrink 'securityParam' and 'maxClockSkew', because the updates
-    -- depend on them.
+    -- We don't shrink 'securityParam' because the updates depend on it
     [ cscs
       { serverUpdates = ServerUpdates serverUpdates'
       , clientUpdates = removeLateClientUpdates
                           (ServerUpdates serverUpdates')
                           clientUpdates
-      , startSlot     = startSlot'
+      , startTick     = startTick'
       }
     | serverUpdates' <- shrinkUpdateSchedule (getServerUpdates serverUpdates)
-    , let maxStartSlot = maximum
+    , let maxStartTick = maximum
             [ 1
-            , lastSlot (getClientUpdates clientUpdates) - 1
-            , lastSlot serverUpdates' - 1 ]
-    , startSlot' <- [1..min startSlot maxStartSlot]
+            , lastTick (getClientUpdates clientUpdates) - 1
+            , lastTick serverUpdates' - 1
+            ]
+    , startTick' <- [1..min startTick maxStartTick]
     ] <>
     [ cscs
       { clientUpdates = clientUpdates'
-      , startSlot     = startSlot'
+      , startTick     = startTick'
       }
     | clientUpdates' <-
         removeLateClientUpdates serverUpdates . ClientUpdates <$>
         shrinkUpdateSchedule (getClientUpdates clientUpdates)
-    , let maxStartSlot = maximum
+    , let maxStartTick = maximum
             [ 1
-            , lastSlot (getClientUpdates clientUpdates') - 1
-            , lastSlot (getServerUpdates serverUpdates)  - 1 ]
-    , startSlot' <- [1..min startSlot maxStartSlot]
+            , lastTick (getClientUpdates clientUpdates') - 1
+            , lastTick (getServerUpdates serverUpdates)  - 1
+            ]
+    , startTick' <- [1..min startTick maxStartTick]
     ]
 
 instance Show ChainSyncClientSetup where
   show ChainSyncClientSetup {..} = unlines
       [ "ChainSyncClientSetup:"
       , "securityParam: " <> show (maxRollbacks securityParam)
-      , "maxClockSkew: "  <> show (unClockSkew maxClockSkew)
       , "clientUpdates:"
       , ppUpdates (getClientUpdates clientUpdates) <> "--"
       , "serverUpdates:"
       , ppUpdates (getServerUpdates serverUpdates) <> "--"
-      , "startSlot: " <> show (unSlotNo startSlot)
+      , "startTick: " <> show startTick
       ]
 
--- | Remove client updates that happen at a slot after the slot in which the
+-- | Remove client updates that happen at a tick after the tick in which the
 -- last server updates happened.
 --
 -- If we don't do this, the client's chain might no longer intersect with the
@@ -559,11 +546,11 @@ instance Show ChainSyncClientSetup where
 -- server.
 removeLateClientUpdates :: ServerUpdates -> ClientUpdates -> ClientUpdates
 removeLateClientUpdates (ServerUpdates sus)
-    | Just ((lastServerUpdateSlotNo, _), _) <- Map.maxViewWithKey sus
+    | Just ((lastServerUpdateTickNo, _), _) <- Map.maxViewWithKey sus
     = \(ClientUpdates cus) ->
-       let (cus', _) = Map.split (succ lastServerUpdateSlotNo) cus
+       let (cus', _) = Map.split (succ lastServerUpdateTickNo) cus
            -- @cus'@ contains the entries with a key < @succ
-           -- lastServerUpdateSlotNo@
+           -- lastServerUpdateTickNo@
        in ClientUpdates cus'
     | otherwise
     = id
@@ -573,77 +560,54 @@ removeLateClientUpdates (ServerUpdates sus)
 -------------------------------------------------------------------------------}
 
 genUpdateSchedule
-  :: SecurityParam -> ClockSkew
+  :: SecurityParam
   -> StateT ChainUpdateState Gen (Schedule [ChainUpdate])
-genUpdateSchedule securityParam maxClockSkew = do
+genUpdateSchedule securityParam = do
     cus  <- get
     cus' <- lift $ genChainUpdates securityParam 10 cus
     put cus'
     let chainUpdates = getChainUpdates cus'
-    lift $ spreadUpdates maxClockSkew chainUpdates
+    lift $ spreadUpdates chainUpdates
 
--- | Repeatedly remove the last entry (highest SlotNo)
+-- | Repeatedly remove the last entry (highest 'Tick')
 shrinkUpdateSchedule :: Schedule [ChainUpdate]
                      -> [Schedule [ChainUpdate]]
 shrinkUpdateSchedule = unfoldr (fmap (\(_, m) -> (m, m)) . Map.maxView)
 
 -- | Spread out updates over a schedule, i.e. schedule a number of updates to
--- be executed on each slot. We use slot as a proxy for time. Most slots will
--- have no planned updates.
---
--- Note that the current slot (from the BlockchainTime) is used to reject
--- chains that extend too much in the future (see 'ClockSkew'), so be careful
--- not to schedule updates that add blocks with slot numbers from the future.
---
--- Don't shedule updates at slot 0, because 'onEachChange' isn't called for
--- 0.
+-- be executed on each tick. Most ticks will have no planned updates.
 --
 -- Each roll back of @x@ blocks will be immediately followed (in the same
--- slot) by adding @y@ blocks, where @y >= x@.
-spreadUpdates :: ClockSkew
-              -> [ChainUpdate]
+-- tick) by adding @y@ blocks, where @y >= x@.
+spreadUpdates :: [ChainUpdate]
               -> Gen (Schedule [ChainUpdate])
-spreadUpdates (ClockSkew maxClockSkew) = go Map.empty 1
+spreadUpdates = go Map.empty 1
   where
-    go !schedule slot updates
+    go :: Map Tick [ChainUpdate]
+       -> Tick
+       -> [ChainUpdate]
+       -> Gen (Map Tick [ChainUpdate])
+    go !schedule tick updates
       | null updates = return schedule
       | otherwise    = do
         nbUpdates <- frequency [ (2, return 0), (1, choose (1, 5)) ]
-        let maxSlot = SlotNo (unSlotNo slot + maxClockSkew)
-            (updates', tooFarInTheFuture) =
-              span ((<= maxSlot) . chainUpdateHighestSlotNo) updates
-            (this, rest) = splitAt nbUpdates updates'
-        go (Map.insert slot this schedule) (succ slot) (rest <> tooFarInTheFuture)
+        let (this, rest) = splitAt nbUpdates updates
+        go (Map.insert tick this schedule) (succ tick) rest
 
 -- | Inverse of 'spreadUpdates'
 joinUpdates :: Schedule [ChainUpdate] -> [ChainUpdate]
 joinUpdates = concatMap snd . Map.toAscList
 
-prop_joinUpdates_spreadUpdates :: SecurityParam -> ClockSkew -> Property
-prop_joinUpdates_spreadUpdates securityParam maxClockSkew =
+prop_joinUpdates_spreadUpdates :: SecurityParam -> Property
+prop_joinUpdates_spreadUpdates securityParam =
     forAll genUpdatesAndSpread $ \(updates, spread) ->
       joinUpdates spread === updates
   where
     genUpdatesAndSpread = do
       updates <- getChainUpdates <$>
                  genChainUpdates securityParam updatesToGenerate emptyUpdateState
-      spread  <- spreadUpdates maxClockSkew updates
+      spread  <- spreadUpdates updates
       return (updates, spread)
-
--- | Test that we don't generate updates that add blocks with slots that are
--- too far in the future.
-prop_genUpdateSchedule_notInFuture :: SecurityParam -> ClockSkew -> Property
-prop_genUpdateSchedule_notInFuture securityParam maxClockSkew =
-    forAll genUpdateSchedule' $ \updates -> conjoin
-      [ unSlotNo (chainUpdateHighestSlotNo chainUpdate) <= unSlotNo slot + maxSkew
-      | (slot, chainUpdates) <- Map.toAscList updates
-      , chainUpdate          <- chainUpdates
-      ]
-  where
-    genUpdateSchedule' = evalStateT
-      (genUpdateSchedule securityParam maxClockSkew)
-      emptyUpdateState
-    maxSkew = unClockSkew maxClockSkew
 
 {-------------------------------------------------------------------------------
   Generating ChainUpdates
@@ -766,9 +730,10 @@ ppUpdates = unlines
           . filter (not . null . snd)
           . Map.toAscList
   where
-    showEntry :: SlotNo -> [ChainUpdate] -> String
-    showEntry (SlotNo slot) updates = show slot <> ": " <>
+    showEntry :: Tick -> [ChainUpdate] -> String
+    showEntry (Tick tick) updates = show tick <> ": " <>
       intercalate ", " (map showChainUpdate updates)
+
     showChainUpdate :: ChainUpdate -> String
     showChainUpdate u = case u of
       AddBlock b -> "AddBlock " <> ppBlock b
@@ -776,6 +741,6 @@ ppUpdates = unlines
         unwords (map ppBlock bs)
 
 ppTraceEvent :: TraceEvent -> String
-ppTraceEvent (SlotNo n, ev) = show n <> " | " <> case ev of
+ppTraceEvent (Tick n, ev) = show n <> " | " <> case ev of
     Left  cl -> "Client: "   <> show cl
     Right pt -> "Protocol: " <> show pt

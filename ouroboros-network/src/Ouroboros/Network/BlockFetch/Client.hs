@@ -71,7 +71,7 @@ type BlockFetchClient header block m a =
 -- work in conjunction with our fetch logic.
 --
 blockFetchClient :: forall header block m void.
-                    (MonadSTM m, MonadTime m, MonadThrow m,
+                    (MonadSTM m, MonadMonotonicTime m, MonadThrow m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
                  => FetchClientContext header block m
@@ -282,4 +282,3 @@ blockFetchClient FetchClientContext {
 
 castRange :: (HeaderHash a ~ HeaderHash b) => ChainRange a -> ChainRange b
 castRange (ChainRange l u) = ChainRange (castPoint l) (castPoint u)
-

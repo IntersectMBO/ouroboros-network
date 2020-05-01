@@ -29,6 +29,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
 import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util (chunks)
 import           Ouroboros.Consensus.Util.AnchoredFragment
@@ -58,7 +59,6 @@ import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.SOP
 import           Test.Util.TestBlock
-import           Test.Util.Time
 
 import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock (..))
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
@@ -139,8 +139,8 @@ prop_addBlock_multiple_threads (SmallChunkInfo chunkInfo) bpt =
         Model.currentChain $
         Model.addBlocks cfg theBlks $
         -- Make sure no blocks are "from the future"
-        Model.advanceCurSlot cfg maxBound $
-        Model.empty initLedger
+        Model.advanceCurSlot maxBound $
+        Model.empty initLedger 0
 
     equallyPreferable :: Chain TestBlock -> Chain TestBlock -> Bool
     equallyPreferable chain1 chain2 =
@@ -275,7 +275,7 @@ mkArgs cfg chunkInfo initLedger tracer registry hashInfo
     , cdbHashInfo             = hashInfo
     , cdbIsEBB                = const Nothing
     , cdbCheckIntegrity       = const True
-    , cdbBlockchainTime       = testBlockchainTime (fixedBlockchainTime maxBound)
+    , cdbCheckInFuture        = InFuture.dontCheck
     , cdbGenesis              = return initLedger
     , cdbAddHdrEnv            = \_ _ -> id
     , cdbImmDbCacheConfig     = Index.CacheConfig 2 60

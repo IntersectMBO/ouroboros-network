@@ -58,12 +58,12 @@ import qualified Ouroboros.Network.Point as Point
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Forecast
+import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
@@ -265,11 +265,6 @@ instance HasHardForkHistory ByronBlock where
   -- Once we actually start using the hard fork combinator, we should fix this.
   -- <https://github.com/input-output-hk/ouroboros-network/issues/1786>
   hardForkTransitions _ _ = HardFork.transitionsUnknown
-
-instance LedgerDerivedInfo ByronBlock where
-  knownSlotLength = fromByronSlotLength
-                  . genesisSlotLength
-                  . byronGenesisConfig
 
 {-------------------------------------------------------------------------------
   Auxiliary

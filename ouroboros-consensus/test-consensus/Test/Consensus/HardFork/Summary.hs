@@ -74,16 +74,23 @@ isPastHorizonException ArbitrarySummary{..} ma =
 roundtripWallclockSlot :: ArbitrarySummary -> Property
 roundtripWallclockSlot s@ArbitrarySummary{beforeHorizonTime = time} =
     noPastHorizonException s $ do
-      (slot  ,  inSlot ) <- HF.wallclockToSlot time
-      (time' , _slotLen) <- HF.slotToWallclock slot
-      return $ addUTCTime inSlot time' === time
+      (slot , inSlot, timeLeft) <- HF.wallclockToSlot time
+      (time', slotLen) <- HF.slotToWallclock slot
+      return $ conjoin [
+           addUTCTime inSlot time' === time
+         , inSlot + timeLeft       === getSlotLength slotLen
+         ]
 
 roundtripSlotWallclock :: ArbitrarySummary -> Property
 roundtripSlotWallclock s@ArbitrarySummary{beforeHorizonSlot = slot} =
     noPastHorizonException s $ do
-      (time  , _slotLen) <- HF.slotToWallclock slot
-      (slot' ,  inSlot ) <- HF.wallclockToSlot time
-      return $ slot' === slot .&&. inSlot === 0
+      (time , slotLen)          <- HF.slotToWallclock slot
+      (slot', inSlot, timeLeft) <- HF.wallclockToSlot time
+      return $ conjoin [
+          slot'             === slot
+        , inSlot            === 0
+        , inSlot + timeLeft === getSlotLength slotLen
+        ]
 
 roundtripSlotEpoch :: ArbitrarySummary -> Property
 roundtripSlotEpoch s@ArbitrarySummary{beforeHorizonSlot = slot} =

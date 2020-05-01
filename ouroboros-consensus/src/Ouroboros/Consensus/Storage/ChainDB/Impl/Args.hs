@@ -22,8 +22,8 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Network.Block (HeaderHash)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -90,7 +90,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
     , cdbIsEBB                :: Header blk -> Maybe EpochNo
     , cdbCheckIntegrity       :: blk -> Bool
     , cdbGenesis              :: m (ExtLedgerState blk)
-    , cdbBlockchainTime       :: BlockchainTime m
+    , cdbCheckInFuture        :: CheckInFuture m blk
     , cdbAddHdrEnv            :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
       -- ^ The header envelope will only be added after extracting the binary
       -- header from the binary block. Note that we never have to remove an
@@ -129,7 +129,7 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
     , cdbsGcInterval      :: DiffTime
       -- ^ Batch all scheduled GCs so that at most one GC happens every
       -- 'cdbsGcInterval'.
-    , cdbsBlockchainTime  :: BlockchainTime m
+    , cdbsCheckInFuture   :: CheckInFuture m blk
     , cdbsEncodeHeader    :: Header blk -> Encoding
     , cdbsBlocksToAddSize :: Word
     }
@@ -140,7 +140,7 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
 --
 -- * 'cdbsTracer'
 -- * 'cdbsRegistry'
--- * 'cdbsBlockchainTime'
+-- * 'cdbsCheckInFuture'
 -- * 'cdbsEncodeHeader'
 --
 -- We a 'cdbsGcDelay' of 60 seconds and a 'cdbsGcInterval' of 10 seconds, this
@@ -165,7 +165,7 @@ defaultSpecificArgs = ChainDbSpecificArgs{
       -- Fields without a default
     , cdbsTracer          = error "no default for cdbsTracer"
     , cdbsRegistry        = error "no default for cdbsRegistry"
-    , cdbsBlockchainTime  = error "no default for cdbsBlockchainTime"
+    , cdbsCheckInFuture   = error "no default for cdbsCheckInFuture"
     , cdbsEncodeHeader    = error "no default for cdbsEncodeHeader"
     }
 
@@ -244,7 +244,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , cdbsRegistry        = cdbRegistry
         , cdbsGcDelay         = cdbGcDelay
         , cdbsGcInterval      = cdbGcInterval
-        , cdbsBlockchainTime  = cdbBlockchainTime
+        , cdbsCheckInFuture   = cdbCheckInFuture
         , cdbsEncodeHeader    = cdbEncodeHeader
         , cdbsBlocksToAddSize = cdbBlocksToAddSize
         }
@@ -294,7 +294,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbIsEBB                = immIsEBB
     , cdbCheckIntegrity       = immCheckIntegrity
     , cdbGenesis              = lgrGenesis
-    , cdbBlockchainTime       = cdbsBlockchainTime
+    , cdbCheckInFuture        = cdbsCheckInFuture
     , cdbAddHdrEnv            = immAddHdrEnv
     , cdbImmDbCacheConfig     = immCacheConfig
       -- Misc

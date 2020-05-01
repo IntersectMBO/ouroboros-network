@@ -20,8 +20,8 @@ import           Test.QuickCheck hiding (Fixed (..))
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
-                     (ClockSkew (..))
+import           Ouroboros.Consensus.Fragment.InFuture (ClockSkew)
+import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util.Random (Seed (..))
 
@@ -29,22 +29,12 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 
-import           Test.Util.Time
-
 minNumCoreNodes :: Word64
 minNumCoreNodes = 2
-
-minNumSlots :: Word64
-minNumSlots = 1
 
 instance Arbitrary NumCoreNodes where
   arbitrary = NumCoreNodes <$> choose (minNumCoreNodes, 5)
   shrink (NumCoreNodes n) = NumCoreNodes <$> (filter (>= minNumCoreNodes) $ shrink n)
-
--- TODO: We shouldn't really pick the number of slots independent from k
-instance Arbitrary NumSlots where
-  arbitrary = NumSlots <$> choose (minNumSlots, 100)
-  shrink (NumSlots n) = NumSlots <$> (filter (>= minNumSlots) $ shrink n)
 
 -- | Picks time span between 0 seconds and (roughly) 50 years
 instance Arbitrary NominalDiffTime where
@@ -121,8 +111,18 @@ instance Arbitrary ChunkSlot where
   shrink    = genericShrink
 
 instance Arbitrary ClockSkew where
-  arbitrary = ClockSkew <$> choose (0, 5)
-  shrink (ClockSkew n) = [ ClockSkew n' | n' <- shrink n ]
+  arbitrary = InFuture.clockSkewInSeconds <$> choose (0, 5)
+  shrink skew = concat [
+     -- Shrink to some simple values, including 0
+     -- (it would be useful to know if a test fails only when having non-zero
+     -- clock skew)
+       [ skew0 | skew0 < skew ]
+     , [ skew1 | skew1 < skew ]
+     ]
+    where
+      skew0, skew1 :: ClockSkew
+      skew0 = InFuture.clockSkewInSeconds 0
+      skew1 = InFuture.clockSkewInSeconds 1
 
 {-------------------------------------------------------------------------------
   Crypto

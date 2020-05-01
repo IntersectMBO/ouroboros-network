@@ -1,14 +1,18 @@
-{-# LANGUAGE DataKinds      #-}
-{-# LANGUAGE DerivingVia    #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingStrategies  #-}
+{-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.BlockchainTime.API (
     BlockchainTime(..)
+  , CurrentSlot(..)
   , onKnownSlotChange
-    -- * Testing
-  , settableBlockchainTime
   ) where
 
+import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
@@ -30,9 +34,23 @@ import           Ouroboros.Consensus.Util.STM (onEachChange)
 -- execute an action each time we advance a slot.
 data BlockchainTime m = BlockchainTime {
       -- | Get current slot
-      getCurrentSlot :: STM m SlotNo
+      getCurrentSlot :: STM m CurrentSlot
     }
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlockchainTime" (BlockchainTime m)
+  deriving NoUnexpectedThunks
+       via OnlyCheckIsWHNF "BlockchainTime" (BlockchainTime m)
+
+data CurrentSlot =
+    -- | The current slot is known
+    CurrentSlot !SlotNo
+
+    -- | The current slot is not yet known
+    --
+    -- This only happens when the tip of the ledger is so far behind that we
+    -- lack the information necessary to translate the current 'UTCTime' into a
+    -- 'SlotNo'. This should only be the case during syncing.
+  | CurrentSlotUnknown
+  deriving stock    (Generic, Show)
+  deriving anyclass (NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   Derived functionality
@@ -45,27 +63,19 @@ data BlockchainTime m = BlockchainTime {
 -- we may not know what the current 'SlotId' is).
 --
 -- Returns a handle to kill the thread.
-onKnownSlotChange :: (IOLike m, HasCallStack)
+onKnownSlotChange :: forall m. (IOLike m, HasCallStack)
                   => ResourceRegistry m
                   -> BlockchainTime m
                   -> String            -- ^ Label for the thread
                   -> (SlotNo -> m ())  -- ^ Action to execute
                   -> m (m ())
-onKnownSlotChange registry BlockchainTime{getCurrentSlot} label =
+onKnownSlotChange registry btime label =
       fmap cancelThread
-    . onEachChange registry label id Nothing getCurrentSlot
-
-{-------------------------------------------------------------------------------
-  Test infrastructure
-
-  TODO: these will go after
-  <https://github.com/input-output-hk/ouroboros-network/pull/1989>
--------------------------------------------------------------------------------}
-
--- | The current slot can be changed by modifying the given 'StrictTVar'.
---
--- 'onSlotChange_' is not implemented and will return an 'error'.
-settableBlockchainTime :: MonadSTM m => StrictTVar m SlotNo -> BlockchainTime m
-settableBlockchainTime varCurSlot = BlockchainTime {
-      getCurrentSlot = readTVar varCurSlot
-    }
+    . onEachChange registry label id Nothing getCurrentSlot'
+  where
+    getCurrentSlot' :: STM m SlotNo
+    getCurrentSlot' = do
+        mSlot <- getCurrentSlot btime
+        case mSlot of
+          CurrentSlotUnknown -> retry
+          CurrentSlot s      -> return s

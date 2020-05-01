@@ -27,7 +27,6 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
   , ChainSyncClientException (..)
   , ChainDbView (..)
   , defaultChainDbView
-  , ClockSkew (..)
   , Our (..)
   , Their (..)
     -- * Trace events
@@ -59,7 +58,6 @@ import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation
@@ -77,15 +75,6 @@ import           Ouroboros.Consensus.Util.STM (WithFingerprint (..),
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
                      InvalidBlockReason)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
-
--- | Clock skew: the number of slots the chain of an upstream node may be
--- ahead of the current slot (according to 'BlockchainTime').
---
--- E.g. a 'ClockSkew' value of @1@ means that a block produced by an upstream
--- it may have a slot number that is 1 greater than the current slot.
-newtype ClockSkew = ClockSkew { unClockSkew :: Word64 }
-  deriving stock   (Show, Eq, Ord)
-  deriving newtype (Enum, Bounded, Num)
 
 type Consensus (client :: * -> * -> (* -> *) -> * -> *) blk m =
    client (Header blk) (Tip blk) m Void
@@ -351,13 +340,10 @@ chainSyncClient
     => MkPipelineDecision
     -> Tracer m (TraceChainSyncClientEvent blk)
     -> TopLevelConfig blk
-    -> BlockchainTime m
-    -> ClockSkew   -- ^ Maximum clock skew
     -> ChainDbView m blk
     -> StrictTVar m (AnchoredFragment (Header blk))
     -> Consensus ChainSyncClientPipelined blk m
-chainSyncClient mkPipelineDecision0 tracer cfg btime
-                (ClockSkew maxSkew)
+chainSyncClient mkPipelineDecision0 tracer cfg
                 ChainDbView
                 { getCurrentChain
                 , getCurrentLedger
@@ -666,11 +652,6 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
                 , mostRecentIntersection
                 } = kis'
 
-          -- Check for clock skew
-          wallclock <- atomically $ getCurrentSlot btime
-          when (fmap unSlotNo (pointSlot hdrPoint) > At (unSlotNo wallclock + maxSkew)) $
-            disconnect $ HeaderExceedsClockSkew hdrPoint wallclock ourTip theirTip
-
           -- Validate header
           let expectPrevHash = castHash (AF.headHash theirFrag)
               actualPrevHash = headerPrevHash hdr
@@ -946,19 +927,8 @@ continueWithState !s (Stateful f) =
 -------------------------------------------------------------------------------}
 
 data ChainSyncClientException =
-      -- | The header we received was for a slot too far in the future.
-      --
-      -- I.e., the slot of the received header was > current slot (according
-      -- to the wall time) + the max clock skew.
-      forall blk. BlockSupportsProtocol blk =>
-        HeaderExceedsClockSkew
-          (Point blk)  -- ^ Received header
-          SlotNo       -- ^ Current wall slotnumber
-          (Our   (Tip blk))
-          (Their (Tip blk))
-
       -- | The server we're connecting to forked more than @k@ blocks ago.
-    | forall blk. BlockSupportsProtocol blk =>
+      forall blk. BlockSupportsProtocol blk =>
         ForkTooDeep
           (Point blk)  -- ^ Intersection
           (Our   (Tip blk))
@@ -1033,12 +1003,6 @@ data ChainSyncClientException =
 deriving instance Show ChainSyncClientException
 
 instance Eq ChainSyncClientException where
-  HeaderExceedsClockSkew (a :: Point blk) b c d == HeaderExceedsClockSkew (a' :: Point blk') b' c' d' =
-    case eqT @blk @blk' of
-      Nothing   -> False
-      Just Refl -> (a, b, c, d) == (a', b', c', d')
-  HeaderExceedsClockSkew{} == _ = False
-
   ForkTooDeep (a :: Point blk) b c == ForkTooDeep (a' :: Point blk') b' c' =
     case eqT @blk @blk' of
       Nothing   -> False

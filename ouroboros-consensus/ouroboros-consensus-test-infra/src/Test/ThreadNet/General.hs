@@ -74,7 +74,7 @@ import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.Range
 import           Test.Util.Shrink (andId, dropId)
 import           Test.Util.Stream
-import           Test.Util.Time
+import           Test.Util.WrappedClock (NumSlots (..))
 
 {-------------------------------------------------------------------------------
   Configuring tests
@@ -199,6 +199,7 @@ runTestNetwork ::
      ( RunNode blk
      , TxGen blk
      , TracingConstraints blk
+     , HasCallStack
      )
   => TestConfig
   -> EpochSize

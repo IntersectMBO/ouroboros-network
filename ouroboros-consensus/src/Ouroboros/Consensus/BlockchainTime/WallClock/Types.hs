@@ -1,12 +1,13 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
--- | Supporting definitions for BlockchanTime instances that use the wallclock
-module Ouroboros.Consensus.BlockchainTime.WallClock (
-    -- * System start
+module Ouroboros.Consensus.BlockchainTime.WallClock.Types (
+    -- * System time
     SystemStart(..)
+  , SystemTime(..)
+  , defaultSystemTime
     -- * Slot length
   , SlotLength -- Opaque
   , getSlotLength
@@ -16,19 +17,16 @@ module Ouroboros.Consensus.BlockchainTime.WallClock (
   , slotLengthToSec
   , slotLengthFromMillisec
   , slotLengthToMillisec
-    -- * Tracing
-  , TraceBlockchainTimeEvent(..)
-    -- * Exceptions
-  , SystemClockMovedBackException(..)
   ) where
 
-import           Control.Exception (Exception)
 import           Data.Fixed
 import           Data.Time (NominalDiffTime, UTCTime)
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
-import           Cardano.Slotting.Slot
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..),
+                     UseIsNormalForm (..))
+
+import           Control.Monad.Class.MonadTime (MonadTime (..))
 
 {-------------------------------------------------------------------------------
   System start
@@ -40,6 +38,18 @@ import           Cardano.Slotting.Slot
 newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
   deriving (Eq, Show)
   deriving NoUnexpectedThunks via UseIsNormalForm SystemStart
+
+-- | System time
+--
+-- Slots are counted from the system start.
+data SystemTime m = SystemTime {
+      systemTimeStart   :: !SystemStart
+    , systemTimeCurrent :: !(m UTCTime)
+    }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "SystemTime" (SystemTime m)
+
+defaultSystemTime :: MonadTime m => SystemStart -> SystemTime m
+defaultSystemTime start = SystemTime start getCurrentTime
 
 {-------------------------------------------------------------------------------
   SlotLength
@@ -78,28 +88,3 @@ slotLengthToMillisec = conv . getSlotLength
     conv = truncate
          . (* 1000)
          . (realToFrac :: NominalDiffTime -> Pico)
-
-{-------------------------------------------------------------------------------
-  Tracing
--------------------------------------------------------------------------------}
-
--- | Time related tracing
-data TraceBlockchainTimeEvent
-  = TraceStartTimeInTheFuture SystemStart NominalDiffTime
-    -- ^ The start time of the blockchain time is in the future. We have to
-    -- block (for 'NominalDiffTime') until that time comes.
-  deriving (Show)
-
-{-------------------------------------------------------------------------------
-  Exceptions
--------------------------------------------------------------------------------}
-
-data SystemClockMovedBackException =
-    -- | The system clock got moved back so far that the slot number decreased
-    --
-    -- We record the time at which we discovered the clock change, the slot
-    -- number before the clock change, and the slot number after the change.
-    SystemClockMovedBack UTCTime SlotNo SlotNo
-  deriving (Show)
-
-instance Exception SystemClockMovedBackException

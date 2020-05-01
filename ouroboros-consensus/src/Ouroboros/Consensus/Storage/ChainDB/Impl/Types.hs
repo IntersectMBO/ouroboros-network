@@ -36,13 +36,14 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
     -- * Invalid blocks
   , InvalidBlocks
   , InvalidBlockInfo (..)
+    -- * Future blocks
+  , FutureBlocks
     -- * Blocks to add
   , BlocksToAdd
   , BlockToAdd (..)
   , newBlocksToAdd
   , addBlockToAdd
   , getBlockToAdd
-  , FutureBlockToAdd (..)
     -- * Trace types
   , TraceEvent (..)
   , TraceAddBlockEvent (..)
@@ -61,7 +62,6 @@ import           Data.Map.Strict (Map)
 import           Data.Time.Clock (DiffTime)
 import           Data.Typeable
 import           Data.Void (Void)
-import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
 
@@ -75,8 +75,8 @@ import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.IOLike
@@ -217,18 +217,27 @@ data ChainDbEnv m blk = CDB
   , cdbChunkInfo       :: !ImmDB.ChunkInfo
   , cdbIsEBB           :: !(Header blk -> IsEBB)
   , cdbCheckIntegrity  :: !(blk -> Bool)
-  , cdbBlockchainTime  :: !(BlockchainTime m)
+  , cdbCheckInFuture   :: !(CheckInFuture m blk)
   , cdbBlocksToAdd     :: !(BlocksToAdd m blk)
     -- ^ Queue of blocks that still have to be added.
-  , cdbFutureBlocks    :: !(StrictTVar m (Map SlotNo (NonEmpty (FutureBlockToAdd m blk))))
-    -- ^ Scheduled chain selections for blocks with a slot in the future.
+  , cdbFutureBlocks    :: !(StrictTVar m (FutureBlocks blk))
+    -- ^ Blocks from the future
     --
-    -- When a block with slot @s@, which is > the current slot is added, we
-    -- add a corresponding 'FutureBlockToAdd' to the front of the list stored
-    -- under its slot number. We prepend to the list, so they are in reverse
-    -- order w.r.t. the order in which they were added.
+    -- Blocks that were added to the ChainDB but that were from the future
+    -- according to 'CheckInFuture', without exceeding the clock skew
+    -- ('inFutureExceedsClockSkew'). Blocks exceeding the clock skew are
+    -- considered to be invalid ('InFutureExceedsClockSkew') and will be added
+    -- 'cdbInvalid'.
     --
-    -- INVARIANT: all slots in the map are > the current slot.
+    -- Whenever a block is added to the ChainDB, we first trigger chain
+    -- selection for all the blocks in this map so that blocks no longer from
+    -- the future can get adopted. Note that when no blocks are added to the
+    -- ChainDB, we will /not/ actively trigger chain selection for the blocks
+    -- in this map.
+    --
+    -- The number of blocks from the future is bounded by the number of
+    -- upstream peers multiplied by the max clock skew divided by the slot
+    -- length.
   } deriving (Generic)
 
 -- | We include @blk@ in 'showTypeOf' because it helps resolving type families
@@ -243,23 +252,21 @@ instance (IOLike m, LedgerSupportsProtocol blk)
 -------------------------------------------------------------------------------}
 
 data Internal m blk = Internal
-  { intCopyToImmDB             :: m (WithOrigin SlotNo)
+  { intCopyToImmDB           :: m (WithOrigin SlotNo)
     -- ^ Copy the blocks older than @k@ from to the VolatileDB to the
     -- ImmutableDB and update the in-memory chain fragment correspondingly.
     --
     -- The 'SlotNo' of the tip of the ImmutableDB after copying the blocks is
     -- returned. This can be used for a garbage collection on the VolatileDB.
-  , intGarbageCollect          :: SlotNo -> m ()
+  , intGarbageCollect        :: SlotNo -> m ()
     -- ^ Perform garbage collection for blocks <= the given 'SlotNo'.
-  , intUpdateLedgerSnapshots   :: m ()
+  , intUpdateLedgerSnapshots :: m ()
     -- ^ Write a new LedgerDB snapshot to disk and remove the oldest one(s).
-  , intScheduledChainSelection :: SlotNo -> m ()
-    -- ^ Run the scheduled chain selections for the given 'SlotNo'.
-  , intAddBlockRunner          :: m Void
+  , intAddBlockRunner        :: m Void
     -- ^ Start the loop that adds blocks to the ChainDB retrieved from the
     -- queue populated by 'ChainDB.addBlock'. Execute this loop in a separate
     -- thread.
-  , intKillBgThreads           :: StrictTVar m (m ())
+  , intKillBgThreads         :: StrictTVar m (m ())
     -- ^ A handle to kill the background threads.
   }
 
@@ -379,6 +386,16 @@ data InvalidBlockInfo blk = InvalidBlockInfo
   } deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
+  Future blocks
+-------------------------------------------------------------------------------}
+
+-- | Blocks from the future for which we still need to trigger chain
+-- selection.
+--
+-- See 'cdbFutureBlocks' for more info.
+type FutureBlocks blk = Map (HeaderHash blk) (Header blk)
+
+{-------------------------------------------------------------------------------
   Blocks to add
 -------------------------------------------------------------------------------}
 
@@ -391,13 +408,11 @@ newtype BlocksToAdd m blk = BlocksToAdd (TBQueue m (BlockToAdd m blk))
 -- | Entry in the 'BlocksToAdd' queue: a block together with the 'TMVar's used
 -- to implement 'AddBlockPromise'.
 data BlockToAdd m blk = BlockToAdd
-  { blockToAdd                 :: !blk
-  , varBlockWrittenToDisk      :: !(StrictTMVar m Bool)
+  { blockToAdd            :: !blk
+  , varBlockWrittenToDisk :: !(StrictTMVar m Bool)
     -- ^ Used for the 'blockWrittenToDisk' field of 'AddBlockPromise'.
-  , varBlockProcessed          :: !(StrictTMVar m (Point blk))
+  , varBlockProcessed     :: !(StrictTMVar m (Point blk))
     -- ^ Used for the 'blockProcessed' field of 'AddBlockPromise'.
-  , varChainSelectionPerformed :: !(StrictTMVar m (Point blk))
-    -- ^ Used for the 'chainSelectionPerformed' field of 'AddBlockPromise'.
   }
 
 -- | Create a new 'BlocksToAdd' with the given size.
@@ -413,14 +428,12 @@ addBlockToAdd
   -> blk
   -> m (AddBlockPromise m blk)
 addBlockToAdd tracer (BlocksToAdd queue) blk = do
-    varBlockWrittenToDisk      <- newEmptyTMVarM
-    varBlockProcessed          <- newEmptyTMVarM
-    varChainSelectionPerformed <- newEmptyTMVarM
+    varBlockWrittenToDisk <- newEmptyTMVarM
+    varBlockProcessed     <- newEmptyTMVarM
     let !toAdd = BlockToAdd
           { blockToAdd = blk
           , varBlockWrittenToDisk
           , varBlockProcessed
-          , varChainSelectionPerformed
           }
     queueSize <- atomically $ do
       writeTBQueue  queue toAdd
@@ -430,25 +443,12 @@ addBlockToAdd tracer (BlocksToAdd queue) blk = do
     return AddBlockPromise
       { blockWrittenToDisk      = readTMVar varBlockWrittenToDisk
       , blockProcessed          = readTMVar varBlockProcessed
-      , chainSelectionPerformed = readTMVar varChainSelectionPerformed
       }
 
 -- | Get the oldest block from the 'BlocksToAdd' queue. Can block when the
 -- queue is empty.
 getBlockToAdd :: IOLike m => BlocksToAdd m blk -> m (BlockToAdd m blk)
 getBlockToAdd (BlocksToAdd queue) = atomically $ readTBQueue queue
-
-data FutureBlockToAdd m blk = FutureBlockToAdd
-  { futureBlockHdr                   :: !(Header blk)
-  , varFutureChainSelectionPerformed :: !(StrictTMVar m (Point blk))
-  }
-
--- No instance for 'StrictTMVar'; we can't use generics
-instance NoUnexpectedThunks (Header blk)
-      => NoUnexpectedThunks (FutureBlockToAdd m blk) where
-  showTypeOf _ = "FutureBlockToAdd"
-  whnfNoUnexpectedThunks ctxt (FutureBlockToAdd hdr _tmvar) =
-    noUnexpectedThunks ctxt hdr
 
 {-------------------------------------------------------------------------------
   Trace types
@@ -560,26 +560,13 @@ data TraceAddBlockEvent blk
     -- to that fork (second fragment), as it is preferable to our (previous)
     -- current chain (first fragment).
 
-  | ChainChangedInBg
-      (AnchoredFragment (Header blk))
-      (AnchoredFragment (Header blk))
-    -- ^ While trying to extend our chain or switching to a fork, the current
-    -- chain was changed in the background by a concurrently added block such
-    -- that the new chain (second fragment) is no longer peferable to the
-    -- updated current chain (first fragment).
-
   | AddBlockValidation (TraceValidationEvent blk)
     -- ^ An event traced during validating performed while adding a block.
 
-  | ScheduledChainSelection (Point blk) SlotNo Word64
-    -- ^ A chain selection was scheduled in the future for the given block (at
-    -- its slot number). The current slot number and the total number of
-    -- scheduled chain selections is included.
-
-  | RunningScheduledChainSelection (NonEmpty (Point blk)) SlotNo Word64
-    -- ^ Scheduled chain selections are executed for the blocks corresponding
-    -- to the given points at the given current slot number. The total number
-    -- of scheduled chain selections is included.
+  | ChainSelectionForFutureBlock (RealPoint blk)
+    -- ^ Run chain selection for a block that was previously from the future.
+    -- This is done for all blocks from the future each time a new block is
+    -- added.
   deriving (Generic)
 
 deriving instance
@@ -606,15 +593,21 @@ data TraceValidationEvent blk =
     -- | A candidate chain was valid.
   | ValidCandidate (AnchoredFragment (Header blk))
 
-    -- | Candidate required rollback past what LedgerDB supported
-    --
-    -- This should only happen in exceptional circumstances (like after disk
-    -- corruption).
-  | CandidateExceedsRollback
-      Word64  -- ^ Supported rollback
-      Word64  -- ^ Rollback requested from the candidate
+    -- | Candidate contains headers from the future which do no exceed the
+    -- clock skew.
+  | CandidateContainsFutureBlocks
       (AnchoredFragment (Header blk))
+      -- ^ Candidate chain containing headers from the future
+      [Header blk]
+      -- ^ Headers from the future, not exceeding clock skew
 
+    -- | Candidate contains headers from the future which exceed the
+    -- clock skew, making them invalid.
+  | CandidateContainsFutureBlocksExceedingClockSkew
+      (AnchoredFragment (Header blk))
+      -- ^ Candidate chain containing headers from the future
+      [Header blk]
+      -- ^ Headers from the future, exceeding clock skew
   deriving (Generic)
 
 deriving instance

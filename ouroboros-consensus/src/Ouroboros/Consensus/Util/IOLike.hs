@@ -27,10 +27,9 @@ module Ouroboros.Consensus.Util.IOLike (
     -- *** MonadST
   , MonadST(..)
     -- *** MonadTime
-  , MonadTime(..)
-  , DiffTime
+  , MonadMonotonicTime(..)
   , Time(..)
-  , UTCTime
+  , DiffTime
   , addTime
   , diffTime
     -- *** MonadDelay
@@ -50,7 +49,7 @@ import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime hiding (MonadTime (..))
 import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
@@ -74,17 +73,17 @@ instance MonadSTMTxExtended IO.STM where
   IOLike
 -------------------------------------------------------------------------------}
 
-class ( MonadAsync    m
-      , MonadEventlog m
-      , MonadFork     m
-      , MonadST       m
-      , MonadTime     m
-      , MonadDelay    m
-      , MonadThread   m
-      , MonadThrow    m
-      , MonadCatch    m
-      , MonadMask     m
-      , MonadThrow (STM m)
+class ( MonadAsync              m
+      , MonadEventlog           m
+      , MonadFork               m
+      , MonadST                 m
+      , MonadDelay              m
+      , MonadThread             m
+      , MonadThrow              m
+      , MonadCatch              m
+      , MonadMask               m
+      , MonadMonotonicTime      m
+      , MonadThrow         (STM m)
       , MonadSTMTxExtended (STM m)
       , forall a. NoUnexpectedThunks (m a)
       , forall a. NoUnexpectedThunks a => NoUnexpectedThunks (StrictTVar m a)

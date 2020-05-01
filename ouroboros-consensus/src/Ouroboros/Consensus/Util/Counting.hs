@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveFoldable      #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE DeriveTraversable   #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -10,10 +11,12 @@
 {-# LANGUAGE TypeOperators       #-}
 
 -- | Type-level counting
+--
+-- Intended for unqualified import.
 module Ouroboros.Consensus.Util.Counting (
     Exactly(..)
   , AtMost(..)
-  , NonEmptyAtMost(..)
+  , NonEmpty(..)
     -- * Working with 'Exactly'
   , exactlyOne
   , exactlyHead
@@ -28,10 +31,10 @@ module Ouroboros.Consensus.Util.Counting (
   , atMostInit
   , atMostLast
   , atMostZipFoldable
-    -- * Working with 'NonEmptyAtMost'
-  , nonEmptyAtMostOne
-  , nonEmptyAtMostCons
-  , nonEmptyAtMostInit
+    -- * Working with 'NonEmpty'
+  , nonEmptyHead
+  , nonEmptyLast
+  , nonEmptyInit
   ) where
 
 import qualified Data.Foldable as Foldable
@@ -51,12 +54,13 @@ data AtMost :: [*] -> * -> * where
   AtMostCons :: !a -> !(AtMost xs a) -> AtMost (x ': xs) a
 
 -- | Non-empty variation on 'AtMost'
-data NonEmptyAtMost :: [*] -> * -> * where
-  NonEmptyAtMost :: !a -> !(AtMost xs a) -> NonEmptyAtMost (x ': xs) a
+data NonEmpty :: [*] -> * -> * where
+  NonEmptyOne  :: !a -> NonEmpty (x ': xs) a
+  NonEmptyCons :: !a -> !(NonEmpty xs a) -> NonEmpty (x ': xs) a
 
 deriving instance Show a => Show (Exactly        xs a)
 deriving instance Show a => Show (AtMost         xs a)
-deriving instance Show a => Show (NonEmptyAtMost xs a)
+deriving instance Show a => Show (NonEmpty xs a)
 
 deriving instance Functor     (Exactly xs)
 deriving instance Foldable    (Exactly xs)
@@ -66,9 +70,9 @@ deriving instance Functor     (AtMost xs)
 deriving instance Foldable    (AtMost xs)
 deriving instance Traversable (AtMost xs)
 
-deriving instance Functor     (NonEmptyAtMost xs)
-deriving instance Foldable    (NonEmptyAtMost xs)
-deriving instance Traversable (NonEmptyAtMost xs)
+deriving instance Functor     (NonEmpty xs)
+deriving instance Foldable    (NonEmpty xs)
+deriving instance Traversable (NonEmpty xs)
 
 {-------------------------------------------------------------------------------
   Working with 'Exactly'
@@ -110,8 +114,12 @@ exactlyWeaken = go
     go ExactlyNil         = AtMostNil
     go (ExactlyCons x xs) = AtMostCons x (go xs)
 
-exactlyWeakenNonEmpty :: Exactly (x ': xs) a -> NonEmptyAtMost (x ': xs) a
-exactlyWeakenNonEmpty (ExactlyCons x xs) = NonEmptyAtMost x (exactlyWeaken xs)
+exactlyWeakenNonEmpty :: Exactly (x ': xs) a -> NonEmpty (x ': xs) a
+exactlyWeakenNonEmpty = go
+  where
+    go :: Exactly (x ': xs) a -> NonEmpty (x ': xs) a
+    go (ExactlyCons x ExactlyNil)       = NonEmptyOne x
+    go (ExactlyCons x xs@ExactlyCons{}) = NonEmptyCons x (go xs)
 
 -- | Analogue of 'replicate'
 --
@@ -157,18 +165,22 @@ atMostZipFoldable = \as bs -> go as (Foldable.toList bs)
     go (AtMostCons a as) (b:bs) = AtMostCons (a, b) (go as bs)
 
 {-------------------------------------------------------------------------------
-  Working with 'NonEmptyAtMost'
+  Working with 'NonEmpty'
 -------------------------------------------------------------------------------}
 
-nonEmptyAtMostOne :: a -> NonEmptyAtMost (x ': xs) a
-nonEmptyAtMostOne x = NonEmptyAtMost x AtMostNil
+-- | Analogue of 'head'
+nonEmptyHead :: NonEmpty xs a -> a
+nonEmptyHead (NonEmptyOne  x)   = x
+nonEmptyHead (NonEmptyCons x _) = x
 
-nonEmptyAtMostCons :: a -> NonEmptyAtMost xs a -> NonEmptyAtMost (x ': xs) a
-nonEmptyAtMostCons x (NonEmptyAtMost x' xs) =
-    NonEmptyAtMost x (AtMostCons x' xs)
+-- | Analogue of 'last'
+nonEmptyLast :: NonEmpty xs a -> a
+nonEmptyLast = snd . nonEmptyInit
 
-nonEmptyAtMostInit :: NonEmptyAtMost xs a -> (Maybe (NonEmptyAtMost xs a), a)
-nonEmptyAtMostInit (NonEmptyAtMost x xs) =
-    case atMostInit xs of
-      Nothing           -> (Nothing, x)
-      Just (xs', final) -> (Just (NonEmptyAtMost x xs'), final)
+-- | Analogue of 'init'
+nonEmptyInit :: NonEmpty xs a -> (Maybe (NonEmpty xs a), a)
+nonEmptyInit (NonEmptyOne  x)    = (Nothing, x)
+nonEmptyInit (NonEmptyCons x xs) =
+    case nonEmptyInit xs of
+      (Nothing  , final) -> (Just (NonEmptyOne  x)     , final)
+      (Just xs' , final) -> (Just (NonEmptyCons x xs') , final)

@@ -88,12 +88,12 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
+import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Node.LedgerDerivedInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -250,12 +250,8 @@ instance Condense (ChainHash TestBlock) where
   condense (BlockHash h) = show h
 
 data instance BlockConfig TestBlock = TestBlockConfig {
-      testBlockSlotLength :: !SlotLength
-
       -- | Era parameters
-      --
-      -- TODO: This should obsolete 'testBlockSlotLengths' (#1637)
-    , testBlockEraParams :: !HardFork.EraParams
+      testBlockEraParams :: !HardFork.EraParams
 
       -- | Number of core nodes
       --
@@ -356,9 +352,6 @@ instance HasHardForkHistory TestBlock where
   hardForkShape           = HardFork.singletonShape . testBlockEraParams
   hardForkTransitions _ _ = HardFork.transitionsUnknown
 
-instance LedgerDerivedInfo TestBlock where
-  knownSlotLength = testBlockSlotLength
-
 instance QueryLedger TestBlock where
   data Query TestBlock result where
     QueryLedgerTip :: Query TestBlock (Point TestBlock)
@@ -394,7 +387,7 @@ singleNodeTestConfig = TopLevelConfig {
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
     , configLedger = ()
-    , configBlock  = TestBlockConfig slotLength eraParams numCoreNodes
+    , configBlock  = TestBlockConfig eraParams numCoreNodes
     }
   where
     slotLength :: SlotLength
