@@ -151,7 +151,7 @@ blockUntilTick clock tick = atomically $ do
 --
 -- We do this by providing it a 'SystemTime' instance that translates ticks
 -- to time.
-hardForkBlockchainTime :: (IOLike m, HasHardForkHistory blk, UpdateLedger blk, HasCallStack)
+hardForkBlockchainTime :: (IOLike m, HasHardForkHistory blk, HasCallStack)
                        => ResourceRegistry m
                        -> Tracer m BTime.TraceBlockchainTimeEvent
                        -> LogicalClock m

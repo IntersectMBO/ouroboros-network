@@ -241,32 +241,28 @@ instance LedgerSupportsProtocol ByronBlock where
                 Origin -> SlotNo $ 2 * k
                 At s   -> SlotNo $ unSlotNo s + 1 + (2 * k)
 
+
+
+byronEraParams :: Gen.Config -> HardFork.EraParams
+byronEraParams genesis = HardFork.EraParams {
+      eraEpochSize  = fromByronEpochSlots $ Gen.configEpochSlots genesis
+    , eraSlotLength = fromByronSlotLength $ genesisSlotLength genesis
+    , eraSafeZone   = HardFork.SafeZone {
+          safeFromTip     = 2 * k
+
+          -- @180@ is merely a lower bound on the 'EpochNo' in which the
+          -- Byron-to-Shelley transition could take place. We can update
+          -- it over time, and set it to the precise value once the
+          -- transition has actually taken place.
+        , safeBeforeEpoch = HardFork.LowerBound (EpochNo 180)
+        }
+    }
+  where
+    SecurityParam k = genesisSecurityParam genesis
+
 instance HasHardForkHistory ByronBlock where
-  type HardForkIndices ByronBlock = '[()]
-
-  hardForkShape _ genesis = HardFork.singletonShape eraParams
-    where
-      SecurityParam k = genesisSecurityParam genesis
-
-      eraParams :: HardFork.EraParams
-      eraParams = HardFork.EraParams {
-            eraEpochSize  = fromByronEpochSlots $ Gen.configEpochSlots genesis
-          , eraSlotLength = fromByronSlotLength $ genesisSlotLength genesis
-          , eraSafeZone   = HardFork.SafeZone {
-                safeFromTip     = 2 * k
-
-                -- @180@ is merely a lower bound on the 'EpochNo' in which the
-                -- Byron-to-Shelley transition could take place. We can update
-                -- it over time, and set it to the precise value once the
-                -- transition has actually taken place.
-              , safeBeforeEpoch = HardFork.LowerBound (EpochNo 180)
-              }
-          }
-
-  -- TODO: This is wrong. We should look at the state of the ledger.
-  -- Once we actually start using the hard fork combinator, we should fix this.
-  -- <https://github.com/input-output-hk/ouroboros-network/issues/1786>
-  hardForkTransitions _ _ = HardFork.transitionsUnknown
+  type HardForkIndices ByronBlock = '[ByronBlock]
+  hardForkSummary = neverForksHardForkSummary byronEraParams
 
 {-------------------------------------------------------------------------------
   Auxiliary

@@ -10,7 +10,6 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.HardFork (
 
 import           Control.Monad
 import           Control.Tracer
-import           Data.Proxy
 import           Data.Time (NominalDiffTime, UTCTime)
 import           Data.Void
 import           GHC.Stack
@@ -29,7 +28,6 @@ import           Ouroboros.Consensus.Util.Time
 hardForkBlockchainTime :: forall m blk.
                           ( IOLike m
                           , HasHardForkHistory blk
-                          , UpdateLedger blk
                           , HasCallStack
                           )
                        => ResourceRegistry m
@@ -56,11 +54,7 @@ hardForkBlockchainTime registry
       }
   where
     summarize :: LedgerState blk -> HF.Summary (HardForkIndices blk)
-    summarize st = HF.summarize
-                     systemTimeStart
-                     (ledgerTipSlot st)
-                     (hardForkShape (Proxy @blk) cfg)
-                     (hardForkTransitions        cfg st)
+    summarize st = hardForkSummary systemTimeStart cfg st
 
     loop :: HF.RunWithCachedSummary xs m
          -> StrictTVar m CurrentSlot

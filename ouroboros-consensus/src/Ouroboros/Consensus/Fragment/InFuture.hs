@@ -23,7 +23,6 @@ module Ouroboros.Consensus.Fragment.InFuture (
   ) where
 
 import           Data.Bifunctor
-import           Data.Proxy
 import           Data.Time (NominalDiffTime, diffUTCTime)
 import           Data.Word
 
@@ -117,12 +116,7 @@ reference cfg (ClockSkew clockSkew) SystemTime{..} = CheckInFuture {
         -- summary can be used to check all of the blocks in the fragment
         return $
           checkFragment
-            (HF.summarize
-               systemTimeStart
-               (ledgerTipSlot
-                  (VF.validatedLedger validated))
-               (hardForkShape (Proxy @blk) cfg)
-               (hardForkTransitions cfg (VF.validatedLedger validated)))
+            (hardForkSummary systemTimeStart cfg (VF.validatedLedger validated))
             now
             (VF.validatedFragment validated)
     }

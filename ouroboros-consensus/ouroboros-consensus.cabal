@@ -51,6 +51,34 @@ library
                        Ouroboros.Consensus.Fragment.Validated
                        Ouroboros.Consensus.Fragment.ValidatedDiff
                        Ouroboros.Consensus.HardFork.Abstract
+                       Ouroboros.Consensus.HardFork.Combinator
+                       Ouroboros.Consensus.HardFork.Combinator.Abstract
+                       Ouroboros.Consensus.HardFork.Combinator.Basics
+                       Ouroboros.Consensus.HardFork.Combinator.Block
+                       Ouroboros.Consensus.HardFork.Combinator.Degenerate
+                       Ouroboros.Consensus.HardFork.Combinator.Forge
+                       Ouroboros.Consensus.HardFork.Combinator.Ledger
+                       Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
+                       Ouroboros.Consensus.HardFork.Combinator.Mempool
+                       Ouroboros.Consensus.HardFork.Combinator.PartialConfig
+                       Ouroboros.Consensus.HardFork.Combinator.Protocol
+                       Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
+                       Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
+                       Ouroboros.Consensus.HardFork.Combinator.Protocol.State
+                       Ouroboros.Consensus.HardFork.Combinator.SingleEra
+                       Ouroboros.Consensus.HardFork.Combinator.SingleEra.Combined
+                       Ouroboros.Consensus.HardFork.Combinator.SingleEra.Info
+                       Ouroboros.Consensus.HardFork.Combinator.SingleEra.Wrappers
+                       Ouroboros.Consensus.HardFork.Combinator.State
+                       Ouroboros.Consensus.HardFork.Combinator.State.Infra
+                       Ouroboros.Consensus.HardFork.Combinator.Translation
+                       Ouroboros.Consensus.HardFork.Combinator.Unary
+                       Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
+                       Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
+                       Ouroboros.Consensus.HardFork.Combinator.Util.Match
+                       Ouroboros.Consensus.HardFork.Combinator.Util.SOP
+                       Ouroboros.Consensus.HardFork.Combinator.Util.Tails
+                       Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                        Ouroboros.Consensus.HardFork.History
                        Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract
@@ -168,6 +196,9 @@ library
                        Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
                        Ouroboros.Consensus.Storage.VolatileDB.Types
 
+                       -- Strict wrapper around SOP
+                       Data.SOP.Strict
+
   default-language:    Haskell2010
   other-extensions:
                        BangPatterns
@@ -230,6 +261,7 @@ library
                      , network           >=3.1   && <3.2
                      , psqueues          >=0.2.3 && <0.3
                      , serialise         >=0.2   && <0.3
+                     , sop-core          >=0.5   && <0.6
                      , stm               >=2.5   && <2.6
                      , streaming
                      , text              >=1.2   && <1.3

@@ -7,11 +7,12 @@ module Ouroboros.Consensus.Block.Forge (
   , Update(..)
   , updateFromTVar
   , liftUpdate
+  , coerceUpdate
   ) where
 
 import           Crypto.Random (MonadRandom)
 import           Data.Bifunctor (first)
-
+import           Data.Coerce
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Block
@@ -72,3 +73,6 @@ liftUpdate :: (large -> small)
 liftUpdate get set (Update update) = Update $ \f ->
     update $ \large ->
       first (flip set large) <$> (f (get large))
+
+coerceUpdate :: Coercible a b => Update m a -> Update m b
+coerceUpdate = liftUpdate coerce (\new _old -> coerce new)

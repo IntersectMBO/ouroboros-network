@@ -537,9 +537,8 @@ instance LedgerSupportsProtocol TestBlock where
   ledgerViewForecastAt _ _ = Just . trivialForecast
 
 instance HasHardForkHistory TestBlock where
-  type HardForkIndices TestBlock = '[()]
-  hardForkShape _         = HardFork.singletonShape
-  hardForkTransitions _ _ = HardFork.transitionsUnknown
+  type HardForkIndices TestBlock = '[TestBlock]
+  hardForkSummary = neverForksHardForkSummary id
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint GenesisHash

@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Util.Counting (
   , exactlyWeaken
   , exactlyWeakenNonEmpty
   , exactlyReplicate
+  , exactlyFromNP
     -- * Working with 'AtMost'
   , atMostOne
   , atMostInit
@@ -38,6 +39,7 @@ module Ouroboros.Consensus.Util.Counting (
   ) where
 
 import qualified Data.Foldable as Foldable
+import           Data.SOP.Strict
 
 {-------------------------------------------------------------------------------
   Types
@@ -130,6 +132,13 @@ exactlyReplicate = go
     go :: Word -> a -> (forall xs. Exactly xs a -> r) -> r
     go 0 _ k = k ExactlyNil
     go n a k = go (n - 1) a $ \xs -> k (ExactlyCons a xs)
+
+exactlyFromNP :: NP (K a) xs -> Exactly xs a
+exactlyFromNP = go
+  where
+    go :: NP (K a) xs -> Exactly xs a
+    go Nil         = ExactlyNil
+    go (K x :* xs) = ExactlyCons x (go xs)
 
 {-------------------------------------------------------------------------------
   Working with 'AtMost'

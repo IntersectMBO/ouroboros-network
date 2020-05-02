@@ -4,9 +4,13 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE UndecidableInstances       #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module Ouroboros.Consensus.Util.Orphans () where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -19,6 +23,7 @@ import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.IntPSQ (IntPSQ)
 import qualified Data.IntPSQ as PSQ
+import           Data.SOP.Strict
 import           Data.Void (Void)
 
 import           Control.Tracer (Tracer)
@@ -117,3 +122,7 @@ deriving newtype instance NoUnexpectedThunks Time
 
 -- TODO move to cardano-prelude
 deriving anyclass instance NoUnexpectedThunks Void
+
+instance NoUnexpectedThunks a => NoUnexpectedThunks (K a b) where
+  showTypeOf _ = showTypeOf (Proxy @a)
+  whnfNoUnexpectedThunks ctxt (K a) = whnfNoUnexpectedThunks ("K":ctxt) a
