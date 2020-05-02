@@ -152,11 +152,9 @@ data RunNodeArgs blk = RunNodeArgs {
 --
 -- This function runs forever unless an exception is thrown.
 run :: forall blk. RunNode blk => RunNodeArgs blk -> IO ()
-run RunNodeArgs{..} = withLockDB hasFS mountPoint $ do
-    either throwM return =<< checkDbMarker
-      hasFS
-      mountPoint
-      (nodeProtocolMagicId (Proxy @blk) cfg)
+run runargs@RunNodeArgs{..} =
+
+    withDBChecks runargs $ \lastShutDownWasClean ->
     withRegistry $ \registry -> do
 
       let inFuture :: CheckInFuture IO blk
@@ -165,14 +163,6 @@ run RunNodeArgs{..} = withLockDB hasFS mountPoint $ do
                        rnMaxClockSkew
                        (defaultSystemTime $ nodeStartTime (Proxy @blk) cfg)
 
-      -- When we shut down cleanly, we create a marker file so that the next
-      -- time we start, we know we don't have to validate the contents of the
-      -- whole ChainDB. When we shut down with an exception indicating
-      -- corruption or something going wrong with the file system, we don't
-      -- create this marker file so that the next time we start, we do a full
-      -- validation.
-      lastShutDownWasClean <- hasCleanShutdownMarker hasFS
-      when lastShutDownWasClean $ removeCleanShutdownMarker hasFS
       let customiseChainDbArgs' args
             | lastShutDownWasClean
             = rnCustomiseChainDbArgs args
@@ -187,48 +177,41 @@ run RunNodeArgs{..} = withLockDB hasFS mountPoint $ do
               , ChainDB.cdbVolValidation = ValidateAll
               }
 
-      -- On a clean shutdown, create a marker in the database folder so that
-      -- next time we start up, we know we don't have to validate the whole
-      -- database.
-      createMarkerOnCleanShutdown (Proxy @blk) hasFS $ do
+      (_, chainDB) <- allocate registry
+        (\_ -> openChainDB
+          rnTraceDB registry inFuture rnDatabasePath cfg initLedger
+          customiseChainDbArgs')
+        ChainDB.closeDB
 
-        (_, chainDB) <- allocate registry
-          (\_ -> openChainDB
-            rnTraceDB registry inFuture rnDatabasePath cfg initLedger
-            customiseChainDbArgs')
-          ChainDB.closeDB
+      btime <- hardForkBlockchainTime
+                 registry
+                 (blockchainTimeTracer rnTraceConsensus)
+                 (defaultSystemTime (nodeStartTime (Proxy @blk) cfg))
+                 cfg
+                 (ledgerState <$> ChainDB.getCurrentLedger chainDB)
 
-        btime <- hardForkBlockchainTime
-                   registry
-                   (blockchainTimeTracer rnTraceConsensus)
-                   (defaultSystemTime (nodeStartTime (Proxy @blk) cfg))
-                   cfg
-                   (ledgerState <$> ChainDB.getCurrentLedger chainDB)
+      let nodeArgs = rnCustomiseNodeArgs $
+            mkNodeArgs
+              registry
+              cfg
+              initState
+              rnTraceConsensus
+              btime
+              chainDB
+      nodeKernel <- initNodeKernel nodeArgs
+      rnNodeKernelHook registry nodeKernel
 
-        let nodeArgs = rnCustomiseNodeArgs $
-              mkNodeArgs
-                registry
-                cfg
-                initState
-                rnTraceConsensus
-                btime
-                chainDB
-        nodeKernel <- initNodeKernel nodeArgs
-        rnNodeKernelHook registry nodeKernel
+      let ntnApps = mkNodeToNodeApps   nodeArgs nodeKernel
+          ntcApps = mkNodeToClientApps nodeArgs nodeKernel
+          diffusionApplications = mkDiffusionApplications
+                                    (miniProtocolParameters nodeArgs)
+                                    ntnApps
+                                    ntcApps
 
-        let ntnApps = mkNodeToNodeApps   nodeArgs nodeKernel
-            ntcApps = mkNodeToClientApps nodeArgs nodeKernel
-            diffusionApplications = mkDiffusionApplications
-                                      (miniProtocolParameters nodeArgs)
-                                      ntnApps
-                                      ntcApps
-
-        runDataDiffusion rnTraceDiffusion
-                         rnDiffusionArguments
-                         diffusionApplications
+      runDataDiffusion rnTraceDiffusion
+                       rnDiffusionArguments
+                       diffusionApplications
   where
-    mountPoint              = MountPoint rnDatabasePath
-    hasFS                   = ioHasFS mountPoint
     nodeToNodeVersionData   = NodeToNodeVersionData   { networkMagic = rnNetworkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnNetworkMagic }
 
@@ -303,6 +286,47 @@ run RunNodeArgs{..} = withLockDB hasFS mountPoint $ do
             ]
         , daErrorPolicies = consensusErrorPolicy (Proxy @blk)
         }
+
+-- | Check the DB marker, lock the DB and look for the clean shutdown marker.
+--
+-- Run the body action with the DB locked, and if the last shutdown was clean.
+--
+withDBChecks :: forall blk a.
+                RunNode blk
+             => RunNodeArgs blk
+             -> (Bool -> IO a)  -- ^ Body action with last shutdown was clean.
+             -> IO a
+withDBChecks RunNodeArgs{..} body = do
+
+    -- Check the DB marker first, before doing the lock file, since if the
+    -- marker is not present, it expects an empty DB dir.
+    either throwM return =<< checkDbMarker
+      hasFS
+      mountPoint
+      (nodeProtocolMagicId (Proxy @blk) pInfoConfig)
+
+    -- Then create the lock file.
+    withLockDB hasFS mountPoint $ do
+
+      -- When we shut down cleanly, we create a marker file so that the next
+      -- time we start, we know we don't have to validate the contents of the
+      -- whole ChainDB. When we shut down with an exception indicating
+      -- corruption or something going wrong with the file system, we don't
+      -- create this marker file so that the next time we start, we do a full
+      -- validation.
+      lastShutDownWasClean <- hasCleanShutdownMarker hasFS
+      when lastShutDownWasClean $ removeCleanShutdownMarker hasFS
+
+      -- On a clean shutdown, create a marker in the database folder so that
+      -- next time we start up, we know we don't have to validate the whole
+      -- database.
+      createMarkerOnCleanShutdown (Proxy @blk) hasFS $
+
+        body lastShutDownWasClean
+  where
+    mountPoint                   = MountPoint rnDatabasePath
+    hasFS                        = ioHasFS mountPoint
+    ProtocolInfo { pInfoConfig } = rnProtocolInfo
 
 openChainDB
   :: forall blk. RunNode blk
