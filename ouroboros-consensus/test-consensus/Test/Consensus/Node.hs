@@ -23,9 +23,7 @@ import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Util.FileLock (FileLock, ioFileLock)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.FS.API (HasFS)
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 
 import           Test.Tasty
 import           Test.Tasty.HUnit
@@ -154,13 +152,13 @@ test_checkProtocolMagicId_empty = res @?= Left e
 -- to fail.
 prop_reacquire_lock :: ReleaseDelay -> Property
 prop_reacquire_lock (ReleaseDelay releaseDelay) =
-    runSimOrThrow $ fmap fst $ runSimFS Mock.empty $ \hasFS -> do
+    runSimOrThrow $ fmap fst $ runSimFS Mock.empty $ \_hasFS -> do
       fileLock <- mockFileLock (Just releaseDelay)
       -- Lock and unlock it
-      touchLock hasFS fileLock
+      touchLock fileLock
 
       -- Lock and unlock it again, which might fail:
-      tryL (touchLock hasFS fileLock) <&> \case
+      tryL (touchLock fileLock) <&> \case
         -- If we failed to obtain the lock, it must be because the release
         -- delay we simulate is greater than or equal to the timeout
         Left  _  -> label "timed out" $ releaseDelay `ge` timeout
@@ -168,11 +166,10 @@ prop_reacquire_lock (ReleaseDelay releaseDelay) =
   where
     timeout = secondsToDiffTime 2
 
-    touchLock :: (IOLike m, MonadTimer m) => HasFS m h -> FileLock m -> m ()
-    touchLock hasFS fileLock =
+    touchLock :: (IOLike m, MonadTimer m) => FileLock m -> m ()
+    touchLock fileLock =
       withLockDB_
         fileLock
-        hasFS
         mountPoint
         dbLockFsPath
         timeout
@@ -183,12 +180,11 @@ prop_reacquire_lock (ReleaseDelay releaseDelay) =
 test_acquire_held_lock :: Assertion
 test_acquire_held_lock = withTempDir $ \dbPath -> do
     let dbMountPoint = MountPoint dbPath
-        hasFS        = ioHasFS dbMountPoint
 
     -- While holding the lock, try to acquire it again, which should fail
     res <-
-      tryL $ withLock hasFS dbMountPoint (secondsToDiffTime 0) $
-               tryL $ withLock hasFS dbMountPoint (millisecondsToDiffTime 10) $
+      tryL $ withLock dbMountPoint (secondsToDiffTime 0) $
+               tryL $ withLock dbMountPoint (millisecondsToDiffTime 10) $
                         return ()
 
     -- The outer 'Right' means that the first call to 'withLock'
@@ -201,11 +197,10 @@ test_acquire_held_lock = withTempDir $ \dbPath -> do
       sysTmpDir <- getTemporaryDirectory
       withTempDirectory sysTmpDir "ouroboros-network-test" k
 
-    withLock :: HasFS IO h -> MountPoint -> DiffTime -> IO a -> IO a
-    withLock hasFS dbMountPoint lockTimeout =
+    withLock :: MountPoint -> DiffTime -> IO a -> IO a
+    withLock dbMountPoint lockTimeout =
       withLockDB_
         ioFileLock
-        hasFS
         dbMountPoint
         dbLockFsPath
         lockTimeout
@@ -222,7 +217,7 @@ tryL = try
 --
 prop_wait_to_acquire_lock :: ActualAndMaxDelay -> Property
 prop_wait_to_acquire_lock ActualAndMaxDelay { actualDelay, maxDelay } =
-    runSimOrThrow $ fmap fst $ runSimFS Mock.empty $ \hasFS -> do
+    runSimOrThrow $ fmap fst $ runSimFS Mock.empty $ \_hasFS -> do
       -- We don't simulate delayed releases because the test depends on
       -- precise timing.
       fileLock <- mockFileLock Nothing
@@ -231,7 +226,7 @@ prop_wait_to_acquire_lock ActualAndMaxDelay { actualDelay, maxDelay } =
       let bgThread =
             -- The lock will not be held, so just use the default parameters
             -- to acquire it
-            withLock hasFS fileLock dbLockTimeout $
+            withLock fileLock dbLockTimeout $
               -- Hold the lock for ACTUAL
               threadDelay actualDelay
 
@@ -241,20 +236,18 @@ prop_wait_to_acquire_lock ActualAndMaxDelay { actualDelay, maxDelay } =
         --
         -- The test will fail when an exception is thrown below because it
         -- timed out while waiting on the lock.
-        withLock hasFS fileLock maxDelay $
+        withLock fileLock maxDelay $
           return $ property True
   where
     withLock
       :: (IOLike m, MonadTimer m)
-      => HasFS m h
-      -> FileLock m
+      => FileLock m
       -> DiffTime
       -> m a
       -> m a
-    withLock hasFS fileLock timeout =
+    withLock fileLock timeout =
       withLockDB_
         fileLock
-        hasFS
         mountPoint
         dbLockFsPath
         timeout

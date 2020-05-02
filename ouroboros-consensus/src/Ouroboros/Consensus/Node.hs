@@ -306,7 +306,7 @@ withDBChecks RunNodeArgs{..} body = do
       (nodeProtocolMagicId (Proxy @blk) pInfoConfig)
 
     -- Then create the lock file.
-    withLockDB hasFS mountPoint $ do
+    withLockDB mountPoint $ do
 
       -- When we shut down cleanly, we create a marker file so that the next
       -- time we start, we know we don't have to validate the contents of the
