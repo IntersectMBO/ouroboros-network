@@ -15,7 +15,6 @@ module Ouroboros.Consensus.Node.DbLock (
 import           Control.Monad.Class.MonadTimer
 import qualified Data.Time.Clock as Time
 
-import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Util.FileLock
 import           Ouroboros.Consensus.Util.IOLike
@@ -24,11 +23,10 @@ import           Ouroboros.Consensus.Util.IOLike
 -- the database cannot be opened by more than one process. We wait up to
 -- 'dbLockTimeout' to take the lock, before timing out and throwing a
 -- 'DbLocked' exception.
-withLockDB :: HasFS IO h -> MountPoint -> IO a -> IO a
-withLockDB hasFS mountPoint =
+withLockDB :: MountPoint -> IO a -> IO a
+withLockDB mountPoint =
     withLockDB_
       ioFileLock
-      hasFS
       mountPoint
       dbLockFsPath
       dbLockTimeout
@@ -49,16 +47,14 @@ dbLockTimeout = Time.secondsToDiffTime 2
 -- Some systems may delete the empty file when all its handles are closed.
 -- This is not an issue, since the file is created if it doesn't exist.
 withLockDB_
-  :: forall m h a. (IOLike m, MonadTimer m)
+  :: forall m a. (IOLike m, MonadTimer m)
   => FileLock m
-  -> HasFS m h
   -> MountPoint  -- ^ Root of the path
   -> FsPath      -- ^ File to lock
   -> DiffTime    -- ^ Timeout
   -> m a
   -> m a
-withLockDB_ fileLock hasFS mountPoint lockFsPath lockTimeout action = do
-    createDirectoryIfMissing hasFS True root
+withLockDB_ fileLock mountPoint lockFsPath lockTimeout action =
     bracket acquireLock id (const action)
   where
     -- We want to avoid blocking the main thread at an uninterruptible ffi, to
@@ -81,7 +77,6 @@ withLockDB_ fileLock hasFS mountPoint lockFsPath lockTimeout action = do
         Nothing     -> throwM $ DbLocked lockFilePath
         Just unlock -> return unlock
 
-    root         = mkFsPath []
     lockFilePath = fsToFilePath mountPoint lockFsPath
 
 newtype DbLocked = DbLocked FilePath

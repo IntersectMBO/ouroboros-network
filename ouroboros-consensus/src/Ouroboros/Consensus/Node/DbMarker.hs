@@ -83,6 +83,7 @@ checkDbMarker hasFS mountPoint protocolMagicId = runExceptT $ do
           actualProtocolMagicId
           protocolMagicId
     else do
+      lift $ createDirectoryIfMissing hasFS False root
       isEmpty <- lift $ Set.null <$> listDirectory hasFS root
       if isEmpty then
         createProtocolMagicIdFile
