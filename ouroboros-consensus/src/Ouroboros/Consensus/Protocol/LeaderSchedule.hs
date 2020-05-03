@@ -21,6 +21,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), fromCoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
@@ -65,7 +66,7 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
 
   checkIfCanBeLeader _ = True -- Conservative approximation
 
-  checkIsLeader WLSConfig{..} slot _ _ = return $
+  checkIsLeader WLSConfig{..} (TickedLedgerState slot _) _ = return $
     case Map.lookup slot $ getLeaderSchedule wlsConfigSchedule of
         Nothing                           -> Nothing
         Just nids

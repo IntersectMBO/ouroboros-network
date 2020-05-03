@@ -324,7 +324,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       TPraosIsACoreNode{}  -> True
       TPraosIsNotACoreNode -> False
 
-  checkIsLeader cfg@TPraosConfig{..} slot lv cs =
+  checkIsLeader cfg@TPraosConfig{..} (TickedLedgerState slot lv) cs =
     case tpraosIsCoreNodeOrNot of
       TPraosIsNotACoreNode          -> return Nothing
       TPraosIsACoreNode isACoreNode -> go isACoreNode

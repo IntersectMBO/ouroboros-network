@@ -266,7 +266,7 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
         CoreId{}  -> True
         RelayId{} -> False  -- Relays are never leaders
 
-  checkIsLeader cfg@PraosConfig{..} slot _u cs =
+  checkIsLeader cfg@PraosConfig{..} (TickedLedgerState slot _u) cs =
     case praosNodeId of
         RelayId _  -> return Nothing
         CoreId nid -> do

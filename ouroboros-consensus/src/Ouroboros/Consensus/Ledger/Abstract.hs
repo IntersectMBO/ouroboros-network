@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DerivingStrategies    #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -115,7 +116,7 @@ data TickedLedger l = TickedLedgerState {
       -- > == ledgerTipPoint st
     , tickedLedgerState :: !l
     }
-  deriving stock    (Generic)
+  deriving stock    (Generic, Functor)
   deriving anyclass (NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------

@@ -265,7 +265,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
         PBftIsALeader{}  -> True
         PBftIsNotALeader -> False
 
-  checkIsLeader PBftConfig{pbftIsLeader, pbftParams} (SlotNo n) _l _cs =
+  checkIsLeader PBftConfig{pbftIsLeader, pbftParams} (TickedLedgerState (SlotNo n) _l) _cs =
       case pbftIsLeader of
         PBftIsNotALeader                           -> return Nothing
 

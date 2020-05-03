@@ -29,8 +29,7 @@ import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point,
-                     SlotNo (..))
+import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point)
 
 import           Ouroboros.Consensus.Ledger.Abstract (TickedLedger)
 
@@ -154,11 +153,10 @@ class ( Show (ConsensusState p)
 
   -- | Check if a node is the leader
   checkIsLeader :: MonadRandom m
-                => ConsensusConfig p
-                -> SlotNo
-                -> LedgerView      p
-                -> ConsensusState  p
-                -> m (Maybe (IsLeader p))
+                => ConsensusConfig          p
+                -> TickedLedger (LedgerView p)
+                -> ConsensusState           p
+                -> m (Maybe (IsLeader       p))
 
   -- | Check if a node is configured such that it can be a leader.
   checkIfCanBeLeader :: ConsensusConfig p -> Bool
