@@ -9,6 +9,7 @@
 module Ouroboros.Consensus.Shelley.Node (
     protocolInfoShelley
   , ShelleyGenesis (..)
+  , initialFundsPseudoTxIn
   , ShelleyGenesisStaking (..)
   , TPraosLeaderCredentials (..)
   , SL.ProtVer
@@ -17,8 +18,6 @@ module Ouroboros.Consensus.Shelley.Node (
 
 import           Codec.Serialise (decode, encode)
 import           Control.Monad.Reader (runReader)
-import           Data.ByteString (ByteString)
-import           Data.Coerce (coerce)
 import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -29,6 +28,7 @@ import           GHC.Generics (Generic)
 import           Cardano.Binary (Annotator (..), FullByteString (..), fromCBOR,
                      toCBOR)
 import           Cardano.Crypto (ProtocolMagicId)
+import qualified Cardano.Crypto.Hash.Class as Crypto (Hash (..))
 import           Cardano.Crypto.KES.Class (SignKeyKES)
 import           Cardano.Prelude (Natural)
 import           Cardano.Slotting.EpochInfo
@@ -60,6 +60,7 @@ import qualified Shelley.Spec.Ledger.EpochBoundary as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
+import qualified Shelley.Spec.Ledger.Scripts as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL
 import qualified Shelley.Spec.Ledger.STS.NewEpoch as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as SL
@@ -143,6 +144,34 @@ data ShelleyGenesis c = ShelleyGenesis {
     , sgStaking               :: !(ShelleyGenesisStaking c)
     }
   deriving (Eq, Show, Generic)
+
+
+-- | Compute the 'SL.TxIn' of the initial UTxO pseudo-transaction corresponding
+-- to the given address in the genesis initial funds.
+--
+-- The Shelley initial UTxO is constructed from the 'sgInitialFunds' which
+-- is not a full UTxO but just a map from addresses to coin values.
+--
+-- This gets turned into a UTxO by making a pseudo-transaction for each address,
+-- with the 0th output being the coin value. So to spend from the initial UTxO
+-- we need this same 'SL.TxIn' to use as an input to the spending transaction.
+--
+initialFundsPseudoTxIn :: forall c. SL.Addr c -> SL.TxIn c
+initialFundsPseudoTxIn addr =
+    case addr of
+      SL.Addr (SL.KeyHashObj    (SL.KeyHash    h)) _sref -> pseudoTxIn h
+      SL.Addr (SL.ScriptHashObj (SL.ScriptHash h)) _sref -> pseudoTxIn h
+      SL.AddrBootstrap          (SL.KeyHash    h)        -> pseudoTxIn h
+  where
+    pseudoTxIn :: Crypto.Hash (HASH c) a -> SL.TxIn c
+    pseudoTxIn h = SL.TxIn (pseudoTxId h) 0
+
+    pseudoTxId :: Crypto.Hash (HASH c) a -> SL.TxId c
+    pseudoTxId = SL.TxId . castHash
+
+    --TODO: move this to the hash API module
+    castHash :: Crypto.Hash (HASH c) a -> Crypto.Hash (HASH c) b
+    castHash (Crypto.UnsafeHash h) = Crypto.UnsafeHash h
 
 protocolInfoShelley
   :: forall c. Crypto c
@@ -281,21 +310,11 @@ protocolInfoShelley genesis protVer mbCredentials =
 
     genesisUtxO :: SL.UTxO c
     genesisUtxO = SL.UTxO $ Map.fromList
-        [ (magicTxIn, txOut)
+        [ (txIn, txOut)
         | (addr, amount) <- Map.toList (sgInitialFunds genesis)
-        , let txOut = SL.TxOut addr amount
+        , let txIn  = initialFundsPseudoTxIn addr
+              txOut = SL.TxOut addr amount
         ]
-      where
-        -- TODO
-        magicTxInId =
-            SL.TxId
-          . coerce
-          $ SL.hash
-            @(HASH c)
-            @ByteString
-            "In the beginning"
-
-        magicTxIn = SL.TxIn magicTxInId 0
 
     -- Register the initial staking.
     --
