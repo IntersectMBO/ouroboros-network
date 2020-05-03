@@ -32,6 +32,8 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point,
                      SlotNo (..))
 
+import           Ouroboros.Consensus.Ledger.Abstract (TickedLedger)
+
 -- | Static configuration required to run the consensus protocol
 --
 -- Every method in the 'ConsensusProtocol' class takes the consensus
@@ -163,10 +165,10 @@ class ( Show (ConsensusState p)
 
   -- | Apply a header
   updateConsensusState :: HasCallStack
-                       => ConsensusConfig p
-                       -> LedgerView      p -- /Updated/ ledger state
-                       -> ValidateView    p
-                       -> ConsensusState  p -- /Previous/ Ouroboros state
+                       => ConsensusConfig          p
+                       -> TickedLedger (LedgerView p)
+                       -> ValidateView             p
+                       -> ConsensusState           p
                        -> Except (ValidationErr p) (ConsensusState p)
 
   -- | We require that protocols support a @k@ security parameter

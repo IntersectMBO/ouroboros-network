@@ -61,6 +61,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -703,7 +704,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                   -> Point blk   -- ^ Intersection between our and their chain
                   -> Our (Tip blk)       -- ^ Only to produce an error message
                   -> Their (Tip blk)     -- ^ Only to produce an error message
-                  -> STM m (LedgerView (BlockProtocol blk))
+                  -> STM m (TickedLedger (LedgerView (BlockProtocol blk)))
     getLedgerView hdr intersection ourTip theirTip = do
         curLedger <- ledgerState <$> getCurrentLedger
 
@@ -727,7 +728,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg
               Left OutsideForecastRange{} -> -- Case (1)
                 retry
               Right lv ->
-                return lv
+                -- Forecasting is equivalent to ticking
+                -- ('lemma_ledgerViewForecastAt_applyChainTick' )
+                return (TickedLedgerState (realPointSlot hdrPoint) lv)
       where
         hdrPoint = headerRealPoint hdr
 

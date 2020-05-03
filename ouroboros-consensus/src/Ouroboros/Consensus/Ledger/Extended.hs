@@ -138,7 +138,7 @@ instance ( LedgerSupportsProtocol blk
       hdr' <- withExcept ExtValidationErrorHeader $
                 validateHeader
                   cfg
-                  ledgerView
+                  (TickedLedgerState slot ledgerView)
                   (getHeader blk)
                   hdr
       lgr' <- withExcept ExtValidationErrorLedger $
@@ -167,7 +167,7 @@ instance ( LedgerSupportsProtocol blk
         , headerState = cantBeError $
                          validateHeader
                            cfg
-                           ledgerView
+                           (TickedLedgerState slot ledgerView)
                            (getHeader blk)
                            hdr
         }

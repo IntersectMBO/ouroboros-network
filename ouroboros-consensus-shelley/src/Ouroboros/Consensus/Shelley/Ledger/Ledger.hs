@@ -316,7 +316,7 @@ instance Crypto c => ValidateEnvelope (ShelleyBlock c) where
   type OtherHeaderEnvelopeError (ShelleyBlock c) =
     STS.PredicateFailure (STS.CHAIN c)
 
-  validateEnvelope cfg ledgerView oldTip hdr = do
+  validateEnvelope cfg (TickedLedgerState _ ledgerView) oldTip hdr = do
       -- In addition to the default 'validateEnvelope' ...
       defaultValidateEnvelope oldTip hdr
       -- ... perform the @chainChecks@ that are part of the @CHAIN@ rule.

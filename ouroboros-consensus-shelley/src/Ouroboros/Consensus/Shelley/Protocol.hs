@@ -57,6 +57,7 @@ import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Network.Block (pointSlot)
 
+import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Node.State as NodeState
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense
@@ -76,7 +77,6 @@ import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
 import           Ouroboros.Consensus.Shelley.Protocol.Util
-
 
 {-------------------------------------------------------------------------------
   Fields required by TPraos in the header
@@ -373,7 +373,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
             where
               SL.GenDelegs dlgMap = SL.lvGenDelegs lv
 
-  updateConsensusState TPraosConfig{..} lv b cs = do
+  updateConsensusState TPraosConfig{..} (TickedLedgerState _ lv) b cs = do
       newCS <- except . flip runReader shelleyGlobals $
         applySTS @(STS.PRTCL c) $ STS.TRC (prtclEnv, prtclState, b)
       return
