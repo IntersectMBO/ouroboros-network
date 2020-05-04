@@ -84,7 +84,7 @@ flipMiniProtocolDir ResponderDir = InitiatorDir
 --
 data MiniProtocolDispatch m =
      MiniProtocolDispatch
-       !(Array MiniProtocolNum (Maybe MiniProtocolIx))
+       !(Array (MiniProtocolNum, MiniProtocolDir) (Maybe MiniProtocolIx))
        !(Array (MiniProtocolIx, MiniProtocolDir)
                (MiniProtocolDispatchInfo m))
 
@@ -117,7 +117,7 @@ demuxer ptcls bearer =
                           ("id = " ++ show (msNum sdu)) callStack)
       Just MiniProtocolDirUnused ->
                    throwM (MuxError MuxInitiatorOnly
-                          ("id = " ++ show (msNum sdu)) callStack)
+                          ("id = " ++ show (msNum sdu) ++ ("dir = " ++ show (msDir sdu))) callStack)
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
           buf <- readTVar q
@@ -133,19 +133,29 @@ lookupMiniProtocol :: MiniProtocolDispatch m
                    -> MiniProtocolDir
                    -> Maybe (MiniProtocolDispatchInfo m)
 lookupMiniProtocol (MiniProtocolDispatch codeTbl ptclTbl) code mode
-  | inRange (bounds codeTbl) code
-  , Just mpid <- codeTbl ! code = Just (ptclTbl ! (mpid, mode))
-  | otherwise                   = Nothing
+  | inRange (bounds codeTbl) (code, mode)
+  , Just mpid <- codeTbl ! (code, mode) = Just (ptclTbl ! (mpid, mode))
+  | otherwise                           = Nothing
 
 -- Construct the array of TBQueues, one for each protocol id, and each mode
 setupDispatchTable :: [MiniProtocolState mode m] -> MiniProtocolDispatch m
 setupDispatchTable ptcls =
     MiniProtocolDispatch
-      (array (mincode, maxcode) $
-             [ (code, Nothing)    | code <- [mincode..maxcode] ]
-          ++ [ (code, Just pix)
+      (array ((mincode, InitiatorDir), (maxcode, ResponderDir)) $
+             [ ((pix, dir), Nothing)
+             | (pix, dir) <- range ((mincode, InitiatorDir),
+                                     (maxcode, ResponderDir)) ]
+          ++ [ ((code, dir), Just pix)
              | (pix, ptcl) <- zip [0..] ptcls
-             , let code = miniProtocolNum (miniProtocolInfo ptcl) ])
+             , let code = miniProtocolNum (miniProtocolInfo ptcl)
+                   MiniProtocolState {
+                     miniProtocolInfo =
+                       MiniProtocolInfo {
+                         miniProtocolDir
+                       }
+                   }    = ptcl
+                   dir  = protocolDirEnum miniProtocolDir
+             ])
       (array ((minpix, InitiatorDir), (maxpix, ResponderDir)) $
              [ ((pix, dir), MiniProtocolDirUnused)
              | (pix, dir) <- range ((minpix, InitiatorDir),
