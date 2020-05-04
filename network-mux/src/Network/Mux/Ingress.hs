@@ -12,11 +12,12 @@ module Network.Mux.Ingress (
     ) where
 
 import           Data.Array
-import           Control.Monad
+import           Data.List (nub)
 import qualified Data.ByteString.Lazy as BL
 import           GHC.Stack
 import           Text.Printf
 
+import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
@@ -132,42 +133,73 @@ lookupMiniProtocol :: MiniProtocolDispatch m
                    -> MiniProtocolNum
                    -> MiniProtocolDir
                    -> Maybe (MiniProtocolDispatchInfo m)
-lookupMiniProtocol (MiniProtocolDispatch codeTbl ptclTbl) code mode
-  | inRange (bounds codeTbl) code
-  , Just mpid <- codeTbl ! code = Just (ptclTbl ! (mpid, mode))
+lookupMiniProtocol (MiniProtocolDispatch pnumArray ptclArray) pnum pdir
+  | inRange (bounds pnumArray) pnum
+  , Just mpid <- pnumArray ! pnum = Just (ptclArray ! (mpid, pdir))
   | otherwise                   = Nothing
 
--- Construct the array of TBQueues, one for each protocol id, and each mode
-setupDispatchTable :: [MiniProtocolState mode m] -> MiniProtocolDispatch m
+-- | Construct the table that maps 'MiniProtocolNum' and 'MiniProtocolDir' to
+-- 'MiniProtocolDispatchInfo'. Use 'lookupMiniProtocol' to index it.
+--
+setupDispatchTable :: forall mode m.
+                      [MiniProtocolState mode m] -> MiniProtocolDispatch m
 setupDispatchTable ptcls =
-    MiniProtocolDispatch
-      (array (mincode, maxcode) $
-             [ (code, Nothing)    | code <- [mincode..maxcode] ]
-          ++ [ (code, Just pix)
-             | (pix, ptcl) <- zip [0..] ptcls
-             , let code = miniProtocolNum (miniProtocolInfo ptcl) ])
-      (array ((minpix, InitiatorDir), (maxpix, ResponderDir)) $
-             [ ((pix, dir), MiniProtocolDirUnused)
-             | (pix, dir) <- range ((minpix, InitiatorDir),
-                                    (maxpix, ResponderDir)) ]
-          ++ [ ((pix, dir), MiniProtocolDispatchInfo q qMax)
-             | (pix, ptcl) <- zip [0..] ptcls
-             , let MiniProtocolState {
-                     miniProtocolIngressQueue = q,
-                     miniProtocolInfo =
-                       MiniProtocolInfo {
-                         miniProtocolDir,
-                         miniProtocolLimits
-                       }
-                   }    = ptcl
-                   qMax = maximumIngressQueue miniProtocolLimits
-                   dir  = protocolDirEnum miniProtocolDir
-             ])
+    MiniProtocolDispatch pnumArray ptclArray
   where
-    minpix = 0
-    maxpix = fromIntegral (length ptcls - 1)
+    -- The 'MiniProtocolNum' space is sparse but we don't want a huge single
+    -- table if we use large protocol numbers. So we use a two level mapping.
+    --
+    -- The first array maps 'MiniProtocolNum' to a dense space of intermediate
+    -- integer indexes. These indexes are meaningless outside of the context of
+    -- this table. Then we use the index and the 'MiniProtocolDir' for the
+    -- second table.
+    --
+    pnumArray :: Array MiniProtocolNum (Maybe MiniProtocolIx)
+    pnumArray =
+      array (minpnum, maxpnum) $
+            -- Fill in Nothing first to cover any unused ones.
+            [ (pnum, Nothing)    | pnum <- [minpnum..maxpnum] ]
 
-    codes   = map (miniProtocolNum . miniProtocolInfo) ptcls
-    mincode = minimum codes
-    maxcode = maximum codes
+            -- And override with the ones actually used.
+         ++ [ (pnum, Just pix)   | (pix, pnum) <- zip [0..] pnums ]
+
+    ptclArray :: Array (MiniProtocolIx, MiniProtocolDir)
+                       (MiniProtocolDispatchInfo m)
+    ptclArray =
+      array ((minpix, InitiatorDir), (maxpix, ResponderDir)) $
+            -- Fill in MiniProtocolDirUnused first to cover any unused ones.
+            [ ((pix, dir), MiniProtocolDirUnused)
+            | (pix, dir) <- range ((minpix, InitiatorDir),
+                                   (maxpix, ResponderDir)) ]
+
+             -- And override with the ones actually used.
+         ++ [ ((pix, dir), MiniProtocolDispatchInfo q qMax)
+            | MiniProtocolState {
+                miniProtocolInfo =
+                  MiniProtocolInfo {
+                    miniProtocolNum,
+                    miniProtocolDir,
+                    miniProtocolLimits
+                  },
+                miniProtocolIngressQueue = q
+              } <- ptcls
+            , let Just pix = pnumArray ! miniProtocolNum
+                  dir      = protocolDirEnum miniProtocolDir
+                  qMax     = maximumIngressQueue miniProtocolLimits
+            ]
+
+    -- The protocol numbers actually used, in the order of the first use within
+    -- the 'ptcls' list. The order does not matter provided we do it
+    -- consistently between the two arrays.
+    pnums   = nub $ map (miniProtocolNum . miniProtocolInfo) ptcls
+
+    -- The dense range of indexes of used protocol numbers.
+    minpix, maxpix :: MiniProtocolIx
+    minpix  = 0
+    maxpix  = fromIntegral (length pnums - 1)
+
+    -- The sparse range of protocol numbers
+    minpnum, maxpnum :: MiniProtocolNum
+    minpnum = minimum pnums
+    maxpnum = maximum pnums
 
