@@ -58,7 +58,7 @@ import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract (TickedLedger (..))
+import           Ouroboros.Consensus.Ledger.Abstract (Ticked (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -265,7 +265,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
         PBftIsALeader{}  -> True
         PBftIsNotALeader -> False
 
-  checkIsLeader PBftConfig{pbftIsLeader, pbftParams} (TickedLedgerState (SlotNo n) _l) _cs =
+  checkIsLeader PBftConfig{pbftIsLeader, pbftParams} (Ticked (SlotNo n) _l) _cs =
       case pbftIsLeader of
         PBftIsNotALeader                           -> return Nothing
 
@@ -279,7 +279,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
             PBftIsLeader{pbftCoreNodeId = CoreNodeId i} = credentials
             PBftParams{pbftNumNodes = NumCoreNodes numCoreNodes} = pbftParams
 
-  updateConsensusState cfg@PBftConfig{..} (TickedLedgerState _ lv@(PBftLedgerView dms)) toValidate state =
+  updateConsensusState cfg@PBftConfig{..} (Ticked _ lv@(PBftLedgerView dms)) toValidate state =
       case toValidate of
         PBftValidateBoundary slot hash ->
           return $! appendEBB cfg params slot hash state

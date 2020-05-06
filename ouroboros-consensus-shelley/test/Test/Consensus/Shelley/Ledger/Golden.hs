@@ -1004,7 +1004,7 @@ exampleLedgerState :: LedgerState Block
 exampleLedgerState = reapplyLedgerBlock
     SL.testGlobals
     (mkShelleyBlock newBlock)
-    (TickedLedgerState 0 ShelleyLedgerState {
+    (Ticked 0 ShelleyLedgerState {
         ledgerTip    = genesisPoint
       , history      = History.empty
       , shelleyState = STS.chainNes startState

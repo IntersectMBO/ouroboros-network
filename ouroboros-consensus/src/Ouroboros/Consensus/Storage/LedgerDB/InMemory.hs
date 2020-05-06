@@ -783,19 +783,19 @@ instance ( IsLedger l
   type LedgerErr (LedgerDB l r) = LedgerErr l
 
   applyChainTick cfg slot db =
-      TickedLedgerState slot $ db { ledgerDbCurrent = l' }
+      Ticked slot $ db { ledgerDbCurrent = l' }
     where
-      TickedLedgerState _slot l' = applyChainTick cfg slot (ledgerDbCurrent db)
+      Ticked _slot l' = applyChainTick cfg slot (ledgerDbCurrent db)
 
 instance ApplyBlock l blk => ApplyBlock (LedgerDB l (RealPoint blk)) blk where
-  applyLedgerBlock cfg blk (TickedLedgerState slot db) = do
+  applyLedgerBlock cfg blk (Ticked slot db) = do
       fmap (\current' -> pushLedgerState current' (blockRealPoint blk) db) $
         applyLedgerBlock cfg blk $
-          TickedLedgerState slot (ledgerDbCurrent db)
-  reapplyLedgerBlock cfg blk (TickedLedgerState slot db) =
+          Ticked slot (ledgerDbCurrent db)
+  reapplyLedgerBlock cfg blk (Ticked slot db) =
       (\current' -> pushLedgerState current' (blockRealPoint blk) db) $
         reapplyLedgerBlock cfg blk $
-          TickedLedgerState slot (ledgerDbCurrent db)
+          Ticked slot (ledgerDbCurrent db)
   ledgerTipPoint =
       ledgerTipPoint . ledgerDbCurrent
 

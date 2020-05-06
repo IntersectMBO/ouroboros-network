@@ -704,7 +704,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                   -> Point blk   -- ^ Intersection between our and their chain
                   -> Our (Tip blk)       -- ^ Only to produce an error message
                   -> Their (Tip blk)     -- ^ Only to produce an error message
-                  -> STM m (TickedLedger (LedgerView (BlockProtocol blk)))
+                  -> STM m (Ticked (LedgerView (BlockProtocol blk)))
     getLedgerView hdr intersection ourTip theirTip = do
         curLedger <- ledgerState <$> getCurrentLedger
 
@@ -730,7 +730,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
               Right lv ->
                 -- Forecasting is equivalent to ticking
                 -- ('lemma_ledgerViewForecastAt_applyChainTick' )
-                return (TickedLedgerState (realPointSlot hdrPoint) lv)
+                return (Ticked (realPointSlot hdrPoint) lv)
       where
         hdrPoint = headerRealPoint hdr
 

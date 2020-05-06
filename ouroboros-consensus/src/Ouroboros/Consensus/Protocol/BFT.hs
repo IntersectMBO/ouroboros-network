@@ -141,7 +141,7 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
         CoreId{}  -> True
         RelayId{} -> False  -- Relays are never leaders
 
-  checkIsLeader BftConfig{..} (TickedLedgerState (SlotNo n) _l) _cs = do
+  checkIsLeader BftConfig{..} (Ticked (SlotNo n) _l) _cs = do
       return $ case bftNodeId of
                  RelayId _ -> Nothing
                  CoreId (CoreNodeId i) ->

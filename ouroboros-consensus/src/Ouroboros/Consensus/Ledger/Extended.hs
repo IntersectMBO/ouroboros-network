@@ -123,29 +123,27 @@ instance ( IsLedger (LedgerState  blk)
   type LedgerErr (ExtLedgerState blk) = ExtValidationError blk
 
   applyChainTick cfg slot (ExtLedgerState ledger header) =
-      TickedLedgerState slot $
-        ExtLedgerState ledger' header
+      Ticked slot $ ExtLedgerState ledger' header
     where
-      TickedLedgerState _slot ledger' =
-          applyChainTick (configLedger cfg) slot ledger
+      Ticked _slot ledger' = applyChainTick (configLedger cfg) slot ledger
 
 instance ( LedgerSupportsProtocol blk
          ) => ApplyBlock (ExtLedgerState blk) blk where
-  applyLedgerBlock cfg blk (TickedLedgerState {
+  applyLedgerBlock cfg blk (Ticked {
                                 tickedSlotNo      = slot
                               , tickedLedgerState = ExtLedgerState lgr hdr
                               }) = do
       hdr' <- withExcept ExtValidationErrorHeader $
                 validateHeader
                   cfg
-                  (TickedLedgerState slot ledgerView)
+                  (Ticked slot ledgerView)
                   (getHeader blk)
                   hdr
       lgr' <- withExcept ExtValidationErrorLedger $
                 applyLedgerBlock
                   (configLedger cfg)
                   blk
-                  (TickedLedgerState slot lgr)
+                  (Ticked slot lgr)
 
       return $!
         assertWithMsg
@@ -155,7 +153,7 @@ instance ( LedgerSupportsProtocol blk
       ledgerView :: LedgerView (BlockProtocol blk)
       ledgerView = protocolLedgerView (configLedger cfg) lgr
 
-  reapplyLedgerBlock cfg blk (TickedLedgerState {
+  reapplyLedgerBlock cfg blk (Ticked {
                                 tickedSlotNo      = slot
                               , tickedLedgerState = ExtLedgerState lgr hdr
                               }) =
@@ -163,11 +161,11 @@ instance ( LedgerSupportsProtocol blk
           ledgerState = reapplyLedgerBlock
                           (configLedger cfg)
                           blk
-                          (TickedLedgerState slot lgr)
+                          (Ticked slot lgr)
         , headerState = cantBeError $
                          validateHeader
                            cfg
-                           (TickedLedgerState slot ledgerView)
+                           (Ticked slot ledgerView)
                            (getHeader blk)
                            hdr
         }

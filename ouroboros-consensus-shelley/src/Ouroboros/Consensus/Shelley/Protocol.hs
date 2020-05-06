@@ -324,7 +324,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       TPraosIsACoreNode{}  -> True
       TPraosIsNotACoreNode -> False
 
-  checkIsLeader cfg@TPraosConfig{..} (TickedLedgerState slot lv) cs =
+  checkIsLeader cfg@TPraosConfig{..} (Ticked slot lv) cs =
     case tpraosIsCoreNodeOrNot of
       TPraosIsNotACoreNode          -> return Nothing
       TPraosIsACoreNode isACoreNode -> go isACoreNode
@@ -373,7 +373,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
             where
               SL.GenDelegs dlgMap = SL.lvGenDelegs lv
 
-  updateConsensusState TPraosConfig{..} (TickedLedgerState _ lv) b cs = do
+  updateConsensusState TPraosConfig{..} (Ticked _ lv) b cs = do
       newCS <- except . flip runReader shelleyGlobals $
         applySTS @(STS.PRTCL c) $ STS.TRC (prtclEnv, prtclState, b)
       return

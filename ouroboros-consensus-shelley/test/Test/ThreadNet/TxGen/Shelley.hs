@@ -66,7 +66,7 @@ genTx
   -> TickedLedgerState (ShelleyBlock TPraosMockCrypto)
   -> Gen.GenEnv
   -> Gen (GenTx (ShelleyBlock TPraosMockCrypto))
-genTx _cfg TickedLedgerState { tickedSlotNo, tickedLedgerState } genEnv =
+genTx _cfg Ticked { tickedSlotNo, tickedLedgerState } genEnv =
     mkShelleyTx <$> Gen.genTx
       genEnv
       ledgerEnv

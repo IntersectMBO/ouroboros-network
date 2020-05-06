@@ -31,7 +31,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point)
 
-import           Ouroboros.Consensus.Ledger.Abstract (TickedLedger)
+import           Ouroboros.Consensus.Ledger.Abstract (Ticked)
 
 -- | Static configuration required to run the consensus protocol
 --
@@ -153,20 +153,20 @@ class ( Show (ConsensusState p)
 
   -- | Check if a node is the leader
   checkIsLeader :: MonadRandom m
-                => ConsensusConfig          p
-                -> TickedLedger (LedgerView p)
-                -> ConsensusState           p
-                -> m (Maybe (IsLeader       p))
+                => ConsensusConfig    p
+                -> Ticked (LedgerView p)
+                -> ConsensusState     p
+                -> m (Maybe (IsLeader p))
 
   -- | Check if a node is configured such that it can be a leader.
   checkIfCanBeLeader :: ConsensusConfig p -> Bool
 
   -- | Apply a header
   updateConsensusState :: HasCallStack
-                       => ConsensusConfig          p
-                       -> TickedLedger (LedgerView p)
-                       -> ValidateView             p
-                       -> ConsensusState           p
+                       => ConsensusConfig    p
+                       -> Ticked (LedgerView p)
+                       -> ValidateView       p
+                       -> ConsensusState     p
                        -> Except (ValidationErr p) (ConsensusState p)
 
   -- | We require that protocols support a @k@ security parameter

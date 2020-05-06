@@ -66,7 +66,7 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
 
   checkIfCanBeLeader _ = True -- Conservative approximation
 
-  checkIsLeader WLSConfig{..} (TickedLedgerState slot _) _ = return $
+  checkIsLeader WLSConfig{..} (Ticked slot _) _ = return $
     case Map.lookup slot $ getLeaderSchedule wlsConfigSchedule of
         Nothing                           -> Nothing
         Just nids

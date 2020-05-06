@@ -15,7 +15,7 @@
 module Ouroboros.Consensus.Ledger.Abstract (
     -- * Definition of a ledger independent of a choice of block
     IsLedger(..)
-  , TickedLedger(..)
+  , Ticked(..)
   , ApplyBlock(..)
     -- ** Derived
   , tickThenApply
@@ -96,13 +96,24 @@ class ( -- Requirements on the ledger state itself
   --
   -- PRECONDITION: The slot number must be strictly greater than the slot at
   -- the tip of the ledger (except for EBBs, obviously..).
-  applyChainTick :: LedgerCfg l -> SlotNo -> l -> TickedLedger l
+  applyChainTick :: LedgerCfg l -> SlotNo -> l -> Ticked l
 
--- | Ledger state with the chain tick function already applied
+-- | Mark a ledger state or ledger view as " ticked "
 --
--- 'applyChainTick' is intended to mark the passage of time, without changing
--- the tip of the underlying ledger (i.e., no blocks have been applied).
-data TickedLedger l = TickedLedgerState {
+-- Ticking refers to the passage of time (the ticking of the clock). When a
+-- ledger state or ledger view is marked as ticked, it means  that time-related
+-- changes have been applied to ledger state, or the right view has been
+-- forecast for that slot.
+--
+-- Some examples of time related changes:
+--
+-- * Scheduled delegations might have been applied in Byron
+-- * New leader schedule computed for Shelley
+-- * Transition from Byron to Shelley activated in the hard fork combinator.
+--
+-- When applying a block, the ledger must first have been advanced to the slot
+-- of the block.
+data Ticked l = Ticked {
       -- | The slot number supplied to 'applyChainTick'
       tickedSlotNo      :: !SlotNo
 
@@ -132,9 +143,7 @@ class ( IsLedger l
   -- This is passed the ledger state ticked with the slot of the given block,
   -- so 'applyChainTick' has already been called.
   applyLedgerBlock :: HasCallStack
-                   => LedgerCfg l
-                   -> blk
-                   -> TickedLedger l -> Except (LedgerErr l) l
+                   => LedgerCfg l -> blk -> Ticked l -> Except (LedgerErr l) l
 
   -- | Re-apply a block to the very same ledger state it was applied in before.
   --
@@ -146,7 +155,7 @@ class ( IsLedger l
   -- the provided ledger state, the ledger layer should not perform /any/
   -- validation checks.
   reapplyLedgerBlock :: HasCallStack
-                     => LedgerCfg l -> blk -> TickedLedger l -> l
+                     => LedgerCfg l -> blk -> Ticked l -> l
 
   -- | Point of the most recently applied block
   --
@@ -187,9 +196,9 @@ class ApplyBlock (LedgerState blk) blk => UpdateLedger blk where
   Short-hand
 -------------------------------------------------------------------------------}
 
-type LedgerConfig      blk = LedgerCfg    (LedgerState blk)
-type LedgerError       blk = LedgerErr    (LedgerState blk)
-type TickedLedgerState blk = TickedLedger (LedgerState blk)
+type LedgerConfig      blk = LedgerCfg (LedgerState blk)
+type LedgerError       blk = LedgerErr (LedgerState blk)
+type TickedLedgerState blk = Ticked    (LedgerState blk)
 
 -- | Wrapper around 'ledgerTipPoint' that uses a proxy to fix @blk@
 --

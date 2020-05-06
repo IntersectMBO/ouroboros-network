@@ -724,7 +724,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
       where
         -- Wrap in 'TickedLedgerState' so that we can call 'applyTx'
         notReallyTicked :: LedgerState TestBlock -> TickedLedgerState TestBlock
-        notReallyTicked = TickedLedgerState 0
+        notReallyTicked = Ticked 0
 
         txs = map fst snapshotTxs
         mkErrMsg e =

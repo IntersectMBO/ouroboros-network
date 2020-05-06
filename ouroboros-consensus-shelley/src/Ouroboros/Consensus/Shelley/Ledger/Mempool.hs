@@ -127,8 +127,8 @@ applyShelleyTx
   -> GenTx (ShelleyBlock c)
   -> TickedLedgerState (ShelleyBlock c)
   -> Except (ApplyTxErr (ShelleyBlock c)) (TickedLedgerState (ShelleyBlock c))
-applyShelleyTx globals (ShelleyTx _ tx) (TickedLedgerState slot st) =
-    (\state -> TickedLedgerState slot $ st { shelleyState = state }) <$>
+applyShelleyTx globals (ShelleyTx _ tx) (Ticked slot st) =
+    (\state -> Ticked slot $ st { shelleyState = state }) <$>
        SL.overShelleyState
         (SL.applyTxs globals mempoolEnv (Seq.singleton tx))
         shelleyState

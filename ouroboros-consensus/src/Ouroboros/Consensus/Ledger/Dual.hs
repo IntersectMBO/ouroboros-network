@@ -269,7 +269,7 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
                  slot
                  DualLedgerState{..} =
       assert (tickedSlotNo tickedM == tickedSlotNo tickedA) $
-      TickedLedgerState (tickedSlotNo tickedM) DualLedgerState {
+      Ticked (tickedSlotNo tickedM) DualLedgerState {
           dualLedgerStateMain   = tickedLedgerState tickedM
         , dualLedgerStateAux    = tickedLedgerState tickedA
         , dualLedgerStateBridge = dualLedgerStateBridge
@@ -290,17 +290,17 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
 instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) where
   applyLedgerBlock DualLedgerConfig{..}
                    block@DualBlock{..}
-                   (TickedLedgerState slot DualLedgerState{..}) = do
+                   (Ticked slot DualLedgerState{..}) = do
       (main', aux') <-
         agreeOnError DualLedgerError (
             applyLedgerBlock
               dualLedgerConfigMain
               dualBlockMain
-              (TickedLedgerState slot dualLedgerStateMain)
+              (Ticked slot dualLedgerStateMain)
           , applyMaybeBlock
               dualLedgerConfigAux
               dualBlockAux
-              (TickedLedgerState slot dualLedgerStateAux)
+              (Ticked slot dualLedgerStateAux)
           )
       return DualLedgerState {
           dualLedgerStateMain   = main'
@@ -312,16 +312,16 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
 
   reapplyLedgerBlock DualLedgerConfig{..}
                      block@DualBlock{..}
-                     (TickedLedgerState slot DualLedgerState{..}) =
+                     (Ticked slot DualLedgerState{..}) =
     DualLedgerState {
           dualLedgerStateMain   = reapplyLedgerBlock
                                     dualLedgerConfigMain
                                     dualBlockMain
-                                    (TickedLedgerState slot dualLedgerStateMain)
+                                    (Ticked slot dualLedgerStateMain)
         , dualLedgerStateAux    = reapplyMaybeBlock
                                     dualLedgerConfigAux
                                     dualBlockAux
-                                    (TickedLedgerState slot dualLedgerStateAux)
+                                    (Ticked slot dualLedgerStateAux)
         , dualLedgerStateBridge = updateBridgeWithBlock
                                     block
                                     dualLedgerStateBridge
@@ -440,19 +440,19 @@ instance Bridge m a => ApplyTx (DualBlock m a) where
 
   applyTx DualLedgerConfig{..}
           tx@DualGenTx{..}
-          (TickedLedgerState slot DualLedgerState{..}) = do
-      (TickedLedgerState _ main', TickedLedgerState _ aux') <-
+          (Ticked slot DualLedgerState{..}) = do
+      (Ticked _ main', Ticked _ aux') <-
         agreeOnError DualGenTxErr (
             applyTx
               dualLedgerConfigMain
               dualGenTxMain
-              (TickedLedgerState slot dualLedgerStateMain)
+              (Ticked slot dualLedgerStateMain)
           , applyTx
               dualLedgerConfigAux
               dualGenTxAux
-              (TickedLedgerState slot dualLedgerStateAux)
+              (Ticked slot dualLedgerStateAux)
           )
-      return $ TickedLedgerState slot DualLedgerState {
+      return $ Ticked slot DualLedgerState {
           dualLedgerStateMain   = main'
         , dualLedgerStateAux    = aux'
         , dualLedgerStateBridge = updateBridgeWithTx
@@ -462,19 +462,19 @@ instance Bridge m a => ApplyTx (DualBlock m a) where
 
   reapplyTx DualLedgerConfig{..}
             tx@DualGenTx{..}
-            (TickedLedgerState slot DualLedgerState{..}) = do
-      (TickedLedgerState _ main', TickedLedgerState _ aux') <-
+            (Ticked slot DualLedgerState{..}) = do
+      (Ticked _ main', Ticked _ aux') <-
         agreeOnError DualGenTxErr (
             reapplyTx
               dualLedgerConfigMain
               dualGenTxMain
-              (TickedLedgerState slot dualLedgerStateMain)
+              (Ticked slot dualLedgerStateMain)
           , reapplyTx
               dualLedgerConfigAux
               dualGenTxAux
-              (TickedLedgerState slot dualLedgerStateAux)
+              (Ticked slot dualLedgerStateAux)
           )
-      return $ TickedLedgerState slot DualLedgerState {
+      return $ Ticked slot DualLedgerState {
           dualLedgerStateMain   = main'
         , dualLedgerStateAux    = aux'
         , dualLedgerStateBridge = updateBridgeWithTx

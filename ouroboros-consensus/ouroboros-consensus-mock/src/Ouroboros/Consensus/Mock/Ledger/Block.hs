@@ -282,7 +282,7 @@ instance MockProtocolSpecific c ext
   type LedgerCfg (LedgerState (SimpleBlock c ext)) = MockLedgerConfig       c ext
   type LedgerErr (LedgerState (SimpleBlock c ext)) = MockError (SimpleBlock c ext)
 
-  applyChainTick _ = TickedLedgerState
+  applyChainTick _ = Ticked
 
 instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
@@ -305,7 +305,7 @@ updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
                         -> TickedLedgerState (SimpleBlock c ext)
                         -> Except (MockError (SimpleBlock c ext))
                                   (LedgerState (SimpleBlock c ext))
-updateSimpleLedgerState b (TickedLedgerState _ (SimpleLedgerState st)) =
+updateSimpleLedgerState b (Ticked _ (SimpleLedgerState st)) =
     SimpleLedgerState <$> updateMockState b st
 
 updateSimpleUTxO :: Mock.HasMockTxs a
@@ -313,9 +313,8 @@ updateSimpleUTxO :: Mock.HasMockTxs a
                  -> TickedLedgerState (SimpleBlock c ext)
                  -> Except (MockError (SimpleBlock c ext))
                            (TickedLedgerState (SimpleBlock c ext))
-updateSimpleUTxO x (TickedLedgerState slot (SimpleLedgerState st)) =
-    TickedLedgerState slot . SimpleLedgerState <$>
-      updateMockUTxO slot x st
+updateSimpleUTxO x (Ticked slot (SimpleLedgerState st)) =
+    Ticked slot . SimpleLedgerState <$> updateMockUTxO slot x st
 
 genesisSimpleLedgerState :: AddrDist -> LedgerState (SimpleBlock c ext)
 genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
