@@ -6,6 +6,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Integrity (
   , verifyBlockIntegrity
   ) where
 
+import           Data.Either (isRight)
 import           Data.Word (Word64)
 
 import           Ouroboros.Network.Block (SlotNo (..), blockSlot)
@@ -36,9 +37,10 @@ verifyBlockMatchesHeader hdr blk =
 verifyHeaderIntegrity
   :: TPraosCrypto c
   => Word64  -- ^ 'tpraosSlotsPerKESPeriod'
-  -> Header (ShelleyBlock c) -> Bool
+  -> Header (ShelleyBlock c)
+  -> Bool
 verifyHeaderIntegrity slotsPerKESPeriod hdr@ShelleyHeader { shelleyHeaderRaw } =
-    SL.verifyKES ocertVkHot hdrBody hdrSignature t
+    isRight $ SL.verifySignedKES () ocertVkHot t hdrBody hdrSignature
   where
     SL.BHeader hdrBody hdrSignature = shelleyHeaderRaw
     SL.OCert {

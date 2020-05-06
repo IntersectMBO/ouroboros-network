@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds               #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE TypeFamilies            #-}
@@ -28,7 +29,6 @@ import           Ouroboros.Consensus.Util.Condense (Condense)
 import           Shelley.Spec.Ledger.BaseTypes (Seed)
 import           Shelley.Spec.Ledger.BlockChain (BHBody)
 import           Shelley.Spec.Ledger.Crypto (Crypto (..))
-import           Shelley.Spec.Ledger.Keys (VKeyES (..))
 import           Shelley.Spec.Ledger.OCert (KESPeriod)
 import           Shelley.Spec.Ledger.TxData (TxBody)
 
@@ -37,7 +37,7 @@ class ( Crypto c
       , Condense (SigKES (KES c))
       , DSIGN.Signable
           (DSIGN c)
-          (VKeyES c, Natural, KESPeriod)
+          (VerKeyKES (KES c), Natural, KESPeriod)
       , DSIGN.Signable
           (DSIGN c)
           (TxBody c)
@@ -52,7 +52,7 @@ data TPraosStandardCrypto
 
 instance Crypto TPraosStandardCrypto where
   type DSIGN TPraosStandardCrypto = Ed25519DSIGN
-  type KES   TPraosStandardCrypto = SimpleKES Ed448DSIGN
+  type KES   TPraosStandardCrypto = SimpleKES Ed448DSIGN 100 -- TODO correct number of evolutions?
   type VRF   TPraosStandardCrypto = SimpleVRF
   type HASH  TPraosStandardCrypto = Blake2b_256
 

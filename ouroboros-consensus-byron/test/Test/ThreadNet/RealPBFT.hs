@@ -29,6 +29,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Cardano.Crypto.Seed (mkSeedFromBytes)
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block (SlotNo (..))
@@ -780,10 +781,13 @@ prop_simple_real_pbft_convergence produceEBBs k
                         Genesis.unGenesisDelegation $
                         Genesis.gdHeavyDelegation $
                         Genesis.configGenesisData genesisConfig
+                      genKeyDSIGNRandom = do
+                        seed <- mkSeedFromBytes <$> getRandomBytes 32
+                        pure $ Crypto.genKeyDSIGN seed
                   in
                   Stream.nubOrdBy prj acc0 $
                   withSeed initSeed $   -- seems fine to reuse seed for this
-                  sequence $ let ms = Crypto.genKeyDSIGN Stream.:< ms in ms
+                  sequence $ let ms = genKeyDSIGNRandom Stream.:< ms in ms
               }
             , txGenExtra = ()
             }

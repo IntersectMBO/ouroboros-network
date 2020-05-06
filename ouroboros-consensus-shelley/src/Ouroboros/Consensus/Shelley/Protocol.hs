@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveAnyClass       #-}
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
@@ -161,11 +162,12 @@ forgeTPraosFields :: ( MonadRandom m
                   -> m (TPraosFields c toSign)
 forgeTPraosFields updateNodeState TPraosProof{..} kesPeriod mkToSign = do
     hotKESKey   <- evolveKESKeyIfNecessary updateNodeState kesPeriod
-    mbSignature <- signedKES
-      ()
-      kesPeriodNat
-      (mkToSign signedFields)
-      hotKESKey
+    let
+      mbSignature = signedKES
+        ()
+        kesPeriodNat
+        (mkToSign signedFields)
+        hotKESKey
     case mbSignature of
       Nothing        -> error "signedKES failed"
       Just signature ->
@@ -178,7 +180,7 @@ forgeTPraosFields updateNodeState TPraosProof{..} kesPeriod mkToSign = do
 
     TPraosIsCoreNode{..} = tpraosIsCoreNode
 
-    SL.DiscVKey issuerVK = tpraosIsCoreNodeColdVerKey
+    SL.VKey issuerVK = tpraosIsCoreNodeColdVerKey
 
     signedFields = TPraosToSign {
         tpraosToSignIssuerVK = issuerVK
@@ -225,7 +227,7 @@ evolveKESKeyIfNecessary updateNodeState (SL.KESPeriod kesPeriod) = do
     -- | Evolve the given key so that its KES period matches @kesPeriod@.
     evolveKey :: SignKeyKES (KES c) -> m (SignKeyKES (KES c))
     evolveKey outdatedKey =
-      KES.updateKES () outdatedKey kesPeriod >>= \case
+      case KES.updateKES () outdatedKey kesPeriod of
         -- TODO
         Nothing         -> error "Could not update KES key"
         Just evolvedKey -> return evolvedKey
@@ -278,7 +280,7 @@ data TPraosIsCoreNode c = TPraosIsCoreNode {
       -- genesis stakeholder delegate cold key) to the online KES key.
       tpraosIsCoreNodeOpCert     :: !(SL.OCert c)
     -- | Stake pool cold key or genesis stakeholder delegate cold key.
-    , tpraosIsCoreNodeColdVerKey :: !(SL.VKey c)
+    , tpraosIsCoreNodeColdVerKey :: !(SL.VKey 'SL.BlockIssuer c)
     , tpraosIsCoreNodeSignKeyVRF :: !(SignKeyVRF (VRF c))
     }
   deriving (Generic)
@@ -345,7 +347,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
         -- First, check whether we're in the overlay schedule
         return $ case Map.lookup slot (SL.lvOverlaySched lv) of
           Nothing
-            | meetsLeaderThreshold cfg lv vkhCold y
+            | meetsLeaderThreshold cfg lv (SL.coerceKeyRole vkhCold) y
               -- Slot isn't in the overlay schedule, so we're in Praos
             -> Just TPraosProof {
                  tpraosEta        = coerce rho
@@ -361,14 +363,15 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
           -- The given genesis key has authority to produce a block in this
           -- slot. Check whether we're its delegate.
           Just (SL.ActiveSlot gkhash) -> case Map.lookup gkhash dlgMap of
-              Just dlgHash | dlgHash == vkhCold -> Just TPraosProof {
-                  tpraosEta        = coerce rho
-                  -- Note that this leader value is not checked for slots in
-                  -- the overlay schedule, so we could set it to whatever we
-                  -- want. We evaluate it as normal for simplicity's sake.
-                , tpraosLeader     = coerce y
-                , tpraosIsCoreNode = icn
-                }
+              Just dlgHash | SL.coerceKeyRole dlgHash == vkhCold
+                -> Just TPraosProof {
+                    tpraosEta        = coerce rho
+                    -- Note that this leader value is not checked for slots in
+                    -- the overlay schedule, so we could set it to whatever we
+                    -- want. We evaluate it as normal for simplicity's sake.
+                  , tpraosLeader     = coerce y
+                  , tpraosIsCoreNode = icn
+                  }
               _ -> Nothing
             where
               SL.GenDelegs dlgMap = SL.lvGenDelegs lv
@@ -423,7 +426,7 @@ meetsLeaderThreshold
   :: forall c. TPraosCrypto c
   => ConsensusConfig (TPraos c)
   -> LedgerView (TPraos c)
-  -> SL.KeyHash c
+  -> SL.KeyHash 'SL.StakePool c
   -> CertifiedVRF (VRF c) SL.Seed
   -> Bool
 meetsLeaderThreshold

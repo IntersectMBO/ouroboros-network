@@ -105,18 +105,19 @@ instance ( SimpleCrypto c
          , ContextDSIGN (PBftDSIGN c') ~ ()
          , Serialise (PBftVerKeyHash c')
          ) => RunMockBlock c (SimplePBftExt c c') where
-  forgeExt _cfg _updateState isLeader SimpleBlock{..} = do
-      ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
+  forgeExt _cfg _updateState isLeader SimpleBlock{..} =
+      return SimpleBlock {
+        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+      , simpleBody   = simpleBody
+      }
+    where
+      SimpleHeader{..} = simpleHeader
+      ext :: SimplePBftExt c c'
+      ext = SimplePBftExt $
         forgePBftFields
           (const ())
           isLeader
           SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
-      return SimpleBlock {
-          simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-        , simpleBody   = simpleBody
-        }
-    where
-      SimpleHeader{..} = simpleHeader
 
   mockProtocolMagicId      = const constructMockProtocolMagicId
   mockEncodeConsensusState = const S.encodePBftState

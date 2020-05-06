@@ -16,6 +16,7 @@ import qualified Codec.CBOR.Write as CBOR
 import qualified Data.Binary.Get as Get
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.IP (IPv4, IPv6, toIPv4, toIPv6)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.Proxy (Proxy (..))
@@ -42,7 +43,6 @@ import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
-import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
@@ -280,7 +280,7 @@ prop_detectCorruption_Header =
   Generators
 -------------------------------------------------------------------------------}
 
-genHash :: forall a c. Crypto c => Proxy c -> Gen (SL.Hash (SL.HASH c) a)
+genHash :: forall a c. Crypto c => Proxy c -> Gen (SL.Hash c a)
 genHash proxy = mkDummyHash proxy <$> arbitrary
 
 instance Arbitrary Block where
@@ -438,8 +438,8 @@ instance Arbitrary SL.Coin where
 -- Most generators below don't care about correctness, they just generate
 -- random values to exercise the roundtrip generators
 
-instance Crypto c => Arbitrary (SL.DiscKeyHash a c) where
-  arbitrary = SL.DiscKeyHash <$> genHash (Proxy @c)
+instance Crypto c => Arbitrary (SL.KeyHash a c) where
+  arbitrary = SL.KeyHash <$> genHash (Proxy @c)
 
 instance Crypto c => Arbitrary (SL.LastAppliedBlock c) where
   arbitrary = SL.LastAppliedBlock
@@ -463,7 +463,7 @@ instance Crypto c => Arbitrary (STS.PrtclState c) where
 instance Crypto c => Arbitrary (SL.BlocksMade c) where
   arbitrary = SL.BlocksMade <$> arbitrary
 
-instance Crypto c => Arbitrary (SL.Credential c) where
+instance Crypto c => Arbitrary (SL.Credential r c) where
   arbitrary = oneof
     [ SL.ScriptHashObj . SL.ScriptHash <$> genHash (Proxy @c)
     , SL.KeyHashObj <$> arbitrary
@@ -506,7 +506,7 @@ instance Crypto c => Arbitrary (SL.Stake c) where
   arbitrary = SL.Stake <$> arbitrary
 
 instance Arbitrary SL.Url where
-  arbitrary = return $ SL.mkUrl "text"
+  arbitrary = return . fromJust $ SL.textToUrl "text"
 
 instance Arbitrary a => Arbitrary (StrictSeq a) where
   arbitrary = StrictSeq.toStrict <$> arbitrary
@@ -518,14 +518,14 @@ instance Arbitrary SL.PoolMetaData where
 instance Arbitrary SL.Port where
   arbitrary = fromIntegral @Word8 @SL.Port <$> arbitrary
 
-instance Arbitrary SL.IPv4 where
-  arbitrary = SL.mkIPv4 <$> arbitrary
+instance Arbitrary IPv4 where
+  arbitrary = pure $ toIPv4 [192, 0, 2, 1]
 
-instance Arbitrary SL.IPv6 where
-  arbitrary = SL.mkIPv6 <$> arbitrary
+instance Arbitrary IPv6 where
+  arbitrary = pure $ toIPv6 [0x2001,0xDB8,0,0,0,0,0,1]
 
 instance Arbitrary SL.DnsName where
-  arbitrary = pure $ SL.mkDnsName "foo.example.com"
+  arbitrary = pure . fromJust $ SL.textToDns "foo.example.com"
 
 instance Arbitrary SL.StakePoolRelay where
   arbitrary = genericArbitraryU

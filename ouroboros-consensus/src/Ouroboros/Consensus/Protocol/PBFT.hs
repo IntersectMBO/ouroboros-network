@@ -39,7 +39,6 @@ module Ouroboros.Consensus.Protocol.PBFT (
 import           Codec.Serialise (Serialise (..))
 import qualified Control.Exception as Exn
 import           Control.Monad.Except
-import           Crypto.Random (MonadRandom)
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.Proxy (Proxy (..))
@@ -145,19 +144,17 @@ type PBftSelectView = (BlockNo, IsEBB)
   Block forging
 -------------------------------------------------------------------------------}
 
-forgePBftFields :: forall m c toSign. (
-                       MonadRandom m
-                     , PBftCrypto c
+forgePBftFields :: forall c toSign. (
+                       PBftCrypto c
                      , Signable (PBftDSIGN c) toSign
                      )
                 => (VerKeyDSIGN (PBftDSIGN c) -> ContextDSIGN (PBftDSIGN c))
                 -- ^ Construct DSIGN context given 'pbftGenKey'
                 -> IsLeader (PBft c)
                 -> toSign
-                -> m (PBftFields c toSign)
-forgePBftFields contextDSIGN PBftIsLeader{..} toSign = do
-    signature <- signedDSIGN ctxtDSIGN toSign pbftSignKey
-    return $ Exn.assert (issuer == deriveVerKeyDSIGN pbftSignKey) $ PBftFields {
+                -> PBftFields c toSign
+forgePBftFields contextDSIGN PBftIsLeader{..} toSign =
+    Exn.assert (issuer == deriveVerKeyDSIGN pbftSignKey) $ PBftFields {
         pbftIssuer    = issuer
       , pbftGenKey    = genKey
       , pbftSignature = signature
@@ -166,6 +163,7 @@ forgePBftFields contextDSIGN PBftIsLeader{..} toSign = do
     issuer    = dlgCertDlgVerKey pbftDlgCert
     genKey    = dlgCertGenVerKey pbftDlgCert
     ctxtDSIGN = contextDSIGN genKey
+    signature = signedDSIGN ctxtDSIGN toSign pbftSignKey
 
 {-------------------------------------------------------------------------------
   Information PBFT requires from the ledger
