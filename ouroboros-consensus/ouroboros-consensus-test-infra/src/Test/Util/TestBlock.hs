@@ -316,14 +316,15 @@ instance ApplyBlock (LedgerState TestBlock) TestBlock where
 
   ledgerTipPoint = lastAppliedPoint
 
-instance UpdateLedger TestBlock where
-  newtype LedgerState TestBlock =
-      TestLedger {
-          -- The ledger state simply consists of the last applied block
-          lastAppliedPoint :: Point TestBlock
-        }
-    deriving stock   (Show, Eq, Generic)
-    deriving newtype (Serialise, NoUnexpectedThunks, ToExpr)
+newtype instance LedgerState TestBlock =
+    TestLedger {
+        -- The ledger state simply consists of the last applied block
+        lastAppliedPoint :: Point TestBlock
+      }
+  deriving stock   (Show, Eq, Generic)
+  deriving newtype (Serialise, NoUnexpectedThunks, ToExpr)
+
+instance UpdateLedger TestBlock
 
 -- | Last applied block
 --

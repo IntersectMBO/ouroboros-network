@@ -331,13 +331,14 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
                  . (ledgerTipPoint :: LedgerState m -> Point m)
                  . dualLedgerStateMain
 
-instance Bridge m a => UpdateLedger (DualBlock m a) where
-  data LedgerState (DualBlock m a) = DualLedgerState {
-        dualLedgerStateMain   :: LedgerState m
-      , dualLedgerStateAux    :: LedgerState a
-      , dualLedgerStateBridge :: BridgeLedger m a
-      }
-    deriving NoUnexpectedThunks via AllowThunk (LedgerState (DualBlock m a))
+data instance LedgerState (DualBlock m a) = DualLedgerState {
+      dualLedgerStateMain   :: LedgerState m
+    , dualLedgerStateAux    :: LedgerState a
+    , dualLedgerStateBridge :: BridgeLedger m a
+    }
+  deriving NoUnexpectedThunks via AllowThunk (LedgerState (DualBlock m a))
+
+instance Bridge m a => UpdateLedger (DualBlock m a)
 
 deriving instance ( Show (LedgerState m)
                   , Show (LedgerState a)

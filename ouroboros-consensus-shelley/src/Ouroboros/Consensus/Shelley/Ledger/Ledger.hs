@@ -20,7 +20,6 @@
 module Ouroboros.Consensus.Shelley.Ledger.Ledger (
     ShelleyLedgerError (..)
   , LedgerState (..)
-  , UpdateLedger (..)
   , QueryLedger (..)
   , Query (..)
   , NonMyopicMemberRewards (..)
@@ -160,13 +159,14 @@ instance TPraosCrypto c
 
   ledgerTipPoint = ledgerTip
 
-instance TPraosCrypto c => UpdateLedger (ShelleyBlock c) where
-  data LedgerState (ShelleyBlock c) = ShelleyLedgerState {
-        ledgerTip    :: !(Point (ShelleyBlock c))
-      , history      :: !(History.LedgerViewHistory c)
-      , shelleyState :: !(SL.ShelleyState c)
-      }
-    deriving (Eq, Show, Generic, NoUnexpectedThunks)
+data instance LedgerState (ShelleyBlock c) = ShelleyLedgerState {
+      ledgerTip    :: !(Point (ShelleyBlock c))
+    , history      :: !(History.LedgerViewHistory c)
+    , shelleyState :: !(SL.ShelleyState c)
+    }
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
+instance TPraosCrypto c => UpdateLedger (ShelleyBlock c)
 
 instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
   protocolLedgerView _cfg = SL.currentLedgerView . shelleyState

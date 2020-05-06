@@ -469,15 +469,16 @@ instance ApplyBlock (LedgerState TestBlock) TestBlock where
 
   ledgerTipPoint = lastAppliedPoint
 
-instance UpdateLedger TestBlock where
-  data LedgerState TestBlock =
-      TestLedger {
-          -- The ledger state simply consists of the last applied block
-          lastAppliedPoint :: !(Point TestBlock)
-        , lastAppliedHash  :: !(ChainHash TestBlock)
-        }
-    deriving stock    (Show, Eq, Generic)
-    deriving anyclass (Serialise, NoUnexpectedThunks)
+data instance LedgerState TestBlock =
+    TestLedger {
+        -- The ledger state simply consists of the last applied block
+        lastAppliedPoint :: !(Point TestBlock)
+      , lastAppliedHash  :: !(ChainHash TestBlock)
+      }
+  deriving stock    (Show, Eq, Generic)
+  deriving anyclass (Serialise, NoUnexpectedThunks)
+
+instance UpdateLedger TestBlock
 
 instance HasAnnTip TestBlock where
   type TipInfo TestBlock = IsEBB
