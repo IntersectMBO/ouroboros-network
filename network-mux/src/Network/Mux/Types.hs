@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Network.Mux.Types (
       MiniProtocolLimits (..)
@@ -211,10 +212,11 @@ data MuxBearer m = MuxBearer {
 -- 'MiniProtocolNum' and 'MiniProtocolMode'.
 --
 muxBearerAsChannel
-  :: MuxBearer IO
+  :: forall m. Functor m
+  => MuxBearer m
   -> MiniProtocolNum
   -> MiniProtocolMode
-  -> Channel IO
+  -> Channel m
 muxBearerAsChannel bearer protocolNum mode =
       Channel {
         send = \blob -> void $ write bearer noTimeout (wrap blob),
@@ -234,5 +236,5 @@ muxBearerAsChannel bearer protocolNum mode =
             msBlob = blob
           }
 
-      noTimeout :: TimeoutFn IO
+      noTimeout :: TimeoutFn m
       noTimeout _ r = Just <$> r
