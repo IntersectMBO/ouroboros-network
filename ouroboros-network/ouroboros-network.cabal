@@ -168,6 +168,7 @@ library ouroboros-protocol-tests
                        Ouroboros.Network.Protocol.ChainSync.DirectPipelined
                        Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
                        Ouroboros.Network.Protocol.ChainSync.Test
+                       Ouroboros.Network.Protocol.Handshake.Direct
                        Ouroboros.Network.Protocol.Handshake.Test
                        Ouroboros.Network.Protocol.LocalStateQuery.Direct
                        Ouroboros.Network.Protocol.LocalStateQuery.Test
