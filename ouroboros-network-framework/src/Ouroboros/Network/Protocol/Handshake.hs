@@ -54,7 +54,7 @@ handshakeTimeout = 10 -- 10 seconds
 data HandshakeException a =
     HandshakeProtocolLimit ProtocolLimitFailure
   | HandshakeProtocolError a
-  | HanshakeTimeout
+  | HandshakeTimeout
 
 
 -- | Try to complete either initiator or responder side of the Handshake protocol
@@ -69,10 +69,10 @@ tryHandshake :: ( MonadAsync m
                 )
              => m (Either a r)
              -> m (Either (HandshakeException a) r)
-tryHandshake doHanshake = do
-    mapp <- withTimeoutSerial $ \timeoutFn -> timeoutFn handshakeTimeout $ try doHanshake
+tryHandshake doHandshake = do
+    mapp <- withTimeoutSerial $ \timeoutFn -> timeoutFn handshakeTimeout $ try doHandshake
     case mapp of
-         Nothing -> return $ Left HanshakeTimeout
+         Nothing -> return $ Left HandshakeTimeout
          Just (Left (err :: ProtocolLimitFailure)) ->
              return $ Left $ HandshakeProtocolLimit err
          Just (Right (Left err)) ->
