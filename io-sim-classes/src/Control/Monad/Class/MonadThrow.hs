@@ -185,7 +185,7 @@ class MonadCatch m => MonadMask m where
   uninterruptibleMask_ action = uninterruptibleMask $ \_ -> action
 
 
--- | Monads which can 'evaluate'.  We only provide an instance for `IO` here.
+-- | Monads which can 'evaluate'.
 --
 class MonadThrow m => MonadEvaluate m where
     evaluate :: a -> m a
