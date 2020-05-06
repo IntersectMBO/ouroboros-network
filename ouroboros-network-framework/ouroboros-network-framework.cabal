@@ -30,6 +30,7 @@ library
                        Ouroboros.Network.IOManager
                        Ouroboros.Network.Mux
 
+                       Ouroboros.Network.Protocol.Handshake
                        Ouroboros.Network.Protocol.Handshake.Type
                        Ouroboros.Network.Protocol.Handshake.Codec
                        Ouroboros.Network.Protocol.Handshake.Client
