@@ -368,15 +368,21 @@ protocolInfoShelley genesis protVer mbCredentials =
         -- during the previous epoch. We create a "fake" snapshot in order to
         -- establish an initial stake distribution.
         initSnapShot = SL.SnapShot
-          { SL._stake = SL.Stake . Map.mapKeys addrKeyHash $ sgInitialFunds genesis
+          { SL._stake = SL.Stake . Map.fromList $
+              [ (stakeCred, stake)
+              | (addr, stake) <- Map.toList (sgInitialFunds genesis)
+              , Just stakeCred <- [addrStakeCred addr]
+              ]
           , SL._delegations = Map.mapKeys SL.KeyHashObj sgsStake
           , SL._poolParams = sgsPools
           }
           where
-            addrKeyHash (SL.AddrBootstrap kh) = SL.KeyHashObj $ SL.coerceKeyRole kh
-            addrKeyHash (SL.Addr _ sr) = case sr of
-              SL.StakeRefBase kh -> kh
-              _ -> error "Pointer stake addresses not allowed in initial snapshot"
+            addrStakeCred (SL.AddrBootstrap _) = Nothing
+            addrStakeCred (SL.Addr _ sr) = case sr of
+              SL.StakeRefBase sc -> Just sc
+              SL.StakeRefPtr _ ->
+                error "Pointer stake addresses not allowed in initial snapshot"
+              SL.StakeRefNull -> Nothing
 
 
 {-------------------------------------------------------------------------------
