@@ -29,7 +29,7 @@ import Ouroboros.Network.Mux
 import Ouroboros.Network.ErrorPolicy
 import Ouroboros.Network.IOManager
 
-import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Protocol.Handshake.Version
 

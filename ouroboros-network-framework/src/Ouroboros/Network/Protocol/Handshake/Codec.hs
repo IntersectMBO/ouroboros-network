@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
@@ -14,6 +15,10 @@ module Ouroboros.Network.Protocol.Handshake.Codec
 
   , encodeRefuseReason
   , decodeRefuseReason
+
+    -- ** Version data codec
+  , VersionDataCodec (..)
+  , cborTermVersionDataCodec
   ) where
 
 import           Control.Monad.Class.MonadST
@@ -23,6 +28,7 @@ import           Control.Monad (unless, replicateM)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Either (partitionEithers)
+import           Data.Text (Text)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
@@ -35,7 +41,28 @@ import qualified Codec.CBOR.Term     as CBOR
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver.Limits
+
 import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Version
+
+-- | Codec for version data ('vData' in code) exchanged by the handshake
+-- protocol.
+--
+data VersionDataCodec extra bytes = VersionDataCodec {
+    encodeData :: forall vData. extra vData -> vData -> bytes,
+    -- ^ encoder of 'vData' which has access to 'extra vData' which can bring
+    -- extra instances into the scope (by means of pattern matching on a GADT).
+    decodeData :: forall vData. extra vData -> bytes -> Either Text vData
+    -- ^ decoder of 'vData'.
+  }
+
+-- TODO: remove this from top level API, this is the only way we encode or
+-- decode version data.
+cborTermVersionDataCodec :: VersionDataCodec DictVersion CBOR.Term
+cborTermVersionDataCodec = VersionDataCodec {
+      encodeData = \(DictVersion codec) -> encodeTerm codec,
+      decodeData = \(DictVersion codec) -> decodeTerm codec
+    }
 
 -- |
 -- We assume that a TCP segment size of 1440 bytes with initial window of size

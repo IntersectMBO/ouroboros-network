@@ -53,7 +53,7 @@ import           Ouroboros.Network.Testing.ConcreteBlock
 
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
-import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version
 

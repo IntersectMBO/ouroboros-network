@@ -58,7 +58,7 @@ import           Network.Mux.Types ( MiniProtocolMode (..) , MuxSDU (..), MuxSDU
                                    , RemoteClockModel (..), write)
 import           Network.Mux.Timeout
 
-import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version
 
