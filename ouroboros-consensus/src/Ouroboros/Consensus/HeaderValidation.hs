@@ -63,6 +63,7 @@ import           Ouroboros.Network.Block hiding (Tip (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Abstract (Ticked)
 import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 
@@ -277,7 +278,7 @@ class ( HasAnnTip blk
 
   -- | Validate the header envelope
   validateEnvelope :: TopLevelConfig blk
-                   -> LedgerView (BlockProtocol blk)
+                   -> Ticked (LedgerView (BlockProtocol blk))
                    -> WithOrigin (AnnTip blk)
                    -> Header blk
                    -> Except (HeaderEnvelopeError blk) ()
@@ -295,7 +296,7 @@ class ( HasAnnTip blk
 
   default validateEnvelope :: HasHeader (Header blk)
                            => TopLevelConfig blk
-                           -> LedgerView (BlockProtocol blk)
+                           -> Ticked (LedgerView (BlockProtocol blk))
                            -> WithOrigin (AnnTip blk)
                            -> Header blk
                            -> Except (HeaderEnvelopeError blk) ()
@@ -418,7 +419,7 @@ castHeaderError (HeaderEnvelopeError e) = HeaderEnvelopeError $
 -- entire block (not just the block body).
 validateHeader :: (BlockSupportsProtocol blk, ValidateEnvelope blk)
                => TopLevelConfig blk
-               -> LedgerView (BlockProtocol blk)
+               -> Ticked (LedgerView (BlockProtocol blk))
                -> Header blk
                -> HeaderState blk
                -> Except (HeaderError blk) (HeaderState blk)

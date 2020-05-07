@@ -81,7 +81,7 @@ instance IsLedger (LedgerState ByronBlock) where
   type LedgerCfg (LedgerState ByronBlock) = Gen.Config
 
   applyChainTick cfg slotNo ByronLedgerState{..} =
-      TickedLedgerState slotNo ByronLedgerState {
+      Ticked slotNo ByronLedgerState {
           byronDelegationHistory = byronDelegationHistory
         , byronLedgerState       = CC.applyChainTick
                                       cfg
@@ -300,7 +300,7 @@ applyByronBlock :: CC.ValidationMode
 applyByronBlock validationMode
                 cfg
                 (ByronBlock blk _ (ByronHash blkHash))
-                (TickedLedgerState _slot ls) = case blk of
+                (Ticked _slot ls) = case blk of
       CC.ABOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash ls
       CC.ABOBBoundary blk' -> applyABoundaryBlock        cfg blk'         ls
 

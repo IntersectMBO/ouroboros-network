@@ -453,10 +453,10 @@ instance IsLedger (LedgerState TestBlock) where
   type LedgerCfg (LedgerState TestBlock) = ()
   type LedgerErr (LedgerState TestBlock) = TestBlockError
 
-  applyChainTick _ = TickedLedgerState
+  applyChainTick _ = Ticked
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
-  applyLedgerBlock _ tb@TestBlock{..} (TickedLedgerState _ TestLedger{..})
+  applyLedgerBlock _ tb@TestBlock{..} (Ticked _ TestLedger{..})
     | blockPrevHash tb /= lastAppliedHash
     = throwError $ InvalidHash lastAppliedHash (blockPrevHash tb)
     | not $ tbIsValid testBody

@@ -68,6 +68,7 @@ import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (At))
 
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
@@ -266,7 +267,7 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
         CoreId{}  -> True
         RelayId{} -> False  -- Relays are never leaders
 
-  checkIsLeader cfg@PraosConfig{..} slot _u cs =
+  checkIsLeader cfg@PraosConfig{..} (Ticked slot _u) cs =
     case praosNodeId of
         RelayId _  -> return Nothing
         CoreId nid -> do
@@ -283,7 +284,7 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
               else Nothing
 
   updateConsensusState cfg@PraosConfig{..}
-                       sd
+                       (Ticked _ sd)
                        (PraosValidateView slot PraosFields{..} toSign)
                        cs = do
     let PraosExtraFields{..} = praosExtraFields

@@ -40,6 +40,7 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
 
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -138,7 +139,7 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
         CoreId{}  -> True
         RelayId{} -> False  -- Relays are never leaders
 
-  checkIsLeader BftConfig{..} (SlotNo n) _l _cs = do
+  checkIsLeader BftConfig{..} (Ticked (SlotNo n) _l) _cs = do
       return $ case bftNodeId of
                  RelayId _ -> Nothing
                  CoreId (CoreNodeId i) ->

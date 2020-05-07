@@ -227,7 +227,7 @@ forgeDualByronBlock cfg updateState curBlockNo tickedLedger txs isLeader = do
               (dualTopLevelConfigMain cfg)
               updateState
               curBlockNo
-              (TickedLedgerState {
+              (Ticked {
                    tickedSlotNo      = curSlotNo
                  , tickedLedgerState = dualLedgerStateMain $
                                          tickedLedgerState tickedLedger

@@ -47,7 +47,7 @@ instance IsLedger (LedgerState ByronSpecBlock) where
   type LedgerErr (LedgerState ByronSpecBlock) = ByronSpecLedgerError
   type LedgerCfg (LedgerState ByronSpecBlock) = ByronSpecGenesis
 
-  applyChainTick cfg slot state = TickedLedgerState slot $
+  applyChainTick cfg slot state = Ticked slot $
       updateByronSpecLedgerStateKeepTip state $
         Rules.applyChainTick
           cfg
@@ -55,7 +55,7 @@ instance IsLedger (LedgerState ByronSpecBlock) where
           (byronSpecLedgerState    state)
 
 instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
-  applyLedgerBlock cfg block (TickedLedgerState slot state) =
+  applyLedgerBlock cfg block (Ticked slot state) =
     withExcept ByronSpecLedgerError $
       updateByronSpecLedgerStateNewTip slot <$>
         -- Note that the CHAIN rule also applies the chain tick. So even

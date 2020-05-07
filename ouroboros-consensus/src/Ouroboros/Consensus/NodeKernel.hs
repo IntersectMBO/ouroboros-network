@@ -424,15 +424,11 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
 
         -- Check if we are the leader
         proof <- do
-          let ledgerView = protocolLedgerView
-                             (configLedger cfg)
-                             (tickedLedgerState ticked)
           mIsLeader :: Maybe (IsLeader (BlockProtocol blk)) <- lift $
             runMonadRandom $ \_lift' ->
               checkIsLeader
                 (configConsensus cfg)
-                currentSlot
-                ledgerView
+                (protocolLedgerView (configLedger cfg) <$> ticked)
                 (headerStateConsensus (headerState extLedger))
           case mIsLeader of
             Just p  -> return p

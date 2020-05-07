@@ -103,7 +103,7 @@ instance TPraosCrypto c => IsLedger (LedgerState (ShelleyBlock c)) where
     globals
     slotNo
     (ShelleyLedgerState pt history bhState) =
-      TickedLedgerState slotNo
+      Ticked slotNo
         . ShelleyLedgerState pt history
         $ SL.applyTickTransition globals bhState slotNo
 
@@ -121,7 +121,7 @@ instance TPraosCrypto c
   --
   applyLedgerBlock globals
                    blk
-                   TickedLedgerState {
+                   Ticked {
                        tickedLedgerState = ShelleyLedgerState {
                            history
                          , shelleyState = oldShelleyState
@@ -316,7 +316,7 @@ instance Crypto c => ValidateEnvelope (ShelleyBlock c) where
   type OtherHeaderEnvelopeError (ShelleyBlock c) =
     STS.PredicateFailure (STS.CHAIN c)
 
-  validateEnvelope cfg ledgerView oldTip hdr = do
+  validateEnvelope cfg (Ticked _ ledgerView) oldTip hdr = do
       -- In addition to the default 'validateEnvelope' ...
       defaultValidateEnvelope oldTip hdr
       -- ... perform the @chainChecks@ that are part of the @CHAIN@ rule.
