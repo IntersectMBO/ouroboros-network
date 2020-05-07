@@ -70,7 +70,7 @@ import           Test.ThreadNet.TxGen.Shelley (ShelleyTxGenExtra (..))
 
 tests :: TestTree
 tests = testGroup "RealTPraos"
-    [ testProperty "simple convergence" $
+    [ testProperty "simple convergence" $ withMaxSuccess 20 $
           forAll (SecurityParam <$> elements [5, 10])
             $ \k ->
           -- TODO it would be good to test this with intermediate values, but at
