@@ -109,12 +109,13 @@ instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
           where
             slot = fromByronSlotNo (CC.cvsLastSlot state)
 
-instance UpdateLedger ByronBlock where
-  data LedgerState ByronBlock = ByronLedgerState {
-        byronLedgerState       :: !CC.ChainValidationState
-      , byronDelegationHistory :: !DelegationHistory
-      }
-    deriving (Eq, Show, Generic, NoUnexpectedThunks)
+data instance LedgerState ByronBlock = ByronLedgerState {
+      byronLedgerState       :: !CC.ChainValidationState
+    , byronDelegationHistory :: !DelegationHistory
+    }
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
+instance UpdateLedger ByronBlock
 
 initByronLedgerState :: Gen.Config
                      -> Maybe CC.UTxO -- ^ Optionally override UTxO

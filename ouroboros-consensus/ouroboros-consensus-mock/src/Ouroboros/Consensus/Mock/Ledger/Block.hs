@@ -293,12 +293,13 @@ instance MockProtocolSpecific c ext
       mustSucceed (Right st)  = st
   ledgerTipPoint (SimpleLedgerState st) = mockTip st
 
-instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext) where
-  newtype LedgerState (SimpleBlock c ext) = SimpleLedgerState {
-        simpleLedgerState :: MockState (SimpleBlock c ext)
-      }
-    deriving stock   (Generic, Show, Eq)
-    deriving newtype (Serialise, NoUnexpectedThunks)
+newtype instance LedgerState (SimpleBlock c ext) = SimpleLedgerState {
+      simpleLedgerState :: MockState (SimpleBlock c ext)
+    }
+  deriving stock   (Generic, Show, Eq)
+  deriving newtype (Serialise, NoUnexpectedThunks)
+
+instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext)
 
 updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
                         => SimpleBlock c ext

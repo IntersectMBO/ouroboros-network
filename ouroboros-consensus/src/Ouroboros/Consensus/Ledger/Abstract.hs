@@ -23,7 +23,8 @@ module Ouroboros.Consensus.Ledger.Abstract (
   , foldLedger
   , refoldLedger
     -- * Link block to its ledger
-  , UpdateLedger(..)
+  , LedgerState
+  , UpdateLedger
     -- ** Short-hand
   , LedgerConfig
   , LedgerError
@@ -188,9 +189,11 @@ refoldLedger = repeatedly . tickThenReapply
   Link block to its ledger
 -------------------------------------------------------------------------------}
 
+-- | Ledger state associated with a block
+data family LedgerState blk :: *
+
 -- | Interaction with the ledger layer
-class ApplyBlock (LedgerState blk) blk => UpdateLedger blk where
-  data family LedgerState blk :: *
+class ApplyBlock (LedgerState blk) blk => UpdateLedger blk
 
 {-------------------------------------------------------------------------------
   Short-hand

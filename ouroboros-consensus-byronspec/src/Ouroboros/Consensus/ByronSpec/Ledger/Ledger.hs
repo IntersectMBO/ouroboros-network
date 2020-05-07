@@ -84,19 +84,20 @@ instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
                        slot
                        (getChainStateHash (byronSpecLedgerState state))
 
-instance UpdateLedger ByronSpecBlock where
-  data LedgerState ByronSpecBlock = ByronSpecLedgerState {
-        -- | Tip of the ledger (most recently applied block, if any)
-        --
-        -- The spec state stores the last applied /hash/, but not the /slot/.
-        byronSpecLedgerTip :: Maybe SlotNo
+data instance LedgerState ByronSpecBlock = ByronSpecLedgerState {
+      -- | Tip of the ledger (most recently applied block, if any)
+      --
+      -- The spec state stores the last applied /hash/, but not the /slot/.
+      byronSpecLedgerTip :: Maybe SlotNo
 
-        -- | The spec state proper
-      , byronSpecLedgerState :: Spec.State Spec.CHAIN
-      }
-    deriving stock (Show, Eq, Generic)
-    deriving anyclass (Serialise)
-    deriving NoUnexpectedThunks via AllowThunk (LedgerState ByronSpecBlock)
+      -- | The spec state proper
+    , byronSpecLedgerState :: Spec.State Spec.CHAIN
+    }
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass (Serialise)
+  deriving NoUnexpectedThunks via AllowThunk (LedgerState ByronSpecBlock)
+
+instance UpdateLedger ByronSpecBlock
 
 {-------------------------------------------------------------------------------
   Working with the ledger state
