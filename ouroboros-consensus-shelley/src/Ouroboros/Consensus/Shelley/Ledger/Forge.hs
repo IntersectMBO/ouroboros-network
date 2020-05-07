@@ -60,7 +60,7 @@ forgeShelleyBlock cfg updateNodeState curNo tickedLedger txs isLeader = do
     body = SL.TxSeq $ Seq.fromList $ (\(ShelleyTx _ tx) -> tx) <$> txs
 
     mkHeader TPraosFields { tpraosSignature, tpraosToSign } =
-      SL.BHeader tpraosToSign (SL.KESig tpraosSignature)
+      SL.BHeader tpraosToSign tpraosSignature
 
     prevHash =
         toShelleyPrevHash

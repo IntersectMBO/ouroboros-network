@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DeriveGeneric            #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE DuplicateRecordFields    #-}
@@ -100,14 +101,14 @@ data ShelleyGenesisStaking c = ShelleyGenesisStaking {
     --   The key in this map is the hash of the public key of the _pool_. This
     --   need not correspond to any payment or staking key, but must correspond
     --   to the cold key held by 'TPraosIsCoreNode'.
-    sgsPools :: !(Map (SL.KeyHash c) (SL.PoolParams c))
+    sgsPools :: !(Map (SL.KeyHash 'SL.StakePool c) (SL.PoolParams c))
     -- | Stake-holding key hash credentials and the pools to delegate that stake
     -- to. We require the raw staking key hash in order to:
     --
     -- - Avoid pointer addresses, which would be tricky when there's no slot or
     --   transaction to point to.
     -- - Avoid script credentials.
-  , sgsStake :: !(Map (SL.KeyHash c) (SL.KeyHash c))
+  , sgsStake :: !(Map (SL.KeyHash 'SL.Staking c) (SL.KeyHash 'SL.StakePool c))
   } deriving (Eq, Show, Generic)
 
 -- | Empty genesis staking
@@ -139,7 +140,7 @@ data ShelleyGenesis c = ShelleyGenesis {
     , sgMaxLovelaceSupply     :: !Word64
     , sgMaxBodySize           :: !Natural
     , sgMaxHeaderSize         :: !Natural
-    , sgGenDelegs             :: !(Map (SL.GenKeyHash c) (SL.KeyHash c))
+    , sgGenDelegs             :: !(Map (SL.KeyHash 'SL.Genesis c) (SL.KeyHash 'SL.GenesisDelegate c))
     , sgInitialFunds          :: !(Map (SL.Addr c) SL.Coin)
     , sgStaking               :: !(ShelleyGenesisStaking c)
     }
@@ -372,7 +373,7 @@ protocolInfoShelley genesis protVer mbCredentials =
           , SL._poolParams = sgsPools
           }
           where
-            addrKeyHash (SL.AddrBootstrap kh) = SL.KeyHashObj kh
+            addrKeyHash (SL.AddrBootstrap kh) = SL.KeyHashObj $ SL.coerceKeyRole kh
             addrKeyHash (SL.Addr _ sr) = case sr of
               SL.StakeRefBase kh -> kh
               _ -> error "Pointer stake addresses not allowed in initial snapshot"

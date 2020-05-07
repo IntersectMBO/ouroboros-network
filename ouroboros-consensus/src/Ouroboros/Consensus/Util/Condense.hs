@@ -184,20 +184,18 @@ instance Condense (SigDSIGN MockDSIGN) where
 instance Condense (SigKES v) => Condense (SignedKES v a) where
   condense (SignedKES sig) = condense sig
 
-instance Condense (SigKES MockKES) where
-    condense (SigMockKES n (SignKeyMockKES (VerKeyMockKES v) j d)) =
+instance Condense (SigKES (MockKES t)) where
+    condense (SigMockKES n (SignKeyMockKES (VerKeyMockKES v) j)) =
            show n
         <> ":"
         <> show v
         <> ":"
         <> show j
-        <> ":"
-        <> show d
 
 instance Condense (SigKES NeverKES) where
   condense = show
 
-instance Condense (SigDSIGN d) => Condense (SigKES (SimpleKES d)) where
+instance Condense (SigDSIGN d) => Condense (SigKES (SimpleKES d t)) where
     condense (SigSimpleKES sig) = condense sig
 
 instance Condense (Hash h a) where

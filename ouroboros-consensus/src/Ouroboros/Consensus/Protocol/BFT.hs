@@ -32,7 +32,6 @@ import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Control.Monad.Except
-import           Crypto.Random (MonadRandom)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
@@ -77,16 +76,15 @@ bftValidateView :: ( HasHeader    hdr
 bftValidateView getFields hdr =
     BftValidateView (blockSlot hdr) (getFields hdr) (headerSigned hdr)
 
-forgeBftFields :: ( MonadRandom m
-                  , BftCrypto c
+forgeBftFields :: ( BftCrypto c
                   , Signable (BftDSIGN c) toSign
                   )
                => ConsensusConfig (Bft c)
                -> toSign
-               -> m (BftFields c toSign)
-forgeBftFields BftConfig{..} toSign = do
-      signature <- signedDSIGN () toSign bftSignKey
-      return $ BftFields {
+               -> BftFields c toSign
+forgeBftFields BftConfig{..} toSign = let
+      signature = signedDSIGN () toSign bftSignKey
+      in BftFields {
           bftSignature = signature
         }
 

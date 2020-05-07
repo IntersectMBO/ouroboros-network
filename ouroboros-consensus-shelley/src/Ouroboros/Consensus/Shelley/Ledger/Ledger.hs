@@ -222,8 +222,8 @@ instance HasHardForkHistory (ShelleyBlock c) where
 -------------------------------------------------------------------------------}
 
 newtype NonMyopicMemberRewards c = NonMyopicMemberRewards {
-      unNonMyopicMemberRewards :: Map (SL.Credential c)
-                                      (Map (SL.KeyHash c) SL.Coin)
+      unNonMyopicMemberRewards :: Map (SL.Credential 'SL.Staking c)
+                                      (Map (SL.KeyHash 'SL.StakePool c) SL.Coin)
     }
   deriving stock   (Show)
   deriving newtype (Eq)
@@ -239,7 +239,7 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
     -- | Calculate the Non-Myopic Pool Member Rewards for a set of
     -- credentials. See 'SL.getNonMyopicMemberRewards'
     GetNonMyopicMemberRewards
-      :: Set (SL.Credential c)
+      :: Set (SL.Credential 'SL.Staking c)
       -> Query (ShelleyBlock c) (NonMyopicMemberRewards c)
     GetCurrentPParams
       :: Query (ShelleyBlock c) SL.PParams

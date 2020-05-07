@@ -50,7 +50,6 @@ protocolInfoPraos numCoreNodes nid params cfg =
       , pInfoInitState = PraosKeyAvailable $ SignKeyMockKES
            (fst $ verKeys Map.! nid)   -- key ID
            0                           -- KES initial slot
-           (praosLifetimeKES params)   -- KES lifetime
       }
   where
     signKeyVRF :: CoreNodeId -> SignKeyVRF MockVRF
@@ -59,13 +58,13 @@ protocolInfoPraos numCoreNodes nid params cfg =
     verKeyVRF :: CoreNodeId -> VerKeyVRF MockVRF
     verKeyVRF (CoreNodeId n) = VerKeyMockVRF (fromIntegral n)
 
-    verKeyKES :: CoreNodeId -> VerKeyKES MockKES
+    verKeyKES :: CoreNodeId -> VerKeyKES (MockKES t)
     verKeyKES (CoreNodeId n) = VerKeyMockKES (fromIntegral n)
 
     addrDist :: AddrDist
     addrDist = mkAddrDist numCoreNodes
 
-    verKeys :: Map CoreNodeId (VerKeyKES MockKES, VerKeyVRF MockVRF)
+    verKeys :: Map CoreNodeId (VerKeyKES (MockKES t), VerKeyVRF MockVRF)
     verKeys = Map.fromList
       [ (nid', (kesKey, vrfKey))
       | nid' <- enumCoreNodes numCoreNodes

@@ -25,11 +25,13 @@ import           Cardano.Binary
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId, SignTag (..), Signature,
-                     SigningKey, VerificationKey, keyGen, signRaw,
+                     SigningKey, VerificationKey, deterministicKeyGen, signRaw,
                      toVerification, verifySignatureRaw)
 import           Cardano.Crypto.DSIGN.Class
+import           Cardano.Crypto.Seed (SeedBytesExhausted (..), getBytesFromSeed)
 import qualified Cardano.Crypto.Signing as Crypto
 import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
+import           Control.Exception (throw)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
 import           Data.Proxy (Proxy (..))
@@ -56,6 +58,11 @@ instance HasSignTag (Annotated CC.Block.ToSign ByteString) where
 data ByronDSIGN
 
 instance DSIGNAlgorithm ByronDSIGN where
+
+    algorithmNameDSIGN _ = "ByronDSIGN"
+
+    seedSizeDSIGN _ = 32
+
     -- Context required for Byron digital signatures
     --
     -- We require the the protocol magic as well as the verification key of the
@@ -86,12 +93,17 @@ instance DSIGNAlgorithm ByronDSIGN where
     encodeSigDSIGN (SigByronDSIGN pk) = toCBOR pk
     decodeSigDSIGN = SigByronDSIGN <$> fromCBOR
 
-    genKeyDSIGN = SignKeyByronDSIGN . snd <$> keyGen
+    genKeyDSIGN seed =
+        SignKeyByronDSIGN . snd $ deterministicKeyGen seedBytes
+      where
+        seedBytes = case getBytesFromSeed 32 seed of
+          Just (x,_) -> x
+          Nothing    -> throw $ SeedBytesExhausted (-1) -- TODO We can't get the seed size!
 
     deriveVerKeyDSIGN (SignKeyByronDSIGN sk) = VerKeyByronDSIGN $ toVerification sk
 
-    signDSIGN (magic, genKey) a (SignKeyByronDSIGN sk) = return
-        . SigByronDSIGN
+    signDSIGN (magic, genKey) a (SignKeyByronDSIGN sk) =
+        SigByronDSIGN
         . coerce
         $ signRaw magic (Just $ signTagFor genKey a) sk (recoverBytes a)
 

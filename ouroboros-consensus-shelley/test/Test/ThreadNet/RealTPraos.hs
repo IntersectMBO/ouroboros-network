@@ -28,6 +28,7 @@ import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
 import           Cardano.Crypto.KES.Class (SignKeyKES, deriveVerKeyKES,
                      genKeyKES)
+import           Cardano.Crypto.Seed (mkSeedFromBytes)
 import           Cardano.Crypto.VRF.Class (SignKeyVRF, deriveVerKeyVRF,
                      genKeyVRF)
 import           Cardano.Slotting.Slot (EpochSize (..))
@@ -143,7 +144,7 @@ prop_simple_real_tpraos_convergence k d
     coreNodes :: [CoreNode TPraosMockCrypto]
     coreNodes = withSeed initSeed $
       replicateM (fromIntegral n) $
-      genCoreNode maxKESEvolution initialKESPeriod
+      genCoreNode initialKESPeriod
 
     genesisConfig :: ShelleyGenesis TPraosMockCrypto
     genesisConfig = mkGenesisConfig k d maxKESEvolution coreNodes
@@ -166,8 +167,8 @@ data CoreNode c = CoreNode {
 
 data CoreNodeKeyInfo = CoreNodeKeyInfo
   { cnkiKeyPair
-      ::  ( SL.KeyPair 'SL.Regular TPraosMockCrypto
-          , SL.KeyPair 'SL.Regular TPraosMockCrypto
+      ::  ( SL.KeyPair 'SL.Payment TPraosMockCrypto
+          , SL.KeyPair 'SL.Staking TPraosMockCrypto
           )
   , cnkiCoreNode :: (SL.KeyPair 'SL.Genesis TPraosMockCrypto, Gen.AllPoolKeys)
   }
@@ -183,38 +184,37 @@ coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey, cnVRF, cnKES}
             { Gen.cold = mkDSIGNKeyPair cnDelegateKey
             , Gen.vrf  = mkVRFKeyPair cnVRF
             , Gen.hot  = [(SL.KESPeriod 100, mkKESKeyPair cnKES)]
-            , Gen.hk   = SL.hashKey (SL.DiscVKey $ deriveVerKeyDSIGN cnDelegateKey)
+            , Gen.hk   = SL.hashKey (SL.VKey $ deriveVerKeyDSIGN cnDelegateKey)
             }
           )
       , cnkiKeyPair = (mkDSIGNKeyPair cnDelegateKey, mkDSIGNKeyPair cnStakingKey)
       }
   where
-    mkDSIGNKeyPair k = SL.KeyPair (SL.DiscVKey $ deriveVerKeyDSIGN k)
-                                  (SL.SKey k)
+    mkDSIGNKeyPair k = SL.KeyPair (SL.VKey $ deriveVerKeyDSIGN k)
+                                  k
     mkVRFKeyPair k = (k, deriveVerKeyVRF k)
-    mkKESKeyPair k = (SL.SKeyES k, SL.VKeyES $ deriveVerKeyKES k)
+    mkKESKeyPair k = (k, deriveVerKeyKES k)
 
 genCoreNode
   :: (MonadRandom m, TPraosCrypto c)
-  => Word64  -- ^ Max KES evolutions
-  -> SL.KESPeriod
+  => SL.KESPeriod
   -> m (CoreNode c)
-genCoreNode maxKESEvolutions startKESPeriod = do
-    genKey <- genKeyDSIGN
-    delKey <- genKeyDSIGN
-    stkKey <- genKeyDSIGN
-    vrfKey <- genKeyVRF
-    kesKey <- genKeyKES (fromIntegral maxKESEvolutions)
-    let kesPub = SL.VKeyES $ deriveVerKeyKES kesKey
-    sigma <- signedDSIGN
-      ()
-      (kesPub, certificateIssueNumber, startKESPeriod)
-      delKey
+genCoreNode startKESPeriod = do
+    genKey <- withMRSeed 8 genKeyDSIGN
+    delKey <- withMRSeed 8 genKeyDSIGN
+    stkKey <- withMRSeed 8 genKeyDSIGN
+    vrfKey <- withMRSeed 8 genKeyVRF
+    kesKey <- withMRSeed 8 genKeyKES
+    let kesPub = deriveVerKeyKES kesKey
+        sigma = signedDSIGN
+          ()
+          (kesPub, certificateIssueNumber, startKESPeriod)
+          delKey
     let ocert = SL.OCert {
             ocertVkHot     = kesPub
           , ocertN         = certificateIssueNumber
           , ocertKESPeriod = startKESPeriod
-          , ocertSigma     = SL.UnsafeSig sigma
+          , ocertSigma     = sigma
           }
     return CoreNode {
         cnGenesisKey  = genKey
@@ -226,6 +226,9 @@ genCoreNode maxKESEvolutions startKESPeriod = do
       }
   where
     certificateIssueNumber = 0
+    withMRSeed sz go = do
+      seed <- mkSeedFromBytes <$> getRandomBytes sz
+      pure $ go seed
 
 mkGenesisConfig
   :: forall c. TPraosCrypto c
@@ -263,10 +266,10 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
     maxLovelaceSupply =
       fromIntegral (length coreNodes) * initialLovelacePerCoreNode
 
-    coreNodesToGenesisMapping :: Map (SL.GenKeyHash c) (SL.KeyHash c)
+    coreNodesToGenesisMapping :: Map (SL.KeyHash 'SL.Genesis c) (SL.KeyHash 'SL.GenesisDelegate c)
     coreNodesToGenesisMapping  = Map.fromList
-      [ ( SL.GenKeyHash $ SL.hash $ deriveVerKeyDSIGN cnGenesisKey
-        ,    SL.KeyHash $ SL.hash $ deriveVerKeyDSIGN cnDelegateKey
+      [ ( SL.KeyHash $ SL.hash $ deriveVerKeyDSIGN cnGenesisKey
+        , SL.KeyHash $ SL.hash $ deriveVerKeyDSIGN cnDelegateKey
         )
       | CoreNode { cnGenesisKey, cnDelegateKey } <- coreNodes
       ]
@@ -287,10 +290,12 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
           [ (pk, pp)
           | pp@(SL.PoolParams { _poolPubKey = pk }) <- Map.elems coreNodeToPoolMapping
           ]
-      , sgsStake = Map.map SL._poolPubKey coreNodeToPoolMapping
+      , sgsStake = Map.mapKeysMonotonic SL.coerceKeyRole
+                 . Map.map SL._poolPubKey
+                 $ coreNodeToPoolMapping
       }
       where
-        coreNodeToPoolMapping :: Map (SL.KeyHash c) (SL.PoolParams c)
+        coreNodeToPoolMapping :: Map (SL.KeyHash 'SL.StakePool c) (SL.PoolParams c)
           = Map.fromList
             [ ( SL.KeyHash $ SL.hash $ deriveVerKeyDSIGN cnStakingKey
               , SL.PoolParams
@@ -303,17 +308,17 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
                   -- Reward accounts live in a separate "namespace" to other
                   -- accounts, so it should be fine to use the same address.
                 , SL._poolRAcnt = SL.RewardAcnt $ mkCredential cnDelegateKey
-                , SL._poolOwners = Set.singleton poolHash
+                , SL._poolOwners = Set.singleton $ SL.coerceKeyRole poolHash
                 , SL._poolRelays = Seq.empty
                 , SL._poolMD = SL.SNothing
                 }
               )
             | CoreNode { cnDelegateKey, cnStakingKey, cnVRF } <- coreNodes
             , let poolHash = SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
-            , let vrfHash = SL.hashKeyVRF @c $ deriveVerKeyVRF cnVRF
+            , let vrfHash = SL.hashVerKeyVRF $ deriveVerKeyVRF cnVRF
             ]
 
-    mkCredential :: SignKeyDSIGN (DSIGN c) -> SL.Credential c
+    mkCredential :: SignKeyDSIGN (DSIGN c) -> SL.Credential r c
     mkCredential = SL.KeyHashObj . SL.hashKey . SL.VKey . deriveVerKeyDSIGN
 
 mkProtocolRealTPraos

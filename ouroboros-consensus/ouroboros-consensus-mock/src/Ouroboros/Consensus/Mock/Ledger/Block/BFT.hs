@@ -92,18 +92,19 @@ instance ( SimpleCrypto c
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          )
       => RunMockBlock c (SimpleBftExt c c') where
-  forgeExt cfg _updateState () SimpleBlock{..} = do
-      ext :: SimpleBftExt c c' <- fmap SimpleBftExt $
-        forgeBftFields (configConsensus cfg) $
-          SignedSimpleBft {
-              signedSimpleBft = simpleHeaderStd
-            }
+  forgeExt cfg _updateState () SimpleBlock{..} =
       return SimpleBlock {
           simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
         , simpleBody   = simpleBody
         }
     where
       SimpleHeader{..} = simpleHeader
+      ext :: SimpleBftExt c c'
+      ext = SimpleBftExt $
+        forgeBftFields (configConsensus cfg) $
+          SignedSimpleBft {
+              signedSimpleBft = simpleHeaderStd
+            }
 
   mockProtocolMagicId      = const constructMockProtocolMagicId
   mockEncodeConsensusState = const encode

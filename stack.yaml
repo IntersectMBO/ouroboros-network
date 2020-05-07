@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/91f357abae16099858193b999807323ca9a7c63c/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/bd7eb69d27bfaee46d435bc1d2720520b1446426/snapshot.yaml
 
 packages:
   - ./typed-protocols
@@ -36,12 +36,12 @@ flags:
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: 0aae419140b50e93154c146ec9cbea9d3c7ac9ba
+    commit: ae0bf700bed6a411dcf7f03a49f8c89e8344a7b9
     subdirs:
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 2cc27584bb19bd5be9f1721fd4a2393bb99c6119
+    commit: c845509c307af9df956ef203ac8ad67fe4d5d065
     subdirs:
       - binary
       - binary/test
@@ -49,7 +49,7 @@ extra-deps:
       - slotting
 
   - git: https://github.com/input-output-hk/cardano-ledger-specs
-    commit: d10508f3094fa8c429ce371255129fbc9e9418a0
+    commit: 1b2a06df9a710f5cc9b511b6ae39c23bcfd04486
     subdirs:
       - byron/chain/executable-spec
       - byron/ledger/executable-spec
@@ -73,7 +73,7 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: 91f357abae16099858193b999807323ca9a7c63c
+    commit: bd7eb69d27bfaee46d435bc1d2720520b1446426
     subdirs:
       - .
       - test

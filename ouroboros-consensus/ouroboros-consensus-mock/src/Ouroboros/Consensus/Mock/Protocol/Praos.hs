@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
@@ -155,7 +156,7 @@ forgePraosFields PraosConfig{..} updateState PraosProof{..} mkToSign = do
         return (PraosKeyEvolving, oldKey)
 
     -- Evolve the key
-    newKey <- fromMaybe (error "mkOutoborosPayload: updateKES failed") <$>
+    let newKey = fromMaybe (error "mkOutoborosPayload: updateKES failed") $
                  updateKES () oldKey kesPeriod
     runUpdate updateState $ \_ -> return (PraosKeyAvailable newKey, ())
 
@@ -164,7 +165,7 @@ forgePraosFields PraosConfig{..} updateState PraosProof{..} mkToSign = do
         , praosRho     = praosProofRho
         , praosY       = praosProofY
         }
-    m <- signedKES () kesPeriod (mkToSign signedFields) newKey
+        m = signedKES () kesPeriod (mkToSign signedFields) newKey
     case m of
       Nothing -> error "mkOutoborosPayload: signedKES failed"
       Just signature -> do
@@ -466,12 +467,12 @@ data PraosStandardCrypto
 data PraosMockCrypto
 
 instance PraosCrypto PraosStandardCrypto where
-  type PraosKES  PraosStandardCrypto = SimpleKES Ed448DSIGN
+  type PraosKES  PraosStandardCrypto = SimpleKES Ed448DSIGN 100
   type PraosVRF  PraosStandardCrypto = SimpleVRF
   type PraosHash PraosStandardCrypto = SHA256
 
 instance PraosCrypto PraosMockCrypto where
-  type PraosKES  PraosMockCrypto = MockKES
+  type PraosKES  PraosMockCrypto = MockKES 100
   type PraosVRF  PraosMockCrypto = MockVRF
   type PraosHash PraosMockCrypto = MD5
 
