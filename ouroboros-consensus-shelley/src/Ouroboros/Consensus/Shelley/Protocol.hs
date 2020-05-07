@@ -406,17 +406,17 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
 
 mkShelleyGlobals :: TPraosParams -> SL.Globals
 mkShelleyGlobals TPraosParams {..} = SL.Globals {
-      epochInfo         = tpraosEpochInfo
-    , slotsPerKESPeriod = tpraosSlotsPerKESPeriod
+      epochInfo                      = tpraosEpochInfo
+    , slotsPerKESPeriod              = tpraosSlotsPerKESPeriod
       -- TODO where does 3 * k come from?
-    , slotsPrior        = 3 * k
-    , startRewards      = 3 * k
-    , securityParameter = k
-    , maxKESEvo         = tpraosMaxKESEvo
-    , quorum            = tpraosQuorum
-    , maxMajorPV        = tpraosMaxMajorPV
-    , maxLovelaceSupply = tpraosMaxLovelaceSupply
-    , activeSlotCoeff   = tpraosLeaderF
+    , stabilityWindow                = 3 * k
+    , randomnessStabilisationWindow  = 3 * k
+    , securityParameter              = k
+    , maxKESEvo                      = tpraosMaxKESEvo
+    , quorum                         = tpraosQuorum
+    , maxMajorPV                     = tpraosMaxMajorPV
+    , maxLovelaceSupply              = tpraosMaxLovelaceSupply
+    , activeSlotCoeff                = tpraosLeaderF
     }
   where
     SecurityParam k = tpraosSecurityParam

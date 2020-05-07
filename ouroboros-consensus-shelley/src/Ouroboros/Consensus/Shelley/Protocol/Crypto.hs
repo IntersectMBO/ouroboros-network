@@ -17,6 +17,7 @@ import           Cardano.Binary (ToCBOR)
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import           Cardano.Crypto.DSIGN.Ed25519 (Ed25519DSIGN)
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
+import           Cardano.Crypto.Hash.Class
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
 import           Cardano.Crypto.KES.Class
 import qualified Cardano.Crypto.KES.Class as KES
@@ -40,7 +41,7 @@ class ( Crypto c
           (VerKeyKES (KES c), Natural, KESPeriod)
       , DSIGN.Signable
           (DSIGN c)
-          (TxBody c)
+          (Hash c (TxBody c)) -- This doesn't seem to work as I expected
       , KES.Signable
           (KES c)
           (BHBody c)
@@ -55,5 +56,6 @@ instance Crypto TPraosStandardCrypto where
   type KES   TPraosStandardCrypto = SimpleKES Ed448DSIGN 100 -- TODO correct number of evolutions?
   type VRF   TPraosStandardCrypto = SimpleVRF
   type HASH  TPraosStandardCrypto = Blake2b_256
+  networkMagicId _ = ???
 
 instance TPraosCrypto TPraosStandardCrypto
