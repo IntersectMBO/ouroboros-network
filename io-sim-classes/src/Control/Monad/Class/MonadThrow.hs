@@ -1,13 +1,16 @@
+{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE DefaultSignatures         #-}
 {-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeFamilies              #-}
 
 module Control.Monad.Class.MonadThrow
   ( MonadThrow(..)
   , MonadCatch(..)
   , MonadMask(..)
+  , MonadEvaluate(..)
   , Exception(..)
   , SomeException
   , ExitCase(..)
@@ -181,6 +184,12 @@ class MonadCatch m => MonadMask m where
   mask_                action = mask                $ \_ -> action
   uninterruptibleMask_ action = uninterruptibleMask $ \_ -> action
 
+
+-- | Monads which can 'evaluate'.
+--
+class MonadThrow m => MonadEvaluate m where
+    evaluate :: a -> m a
+
 --
 -- Instance for IO uses the existing base library implementations
 --
@@ -219,6 +228,9 @@ instance MonadMask IO where
 
   uninterruptibleMask  = IO.uninterruptibleMask
   uninterruptibleMask_ = IO.uninterruptibleMask_
+
+instance MonadEvaluate IO where
+  evaluate = IO.evaluate
 
 --
 -- Instance for STM uses STM primitives and default implementations

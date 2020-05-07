@@ -226,6 +226,9 @@ instance MonadSay (SimM s) where
 instance MonadThrow (SimM s) where
   throwM e = SimM $ \_ -> Throw (toException e)
 
+instance MonadEvaluate (SimM s) where
+  evaluate a = SimM $ \k -> k $! a
+
 instance Exceptions.MonadThrow (SimM s) where
   throwM = MonadThrow.throwM
 
