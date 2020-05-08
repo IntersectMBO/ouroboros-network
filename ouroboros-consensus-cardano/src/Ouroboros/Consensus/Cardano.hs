@@ -17,11 +17,18 @@ module Ouroboros.Consensus.Cardano (
     -- * Evidence that we can run all the supported protocols
   , runProtocol
   , module X
+
+    -- * Client support for nodes running a protocol
+  , ProtocolClient(..)
+  , protocolClientInfo
+  , runProtocolClient
+  , verifyProtocolClient
   ) where
 
 import           Data.Type.Equality
 
 import qualified Cardano.Chain.Genesis as Genesis
+import           Cardano.Chain.Slotting (EpochSlots)
 import qualified Cardano.Chain.Update as Update
 
 import           Ouroboros.Consensus.Block
@@ -165,3 +172,45 @@ runProtocol ProtocolLeaderSchedule{} = Dict
 runProtocol ProtocolMockPBFT{}       = Dict
 runProtocol ProtocolRealPBFT{}       = Dict
 runProtocol ProtocolRealTPraos{}     = Dict
+
+{-------------------------------------------------------------------------------
+  Client support for the protocols: what you need as a client of the node
+-------------------------------------------------------------------------------}
+
+-- | Node client support for each consensus protocol.
+--
+-- This is like 'Protocol' but for clients of the node, so with less onerous
+-- requirements than to run a node.
+--
+data ProtocolClient blk p where
+  --TODO: the mock protocols
+
+  ProtocolClientRealPBFT
+    :: EpochSlots
+    -> ProtocolClient
+         ByronBlock
+         ProtocolRealPBFT
+
+  ProtocolClientRealTPraos
+    :: ProtocolClient
+         (ShelleyBlock TPraosStandardCrypto)
+         ProtocolRealTPraos
+
+-- | Sanity check that we have the right type combinations
+verifyProtocolClient :: ProtocolClient blk p -> (p :~: BlockProtocol blk)
+verifyProtocolClient ProtocolClientRealPBFT{}   = Refl
+verifyProtocolClient ProtocolClientRealTPraos{} = Refl
+
+-- | Sanity check that we have the right class instances available
+runProtocolClient :: ProtocolClient blk p -> Dict (RunNode blk)
+runProtocolClient ProtocolClientRealPBFT{}   = Dict
+runProtocolClient ProtocolClientRealTPraos{} = Dict
+
+-- | Data required by clients of a node running the specified protocol.
+protocolClientInfo :: ProtocolClient blk p -> ProtocolClientInfo blk
+protocolClientInfo (ProtocolClientRealPBFT epochSlots) =
+    protocolClientInfoByron epochSlots
+
+protocolClientInfo ProtocolClientRealTPraos =
+    protocolClientInfoShelley
+

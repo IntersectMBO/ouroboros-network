@@ -4,12 +4,14 @@ module Ouroboros.Consensus.Node.ProtocolInfo (
     NumCoreNodes(..)
   , enumCoreNodes
   , ProtocolInfo(..)
+  , ProtocolClientInfo(..)
   ) where
 
 import           Data.Word
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.State
@@ -37,3 +39,8 @@ data ProtocolInfo b = ProtocolInfo {
       , pInfoInitState  :: NodeState      b
       , pInfoInitLedger :: ExtLedgerState b -- ^ Genesis ledger state
       }
+
+-- | Data required by clients of a node running the specified protocol.
+data ProtocolClientInfo b = ProtocolClientInfo {
+       pClientInfoCodecConfig :: CodecConfig b
+     }
