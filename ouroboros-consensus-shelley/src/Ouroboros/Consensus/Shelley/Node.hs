@@ -129,7 +129,6 @@ data ShelleyGenesis c = ShelleyGenesis {
     , sgNetworkMagic          :: !NetworkMagic
     , sgProtocolMagicId       :: !ProtocolMagicId
     , sgActiveSlotsCoeff      :: !Double
-    , sgDecentralisationParam :: !Double
     , sgSecurityParam         :: !SecurityParam
     , sgEpochLength           :: !EpochSize
     , sgSlotsPerKESPeriod     :: !Word64
@@ -138,8 +137,7 @@ data ShelleyGenesis c = ShelleyGenesis {
     , sgUpdateQuorum          :: !Word64
     , sgMaxMajorPV            :: !Natural
     , sgMaxLovelaceSupply     :: !Word64
-    , sgMaxBodySize           :: !Natural
-    , sgMaxHeaderSize         :: !Natural
+    , sgProtocolParams        :: !SL.PParams
     , sgGenDelegs             :: !(Map (SL.KeyHash 'SL.Genesis c) (SL.KeyHash 'SL.GenesisDelegate c))
     , sgInitialFunds          :: !(Map (SL.Addr c) SL.Coin)
     , sgStaking               :: !(ShelleyGenesisStaking c)
@@ -278,7 +276,7 @@ protocolInfoShelley genesis protVer mbCredentials =
       (fromIntegral (sgMaxLovelaceSupply genesis) - SL.balance genesisUtxO)
       (sgGenDelegs genesis)
       oSched
-      pparams
+      (sgProtocolParams genesis)
       -- TODO initial nonce, typically created from the hash of
       -- the last Byron block using 'SL.hashHeaderToNonce'.
       (SL.mkNonce 0)
@@ -297,17 +295,7 @@ protocolInfoShelley genesis protVer mbCredentials =
       SL.overlaySchedule
         initialEpochNo
         (Map.keysSet (sgGenDelegs genesis))
-        pparams
-
-    pparams :: SL.PParams
-    pparams = SL.emptyPParams {
-        SL._d =
-            SL.truncateUnitInterval
-          . realToFrac
-          $ sgDecentralisationParam genesis
-      , SL._maxBBSize = sgMaxBodySize genesis
-      , SL._maxBHSize = sgMaxHeaderSize genesis
-      }
+        (sgProtocolParams genesis)
 
     genesisUtxO :: SL.UTxO c
     genesisUtxO = SL.UTxO $ Map.fromList

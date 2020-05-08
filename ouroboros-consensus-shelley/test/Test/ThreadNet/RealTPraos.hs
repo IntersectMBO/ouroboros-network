@@ -242,7 +242,6 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
     , sgNetworkMagic          = NetworkMagic 0
     , sgProtocolMagicId       = ProtocolMagicId 0
     , sgActiveSlotsCoeff      = 0.5 -- TODO 1 is not accepted by 'mkActiveSlotCoeff'
-    , sgDecentralisationParam = d
     , sgSecurityParam         = k
     , sgEpochLength           = EpochSize (10 * maxRollbacks k)
     , sgSlotsPerKESPeriod     = 10 -- TODO
@@ -251,8 +250,7 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
     , sgUpdateQuorum          = 1  -- TODO
     , sgMaxMajorPV            = 1000 -- TODO
     , sgMaxLovelaceSupply     = maxLovelaceSupply
-    , sgMaxBodySize           = 10000 -- TODO
-    , sgMaxHeaderSize         = 1000 -- TODO
+    , sgProtocolParams        = pparams
     , sgGenDelegs             = coreNodesToGenesisMapping
     , sgInitialFunds          = initialFunds
     , sgStaking               = initialStake
@@ -265,6 +263,16 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
     maxLovelaceSupply :: Word64
     maxLovelaceSupply =
       fromIntegral (length coreNodes) * initialLovelacePerCoreNode
+
+    pparams :: SL.PParams
+    pparams = SL.emptyPParams
+      { SL._d =
+            SL.truncateUnitInterval
+          . realToFrac
+          $ d
+      , SL._maxBBSize = 10000 -- TODO
+      , SL._maxBHSize = 1000 -- TODO
+      }
 
     coreNodesToGenesisMapping :: Map (SL.KeyHash 'SL.Genesis c) (SL.KeyHash 'SL.GenesisDelegate c)
     coreNodesToGenesisMapping  = Map.fromList
