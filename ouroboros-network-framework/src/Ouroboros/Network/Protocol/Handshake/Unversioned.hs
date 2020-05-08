@@ -32,7 +32,7 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 -- tests and demos where proper versioning is excessive.
 --
 data UnversionedProtocol = UnversionedProtocol
-  deriving (Eq, Ord, Enum, Show)
+  deriving (Eq, Ord, Show)
 
 
 data UnversionedProtocolData = UnversionedProtocolData

@@ -169,7 +169,6 @@ data ConnectionId addr = ConnectionId {
 connectToNode
   :: forall appType vNumber extra fd addr a b.
      ( Ord vNumber
-     , Enum vNumber
      , Typeable vNumber
      , Show vNumber
      , Mx.HasInitiator appType ~ True
@@ -209,7 +208,6 @@ connectToNode sn handshakeCodec versionDataCodec tracers versions localAddr remo
 connectToNode'
   :: forall appType vNumber extra fd addr a b.
      ( Ord vNumber
-     , Enum vNumber
      , Typeable vNumber
      , Show vNumber
      , Mx.HasInitiator appType ~ True
@@ -264,7 +262,6 @@ connectToNode' sn handshakeCodec versionDataCodec NetworkConnectTracers {nctMuxT
 connectToNodeSocket
   :: forall appType vNumber extra a b.
      ( Ord vNumber
-     , Enum vNumber
      , Typeable vNumber
      , Show vNumber
      , Mx.HasInitiator appType ~ True
@@ -331,7 +328,6 @@ data AcceptConnection st vNumber extra peerid m bytes where
 beginConnection
     :: forall peerid vNumber extra addr st fd.
        ( Ord vNumber
-       , Enum vNumber
        , Typeable vNumber
        , Show vNumber
        )
@@ -492,7 +488,6 @@ cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
 runServerThread
     :: forall vNumber extra fd addr b.
        ( Ord vNumber
-       , Enum vNumber
        , Typeable vNumber
        , Show vNumber
        , Ord addr
@@ -575,7 +570,6 @@ runServerThread NetworkServerTracers { nstMuxTracer
 withServerNode
     :: forall vNumber extra t fd addr b.
        ( Ord vNumber
-       , Enum vNumber
        , Typeable vNumber
        , Show vNumber
        , Ord addr
@@ -643,7 +637,6 @@ withServerNode sn
 withServerNode'
     :: forall vNumber extra t fd addr b.
        ( Ord vNumber
-       , Enum vNumber
        , Typeable vNumber
        , Show vNumber
        , Ord addr
