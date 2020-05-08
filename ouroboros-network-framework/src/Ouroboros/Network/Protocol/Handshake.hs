@@ -135,7 +135,7 @@ runHandshakeClient bearer
         haHandshakeCodec
         byteLimitsHandshake
         timeLimitsHandshake
-        (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum ModeResponder))
+        (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum ModeInitiator))
         (handshakeClientPeer haVersionDataCodec haVersions))
 
 
