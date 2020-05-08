@@ -91,4 +91,4 @@ instance ValidateEnvelope ByronBlock where
       canBeEBB (SlotNo s) = s `mod` epochSlots == 0
 
       epochSlots :: Word64
-      epochSlots = CC.unEpochSlots $ byronEpochSlots $ configBlock cfg
+      epochSlots = CC.unEpochSlots $ byronEpochSlots $ configCodec cfg

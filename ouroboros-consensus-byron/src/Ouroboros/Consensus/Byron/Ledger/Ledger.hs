@@ -57,6 +57,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
+import           Ouroboros.Consensus.Block (getCodecConfig)
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -249,7 +250,7 @@ instance HasHardForkHistory ByronBlock where
 
       eraParams :: HardFork.EraParams
       eraParams = HardFork.EraParams {
-            eraEpochSize  = fromByronEpochSlots $ byronEpochSlots cfg
+            eraEpochSize  = fromByronEpochSlots . byronEpochSlots $ getCodecConfig cfg
           , eraSlotLength = fromByronSlotLength $ genesisSlotLength genesis
           , eraSafeZone   = HardFork.SafeZone {
                 safeFromTip     = 2 * k

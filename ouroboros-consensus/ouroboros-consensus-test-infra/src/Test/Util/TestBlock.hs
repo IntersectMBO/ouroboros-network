@@ -261,6 +261,12 @@ data instance BlockConfig TestBlock = TestBlockConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
+data instance CodecConfig TestBlock = TestCodecConfig
+  deriving (Generic, NoUnexpectedThunks)
+
+instance BlockHasCodecConfig TestBlock where
+  getCodecConfig = const TestCodecConfig
+
 {-------------------------------------------------------------------------------
   Test infrastructure: ledger state
 -------------------------------------------------------------------------------}

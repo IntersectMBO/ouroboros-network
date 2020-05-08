@@ -30,6 +30,7 @@ module Ouroboros.Consensus.Ledger.Dual (
     -- * Type class family instances
   , Header(..)
   , BlockConfig(..)
+  , CodecConfig(..)
   , LedgerState(..)
   , GenTx(..)
   , TxId(..)
@@ -136,6 +137,20 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
     }
   deriving NoUnexpectedThunks via AllowThunk (BlockConfig (DualBlock m a))
 
+data instance CodecConfig (DualBlock m a) = DualCodecConfig {
+      dualCodecConfigMain :: CodecConfig m
+    , dualCodecConfigAux  :: CodecConfig a
+    }
+  deriving NoUnexpectedThunks via AllowThunk (CodecConfig (DualBlock m a))
+
+instance (BlockHasCodecConfig m, BlockHasCodecConfig a)
+  => BlockHasCodecConfig (DualBlock m a) where
+    getCodecConfig DualBlockConfig { .. }
+      = DualCodecConfig
+        { dualCodecConfigMain = getCodecConfig dualBlockConfigMain
+        , dualCodecConfigAux = getCodecConfig dualBlockConfigAux
+        }
+
 -- | This is only used for block production
 dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
 dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
@@ -166,6 +181,7 @@ class (
       , UpdateLedger     a
       , ApplyTx          a
       , Show (ApplyTxErr a)
+      , BlockHasCodecConfig a
       , NoUnexpectedThunks (LedgerConfig a)
 
         -- Requirements on the various bridges

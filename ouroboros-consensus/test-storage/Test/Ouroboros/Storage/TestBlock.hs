@@ -217,6 +217,12 @@ data instance BlockConfig TestBlock = TestBlockConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
+data instance CodecConfig TestBlock = TestCodecConfig
+  deriving (Generic, NoUnexpectedThunks)
+
+instance BlockHasCodecConfig TestBlock where
+  getCodecConfig = const TestCodecConfig
+
 instance Condense TestBlock where
   condense = show -- TODO
 

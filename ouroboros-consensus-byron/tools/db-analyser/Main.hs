@@ -350,7 +350,7 @@ withImmDB :: FilePath
           -> IO a
 withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
   where
-    bcfg = configBlock cfg
+    bcfg = configCodec cfg
     pb   = Proxy @ByronBlock
 
     args :: ImmDbArgs IO ByronBlock

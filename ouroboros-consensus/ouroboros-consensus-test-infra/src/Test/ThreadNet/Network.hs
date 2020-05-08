@@ -614,7 +614,7 @@ runThreadNetwork ThreadNetworkArgs
         , cdbBlocksToAddSize      = 2
         }
       where
-        bcfg = configBlock cfg
+        bcfg = configCodec cfg
 
         -- prop_general relies on this tracer
         instrumentationTracer = Tracer $ \case
@@ -853,7 +853,7 @@ runThreadNetwork ThreadNetworkArgs
               NTN.cTxSubmissionCodec NTN.identityCodecs
         }
       where
-        binaryProtocolCodecs = NTN.defaultCodecs (configBlock cfg)
+        binaryProtocolCodecs = NTN.defaultCodecs (configCodec cfg)
                                  (mostRecentNodeToNodeVersion (Proxy @blk))
 
 -- | Sum of 'CodecFailure' (from @identityCodecs@) and 'DeserialiseFailure'
