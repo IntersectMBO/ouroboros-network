@@ -1,16 +1,17 @@
 {-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE TypeFamilies      #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Byron.Ledger.Config (
     BlockConfig(..)
+  , CodecConfig(..)
+  , byronGenesisHash
   , byronProtocolMagicId
   , byronProtocolMagic
-  , byronGenesisHash
-  , byronEpochSlots
   ) where
 
 import           GHC.Generics (Generic)
@@ -44,14 +45,21 @@ data instance BlockConfig ByronBlock = ByronConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
+data instance CodecConfig ByronBlock = ByronCodecConfig {
+  byronEpochSlots :: CC.Slot.EpochSlots
+} deriving (Generic, NoUnexpectedThunks)
+
+instance BlockHasCodecConfig ByronBlock where
+  getCodecConfig ByronConfig { byronGenesisConfig }
+    = ByronCodecConfig
+      { byronEpochSlots = CC.Genesis.configEpochSlots byronGenesisConfig
+      }
+
+byronGenesisHash :: BlockConfig ByronBlock -> CC.Genesis.GenesisHash
+byronGenesisHash = CC.Genesis.configGenesisHash . byronGenesisConfig
+
 byronProtocolMagicId :: BlockConfig ByronBlock -> Crypto.ProtocolMagicId
 byronProtocolMagicId = Crypto.getProtocolMagicId . byronProtocolMagic
 
 byronProtocolMagic :: BlockConfig ByronBlock -> Crypto.ProtocolMagic
 byronProtocolMagic = CC.Genesis.configProtocolMagic . byronGenesisConfig
-
-byronGenesisHash :: BlockConfig ByronBlock -> CC.Genesis.GenesisHash
-byronGenesisHash = CC.Genesis.configGenesisHash . byronGenesisConfig
-
-byronEpochSlots :: BlockConfig ByronBlock -> CC.Slot.EpochSlots
-byronEpochSlots = CC.Genesis.configEpochSlots . byronGenesisConfig

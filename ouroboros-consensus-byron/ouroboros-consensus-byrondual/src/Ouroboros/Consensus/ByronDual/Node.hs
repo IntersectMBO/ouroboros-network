@@ -52,8 +52,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Node hiding (extractEpochSlots)
-import qualified Ouroboros.Consensus.Byron.Node as Byron
+import           Ouroboros.Consensus.Byron.Ledger.Config (byronEpochSlots)
+import           Ouroboros.Consensus.Byron.Node
 import           Ouroboros.Consensus.Byron.Protocol
 
 import           Ouroboros.Consensus.ByronSpec.Ledger
@@ -269,12 +269,12 @@ instance RunNode DualByronBlock where
   nodeEncodeBlockWithInfo  = const $ encodeDualBlockWithInfo encodeByronBlockWithInfo
   nodeEncodeHeader         = \cfg version ->
                                   nodeEncodeHeader
-                                    (dualBlockConfigMain cfg)
+                                    (dualCodecConfigMain cfg)
                                     (castSerialisationVersion version)
                                 . dualHeaderMain
   nodeEncodeWrappedHeader  = \cfg version ->
                                   nodeEncodeWrappedHeader
-                                    (dualBlockConfigMain cfg)
+                                    (dualCodecConfigMain cfg)
                                     (castSerialisationAcrossNetwork version)
                                 . dualWrappedMain
   nodeEncodeLedgerState    = encodeDualLedgerState encodeByronLedgerState
@@ -291,12 +291,12 @@ instance RunNode DualByronBlock where
   nodeDecodeHeader         = \cfg version ->
                                (DualHeader .) <$>
                                  nodeDecodeHeader
-                                   (dualBlockConfigMain cfg)
+                                   (dualCodecConfigMain cfg)
                                    (castSerialisationVersion version)
   nodeDecodeWrappedHeader  = \cfg version ->
                                rewrapMain <$>
                                  nodeDecodeWrappedHeader
-                                   (dualBlockConfigMain cfg)
+                                   (dualCodecConfigMain cfg)
                                    (castSerialisationAcrossNetwork version)
   nodeDecodeGenTx          = decodeDualGenTx   decodeByronGenTx
   nodeDecodeGenTxId        = decodeDualGenTxId decodeByronGenTxId
@@ -309,8 +309,8 @@ instance RunNode DualByronBlock where
   nodeDecodeQuery          = error "DualByron.nodeDecodeQuery"
   nodeDecodeResult         = \case {}
 
-extractEpochSlots :: BlockConfig DualByronBlock -> EpochSlots
-extractEpochSlots = Byron.extractEpochSlots . dualBlockConfigMain
+extractEpochSlots :: CodecConfig DualByronBlock -> EpochSlots
+extractEpochSlots = byronEpochSlots . dualCodecConfigMain
 
 {-------------------------------------------------------------------------------
   The headers for DualByronBlock and ByronBlock are identical, so we can

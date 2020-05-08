@@ -160,13 +160,13 @@ class ( LedgerSupportsProtocol    blk
   nodeExceptionIsFatal _ _ = Nothing
 
   -- Encoders
-  nodeEncodeBlockWithInfo  :: BlockConfig blk -> blk -> BinaryInfo Encoding
-  nodeEncodeBlock          :: BlockConfig blk -> blk -> Encoding
+  nodeEncodeBlockWithInfo  :: CodecConfig blk -> blk -> BinaryInfo Encoding
+  nodeEncodeBlock          :: CodecConfig blk -> blk -> Encoding
   nodeEncodeBlock cfg blk = binaryBlob $ nodeEncodeBlockWithInfo cfg blk
-  nodeEncodeHeader         :: BlockConfig blk
+  nodeEncodeHeader         :: CodecConfig blk
                            -> SerialisationVersion blk
                            -> Header blk -> Encoding
-  nodeEncodeWrappedHeader  :: BlockConfig blk
+  nodeEncodeWrappedHeader  :: CodecConfig blk
                            -> SerialisationAcrossNetwork blk
                            -> Serialised (Header blk) -> Encoding
   nodeEncodeGenTx          :: GenTx  blk -> Encoding
@@ -180,13 +180,13 @@ class ( LedgerSupportsProtocol    blk
   nodeEncodeResult         :: Query blk result -> result -> Encoding
 
   -- Decoders
-  nodeDecodeHeader         :: forall s. BlockConfig blk
+  nodeDecodeHeader         :: forall s. CodecConfig blk
                            -> SerialisationVersion blk
                            -> Decoder s (Lazy.ByteString -> Header blk)
-  nodeDecodeWrappedHeader  :: forall s. BlockConfig blk
+  nodeDecodeWrappedHeader  :: forall s. CodecConfig blk
                            -> SerialisationAcrossNetwork blk
                            -> Decoder s (Serialised (Header blk))
-  nodeDecodeBlock          :: forall s. BlockConfig blk -> Decoder s (Lazy.ByteString -> blk)
+  nodeDecodeBlock          :: forall s. CodecConfig blk -> Decoder s (Lazy.ByteString -> blk)
   nodeDecodeGenTx          :: forall s. Decoder s (GenTx blk)
   nodeDecodeGenTxId        :: forall s. Decoder s (GenTxId blk)
   nodeDecodeHeaderHash     :: forall s. Proxy blk -> Decoder s (HeaderHash blk)

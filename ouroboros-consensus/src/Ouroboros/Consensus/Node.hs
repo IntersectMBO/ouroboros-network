@@ -230,7 +230,7 @@ run runargs@RunNodeArgs{..} =
         NTN.mkApps
           nodeKernel
           rnTraceNTN
-          (NTN.defaultCodecs (configBlock (getTopLevelConfig nodeKernel)) version)
+          (NTN.defaultCodecs (configCodec (getTopLevelConfig nodeKernel)) version)
           (Just 70) -- timeout after waiting this long for the next header
                     -- 70s allows for 3 slots (3 * 20s)
           (NTN.mkHandlers nodeArgs nodeKernel)
@@ -243,7 +243,7 @@ run runargs@RunNodeArgs{..} =
     mkNodeToClientApps nodeArgs nodeKernel version =
         NTC.mkApps
           rnTraceNTC
-          (NTC.defaultCodecs (configBlock (getTopLevelConfig nodeKernel)) version)
+          (NTC.defaultCodecs (configCodec (getTopLevelConfig nodeKernel)) version)
           (NTC.mkHandlers nodeArgs nodeKernel)
 
     mkDiffusionApplications
@@ -364,14 +364,14 @@ mkChainDbArgs
 mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
               chunkInfo = (ChainDB.defaultArgs dbPath)
     { ChainDB.cdbBlocksPerFile        = mkBlocksPerFile 1000
-    , ChainDB.cdbDecodeBlock          = nodeDecodeBlock          bcfg
-    , ChainDB.cdbDecodeHeader         = nodeDecodeHeader         bcfg SerialisedToDisk
+    , ChainDB.cdbDecodeBlock          = nodeDecodeBlock          ccfg
+    , ChainDB.cdbDecodeHeader         = nodeDecodeHeader         ccfg SerialisedToDisk
     , ChainDB.cdbDecodeConsensusState = nodeDecodeConsensusState pb cfg
     , ChainDB.cdbDecodeHash           = nodeDecodeHeaderHash     pb
     , ChainDB.cdbDecodeLedger         = nodeDecodeLedgerState
     , ChainDB.cdbDecodeTipInfo        = nodeDecodeTipInfo        pb
-    , ChainDB.cdbEncodeBlock          = nodeEncodeBlockWithInfo  bcfg
-    , ChainDB.cdbEncodeHeader         = nodeEncodeHeader         bcfg SerialisedToDisk
+    , ChainDB.cdbEncodeBlock          = nodeEncodeBlockWithInfo  ccfg
+    , ChainDB.cdbEncodeHeader         = nodeEncodeHeader         ccfg SerialisedToDisk
     , ChainDB.cdbEncodeConsensusState = nodeEncodeConsensusState pb cfg
     , ChainDB.cdbEncodeHash           = nodeEncodeHeaderHash     pb
     , ChainDB.cdbEncodeLedger         = nodeEncodeLedgerState
@@ -393,7 +393,7 @@ mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
     }
   where
     k    = configSecurityParam cfg
-    bcfg = configBlock         cfg
+    ccfg = configCodec         cfg
     pb   = Proxy @blk
 
 mkNodeArgs

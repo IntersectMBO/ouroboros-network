@@ -98,11 +98,14 @@ instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
   mockEncodeConsensusState = const encode
   mockDecodeConsensusState = const decode
 
-instance SimpleCrypto c
-      => BlockSupportsProtocol (SimpleBlock c SimplePraosRuleExt) where
+instance
+  ( SimpleCrypto c
+  ) => BlockSupportsProtocol (SimpleBlock c SimplePraosRuleExt) where
   validateView _ _ = ()
 
-instance SimpleCrypto c => LedgerSupportsProtocol (SimplePraosRuleBlock c) where
+instance
+  ( SimpleCrypto c
+  ) => LedgerSupportsProtocol (SimplePraosRuleBlock c) where
   protocolLedgerView _ _ = ()
   ledgerViewForecastAt_ _ _ = Just . trivialForecast
 

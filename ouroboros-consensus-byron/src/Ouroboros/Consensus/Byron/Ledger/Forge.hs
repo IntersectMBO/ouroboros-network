@@ -62,13 +62,16 @@ forgeEBB
   -> ChainHash ByronBlock            -- ^ Previous hash
   -> ByronBlock
 forgeEBB cfg curSlot curNo prevHash =
-        mkByronBlock (byronEpochSlots byronConfig)
+        mkByronBlock (byronEpochSlots byronCodecs)
       . CC.Block.ABOBBoundary
       . CC.reAnnotateBoundary (byronProtocolMagicId byronConfig)
       $ boundaryBlock
   where
     byronConfig :: BlockConfig ByronBlock
     byronConfig = configBlock cfg
+
+    byronCodecs :: CodecConfig ByronBlock
+    byronCodecs = configCodec cfg
 
     prevHeaderHash :: Either CC.Genesis.GenesisHash CC.Block.HeaderHash
     prevHeaderHash = case prevHash of
@@ -93,7 +96,7 @@ forgeEBB cfg curSlot curNo prevHash =
       where
         CC.Slot.EpochNumber epoch =
             CC.Slot.epochNo
-          . CC.Slot.fromSlotNumber (byronEpochSlots byronConfig)
+          . CC.Slot.fromSlotNumber (byronEpochSlots byronCodecs)
           $ coerce curSlot
 
 -- | Internal helper data type for 'forgeRegularBlock' used to accumulate the
@@ -133,7 +136,7 @@ forgeRegularBlock
 forgeRegularBlock cfg _updateState curNo tickedLedger txs isLeader =
     let ouroborosPayload =
           forgePBftFields
-            (mkByronContextDSIGN (configBlock cfg))
+            (mkByronContextDSIGN $ configBlock cfg)
             isLeader
             (reAnnotate $ Annotated toSign ())
     in return $ forge ouroborosPayload
@@ -143,6 +146,9 @@ forgeRegularBlock cfg _updateState curNo tickedLedger txs isLeader =
 
     byronConfig :: BlockConfig ByronBlock
     byronConfig = configBlock cfg
+
+    byronCodecs :: CodecConfig ByronBlock
+    byronCodecs = configCodec cfg
 
     blockPayloads :: BlockPayloads
     blockPayloads = foldr extendBlockPayloads initBlockPayloads txs
@@ -192,7 +198,7 @@ forgeRegularBlock cfg _updateState curNo tickedLedger txs isLeader =
       BlockHash (ByronHash h) -> h
 
     epochAndSlotCount :: CC.Slot.EpochAndSlotCount
-    epochAndSlotCount = CC.Slot.fromSlotNumber (byronEpochSlots byronConfig) $
+    epochAndSlotCount = CC.Slot.fromSlotNumber (byronEpochSlots byronCodecs) $
                           coerce curSlot
 
     toSign :: CC.Block.ToSign
@@ -214,7 +220,7 @@ forgeRegularBlock cfg _updateState curNo tickedLedger txs isLeader =
     forge :: PBftFields PBftByronCrypto (Annotated CC.Block.ToSign ByteString)
           -> ByronBlock
     forge ouroborosPayload =
-       annotateByronBlock (byronEpochSlots byronConfig) block
+       annotateByronBlock (byronEpochSlots byronCodecs) block
       where
         block :: CC.Block.Block
         block = CC.Block.ABlock {

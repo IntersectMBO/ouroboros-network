@@ -5,6 +5,7 @@
 module Ouroboros.Consensus.Config (
     TopLevelConfig(..)
   , configSecurityParam
+  , configCodec
   ) where
 
 import           GHC.Generics (Generic)
@@ -31,3 +32,9 @@ instance ( ConsensusProtocol  (BlockProtocol blk)
 configSecurityParam :: ConsensusProtocol (BlockProtocol blk)
                     => TopLevelConfig blk -> SecurityParam
 configSecurityParam = protocolSecurityParam . configConsensus
+
+configCodec
+  :: BlockHasCodecConfig blk
+  => TopLevelConfig blk
+  -> CodecConfig blk
+configCodec = getCodecConfig . configBlock

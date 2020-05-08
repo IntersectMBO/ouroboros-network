@@ -172,7 +172,7 @@ data Codecs blk e m bCS bSCS bBF bSBF bTX = Codecs {
 
 -- | Protocol codecs for the node-to-node protocols
 defaultCodecs :: forall m blk. (IOLike m, RunNode blk)
-              => BlockConfig       blk
+              => CodecConfig       blk
               -> NodeToNodeVersion blk
               -> Codecs blk DeserialiseFailure m
                    ByteString ByteString ByteString ByteString ByteString

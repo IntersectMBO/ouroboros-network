@@ -250,6 +250,13 @@ data instance BlockConfig (SimpleBlock c ext) = SimpleBlockConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
+-- | No additional codec information is required for simple blocks
+data instance CodecConfig (SimpleBlock c ext) = SimpleCodecConfig
+  deriving (Generic, NoUnexpectedThunks)
+
+instance BlockHasCodecConfig (SimpleBlock c ext) where
+  getCodecConfig = const SimpleCodecConfig
+
 defaultSimpleBlockConfig :: SecurityParam
                          -> SlotLength
                          -> BlockConfig (SimpleBlock c ext)

@@ -22,8 +22,6 @@ module Ouroboros.Consensus.Byron.Node (
   , pbftLeaderOrNot
     -- * For testing
   , plcCoreNodeId
-    -- * Exported for the benefit of ByronDual
-  , extractEpochSlots
   ) where
 
 import           Codec.Serialise (decode, encode)
@@ -250,8 +248,8 @@ instance RunNode ByronBlock where
   nodeEncodeQuery           = encodeByronQuery
   nodeEncodeResult          = encodeByronResult
 
-  nodeDecodeBlock           = decodeByronBlock . extractEpochSlots
-  nodeDecodeHeader          = \ cfg -> decodeByronHeader (extractEpochSlots cfg)
+  nodeDecodeBlock           = decodeByronBlock . byronEpochSlots
+  nodeDecodeHeader          = \ cfg -> decodeByronHeader (byronEpochSlots cfg)
   nodeDecodeWrappedHeader   = \_cfg -> decodeWrappedByronHeader
   nodeDecodeGenTx           = decodeByronGenTx
   nodeDecodeGenTxId         = decodeByronGenTxId
@@ -270,6 +268,3 @@ extractGenesisData :: TopLevelConfig ByronBlock -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData
                    . byronGenesisConfig
                    . configBlock
-
-extractEpochSlots :: BlockConfig ByronBlock -> EpochSlots
-extractEpochSlots = Genesis.configEpochSlots . byronGenesisConfig
