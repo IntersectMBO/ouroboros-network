@@ -16,7 +16,6 @@ import           Numeric.Natural
 import           Cardano.Binary (ToCBOR)
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import           Cardano.Crypto.DSIGN.Ed25519 (Ed25519DSIGN)
-import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_256)
 import           Cardano.Crypto.KES.Class
 import qualified Cardano.Crypto.KES.Class as KES
@@ -52,7 +51,7 @@ data TPraosStandardCrypto
 
 instance Crypto TPraosStandardCrypto where
   type DSIGN TPraosStandardCrypto = Ed25519DSIGN
-  type KES   TPraosStandardCrypto = SimpleKES Ed448DSIGN 100 -- TODO correct number of evolutions?
+  type KES   TPraosStandardCrypto = SimpleKES Ed25519DSIGN 14 -- TODO: replace with the Sum6KES or Sum7KES
   type VRF   TPraosStandardCrypto = SimpleVRF
   type HASH  TPraosStandardCrypto = Blake2b_256
 

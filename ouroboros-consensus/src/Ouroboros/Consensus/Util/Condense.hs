@@ -27,9 +27,9 @@ import           Text.Printf (printf)
 import           Control.Monad.Class.MonadTime (Time (..))
 
 import           Cardano.Crypto (VerificationKey)
-import           Cardano.Crypto.DSIGN (Ed448DSIGN, MockDSIGN, SigDSIGN,
-                     pattern SigEd448DSIGN, pattern SigMockDSIGN,
-                     SignedDSIGN (..))
+import           Cardano.Crypto.DSIGN (Ed25519DSIGN, Ed448DSIGN, MockDSIGN,
+                     SigDSIGN, pattern SigEd25519DSIGN, pattern SigEd448DSIGN,
+                     pattern SigMockDSIGN, SignedDSIGN (..))
 import           Cardano.Crypto.Hash (Hash)
 import           Cardano.Crypto.KES (MockKES, NeverKES, SigKES,
                      pattern SigMockKES, pattern SigSimpleKES,
@@ -174,6 +174,9 @@ instance Condense VerificationKey where
 
 instance Condense (SigDSIGN v) => Condense (SignedDSIGN v a) where
   condense (SignedDSIGN sig) = condense sig
+
+instance Condense (SigDSIGN Ed25519DSIGN) where
+  condense (SigEd25519DSIGN s) = show s
 
 instance Condense (SigDSIGN Ed448DSIGN) where
   condense (SigEd448DSIGN s) = show s
