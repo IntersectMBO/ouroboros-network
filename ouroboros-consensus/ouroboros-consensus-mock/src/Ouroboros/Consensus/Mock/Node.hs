@@ -51,15 +51,15 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeBlockMatchesHeader    = matchesSimpleHeader
   nodeBlockFetchSize        = fromIntegral . simpleBlockSize . simpleHeaderStd
   nodeIsEBB                 = const Nothing
-  nodeImmDbChunkInfo        = \_ cfg -> simpleChunkInfo $
+  nodeImmDbChunkInfo        = \cfg -> simpleChunkInfo $
     EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
-  nodeStartTime             = \_ _ -> SystemStart dummyDate
+  nodeStartTime             = \_cfg -> SystemStart dummyDate
     where
       --  This doesn't matter much
       dummyDate = UTCTime (fromGregorian 2019 8 13) 0
-  nodeNetworkMagic          = \_ _ -> NetworkMagic 0x0000ffff
+  nodeNetworkMagic          = \_ -> NetworkMagic 0x0000ffff
 
-  nodeProtocolMagicId       = const mockProtocolMagicId
+  nodeProtocolMagicId       = mockProtocolMagicId
   nodeHashInfo              = const simpleBlockHashInfo
   nodeMaxBlockSize          = const 2000000 -- TODO
   nodeBlockEncodingOverhead = const 1000 -- TODO
@@ -72,7 +72,7 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeEncodeGenTxId         =       encode
   nodeEncodeHeaderHash      = const encode
   nodeEncodeLedgerState     = encode
-  nodeEncodeConsensusState  = const mockEncodeConsensusState
+  nodeEncodeConsensusState  = mockEncodeConsensusState
   nodeEncodeApplyTxError    = const encode
   nodeEncodeTipInfo         = const encode
   nodeEncodeQuery           = \case {}
@@ -85,7 +85,7 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeDecodeGenTxId         =       decode
   nodeDecodeHeaderHash      = const decode
   nodeDecodeLedgerState     = decode
-  nodeDecodeConsensusState  = const mockDecodeConsensusState
+  nodeDecodeConsensusState  = mockDecodeConsensusState
   nodeDecodeApplyTxError    = const decode
   nodeDecodeTipInfo         = const decode
   nodeDecodeQuery           = error "Mock.nodeDecodeQuery"

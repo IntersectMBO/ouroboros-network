@@ -190,7 +190,7 @@ instance RunNode ByronBlock where
 
   -- The epoch size is fixed and can be derived from @k@ by the ledger
   -- ('kEpochSlots').
-  nodeImmDbChunkInfo        = \_proxy cfg ->
+  nodeImmDbChunkInfo        = \cfg ->
                                   simpleChunkInfo
                                 . (coerce :: EpochSlots -> EpochSize)
                                 . kEpochSlots
@@ -213,17 +213,14 @@ instance RunNode ByronBlock where
           genesisEBB = forgeEBB cfg (SlotNo 0) (BlockNo 0) GenesisHash
 
   -- Extract it from the 'Genesis.Config'
-  nodeStartTime             = const
-                            $ SystemStart
+  nodeStartTime             = SystemStart
                             . Genesis.gdStartTime
                             . extractGenesisData
-  nodeNetworkMagic          = const
-                            $ NetworkMagic
+  nodeNetworkMagic          = NetworkMagic
                             . Crypto.unProtocolMagicId
                             . Genesis.gdProtocolMagicId
                             . extractGenesisData
-  nodeProtocolMagicId       = const
-                            $ Genesis.gdProtocolMagicId
+  nodeProtocolMagicId       = Genesis.gdProtocolMagicId
                             . extractGenesisData
   nodeHashInfo              = const byronHashInfo
   nodeCheckIntegrity        = verifyBlockIntegrity . configBlock
@@ -242,7 +239,7 @@ instance RunNode ByronBlock where
   nodeEncodeGenTxId         = encodeByronGenTxId
   nodeEncodeHeaderHash      = const encodeByronHeaderHash
   nodeEncodeLedgerState     = encodeByronLedgerState
-  nodeEncodeConsensusState  = \_proxy _cfg -> encodeByronConsensusState
+  nodeEncodeConsensusState  = \_cfg -> encodeByronConsensusState
   nodeEncodeApplyTxError    = const encodeByronApplyTxError
   nodeEncodeTipInfo         = const encode
   nodeEncodeQuery           = encodeByronQuery
@@ -255,7 +252,7 @@ instance RunNode ByronBlock where
   nodeDecodeGenTxId         = decodeByronGenTxId
   nodeDecodeHeaderHash      = const decodeByronHeaderHash
   nodeDecodeLedgerState     = decodeByronLedgerState
-  nodeDecodeConsensusState  = \_proxy cfg ->
+  nodeDecodeConsensusState  = \cfg ->
                                  let k = configSecurityParam cfg
                                  in decodeByronConsensusState k
   nodeDecodeApplyTxError    = const decodeByronApplyTxError

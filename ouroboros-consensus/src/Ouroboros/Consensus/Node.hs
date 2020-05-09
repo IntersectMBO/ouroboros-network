@@ -161,7 +161,7 @@ run runargs@RunNodeArgs{..} =
           inFuture = InFuture.reference
                        cfg
                        rnMaxClockSkew
-                       (defaultSystemTime $ nodeStartTime (Proxy @blk) cfg)
+                       (defaultSystemTime $ nodeStartTime cfg)
 
       let customiseChainDbArgs' args
             | lastShutDownWasClean
@@ -186,7 +186,7 @@ run runargs@RunNodeArgs{..} =
       btime <- hardForkBlockchainTime
                  registry
                  (blockchainTimeTracer rnTraceConsensus)
-                 (defaultSystemTime (nodeStartTime (Proxy @blk) cfg))
+                 (defaultSystemTime $ nodeStartTime cfg)
                  cfg
                  (ledgerState <$> ChainDB.getCurrentLedger chainDB)
 
@@ -303,7 +303,7 @@ withDBChecks RunNodeArgs{..} body = do
     either throwM return =<< checkDbMarker
       hasFS
       mountPoint
-      (nodeProtocolMagicId (Proxy @blk) pInfoConfig)
+      (nodeProtocolMagicId pInfoConfig)
 
     -- Then create the lock file.
     withLockDB mountPoint $ do
@@ -347,7 +347,7 @@ openChainDB tracer registry inFuture dbPath cfg initLedger customiseArgs =
     args :: ChainDbArgs IO blk
     args = customiseArgs $
              mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
-             (nodeImmDbChunkInfo (Proxy @blk) cfg)
+             (nodeImmDbChunkInfo cfg)
 
 mkChainDbArgs
   :: forall blk. RunNode blk
@@ -366,13 +366,13 @@ mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
     { ChainDB.cdbBlocksPerFile        = mkBlocksPerFile 1000
     , ChainDB.cdbDecodeBlock          = nodeDecodeBlock          ccfg
     , ChainDB.cdbDecodeHeader         = nodeDecodeHeader         ccfg SerialisedToDisk
-    , ChainDB.cdbDecodeConsensusState = nodeDecodeConsensusState pb cfg
+    , ChainDB.cdbDecodeConsensusState = nodeDecodeConsensusState cfg
     , ChainDB.cdbDecodeHash           = nodeDecodeHeaderHash     pb
     , ChainDB.cdbDecodeLedger         = nodeDecodeLedgerState
     , ChainDB.cdbDecodeTipInfo        = nodeDecodeTipInfo        pb
     , ChainDB.cdbEncodeBlock          = nodeEncodeBlockWithInfo  ccfg
     , ChainDB.cdbEncodeHeader         = nodeEncodeHeader         ccfg SerialisedToDisk
-    , ChainDB.cdbEncodeConsensusState = nodeEncodeConsensusState pb cfg
+    , ChainDB.cdbEncodeConsensusState = nodeEncodeConsensusState cfg
     , ChainDB.cdbEncodeHash           = nodeEncodeHeaderHash     pb
     , ChainDB.cdbEncodeLedger         = nodeEncodeLedgerState
     , ChainDB.cdbEncodeTipInfo        = nodeEncodeTipInfo        pb

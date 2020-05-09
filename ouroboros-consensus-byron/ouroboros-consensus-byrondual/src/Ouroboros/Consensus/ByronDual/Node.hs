@@ -232,10 +232,10 @@ instance RunNode DualByronBlock where
                          GenesisHash
 
   -- Node config is a consensus concern, determined by the main block only
-  nodeImmDbChunkInfo  = \_p -> nodeImmDbChunkInfo  pb . dualTopLevelConfigMain
-  nodeStartTime       = \_p -> nodeStartTime       pb . dualTopLevelConfigMain
-  nodeNetworkMagic    = \_p -> nodeNetworkMagic    pb . dualTopLevelConfigMain
-  nodeProtocolMagicId = \_p -> nodeProtocolMagicId pb . dualTopLevelConfigMain
+  nodeImmDbChunkInfo  = nodeImmDbChunkInfo  . dualTopLevelConfigMain
+  nodeStartTime       = nodeStartTime       . dualTopLevelConfigMain
+  nodeNetworkMagic    = nodeNetworkMagic    . dualTopLevelConfigMain
+  nodeProtocolMagicId = nodeProtocolMagicId . dualTopLevelConfigMain
 
   -- The max block size we set to the max block size of the /concrete/ block
   -- (Correspondingly, 'txSize' for the Byron spec returns 0)
@@ -282,7 +282,7 @@ instance RunNode DualByronBlock where
   nodeEncodeHeaderHash     = const $ encodeByronHeaderHash
   nodeEncodeGenTx          = encodeDualGenTx   encodeByronGenTx
   nodeEncodeGenTxId        = encodeDualGenTxId encodeByronGenTxId
-  nodeEncodeConsensusState = \_proxy _cfg -> encodeByronConsensusState
+  nodeEncodeConsensusState = \_cfg -> encodeByronConsensusState
   nodeEncodeQuery          = \case {}
   nodeEncodeResult         = \case {}
 
@@ -303,7 +303,7 @@ instance RunNode DualByronBlock where
   nodeDecodeHeaderHash     = const $ decodeByronHeaderHash
   nodeDecodeLedgerState    = decodeDualLedgerState decodeByronLedgerState
   nodeDecodeApplyTxError   = const $ decodeDualGenTxErr    decodeByronApplyTxError
-  nodeDecodeConsensusState = \_proxy cfg ->
+  nodeDecodeConsensusState = \cfg ->
                                 let k = configSecurityParam cfg
                                 in decodeByronConsensusState k
   nodeDecodeQuery          = error "DualByron.nodeDecodeQuery"

@@ -387,7 +387,7 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeIsEBB = const Nothing
 
   -- We fix the chunk size to 10k
-  nodeImmDbChunkInfo _proxy =
+  nodeImmDbChunkInfo =
       simpleChunkInfo
     . EpochSize
     . (* 10)
@@ -396,9 +396,9 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
     . tpraosParams
     . configConsensus
 
-  nodeStartTime       = const $ shelleyStartTime       . configBlock
-  nodeNetworkMagic    = const $ shelleyNetworkMagic    . configBlock
-  nodeProtocolMagicId = const $ shelleyProtocolMagicId . configBlock
+  nodeStartTime       = shelleyStartTime       . configBlock
+  nodeNetworkMagic    = shelleyNetworkMagic    . configBlock
+  nodeProtocolMagicId = shelleyProtocolMagicId . configBlock
 
   nodeHashInfo = const shelleyHashInfo
 
@@ -428,7 +428,7 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeEncodeGenTxId        = toCBOR
   nodeEncodeHeaderHash     = \Proxy -> toCBOR
   nodeEncodeLedgerState    = encodeShelleyLedgerState
-  nodeEncodeConsensusState = \Proxy _cfg -> toCBOR
+  nodeEncodeConsensusState = \_cfg -> toCBOR
   nodeEncodeApplyTxError   = \Proxy -> toCBOR
   nodeEncodeTipInfo        = \Proxy -> toCBOR
   nodeEncodeQuery          = encodeShelleyQuery
@@ -441,7 +441,7 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeDecodeGenTxId        = fromCBOR
   nodeDecodeHeaderHash     = \Proxy -> fromCBOR
   nodeDecodeLedgerState    = decodeShelleyLedgerState
-  nodeDecodeConsensusState = \Proxy _cfg -> fromCBOR
+  nodeDecodeConsensusState = \_cfg -> fromCBOR
   nodeDecodeApplyTxError   = \Proxy -> fromCBOR
   nodeDecodeTipInfo        = \Proxy -> fromCBOR
   nodeDecodeQuery          = decodeShelleyQuery
