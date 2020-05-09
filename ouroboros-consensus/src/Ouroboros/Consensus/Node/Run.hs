@@ -40,7 +40,7 @@ import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
                      ChunkInfo, HashInfo)
 
@@ -120,9 +120,14 @@ class ( LedgerSupportsProtocol    blk
   --
   -- This function can be used to, for example, create the genesis EBB in case
   -- the chain(DB) is empty.
+  --
+  -- We only provide a limited interface to the chain DB. This is primarily
+  -- useful for the definition of combinators (which may need to turn a
+  -- 'InitChainDB' for one type of block into an 'InitChainDB' for a closely
+  -- related type of block).
   nodeInitChainDB :: IOLike m
                   => TopLevelConfig blk
-                  -> ChainDB m blk
+                  -> InitChainDB m blk
                   -> m ()
   nodeInitChainDB _ _ = return ()
 

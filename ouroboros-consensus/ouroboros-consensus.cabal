@@ -131,6 +131,7 @@ library
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Reader
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                        Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
+                       Ouroboros.Consensus.Storage.ChainDB.Init
                        Ouroboros.Consensus.Storage.Common
                        Ouroboros.Consensus.Storage.FS.API
                        Ouroboros.Consensus.Storage.FS.API.Types

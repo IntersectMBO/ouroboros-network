@@ -11,6 +11,7 @@ module Ouroboros.Consensus.ByronDual.Node (
     protocolInfoDualByron
   ) where
 
+import           Control.Monad
 import           Data.Either (fromRight)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (fromMaybe)
@@ -48,8 +49,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
-import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
-import           Ouroboros.Consensus.Util.IOLike
+import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Config (byronEpochSlots)
@@ -212,24 +212,22 @@ instance RunNode DualByronBlock where
 
   -- Just like Byron, we need to start with an EBB
   nodeInitChainDB cfg chainDB = do
-      tip <- atomically $ ChainDB.getTipPoint chainDB
-      case tip of
-        BlockPoint {} -> return () -- Chain is not empty
-        GenesisPoint  -> ChainDB.addBlock_ chainDB genesisEBB
-          where
-            genesisEBB :: DualByronBlock
-            genesisEBB = DualBlock {
-                  dualBlockMain   = byronEBB
-                , dualBlockAux    = Nothing
-                , dualBlockBridge = mempty
-                }
+      empty <- InitChainDB.checkEmpty chainDB
+      when empty $ InitChainDB.addBlock chainDB genesisEBB
+    where
+      genesisEBB :: DualByronBlock
+      genesisEBB = DualBlock {
+            dualBlockMain   = byronEBB
+          , dualBlockAux    = Nothing
+          , dualBlockBridge = mempty
+          }
 
-            byronEBB :: ByronBlock
-            byronEBB = forgeEBB
-                         (dualTopLevelConfigMain cfg)
-                         (SlotNo 0)
-                         (BlockNo 0)
-                         GenesisHash
+      byronEBB :: ByronBlock
+      byronEBB = forgeEBB
+                   (dualTopLevelConfigMain cfg)
+                   (SlotNo 0)
+                   (BlockNo 0)
+                   GenesisHash
 
   -- Node config is a consensus concern, determined by the main block only
   nodeImmDbChunkInfo  = nodeImmDbChunkInfo  . dualTopLevelConfigMain
