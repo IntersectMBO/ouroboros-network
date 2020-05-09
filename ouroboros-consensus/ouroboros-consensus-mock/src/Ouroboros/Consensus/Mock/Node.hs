@@ -76,7 +76,7 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeEncodeLedgerState     = const encode
   nodeEncodeConsensusState  = mockEncodeConsensusState
   nodeEncodeApplyTxError    = const encode
-  nodeEncodeAnnTip          = const $ defaultEncodeAnnTip encode encode
+  nodeEncodeAnnTip          = const $ defaultEncodeAnnTip encode
   nodeEncodeQuery           = \case {}
   nodeEncodeResult          = \case {}
 
@@ -89,6 +89,6 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeDecodeLedgerState     = const decode
   nodeDecodeConsensusState  = mockDecodeConsensusState
   nodeDecodeApplyTxError    = const decode
-  nodeDecodeAnnTip          = const $ defaultDecodeAnnTip decode decode
+  nodeDecodeAnnTip          = const $ defaultDecodeAnnTip decode
   nodeDecodeQuery           = error "Mock.nodeDecodeQuery"
   nodeDecodeResult          = \case {}

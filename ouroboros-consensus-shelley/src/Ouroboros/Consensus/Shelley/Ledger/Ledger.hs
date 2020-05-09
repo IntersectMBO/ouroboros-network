@@ -345,10 +345,10 @@ serialisationFormatVersion0 :: VersionNumber
 serialisationFormatVersion0 = 0
 
 encodeShelleyAnnTip :: Crypto c => AnnTip (ShelleyBlock c) -> Encoding
-encodeShelleyAnnTip = defaultEncodeAnnTip toCBOR toCBOR
+encodeShelleyAnnTip = defaultEncodeAnnTip toCBOR
 
 decodeShelleyAnnTip :: Crypto c => Decoder s (AnnTip (ShelleyBlock c))
-decodeShelleyAnnTip = defaultDecodeAnnTip fromCBOR fromCBOR
+decodeShelleyAnnTip = defaultDecodeAnnTip fromCBOR
 
 encodeShelleyExtLedgerState :: Crypto c
                             => ExtLedgerState (ShelleyBlock c)

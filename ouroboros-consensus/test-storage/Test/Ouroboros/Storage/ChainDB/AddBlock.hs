@@ -248,7 +248,7 @@ mkArgs cfg chunkInfo initLedger tracer registry hashInfo
     , cdbDecodeHeader         = const <$> decode
     , cdbDecodeLedger         = decode
     , cdbDecodeConsensusState = decode
-    , cdbDecodeAnnTip         = defaultDecodeAnnTip decode decode
+    , cdbDecodeAnnTip         = defaultDecodeAnnTip decode
 
       -- Encoders
     , cdbEncodeHash           = encode
@@ -256,7 +256,7 @@ mkArgs cfg chunkInfo initLedger tracer registry hashInfo
     , cdbEncodeHeader         = encode
     , cdbEncodeLedger         = encode
     , cdbEncodeConsensusState = encode
-    , cdbEncodeAnnTip         = defaultEncodeAnnTip encode encode
+    , cdbEncodeAnnTip         = defaultEncodeAnnTip encode
 
       -- HasFS instances
     , cdbHasFSImmDb           = simHasFS immDbFsVar

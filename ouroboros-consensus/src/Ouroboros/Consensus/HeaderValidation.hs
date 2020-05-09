@@ -448,27 +448,33 @@ validateHeader cfg ledgerView hdr st = do
 
 defaultEncodeAnnTip :: TipInfo blk ~ ()
                     => (HeaderHash blk -> Encoding)
-                    -> (TipInfo    blk -> Encoding)
                     -> (AnnTip     blk -> Encoding)
-defaultEncodeAnnTip encodeHash encodeInfo AnnTip{..} = mconcat [
+defaultEncodeAnnTip encodeHash AnnTip{..} = mconcat [
       encodeListLen 4
     , encode     annTipSlotNo
     , encodeHash annTipHash
     , encode     annTipBlockNo
+      -- TODO: Useless field. Remove when OK to break binary compatibility.
     , encodeInfo annTipInfo
     ]
+  where
+    encodeInfo :: () -> Encoding
+    encodeInfo = encode
 
 defaultDecodeAnnTip :: TipInfo blk ~ ()
                     => (forall s. Decoder s (HeaderHash blk))
-                    -> (forall s. Decoder s (TipInfo    blk))
                     -> (forall s. Decoder s (AnnTip     blk))
-defaultDecodeAnnTip decodeHash decodeInfo = do
+defaultDecodeAnnTip decodeHash = do
     enforceSize "AnnTip" 4
     annTipSlotNo  <- decode
     annTipHash    <- decodeHash
     annTipBlockNo <- decode
+      -- TODO: Useless field. Remove when OK to break binary compatibility.
     annTipInfo    <- decodeInfo
     return AnnTip{..}
+  where
+    decodeInfo :: forall s. Decoder s ()
+    decodeInfo = decode
 
 encodeAnnTipIsEBB :: TipInfo blk ~ IsEBB
                   => (HeaderHash blk -> Encoding)
