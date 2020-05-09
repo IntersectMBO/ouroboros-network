@@ -26,6 +26,8 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
     -- * Auxiliary
   , getPParams
     -- * Serialisation
+  , encodeShelleyAnnTip
+  , decodeShelleyAnnTip
   , decodeShelleyLedgerState
   , encodeShelleyLedgerState
   , encodeShelleyQuery
@@ -342,22 +344,26 @@ getProposedPPUpdates = SL._ppups . SL._utxoState . SL.esLState . SL.nesEs
 serialisationFormatVersion0 :: VersionNumber
 serialisationFormatVersion0 = 0
 
+encodeShelleyAnnTip :: Crypto c => AnnTip (ShelleyBlock c) -> Encoding
+encodeShelleyAnnTip = defaultEncodeAnnTip toCBOR toCBOR
+
+decodeShelleyAnnTip :: Crypto c => Decoder s (AnnTip (ShelleyBlock c))
+decodeShelleyAnnTip = defaultDecodeAnnTip fromCBOR fromCBOR
+
 encodeShelleyExtLedgerState :: Crypto c
                             => ExtLedgerState (ShelleyBlock c)
                             -> Encoding
 encodeShelleyExtLedgerState = encodeExtLedgerState
     encodeShelleyLedgerState
     toCBOR
-    toCBOR
-    toCBOR
+    encodeShelleyAnnTip
 
 encodeShelleyHeaderState :: Crypto c
                          => HeaderState (ShelleyBlock c)
                          -> Encoding
 encodeShelleyHeaderState = encodeHeaderState
     toCBOR
-    toCBOR
-    toCBOR
+    encodeShelleyAnnTip
 
 encodeShelleyLedgerState :: Crypto c => LedgerState (ShelleyBlock c) -> Encoding
 encodeShelleyLedgerState

@@ -25,7 +25,6 @@ module Ouroboros.Consensus.Byron.Node (
   , plcCoreNodeId
   ) where
 
-import           Codec.Serialise (decode, encode)
 import           Control.Exception (Exception (..))
 import           Control.Monad.Except
 import           Data.Coerce (coerce)
@@ -244,7 +243,7 @@ instance RunNode ByronBlock where
   nodeEncodeLedgerState     = const encodeByronLedgerState
   nodeEncodeConsensusState  = \_cfg -> encodeByronConsensusState
   nodeEncodeApplyTxError    = const encodeByronApplyTxError
-  nodeEncodeTipInfo         = const encode
+  nodeEncodeAnnTip          = const encodeByronAnnTip
   nodeEncodeQuery           = encodeByronQuery
   nodeEncodeResult          = encodeByronResult
 
@@ -259,7 +258,7 @@ instance RunNode ByronBlock where
                                  let k = configSecurityParam cfg
                                  in decodeByronConsensusState k
   nodeDecodeApplyTxError    = const decodeByronApplyTxError
-  nodeDecodeTipInfo         = const decode
+  nodeDecodeAnnTip          = const decodeByronAnnTip
   nodeDecodeQuery           = decodeByronQuery
   nodeDecodeResult          = decodeByronResult
 

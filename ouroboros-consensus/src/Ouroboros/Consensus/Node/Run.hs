@@ -172,7 +172,7 @@ class ( LedgerSupportsProtocol    blk
   nodeEncodeLedgerState    :: TopLevelConfig blk -> LedgerState blk -> Encoding
   nodeEncodeConsensusState :: TopLevelConfig blk -> ConsensusState (BlockProtocol blk) -> Encoding
   nodeEncodeApplyTxError   :: Proxy blk -> ApplyTxErr blk -> Encoding
-  nodeEncodeTipInfo        :: Proxy blk -> TipInfo blk -> Encoding
+  nodeEncodeAnnTip         :: Proxy blk -> AnnTip blk -> Encoding
   nodeEncodeQuery          :: Query blk result -> Encoding
   nodeEncodeResult         :: Query blk result -> result -> Encoding
 
@@ -190,6 +190,6 @@ class ( LedgerSupportsProtocol    blk
   nodeDecodeLedgerState    :: forall s. TopLevelConfig blk -> Decoder s (LedgerState blk)
   nodeDecodeConsensusState :: forall s. TopLevelConfig blk -> Decoder s (ConsensusState (BlockProtocol blk))
   nodeDecodeApplyTxError   :: forall s. Proxy blk -> Decoder s (ApplyTxErr blk)
-  nodeDecodeTipInfo        :: forall s. Proxy blk -> Decoder s (TipInfo blk)
+  nodeDecodeAnnTip         :: forall s. Proxy blk -> Decoder s (AnnTip blk)
   nodeDecodeQuery          :: forall s. Decoder s (Some (Query blk))
   nodeDecodeResult         :: Query blk result -> forall s. Decoder s result

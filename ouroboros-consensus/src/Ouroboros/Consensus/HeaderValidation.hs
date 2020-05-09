@@ -37,8 +37,8 @@ module Ouroboros.Consensus.HeaderValidation (
   , HeaderError(..)
   , castHeaderError
     -- * Serialization
-  , encodeAnnTip
-  , decodeAnnTip
+  , defaultEncodeAnnTip
+  , defaultDecodeAnnTip
   , encodeHeaderState
   , decodeHeaderState
   ) where
@@ -442,10 +442,10 @@ validateHeader cfg ledgerView hdr st = do
   Serialisation
 -------------------------------------------------------------------------------}
 
-encodeAnnTip :: (HeaderHash blk -> Encoding)
-             -> (TipInfo    blk -> Encoding)
-             -> (AnnTip     blk -> Encoding)
-encodeAnnTip encodeHash encodeInfo AnnTip{..} = mconcat [
+defaultEncodeAnnTip :: (HeaderHash blk -> Encoding)
+                    -> (TipInfo    blk -> Encoding)
+                    -> (AnnTip     blk -> Encoding)
+defaultEncodeAnnTip encodeHash encodeInfo AnnTip{..} = mconcat [
       encodeListLen 4
     , encode     annTipSlotNo
     , encodeHash annTipHash
@@ -453,10 +453,10 @@ encodeAnnTip encodeHash encodeInfo AnnTip{..} = mconcat [
     , encodeInfo annTipInfo
     ]
 
-decodeAnnTip :: (forall s. Decoder s (HeaderHash blk))
-             -> (forall s. Decoder s (TipInfo    blk))
-             -> (forall s. Decoder s (AnnTip     blk))
-decodeAnnTip decodeHash decodeInfo = do
+defaultDecodeAnnTip :: (forall s. Decoder s (HeaderHash blk))
+                    -> (forall s. Decoder s (TipInfo    blk))
+                    -> (forall s. Decoder s (AnnTip     blk))
+defaultDecodeAnnTip decodeHash decodeInfo = do
     enforceSize "AnnTip" 4
     annTipSlotNo  <- decode
     annTipHash    <- decodeHash
@@ -465,30 +465,23 @@ decodeAnnTip decodeHash decodeInfo = do
     return AnnTip{..}
 
 encodeHeaderState :: (ConsensusState (BlockProtocol blk) -> Encoding)
-                  -> (HeaderHash  blk -> Encoding)
-                  -> (TipInfo     blk -> Encoding)
+                  -> (AnnTip      blk -> Encoding)
                   -> (HeaderState blk -> Encoding)
 encodeHeaderState encodeConsensusState
-                  encodeHash
-                  encodeInfo
+                  encodeAnnTip'
                   HeaderState{..} = mconcat [
       encodeListLen 3
     , encodeConsensusState headerStateConsensus
     , Util.CBOR.encodeSeq        encodeAnnTip' headerStateTips
     , Util.CBOR.encodeWithOrigin encodeAnnTip' headerStateAnchor
     ]
-  where
-    encodeAnnTip' = encodeAnnTip encodeHash encodeInfo
 
 decodeHeaderState :: (forall s. Decoder s (ConsensusState (BlockProtocol blk)))
-                  -> (forall s. Decoder s (HeaderHash  blk))
-                  -> (forall s. Decoder s (TipInfo     blk))
+                  -> (forall s. Decoder s (AnnTip      blk))
                   -> (forall s. Decoder s (HeaderState blk))
-decodeHeaderState decodeConsensusState decodeHash decodeInfo = do
+decodeHeaderState decodeConsensusState decodeAnnTip' = do
     enforceSize "HeaderState" 3
     headerStateConsensus <- decodeConsensusState
     headerStateTips      <- Util.CBOR.decodeSeq        decodeAnnTip'
     headerStateAnchor    <- Util.CBOR.decodeWithOrigin decodeAnnTip'
     return HeaderState{..}
-  where
-    decodeAnnTip' = decodeAnnTip decodeHash decodeInfo

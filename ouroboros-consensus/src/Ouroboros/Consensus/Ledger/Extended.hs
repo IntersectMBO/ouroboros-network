@@ -185,13 +185,11 @@ instance ( LedgerSupportsProtocol blk
 
 encodeExtLedgerState :: (LedgerState   blk -> Encoding)
                      -> (ConsensusState (BlockProtocol blk) -> Encoding)
-                     -> (HeaderHash    blk -> Encoding)
-                     -> (TipInfo       blk -> Encoding)
+                     -> (AnnTip        blk -> Encoding)
                      -> ExtLedgerState blk -> Encoding
 encodeExtLedgerState encodeLedgerState
                      encodeConsensusState
-                     encodeHash
-                     encodeInfo
+                     encodeAnnTip
                      ExtLedgerState{..} = mconcat [
       encodeLedgerState  ledgerState
     , encodeHeaderState' headerState
@@ -199,23 +197,19 @@ encodeExtLedgerState encodeLedgerState
   where
     encodeHeaderState' = encodeHeaderState
                            encodeConsensusState
-                           encodeHash
-                           encodeInfo
+                           encodeAnnTip
 
 decodeExtLedgerState :: (forall s. Decoder s (LedgerState    blk))
                      -> (forall s. Decoder s (ConsensusState (BlockProtocol blk)))
-                     -> (forall s. Decoder s (HeaderHash     blk))
-                     -> (forall s. Decoder s (TipInfo        blk))
+                     -> (forall s. Decoder s (AnnTip         blk))
                      -> (forall s. Decoder s (ExtLedgerState blk))
 decodeExtLedgerState decodeLedgerState
                      decodeConsensusState
-                     decodeHash
-                     decodeInfo = do
+                     decodeAnnTip = do
     ledgerState <- decodeLedgerState
     headerState <- decodeHeaderState'
     return ExtLedgerState{..}
   where
     decodeHeaderState' = decodeHeaderState
                            decodeConsensusState
-                           decodeHash
-                           decodeInfo
+                           decodeAnnTip

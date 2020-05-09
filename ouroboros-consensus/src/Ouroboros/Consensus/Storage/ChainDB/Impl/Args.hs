@@ -54,7 +54,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
       -- ^ The given encoding will include the header envelope
       -- ('cdbAddHdrEnv').
     , cdbDecodeLedger         :: forall s. Decoder s (LedgerState blk)
-    , cdbDecodeTipInfo        :: forall s. Decoder s (TipInfo blk)
+    , cdbDecodeAnnTip         :: forall s. Decoder s (AnnTip blk)
     , cdbDecodeConsensusState :: forall s. Decoder s (ConsensusState (BlockProtocol blk))
 
       -- Encoders
@@ -68,7 +68,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
       -- often be encoding the in-memory headers. (It is cheap for Byron
       -- headers, as we store the serialisation in the annotation.)
     , cdbEncodeLedger         :: LedgerState blk -> Encoding
-    , cdbEncodeTipInfo        :: TipInfo blk -> Encoding
+    , cdbEncodeAnnTip         :: AnnTip blk -> Encoding
     , cdbEncodeConsensusState :: ConsensusState (BlockProtocol blk) -> Encoding
 
       -- HasFS instances
@@ -228,11 +228,11 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrDecodeLedger         = cdbDecodeLedger
         , lgrDecodeConsensusState = cdbDecodeConsensusState
         , lgrDecodeHash           = cdbDecodeHash
-        , lgrDecodeTipInfo        = cdbDecodeTipInfo
+        , lgrDecodeAnnTip         = cdbDecodeAnnTip
         , lgrEncodeLedger         = cdbEncodeLedger
         , lgrEncodeConsensusState = cdbEncodeConsensusState
         , lgrEncodeHash           = cdbEncodeHash
-        , lgrEncodeTipInfo        = cdbEncodeTipInfo
+        , lgrEncodeAnnTip         = cdbEncodeAnnTip
         , lgrParams               = cdbParamsLgrDB
         , lgrDiskPolicy           = cdbDiskPolicy
         , lgrGenesis              = cdbGenesis
@@ -268,14 +268,14 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbDecodeBlock          = immDecodeBlock
     , cdbDecodeHeader         = immDecodeHeader
     , cdbDecodeLedger         = lgrDecodeLedger
-    , cdbDecodeTipInfo        = lgrDecodeTipInfo
+    , cdbDecodeAnnTip         = lgrDecodeAnnTip
     , cdbDecodeConsensusState = lgrDecodeConsensusState
       -- Encoders
     , cdbEncodeHash           = immEncodeHash
     , cdbEncodeBlock          = immEncodeBlock
     , cdbEncodeHeader         = cdbsEncodeHeader
     , cdbEncodeLedger         = lgrEncodeLedger
-    , cdbEncodeTipInfo        = lgrEncodeTipInfo
+    , cdbEncodeAnnTip         = lgrEncodeAnnTip
     , cdbEncodeConsensusState = lgrEncodeConsensusState
       -- HasFS instances
     , cdbHasFSImmDb           = immHasFS
