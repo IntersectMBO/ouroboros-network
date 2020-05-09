@@ -525,9 +525,8 @@ exampleHeaderState = (genesisHeaderState S.empty)
   where
     annTip = AnnTip {
         annTipSlotNo  = 0
-      , annTipHash    = exampleHeaderHash
       , annTipBlockNo = 0
-      , annTipInfo    = IsNotEBB
+      , annTipInfo    = (exampleHeaderHash, IsNotEBB)
       }
 
 exampleHeaderHash :: ByronHash
