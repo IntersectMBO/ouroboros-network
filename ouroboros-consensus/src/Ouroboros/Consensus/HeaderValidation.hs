@@ -287,7 +287,7 @@ class ( HasAnnTip blk
   -- | Validate the header envelope
   validateEnvelope :: TopLevelConfig blk
                    -> Ticked (LedgerView (BlockProtocol blk))
-                   -> WithOrigin (AnnTip blk)
+                   -> WithOrigin (AnnTip blk) -- ^ Old tip
                    -> Header blk
                    -> Except (HeaderEnvelopeError blk) ()
 
