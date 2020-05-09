@@ -345,10 +345,10 @@ applyABoundaryBlock cfg blk ByronLedgerState{..} = do
 -------------------------------------------------------------------------------}
 
 encodeByronAnnTip :: AnnTip ByronBlock -> Encoding
-encodeByronAnnTip = encodeAnnTipIsEBB encodeByronHeaderHash encode
+encodeByronAnnTip = encodeAnnTipIsEBB encodeByronHeaderHash
 
 decodeByronAnnTip :: Decoder s (AnnTip ByronBlock)
-decodeByronAnnTip = decodeAnnTipIsEBB decodeByronHeaderHash decode
+decodeByronAnnTip = decodeAnnTipIsEBB decodeByronHeaderHash
 
 encodeByronExtLedgerState :: ExtLedgerState ByronBlock -> Encoding
 encodeByronExtLedgerState = encodeExtLedgerState

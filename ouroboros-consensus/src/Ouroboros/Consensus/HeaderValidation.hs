@@ -12,8 +12,6 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-{-# OPTIONS_GHC -Wno-redundant-constraints #-}
-
 -- | Header validation
 module Ouroboros.Consensus.HeaderValidation (
     validateHeader
@@ -478,27 +476,31 @@ defaultDecodeAnnTip decodeHash = do
 
 encodeAnnTipIsEBB :: TipInfo blk ~ IsEBB
                   => (HeaderHash blk -> Encoding)
-                  -> (TipInfo    blk -> Encoding)
                   -> (AnnTip     blk -> Encoding)
-encodeAnnTipIsEBB encodeHash encodeInfo AnnTip{..} = mconcat [
+encodeAnnTipIsEBB encodeHash AnnTip{..} = mconcat [
       encodeListLen 4
     , encode     annTipSlotNo
     , encodeHash annTipHash
     , encode     annTipBlockNo
     , encodeInfo annTipInfo
     ]
+  where
+    encodeInfo :: IsEBB -> Encoding
+    encodeInfo = encode
 
 decodeAnnTipIsEBB :: TipInfo blk ~ IsEBB
                   => (forall s. Decoder s (HeaderHash blk))
-                  -> (forall s. Decoder s (TipInfo    blk))
                   -> (forall s. Decoder s (AnnTip     blk))
-decodeAnnTipIsEBB decodeHash decodeInfo = do
+decodeAnnTipIsEBB decodeHash = do
     enforceSize "AnnTip" 4
     annTipSlotNo  <- decode
     annTipHash    <- decodeHash
     annTipBlockNo <- decode
     annTipInfo    <- decodeInfo
     return AnnTip{..}
+  where
+    decodeInfo :: forall s. Decoder s IsEBB
+    decodeInfo = decode
 
 encodeHeaderState :: (ConsensusState (BlockProtocol blk) -> Encoding)
                   -> (AnnTip      blk -> Encoding)
