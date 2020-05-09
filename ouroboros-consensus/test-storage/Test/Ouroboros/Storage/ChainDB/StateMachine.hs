@@ -1490,7 +1490,7 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
     , cdbDecodeHeader         = const <$> decode
     , cdbDecodeLedger         = decode
     , cdbDecodeConsensusState = decode
-    , cdbDecodeAnnTip         = defaultDecodeAnnTip decode decode
+    , cdbDecodeAnnTip         = decodeAnnTipIsEBB decode decode
 
       -- Encoders
     , cdbEncodeHash           = encode
@@ -1498,7 +1498,7 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
     , cdbEncodeHeader         = encode
     , cdbEncodeLedger         = encode
     , cdbEncodeConsensusState = encode
-    , cdbEncodeAnnTip         = defaultEncodeAnnTip encode encode
+    , cdbEncodeAnnTip         = encodeAnnTipIsEBB encode encode
 
       -- HasFS instances
     , cdbHasFSImmDb           = simHasFS immDbFsVar

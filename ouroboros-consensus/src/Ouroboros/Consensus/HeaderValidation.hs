@@ -12,6 +12,8 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+
 -- | Header validation
 module Ouroboros.Consensus.HeaderValidation (
     validateHeader
@@ -39,6 +41,8 @@ module Ouroboros.Consensus.HeaderValidation (
     -- * Serialization
   , defaultEncodeAnnTip
   , defaultDecodeAnnTip
+  , encodeAnnTipIsEBB
+  , decodeAnnTipIsEBB
   , encodeHeaderState
   , decodeHeaderState
   ) where
@@ -442,7 +446,8 @@ validateHeader cfg ledgerView hdr st = do
   Serialisation
 -------------------------------------------------------------------------------}
 
-defaultEncodeAnnTip :: (HeaderHash blk -> Encoding)
+defaultEncodeAnnTip :: TipInfo blk ~ ()
+                    => (HeaderHash blk -> Encoding)
                     -> (TipInfo    blk -> Encoding)
                     -> (AnnTip     blk -> Encoding)
 defaultEncodeAnnTip encodeHash encodeInfo AnnTip{..} = mconcat [
@@ -453,10 +458,35 @@ defaultEncodeAnnTip encodeHash encodeInfo AnnTip{..} = mconcat [
     , encodeInfo annTipInfo
     ]
 
-defaultDecodeAnnTip :: (forall s. Decoder s (HeaderHash blk))
+defaultDecodeAnnTip :: TipInfo blk ~ ()
+                    => (forall s. Decoder s (HeaderHash blk))
                     -> (forall s. Decoder s (TipInfo    blk))
                     -> (forall s. Decoder s (AnnTip     blk))
 defaultDecodeAnnTip decodeHash decodeInfo = do
+    enforceSize "AnnTip" 4
+    annTipSlotNo  <- decode
+    annTipHash    <- decodeHash
+    annTipBlockNo <- decode
+    annTipInfo    <- decodeInfo
+    return AnnTip{..}
+
+encodeAnnTipIsEBB :: TipInfo blk ~ IsEBB
+                  => (HeaderHash blk -> Encoding)
+                  -> (TipInfo    blk -> Encoding)
+                  -> (AnnTip     blk -> Encoding)
+encodeAnnTipIsEBB encodeHash encodeInfo AnnTip{..} = mconcat [
+      encodeListLen 4
+    , encode     annTipSlotNo
+    , encodeHash annTipHash
+    , encode     annTipBlockNo
+    , encodeInfo annTipInfo
+    ]
+
+decodeAnnTipIsEBB :: TipInfo blk ~ IsEBB
+                  => (forall s. Decoder s (HeaderHash blk))
+                  -> (forall s. Decoder s (TipInfo    blk))
+                  -> (forall s. Decoder s (AnnTip     blk))
+decodeAnnTipIsEBB decodeHash decodeInfo = do
     enforceSize "AnnTip" 4
     annTipSlotNo  <- decode
     annTipHash    <- decodeHash
