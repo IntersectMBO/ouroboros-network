@@ -9,6 +9,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Node (
     protocolInfoShelley
+  , protocolClientInfoShelley
   , ShelleyGenesis (..)
   , initialFundsPseudoTxIn
   , ShelleyGenesisStaking (..)
@@ -371,6 +372,14 @@ protocolInfoShelley genesis protVer mbCredentials =
               SL.StakeRefPtr _ ->
                 error "Pointer stake addresses not allowed in initial snapshot"
               SL.StakeRefNull -> Nothing
+
+
+protocolClientInfoShelley :: Crypto c => ProtocolClientInfo (ShelleyBlock c)
+protocolClientInfoShelley =
+    ProtocolClientInfo {
+      -- No particular codec configuration is needed for Shelley
+      pClientInfoCodecConfig = ShelleyCodecConfig
+    }
 
 
 {-------------------------------------------------------------------------------

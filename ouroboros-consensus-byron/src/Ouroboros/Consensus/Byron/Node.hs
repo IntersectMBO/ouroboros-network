@@ -12,6 +12,7 @@
 
 module Ouroboros.Consensus.Byron.Node (
     protocolInfoByron
+  , protocolClientInfoByron
   , mkByronConfig
   , PBftSignatureThreshold(..)
   , defaultPBftSignatureThreshold
@@ -147,6 +148,12 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
       }
   where
     byronConfig = mkByronConfig genesisConfig pVer sVer
+
+protocolClientInfoByron :: EpochSlots -> ProtocolClientInfo ByronBlock
+protocolClientInfoByron byronEpochSlots =
+    ProtocolClientInfo {
+      pClientInfoCodecConfig = ByronCodecConfig { byronEpochSlots }
+    }
 
 byronPBftParams :: Genesis.Config -> Maybe PBftSignatureThreshold -> PBftParams
 byronPBftParams cfg threshold = PBftParams {
