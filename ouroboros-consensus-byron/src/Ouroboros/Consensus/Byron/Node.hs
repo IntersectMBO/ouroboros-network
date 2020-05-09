@@ -234,7 +234,7 @@ instance RunNode ByronBlock where
   nodeEncodeGenTx           = encodeByronGenTx
   nodeEncodeGenTxId         = encodeByronGenTxId
   nodeEncodeHeaderHash      = const encodeByronHeaderHash
-  nodeEncodeLedgerState     = encodeByronLedgerState
+  nodeEncodeLedgerState     = const encodeByronLedgerState
   nodeEncodeConsensusState  = \_cfg -> encodeByronConsensusState
   nodeEncodeApplyTxError    = const encodeByronApplyTxError
   nodeEncodeTipInfo         = const encode
@@ -247,7 +247,7 @@ instance RunNode ByronBlock where
   nodeDecodeGenTx           = decodeByronGenTx
   nodeDecodeGenTxId         = decodeByronGenTxId
   nodeDecodeHeaderHash      = const decodeByronHeaderHash
-  nodeDecodeLedgerState     = decodeByronLedgerState
+  nodeDecodeLedgerState     = const decodeByronLedgerState
   nodeDecodeConsensusState  = \cfg ->
                                  let k = configSecurityParam cfg
                                  in decodeByronConsensusState k

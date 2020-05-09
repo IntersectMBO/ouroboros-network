@@ -275,7 +275,7 @@ instance RunNode DualByronBlock where
                                     (dualCodecConfigMain cfg)
                                     (castSerialisationAcrossNetwork version)
                                 . dualWrappedMain
-  nodeEncodeLedgerState    = encodeDualLedgerState encodeByronLedgerState
+  nodeEncodeLedgerState    = const $ encodeDualLedgerState encodeByronLedgerState
   nodeEncodeApplyTxError   = const $ encodeDualGenTxErr encodeByronApplyTxError
   nodeEncodeHeaderHash     = const $ encodeByronHeaderHash
   nodeEncodeGenTx          = encodeDualGenTx   encodeByronGenTx
@@ -299,7 +299,7 @@ instance RunNode DualByronBlock where
   nodeDecodeGenTx          = decodeDualGenTx   decodeByronGenTx
   nodeDecodeGenTxId        = decodeDualGenTxId decodeByronGenTxId
   nodeDecodeHeaderHash     = const $ decodeByronHeaderHash
-  nodeDecodeLedgerState    = decodeDualLedgerState decodeByronLedgerState
+  nodeDecodeLedgerState    = const $ decodeDualLedgerState decodeByronLedgerState
   nodeDecodeApplyTxError   = const $ decodeDualGenTxErr    decodeByronApplyTxError
   nodeDecodeConsensusState = \cfg ->
                                 let k = configSecurityParam cfg

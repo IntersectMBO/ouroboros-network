@@ -368,13 +368,13 @@ mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
     , ChainDB.cdbDecodeHeader         = nodeDecodeHeader         ccfg SerialisedToDisk
     , ChainDB.cdbDecodeConsensusState = nodeDecodeConsensusState cfg
     , ChainDB.cdbDecodeHash           = nodeDecodeHeaderHash     pb
-    , ChainDB.cdbDecodeLedger         = nodeDecodeLedgerState
+    , ChainDB.cdbDecodeLedger         = nodeDecodeLedgerState    cfg
     , ChainDB.cdbDecodeTipInfo        = nodeDecodeTipInfo        pb
     , ChainDB.cdbEncodeBlock          = nodeEncodeBlockWithInfo  ccfg
     , ChainDB.cdbEncodeHeader         = nodeEncodeHeader         ccfg SerialisedToDisk
     , ChainDB.cdbEncodeConsensusState = nodeEncodeConsensusState cfg
     , ChainDB.cdbEncodeHash           = nodeEncodeHeaderHash     pb
-    , ChainDB.cdbEncodeLedger         = nodeEncodeLedgerState
+    , ChainDB.cdbEncodeLedger         = nodeEncodeLedgerState    cfg
     , ChainDB.cdbEncodeTipInfo        = nodeEncodeTipInfo        pb
     , ChainDB.cdbChunkInfo            = chunkInfo
     , ChainDB.cdbHashInfo             = nodeHashInfo             pb

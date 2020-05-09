@@ -169,7 +169,7 @@ class ( LedgerSupportsProtocol    blk
   nodeEncodeGenTx          :: GenTx  blk -> Encoding
   nodeEncodeGenTxId        :: GenTxId blk -> Encoding
   nodeEncodeHeaderHash     :: Proxy blk -> HeaderHash blk -> Encoding
-  nodeEncodeLedgerState    :: LedgerState blk -> Encoding
+  nodeEncodeLedgerState    :: TopLevelConfig blk -> LedgerState blk -> Encoding
   nodeEncodeConsensusState :: TopLevelConfig blk -> ConsensusState (BlockProtocol blk) -> Encoding
   nodeEncodeApplyTxError   :: Proxy blk -> ApplyTxErr blk -> Encoding
   nodeEncodeTipInfo        :: Proxy blk -> TipInfo blk -> Encoding
@@ -187,7 +187,7 @@ class ( LedgerSupportsProtocol    blk
   nodeDecodeGenTx          :: forall s. Decoder s (GenTx blk)
   nodeDecodeGenTxId        :: forall s. Decoder s (GenTxId blk)
   nodeDecodeHeaderHash     :: forall s. Proxy blk -> Decoder s (HeaderHash blk)
-  nodeDecodeLedgerState    :: forall s. Decoder s (LedgerState blk)
+  nodeDecodeLedgerState    :: forall s. TopLevelConfig blk -> Decoder s (LedgerState blk)
   nodeDecodeConsensusState :: forall s. TopLevelConfig blk -> Decoder s (ConsensusState (BlockProtocol blk))
   nodeDecodeApplyTxError   :: forall s. Proxy blk -> Decoder s (ApplyTxErr blk)
   nodeDecodeTipInfo        :: forall s. Proxy blk -> Decoder s (TipInfo blk)
