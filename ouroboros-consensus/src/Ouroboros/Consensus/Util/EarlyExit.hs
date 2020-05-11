@@ -183,6 +183,10 @@ instance (MonadMask m, MonadAsync m, MonadCatch (STM m))
   cancel        a  = lift $ cancel     (withEarlyExit a)
   cancelWith    a  = lift . cancelWith (withEarlyExit a)
 
+  asyncWithUnmask f = earlyExit $ fmap (Just . earlyExit) $
+    asyncWithUnmask $ \unmask ->
+      withEarlyExit (f (earlyExit . unmask . withEarlyExit))
+
 commute :: Either SomeException (Maybe a) -> Maybe (Either SomeException a)
 commute (Left e)         = Just (Left e)
 commute (Right Nothing)  = Nothing

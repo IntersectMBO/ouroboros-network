@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
@@ -91,7 +92,7 @@ class ( MonadSTM m
       , MonadAsyncSTM (Async m) (STM m)
       ) => MonadAsync m where
 
-  {-# MINIMAL async, asyncThreadId, cancel, cancelWith #-}
+  {-# MINIMAL async, asyncThreadId, cancel, cancelWith, asyncWithUnmask #-}
 
   -- | An asynchronous action
   type Async m :: * -> *
@@ -127,6 +128,8 @@ class ( MonadSTM m
   race                  :: m a -> m b -> m (Either a b)
   race_                 :: m a -> m b -> m ()
   concurrently          :: m a -> m b -> m (a,b)
+
+  asyncWithUnmask       :: ((forall b . m b -> m b) ->  m a) -> m (Async m a)
 
   -- default implementations
   default withAsync     :: MonadMask m => m a -> (Async m a -> m b) -> m b
@@ -228,6 +231,8 @@ instance MonadAsync IO where
   race_                 = Async.race_
   concurrently          = Async.concurrently
 
+  asyncWithUnmask       = Async.asyncWithUnmask
+
 --
 -- Lift to ReaderT
 --
@@ -242,6 +247,12 @@ instance MonadAsync m => MonadAsync (ReaderT r m) where
 
   async     (ReaderT ma)   = ReaderT $ \r -> async (ma r)
   withAsync (ReaderT ma) f = ReaderT $ \r -> withAsync (ma r) $ \a -> runReaderT (f a) r
+  asyncWithUnmask        f = ReaderT $ \r ->
+                              asyncWithUnmask $ \unmask ->
+                                runReaderT (f (liftF unmask)) r
+    where
+      liftF :: (m a -> m a) ->  ReaderT r m a -> ReaderT r m a
+      liftF g (ReaderT r) = ReaderT (g . r)
 
   race         (ReaderT ma) (ReaderT mb) = ReaderT $ \r -> race         (ma r) (mb r)
   race_        (ReaderT ma) (ReaderT mb) = ReaderT $ \r -> race_        (ma r) (mb r)
