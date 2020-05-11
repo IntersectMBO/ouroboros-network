@@ -1,14 +1,18 @@
+{-# LANGUAGE DataKinds     #-}
 {-# LANGUAGE GADTs         #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Ouroboros.Consensus.Cardano (
+    -- * The block type of the Cardano block chain
+    CardanoBlock
     -- * Supported protocols
-    ProtocolMockBFT
+  , ProtocolMockBFT
   , ProtocolMockPraos
   , ProtocolLeaderSchedule
   , ProtocolMockPBFT
   , ProtocolRealPBFT
   , ProtocolRealTPraos
+  , ProtocolCardano
     -- * Abstract over the various protocols
   , Protocol(..)
   , verifyProtocol
@@ -32,17 +36,7 @@ import           Cardano.Chain.Slotting (EpochSlots)
 import qualified Cardano.Chain.Update as Update
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Node as X
-import           Ouroboros.Consensus.Byron.Protocol (PBftByronCrypto)
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
-import           Ouroboros.Consensus.Mock.Ledger
-import           Ouroboros.Consensus.Mock.Node ()
-import           Ouroboros.Consensus.Mock.Node.BFT as X
-import           Ouroboros.Consensus.Mock.Node.PBFT as X
-import           Ouroboros.Consensus.Mock.Node.Praos as X
-import           Ouroboros.Consensus.Mock.Node.PraosRule as X
-import           Ouroboros.Consensus.Mock.Protocol.Praos as X
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
@@ -50,11 +44,30 @@ import           Ouroboros.Consensus.Protocol.Abstract as X
 import           Ouroboros.Consensus.Protocol.BFT as X
 import           Ouroboros.Consensus.Protocol.LeaderSchedule as X
 import           Ouroboros.Consensus.Protocol.PBFT as X
-import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
+import           Ouroboros.Consensus.Util
+
+import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.Degenerate
+import           Ouroboros.Consensus.HardFork.Combinator.Unary
+
+import           Ouroboros.Consensus.Mock.Ledger
+import           Ouroboros.Consensus.Mock.Node ()
+import           Ouroboros.Consensus.Mock.Node.BFT as X
+import           Ouroboros.Consensus.Mock.Node.PBFT as X
+import           Ouroboros.Consensus.Mock.Node.Praos as X
+import           Ouroboros.Consensus.Mock.Node.PraosRule as X
+import           Ouroboros.Consensus.Mock.Protocol.Praos as X
+
+import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Node as X
+import           Ouroboros.Consensus.Byron.Protocol (PBftByronCrypto)
+
+import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node as X
 import           Ouroboros.Consensus.Shelley.Protocol (TPraos,
                      TPraosStandardCrypto)
-import           Ouroboros.Consensus.Util
+
+import           Ouroboros.Consensus.Cardano.Block
 
 {-------------------------------------------------------------------------------
   Supported protocols
@@ -71,6 +84,7 @@ type ProtocolLeaderSchedule = WithLeaderSchedule (Praos PraosCryptoUnused)
 type ProtocolMockPBFT       = PBft PBftMockCrypto
 type ProtocolRealPBFT       = PBft PBftByronCrypto
 type ProtocolRealTPraos     = TPraos TPraosStandardCrypto
+type ProtocolCardano        = HardForkProtocol '[ShelleyBlock TPraosStandardCrypto]
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols
@@ -130,6 +144,15 @@ data Protocol blk p where
          (ShelleyBlock TPraosStandardCrypto)
          ProtocolRealTPraos
 
+  -- | Run the protocols of /the/ Cardano block
+  ProtocolCardano
+    :: ShelleyGenesis TPraosStandardCrypto
+    -> ProtVer
+    -> Maybe (TPraosLeaderCredentials TPraosStandardCrypto)
+    -> Protocol
+         (CardanoBlock TPraosStandardCrypto)
+         ProtocolCardano
+
 verifyProtocol :: Protocol blk p -> (p :~: BlockProtocol blk)
 verifyProtocol ProtocolMockBFT{}        = Refl
 verifyProtocol ProtocolMockPraos{}      = Refl
@@ -137,6 +160,7 @@ verifyProtocol ProtocolLeaderSchedule{} = Refl
 verifyProtocol ProtocolMockPBFT{}       = Refl
 verifyProtocol ProtocolRealPBFT{}       = Refl
 verifyProtocol ProtocolRealTPraos{}     = Refl
+verifyProtocol ProtocolCardano{}        = Refl
 
 {-------------------------------------------------------------------------------
   Data required to run a protocol
@@ -162,6 +186,15 @@ protocolInfo (ProtocolRealPBFT gc mthr prv swv mplc) =
 protocolInfo (ProtocolRealTPraos genesis protVer mbLeaderCredentials) =
     protocolInfoShelley genesis protVer mbLeaderCredentials
 
+protocolInfo (ProtocolCardano genesis protVer mbLeaderCredentials) =
+    castProtocolInfo $
+      injProtocolInfo
+        (nodeStartTime (pInfoConfig shelleyProtocolInfo))
+        shelleyProtocolInfo
+  where
+    shelleyProtocolInfo :: ProtocolInfo (ShelleyBlock TPraosStandardCrypto)
+    shelleyProtocolInfo = protocolInfoShelley genesis protVer mbLeaderCredentials
+
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols
 -------------------------------------------------------------------------------}
@@ -173,6 +206,7 @@ runProtocol ProtocolLeaderSchedule{} = Dict
 runProtocol ProtocolMockPBFT{}       = Dict
 runProtocol ProtocolRealPBFT{}       = Dict
 runProtocol ProtocolRealTPraos{}     = Dict
+runProtocol ProtocolCardano{}        = Dict
 
 {-------------------------------------------------------------------------------
   Client support for the protocols: what you need as a client of the node
@@ -197,15 +231,22 @@ data ProtocolClient blk p where
          (ShelleyBlock TPraosStandardCrypto)
          ProtocolRealTPraos
 
+  ProtocolClientCardano
+    :: ProtocolClient
+         (CardanoBlock TPraosStandardCrypto)
+         ProtocolCardano
+
 -- | Sanity check that we have the right type combinations
 verifyProtocolClient :: ProtocolClient blk p -> (p :~: BlockProtocol blk)
 verifyProtocolClient ProtocolClientRealPBFT{}   = Refl
 verifyProtocolClient ProtocolClientRealTPraos{} = Refl
+verifyProtocolClient ProtocolClientCardano{}    = Refl
 
 -- | Sanity check that we have the right class instances available
 runProtocolClient :: ProtocolClient blk p -> Dict (RunNode blk)
 runProtocolClient ProtocolClientRealPBFT{}   = Dict
 runProtocolClient ProtocolClientRealTPraos{} = Dict
+runProtocolClient ProtocolClientCardano{}    = Dict
 
 -- | Data required by clients of a node running the specified protocol.
 protocolClientInfo :: ProtocolClient blk p -> ProtocolClientInfo blk
@@ -214,3 +255,7 @@ protocolClientInfo (ProtocolClientRealPBFT epochSlots) =
 
 protocolClientInfo ProtocolClientRealTPraos =
     protocolClientInfoShelley
+
+protocolClientInfo ProtocolClientCardano =
+    castProtocolClientInfo $
+      injProtocolClientInfo protocolClientInfoShelley

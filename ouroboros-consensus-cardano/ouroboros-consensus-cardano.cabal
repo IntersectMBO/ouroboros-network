@@ -26,6 +26,7 @@ library
   hs-source-dirs:      src
   exposed-modules:
                        Ouroboros.Consensus.Cardano
+                       Ouroboros.Consensus.Cardano.Block
 
   build-depends:       base              >=4.9   && <4.13
                      , cardano-ledger
