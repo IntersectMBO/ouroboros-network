@@ -439,7 +439,7 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeEncodeLedgerState    = const encodeShelleyLedgerState
   nodeEncodeConsensusState = \_cfg -> toCBOR
   nodeEncodeApplyTxError   = \Proxy -> toCBOR
-  nodeEncodeTipInfo        = \Proxy -> toCBOR
+  nodeEncodeAnnTip         = \Proxy -> encodeShelleyAnnTip
   nodeEncodeQuery          = encodeShelleyQuery
   nodeEncodeResult         = encodeShelleyResult
 
@@ -452,6 +452,6 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeDecodeLedgerState    = const decodeShelleyLedgerState
   nodeDecodeConsensusState = \_cfg -> fromCBOR
   nodeDecodeApplyTxError   = \Proxy -> fromCBOR
-  nodeDecodeTipInfo        = \Proxy -> fromCBOR
+  nodeDecodeAnnTip         = \Proxy -> decodeShelleyAnnTip
   nodeDecodeQuery          = decodeShelleyQuery
   nodeDecodeResult         = decodeShelleyResult

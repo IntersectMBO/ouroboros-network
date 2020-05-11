@@ -19,6 +19,8 @@ module Ouroboros.Consensus.Byron.Ledger.Ledger (
   , Query(..)
   , initByronLedgerState
     -- * Serialisation
+  , encodeByronAnnTip
+  , decodeByronAnnTip
   , encodeByronExtLedgerState
   , encodeByronHeaderState
   , encodeByronLedgerState
@@ -342,18 +344,22 @@ applyABoundaryBlock cfg blk ByronLedgerState{..} = do
   Serialisation
 -------------------------------------------------------------------------------}
 
+encodeByronAnnTip :: AnnTip ByronBlock -> Encoding
+encodeByronAnnTip = encodeAnnTipIsEBB encodeByronHeaderHash
+
+decodeByronAnnTip :: Decoder s (AnnTip ByronBlock)
+decodeByronAnnTip = decodeAnnTipIsEBB decodeByronHeaderHash
+
 encodeByronExtLedgerState :: ExtLedgerState ByronBlock -> Encoding
 encodeByronExtLedgerState = encodeExtLedgerState
     encodeByronLedgerState
     encodeByronConsensusState
-    encodeByronHeaderHash
-    encode
+    encodeByronAnnTip
 
 encodeByronHeaderState :: HeaderState ByronBlock -> Encoding
 encodeByronHeaderState = encodeHeaderState
     encodeByronConsensusState
-    encodeByronHeaderHash
-    encode
+    encodeByronAnnTip
 
 encodeByronLedgerState :: LedgerState ByronBlock -> Encoding
 encodeByronLedgerState ByronLedgerState{..} = mconcat

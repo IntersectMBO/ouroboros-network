@@ -487,8 +487,9 @@ data instance LedgerState TestBlock =
 instance UpdateLedger TestBlock
 
 instance HasAnnTip TestBlock where
-  type TipInfo TestBlock = IsEBB
-  getTipInfo = thIsEBB . unTestHeader
+  type TipInfo TestBlock = (HeaderHash TestBlock, IsEBB)
+  tipInfoHash _ = fst
+  getTipInfo b  = (blockHash b, thIsEBB (unTestHeader b))
 
 data TestBlockOtherHeaderEnvelopeError =
     UnexpectedEBBInSlot !SlotNo
@@ -527,8 +528,8 @@ instance ValidateEnvelope TestBlock where
       expectedPrevHash :: ChainHash TestBlock
 
       (expectedSlotNo, expectedBlockNo, expectedPrevHash) = (
-            nextSlotNo  ((annTipInfo &&& annTipSlotNo)  <$> oldTip) newIsEBB
-          , nextBlockNo ((annTipInfo &&& annTipBlockNo) <$> oldTip) newIsEBB
+            nextSlotNo  (((snd . annTipInfo) &&& annTipSlotNo)  <$> oldTip) newIsEBB
+          , nextBlockNo (((snd . annTipInfo) &&& annTipBlockNo) <$> oldTip) newIsEBB
           , withOrigin GenesisHash (BlockHash . annTipHash) oldTip
           )
 

@@ -574,14 +574,14 @@ runThreadNetwork ThreadNetworkArgs
         , cdbDecodeHeader         = nodeDecodeHeader         bcfg SerialisedToDisk
         , cdbDecodeLedger         = nodeDecodeLedgerState    cfg
         , cdbDecodeConsensusState = nodeDecodeConsensusState cfg
-        , cdbDecodeTipInfo        = nodeDecodeTipInfo        (Proxy @blk)
+        , cdbDecodeAnnTip         = nodeDecodeAnnTip         (Proxy @blk)
           -- Encoders
         , cdbEncodeHash           = nodeEncodeHeaderHash     (Proxy @blk)
         , cdbEncodeBlock          = nodeEncodeBlockWithInfo  bcfg
         , cdbEncodeHeader         = nodeEncodeHeader         bcfg SerialisedToDisk
         , cdbEncodeLedger         = nodeEncodeLedgerState    cfg
         , cdbEncodeConsensusState = nodeEncodeConsensusState cfg
-        , cdbEncodeTipInfo        = nodeEncodeTipInfo        (Proxy @blk)
+        , cdbEncodeAnnTip         = nodeEncodeAnnTip         (Proxy @blk)
           -- HasFS instances
         , cdbHasFSImmDb           = simHasFS (nodeDBsImm nodeDBs)
         , cdbHasFSVolDb           = simHasFS (nodeDBsVol nodeDBs)

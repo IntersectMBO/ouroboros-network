@@ -30,6 +30,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util (chunks)
 import           Ouroboros.Consensus.Util.AnchoredFragment
@@ -247,7 +248,7 @@ mkArgs cfg chunkInfo initLedger tracer registry hashInfo
     , cdbDecodeHeader         = const <$> decode
     , cdbDecodeLedger         = decode
     , cdbDecodeConsensusState = decode
-    , cdbDecodeTipInfo        = decode
+    , cdbDecodeAnnTip         = defaultDecodeAnnTip decode
 
       -- Encoders
     , cdbEncodeHash           = encode
@@ -255,7 +256,7 @@ mkArgs cfg chunkInfo initLedger tracer registry hashInfo
     , cdbEncodeHeader         = encode
     , cdbEncodeLedger         = encode
     , cdbEncodeConsensusState = encode
-    , cdbEncodeTipInfo        = encode
+    , cdbEncodeAnnTip         = defaultEncodeAnnTip encode
 
       -- HasFS instances
     , cdbHasFSImmDb           = simHasFS immDbFsVar

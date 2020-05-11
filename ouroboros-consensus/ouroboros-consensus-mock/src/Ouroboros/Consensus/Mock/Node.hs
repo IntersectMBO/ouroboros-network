@@ -20,6 +20,8 @@ import           Ouroboros.Network.Magic (NetworkMagic (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HeaderValidation (defaultDecodeAnnTip,
+                     defaultEncodeAnnTip)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node.Abstract
@@ -74,7 +76,7 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeEncodeLedgerState     = const encode
   nodeEncodeConsensusState  = mockEncodeConsensusState
   nodeEncodeApplyTxError    = const encode
-  nodeEncodeTipInfo         = const encode
+  nodeEncodeAnnTip          = const $ defaultEncodeAnnTip encode
   nodeEncodeQuery           = \case {}
   nodeEncodeResult          = \case {}
 
@@ -87,6 +89,6 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeDecodeLedgerState     = const decode
   nodeDecodeConsensusState  = mockDecodeConsensusState
   nodeDecodeApplyTxError    = const decode
-  nodeDecodeTipInfo         = const decode
+  nodeDecodeAnnTip          = const $ defaultDecodeAnnTip decode
   nodeDecodeQuery           = error "Mock.nodeDecodeQuery"
   nodeDecodeResult          = \case {}

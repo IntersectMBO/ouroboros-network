@@ -144,11 +144,11 @@ data LgrDbArgs m blk = forall h. Eq h => LgrDbArgs {
     , lgrHasFS                :: HasFS m h
     , lgrDecodeLedger         :: forall s. Decoder s (LedgerState                   blk)
     , lgrDecodeHash           :: forall s. Decoder s (HeaderHash                    blk)
-    , lgrDecodeTipInfo        :: forall s. Decoder s (TipInfo                       blk)
+    , lgrDecodeAnnTip         :: forall s. Decoder s (AnnTip                        blk)
     , lgrDecodeConsensusState :: forall s. Decoder s (ConsensusState (BlockProtocol blk))
     , lgrEncodeLedger         :: LedgerState                   blk  -> Encoding
     , lgrEncodeHash           :: HeaderHash                    blk  -> Encoding
-    , lgrEncodeTipInfo        :: TipInfo                       blk  -> Encoding
+    , lgrEncodeAnnTip         :: AnnTip                        blk  -> Encoding
     , lgrEncodeConsensusState :: ConsensusState (BlockProtocol blk) -> Encoding
     , lgrParams               :: LedgerDbParams
     , lgrDiskPolicy           :: DiskPolicy
@@ -180,11 +180,11 @@ defaultArgs fp = LgrDbArgs {
     , lgrTopLevelConfig       = error "no default for lgrTopLevelConfig"
     , lgrDecodeLedger         = error "no default for lgrDecodeLedger"
     , lgrDecodeHash           = error "no default for lgrDecodeHash"
-    , lgrDecodeTipInfo        = error "no default for lgrDecodeTipInfo"
+    , lgrDecodeAnnTip         = error "no default for lgrDecodeAnnTip"
     , lgrDecodeConsensusState = error "no default for lgrDecodeConsensusState"
     , lgrEncodeLedger         = error "no default for lgrEncodeLedger"
     , lgrEncodeHash           = error "no default for lgrEncodeHash"
-    , lgrEncodeTipInfo        = error "no default for lgrEncodeTipInfo"
+    , lgrEncodeAnnTip         = error "no default for lgrEncodeAnnTip"
     , lgrEncodeConsensusState = error "no default for lgrEncodeConsensusState"
     , lgrParams               = error "no default for lgrParams"
     , lgrDiskPolicy           = error "no default for lgrDiskPolicy"
@@ -267,8 +267,7 @@ initFromDisk LgrDbArgs{..} replayTracer immDB = wrapFailure $ do
     decodeExtLedgerState' = decodeExtLedgerState
                               lgrDecodeLedger
                               lgrDecodeConsensusState
-                              lgrDecodeHash
-                              lgrDecodeTipInfo
+                              lgrDecodeAnnTip
 
 -- | For testing purposes
 mkLgrDB :: StrictTVar m (LedgerDB blk)
@@ -342,8 +341,7 @@ takeSnapshot lgrDB@LgrDB{ args = LgrDbArgs{..} } = wrapFailure $ do
     encodeExtLedgerState' = encodeExtLedgerState
                               lgrEncodeLedger
                               lgrEncodeConsensusState
-                              lgrEncodeHash
-                              lgrEncodeTipInfo
+                              lgrEncodeAnnTip
 
 trimSnapshots :: MonadCatch m => LgrDB m blk -> m [DiskSnapshot]
 trimSnapshots LgrDB{ args = LgrDbArgs{..} } = wrapFailure $

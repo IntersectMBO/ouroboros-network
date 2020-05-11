@@ -1,6 +1,7 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric  #-}
-{-# LANGUAGE TypeFamilies   #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -33,9 +34,12 @@ import           Ouroboros.Consensus.Byron.Ledger.PBFT ()
   Envelope
 -------------------------------------------------------------------------------}
 
+type ByronTipInfo = (HeaderHash ByronBlock, IsEBB)
+
 instance HasAnnTip ByronBlock where
-  type TipInfo ByronBlock = IsEBB
-  getTipInfo = byronHeaderIsEBB
+  type TipInfo ByronBlock = ByronTipInfo
+  tipInfoHash _ = fst
+  getTipInfo b  = (blockHash b, byronHeaderIsEBB b)
 
 data ByronOtherHeaderEnvelopeError =
     UnexpectedEBBInSlot !SlotNo
@@ -70,8 +74,8 @@ instance ValidateEnvelope ByronBlock where
       expectedPrevHash :: ChainHash ByronBlock
 
       (expectedSlotNo, expectedBlockNo, expectedPrevHash) = (
-            nextSlotNo  ((annTipInfo &&& annTipSlotNo)  <$> oldTip) newIsEBB
-          , nextBlockNo ((annTipInfo &&& annTipBlockNo) <$> oldTip) newIsEBB
+            nextSlotNo  (((snd . annTipInfo) &&& annTipSlotNo)  <$> oldTip) newIsEBB
+          , nextBlockNo (((snd . annTipInfo) &&& annTipBlockNo) <$> oldTip) newIsEBB
           , withOrigin GenesisHash (BlockHash . annTipHash) oldTip
           )
 

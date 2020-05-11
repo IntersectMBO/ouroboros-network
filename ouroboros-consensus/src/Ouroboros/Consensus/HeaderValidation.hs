@@ -17,6 +17,7 @@ module Ouroboros.Consensus.HeaderValidation (
     validateHeader
     -- * Annotated tips
   , AnnTip(..)
+  , annTipHash
   , annTipPoint
   , castAnnTip
   , HasAnnTip(..)
@@ -37,8 +38,10 @@ module Ouroboros.Consensus.HeaderValidation (
   , HeaderError(..)
   , castHeaderError
     -- * Serialization
-  , encodeAnnTip
-  , decodeAnnTip
+  , defaultEncodeAnnTip
+  , defaultDecodeAnnTip
+  , encodeAnnTipIsEBB
+  , decodeAnnTipIsEBB
   , encodeHeaderState
   , decodeHeaderState
   ) where
@@ -79,7 +82,6 @@ import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 -- was an EBB.
 data AnnTip blk = AnnTip {
       annTipSlotNo  :: !SlotNo
-    , annTipHash    :: !(HeaderHash blk)
     , annTipBlockNo :: !BlockNo
     , annTipInfo    :: !(TipInfo blk)
     }
@@ -89,13 +91,13 @@ deriving instance HasAnnTip blk => Show               (AnnTip blk)
 deriving instance HasAnnTip blk => Eq                 (AnnTip blk)
 deriving instance HasAnnTip blk => NoUnexpectedThunks (AnnTip blk)
 
-annTipPoint :: AnnTip blk -> Point blk
-annTipPoint AnnTip{..} = BlockPoint annTipSlotNo annTipHash
+annTipHash :: forall blk. HasAnnTip blk => AnnTip blk -> HeaderHash blk
+annTipHash = tipInfoHash (Proxy @blk) . annTipInfo
 
-castAnnTip :: ( HeaderHash blk ~ HeaderHash blk'
-              , TipInfo    blk ~ TipInfo    blk'
-              )
-           => AnnTip blk -> AnnTip blk'
+annTipPoint :: forall blk. HasAnnTip blk => AnnTip blk -> Point blk
+annTipPoint annTip@AnnTip{..} = BlockPoint annTipSlotNo (annTipHash annTip)
+
+castAnnTip :: TipInfo blk ~ TipInfo blk' => AnnTip blk -> AnnTip blk'
 castAnnTip AnnTip{..} = AnnTip{..}
 
 class ( StandardHash blk
@@ -104,18 +106,26 @@ class ( StandardHash blk
       , NoUnexpectedThunks (TipInfo blk)
       ) => HasAnnTip blk where
   type TipInfo blk :: *
-  type TipInfo blk = ()
+  type TipInfo blk = HeaderHash blk
 
+  -- | Extract 'TipInfo' from a block header
   getTipInfo :: Header blk -> TipInfo blk
 
-  default getTipInfo :: TipInfo blk ~ () => Header blk -> TipInfo blk
-  getTipInfo _ = ()
+  -- | The tip info must at least include the hash
+  tipInfoHash :: proxy blk -> TipInfo blk -> HeaderHash blk
+
+  default tipInfoHash :: (TipInfo blk ~ HeaderHash blk)
+                      => proxy blk -> TipInfo blk -> HeaderHash blk
+  tipInfoHash _ = id
+
+  default getTipInfo :: (TipInfo blk ~ HeaderHash blk, HasHeader (Header blk))
+                     => Header blk -> TipInfo blk
+  getTipInfo = blockHash
 
 getAnnTip :: (HasHeader (Header blk), HasAnnTip blk)
           => Header blk -> AnnTip blk
 getAnnTip hdr = AnnTip {
       annTipSlotNo  = blockSlot  hdr
-    , annTipHash    = blockHash  hdr
     , annTipBlockNo = blockNo    hdr
     , annTipInfo    = getTipInfo hdr
     }
@@ -178,10 +188,7 @@ genesisHeaderState state = HeaderState state Seq.Empty Origin
 
 castHeaderState :: (   ConsensusState (BlockProtocol blk )
                      ~ ConsensusState (BlockProtocol blk')
-                   ,   HeaderHash blk
-                     ~ HeaderHash blk'
-                   ,   TipInfo blk
-                     ~ TipInfo blk'
+                   , TipInfo blk ~ TipInfo blk'
                    )
                 => HeaderState blk -> HeaderState blk'
 castHeaderState HeaderState{..} = HeaderState{
@@ -203,6 +210,7 @@ castHeaderState HeaderState{..} = HeaderState{
 rewindHeaderState :: forall blk.
                      ( BlockSupportsProtocol blk
                      , Serialise (HeaderHash blk)
+                     , HasAnnTip blk
                      )
                   => TopLevelConfig blk
                   -> Point blk
@@ -279,7 +287,7 @@ class ( HasAnnTip blk
   -- | Validate the header envelope
   validateEnvelope :: TopLevelConfig blk
                    -> Ticked (LedgerView (BlockProtocol blk))
-                   -> WithOrigin (AnnTip blk)
+                   -> WithOrigin (AnnTip blk) -- ^ Old tip
                    -> Header blk
                    -> Except (HeaderEnvelopeError blk) ()
 
@@ -341,14 +349,14 @@ defaultValidateEnvelope oldTip hdr = do
 
     (expectedSlotNo, expectedBlockNo, expectedPrevHash) =
         case oldTip of
-          At (AnnTip s h b _) -> ( succ s, succ b, BlockHash h )
+          At (AnnTip s b nfo) -> let h = tipInfoHash proxy nfo in
+                                 ( succ s, succ b, BlockHash h )
           Origin              -> ( minimumPossibleSlotNo proxy
                                  , firstBlockNo          proxy
                                  , GenesisHash
                                  )
       where
         proxy = Proxy @blk
-
 
 {-------------------------------------------------------------------------------
   Errors
@@ -442,53 +450,82 @@ validateHeader cfg ledgerView hdr st = do
   Serialisation
 -------------------------------------------------------------------------------}
 
-encodeAnnTip :: (HeaderHash blk -> Encoding)
-             -> (TipInfo    blk -> Encoding)
-             -> (AnnTip     blk -> Encoding)
-encodeAnnTip encodeHash encodeInfo AnnTip{..} = mconcat [
+defaultEncodeAnnTip :: TipInfo blk ~ HeaderHash blk
+                    => (HeaderHash blk -> Encoding)
+                    -> (AnnTip     blk -> Encoding)
+defaultEncodeAnnTip encodeHash AnnTip{..} = mconcat [
       encodeListLen 4
     , encode     annTipSlotNo
-    , encodeHash annTipHash
+    , encodeHash annTipInfo
     , encode     annTipBlockNo
-    , encodeInfo annTipInfo
+      -- TODO: Useless field. Remove when OK to break binary compatibility.
+    , encodeInfo ()
     ]
+  where
+    encodeInfo :: () -> Encoding
+    encodeInfo = encode
 
-decodeAnnTip :: (forall s. Decoder s (HeaderHash blk))
-             -> (forall s. Decoder s (TipInfo    blk))
-             -> (forall s. Decoder s (AnnTip     blk))
-decodeAnnTip decodeHash decodeInfo = do
+defaultDecodeAnnTip :: TipInfo blk ~ HeaderHash blk
+                    => (forall s. Decoder s (HeaderHash blk))
+                    -> (forall s. Decoder s (AnnTip     blk))
+defaultDecodeAnnTip decodeHash = do
     enforceSize "AnnTip" 4
     annTipSlotNo  <- decode
-    annTipHash    <- decodeHash
+    annTipInfo    <- decodeHash
     annTipBlockNo <- decode
-    annTipInfo    <- decodeInfo
+      -- TODO: Useless field. Remove when OK to break binary compatibility.
+    ()            <- decodeInfo
     return AnnTip{..}
+  where
+    decodeInfo :: forall s. Decoder s ()
+    decodeInfo = decode
+
+encodeAnnTipIsEBB :: TipInfo blk ~ (HeaderHash blk, IsEBB)
+                  => (HeaderHash blk -> Encoding)
+                  -> (AnnTip     blk -> Encoding)
+encodeAnnTipIsEBB encodeHash AnnTip{..} = mconcat [
+      encodeListLen 4
+    , encode     annTipSlotNo
+    , encodeHash (fst annTipInfo)
+    , encode     annTipBlockNo
+    , encodeInfo (snd annTipInfo)
+    ]
+  where
+    encodeInfo :: IsEBB -> Encoding
+    encodeInfo = encode
+
+decodeAnnTipIsEBB :: TipInfo blk ~ (HeaderHash blk, IsEBB)
+                  => (forall s. Decoder s (HeaderHash blk))
+                  -> (forall s. Decoder s (AnnTip     blk))
+decodeAnnTipIsEBB decodeHash = do
+    enforceSize "AnnTip" 4
+    annTipSlotNo  <- decode
+    hash          <- decodeHash
+    annTipBlockNo <- decode
+    isEBB         <- decodeInfo
+    return AnnTip{annTipInfo = (hash, isEBB), ..}
+  where
+    decodeInfo :: forall s. Decoder s IsEBB
+    decodeInfo = decode
 
 encodeHeaderState :: (ConsensusState (BlockProtocol blk) -> Encoding)
-                  -> (HeaderHash  blk -> Encoding)
-                  -> (TipInfo     blk -> Encoding)
+                  -> (AnnTip      blk -> Encoding)
                   -> (HeaderState blk -> Encoding)
 encodeHeaderState encodeConsensusState
-                  encodeHash
-                  encodeInfo
+                  encodeAnnTip'
                   HeaderState{..} = mconcat [
       encodeListLen 3
     , encodeConsensusState headerStateConsensus
     , Util.CBOR.encodeSeq        encodeAnnTip' headerStateTips
     , Util.CBOR.encodeWithOrigin encodeAnnTip' headerStateAnchor
     ]
-  where
-    encodeAnnTip' = encodeAnnTip encodeHash encodeInfo
 
 decodeHeaderState :: (forall s. Decoder s (ConsensusState (BlockProtocol blk)))
-                  -> (forall s. Decoder s (HeaderHash  blk))
-                  -> (forall s. Decoder s (TipInfo     blk))
+                  -> (forall s. Decoder s (AnnTip      blk))
                   -> (forall s. Decoder s (HeaderState blk))
-decodeHeaderState decodeConsensusState decodeHash decodeInfo = do
+decodeHeaderState decodeConsensusState decodeAnnTip' = do
     enforceSize "HeaderState" 3
     headerStateConsensus <- decodeConsensusState
     headerStateTips      <- Util.CBOR.decodeSeq        decodeAnnTip'
     headerStateAnchor    <- Util.CBOR.decodeWithOrigin decodeAnnTip'
     return HeaderState{..}
-  where
-    decodeAnnTip' = decodeAnnTip decodeHash decodeInfo

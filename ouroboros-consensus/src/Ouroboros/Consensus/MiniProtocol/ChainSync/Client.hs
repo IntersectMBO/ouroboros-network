@@ -843,6 +843,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
 
 attemptRollback :: ( BlockSupportsProtocol blk
                    , Serialise (HeaderHash blk)
+                   , HasAnnTip blk
                    )
                 => TopLevelConfig blk
                 -> Point blk

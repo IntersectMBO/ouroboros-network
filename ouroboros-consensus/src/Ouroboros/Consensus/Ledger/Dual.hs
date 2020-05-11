@@ -384,7 +384,8 @@ dualExtValidationErrorMain = \case
 
 instance Bridge m a => HasAnnTip (DualBlock m a) where
   type TipInfo (DualBlock m a) = TipInfo m
-  getTipInfo = getTipInfo . dualHeaderMain
+  tipInfoHash _ = tipInfoHash (Proxy @m)
+  getTipInfo    = getTipInfo . dualHeaderMain
 
 instance Bridge m a => ValidateEnvelope (DualBlock m a) where
   type OtherHeaderEnvelopeError (DualBlock m a) = OtherHeaderEnvelopeError m

@@ -241,9 +241,9 @@ instance RunNode DualByronBlock where
   nodeBlockEncodingOverhead = nodeBlockEncodingOverhead . dualLedgerStateMain
 
   -- Envelope
-  nodeHashInfo      = \_p -> nodeHashInfo      pb
-  nodeEncodeTipInfo = \_p -> nodeEncodeTipInfo pb
-  nodeDecodeTipInfo = \_p -> nodeDecodeTipInfo pb
+  nodeHashInfo     = \_p -> nodeHashInfo     pb
+  nodeEncodeAnnTip = \_p -> nodeEncodeAnnTip pb . castAnnTip
+  nodeDecodeAnnTip = \_p -> castAnnTip <$> nodeDecodeAnnTip pb
 
   -- We can look at the concrete header to see if this is an EBB
   nodeIsEBB = nodeIsEBB . dualHeaderMain
