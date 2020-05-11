@@ -45,6 +45,13 @@ data LocalTxSubmission tx reject where
   StDone   :: LocalTxSubmission tx reject
 
 
+-- | Isomorphic with Maybe but with a name that better describes its purpose and
+-- usage.
+data SubmitResult reason
+  = SubmitSuccess
+  | SubmitFail reason
+  deriving Eq
+
 instance Protocol (LocalTxSubmission tx reject) where
 
   -- | The messages in the transaction submission protocol.

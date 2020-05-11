@@ -88,7 +88,7 @@ newtype Reject = Reject Int
 -- | Run a simple tx-submission client and server, directly on the wrappers,
 -- without going via the 'Peer'.
 --
-prop_direct :: (Tx -> Maybe Reject) -> [Tx] -> Bool
+prop_direct :: (Tx -> SubmitResult Reject) -> [Tx] -> Bool
 prop_direct p txs =
     runSimOrThrow
       (direct
@@ -110,7 +110,7 @@ prop_direct p txs =
 -- This test converts the pipelined server peer to a non-pipelined peer
 -- before connecting it with the client.
 --
-prop_connect :: (Tx -> Maybe Reject) -> [Tx] -> Bool
+prop_connect :: (Tx -> SubmitResult Reject) -> [Tx] -> Bool
 prop_connect p txs =
     case runSimOrThrow
            (connect
@@ -133,7 +133,7 @@ prop_connect p txs =
 --
 prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
              => m (Channel m ByteString, Channel m ByteString)
-             -> (Tx -> Maybe Reject) -> [Tx]
+             -> (Tx -> SubmitResult Reject) -> [Tx]
              -> m Bool
 prop_channel createChannels p txs =
 
@@ -153,7 +153,7 @@ prop_channel createChannels p txs =
 
 -- | Run 'prop_channel' in the simulation monad.
 --
-prop_channel_ST :: (Tx -> Maybe Reject) -> [Tx] -> Bool
+prop_channel_ST :: (Tx -> SubmitResult Reject) -> [Tx] -> Bool
 prop_channel_ST p txs =
     runSimOrThrow
       (prop_channel createConnectedChannels p txs)
@@ -161,14 +161,14 @@ prop_channel_ST p txs =
 
 -- | Run 'prop_channel' in the IO monad.
 --
-prop_channel_IO :: (Tx -> Maybe Reject) -> [Tx] -> Property
+prop_channel_IO :: (Tx -> SubmitResult Reject) -> [Tx] -> Property
 prop_channel_IO p txs =
     ioProperty (prop_channel createConnectedChannels p txs)
 
 
 -- | Run 'prop_channel' in the IO monad using local pipes.
 --
-prop_pipe_IO :: (Tx -> Maybe Reject) -> [Tx] -> Property
+prop_pipe_IO :: (Tx -> SubmitResult Reject) -> [Tx] -> Property
 prop_pipe_IO p txs =
     ioProperty (prop_channel createPipeConnectedChannels p txs)
 
@@ -212,6 +212,14 @@ instance (Eq tx, Eq reject) =>
        (AnyMessage MsgDone) = True
 
   _ == _ = False
+
+instance Arbitrary a => Arbitrary (SubmitResult a) where
+  arbitrary =
+    QC.frequency
+      [ (1, pure SubmitSuccess)
+      , (3, SubmitFail <$> arbitrary)
+      ]
+  shrink = const []
 
 
 codec :: MonadST m

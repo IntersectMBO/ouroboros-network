@@ -21,6 +21,9 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Client (
     LocalTxSubmissionClient(..)
   , LocalTxClientStIdle (..)
 
+    -- * The result from a transaction submission.
+  , SubmitResult
+
     -- * Execution as a typed protocol
   , localTxSubmissionClientPeer
 
@@ -63,14 +66,13 @@ data LocalTxClientStIdle tx reject m a where
      --
      SendMsgSubmitTx
        :: tx
-       -> (Maybe reject -> m (LocalTxClientStIdle tx reject m a))
+       -> (SubmitResult reject -> m (LocalTxClientStIdle tx reject m a))
        -> LocalTxClientStIdle tx reject m a
 
      -- | The client can terminate the protocol.
      --
      SendMsgDone
        :: a -> LocalTxClientStIdle tx reject m a
-
 
 -- | A non-pipelined 'Peer' representing the 'LocalTxSubmissionClient'.
 --
@@ -87,8 +89,8 @@ localTxSubmissionClientPeer (LocalTxSubmissionClient client) =
       Yield (ClientAgency TokIdle)
             (MsgSubmitTx tx) $
       Await (ServerAgency TokBusy) $ \msg -> case msg of
-        MsgAcceptTx        -> Effect (go <$> k Nothing)
-        MsgRejectTx reject -> Effect (go <$> k (Just reject))
+        MsgAcceptTx        -> Effect (go <$> k SubmitSuccess)
+        MsgRejectTx reject -> Effect (go <$> k (SubmitFail reject))
 
     go (SendMsgDone a) =
       Yield (ClientAgency TokIdle)

@@ -28,7 +28,7 @@ localTxSubmissionClient
   :: forall tx reject m.
      Applicative m
   => [tx]
-  -> LocalTxSubmissionClient tx reject m [(tx, Maybe reject)]
+  -> LocalTxSubmissionClient tx reject m [(tx, SubmitResult reject)]
 localTxSubmissionClient =
     LocalTxSubmissionClient . pure . client []
   where
@@ -46,8 +46,8 @@ localTxSubmissionClient =
 localTxSubmissionServer
   :: forall tx reject m.
      Applicative m
-  => (tx -> Maybe reject)
-  -> LocalTxSubmissionServer tx reject m [(tx, Maybe reject)]
+  => (tx -> SubmitResult reject)
+  -> LocalTxSubmissionServer tx reject m [(tx, SubmitResult reject)]
 localTxSubmissionServer p =
     server []
   where
