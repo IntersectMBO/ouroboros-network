@@ -41,8 +41,8 @@ import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
-                     ChainHash (..), pattern GenesisPoint, SlotNo (..))
+import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
+                     SlotNo (..))
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.BlockchainTime
@@ -55,9 +55,8 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
-import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
-import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger
@@ -197,7 +196,7 @@ instance RunNode ByronBlock where
 
   -- The epoch size is fixed and can be derived from @k@ by the ledger
   -- ('kEpochSlots').
-  nodeImmDbChunkInfo        = \_proxy cfg ->
+  nodeImmDbChunkInfo        = \cfg ->
                                   simpleChunkInfo
                                 . (coerce :: EpochSlots -> EpochSize)
                                 . kEpochSlots
@@ -211,26 +210,20 @@ instance RunNode ByronBlock where
   -- If the current chain is empty, produce a genesis EBB and add it to the
   -- ChainDB. Only an EBB can have Genesis (= empty chain) as its predecessor.
   nodeInitChainDB cfg chainDB = do
-    tip <- atomically $ ChainDB.getTipPoint chainDB
-    case tip of
-      -- Chain is not empty
-      BlockPoint {} -> return ()
-      GenesisPoint  -> ChainDB.addBlock_ chainDB genesisEBB
-        where
-          genesisEBB = forgeEBB cfg (SlotNo 0) (BlockNo 0) GenesisHash
+      empty <- InitChainDB.checkEmpty chainDB
+      when empty $ InitChainDB.addBlock chainDB genesisEBB
+    where
+      genesisEBB = forgeEBB cfg (SlotNo 0) (BlockNo 0) GenesisHash
 
   -- Extract it from the 'Genesis.Config'
-  nodeStartTime             = const
-                            $ SystemStart
+  nodeStartTime             = SystemStart
                             . Genesis.gdStartTime
                             . extractGenesisData
-  nodeNetworkMagic          = const
-                            $ NetworkMagic
+  nodeNetworkMagic          = NetworkMagic
                             . Crypto.unProtocolMagicId
                             . Genesis.gdProtocolMagicId
                             . extractGenesisData
-  nodeProtocolMagicId       = const
-                            $ Genesis.gdProtocolMagicId
+  nodeProtocolMagicId       = Genesis.gdProtocolMagicId
                             . extractGenesisData
   nodeHashInfo              = const byronHashInfo
   nodeCheckIntegrity        = verifyBlockIntegrity . configBlock
@@ -248,8 +241,8 @@ instance RunNode ByronBlock where
   nodeEncodeGenTx           = encodeByronGenTx
   nodeEncodeGenTxId         = encodeByronGenTxId
   nodeEncodeHeaderHash      = const encodeByronHeaderHash
-  nodeEncodeLedgerState     = encodeByronLedgerState
-  nodeEncodeConsensusState  = \_proxy _cfg -> encodeByronConsensusState
+  nodeEncodeLedgerState     = const encodeByronLedgerState
+  nodeEncodeConsensusState  = \_cfg -> encodeByronConsensusState
   nodeEncodeApplyTxError    = const encodeByronApplyTxError
   nodeEncodeTipInfo         = const encode
   nodeEncodeQuery           = encodeByronQuery
@@ -261,8 +254,8 @@ instance RunNode ByronBlock where
   nodeDecodeGenTx           = decodeByronGenTx
   nodeDecodeGenTxId         = decodeByronGenTxId
   nodeDecodeHeaderHash      = const decodeByronHeaderHash
-  nodeDecodeLedgerState     = decodeByronLedgerState
-  nodeDecodeConsensusState  = \_proxy cfg ->
+  nodeDecodeLedgerState     = const decodeByronLedgerState
+  nodeDecodeConsensusState  = \cfg ->
                                  let k = configSecurityParam cfg
                                  in decodeByronConsensusState k
   nodeDecodeApplyTxError    = const decodeByronApplyTxError

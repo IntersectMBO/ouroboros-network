@@ -11,6 +11,7 @@ module Ouroboros.Consensus.ByronDual.Node (
     protocolInfoDualByron
   ) where
 
+import           Control.Monad
 import           Data.Either (fromRight)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (fromMaybe)
@@ -48,8 +49,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
-import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
-import           Ouroboros.Consensus.Util.IOLike
+import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Config (byronEpochSlots)
@@ -212,30 +212,28 @@ instance RunNode DualByronBlock where
 
   -- Just like Byron, we need to start with an EBB
   nodeInitChainDB cfg chainDB = do
-      tip <- atomically $ ChainDB.getTipPoint chainDB
-      case tip of
-        BlockPoint {} -> return () -- Chain is not empty
-        GenesisPoint  -> ChainDB.addBlock_ chainDB genesisEBB
-          where
-            genesisEBB :: DualByronBlock
-            genesisEBB = DualBlock {
-                  dualBlockMain   = byronEBB
-                , dualBlockAux    = Nothing
-                , dualBlockBridge = mempty
-                }
+      empty <- InitChainDB.checkEmpty chainDB
+      when empty $ InitChainDB.addBlock chainDB genesisEBB
+    where
+      genesisEBB :: DualByronBlock
+      genesisEBB = DualBlock {
+            dualBlockMain   = byronEBB
+          , dualBlockAux    = Nothing
+          , dualBlockBridge = mempty
+          }
 
-            byronEBB :: ByronBlock
-            byronEBB = forgeEBB
-                         (dualTopLevelConfigMain cfg)
-                         (SlotNo 0)
-                         (BlockNo 0)
-                         GenesisHash
+      byronEBB :: ByronBlock
+      byronEBB = forgeEBB
+                   (dualTopLevelConfigMain cfg)
+                   (SlotNo 0)
+                   (BlockNo 0)
+                   GenesisHash
 
   -- Node config is a consensus concern, determined by the main block only
-  nodeImmDbChunkInfo  = \_p -> nodeImmDbChunkInfo  pb . dualTopLevelConfigMain
-  nodeStartTime       = \_p -> nodeStartTime       pb . dualTopLevelConfigMain
-  nodeNetworkMagic    = \_p -> nodeNetworkMagic    pb . dualTopLevelConfigMain
-  nodeProtocolMagicId = \_p -> nodeProtocolMagicId pb . dualTopLevelConfigMain
+  nodeImmDbChunkInfo  = nodeImmDbChunkInfo  . dualTopLevelConfigMain
+  nodeStartTime       = nodeStartTime       . dualTopLevelConfigMain
+  nodeNetworkMagic    = nodeNetworkMagic    . dualTopLevelConfigMain
+  nodeProtocolMagicId = nodeProtocolMagicId . dualTopLevelConfigMain
 
   -- The max block size we set to the max block size of the /concrete/ block
   -- (Correspondingly, 'txSize' for the Byron spec returns 0)
@@ -277,12 +275,12 @@ instance RunNode DualByronBlock where
                                     (dualCodecConfigMain cfg)
                                     (castSerialisationAcrossNetwork version)
                                 . dualWrappedMain
-  nodeEncodeLedgerState    = encodeDualLedgerState encodeByronLedgerState
+  nodeEncodeLedgerState    = const $ encodeDualLedgerState encodeByronLedgerState
   nodeEncodeApplyTxError   = const $ encodeDualGenTxErr encodeByronApplyTxError
   nodeEncodeHeaderHash     = const $ encodeByronHeaderHash
   nodeEncodeGenTx          = encodeDualGenTx   encodeByronGenTx
   nodeEncodeGenTxId        = encodeDualGenTxId encodeByronGenTxId
-  nodeEncodeConsensusState = \_proxy _cfg -> encodeByronConsensusState
+  nodeEncodeConsensusState = \_cfg -> encodeByronConsensusState
   nodeEncodeQuery          = \case {}
   nodeEncodeResult         = \case {}
 
@@ -301,9 +299,9 @@ instance RunNode DualByronBlock where
   nodeDecodeGenTx          = decodeDualGenTx   decodeByronGenTx
   nodeDecodeGenTxId        = decodeDualGenTxId decodeByronGenTxId
   nodeDecodeHeaderHash     = const $ decodeByronHeaderHash
-  nodeDecodeLedgerState    = decodeDualLedgerState decodeByronLedgerState
+  nodeDecodeLedgerState    = const $ decodeDualLedgerState decodeByronLedgerState
   nodeDecodeApplyTxError   = const $ decodeDualGenTxErr    decodeByronApplyTxError
-  nodeDecodeConsensusState = \_proxy cfg ->
+  nodeDecodeConsensusState = \cfg ->
                                 let k = configSecurityParam cfg
                                 in decodeByronConsensusState k
   nodeDecodeQuery          = error "DualByron.nodeDecodeQuery"

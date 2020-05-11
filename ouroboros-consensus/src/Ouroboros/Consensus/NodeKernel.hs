@@ -73,6 +73,8 @@ import           Ouroboros.Consensus.Util.STM
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 
 {-------------------------------------------------------------------------------
   Relay node
@@ -164,7 +166,7 @@ data NodeArgs m remotePeer localPeer blk = NodeArgs {
     , initState              :: NodeState blk
     , btime                  :: BlockchainTime m
     , chainDB                :: ChainDB m blk
-    , initChainDB            :: TopLevelConfig blk -> ChainDB m blk -> m ()
+    , initChainDB            :: TopLevelConfig blk -> InitChainDB m blk -> m ()
     , blockFetchSize         :: Header blk -> SizeInBytes
     , blockProduction        :: Maybe (BlockProduction m blk)
     , blockMatchesHeader     :: Header blk -> blk -> Bool
@@ -186,7 +188,7 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
                              , blockProduction, chainDB, initChainDB
                              , miniProtocolParameters } = do
 
-    initChainDB cfg chainDB
+    initChainDB cfg (InitChainDB.fromFull chainDB)
 
     st <- initInternalState args
 

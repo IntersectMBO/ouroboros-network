@@ -40,7 +40,7 @@ import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
                      ChunkInfo, HashInfo)
 
@@ -71,20 +71,13 @@ class ( LedgerSupportsProtocol    blk
   nodeBlockFetchSize      :: Header blk -> SizeInBytes
   nodeIsEBB               :: Header blk -> Maybe EpochNo
 
-  nodeImmDbChunkInfo      :: Proxy blk
-                          -> TopLevelConfig blk
-                          -> ChunkInfo
-  nodeStartTime           :: Proxy blk
-                          -> TopLevelConfig blk
-                          -> SystemStart
-  nodeNetworkMagic        :: Proxy blk
-                          -> TopLevelConfig blk
-                          -> NetworkMagic
-  nodeProtocolMagicId     :: Proxy blk
-                          -> TopLevelConfig blk
-                          -> ProtocolMagicId
-  nodeHashInfo            :: Proxy blk
-                          -> HashInfo (HeaderHash blk)
+  nodeImmDbChunkInfo      :: TopLevelConfig blk -> ChunkInfo
+  nodeStartTime           :: TopLevelConfig blk -> SystemStart
+  nodeNetworkMagic        :: TopLevelConfig blk -> NetworkMagic
+  nodeProtocolMagicId     :: TopLevelConfig blk -> ProtocolMagicId
+
+  -- | Hash serialisation
+  nodeHashInfo :: Proxy blk -> HashInfo (HeaderHash blk)
 
   -- | The maximum block size in bytes according to the currently adopted
   -- protocol parameters of the ledger state.
@@ -107,8 +100,7 @@ class ( LedgerSupportsProtocol    blk
   -- This does not check the validity of the contents of the block, e.g.,
   -- whether the transactions are valid w.r.t. the ledger, or whether it's
   -- sent by a malicious node.
-  nodeCheckIntegrity :: TopLevelConfig blk
-                     -> blk -> Bool
+  nodeCheckIntegrity :: TopLevelConfig blk -> blk -> Bool
 
   -- | When extracting the bytes corresponding to header from a serialised
   -- block, it may be necessary to add an envelope to it to obtain a
@@ -128,9 +120,14 @@ class ( LedgerSupportsProtocol    blk
   --
   -- This function can be used to, for example, create the genesis EBB in case
   -- the chain(DB) is empty.
+  --
+  -- We only provide a limited interface to the chain DB. This is primarily
+  -- useful for the definition of combinators (which may need to turn a
+  -- 'InitChainDB' for one type of block into an 'InitChainDB' for a closely
+  -- related type of block).
   nodeInitChainDB :: IOLike m
                   => TopLevelConfig blk
-                  -> ChainDB m blk
+                  -> InitChainDB m blk
                   -> m ()
   nodeInitChainDB _ _ = return ()
 
@@ -172,8 +169,8 @@ class ( LedgerSupportsProtocol    blk
   nodeEncodeGenTx          :: GenTx  blk -> Encoding
   nodeEncodeGenTxId        :: GenTxId blk -> Encoding
   nodeEncodeHeaderHash     :: Proxy blk -> HeaderHash blk -> Encoding
-  nodeEncodeLedgerState    :: LedgerState blk -> Encoding
-  nodeEncodeConsensusState :: Proxy blk -> TopLevelConfig blk -> ConsensusState (BlockProtocol blk) -> Encoding
+  nodeEncodeLedgerState    :: TopLevelConfig blk -> LedgerState blk -> Encoding
+  nodeEncodeConsensusState :: TopLevelConfig blk -> ConsensusState (BlockProtocol blk) -> Encoding
   nodeEncodeApplyTxError   :: Proxy blk -> ApplyTxErr blk -> Encoding
   nodeEncodeTipInfo        :: Proxy blk -> TipInfo blk -> Encoding
   nodeEncodeQuery          :: Query blk result -> Encoding
@@ -190,8 +187,8 @@ class ( LedgerSupportsProtocol    blk
   nodeDecodeGenTx          :: forall s. Decoder s (GenTx blk)
   nodeDecodeGenTxId        :: forall s. Decoder s (GenTxId blk)
   nodeDecodeHeaderHash     :: forall s. Proxy blk -> Decoder s (HeaderHash blk)
-  nodeDecodeLedgerState    :: forall s. Decoder s (LedgerState blk)
-  nodeDecodeConsensusState :: forall s. Proxy blk -> TopLevelConfig blk -> Decoder s (ConsensusState (BlockProtocol blk))
+  nodeDecodeLedgerState    :: forall s. TopLevelConfig blk -> Decoder s (LedgerState blk)
+  nodeDecodeConsensusState :: forall s. TopLevelConfig blk -> Decoder s (ConsensusState (BlockProtocol blk))
   nodeDecodeApplyTxError   :: forall s. Proxy blk -> Decoder s (ApplyTxErr blk)
   nodeDecodeTipInfo        :: forall s. Proxy blk -> Decoder s (TipInfo blk)
   nodeDecodeQuery          :: forall s. Decoder s (Some (Query blk))
