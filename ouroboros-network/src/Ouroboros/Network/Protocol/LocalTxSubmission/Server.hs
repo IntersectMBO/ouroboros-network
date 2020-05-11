@@ -40,7 +40,7 @@ data LocalTxSubmissionServer tx reject m a =
        -- the transaction or rejected it. In the rejection case a reason for the
        -- rejection is included.
        --
-       recvMsgSubmitTx :: tx -> m ( Maybe reject
+       recvMsgSubmitTx :: tx -> m ( SubmitResult reject
                                   , LocalTxSubmissionServer tx reject m a ),
 
        -- | The client can terminate the protocol.
@@ -63,15 +63,15 @@ localTxSubmissionServerPeer server =
     go LocalTxSubmissionServer{recvMsgSubmitTx, recvMsgDone} =
       Await (ClientAgency TokIdle) $ \msg -> case msg of
         MsgSubmitTx tx -> Effect $ do
-          (mreject, k) <- recvMsgSubmitTx tx
+          (result, k) <- recvMsgSubmitTx tx
           return $
-            case mreject of
-              Nothing ->
+            case result of
+              SubmitSuccess ->
                 Yield
                   (ServerAgency TokBusy)
                   MsgAcceptTx
                   (go k)
-              Just reject ->
+              SubmitFail reject ->
                 Yield
                   (ServerAgency TokBusy)
                   (MsgRejectTx reject)

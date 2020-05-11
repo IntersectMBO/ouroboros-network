@@ -12,6 +12,7 @@ module Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
 import           Control.Tracer
 
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
+import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Util.IOLike
@@ -33,8 +34,8 @@ localTxSubmissionServer tracer mempool =
         res <- addTxs mempool [tx]
         case res of
           [(_tx, addTxRes)] -> case addTxRes of
-            MempoolTxAdded             -> return (Nothing, server)
-            MempoolTxRejected addTxErr -> return (Just addTxErr, server)
+            MempoolTxAdded             -> return (SubmitSuccess, server)
+            MempoolTxRejected addTxErr -> return (SubmitFail addTxErr, server)
           -- The output list of addTxs has the same length as the input list.
           _                 -> error "addTxs: unexpected result"
 
