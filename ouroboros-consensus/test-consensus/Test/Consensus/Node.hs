@@ -152,7 +152,7 @@ test_checkProtocolMagicId_empty = res @?= Left e
 -- to fail.
 prop_reacquire_lock :: ReleaseDelay -> Property
 prop_reacquire_lock (ReleaseDelay releaseDelay) =
-    runSimOrThrow $ fmap fst $ runSimFS Mock.empty $ \_hasFS -> do
+    runSimOrThrow $ do
       fileLock <- mockFileLock (Just releaseDelay)
       -- Lock and unlock it
       touchLock fileLock
@@ -217,7 +217,7 @@ tryL = try
 --
 prop_wait_to_acquire_lock :: ActualAndMaxDelay -> Property
 prop_wait_to_acquire_lock ActualAndMaxDelay { actualDelay, maxDelay } =
-    runSimOrThrow $ fmap fst $ runSimFS Mock.empty $ \_hasFS -> do
+    runSimOrThrow $ do
       -- We don't simulate delayed releases because the test depends on
       -- precise timing.
       fileLock <- mockFileLock Nothing
