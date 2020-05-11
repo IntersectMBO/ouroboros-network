@@ -105,7 +105,6 @@ codecHandshake
      , MonadThrow m
      , MonadST m
      , Ord vNumber
-     , Enum vNumber
      , Show vNumber
      , Show failure
      )
