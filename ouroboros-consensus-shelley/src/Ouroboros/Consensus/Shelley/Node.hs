@@ -174,8 +174,8 @@ initialFundsPseudoTxIn addr =
     castHash (Crypto.UnsafeHash h) = Crypto.UnsafeHash h
 
 protocolInfoShelley
-  :: forall c. Crypto c
-  => ShelleyGenesis c
+  :: forall c.
+     ShelleyGenesis c
   -> SL.ProtVer
   -> Maybe (TPraosLeaderCredentials c)
   -> ProtocolInfo (ShelleyBlock c)
@@ -373,8 +373,7 @@ protocolInfoShelley genesis protVer mbCredentials =
                 error "Pointer stake addresses not allowed in initial snapshot"
               SL.StakeRefNull -> Nothing
 
-
-protocolClientInfoShelley :: Crypto c => ProtocolClientInfo (ShelleyBlock c)
+protocolClientInfoShelley :: ProtocolClientInfo (ShelleyBlock c)
 protocolClientInfoShelley =
     ProtocolClientInfo {
       -- No particular codec configuration is needed for Shelley
@@ -422,6 +421,8 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   -- TODO
   nodeBlockEncodingOverhead = const 1 -- Single list tag.
   -- Check this isn't altered by the TxWits stuff
+
+  nodeTxSize (ShelleyTx _ tx) = fromIntegral $ SL.txsize tx
 
   nodeCheckIntegrity cfg = verifyBlockIntegrity tpraosSlotsPerKESPeriod
     where

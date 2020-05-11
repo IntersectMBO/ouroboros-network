@@ -454,8 +454,6 @@ instance Bridge m a => ApplyTx (DualBlock m a) where
 
   type ApplyTxErr (DualBlock m a) = DualGenTxErr m a
 
-  txSize DualGenTx{..} = txSize dualGenTxMain + txSize dualGenTxAux
-
   applyTx DualLedgerConfig{..}
           tx@DualGenTx{..}
           (Ticked slot DualLedgerState{..}) = do

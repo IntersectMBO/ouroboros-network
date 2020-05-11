@@ -667,6 +667,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
                                               cfg
                                               testMempoolCap
                                               tracer
+                                              txSize
       result  <- addTxs mempool testInitialTxs
       -- the invalid transactions are reported in the same order they were
       -- added, so the first error is not the result of a cascade

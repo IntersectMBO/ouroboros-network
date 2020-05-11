@@ -21,7 +21,7 @@ import           Ouroboros.Consensus.Util.IOLike
 -- | Local transaction submission server, for adding txs to the 'Mempool'
 --
 localTxSubmissionServer
-  :: (MonadSTM m, ApplyTx blk)
+  :: MonadSTM m
   => Tracer m (TraceLocalTxSubmissionServerEvent blk)
   -> Mempool m blk idx
   -> LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()

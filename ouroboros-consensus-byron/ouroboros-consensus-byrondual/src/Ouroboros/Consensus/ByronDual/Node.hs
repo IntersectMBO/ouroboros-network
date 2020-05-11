@@ -240,6 +240,11 @@ instance RunNode DualByronBlock where
   nodeMaxBlockSize          = nodeMaxBlockSize          . dualLedgerStateMain
   nodeBlockEncodingOverhead = nodeBlockEncodingOverhead . dualLedgerStateMain
 
+  -- We pretend the abstract transactions have no size, and let the size of
+  -- the mempool be limited by concrete transactions only. This is ok, because
+  -- the spec does not impose a maximum block size.
+  nodeTxSize = nodeTxSize . dualGenTxMain
+
   -- Envelope
   nodeHashInfo     = \_p -> nodeHashInfo     pb
   nodeEncodeAnnTip = \_p -> nodeEncodeAnnTip pb . castAnnTip

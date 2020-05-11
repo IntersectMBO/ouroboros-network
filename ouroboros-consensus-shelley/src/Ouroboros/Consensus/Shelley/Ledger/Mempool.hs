@@ -36,7 +36,6 @@ import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.API as SL
 import           Shelley.Spec.Ledger.BlockChain as SL
-import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.Tx as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
@@ -54,10 +53,6 @@ instance TPraosCrypto c => ApplyTx (ShelleyBlock c) where
     deriving anyclass (NoUnexpectedThunks)
 
   type ApplyTxErr (ShelleyBlock c) = SL.ApplyTxError c
-
-  -- TODO why does that function live in LedgerState? It looks like a crazy
-  -- function.
-  txSize (ShelleyTx _ tx) = fromIntegral $ SL.txsize tx
 
   txInvariant = const True
 

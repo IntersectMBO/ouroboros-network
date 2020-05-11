@@ -45,9 +45,6 @@ class ( UpdateLedger blk
   -- also other kinds of things such as update proposals, delegations, etc.
   data family GenTx blk :: *
 
-  -- | Return the post-serialization size in bytes of a 'GenTx'.
-  txSize :: GenTx blk -> TxSizeInBytes
-
   -- | Check whether the internal invariants of the transaction hold.
   txInvariant :: GenTx blk -> Bool
   txInvariant = const True
@@ -223,6 +220,9 @@ data Mempool m blk idx = Mempool {
       -- | Get the mempool's capacity in bytes.
     , getCapacity    :: STM m MempoolCapacityBytes
 
+      -- | Return the post-serialisation size in bytes of a 'GenTx'.
+    , getTxSize      :: GenTx blk -> TxSizeInBytes
+
       -- | Represents the initial value at which the transaction ticket number
       -- counter will start (i.e. the zeroth ticket number).
     , zeroIdx        :: idx
@@ -257,7 +257,7 @@ isMempoolTxRejected _                     = False
 -- > processed <- addTxs mpEnv txs
 -- > map fst processed == txs
 addTxs
-  :: forall m blk idx. (MonadSTM m, ApplyTx blk)
+  :: forall m blk idx. MonadSTM m
   => Mempool m blk idx
   -> [GenTx blk]
   -> m [(GenTx blk, MempoolAddTxResult blk)]
@@ -275,7 +275,7 @@ addTxs mempool = \txs -> do
       -> m [(GenTx blk, MempoolAddTxResult blk)]
     go acc []         = return (concat (reverse acc))
     go acc txs@(tx:_) = do
-      let firstTxSize = txSize tx
+      let firstTxSize = getTxSize mempool tx
       -- Wait until there's at least room for the first transaction we're
       -- trying to add, otherwise there's no point in trying to add it.
       atomically $ do

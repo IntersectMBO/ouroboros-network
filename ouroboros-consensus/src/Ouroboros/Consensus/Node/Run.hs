@@ -113,6 +113,17 @@ class ( LedgerSupportsProtocol    blk
                         -> Lazy.ByteString -> Lazy.ByteString
   nodeAddHeaderEnvelope _ _ _ = id  -- Default to no envelope
 
+  -- | Return the post-serialisation size in bytes of a 'GenTx'.
+  --
+  -- Can be implemented by serialising the 'GenTx', but, ideally, this is
+  -- implement more efficiently. E.g., by returning the length of the
+  -- annotation.
+  --
+  -- > forall tx:
+  -- >   nodeTxSize tx ==
+  -- >   BSL.length (CBOR.toLazyByteString (nodeEncodeGenTx tx))
+  --
+  nodeTxSize :: GenTx blk -> TxSizeInBytes
 
   -- | This function is called when starting up the node, right after the
   -- ChainDB was opened, and before we connect to other nodes and start block
