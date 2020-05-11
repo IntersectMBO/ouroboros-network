@@ -236,6 +236,7 @@ socketSnocket ioManager = Snocket {
           -- not supported on Windows 10
           Socket.setSocketOption sd Socket.ReusePort 1
 #endif
+          Socket.setSocketOption sd Socket.NoDelay 1
         when (fml == Socket.AF_INET6)
           -- An AF_INET6 socket can be used to talk to both IPv4 and IPv6 end points, and
           -- it is enabled by default on some systems. Disabled here since we run a separate
