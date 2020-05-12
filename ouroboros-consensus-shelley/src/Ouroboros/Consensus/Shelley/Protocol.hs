@@ -172,7 +172,8 @@ forgeTPraosFields updateNodeState TPraosProof{..} kesPeriod mkToSign = do
         hotKESKey
     case mbSignature of
       Nothing        -> error "signedKES failed"
-      Just signature ->
+      Just signature -> do
+        traceShowM ("forgeTPraosFields", ("kesPeriod", kesPeriod))
         return TPraosFields {
             tpraosSignature = signature
           , tpraosToSign    = mkToSign signedFields
