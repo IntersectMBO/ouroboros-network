@@ -35,11 +35,6 @@ instance ApplyTx ByronSpecBlock where
 
   type ApplyTxErr ByronSpecBlock = ByronSpecGenTxErr
 
-  -- We pretend the abstract transactions have no size, and let the size of the
-  -- mempool be limited by concrete transactions only. This is ok, because the
-  -- spec does not impose a maximum block size.
-  txSize _ = 0
-
   applyTx cfg tx (Ticked slot st) =
       (Ticked slot . updateByronSpecLedgerStateKeepTip st) <$>
         GenTx.apply

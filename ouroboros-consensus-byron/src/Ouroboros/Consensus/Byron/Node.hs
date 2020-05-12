@@ -27,6 +27,7 @@ module Ouroboros.Consensus.Byron.Node (
 
 import           Control.Exception (Exception (..))
 import           Control.Monad.Except
+import qualified Data.ByteString as Strict
 import           Data.Coerce (coerce)
 import           Data.Maybe
 
@@ -205,6 +206,10 @@ instance RunNode ByronBlock where
 
   nodeMaxBlockSize          = API.getMaxBlockSize . byronLedgerState
   nodeBlockEncodingOverhead = const byronBlockEncodingOverhead
+  nodeTxSize                = fromIntegral
+                            . Strict.length
+                            . API.mempoolPayloadRecoverBytes
+                            . toMempoolPayload
 
   -- If the current chain is empty, produce a genesis EBB and add it to the
   -- ChainDB. Only an EBB can have Genesis (= empty chain) as its predecessor.

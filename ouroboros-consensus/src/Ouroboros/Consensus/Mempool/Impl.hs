@@ -57,9 +57,10 @@ openMempool :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk
             -> LedgerConfig blk
             -> MempoolCapacityBytes
             -> Tracer m (TraceEventMempool blk)
+            -> (GenTx blk -> TxSizeInBytes)
             -> m (Mempool m blk TicketNo)
-openMempool registry ledger cfg capacity tracer = do
-    env <- initMempoolEnv ledger cfg capacity tracer
+openMempool registry ledger cfg capacity tracer txSize = do
+    env <- initMempoolEnv ledger cfg capacity tracer txSize
     forkSyncStateOnTipPointChange registry env
     return $ mkMempool env
 
@@ -73,9 +74,10 @@ openMempoolWithoutSyncThread
   -> LedgerConfig blk
   -> MempoolCapacityBytes
   -> Tracer m (TraceEventMempool blk)
+  -> (GenTx blk -> TxSizeInBytes)
   -> m (Mempool m blk TicketNo)
-openMempoolWithoutSyncThread ledger cfg capacity tracer =
-    mkMempool <$> initMempoolEnv ledger cfg capacity tracer
+openMempoolWithoutSyncThread ledger cfg capacity tracer txSize =
+    mkMempool <$> initMempoolEnv ledger cfg capacity tracer txSize
 
 mkMempool :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
           => MempoolEnv m blk -> Mempool m blk TicketNo
@@ -86,6 +88,7 @@ mkMempool env = Mempool
     , getSnapshot    = implGetSnapshot    env
     , getSnapshotFor = implGetSnapshotFor env
     , getCapacity    = implGetCapacity    env
+    , getTxSize      = mpEnvTxSize        env
     , zeroIdx        = zeroTicketNo
     }
 
@@ -160,6 +163,7 @@ data MempoolEnv m blk = MempoolEnv {
     , mpEnvCapacity  :: !MempoolCapacityBytes
     , mpEnvStateVar  :: StrictTVar m (InternalState blk)
     , mpEnvTracer    :: Tracer m (TraceEventMempool blk)
+    , mpEnvTxSize    :: GenTx blk -> TxSizeInBytes
     }
 
 initInternalState
@@ -185,8 +189,9 @@ initMempoolEnv :: ( IOLike m
                -> LedgerConfig blk
                -> MempoolCapacityBytes
                -> Tracer m (TraceEventMempool blk)
+               -> (GenTx blk -> TxSizeInBytes)
                -> m (MempoolEnv m blk)
-initMempoolEnv ledgerInterface cfg capacity tracer = do
+initMempoolEnv ledgerInterface cfg capacity tracer txSize = do
     st <- atomically $ getCurrentLedgerState ledgerInterface
     let st' = tickLedgerState cfg (ForgeInUnknownSlot st)
     isVar <- newTVarM $ initInternalState zeroTicketNo st'
@@ -196,6 +201,7 @@ initMempoolEnv ledgerInterface cfg capacity tracer = do
       , mpEnvCapacity  = capacity
       , mpEnvStateVar  = isVar
       , mpEnvTracer    = tracer
+      , mpEnvTxSize    = txSize
       }
 
 -- | Spawn a thread which syncs the 'Mempool' state whenever the 'LedgerState'
@@ -263,6 +269,7 @@ implTryAddTxs mpEnv = go []
       , mpEnvLedgerCfg = cfg
       , mpEnvCapacity  = MempoolCapacityBytes capacity
       , mpEnvTracer
+      , mpEnvTxSize
       } = mpEnv
 
     done acc toAdd = return (reverse acc, toAdd)
@@ -274,14 +281,15 @@ implTryAddTxs mpEnv = go []
       where
         tryAdd is
           -- No space in the Mempool.
-          | let firstTxSize = txSize firstTx
+          | let firstTxSize = mpEnvTxSize firstTx
                 curSize = msNumBytes $ isMempoolSize is
           , curSize + firstTxSize > capacity
           = return $ done acc toAdd
 
           | otherwise
           = do
-              let vr  = extendVRNew cfg firstTx $ validationResultFromIS is
+              let vr  = extendVRNew cfg firstTx mpEnvTxSize $
+                          validationResultFromIS is
                   is' = internalStateFromVR vr
               unless (null (vrNewValid vr)) $
                 -- Each time we have found a valid transaction, we update the
@@ -578,9 +586,10 @@ extendVRPrevApplied cfg txTicket vr =
 extendVRNew :: (ApplyTx blk, HasTxId (GenTx blk))
             => LedgerConfig blk
             -> GenTx blk
+            -> (GenTx blk -> TxSizeInBytes)
             -> ValidationResult blk
             -> ValidationResult blk
-extendVRNew cfg tx vr = assert (isNothing vrNewValid) $
+extendVRNew cfg tx txSize vr = assert (isNothing vrNewValid) $
     case runExcept (applyTx cfg tx vrAfter) of
       Left err  -> vr { vrInvalid      = (tx, err) : vrInvalid
                       }

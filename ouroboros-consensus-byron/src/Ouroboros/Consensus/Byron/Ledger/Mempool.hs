@@ -43,7 +43,6 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Maybe (maybeToList)
 import           Data.Word
@@ -89,9 +88,6 @@ instance ApplyTx ByronBlock where
     | ByronUpdateVote     !Update.VoteId            !(Update.AVote            ByteString)
     deriving (Eq, Generic)
     deriving NoUnexpectedThunks via UseIsNormalForm (GenTx ByronBlock)
-
-  txSize =
-      fromIntegral . Strict.length . CC.mempoolPayloadRecoverBytes . toMempoolPayload
 
   -- Check that the annotation is the canonical encoding. This is currently
   -- enforced by 'decodeByronGenTx', see its docstring for more context.

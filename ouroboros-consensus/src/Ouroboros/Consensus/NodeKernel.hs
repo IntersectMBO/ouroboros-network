@@ -273,6 +273,7 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                                   (configLedger cfg)
                                   mpCap
                                   (mempoolTracer tracers)
+                                  nodeTxSize
 
     fetchClientRegistry <- newFetchClientRegistry
 
@@ -612,7 +613,7 @@ mkCurrentBlockContext currentSlot c = case c of
 -------------------------------------------------------------------------------}
 
 getMempoolReader
-  :: forall m blk. (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
+  :: forall m blk. (IOLike m, HasTxId (GenTx blk))
   => Mempool m blk TicketNo
   -> TxSubmissionMempoolReader (GenTxId blk) (GenTx blk) TicketNo m
 getMempoolReader mempool = MempoolReader.TxSubmissionMempoolReader
@@ -627,7 +628,7 @@ getMempoolReader mempool = MempoolReader.TxSubmissionMempoolReader
                                       snapshotHasTx } =
       MempoolReader.MempoolSnapshot
         { mempoolTxIdsAfter = \idx ->
-            [ (txId tx, idx', txSize tx)
+            [ (txId tx, idx', getTxSize mempool tx)
             | (tx, idx') <- snapshotTxsAfter idx
             ]
         , mempoolLookupTx   = snapshotLookupTx
@@ -635,7 +636,7 @@ getMempoolReader mempool = MempoolReader.TxSubmissionMempoolReader
         }
 
 getMempoolWriter
-  :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
+  :: (IOLike m, HasTxId (GenTx blk))
   => Mempool m blk TicketNo
   -> TxSubmissionMempoolWriter (GenTxId blk) (GenTx blk) TicketNo m
 getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter

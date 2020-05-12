@@ -46,6 +46,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
     -- * 'ApplyTx' (mempool support)
   , GenTx(..)
   , mkSimpleGenTx
+  , txSize
     -- * 'TxId'
   , unSimpleGenTxId
     -- * Crypto
@@ -338,8 +339,6 @@ instance MockProtocolSpecific c ext => ApplyTx (SimpleBlock c ext) where
     } deriving stock    (Generic, Eq, Ord)
       deriving anyclass (Serialise)
 
-  txSize = fromIntegral . Lazy.length . serialise
-
   type ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
   applyTx   = const updateSimpleUTxO
@@ -376,6 +375,9 @@ mkSimpleGenTx tx = SimpleGenTx
     { simpleGenTx   = tx
     , simpleGenTxId = hash tx
     }
+
+txSize :: GenTx (SimpleBlock c ext) -> TxSizeInBytes
+txSize = fromIntegral . Lazy.length . serialise
 
 {-------------------------------------------------------------------------------
   Support for QueryLedger
