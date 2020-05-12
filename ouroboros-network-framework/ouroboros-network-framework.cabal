@@ -43,6 +43,8 @@ library
                        Ouroboros.Network.ConnectionId
                        Ouroboros.Network.ConnectionManager.Types
                        Ouroboros.Network.ConnectionManager.Core
+                       Ouroboros.Network.ConnectionManager.ConnectionHandler
+                       Ouroboros.Network.ConnectionManager.RethrowPolicy
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Server.RateLimiting
