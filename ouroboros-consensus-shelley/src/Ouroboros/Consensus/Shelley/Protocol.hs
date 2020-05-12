@@ -79,6 +79,8 @@ import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
 import           Ouroboros.Consensus.Shelley.Protocol.Util
 
+import           Debug.Trace
+
 {-------------------------------------------------------------------------------
   Fields required by TPraos in the header
 -------------------------------------------------------------------------------}
@@ -218,7 +220,8 @@ evolveKESKeyIfNecessary updateNodeState (SL.KESPeriod kesPeriod) = do
         | let kesPeriodOfKey = KES.currentPeriodKES () key
         , kesPeriodOfKey < kesPeriod
           -- Must evolve key
-        -> return (TPraosKeyEvolving, Left key)
+        -> traceShowM ("evolveKey", ("fromPeriod", kesPeriodOfKey),  ("toPeriod", kesPeriod), key)
+            >> return (TPraosKeyEvolving, Left key)
         | otherwise
         -> return (TPraosKeyAvailable key, Right key)
       TPraosNoKey ->
