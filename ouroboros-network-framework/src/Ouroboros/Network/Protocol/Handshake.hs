@@ -52,6 +52,7 @@ handshakeProtocolNum = MiniProtocolNum 0
 data HandshakeException a =
     HandshakeProtocolLimit ProtocolLimitFailure
   | HandshakeProtocolError a
+  deriving Show
 
 
 -- | Try to complete either initiator or responder side of the Handshake protocol
