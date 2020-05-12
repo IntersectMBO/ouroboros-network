@@ -307,10 +307,10 @@ class ( HasAnnTip blk
 
   -- | Compare hashes
   checkPrevHash :: proxy blk
-                -> WithOrigin (HeaderHash blk)  -- ^ Old tip
-                -> ChainHash blk                -- ^ Prev hash of new block
+                -> HeaderHash blk  -- ^ Old tip
+                -> HeaderHash blk  -- ^ Prev hash of new block
                 -> Bool
-  checkPrevHash _ oldTip = (withOrigin GenesisHash BlockHash oldTip ==)
+  checkPrevHash _ = (==)
 
   -- | Do additional envelope checks
   additionalEnvelopeChecks :: TopLevelConfig blk
@@ -331,11 +331,18 @@ validateEnvelope cfg ledgerView oldTip hdr = do
       throwError $ UnexpectedBlockNo expectedBlockNo actualBlockNo
     unless (actualSlotNo >= expectedSlotNo) $
       throwError $ UnexpectedSlotNo expectedSlotNo actualSlotNo
-    unless (checkPrevHash p (annTipHash <$> oldTip) actualPrevHash) $
+    unless (checkPrevHash' (annTipHash <$> oldTip) actualPrevHash) $
       throwError $ UnexpectedPrevHash (annTipHash <$> oldTip) actualPrevHash
     withExcept OtherHeaderEnvelopeError $
       additionalEnvelopeChecks cfg ledgerView hdr
   where
+    checkPrevHash' :: WithOrigin (HeaderHash blk)
+                   -> ChainHash blk
+                   -> Bool
+    checkPrevHash' Origin GenesisHash    = True
+    checkPrevHash' (At h) (BlockHash h') = checkPrevHash p h h'
+    checkPrevHash' _      _              = False
+
     actualSlotNo   :: SlotNo
     actualBlockNo  :: BlockNo
     actualPrevHash :: ChainHash blk

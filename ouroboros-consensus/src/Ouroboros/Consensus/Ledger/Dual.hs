@@ -394,9 +394,7 @@ instance Bridge m a => ValidateEnvelope (DualBlock m a) where
   expectedNextBlockNo   _ = expectedNextBlockNo   (Proxy @m)
   minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @m)
   minimumNextSlotNo     _ = minimumNextSlotNo     (Proxy @m)
-
-  checkPrevHash _ oldTip prevHash =
-      checkPrevHash (Proxy @m) oldTip (castHash prevHash)
+  checkPrevHash         _ = checkPrevHash         (Proxy @m)
 
   additionalEnvelopeChecks cfg ledgerView hdr =
       additionalEnvelopeChecks
