@@ -560,7 +560,7 @@ mkCurrentBlockContext
 mkCurrentBlockContext currentSlot c = case c of
     Empty AF.AnchorGenesis ->
       -- The chain is entirely empty.
-      Right $ BlockContext (firstBlockNo (Proxy @blk)) genesisPoint
+      Right $ BlockContext (expectedFirstBlockNo (Proxy @blk)) genesisPoint
 
     Empty (AF.Anchor anchorSlot anchorHash anchorBlockNo) ->
       let p :: Point blk = BlockPoint anchorSlot anchorHash

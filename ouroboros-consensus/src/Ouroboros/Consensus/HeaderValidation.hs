@@ -33,7 +33,6 @@ module Ouroboros.Consensus.HeaderValidation (
   , HeaderEnvelopeError(..)
   , castHeaderEnvelopeError
   , ValidateEnvelope(..)
-  , defaultValidateEnvelope
     -- * Errors
   , HeaderError(..)
   , castHeaderError
@@ -60,7 +59,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot (WithOrigin (..))
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block hiding (Tip (..))
 
@@ -248,8 +247,8 @@ data HeaderEnvelopeError blk =
 
     -- | Invalid hash (in the reference to the previous block)
     --
-    -- We record both the expected and actual hash
-  | UnexpectedPrevHash !(ChainHash blk) !(ChainHash blk)
+    -- We record the current tip as well as the prev hash of the new block.
+  | UnexpectedPrevHash !(WithOrigin (HeaderHash blk)) !(ChainHash blk)
 
     -- | Block specific envelope error
   | OtherHeaderEnvelopeError !(OtherHeaderEnvelopeError blk)
@@ -265,13 +264,10 @@ castHeaderEnvelopeError :: ( HeaderHash blk ~ HeaderHash blk'
                            )
                         => HeaderEnvelopeError blk -> HeaderEnvelopeError blk'
 castHeaderEnvelopeError = \case
-    OtherHeaderEnvelopeError err       -> OtherHeaderEnvelopeError err
-    UnexpectedBlockNo  expected actual -> UnexpectedBlockNo  expected  actual
-    UnexpectedSlotNo   expected actual -> UnexpectedSlotNo   expected  actual
-    UnexpectedPrevHash expected actual -> UnexpectedPrevHash expected' actual'
-      where
-        expected' = castHash expected
-        actual'   = castHash actual
+    OtherHeaderEnvelopeError err         -> OtherHeaderEnvelopeError err
+    UnexpectedBlockNo  expected actual   -> UnexpectedBlockNo  expected actual
+    UnexpectedSlotNo   expected actual   -> UnexpectedSlotNo   expected actual
+    UnexpectedPrevHash oldTip   prevHash -> UnexpectedPrevHash oldTip (castHash prevHash)
 
 -- | Validate header envelope (block, slot, hash)
 class ( HasAnnTip blk
@@ -284,16 +280,16 @@ class ( HasAnnTip blk
   type OtherHeaderEnvelopeError blk :: *
   type OtherHeaderEnvelopeError blk = Void
 
-  -- | Validate the header envelope
-  validateEnvelope :: TopLevelConfig blk
-                   -> Ticked (LedgerView (BlockProtocol blk))
-                   -> WithOrigin (AnnTip blk) -- ^ Old tip
-                   -> Header blk
-                   -> Except (HeaderEnvelopeError blk) ()
-
   -- | The block number of the first block on the chain
-  firstBlockNo :: Proxy blk -> BlockNo
-  firstBlockNo _ = BlockNo 0
+  expectedFirstBlockNo :: proxy blk -> BlockNo
+  expectedFirstBlockNo _ = BlockNo 0
+
+  -- | Next block number
+  expectedNextBlockNo :: proxy blk
+                      -> TipInfo blk -- ^ Old tip
+                      -> TipInfo blk -- ^ New block
+                      -> BlockNo -> BlockNo
+  expectedNextBlockNo _ _ _ = succ
 
   -- | The smallest possible 'SlotNo'
   --
@@ -302,38 +298,43 @@ class ( HasAnnTip blk
   minimumPossibleSlotNo :: Proxy blk -> SlotNo
   minimumPossibleSlotNo _ = SlotNo 0
 
-  default validateEnvelope :: HasHeader (Header blk)
-                           => TopLevelConfig blk
-                           -> Ticked (LedgerView (BlockProtocol blk))
-                           -> WithOrigin (AnnTip blk)
-                           -> Header blk
-                           -> Except (HeaderEnvelopeError blk) ()
-  validateEnvelope _cfg _ledgerView = defaultValidateEnvelope
+  -- | Minimum next slot number
+  minimumNextSlotNo :: proxy blk
+                    -> TipInfo blk -- ^ Old tip
+                    -> TipInfo blk -- ^ New block
+                    -> SlotNo -> SlotNo
+  minimumNextSlotNo _ _ _ = succ
 
--- | Default implementation for 'validateEnvelope'.
---
--- Is provided as a separate function to make it easier to extend the
--- 'validateEnvelope' implemention with checks on top of the default ones.
---
--- Using the other members of 'ValidateEnvelope', it checks:
---
--- * whether block numbers are /strictly increasing/, starting from
---  'firstBlockNo'.
--- * whether slot number are /increasing/, starting from
---  'minimumPossibleSlotNo'.
--- * whether the previous hash matches the hash of the previous header
-defaultValidateEnvelope
-  :: forall blk. (HasHeader (Header blk), ValidateEnvelope blk)
-  => WithOrigin (AnnTip blk)
-  -> Header blk
-  -> Except (HeaderEnvelopeError blk) ()
-defaultValidateEnvelope oldTip hdr = do
-    when (actualBlockNo /= expectedBlockNo) $
+  -- | Compare hashes
+  checkPrevHash :: proxy blk
+                -> WithOrigin (HeaderHash blk)  -- ^ Old tip
+                -> ChainHash blk                -- ^ Prev hash of new block
+                -> Bool
+  checkPrevHash _ oldTip = (withOrigin GenesisHash BlockHash oldTip ==)
+
+  -- | Do additional envelope checks
+  additionalEnvelopeChecks :: TopLevelConfig blk
+                           -> Ticked (LedgerView (BlockProtocol blk))
+                           -> Header blk
+                           -> Except (OtherHeaderEnvelopeError blk) ()
+  additionalEnvelopeChecks _ _ _ = return ()
+
+-- | Validate the header envelope
+validateEnvelope :: forall blk. (ValidateEnvelope blk, HasHeader (Header blk))
+                 => TopLevelConfig blk
+                 -> Ticked (LedgerView (BlockProtocol blk))
+                 -> WithOrigin (AnnTip blk) -- ^ Old tip
+                 -> Header blk
+                 -> Except (HeaderEnvelopeError blk) ()
+validateEnvelope cfg ledgerView oldTip hdr = do
+    unless (actualBlockNo == expectedBlockNo) $
       throwError $ UnexpectedBlockNo expectedBlockNo actualBlockNo
-    when (actualSlotNo < expectedSlotNo) $
+    unless (actualSlotNo >= expectedSlotNo) $
       throwError $ UnexpectedSlotNo expectedSlotNo actualSlotNo
-    when (actualPrevHash /= expectedPrevHash) $
-      throwError $ UnexpectedPrevHash expectedPrevHash actualPrevHash
+    unless (checkPrevHash p (annTipHash <$> oldTip) actualPrevHash) $
+      throwError $ UnexpectedPrevHash (annTipHash <$> oldTip) actualPrevHash
+    withExcept OtherHeaderEnvelopeError $
+      additionalEnvelopeChecks cfg ledgerView hdr
   where
     actualSlotNo   :: SlotNo
     actualBlockNo  :: BlockNo
@@ -343,20 +344,23 @@ defaultValidateEnvelope oldTip hdr = do
     actualBlockNo  =            blockNo       hdr
     actualPrevHash = castHash $ blockPrevHash hdr
 
-    expectedSlotNo   :: SlotNo           -- Lower bound only
-    expectedBlockNo  :: BlockNo
-    expectedPrevHash :: ChainHash blk
-
-    (expectedSlotNo, expectedBlockNo, expectedPrevHash) =
+    expectedSlotNo :: SlotNo -- Lower bound only
+    expectedSlotNo =
         case oldTip of
-          At (AnnTip s b nfo) -> let h = tipInfoHash proxy nfo in
-                                 ( succ s, succ b, BlockHash h )
-          Origin              -> ( minimumPossibleSlotNo proxy
-                                 , firstBlockNo          proxy
-                                 , GenesisHash
-                                 )
-      where
-        proxy = Proxy @blk
+          Origin -> minimumPossibleSlotNo p
+          At tip -> minimumNextSlotNo p (annTipInfo tip)
+                                        (getTipInfo hdr)
+                                        (annTipSlotNo tip)
+
+    expectedBlockNo  :: BlockNo
+    expectedBlockNo =
+        case oldTip of
+          Origin -> expectedFirstBlockNo p
+          At tip -> expectedNextBlockNo p (annTipInfo tip)
+                                          (getTipInfo hdr)
+                                          (annTipBlockNo tip)
+
+    p = Proxy @blk
 
 {-------------------------------------------------------------------------------
   Errors

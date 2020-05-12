@@ -318,12 +318,8 @@ instance Crypto c => ValidateEnvelope (ShelleyBlock c) where
   type OtherHeaderEnvelopeError (ShelleyBlock c) =
     STS.PredicateFailure (STS.CHAIN c)
 
-  validateEnvelope cfg (Ticked _ ledgerView) oldTip hdr = do
-      -- In addition to the default 'validateEnvelope' ...
-      defaultValidateEnvelope oldTip hdr
-      -- ... perform the @chainChecks@ that are part of the @CHAIN@ rule.
-      withExcept OtherHeaderEnvelopeError $
-        SL.chainChecks (configLedger cfg) pparams (shelleyHeaderRaw hdr)
+  additionalEnvelopeChecks cfg (Ticked _ ledgerView) hdr =
+      SL.chainChecks (configLedger cfg) pparams (shelleyHeaderRaw hdr)
     where
       pparams = SL.lvProtParams ledgerView
 

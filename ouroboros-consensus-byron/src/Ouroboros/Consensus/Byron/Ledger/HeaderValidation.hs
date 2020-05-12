@@ -9,13 +9,11 @@ module Ouroboros.Consensus.Byron.Ledger.HeaderValidation (
     ByronOtherHeaderEnvelopeError(..)
   ) where
 
-import           Control.Arrow ((&&&))
 import           Control.Monad.Except
 import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Cardano.Slotting.Slot (WithOrigin (..), withOrigin)
 
 import qualified Cardano.Chain.Slotting as CC
 
@@ -48,48 +46,30 @@ data ByronOtherHeaderEnvelopeError =
 instance ValidateEnvelope ByronBlock where
   type OtherHeaderEnvelopeError ByronBlock = ByronOtherHeaderEnvelopeError
 
-  validateEnvelope cfg _ledgerView oldTip hdr = do
-      when (actualBlockNo /= expectedBlockNo) $
-        throwError $ UnexpectedBlockNo expectedBlockNo actualBlockNo
-      when (actualSlotNo < expectedSlotNo) $
-        throwError $ UnexpectedSlotNo expectedSlotNo actualSlotNo
-      when (actualPrevHash /= expectedPrevHash) $
-        throwError $ UnexpectedPrevHash expectedPrevHash actualPrevHash
+  expectedFirstBlockNo  _ = BlockNo 0
+  minimumPossibleSlotNo _ = SlotNo 0
+
+  -- EBB shares its block number with its predecessor
+  expectedNextBlockNo _ (_, prevIsEBB) (_, curIsEBB) b =
+     case (prevIsEBB, curIsEBB) of
+       (IsNotEBB, IsEBB) -> b
+       _otherwise        -> succ b
+
+  -- EBB shares its slot number with its successor
+  minimumNextSlotNo _ (_, prevIsEBB) (_, curIsEBB) s =
+      case (prevIsEBB, curIsEBB) of
+        (IsEBB, IsNotEBB) -> s
+        _otherwise        -> succ s
+
+  additionalEnvelopeChecks cfg _ledgerView hdr =
       when (fromIsEBB newIsEBB && not (canBeEBB actualSlotNo)) $
-        throwError $ OtherHeaderEnvelopeError $ UnexpectedEBBInSlot actualSlotNo
+        throwError $ UnexpectedEBBInSlot actualSlotNo
     where
+      actualSlotNo :: SlotNo
+      actualSlotNo = blockSlot hdr
+
       newIsEBB :: IsEBB
       newIsEBB = byronHeaderIsEBB hdr
-
-      actualSlotNo   :: SlotNo
-      actualBlockNo  :: BlockNo
-      actualPrevHash :: ChainHash ByronBlock
-
-      actualSlotNo   =            blockSlot     hdr
-      actualBlockNo  =            blockNo       hdr
-      actualPrevHash = castHash $ blockPrevHash hdr
-
-      expectedSlotNo   :: SlotNo           -- Lower bound only
-      expectedBlockNo  :: BlockNo
-      expectedPrevHash :: ChainHash ByronBlock
-
-      (expectedSlotNo, expectedBlockNo, expectedPrevHash) = (
-            nextSlotNo  (((snd . annTipInfo) &&& annTipSlotNo)  <$> oldTip) newIsEBB
-          , nextBlockNo (((snd . annTipInfo) &&& annTipBlockNo) <$> oldTip) newIsEBB
-          , withOrigin GenesisHash (BlockHash . annTipHash) oldTip
-          )
-
-      -- EBB shares its slot number with its successor
-      nextSlotNo :: WithOrigin (IsEBB, SlotNo) -> IsEBB -> SlotNo
-      nextSlotNo Origin          _        = SlotNo 0
-      nextSlotNo (At (IsEBB, s)) IsNotEBB = s
-      nextSlotNo (At (_    , s)) _        = succ s
-
-      -- EBB shares its block number with its predecessor
-      nextBlockNo :: WithOrigin (IsEBB, BlockNo) -> IsEBB -> BlockNo
-      nextBlockNo Origin             _     = BlockNo 0
-      nextBlockNo (At (IsNotEBB, b)) IsEBB = b
-      nextBlockNo (At (_       , b)) _     = succ b
 
       canBeEBB :: SlotNo -> Bool
       canBeEBB (SlotNo s) = s `mod` epochSlots == 0

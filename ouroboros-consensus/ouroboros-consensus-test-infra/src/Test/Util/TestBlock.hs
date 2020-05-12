@@ -348,7 +348,7 @@ instance HasAnnTip TestBlock where
 
 instance ValidateEnvelope TestBlock where
   -- The block number of a test block is derived from the length of the hash
-  firstBlockNo _ = Block.BlockNo 1
+  expectedFirstBlockNo _ = Block.BlockNo 1
 
 instance LedgerSupportsProtocol TestBlock where
   protocolLedgerView _ _ = ()
