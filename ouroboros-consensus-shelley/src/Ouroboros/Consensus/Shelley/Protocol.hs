@@ -167,7 +167,7 @@ forgeTPraosFields updateNodeState TPraosProof{..} kesPeriod mkToSign = do
     let
       mbSignature = signedKES
         ()
-        kesPeriodNat
+        kesEvolution
         (mkToSign signedFields)
         hotKESKey
     case mbSignature of
@@ -180,6 +180,9 @@ forgeTPraosFields updateNodeState TPraosProof{..} kesPeriod mkToSign = do
           }
   where
     SL.KESPeriod kesPeriodNat = kesPeriod
+    SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
+
+    kesEvolution = if kesPeriodNat >= c0 then kesPeriodNat - c0 else 0
 
     TPraosIsCoreNode{..} = tpraosIsCoreNode
 
