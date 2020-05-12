@@ -32,6 +32,7 @@ module Ouroboros.Network.Mux
   , MiniProtocolLimits (..)
   , RunMiniProtocol (..)
   , MuxPeer (..)
+  , runMuxPeer
   , toApplication
   , mkMuxApplicationBundle
   , ControlMessage (..)
