@@ -23,7 +23,7 @@ instance HasCreator (SimpleBftBlock c BftMockCrypto) where
                . simpleHeader
       where
         coreNodeId :: SignedDSIGN MockDSIGN a -> CoreNodeId
-        coreNodeId = CoreNodeId . fromIntegral . verKeyIdFromSigned
+        coreNodeId = CoreNodeId . verKeyIdFromSigned
 
 instance HasCreator (SimplePBftBlock c PBftMockCrypto) where
     getCreator = coreNodeId
@@ -33,7 +33,7 @@ instance HasCreator (SimplePBftBlock c PBftMockCrypto) where
                . simpleHeader
       where
         coreNodeId :: SignedDSIGN MockDSIGN a -> CoreNodeId
-        coreNodeId = CoreNodeId . fromIntegral . verKeyIdFromSigned
+        coreNodeId = CoreNodeId . verKeyIdFromSigned
 
 instance HasCreator (SimplePraosBlock c PraosMockCrypto) where
     getCreator = praosCreator

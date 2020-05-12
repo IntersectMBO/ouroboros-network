@@ -298,7 +298,7 @@ instance BlockSupportsProtocol TestBlock where
       -- We don't want /our/ signing key, but rather the signing key of the
       -- node that produced the block
       signKey :: Block.SlotNo -> SignKeyDSIGN MockDSIGN
-      signKey (SlotNo n) = SignKeyMockDSIGN $ fromIntegral (n `mod` numCore)
+      signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
 
 instance IsLedger (LedgerState TestBlock) where
   type LedgerCfg (LedgerState TestBlock) = HardFork.EraParams

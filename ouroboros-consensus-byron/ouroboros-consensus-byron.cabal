@@ -48,6 +48,7 @@ library
                      , binary            >=0.8   && <0.9
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
+                     , cardano-crypto
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
                      , cardano-ledger

@@ -49,8 +49,10 @@ import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
 
+import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
+import qualified Shelley.Spec.Ledger.Credential as SL
 import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
@@ -60,7 +62,8 @@ import qualified Shelley.Spec.Ledger.TxData as SL
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (DSIGN)
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto (DSIGN,
+                     HotKey (..))
 
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 import qualified Test.Shelley.Spec.Ledger.Generator.Constants as Gen
@@ -276,8 +279,8 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
 
     coreNodesToGenesisMapping :: Map (SL.KeyHash 'SL.Genesis c) (SL.KeyHash 'SL.GenesisDelegate c)
     coreNodesToGenesisMapping  = Map.fromList
-      [ ( SL.KeyHash $ SL.hash $ deriveVerKeyDSIGN cnGenesisKey
-        , SL.KeyHash $ SL.hash $ deriveVerKeyDSIGN cnDelegateKey
+      [ ( SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnGenesisKey
+        , SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
         )
       | CoreNode { cnGenesisKey, cnDelegateKey } <- coreNodes
       ]
@@ -341,7 +344,7 @@ mkProtocolRealTPraos genesis CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
 
     credentials :: TPraosLeaderCredentials c
     credentials = TPraosLeaderCredentials {
-        tpraosLeaderCredentialsSignKey    = cnKES
+        tpraosLeaderCredentialsSignKey    = HotKey 0 cnKES
       , tpraosLeaderCredentialsIsCoreNode = TPraosIsCoreNode {
           tpraosIsCoreNodeOpCert     = cnOCert
         , tpraosIsCoreNodeColdVerKey = SL.VKey $ deriveVerKeyDSIGN cnDelegateKey

@@ -76,15 +76,16 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Control.State.Transition as STS
+import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Coin as SL
+import qualified Shelley.Spec.Ledger.Credential as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as STS
-import qualified Shelley.Spec.Ledger.TxData as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
 import           Ouroboros.Consensus.Shelley.Genesis
@@ -127,7 +128,8 @@ mkShelleyLedgerConfig genesis = ShelleyLedgerConfig {
                                  (sgSlotLength    genesis)
     }
   where
-    SecurityParam k = sgSecurityParam  genesis
+    SecurityParam k = sgSecurityParam genesis
+    f = SL.intervalValue . SL.activeSlotVal $ sgActiveSlotCoeff genesis
 
     -- TODO: This must instead be derived from the hard fork history.
     -- <https://github.com/input-output-hk/ouroboros-network/issues/1205>
@@ -138,9 +140,10 @@ mkShelleyLedgerConfig genesis = ShelleyLedgerConfig {
     shelleyGlobals = SL.Globals {
           epochInfo         = epochInfo
         , slotsPerKESPeriod = sgSlotsPerKESPeriod genesis
-          -- TODO where does 3 * k come from?
-        , slotsPrior        = 3 * k
-        , startRewards      = 3 * k
+          -- The values 3k/f and 4k/f are determined to be suitabe values as per
+          -- https://docs.google.com/document/d/1B8BNMx8jVWRjYiUBOaI3jfZ7dQNvNTSDODvT5iOuYCU/edit#heading=h.qh2zcajmu6hm
+        , stabilityWindow   = ceiling $ fromIntegral @_ @Double (3 * k) / fromRational f
+        , randomnessStabilisationWindow = ceiling $ fromIntegral @_ @Double (4 * k) / fromRational f
         , securityParameter = k
         , maxKESEvo         = sgMaxKESEvolutions  genesis
         , quorum            = sgUpdateQuorum      genesis

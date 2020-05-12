@@ -293,7 +293,7 @@ genTestPBftState = do
 -------------------------------------------------------------------------------}
 
 genMockKey :: Int -> Gen (VerKeyDSIGN MockDSIGN)
-genMockKey numKeys = VerKeyMockDSIGN <$> choose (1, numKeys)
+genMockKey numKeys = VerKeyMockDSIGN <$> choose (1, fromIntegral numKeys)
 
 -- | Generate a possibly empty sequence of 'InputEBB's and 'InputSigner's
 --

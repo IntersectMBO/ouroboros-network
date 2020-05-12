@@ -81,7 +81,7 @@ shelleyHashInfo = HashInfo { hashSize, getHash, putHash }
   where
     hashSize :: Word32
     hashSize = fromIntegral $
-      Crypto.byteCount (Proxy :: Proxy (HASH c))
+      Crypto.sizeHash (Proxy :: Proxy (HASH c))
 
     getHash :: Get (ShelleyHash c)
     getHash = do

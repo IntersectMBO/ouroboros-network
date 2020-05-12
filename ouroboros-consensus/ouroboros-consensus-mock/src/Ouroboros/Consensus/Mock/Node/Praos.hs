@@ -54,13 +54,13 @@ protocolInfoPraos numCoreNodes nid params eraParams =
       }
   where
     signKeyVRF :: CoreNodeId -> SignKeyVRF MockVRF
-    signKeyVRF (CoreNodeId n) = SignKeyMockVRF (fromIntegral n)
+    signKeyVRF (CoreNodeId n) = SignKeyMockVRF n
 
     verKeyVRF :: CoreNodeId -> VerKeyVRF MockVRF
-    verKeyVRF (CoreNodeId n) = VerKeyMockVRF (fromIntegral n)
+    verKeyVRF (CoreNodeId n) = VerKeyMockVRF n
 
     verKeyKES :: CoreNodeId -> VerKeyKES (MockKES t)
-    verKeyKES (CoreNodeId n) = VerKeyMockKES (fromIntegral n)
+    verKeyKES (CoreNodeId n) = VerKeyMockKES n
 
     addrDist :: AddrDist
     addrDist = mkAddrDist numCoreNodes

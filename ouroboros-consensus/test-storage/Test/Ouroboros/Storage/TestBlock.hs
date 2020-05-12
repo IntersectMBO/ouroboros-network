@@ -437,7 +437,7 @@ instance BlockSupportsProtocol TestBlock where
       -- We don't want /our/ signing key, but rather the signing key of the
       -- node that produced the block
       signKey :: SlotNo -> SignKeyDSIGN MockDSIGN
-      signKey (SlotNo n) = SignKeyMockDSIGN $ fromIntegral (n `mod` numCore)
+      signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
 
   selectView _ hdr = (blockNo hdr, thIsEBB (unTestHeader hdr))
 
