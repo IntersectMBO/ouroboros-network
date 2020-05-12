@@ -61,8 +61,6 @@ module Ouroboros.Network.Socket (
     , sockAddrFamily
     ) where
 
-import           Cardano.Prelude (UseIsNormalForm (..))
-
 import           Control.Concurrent.Async
 import           Control.Exception (IOException, SomeException (..))
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
@@ -76,11 +74,8 @@ import qualified Codec.CBOR.Term     as CBOR
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Void
-import           GHC.Generics (Generic)
 
 import qualified Network.Socket as Socket
-
-import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Control.Tracer
 
@@ -88,6 +83,7 @@ import qualified Network.Mux as Mx
 import Network.Mux.DeltaQ.TraceTransformer
 import           Network.Mux.Types (MuxBearer)
 
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Codec hiding (encode, decode)
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Driver (TraceSendRecv)
@@ -142,19 +138,6 @@ sockAddrFamily
 sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
 sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
 sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
-
-
--- | Connection is identified by local and remote address.
---
--- TODO: the type variable which this data type fills in is called `peerid`.  We
--- should renamed to `connectionId`.
---
-data ConnectionId addr = ConnectionId {
-    localAddress  :: !addr,
-    remoteAddress :: !addr
-  }
-  deriving (Eq, Ord, Show, Generic)
-  deriving NoUnexpectedThunks via (UseIsNormalForm (ConnectionId addr))
 
 
 -- |
