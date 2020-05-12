@@ -389,13 +389,20 @@ instance Bridge m a => HasAnnTip (DualBlock m a) where
 
 instance Bridge m a => ValidateEnvelope (DualBlock m a) where
   type OtherHeaderEnvelopeError (DualBlock m a) = OtherHeaderEnvelopeError m
-  validateEnvelope cfg ledgerView t =
-        withExcept castHeaderEnvelopeError
-      . validateEnvelope (dualTopLevelConfigMain cfg) ledgerView (castAnnTip <$> t)
-      . dualHeaderMain
 
-  firstBlockNo          _ = firstBlockNo          (Proxy @m)
+  expectedFirstBlockNo  _ = expectedFirstBlockNo  (Proxy @m)
+  expectedNextBlockNo   _ = expectedNextBlockNo   (Proxy @m)
   minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @m)
+  minimumNextSlotNo     _ = minimumNextSlotNo     (Proxy @m)
+
+  checkPrevHash _ oldTip prevHash =
+      checkPrevHash (Proxy @m) oldTip (castHash prevHash)
+
+  additionalEnvelopeChecks cfg ledgerView hdr =
+      additionalEnvelopeChecks
+        (dualTopLevelConfigMain cfg)
+        ledgerView
+        (dualHeaderMain hdr)
 
 instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
   protocolLedgerView cfg state =
