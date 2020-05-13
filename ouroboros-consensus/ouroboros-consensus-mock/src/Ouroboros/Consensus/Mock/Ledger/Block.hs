@@ -34,9 +34,9 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , mkSimpleHeader
   , matchesSimpleHeader
   , countSimpleGenTxs
-  , defaultSimpleBlockConfig
     -- * Configuration
   , BlockConfig(..)
+  , SimpleLedgerConfig(..)
     -- * Protocol-specific part
   , MockProtocolSpecific(..)
     -- * 'UpdateLedger'
@@ -82,7 +82,6 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
@@ -91,7 +90,6 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -246,9 +244,7 @@ instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
   Config
 -------------------------------------------------------------------------------}
 
-data instance BlockConfig (SimpleBlock c ext) = SimpleBlockConfig {
-      simpleBlockEraParams :: !HardFork.EraParams
-    }
+data instance BlockConfig (SimpleBlock c ext) = SimpleBlockConfig
   deriving (Generic, NoUnexpectedThunks)
 
 -- | No additional codec information is required for simple blocks
@@ -258,16 +254,9 @@ data instance CodecConfig (SimpleBlock c ext) = SimpleCodecConfig
 instance BlockHasCodecConfig (SimpleBlock c ext) where
   getCodecConfig = const SimpleCodecConfig
 
-defaultSimpleBlockConfig :: SecurityParam
-                         -> SlotLength
-                         -> BlockConfig (SimpleBlock c ext)
-defaultSimpleBlockConfig k slotLength = SimpleBlockConfig {
-      simpleBlockEraParams = HardFork.defaultEraParams k slotLength
-    }
-
 instance HasHardForkHistory (SimpleBlock c ext) where
   type HardForkIndices (SimpleBlock c ext) = '[()]
-  hardForkShape           = HardFork.singletonShape . simpleBlockEraParams
+  hardForkShape _         = HardFork.singletonShape . simpleLedgerEraParams
   hardForkTransitions _ _ = HardFork.transitionsUnknown
 
 {-------------------------------------------------------------------------------
@@ -285,9 +274,22 @@ class ( SimpleCrypto c
   Update the ledger
 -------------------------------------------------------------------------------}
 
+data SimpleLedgerConfig c ext = SimpleLedgerConfig {
+      -- | Config required by the various kinds of mock block (PFT, Praos, ..)
+      simpleMockLedgerConfig :: !(MockLedgerConfig c ext)
+
+      -- | Era parameters
+    , simpleLedgerEraParams  :: !HardFork.EraParams
+    }
+  deriving (Generic)
+
+deriving instance Show (MockLedgerConfig c ext) => Show (SimpleLedgerConfig c ext)
+deriving instance NoUnexpectedThunks (MockLedgerConfig c ext)
+               => NoUnexpectedThunks (SimpleLedgerConfig c ext)
+
 instance MockProtocolSpecific c ext
       => IsLedger (LedgerState (SimpleBlock c ext)) where
-  type LedgerCfg (LedgerState (SimpleBlock c ext)) = MockLedgerConfig       c ext
+  type LedgerCfg (LedgerState (SimpleBlock c ext)) = SimpleLedgerConfig c ext
   type LedgerErr (LedgerState (SimpleBlock c ext)) = MockError (SimpleBlock c ext)
 
   applyChainTick _ = Ticked

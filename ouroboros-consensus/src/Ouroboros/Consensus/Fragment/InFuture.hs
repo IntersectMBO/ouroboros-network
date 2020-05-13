@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 -- | Intended for qualified import
 --
@@ -22,6 +23,7 @@ module Ouroboros.Consensus.Fragment.InFuture (
   ) where
 
 import           Data.Bifunctor
+import           Data.Proxy
 import           Data.Time (NominalDiffTime, diffUTCTime)
 import           Data.Word
 
@@ -36,7 +38,6 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.Abstract
@@ -105,7 +106,7 @@ clockSkewInSeconds = ClockSkew . secondsToNominalDiffTime
 -------------------------------------------------------------------------------}
 
 reference :: forall m blk. (Monad m, UpdateLedger blk, HasHardForkHistory blk)
-          => TopLevelConfig blk
+          => LedgerConfig blk
           -> ClockSkew
           -> SystemTime m
           -> CheckInFuture m blk
@@ -120,12 +121,8 @@ reference cfg (ClockSkew clockSkew) SystemTime{..} = CheckInFuture {
                systemTimeStart
                (ledgerTipSlot
                   (VF.validatedLedger validated))
-               (hardForkShape
-                  (configBlock cfg))
-               (hardForkTransitions
-                  (configLedger cfg)
-                  (VF.validatedLedger validated))
-               )
+               (hardForkShape (Proxy @blk) cfg)
+               (hardForkTransitions cfg (VF.validatedLedger validated)))
             now
             (VF.validatedFragment validated)
     }

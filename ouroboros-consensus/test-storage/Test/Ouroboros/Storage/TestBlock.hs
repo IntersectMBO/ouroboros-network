@@ -201,12 +201,9 @@ instance HasHeader (Header TestBlock) where
   blockInvariant = const True
 
 data instance BlockConfig TestBlock = TestBlockConfig {
-      -- | Era parameters
-      testBlockEraParams    :: !HardFork.EraParams
-
       -- | Whether the test block can be EBBs or not. This can vary per test
       -- case. It will be used by 'validateEnvelope' to forbid EBBs 'False'.
-    , testBlockEBBsAllowed  :: !Bool
+      testBlockEBBsAllowed  :: !Bool
 
       -- | Number of core nodes
       --
@@ -455,7 +452,7 @@ data TestBlockError =
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 instance IsLedger (LedgerState TestBlock) where
-  type LedgerCfg (LedgerState TestBlock) = ()
+  type LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
   type LedgerErr (LedgerState TestBlock) = TestBlockError
 
   applyChainTick _ = Ticked
@@ -532,8 +529,7 @@ instance ValidateEnvelope TestBlock where
       epochSlots =
           unEpochSize
         . HardFork.eraEpochSize
-        . testBlockEraParams
-        . configBlock
+        . configLedger
         $ cfg
 
 instance LedgerSupportsProtocol TestBlock where
@@ -542,7 +538,7 @@ instance LedgerSupportsProtocol TestBlock where
 
 instance HasHardForkHistory TestBlock where
   type HardForkIndices TestBlock = '[()]
-  hardForkShape           = HardFork.singletonShape . testBlockEraParams
+  hardForkShape _         = HardFork.singletonShape
   hardForkTransitions _ _ = HardFork.transitionsUnknown
 
 testInitLedger :: LedgerState TestBlock
@@ -567,10 +563,9 @@ mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
           , bftSignKey  = SignKeyMockDSIGN 0
           , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
           }
-      , configLedger = ()
+      , configLedger = eraParams
       , configBlock  = TestBlockConfig {
-            testBlockEraParams    = eraParams
-          , testBlockEBBsAllowed  = chunkCanContainEBB
+            testBlockEBBsAllowed  = chunkCanContainEBB
           , testBlockNumCoreNodes = numCoreNodes
           }
       }

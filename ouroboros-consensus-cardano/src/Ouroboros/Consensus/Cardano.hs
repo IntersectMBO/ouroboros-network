@@ -35,6 +35,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node as X
 import           Ouroboros.Consensus.Byron.Protocol (PBftByronCrypto)
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node ()
 import           Ouroboros.Consensus.Mock.Node.BFT as X
@@ -82,7 +83,7 @@ data Protocol blk p where
     :: NumCoreNodes
     -> CoreNodeId
     -> SecurityParam
-    -> BlockConfig MockBftBlock
+    -> HardFork.EraParams
     -> Protocol MockBftBlock ProtocolMockBFT
 
   -- | Run Praos against the mock ledger
@@ -90,7 +91,7 @@ data Protocol blk p where
     :: NumCoreNodes
     -> CoreNodeId
     -> PraosParams
-    -> BlockConfig MockPraosBlock
+    -> HardFork.EraParams
     -> Protocol MockPraosBlock ProtocolMockPraos
 
   -- | Run Praos against the mock ledger but with an explicit leader schedule
@@ -98,14 +99,14 @@ data Protocol blk p where
     :: NumCoreNodes
     -> CoreNodeId
     -> PraosParams
-    -> BlockConfig MockPraosRuleBlock
+    -> HardFork.EraParams
     -> LeaderSchedule
     -> Protocol MockPraosRuleBlock ProtocolLeaderSchedule
 
   -- | Run PBFT against the mock ledger
   ProtocolMockPBFT
     :: PBftParams
-    -> BlockConfig MockPBftBlock
+    -> HardFork.EraParams
     -> CoreNodeId
     -> Protocol MockPBftBlock ProtocolMockPBFT
 
@@ -143,17 +144,17 @@ verifyProtocol ProtocolRealTPraos{}     = Refl
 
 -- | Data required to run the selected protocol
 protocolInfo :: Protocol blk p -> ProtocolInfo blk
-protocolInfo (ProtocolMockBFT nodes nid params cfg) =
-    protocolInfoBft nodes nid params cfg
+protocolInfo (ProtocolMockBFT nodes nid k paramsEra) =
+    protocolInfoBft nodes nid k paramsEra
 
-protocolInfo (ProtocolMockPraos nodes nid params cfg) =
-    protocolInfoPraos nodes nid params cfg
+protocolInfo (ProtocolMockPraos nodes nid paramsPraos paramsEra) =
+    protocolInfoPraos nodes nid paramsPraos paramsEra
 
-protocolInfo (ProtocolLeaderSchedule nodes nid params cfg schedule) =
-    protocolInfoPraosRule nodes nid params cfg schedule
+protocolInfo (ProtocolLeaderSchedule nodes nid paramsPraos paramsEra schedule) =
+    protocolInfoPraosRule nodes nid paramsPraos paramsEra schedule
 
-protocolInfo (ProtocolMockPBFT params cfg nid) =
-    protocolInfoMockPBFT params cfg nid
+protocolInfo (ProtocolMockPBFT paramsPBft paramsEra nid) =
+    protocolInfoMockPBFT paramsPBft paramsEra nid
 
 protocolInfo (ProtocolRealPBFT gc mthr prv swv mplc) =
     protocolInfoByron gc mthr prv swv mplc
@@ -213,4 +214,3 @@ protocolClientInfo (ProtocolClientRealPBFT epochSlots) =
 
 protocolClientInfo ProtocolClientRealTPraos =
     protocolClientInfoShelley
-

@@ -11,6 +11,7 @@ import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
 import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
@@ -24,13 +25,13 @@ type MockPraosRuleBlock = SimplePraosRuleBlock SimpleMockCrypto
 protocolInfoPraosRule :: NumCoreNodes
                       -> CoreNodeId
                       -> PraosParams
-                      -> BlockConfig MockPraosRuleBlock
+                      -> HardFork.EraParams
                       -> LeaderSchedule
                       -> ProtocolInfo MockPraosRuleBlock
 protocolInfoPraosRule numCoreNodes
                       nid
                       params
-                      cfg
+                      eraParams
                       schedule =
     ProtocolInfo {
       pInfoConfig = TopLevelConfig {
@@ -46,8 +47,8 @@ protocolInfoPraosRule numCoreNodes
                 }
             , wlsConfigNodeId   = nid
             }
-        , configLedger = ()
-        , configBlock  = cfg
+        , configLedger = SimpleLedgerConfig () eraParams
+        , configBlock  = SimpleBlockConfig
         }
     , pInfoInitLedger = ExtLedgerState
         { ledgerState = genesisSimpleLedgerState addrDist

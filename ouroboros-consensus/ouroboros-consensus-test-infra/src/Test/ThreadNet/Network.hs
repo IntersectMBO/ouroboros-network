@@ -600,7 +600,7 @@ runThreadNetwork ThreadNetworkArgs
         , cdbCheckIntegrity       = nodeCheckIntegrity cfg
         , cdbGenesis              = return initLedger
         , cdbCheckInFuture        = LogicalClock.checkInFuture
-                                      cfg
+                                      (configLedger cfg)
                                       (unwrapLogicalClock clock)
         , cdbAddHdrEnv            = nodeAddHeaderEnvelope (Proxy @blk)
         , cdbImmDbCacheConfig     = Index.CacheConfig 2 60
@@ -751,7 +751,7 @@ runThreadNetwork ThreadNetworkArgs
                  registry
                  (blockchainTimeTracer tracers)
                  (unwrapLogicalClock clock)
-                 pInfoConfig
+                 (configLedger pInfoConfig)
                  (ledgerState <$> ChainDB.getCurrentLedger chainDB)
 
       let nodeArgs = NodeArgs

@@ -13,6 +13,7 @@ import           Test.Tasty.QuickCheck
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node ()
 import           Ouroboros.Consensus.Mock.Node.Praos (protocolInfoPraos)
@@ -115,7 +116,7 @@ prop_simple_praos_convergence
                                       numCoreNodes
                                       nid
                                       params
-                                      (defaultSimpleBlockConfig
+                                      (HardFork.defaultEraParams
                                         praosSecurityParam
                                         praosSlotLength)
             , rekeying    = Nothing

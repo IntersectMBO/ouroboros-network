@@ -17,6 +17,7 @@ import           Ouroboros.Network.Block (SlotNo (..), blockSlot)
 import           Ouroboros.Network.MockChain.Chain (foldChain)
 
 import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError (..))
 import           Ouroboros.Consensus.Mock.Ledger.Block
@@ -103,7 +104,7 @@ prop_simple_pbft_convergence
             , nodeInfo    = plainTestNodeInitialization .
                             protocolInfoMockPBFT
                               params
-                              (defaultSimpleBlockConfig k slotLength)
+                              (HardFork.defaultEraParams k slotLength)
             , rekeying    = Nothing
             , txGenExtra  = ()
             }

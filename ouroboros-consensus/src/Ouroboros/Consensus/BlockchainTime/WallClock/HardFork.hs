@@ -1,6 +1,8 @@
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Consensus.BlockchainTime.WallClock.HardFork (
     hardForkBlockchainTime
@@ -8,6 +10,7 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.HardFork (
 
 import           Control.Monad
 import           Control.Tracer
+import           Data.Proxy
 import           Data.Time (NominalDiffTime, UTCTime)
 import           Data.Void
 import           GHC.Stack
@@ -15,7 +18,6 @@ import           GHC.Stack
 import           Ouroboros.Consensus.BlockchainTime.API
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Util
-import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -33,13 +35,13 @@ hardForkBlockchainTime :: forall m blk.
                        => ResourceRegistry m
                        -> Tracer m TraceBlockchainTimeEvent
                        -> SystemTime m
-                       -> TopLevelConfig blk
+                       -> LedgerConfig blk
                        -> STM m (LedgerState blk)
                        -> m (BlockchainTime m)
 hardForkBlockchainTime registry
                        tracer
                        time@SystemTime{..}
-                       TopLevelConfig{..}
+                       cfg
                        getLedgerState = do
     run <- HF.runWithCachedSummary (summarize <$> getLedgerState)
     waitUntilSystemStart tracer time
@@ -57,8 +59,8 @@ hardForkBlockchainTime registry
     summarize st = HF.summarize
                      systemTimeStart
                      (ledgerTipSlot st)
-                     (hardForkShape       configBlock)
-                     (hardForkTransitions configLedger st)
+                     (hardForkShape (Proxy @blk) cfg)
+                     (hardForkTransitions        cfg st)
 
     loop :: HF.RunWithCachedSummary xs m
          -> StrictTVar m CurrentSlot
