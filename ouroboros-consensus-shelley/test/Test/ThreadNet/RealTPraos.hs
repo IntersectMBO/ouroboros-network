@@ -142,9 +142,12 @@ prop_simple_real_tpraos_convergence k d
     maxKESEvolution = 100 -- TODO
 
     coreNodes :: [CoreNode TPraosMockCrypto]
-    coreNodes = withSeed initSeed $
-      replicateM (fromIntegral n) $
-      genCoreNode initialKESPeriod
+    coreNodes = withSeed initSeed $ do
+      x <- genCoreNode (SL.KESPeriod 1)
+      xs <- replicateM (fromIntegral $ n - 1) $
+        genCoreNode initialKESPeriod
+      return $ x:xs
+
 
     genesisConfig :: ShelleyGenesis TPraosMockCrypto
     genesisConfig = mkGenesisConfig k d maxKESEvolution coreNodes
