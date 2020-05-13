@@ -162,11 +162,11 @@ forgeTPraosFields :: ( MonadRandom m
                   -> (TPraosToSign c -> toSign)
                   -> m (TPraosFields c toSign)
 forgeTPraosFields updateNodeState TPraosProof{..} kesPeriod mkToSign = do
-    hotKESKey   <- evolveKESKeyIfNecessary updateNodeState kesPeriod
+    hotKESKey <- evolveKESKeyIfNecessary updateNodeState (SL.KESPeriod kesEvolution)
     let
       signature = signedKES
         ()
-        kesPeriodNat
+        kesEvolution
         (mkToSign signedFields)
         hotKESKey
     return TPraosFields {
@@ -175,6 +175,9 @@ forgeTPraosFields updateNodeState TPraosProof{..} kesPeriod mkToSign = do
       }
   where
     SL.KESPeriod kesPeriodNat = kesPeriod
+    SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
+
+    kesEvolution = if kesPeriodNat >= c0 then kesPeriodNat - c0 else 0
 
     TPraosIsCoreNode{..} = tpraosIsCoreNode
 
@@ -193,7 +196,7 @@ forgeTPraosFields updateNodeState TPraosProof{..} kesPeriod mkToSign = do
 evolveKESKeyIfNecessary
   :: forall m c. (MonadRandom m, TPraosCrypto c)
   => NodeState.Update m (TPraosNodeState c)
-  -> SL.KESPeriod
+  -> SL.KESPeriod -- ^ Relative KES period (to the start period of the OCert)
   -> m (SignKeyKES (KES c))
 evolveKESKeyIfNecessary updateNodeState (SL.KESPeriod kesPeriod) = do
     getOudatedKeyOrCurrentKey >>= \case
