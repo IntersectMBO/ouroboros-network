@@ -57,7 +57,7 @@ import qualified Cardano.Crypto.VRF.Class as VRF
 import           Cardano.Prelude (Natural, NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
 
-import           Ouroboros.Network.Block (pointSlot)
+import           Ouroboros.Network.Block (pointSlot, unSlotNo)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Node.State as NodeState
@@ -338,6 +338,19 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       TPraosIsNotACoreNode          -> return Nothing
       TPraosIsACoreNode isACoreNode -> go isACoreNode
     where
+
+      -- | Check whether we have an operational certificate valid for the
+      -- current KES period.
+      hasValidOCert :: TPraosIsCoreNode c -> Bool
+      hasValidOCert TPraosIsCoreNode{tpraosIsCoreNodeOpCert} =
+          kesPeriod > c0 && kesPeriod < c1
+        where
+          SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
+          c1 = c0 + fromIntegral (tpraosMaxKESEvo tpraosParams)
+          -- The current KES period
+          kesPeriod = fromIntegral $
+            unSlotNo slot `div` tpraosSlotsPerKESPeriod tpraosParams
+
       go :: MonadRandom m => TPraosIsCoreNode c -> m (Maybe (TPraosProof c))
       go icn = do
         let TPraosIsCoreNode {
@@ -355,6 +368,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
         return $ case Map.lookup slot (SL.lvOverlaySched lv) of
           Nothing
             | meetsLeaderThreshold cfg lv (SL.coerceKeyRole vkhCold) y
+            , hasValidOCert icn
               -- Slot isn't in the overlay schedule, so we're in Praos
             -> Just TPraosProof {
                  tpraosEta        = coerce rho
@@ -370,7 +384,9 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
           -- The given genesis key has authority to produce a block in this
           -- slot. Check whether we're its delegate.
           Just (SL.ActiveSlot gkhash) -> case Map.lookup gkhash dlgMap of
-              Just dlgHash | SL.coerceKeyRole dlgHash == vkhCold
+              Just dlgHash
+                | SL.coerceKeyRole dlgHash == vkhCold
+                , hasValidOCert icn
                 -> Just TPraosProof {
                     tpraosEta        = coerce rho
                     -- Note that this leader value is not checked for slots in
