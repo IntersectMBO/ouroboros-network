@@ -146,8 +146,8 @@ forgePraosFields PraosConfig{..} updateState PraosProof{..} mkToSign = do
     -- For the mock implementation, we consider the KES period to be the slot.
     -- In reality, there will be some kind of constant slotsPerPeriod factor.
     -- (Put another way, we consider slotsPerPeriod to be 1 here.)
-    let kesPeriod :: Natural
-        kesPeriod = fromIntegral (unSlotNo praosProofSlot)
+    let kesPeriod :: Period
+        kesPeriod = fromIntegral $ unSlotNo praosProofSlot
 
     oldKey <- runUpdate updateState $ \case
       PraosKeyEvolving ->
@@ -166,14 +166,11 @@ forgePraosFields PraosConfig{..} updateState PraosProof{..} mkToSign = do
         , praosRho     = praosProofRho
         , praosY       = praosProofY
         }
-        m = signedKES () kesPeriod (mkToSign signedFields) newKey
-    case m of
-      Nothing -> error "mkOutoborosPayload: signedKES failed"
-      Just signature -> do
-        return $ PraosFields {
-            praosSignature   = signature
-          , praosExtraFields = signedFields
-          }
+        signature = signedKES () kesPeriod (mkToSign signedFields) newKey
+    return $ PraosFields {
+        praosSignature   = signature
+      , praosExtraFields = signedFields
+      }
 
 {-------------------------------------------------------------------------------
   Praos specific types
@@ -427,7 +424,7 @@ leaderThreshold :: forall c. PraosCrypto c
                 -> Double
 leaderThreshold st xs s n =
     let a = stakeWithDefault 0 n $ infosStake st xs (slotEpoch st s)
-    in  2 ^ (byteCount (Proxy :: Proxy (PraosHash c)) * 8) * phi st a
+    in  2 ^ (sizeHash (Proxy :: Proxy (PraosHash c)) * 8) * phi st a
 
 rhoYT :: PraosCrypto c
       => ConsensusConfig (Praos c)

@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveAnyClass       #-}
 {-# LANGUAGE DeriveGeneric        #-}
@@ -56,7 +57,7 @@ import qualified Cardano.Crypto.VRF.Class as VRF
 import           Cardano.Prelude (Natural, NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
 
-import           Ouroboros.Network.Block (pointSlot)
+import           Ouroboros.Network.Block (pointSlot, unSlotNo)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Node.State as NodeState
@@ -132,8 +133,8 @@ type TPraosValidateView c = SL.BHeader c
 -------------------------------------------------------------------------------}
 
 data TPraosNodeState c =
-    -- | The online KES key used to sign blocks is available
-    TPraosKeyAvailable !(SignKeyKES (KES c))
+    -- | The online KES key used to sign blocks is available at the given period
+    TPraosKeyAvailable !(HotKey c)
 
     -- | The KES key is being evolved by another thread
     --
@@ -161,22 +162,22 @@ forgeTPraosFields :: ( MonadRandom m
                   -> (TPraosToSign c -> toSign)
                   -> m (TPraosFields c toSign)
 forgeTPraosFields updateNodeState TPraosProof{..} kesPeriod mkToSign = do
-    hotKESKey   <- evolveKESKeyIfNecessary updateNodeState kesPeriod
+    hotKESKey <- evolveKESKeyIfNecessary updateNodeState (SL.KESPeriod kesEvolution)
     let
-      mbSignature = signedKES
+      signature = signedKES
         ()
-        kesPeriodNat
+        kesEvolution
         (mkToSign signedFields)
         hotKESKey
-    case mbSignature of
-      Nothing        -> error "signedKES failed"
-      Just signature ->
-        return TPraosFields {
-            tpraosSignature = signature
-          , tpraosToSign    = mkToSign signedFields
-          }
+    return TPraosFields {
+        tpraosSignature = signature
+      , tpraosToSign    = mkToSign signedFields
+      }
   where
     SL.KESPeriod kesPeriodNat = kesPeriod
+    SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
+
+    kesEvolution = if kesPeriodNat >= c0 then kesPeriodNat - c0 else 0
 
     TPraosIsCoreNode{..} = tpraosIsCoreNode
 
@@ -195,45 +196,51 @@ forgeTPraosFields updateNodeState TPraosProof{..} kesPeriod mkToSign = do
 evolveKESKeyIfNecessary
   :: forall m c. (MonadRandom m, TPraosCrypto c)
   => NodeState.Update m (TPraosNodeState c)
-  -> SL.KESPeriod
+  -> SL.KESPeriod -- ^ Relative KES period (to the start period of the OCert)
   -> m (SignKeyKES (KES c))
 evolveKESKeyIfNecessary updateNodeState (SL.KESPeriod kesPeriod) = do
     getOudatedKeyOrCurrentKey >>= \case
       Right currentKey -> return currentKey
       Left outdatedKey -> do
-        newKey <- evolveKey outdatedKey
+        let newKey@(HotKey _ key) = evolveKey outdatedKey
         saveNewKey newKey
-        return newKey
+        return key
   where
-    -- | Return either (@Left@) an outdated key (setting the node state to
-    -- 'TPraosKeyEvolving') or (@Right@) a key that's up-to-date w.r.t. the
-    -- current KES period (leaving the node state to 'TPraosKeyAvailable').
+    -- | Return either (@Left@) an outdated key with its current period (setting
+    -- the node state to 'TPraosKeyEvolving') or (@Right@) a key that's
+    -- up-to-date w.r.t. the current KES period (leaving the node state to
+    -- 'TPraosKeyAvailable').
     getOudatedKeyOrCurrentKey
-      :: m (Either (SignKeyKES (KES c)) (SignKeyKES (KES c)))
+      :: m (Either (HotKey c) (SignKeyKES (KES c)))
     getOudatedKeyOrCurrentKey = NodeState.runUpdate updateNodeState $ \case
       TPraosKeyEvolving ->
         -- Another thread is currently evolving the key; wait
         Nothing
-      TPraosKeyAvailable key
-        | let kesPeriodOfKey = KES.currentPeriodKES () key
-        , kesPeriodOfKey < kesPeriod
+      TPraosKeyAvailable hk@(HotKey kesPeriodOfKey key)
+        | kesPeriodOfKey < kesPeriod
           -- Must evolve key
-        -> return (TPraosKeyEvolving, Left key)
+        -> return (TPraosKeyEvolving, Left hk)
         | otherwise
-        -> return (TPraosKeyAvailable key, Right key)
+        -> return (TPraosKeyAvailable hk, Right key)
       TPraosNoKey ->
         error "no KES key available"
 
     -- | Evolve the given key so that its KES period matches @kesPeriod@.
-    evolveKey :: SignKeyKES (KES c) -> m (SignKeyKES (KES c))
-    evolveKey outdatedKey =
-      case KES.updateKES () outdatedKey kesPeriod of
-        -- TODO
-        Nothing         -> error "Could not update KES key"
-        Just evolvedKey -> return evolvedKey
+    evolveKey :: HotKey c -> HotKey c
+    evolveKey (HotKey oldPeriod outdatedKey) = go outdatedKey oldPeriod kesPeriod
+      where
+        go !sk c t
+          | t < c
+          = error "Asked to evolve KES key to old period"
+          | c == t
+          = HotKey kesPeriod sk
+          | otherwise
+          = case KES.updateKES () sk c of
+              Nothing  -> error "Could not update KES key"
+              Just sk' -> go sk' (c + 1) t
 
     -- | PRECONDITION: we're in the 'TPraosKeyEvolving' node state.
-    saveNewKey :: SignKeyKES (KES c) -> m ()
+    saveNewKey :: HotKey c -> m ()
     saveNewKey newKey = NodeState.runUpdate updateNodeState $ \case
       TPraosKeyEvolving -> Just (TPraosKeyAvailable newKey, ())
       _                 -> error "must be in evolving state"
@@ -331,6 +338,19 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       TPraosIsNotACoreNode          -> return Nothing
       TPraosIsACoreNode isACoreNode -> go isACoreNode
     where
+
+      -- | Check whether we have an operational certificate valid for the
+      -- current KES period.
+      hasValidOCert :: TPraosIsCoreNode c -> Bool
+      hasValidOCert TPraosIsCoreNode{tpraosIsCoreNodeOpCert} =
+          kesPeriod > c0 && kesPeriod < c1
+        where
+          SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
+          c1 = c0 + fromIntegral (tpraosMaxKESEvo tpraosParams)
+          -- The current KES period
+          kesPeriod = fromIntegral $
+            unSlotNo slot `div` tpraosSlotsPerKESPeriod tpraosParams
+
       go :: MonadRandom m => TPraosIsCoreNode c -> m (Maybe (TPraosProof c))
       go icn = do
         let TPraosIsCoreNode {
@@ -348,6 +368,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
         return $ case Map.lookup slot (SL.lvOverlaySched lv) of
           Nothing
             | meetsLeaderThreshold cfg lv (SL.coerceKeyRole vkhCold) y
+            , hasValidOCert icn
               -- Slot isn't in the overlay schedule, so we're in Praos
             -> Just TPraosProof {
                  tpraosEta        = coerce rho
@@ -363,7 +384,9 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
           -- The given genesis key has authority to produce a block in this
           -- slot. Check whether we're its delegate.
           Just (SL.ActiveSlot gkhash) -> case Map.lookup gkhash dlgMap of
-              Just dlgHash | SL.coerceKeyRole dlgHash == vkhCold
+              Just dlgHash
+                | SL.coerceKeyRole dlgHash == vkhCold
+                , hasValidOCert icn
                 -> Just TPraosProof {
                     tpraosEta        = coerce rho
                     -- Note that this leader value is not checked for slots in
@@ -408,9 +431,8 @@ mkShelleyGlobals :: TPraosParams -> SL.Globals
 mkShelleyGlobals TPraosParams {..} = SL.Globals {
       epochInfo         = tpraosEpochInfo
     , slotsPerKESPeriod = tpraosSlotsPerKESPeriod
-      -- TODO where does 3 * k come from?
-    , slotsPrior        = 3 * k
-    , startRewards      = 3 * k
+    , stabilityWindow   = ceiling $ 3 * (toRational f / fromIntegral k)
+    , randomnessStabilisationWindow = ceiling $ 4 * (toRational f / fromIntegral k)
     , securityParameter = k
     , maxKESEvo         = tpraosMaxKESEvo
     , quorum            = tpraosQuorum
@@ -420,6 +442,7 @@ mkShelleyGlobals TPraosParams {..} = SL.Globals {
     }
   where
     SecurityParam k = tpraosSecurityParam
+    f = SL.intervalValue . SL.activeSlotVal $ tpraosLeaderF
 
 -- | Check whether this node meets the leader threshold to issue a block.
 meetsLeaderThreshold

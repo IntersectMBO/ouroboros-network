@@ -53,10 +53,10 @@ protocolInfoMockPBFT params eraParams nid =
                        ]
 
     signKey :: CoreNodeId -> SignKeyDSIGN MockDSIGN
-    signKey (CoreNodeId n) = SignKeyMockDSIGN (fromIntegral n)
+    signKey (CoreNodeId n) = SignKeyMockDSIGN n
 
     verKey :: CoreNodeId -> VerKeyDSIGN MockDSIGN
-    verKey (CoreNodeId n) = VerKeyMockDSIGN (fromIntegral n)
+    verKey (CoreNodeId n) = VerKeyMockDSIGN n
 
     addrDist :: AddrDist
     addrDist = mkAddrDist (pbftNumNodes params)

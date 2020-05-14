@@ -33,6 +33,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Shelley.Spec.Ledger.BaseTypes (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.Credential as SL
 import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
@@ -40,7 +41,6 @@ import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as STS
 import qualified Shelley.Spec.Ledger.STS.Ledger as STS
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
-import qualified Shelley.Spec.Ledger.TxData as SL
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (ConcreteCrypto,
                      hashKeyVRF)
 import qualified Test.Shelley.Spec.Ledger.Examples.Examples as Examples
@@ -115,7 +115,7 @@ testQueries = testGroup "Queries"
       , TkListLen 1
       , TkListLen 2
       , TkInt 0
-      , TkBytes "\147\184\133\173"
+      , TkBytes "}\234\&6+"
       ]
 
     currentPParamsTerm =
@@ -247,7 +247,7 @@ testResults = testGroup "Results"
     proposedPParamsUpdatesTerm :: FlatTerm
     proposedPParamsUpdatesTerm =
       [ TkMapLen 1
-      , TkBytes "\147\184\133\173"
+      , TkBytes "}\234\&6+"
       , TkMapLen 1
       , TkInt 5
       , TkInt 100
@@ -256,12 +256,12 @@ testResults = testGroup "Results"
     stakeDistributionTerm :: FlatTerm
     stakeDistributionTerm =
       [ TkMapLen 1
-      , TkBytes "\147\184\133\173"
+      , TkBytes "\247\223\&4\142"
       , TkListLen 2
       , TkListLen 2
       , TkInt 1
       , TkInt 1
-      , TkBytes "\147\184\133\173"
+      , TkBytes "}\234\&6+"
       ]
 
     goldenTestResult :: Query Block result -> result -> FlatTerm -> Assertion
@@ -282,48 +282,35 @@ test_golden_Block = goldenTestCBOR
     , TkListLen 15
     , TkInt 2
     , TkInt 20
-    , TkBytes "\SO\212F\170"
-    , TkInt 3546075839721582641
-    , TkInt 3546075839721582641
+    , TkBytes "\191|nI"
+    , TkBytes "16260160"
+    , TkBytes "16260160"
     , TkListLen 2
     , TkInt 2
-    , TkListLen 2
-    , TkInt 3546075839721582641
-    , TkInteger 155720561651862627124907358847946323278
+    , TkBytes "16260160\245N"
     , TkListLen 2
     , TkInt 0
-    , TkListLen 2
-    , TkInt 3546075839721582641
-    , TkInteger 132220243341478360044794887852609007894
-    , TkInt 216
-    , TkBytes "\141\&6\253\&0"
-    , TkInt 3546075839721582641
+    , TkBytes "16260160q\SYN"
+    , TkInt 208
+    , TkBytes "\211W9O"
+    , TkBytes "16260160"
     , TkInt 0
     , TkInt 0
-    , TkListLen 2
-    , TkBytes "\198\FS[\226"
-    , TkInt 3546075839721582641
+    , TkBytes "\ETX\148G\SO16260160"
     , TkInt 0
     , TkInt 0
-    , TkListLen 2
-    , TkInteger 170325556512963171230836426693446393414
-    , TkListLen 2
-    , TkInt 3546075839721582641
-    , TkInt 1
+    , TkBytes "fh\ACK\135o\180w\134\DC3.\146pK\223\129\193\&16260160\NUL\NUL\NUL\NUL\NUL\NUL\NUL\SOH"
     , TkListLen 1
     , TkMapLen 5
     , TkInt 0
-    , TkListBegin
+    , TkListLen 1
     , TkListLen 2
-    , TkBytes "F\248m\RS"
+    , TkBytes "-/\249\&7"
     , TkInt 0
-    , TkBreak
     , TkInt 1
     , TkListLen 1
-    , TkListLen 4
-    , TkInt 0
-    , TkBytes "\174\232Lp"
-    , TkBytes "\212.\173\177"
+    , TkListLen 2
+    , TkBytes "\STX\EOT\140\196$0P\247\158"
     , TkInt 9999999999999998
     , TkInt 2
     , TkInt 1
@@ -332,7 +319,7 @@ test_golden_Block = goldenTestCBOR
     , TkInt 6
     , TkListLen 2
     , TkMapLen 2
-    , TkBytes "\133\130\191\198"
+    , TkBytes "u\197c\227"
     , TkMapLen 2
     , TkInt 8
     , TkInt 200
@@ -340,7 +327,7 @@ test_golden_Block = goldenTestCBOR
     , TkListLen 2
     , TkInt 1
     , TkBytes "e\138\176\224\245\253\239\216h\168\232\ENQ\209\SOH\169\140\195Z\181\ETB\233}\243\147q\130\218\fz\243\139="
-    , TkBytes "\244\249\211j"
+    , TkBytes "\229\221D\172"
     , TkMapLen 2
     , TkInt 8
     , TkInt 200
@@ -354,20 +341,14 @@ test_golden_Block = goldenTestCBOR
     , TkInt 0
     , TkListLen 3
     , TkListLen 2
-    , TkInt 3545801000469477428
+    , TkBytes "00000214"
+    , TkBytes "6\139\GS\DC200000214"
     , TkListLen 2
-    , TkBytes "7F\155\210"
-    , TkInt 3545801000469477428
+    , TkBytes "16415019"
+    , TkBytes "6\139\GS\DC216415019"
     , TkListLen 2
-    , TkInt 3472328296227811636
-    , TkListLen 2
-    , TkBytes "7F\155\210"
-    , TkInt 3472328296227811636
-    , TkListLen 2
-    , TkInt 3546079142551236921
-    , TkListLen 2
-    , TkBytes "7F\155\210"
-    , TkInt 3546079142551236921
+    , TkBytes "15795584"
+    , TkBytes "6\139\GS\DC215795584"
     , TkMapLen 0
     ]
 
@@ -379,41 +360,31 @@ test_golden_Header = goldenTestCBOR
     , TkListLen 15
     , TkInt 2
     , TkInt 20
-    , TkBytes "\SO\212F\170"
-    , TkInt 3546075839721582641
-    , TkInt 3546075839721582641
+    , TkBytes "\191|nI"
+    , TkBytes "16260160"
+    , TkBytes "16260160"
     , TkListLen 2
     , TkInt 2
-    , TkListLen 2
-    , TkInt 3546075839721582641
-    , TkInteger 155720561651862627124907358847946323278
+    , TkBytes "16260160\245N"
     , TkListLen 2
     , TkInt 0
-    , TkListLen 2
-    , TkInt 3546075839721582641
-    , TkInteger 132220243341478360044794887852609007894
-    , TkInt 216
-    , TkBytes "\141\&6\253\&0"
-    , TkInt 3546075839721582641
+    , TkBytes "16260160q\SYN"
+    , TkInt 208
+    , TkBytes "\211W9O"
+    , TkBytes "16260160"
     , TkInt 0
     , TkInt 0
-    , TkListLen 2
-    , TkBytes "\198\FS[\226"
-    , TkInt 3546075839721582641
+    , TkBytes "\ETX\148G\SO16260160"
     , TkInt 0
     , TkInt 0
-    , TkListLen 2
-    , TkInteger 170325556512963171230836426693446393414
-    , TkListLen 2
-    , TkInt 3546075839721582641
-    , TkInt 1
+    , TkBytes "fh\ACK\135o\180w\134\DC3.\146pK\223\129\193\&16260160\NUL\NUL\NUL\NUL\NUL\NUL\NUL\SOH"
     ]
 
 test_golden_HeaderHash :: Assertion
 test_golden_HeaderHash = goldenTestCBOR
     toCBOR
     (blockHash exampleBlock)
-    [ TkBytes "\237\239U\235"
+    [ TkBytes "=87\168"
     ]
 
 test_golden_GenTx :: Assertion
@@ -423,17 +394,14 @@ test_golden_GenTx = goldenTestCBORInCBOR
     [ TkListLen 3
     , TkMapLen 6
     , TkInt 0
-    , TkListBegin
+    , TkListLen 1
     , TkListLen 2
-    , TkBytes "`P\aC"
+    , TkBytes "\157\184\164\ETB"
     , TkInt 0
-    , TkBreak
     , TkInt 1
     , TkListLen 1
-    , TkListLen 4
-    , TkInt 0
-    , TkBytes "\174\232Lp"
-    , TkBytes "\212.\173\177"
+    , TkListLen 2
+    , TkBytes "\STX\EOT\140\196$0P\247\158"
     , TkInt 9999999999999726
     , TkInt 2
     , TkInt 3
@@ -445,21 +413,21 @@ test_golden_GenTx = goldenTestCBORInCBOR
     , TkInt 0
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkListLen 2
     , TkInt 0
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\ENQ\214\186\134"
+    , TkBytes "\191\152\145\198"
     , TkListLen 2
     , TkInt 0
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\228 \204\167"
+    , TkBytes "\ACK7\193<"
     , TkListLen 10
     , TkInt 3
-    , TkBytes "\212.\173\177"
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
+    , TkBytes "0P\247\158"
     , TkInt 1
     , TkInt 5
     , TkTag 30
@@ -468,9 +436,9 @@ test_golden_GenTx = goldenTestCBORInCBOR
     , TkInt 10
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkListLen 1
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkListLen 0
     , TkListLen 2
     , TkString "alice.pool"
@@ -480,16 +448,16 @@ test_golden_GenTx = goldenTestCBORInCBOR
     , TkMapLen 2
     , TkListLen 2
     , TkInt 0
-    , TkBytes "oY\252#"
-    , TkInt 99
+    , TkBytes "\ACK7\193<"
+    , TkInt 110
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\228 \204\167"
-    , TkInt 110
+    , TkBytes "\144&R("
+    , TkInt 99
     , TkInt 6
     , TkListLen 2
     , TkMapLen 1
-    , TkBytes "\224\253Xv"
+    , TkBytes "Rsb\139"
     , TkMapLen 1
     , TkInt 5
     , TkInt 255
@@ -498,45 +466,29 @@ test_golden_GenTx = goldenTestCBORInCBOR
     , TkInt 0
     , TkListLen 8
     , TkListLen 2
-    , TkInt 3545803182228911155
+    , TkBytes "00000214"
+    , TkBytes "9\235\242\239\&00000214"
     , TkListLen 2
-    , TkBytes "\203\250K\GS"
-    , TkInt 3545803182228911155
+    , TkBytes "15485867"
+    , TkBytes "9\235\242\239\&15485867"
     , TkListLen 2
-    , TkInt 3904965248267073080
+    , TkBytes "15640725"
+    , TkBytes "9\235\242\239\&15640725"
     , TkListLen 2
-    , TkBytes "\203\250K\GS"
-    , TkInt 3904965248267073080
+    , TkBytes "16260160"
+    , TkBytes "9\235\242\239\&16260160"
     , TkListLen 2
-    , TkInt 3545801000469477428
+    , TkBytes "61943468"
+    , TkBytes "9\235\242\239\&61943468"
     , TkListLen 2
-    , TkBytes "\203\250K\GS"
-    , TkInt 3545801000469477428
+    , TkBytes "15950443"
+    , TkBytes "9\235\242\239\&15950443"
     , TkListLen 2
-    , TkInt 3546076964918998576
+    , TkBytes "16105301"
+    , TkBytes "9\235\242\239\&16105301"
     , TkListLen 2
-    , TkBytes "\203\250K\GS"
-    , TkInt 3546076964918998576
-    , TkListLen 2
-    , TkInt 3472328296227811636
-    , TkListLen 2
-    , TkBytes "\203\250K\GS"
-    , TkInt 3472328296227811636
-    , TkListLen 2
-    , TkInt 3546075839721582641
-    , TkListLen 2
-    , TkBytes "\203\250K\GS"
-    , TkInt 3546075839721582641
-    , TkListLen 2
-    , TkInt 3545797697639822903
-    , TkListLen 2
-    , TkBytes "\203\250K\GS"
-    , TkInt 3545797697639822903
-    , TkListLen 2
-    , TkInt 3545799879399256629
-    , TkListLen 2
-    , TkBytes "\203\250K\GS"
-    , TkInt 3545799879399256629
+    , TkBytes "15795584"
+    , TkBytes "9\235\242\239\&15795584"
     , TkNull
     ]
 
@@ -544,8 +496,7 @@ test_golden_GenTxId :: Assertion
 test_golden_GenTxId = goldenTestCBOR
     toCBOR
     (txId exampleGenTx)
-    [ TkBytes "\203\250K\GS"
-    ]
+    [ TkBytes "\253d\142\221" ]
 
 test_golden_ApplyTxErr :: Assertion
 test_golden_ApplyTxErr = goldenTestCBOR
@@ -662,7 +613,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkListLen 3
     , TkListLen 2
     , TkInt 10
-    , TkBytes "\178\131\GS)"
+    , TkBytes "*d\157H"
     , TkListLen 2
     , TkListLen 1
     , TkInt 0
@@ -693,25 +644,21 @@ test_golden_LedgerState = goldenTestCBOR
     , TkListLen 4
     , TkMapLen 2
     , TkListLen 2
-    , TkBytes "`P\aC"
+    , TkBytes "\157\184\164\ETB"
     , TkInt 1
-    , TkListLen 4
-    , TkInt 0
-    , TkBytes "\174\SOH\SO\ENQ"
-    , TkBytes "\ENQ\214\186\134"
+    , TkListLen 2
+    , TkBytes "\STX\131?\NAK\145\191\152\145\198"
     , TkInt 1000000000000000
     , TkListLen 2
-    , TkBytes "\203\250K\GS"
+    , TkBytes "\253d\142\221"
     , TkInt 0
-    , TkListLen 4
-    , TkInt 0
-    , TkBytes "\174\232Lp"
-    , TkBytes "\212.\173\177"
+    , TkListLen 2
+    , TkBytes "\STX\EOT\140\196$0P\247\158"
     , TkInt 9999999999999726
     , TkInt 271
     , TkInt 3
     , TkMapLen 1
-    , TkBytes "\224\253Xv"
+    , TkBytes "Rsb\139"
     , TkMapLen 1
     , TkInt 5
     , TkInt 255
@@ -720,28 +667,28 @@ test_golden_LedgerState = goldenTestCBOR
     , TkMapLen 3
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\ENQ\214\186\134"
+    , TkBytes "\ACK7\193<"
     , TkInt 10
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkInt 10
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\228 \204\167"
+    , TkBytes "\191\152\145\198"
     , TkInt 10
     , TkMapLen 3
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\ENQ\214\186\134"
+    , TkBytes "\ACK7\193<"
     , TkInt 0
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkInt 0
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\228 \204\167"
+    , TkBytes "\191\152\145\198"
     , TkInt 0
     , TkMapLen 0
     , TkMapLen 3
@@ -751,55 +698,55 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 0
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkListLen 3
     , TkInt 10
     , TkInt 0
     , TkInt 1
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\ENQ\214\186\134"
+    , TkBytes "\191\152\145\198"
     , TkListLen 3
     , TkInt 10
     , TkInt 0
     , TkInt 2
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\228 \204\167"
+    , TkBytes "\ACK7\193<"
     , TkMapLen 0
     , TkMapLen 7
-    , TkBytes "\b\CAN\169\214"
-    , TkBytes "\b\CAN\169\214"
-    , TkBytes "\133\130\191\198"
-    , TkBytes "\133\130\191\198"
-    , TkBytes "\152~8\208"
-    , TkBytes "\152~8\208"
-    , TkBytes "\183\147@\177"
-    , TkBytes "\183\147@\177"
-    , TkBytes "\189\240`\183"
-    , TkBytes "\189\240`\183"
-    , TkBytes "\224\253Xv"
-    , TkBytes "\224\253Xv"
-    , TkBytes "\244\249\211j"
-    , TkBytes "\244\249\211j"
+    , TkBytes "\CANg\231\ACK"
+    , TkBytes "\CANg\231\ACK"
+    , TkBytes "Rsb\139"
+    , TkBytes "Rsb\139"
+    , TkBytes "u\197c\227"
+    , TkBytes "u\197c\227"
+    , TkBytes "u\200\129\164"
+    , TkBytes "u\200\129\164"
+    , TkBytes "\174\134\&0\129"
+    , TkBytes "\174\134\&0\129"
+    , TkBytes "\203\GS\151\&8"
+    , TkBytes "\203\GS\151\&8"
+    , TkBytes "\229\221D\172"
+    , TkBytes "\229\221D\172"
     , TkMapLen 2
     , TkListLen 2
     , TkInt 0
-    , TkBytes "oY\252#"
-    , TkInt 99
+    , TkBytes "\ACK7\193<"
+    , TkInt 110
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\228 \204\167"
-    , TkInt 110
+    , TkBytes "\144&R("
+    , TkInt 99
     , TkListLen 3
     , TkMapLen 1
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkInt 10
     , TkMapLen 1
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkListLen 9
-    , TkBytes "\212.\173\177"
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
+    , TkBytes "0P\247\158"
     , TkInt 1
     , TkInt 5
     , TkTag 30
@@ -808,9 +755,9 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 10
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkListLen 1
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkListLen 0
     , TkListLen 2
     , TkString "alice.pool"
@@ -918,7 +865,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkListLen 0
     , TkMapLen 0
     , TkMapLen 7
-    , TkBytes "\b\CAN\169\214"
+    , TkBytes "\CANg\231\ACK"
     , TkListBegin
     , TkInt 0
     , TkInt 14
@@ -929,7 +876,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 84
     , TkInt 98
     , TkBreak
-    , TkBytes "\133\130\191\198"
+    , TkBytes "Rsb\139"
     , TkListBegin
     , TkInt 2
     , TkInt 16
@@ -939,7 +886,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 72
     , TkInt 86
     , TkBreak
-    , TkBytes "\152~8\208"
+    , TkBytes "u\197c\227"
     , TkListBegin
     , TkInt 4
     , TkInt 18
@@ -949,7 +896,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 74
     , TkInt 88
     , TkBreak
-    , TkBytes "\183\147@\177"
+    , TkBytes "u\200\129\164"
     , TkListBegin
     , TkInt 6
     , TkInt 20
@@ -959,7 +906,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 76
     , TkInt 90
     , TkBreak
-    , TkBytes "\189\240`\183"
+    , TkBytes "\174\134\&0\129"
     , TkListBegin
     , TkInt 8
     , TkInt 22
@@ -969,7 +916,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 78
     , TkInt 92
     , TkBreak
-    , TkBytes "\224\253Xv"
+    , TkBytes "\203\GS\151\&8"
     , TkListBegin
     , TkInt 10
     , TkInt 24
@@ -979,7 +926,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 80
     , TkInt 94
     , TkBreak
-    , TkBytes "\244\249\211j"
+    , TkBytes "\229\221D\172"
     , TkListBegin
     , TkInt 12
     , TkInt 26
@@ -1078,7 +1025,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkListLen 3
     , TkListLen 2
     , TkInt 10
-    , TkBytes "\178\131\GS)"
+    , TkBytes "*d\157H"
     , TkListLen 2
     , TkListLen 1
     , TkInt 0
@@ -1109,25 +1056,21 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkListLen 4
     , TkMapLen 2
     , TkListLen 2
-    , TkBytes "`P\aC"
+    , TkBytes "\157\184\164\ETB"
     , TkInt 1
-    , TkListLen 4
-    , TkInt 0
-    , TkBytes "\174\SOH\SO\ENQ"
-    , TkBytes "\ENQ\214\186\134"
+    , TkListLen 2
+    , TkBytes "\STX\131?\NAK\145\191\152\145\198"
     , TkInt 1000000000000000
     , TkListLen 2
-    , TkBytes "\203\250K\GS"
+    , TkBytes "\253d\142\221"
     , TkInt 0
-    , TkListLen 4
-    , TkInt 0
-    , TkBytes "\174\232Lp"
-    , TkBytes "\212.\173\177"
+    , TkListLen 2
+    , TkBytes "\STX\EOT\140\196$0P\247\158"
     , TkInt 9999999999999726
     , TkInt 271
     , TkInt 3
     , TkMapLen 1
-    , TkBytes "\224\253Xv"
+    , TkBytes "Rsb\139"
     , TkMapLen 1
     , TkInt 5
     , TkInt 255
@@ -1136,28 +1079,28 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkMapLen 3
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\ENQ\214\186\134"
+    , TkBytes "\ACK7\193<"
     , TkInt 10
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkInt 10
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\228 \204\167"
+    , TkBytes "\191\152\145\198"
     , TkInt 10
     , TkMapLen 3
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\ENQ\214\186\134"
+    , TkBytes "\ACK7\193<"
     , TkInt 0
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkInt 0
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\228 \204\167"
+    , TkBytes "\191\152\145\198"
     , TkInt 0
     , TkMapLen 0
     , TkMapLen 3
@@ -1167,55 +1110,55 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 0
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkListLen 3
     , TkInt 10
     , TkInt 0
     , TkInt 1
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\ENQ\214\186\134"
+    , TkBytes "\191\152\145\198"
     , TkListLen 3
     , TkInt 10
     , TkInt 0
     , TkInt 2
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\228 \204\167"
+    , TkBytes "\ACK7\193<"
     , TkMapLen 0
     , TkMapLen 7
-    , TkBytes "\b\CAN\169\214"
-    , TkBytes "\b\CAN\169\214"
-    , TkBytes "\133\130\191\198"
-    , TkBytes "\133\130\191\198"
-    , TkBytes "\152~8\208"
-    , TkBytes "\152~8\208"
-    , TkBytes "\183\147@\177"
-    , TkBytes "\183\147@\177"
-    , TkBytes "\189\240`\183"
-    , TkBytes "\189\240`\183"
-    , TkBytes "\224\253Xv"
-    , TkBytes "\224\253Xv"
-    , TkBytes "\244\249\211j"
-    , TkBytes "\244\249\211j"
+    , TkBytes "\CANg\231\ACK"
+    , TkBytes "\CANg\231\ACK"
+    , TkBytes "Rsb\139"
+    , TkBytes "Rsb\139"
+    , TkBytes "u\197c\227"
+    , TkBytes "u\197c\227"
+    , TkBytes "u\200\129\164"
+    , TkBytes "u\200\129\164"
+    , TkBytes "\174\134\&0\129"
+    , TkBytes "\174\134\&0\129"
+    , TkBytes "\203\GS\151\&8"
+    , TkBytes "\203\GS\151\&8"
+    , TkBytes "\229\221D\172"
+    , TkBytes "\229\221D\172"
     , TkMapLen 2
     , TkListLen 2
     , TkInt 0
-    , TkBytes "oY\252#"
-    , TkInt 99
+    , TkBytes "\ACK7\193<"
+    , TkInt 110
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\228 \204\167"
-    , TkInt 110
+    , TkBytes "\144&R("
+    , TkInt 99
     , TkListLen 3
     , TkMapLen 1
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkInt 10
     , TkMapLen 1
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkListLen 9
-    , TkBytes "\212.\173\177"
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
+    , TkBytes "0P\247\158"
     , TkInt 1
     , TkInt 5
     , TkTag 30
@@ -1224,9 +1167,9 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 10
     , TkListLen 2
     , TkInt 0
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkListLen 1
-    , TkBytes "\212.\173\177"
+    , TkBytes "0P\247\158"
     , TkListLen 0
     , TkListLen 2
     , TkString "alice.pool"
@@ -1334,7 +1277,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkListLen 0
     , TkMapLen 0
     , TkMapLen 7
-    , TkBytes "\b\CAN\169\214"
+    , TkBytes "\CANg\231\ACK"
     , TkListBegin
     , TkInt 0
     , TkInt 14
@@ -1345,7 +1288,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 84
     , TkInt 98
     , TkBreak
-    , TkBytes "\133\130\191\198"
+    , TkBytes "Rsb\139"
     , TkListBegin
     , TkInt 2
     , TkInt 16
@@ -1355,7 +1298,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 72
     , TkInt 86
     , TkBreak
-    , TkBytes "\152~8\208"
+    , TkBytes "u\197c\227"
     , TkListBegin
     , TkInt 4
     , TkInt 18
@@ -1365,7 +1308,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 74
     , TkInt 88
     , TkBreak
-    , TkBytes "\183\147@\177"
+    , TkBytes "u\200\129\164"
     , TkListBegin
     , TkInt 6
     , TkInt 20
@@ -1375,7 +1318,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 76
     , TkInt 90
     , TkBreak
-    , TkBytes "\189\240`\183"
+    , TkBytes "\174\134\&0\129"
     , TkListBegin
     , TkInt 8
     , TkInt 22
@@ -1385,7 +1328,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 78
     , TkInt 92
     , TkBreak
-    , TkBytes "\224\253Xv"
+    , TkBytes "\203\GS\151\&8"
     , TkListBegin
     , TkInt 10
     , TkInt 24
@@ -1395,7 +1338,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 80
     , TkInt 94
     , TkBreak
-    , TkBytes "\244\249\211j"
+    , TkBytes "\229\221D\172"
     , TkListBegin
     , TkInt 12
     , TkInt 26

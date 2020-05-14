@@ -28,7 +28,6 @@ import           Data.Proxy (Proxy (..))
 import           Cardano.Binary (Annotator (..), FullByteString (..), fromCBOR,
                      toCBOR)
 import qualified Cardano.Crypto.Hash.Class as Crypto (Hash (..))
-import           Cardano.Crypto.KES.Class (SignKeyKES)
 import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
                      SlotNo (..), WithOrigin (Origin))
@@ -46,8 +45,10 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 
+import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.Credential as SL
 import           Shelley.Spec.Ledger.Crypto (HASH)
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
@@ -66,7 +67,7 @@ import           Ouroboros.Consensus.Shelley.Ledger
 import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Protocol
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (KES)
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto (HotKey)
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
 
 {-------------------------------------------------------------------------------
@@ -77,7 +78,7 @@ data TPraosLeaderCredentials c = TPraosLeaderCredentials {
     -- | Signing KES key. Note that this is not inside 'TPraosIsCoreNode' since
     --   it gets evolved automatically, whereas 'TPraosIsCoreNode' does not
     --   change.
-    tpraosLeaderCredentialsSignKey    :: SignKeyKES (KES c)
+    tpraosLeaderCredentialsSignKey    :: HotKey c
   , tpraosLeaderCredentialsIsCoreNode :: TPraosIsCoreNode c
   }
 

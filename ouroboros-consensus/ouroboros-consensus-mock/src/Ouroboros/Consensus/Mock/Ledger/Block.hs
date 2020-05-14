@@ -76,7 +76,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
-import           Cardano.Crypto.Hash
+import           Cardano.Crypto.Hash hiding (castHash)
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Network.Block
@@ -504,4 +504,4 @@ simpleBlockHashInfo = HashInfo
     }
   where
     -- + 1 For the CBOR tag
-    hashSize = 1 + fromIntegral (byteCount (Proxy @(SimpleHash c)))
+    hashSize = 1 + fromIntegral (sizeHash (Proxy @(SimpleHash c)))

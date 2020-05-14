@@ -22,6 +22,7 @@ import           Ouroboros.Network.Magic (NetworkMagic)
 import           Ouroboros.Consensus.BlockchainTime (SlotLength, SystemStart)
 import           Ouroboros.Consensus.Config.SecurityParam
 
+import qualified Shelley.Spec.Ledger.Address as SL
 import           Shelley.Spec.Ledger.BaseTypes (ActiveSlotCoeff)
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Coin as SL

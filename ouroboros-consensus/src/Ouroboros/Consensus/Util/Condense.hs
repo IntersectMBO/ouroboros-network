@@ -29,12 +29,14 @@ import           Control.Monad.Class.MonadTime (Time (..))
 import           Cardano.Crypto (VerificationKey)
 import           Cardano.Crypto.DSIGN (Ed25519DSIGN, Ed448DSIGN, MockDSIGN,
                      SigDSIGN, pattern SigEd25519DSIGN, pattern SigEd448DSIGN,
-                     pattern SigMockDSIGN, SignedDSIGN (..))
+                     pattern SigMockDSIGN, SignedDSIGN (..), VerKeyDSIGN)
 import           Cardano.Crypto.Hash (Hash)
 import           Cardano.Crypto.KES (MockKES, NeverKES, SigKES,
                      pattern SigMockKES, pattern SigSimpleKES,
+                     pattern SigSingleKES, pattern SigSumKES,
                      pattern SignKeyMockKES, SignedKES (..), SimpleKES,
-                     pattern VerKeyMockKES)
+                     SingleKES, SumKES, VerKeyKES, pattern VerKeyMockKES,
+                     pattern VerKeySingleKES, pattern VerKeySumKES)
 import           Cardano.Slotting.Slot (WithOrigin (..))
 
 import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
@@ -200,6 +202,22 @@ instance Condense (SigKES NeverKES) where
 
 instance Condense (SigDSIGN d) => Condense (SigKES (SimpleKES d t)) where
     condense (SigSimpleKES sig) = condense sig
+
+instance Condense (SigDSIGN d) => Condense (SigKES (SingleKES d)) where
+    condense (SigSingleKES sig) = condense sig
+
+instance Show (VerKeyDSIGN d) => Condense (VerKeyDSIGN d) where
+  condense = show
+
+instance (Condense (SigKES d), Condense (VerKeyKES d))
+  => Condense (SigKES (SumKES h d)) where
+    condense (SigSumKES sk vk1 vk2) = condense (sk, vk1, vk2)
+
+instance Show (VerKeyDSIGN d) => Condense (VerKeyKES (SingleKES d)) where
+    condense (VerKeySingleKES h) = condense h
+
+instance Condense (VerKeyKES (SumKES h d)) where
+    condense (VerKeySumKES h) = condense h
 
 instance Condense (Hash h a) where
     condense = show

@@ -24,12 +24,14 @@ module Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Cardano.Binary
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.UTxO as CC.UTxO
-import           Cardano.Crypto (ProtocolMagicId, SignTag (..), Signature,
-                     SigningKey, VerificationKey, deterministicKeyGen, signRaw,
-                     toVerification, verifySignatureRaw)
+import           Cardano.Crypto (ProtocolMagicId, SignTag (..), Signature (..),
+                     SigningKey (..), VerificationKey (..),
+                     deterministicKeyGen, signRaw, toVerification,
+                     verifySignatureRaw)
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.Seed (SeedBytesExhausted (..), getBytesFromSeed)
 import qualified Cardano.Crypto.Signing as Crypto
+import qualified Cardano.Crypto.Wallet as CC
 import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
 import           Control.Exception (throw)
 import           Data.ByteString (ByteString)
@@ -61,8 +63,6 @@ instance DSIGNAlgorithm ByronDSIGN where
 
     algorithmNameDSIGN _ = "ByronDSIGN"
 
-    seedSizeDSIGN _ = 32
-
     -- Context required for Byron digital signatures
     --
     -- We require the the protocol magic as well as the verification key of the
@@ -84,15 +84,6 @@ instance DSIGNAlgorithm ByronDSIGN where
 
     type Signable ByronDSIGN = ByronSignable
 
-    encodeVerKeyDSIGN (VerKeyByronDSIGN pk) = toCBOR pk
-    decodeVerKeyDSIGN = VerKeyByronDSIGN <$> fromCBOR
-
-    encodeSignKeyDSIGN (SignKeyByronDSIGN pk) = toCBOR pk
-    decodeSignKeyDSIGN = SignKeyByronDSIGN <$> fromCBOR
-
-    encodeSigDSIGN (SigByronDSIGN pk) = toCBOR pk
-    decodeSigDSIGN = SigByronDSIGN <$> fromCBOR
-
     genKeyDSIGN seed =
         SignKeyByronDSIGN . snd $ deterministicKeyGen seedBytes
       where
@@ -112,8 +103,25 @@ instance DSIGNAlgorithm ByronDSIGN where
           then Right ()
           else Left "Verification failed"
 
-    abstractSizeVKey _ = error "Ouroboros.Consensus.Byron.Crypto.DSIGN: DSIGNAlgorithm ByronDSIGN"
-    abstractSizeSig  _ = error "Ouroboros.Consensus.Byron.Crypto.DSIGN: DSIGNAlgorithm ByronDSIGN"
+    seedSizeDSIGN _ = 32
+
+    sizeVerKeyDSIGN _ = 64
+    sizeSignKeyDSIGN _ = 128
+    sizeSigDSIGN _ = 64
+
+    rawSerialiseVerKeyDSIGN (VerKeyByronDSIGN (VerificationKey vk)) = CC.unXPub vk
+    rawSerialiseSignKeyDSIGN (SignKeyByronDSIGN (SigningKey sk)) = CC.unXPrv sk
+    rawSerialiseSigDSIGN (SigByronDSIGN (Signature sig)) = CC.unXSignature sig
+
+    rawDeserialiseVerKeyDSIGN bs =
+      VerKeyByronDSIGN . VerificationKey <$> (eitherToMaybe $ CC.xpub bs)
+    rawDeserialiseSignKeyDSIGN bs =
+      SignKeyByronDSIGN . SigningKey <$> (eitherToMaybe $ CC.xprv bs)
+    rawDeserialiseSigDSIGN bs =
+      SigByronDSIGN . Signature <$> (eitherToMaybe $ CC.xsignature bs)
+
+eitherToMaybe :: Either a b -> Maybe b
+eitherToMaybe = either (const Nothing) (Just)
 
 instance Condense (SigDSIGN ByronDSIGN) where
     condense (SigByronDSIGN s) = show s
