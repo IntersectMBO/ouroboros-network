@@ -250,14 +250,11 @@ instance Condense (ChainHash TestBlock) where
   condense (BlockHash h) = show h
 
 data instance BlockConfig TestBlock = TestBlockConfig {
-      -- | Era parameters
-      testBlockEraParams :: !HardFork.EraParams
-
       -- | Number of core nodes
       --
       -- We need this in order to compute the 'ValidateView', which must
       -- conjure up a validation key out of thin air
-    , testBlockNumCoreNodes :: !NumCoreNodes
+      testBlockNumCoreNodes :: !NumCoreNodes
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -304,7 +301,7 @@ instance BlockSupportsProtocol TestBlock where
       signKey (SlotNo n) = SignKeyMockDSIGN $ fromIntegral (n `mod` numCore)
 
 instance IsLedger (LedgerState TestBlock) where
-  type LedgerCfg (LedgerState TestBlock) = ()
+  type LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
   type LedgerErr (LedgerState TestBlock) = TestBlockError
 
   applyChainTick _ = Ticked
@@ -356,7 +353,7 @@ instance LedgerSupportsProtocol TestBlock where
 
 instance HasHardForkHistory TestBlock where
   type HardForkIndices TestBlock = '[()]
-  hardForkShape           = HardFork.singletonShape . testBlockEraParams
+  hardForkShape _         = HardFork.singletonShape
   hardForkTransitions _ _ = HardFork.transitionsUnknown
 
 instance QueryLedger TestBlock where
@@ -393,8 +390,8 @@ singleNodeTestConfig = TopLevelConfig {
         , bftSignKey  = SignKeyMockDSIGN 0
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
-    , configLedger = ()
-    , configBlock  = TestBlockConfig eraParams numCoreNodes
+    , configLedger = eraParams
+    , configBlock  = TestBlockConfig numCoreNodes
     }
   where
     slotLength :: SlotLength

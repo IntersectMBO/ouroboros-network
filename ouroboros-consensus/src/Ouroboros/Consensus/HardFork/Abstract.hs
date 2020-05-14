@@ -5,7 +5,6 @@ module Ouroboros.Consensus.HardFork.Abstract (
     HasHardForkHistory(..)
   ) where
 
-import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
 
@@ -18,7 +17,8 @@ class HasHardForkHistory blk where
   type family HardForkIndices blk :: [*]
 
   -- | Static (ledger independent) hard fork shape
-  hardForkShape :: BlockConfig blk
+  hardForkShape :: proxy blk
+                -> LedgerConfig blk
                 -> HardFork.Shape (HardForkIndices blk)
 
   -- | Ledger-dependent hard fork transitions

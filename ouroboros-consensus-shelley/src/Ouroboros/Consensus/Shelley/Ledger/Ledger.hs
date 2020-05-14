@@ -23,6 +23,10 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , QueryLedger (..)
   , Query (..)
   , NonMyopicMemberRewards (..)
+    -- * Ledger config
+  , ShelleyLedgerConfig (..)
+  , mkShelleyEraParams
+  , mkShelleyLedgerConfig
     -- * Auxiliary
   , getPParams
     -- * Serialisation
@@ -44,6 +48,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad.Except
+import           Data.Functor.Identity
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import           Data.Set (Set)
@@ -52,11 +57,13 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (enforceSize, fromCBOR, toCBOR)
 import           Cardano.Prelude (NoUnexpectedThunks (..))
-import           Cardano.Slotting.Slot (EpochNo, WithOrigin (..))
+import           Cardano.Slotting.EpochInfo
+import           Cardano.Slotting.Slot hiding (at)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
@@ -65,6 +72,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Control.State.Transition as STS
@@ -79,8 +87,8 @@ import qualified Shelley.Spec.Ledger.STS.Chain as STS
 import qualified Shelley.Spec.Ledger.TxData as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
+import           Ouroboros.Consensus.Shelley.Genesis
 import           Ouroboros.Consensus.Shelley.Ledger.Block
-import           Ouroboros.Consensus.Shelley.Ledger.Config
 import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
 import           Ouroboros.Consensus.Shelley.Protocol
@@ -96,17 +104,62 @@ data ShelleyLedgerError c
 
 instance NoUnexpectedThunks (ShelleyLedgerError c)
 
+data ShelleyLedgerConfig = ShelleyLedgerConfig {
+      shelleyLedgerGlobals   :: !SL.Globals
+    , shelleyLedgerEraParams :: !HardFork.EraParams
+    }
+  deriving (Generic, NoUnexpectedThunks)
+
+-- TODO: k * 2 is wrong.
+mkShelleyEraParams :: SecurityParam -> EpochSize -> SlotLength -> HardFork.EraParams
+mkShelleyEraParams (SecurityParam k) epochLen slotLen = HardFork.EraParams {
+      eraEpochSize  = epochLen
+    , eraSlotLength = slotLen
+    , eraSafeZone   = HardFork.SafeZone (k * 2) HardFork.NoLowerBound
+    }
+
+mkShelleyLedgerConfig :: ShelleyGenesis c -> ShelleyLedgerConfig
+mkShelleyLedgerConfig genesis = ShelleyLedgerConfig {
+      shelleyLedgerGlobals   = shelleyGlobals
+    , shelleyLedgerEraParams = mkShelleyEraParams
+                                 (sgSecurityParam genesis)
+                                 (sgEpochLength   genesis)
+                                 (sgSlotLength    genesis)
+    }
+  where
+    SecurityParam k = sgSecurityParam  genesis
+
+    -- TODO: This must instead be derived from the hard fork history.
+    -- <https://github.com/input-output-hk/ouroboros-network/issues/1205>
+    epochInfo :: EpochInfo Identity
+    epochInfo = fixedSizeEpochInfo $ sgEpochLength genesis
+
+    shelleyGlobals :: SL.Globals
+    shelleyGlobals = SL.Globals {
+          epochInfo         = epochInfo
+        , slotsPerKESPeriod = sgSlotsPerKESPeriod genesis
+          -- TODO where does 3 * k come from?
+        , slotsPrior        = 3 * k
+        , startRewards      = 3 * k
+        , securityParameter = k
+        , maxKESEvo         = sgMaxKESEvolutions  genesis
+        , quorum            = sgUpdateQuorum      genesis
+        , maxMajorPV        = sgMaxMajorPV        genesis
+        , maxLovelaceSupply = sgMaxLovelaceSupply genesis
+        , activeSlotCoeff   = sgActiveSlotCoeff   genesis
+        }
+
 instance TPraosCrypto c => IsLedger (LedgerState (ShelleyBlock c)) where
   type LedgerErr (LedgerState (ShelleyBlock c)) = ShelleyLedgerError c
-  type LedgerCfg (LedgerState (ShelleyBlock c)) = SL.Globals
+  type LedgerCfg (LedgerState (ShelleyBlock c)) = ShelleyLedgerConfig
 
   applyChainTick
-    globals
+    cfg
     slotNo
     (ShelleyLedgerState pt history bhState) =
       Ticked slotNo
         . ShelleyLedgerState pt history
-        $ SL.applyTickTransition globals bhState slotNo
+        $ SL.applyTickTransition (shelleyLedgerGlobals cfg) bhState slotNo
 
 instance TPraosCrypto c
       => ApplyBlock (LedgerState (ShelleyBlock c)) (ShelleyBlock c) where
@@ -120,7 +173,7 @@ instance TPraosCrypto c
   --    - 'updateConsensusState': executes the @PRTCL@ transition
   -- + 'applyLedgerBlock': executes the @BBODY@ transition
   --
-  applyLedgerBlock globals
+  applyLedgerBlock cfg
                    blk
                    Ticked {
                        tickedLedgerState = ShelleyLedgerState {
@@ -150,6 +203,8 @@ instance TPraosCrypto c
         , history      = history'
         , shelleyState = newShelleyState
         }
+    where
+      globals = shelleyLedgerGlobals cfg
 
   -- TODO actual reapplication:
   -- https://github.com/input-output-hk/cardano-ledger-specs/issues/1303
@@ -173,7 +228,7 @@ instance TPraosCrypto c => UpdateLedger (ShelleyBlock c)
 instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
   protocolLedgerView _cfg = SL.currentLedgerView . shelleyState
 
-  ledgerViewForecastAt_ globals ledgerState at = do
+  ledgerViewForecastAt_ cfg ledgerState at = do
       guard (at >= minLo)
       return $ Forecast at $ \for ->
         case History.find (At for) history of
@@ -194,8 +249,9 @@ instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
                        SL.futureLedgerView globals shelleyState for
     where
       ShelleyLedgerState {history , shelleyState} = ledgerState
-      k   = SL.securityParameter globals
-      tip = ledgerTipSlot ledgerState
+      globals = shelleyLedgerGlobals cfg
+      k       = SL.securityParameter globals
+      tip     = ledgerTipSlot ledgerState
 
       -- Inclusive lower bound
       minLo :: WithOrigin SlotNo
@@ -212,7 +268,7 @@ instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
 instance HasHardForkHistory (ShelleyBlock c) where
   type HardForkIndices (ShelleyBlock c) = '[()]
 
-  hardForkShape cfg = HardFork.singletonShape $ shelleyEraParams cfg
+  hardForkShape _ cfg = HardFork.singletonShape $ shelleyLedgerEraParams cfg
 
   -- TODO: This is wrong. We should look at the state of the ledger.
   -- Once we actually start using the hard fork combinator, we should fix this.
@@ -253,15 +309,17 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
       :: Set (SL.Addr c)
       -> Query (ShelleyBlock c) (SL.UTxO c)
 
-  answerQuery globals query st = case query of
-    GetLedgerTip -> ledgerTip st
-    GetEpochNo -> SL.nesEL $ shelleyState st
-    GetNonMyopicMemberRewards creds -> NonMyopicMemberRewards $
-        SL.getNonMyopicMemberRewards globals (shelleyState st) creds
-    GetCurrentPParams -> getPParams $ shelleyState st
-    GetProposedPParamsUpdates -> getProposedPPUpdates $ shelleyState st
-    GetStakeDistribution -> SL.nesPd $ shelleyState st
-    GetFilteredUTxO addrs -> SL.getFilteredUTxO (shelleyState st) addrs
+  answerQuery cfg query st = case query of
+      GetLedgerTip -> ledgerTip st
+      GetEpochNo -> SL.nesEL $ shelleyState st
+      GetNonMyopicMemberRewards creds -> NonMyopicMemberRewards $
+          SL.getNonMyopicMemberRewards globals (shelleyState st) creds
+      GetCurrentPParams -> getPParams $ shelleyState st
+      GetProposedPParamsUpdates -> getProposedPPUpdates $ shelleyState st
+      GetStakeDistribution -> SL.nesPd $ shelleyState st
+      GetFilteredUTxO addrs -> SL.getFilteredUTxO (shelleyState st) addrs
+    where
+      globals = shelleyLedgerGlobals cfg
 
   eqQuery GetLedgerTip GetLedgerTip
     = Just Refl
@@ -319,9 +377,10 @@ instance Crypto c => ValidateEnvelope (ShelleyBlock c) where
     STS.PredicateFailure (STS.CHAIN c)
 
   additionalEnvelopeChecks cfg (Ticked _ ledgerView) hdr =
-      SL.chainChecks (configLedger cfg) pparams (shelleyHeaderRaw hdr)
+      SL.chainChecks globals pparams (shelleyHeaderRaw hdr)
     where
       pparams = SL.lvProtParams ledgerView
+      globals = shelleyLedgerGlobals (configLedger cfg)
 
 {-------------------------------------------------------------------------------
   Auxiliary

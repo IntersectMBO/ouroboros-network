@@ -36,7 +36,6 @@ import           GHC.Stack
 import           System.Random (Random)
 
 import qualified Ouroboros.Consensus.BlockchainTime as BTime
-import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.HardFork.Abstract
@@ -156,14 +155,14 @@ hardForkBlockchainTime :: (IOLike m, HasHardForkHistory blk, UpdateLedger blk, H
                        => ResourceRegistry m
                        -> Tracer m BTime.TraceBlockchainTimeEvent
                        -> LogicalClock m
-                       -> TopLevelConfig blk
+                       -> LedgerConfig blk
                        -> STM m (LedgerState blk)
                        -> m (BTime.BlockchainTime m)
 hardForkBlockchainTime rr tracer =
     BTime.hardForkBlockchainTime rr tracer . mockSystemTime
 
 checkInFuture :: (Monad m, HasHardForkHistory blk, UpdateLedger blk)
-              => TopLevelConfig blk
+              => LedgerConfig blk
               -> LogicalClock m
               -> CheckInFuture m blk
 checkInFuture cfg =

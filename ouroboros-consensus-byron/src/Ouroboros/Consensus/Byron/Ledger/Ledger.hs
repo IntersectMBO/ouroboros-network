@@ -59,7 +59,6 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
-import           Ouroboros.Consensus.Block (getCodecConfig)
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -70,7 +69,6 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
-import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Ledger.DelegationHistory
                      (DelegationHistory)
@@ -245,14 +243,13 @@ instance LedgerSupportsProtocol ByronBlock where
 instance HasHardForkHistory ByronBlock where
   type HardForkIndices ByronBlock = '[()]
 
-  hardForkShape cfg = HardFork.singletonShape eraParams
+  hardForkShape _ genesis = HardFork.singletonShape eraParams
     where
-      genesis         = byronGenesisConfig cfg
       SecurityParam k = genesisSecurityParam genesis
 
       eraParams :: HardFork.EraParams
       eraParams = HardFork.EraParams {
-            eraEpochSize  = fromByronEpochSlots . byronEpochSlots $ getCodecConfig cfg
+            eraEpochSize  = fromByronEpochSlots $ Gen.configEpochSlots genesis
           , eraSlotLength = fromByronSlotLength $ genesisSlotLength genesis
           , eraSafeZone   = HardFork.SafeZone {
                 safeFromTip     = 2 * k

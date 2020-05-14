@@ -5,6 +5,7 @@
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Consensus.Mempool (tests) where
@@ -38,11 +39,14 @@ import           Ouroboros.Network.Block (pattern BlockPoint, HeaderHash,
                      SlotNo, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
+import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Mock.Ledger hiding (TxId)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM,
                      safeMaximumOn, whenJust)
@@ -306,6 +310,18 @@ type TestTxError = ApplyTxErr TestBlock
 -- There are 5 (core)nodes and each gets 1000.
 testInitLedger :: LedgerState TestBlock
 testInitLedger = genesisSimpleLedgerState $ mkAddrDist (NumCoreNodes 5)
+
+-- | Test config
+--
+-- (We don't really care about these values here)
+testLedgerConfig :: LedgerConfig TestBlock
+testLedgerConfig = SimpleLedgerConfig {
+      simpleMockLedgerConfig = ()
+    , simpleLedgerEraParams  =
+        HardFork.defaultEraParams
+          (SecurityParam 4)
+          (slotLengthFromSec 20)
+    }
 
 data TestSetup = TestSetup
   { testLedgerState :: LedgerState TestBlock
@@ -640,14 +656,12 @@ withTestMempool
   => TestSetup
   -> (forall m. IOLike m => TestMempool m -> m prop)
   -> Property
-withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCap } prop =
+withTestMempool setup@TestSetup {..} prop =
     counterexample (ppTestSetup setup) $
     classify      (null testInitialTxs)  "empty Mempool"     $
     classify (not (null testInitialTxs)) "non-empty Mempool" $
     runSimOrThrow setUpAndRun
   where
-    cfg = ()
-
     setUpAndRun :: forall m. IOLike m => m Property
     setUpAndRun = do
 
@@ -664,7 +678,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
 
       -- Open the mempool and add the initial transactions
       mempool <- openMempoolWithoutSyncThread ledgerInterface
-                                              cfg
+                                              testLedgerConfig
                                               testMempoolCap
                                               tracer
                                               txSize
@@ -717,7 +731,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
                          -> Property
     checkMempoolValidity ledgerState MempoolSnapshot { snapshotTxs } =
         case runExcept $ repeatedlyM
-               (applyTx ())
+               (applyTx testLedgerConfig)
                txs
                (notReallyTicked ledgerState) of
           Right _ -> property True

@@ -159,7 +159,7 @@ run runargs@RunNodeArgs{..} =
 
       let inFuture :: CheckInFuture IO blk
           inFuture = InFuture.reference
-                       cfg
+                       (configLedger cfg)
                        rnMaxClockSkew
                        (defaultSystemTime $ nodeStartTime cfg)
 
@@ -187,7 +187,7 @@ run runargs@RunNodeArgs{..} =
                  registry
                  (blockchainTimeTracer rnTraceConsensus)
                  (defaultSystemTime $ nodeStartTime cfg)
-                 cfg
+                 (configLedger cfg)
                  (ledgerState <$> ChainDB.getCurrentLedger chainDB)
 
       let nodeArgs = rnCustomiseNodeArgs $

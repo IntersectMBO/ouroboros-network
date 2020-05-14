@@ -17,7 +17,6 @@ import           Ouroboros.Network.Magic (NetworkMagic)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import qualified Ouroboros.Consensus.HardFork.History as HardFork
 
 import qualified Shelley.Spec.Ledger.PParams as SL (ProtVer)
 
@@ -34,7 +33,6 @@ data instance BlockConfig (ShelleyBlock c) = ShelleyConfig {
     , shelleyStartTime       :: !SystemStart
     , shelleyNetworkMagic    :: !NetworkMagic
     , shelleyProtocolMagicId :: !ProtocolMagicId
-    , shelleyEraParams       :: !HardFork.EraParams
     }
   deriving stock (Show, Generic)
   deriving anyclass NoUnexpectedThunks

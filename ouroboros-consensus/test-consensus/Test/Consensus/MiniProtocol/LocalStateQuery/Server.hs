@@ -233,8 +233,8 @@ testCfg securityParam = TopLevelConfig {
         , bftSignKey  = SignKeyMockDSIGN 0
         , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
         }
-    , configLedger = ()
-    , configBlock  = TestBlockConfig eraParams numCoreNodes
+    , configLedger = eraParams
+    , configBlock  = TestBlockConfig numCoreNodes
     }
   where
     slotLength :: SlotLength

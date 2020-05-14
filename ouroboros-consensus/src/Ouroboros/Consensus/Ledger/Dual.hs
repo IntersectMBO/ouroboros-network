@@ -416,9 +416,9 @@ instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
 instance Bridge m a => HasHardForkHistory (DualBlock m a) where
   type HardForkIndices (DualBlock m a) = HardForkIndices m
 
-  hardForkShape cfg =
-      hardForkShape
-        (dualBlockConfigMain cfg)
+  hardForkShape _ cfg =
+      hardForkShape (Proxy @m)
+        (dualLedgerConfigMain cfg)
 
   hardForkTransitions cfg state =
       hardForkTransitions

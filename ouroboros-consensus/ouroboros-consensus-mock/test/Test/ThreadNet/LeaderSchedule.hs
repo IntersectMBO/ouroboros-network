@@ -18,6 +18,7 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node ()
 import           Ouroboros.Consensus.Mock.Node.PraosRule
@@ -111,7 +112,7 @@ prop_simple_leader_schedule_convergence
                                       numCoreNodes
                                       nid
                                       params
-                                      (defaultSimpleBlockConfig
+                                      (HardFork.defaultEraParams
                                         praosSecurityParam
                                         praosSlotLength)
                                       schedule

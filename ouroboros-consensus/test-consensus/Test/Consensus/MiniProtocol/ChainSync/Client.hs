@@ -401,8 +401,8 @@ runChainSync securityParam (ClientUpdates clientUpdates)
                           , (CoreId (CoreNodeId 1), VerKeyMockDSIGN 1)
                           ]
           }
-      , configLedger = ()
-      , configBlock  = TestBlockConfig eraParams numCoreNodes
+      , configLedger = eraParams
+      , configBlock  = TestBlockConfig numCoreNodes
       }
 
     eraParams :: HardFork.EraParams

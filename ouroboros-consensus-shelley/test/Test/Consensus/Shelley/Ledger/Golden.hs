@@ -15,12 +15,15 @@ import           Data.Proxy (Proxy (..))
 import qualified Data.Set as Set
 
 import           Cardano.Binary (toCBOR)
+import           Cardano.Slotting.Slot (EpochSize (..))
 
 import           Ouroboros.Network.Block (Point (..), SlotNo (..), blockHash,
                      genesisPoint)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -990,7 +993,7 @@ test_golden_LedgerState = goldenTestCBOR
 
 exampleLedgerState :: LedgerState Block
 exampleLedgerState = reapplyLedgerBlock
-    SL.testGlobals
+    (ShelleyLedgerConfig SL.testGlobals testEraParams)
     (mkShelleyBlock newBlock)
     (Ticked 0 ShelleyLedgerState {
         ledgerTip    = genesisPoint
@@ -999,6 +1002,14 @@ exampleLedgerState = reapplyLedgerBlock
       })
   where
     Examples.CHAINExample { startState, newBlock } = Examples.ex2A
+
+-- | Era parameters chosen to be compatible with 'SL.testGlobals'
+testEraParams :: HardFork.EraParams
+testEraParams =
+    mkShelleyEraParams
+      (SecurityParam 10)
+      (EpochSize 100)
+      (slotLengthFromSec 2) -- Not really important
 
 test_golden_HeaderState :: Assertion
 test_golden_HeaderState = goldenTestCBOR

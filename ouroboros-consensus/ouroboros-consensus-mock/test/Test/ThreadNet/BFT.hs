@@ -13,6 +13,7 @@ import           Test.Tasty.QuickCheck
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node ()
 import           Ouroboros.Consensus.Mock.Node.BFT
@@ -98,7 +99,7 @@ prop_simple_bft_convergence k
                     numCoreNodes
                     nid
                     k
-                    (defaultSimpleBlockConfig k slotLength)
+                    (HardFork.defaultEraParams k slotLength)
             , rekeying    = Nothing
             , txGenExtra  = ()
             }

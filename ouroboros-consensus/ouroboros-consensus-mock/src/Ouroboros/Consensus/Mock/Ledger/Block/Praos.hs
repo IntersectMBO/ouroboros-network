@@ -165,7 +165,7 @@ instance ( SimpleCrypto c
 -- may not be worth it; it would be a bit of work, and after we have integrated
 -- the Shelley rules, we'll have a proper instance anyway.
 stakeDist :: LedgerConfig (SimplePraosBlock c c') -> StakeDist
-stakeDist = equalStakeDist
+stakeDist = equalStakeDist . simpleMockLedgerConfig
 
 {-------------------------------------------------------------------------------
   Serialisation
