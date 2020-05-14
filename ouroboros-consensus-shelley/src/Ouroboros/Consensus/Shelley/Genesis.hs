@@ -20,7 +20,7 @@ import           Cardano.Slotting.Slot (EpochSize)
 import           Ouroboros.Network.Magic (NetworkMagic)
 
 import           Ouroboros.Consensus.BlockchainTime (SlotLength, SystemStart)
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import           Ouroboros.Consensus.Config.SecurityParam
 
 import           Shelley.Spec.Ledger.BaseTypes (ActiveSlotCoeff)
 import qualified Shelley.Spec.Ledger.BaseTypes as SL

@@ -25,7 +25,7 @@ import qualified Cardano.Prelude
 import           Ouroboros.Network.Block (HeaderHash, SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Protocol.PBFT.State (EbbInfo (..),
                      MaybeEbbInfo (..), PBftState)

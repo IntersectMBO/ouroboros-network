@@ -39,9 +39,9 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Protocol.PBFT (PBftParams (..))
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 

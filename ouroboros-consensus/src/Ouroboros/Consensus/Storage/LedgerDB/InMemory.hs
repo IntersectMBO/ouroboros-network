@@ -84,8 +84,8 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Block.RealPoint
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
                      encodeWithOrigin)

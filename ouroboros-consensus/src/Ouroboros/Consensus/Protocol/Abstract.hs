@@ -6,6 +6,7 @@ module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocol
     ConsensusProtocol(..)
   , ConsensusConfig
+    -- * Convenience re-exports
   , SecurityParam(..)
   ) where
 

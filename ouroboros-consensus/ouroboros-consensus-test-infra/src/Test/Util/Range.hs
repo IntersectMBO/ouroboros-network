@@ -8,7 +8,7 @@ module Test.Util.Range (
 import qualified Data.List as L
 import           Data.Word
 
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import           Ouroboros.Consensus.Config.SecurityParam
 
 {-------------------------------------------------------------------------------
   Range of values related to K
