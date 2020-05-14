@@ -56,7 +56,9 @@ library
                        Ouroboros.Network.Magic
                        Ouroboros.Network.Diffusion
                        Ouroboros.Network.NodeToNode
+                       Ouroboros.Network.NodeToNode.Version
                        Ouroboros.Network.NodeToClient
+                       Ouroboros.Network.NodeToClient.Version
                        Ouroboros.Network.Tracers
                        Ouroboros.Network.Point
                        Ouroboros.Network.PeerSelection.Types
