@@ -3,6 +3,9 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- usage of `MsgKThxBye` is safe in this module.
+{-# OPTIONS_GHC -Wno-warnings-deprecations #-}
+
 -- | A view of the transaction submission protocol from the point of view of
 -- the server.
 --

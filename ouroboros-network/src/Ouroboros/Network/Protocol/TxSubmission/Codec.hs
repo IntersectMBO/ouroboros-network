@@ -6,6 +6,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 
+-- usage of `MsgKThxBye` is safe in this module.
+{-# OPTIONS_GHC -Wno-warnings-deprecations #-}
+
 module Ouroboros.Network.Protocol.TxSubmission.Codec (
     codecTxSubmission
   , codecTxSubmissionId

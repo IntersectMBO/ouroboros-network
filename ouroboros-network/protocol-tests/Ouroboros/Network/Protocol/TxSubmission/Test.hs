@@ -8,6 +8,8 @@
 {-# LANGUAGE DataKinds                  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+-- usage of `MsgKThxBye` is safe in this module.
+{-# OPTIONS_GHC -Wno-warnings-deprecations #-}
 
 module Ouroboros.Network.Protocol.TxSubmission.Test (
     tests
