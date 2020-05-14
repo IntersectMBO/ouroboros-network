@@ -61,7 +61,7 @@ import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..), withOriginFromMaybe,
                      withOriginToMaybe)
 
-import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
 import           Ouroboros.Consensus.Util (repeatedly)

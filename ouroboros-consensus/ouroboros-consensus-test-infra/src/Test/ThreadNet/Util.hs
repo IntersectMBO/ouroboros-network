@@ -36,9 +36,9 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
                      (LeaderSchedule (..))
 import           Ouroboros.Consensus.Util.Condense

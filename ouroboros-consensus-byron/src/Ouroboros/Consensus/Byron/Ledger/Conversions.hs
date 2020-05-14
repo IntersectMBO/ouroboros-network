@@ -33,8 +33,8 @@ import           Ouroboros.Network.Block (ChainHash (..), HeaderHash)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Protocol.Abstract
 
 {-------------------------------------------------------------------------------
   From @cardano-ledger@ to @ouroboros-consensus@

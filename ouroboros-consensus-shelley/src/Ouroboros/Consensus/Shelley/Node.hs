@@ -37,13 +37,13 @@ import           Ouroboros.Network.Block (genesisPoint)
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.State
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 
 import qualified Shelley.Spec.Ledger.BaseTypes as SL

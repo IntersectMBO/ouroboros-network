@@ -11,7 +11,7 @@ import           Data.Word
 
 import           Control.Monad.Class.MonadTime
 
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import           Ouroboros.Consensus.Config.SecurityParam
 
 -- | On-disk policy
 --

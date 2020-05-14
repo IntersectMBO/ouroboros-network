@@ -1,21 +1,12 @@
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE DefaultSignatures          #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE FunctionalDependencies     #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE TypeFamilies      #-}
 
 module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocol
     ConsensusProtocol(..)
   , ConsensusConfig
+    -- * Convenience re-exports
   , SecurityParam(..)
   ) where
 
@@ -23,14 +14,13 @@ import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom (..))
 import           Data.Typeable (Typeable)
-import           Data.Word (Word64)
-import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point)
 
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Abstract (Ticked)
 
 -- | Static configuration required to run the consensus protocol
@@ -221,15 +211,3 @@ class ( Show (ConsensusState p)
                             -> SelectView      p
                             -> Ordering
   compareCandidates _ = compare
-
--- | Protocol security parameter
---
--- We interpret this as the number of rollbacks we support.
---
--- i.e., k == 0: we can't roll back at all
---       k == 1: we can roll back at most one block, etc
---
--- NOTE: This talks about the number of /blocks/ we can roll back, not
--- the number of /slots/.
-newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)

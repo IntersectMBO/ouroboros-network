@@ -24,9 +24,9 @@ import           Cardano.Slotting.Slot
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory

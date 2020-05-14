@@ -5,8 +5,8 @@ module Test.ThreadNet.Util.Tests (
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)

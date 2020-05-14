@@ -36,10 +36,10 @@ import           Cardano.Slotting.Slot (EpochSize (..))
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Mempool.API (extractTxs)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.ThreadNet.General
