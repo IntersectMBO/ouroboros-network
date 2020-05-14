@@ -43,6 +43,7 @@ library
                        Ouroboros.Consensus.BlockchainTime.WallClock.Types
                        Ouroboros.Consensus.BlockchainTime.WallClock.Util
                        Ouroboros.Consensus.Config
+                       Ouroboros.Consensus.Config.SecurityParam
                        Ouroboros.Consensus.Forecast
                        Ouroboros.Consensus.Fragment.Diff
                        Ouroboros.Consensus.Fragment.InFuture
