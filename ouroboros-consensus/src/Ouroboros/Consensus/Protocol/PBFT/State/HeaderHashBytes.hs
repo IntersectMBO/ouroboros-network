@@ -19,13 +19,14 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks)
+import           Cardano.Prelude.CanonicalExamples.Orphans ()
 
 import           Ouroboros.Network.Block (HeaderHash)
 
 newtype HeaderHashBytes = HeaderHashBytes BS.ByteString
   deriving stock (Generic, Show)
-  deriving newtype (Eq, Ord, NoUnexpectedThunks, Serialise)
+  deriving newtype (Eq, Ord, NoUnexpectedThunks, Serialise, CanonicalExamples)
 
 -- | The safe way to construct 'HeaderHashBytes'
 headerHashBytes

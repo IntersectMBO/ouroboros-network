@@ -23,6 +23,8 @@ module Ouroboros.Consensus.ByronDual.Ledger (
   , forgeDualByronBlock
   ) where
 
+import           Cardano.Prelude (CanonicalExamples (..))
+
 import           Codec.Serialise
 import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
@@ -70,7 +72,7 @@ type DualByronBridge = BridgeLedger ByronBlock ByronSpecBlock
 newtype SpecToImplIds = SpecToImplIds {
       getSpecToImplIds :: Spec.Test.AbstractToConcreteIdMaps
     }
-  deriving (Show, Eq, Generic, Serialise)
+  deriving (Show, Eq, Generic, Serialise, CanonicalExamples)
 
 instance Semigroup SpecToImplIds where
   SpecToImplIds a <> SpecToImplIds b =
@@ -140,6 +142,9 @@ data ByronSpecBridge = ByronSpecBridge {
     , toImplIds  :: SpecToImplIds
     }
   deriving (Show, Eq, Generic, Serialise)
+
+instance CanonicalExamples ByronSpecBridge where
+   canonicalExamples = return [] -- TODO(kde)
 
 instance Bridge ByronBlock ByronSpecBlock where
   type BridgeLedger ByronBlock ByronSpecBlock = ByronSpecBridge

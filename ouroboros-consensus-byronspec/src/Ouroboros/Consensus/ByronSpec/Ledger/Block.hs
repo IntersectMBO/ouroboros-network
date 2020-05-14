@@ -12,6 +12,8 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Block (
   , BlockConfig(..)
   ) where
 
+import           Cardano.Prelude (CanonicalExamples (..))
+
 import           Codec.Serialise
 import           Data.FingerTree.Strict (Measured (..))
 import           GHC.Generics (Generic)
@@ -42,6 +44,9 @@ data ByronSpecBlock = ByronSpecBlock {
     , byronSpecBlockHash :: Spec.Hash
     }
   deriving (Show, Eq, Generic, Serialise)
+
+instance CanonicalExamples ByronSpecBlock where
+  canonicalExamples = return [] -- TODO(kde)
 
 {-------------------------------------------------------------------------------
   GetHeader
@@ -94,7 +99,9 @@ instance HasHeader ByronSpecHeader where
 -------------------------------------------------------------------------------}
 
 data instance BlockConfig ByronSpecBlock = ByronSpecBlockConfig
+    deriving (Generic, CanonicalExamples)
 data instance CodecConfig ByronSpecBlock = ByronSpecCodecConfig
+    deriving (Generic, CanonicalExamples)
 
 instance BlockHasCodecConfig ByronSpecBlock where
   getCodecConfig = const ByronSpecCodecConfig

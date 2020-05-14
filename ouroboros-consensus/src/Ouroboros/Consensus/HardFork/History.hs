@@ -91,7 +91,8 @@ import           Data.Time
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalFormNamed (..))
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks,
+                     UseIsNormalFormNamed (..))
 import           Cardano.Slotting.EpochInfo.API
 import           Cardano.Slotting.Slot
 
@@ -207,7 +208,7 @@ data EraParams = EraParams {
     , eraSafeZone   :: !SafeZone
     }
   deriving stock    (Show, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoUnexpectedThunks, CanonicalExamples)
 
 -- | Default 'EraParams'
 --
@@ -237,7 +238,7 @@ data SafeZone = SafeZone {
     , safeBeforeEpoch :: !SafeBeforeEpoch
     }
   deriving stock    (Show, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoUnexpectedThunks, CanonicalExamples)
 
 -- | Lower bound on when a transition can take place
 data SafeBeforeEpoch =
@@ -280,7 +281,7 @@ data SafeBeforeEpoch =
     -- 'LowerBound', and can be used for similar reasons.
   | UnsafeUnbounded
   deriving stock    (Show, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoUnexpectedThunks, CanonicalExamples)
 
 -- | The shape of the chain (old to new)
 --

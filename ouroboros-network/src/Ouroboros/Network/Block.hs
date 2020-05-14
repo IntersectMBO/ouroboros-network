@@ -85,7 +85,7 @@ import           Control.Tracer (contramap)
 
 import           Cardano.Binary (Case (..), Size, szCases, szGreedy)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks)
 import           Cardano.Slotting.Block
 import           Cardano.Slotting.Slot (SlotNo (..))
 
@@ -136,6 +136,7 @@ class ( Eq        (HeaderHash b)
       , Show      (HeaderHash b)
       , Typeable  (HeaderHash b)
       , NoUnexpectedThunks (HeaderHash b)
+      , CanonicalExamples (HeaderHash b)
       ) => StandardHash b
 
 data ChainHash b = GenesisHash | BlockHash !(HeaderHash b)
@@ -146,6 +147,8 @@ deriving instance StandardHash block => Ord  (ChainHash block)
 deriving instance StandardHash block => Show (ChainHash block)
 
 instance (StandardHash block, Typeable block) => NoUnexpectedThunks (ChainHash block)
+instance (StandardHash block, Typeable (HeaderHash block), Typeable block)
+    => CanonicalExamples (ChainHash block)
   -- use generic instance
 
 castHash :: HeaderHash b ~ HeaderHash b' => ChainHash b -> ChainHash b'
@@ -173,6 +176,8 @@ deriving newtype instance StandardHash block => Eq   (Point block)
 deriving newtype instance StandardHash block => Ord  (Point block)
 deriving newtype instance StandardHash block => Show (Point block)
 deriving newtype instance (StandardHash block, Typeable block) => NoUnexpectedThunks (Point block)
+deriving newtype instance (CanonicalExamples (HeaderHash block), Typeable (HeaderHash block))
+    => CanonicalExamples (Point block)
 
 pattern GenesisPoint :: Point block
 pattern GenesisPoint = Point Origin

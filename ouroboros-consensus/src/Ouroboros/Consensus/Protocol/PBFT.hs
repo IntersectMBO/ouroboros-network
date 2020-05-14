@@ -49,7 +49,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.DSIGN.Class
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples (..), NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
@@ -178,6 +178,9 @@ data PBftLedgerView c = PBftLedgerView {
 
 deriving instance PBftCrypto c => NoUnexpectedThunks (PBftLedgerView c)
   -- use generic instance
+instance PBftCrypto c => CanonicalExamples (PBftLedgerView c) where
+  canonicalExamples =
+    fmap (PBftLedgerView . Bimap.fromList) <$> canonicalExamples
 
 deriving instance Eq (PBftVerKeyHash c) => Eq (PBftLedgerView c)
 deriving instance Show (PBftVerKeyHash c) => Show (PBftLedgerView c)
@@ -216,7 +219,7 @@ data PBftParams = PBftParams {
       -- parameter to the ambient security parameter @k@.
     , pbftSignatureThreshold :: !Double
     }
-  deriving (Generic, NoUnexpectedThunks, Show)
+  deriving (Generic, NoUnexpectedThunks, Show, CanonicalExamples)
 
 -- | If we are a core node (i.e. a block producing node) we know which core
 -- node we are, and we have the operational key pair and delegation certificate.
@@ -229,19 +232,20 @@ data PBftIsLeader c = PBftIsLeader {
   deriving (Generic)
 
 instance PBftCrypto c => NoUnexpectedThunks (PBftIsLeader c)
+instance PBftCrypto c => CanonicalExamples (PBftIsLeader c)
  -- use generic instance
 
 data PBftIsLeaderOrNot c
   = PBftIsALeader !(PBftIsLeader c)
   | PBftIsNotALeader
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoUnexpectedThunks, CanonicalExamples)
 
 -- | (Static) node configuration
 data instance ConsensusConfig (PBft c) = PBftConfig {
       pbftParams   :: !PBftParams
     , pbftIsLeader :: !(PBftIsLeaderOrNot c)
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoUnexpectedThunks, CanonicalExamples)
 
 instance PBftCrypto c => ConsensusProtocol (PBft c) where
   type ValidationErr (PBft c) = PBftValidationErr c
@@ -416,10 +420,13 @@ data PBftValidationErr c
   -- | We record how many slots this key signed
   | PBftExceededSignThreshold !(PBftVerKeyHash c) !Word64
   | PBftInvalidSlot
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoUnexpectedThunks, Typeable)
 
 deriving instance PBftCrypto c => Show (PBftValidationErr c)
 deriving instance PBftCrypto c => Eq   (PBftValidationErr c)
+
+instance (Typeable (PBftVerKeyHash c), PBftCrypto c, CanonicalExamples (PBftLedgerView c))
+    => CanonicalExamples (PBftValidationErr c)
 
 {-------------------------------------------------------------------------------
   Condense

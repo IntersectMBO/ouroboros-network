@@ -19,6 +19,8 @@ import           Codec.Serialise
 import           Control.Monad.Trans.Except
 import           GHC.Generics (Generic)
 
+import           Cardano.Prelude (CanonicalExamples)
+
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Delegation as Spec
 import qualified Byron.Spec.Ledger.Update as Spec
@@ -43,7 +45,7 @@ data ByronSpecGenTx =
   | ByronSpecGenTxTx    Spec.Tx
   | ByronSpecGenTxUProp Spec.UProp
   | ByronSpecGenTxVote  Spec.Vote
-  deriving (Show, Generic, Serialise)
+  deriving (Show, Generic, Serialise, CanonicalExamples)
 
 -- | Transaction errors
 --

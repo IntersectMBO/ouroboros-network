@@ -30,7 +30,7 @@ import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks (..))
 
 import           Ouroboros.Network.Block
 
@@ -62,6 +62,10 @@ data ExtValidationError blk =
 
 instance LedgerSupportsProtocol blk => NoUnexpectedThunks (ExtValidationError blk)
 
+instance (Typeable (LedgerError blk), Typeable (HeaderError blk),
+       CanonicalExamples (LedgerError blk), CanonicalExamples (HeaderError blk))
+    => CanonicalExamples (ExtValidationError blk)
+
 deriving instance LedgerSupportsProtocol blk => Show (ExtLedgerState     blk)
 deriving instance LedgerSupportsProtocol blk => Show (ExtValidationError blk)
 deriving instance LedgerSupportsProtocol blk => Eq   (ExtValidationError blk)
@@ -72,6 +76,12 @@ deriving instance LedgerSupportsProtocol blk => Eq   (ExtValidationError blk)
 -- kinds of type families.
 instance LedgerSupportsProtocol blk => NoUnexpectedThunks (ExtLedgerState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(ExtLedgerState blk))
+
+instance ( Typeable (LedgerState blk), CanonicalExamples (LedgerState blk)
+         , Typeable (HeaderError blk), CanonicalExamples (HeaderError blk)
+         , Typeable blk, ConsensusProtocol (BlockProtocol blk), HasAnnTip blk
+         , Typeable (ConsensusState (BlockProtocol blk)), Typeable (TipInfo blk))
+    => CanonicalExamples (ExtLedgerState blk)
 
 deriving instance ( LedgerSupportsProtocol blk
                   , Eq (ConsensusState (BlockProtocol blk))
@@ -115,7 +125,10 @@ lemma_protocoLedgerView_applyLedgerBlock cfg blk st
   The extended ledger can behave like a ledger
 -------------------------------------------------------------------------------}
 
-instance ( IsLedger (LedgerState  blk)
+instance ( Typeable (LedgerCfg (LedgerState blk))
+         , Typeable (LedgerErr (LedgerState blk))
+         , CanonicalExamples (HeaderError blk)
+         , IsLedger (LedgerState  blk)
          , LedgerSupportsProtocol blk
          )
       => IsLedger (ExtLedgerState blk) where
@@ -128,6 +141,9 @@ instance ( IsLedger (LedgerState  blk)
       Ticked _slot ledger' = applyChainTick (configLedger cfg) slot ledger
 
 instance ( LedgerSupportsProtocol blk
+         , Typeable (LedgerCfg (LedgerState blk))
+         , Typeable (LedgerErr (LedgerState blk))
+         , CanonicalExamples (HeaderError blk)
          ) => ApplyBlock (ExtLedgerState blk) blk where
   applyLedgerBlock cfg blk (Ticked {
                                 tickedSlotNo      = slot

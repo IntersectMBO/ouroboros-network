@@ -76,7 +76,7 @@ import qualified System.Random as R
 import           Test.QuickCheck hiding (Result)
 
 import           Cardano.Crypto.DSIGN
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (ChainHash (..), HeaderHash,
                      SlotNo (..))
@@ -151,7 +151,7 @@ newtype TestHash = UnsafeTestHash {
     }
   deriving stock   (Generic)
   deriving newtype (Eq, Ord, Serialise, ToExpr)
-  deriving anyclass NoUnexpectedThunks
+  deriving anyclass (NoUnexpectedThunks, CanonicalExamples)
 
 pattern TestHash :: NonEmpty Word64 -> TestHash
 pattern TestHash path <- UnsafeTestHash path where
@@ -200,12 +200,12 @@ data TestBlock = TestBlock {
       -- blocks with the same 'TestHash' have the same value for 'tbValid'.
     }
   deriving stock    (Show, Eq, Ord, Generic)
-  deriving anyclass (Serialise, NoUnexpectedThunks, ToExpr)
+  deriving anyclass (Serialise, NoUnexpectedThunks, ToExpr, CanonicalExamples)
 
 instance GetHeader TestBlock where
   newtype Header TestBlock = TestHeader { testHeader :: TestBlock }
     deriving stock   (Eq, Show)
-    deriving newtype (NoUnexpectedThunks, Serialise)
+    deriving newtype (NoUnexpectedThunks, Serialise, CanonicalExamples)
   getHeader = TestHeader
 
 type instance HeaderHash TestBlock = TestHash
@@ -256,7 +256,7 @@ data instance BlockConfig TestBlock = TestBlockConfig {
       -- conjure up a validation key out of thin air
       testBlockNumCoreNodes :: !NumCoreNodes
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoUnexpectedThunks, CanonicalExamples)
 
 data instance CodecConfig TestBlock = TestCodecConfig
   deriving (Generic, NoUnexpectedThunks)
@@ -282,7 +282,7 @@ data TestBlockError =
 
     -- | The block itself is invalid
   | InvalidBlock
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoUnexpectedThunks, CanonicalExamples)
 
 instance BlockSupportsProtocol TestBlock where
   validateView TestBlockConfig{..} =
@@ -298,7 +298,7 @@ instance BlockSupportsProtocol TestBlock where
       -- We don't want /our/ signing key, but rather the signing key of the
       -- node that produced the block
       signKey :: Block.SlotNo -> SignKeyDSIGN MockDSIGN
-      signKey (SlotNo n) = SignKeyMockDSIGN $ fromIntegral (n `mod` numCore)
+      signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
 
 instance IsLedger (LedgerState TestBlock) where
   type LedgerCfg (LedgerState TestBlock) = HardFork.EraParams

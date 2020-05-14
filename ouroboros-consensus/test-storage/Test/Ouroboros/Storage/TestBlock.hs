@@ -79,7 +79,7 @@ import           Test.QuickCheck
 import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Crypto.DSIGN
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks)
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block
@@ -130,12 +130,12 @@ data TestBlock = TestBlock {
 -- | Hash of a 'TestHeader'
 newtype TestHeaderHash = TestHeaderHash Int
   deriving stock    (Eq, Ord, Show, Generic)
-  deriving newtype  (Condense, NoUnexpectedThunks, Hashable, Serialise, Binary)
+  deriving newtype  (Condense, NoUnexpectedThunks, Hashable, Serialise, Binary, CanonicalExamples)
 
 -- | Hash of a 'TestBody'
 newtype TestBodyHash = TestBodyHash Int
   deriving stock    (Eq, Ord, Show, Generic)
-  deriving newtype  (Condense, NoUnexpectedThunks, Hashable, Serialise)
+  deriving newtype  (Condense, NoUnexpectedThunks, Hashable, Serialise, CanonicalExamples)
 
 data TestHeader = TestHeader {
       thHash     :: HeaderHash TestHeader
@@ -153,7 +153,7 @@ data TestHeader = TestHeader {
     , thIsEBB    :: !IsEBB
     }
   deriving stock    (Eq, Show, Generic)
-  deriving anyclass (NoUnexpectedThunks, Serialise)
+  deriving anyclass (NoUnexpectedThunks, Serialise, CanonicalExamples)
 
 data TestBody = TestBody {
       tbForkNo  :: !Word
@@ -174,7 +174,7 @@ data TestBody = TestBody {
 
 instance GetHeader TestBlock where
   newtype Header TestBlock = TestHeader' { unTestHeader :: TestHeader }
-    deriving newtype (Eq, Show, NoUnexpectedThunks, Serialise)
+    deriving newtype (Eq, Show, NoUnexpectedThunks, Serialise, CanonicalExamples)
   getHeader = TestHeader' . testHeader
 
 instance StandardHash TestBlock
@@ -211,7 +211,7 @@ data instance BlockConfig TestBlock = TestBlockConfig {
       -- conjure up a validation key out of thin air
     , testBlockNumCoreNodes :: !NumCoreNodes
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoUnexpectedThunks, CanonicalExamples)
 
 data instance CodecConfig TestBlock = TestCodecConfig
   deriving (Generic, NoUnexpectedThunks)
@@ -437,7 +437,7 @@ instance BlockSupportsProtocol TestBlock where
       -- We don't want /our/ signing key, but rather the signing key of the
       -- node that produced the block
       signKey :: SlotNo -> SignKeyDSIGN MockDSIGN
-      signKey (SlotNo n) = SignKeyMockDSIGN $ fromIntegral (n `mod` numCore)
+      signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
 
   selectView _ hdr = (blockNo hdr, thIsEBB (unTestHeader hdr))
 
@@ -449,7 +449,7 @@ data TestBlockError =
 
     -- | The block itself is invalid
   | InvalidBlock
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoUnexpectedThunks, CanonicalExamples)
 
 instance IsLedger (LedgerState TestBlock) where
   type LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
@@ -489,7 +489,7 @@ instance HasAnnTip TestBlock where
 
 data TestBlockOtherHeaderEnvelopeError =
     UnexpectedEBBInSlot !SlotNo
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoUnexpectedThunks, CanonicalExamples)
 
 instance ValidateEnvelope TestBlock where
   type OtherHeaderEnvelopeError TestBlock = TestBlockOtherHeaderEnvelopeError

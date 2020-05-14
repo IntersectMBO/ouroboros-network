@@ -58,7 +58,7 @@ import           Data.Void (Void)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (enforceSize)
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks)
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block hiding (Tip (..))
@@ -89,6 +89,9 @@ data AnnTip blk = AnnTip {
 deriving instance HasAnnTip blk => Show               (AnnTip blk)
 deriving instance HasAnnTip blk => Eq                 (AnnTip blk)
 deriving instance HasAnnTip blk => NoUnexpectedThunks (AnnTip blk)
+deriving instance (HasAnnTip blk, Typeable (TipInfo blk),
+    CanonicalExamples (HeaderHash blk))
+    => CanonicalExamples  (AnnTip blk)
 
 annTipHash :: forall blk. HasAnnTip blk => AnnTip blk -> HeaderHash blk
 annTipHash = tipInfoHash (Proxy @blk) . annTipInfo
@@ -103,6 +106,7 @@ class ( StandardHash blk
       , Show               (TipInfo blk)
       , Eq                 (TipInfo blk)
       , NoUnexpectedThunks (TipInfo blk)
+      , CanonicalExamples  (TipInfo blk)
       ) => HasAnnTip blk where
   type TipInfo blk :: *
   type TipInfo blk = HeaderHash blk
@@ -182,6 +186,11 @@ deriving instance ( BlockSupportsProtocol blk
                   , Eq (ConsensusState (BlockProtocol blk))
                   ) => Eq (HeaderState blk)
 
+instance (Typeable blk, Typeable (ConsensusState (BlockProtocol blk)),
+    ConsensusProtocol (BlockProtocol blk), HasAnnTip blk, Typeable (TipInfo blk),
+    CanonicalExamples (HeaderHash blk))
+    => CanonicalExamples (HeaderState blk)
+
 genesisHeaderState :: ConsensusState (BlockProtocol blk) -> HeaderState blk
 genesisHeaderState state = HeaderState state Seq.Empty Origin
 
@@ -258,6 +267,8 @@ deriving instance (ValidateEnvelope blk) => Eq   (HeaderEnvelopeError blk)
 deriving instance (ValidateEnvelope blk) => Show (HeaderEnvelopeError blk)
 deriving instance (ValidateEnvelope blk, Typeable blk)
                => NoUnexpectedThunks (HeaderEnvelopeError blk)
+deriving instance (ValidateEnvelope blk, Typeable blk)
+               => CanonicalExamples (HeaderEnvelopeError blk)
 
 castHeaderEnvelopeError :: ( HeaderHash blk ~ HeaderHash blk'
                            , OtherHeaderEnvelopeError blk ~ OtherHeaderEnvelopeError blk'
@@ -273,7 +284,9 @@ castHeaderEnvelopeError = \case
 class ( HasAnnTip blk
       , Eq                 (OtherHeaderEnvelopeError blk)
       , Show               (OtherHeaderEnvelopeError blk)
-      , NoUnexpectedThunks (OtherHeaderEnvelopeError blk))
+      , Typeable           (OtherHeaderEnvelopeError blk)
+      , NoUnexpectedThunks (OtherHeaderEnvelopeError blk)
+      , CanonicalExamples  (OtherHeaderEnvelopeError blk))
    => ValidateEnvelope blk where
 
   -- | A block-specific error that 'validateEnvelope' can return.
@@ -388,6 +401,10 @@ deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
                => Show               (HeaderError blk)
 deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
                => NoUnexpectedThunks (HeaderError blk)
+deriving instance ( BlockSupportsProtocol blk, ValidateEnvelope blk
+                  , Typeable (ValidationErr (BlockProtocol blk))
+                  , CanonicalExamples (HeaderEnvelopeError blk))
+               => CanonicalExamples  (HeaderError blk)
 
 castHeaderError :: (   ValidationErr (BlockProtocol blk )
                      ~ ValidationErr (BlockProtocol blk')

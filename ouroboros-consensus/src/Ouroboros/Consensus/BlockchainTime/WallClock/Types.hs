@@ -23,8 +23,9 @@ import           Data.Fixed
 import           Data.Time (NominalDiffTime, UTCTime)
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..),
-                     UseIsNormalForm (..))
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks,
+                     OnlyCheckIsWHNF (..), UseIsNormalForm (..))
+import           Cardano.Prelude.CanonicalExamples.Orphans ()
 
 import           Control.Monad.Class.MonadTime (MonadTime (..))
 
@@ -57,7 +58,7 @@ defaultSystemTime start = SystemTime start getCurrentTime
 
 -- | Slot length
 newtype SlotLength = SlotLength { getSlotLength :: NominalDiffTime }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
+  deriving (Show, Eq, Generic, NoUnexpectedThunks, CanonicalExamples)
 
 -- | Constructor for 'SlotLength'
 mkSlotLength :: NominalDiffTime -> SlotLength

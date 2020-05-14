@@ -29,7 +29,7 @@ import           Cardano.Binary (enforceSize)
 
 import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Delegation as Delegation
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks, CanonicalExamples)
 import           Cardano.Slotting.SlotBounded (Bounds (..), SlotBounded (..))
 
 import           Ouroboros.Network.Block (SlotNo (..))
@@ -56,7 +56,7 @@ import           Ouroboros.Consensus.Byron.Protocol
 -- See 'History' for more details
 newtype DelegationHistory = DH (History Delegation.Map)
   deriving stock (Show, Eq)
-  deriving newtype (NoUnexpectedThunks)
+  deriving newtype (NoUnexpectedThunks, CanonicalExamples)
 
 -- | Empty (genesis) delegation history
 empty :: DelegationHistory

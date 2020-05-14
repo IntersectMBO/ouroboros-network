@@ -10,7 +10,8 @@ module Ouroboros.Consensus.Config (
 
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks,
+                     Typeable)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -22,12 +23,20 @@ data TopLevelConfig blk = TopLevelConfig {
     , configLedger    :: !(LedgerConfig                   blk)
     , configBlock     :: !(BlockConfig                    blk)
     }
-  deriving (Generic)
+  deriving (Generic, Typeable)
 
 instance ( ConsensusProtocol  (BlockProtocol blk)
          , UpdateLedger                      blk
          , NoUnexpectedThunks (BlockConfig   blk)
          ) => NoUnexpectedThunks (TopLevelConfig blk)
+
+instance (CanonicalExamples (LedgerCfg (LedgerState blk))
+         , CanonicalExamples (ConsensusConfig (BlockProtocol blk))
+         , CanonicalExamples (BlockConfig blk)
+         , Typeable blk
+         , Typeable (BlockProtocol blk)
+         , Typeable (LedgerCfg (LedgerState blk)))
+    => CanonicalExamples (TopLevelConfig blk)
 
 configSecurityParam :: ConsensusProtocol (BlockProtocol blk)
                     => TopLevelConfig blk -> SecurityParam

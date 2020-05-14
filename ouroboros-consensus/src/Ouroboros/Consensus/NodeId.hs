@@ -14,7 +14,7 @@ import           Codec.Serialise (Serialise)
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
@@ -26,7 +26,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense (..))
 -- layer does not use or provide node ids (it uses addresses).
 data NodeId = CoreId !CoreNodeId
             | RelayId !Word64
-  deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks, CanonicalExamples)
 
 instance Condense NodeId where
   condense (CoreId (CoreNodeId i)) = "c" ++ show i
@@ -35,7 +35,7 @@ instance Condense NodeId where
 -- | Core node ID
 newtype CoreNodeId = CoreNodeId Word64
   deriving stock   (Show, Eq, Ord)
-  deriving newtype (Condense, Serialise, NoUnexpectedThunks)
+  deriving newtype (Condense, Serialise, NoUnexpectedThunks, CanonicalExamples)
 
 fromCoreNodeId :: CoreNodeId -> NodeId
 fromCoreNodeId = CoreId

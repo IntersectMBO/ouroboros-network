@@ -55,7 +55,8 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Binary (enforceSize)
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks
+                     , Typeable)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..), withOriginFromMaybe,
@@ -177,7 +178,7 @@ data PBftState c = PBftState {
       --  * @and [ At s <= eiPrevSlot | s <- precedingSignedSlots ]@
       --
       --  * @'rewind' k n ('At' eiSlot) cs = 'rewind' k n eiPrevSlot cs@
-      --
+      --(PBftVerKeyHash c)
       --   where
       --
       --  * @precedingSignedSlots = filter (< eiSlot) signedSlots@
@@ -186,6 +187,12 @@ data PBftState c = PBftState {
     , ebbs       :: !MaybeEbbInfo
     }
   deriving (Generic)
+
+-- instance (PBftCrypto c, Typeable (PBftState c)) => CanonicalExamples (PBftState c)
+
+-- instance (Typeable c, CanonicalExamples c,  Typeable (PBftVerKeyHash c),
+--           Ord (PBftVerKeyHash c), CanonicalExamples (PBftVerKeyHash c))
+--     => CanonicalExamples (PBftState c)
 
 {-------------------------------------------------------------------------------
   Invariant
@@ -289,10 +296,14 @@ newtype WindowSize = WindowSize { getWindowSize :: Word64 }
 deriving instance PBftCrypto c => Show (PBftState c)
 deriving instance PBftCrypto c => Eq   (PBftState c)
 deriving instance PBftCrypto c => NoUnexpectedThunks (PBftState c)
+deriving instance (PBftCrypto c, Typeable (PBftVerKeyHash c))
+    => CanonicalExamples (PBftState c)
 
 deriving instance PBftCrypto c => Show (PBftSigner c)
 deriving instance PBftCrypto c => Eq   (PBftSigner c)
 deriving instance PBftCrypto c => NoUnexpectedThunks (PBftSigner c)
+deriving instance (PBftCrypto c, Typeable c, Typeable (PBftVerKeyHash c))
+    => CanonicalExamples (PBftSigner c)
 
 {-------------------------------------------------------------------------------
   Queries
@@ -664,7 +675,7 @@ data MaybeEbbInfo
   = NothingEbbInfo
   | JustEbbInfo !EbbInfo
   deriving stock (Eq, Generic, Ord, Show)
-  deriving anyclass (NoUnexpectedThunks, Serialise)
+  deriving anyclass (CanonicalExamples, NoUnexpectedThunks, Serialise)
 
 -- | Info about an EBB
 --
@@ -684,7 +695,7 @@ data EbbInfo = EbbInfo
     -- ^ the slot of the latest non-EBB that precedes the EBB
   }
   deriving stock (Eq, Generic, Ord, Show)
-  deriving anyclass (NoUnexpectedThunks, Serialise)
+  deriving anyclass (CanonicalExamples, NoUnexpectedThunks, Serialise)
 
 ebbsEmpty :: MaybeEbbInfo
 ebbsEmpty = NothingEbbInfo

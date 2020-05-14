@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia        #-}
 {-# LANGUAGE RecordWildCards    #-}
@@ -26,6 +27,8 @@ import           Numeric.Natural (Natural)
 
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
+import           Cardano.Prelude (CanonicalExamples, Generic)
+
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Core as Spec
 import qualified Byron.Spec.Ledger.Update as Spec
@@ -53,8 +56,10 @@ data ByronSpecGenesis = ByronSpecGenesis {
       -- as the real PBFT does ('ppSlotDuration' in 'ProtocolParameters').
     , byronSpecGenesisSlotLength    :: Natural
     }
-  deriving stock (Show)
+  deriving stock (Show, Generic)
   deriving NoUnexpectedThunks via AllowThunk ByronSpecGenesis
+
+instance CanonicalExamples ByronSpecGenesis
 
 modPBftThreshold :: (Double -> Double)
                  -> ByronSpecGenesis -> ByronSpecGenesis

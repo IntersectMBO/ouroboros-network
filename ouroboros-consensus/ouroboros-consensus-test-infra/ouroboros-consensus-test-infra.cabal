@@ -67,6 +67,7 @@ library
                      , base16-bytestring
                      , binary            >=0.8   && <0.9
                      , bytestring        >=0.10  && <0.11
+                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-prelude
                      , cardano-slotting
@@ -79,6 +80,7 @@ library
                      , generics-sop
                      , graphviz
                      , mtl               >=2.2   && <2.3
+                     , pretty-show
                      , QuickCheck
                      , quickcheck-state-machine
                      , random

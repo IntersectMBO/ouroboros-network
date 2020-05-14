@@ -30,7 +30,7 @@ module Ouroboros.Consensus.Protocol.BFT (
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks (..))
 import           Control.Monad.Except
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -116,6 +116,8 @@ data BftParams = BftParams {
     }
   deriving (Generic, NoUnexpectedThunks)
 
+instance CanonicalExamples BftParams
+
 -- | (Static) node configuration
 data instance ConsensusConfig (Bft c) = BftConfig {
       bftParams  :: !BftParams
@@ -172,12 +174,15 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
 instance BftCrypto c => NoUnexpectedThunks (ConsensusConfig (Bft c))
   -- use generic instance
 
+instance BftCrypto c
+      => CanonicalExamples (ConsensusConfig (Bft c))
+
 {-------------------------------------------------------------------------------
   BFT specific types
 -------------------------------------------------------------------------------}
 
 data BftValidationErr = BftInvalidSignature String
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
+  deriving (Show, Eq, Generic, NoUnexpectedThunks, CanonicalExamples)
 
 {-------------------------------------------------------------------------------
   Crypto models
@@ -188,6 +193,7 @@ class ( Typeable c
       , DSIGNAlgorithm (BftDSIGN c)
       , Condense (SigDSIGN (BftDSIGN c))
       , NoUnexpectedThunks (SigDSIGN (BftDSIGN c))
+      , CanonicalExamples (SigDSIGN (BftDSIGN c))
       , ContextDSIGN (BftDSIGN c) ~ ()
       ) => BftCrypto c where
   type family BftDSIGN c :: *

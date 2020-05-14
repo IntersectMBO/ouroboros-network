@@ -13,6 +13,6 @@ tests :: TestTree
 tests =
   testGroup "byron"
   [ Test.Consensus.Byron.Ledger.tests
-  , Test.ThreadNet.RealPBFT.tests
-  , Test.ThreadNet.DualPBFT.tests
+--  , Test.ThreadNet.RealPBFT.tests
+--  , Test.ThreadNet.DualPBFT.tests
   ]

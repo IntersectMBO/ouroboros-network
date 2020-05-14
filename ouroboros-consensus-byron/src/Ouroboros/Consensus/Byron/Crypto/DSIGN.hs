@@ -30,7 +30,8 @@ import           Cardano.Crypto (ProtocolMagicId, SignTag (..), Signature,
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.Seed (SeedBytesExhausted (..), getBytesFromSeed)
 import qualified Cardano.Crypto.Signing as Crypto
-import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks,
+                     UseIsNormalForm (..))
 import           Control.Exception (throw)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
@@ -73,25 +74,19 @@ instance DSIGNAlgorithm ByronDSIGN where
     newtype VerKeyDSIGN ByronDSIGN = VerKeyByronDSIGN VerificationKey
         deriving (Show, Eq, Generic)
         deriving NoUnexpectedThunks via UseIsNormalForm (VerKeyDSIGN ByronDSIGN)
+        deriving CanonicalExamples
 
     newtype SignKeyDSIGN ByronDSIGN = SignKeyByronDSIGN SigningKey
         deriving (Show, Generic)
         deriving NoUnexpectedThunks via UseIsNormalForm (SignKeyDSIGN ByronDSIGN)
+        deriving CanonicalExamples
 
     newtype SigDSIGN ByronDSIGN = SigByronDSIGN (Signature CC.Block.ToSign)
         deriving (Show, Eq, Generic)
         deriving NoUnexpectedThunks via UseIsNormalForm (SigDSIGN ByronDSIGN)
+        deriving CanonicalExamples
 
     type Signable ByronDSIGN = ByronSignable
-
-    encodeVerKeyDSIGN (VerKeyByronDSIGN pk) = toCBOR pk
-    decodeVerKeyDSIGN = VerKeyByronDSIGN <$> fromCBOR
-
-    encodeSignKeyDSIGN (SignKeyByronDSIGN pk) = toCBOR pk
-    decodeSignKeyDSIGN = SignKeyByronDSIGN <$> fromCBOR
-
-    encodeSigDSIGN (SigByronDSIGN pk) = toCBOR pk
-    decodeSigDSIGN = SigByronDSIGN <$> fromCBOR
 
     genKeyDSIGN seed =
         SignKeyByronDSIGN . snd $ deterministicKeyGen seedBytes
@@ -111,9 +106,6 @@ instance DSIGNAlgorithm ByronDSIGN where
         if verifySignatureRaw vk (Crypto.signTag magic (signTagFor genKey a) <> recoverBytes a) $ coerce sig
           then Right ()
           else Left "Verification failed"
-
-    abstractSizeVKey _ = error "Ouroboros.Consensus.Byron.Crypto.DSIGN: DSIGNAlgorithm ByronDSIGN"
-    abstractSizeSig  _ = error "Ouroboros.Consensus.Byron.Crypto.DSIGN: DSIGNAlgorithm ByronDSIGN"
 
 instance Condense (SigDSIGN ByronDSIGN) where
     condense (SigByronDSIGN s) = show s

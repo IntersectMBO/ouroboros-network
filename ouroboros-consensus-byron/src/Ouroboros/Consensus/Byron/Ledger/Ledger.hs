@@ -43,7 +43,7 @@ import           Data.ByteString (ByteString)
 import           Data.Type.Equality ((:~:) (Refl))
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks)
 import           Cardano.Slotting.Slot hiding (at)
 
 import           Cardano.Binary (fromCBOR, toCBOR)
@@ -114,7 +114,7 @@ data instance LedgerState ByronBlock = ByronLedgerState {
       byronLedgerState       :: !CC.ChainValidationState
     , byronDelegationHistory :: !DelegationHistory
     }
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoUnexpectedThunks, CanonicalExamples)
 
 instance UpdateLedger ByronBlock
 

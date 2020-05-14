@@ -27,7 +27,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (BlockNo, HeaderHash, Point)
 
@@ -54,9 +54,15 @@ class ( Show (ConsensusState p)
       , Eq   (ConsensusState p)
       , Eq   (ValidationErr  p)
       , Eq   (LedgerView     p)
+      , Typeable (ConsensusConfig p)
+      , Typeable (ConsensusState  p)
+      , Typeable (ValidationErr   p)
       , NoUnexpectedThunks (ConsensusConfig p)
       , NoUnexpectedThunks (ConsensusState  p)
       , NoUnexpectedThunks (ValidationErr   p)
+      , CanonicalExamples (ConsensusConfig p)
+      , CanonicalExamples (ConsensusState  p)
+      , CanonicalExamples (ValidationErr   p)
       , Typeable p -- so that p can appear in exceptions
       ) => ConsensusProtocol p where
 
@@ -233,3 +239,5 @@ class ( Show (ConsensusState p)
 -- the number of /slots/.
 newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
+
+instance CanonicalExamples SecurityParam

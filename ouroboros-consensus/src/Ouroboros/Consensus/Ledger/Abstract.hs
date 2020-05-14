@@ -43,7 +43,8 @@ import           Data.Type.Equality ((:~:))
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks,
+                     Typeable)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin)
@@ -62,11 +63,15 @@ class ( -- Requirements on the ledger state itself
       , Eq                 l
       , NoUnexpectedThunks l
         -- Requirements on 'LedgerCfg'
+      , Typeable           (LedgerCfg l)
       , NoUnexpectedThunks (LedgerCfg l)
+      , CanonicalExamples  (LedgerCfg l)
         -- Requirements on 'LedgerErr'
       , Show               (LedgerErr l)
       , Eq                 (LedgerErr l)
+      , Typeable           (LedgerErr l)
       , NoUnexpectedThunks (LedgerErr l)
+      , CanonicalExamples  (LedgerErr l)
       ) => IsLedger l where
   -- | Static environment required for the ledger
   type family LedgerCfg l :: *

@@ -26,7 +26,7 @@ import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>), Empty))
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks)
 
 import           Cardano.Slotting.SlotBounded (Bounds (..), SlotBounded (..))
 import qualified Cardano.Slotting.SlotBounded as SB
@@ -77,7 +77,7 @@ data History st = History {
     , historySnapshots :: !(Snapshots st)
     }
   deriving stock (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoUnexpectedThunks, CanonicalExamples)
 
 -- | Snapshots strictly after genesis
 --

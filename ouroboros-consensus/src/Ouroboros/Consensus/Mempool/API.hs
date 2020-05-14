@@ -30,6 +30,8 @@ import           Control.Monad.Except
 import           Data.Word (Word32)
 import           GHC.Stack (HasCallStack)
 
+import           Cardano.Prelude (CanonicalExamples)
+
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -37,6 +39,7 @@ import           Ouroboros.Consensus.Util.IOLike
 
 class ( UpdateLedger blk
       , NoUnexpectedThunks (GenTx blk)
+      , CanonicalExamples (GenTx blk)
       ) => ApplyTx blk where
   -- | Generalized transaction
   --
@@ -74,7 +77,8 @@ class ( UpdateLedger blk
 --
 -- The mempool will use these to locate transactions, so two different
 -- transactions should have different identifiers.
-class (Ord (TxId tx), NoUnexpectedThunks (TxId tx)) => HasTxId tx where
+class (Ord (TxId tx), NoUnexpectedThunks (TxId tx), CanonicalExamples (TxId tx))
+  => HasTxId tx where
   -- | A generalized transaction, 'GenTx', identifier.
   data family TxId tx :: *
 

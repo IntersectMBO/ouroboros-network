@@ -20,7 +20,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Protocol.Abstract
 
@@ -68,3 +68,6 @@ instance (Typeable p, Typeable s, ChainSelection p s)
 instance ConsensusProtocol p
       => NoUnexpectedThunks (ConsensusConfig (ModChainSel p s))
   -- use generic instance
+
+instance ConsensusProtocol p
+      => CanonicalExamples (ConsensusConfig (ModChainSel p s))

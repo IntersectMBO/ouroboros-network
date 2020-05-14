@@ -18,6 +18,8 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Data.ByteString (ByteString)
 
+import           Cardano.Prelude.CanonicalExamples.Orphans ()
+
 import           Cardano.Binary (Annotated)
 import           Cardano.Crypto.DSIGN
 

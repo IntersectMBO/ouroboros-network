@@ -52,8 +52,8 @@ import           Cardano.Binary (ByteSpan, DecoderError (..), FromCBOR (..),
                      ToCBOR (..), enforceSize, fromCBOR, serialize, slice,
                      toCBOR, unsafeDeserialize)
 import           Cardano.Crypto (hashDecoded)
-import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..),
-                     cborError)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks (..),
+                     UseIsNormalForm (..), cborError)
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
@@ -88,6 +88,7 @@ instance ApplyTx ByronBlock where
     | ByronUpdateVote     !Update.VoteId            !(Update.AVote            ByteString)
     deriving (Eq, Generic)
     deriving NoUnexpectedThunks via UseIsNormalForm (GenTx ByronBlock)
+    deriving CanonicalExamples
 
   -- Check that the annotation is the canonical encoding. This is currently
   -- enforced by 'decodeByronGenTx', see its docstring for more context.
@@ -112,8 +113,9 @@ instance HasTxId (GenTx ByronBlock) where
     | ByronDlgId            !Delegation.CertificateId
     | ByronUpdateProposalId !Update.UpId
     | ByronUpdateVoteId     !Update.VoteId
-    deriving (Eq, Ord)
+    deriving (Eq, Ord, Generic)
     deriving NoUnexpectedThunks via UseIsNormalForm (TxId (GenTx ByronBlock))
+    deriving CanonicalExamples
 
   txId (ByronTx             i _) = ByronTxId             i
   txId (ByronDlg            i _) = ByronDlgId            i

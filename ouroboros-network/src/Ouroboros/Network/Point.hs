@@ -18,14 +18,14 @@ module Ouroboros.Network.Point
 
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks)
 import           Cardano.Slotting.Slot
 
 data Block slot hash = Block
   { blockPointSlot :: !slot
   , blockPointHash :: !hash
   }
-  deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks, CanonicalExamples)
 
 block :: slot -> hash -> WithOrigin (Block slot hash)
 block slot hash = at (Block slot hash)

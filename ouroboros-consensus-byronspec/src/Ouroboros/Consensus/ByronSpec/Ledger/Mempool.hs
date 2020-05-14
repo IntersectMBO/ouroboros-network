@@ -13,7 +13,8 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Mempool (
 import           Codec.Serialise
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
+import           Cardano.Prelude (AllowThunk (..), CanonicalExamples,
+                     NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API
@@ -32,6 +33,7 @@ instance ApplyTx ByronSpecBlock where
     deriving stock (Show, Generic)
     deriving anyclass (Serialise)
     deriving NoUnexpectedThunks via AllowThunk (GenTx ByronSpecBlock)
+    deriving CanonicalExamples
 
   type ApplyTxErr ByronSpecBlock = ByronSpecGenTxErr
 

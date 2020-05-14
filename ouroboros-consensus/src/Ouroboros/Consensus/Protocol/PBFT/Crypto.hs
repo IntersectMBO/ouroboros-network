@@ -17,7 +17,7 @@ import           Data.Typeable
 
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Util.Condense
 
@@ -36,6 +36,11 @@ class ( Typeable c
       , Show (PBftVerKeyHash c)
       , NoUnexpectedThunks (PBftVerKeyHash c)
       , NoUnexpectedThunks (PBftDelegationCert c)
+      , Typeable (PBftVerKeyHash c)
+      , Typeable (PBftVerKeyHash c)
+      , CanonicalExamples (PBftVerKeyHash c)
+      , Typeable (PBftDelegationCert c)
+      , CanonicalExamples (PBftDelegationCert c)
       ) => PBftCrypto c where
   type family PBftDSIGN          c :: *
   type family PBftDelegationCert c = (d :: *) | d -> c

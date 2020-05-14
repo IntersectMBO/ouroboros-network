@@ -1,4 +1,7 @@
+
 {-# LANGUAGE ConstraintKinds         #-}
+{-# LANGUAGE DeriveAnyClass          #-}
+{-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE DerivingStrategies      #-}
 {-# LANGUAGE DerivingVia             #-}
 {-# LANGUAGE EmptyCase               #-}
@@ -60,7 +63,8 @@ import           Data.Typeable
 import           GHC.Stack
 
 import           Cardano.Binary (enforceSize)
-import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
+import           Cardano.Prelude (AllowThunk (..), CanonicalExamples, Generic,
+                     NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block
 
@@ -119,9 +123,13 @@ instance StandardHash m => StandardHash (DualBlock m a)
 
 instance GetHeader m => GetHeader (DualBlock m a) where
   newtype Header (DualBlock m a) = DualHeader { dualHeaderMain :: Header m }
+    deriving Generic
     deriving NoUnexpectedThunks via AllowThunk (Header (DualBlock m a))
 
   getHeader = DualHeader . getHeader . dualBlockMain
+
+instance (Typeable m, CanonicalExamples (Header m))
+    => CanonicalExamples (Header (DualBlock m a))
 
 type DualHeader m a = Header (DualBlock m a)
 
@@ -135,7 +143,12 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
       dualBlockConfigMain :: BlockConfig m
     , dualBlockConfigAux  :: BlockConfig a
     }
+  deriving Generic
   deriving NoUnexpectedThunks via AllowThunk (BlockConfig (DualBlock m a))
+
+instance (Typeable m, Typeable a, CanonicalExamples (BlockConfig m),
+    CanonicalExamples (BlockConfig a))
+    => CanonicalExamples (BlockConfig (DualBlock m a))
 
 data instance CodecConfig (DualBlock m a) = DualCodecConfig {
       dualCodecConfigMain :: CodecConfig m
@@ -174,6 +187,11 @@ class (
       , ApplyTx                m
       , HasTxId (GenTx         m)
       , Show (ApplyTxErr       m)
+      , Typeable               m
+      , Typeable (LedgerErr (LedgerState m))
+      , Typeable (LedgerCfg (LedgerState m))
+      , CanonicalExamples (LedgerConfig m)
+      , CanonicalExamples (LedgerState m)
 
         -- Requirements on the auxiliary block
         -- No 'LedgerSupportsProtocol' for @a@!
@@ -183,13 +201,19 @@ class (
       , Show (ApplyTxErr a)
       , BlockHasCodecConfig a
       , NoUnexpectedThunks (LedgerConfig a)
+      , Typeable (LedgerCfg (LedgerState a))
+      , Typeable (LedgerErr (LedgerState a))
+      , CanonicalExamples (LedgerState a)
+      , CanonicalExamples (LedgerConfig a)
+
 
         -- Requirements on the various bridges
-      , Show      (BridgeLedger m a)
-      , Eq        (BridgeLedger m a)
-      , Serialise (BridgeLedger m a)
-      , Serialise (BridgeBlock  m a)
-      , Serialise (BridgeTx     m a)
+      , Show              (BridgeLedger m a)
+      , Eq                (BridgeLedger m a)
+      , Serialise         (BridgeLedger m a)
+      , CanonicalExamples (BridgeLedger m a)
+      , Serialise         (BridgeBlock  m a)
+      , Serialise         (BridgeTx     m a)
       ) => Bridge m a where
 
   -- | Additional information relating both ledgers
@@ -237,7 +261,8 @@ instance Bridge m a => HasHeader (DualHeader m a) where
 type instance NodeState     (DualBlock m a) = NodeState     m
 type instance BlockProtocol (DualBlock m a) = BlockProtocol m
 
-instance Bridge m a => BlockSupportsProtocol (DualBlock m a) where
+instance (CanonicalExamples (Header (DualBlock m a)), Bridge m a, CanonicalExamples (BlockConfig (DualBlock m a)))
+  => BlockSupportsProtocol (DualBlock m a) where
   validateView cfg = validateView (dualBlockConfigMain cfg) . dualHeaderMain
   selectView   cfg = selectView   (dualBlockConfigMain cfg) . dualHeaderMain
 
@@ -258,6 +283,7 @@ data DualLedgerError m a = DualLedgerError {
         dualLedgerErrorMain :: LedgerError m
       , dualLedgerErrorAux  :: LedgerError a
       }
+  deriving Generic
   deriving NoUnexpectedThunks via AllowThunk (DualLedgerError m a)
 
 deriving instance ( Show (LedgerError m)
@@ -267,6 +293,10 @@ deriving instance ( Eq (LedgerError m)
                   , Eq (LedgerError a)
                   ) => Eq (DualLedgerError m a)
 
+instance ( CanonicalExamples (LedgerError m), CanonicalExamples (LedgerError a)
+         , Typeable (LedgerError m), Typeable (LedgerError a))
+    => CanonicalExamples (DualLedgerError m a)
+
 {-------------------------------------------------------------------------------
   Update the ledger
 -------------------------------------------------------------------------------}
@@ -275,9 +305,18 @@ data DualLedgerConfig m a = DualLedgerConfig {
       dualLedgerConfigMain :: LedgerConfig m
     , dualLedgerConfigAux  :: LedgerConfig a
     }
+  deriving Generic
   deriving NoUnexpectedThunks via AllowThunk (DualLedgerConfig m a)
 
-instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
+instance ( CanonicalExamples (LedgerCfg (LedgerState m))
+         , CanonicalExamples (LedgerCfg (LedgerState a))
+         , Typeable (LedgerCfg (LedgerState m))
+         , Typeable (LedgerCfg (LedgerState a))
+         )
+    => CanonicalExamples (DualLedgerConfig m a)
+
+instance ( Bridge m a)
+    => IsLedger (LedgerState (DualBlock m a)) where
   type LedgerCfg (LedgerState (DualBlock m a)) = DualLedgerConfig m a
   type LedgerErr (LedgerState (DualBlock m a)) = DualLedgerError   m a
 
@@ -402,7 +441,8 @@ instance Bridge m a => ValidateEnvelope (DualBlock m a) where
         ledgerView
         (dualHeaderMain hdr)
 
-instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
+instance ( CanonicalExamples (BlockConfig a), Bridge m a)
+      => LedgerSupportsProtocol (DualBlock m a) where
   protocolLedgerView cfg state =
       protocolLedgerView
         (dualLedgerConfigMain cfg)
@@ -449,12 +489,19 @@ data DualGenTxErr m a = DualGenTxErr {
     , dualGenTxErrAux  :: ApplyTxErr a
     }
 
-instance Bridge m a => ApplyTx (DualBlock m a) where
+instance (Typeable m, Typeable a, Typeable (BridgeTx m a), CanonicalExamples (GenTx m), CanonicalExamples (GenTx a),
+    CanonicalExamples (BridgeTx m a))
+    => CanonicalExamples (GenTx (DualBlock m a))
+
+instance (Typeable (LedgerError m), Typeable (LedgerError a), Typeable (BridgeTx m a),
+       Bridge m a, Typeable (BridgeLedger m a), CanonicalExamples (BridgeTx m a))
+    => ApplyTx (DualBlock m a) where
   data GenTx (DualBlock m a) = DualGenTx {
         dualGenTxMain   :: GenTx m
       , dualGenTxAux    :: GenTx a
       , dualGenTxBridge :: BridgeTx m a
       }
+    deriving Generic
     deriving NoUnexpectedThunks via AllowThunk (GenTx (DualBlock m a))
 
   type ApplyTxErr (DualBlock m a) = DualGenTxErr m a
@@ -503,11 +550,15 @@ instance Bridge m a => ApplyTx (DualBlock m a) where
                                     dualLedgerStateBridge
         }
 
+instance (Typeable m, CanonicalExamples (TxId (GenTx m)))
+    => CanonicalExamples (TxId (GenTx (DualBlock m a)))
+
 instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
   -- We don't need a pair of IDs, as long as we can unique ID the transaction
   newtype TxId (GenTx (DualBlock m a)) = DualGenTxId {
         dualGenTxIdMain :: GenTxId m
       }
+    deriving Generic
     deriving NoUnexpectedThunks via AllowThunk (TxId (GenTx (DualBlock m a)))
 
   txId = DualGenTxId . txId . dualGenTxMain

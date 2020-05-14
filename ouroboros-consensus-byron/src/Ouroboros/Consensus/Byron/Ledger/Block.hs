@@ -1,13 +1,16 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Byron.Ledger.Block (
     -- * Hash
@@ -43,7 +46,8 @@ import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks (..))
+import           Cardano.Prelude.CanonicalExamples.Orphans ()
 
 import qualified Crypto.Hash as Crypto
 
@@ -70,7 +74,7 @@ import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 newtype ByronHash = ByronHash { unByronHash :: CC.HeaderHash }
   deriving stock   (Eq, Ord, Show, Generic)
   deriving newtype (ToCBOR, FromCBOR, Condense)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (CanonicalExamples, NoUnexpectedThunks)
 
 mkByronHash :: CC.ABlockOrBoundaryHdr ByteString -> ByronHash
 mkByronHash = ByronHash . CC.abobHdrHash
@@ -167,6 +171,10 @@ instance Condense (Header ByronBlock) where
 
 instance NoUnexpectedThunks (Header ByronBlock) where
   showTypeOf _ = show $ typeRep (Proxy @(Header ByronBlock))
+
+-- | TODO(kde) are all changes in this module really necessary?
+deriving instance CanonicalExamples (CC.ABoundaryHeader ByteString)
+    => CanonicalExamples (Header ByronBlock)
 
 mkByronHeader :: CC.EpochSlots
               -> CC.ABlockOrBoundaryHdr ByteString

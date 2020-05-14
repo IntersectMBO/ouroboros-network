@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS -Wno-orphans #-}
@@ -21,7 +22,8 @@ import           Codec.Serialise
 import           Control.Monad.Except
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
+import           Cardano.Prelude (AllowThunk (..), CanonicalExamples (..),
+                     NoUnexpectedThunks)
 
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Control.State.Transition as Spec
@@ -42,6 +44,10 @@ newtype ByronSpecLedgerError = ByronSpecLedgerError {
     }
   deriving (Show, Eq)
   deriving NoUnexpectedThunks via AllowThunk ByronSpecLedgerError
+
+-- TODO(kde)
+instance CanonicalExamples ByronSpecLedgerError where
+  canonicalExamples = return []
 
 instance IsLedger (LedgerState ByronSpecBlock) where
   type LedgerErr (LedgerState ByronSpecBlock) = ByronSpecLedgerError
@@ -98,6 +104,10 @@ data instance LedgerState ByronSpecBlock = ByronSpecLedgerState {
   deriving NoUnexpectedThunks via AllowThunk (LedgerState ByronSpecBlock)
 
 instance UpdateLedger ByronSpecBlock
+
+-- | TODO(kderme)
+instance CanonicalExamples (LedgerState ByronSpecBlock) where
+    canonicalExamples = return []
 
 {-------------------------------------------------------------------------------
   Working with the ledger state

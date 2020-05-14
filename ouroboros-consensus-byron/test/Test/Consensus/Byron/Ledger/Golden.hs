@@ -65,6 +65,7 @@ tests = testGroup "Golden tests"
     , testCase "ExtLedgerState" test_golden_ExtLedgerState
     , testCase "Query"          test_golden_Query
     , testCase "Result"         test_golden_Result
+    , testCase "Canonical"      test_golden_All
     ]
 
 -- | Note that we must use the same value for the 'SecurityParam' as for the
@@ -1243,3 +1244,13 @@ _goldenTestCBORBackwardsCompat dec a path = do
         -> a' @?= a
         | otherwise
         -> assertFailure $ "Left-over bytes: " <> show leftover
+
+test_golden_All :: Assertion
+test_golden_All = goldenTestCBORCanonicalAll Nothing
+    [ Explicit encodeByronHeaderHash
+    , Explicit encodeByronConsensusState
+    , Explicit encodeByronLedgerState
+--    -- TODO(kde) Use CanonicalExamplesSized for this:
+--    , Explicit encodeByronExtLedgerState 
+    ]
+    []

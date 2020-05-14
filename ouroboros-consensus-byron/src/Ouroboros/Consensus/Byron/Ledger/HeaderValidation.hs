@@ -13,7 +13,7 @@ import           Control.Monad.Except
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (CanonicalExamples, NoUnexpectedThunks)
 
 import qualified Cardano.Chain.Slotting as CC
 
@@ -41,7 +41,7 @@ instance HasAnnTip ByronBlock where
 
 data ByronOtherHeaderEnvelopeError =
     UnexpectedEBBInSlot !SlotNo
-  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoUnexpectedThunks, CanonicalExamples)
 
 instance ValidateEnvelope ByronBlock where
   type OtherHeaderEnvelopeError ByronBlock = ByronOtherHeaderEnvelopeError

@@ -19,6 +19,26 @@ packages: ./typed-protocols
           ./ntp-client
           ./Win32-network
 
+          ../cardano-prelude
+          ../cardano-prelude/test
+
+          ../cardano-base/binary
+          ../cardano-base/binary/test
+          ../cardano-base/cardano-crypto-class
+          ../cardano-base/slotting
+
+          ../cardano-ledger/cardano-ledger
+          ../cardano-ledger/cardano-ledger/test
+          ../cardano-ledger/crypto
+          ../cardano-ledger/crypto/test
+
+          ../cardano-ledger-specs/byron/ledger/executable-spec
+          ../cardano-ledger-specs/semantics/executable-spec
+          ../cardano-ledger-specs/byron/chain/executable-spec
+          ../cardano-ledger-specs/shelley/chain-and-ledger/dependencies/non-integer
+          ../cardano-ledger-specs/shelley/chain-and-ledger/executable-spec
+          ../cardano-ledger-specs/shelley/chain-and-ledger/executable-spec/test
+
 constraints:
   ip < 1.5,
   graphviz == 2999.20.0.3,
@@ -117,120 +137,9 @@ source-repository-package
 
 source-repository-package
   type: git
-  location: https://github.com/input-output-hk/cardano-prelude
-  tag: bd7eb69d27bfaee46d435bc1d2720520b1446426
-  --sha256: 1cmxh1gk7lvgs6bfr8v6k2lpjxmk0qam58clvdvxkybrlbh186ps
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-prelude
-  tag: bd7eb69d27bfaee46d435bc1d2720520b1446426
-  --sha256: 1cmxh1gk7lvgs6bfr8v6k2lpjxmk0qam58clvdvxkybrlbh186ps
-  subdir: test
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-base
-  tag: c845509c307af9df956ef203ac8ad67fe4d5d065
-  --sha256: 1ik5giyjinj5rq8yqxilw87n41c1zjrd83iihnfjnhpwwy86qza3
-  subdir: binary
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-base
-  tag: c845509c307af9df956ef203ac8ad67fe4d5d065
-  --sha256: 1ik5giyjinj5rq8yqxilw87n41c1zjrd83iihnfjnhpwwy86qza3
-  subdir: binary/test
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-base
-  tag: c845509c307af9df956ef203ac8ad67fe4d5d065
-  --sha256: 1ik5giyjinj5rq8yqxilw87n41c1zjrd83iihnfjnhpwwy86qza3
-  subdir: cardano-crypto-class
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-base
-  tag: c845509c307af9df956ef203ac8ad67fe4d5d065
-  --sha256: 1ik5giyjinj5rq8yqxilw87n41c1zjrd83iihnfjnhpwwy86qza3
-  subdir: slotting
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 1b2a06df9a710f5cc9b511b6ae39c23bcfd04486
-  --sha256: 0qva90k2alhznn88nkxp0ghphhnrynf2sl0n9jccc3q6hycdzxv8
-  subdir: semantics/executable-spec
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 1b2a06df9a710f5cc9b511b6ae39c23bcfd04486
-  --sha256: 0qva90k2alhznn88nkxp0ghphhnrynf2sl0n9jccc3q6hycdzxv8
-  subdir: byron/ledger/executable-spec
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 1b2a06df9a710f5cc9b511b6ae39c23bcfd04486
-  --sha256: 0qva90k2alhznn88nkxp0ghphhnrynf2sl0n9jccc3q6hycdzxv8
-  subdir: byron/chain/executable-spec
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 1b2a06df9a710f5cc9b511b6ae39c23bcfd04486
-  --sha256: 0qva90k2alhznn88nkxp0ghphhnrynf2sl0n9jccc3q6hycdzxv8
-  subdir: shelley/chain-and-ledger/dependencies/non-integer
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 1b2a06df9a710f5cc9b511b6ae39c23bcfd04486
-  --sha256: 0qva90k2alhznn88nkxp0ghphhnrynf2sl0n9jccc3q6hycdzxv8
-  subdir: shelley/chain-and-ledger/executable-spec
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 1b2a06df9a710f5cc9b511b6ae39c23bcfd04486
-  --sha256: 0qva90k2alhznn88nkxp0ghphhnrynf2sl0n9jccc3q6hycdzxv8
-  subdir: shelley/chain-and-ledger/executable-spec/test
-
-source-repository-package
-  type: git
   location: https://github.com/input-output-hk/goblins
   tag: 26d35ad52fe9ade3391532dbfeb2f416f07650bc
   --sha256: 17p5x0hj6c67jkdqx0cysqlwq2zs2l87azihn1alzajy9ak6ii0b
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-ledger
-  tag: 9ee8a6630a8719ba54554c3ce10c555bf5dff4cc
-  --sha256: 0ycd751rd7952amrmq1q7i84ic2xwc3xipvqvd3zcy6xyncqdxk4
-  subdir: cardano-ledger
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-ledger
-  tag: 9ee8a6630a8719ba54554c3ce10c555bf5dff4cc
-  --sha256: 0ycd751rd7952amrmq1q7i84ic2xwc3xipvqvd3zcy6xyncqdxk4
-  subdir: crypto
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-ledger
-  tag: 9ee8a6630a8719ba54554c3ce10c555bf5dff4cc
-  --sha256: 0ycd751rd7952amrmq1q7i84ic2xwc3xipvqvd3zcy6xyncqdxk4
-  subdir: cardano-ledger/test
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-ledger
-  tag: 9ee8a6630a8719ba54554c3ce10c555bf5dff4cc
-  --sha256: 0ycd751rd7952amrmq1q7i84ic2xwc3xipvqvd3zcy6xyncqdxk4
-  subdir: crypto/test
 
 source-repository-package
   type: git
