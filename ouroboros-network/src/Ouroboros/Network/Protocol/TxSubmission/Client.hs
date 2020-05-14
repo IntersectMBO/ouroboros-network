@@ -64,7 +64,9 @@ data ClientStIdle txid tx m a = ClientStIdle {
                              -> m (ClientStTxIds blocking txid tx m a),
 
     recvMsgRequestTxs        :: [txid]
-                             -> m (ClientStTxs txid tx m a)
+                             -> m (ClientStTxs txid tx m a),
+
+    recvMsgKThxBye           :: m a
   }
 
 data ClientStTxIds blocking txid tx m a where
@@ -94,7 +96,7 @@ txSubmissionClientPeer (TxSubmissionClient client) =
   where
     go :: ClientStIdle txid tx m a
        -> Peer (TxSubmission txid tx) AsClient StIdle m a
-    go ClientStIdle {recvMsgRequestTxIds, recvMsgRequestTxs} =
+    go ClientStIdle {recvMsgRequestTxIds, recvMsgRequestTxs, recvMsgKThxBye} =
       Await (ServerAgency TokIdle) $ \msg -> case msg of
         MsgRequestTxIds blocking ackNo reqNo -> Effect $ do
           reply <- recvMsgRequestTxIds blocking ackNo reqNo
@@ -115,3 +117,6 @@ txSubmissionClientPeer (TxSubmissionClient client) =
                          (MsgReplyTxs txs)
                          (go k)
 
+        MsgKThxBye -> Effect $ do
+          a <- recvMsgKThxBye
+          return (Done TokDone a)

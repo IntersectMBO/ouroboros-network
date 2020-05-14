@@ -199,6 +199,12 @@ instance Protocol (TxSubmission txid tx) where
       :: [tx]
       -> Message (TxSubmission txid tx) StTxs StIdle
 
+    -- Server side termination message. The name is inpired by
+    -- [LOLCODE](https://en.wikipedia.org/wiki/LOLCODE).
+    --
+    MsgKThxBye
+      :: Message (TxSubmission txid tx) StIdle StDone
+
     -- | Termination message, initiated by the client when the server is
     -- making a blocking call for more transaction identifiers.
     --

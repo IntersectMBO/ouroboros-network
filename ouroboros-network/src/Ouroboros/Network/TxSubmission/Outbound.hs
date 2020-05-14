@@ -74,19 +74,19 @@ instance Exception TxSubmissionProtocolError where
 
 
 txSubmissionOutbound
-  :: forall txid tx idx m void.
+  :: forall txid tx idx m.
      (Ord txid, Ord idx, MonadSTM m, MonadThrow m)
   => Tracer m (TraceTxSubmissionOutbound txid tx)
   -> Word16         -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
-  -> TxSubmissionClient txid tx m void
+  -> TxSubmissionClient txid tx m ()
 txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} =
     TxSubmissionClient (pure (client Seq.empty Map.empty mempoolZeroIdx))
   where
-    client :: StrictSeq txid -> Map txid idx -> idx -> ClientStIdle txid tx m void
+    client :: StrictSeq txid -> Map txid idx -> idx -> ClientStIdle txid tx m ()
     client !unackedSeq !unackedMap !lastIdx =
         assert invariant
-        ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs }
+        ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs, recvMsgKThxBye }
       where
         invariant =
           Map.isSubmapOfBy
@@ -98,7 +98,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} =
                                TokBlockingStyle blocking
                             -> Word16
                             -> Word16
-                            -> m (ClientStTxIds blocking txid tx m void)
+                            -> m (ClientStTxIds blocking txid tx m ())
         recvMsgRequestTxIds blocking ackNo reqNo = do
 
           when (ackNo > fromIntegral (Seq.length unackedSeq)) $
@@ -169,7 +169,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} =
 
 
         recvMsgRequestTxs :: [txid]
-                          -> m (ClientStTxs txid tx m void)
+                          -> m (ClientStTxs txid tx m ())
         recvMsgRequestTxs txids = do
           -- Trace the IDs of the transactions requested.
           traceWith tracer (TraceTxSubmissionOutboundRecvMsgRequestTxs txids)
@@ -193,3 +193,6 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} =
           traceWith tracer (TraceTxSubmissionOutboundSendMsgReplyTxs txs)
 
           return $ SendMsgReplyTxs txs client'
+
+        recvMsgKThxBye :: m ()
+        recvMsgKThxBye = pure ()

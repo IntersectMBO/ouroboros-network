@@ -105,6 +105,10 @@ codecTxSubmission encodeTxId decodeTxId
      <> CBOR.encodeListLenIndef
      <> foldr (\txid r -> encodeTxId txid <> r) CBOR.encodeBreak txids
 
+    encode (ServerAgency TokIdle) MsgKThxBye =
+         CBOR.encodeListLen 1
+      <> CBOR.encodeWord 5
+
     encode (ClientAgency TokTxs)  (MsgReplyTxs txs) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 3
@@ -157,6 +161,9 @@ codecTxSubmission encodeTxId decodeTxId
           CBOR.decodeListLenIndef
           txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTxId
           return (SomeMessage (MsgRequestTxs txids))
+
+        (ServerAgency TokIdle,       1, 5) ->
+          return (SomeMessage MsgKThxBye)
 
         (ClientAgency TokTxs,     2, 3) -> do
           CBOR.decodeListLenIndef
