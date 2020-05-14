@@ -26,6 +26,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Exception (Exception(..), assert)
 import           Control.Tracer (Tracer, traceWith)
 
+import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import           Ouroboros.Network.Protocol.TxSubmission.Client
 import           Ouroboros.Network.TxSubmission.Mempool.Reader
                      (MempoolSnapshot (..), TxSubmissionMempoolReader (..))
@@ -79,8 +80,9 @@ txSubmissionOutbound
   => Tracer m (TraceTxSubmissionOutbound txid tx)
   -> Word16         -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
+  -> NodeToNodeVersion
   -> TxSubmissionClient txid tx m ()
-txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} =
+txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
     TxSubmissionClient (pure (client Seq.empty Map.empty mempoolZeroIdx))
   where
     client :: StrictSeq txid -> Map txid idx -> idx -> ClientStIdle txid tx m ()
