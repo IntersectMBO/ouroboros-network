@@ -10,19 +10,22 @@ module Test.Consensus.Shelley.Ledger.Golden (
 
 import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..))
 import           Data.Coerce (coerce)
+import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
 import qualified Data.Set as Set
+import           Data.Time (UTCTime (..), fromGregorian)
 
 import           Cardano.Binary (toCBOR)
-import           Cardano.Slotting.Slot (EpochSize (..))
+import           Cardano.Crypto (ProtocolMagicId (..))
+import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Network.Block (Point (..), blockHash, genesisPoint)
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -45,6 +48,7 @@ import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (ConcreteCrypto,
 import qualified Test.Shelley.Spec.Ledger.Examples as Examples
 import qualified Test.Shelley.Spec.Ledger.Utils as SL (testGlobals)
 
+import           Ouroboros.Consensus.Shelley.Genesis
 import           Ouroboros.Consensus.Shelley.Ledger
 import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
@@ -936,7 +940,7 @@ test_golden_LedgerState = goldenTestCBOR
 
 exampleLedgerState :: LedgerState Block
 exampleLedgerState = reapplyLedgerBlock
-    (ShelleyLedgerConfig SL.testGlobals testEraParams)
+    ledgerCfg
     (mkShelleyBlock newBlock)
     (Ticked 0 ShelleyLedgerState {
         ledgerTip    = genesisPoint
@@ -945,14 +949,33 @@ exampleLedgerState = reapplyLedgerBlock
       })
   where
     Examples.CHAINExample { startState, newBlock } = Examples.ex2A
+    ledgerCfg = mkShelleyLedgerConfig testShelleyGenesis testEpochInfo
 
--- | Era parameters chosen to be compatible with 'SL.testGlobals'
-testEraParams :: HardFork.EraParams
-testEraParams =
-    mkShelleyEraParams
-      (SecurityParam 10)
-      (EpochSize 100)
-      (slotLengthFromSec 2) -- Not really important
+testEpochInfo :: EpochInfo Identity
+testEpochInfo = SL.epochInfo SL.testGlobals
+
+-- | These are dummy values.
+testShelleyGenesis :: ShelleyGenesis c
+testShelleyGenesis = ShelleyGenesis {
+      sgStartTime         = SystemStart $ UTCTime (fromGregorian 2020 5 14) 0
+    , sgNetworkMagic      = NetworkMagic 0
+    , sgProtocolMagicId   = ProtocolMagicId 0
+      -- Chosen to match SL.activeSlotCoeff
+    , sgActiveSlotsCoeff  = 0.9
+    , sgSecurityParam     = SecurityParam $ SL.securityParameter SL.testGlobals
+    , sgEpochLength       = runIdentity $ epochInfoSize testEpochInfo 0
+    , sgSlotsPerKESPeriod = SL.slotsPerKESPeriod SL.testGlobals
+    , sgMaxKESEvolutions  = SL.maxKESEvo SL.testGlobals
+      -- Not important
+    , sgSlotLength        = slotLengthFromSec 2
+    , sgUpdateQuorum      = SL.quorum  SL.testGlobals
+    , sgMaxMajorPV        = SL.maxMajorPV SL.testGlobals
+    , sgMaxLovelaceSupply = SL.maxLovelaceSupply SL.testGlobals
+    , sgProtocolParams    = SL.emptyPParams
+    , sgGenDelegs         = Map.empty
+    , sgInitialFunds      = Map.empty
+    , sgStaking           = emptyGenesisStaking
+    }
 
 test_golden_HeaderState :: Assertion
 test_golden_HeaderState = goldenTestCBOR

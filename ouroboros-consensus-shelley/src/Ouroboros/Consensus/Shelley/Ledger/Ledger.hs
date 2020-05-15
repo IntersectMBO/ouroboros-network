@@ -105,8 +105,13 @@ data ShelleyLedgerError c
 
 instance NoUnexpectedThunks (ShelleyLedgerError c)
 
-data ShelleyLedgerConfig = ShelleyLedgerConfig {
-      shelleyLedgerGlobals   :: !SL.Globals
+data ShelleyLedgerConfig c = ShelleyLedgerConfig {
+      shelleyLedgerGenesis   :: !(ShelleyGenesis c)
+      -- | Derived from 'shelleyLedgerGenesis' but we store a cached version
+      -- because it used very often.
+    , shelleyLedgerGlobals   :: !SL.Globals
+      -- | Derived from 'shelleyLedgerGenesis' but we store a cached version
+      -- because it used very often.
     , shelleyLedgerEraParams :: !HardFork.EraParams
     }
   deriving (Generic, NoUnexpectedThunks)
@@ -119,9 +124,13 @@ mkShelleyEraParams (SecurityParam k) epochLen slotLen = HardFork.EraParams {
     , eraSafeZone   = HardFork.SafeZone (k * 2) HardFork.NoLowerBound
     }
 
-mkShelleyLedgerConfig :: ShelleyGenesis c -> ShelleyLedgerConfig
-mkShelleyLedgerConfig genesis = ShelleyLedgerConfig {
-      shelleyLedgerGlobals   = shelleyGlobals
+mkShelleyLedgerConfig
+  :: ShelleyGenesis c
+  -> EpochInfo Identity
+  -> ShelleyLedgerConfig c
+mkShelleyLedgerConfig genesis epochInfo = ShelleyLedgerConfig {
+      shelleyLedgerGenesis   = genesis
+    , shelleyLedgerGlobals   = shelleyGlobals
     , shelleyLedgerEraParams = mkShelleyEraParams
                                  (sgSecurityParam genesis)
                                  (sgEpochLength   genesis)
@@ -130,11 +139,6 @@ mkShelleyLedgerConfig genesis = ShelleyLedgerConfig {
   where
     SecurityParam k = sgSecurityParam genesis
     f = SL.intervalValue . SL.activeSlotVal $ sgActiveSlotCoeff genesis
-
-    -- TODO: This must instead be derived from the hard fork history.
-    -- <https://github.com/input-output-hk/ouroboros-network/issues/1205>
-    epochInfo :: EpochInfo Identity
-    epochInfo = fixedSizeEpochInfo $ sgEpochLength genesis
 
     shelleyGlobals :: SL.Globals
     shelleyGlobals = SL.Globals {
@@ -154,7 +158,7 @@ mkShelleyLedgerConfig genesis = ShelleyLedgerConfig {
 
 instance TPraosCrypto c => IsLedger (LedgerState (ShelleyBlock c)) where
   type LedgerErr (LedgerState (ShelleyBlock c)) = ShelleyLedgerError c
-  type LedgerCfg (LedgerState (ShelleyBlock c)) = ShelleyLedgerConfig
+  type LedgerCfg (LedgerState (ShelleyBlock c)) = ShelleyLedgerConfig c
 
   applyChainTick
     cfg
