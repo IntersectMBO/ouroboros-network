@@ -50,10 +50,7 @@ tests = testGroup "RealTPraos"
     [ testProperty "simple convergence" $ withMaxSuccess 20 $
           forAll (SecurityParam <$> elements [5, 10])
             $ \k ->
-          -- TODO it would be good to test this with intermediate values, but at
-          -- the moment the test sometimes fails if we do this.
-          -- > choose (0,1)
-          forAll (elements [0,1])
+          forAll (elements [x / 10 | x <- [1..10]])
             $ \d ->
           forAllShrink
               (genRealTPraosTestConfig k)
@@ -125,6 +122,10 @@ prop_simple_real_tpraos_convergence k d
 
     epochSize :: EpochSize
     epochSize = sgEpochLength genesisConfig
+
+-------------------------------------------------------------------------
+-- Test config
+-------------------------------------------------------------------------
 
 genRealTPraosTestConfig :: SecurityParam -> Gen TestConfig
 genRealTPraosTestConfig _k = do
