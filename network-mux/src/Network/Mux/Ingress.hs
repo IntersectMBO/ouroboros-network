@@ -14,7 +14,6 @@ module Network.Mux.Ingress (
 import           Data.Array
 import           Data.List (nub)
 import qualified Data.ByteString.Lazy as BL
-import           GHC.Stack
 import           Text.Printf
 
 import           Control.Monad
@@ -99,7 +98,7 @@ data MiniProtocolDispatchInfo m =
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from
 -- the underlying Mux Bearer and forwards it to the matching ingress queue.
 demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-            MonadTimer m, MonadTime m, HasCallStack)
+            MonadTimer m, MonadTime m)
       => [MiniProtocolState mode m]
       -> MuxBearer m
       -> m void
@@ -115,10 +114,10 @@ demuxer ptcls bearer =
                             -- delivered to InitiatorDir and vice versa:
                             (flipMiniProtocolDir $ msDir sdu) of
       Nothing   -> throwM (MuxError MuxUnknownMiniProtocol
-                          ("id = " ++ show (msNum sdu)) callStack)
+                          ("id = " ++ show (msNum sdu)))
       Just MiniProtocolDirUnused ->
                    throwM (MuxError MuxInitiatorOnly
-                          ("id = " ++ show (msNum sdu)) callStack)
+                          ("id = " ++ show (msNum sdu)))
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
           buf <- readTVar q
@@ -127,7 +126,6 @@ demuxer ptcls bearer =
               else throwM $ MuxError MuxIngressQueueOverRun
                                 (printf "Ingress Queue overrun on %s %s"
                                  (show $ msNum sdu) (show $ msDir sdu))
-                                callStack
 
 lookupMiniProtocol :: MiniProtocolDispatch m
                    -> MiniProtocolNum

@@ -19,7 +19,6 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
-import           GHC.Stack
 import           System.IO (Handle, hFlush)
 
 #if defined(mingw32_HOST_OS)
@@ -81,7 +80,7 @@ pipeAsMuxBearer tracer channel =
           Mx.sduSize = 32768
         }
     where
-      readPipe :: HasCallStack => Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
+      readPipe :: Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
       readPipe _ = do
           traceWith tracer $ Mx.MuxTraceRecvHeaderStart
           hbuf <- recvLen' 8 []
@@ -101,7 +100,7 @@ pipeAsMuxBearer tracer channel =
           buf <- readHandle channel l
                     `catch` Mx.handleIOException "readHandle errored"
           if BL.null buf
-              then throwM $ Mx.MuxError Mx.MuxBearerClosed "Pipe closed when reading data" callStack
+              then throwM $ Mx.MuxError Mx.MuxBearerClosed "Pipe closed when reading data"
               else do
                   traceWith tracer $ Mx.MuxTraceRecvEnd (fromIntegral $ BL.length buf)
                   recvLen' (l - fromIntegral (BL.length buf)) (buf : bufs)

@@ -13,8 +13,6 @@ import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 
-import           GHC.Stack
-
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer hiding (timeout)
@@ -60,7 +58,7 @@ socketAsMuxBearer sduTimeout tracer sd =
     where
       hdrLenght = 8
 
-      readSocket :: HasCallStack => Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
+      readSocket :: Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
       readSocket timeout = do
           traceWith tracer $ Mx.MuxTraceRecvHeaderStart
 
@@ -72,7 +70,7 @@ socketAsMuxBearer sduTimeout tracer sd =
           case r_m of
                 Nothing -> do
                     traceWith tracer $ Mx.MuxTraceSDUReadTimeoutException
-                    throwM $ Mx.MuxError Mx.MuxSDUReadTimeout "Mux SDU Timeout" callStack
+                    throwM $ Mx.MuxError Mx.MuxSDUReadTimeout "Mux SDU Timeout"
                 Just r -> return r
 
       recvRem :: BL.ByteString -> IO (Mx.MuxSDU, Time)
@@ -114,7 +112,7 @@ socketAsMuxBearer sduTimeout tracer sd =
                       threadDelay 1
                   throwM $ Mx.MuxError Mx.MuxBearerClosed (show sd ++
                       " closed when reading data, waiting on next header " ++
-                      show waitingOnNxtHeader) callStack
+                      show waitingOnNxtHeader)
               else do
                   traceWith tracer $ Mx.MuxTraceRecvEnd (fromIntegral $ BL.length buf)
                   return buf
@@ -136,7 +134,7 @@ socketAsMuxBearer sduTimeout tracer sd =
           case r of
                Nothing -> do
                     traceWith tracer $ Mx.MuxTraceSDUWriteTimeoutException
-                    throwM $ Mx.MuxError Mx.MuxSDUWriteTimeout "Mux SDU Timeout" callStack
+                    throwM $ Mx.MuxError Mx.MuxSDUWriteTimeout "Mux SDU Timeout"
                Just _ -> do
                    traceWith tracer $ Mx.MuxTraceSendEnd
                    return ts

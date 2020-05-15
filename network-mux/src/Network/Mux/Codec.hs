@@ -7,7 +7,6 @@ import qualified Data.Binary.Put as Bin
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
 import           Data.Word
-import           GHC.Stack
 
 import           Network.Mux.Types
 import           Network.Mux.Trace
@@ -43,11 +42,10 @@ encodeMuxSDU sdu =
 
 -- | Decode a 'MuSDU' header.  A left inverse of 'encodeMuxSDU'.
 --
-decodeMuxSDU :: HasCallStack
-             => BL.ByteString -> Either MuxError MuxSDU
+decodeMuxSDU :: BL.ByteString -> Either MuxError MuxSDU
 decodeMuxSDU buf =
     case Bin.runGetOrFail dec buf of
-         Left  (_, _, e)  -> Left $ MuxError MuxDecodeError e callStack
+         Left  (_, _, e)  -> Left $ MuxError MuxDecodeError e
          Right (_, _, h) ->
              Right $ MuxSDU {
                    msHeader = h
