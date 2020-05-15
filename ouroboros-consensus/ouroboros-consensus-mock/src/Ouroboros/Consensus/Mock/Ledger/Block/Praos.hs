@@ -153,8 +153,8 @@ instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
-  protocolLedgerView    cfg _ =                            stakeDist cfg
-  ledgerViewForecastAt_ cfg _ = Just . constantForecastOf (stakeDist cfg)
+  protocolLedgerView   cfg _ =                            stakeDist cfg
+  ledgerViewForecastAt cfg _ = Just . constantForecastOf (stakeDist cfg)
 
 -- | Praos needs a ledger that can give it the "active stake distribution"
 --

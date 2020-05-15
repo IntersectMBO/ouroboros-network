@@ -106,8 +106,8 @@ instance
 instance
   ( SimpleCrypto c
   ) => LedgerSupportsProtocol (SimplePraosRuleBlock c) where
-  protocolLedgerView _ _ = ()
-  ledgerViewForecastAt_ _ _ = Just . trivialForecast
+  protocolLedgerView   _ _ = ()
+  ledgerViewForecastAt _ _ = Just . trivialForecast
 
 {-------------------------------------------------------------------------------
   We don't need crypto for this protocol

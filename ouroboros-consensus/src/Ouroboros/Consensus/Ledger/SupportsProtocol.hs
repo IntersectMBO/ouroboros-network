@@ -1,10 +1,9 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Ledger.SupportsProtocol (
     LedgerSupportsProtocol(..)
-  , ledgerViewForecastAt
   , ledgerViewForecastAtTip
-  , lemma_ledgerViewForecastAt_applyChainTick
   ) where
 
 import           Control.Monad.Except
@@ -18,7 +17,6 @@ import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.Assert
 
 -- | Link protocol to ledger
 class ( BlockSupportsProtocol blk
@@ -57,28 +55,11 @@ class ( BlockSupportsProtocol blk
   -- 'OutsideForecastRange' for the same 'SlotNo'. We expect the two functions
   -- to produce the same view whenever the 'SlotNo' /is/ in range, however;
   -- see 'lemma_ledgerViewForecastAt_applyChainTick'.
-  ledgerViewForecastAt_ :: HasCallStack
-                        => LedgerConfig blk
-                        -> LedgerState blk
-                        -> WithOrigin SlotNo
-                        -> Maybe (Forecast (LedgerView (BlockProtocol blk)))
-
--- | Wrapper around 'forecastAt' that checks 'lemma_forecast_chaintic'.
-ledgerViewForecastAt :: forall blk. (LedgerSupportsProtocol blk, HasCallStack)
-                     => LedgerConfig blk
-                     -> LedgerState blk
-                     -> WithOrigin SlotNo
-                     -> Maybe (Forecast (LedgerView (BlockProtocol blk)))
-ledgerViewForecastAt cfg st at =
-    checkLemma <$> ledgerViewForecastAt_ cfg st at
-  where
-    checkLemma :: Forecast (LedgerView (BlockProtocol blk))
-               -> Forecast (LedgerView (BlockProtocol blk))
-    checkLemma forecast = forecast { forecastFor = \for ->
-        assertWithMsg
-          (lemma_ledgerViewForecastAt_applyChainTick cfg st forecast for)
-          (forecastFor forecast for)
-      }
+  ledgerViewForecastAt :: HasCallStack
+                       => LedgerConfig blk
+                       -> LedgerState blk
+                       -> WithOrigin SlotNo
+                       -> Maybe (Forecast (LedgerView (BlockProtocol blk)))
 
 -- | Get a 'Forecast' from the tip of the ledger
 --
@@ -109,14 +90,14 @@ ledgerViewForecastAtTip cfg st =
 -- > == view
 --
 -- This should be true for each ledger because consensus depends on it.
-lemma_ledgerViewForecastAt_applyChainTick
-  :: LedgerSupportsProtocol blk
+_lemma_ledgerViewForecastAt_applyChainTick
+  :: (LedgerSupportsProtocol blk, Eq (LedgerView (BlockProtocol blk)))
   => LedgerConfig blk
   -> LedgerState blk
   -> Forecast (LedgerView (BlockProtocol blk))
   -> SlotNo
   -> Either String ()
-lemma_ledgerViewForecastAt_applyChainTick cfg st forecast for
+_lemma_ledgerViewForecastAt_applyChainTick cfg st forecast for
     | At for >= ledgerTipSlot st
     , let lhs = forecastFor forecast for
           rhs = protocolLedgerView cfg
