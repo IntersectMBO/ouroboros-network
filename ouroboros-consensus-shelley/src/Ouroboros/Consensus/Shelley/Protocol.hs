@@ -343,7 +343,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       -- current KES period.
       hasValidOCert :: TPraosIsCoreNode c -> Bool
       hasValidOCert TPraosIsCoreNode{tpraosIsCoreNodeOpCert} =
-          kesPeriod > c0 && kesPeriod < c1
+          kesPeriod >= c0 && kesPeriod < c1
         where
           SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
           c1 = c0 + fromIntegral (tpraosMaxKESEvo tpraosParams)
