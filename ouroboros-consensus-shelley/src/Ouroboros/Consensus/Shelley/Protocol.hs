@@ -404,7 +404,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
         applySTS @(STS.PRTCL c) $ STS.TRC (prtclEnv, prtclState, b)
       return
         $ State.prune (fromIntegral k)
-        $ State.append newCS cs
+        $ State.append slot newCS cs
     where
       slot = SL.bheaderSlotNo $ SL.bhbody b
       epochInfo = tpraosEpochInfo tpraosParams
@@ -414,7 +414,6 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       prtclEnv :: STS.PrtclEnv c
       prtclEnv = SL.mkPrtclEnv
         lv
-        slot
         (isNewEpoch epochInfo slot (State.lastSlot cs))
 
       prtclState :: STS.PrtclState c

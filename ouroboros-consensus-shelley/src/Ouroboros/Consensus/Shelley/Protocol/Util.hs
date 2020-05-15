@@ -4,8 +4,6 @@
 -- package from cardano-ledger-specs.
 module Ouroboros.Consensus.Shelley.Protocol.Util (
     isNewEpoch
-  , prtclStateHash
-  , prtclStateSlot
   , prtclStateEta0
   ) where
 
@@ -14,7 +12,6 @@ import           Cardano.Slotting.Slot
 import           Data.Functor.Identity (Identity (..))
 
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
 
 -- | Verify whether a slot represents a change to a new epoch with regard to
@@ -34,18 +31,6 @@ isNewEpoch ei newSlot referenceWO = runIdentity $ do
     reference = fromWithOrigin genesisSlotNo referenceWO
     -- TODO
     genesisSlotNo = SlotNo 0
-
-prtclStateHash
-  :: STS.State (STS.PRTCL c)
-  -> WithOrigin (SL.HashHeader c)
-prtclStateHash (STS.PrtclState _ lastAppliedBlock _ _ _ _) =
-    SL.labHash <$> lastAppliedBlock
-
-prtclStateSlot
-  :: STS.State (STS.PRTCL c)
-  -> WithOrigin SlotNo
-prtclStateSlot (STS.PrtclState _ lastAppliedBlock _ _ _ _) =
-    SL.labSlotNo <$> lastAppliedBlock
 
 prtclStateEta0
   :: STS.State (STS.PRTCL c)

@@ -34,8 +34,6 @@ import           Ouroboros.Consensus.Util.Versioned
 import           Shelley.Spec.Ledger.Crypto
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
 
-import           Ouroboros.Consensus.Shelley.Protocol.Util (prtclStateSlot)
-
 -- | Praos consensus state.
 --
 -- The transitional praos implementation itself has a concept of state, given
@@ -100,14 +98,13 @@ lastSlot st
 -- This does not prune anything from the old history - so it's possible after
 -- calling this to have a state containing more history than needed.
 append
-  :: STS.State (STS.PRTCL c)
+  :: SlotNo
+  -> STS.State (STS.PRTCL c)
   -> TPraosState c
   -> TPraosState c
-append prtclState st = st {
-      historicalStates = Map.insert slot prtclState (historicalStates st)
+append slot prtclState st = st {
+      historicalStates = Map.insert (At slot) prtclState (historicalStates st)
     }
-  where
-    slot = prtclStateSlot prtclState
 
 -- | Prune the state to a given maximum size
 prune
@@ -159,13 +156,11 @@ rewind toSlot st
         Nothing      -> older
         Just current -> Map.insert toSlot current older
 
-empty :: STS.State (STS.PRTCL c) -> TPraosState c
-empty prtclState = TPraosState {
+empty :: WithOrigin SlotNo -> STS.State (STS.PRTCL c) -> TPraosState c
+empty slot prtclState = TPraosState {
       anchor           = slot
     , historicalStates = Map.singleton slot prtclState
     }
-  where
-    slot = prtclStateSlot prtclState
 
 {-------------------------------------------------------------------------------
   Serialisation

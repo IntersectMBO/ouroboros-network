@@ -178,10 +178,15 @@ protocolInfoShelley genesis protVer mbCredentials =
       }
 
     initConsensusState :: State.TPraosState c
-    initConsensusState = State.empty $
+    initConsensusState = State.empty Origin $
       SL.PrtclState
          (SL.chainOCertIssue     initShelleyState)
-         Origin
+         -- TODO use the hash of the genesis config as entropy. Originally it
+         -- was planned to use the hash of the last Byron block for it, but we
+         -- won't have access to it when we need to translate the Byron
+         -- 'ConsensusState' to this one. So it was decided that just the hash
+         -- of the genesis config was enough.
+         SL.NeutralNonce
          (SL.chainEpochNonce     initShelleyState)
          (SL.chainEvolvingNonce  initShelleyState)
          (SL.chainCandidateNonce initShelleyState)
