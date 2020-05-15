@@ -79,6 +79,7 @@ test-suite test
                        Test.Consensus.Shelley.Ledger
                        Test.Consensus.Shelley.Ledger.Golden
                        Test.Consensus.Shelley.MockCrypto
+                       Test.ThreadNet.Infra.Shelley
                        Test.ThreadNet.RealTPraos
                        Test.ThreadNet.TxGen.Shelley
 
