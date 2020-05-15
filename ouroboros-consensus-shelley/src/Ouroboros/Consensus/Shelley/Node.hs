@@ -136,7 +136,7 @@ protocolInfoShelley genesis protVer mbCredentials =
       }
 
     ledgerConfig :: LedgerConfig (ShelleyBlock c)
-    ledgerConfig = mkShelleyLedgerConfig genesis
+    ledgerConfig = mkShelleyLedgerConfig genesis epochInfo
 
     -- TODO: This must instead be derived from the hard fork history.
     -- <https://github.com/input-output-hk/ouroboros-network/issues/1205>
@@ -178,10 +178,15 @@ protocolInfoShelley genesis protVer mbCredentials =
       }
 
     initConsensusState :: State.TPraosState c
-    initConsensusState = State.empty $
+    initConsensusState = State.empty Origin $
       SL.PrtclState
          (SL.chainOCertIssue     initShelleyState)
-         Origin
+         -- TODO use the hash of the genesis config as entropy. Originally it
+         -- was planned to use the hash of the last Byron block for it, but we
+         -- won't have access to it when we need to translate the Byron
+         -- 'ConsensusState' to this one. So it was decided that just the hash
+         -- of the genesis config was enough.
+         SL.NeutralNonce
          (SL.chainEpochNonce     initShelleyState)
          (SL.chainEvolvingNonce  initShelleyState)
          (SL.chainCandidateNonce initShelleyState)
@@ -199,9 +204,9 @@ protocolInfoShelley genesis protVer mbCredentials =
       (sgGenDelegs genesis)
       oSched
       (sgProtocolParams genesis)
-      -- TODO initial nonce, typically created from the hash of
-      -- the last Byron block using 'SL.hashHeaderToNonce'.
-      (SL.mkNonce 0)
+      -- We can start without entropy, throughout the epoch(s) we'll obtain
+      -- entropy.
+      SL.NeutralNonce
 
     initExtLedgerState :: ExtLedgerState (ShelleyBlock c)
     initExtLedgerState = ExtLedgerState {

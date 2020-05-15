@@ -31,7 +31,7 @@ import           Cardano.Binary (Annotator (..), FullByteString (..), fromCBOR,
 
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      HeaderHash, Point, SlotNo (..))
-import           Ouroboros.Network.Point (WithOrigin (..))
+import           Ouroboros.Network.Point (WithOrigin (..), withOrigin)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -68,7 +68,7 @@ import qualified Shelley.Spec.Ledger.TxData as SL
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
 import qualified Test.Shelley.Spec.Ledger.Generator.Presets as Gen.Preset
 import qualified Test.Shelley.Spec.Ledger.Generator.Update as Gen
-import qualified Test.Shelley.Spec.Ledger.PreSTSGenerator as SL
+import qualified Test.Shelley.Spec.Ledger.NonTraceProperties.Generator as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.History (LedgerViewHistory)
@@ -356,39 +356,23 @@ instance Arbitrary (Point Block) where
 instance Arbitrary (TPraosState TPraosMockCrypto) where
   arbitrary = do
       steps     <- choose (0, 5)
-      startSlot <- SlotNo <$> choose (0, 100)
-      initState <-
-        TPraosState.empty . setSlot startSlot <$> arbitrary
+      startSlot <- frequency
+        [ (1, return Origin)
+        , (5, At . SlotNo <$> choose (0, 100))
+        ]
+      initState <- TPraosState.empty startSlot <$> arbitrary
       go steps startSlot initState
     where
       go :: Int
-         -> SlotNo
+         -> WithOrigin SlotNo
          -> TPraosState TPraosMockCrypto
          -> Gen (TPraosState TPraosMockCrypto)
       go steps prevSlot st
         | 0 <- steps = return st
         | otherwise  = do
-          let slot = prevSlot + 1
-          newPrtclState <- setSlot slot <$> arbitrary
-          go (steps - 1) slot (TPraosState.append newPrtclState st)
-
-      setSlot
-        :: SlotNo
-        -> STS.PrtclState TPraosMockCrypto
-        -> STS.PrtclState TPraosMockCrypto
-      setSlot slot (STS.PrtclState a b c d e f) =
-          STS.PrtclState a b' c d e f
-        where
-          b' = case b of
-            At lab -> At lab { SL.labSlotNo = slot }
-            Origin -> At SL.LastAppliedBlock {
-              labBlockNo = BlockNo (unSlotNo slot)
-            , labSlotNo  = slot
-            , labHash    = SL.HashHeader $
-                mkDummyHash
-                  (Proxy @TPraosMockCrypto)
-                  (fromIntegral (unSlotNo slot))
-            }
+          let slot = withOrigin (SlotNo 0) succ prevSlot
+          newPrtclState <- arbitrary
+          go (steps - 1) (At slot) (TPraosState.append slot newPrtclState st)
 
 instance Arbitrary (History.LedgerViewHistory TPraosMockCrypto) where
   arbitrary = do
@@ -442,24 +426,9 @@ instance Arbitrary SL.Coin where
 instance Crypto c => Arbitrary (SL.KeyHash a c) where
   arbitrary = SL.KeyHash <$> genHash (Proxy @c)
 
-instance Crypto c => Arbitrary (SL.LastAppliedBlock c) where
-  arbitrary = SL.LastAppliedBlock
-    <$> (BlockNo <$> arbitrary)
-    <*> arbitrary
-    <*> (SL.HashHeader <$> genHash (Proxy @c))
-
 instance Crypto c => Arbitrary (STS.PrtclState c) where
-  arbitrary =
-    STS.PrtclState
-      <$> arbitrary
-      <*> frequency
-          [ (1, return Origin)
-          , (9, At <$> arbitrary)
-          ]
-      <*> arbitrary
-      <*> arbitrary
-      <*> arbitrary
-      <*> arbitrary
+  arbitrary = genericArbitraryU
+  shrink    = genericShrink
 
 instance Crypto c => Arbitrary (SL.BlocksMade c) where
   arbitrary = SL.BlocksMade <$> arbitrary

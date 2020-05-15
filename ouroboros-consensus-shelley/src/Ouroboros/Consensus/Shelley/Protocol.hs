@@ -404,7 +404,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
         applySTS @(STS.PRTCL c) $ STS.TRC (prtclEnv, prtclState, b)
       return
         $ State.prune (fromIntegral k)
-        $ State.append newCS cs
+        $ State.append slot newCS cs
     where
       slot = SL.bheaderSlotNo $ SL.bhbody b
       epochInfo = tpraosEpochInfo tpraosParams
@@ -414,7 +414,6 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       prtclEnv :: STS.PrtclEnv c
       prtclEnv = SL.mkPrtclEnv
         lv
-        slot
         (isNewEpoch epochInfo slot (State.lastSlot cs))
 
       prtclState :: STS.PrtclState c
@@ -429,16 +428,16 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
 
 mkShelleyGlobals :: TPraosParams -> SL.Globals
 mkShelleyGlobals TPraosParams {..} = SL.Globals {
-      epochInfo         = tpraosEpochInfo
-    , slotsPerKESPeriod = tpraosSlotsPerKESPeriod
-    , stabilityWindow   = ceiling $ 3 * (toRational f / fromIntegral k)
+      epochInfo                     = tpraosEpochInfo
+    , slotsPerKESPeriod             = tpraosSlotsPerKESPeriod
+    , stabilityWindow               = ceiling $ 3 * (toRational f / fromIntegral k)
     , randomnessStabilisationWindow = ceiling $ 4 * (toRational f / fromIntegral k)
-    , securityParameter = k
-    , maxKESEvo         = tpraosMaxKESEvo
-    , quorum            = tpraosQuorum
-    , maxMajorPV        = tpraosMaxMajorPV
-    , maxLovelaceSupply = tpraosMaxLovelaceSupply
-    , activeSlotCoeff   = tpraosLeaderF
+    , securityParameter             = k
+    , maxKESEvo                     = tpraosMaxKESEvo
+    , quorum                        = tpraosQuorum
+    , maxMajorPV                    = tpraosMaxMajorPV
+    , maxLovelaceSupply             = tpraosMaxLovelaceSupply
+    , activeSlotCoeff               = tpraosLeaderF
     }
   where
     SecurityParam k = tpraosSecurityParam

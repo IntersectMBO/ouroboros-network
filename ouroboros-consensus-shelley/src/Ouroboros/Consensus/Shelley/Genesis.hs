@@ -1,5 +1,7 @@
-{-# LANGUAGE DataKinds     #-}
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
 
 module Ouroboros.Consensus.Shelley.Genesis (
     ShelleyGenesisStaking(..)
@@ -14,7 +16,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import           Cardano.Crypto (ProtocolMagicId)
-import           Cardano.Prelude (Natural)
+import           Cardano.Prelude (Natural, NoUnexpectedThunks)
 import           Cardano.Slotting.Slot (EpochSize)
 
 import           Ouroboros.Network.Magic (NetworkMagic)
@@ -39,20 +41,22 @@ import qualified Shelley.Spec.Ledger.TxData as SL
 -- For simplicity, pools defined in the genesis staking do not pay deposits for
 -- their registration.
 data ShelleyGenesisStaking c = ShelleyGenesisStaking {
-    -- | Pools to register
-    --
-    --   The key in this map is the hash of the public key of the _pool_. This
-    --   need not correspond to any payment or staking key, but must correspond
-    --   to the cold key held by 'TPraosIsCoreNode'.
-    sgsPools :: !(Map (SL.KeyHash 'SL.StakePool c) (SL.PoolParams c))
-    -- | Stake-holding key hash credentials and the pools to delegate that stake
-    -- to. We require the raw staking key hash in order to:
-    --
-    -- - Avoid pointer addresses, which would be tricky when there's no slot or
-    --   transaction to point to.
-    -- - Avoid script credentials.
-  , sgsStake :: !(Map (SL.KeyHash 'SL.Staking c) (SL.KeyHash 'SL.StakePool c))
-  } deriving (Eq, Show, Generic)
+      -- | Pools to register
+      --
+      --   The key in this map is the hash of the public key of the _pool_. This
+      --   need not correspond to any payment or staking key, but must correspond
+      --   to the cold key held by 'TPraosIsCoreNode'.
+      sgsPools :: !(Map (SL.KeyHash 'SL.StakePool c) (SL.PoolParams c))
+      -- | Stake-holding key hash credentials and the pools to delegate that stake
+      -- to. We require the raw staking key hash in order to:
+      --
+      -- - Avoid pointer addresses, which would be tricky when there's no slot or
+      --   transaction to point to.
+      -- - Avoid script credentials.
+    , sgsStake :: !(Map (SL.KeyHash 'SL.Staking c) (SL.KeyHash 'SL.StakePool c))
+    }
+  deriving stock    (Eq, Show, Generic)
+  deriving anyclass (NoUnexpectedThunks)
 
 -- | Empty genesis staking
 emptyGenesisStaking :: ShelleyGenesisStaking c
@@ -85,7 +89,8 @@ data ShelleyGenesis c = ShelleyGenesis {
     , sgInitialFunds          :: !(Map (SL.Addr c) SL.Coin)
     , sgStaking               :: !(ShelleyGenesisStaking c)
     }
-  deriving (Eq, Show, Generic)
+  deriving stock    (Eq, Show, Generic)
+  deriving anyclass (NoUnexpectedThunks)
 
 sgActiveSlotCoeff :: ShelleyGenesis c -> ActiveSlotCoeff
 sgActiveSlotCoeff =

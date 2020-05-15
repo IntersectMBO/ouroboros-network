@@ -10,20 +10,22 @@ module Test.Consensus.Shelley.Ledger.Golden (
 
 import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..))
 import           Data.Coerce (coerce)
+import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
 import qualified Data.Set as Set
+import           Data.Time (UTCTime (..), fromGregorian)
 
 import           Cardano.Binary (toCBOR)
-import           Cardano.Slotting.Slot (EpochSize (..))
+import           Cardano.Crypto (ProtocolMagicId (..))
+import           Cardano.Slotting.EpochInfo
 
-import           Ouroboros.Network.Block (Point (..), SlotNo (..), blockHash,
-                     genesisPoint)
+import           Ouroboros.Network.Block (Point (..), blockHash, genesisPoint)
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -43,9 +45,10 @@ import qualified Shelley.Spec.Ledger.STS.Ledger as STS
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (ConcreteCrypto,
                      hashKeyVRF)
-import qualified Test.Shelley.Spec.Ledger.Examples.Examples as Examples
+import qualified Test.Shelley.Spec.Ledger.Examples as Examples
 import qualified Test.Shelley.Spec.Ledger.Utils as SL (testGlobals)
 
+import           Ouroboros.Consensus.Shelley.Genesis
 import           Ouroboros.Consensus.Shelley.Ledger
 import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
@@ -187,6 +190,7 @@ testResults = testGroup "Results"
         , _d               = SNothing
         , _extraEntropy    = SNothing
         , _protocolVersion = SNothing
+        , _minUTxOValue    = SNothing
         })
 
     stakeDistribution :: SL.PoolDistr TPraosMockCrypto
@@ -196,7 +200,7 @@ testResults = testGroup "Results"
 
     currentPParamsTerm :: FlatTerm
     currentPParamsTerm =
-      [ TkListLen 20
+      [ TkListLen 21
       , TkInt 0
       , TkInt 0
       , TkInt 0
@@ -239,6 +243,7 @@ testResults = testGroup "Results"
       , TkInt 0
       , TkInt 1
       , TkListLen 1
+      , TkInt 0
       , TkInt 0
       , TkInt 0
       , TkInt 0
@@ -540,9 +545,7 @@ test_golden_ConsensusState = goldenTestCBOR
     , TkInt 1
     , TkBytes "\158h\140X"
     , TkInt 2
-    , TkListLen 1
-    , TkListLen 3
-    , TkInt 0
+    , TkListLen 2
     , TkInt 1
     , TkBytes "U\165@\b"
     , TkListLen 1
@@ -565,11 +568,9 @@ test_golden_ConsensusState = goldenTestCBOR
     , TkInt 1
     , TkBytes "\158h\140X"
     , TkInt 2
-    , TkListLen 1
-    , TkListLen 3
-    , TkInt 0
-    , TkInt 2
-    , TkBytes "U\165@\b"
+    , TkListLen 2
+    , TkInt 1
+    , TkBytes "\158h\140X"
     , TkListLen 1
     , TkInt 0
     , TkListLen 2
@@ -585,20 +586,17 @@ test_golden_ConsensusState = goldenTestCBOR
   where
     exampleConsensusState :: ConsensusState (BlockProtocol Block)
     exampleConsensusState =
-      TPraosState.append (mkPrtclState 2) $
-      TPraosState.empty  (mkPrtclState 1)
+      TPraosState.append 2      (mkPrtclState 2) $
+      TPraosState.empty  (At 1) (mkPrtclState 1)
 
-    mkPrtclState :: SlotNo -> STS.PrtclState TPraosMockCrypto
-    mkPrtclState slot = STS.PrtclState
+    mkPrtclState :: Int -> STS.PrtclState TPraosMockCrypto
+    mkPrtclState seed = STS.PrtclState
       (Map.fromList
        [ (SL.KeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 1), 1)
        , (SL.KeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 2), 2)
        ])
-      (At SL.LastAppliedBlock {
-          labBlockNo = 0
-        , labSlotNo  = slot
-        , labHash    = SL.HashHeader (mkDummyHash (Proxy @TPraosMockCrypto) 1)
-        })
+      (SL.hashHeaderToNonce @TPraosMockCrypto
+        (SL.HashHeader (mkDummyHash (Proxy @TPraosMockCrypto) seed)))
       SL.NeutralNonce
       (SL.mkNonce 1)
       (SL.mkNonce 2)
@@ -763,7 +761,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkString "alice.pool"
     , TkBytes "{}"
     , TkMapLen 0
-    , TkListLen 20
+    , TkListLen 21
     , TkInt 0
     , TkInt 0
     , TkInt 50000
@@ -809,7 +807,8 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 0
     , TkInt 0
     , TkInt 0
-    , TkListLen 20
+    , TkInt 100
+    , TkListLen 21
     , TkInt 0
     , TkInt 0
     , TkInt 50000
@@ -837,110 +836,111 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 100
     , TkTag 30
     , TkListLen 2
-    , TkInt 0
-    , TkInt 1
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 21
-    , TkInt 10000
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 5
-    , TkTag 30
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 2
-    , TkListLen 1
-    , TkInt 0
-    , TkInt 0
-    , TkInt 0
-    , TkListLen 3
-    , TkMapLen 0
-    , TkInt 0
-    , TkListLen 3
-    , TkMapLen 0
-    , TkMapLen 0
-    , TkMapLen 0
-    , TkListLen 0
-    , TkMapLen 0
-    , TkMapLen 7
-    , TkBytes "\CANg\231\ACK"
-    , TkListBegin
-    , TkInt 0
-    , TkInt 14
-    , TkInt 28
-    , TkInt 42
-    , TkInt 56
-    , TkInt 70
-    , TkInt 84
-    , TkInt 98
-    , TkBreak
-    , TkBytes "Rsb\139"
-    , TkListBegin
-    , TkInt 2
-    , TkInt 16
-    , TkInt 30
-    , TkInt 44
-    , TkInt 58
-    , TkInt 72
-    , TkInt 86
-    , TkBreak
-    , TkBytes "u\197c\227"
-    , TkListBegin
-    , TkInt 4
-    , TkInt 18
-    , TkInt 32
-    , TkInt 46
-    , TkInt 60
-    , TkInt 74
-    , TkInt 88
-    , TkBreak
-    , TkBytes "u\200\129\164"
-    , TkListBegin
-    , TkInt 6
-    , TkInt 20
-    , TkInt 34
-    , TkInt 48
-    , TkInt 62
-    , TkInt 76
-    , TkInt 90
-    , TkBreak
-    , TkBytes "\174\134\&0\129"
-    , TkListBegin
-    , TkInt 8
-    , TkInt 22
-    , TkInt 36
-    , TkInt 50
-    , TkInt 64
-    , TkInt 78
-    , TkInt 92
-    , TkBreak
-    , TkBytes "\203\GS\151\&8"
-    , TkListBegin
-    , TkInt 10
-    , TkInt 24
-    , TkInt 38
-    , TkInt 52
-    , TkInt 66
-    , TkInt 80
-    , TkInt 94
-    , TkBreak
-    , TkBytes "\229\221D\172"
-    , TkListBegin
-    , TkInt 12
-    , TkInt 26
-    , TkInt 40
-    , TkInt 54
-    , TkInt 68
-    , TkInt 82
-    , TkInt 96
-    , TkBreak
-    ]
+     , TkInt 0
+     , TkInt 1
+     , TkTag 30
+     , TkListLen 2
+     , TkInt 21
+     , TkInt 10000
+     , TkTag 30
+     , TkListLen 2
+     , TkInt 1
+     , TkInt 5
+     , TkTag 30
+     , TkListLen 2
+     , TkInt 1
+     , TkInt 2
+     , TkListLen 1
+     , TkInt 0
+     , TkInt 0
+     , TkInt 0
+     , TkInt 100
+     , TkListLen 3
+     , TkMapLen 0
+     , TkInt 0
+     , TkListLen 3
+     , TkMapLen 0
+     , TkMapLen 0
+     , TkMapLen 0
+     , TkListLen 0
+     , TkMapLen 0
+     , TkMapLen 7
+     , TkBytes "\CANg\231\ACK"
+     , TkListBegin
+     , TkInt 0
+     , TkInt 14
+     , TkInt 28
+     , TkInt 42
+     , TkInt 56
+     , TkInt 70
+     , TkInt 84
+     , TkInt 98
+     , TkBreak
+     , TkBytes "Rsb\139"
+     , TkListBegin
+     , TkInt 2
+     , TkInt 16
+     , TkInt 30
+     , TkInt 44
+     , TkInt 58
+     , TkInt 72
+     , TkInt 86
+     , TkBreak
+     , TkBytes "u\197c\227"
+     , TkListBegin
+     , TkInt 4
+     , TkInt 18
+     , TkInt 32
+     , TkInt 46
+     , TkInt 60
+     , TkInt 74
+     , TkInt 88
+     , TkBreak
+     , TkBytes "u\200\129\164"
+     , TkListBegin
+     , TkInt 6
+     , TkInt 20
+     , TkInt 34
+     , TkInt 48
+     , TkInt 62
+     , TkInt 76
+     , TkInt 90
+     , TkBreak
+     , TkBytes "\174\134\&0\129"
+     , TkListBegin
+     , TkInt 8
+     , TkInt 22
+     , TkInt 36
+     , TkInt 50
+     , TkInt 64
+     , TkInt 78
+     , TkInt 92
+     , TkBreak
+     , TkBytes "\203\GS\151\&8"
+     , TkListBegin
+     , TkInt 10
+     , TkInt 24
+     , TkInt 38
+     , TkInt 52
+     , TkInt 66
+     , TkInt 80
+     , TkInt 94
+     , TkBreak
+     , TkBytes "\229\221D\172"
+     , TkListBegin
+     , TkInt 12
+     , TkInt 26
+     , TkInt 40
+     , TkInt 54
+     , TkInt 68
+     , TkInt 82
+     , TkInt 96
+     , TkBreak
+     ]
 
 exampleLedgerState :: LedgerState Block
 exampleLedgerState = reapplyLedgerBlock
-    (ShelleyLedgerConfig SL.testGlobals testEraParams)
+    ledgerCfg
     (mkShelleyBlock newBlock)
     (Ticked 0 ShelleyLedgerState {
         ledgerTip    = genesisPoint
@@ -949,14 +949,33 @@ exampleLedgerState = reapplyLedgerBlock
       })
   where
     Examples.CHAINExample { startState, newBlock } = Examples.ex2A
+    ledgerCfg = mkShelleyLedgerConfig testShelleyGenesis testEpochInfo
 
--- | Era parameters chosen to be compatible with 'SL.testGlobals'
-testEraParams :: HardFork.EraParams
-testEraParams =
-    mkShelleyEraParams
-      (SecurityParam 10)
-      (EpochSize 100)
-      (slotLengthFromSec 2) -- Not really important
+testEpochInfo :: EpochInfo Identity
+testEpochInfo = SL.epochInfo SL.testGlobals
+
+-- | These are dummy values.
+testShelleyGenesis :: ShelleyGenesis c
+testShelleyGenesis = ShelleyGenesis {
+      sgStartTime         = SystemStart $ UTCTime (fromGregorian 2020 5 14) 0
+    , sgNetworkMagic      = NetworkMagic 0
+    , sgProtocolMagicId   = ProtocolMagicId 0
+      -- Chosen to match SL.activeSlotCoeff
+    , sgActiveSlotsCoeff  = 0.9
+    , sgSecurityParam     = SecurityParam $ SL.securityParameter SL.testGlobals
+    , sgEpochLength       = runIdentity $ epochInfoSize testEpochInfo 0
+    , sgSlotsPerKESPeriod = SL.slotsPerKESPeriod SL.testGlobals
+    , sgMaxKESEvolutions  = SL.maxKESEvo SL.testGlobals
+      -- Not important
+    , sgSlotLength        = slotLengthFromSec 2
+    , sgUpdateQuorum      = SL.quorum  SL.testGlobals
+    , sgMaxMajorPV        = SL.maxMajorPV SL.testGlobals
+    , sgMaxLovelaceSupply = SL.maxLovelaceSupply SL.testGlobals
+    , sgProtocolParams    = SL.emptyPParams
+    , sgGenDelegs         = Map.empty
+    , sgInitialFunds      = Map.empty
+    , sgStaking           = emptyGenesisStaking
+    }
 
 test_golden_HeaderState :: Assertion
 test_golden_HeaderState = goldenTestCBOR
@@ -977,9 +996,7 @@ test_golden_HeaderState = goldenTestCBOR
     , TkMapLen 1
     , TkBytes "U\165@\b"
     , TkInt 1
-    , TkListLen 1
-    , TkListLen 3
-    , TkInt 0
+    , TkListLen 2
     , TkInt 1
     , TkBytes "U\165@\b"
     , TkListLen 1
@@ -1003,18 +1020,15 @@ exampleHeaderState = genesisHeaderState st
     prtclState = STS.PrtclState
       (Map.fromList
         [(SL.KeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 1), 1)])
-      (At SL.LastAppliedBlock {
-          labBlockNo = 0
-        , labSlotNo  = 1
-        , labHash    = SL.HashHeader (mkDummyHash (Proxy @TPraosMockCrypto) 1)
-        })
+      (SL.hashHeaderToNonce @TPraosMockCrypto
+        (SL.HashHeader (mkDummyHash (Proxy @TPraosMockCrypto) 1)))
       SL.NeutralNonce
       (SL.mkNonce 1)
       SL.NeutralNonce
       (SL.mkNonce 2)
 
     st :: TPraosState ConcreteCrypto
-    st = TPraosState.empty prtclState
+    st = TPraosState.empty (At 1) prtclState
 
 test_golden_ExtLedgerState :: Assertion
 test_golden_ExtLedgerState = goldenTestCBOR
@@ -1175,7 +1189,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkString "alice.pool"
     , TkBytes "{}"
     , TkMapLen 0
-    , TkListLen 20
+    , TkListLen 21
     , TkInt 0
     , TkInt 0
     , TkInt 50000
@@ -1221,7 +1235,8 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 0
     , TkInt 0
     , TkInt 0
-    , TkListLen 20
+    , TkInt 100
+    , TkListLen 21
     , TkInt 0
     , TkInt 0
     , TkInt 50000
@@ -1267,6 +1282,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 0
     , TkInt 0
     , TkInt 0
+    , TkInt 100
     , TkListLen 3
     , TkMapLen 0
     , TkInt 0
@@ -1363,9 +1379,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkMapLen 1
     , TkBytes "U\165@\b"
     , TkInt 1
-    , TkListLen 1
-    , TkListLen 3
-    , TkInt 0
+    , TkListLen 2
     , TkInt 1
     , TkBytes "U\165@\b"
     , TkListLen 1
