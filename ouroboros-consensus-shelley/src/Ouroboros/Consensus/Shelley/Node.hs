@@ -204,9 +204,9 @@ protocolInfoShelley genesis protVer mbCredentials =
       (sgGenDelegs genesis)
       oSched
       (sgProtocolParams genesis)
-      -- TODO initial nonce, typically created from the hash of
-      -- the last Byron block using 'SL.hashHeaderToNonce'.
-      (SL.mkNonce 0)
+      -- We can start without entropy, throughout the epoch(s) we'll obtain
+      -- entropy.
+      SL.NeutralNonce
 
     initExtLedgerState :: ExtLedgerState (ShelleyBlock c)
     initExtLedgerState = ExtLedgerState {
