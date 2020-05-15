@@ -135,8 +135,8 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => LedgerSupportsProtocol (SimplePBftBlock c PBftMockCrypto) where
-  protocolLedgerView    cfg _ =                           (simpleMockLedgerConfig cfg)
-  ledgerViewForecastAt_ cfg _ = Just . constantForecastOf (simpleMockLedgerConfig cfg)
+  protocolLedgerView   cfg _ =                           (simpleMockLedgerConfig cfg)
+  ledgerViewForecastAt cfg _ = Just . constantForecastOf (simpleMockLedgerConfig cfg)
 
 {-------------------------------------------------------------------------------
   Serialisation

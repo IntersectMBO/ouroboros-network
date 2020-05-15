@@ -120,8 +120,8 @@ instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          ) => LedgerSupportsProtocol (SimpleBftBlock c c') where
-  protocolLedgerView _ _ = ()
-  ledgerViewForecastAt_ _ _ = Just . trivialForecast
+  protocolLedgerView   _ _ = ()
+  ledgerViewForecastAt _ _ = Just . trivialForecast
 
 {-------------------------------------------------------------------------------
   Serialisation

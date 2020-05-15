@@ -19,8 +19,6 @@ module Ouroboros.Consensus.Ledger.Extended (
     -- * Serialisation
   , encodeExtLedgerState
   , decodeExtLedgerState
-    -- * Lemmas
-  , lemma_protocoLedgerView_applyLedgerBlock
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -40,7 +38,6 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.Assert
 
 {-------------------------------------------------------------------------------
   Extended ledger state
@@ -89,13 +86,13 @@ deriving instance ( LedgerSupportsProtocol blk
 -- 'protocolLedgerView'.
 --
 -- This should be true for each ledger because consensus depends on it.
-lemma_protocoLedgerView_applyLedgerBlock
-  :: LedgerSupportsProtocol blk
+_lemma_protocoLedgerView_applyLedgerBlock
+  :: (LedgerSupportsProtocol blk, Eq (LedgerView (BlockProtocol blk)))
   => LedgerConfig blk
   -> blk
   -> LedgerState blk
   -> Either String ()
-lemma_protocoLedgerView_applyLedgerBlock cfg blk st
+_lemma_protocoLedgerView_applyLedgerBlock cfg blk st
     | Right lhs' <- runExcept lhs
     , lhs' /= rhs
     = Left $ unlines
@@ -145,10 +142,7 @@ instance ( LedgerSupportsProtocol blk
                   blk
                   (Ticked slot lgr)
 
-      return $!
-        assertWithMsg
-          (lemma_protocoLedgerView_applyLedgerBlock (configLedger cfg) blk lgr)
-          (ExtLedgerState lgr' hdr')
+      return $! ExtLedgerState lgr' hdr'
     where
       ledgerView :: LedgerView (BlockProtocol blk)
       ledgerView = protocolLedgerView (configLedger cfg) lgr

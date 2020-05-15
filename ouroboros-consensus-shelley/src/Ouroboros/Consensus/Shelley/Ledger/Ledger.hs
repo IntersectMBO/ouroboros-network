@@ -231,7 +231,7 @@ instance TPraosCrypto c => UpdateLedger (ShelleyBlock c)
 instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
   protocolLedgerView _cfg = SL.currentLedgerView . shelleyState
 
-  ledgerViewForecastAt_ cfg ledgerState at = do
+  ledgerViewForecastAt cfg ledgerState at = do
       guard (at >= minLo)
       return $ Forecast at $ \for ->
         case History.find (At for) history of

@@ -207,7 +207,7 @@ instance LedgerSupportsProtocol ByronBlock where
   -- forecast to @2k@ slots /from the intersection/ point; if we don't, there
   -- could be delegation certificates present on the other chain that we do not
   -- know about and that could have taken effect.
-  ledgerViewForecastAt_ cfg (ByronLedgerState ls ss) at = do
+  ledgerViewForecastAt cfg (ByronLedgerState ls ss) at = do
       guard (at >= minLo)
       return $ Forecast at $ \for ->
         case History.find (At for) ss of
