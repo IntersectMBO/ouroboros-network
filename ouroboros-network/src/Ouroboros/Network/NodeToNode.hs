@@ -96,7 +96,7 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 
 import qualified Data.ByteString.Lazy as BL
-import           Data.Int (Int64)
+import           Data.Int (Int32, Int64)
 import           Data.Time.Clock (DiffTime)
 import           Data.Text (Text)
 import qualified Data.Text as T
@@ -450,13 +450,22 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
     where
       encodeTerm :: NodeToNodeVersionData -> CBOR.Term
       encodeTerm NodeToNodeVersionData { networkMagic } =
-        CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
+        if (unNetworkMagic networkMagic) > maxInt32
+           then CBOR.TInt     (fromIntegral $ unNetworkMagic networkMagic)
+           else CBOR.TInteger (fromIntegral $ unNetworkMagic networkMagic)
 
       decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
-      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToNodeVersionData $ NetworkMagic $ fromIntegral x)
-                               | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
+      decodeTerm (CBOR.TInt x) | x >= 0 && x <= maxInt32 = Right (NodeToNodeVersionData $ NetworkMagic $ fromIntegral x)
+                               | otherwise    = Left $ T.pack $ "networkMagic out of bound: " <> show x
+      decodeTerm (CBOR.TInteger x) | x >= 0 && x <= maxWord32 = Right (NodeToNodeVersionData $ NetworkMagic $ fromIntegral x)
+                               | otherwise                    = Left $ T.pack $ "networkMagic out of bound: " <> show x
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
 
+      maxInt32 :: Integral a => a
+      maxInt32  = fromIntegral (maxBound :: Int32)
+
+      maxWord32 :: Integral a => a
+      maxWord32 = fromIntegral (maxBound :: Word32) 
 
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --

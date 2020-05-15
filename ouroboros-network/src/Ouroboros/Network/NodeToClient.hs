@@ -94,12 +94,14 @@ import           Data.Bits (setBit, clearBit, testBit)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor.Identity (Identity (..))
 import           Data.Functor.Contravariant (contramap)
+import           Data.Int
 import           Data.Kind (Type)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Time.Clock
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
+import           Data.Word
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
@@ -288,12 +290,22 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
     where
       encodeTerm :: NodeToClientVersionData -> CBOR.Term
       encodeTerm NodeToClientVersionData { networkMagic } =
-        CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
+        if (unNetworkMagic networkMagic) > maxInt32
+           then CBOR.TInt     (fromIntegral $ unNetworkMagic networkMagic)
+           else CBOR.TInteger (fromIntegral $ unNetworkMagic networkMagic)
 
-      decodeTerm :: CBOR.Term -> Either Text NodeToClientVersionData
-      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData $ NetworkMagic $ fromIntegral x)
-                               | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
+      decodeTerm (CBOR.TInt x) | x >= 0 && x <= maxInt32 = Right (NodeToClientVersionData $ NetworkMagic $ fromIntegral x)
+                               | otherwise    = Left $ T.pack $ "networkMagic out of bound: " <> show x
+      decodeTerm (CBOR.TInteger x) | x >= 0 && x <= maxWord32 = Right (NodeToClientVersionData $ NetworkMagic $ fromIntegral x)
+                               | otherwise                    = Left $ T.pack $ "networkMagic out of bound: " <> show x
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
+
+      maxInt32 :: Integral a => a
+      maxInt32  = fromIntegral (maxBound :: Int32)
+
+      maxWord32 :: Integral a => a
+      maxWord32 = fromIntegral (maxBound :: Word32) 
+
 
 -- | A specialised version of 'Ouroboros.Network.Socket.connectToNode'.  It is
 -- a general purpose function which can connect using any version of the
