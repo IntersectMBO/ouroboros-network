@@ -773,13 +773,14 @@ ledgerDbSwitch cfg numRollbacks newBlocks db = do
   The LedgerDB itself behaves like a ledger
 -------------------------------------------------------------------------------}
 
+type instance LedgerCfg (LedgerDB l r) = LedgerCfg l
+
 instance ( IsLedger l
            -- Required superclass constraints of 'IsLedger'
          , Show               r
          , Eq                 r
          , NoUnexpectedThunks r
          ) => IsLedger (LedgerDB l r) where
-  type LedgerCfg (LedgerDB l r) = LedgerCfg l
   type LedgerErr (LedgerDB l r) = LedgerErr l
 
   applyChainTick cfg slot db =

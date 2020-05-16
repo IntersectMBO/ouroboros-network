@@ -277,8 +277,9 @@ data DualLedgerConfig m a = DualLedgerConfig {
     }
   deriving NoUnexpectedThunks via AllowThunk (DualLedgerConfig m a)
 
+type instance LedgerCfg (LedgerState (DualBlock m a)) = DualLedgerConfig m a
+
 instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
-  type LedgerCfg (LedgerState (DualBlock m a)) = DualLedgerConfig m a
   type LedgerErr (LedgerState (DualBlock m a)) = DualLedgerError   m a
 
   applyChainTick DualLedgerConfig{..}
@@ -387,14 +388,15 @@ instance Bridge m a => HasAnnTip (DualBlock m a) where
   tipInfoHash _ = tipInfoHash (Proxy @m)
   getTipInfo    = getTipInfo . dualHeaderMain
 
-instance Bridge m a => ValidateEnvelope (DualBlock m a) where
-  type OtherHeaderEnvelopeError (DualBlock m a) = OtherHeaderEnvelopeError m
-
+instance Bridge m a => BasicEnvelopeValidation (DualBlock m a) where
   expectedFirstBlockNo  _ = expectedFirstBlockNo  (Proxy @m)
   expectedNextBlockNo   _ = expectedNextBlockNo   (Proxy @m)
   minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @m)
   minimumNextSlotNo     _ = minimumNextSlotNo     (Proxy @m)
   checkPrevHash         _ = checkPrevHash         (Proxy @m)
+
+instance Bridge m a => ValidateEnvelope (DualBlock m a) where
+  type OtherHeaderEnvelopeError (DualBlock m a) = OtherHeaderEnvelopeError m
 
   additionalEnvelopeChecks cfg ledgerView hdr =
       additionalEnvelopeChecks

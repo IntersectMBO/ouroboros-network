@@ -43,9 +43,10 @@ newtype ByronSpecLedgerError = ByronSpecLedgerError {
   deriving (Show, Eq)
   deriving NoUnexpectedThunks via AllowThunk ByronSpecLedgerError
 
+type instance LedgerCfg (LedgerState ByronSpecBlock) = ByronSpecGenesis
+
 instance IsLedger (LedgerState ByronSpecBlock) where
   type LedgerErr (LedgerState ByronSpecBlock) = ByronSpecLedgerError
-  type LedgerCfg (LedgerState ByronSpecBlock) = ByronSpecGenesis
 
   applyChainTick cfg slot state = Ticked slot $
       updateByronSpecLedgerStateKeepTip state $
