@@ -11,8 +11,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 
 module Ouroboros.Consensus.Protocol.ModChainSel (
-    ChainSelection (..)
-  , ModChainSel
+    ModChainSel
     -- * Type family instances
   , ConsensusConfig (..)
   ) where
@@ -25,48 +24,37 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Protocol.Abstract
 
--- | Redefine the chain selection part of 'ConsensusProtocol'
-class ConsensusProtocol p => ChainSelection p s where
-  type family SelectView' p :: *
-
-  preferCandidate'   :: proxy s
-                     -> ConsensusConfig p
-                     -> SelectView'     p
-                     -> SelectView'     p
-                     -> Bool
-
-  compareCandidates' :: proxy s
-                     -> ConsensusConfig p
-                     -> SelectView'     p
-                     -> SelectView'     p
-                     -> Ordering
-
 data ModChainSel p s
 
-newtype instance ConsensusConfig (ModChainSel p s) = McsConsensusConfig {
-      unMcsConsensusConfig :: ConsensusConfig p
+data instance ConsensusConfig (ModChainSel p s) = McsConsensusConfig {
+      mcsConfigS :: ChainSelConfig  s
+    , mcsConfigP :: ConsensusConfig p
     }
   deriving (Generic)
 
-instance (Typeable p, Typeable s, ChainSelection p s)
+instance ChainSelection s => ChainSelection (ModChainSel p s) where
+  type ChainSelConfig (ModChainSel p s) = ChainSelConfig s
+  type SelectView     (ModChainSel p s) = SelectView     s
+
+  preferCandidate   _ = preferCandidate   (Proxy @s)
+  compareCandidates _ = compareCandidates (Proxy @s)
+
+instance (Typeable p, Typeable s, ConsensusProtocol p, ChainSelection s)
       => ConsensusProtocol (ModChainSel p s) where
     type ConsensusState (ModChainSel p s) = ConsensusState p
     type IsLeader       (ModChainSel p s) = IsLeader       p
     type LedgerView     (ModChainSel p s) = LedgerView     p
     type ValidationErr  (ModChainSel p s) = ValidationErr  p
     type ValidateView   (ModChainSel p s) = ValidateView   p
-    type SelectView     (ModChainSel p s) = SelectView'    p
 
-    checkIfCanBeLeader    (McsConsensusConfig cfg) = checkIfCanBeLeader    cfg
-    checkIsLeader         (McsConsensusConfig cfg) = checkIsLeader         cfg
-    updateConsensusState  (McsConsensusConfig cfg) = updateConsensusState  cfg
-    protocolSecurityParam (McsConsensusConfig cfg) = protocolSecurityParam cfg
+    checkIfCanBeLeader    = checkIfCanBeLeader    . mcsConfigP
+    checkIsLeader         = checkIsLeader         . mcsConfigP
+    updateConsensusState  = updateConsensusState  . mcsConfigP
+    protocolSecurityParam = protocolSecurityParam . mcsConfigP
 
     rewindConsensusState _proxy = rewindConsensusState (Proxy @p)
 
-    preferCandidate   (McsConsensusConfig cfg) = preferCandidate'   (Proxy @s) cfg
-    compareCandidates (McsConsensusConfig cfg) = compareCandidates' (Proxy @s) cfg
+    chainSelConfig = mcsConfigS
 
-instance ConsensusProtocol p
+instance (ConsensusProtocol p, ChainSelection s)
       => NoUnexpectedThunks (ConsensusConfig (ModChainSel p s))
-  -- use generic instance

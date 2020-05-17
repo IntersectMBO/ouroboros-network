@@ -250,6 +250,9 @@ data instance ConsensusConfig (Praos c) = PraosConfig
   }
   deriving (Generic)
 
+instance PraosCrypto c => ChainSelection (Praos c) where
+  -- Use defaults
+
 instance PraosCrypto c => ConsensusProtocol (Praos c) where
   protocolSecurityParam = praosSecurityParam . praosParams
 

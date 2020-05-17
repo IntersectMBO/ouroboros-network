@@ -243,10 +243,27 @@ data instance ConsensusConfig (PBft c) = PBftConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
+instance PBftCrypto c => ChainSelection (PBft c) where
+  type SelectView (PBft c) = PBftSelectView
+
+  compareCandidates _proxy _config (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
+      -- Prefer the highest block number, as it is a proxy for chain length
+      case lBlockNo `compare` rBlockNo of
+        LT -> LT
+        GT -> GT
+        -- If the block numbers are the same, check if one of them is an EBB.
+        -- An EBB has the same block number as the block before it, so the
+        -- chain ending with an EBB is actually longer than the one ending
+        -- with a regular block.
+        EQ -> score lIsEBB `compare` score rIsEBB
+     where
+       score :: IsEBB -> Int
+       score IsEBB    = 1
+       score IsNotEBB = 0
+
 instance PBftCrypto c => ConsensusProtocol (PBft c) where
   type ValidationErr (PBft c) = PBftValidationErr c
   type ValidateView  (PBft c) = PBftValidateView  c
-  type SelectView    (PBft c) = PBftSelectView
 
   -- | We require two things from the ledger state:
   --
@@ -309,21 +326,6 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
       params = pbftWindowParams cfg
 
   rewindConsensusState _proxy = rewind
-
-  compareCandidates PBftConfig{..} (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
-      -- Prefer the highest block number, as it is a proxy for chain length
-      case lBlockNo `compare` rBlockNo of
-        LT -> LT
-        GT -> GT
-        -- If the block numbers are the same, check if one of them is an EBB.
-        -- An EBB has the same block number as the block before it, so the
-        -- chain ending with an EBB is actually longer than the one ending
-        -- with a regular block.
-        EQ -> score lIsEBB `compare` score rIsEBB
-     where
-       score :: IsEBB -> Int
-       score IsEBB    = 1
-       score IsNotEBB = 0
 
 {-------------------------------------------------------------------------------
   Internal: thin wrapper on top of 'PBftState'

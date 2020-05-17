@@ -88,6 +88,7 @@ import           Data.List (isInfixOf, isPrefixOf, sortBy)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust)
+import           Data.Proxy
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -396,8 +397,9 @@ addBlock cfg blk m
     (newChain, newLedger) =
         fromMaybe (currentChain m, currentLedger m)
       . selectChain
+          (Proxy @(BlockProtocol blk))
           (selectView (configBlock cfg) . getHeader)
-          (configConsensus cfg)
+          (chainSelConfig (configConsensus cfg))
           (currentChain m)
       . filter (extendsImmutableChain . fst)
       $ candidates
@@ -955,8 +957,9 @@ wipeVolDB cfg m =
     (newChain, newLedger) =
         isSameAsImmDbChain
       $ selectChain
+          (Proxy @(BlockProtocol blk))
           (selectView (configBlock cfg) . getHeader)
-          (configConsensus cfg)
+          (chainSelConfig (configConsensus cfg))
           Chain.genesis
       $ snd
       $ validChains cfg m (immDbBlocks m)

@@ -125,6 +125,9 @@ data instance ConsensusConfig (Bft c) = BftConfig {
     }
   deriving (Generic)
 
+instance BftCrypto c => ChainSelection (Bft c) where
+  -- Use defaults
+
 instance BftCrypto c => ConsensusProtocol (Bft c) where
   type ValidationErr  (Bft c) = BftValidationErr
   type ValidateView   (Bft c) = BftValidateView c

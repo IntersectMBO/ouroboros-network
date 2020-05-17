@@ -13,6 +13,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
@@ -66,6 +67,7 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
+import           Data.Proxy
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
 import           Data.TreeDiff (ToExpr)
@@ -97,6 +99,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Protocol.Signed
@@ -487,7 +490,11 @@ treePreferredChain :: TopLevelConfig TestBlock
                    -> BlockTree -> Chain TestBlock
 treePreferredChain cfg =
       fromMaybe Genesis
-    . selectUnvalidatedChain Block.blockNo (configConsensus cfg) Genesis
+    . selectUnvalidatedChain
+        (Proxy @(BlockProtocol TestBlock))
+        Block.blockNo
+        (chainSelConfig (configConsensus cfg))
+        Genesis
     . treeToChains
 
 instance Show BlockTree where
