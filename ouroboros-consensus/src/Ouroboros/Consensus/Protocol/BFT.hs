@@ -167,7 +167,7 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
       expectedLeader = CoreId $ CoreNodeId (n `mod` numCoreNodes)
       NumCoreNodes numCoreNodes = bftNumNodes
 
-  rewindConsensusState _ _ _ = Just ()
+  rewindConsensusState _ _ _ _ = Just ()
 
 instance BftCrypto c => NoUnexpectedThunks (ConsensusConfig (Bft c))
   -- use generic instance

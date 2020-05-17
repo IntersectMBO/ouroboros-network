@@ -74,7 +74,7 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
             | otherwise                   -> Nothing
 
   updateConsensusState _ _ _ _ = return ()
-  rewindConsensusState _ _ _  = Just ()
+  rewindConsensusState _ _ _ _ = Just ()
 
 instance ConsensusProtocol p
       => NoUnexpectedThunks (ConsensusConfig (WithLeaderSchedule p))

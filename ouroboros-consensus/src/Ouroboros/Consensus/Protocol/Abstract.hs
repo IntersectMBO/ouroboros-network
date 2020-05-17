@@ -187,10 +187,10 @@ class ( Show (ConsensusState p)
   -- TODO: The Serialise instance is only required for a hack in PBFT.
   -- Reconsider later.
   rewindConsensusState :: Serialise (HeaderHash hdr)
-                       => ConsensusConfig p
-                       -> ConsensusState  p
-                       -> Point hdr    -- ^ Point to rewind to
-                       -> Maybe (ConsensusState p)
+                       => proxy p
+                       -> SecurityParam
+                       -> Point hdr      -- ^ Point to rewind to
+                       -> ConsensusState p -> Maybe (ConsensusState p)
 
   --
   -- Default chain selection

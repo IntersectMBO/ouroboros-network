@@ -423,8 +423,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
   --
   -- We don't roll back to the exact slot since that slot might not have been
   -- filled; instead we roll back the the block just before it.
-  rewindConsensusState TPraosConfig{..} cs rewindTo =
-    State.rewind (pointSlot rewindTo) cs
+  rewindConsensusState _proxy _k = State.rewind . pointSlot
 
 mkShelleyGlobals :: TPraosParams -> SL.Globals
 mkShelleyGlobals TPraosParams {..} = SL.Globals {

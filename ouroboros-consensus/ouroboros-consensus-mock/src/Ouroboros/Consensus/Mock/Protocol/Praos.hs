@@ -353,9 +353,9 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   --
   -- We don't roll back to the exact slot since that slot might not have been
   -- filled; instead we roll back the the block just before it.
-  rewindConsensusState PraosConfig{..} cs rewindTo =
+  rewindConsensusState _proxy _k rewindTo =
       -- This may drop us back to the empty list if we go back to genesis
-      Just $ dropWhile (\bi -> At (biSlot bi) > pointSlot rewindTo) cs
+      Just . dropWhile (\bi -> At (biSlot bi) > pointSlot rewindTo)
 
   -- (Standard) Praos uses the standard chain selection rule, so no need to
   -- override (though see note regarding clock skew).

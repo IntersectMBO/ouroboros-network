@@ -308,9 +308,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
     where
       params = pbftWindowParams cfg
 
-  rewindConsensusState cfg = flip (rewind cfg params)
-    where
-      params = pbftWindowParams cfg
+  rewindConsensusState _proxy = rewind
 
   compareCandidates PBftConfig{..} (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
       -- Prefer the highest block number, as it is a proxy for chain length
@@ -391,15 +389,9 @@ appendEBB PBftConfig{..} PBftWindowParams{..} =
     PBftParams{..} = pbftParams
 
 rewind :: forall c hdr. (PBftCrypto c, Serialise (HeaderHash hdr))
-       => ConsensusConfig (PBft c)
-       -> PBftWindowParams
-       -> Point hdr
-       -> PBftState c
-       -> Maybe (PBftState c)
-rewind PBftConfig{..} PBftWindowParams{..} p =
-    S.rewind pbftSecurityParam windowSize p'
+       => SecurityParam -> Point hdr -> PBftState c -> Maybe (PBftState c)
+rewind k p = S.rewind k (pbftWindowSize k) p'
   where
-    PBftParams{..} = pbftParams
     p' = case p of
       GenesisPoint    -> Origin
       BlockPoint s hh -> At (s, headerHashBytes (Proxy :: Proxy hdr) hh)

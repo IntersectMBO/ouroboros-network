@@ -7,6 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 module Ouroboros.Consensus.Protocol.ModChainSel (
@@ -59,11 +60,12 @@ instance (Typeable p, Typeable s, ChainSelection p s)
     checkIfCanBeLeader    (McsConsensusConfig cfg) = checkIfCanBeLeader    cfg
     checkIsLeader         (McsConsensusConfig cfg) = checkIsLeader         cfg
     updateConsensusState  (McsConsensusConfig cfg) = updateConsensusState  cfg
-    rewindConsensusState  (McsConsensusConfig cfg) = rewindConsensusState  cfg
     protocolSecurityParam (McsConsensusConfig cfg) = protocolSecurityParam cfg
 
-    preferCandidate   (McsConsensusConfig cfg) = preferCandidate'   (Proxy :: Proxy s) cfg
-    compareCandidates (McsConsensusConfig cfg) = compareCandidates' (Proxy :: Proxy s) cfg
+    rewindConsensusState _proxy = rewindConsensusState (Proxy @p)
+
+    preferCandidate   (McsConsensusConfig cfg) = preferCandidate'   (Proxy @s) cfg
+    compareCandidates (McsConsensusConfig cfg) = compareCandidates' (Proxy @s) cfg
 
 instance ConsensusProtocol p
       => NoUnexpectedThunks (ConsensusConfig (ModChainSel p s))
