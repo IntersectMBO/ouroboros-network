@@ -131,12 +131,15 @@ data ForgeEbbEnv blk = ForgeEbbEnv
 
 -- | How to rekey a node with a fresh operational key
 --
+-- When there is a 'NodeRekey' scheduled in the 'NodeRestarts', the test node
+-- will restart and use 'tnaRekeyM' to compute its new 'ProtocolInfo'.
 type RekeyM m blk =
      CoreNodeId
   -> ProtocolInfo blk
   -> SlotNo
      -- ^ The slot in which the node is rekeying
   -> (SlotNo -> m EpochNo)
+     -- ^ Which epoch the slot is in
   -> m (TestNodeInitialization blk)
      -- ^ 'tniProtocolInfo' should include new delegation cert/operational key,
      -- and 'tniCrucialTxs' should include the new delegation certificate
