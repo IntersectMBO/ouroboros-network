@@ -2,8 +2,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Cardano.Client.API
-where
+module Cardano.Client.Subscription (
+  subscribe
+  ) where
+
 import           Data.Proxy
 import           Data.Void (Void)
 import qualified Data.ByteString.Lazy as BSL
