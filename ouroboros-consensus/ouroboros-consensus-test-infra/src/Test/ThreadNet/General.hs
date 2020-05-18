@@ -171,17 +171,30 @@ data TestConfigBlock blk = TestConfigBlock
   , txGenExtra  :: TxGenExtra blk
   }
 
+-- | Functionality used by test node in order to update its operational key
+--
+-- This is the conceptual interface demanded from the test-specific logic. It
+-- is used to define 'tnaRekeyM', which the test infrastructure invokes per the
+-- 'NodeRestarts' schedule.
 data Rekeying blk = forall opKey. Rekeying
   { rekeyOracle
       :: CoreNodeId -> SlotNo -> Maybe SlotNo
     -- ^ The first /nominal/ slot after the given slot, assuming the given core
     -- node cannot lead.
+    --
+    -- IE the first slot that will result in a block successfully being forged
+    -- and diffused (eg no @PBftExceededSignThreshold@).
   , rekeyUpd ::
          ProtocolInfo blk
       -> EpochNo
       -> opKey
       -> Maybe (TestNodeInitialization blk)
      -- ^ new config and any corresponding delegation certificate transactions
+     --
+     -- The epoch number is the one required to create a Byron redeleg cert.
+     --
+     -- The 'TestNodeInitialization' includes the new 'ProtocolInfo' used when
+     -- the node completes restarting.
   , rekeyFreshSKs :: Stream opKey
      -- ^ a stream that only repeats itself after an *effectively* *infinite*
      -- number of iterations and also never includes an operational key from
