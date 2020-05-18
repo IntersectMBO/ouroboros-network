@@ -316,6 +316,8 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
     GetFilteredUTxO
       :: Set (SL.Addr c)
       -> Query (ShelleyBlock c) (SL.UTxO c)
+    GetUTxO
+      :: Query (ShelleyBlock c) (SL.UTxO c)
 
   answerQuery cfg query st = case query of
       GetLedgerTip -> ledgerTip st
@@ -326,6 +328,7 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
       GetProposedPParamsUpdates -> getProposedPPUpdates $ shelleyState st
       GetStakeDistribution -> SL.nesPd $ shelleyState st
       GetFilteredUTxO addrs -> SL.getFilteredUTxO (shelleyState st) addrs
+      GetUTxO -> SL.getUTxO $ shelleyState st
     where
       globals = shelleyLedgerGlobals cfg
 
@@ -363,6 +366,11 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
     = Nothing
   eqQuery (GetFilteredUTxO _) _
     = Nothing
+  eqQuery GetUTxO GetUTxO
+    = Just Refl
+  eqQuery GetUTxO _
+    = Nothing
+
 
 deriving instance Eq   (Query (ShelleyBlock c) result)
 deriving instance Show (Query (ShelleyBlock c) result)
@@ -375,6 +383,7 @@ instance Crypto c => ShowQuery (Query (ShelleyBlock c)) where
   showResult GetProposedPParamsUpdates      = show
   showResult GetStakeDistribution           = show
   showResult (GetFilteredUTxO {})           = show
+  showResult GetUTxO                        = show
 
 {-------------------------------------------------------------------------------
   ValidateEnvelope
@@ -468,6 +477,8 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 5
     GetFilteredUTxO addrs ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 6 <> toCBOR addrs
+    GetUTxO ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 7
 
 decodeShelleyQuery :: Crypto c => Decoder s (Some (Query (ShelleyBlock c)))
 decodeShelleyQuery = do
@@ -481,6 +492,7 @@ decodeShelleyQuery = do
       (1, 4) -> return $ Some GetProposedPParamsUpdates
       (1, 5) -> return $ Some GetStakeDistribution
       (2, 6) -> Some . GetFilteredUTxO <$> fromCBOR
+      (1, 7) -> return $ Some GetUTxO
       _      -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
@@ -496,6 +508,7 @@ encodeShelleyResult query = case query of
     GetProposedPParamsUpdates    -> toCBOR
     GetStakeDistribution         -> toCBOR
     GetFilteredUTxO {}           -> toCBOR
+    GetUTxO                      -> toCBOR
 
 decodeShelleyResult
   :: Crypto c
@@ -509,3 +522,4 @@ decodeShelleyResult query = case query of
     GetProposedPParamsUpdates    -> fromCBOR
     GetStakeDistribution         -> fromCBOR
     GetFilteredUTxO {}           -> fromCBOR
+    GetUTxO                      -> fromCBOR
