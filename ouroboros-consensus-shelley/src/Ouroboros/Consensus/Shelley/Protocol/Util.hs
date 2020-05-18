@@ -35,4 +35,4 @@ isNewEpoch ei newSlot referenceWO = runIdentity $ do
 prtclStateEta0
   :: STS.State (STS.PRTCL c)
   -> SL.Nonce
-prtclStateEta0 (STS.PrtclState _ _ eta0 _ _ _) = eta0
+prtclStateEta0 (STS.PrtclState _ eta0 _ _ _) = eta0
