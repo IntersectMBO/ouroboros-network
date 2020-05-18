@@ -156,9 +156,10 @@ mkShelleyLedgerConfig genesis epochInfo = ShelleyLedgerConfig {
         , activeSlotCoeff   = sgActiveSlotCoeff   genesis
         }
 
+type instance LedgerCfg (LedgerState (ShelleyBlock c)) = ShelleyLedgerConfig c
+
 instance TPraosCrypto c => IsLedger (LedgerState (ShelleyBlock c)) where
   type LedgerErr (LedgerState (ShelleyBlock c)) = ShelleyLedgerError c
-  type LedgerCfg (LedgerState (ShelleyBlock c)) = ShelleyLedgerConfig c
 
   applyChainTick
     cfg
@@ -378,6 +379,9 @@ instance Crypto c => ShowQuery (Query (ShelleyBlock c)) where
 {-------------------------------------------------------------------------------
   ValidateEnvelope
 -------------------------------------------------------------------------------}
+
+instance Crypto c => BasicEnvelopeValidation (ShelleyBlock c) where
+  -- defaults all OK
 
 instance Crypto c => ValidateEnvelope (ShelleyBlock c) where
   type OtherHeaderEnvelopeError (ShelleyBlock c) =

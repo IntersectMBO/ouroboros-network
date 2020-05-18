@@ -43,9 +43,7 @@ data ByronOtherHeaderEnvelopeError =
     UnexpectedEBBInSlot !SlotNo
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
-instance ValidateEnvelope ByronBlock where
-  type OtherHeaderEnvelopeError ByronBlock = ByronOtherHeaderEnvelopeError
-
+instance BasicEnvelopeValidation ByronBlock where
   expectedFirstBlockNo  _ = BlockNo 0
   minimumPossibleSlotNo _ = SlotNo 0
 
@@ -60,6 +58,9 @@ instance ValidateEnvelope ByronBlock where
       case (prevIsEBB, curIsEBB) of
         (IsEBB, IsNotEBB) -> s
         _otherwise        -> succ s
+
+instance ValidateEnvelope ByronBlock where
+  type OtherHeaderEnvelopeError ByronBlock = ByronOtherHeaderEnvelopeError
 
   additionalEnvelopeChecks cfg _ledgerView hdr =
       when (fromIsEBB newIsEBB && not (canBeEBB actualSlotNo)) $

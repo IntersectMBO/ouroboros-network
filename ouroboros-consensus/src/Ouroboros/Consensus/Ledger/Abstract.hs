@@ -15,6 +15,7 @@
 module Ouroboros.Consensus.Ledger.Abstract (
     -- * Definition of a ledger independent of a choice of block
     IsLedger(..)
+  , LedgerCfg
   , Ticked(..)
   , ApplyBlock(..)
     -- ** Derived
@@ -57,6 +58,9 @@ import           Ouroboros.Consensus.Util
   Definition of a ledger independent of a choice of block
 -------------------------------------------------------------------------------}
 
+-- | Static environment required for the ledger
+type family LedgerCfg l :: *
+
 class ( -- Requirements on the ledger state itself
         Show               l
       , Eq                 l
@@ -68,9 +72,6 @@ class ( -- Requirements on the ledger state itself
       , Eq                 (LedgerErr l)
       , NoUnexpectedThunks (LedgerErr l)
       ) => IsLedger l where
-  -- | Static environment required for the ledger
-  type family LedgerCfg l :: *
-
   -- | Errors that can arise when updating the ledger
   --
   -- This is defined here rather than in 'ApplyBlock', since the /type/ of

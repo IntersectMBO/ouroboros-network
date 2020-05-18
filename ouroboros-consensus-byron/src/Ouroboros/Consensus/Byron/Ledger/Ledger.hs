@@ -77,9 +77,10 @@ import           Ouroboros.Consensus.Byron.Ledger.HeaderValidation ()
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation
 
+type instance LedgerCfg (LedgerState ByronBlock) = Gen.Config
+
 instance IsLedger (LedgerState ByronBlock) where
   type LedgerErr (LedgerState ByronBlock) = CC.ChainValidationError
-  type LedgerCfg (LedgerState ByronBlock) = Gen.Config
 
   applyChainTick cfg slotNo ByronLedgerState{..} =
       Ticked slotNo ByronLedgerState {

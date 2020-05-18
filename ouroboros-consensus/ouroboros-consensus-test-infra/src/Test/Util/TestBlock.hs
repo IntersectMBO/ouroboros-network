@@ -300,8 +300,9 @@ instance BlockSupportsProtocol TestBlock where
       signKey :: Block.SlotNo -> SignKeyDSIGN MockDSIGN
       signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
 
+type instance LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
+
 instance IsLedger (LedgerState TestBlock) where
-  type LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
   type LedgerErr (LedgerState TestBlock) = TestBlockError
 
   applyChainTick _ = Ticked
@@ -343,9 +344,12 @@ lastAppliedBlock (TestLedger p) = go p
 instance HasAnnTip TestBlock where
   -- Use defaults
 
-instance ValidateEnvelope TestBlock where
+instance BasicEnvelopeValidation TestBlock where
   -- The block number of a test block is derived from the length of the hash
   expectedFirstBlockNo _ = Block.BlockNo 1
+
+instance ValidateEnvelope TestBlock where
+  -- Use defaults
 
 instance LedgerSupportsProtocol TestBlock where
   protocolLedgerView   _ _ = ()

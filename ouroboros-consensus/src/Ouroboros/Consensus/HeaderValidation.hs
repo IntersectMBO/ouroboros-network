@@ -30,6 +30,7 @@ module Ouroboros.Consensus.HeaderValidation (
   , castHeaderState
   , rewindHeaderState
     -- * Validate header envelope
+  , BasicEnvelopeValidation(..)
   , HeaderEnvelopeError(..)
   , castHeaderEnvelopeError
   , ValidateEnvelope(..)
@@ -269,17 +270,8 @@ castHeaderEnvelopeError = \case
     UnexpectedSlotNo   expected actual   -> UnexpectedSlotNo   expected actual
     UnexpectedPrevHash oldTip   prevHash -> UnexpectedPrevHash oldTip (castHash prevHash)
 
--- | Validate header envelope (block, slot, hash)
-class ( HasAnnTip blk
-      , Eq                 (OtherHeaderEnvelopeError blk)
-      , Show               (OtherHeaderEnvelopeError blk)
-      , NoUnexpectedThunks (OtherHeaderEnvelopeError blk))
-   => ValidateEnvelope blk where
-
-  -- | A block-specific error that 'validateEnvelope' can return.
-  type OtherHeaderEnvelopeError blk :: *
-  type OtherHeaderEnvelopeError blk = Void
-
+-- | Ledger-independent envelope validation (block, slot, hash)
+class HasAnnTip blk => BasicEnvelopeValidation blk where
   -- | The block number of the first block on the chain
   expectedFirstBlockNo :: proxy blk -> BlockNo
   expectedFirstBlockNo _ = BlockNo 0
@@ -311,6 +303,17 @@ class ( HasAnnTip blk
                 -> HeaderHash blk  -- ^ Prev hash of new block
                 -> Bool
   checkPrevHash _ = (==)
+
+-- | Validate header envelope
+class ( BasicEnvelopeValidation blk
+      , Eq                 (OtherHeaderEnvelopeError blk)
+      , Show               (OtherHeaderEnvelopeError blk)
+      , NoUnexpectedThunks (OtherHeaderEnvelopeError blk)
+      ) => ValidateEnvelope blk where
+
+  -- | A block-specific error that 'validateEnvelope' can return.
+  type OtherHeaderEnvelopeError blk :: *
+  type OtherHeaderEnvelopeError blk = Void
 
   -- | Do additional envelope checks
   additionalEnvelopeChecks :: TopLevelConfig blk

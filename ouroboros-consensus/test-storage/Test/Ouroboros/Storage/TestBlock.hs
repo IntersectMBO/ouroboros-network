@@ -451,8 +451,9 @@ data TestBlockError =
   | InvalidBlock
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
+type instance LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
+
 instance IsLedger (LedgerState TestBlock) where
-  type LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
   type LedgerErr (LedgerState TestBlock) = TestBlockError
 
   applyChainTick _ = Ticked
@@ -491,9 +492,7 @@ data TestBlockOtherHeaderEnvelopeError =
     UnexpectedEBBInSlot !SlotNo
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
-instance ValidateEnvelope TestBlock where
-  type OtherHeaderEnvelopeError TestBlock = TestBlockOtherHeaderEnvelopeError
-
+instance BasicEnvelopeValidation TestBlock where
   minimumPossibleSlotNo _ = SlotNo 0
 
   -- EBB shares its slot number with its successor
@@ -510,6 +509,9 @@ instance ValidateEnvelope TestBlock where
       case (prevIsEBB, curIsEBB) of
         (IsNotEBB, IsEBB) -> b
         _otherwise        -> succ b
+
+instance ValidateEnvelope TestBlock where
+  type OtherHeaderEnvelopeError TestBlock = TestBlockOtherHeaderEnvelopeError
 
   additionalEnvelopeChecks cfg _ledgerView hdr =
       when (fromIsEBB newIsEBB && not (canBeEBB actualSlotNo)) $

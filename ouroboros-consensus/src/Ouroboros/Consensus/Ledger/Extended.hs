@@ -112,11 +112,12 @@ _lemma_protocoLedgerView_applyLedgerBlock cfg blk st
   The extended ledger can behave like a ledger
 -------------------------------------------------------------------------------}
 
+type instance LedgerCfg (ExtLedgerState blk) = TopLevelConfig blk
+
 instance ( IsLedger (LedgerState  blk)
          , LedgerSupportsProtocol blk
          )
       => IsLedger (ExtLedgerState blk) where
-  type LedgerCfg (ExtLedgerState blk) = TopLevelConfig     blk
   type LedgerErr (ExtLedgerState blk) = ExtValidationError blk
 
   applyChainTick cfg slot (ExtLedgerState ledger header) =

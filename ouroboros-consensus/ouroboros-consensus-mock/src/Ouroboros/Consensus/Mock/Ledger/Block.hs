@@ -237,6 +237,9 @@ instance Mock.HasMockTxs SimpleBody where
 instance (SimpleCrypto c, Typeable ext) => HasAnnTip (SimpleBlock c ext)
   -- Use defaults
 
+instance (SimpleCrypto c, Typeable ext) => BasicEnvelopeValidation (SimpleBlock c ext)
+  -- Use defaults
+
 instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
   -- Use defaults
 
@@ -287,9 +290,10 @@ deriving instance Show (MockLedgerConfig c ext) => Show (SimpleLedgerConfig c ex
 deriving instance NoUnexpectedThunks (MockLedgerConfig c ext)
                => NoUnexpectedThunks (SimpleLedgerConfig c ext)
 
+type instance LedgerCfg (LedgerState (SimpleBlock c ext)) = SimpleLedgerConfig c ext
+
 instance MockProtocolSpecific c ext
       => IsLedger (LedgerState (SimpleBlock c ext)) where
-  type LedgerCfg (LedgerState (SimpleBlock c ext)) = SimpleLedgerConfig c ext
   type LedgerErr (LedgerState (SimpleBlock c ext)) = MockError (SimpleBlock c ext)
 
   applyChainTick _ = Ticked
