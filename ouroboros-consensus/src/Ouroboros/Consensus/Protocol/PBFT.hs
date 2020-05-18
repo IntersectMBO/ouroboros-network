@@ -243,10 +243,27 @@ data instance ConsensusConfig (PBft c) = PBftConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
+instance PBftCrypto c => ChainSelection (PBft c) where
+  type SelectView (PBft c) = PBftSelectView
+
+  compareCandidates _proxy _config (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
+      -- Prefer the highest block number, as it is a proxy for chain length
+      case lBlockNo `compare` rBlockNo of
+        LT -> LT
+        GT -> GT
+        -- If the block numbers are the same, check if one of them is an EBB.
+        -- An EBB has the same block number as the block before it, so the
+        -- chain ending with an EBB is actually longer than the one ending
+        -- with a regular block.
+        EQ -> score lIsEBB `compare` score rIsEBB
+     where
+       score :: IsEBB -> Int
+       score IsEBB    = 1
+       score IsNotEBB = 0
+
 instance PBftCrypto c => ConsensusProtocol (PBft c) where
   type ValidationErr (PBft c) = PBftValidationErr c
   type ValidateView  (PBft c) = PBftValidateView  c
-  type SelectView    (PBft c) = PBftSelectView
 
   -- | We require two things from the ledger state:
   --
@@ -308,24 +325,7 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
     where
       params = pbftWindowParams cfg
 
-  rewindConsensusState cfg = flip (rewind cfg params)
-    where
-      params = pbftWindowParams cfg
-
-  compareCandidates PBftConfig{..} (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
-      -- Prefer the highest block number, as it is a proxy for chain length
-      case lBlockNo `compare` rBlockNo of
-        LT -> LT
-        GT -> GT
-        -- If the block numbers are the same, check if one of them is an EBB.
-        -- An EBB has the same block number as the block before it, so the
-        -- chain ending with an EBB is actually longer than the one ending
-        -- with a regular block.
-        EQ -> score lIsEBB `compare` score rIsEBB
-     where
-       score :: IsEBB -> Int
-       score IsEBB    = 1
-       score IsNotEBB = 0
+  rewindConsensusState _proxy = rewind
 
 {-------------------------------------------------------------------------------
   Internal: thin wrapper on top of 'PBftState'
@@ -391,15 +391,9 @@ appendEBB PBftConfig{..} PBftWindowParams{..} =
     PBftParams{..} = pbftParams
 
 rewind :: forall c hdr. (PBftCrypto c, Serialise (HeaderHash hdr))
-       => ConsensusConfig (PBft c)
-       -> PBftWindowParams
-       -> Point hdr
-       -> PBftState c
-       -> Maybe (PBftState c)
-rewind PBftConfig{..} PBftWindowParams{..} p =
-    S.rewind pbftSecurityParam windowSize p'
+       => SecurityParam -> Point hdr -> PBftState c -> Maybe (PBftState c)
+rewind k p = S.rewind k (pbftWindowSize k) p'
   where
-    PBftParams{..} = pbftParams
     p' = case p of
       GenesisPoint    -> Origin
       BlockPoint s hh -> At (s, headerHashBytes (Proxy :: Proxy hdr) hh)

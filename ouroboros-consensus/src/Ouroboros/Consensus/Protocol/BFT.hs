@@ -125,6 +125,9 @@ data instance ConsensusConfig (Bft c) = BftConfig {
     }
   deriving (Generic)
 
+instance BftCrypto c => ChainSelection (Bft c) where
+  -- Use defaults
+
 instance BftCrypto c => ConsensusProtocol (Bft c) where
   type ValidationErr  (Bft c) = BftValidationErr
   type ValidateView   (Bft c) = BftValidateView c
@@ -167,7 +170,7 @@ instance BftCrypto c => ConsensusProtocol (Bft c) where
       expectedLeader = CoreId $ CoreNodeId (n `mod` numCoreNodes)
       NumCoreNodes numCoreNodes = bftNumNodes
 
-  rewindConsensusState _ _ _ = Just ()
+  rewindConsensusState _ _ _ _ = Just ()
 
 instance BftCrypto c => NoUnexpectedThunks (ConsensusConfig (Bft c))
   -- use generic instance

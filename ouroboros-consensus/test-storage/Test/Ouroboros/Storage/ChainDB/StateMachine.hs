@@ -1003,7 +1003,8 @@ isEquallyOrMorePreferableThan cfg chain1 chain2 =
       (Just _,    Nothing)   -> True
       (Just blk1, Just blk2) -> LT /=
         compareCandidates
-          (configConsensus cfg)
+          (Proxy @(BlockProtocol blk))
+          (chainSelConfig (configConsensus cfg))
           (selectView (configBlock cfg) (getHeader blk1))
           (selectView (configBlock cfg) (getHeader blk2))
 

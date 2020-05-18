@@ -217,9 +217,10 @@ rewindHeaderState :: forall blk.
                   -> HeaderState blk -> Maybe (HeaderState blk)
 rewindHeaderState cfg p HeaderState{..} = do
     consensusState' <- rewindConsensusState
-                         (configConsensus cfg)
-                         headerStateConsensus
+                         (Proxy @(BlockProtocol blk))
+                         (configSecurityParam cfg)
                          p
+                         headerStateConsensus
     return $ HeaderState {
         headerStateConsensus = consensusState'
       , headerStateTips      = Seq.dropWhileR rolledBack headerStateTips

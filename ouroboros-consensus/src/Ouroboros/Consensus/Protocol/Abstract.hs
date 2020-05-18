@@ -5,6 +5,7 @@
 module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocol
     ConsensusProtocol(..)
+  , ChainSelection(..)
   , ConsensusConfig
     -- * Convenience re-exports
   , SecurityParam(..)
@@ -34,6 +35,67 @@ import           Ouroboros.Consensus.Ledger.Abstract (Ticked)
 -- module).
 data family ConsensusConfig p :: *
 
+-- | Chain selection
+class NoUnexpectedThunks (ChainSelConfig p) => ChainSelection p where
+  -- | Configuration required for chain selection
+  type family ChainSelConfig p :: *
+  type ChainSelConfig p = ()
+
+  -- | View on a header required for chain selection
+  type family SelectView p :: *
+  type SelectView p = BlockNo
+
+  -- | Do we prefer the candidate chain over ours?
+  --
+  -- Should return 'True' when we prefer the candidate over our chain.
+  --
+  -- We pass only the tips of the chains; for all consensus protocols we are
+  -- interested in, this provides sufficient context. (Ouroboros Genesis is
+  -- the only exception, but we will handle the genesis rule elsewhere.)
+  --
+  -- PRECONDITIONS:
+  --
+  -- * The candidate chain does not extend into the future.
+  -- * The candidate must intersect with our chain within @k@ blocks from
+  --   our tip.
+  --
+  -- NOTE: An assumption that is quite deeply ingrained in the design of the
+  -- consensus layer is that if a chain can be extended, it always should (e.g.,
+  -- see the chain database spec in @ChainDB.md@). This means that any chain
+  -- is always preferred over the empty chain, and 'preferCandidate' does not
+  -- need (indeed, cannot) be called if our current chain is empty.
+  preferCandidate :: proxy          p
+                  -> ChainSelConfig p
+                  -> SelectView     p      -- ^ Tip of our chain
+                  -> SelectView     p      -- ^ Tip of the candidate
+                  -> Bool
+
+  -- | Compare two candidates, both of which we prefer to our own chain
+  --
+  -- PRECONDITION: both candidates must be preferred to our own chain
+  compareCandidates :: proxy          p
+                    -> ChainSelConfig p
+                    -> SelectView     p
+                    -> SelectView     p
+                    -> Ordering
+
+  --
+  -- Default chain selection
+  --
+  -- The default preference uses the default comparison. The default comparison
+  -- simply uses the block number.
+  --
+
+  preferCandidate p cfg ours cand = compareCandidates p cfg ours cand == LT
+
+  default compareCandidates :: Ord (SelectView p)
+                            => proxy          p
+                            -> ChainSelConfig p
+                            -> SelectView     p
+                            -> SelectView     p
+                            -> Ordering
+  compareCandidates _ _ = compare
+
 -- | The (open) universe of Ouroboros protocols
 --
 -- This class encodes the part that is independent from any particular
@@ -47,8 +109,8 @@ class ( Show (ConsensusState p)
       , NoUnexpectedThunks (ConsensusState  p)
       , NoUnexpectedThunks (ValidationErr   p)
       , Typeable p -- so that p can appear in exceptions
+      , ChainSelection p
       ) => ConsensusProtocol p where
-
   -- | Protocol-specific state
   --
   -- NOTE: This chain is blockchain dependent, i.e., updated when new blocks
@@ -105,40 +167,11 @@ class ( Show (ConsensusState p)
   -- | View on a header required to validate it
   type family ValidateView p :: *
 
-  -- | View on a header required for chain selection
-  type family SelectView p :: *
-
-  -- | Do we prefer the candidate chain over ours?
-  --
-  -- Should return 'True' when we prefer the candidate over our chain.
-  --
-  -- We pass only the tips of the chains; for all consensus protocols we are
-  -- interested in, this provides sufficient context. (Ouroboros Genesis is
-  -- the only exception, but we will handle the genesis rule elsewhere.)
-  --
-  -- PRECONDITIONS:
-  --
-  -- * The candidate chain does not extend into the future.
-  -- * The candidate must intersect with our chain within @k@ blocks from
-  --   our tip.
-  --
-  -- NOTE: An assumption that is quite deeply ingrained in the design of the
-  -- consensus layer is that if a chain can be extended, it always should (e.g.,
-  -- see the chain database spec in @ChainDB.md@). This means that any chain
-  -- is always preferred over the empty chain, and 'preferCandidate' does not
-  -- need (indeed, cannot) be called if our current chain is empty.
-  preferCandidate :: ConsensusConfig p
-                  -> SelectView      p      -- ^ Tip of our chain
-                  -> SelectView      p      -- ^ Tip of the candidate
-                  -> Bool
-
-  -- | Compare two candidates, both of which we prefer to our own chain
-  --
-  -- PRECONDITION: both candidates must be preferred to our own chain
-  compareCandidates :: ConsensusConfig p
-                    -> SelectView      p
-                    -> SelectView      p
-                    -> Ordering
+  -- | 'ConsensusConfig' must include the 'ChainSelConfig' p
+  chainSelConfig :: ConsensusConfig p -> ChainSelConfig p
+  default chainSelConfig :: (ChainSelConfig p ~ ())
+                         => ConsensusConfig p -> ChainSelConfig p
+  chainSelConfig _ = ()
 
   -- | Check if a node is the leader
   checkIsLeader :: MonadRandom m
@@ -187,26 +220,7 @@ class ( Show (ConsensusState p)
   -- TODO: The Serialise instance is only required for a hack in PBFT.
   -- Reconsider later.
   rewindConsensusState :: Serialise (HeaderHash hdr)
-                       => ConsensusConfig p
-                       -> ConsensusState  p
-                       -> Point hdr    -- ^ Point to rewind to
-                       -> Maybe (ConsensusState p)
-
-  --
-  -- Default chain selection
-  --
-  -- The default preference uses the default comparison. The default comparison
-  -- simply uses the block number.
-  --
-
-  type SelectView p = BlockNo
-
-  preferCandidate cfg ours cand =
-    compareCandidates cfg ours cand == LT
-
-  default compareCandidates :: Ord (SelectView p)
-                            => ConsensusConfig p
-                            -> SelectView      p
-                            -> SelectView      p
-                            -> Ordering
-  compareCandidates _ = compare
+                       => proxy p
+                       -> SecurityParam
+                       -> Point hdr      -- ^ Point to rewind to
+                       -> ConsensusState p -> Maybe (ConsensusState p)

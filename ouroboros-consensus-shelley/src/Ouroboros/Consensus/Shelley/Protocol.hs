@@ -315,16 +315,16 @@ data instance ConsensusConfig (TPraos c) = TPraosConfig {
 -- Use generic instance
 instance TPraosCrypto c => NoUnexpectedThunks (ConsensusConfig (TPraos c))
 
-instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
+instance TPraosCrypto c => ChainSelection (TPraos c) where
+  -- TODO override compareCandidates and preferCandidate to check the
+  -- certificate number. #1877
 
+instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
   type ConsensusState  (TPraos c) = TPraosState c
   type IsLeader        (TPraos c) = TPraosProof c
   type LedgerView      (TPraos c) = SL.LedgerView c
   type ValidationErr   (TPraos c) = [[STS.PredicateFailure (STS.PRTCL c)]]
   type ValidateView    (TPraos c) = TPraosValidateView c
-
-  -- TODO override compareCandidates and preferCandidate to check the
-  -- certificate number?
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
 
@@ -423,8 +423,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
   --
   -- We don't roll back to the exact slot since that slot might not have been
   -- filled; instead we roll back the the block just before it.
-  rewindConsensusState TPraosConfig{..} cs rewindTo =
-    State.rewind (pointSlot rewindTo) cs
+  rewindConsensusState _proxy _k = State.rewind . pointSlot
 
 mkShelleyGlobals :: TPraosParams -> SL.Globals
 mkShelleyGlobals TPraosParams {..} = SL.Globals {

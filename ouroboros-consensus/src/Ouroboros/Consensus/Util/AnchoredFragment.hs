@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 -- | Utility functions on anchored fragments
 --
@@ -12,6 +13,7 @@ module Ouroboros.Consensus.Util.AnchoredFragment (
   ) where
 
 import           Data.Function (on)
+import           Data.Proxy
 import           Data.Word (Word64)
 import           GHC.Stack
 
@@ -164,7 +166,8 @@ preferAnchoredCandidate cfg ours theirs =
       (_ :> ourTip, _ :> theirTip) ->
         -- Case 4
         preferCandidate
-          (configConsensus cfg)
+          (Proxy @(BlockProtocol blk))
+          (chainSelConfig (configConsensus cfg))
           (selectView (configBlock cfg) ourTip)
           (selectView (configBlock cfg) theirTip)
 
@@ -175,7 +178,7 @@ preferAnchoredCandidate cfg ours theirs =
 -- Implementation note: since the empty fragment is never preferred over our
 -- chain, this is trivial. See discussion in 'preferAnchoredCandidate' for
 -- details.
-compareAnchoredCandidates :: (BlockSupportsProtocol blk, HasCallStack)
+compareAnchoredCandidates :: forall blk. (BlockSupportsProtocol blk, HasCallStack)
                           => TopLevelConfig blk
                           -> AnchoredFragment (Header blk)
                           -> AnchoredFragment (Header blk)
@@ -184,7 +187,8 @@ compareAnchoredCandidates cfg ours theirs =
     case (ours, theirs) of
       (_ :> ourTip, _ :> theirTip) ->
         compareCandidates
-          (configConsensus cfg)
+          (Proxy @(BlockProtocol blk))
+          (chainSelConfig (configConsensus cfg))
           (selectView (configBlock cfg) ourTip)
           (selectView (configBlock cfg) theirTip)
       _otherwise ->

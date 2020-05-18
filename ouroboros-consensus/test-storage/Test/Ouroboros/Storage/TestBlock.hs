@@ -100,6 +100,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ModChainSel
 import           Ouroboros.Consensus.Protocol.Signed
@@ -404,13 +405,10 @@ ebbAwareCompareCandidates (lBlockNo, lIsEBB) (rBlockNo, rIsEBB) =
      score IsEBB    = 1
      score IsNotEBB = 0
 
-instance ChainSelection (Bft BftMockCrypto) BftWithEBBs where
-  type SelectView' (Bft BftMockCrypto) = (BlockNo, IsEBB)
+instance ChainSelection BftWithEBBs where
+  type SelectView BftWithEBBs = (BlockNo, IsEBB)
 
-  compareCandidates' _ _ = ebbAwareCompareCandidates
-
-  preferCandidate' _ _ ours cand =
-    ebbAwareCompareCandidates ours cand == LT
+  compareCandidates _ _ = ebbAwareCompareCandidates
 
 type instance BlockProtocol TestBlock =
   ModChainSel (Bft BftMockCrypto) BftWithEBBs
@@ -556,7 +554,7 @@ testInitExtLedger = ExtLedgerState {
 mkTestConfig :: SecurityParam -> ChunkSize -> TopLevelConfig TestBlock
 mkTestConfig k ChunkSize { chunkCanContainEBB, numRegularBlocks } =
     TopLevelConfig {
-        configConsensus = McsConsensusConfig BftConfig {
+        configConsensus = McsConsensusConfig () $ BftConfig {
             bftParams   = BftParams {
                 bftSecurityParam = k
               , bftNumNodes      = numCoreNodes

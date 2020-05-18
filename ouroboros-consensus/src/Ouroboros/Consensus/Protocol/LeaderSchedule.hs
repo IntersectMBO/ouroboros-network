@@ -4,7 +4,9 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 module Ouroboros.Consensus.Protocol.LeaderSchedule (
@@ -15,6 +17,7 @@ module Ouroboros.Consensus.Protocol.LeaderSchedule (
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Proxy
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -26,7 +29,18 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (..), fromCoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
-newtype LeaderSchedule = LeaderSchedule {getLeaderSchedule :: Map SlotNo [CoreNodeId]}
+{-------------------------------------------------------------------------------
+  Leader schedule
+
+  The leader schedule allows us to define, in tests, precisely when each node
+  is meant to lead. Unlike in, say, Praos, where this is determined by a single
+  random seed, this gives us the ability to construct test cases in an
+  inspectable and shrinkable manner.
+-------------------------------------------------------------------------------}
+
+newtype LeaderSchedule = LeaderSchedule {
+        getLeaderSchedule :: Map SlotNo [CoreNodeId]
+      }
     deriving stock    (Show, Eq, Ord, Generic)
     deriving anyclass (NoUnexpectedThunks)
 
@@ -42,8 +56,20 @@ instance Condense LeaderSchedule where
                                 $ map (\(s, ls) -> (s, map fromCoreNodeId ls))
                                 $ Map.toList m
 
+{-------------------------------------------------------------------------------
+  ConsensusProtocol instance
+-------------------------------------------------------------------------------}
+
 -- | Extension of protocol @p@ by a static leader schedule.
 data WithLeaderSchedule p
+
+-- | Chain selection is unchanged
+instance ChainSelection p => ChainSelection (WithLeaderSchedule p) where
+  type ChainSelConfig (WithLeaderSchedule p) = ChainSelConfig p
+  type SelectView     (WithLeaderSchedule p) = SelectView     p
+
+  preferCandidate   _ = preferCandidate   (Proxy @p)
+  compareCandidates _ = compareCandidates (Proxy @p)
 
 data instance ConsensusConfig (WithLeaderSchedule p) = WLSConfig
   { wlsConfigSchedule :: !LeaderSchedule
@@ -58,11 +84,9 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
   type ValidationErr  (WithLeaderSchedule p) = ()
   type IsLeader       (WithLeaderSchedule p) = ()
   type ValidateView   (WithLeaderSchedule p) = ()
-  type SelectView     (WithLeaderSchedule p) = SelectView p
 
-  preferCandidate       WLSConfig{..} = preferCandidate       wlsConfigP
-  compareCandidates     WLSConfig{..} = compareCandidates     wlsConfigP
-  protocolSecurityParam WLSConfig{..} = protocolSecurityParam wlsConfigP
+  protocolSecurityParam = protocolSecurityParam . wlsConfigP
+  chainSelConfig        = chainSelConfig        . wlsConfigP
 
   checkIfCanBeLeader _ = True -- Conservative approximation
 
@@ -74,7 +98,7 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
             | otherwise                   -> Nothing
 
   updateConsensusState _ _ _ _ = return ()
-  rewindConsensusState _ _ _  = Just ()
+  rewindConsensusState _ _ _ _ = Just ()
 
 instance ConsensusProtocol p
       => NoUnexpectedThunks (ConsensusConfig (WithLeaderSchedule p))
