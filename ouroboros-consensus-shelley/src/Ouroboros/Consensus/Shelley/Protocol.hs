@@ -19,6 +19,7 @@
 --   schedule determining slots to be produced by BFT
 module Ouroboros.Consensus.Shelley.Protocol (
     TPraos
+  , TPraosChainSelectView (..)
   , TPraosFields (..)
   , TPraosToSign (..)
   , TPraosValidateView
@@ -57,7 +58,7 @@ import qualified Cardano.Crypto.VRF.Class as VRF
 import           Cardano.Prelude (Natural, NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
 
-import           Ouroboros.Network.Block (pointSlot, unSlotNo)
+import           Ouroboros.Network.Block (BlockNo, pointSlot, unSlotNo)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Node.State as NodeState
@@ -315,9 +316,28 @@ data instance ConsensusConfig (TPraos c) = TPraosConfig {
 -- Use generic instance
 instance TPraosCrypto c => NoUnexpectedThunks (ConsensusConfig (TPraos c))
 
+-- | View of the ledger tip for chain selection.
+--
+--   We order between chains as follows:
+--   - By chain length, with longer chains always preferred; _else_
+--   - If the tip of each chain was issued by the same agent, then we prefer the
+--     chain whose tip has the highest ocert issue number, if one exists; _else_
+--   - All chains are considered equally preferable
+data TPraosChainSelectView c = ChainSelectView {
+    csvChainLength :: BlockNo
+  , csvIssuer      :: SL.VKey 'SL.BlockIssuer c
+  , csvIssueNo     :: Natural
+  } deriving Eq
+
+instance Crypto c => Ord (TPraosChainSelectView c) where
+  compare (ChainSelectView l1 i1 in1) (ChainSelectView l2 i2 in2) =
+    compare l1 l2 <> if i1 == i2 then compare in1 in2 else EQ
+
 instance TPraosCrypto c => ChainSelection (TPraos c) where
-  -- TODO override compareCandidates and preferCandidate to check the
-  -- certificate number. #1877
+
+  -- | Chain selection is done on the basis of the chain length first, and then
+  -- operational certificate issue number.
+  type SelectView (TPraos c) = TPraosChainSelectView c
 
 instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
   type ConsensusState  (TPraos c) = TPraosState c
