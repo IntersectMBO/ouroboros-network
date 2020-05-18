@@ -6,16 +6,15 @@
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
-module Test.ThreadNet.Infra.Shelley
-  ( CoreNode(..)
+module Test.ThreadNet.Infra.Shelley (
+    CoreNode(..)
   , CoreNodeKeyInfo(..)
   , genCoreNode
   , mkGenesisConfig
   , coreNodeKeys
   , mkProtocolRealTPraos
   , tpraosSlotLength
-  )
-where
+  ) where
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
