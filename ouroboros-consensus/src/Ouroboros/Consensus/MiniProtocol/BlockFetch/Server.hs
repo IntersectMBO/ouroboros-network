@@ -27,6 +27,8 @@ import           Ouroboros.Network.Protocol.BlockFetch.Server
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+                     (NodeToNodeVersion)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
@@ -73,9 +75,10 @@ blockFetchServer
        )
     => Tracer m (TraceBlockFetchServerEvent blk)
     -> ChainDB m blk
+    -> NodeToNodeVersion blk
     -> ResourceRegistry m
     -> BlockFetchServer (Serialised blk) m ()
-blockFetchServer _tracer chainDB registry = senderSide
+blockFetchServer _tracer chainDB _version registry = senderSide
   where
     senderSide :: BlockFetchServer (Serialised blk) m ()
     senderSide = BlockFetchServer receiveReq' ()

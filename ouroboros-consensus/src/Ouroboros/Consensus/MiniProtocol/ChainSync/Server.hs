@@ -24,6 +24,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB, Reader,
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+                     (NodeToNodeVersion)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
@@ -36,9 +38,10 @@ chainSyncHeadersServer
     :: forall m blk. (IOLike m, HasHeader (Header blk))
     => Tracer m (TraceChainSyncServerEvent blk (Header blk))
     -> ChainDB m blk
+    -> NodeToNodeVersion blk
     -> ResourceRegistry m
     -> ChainSyncServer (Serialised (Header blk)) (Tip blk) m ()
-chainSyncHeadersServer tracer chainDB registry =
+chainSyncHeadersServer tracer chainDB _version registry =
     ChainSyncServer $ do
       rdr <- ChainDB.newReader chainDB registry getSerialisedHeaderWithPoint
       let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr
