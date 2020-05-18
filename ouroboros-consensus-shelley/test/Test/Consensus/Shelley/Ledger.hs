@@ -624,5 +624,7 @@ instance Eq (Some (Query Block)) where
   Some (GetFilteredUTxO addrs) == Some (GetFilteredUTxO addrs') =
     addrs == addrs'
   Some (GetFilteredUTxO _) == _ = False
+  Some GetUTxO == Some GetUTxO = True
+  Some GetUTxO == _            = False
 
 deriving instance Show (Some (Query Block))
