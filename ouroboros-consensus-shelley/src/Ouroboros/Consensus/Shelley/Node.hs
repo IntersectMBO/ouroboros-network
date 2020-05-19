@@ -20,6 +20,7 @@ module Ouroboros.Consensus.Shelley.Node (
 
 import           Codec.Serialise (decode, encode)
 import           Control.Monad.Reader (runReader)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -59,7 +60,7 @@ import qualified Shelley.Spec.Ledger.Scripts as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL
 import qualified Shelley.Spec.Ledger.STS.NewEpoch as SL
 import qualified Shelley.Spec.Ledger.STS.Prtcl as SL
-import qualified Shelley.Spec.Ledger.TxData as SL
+import qualified Shelley.Spec.Ledger.Tx as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
 import           Ouroboros.Consensus.Shelley.Genesis
@@ -342,7 +343,7 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeBlockEncodingOverhead = const 1 -- Single list tag.
   -- Check this isn't altered by the TxWits stuff
 
-  nodeTxSize (ShelleyTx _ tx) = fromIntegral $ SL.txsize tx
+  nodeTxSize (ShelleyTx _ tx) = fromIntegral . Lazy.length . SL.txFullBytes $ tx
 
   nodeCheckIntegrity cfg = verifyBlockIntegrity tpraosSlotsPerKESPeriod
     where
