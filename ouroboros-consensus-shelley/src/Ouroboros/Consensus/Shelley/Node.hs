@@ -343,7 +343,8 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeBlockEncodingOverhead = const 1 -- Single list tag.
   -- Check this isn't altered by the TxWits stuff
 
-  nodeTxSize (ShelleyTx _ tx) = fromIntegral . Lazy.length . SL.txFullBytes $ tx
+  nodeTxInBlockSize (ShelleyTx _ tx) =
+    fromIntegral . Lazy.length . SL.txFullBytes $ tx
 
   nodeCheckIntegrity cfg = verifyBlockIntegrity tpraosSlotsPerKESPeriod
     where
