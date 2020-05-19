@@ -427,6 +427,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
         $ State.append slot newCS cs
     where
       slot = SL.bheaderSlotNo $ SL.bhbody b
+      prevHash = SL.bheaderPrev $ SL.bhbody b
       epochInfo = tpraosEpochInfo tpraosParams
       SecurityParam k = tpraosSecurityParam tpraosParams
       shelleyGlobals = mkShelleyGlobals tpraosParams
@@ -435,6 +436,7 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
       prtclEnv = SL.mkPrtclEnv
         lv
         (isNewEpoch epochInfo slot (State.lastSlot cs))
+        (SL.prevHashToNonce prevHash)
 
       prtclState :: STS.PrtclState c
       prtclState = State.currentPRTCLState cs
@@ -464,8 +466,8 @@ mkShelleyGlobals TPraosParams {..} = SL.Globals {
 
 -- | Check whether this node meets the leader threshold to issue a block.
 meetsLeaderThreshold
-  :: forall c. TPraosCrypto c
-  => ConsensusConfig (TPraos c)
+  :: forall c.
+     ConsensusConfig (TPraos c)
   -> LedgerView (TPraos c)
   -> SL.KeyHash 'SL.StakePool c
   -> CertifiedVRF (VRF c) SL.Seed

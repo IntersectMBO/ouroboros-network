@@ -18,6 +18,7 @@ import           Data.Time (UTCTime (..), fromGregorian)
 
 import           Cardano.Binary (toCBOR)
 import           Cardano.Crypto (ProtocolMagicId (..))
+import           Cardano.Prelude (Natural)
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Network.Block (Point (..), blockHash, genesisPoint)
@@ -34,7 +35,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Shelley.Spec.Ledger.BaseTypes (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Credential as SL
 import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
@@ -510,8 +510,10 @@ test_golden_ApplyTxErr = goldenTestCBOR
     [ TkListBegin
     , TkListLen 2
     , TkInt 0
-    , TkListLen 1
+    , TkListLen 2
     , TkInt 0
+    , TkListLen 1
+    , TkBytes "\NUL\NUL\NUL\NUL\NUL\NUL\NUL\SOH"
     , TkBreak
     ]
   where
@@ -523,7 +525,7 @@ test_golden_ApplyTxErr = goldenTestCBOR
       $ pure
       $ STS.LedgerFailure
       $ STS.UtxowFailure
-      $ STS.InvalidWitnessesUTXOW
+      $ STS.InvalidWitnessesUTXOW [SL.VKey 1]
 
 test_golden_ConsensusState :: Assertion
 test_golden_ConsensusState = goldenTestCBOR
@@ -539,15 +541,12 @@ test_golden_ConsensusState = goldenTestCBOR
     , TkListLen 2
     , TkInt 1
     , TkInt 1
-    , TkListLen 6
+    , TkListLen 5
     , TkMapLen 2
     , TkBytes "U\165@\b"
     , TkInt 1
     , TkBytes "\158h\140X"
     , TkInt 2
-    , TkListLen 2
-    , TkInt 1
-    , TkBytes "U\165@\b"
     , TkListLen 1
     , TkInt 0
     , TkListLen 2
@@ -555,33 +554,30 @@ test_golden_ConsensusState = goldenTestCBOR
     , TkBytes "K\245\DC2/4ET\197;\222.\187\140\210\183\227\209`\n\214\&1\195\133\165\215\204\226<w\133E\154"
     , TkListLen 2
     , TkInt 1
-    , TkBytes "\219\193\180\201\NUL\255\228\141W[]\165\198\&8\EOT\SOH%\246]\176\254>$IKv\234\152dW\217\134"
-    , TkListLen 2
-    , TkInt 1
-    , TkBytes "\bO\237\b\185x\175M}\EMjtF\168kX\NUL\158cka\GS\177b\DC1\182Z\154\173\255)\197"
-    , TkListLen 2
-    , TkInt 1
-    , TkInt 2
-    , TkListLen 6
-    , TkMapLen 2
-    , TkBytes "U\165@\b"
-    , TkInt 1
-    , TkBytes "\158h\140X"
-    , TkInt 2
-    , TkListLen 2
-    , TkInt 1
-    , TkBytes "\158h\140X"
-    , TkListLen 1
-    , TkInt 0
+    , TkBytes "K\245\DC2/4ET\197;\222.\187\140\210\183\227\209`\n\214\&1\195\133\165\215\204\226<w\133E\154"
     , TkListLen 2
     , TkInt 1
     , TkBytes "K\245\DC2/4ET\197;\222.\187\140\210\183\227\209`\n\214\&1\195\133\165\215\204\226<w\133E\154"
     , TkListLen 2
     , TkInt 1
+    , TkInt 2
+    , TkListLen 5
+    , TkMapLen 2
+    , TkBytes "U\165@\b"
+    , TkInt 1
+    , TkBytes "\158h\140X"
+    , TkInt 2
+    , TkListLen 1
+    , TkInt 0
+    , TkListLen 2
+    , TkInt 1
     , TkBytes "\219\193\180\201\NUL\255\228\141W[]\165\198\&8\EOT\SOH%\246]\176\254>$IKv\234\152dW\217\134"
     , TkListLen 2
     , TkInt 1
-    , TkBytes "\bO\237\b\185x\175M}\EMjtF\168kX\NUL\158cka\GS\177b\DC1\182Z\154\173\255)\197"
+    , TkBytes "\219\193\180\201\NUL\255\228\141W[]\165\198\&8\EOT\SOH%\246]\176\254>$IKv\234\152dW\217\134"
+    , TkListLen 2
+    , TkInt 1
+    , TkBytes "\219\193\180\201\NUL\255\228\141W[]\165\198\&8\EOT\SOH%\246]\176\254>$IKv\234\152dW\217\134"
     ]
   where
     exampleConsensusState :: ConsensusState (BlockProtocol Block)
@@ -589,18 +585,16 @@ test_golden_ConsensusState = goldenTestCBOR
       TPraosState.append 2      (mkPrtclState 2) $
       TPraosState.empty  (At 1) (mkPrtclState 1)
 
-    mkPrtclState :: Int -> STS.PrtclState TPraosMockCrypto
+    mkPrtclState :: Natural -> STS.PrtclState TPraosMockCrypto
     mkPrtclState seed = STS.PrtclState
       (Map.fromList
        [ (SL.KeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 1), 1)
        , (SL.KeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 2), 2)
        ])
-      (SL.hashHeaderToNonce @TPraosMockCrypto
-        (SL.HashHeader (mkDummyHash (Proxy @TPraosMockCrypto) seed)))
       SL.NeutralNonce
-      (SL.mkNonce 1)
-      (SL.mkNonce 2)
-      (SL.mkNonce 3)
+      (SL.mkNonce seed)
+      (SL.mkNonce seed)
+      (SL.mkNonce seed)
 
 test_golden_LedgerState :: Assertion
 test_golden_LedgerState = goldenTestCBOR
@@ -992,13 +986,10 @@ test_golden_HeaderState = goldenTestCBOR
     , TkListLen 2
     , TkInt 1
     , TkInt 1
-    , TkListLen 6
+    , TkListLen 5
     , TkMapLen 1
     , TkBytes "U\165@\b"
     , TkInt 1
-    , TkListLen 2
-    , TkInt 1
-    , TkBytes "U\165@\b"
     , TkListLen 1
     , TkInt 0
     , TkListLen 2
@@ -1020,8 +1011,6 @@ exampleHeaderState = genesisHeaderState st
     prtclState = STS.PrtclState
       (Map.fromList
         [(SL.KeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 1), 1)])
-      (SL.hashHeaderToNonce @TPraosMockCrypto
-        (SL.HashHeader (mkDummyHash (Proxy @TPraosMockCrypto) 1)))
       SL.NeutralNonce
       (SL.mkNonce 1)
       SL.NeutralNonce
@@ -1375,13 +1364,10 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkListLen 2
     , TkInt 1
     , TkInt 1
-    , TkListLen 6
+    , TkListLen 5
     , TkMapLen 1
     , TkBytes "U\165@\b"
     , TkInt 1
-    , TkListLen 2
-    , TkInt 1
-    , TkBytes "U\165@\b"
     , TkListLen 1
     , TkInt 0
     , TkListLen 2

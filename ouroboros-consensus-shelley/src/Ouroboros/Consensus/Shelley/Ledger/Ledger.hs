@@ -103,7 +103,7 @@ data ShelleyLedgerError c
   | BBodyError !(SL.BlockTransitionError c)
   deriving (Eq, Generic, Show)
 
-instance NoUnexpectedThunks (ShelleyLedgerError c)
+instance Crypto c => NoUnexpectedThunks (ShelleyLedgerError c)
 
 data ShelleyLedgerConfig c = ShelleyLedgerConfig {
       shelleyLedgerGenesis   :: !(ShelleyGenesis c)

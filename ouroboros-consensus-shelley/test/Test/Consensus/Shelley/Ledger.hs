@@ -28,6 +28,7 @@ import           Numeric.Natural (Natural)
 
 import           Cardano.Binary (Annotator (..), FullByteString (..), fromCBOR,
                      serialize, toCBOR)
+import           Cardano.Crypto.DSIGN.Mock (VerKeyDSIGN (..))
 
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      HeaderHash, Point, SlotNo (..))
@@ -562,6 +563,9 @@ instance Arbitrary SL.ActiveSlotCoeff where
 instance Arbitrary (SL.PParams' SL.StrictMaybe) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
+
+instance Arbitrary (SL.VKey kd TPraosMockCrypto) where
+  arbitrary = SL.VKey . VerKeyMockDSIGN <$> arbitrary
 
 instance Arbitrary (SL.ProposedPPUpdates TPraosMockCrypto) where
   arbitrary = genericArbitraryU
