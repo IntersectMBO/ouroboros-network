@@ -83,6 +83,10 @@ class ( LedgerSupportsProtocol    blk
   -- protocol parameters of the ledger state.
   nodeMaxBlockSize :: LedgerState blk -> Word32
 
+  -- | The maximum transaction size in bytes according to the currently
+  -- adopted protocol parameters of the ledger state.
+  nodeMaxTxSize :: LedgerState blk -> TxSizeInBytes
+
   -- | The block encoding overhead size in bytes.
   --
   -- This encompasses the overhead in bytes for everything that is encoded

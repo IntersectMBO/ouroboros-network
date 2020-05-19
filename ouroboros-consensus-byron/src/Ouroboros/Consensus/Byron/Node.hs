@@ -38,6 +38,7 @@ import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochSlots (..))
 import qualified Cardano.Chain.Update as Update
+import qualified Cardano.Chain.Update.Validation.Interface as Update
 import qualified Cardano.Crypto as Crypto
 import           Cardano.Slotting.Slot
 
@@ -205,6 +206,12 @@ instance RunNode ByronBlock where
                                 $ cfg
 
   nodeMaxBlockSize          = API.getMaxBlockSize . byronLedgerState
+  -- TODO cardano-ledger should expose API.getMaxTxSize
+  nodeMaxTxSize             = fromIntegral
+                            . Update.ppMaxBlockSize
+                            . Update.adoptedProtocolParameters
+                            . Cardano.Block.cvsUpdateState
+                            . byronLedgerState
   nodeBlockEncodingOverhead = const byronBlockEncodingOverhead
   nodeTxInBlockSize         = fromIntegral
                             . Strict.length
