@@ -206,7 +206,7 @@ instance RunNode ByronBlock where
 
   nodeMaxBlockSize          = API.getMaxBlockSize . byronLedgerState
   nodeBlockEncodingOverhead = const byronBlockEncodingOverhead
-  nodeTxSize                = fromIntegral
+  nodeTxInBlockSize         = fromIntegral
                             . Strict.length
                             . API.mempoolPayloadRecoverBytes
                             . toMempoolPayload

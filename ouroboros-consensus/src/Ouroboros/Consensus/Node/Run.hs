@@ -113,17 +113,25 @@ class ( LedgerSupportsProtocol    blk
                         -> Lazy.ByteString -> Lazy.ByteString
   nodeAddHeaderEnvelope _ _ _ = id  -- Default to no envelope
 
-  -- | Return the post-serialisation size in bytes of a 'GenTx'.
+  -- | Return the post-serialisation size in bytes of a 'GenTx' /when it is
+  -- embedded in a block/. This size might differ from the size of the
+  -- serialisation used to send and receive the transaction across the
+  -- network.
+  --
+  -- This size is used to compute how many transaction we can put in a block
+  -- when forging one.
+  --
+  -- For example, CBOR-in-CBOR could be used when sending the transaction
+  -- across the network, requiring a few extra bytes compared to the actual
+  -- in-block serialisation. Another example is the transaction of the
+  -- hard-fork combinator which will include an envelope indicating its era
+  -- when sent across the network. However, when embedded in the respective
+  -- era's block, there is no need for such envelope.
   --
   -- Can be implemented by serialising the 'GenTx', but, ideally, this is
   -- implement more efficiently. E.g., by returning the length of the
   -- annotation.
-  --
-  -- > forall tx:
-  -- >   nodeTxSize tx ==
-  -- >   BSL.length (CBOR.toLazyByteString (nodeEncodeGenTx tx))
-  --
-  nodeTxSize :: GenTx blk -> TxSizeInBytes
+  nodeTxInBlockSize :: GenTx blk -> TxSizeInBytes
 
   -- | This function is called when starting up the node, right after the
   -- ChainDB was opened, and before we connect to other nodes and start block

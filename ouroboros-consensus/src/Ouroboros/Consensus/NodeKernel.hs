@@ -273,7 +273,7 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                                   (configLedger cfg)
                                   mpCap
                                   (mempoolTracer tracers)
-                                  nodeTxSize
+                                  nodeTxInBlockSize
 
     fetchClientRegistry <- newFetchClientRegistry
 
