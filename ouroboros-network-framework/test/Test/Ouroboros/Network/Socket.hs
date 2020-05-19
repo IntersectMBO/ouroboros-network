@@ -112,9 +112,9 @@ defaultMiniProtocolLimit = 3000000
 -- Allow to run a singly req-resp protocol.
 --
 testProtocols2 :: RunMiniProtocol appType bytes m a b
-               -> OuroborosApplication appType bytes m a b
+               -> OuroborosApplication appType addr bytes m a b
 testProtocols2 reqResp =
-    OuroborosApplication [
+    OuroborosApplication $ \_connectionId -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 4,
         miniProtocolLimits = MiniProtocolLimits {
@@ -199,7 +199,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
     siblingVar <- newTVarM 2
 
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication ResponderApp BL.ByteString IO Void ()
+        responderApp :: OuroborosApplication ResponderApp Socket.SockAddr BL.ByteString IO Void ()
         responderApp = testProtocols2 reqRespResponder
 
         reqRespResponder =
@@ -216,7 +216,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
             waitSibling siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication InitiatorApp BL.ByteString IO () Void
+        initiatorApp :: OuroborosApplication InitiatorApp Socket.SockAddr BL.ByteString IO () Void
         initiatorApp = testProtocols2 reqRespInitiator
 
         reqRespInitiator =
@@ -243,7 +243,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
         unversionedHandshakeCodec
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptableVersion)
-        (unversionedProtocol (\_peerid -> SomeResponderApplication responderApp))
+        (unversionedProtocol (SomeResponderApplication responderApp))
         nullErrorPolicies
         $ \_ _ -> do
           connectToNode
@@ -251,7 +251,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
             unversionedHandshakeCodec
             cborTermVersionDataCodec
             (NetworkConnectTracers activeMuxTracer nullTracer)
-            (unversionedProtocol (\_peerid -> initiatorApp))
+            (unversionedProtocol initiatorApp)
             (Just initiatorAddr)
             responderAddr
           atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
@@ -291,7 +291,7 @@ prop_socket_recv_error f rerr =
 
     sv   <- newEmptyTMVarM
 
-    let app :: OuroborosApplication ResponderApp BL.ByteString IO Void ()
+    let app :: OuroborosApplication ResponderApp Socket.SockAddr BL.ByteString IO Void ()
         app = testProtocols2 reqRespResponder
 
         reqRespResponder =
@@ -326,10 +326,15 @@ prop_socket_recv_error f rerr =
                 (runAccept $ accept snocket sd)
                 (\(sd', _, _) -> Socket.close sd')
                 $ \(sd', _, _) -> do
+                  remoteAddress <- Socket.getPeerName sd'
                   let timeout = if rerr == RecvSDUTimeout then 0.10
                                                           else (-1) -- No timeout
-                  let bearer = Mx.socketAsMuxBearer timeout nullTracer sd'
-                  Mx.muxStart nullTracer (toApplication app) bearer
+                      bearer = Mx.socketAsMuxBearer timeout nullTracer sd'
+                      connectionId = ConnectionId {
+                          localAddress = Socket.addrAddress muxAddress,
+                          remoteAddress
+                        }
+                  Mx.muxStart nullTracer (toApplication connectionId app) bearer
           )
           $ \muxAsync -> do
 
@@ -461,7 +466,7 @@ prop_socket_client_connect_error _ xs =
 
     cv <- newEmptyTMVarM
 
-    let app :: OuroborosApplication InitiatorApp BL.ByteString IO () Void
+    let app :: OuroborosApplication InitiatorApp Socket.SockAddr BL.ByteString IO () Void
         app = testProtocols2 reqRespInitiator
 
         reqRespInitiator =
@@ -483,7 +488,7 @@ prop_socket_client_connect_error _ xs =
         unversionedHandshakeCodec
         cborTermVersionDataCodec
         nullNetworkConnectTracers
-        (unversionedProtocol (\_peerid -> app))
+        (unversionedProtocol app)
         (Just $ Socket.addrAddress clientAddr)
         (Socket.addrAddress serverAddr)
 

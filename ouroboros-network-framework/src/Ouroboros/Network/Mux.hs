@@ -39,6 +39,7 @@ import           Network.Mux
                    , MuxError(..), MuxErrorType(..) )
 
 import           Ouroboros.Network.Channel
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 
@@ -46,8 +47,8 @@ import           Ouroboros.Network.Driver
 -- |  Like 'MuxApplication' but using a 'MuxPeer' rather than a raw
 -- @Channel -> m a@ action.
 --
-newtype OuroborosApplication (appType :: AppType) bytes m a b =
-        OuroborosApplication [MiniProtocol appType bytes m a b]
+newtype OuroborosApplication (appType :: AppType) addr bytes m a b =
+      OuroborosApplication (ConnectionId addr -> [MiniProtocol appType bytes m a b])
 
 data MiniProtocol (appType :: AppType) bytes m a b =
      MiniProtocol {
@@ -89,16 +90,17 @@ data MuxPeer bytes m a where
            -> MuxPeer bytes m a
 
 toApplication :: (MonadCatch m, MonadAsync m)
-              => OuroborosApplication appType LBS.ByteString m a b
+              => ConnectionId addr
+              -> OuroborosApplication appType addr LBS.ByteString m a b
               -> Mux.MuxApplication appType m a b
-toApplication (OuroborosApplication ptcls) =
+toApplication connectionId (OuroborosApplication app) =
   Mux.MuxApplication
     [ Mux.MuxMiniProtocol {
         Mux.miniProtocolNum    = miniProtocolNum ptcl,
         Mux.miniProtocolLimits = miniProtocolLimits ptcl,
         Mux.miniProtocolRun    = toMuxRunMiniProtocol (miniProtocolRun ptcl)
       }
-    | ptcl <- ptcls ]
+    | ptcl <- app connectionId ]
   where
 
 toMuxRunMiniProtocol :: forall appType m a b.

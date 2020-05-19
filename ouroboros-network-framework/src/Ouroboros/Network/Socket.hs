@@ -160,8 +160,7 @@ connectToNode
   -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
   -> VersionDataCodec extra CBOR.Term
   -> NetworkConnectTracers addr vNumber
-  -> Versions vNumber extra
-              (ConnectionId addr -> OuroborosApplication appType BL.ByteString IO a b)
+  -> Versions vNumber extra (OuroborosApplication appType addr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> Maybe addr
   -- ^ local address; the created socket will bind to it
@@ -199,8 +198,7 @@ connectToNode'
   -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
   -> VersionDataCodec extra CBOR.Term
   -> NetworkConnectTracers addr vNumber
-  -> Versions vNumber extra
-              (ConnectionId addr -> OuroborosApplication appType BL.ByteString IO a b)
+  -> Versions vNumber extra (OuroborosApplication appType addr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> fd
   -> IO ()
@@ -238,7 +236,7 @@ connectToNode' sn handshakeCodec versionDataCodec NetworkConnectTracers {nctMuxT
 
          Right app -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             Mx.muxStart muxTracer (toApplication (app connectionId)) bearer
+             Mx.muxStart muxTracer (toApplication connectionId app) bearer
 
 
 -- Wraps a Socket inside a Snocket and calls connectToNode'
@@ -253,9 +251,7 @@ connectToNodeSocket
   -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
   -> VersionDataCodec extra CBOR.Term
   -> NetworkConnectTracers Socket.SockAddr vNumber
-  -> Versions vNumber extra
-              (ConnectionId Socket.SockAddr ->
-                 OuroborosApplication appType BL.ByteString IO a b)
+  -> Versions vNumber extra (OuroborosApplication appType Socket.SockAddr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
@@ -271,12 +267,12 @@ connectToNodeSocket iocp handshakeCodec versionDataCodec tracers versions sd =
 -- |
 -- Wrapper for OuroborosResponderApplication and OuroborosInitiatorAndResponderApplication.
 --
-data SomeResponderApplication bytes m b where
+data SomeResponderApplication addr bytes m b where
      SomeResponderApplication
-       :: forall appType m bytes a b.
+       :: forall appType addr m bytes a b.
           Mx.HasResponder appType ~ True
-       => (OuroborosApplication appType bytes m a b)
-       -> SomeResponderApplication bytes m b
+       => (OuroborosApplication appType addr bytes m a b)
+       -> SomeResponderApplication addr bytes m b
 
 -- |
 -- Accept or reject an incoming connection.  Each record contains the new state
@@ -294,13 +290,13 @@ data AcceptConnection st vNumber extra peerid m bytes where
     AcceptConnection
       :: forall st vNumber extra peerid m bytes b.
          !st
-      -> !peerid
-      -> Versions vNumber extra (peerid -> SomeResponderApplication bytes m b)
+      -> !(ConnectionId peerid)
+      -> Versions vNumber extra (SomeResponderApplication peerid bytes m b)
       -> AcceptConnection st vNumber extra peerid m bytes
 
     RejectConnection
       :: !st
-      -> !peerid
+      -> !(ConnectionId peerid)
       -> AcceptConnection st vNumber extra peerid m bytes
 
 
@@ -309,33 +305,34 @@ data AcceptConnection st vNumber extra peerid m bytes where
 -- of the incoming connection.
 --
 beginConnection
-    :: forall peerid vNumber extra addr st fd.
+    :: forall vNumber extra addr st fd.
        ( Ord vNumber
        , Typeable vNumber
        , Show vNumber
        )
     => Snocket IO fd addr
-    -> Tracer IO (Mx.WithMuxBearer peerid Mx.MuxTrace)
-    -> Tracer IO (Mx.WithMuxBearer peerid (TraceSendRecv (Handshake vNumber CBOR.Term)))
+    -> Tracer IO (Mx.WithMuxBearer (ConnectionId addr) Mx.MuxTrace)
+    -> Tracer IO (Mx.WithMuxBearer (ConnectionId addr) (TraceSendRecv (Handshake vNumber CBOR.Term)))
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber extra peerid IO BL.ByteString))
+    -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber extra addr IO BL.ByteString))
     -- ^ either accept or reject a connection.
     -> Server.BeginConnection addr fd st ()
 beginConnection sn muxTracer handshakeTracer handshakeCodec versionDataCodec acceptVersion fn t addr st = do
     accept <- fn t addr st
     case accept of
-      AcceptConnection st' peerid versions -> pure $ Server.Accept st' $ \sd -> do
-        muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` muxTracer
+      AcceptConnection st' connectionId versions -> pure $ Server.Accept st' $ \sd -> do
+        muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` muxTracer
         let bearer :: MuxBearer IO
             bearer = Snocket.toBearer sn muxTracer' sd
+
         traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
 
         app_e <-
           runHandshakeServer
             bearer
-            peerid
+            connectionId
             acceptVersion
             HandshakeArguments {
               haHandshakeTracer  = handshakeTracer,
@@ -357,11 +354,9 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec versionDataCodec acc
                  traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
                  throwIO err
 
-             Right mkapp -> do
-                 case mkapp peerid of
-                      SomeResponderApplication app -> do
-                          traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
-                          Mx.muxStart muxTracer' (toApplication app) bearer
+             Right (SomeResponderApplication app) -> do
+                 traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
+                 Mx.muxStart muxTracer' (toApplication connectionId app) bearer
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 
 mkListeningSocket
@@ -483,8 +478,7 @@ runServerThread
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra
-                (ConnectionId addr -> SomeResponderApplication BL.ByteString IO b)
+    -> Versions vNumber extra (SomeResponderApplication addr BL.ByteString IO b)
     -> ErrorPolicies
     -> IO Void
 runServerThread NetworkServerTracers { nstMuxTracer
@@ -565,8 +559,7 @@ withServerNode
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra
-                (ConnectionId addr -> SomeResponderApplication BL.ByteString IO b)
+    -> Versions vNumber extra (SomeResponderApplication addr BL.ByteString IO b)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
@@ -632,8 +625,7 @@ withServerNode'
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra
-                (ConnectionId addr -> SomeResponderApplication BL.ByteString IO b)
+    -> Versions vNumber extra (SomeResponderApplication addr BL.ByteString IO b)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
