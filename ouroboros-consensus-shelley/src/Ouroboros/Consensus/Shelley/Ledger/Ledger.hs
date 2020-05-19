@@ -52,10 +52,10 @@ import           Data.Functor.Identity
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import           Data.Set (Set)
-import           Data.Type.Equality ((:~:) (Refl))
+import           Data.Type.Equality ((:~:) (Refl), apply)
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (enforceSize, fromCBOR, toCBOR)
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot hiding (at)
@@ -319,6 +319,29 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
     GetUTxO
       :: Query (ShelleyBlock c) (SL.UTxO c)
 
+    -- | Only for debugging purposes, we don't guarantee binary compatibility
+    GetCurrentLedgerState
+      :: Query (ShelleyBlock c) (SL.LedgerState c)
+
+    -- | Wrap the result of the query using CBOR-in-CBOR.
+    --
+    -- For example, when a client is running a different version than the
+    -- server and it sends a 'GetCurrentLedgerState' query, the client's
+    -- decoder might fail to deserialise it the ledger state as it might have
+    -- changed between the two different versions. The client will then
+    -- disconnect.
+    --
+    -- By using CBOR-in-CBOR, the client always successfully decodes the outer
+    -- CBOR layer (so no disconnect) and can then manually try to decode the
+    -- inner result. When the client's decoder is able to decode the inner
+    -- result, it has access to the deserialised ledger state. When it fails
+    -- to decode it, the client can fall back to pretty printing the actual
+    -- CBOR, which is better than no output at all.
+    GetCBOR
+      :: Query (ShelleyBlock c) result
+      -> Query (ShelleyBlock c) (Serialised result)
+
+
   answerQuery cfg query st = case query of
       GetLedgerTip -> ledgerTip st
       GetEpochNo -> SL.nesEL $ shelleyState st
@@ -329,6 +352,9 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
       GetStakeDistribution -> SL.nesPd $ shelleyState st
       GetFilteredUTxO addrs -> SL.getFilteredUTxO (shelleyState st) addrs
       GetUTxO -> SL.getUTxO $ shelleyState st
+      GetCurrentLedgerState -> getCurrentLedgerState $ shelleyState st
+      GetCBOR query' -> mkSerialised (encodeShelleyResult query') $
+          answerQuery cfg query' st
     where
       globals = shelleyLedgerGlobals cfg
 
@@ -370,7 +396,14 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
     = Just Refl
   eqQuery GetUTxO _
     = Nothing
-
+  eqQuery GetCurrentLedgerState GetCurrentLedgerState
+    = Just Refl
+  eqQuery GetCurrentLedgerState _
+    = Nothing
+  eqQuery (GetCBOR q) (GetCBOR q')
+    = apply Refl <$> eqQuery q q'
+  eqQuery (GetCBOR _) _
+    = Nothing
 
 deriving instance Eq   (Query (ShelleyBlock c) result)
 deriving instance Show (Query (ShelleyBlock c) result)
@@ -384,6 +417,8 @@ instance Crypto c => ShowQuery (Query (ShelleyBlock c)) where
   showResult GetStakeDistribution           = show
   showResult (GetFilteredUTxO {})           = show
   showResult GetUTxO                        = show
+  showResult GetCurrentLedgerState          = show
+  showResult (GetCBOR {})                   = show
 
 {-------------------------------------------------------------------------------
   ValidateEnvelope
@@ -411,6 +446,18 @@ getPParams = SL.esPp . SL.nesEs
 
 getProposedPPUpdates :: SL.ShelleyState c -> SL.ProposedPPUpdates c
 getProposedPPUpdates = SL._ppups . SL._utxoState . SL.esLState . SL.nesEs
+
+-- Get the current LedgerState minus the UTxO and account portions. This
+-- is mainly for debugging.
+getCurrentLedgerState :: SL.ShelleyState c -> SL.LedgerState c
+getCurrentLedgerState =
+    nukeLedgerUtxO . SL.esLState . SL.nesEs
+  where
+    nukeLedgerUtxO :: SL.LedgerState c -> SL.LedgerState c
+    nukeLedgerUtxO ls = ls { SL._utxoState = nukeUtxOSet $ SL._utxoState ls }
+
+    nukeUtxOSet :: SL.UTxOState c -> SL.UTxOState c
+    nukeUtxOSet us = us { SL._utxo = SL.UTxO mempty }
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -479,6 +526,10 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 6 <> toCBOR addrs
     GetUTxO ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 7
+    GetCurrentLedgerState ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 8
+    GetCBOR query' ->
+      CBOR.encodeListLen 2 <> CBOR.encodeWord8 9 <> encodeShelleyQuery query'
 
 decodeShelleyQuery :: Crypto c => Decoder s (Some (Query (ShelleyBlock c)))
 decodeShelleyQuery = do
@@ -493,6 +544,8 @@ decodeShelleyQuery = do
       (1, 5) -> return $ Some GetStakeDistribution
       (2, 6) -> Some . GetFilteredUTxO <$> fromCBOR
       (1, 7) -> return $ Some GetUTxO
+      (1, 8) -> return $ Some GetCurrentLedgerState
+      (2, 9) -> (\(Some q) -> Some (GetCBOR q)) <$> decodeShelleyQuery
       _      -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
@@ -509,6 +562,8 @@ encodeShelleyResult query = case query of
     GetStakeDistribution         -> toCBOR
     GetFilteredUTxO {}           -> toCBOR
     GetUTxO                      -> toCBOR
+    GetCurrentLedgerState        -> toCBOR
+    GetCBOR {}                   -> encode
 
 decodeShelleyResult
   :: Crypto c
@@ -523,3 +578,5 @@ decodeShelleyResult query = case query of
     GetStakeDistribution         -> fromCBOR
     GetFilteredUTxO {}           -> fromCBOR
     GetUTxO                      -> fromCBOR
+    GetCurrentLedgerState        -> fromCBOR
+    GetCBOR {}                   -> decode
