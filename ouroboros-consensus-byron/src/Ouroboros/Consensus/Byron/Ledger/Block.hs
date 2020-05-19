@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -41,6 +42,7 @@ import           Data.Proxy
 import           Data.Typeable
 import           Data.Word
 import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 
 import           Cardano.Binary
 import           Cardano.Prelude (NoUnexpectedThunks (..))
@@ -68,9 +70,10 @@ import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 -------------------------------------------------------------------------------}
 
 newtype ByronHash = ByronHash { unByronHash :: CC.HeaderHash }
-  deriving stock   (Eq, Ord, Show, Generic)
+  deriving stock   (Eq, Ord, Generic)
   deriving newtype (ToCBOR, FromCBOR, Condense)
   deriving anyclass (NoUnexpectedThunks)
+  deriving (Show) via (Quiet ByronHash)
 
 mkByronHash :: CC.ABlockOrBoundaryHdr ByteString -> ByronHash
 mkByronHash = ByronHash . CC.abobHdrHash

@@ -60,6 +60,7 @@ library
                      , formatting        >=6.3   && <6.4
                      , memory
                      , mtl               >=2.2   && <2.3
+                     , quiet             >=0.2   && <0.3
                      , serialise         >=0.2   && <0.3
                      , text              >=1.2   && <1.3
 
