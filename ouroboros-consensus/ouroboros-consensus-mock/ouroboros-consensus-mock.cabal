@@ -55,6 +55,7 @@ library
                      , deepseq
                      , hashable
                      , mtl               >=2.2   && <2.3
+                     , quiet             >=0.2   && <0.3
                      , serialise         >=0.2   && <0.3
                      , time
 

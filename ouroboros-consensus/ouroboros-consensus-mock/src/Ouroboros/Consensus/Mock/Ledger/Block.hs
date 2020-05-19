@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -74,6 +75,7 @@ import           Data.Proxy
 import           Data.Typeable
 import           Data.Word
 import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Crypto.Hash hiding (castHash)
@@ -310,8 +312,9 @@ instance MockProtocolSpecific c ext
 newtype instance LedgerState (SimpleBlock c ext) = SimpleLedgerState {
       simpleLedgerState :: MockState (SimpleBlock c ext)
     }
-  deriving stock   (Generic, Show, Eq)
+  deriving stock   (Generic, Eq)
   deriving newtype (Serialise, NoUnexpectedThunks)
+  deriving (Show) via (Quiet (LedgerState (SimpleBlock c ext)))
 
 instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext)
 
