@@ -244,6 +244,7 @@ instance RunNode DualByronBlock where
   -- the mempool be limited by concrete transactions only. This is ok, because
   -- the spec does not impose a maximum block size.
   nodeTxInBlockSize = nodeTxInBlockSize . dualGenTxMain
+  nodeMaxTxSize     = nodeMaxTxSize     . dualLedgerStateMain
 
   -- Envelope
   nodeHashInfo     = \_p -> nodeHashInfo     pb

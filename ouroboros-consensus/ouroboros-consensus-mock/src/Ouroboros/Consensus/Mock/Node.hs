@@ -65,6 +65,7 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeHashInfo              = const simpleBlockHashInfo
   nodeMaxBlockSize          = const 2000000 -- TODO
   nodeBlockEncodingOverhead = const 1000 -- TODO
+  nodeMaxTxSize             = const 2000000 -- TODO
   nodeTxInBlockSize         = txSize
   nodeCheckIntegrity        = \_ _ -> True
 
