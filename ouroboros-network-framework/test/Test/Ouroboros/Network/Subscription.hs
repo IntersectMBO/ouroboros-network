@@ -70,9 +70,9 @@ defaultMiniProtocolLimit :: Int64
 defaultMiniProtocolLimit = 3000000
 
 testProtocols1 :: RunMiniProtocol appType bytes m a b
-               -> OuroborosApplication appType bytes m a b
+               -> OuroborosApplication appType addr bytes m a b
 testProtocols1 chainSync =
-    OuroborosApplication [
+    OuroborosApplication $ \_connectionId -> [
        MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = MiniProtocolLimits {
@@ -86,9 +86,9 @@ testProtocols1 chainSync =
 -- Allow to run a singly req-resp protocol.
 --
 testProtocols2 :: RunMiniProtocol appType bytes m a b
-               -> OuroborosApplication appType bytes m a b
+               -> OuroborosApplication appType addr bytes m a b
 testProtocols2 reqResp =
-    OuroborosApplication [
+    OuroborosApplication $ \_connectionId -> [
        MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 4,
         miniProtocolLimits = MiniProtocolLimits {
@@ -550,7 +550,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
     clientTbl <- newConnectionTable
 
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication ResponderApp BL.ByteString IO Void ()
+        responderApp :: OuroborosApplication ResponderApp Socket.SockAddr BL.ByteString IO Void ()
         responderApp = testProtocols2 reqRespResponder
 
         reqRespResponder =
@@ -564,7 +564,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
             waitSiblingSub siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication InitiatorApp BL.ByteString IO () Void
+        initiatorApp :: OuroborosApplication InitiatorApp Socket.SockAddr BL.ByteString IO () Void
         initiatorApp = testProtocols2 reqRespInitiator
 
         reqRespInitiator =
@@ -589,7 +589,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         unversionedHandshakeCodec
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptableVersion)
-        (unversionedProtocol (\_peerid -> SomeResponderApplication responderApp))
+        (unversionedProtocol (SomeResponderApplication responderApp))
         nullErrorPolicies
         $ \_ _ -> do
           dnsSubscriptionWorker'
@@ -613,7 +613,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
                 unversionedHandshakeCodec
                 cborTermVersionDataCodec
                 nullNetworkConnectTracers
-                (unversionedProtocol (\_peerid -> initiatorApp)))
+                (unversionedProtocol initiatorApp))
 
     res <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
     return (res == mapAccumL f 0 xs)
@@ -694,7 +694,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
 
   where
 
-    appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp BL.ByteString IO () ()
+    appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp Socket.SockAddr BL.ByteString IO () ()
     appX cfg = testProtocols2 (reqResp cfg)
 
     reqResp ReqRspCfg {rrcTag, rrcServerVar, rrcClientVar, rrcSiblingVar} =
@@ -730,7 +730,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
         unversionedHandshakeCodec
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptableVersion)
-        (unversionedProtocol (\_peerid -> SomeResponderApplication (appX rrcfg)))
+        (unversionedProtocol (SomeResponderApplication (appX rrcfg)))
         nullErrorPolicies
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
@@ -750,7 +750,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
           unversionedHandshakeCodec
           cborTermVersionDataCodec
           (\(DictVersion _) -> acceptableVersion)
-          (unversionedProtocol (\_peerid -> SomeResponderApplication (appX rrcfg)))
+          (unversionedProtocol (SomeResponderApplication (appX rrcfg)))
           nullErrorPolicies
           $ \localAddr _ -> do
             peerStatesVar <- newPeerStatesVar
@@ -775,7 +775,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
                   unversionedHandshakeCodec
                   cborTermVersionDataCodec
                   nullNetworkConnectTracers
-                  (unversionedProtocol (\_peerid -> appX rrcfg)))
+                  (unversionedProtocol (appX rrcfg)))
 
             atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
                              <*> takeTMVar (rrcClientVar rrcfg)
@@ -846,7 +846,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
                 unversionedHandshakeCodec
                 cborTermVersionDataCodec
                 nullNetworkConnectTracers
-                (unversionedProtocol (\_peerid -> appReq)))
+                (unversionedProtocol appReq))
 
     threadDelay 130
     -- bring the servers back again
@@ -867,7 +867,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
             unversionedHandshakeCodec
             cborTermVersionDataCodec
             (\(DictVersion _) -> acceptableVersion)
-            (unversionedProtocol (\_peerid -> SomeResponderApplication appRsp))
+            (unversionedProtocol (SomeResponderApplication appRsp))
             nullErrorPolicies
             (\_ _ -> threadDelay delay)
 
