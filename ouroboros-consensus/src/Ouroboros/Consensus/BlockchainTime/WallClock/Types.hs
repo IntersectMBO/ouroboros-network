@@ -22,6 +22,7 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.Types (
 import           Data.Fixed
 import           Data.Time (NominalDiffTime, UTCTime)
 import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..),
                      UseIsNormalForm (..))
@@ -36,8 +37,9 @@ import           Control.Monad.Class.MonadTime (MonadTime (..))
 --
 -- Slots are counted from the system start.
 newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
-  deriving (Eq, Show)
+  deriving (Eq, Generic)
   deriving NoUnexpectedThunks via UseIsNormalForm SystemStart
+  deriving (Show) via (Quiet SystemStart)
 
 -- | System time
 --
@@ -57,7 +59,8 @@ defaultSystemTime start = SystemTime start getCurrentTime
 
 -- | Slot length
 newtype SlotLength = SlotLength { getSlotLength :: NominalDiffTime }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
+  deriving (Eq, Generic, NoUnexpectedThunks)
+  deriving (Show) via (Quiet SlotLength)
 
 -- | Constructor for 'SlotLength'
 mkSlotLength :: NominalDiffTime -> SlotLength

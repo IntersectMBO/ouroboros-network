@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -30,6 +32,8 @@ import           Crypto.Random (ChaChaDRG, MonadPseudoRandom, MonadRandom (..),
                      drgNewTest, randomBytesGenerate, withDRG)
 import           Data.List (genericLength)
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 
 import           Control.Monad.Class.MonadSTM
 
@@ -48,7 +52,8 @@ generateElement xs = do
 -------------------------------------------------------------------------------}
 
 newtype Seed = Seed {getSeed :: (Word64, Word64, Word64, Word64, Word64)}
-    deriving (Show, Eq, Ord, Serialise)
+    deriving (Eq, Generic, Ord, Serialise)
+    deriving (Show) via (Quiet Seed)
 
 withSeed :: Seed -> MonadPseudoRandom ChaChaDRG a -> a
 withSeed s = fst . withDRG (drgNewTest $ getSeed s)

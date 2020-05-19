@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -19,6 +20,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -41,8 +43,9 @@ import           Ouroboros.Consensus.Util.Condense (Condense (..))
 newtype LeaderSchedule = LeaderSchedule {
         getLeaderSchedule :: Map SlotNo [CoreNodeId]
       }
-    deriving stock    (Show, Eq, Ord, Generic)
+    deriving stock    (Eq, Ord, Generic)
     deriving anyclass (NoUnexpectedThunks)
+    deriving (Show) via (Quiet LeaderSchedule)
 
 instance Semigroup LeaderSchedule where
     LeaderSchedule l <> LeaderSchedule r =
