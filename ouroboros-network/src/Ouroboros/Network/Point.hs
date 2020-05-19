@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingVia       #-}
 
 module Ouroboros.Network.Point
   ( WithOrigin (..)
@@ -17,6 +18,7 @@ module Ouroboros.Network.Point
   ) where
 
 import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot
@@ -25,7 +27,8 @@ data Block slot hash = Block
   { blockPointSlot :: !slot
   , blockPointHash :: !hash
   }
-  deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Ord, Generic, NoUnexpectedThunks)
+  deriving (Show) via (Quiet (Block slot hash))
 
 block :: slot -> hash -> WithOrigin (Block slot hash)
 block slot hash = at (Block slot hash)

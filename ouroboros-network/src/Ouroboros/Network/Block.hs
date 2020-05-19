@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -79,6 +80,7 @@ import           Data.FingerTree.Strict (Measured)
 import           Data.Proxy (Proxy)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 
 -- TODO: it should be exported from 'Cardano.Prelude'
 import           Control.Tracer (contramap)
@@ -171,8 +173,9 @@ newtype Point block = Point
 
 deriving newtype instance StandardHash block => Eq   (Point block)
 deriving newtype instance StandardHash block => Ord  (Point block)
-deriving newtype instance StandardHash block => Show (Point block)
 deriving newtype instance (StandardHash block, Typeable block) => NoUnexpectedThunks (Point block)
+
+deriving via (Quiet (Point block)) instance (StandardHash block) => Show (Point block)
 
 pattern GenesisPoint :: Point block
 pattern GenesisPoint = Point Origin
@@ -438,7 +441,8 @@ instance Monoid BlockMeasure where
 -- putting them on the wire.
 newtype Serialised a = Serialised
   { unSerialised :: Lazy.ByteString }
-  deriving (Eq, Show)
+  deriving (Eq, Generic)
+  deriving (Show) via (Quiet (Serialised a))
 
 type instance HeaderHash (Serialised block) = HeaderHash block
 instance StandardHash block => StandardHash (Serialised block)

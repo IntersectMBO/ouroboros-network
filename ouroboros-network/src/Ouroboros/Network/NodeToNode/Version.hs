@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE DerivingVia    #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Ouroboros.Network.NodeToNode.Version
@@ -10,6 +12,8 @@ module Ouroboros.Network.NodeToNode.Version
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
+import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 
 import qualified Codec.CBOR.Term as CBOR
 
@@ -41,7 +45,8 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
 --
 newtype NodeToNodeVersionData = NodeToNodeVersionData
   { networkMagic :: NetworkMagic }
-  deriving (Eq, Show, Typeable)
+  deriving (Eq, Generic, Typeable)
+  deriving (Show) via (Quiet NodeToNodeVersionData)
 
 instance Acceptable NodeToNodeVersionData where
     acceptableVersion local remote
