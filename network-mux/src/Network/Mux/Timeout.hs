@@ -94,7 +94,7 @@ withTimeoutSerialNative body = body MonadTimer.timeout
 --
 -- The implementation here only relies upon 'threadDelay' which has an
 -- efficient implementation on all platforms. It uses a separate monitoring
--- thread which will through an exception to terminate the action if the
+-- thread which will throw an exception to terminate the action if the
 -- timeout expires. This is why it uses the \"with\" style: because it keeps
 -- a monitoring thread over a region of execution that may use many timeouts.
 -- The cost of allocating this thread is amortised over all the timeouts used.
