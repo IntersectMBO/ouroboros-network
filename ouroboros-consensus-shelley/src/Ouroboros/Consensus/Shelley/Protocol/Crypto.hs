@@ -62,7 +62,7 @@ instance Crypto TPraosStandardCrypto where
 
   -- TODO This is somewhat annoying, since we want it to be based upon a runtime
   -- value.
-  networkMagicId = const Testnet
+  networkMagicId = const Mainnet
 
 instance TPraosCrypto TPraosStandardCrypto
 
