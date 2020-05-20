@@ -216,35 +216,38 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
 --
 nodeToNodeProtocols
   :: MiniProtocolParameters
-  -> NodeToNodeProtocols appType bytes m a b
-  -> OuroborosApplication appType bytes m a b
+  -> (ConnectionId addr -> NodeToNodeProtocols appType bytes m a b)
+  -> OuroborosApplication appType addr bytes m a b
 nodeToNodeProtocols MiniProtocolParameters {
                         chainSyncPipeliningHighMark,
                         blockFetchPipeliningMax,
                         txSubmissionMaxUnacked
                       }
-                    NodeToNodeProtocols {
-                        chainSyncProtocol,
-                        blockFetchProtocol,
-                        txSubmissionProtocol
-                      } =
-    OuroborosApplication [
-      MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 2,
-        miniProtocolLimits = chainSyncProtocolLimits,
-        miniProtocolRun    = chainSyncProtocol
-      }
-    , MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 3,
-        miniProtocolLimits = blockFetchProtocolLimits,
-        miniProtocolRun    = blockFetchProtocol
-      }
-    , MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 4,
-        miniProtocolLimits = txSubmissionProtocolLimits,
-        miniProtocolRun    = txSubmissionProtocol
-      }
-    ]
+                    protocols =
+  OuroborosApplication $ \connectionId ->
+    case protocols connectionId of
+      NodeToNodeProtocols {
+          chainSyncProtocol,
+          blockFetchProtocol,
+          txSubmissionProtocol
+        } ->
+        [
+          MiniProtocol {
+            miniProtocolNum    = MiniProtocolNum 2,
+            miniProtocolLimits = chainSyncProtocolLimits,
+            miniProtocolRun    = chainSyncProtocol
+          }
+        , MiniProtocol {
+            miniProtocolNum    = MiniProtocolNum 3,
+            miniProtocolLimits = blockFetchProtocolLimits,
+            miniProtocolRun    = blockFetchProtocol
+          }
+        , MiniProtocol {
+            miniProtocolNum    = MiniProtocolNum 4,
+            miniProtocolLimits = txSubmissionProtocolLimits,
+            miniProtocolRun    = txSubmissionProtocol
+          }
+        ]
   where
     addSafetyMargin :: Int64 -> Int64
     addSafetyMargin x = x + x `div` 10
@@ -419,8 +422,7 @@ connectTo
   -> NetworkConnectTracers Socket.SockAddr NodeToNodeVersion
   -> Versions NodeToNodeVersion
               DictVersion
-              (ConnectionId Socket.SockAddr ->
-                 OuroborosApplication InitiatorApp BL.ByteString IO a b)
+              (OuroborosApplication InitiatorApp Socket.SockAddr BL.ByteString IO a b)
   -> Maybe Socket.SockAddr
   -> Socket.SockAddr
   -> IO ()
@@ -434,8 +436,7 @@ connectTo_V1
   :: SocketSnocket
   -> NetworkConnectTracers Socket.SockAddr NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> (ConnectionId Socket.SockAddr ->
-        OuroborosApplication InitiatorApp BL.ByteString IO a b)
+  -> OuroborosApplication InitiatorApp Socket.SockAddr BL.ByteString IO a b
   -> Maybe Socket.SockAddr
   -> Socket.SockAddr
   -> IO ()
@@ -467,8 +468,7 @@ withServer
   -> AcceptedConnectionsLimit
   -> Socket.Socket
   -> Versions NodeToNodeVersion DictVersion
-              (ConnectionId Socket.SockAddr ->
-                 OuroborosApplication appType BL.ByteString IO a b)
+              (OuroborosApplication appType Socket.SockAddr BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolicies =
@@ -481,7 +481,7 @@ withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolic
     nodeToNodeHandshakeCodec
     cborTermVersionDataCodec
     (\(DictVersion _) -> acceptableVersion)
-    (fmap (SomeResponderApplication .) versions)
+    (SomeResponderApplication <$> versions)
     errPolicies
     (\_ async -> Async.wait async)
 
@@ -496,8 +496,7 @@ withServer_V1
   -> AcceptedConnectionsLimit
   -> Socket.Socket
   -> NodeToNodeVersionData
-  -> (ConnectionId Socket.SockAddr ->
-        OuroborosApplication appType BL.ByteString IO x y)
+  -> OuroborosApplication appType Socket.SockAddr BL.ByteString IO x y
   -> ErrorPolicies
   -> IO Void
 withServer_V1 sn tracers networkState acceptedConnectionsLimit sd versionData application =
@@ -523,8 +522,7 @@ ipSubscriptionWorker
     -> Versions
         NodeToNodeVersion
         DictVersion
-        (ConnectionId Socket.SockAddr ->
-           OuroborosApplication appType BL.ByteString IO x y)
+        (OuroborosApplication appType Socket.SockAddr BL.ByteString IO x y)
     -> IO Void
 ipSubscriptionWorker
   sn
@@ -561,8 +559,7 @@ ipSubscriptionWorker_V1
     -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> NodeToNodeVersionData
-    -> (ConnectionId Socket.SockAddr ->
-          OuroborosApplication appType BL.ByteString IO x y)
+    -> OuroborosApplication appType Socket.SockAddr BL.ByteString IO x y
     -> IO Void
 ipSubscriptionWorker_V1
   sn
@@ -596,8 +593,7 @@ dnsSubscriptionWorker
     -> Versions
         NodeToNodeVersion
         DictVersion
-        (ConnectionId Socket.SockAddr ->
-           OuroborosApplication appType BL.ByteString IO x y)
+        (OuroborosApplication appType Socket.SockAddr BL.ByteString IO x y)
     -> IO Void
 dnsSubscriptionWorker
   sn
@@ -636,8 +632,7 @@ dnsSubscriptionWorker_V1
     -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> NodeToNodeVersionData
-    -> (ConnectionId Socket.SockAddr ->
-          OuroborosApplication appType BL.ByteString IO x y)
+    -> OuroborosApplication appType Socket.SockAddr BL.ByteString IO x y
     -> IO Void
 dnsSubscriptionWorker_V1
   sn

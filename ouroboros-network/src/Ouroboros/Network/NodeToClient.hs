@@ -160,36 +160,43 @@ data NodeToClientProtocols appType bytes m a b = NodeToClientProtocols {
 -- wireshark plugins.
 --
 nodeToClientProtocols
-  :: NodeToClientProtocols appType bytes m a b
+  :: (ConnectionId addr -> NodeToClientProtocols appType bytes m a b)
   -> NodeToClientVersion
-  -> OuroborosApplication appType bytes m a b
-nodeToClientProtocols NodeToClientProtocols {
-                          localChainSyncProtocol,
-                          localTxSubmissionProtocol,
-                          localStateQueryProtocol
-                        } version =
+  -> OuroborosApplication appType addr bytes m a b
+nodeToClientProtocols protocols version =
     case version of
-      NodeToClientV_1 -> OuroborosApplication
-        [ localChainSyncMiniProtocol
-        , localTxSubmissionMiniProtocol
-        ]
-      NodeToClientV_2 -> OuroborosApplication
-        [ localChainSyncMiniProtocol
-        , localTxSubmissionMiniProtocol
-        , localStateQueryMiniProtocol
-        ]
+      NodeToClientV_1 -> OuroborosApplication $ \connectionId ->
+        case protocols connectionId of
+          NodeToClientProtocols {
+              localChainSyncProtocol,
+              localTxSubmissionProtocol
+            } ->
+            [ localChainSyncMiniProtocol localChainSyncProtocol
+            , localTxSubmissionMiniProtocol localTxSubmissionProtocol
+            ]
+      NodeToClientV_2 -> OuroborosApplication $ \connectionId ->
+        case protocols connectionId of
+          NodeToClientProtocols {
+              localChainSyncProtocol,
+              localTxSubmissionProtocol,
+              localStateQueryProtocol
+            } ->
+            [ localChainSyncMiniProtocol localChainSyncProtocol
+            , localTxSubmissionMiniProtocol localTxSubmissionProtocol
+            , localStateQueryMiniProtocol localStateQueryProtocol
+            ]
   where
-    localChainSyncMiniProtocol = MiniProtocol {
+    localChainSyncMiniProtocol localChainSyncProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 5,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = localChainSyncProtocol
       }
-    localTxSubmissionMiniProtocol = MiniProtocol {
+    localTxSubmissionMiniProtocol localTxSubmissionProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 6,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = localTxSubmissionProtocol
       }
-    localStateQueryMiniProtocol = MiniProtocol {
+    localStateQueryMiniProtocol localStateQueryProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 7,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = localStateQueryProtocol
@@ -215,17 +222,16 @@ nodeToClientHandshakeCodec = codecHandshake nodeToClientVersionCodec
 versionedNodeToClientProtocols
     :: NodeToClientVersion
     -> NodeToClientVersionData
-    -> NodeToClientProtocols appType bytes m a b
+    -> (ConnectionId LocalAddress -> NodeToClientProtocols appType bytes m a b)
     -> Versions NodeToClientVersion
                 DictVersion
-                (ConnectionId LocalAddress ->
-                   OuroborosApplication appType bytes m a b)
+                (OuroborosApplication appType LocalAddress bytes m a b)
 versionedNodeToClientProtocols versionNumber versionData protocols =
     simpleSingletonVersions
       versionNumber
       versionData
       (DictVersion nodeToClientCodecCBORTerm)
-      (const $ nodeToClientProtocols protocols versionNumber)
+      (nodeToClientProtocols protocols versionNumber)
 
 -- | A specialised version of 'Ouroboros.Network.Socket.connectToNode'.  It is
 -- a general purpose function which can connect using any version of the
@@ -237,8 +243,7 @@ connectTo
   -> NetworkConnectTracers LocalAddress NodeToClientVersion
   -> Versions NodeToClientVersion
               DictVersion
-              (ConnectionId LocalAddress ->
-                 OuroborosApplication InitiatorApp BL.ByteString IO a b)
+              (OuroborosApplication InitiatorApp LocalAddress BL.ByteString IO a b)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
@@ -263,8 +268,7 @@ connectTo_V1
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> (ConnectionId LocalAddress ->
-        OuroborosApplication InitiatorApp BL.ByteString IO a b)
+  -> OuroborosApplication InitiatorApp LocalAddress BL.ByteString IO a b
   -- ^ 'OuroborosInitiatorApplication' which is run on an established connection
   -- using a multiplexer after the initial handshake protocol suceeds.
   -> FilePath
@@ -292,13 +296,11 @@ connectTo_V2
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> (ConnectionId LocalAddress
-       -> OuroborosApplication InitiatorApp BL.ByteString IO a b)
+  -> OuroborosApplication InitiatorApp LocalAddress BL.ByteString IO a b
   -- ^ 'NodeToClientV_1' version of 'OuroborosInitiatorApplication' which is
   -- run on an established connection using a multiplexer after the initial
   -- handshake protocol suceeds.
-  -> (ConnectionId LocalAddress
-       -> OuroborosApplication InitiatorApp BL.ByteString IO a b)
+  -> OuroborosApplication InitiatorApp LocalAddress BL.ByteString IO a b
   -- ^ 'NodeToClientV_2' version of 'OuroborosInitiatorApplication' which is
   -- run on an established connection using a multiplexer after the initial
   -- handshake protocol suceeds. 'NodeToClientV_2' supports 'LocalStateQuery'
@@ -338,8 +340,7 @@ withServer
   -> NetworkMutableState LocalAddress
   -> LocalFD
   -> Versions NodeToClientVersion DictVersion
-              (ConnectionId LocalAddress ->
-                 OuroborosApplication appType BL.ByteString IO a b)
+              (OuroborosApplication appType LocalAddress BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState sd versions errPolicies =
@@ -352,7 +353,7 @@ withServer sn tracers networkState sd versions errPolicies =
     nodeToClientHandshakeCodec
     cborTermVersionDataCodec
     (\(DictVersion _) -> acceptableVersion)
-    (fmap (SomeResponderApplication .) versions)
+    (SomeResponderApplication <$> versions)
     errPolicies
     (\_ async -> Async.wait async)
 
@@ -369,8 +370,7 @@ withServer_V1
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> (ConnectionId LocalAddress ->
-        OuroborosApplication appType BL.ByteString IO a b)
+  -> OuroborosApplication appType LocalAddress BL.ByteString IO a b
   -- ^ applications which has the reponder side, i.e.
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
@@ -401,13 +401,11 @@ withServer_V2
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> (ConnectionId LocalAddress
-        -> OuroborosApplication appType BL.ByteString IO a b)
+  -> OuroborosApplication appType LocalAddress BL.ByteString IO a b
   -- ^ 'NodeToClientV_1' version of applications which has the reponder side,
   -- i.e.  'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
-  -> (ConnectionId LocalAddress
-        -> OuroborosApplication appType BL.ByteString IO a b)
+  -> OuroborosApplication appType LocalAddress BL.ByteString IO a b
   -- ^ 'NodeToClientV_2' version of 'OuroborosApplication', which supports
   -- 'LocalStateQuery' mini-protocol.
   -> ErrorPolicies
@@ -447,10 +445,7 @@ ncSubscriptionWorker
     -> Versions
         NodeToClientVersion
         DictVersion
-        (ConnectionId LocalAddress ->
-           OuroborosApplication
-             appType
-             BL.ByteString IO x y)
+        (OuroborosApplication appType LocalAddress BL.ByteString IO x y)
     -> IO Void
 ncSubscriptionWorker
   sn
@@ -487,10 +482,7 @@ ncSubscriptionWorker_V1
     -> NetworkMutableState LocalAddress
     -> ClientSubscriptionParams ()
     -> NodeToClientVersionData
-    -> (ConnectionId LocalAddress ->
-          OuroborosApplication
-            appType
-            BL.ByteString IO x y)
+    -> OuroborosApplication appType LocalAddress BL.ByteString IO x y
     -> IO Void
 ncSubscriptionWorker_V1
   sn
@@ -523,15 +515,9 @@ ncSubscriptionWorker_V2
     -> NetworkMutableState LocalAddress
     -> ClientSubscriptionParams ()
     -> NodeToClientVersionData
-    -> (ConnectionId LocalAddress
-         -> OuroborosApplication
-            appType
-            BL.ByteString IO x y)
+    -> OuroborosApplication appType LocalAddress BL.ByteString IO x y
     -- ^ 'NodeToClientV_1' version of 'OuroborosApplication'
-    -> (ConnectionId LocalAddress
-         -> OuroborosApplication
-            appType
-            BL.ByteString IO x y)
+    -> OuroborosApplication appType LocalAddress BL.ByteString IO x y
     -- ^ 'NodeToClientV_2' version of 'OuroboorsApplication', which supports
     -- 'LocalStateQuery' mini-protocol.
     -> IO Void

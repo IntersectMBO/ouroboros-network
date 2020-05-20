@@ -42,6 +42,7 @@ import           System.IO (hClose)
 #endif
 
 import           Ouroboros.Network.Block (encodeTip, decodeTip)
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
@@ -77,9 +78,9 @@ defaultMiniProtocolLimit = 3000000
 -- | The bundle of mini-protocols in our demo protocol: only chain sync
 --
 demoProtocols :: RunMiniProtocol appType bytes m a b
-              -> OuroborosApplication appType bytes m a b
+              -> OuroborosApplication appType addr bytes m a b
 demoProtocols chainSync =
-    OuroborosApplication [
+    OuroborosApplication $ \_connectionId -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = MiniProtocolLimits {
@@ -150,7 +151,7 @@ demo chain0 updates = do
         let Just expectedChain = Chain.applyChainUpdates updates chain0
             target = Chain.headPoint expectedChain
 
-            consumerApp :: OuroborosApplication InitiatorApp BL.ByteString IO () Void
+            consumerApp :: OuroborosApplication InitiatorApp String BL.ByteString IO () Void
             consumerApp = demoProtocols chainSyncInitator
 
             chainSyncInitator =
@@ -166,7 +167,7 @@ demo chain0 updates = do
             server :: ChainSyncServer block (Tip block) IO ()
             server = ChainSync.chainSyncServerExample () producerVar
 
-            producerApp ::OuroborosApplication ResponderApp BL.ByteString IO Void ()
+            producerApp ::OuroborosApplication ResponderApp String BL.ByteString IO Void ()
             producerApp = demoProtocols chainSyncResponder
 
             chainSyncResponder =
@@ -180,8 +181,20 @@ demo chain0 updates = do
         let clientBearer = Mx.pipeAsMuxBearer activeTracer chan1
             serverBearer = Mx.pipeAsMuxBearer activeTracer chan2
 
-        _ <- async $ Mx.muxStart activeTracer (toApplication producerApp) clientBearer
-        _ <- async $ Mx.muxStart activeTracer (toApplication consumerApp) serverBearer
+        _ <- async $
+              Mx.muxStart
+                activeTracer
+                (toApplication
+                  (ConnectionId "producer" "consumer")
+                  producerApp)
+                clientBearer
+        _ <- async $
+              Mx.muxStart
+                activeTracer
+                (toApplication
+                  (ConnectionId "consumer" "producer")
+                  consumerApp)
+                serverBearer
 
         void $ fork $ sequence_
             [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest
