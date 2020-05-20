@@ -269,6 +269,7 @@ instance BlockHasCodecConfig TestBlock where
   getCodecConfig = const TestCodecConfig
 
 instance HasNetworkProtocolVersion TestBlock where
+  -- Use defaults
 
 {-------------------------------------------------------------------------------
   Test infrastructure: ledger state
