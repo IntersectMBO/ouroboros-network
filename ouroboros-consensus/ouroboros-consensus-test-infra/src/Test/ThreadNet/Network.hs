@@ -677,7 +677,7 @@ runThreadNetwork ThreadNetworkArgs
 
                 -- the typical behavior, which doesn't add a Just-In-Time EBB
                 let forgeWithoutEBB =
-                      nodeForgeBlock pInfoConfig upd
+                      forgeBlock pInfoConfig upd
                         currentBno tickedLdgSt txs prf
 
                 case mbForgeEbbEnv of
@@ -722,7 +722,7 @@ runThreadNetwork ThreadNetworkArgs
 
                       -- forge the block usings the ledger state that includes
                       -- the EBB
-                      blk <- nodeForgeBlock pInfoConfig upd
+                      blk <- forgeBlock pInfoConfig upd
                         currentBno tickedLdgSt' txs prf
 
                       -- /if the new block is valid/, add the EBB to the
@@ -761,7 +761,7 @@ runThreadNetwork ThreadNetworkArgs
             { tracers
             , registry
             , cfg                    = pInfoConfig
-            , initState              = pInfoInitState
+            , initForgeState         = pInfoInitForgeState
             , btime
             , chainDB
             , initChainDB            = nodeInitChainDB

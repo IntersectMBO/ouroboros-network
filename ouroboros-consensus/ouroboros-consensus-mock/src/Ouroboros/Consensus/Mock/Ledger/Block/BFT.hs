@@ -31,8 +31,8 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
+import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Node.Abstract
-import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -63,7 +63,6 @@ data SignedSimpleBft c c' = SignedSimpleBft {
     }
   deriving (Generic)
 
-type instance NodeState     (SimpleBftBlock c c') = ()
 type instance BlockProtocol (SimpleBftBlock c c') = Bft c'
 
 -- | Sanity check that block and header type synonyms agree
@@ -89,23 +88,7 @@ instance SignedHeader (SimpleBftHeader c c') where
 
 instance ( SimpleCrypto c
          , BftCrypto c'
-         , Signable (BftDSIGN c') (SignedSimpleBft c c')
-         )
-      => RunMockBlock c (SimpleBftExt c c') where
-  forgeExt cfg _updateState () SimpleBlock{..} =
-      return SimpleBlock {
-          simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-        , simpleBody   = simpleBody
-        }
-    where
-      SimpleHeader{..} = simpleHeader
-      ext :: SimpleBftExt c c'
-      ext = SimpleBftExt $
-        forgeBftFields (configConsensus cfg) $
-          SignedSimpleBft {
-              signedSimpleBft = simpleHeaderStd
-            }
-
+         ) => RunMockBlock c (SimpleBftExt c c') where
   mockProtocolMagicId      = const constructMockProtocolMagicId
   mockEncodeConsensusState = const encode
   mockDecodeConsensusState = const decode
@@ -122,6 +105,40 @@ instance ( SimpleCrypto c
          ) => LedgerSupportsProtocol (SimpleBftBlock c c') where
   protocolLedgerView   _ _ = ()
   ledgerViewForecastAt _ _ = Just . trivialForecast
+
+{-------------------------------------------------------------------------------
+  Forging
+-------------------------------------------------------------------------------}
+
+forgeBftExt :: forall c c'.
+               ( SimpleCrypto c
+               , BftCrypto c'
+               , Signable (BftDSIGN c') (SignedSimpleBft c c')
+               )
+            => TopLevelConfig (SimpleBftBlock c c')
+            -> SimpleBlock' c (SimpleBftExt c c') ()
+            -> SimpleBftBlock c c'
+forgeBftExt cfg SimpleBlock{..} = SimpleBlock {
+        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+      , simpleBody   = simpleBody
+      }
+  where
+    SimpleHeader{..} = simpleHeader
+    ext :: SimpleBftExt c c'
+    ext = SimpleBftExt $
+      forgeBftFields (configConsensus cfg) $
+        SignedSimpleBft {
+            signedSimpleBft = simpleHeaderStd
+          }
+
+instance ( SimpleCrypto c
+         , BftCrypto c'
+         , Signable (BftDSIGN c') (SignedSimpleBft c c')
+         )
+     => CanForge (SimpleBftBlock c c') where
+  type ForgeState (SimpleBftBlock c c') = ()
+  forgeBlock = forgeSimple $ ForgeExt $ \cfg _update _isLeader ->
+      return . forgeBftExt cfg
 
 {-------------------------------------------------------------------------------
   Serialisation

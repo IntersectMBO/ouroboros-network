@@ -12,13 +12,11 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise)
 import           Control.Exception (SomeException)
-import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy)
 import           Data.Word (Word32)
 
 import           Cardano.Crypto (ProtocolMagicId)
-import           Cardano.Slotting.Block
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block (HeaderHash, Serialised)
@@ -36,7 +34,6 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Exit (ExitReason)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -54,19 +51,10 @@ class ( LedgerSupportsProtocol    blk
       , HasTxId            (GenTx blk)
       , QueryLedger               blk
       , HasNetworkProtocolVersion blk
-      , NoUnexpectedThunks (NodeState blk)
+      , CanForge                  blk
         -- TODO: Remove after reconsidering rewindConsensusState:
       , Serialise (HeaderHash blk)
       ) => RunNode blk where
-  nodeForgeBlock          :: MonadRandom m
-                          => TopLevelConfig blk
-                          -> Update m (NodeState blk)
-                          -> BlockNo                -- ^ Current block number
-                          -> TickedLedgerState blk  -- ^ Current ledger
-                          -> [GenTx blk]            -- ^ Txs to add in the block
-                          -> IsLeader (BlockProtocol blk)
-                          -> m blk
-
   nodeBlockMatchesHeader  :: Header blk -> blk -> Bool
   nodeBlockFetchSize      :: Header blk -> SizeInBytes
   nodeIsEBB               :: Header blk -> Maybe EpochNo

@@ -35,7 +35,7 @@ import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
 
 import           Ouroboros.Network.Block (genesisPoint)
 
-import           Ouroboros.Consensus.Block (BlockProtocol)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HeaderValidation
@@ -43,7 +43,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 
 import qualified Shelley.Spec.Ledger.Address as SL
@@ -118,9 +117,9 @@ protocolInfoShelley
   -> ProtocolInfo (ShelleyBlock c)
 protocolInfoShelley genesis protVer mbCredentials =
     ProtocolInfo {
-        pInfoConfig     = topLevelConfig
-      , pInfoInitState  = initNodeState
-      , pInfoInitLedger = initExtLedgerState
+        pInfoConfig         = topLevelConfig
+      , pInfoInitForgeState = initForgeState
+      , pInfoInitLedger     = initExtLedgerState
       }
   where
     topLevelConfig :: TopLevelConfig (ShelleyBlock c)
@@ -156,9 +155,9 @@ protocolInfoShelley genesis protVer mbCredentials =
       , tpraosMaxLovelaceSupply = sgMaxLovelaceSupply genesis
       }
 
-    initNodeState :: NodeState (ShelleyBlock c)
+    initForgeState :: ForgeState (ShelleyBlock c)
     tpraosIsCoreNodeOrNot :: TPraosIsCoreNodeOrNot c
-    (initNodeState, tpraosIsCoreNodeOrNot) = case mbCredentials of
+    (initForgeState, tpraosIsCoreNodeOrNot) = case mbCredentials of
       Nothing -> (TPraosNoKey, TPraosIsNotACoreNode)
       Just (TPraosLeaderCredentials key isACoreNode) ->
         (TPraosKeyAvailable key, TPraosIsACoreNode isACoreNode)
@@ -301,14 +300,11 @@ protocolClientInfoShelley =
       pClientInfoCodecConfig = ShelleyCodecConfig
     }
 
-
 {-------------------------------------------------------------------------------
   RunNode instance
 -------------------------------------------------------------------------------}
 
 instance TPraosCrypto c => RunNode (ShelleyBlock c) where
-  nodeForgeBlock = forgeShelleyBlock
-
   nodeBlockMatchesHeader = verifyBlockMatchesHeader
 
   nodeBlockFetchSize = fromIntegral . SL.bsize . SL.bhbody . shelleyHeaderRaw

@@ -2,7 +2,8 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-
+{-# LANGUAGE TypeFamilies        #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Byron.Ledger.Forge (
     forgeByronBlock
   , forgeRegularBlock
@@ -32,9 +33,9 @@ import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Network.Block
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -44,14 +45,18 @@ import           Ouroboros.Consensus.Byron.Ledger.Mempool
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Protocol
 
+instance CanForge ByronBlock where
+  type ForgeState ByronBlock = ()
+  forgeBlock = forgeByronBlock
+
 forgeByronBlock
   :: forall m. (Monad m, HasCallStack)
   => TopLevelConfig ByronBlock
-  -> Update m (NodeState ByronBlock)
+  -> Update m (ForgeState ByronBlock)
   -> BlockNo                         -- ^ Current block number
   -> TickedLedgerState ByronBlock    -- ^ Current ledger
   -> [GenTx ByronBlock]              -- ^ Txs to add in the block
-  -> PBftIsLeader PBftByronCrypto  -- ^ Leader proof ('IsLeader')
+  -> PBftIsLeader PBftByronCrypto    -- ^ Leader proof ('IsLeader')
   -> m ByronBlock
 forgeByronBlock = forgeRegularBlock
 
@@ -127,11 +132,11 @@ initBlockPayloads = BlockPayloads
 forgeRegularBlock
   :: forall m. (Monad m, HasCallStack)
   => TopLevelConfig ByronBlock
-  -> Update m (NodeState ByronBlock)
+  -> Update m (ForgeState ByronBlock)
   -> BlockNo                           -- ^ Current block number
   -> TickedLedgerState ByronBlock      -- ^ Current ledger
   -> [GenTx ByronBlock]                -- ^ Txs to add in the block
-  -> PBftIsLeader PBftByronCrypto    -- ^ Leader proof ('IsLeader')
+  -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
   -> m ByronBlock
 forgeRegularBlock cfg _updateState curNo tickedLedger txs isLeader =
     let ouroborosPayload =

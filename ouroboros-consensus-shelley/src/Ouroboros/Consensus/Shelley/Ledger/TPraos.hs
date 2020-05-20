@@ -6,7 +6,6 @@
 module Ouroboros.Consensus.Shelley.Ledger.TPraos () where
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.Signed
 
 import qualified Shelley.Spec.Ledger.BlockChain as SL
@@ -20,7 +19,6 @@ import           Ouroboros.Consensus.Shelley.Protocol
   Support for Transitional Praos consensus algorithm
 -------------------------------------------------------------------------------}
 
-type instance NodeState     (ShelleyBlock c) = TPraosNodeState c
 type instance BlockProtocol (ShelleyBlock c) = TPraos c
 
 instance TPraosCrypto c => BlockSupportsProtocol (ShelleyBlock c) where

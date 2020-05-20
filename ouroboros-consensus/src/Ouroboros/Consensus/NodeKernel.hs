@@ -59,7 +59,6 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
@@ -113,7 +112,7 @@ data BlockProduction m blk = BlockProduction {
       --
       -- Note that this function is not run in @m@, but in some monad @n@
       -- which only has the ability to produce random number and access to the
-      -- 'NodeState'.
+      -- 'ForgeState'.
       produceBlock :: forall n. MonadRandom n
                    => (forall a. m a -> n a)
                    -- Lift actions into @n@
@@ -121,7 +120,7 @@ data BlockProduction m blk = BlockProduction {
                    -- This allows block production to execute arbitrary side
                    -- effects; this is primarily useful for tests.
 
-                   -> Update n (NodeState blk)
+                   -> Update n (ForgeState blk)
                    -> BlockNo               -- Current block number
                    -> TickedLedgerState blk -- Current ledger state
                    -> [GenTx blk]           -- Contents of the mempool
@@ -163,7 +162,7 @@ data NodeArgs m remotePeer localPeer blk = NodeArgs {
       tracers                :: Tracers m remotePeer localPeer blk
     , registry               :: ResourceRegistry m
     , cfg                    :: TopLevelConfig blk
-    , initState              :: NodeState blk
+    , initForgeState         :: ForgeState blk
     , btime                  :: BlockchainTime m
     , chainDB                :: ChainDB m blk
     , initChainDB            :: TopLevelConfig blk -> InitChainDB m blk -> m ()
@@ -237,7 +236,7 @@ data InternalState m remotePeer localPeer blk = IS {
     , blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
     , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
-    , varState            :: StrictTVar m (NodeState blk)
+    , varForgeState       :: StrictTVar m (ForgeState blk)
     , mempool             :: Mempool m blk TicketNo
     }
 
@@ -253,9 +252,9 @@ initInternalState
     -> m (InternalState m remotePeer localPeer blk)
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              blockFetchSize, blockMatchesHeader, btime,
-                             initState, mempoolCap } = do
+                             initForgeState, mempoolCap } = do
     varCandidates  <- newTVarM mempty
-    varState       <- newTVarM initState
+    varForgeState  <- newTVarM initForgeState
     mpCap          <- atomically $ do
       -- If no override is provided, calculate the default mempool capacity as
       -- 2x the current ledger's maximum block size.
@@ -461,7 +460,7 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
         newBlock <- lift $ runMonadRandom $ \lift' ->
           produceBlock
             lift'
-            (updateFromTVar (castStrictTVar varState))
+            (updateFromTVar (castStrictTVar varForgeState))
             bcBlockNo
             ticked
             txs

@@ -44,7 +44,7 @@ protocolInfoBft numCoreNodes nid securityParam eraParams =
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState ())
-      , pInfoInitState  = ()
+      , pInfoInitForgeState  = ()
       }
   where
     signKey :: CoreNodeId -> SignKeyDSIGN MockDSIGN

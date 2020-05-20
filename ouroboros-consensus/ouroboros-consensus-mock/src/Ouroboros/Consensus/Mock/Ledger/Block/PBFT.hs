@@ -34,8 +34,9 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
+import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Node.Abstract
-import           Ouroboros.Consensus.Node.State
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Protocol.Signed
@@ -74,7 +75,6 @@ data SignedSimplePBft c c' = SignedSimplePBft {
     }
   deriving (Generic)
 
-type instance NodeState     (SimplePBftBlock c c') = ()
 type instance BlockProtocol (SimplePBftBlock c c') = PBft c'
 
 -- | Sanity check that block and header type synonyms agree
@@ -101,24 +101,8 @@ instance SignedHeader (SimplePBftHeader c c') where
 
 instance ( SimpleCrypto c
          , PBftCrypto c'
-         , Signable (PBftDSIGN c') (SignedSimplePBft c c')
-         , ContextDSIGN (PBftDSIGN c') ~ ()
          , Serialise (PBftVerKeyHash c')
          ) => RunMockBlock c (SimplePBftExt c c') where
-  forgeExt _cfg _updateState isLeader SimpleBlock{..} =
-      return SimpleBlock {
-        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-      , simpleBody   = simpleBody
-      }
-    where
-      SimpleHeader{..} = simpleHeader
-      ext :: SimplePBftExt c c'
-      ext = SimplePBftExt $
-        forgePBftFields
-          (const ())
-          isLeader
-          SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
-
   mockProtocolMagicId      = const constructMockProtocolMagicId
   mockEncodeConsensusState = const S.encodePBftState
   mockDecodeConsensusState = \cfg -> let k = configSecurityParam cfg
@@ -137,6 +121,43 @@ instance ( SimpleCrypto c
          ) => LedgerSupportsProtocol (SimplePBftBlock c PBftMockCrypto) where
   protocolLedgerView   cfg _ =                           (simpleMockLedgerConfig cfg)
   ledgerViewForecastAt cfg _ = Just . constantForecastOf (simpleMockLedgerConfig cfg)
+
+
+{-------------------------------------------------------------------------------
+  Forging
+-------------------------------------------------------------------------------}
+
+forgePBftExt :: forall c c'.
+                ( SimpleCrypto c
+                , PBftCrypto c'
+                , Signable (PBftDSIGN c') (SignedSimplePBft c c')
+                , ContextDSIGN (PBftDSIGN c') ~ ()
+                )
+             => IsLeader (BlockProtocol (SimplePBftBlock c c'))
+             -> SimpleBlock' c (SimplePBftExt c c') ()
+             -> SimplePBftBlock c c'
+forgePBftExt isLeader SimpleBlock{..} = SimpleBlock {
+      simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+    , simpleBody   = simpleBody
+    }
+  where
+    SimpleHeader{..} = simpleHeader
+    ext :: SimplePBftExt c c'
+    ext = SimplePBftExt $
+      forgePBftFields
+        (const ())
+        isLeader
+        SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
+
+instance ( SimpleCrypto c
+         , PBftCrypto c'
+         , Signable (PBftDSIGN c') (SignedSimplePBft c c')
+         , ContextDSIGN (PBftDSIGN c') ~ ()
+         )
+     => CanForge (SimplePBftBlock c c') where
+  type ForgeState (SimplePBftBlock c c') = ()
+  forgeBlock = forgeSimple $ ForgeExt $ \_cfg _update isLeader ->
+      return . forgePBftExt isLeader
 
 {-------------------------------------------------------------------------------
   Serialisation

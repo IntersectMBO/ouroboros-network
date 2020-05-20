@@ -22,7 +22,7 @@ module Ouroboros.Consensus.Mock.Protocol.Praos (
   , PraosFields(..)
   , PraosExtraFields(..)
   , PraosParams(..)
-  , PraosNodeState(..)
+  , PraosForgeState(..)
   , forgePraosFields
     -- * Tags
   , PraosCrypto(..)
@@ -68,9 +68,9 @@ import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (At))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mock.Ledger.Stake
-import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
@@ -119,7 +119,7 @@ praosValidateView getFields hdr =
   Forging
 -------------------------------------------------------------------------------}
 
-data PraosNodeState c =
+data PraosForgeState c =
     -- | The KES key is available
     PraosKeyAvailable !(SignKeyKES (PraosKES c))
 
@@ -130,15 +130,15 @@ data PraosNodeState c =
   deriving (Generic)
 
 -- We override 'showTypeOf' to make sure to show @c@
-instance PraosCrypto c => NoUnexpectedThunks (PraosNodeState c) where
-  showTypeOf _ = show $ typeRep (Proxy @(PraosNodeState c))
+instance PraosCrypto c => NoUnexpectedThunks (PraosForgeState c) where
+  showTypeOf _ = show $ typeRep (Proxy @(PraosForgeState c))
 
 forgePraosFields :: ( MonadRandom m
                     , PraosCrypto c
                     , Cardano.Crypto.KES.Class.Signable (PraosKES c) toSign
                     )
                  => ConsensusConfig (Praos c)
-                 -> Update m (PraosNodeState c)
+                 -> Update m (PraosForgeState c)
                  -> PraosProof c
                  -> (PraosExtraFields c -> toSign)
                  -> m (PraosFields c toSign)

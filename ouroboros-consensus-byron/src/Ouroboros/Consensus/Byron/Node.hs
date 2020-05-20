@@ -144,7 +144,7 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
             ledgerState = initByronLedgerState genesisConfig Nothing
           , headerState = genesisHeaderState S.empty
           }
-      , pInfoInitState  = ()
+      , pInfoInitForgeState  = ()
       }
   where
     byronConfig = mkByronConfig genesisConfig pVer sVer
@@ -185,7 +185,6 @@ mkByronConfig genesisConfig pVer sVer = ByronConfig {
 -------------------------------------------------------------------------------}
 
 instance RunNode ByronBlock where
-  nodeForgeBlock            = forgeByronBlock
   nodeBlockMatchesHeader    = verifyBlockMatchesHeader
   nodeBlockFetchSize        = byronHeaderBlockSizeHint
   nodeIsEBB                 = \hdr -> case byronHeaderRaw hdr of

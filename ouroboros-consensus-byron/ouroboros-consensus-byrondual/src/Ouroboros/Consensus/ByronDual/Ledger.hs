@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -44,10 +45,10 @@ import qualified Cardano.Chain.UTxO as Impl
 
 import           Ouroboros.Network.Block
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
-import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -206,10 +207,15 @@ bridgeTransactionIds = Spec.Test.transactionIds
   Block forging
 -------------------------------------------------------------------------------}
 
+instance CanForge DualByronBlock where
+  type ForgeState DualByronBlock = ForgeState ByronBlock
+
+  forgeBlock = forgeDualByronBlock
+
 forgeDualByronBlock
   :: forall m. (MonadRandom m, HasCallStack)
   => TopLevelConfig DualByronBlock
-  -> Update m (NodeState DualByronBlock)
+  -> Update m (ForgeState DualByronBlock)
   -> BlockNo                            -- ^ Current block number
   -> TickedLedgerState DualByronBlock   -- ^ Ledger
   -> [GenTx DualByronBlock]             -- ^ Txs to add in the block
