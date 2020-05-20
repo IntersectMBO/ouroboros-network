@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds  #-}
+{-# LANGUAGE DeriveFunctor    #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds   #-}
 {-# LANGUAGE NamedFieldPuns   #-}
@@ -79,13 +80,37 @@ type WithTimeout m = forall b. TimeoutConstraints m
 data SchedulingTolerance =
      SchedulingTolerance {
        negativeSchedulingTolerance :: DiffTime,
-       positiveSchedulingTolerance :: DiffTime
+       positiveSchedulingTolerance :: DiffTime,
+       -- number of cases that can be outside of `negativeSchedulingTolerance`
+       -- and `positiveSchedulingTolerance`.
+       maxFailures                 :: Int
      }
 
 
 --
 -- Properties
 --
+
+data WithSanityCheck prop
+  = WithSanityCheck        prop
+
+  -- | The first one represents the property without sanity check, the other one
+  -- sanity check (which failed). It is kept to keep its `counterexample`s.
+  | WithSanityCheckFailure prop prop
+  deriving (Functor)
+
+ignoreSanityCheck :: WithSanityCheck prop -> prop
+ignoreSanityCheck (WithSanityCheck    prop)   = prop
+ignoreSanityCheck (WithSanityCheckFailure prop _) = prop
+
+withSanityCheck :: WithSanityCheck Property -> Property
+withSanityCheck (WithSanityCheck        prop)             = prop
+withSanityCheck (WithSanityCheckFailure prop sanityCheck) = prop .&&. sanityCheck
+
+isSanityCheckIgnored :: WithSanityCheck prop -> Bool
+isSanityCheckIgnored WithSanityCheck{}         = False
+isSanityCheckIgnored WithSanityCheckFailure {} = True
+
 
 -- | Run an action under a timeout and check the outcome. The action runs for
 -- at least 'ActionDuration', and the timeout is set to the 'TimeoutDuration'.
@@ -111,7 +136,7 @@ singleTimeoutExperiment
     -> SchedulingTolerance
     -> TimeoutDuration
     -> ActionDuration
-    -> m Property
+    -> m (WithSanityCheck Property)
 singleTimeoutExperiment timeout schedulingTolerance
                         intendedTimeoutDuration
                         intendedActionDuration = do
@@ -140,7 +165,7 @@ experimentResult :: SchedulingTolerance
                  -> Time
                  -> Time
                  -> Maybe Time
-                 -> Property
+                 -> WithSanityCheck Property
 experimentResult SchedulingTolerance {
                    negativeSchedulingTolerance,
                    positiveSchedulingTolerance
@@ -153,8 +178,10 @@ experimentResult SchedulingTolerance {
       , "intendedActionDuration:  " ++ show intendedActionDuration
       , "intendedOverallDuration: " ++ show intendedOverallDuration
       , "actualOverallDuration:   " ++ show actualOverallDuration
-      ] $
-    sanityCheck .&&. timeoutCheck
+      ] <$>
+      if ignoredSanityCheck
+        then WithSanityCheckFailure timeoutCheck sanityCheck
+        else WithSanityCheck $ sanityCheck .&&. timeoutCheck
   where
     actualOverallDuration   = diffTime after before
     intendedOverallDuration = min intendedTimeoutDuration intendedActionDuration
@@ -163,24 +190,33 @@ experimentResult SchedulingTolerance {
     -- duration to the expected duration plus scheduling tolerance. In a perfect
     -- simulator the scheduling tolerance can be 0 so we have to make the
     -- bounds inclusive.
-    sanityCheck    = sanityCheckLow .&&. sanityCheckHigh
+    sanityCheck    =  
+         counterexamples
+           [ "negativeSchedulingTolerance: " ++ show negativeSchedulingTolerance
+           , "violation of timer sanity property:\n" ++
+             "  actualOverallDuration >= intendedOverallDuration" ++
+             "                         - negativeSchedulingTolerance"
+           ] sanityCheckLow
+       .&&.
+         counterexamples
+           [ "positiveSchedulingTolerance: " ++ show positiveSchedulingTolerance
+           , "violation of timer sanity property:\n" ++
+             "  actualOverallDuration <= intendedOverallDuration\n" ++
+             "                         + positiveSchedulingTolerance"
+           ]
+           sanityCheckHigh
+
+    ignoredSanityCheck =
+         actualOverallDuration < intendedOverallDuration
+                               - negativeSchedulingTolerance
+      || actualOverallDuration > intendedOverallDuration
+                               + 100 * positiveSchedulingTolerance
+
     sanityCheckLow =
-      counterexamples
-        [ "negativeSchedulingTolerance: " ++ show negativeSchedulingTolerance
-        , "violation of timer sanity property:\n" ++
-          "  actualOverallDuration >= intendedOverallDuration" ++
-          "                         - negativeSchedulingTolerance"
-        ] $
       actualOverallDuration >= intendedOverallDuration
                              - negativeSchedulingTolerance
 
     sanityCheckHigh =
-      counterexamples
-        [ "positiveSchedulingTolerance: " ++ show positiveSchedulingTolerance
-        , "violation of timer sanity property:\n" ++
-          "  actualOverallDuration <= intendedOverallDuration\n" ++
-          "                         + positiveSchedulingTolerance"
-        ] $
       actualOverallDuration <= intendedOverallDuration
                              + positiveSchedulingTolerance
 
@@ -243,7 +279,7 @@ prop_timeout
     -> SchedulingTolerance
     -> TimeoutDuration
     -> ActionDuration
-    -> m Property
+    -> m (WithSanityCheck Property)
 prop_timeout withTimeout
              schedulingTolerance
              intendedTimeoutDuration
@@ -265,11 +301,12 @@ prop_timeouts
     -> SchedulingTolerance
     -> [(TimeoutDuration, ActionDuration)]
     -> m Property
-prop_timeouts withTimeout schedulingTolerance times =
+prop_timeouts withTimeout schedulingTolerance@SchedulingTolerance { maxFailures } times =
     withTimeout $ \timeout ->
-      conjoin <$>
+      conjoin' <$>
       sequence
-        [ counterexample ("failure on timeout test #" ++ show n) <$>
+        [ (fmap (counterexample ("failure on timeout test #" ++ show n)))
+          <$>
           singleTimeoutExperiment
             timeout
             schedulingTolerance
@@ -277,6 +314,15 @@ prop_timeouts withTimeout schedulingTolerance times =
             intendedActionDuration
         | ((intendedTimeoutDuration,
             intendedActionDuration), n) <- zip times [1 :: Int ..] ]
+  where
+    conjoin' :: [WithSanityCheck Property] -> Property
+    conjoin' props =
+           conjoin (ignoreSanityCheck `map` props)
+      .&&. let numFailures = length (filter isSanityCheckIgnored props)
+           in counterexample
+               ("too many failures: " ++ show numFailures ++ " ≰ " ++ show maxFailures)
+               (numFailures <= maxFailures)
+
 
 
 --
@@ -288,7 +334,8 @@ schedulingToleranceSim :: SchedulingTolerance
 schedulingToleranceSim =
     SchedulingTolerance {
       negativeSchedulingTolerance = 0.0,
-      positiveSchedulingTolerance = 0.0
+      positiveSchedulingTolerance = 0.0,
+      maxFailures = 0
     }
 
 
@@ -296,9 +343,10 @@ prop_timeout_sim :: (forall s. WithTimeout (SimM s))
                  -> TimeoutDuration -> ActionDuration -> Property
 prop_timeout_sim withTimeout timeoutDuration actionDuration =
     either (\err -> counterexample (show err) False) id $ runSim $
-      prop_timeout
-        withTimeout schedulingToleranceSim
-        timeoutDuration actionDuration
+      withSanityCheck <$>
+        prop_timeout
+          withTimeout schedulingToleranceSim
+          timeoutDuration actionDuration
 
 prop_timeouts_sim :: (forall s. WithTimeout (SimM s))
                   -> [(TimeoutDuration, ActionDuration)] -> Property
@@ -324,16 +372,18 @@ schedulingToleranceIO :: SchedulingTolerance
 schedulingToleranceIO =
     SchedulingTolerance {
       negativeSchedulingTolerance = 0.001,
-      positiveSchedulingTolerance = 0.1
+      positiveSchedulingTolerance = 0.1,
+      maxFailures                 = 5
     }
 
 
 prop_timeout_io :: WithTimeout IO -> TimeoutDuration -> ActionDuration -> Property
 prop_timeout_io withTimeout timeoutDuration actionDuration =
     ioProperty $
-      prop_timeout
-        withTimeout schedulingToleranceIO
-        timeoutDuration actionDuration
+      withSanityCheck <$>
+        prop_timeout
+          withTimeout schedulingToleranceIO
+          timeoutDuration actionDuration
 
 prop_timeouts_io :: WithTimeout IO
                  -> [(TimeoutDuration, ActionDuration)] -> Property
