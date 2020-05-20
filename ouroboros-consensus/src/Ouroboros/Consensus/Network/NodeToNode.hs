@@ -468,20 +468,25 @@ mkApps kernel Tracers {..} Codecs {..} chainSyncTimeout Handlers {..} =
 initiator
   :: MiniProtocolParameters
   -> NodeToNodeVersion blk
-  -> Apps m peer blk b b b a
-  -> peer
-  -> OuroborosApplication 'InitiatorApp b m a Void
-initiator miniProtocolParameters version Apps {..} them =
+  -> Apps m (ConnectionId peer) blk b b b a
+  -> OuroborosApplication 'InitiatorApp peer b m a Void
+initiator miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
       miniProtocolParameters
-      NodeToNodeProtocols {
+      -- TODO: currently consensus is using 'ConnectionId' for its 'peer' type.
+      -- This is currently ok, as we might accept multiple connections from the
+      -- same ip address, however this will change when we will switch to
+      -- p2p-governor & connection-manager.  Then consenus can use peer's ip
+      -- address & port number, rather than 'ConnectionId' (which is
+      -- a quadruple uniquely determinaing a connection).
+      (\them -> NodeToNodeProtocols {
           chainSyncProtocol =
             (InitiatorProtocolOnly (MuxPeerRaw (aChainSyncClient version them))),
           blockFetchProtocol =
             (InitiatorProtocolOnly (MuxPeerRaw (aBlockFetchClient version them))),
           txSubmissionProtocol =
             (InitiatorProtocolOnly (MuxPeerRaw (aTxSubmissionClient version them)))
-        }
+        })
 
 -- | A projection from 'NetworkApplication' to a server-side
 -- 'OuroborosApplication' for the node-to-node protocols.
@@ -490,17 +495,16 @@ initiator miniProtocolParameters version Apps {..} them =
 responder
   :: MiniProtocolParameters
   -> NodeToNodeVersion blk
-  -> Apps m peer blk b b b a
-  -> peer
-  -> OuroborosApplication 'ResponderApp b m Void a
-responder miniProtocolParameters version Apps {..} them =
+  -> Apps m (ConnectionId peer) blk b b b a
+  -> OuroborosApplication 'ResponderApp peer b m Void a
+responder miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
       miniProtocolParameters
-      NodeToNodeProtocols {
+      (\them -> NodeToNodeProtocols {
           chainSyncProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (aChainSyncServer version them))),
           blockFetchProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (aBlockFetchServer version them))),
           txSubmissionProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (aTxSubmissionServer version them)))
-        }
+        })

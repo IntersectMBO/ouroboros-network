@@ -343,17 +343,16 @@ mkApps Tracers {..} Codecs {..} Handlers {..} =
 -- 'OuroborosApplication' for the node-to-client protocols.
 responder
   :: N.NodeToClientVersion
-  -> Apps m peer b b b a
-  -> peer
-  -> OuroborosApplication 'ResponderApp b m Void a
-responder version Apps {..} peer =
+  -> Apps m (ConnectionId peer) b b b a
+  -> OuroborosApplication 'ResponderApp peer b m Void a
+responder version Apps {..} =
     nodeToClientProtocols
-      NodeToClientProtocols {
+      (\peer -> NodeToClientProtocols {
           localChainSyncProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (aChainSyncServer peer))),
           localTxSubmissionProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (aTxSubmissionServer peer))),
           localStateQueryProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (aStateQueryServer peer)))
-        }
+        })
       version
