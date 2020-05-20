@@ -72,9 +72,9 @@ defaultMiniProtocolLimit = 3000000
 -- | The bundle of mini-protocols in our test protocol: only chain sync
 --
 testProtocols1 :: RunMiniProtocol appType bytes m a b
-               -> OuroborosApplication appType bytes m a b
+               -> OuroborosApplication appType addr bytes m a b
 testProtocols1 chainSync =
-    OuroborosApplication [
+    OuroborosApplication $ \_connectionId -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = MiniProtocolLimits {
@@ -114,7 +114,9 @@ demo chain0 updates = withIOManager $ \iocp -> do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        initiatorApp :: OuroborosApplication InitiatorApp BL.ByteString IO () Void
+        initiatorApp
+          :: OuroborosApplication InitiatorApp Socket.SockAddr
+                                  BL.ByteString IO () Void
         initiatorApp = testProtocols1 chainSyncInitator
 
         chainSyncInitator =
@@ -128,7 +130,9 @@ demo chain0 updates = withIOManager $ \iocp -> do
         server :: ChainSync.ChainSyncServer block (Tip block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
-        responderApp :: OuroborosApplication ResponderApp BL.ByteString IO Void ()
+        responderApp
+          :: OuroborosApplication ResponderApp Socket.SockAddr
+                                  BL.ByteString IO Void ()
         responderApp = testProtocols1 chainSyncResponder
 
         chainSyncResponder =
@@ -154,7 +158,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         NodeToNodeV_1
         (NodeToNodeVersionData $ NetworkMagic 0)
         (DictVersion nodeToNodeCodecCBORTerm)
-        (\_peerid -> SomeResponderApplication responderApp))
+        (SomeResponderApplication responderApp))
       nullErrorPolicies
       $ \realProducerAddress _ -> do
       withAsync
@@ -167,7 +171,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
             NodeToNodeV_1
             (NodeToNodeVersionData $ NetworkMagic 0)
             (DictVersion nodeToNodeCodecCBORTerm)
-            (\_peerid -> initiatorApp))
+            initiatorApp)
           (Just consumerAddress)
           realProducerAddress)
         $ \ _connAsync -> do
