@@ -199,6 +199,12 @@ instance Protocol (TxSubmission txid tx) where
       :: [tx]
       -> Message (TxSubmission txid tx) StTxs StIdle
 
+    -- Server side termination message. The name is inpired by
+    -- [LOLCODE](https://en.wikipedia.org/wiki/LOLCODE).
+    --
+    MsgKThxBye
+      :: Message (TxSubmission txid tx) StIdle StDone
+
     -- | Termination message, initiated by the client when the server is
     -- making a blocking call for more transaction identifiers.
     --
@@ -221,6 +227,8 @@ instance Protocol (TxSubmission txid tx) where
   exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
 
   exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
+
+{-# WARNING MsgKThxBye "MsgKThxBye: should only be used with not yet introduced NodeToNodeV_2" #-}
 
 
 -- | The value level equivalent of 'StBlockingStyle'.

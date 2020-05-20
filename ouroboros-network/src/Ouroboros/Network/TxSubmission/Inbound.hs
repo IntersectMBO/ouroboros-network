@@ -35,6 +35,7 @@ import           Control.Tracer (Tracer)
 
 import           Network.TypedProtocol.Pipelined (N, Nat (..))
 
+import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import           Ouroboros.Network.Protocol.TxSubmission.Server
 import           Ouroboros.Network.TxSubmission.Mempool.Reader
                      (MempoolSnapshot (..), TxSubmissionMempoolReader (..))
@@ -163,8 +164,9 @@ txSubmissionInbound
   -> Word16         -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m
+  -> NodeToNodeVersion
   -> TxSubmissionServerPipelined txid tx m ()
-txSubmissionInbound _tracer maxUnacked mpReader mpWriter =
+txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
     TxSubmissionServerPipelined $
       continueWithStateM (serverIdle Zero) initialServerState
   where

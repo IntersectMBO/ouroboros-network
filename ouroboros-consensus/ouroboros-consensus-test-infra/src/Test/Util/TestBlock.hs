@@ -63,7 +63,7 @@ import           Data.FingerTree.Strict (Measured (..))
 import           Data.Function (on)
 import           Data.Int
 import           Data.List (maximumBy, transpose)
-import           Data.List.NonEmpty (NonEmpty)
+import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
@@ -97,6 +97,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -266,6 +267,9 @@ data instance CodecConfig TestBlock = TestCodecConfig
 
 instance BlockHasCodecConfig TestBlock where
   getCodecConfig = const TestCodecConfig
+
+instance HasNetworkProtocolVersion TestBlock where
+  -- Use defaults
 
 {-------------------------------------------------------------------------------
   Test infrastructure: ledger state

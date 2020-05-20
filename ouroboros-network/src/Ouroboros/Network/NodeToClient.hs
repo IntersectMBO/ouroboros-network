@@ -90,15 +90,11 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
-import           Data.Bits (setBit, clearBit, testBit)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor.Identity (Identity (..))
 import           Data.Functor.Contravariant (contramap)
 import           Data.Kind (Type)
-import           Data.Text (Text)
-import qualified Data.Text as T
 import           Data.Time.Clock
-import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
@@ -107,11 +103,10 @@ import           Network.TypedProtocol (Peer, PeerRole (AsClient))
 import           Network.Mux (WithMuxBearer (..))
 
 import           Ouroboros.Network.Codec
-import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure)
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.Magic
+import           Ouroboros.Network.NodeToClient.Version
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Tracers
 import qualified Ouroboros.Network.Protocol.ChainSync.Type   as ChainSync
@@ -123,7 +118,6 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Client as LocalState
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
-import qualified Ouroboros.Network.Protocol.Handshake.Version as V
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription.Client ( ClientSubscriptionParams (..) )
@@ -208,6 +202,13 @@ maximumMiniProtocolLimits =
     }
 
 
+nodeToClientHandshakeCodec :: ( MonadST    m
+                              , MonadThrow m
+                              )
+                           => Codec (Handshake NodeToClientVersion CBOR.Term)
+                                    CBOR.DeserialiseFailure m BL.ByteString
+nodeToClientHandshakeCodec = codecHandshake nodeToClientVersionCodec
+
 
 -- | 'Versions' containing a single version of 'nodeToClientProtocols'.
 --
@@ -225,75 +226,6 @@ versionedNodeToClientProtocols versionNumber versionData protocols =
       versionData
       (DictVersion nodeToClientCodecCBORTerm)
       (const $ nodeToClientProtocols protocols versionNumber)
-
-
--- | Enumeration of node to client protocol versions.
---
-data NodeToClientVersion
-    = NodeToClientV_1
-    | NodeToClientV_2
-    -- ^ added local-query mini-protocol
-  deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
-
--- | We set 16ths bit to distinguish `NodeToNodeVersion` and
--- `NodeToClientVersion`.  This way connectin wrong protocol suite will fail
--- during `Handshake` negotation
---
--- This is done in backward compatible way, so `NodeToClientV_1` encoding is not
--- changed.
---
-nodeToClientVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToClientVersion
-nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
-    where
-      encodeTerm NodeToClientV_1 = CBOR.TInt 1
-      encodeTerm NodeToClientV_2 = CBOR.TInt (2 `setBit` nodeToClientVersionBit)
-
-      decodeTerm (CBOR.TInt tag) =
-       case ( tag `clearBit` nodeToClientVersionBit
-            , tag `testBit`  nodeToClientVersionBit
-            ) of
-        (1, False) -> Right NodeToClientV_1
-        (2, True)  -> Right NodeToClientV_2
-        (n, _)     -> Left ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show tag)
-                            , Just n)
-      decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"
-                           , Nothing)
-
-
-nodeToClientVersionBit :: Int
-nodeToClientVersionBit = 15
-
-
-nodeToClientHandshakeCodec :: ( MonadST    m
-                              , MonadThrow m
-                              )
-                           => Codec (Handshake NodeToClientVersion CBOR.Term)
-                                    CBOR.DeserialiseFailure m BL.ByteString
-nodeToClientHandshakeCodec = codecHandshake nodeToClientVersionCodec
-
-
--- | Version data for NodeToClient protocol v1
---
-newtype NodeToClientVersionData = NodeToClientVersionData
-  { networkMagic :: NetworkMagic }
-  deriving (Eq, Show, Typeable)
-
-instance Acceptable NodeToClientVersionData where
-    acceptableVersion local remote | local == remote = V.Accept
-                                   | otherwise =  Refuse $ T.pack $ "version data mismatch: " ++ show local
-                                                    ++ " /= " ++ show remote
-
-nodeToClientCodecCBORTerm :: CodecCBORTerm Text NodeToClientVersionData
-nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
-    where
-      encodeTerm :: NodeToClientVersionData -> CBOR.Term
-      encodeTerm NodeToClientVersionData { networkMagic } =
-        CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
-
-      decodeTerm :: CBOR.Term -> Either Text NodeToClientVersionData
-      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData $ NetworkMagic $ fromIntegral x)
-                               | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
-      decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
 
 -- | A specialised version of 'Ouroboros.Network.Socket.connectToNode'.  It is
 -- a general purpose function which can connect using any version of the

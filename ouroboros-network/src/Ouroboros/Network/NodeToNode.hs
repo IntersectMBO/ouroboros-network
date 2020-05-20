@@ -90,17 +90,14 @@ module Ouroboros.Network.NodeToNode (
   , HandshakeTr
   ) where
 
-import qualified Control.Concurrent.Async as Async
-import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
+import qualified Control.Concurrent.Async as Async
+import           Control.Exception (IOException)
 
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int (Int64)
 import           Data.Time.Clock (DiffTime)
-import           Data.Text (Text)
-import qualified Data.Text as T
-import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           Data.Word
 import qualified Codec.CBOR.Read as CBOR
@@ -109,22 +106,20 @@ import           Network.Mux (WithMuxBearer (..))
 import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.Codec
-import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure)
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.Magic
+import           Ouroboros.Network.NodeToNode.Version
 import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
-import qualified Ouroboros.Network.Protocol.Handshake.Version as V
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Tracers
+import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Codec
+import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams, SubscriptionParams (..))
 import qualified Ouroboros.Network.Subscription.Ip as Subscription
 import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
@@ -140,9 +135,19 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..), SubscriberError)
 import           Ouroboros.Network.Snocket
 
+
 -- The Handshake tracer types are simply terrible.
 type HandshakeTr = WithMuxBearer (ConnectionId Socket.SockAddr)
     (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term))
+
+-- | 'Hanshake' codec for the @node-to-node@ protocol suite.
+--
+nodeToNodeHandshakeCodec :: ( MonadST    m
+                            , MonadThrow m
+                            )
+                         => Codec (Handshake NodeToNodeVersion CBOR.Term)
+                                  CBOR.DeserialiseFailure m BL.ByteString
+nodeToNodeHandshakeCodec = codecHandshake nodeToNodeVersionCodec
 
 
 data NodeToNodeProtocols appType bytes m a b = NodeToNodeProtocols {
@@ -405,57 +410,6 @@ nodeToNodeProtocols MiniProtocolParameters {
           maximumIngressQueue = addSafetyMargin $
               fromIntegral txSubmissionMaxUnacked * (44 + 65_540)
         }
-
-
--- | Enumeration of node to node protocol versions.
---
-data NodeToNodeVersion = NodeToNodeV_1
-  deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
-
-nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
-nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
-  where
-    encodeTerm NodeToNodeV_1  = CBOR.TInt 1
-
-    decodeTerm (CBOR.TInt 1) = Right NodeToNodeV_1
-    decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
-                                        <> T.pack (show n)
-                                    , Just n
-                                    )
-    decodeTerm _ = Left ( T.pack "decode NodeToNodeVersion: unexpected term"
-                        , Nothing)
-
--- | 'Hanshake' codec for the @node-to-node@ protocol suite.
---
-nodeToNodeHandshakeCodec :: ( MonadST    m
-                            , MonadThrow m
-                            )
-                         => Codec (Handshake NodeToNodeVersion CBOR.Term)
-                                  CBOR.DeserialiseFailure m BL.ByteString
-nodeToNodeHandshakeCodec = codecHandshake nodeToNodeVersionCodec
-
--- | Version data for NodeToNode protocol v1
---
-newtype NodeToNodeVersionData = NodeToNodeVersionData
-  { networkMagic :: NetworkMagic }
-  deriving (Eq, Show, Typeable)
-
-instance Acceptable NodeToNodeVersionData where
-    acceptableVersion local remote | local == remote = V.Accept
-                                   | otherwise =  Refuse $ T.pack $ "version data mismatch: " ++ show local
-                                                    ++ " /= " ++ show remote
-
-nodeToNodeCodecCBORTerm :: CodecCBORTerm Text NodeToNodeVersionData
-nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
-    where
-      encodeTerm :: NodeToNodeVersionData -> CBOR.Term
-      encodeTerm NodeToNodeVersionData { networkMagic } =
-        CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
-
-      decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
-      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToNodeVersionData $ NetworkMagic $ fromIntegral x)
-                               | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
-      decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
 
 
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.

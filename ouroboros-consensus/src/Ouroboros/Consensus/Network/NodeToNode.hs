@@ -46,7 +46,6 @@ import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode hiding (NodeToNodeVersion (..))
-import qualified Ouroboros.Network.NodeToNode as N (NodeToNodeVersion (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
                      blockFetchServerPeer)
@@ -84,7 +83,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 -- | Protocol handlers for node-to-node (remote) communication
 data Handlers m peer blk = Handlers {
       hChainSyncClient
-        :: StrictTVar m (AnchoredFragment (Header blk))
+        :: NodeToNodeVersion blk
+        -> StrictTVar m (AnchoredFragment (Header blk))
         -> ChainSyncClientPipelined (Header blk) (Tip blk) m Void
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation
@@ -92,23 +92,28 @@ data Handlers m peer blk = Handlers {
         -- closure include these and not need to be explicit about them here.
 
     , hChainSyncServer
-        :: ResourceRegistry m
+        :: NodeToNodeVersion blk
+        -> ResourceRegistry m
         -> ChainSyncServer (Serialised (Header blk)) (Tip blk) m ()
 
     -- TODO block fetch client does not have GADT view of the handlers.
     , hBlockFetchClient
-        :: BlockFetchClient (Header blk) blk m ()
+        :: NodeToNodeVersion blk
+        -> BlockFetchClient (Header blk) blk m ()
 
     , hBlockFetchServer
-        :: ResourceRegistry m
+        :: NodeToNodeVersion blk
+        -> ResourceRegistry m
         -> BlockFetchServer (Serialised blk) m ()
 
     , hTxSubmissionClient
-        :: peer
+        :: NodeToNodeVersion blk
+        -> peer
         -> TxSubmissionClient (GenTxId blk) (GenTx blk) m ()
 
     , hTxSubmissionServer
-        :: peer
+        :: NodeToNodeVersion blk
+        -> peer
         -> TxSubmissionServerPipelined (GenTxId blk) (GenTx blk) m ()
     }
 
@@ -119,6 +124,7 @@ mkHandlers
      , HasTxId (GenTx blk)
      , LedgerSupportsProtocol blk
      , Serialise (HeaderHash blk)
+     , HasNetworkProtocolVersion blk
      )
   => NodeArgs   m remotePeer localPeer blk
   -> NodeKernel m remotePeer localPeer blk
@@ -139,22 +145,27 @@ mkHandlers
           chainSyncHeadersServer
             (Node.chainSyncServerHeaderTracer tracers)
             getChainDB
-      , hBlockFetchClient = blockFetchClient
-      , hBlockFetchServer =
+      , hBlockFetchClient = \version ->
+          blockFetchClient
+            (nodeToNodeProtocolVersion (Proxy :: Proxy blk) version)
+      , hBlockFetchServer = \version ->
           blockFetchServer
             (Node.blockFetchServerTracer tracers)
             getChainDB
-      , hTxSubmissionClient = \peer ->
+            version
+      , hTxSubmissionClient = \version peer ->
           txSubmissionOutbound
             (contramap (TraceLabelPeer peer) (Node.txOutboundTracer tracers))
             (txSubmissionMaxUnacked miniProtocolParameters)
             (getMempoolReader getMempool)
-      , hTxSubmissionServer = \peer ->
+            (nodeToNodeProtocolVersion (Proxy :: Proxy blk) version)
+      , hTxSubmissionServer = \version peer ->
           txSubmissionInbound
             (contramap (TraceLabelPeer peer) (Node.txInboundTracer tracers))
             (txSubmissionMaxUnacked miniProtocolParameters)
             (getMempoolReader getMempool)
             (getMempoolWriter getMempool)
+            (nodeToNodeProtocolVersion (Proxy :: Proxy blk) version)
       }
 
 {-------------------------------------------------------------------------------
@@ -294,27 +305,27 @@ showTracers tr = Tracers {
 -- | Applications for the node-to-node protocols
 --
 -- See 'Network.Mux.Types.MuxApplication'
-data Apps m peer bCS bBF bTX a = Apps {
+data Apps m peer blk bCS bBF bTX a = Apps {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
-      aChainSyncClient    :: peer -> Channel m bCS -> m a
+      aChainSyncClient    :: NodeToNodeVersion blk -> peer -> Channel m bCS -> m a
 
       -- | Start a chain sync server.
-    , aChainSyncServer    :: peer -> Channel m bCS -> m a
+    , aChainSyncServer    :: NodeToNodeVersion blk -> peer -> Channel m bCS -> m a
 
       -- | Start a block fetch client that communicates with the given
       -- upstream node.
-    , aBlockFetchClient   :: peer -> Channel m bBF -> m a
+    , aBlockFetchClient   :: NodeToNodeVersion blk -> peer -> Channel m bBF -> m a
 
       -- | Start a block fetch server.
-    , aBlockFetchServer   :: peer -> Channel m bBF -> m a
+    , aBlockFetchServer   :: NodeToNodeVersion blk -> peer -> Channel m bBF -> m a
 
       -- | Start a transaction submission client that communicates with the
       -- given upstream node.
-    , aTxSubmissionClient :: peer -> Channel m bTX -> m a
+    , aTxSubmissionClient :: NodeToNodeVersion blk -> peer -> Channel m bTX -> m a
 
       -- | Start a transaction submission server.
-    , aTxSubmissionServer :: peer -> Channel m bTX -> m a
+    , aTxSubmissionServer :: NodeToNodeVersion blk -> peer -> Channel m bTX -> m a
     }
 
 -- | Construct the 'NetworkApplication' for the node-to-node protocols
@@ -331,15 +342,16 @@ mkApps
   -> Codecs blk e m bCS bCS bBF bBF bTX
   -> Maybe DiffTime -- Workaround for #1882, test cases that can't cope with timeouts
   -> Handlers m remotePeer blk
-  -> Apps m remotePeer bCS bBF bTX ()
+  -> Apps m remotePeer blk bCS bBF bTX ()
 mkApps kernel Tracers {..} Codecs {..} chainSyncTimeout Handlers {..} =
     Apps {..}
   where
     aChainSyncClient
-      :: remotePeer
+      :: NodeToNodeVersion blk
+      -> remotePeer
       -> Channel m bCS
       -> m ()
-    aChainSyncClient them channel = do
+    aChainSyncClient version them channel = do
       labelThisThread "ChainSyncClient"
       void $
         -- Note that it is crucial that we sync with the fetch client "outside"
@@ -361,13 +373,14 @@ mkApps kernel Tracers {..} Codecs {..} chainSyncTimeout Handlers {..} =
             (timeLimitsChainSync chainSyncTimeout)
             channel
             $ chainSyncClientPeerPipelined
-            $ hChainSyncClient varCandidate
+            $ hChainSyncClient version varCandidate
 
     aChainSyncServer
-      :: remotePeer
+      :: NodeToNodeVersion blk
+      -> remotePeer
       -> Channel m bCS
       -> m ()
-    aChainSyncServer them channel = do
+    aChainSyncServer version them channel = do
       labelThisThread "ChainSyncServer"
       withRegistry $ \registry ->
         runPeerWithLimits
@@ -377,13 +390,14 @@ mkApps kernel Tracers {..} Codecs {..} chainSyncTimeout Handlers {..} =
           (timeLimitsChainSync chainSyncTimeout)
           channel
           $ chainSyncServerPeer
-          $ hChainSyncServer registry
+          $ hChainSyncServer version registry
 
     aBlockFetchClient
-      :: remotePeer
+      :: NodeToNodeVersion blk
+      -> remotePeer
       -> Channel m bBF
       -> m ()
-    aBlockFetchClient them channel = do
+    aBlockFetchClient version them channel = do
       labelThisThread "BlockFetchClient"
       bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx ->
         runPipelinedPeerWithLimits
@@ -392,13 +406,14 @@ mkApps kernel Tracers {..} Codecs {..} chainSyncTimeout Handlers {..} =
           (byteLimitsBlockFetch (const 0)) -- TODO: Real Bytelimits, see #1727
           timeLimitsBlockFetch
           channel
-          $ hBlockFetchClient clientCtx
+          $ hBlockFetchClient version clientCtx
 
     aBlockFetchServer
-      :: remotePeer
+      :: NodeToNodeVersion blk
+      -> remotePeer
       -> Channel m bBF
       -> m ()
-    aBlockFetchServer them channel = do
+    aBlockFetchServer version them channel = do
       labelThisThread "BlockFetchServer"
       withRegistry $ \registry ->
         runPeerWithLimits
@@ -408,13 +423,14 @@ mkApps kernel Tracers {..} Codecs {..} chainSyncTimeout Handlers {..} =
           timeLimitsBlockFetch
           channel
           $ blockFetchServerPeer
-          $ hBlockFetchServer registry
+          $ hBlockFetchServer version registry
 
     aTxSubmissionClient
-      :: remotePeer
+      :: NodeToNodeVersion blk
+      -> remotePeer
       -> Channel m bTX
       -> m ()
-    aTxSubmissionClient them channel = do
+    aTxSubmissionClient version them channel = do
       labelThisThread "TxSubmissionClient"
       runPeerWithLimits
         (contramap (TraceLabelPeer them) tTxSubmissionTracer)
@@ -422,13 +438,14 @@ mkApps kernel Tracers {..} Codecs {..} chainSyncTimeout Handlers {..} =
         (byteLimitsTxSubmission (const 0)) -- TODO: Real Bytelimits, see #1727
         timeLimitsTxSubmission
         channel
-        (txSubmissionClientPeer (hTxSubmissionClient them))
+        (txSubmissionClientPeer (hTxSubmissionClient version them))
 
     aTxSubmissionServer
-      :: remotePeer
+      :: NodeToNodeVersion blk
+      -> remotePeer
       -> Channel m bTX
       -> m ()
-    aTxSubmissionServer them channel = do
+    aTxSubmissionServer version them channel = do
       labelThisThread "TxSubmissionServer"
       runPipelinedPeerWithLimits
         (contramap (TraceLabelPeer them) tTxSubmissionTracer)
@@ -436,7 +453,7 @@ mkApps kernel Tracers {..} Codecs {..} chainSyncTimeout Handlers {..} =
         (byteLimitsTxSubmission (const 0)) -- TODO: Real Bytelimits, see #1727
         timeLimitsTxSubmission
         channel
-        (txSubmissionServerPeerPipelined (hTxSubmissionServer them))
+        (txSubmissionServerPeerPipelined (hTxSubmissionServer version them))
 
 {-------------------------------------------------------------------------------
   Projections from 'Apps'
@@ -450,20 +467,20 @@ mkApps kernel Tracers {..} Codecs {..} chainSyncTimeout Handlers {..} =
 -- currently unused.
 initiator
   :: MiniProtocolParameters
-  -> N.NodeToNodeVersion
-  -> Apps m peer b b b a
+  -> NodeToNodeVersion blk
+  -> Apps m peer blk b b b a
   -> peer
   -> OuroborosApplication 'InitiatorApp b m a Void
-initiator miniProtocolParameters _version Apps {..} them =
+initiator miniProtocolParameters version Apps {..} them =
     nodeToNodeProtocols
       miniProtocolParameters
       NodeToNodeProtocols {
           chainSyncProtocol =
-            (InitiatorProtocolOnly (MuxPeerRaw (aChainSyncClient them))),
+            (InitiatorProtocolOnly (MuxPeerRaw (aChainSyncClient version them))),
           blockFetchProtocol =
-            (InitiatorProtocolOnly (MuxPeerRaw (aBlockFetchClient them))),
+            (InitiatorProtocolOnly (MuxPeerRaw (aBlockFetchClient version them))),
           txSubmissionProtocol =
-            (InitiatorProtocolOnly (MuxPeerRaw (aTxSubmissionClient them)))
+            (InitiatorProtocolOnly (MuxPeerRaw (aTxSubmissionClient version them)))
         }
 
 -- | A projection from 'NetworkApplication' to a server-side
@@ -472,18 +489,18 @@ initiator miniProtocolParameters _version Apps {..} them =
 -- See 'initiatorNetworkApplication' for rationale for the @_version@ arg.
 responder
   :: MiniProtocolParameters
-  -> N.NodeToNodeVersion
-  -> Apps m peer b b b a
+  -> NodeToNodeVersion blk
+  -> Apps m peer blk b b b a
   -> peer
   -> OuroborosApplication 'ResponderApp b m Void a
-responder miniProtocolParameters _version Apps {..} them =
+responder miniProtocolParameters version Apps {..} them =
     nodeToNodeProtocols
       miniProtocolParameters
       NodeToNodeProtocols {
           chainSyncProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aChainSyncServer them))),
+            (ResponderProtocolOnly (MuxPeerRaw (aChainSyncServer version them))),
           blockFetchProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aBlockFetchServer them))),
+            (ResponderProtocolOnly (MuxPeerRaw (aBlockFetchServer version them))),
           txSubmissionProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aTxSubmissionServer them)))
+            (ResponderProtocolOnly (MuxPeerRaw (aTxSubmissionServer version them)))
         }

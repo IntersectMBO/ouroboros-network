@@ -27,6 +27,7 @@ import qualified Data.Set as Set
 
 import           Ouroboros.Network.Block
 
+import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
@@ -74,9 +75,11 @@ blockFetchClient :: forall header block m void.
                     (MonadSTM m, MonadMonotonicTime m, MonadThrow m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
-                 => FetchClientContext header block m
+                 => NodeToNodeVersion
+                 -> FetchClientContext header block m
                  -> PeerPipelined (BlockFetch block) AsClient BFIdle m void
-blockFetchClient FetchClientContext {
+blockFetchClient _version
+                 FetchClientContext {
                    fetchClientCtxTracer    = tracer,
                    fetchClientCtxPolicy    = FetchClientPolicy {
                                                blockFetchSize,

@@ -8,6 +8,8 @@
 {-# LANGUAGE DataKinds                  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+-- usage of `MsgKThxBye` is safe in this module.
+{-# OPTIONS_GHC -Wno-warnings-deprecations #-}
 
 module Ouroboros.Network.Protocol.TxSubmission.Test (
     tests
@@ -254,6 +256,9 @@ instance Arbitrary (AnyMessageAndAgency (TxSubmission TxId Tx)) where
     , AnyMessageAndAgency (ServerAgency TokIdle) <$>
         MsgRequestTxs <$> arbitrary
 
+    , AnyMessageAndAgency (ServerAgency TokIdle) <$>
+        pure MsgKThxBye
+
     , AnyMessageAndAgency (ClientAgency TokTxs) <$>
         MsgReplyTxs <$> arbitrary
 
@@ -290,6 +295,9 @@ instance (Eq txid, Eq tx) => Eq (AnyMessage (TxSubmission txid tx)) where
 
   (==) (AnyMessage MsgDone)
        (AnyMessage MsgDone) = True
+
+  (==) (AnyMessage MsgKThxBye)
+       (AnyMessage MsgKThxBye) = True
 
   _ == _ = False
 

@@ -225,7 +225,7 @@ run runargs@RunNodeArgs{..} =
       :: NodeArgs   IO RemoteConnectionId LocalConnectionId blk
       -> NodeKernel IO RemoteConnectionId LocalConnectionId blk
       -> NodeToNodeVersion blk
-      -> NTN.Apps IO RemoteConnectionId ByteString ByteString ByteString ()
+      -> NTN.Apps IO RemoteConnectionId blk ByteString ByteString ByteString ()
     mkNodeToNodeApps nodeArgs nodeKernel version =
         NTN.mkApps
           nodeKernel
@@ -249,10 +249,10 @@ run runargs@RunNodeArgs{..} =
     mkDiffusionApplications
       :: MiniProtocolParameters
       -> (   NodeToNodeVersion   blk
-          -> NTN.Apps IO RemoteConnectionId ByteString ByteString ByteString ()
+          -> NTN.Apps IO RemoteConnectionId blk ByteString ByteString ByteString ()
          )
       -> (   NodeToClientVersion blk
-          -> NTC.Apps IO LocalConnectionId  ByteString ByteString ByteString ()
+          -> NTC.Apps IO LocalConnectionId      ByteString ByteString ByteString ()
          )
       -> DiffusionApplications
     mkDiffusionApplications miniProtocolParams ntnApps ntcApps =
@@ -262,7 +262,7 @@ run runargs@RunNodeArgs{..} =
                 version'
                 nodeToNodeVersionData
                 (DictVersion nodeToNodeCodecCBORTerm)
-                (NTN.responder miniProtocolParams version' $ ntnApps version)
+                (NTN.responder miniProtocolParams version $ ntnApps version)
             | version <- rnNodeToNodeVersions
             , let version' = nodeToNodeProtocolVersion (Proxy @blk) version
             ]
@@ -271,7 +271,7 @@ run runargs@RunNodeArgs{..} =
                 version'
                 nodeToNodeVersionData
                 (DictVersion nodeToNodeCodecCBORTerm)
-                (NTN.initiator miniProtocolParams version' $ ntnApps version)
+                (NTN.initiator miniProtocolParams version $ ntnApps version)
             | version <- rnNodeToNodeVersions
             , let version' = nodeToNodeProtocolVersion (Proxy @blk) version
             ]

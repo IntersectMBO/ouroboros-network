@@ -294,7 +294,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
               nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
               codecBlockFetch
               channel
-              (blockFetchClient clientCtx)
+              (blockFetchClient NodeToNodeV_1 clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
                              LocalConnectionId BlockHeader Block IO

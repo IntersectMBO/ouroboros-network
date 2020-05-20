@@ -885,7 +885,7 @@ data RestartCause
 -- | Fork two directed edges, one in each direction between the two vertices
 --
 forkBothEdges
-  :: (IOLike m, HasCallStack)
+  :: (IOLike m, HasNetworkProtocolVersion blk, HasCallStack)
   => ResourceRegistry m
   -> WrappedClock m
   -> Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
@@ -932,7 +932,7 @@ forkBothEdges sharedRegistry clock tr vertexStatusVars (node1, node2) = do
 -- edge via the @async@ interface rather than relying on some sort of mock
 -- socket semantics to convey the cancellation.
 directedEdge ::
-  forall m blk. IOLike m
+  forall m blk. (IOLike m, HasNetworkProtocolVersion blk)
   => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
   -> WrappedClock m
   -> EdgeStatusVar m
@@ -976,7 +976,7 @@ directedEdge tr clock edgeStatusVar client server =
 --
 -- See 'directedEdge'.
 directedEdgeInner ::
-  forall m blk. IOLike m
+  forall m blk. (IOLike m, HasNetworkProtocolVersion blk)
   => EdgeStatusVar m
   -> (CoreNodeId, VertexStatusVar m blk)
      -- ^ client threads on this node
@@ -993,12 +993,14 @@ directedEdgeInner edgeStatusVar
 
     let miniProtocol ::
              (  LimitedApp' m NodeId blk
+             -> NodeToNodeVersion blk
              -> NodeId
              -> Channel m msg
              -> m ()
              )
             -- ^ client action to run on node1
           -> (  LimitedApp' m NodeId blk
+             -> NodeToNodeVersion blk
              -> NodeId
              -> Channel m msg
              -> m ()
@@ -1008,8 +1010,8 @@ directedEdgeInner edgeStatusVar
         miniProtocol client server = do
            (chan, dualChan) <- createConnectedChannels
            pure
-             ( client app1 (fromCoreNodeId node2) chan
-             , server app2 (fromCoreNodeId node1) dualChan
+             ( client app1 (mostRecentNodeToNodeVersion (Proxy @blk)) (fromCoreNodeId node2) chan
+             , server app2 (mostRecentNodeToNodeVersion (Proxy @blk)) (fromCoreNodeId node1) dualChan
              )
 
     -- NB only 'watcher' ever returns in these tests
@@ -1042,10 +1044,10 @@ directedEdgeInner edgeStatusVar
     wrapMPEE ::
          Exception e
       => (e -> MiniProtocolExpectedException)
-      -> (app -> peer -> chan -> m a)
-      -> (app -> peer -> chan -> m a)
-    wrapMPEE f m = \app them chan ->
-        catch (m app them chan) $ throwM . f
+      -> (app -> version -> peer -> chan -> m a)
+      -> (app -> version -> peer -> chan -> m a)
+    wrapMPEE f m = \app version them chan ->
+        catch (m app version them chan) $ throwM . f
 
     -- terminates when the vertex starts 'VFalling'
     --
@@ -1263,7 +1265,7 @@ data LimitedApp m peer blk =
 --
 -- Used internal to this module, essentially as an abbreviation.
 type LimitedApp' m peer blk =
-    NTN.Apps m peer
+    NTN.Apps m peer blk
         -- The 'ChainSync' and 'BlockFetch' protocols use @'Serialised' x@ for
         -- the servers and @x@ for the clients. Since both have to match to be
         -- sent across a channel, we can't use @'AnyMessage' ..@, instead, we
