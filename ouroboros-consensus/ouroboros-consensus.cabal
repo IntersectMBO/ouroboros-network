@@ -34,6 +34,7 @@ library
                        Ouroboros.Consensus.Block
                        Ouroboros.Consensus.Block.Abstract
                        Ouroboros.Consensus.Block.EBB
+                       Ouroboros.Consensus.Block.Forge
                        Ouroboros.Consensus.Block.RealPoint
                        Ouroboros.Consensus.Block.SupportsProtocol
                        Ouroboros.Consensus.BlockchainTime
@@ -79,7 +80,6 @@ library
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.Recovery
                        Ouroboros.Consensus.Node.Run
-                       Ouroboros.Consensus.Node.State
                        Ouroboros.Consensus.Node.Tracers
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT

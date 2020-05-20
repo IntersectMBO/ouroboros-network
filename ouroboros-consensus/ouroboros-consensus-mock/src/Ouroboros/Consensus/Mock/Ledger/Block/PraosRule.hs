@@ -31,9 +31,9 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
+import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
-import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Util.Condense
@@ -65,7 +65,6 @@ newtype SimplePraosRuleExt = SimplePraosRuleExt {
   deriving newtype  (Condense)
   deriving anyclass (NoUnexpectedThunks)
 
-type instance NodeState     (SimplePraosRuleBlock c) = ()
 type instance BlockProtocol (SimplePraosRuleBlock c) =
     WithLeaderSchedule (Praos PraosCryptoUnused)
 
@@ -85,15 +84,6 @@ instance SimpleCrypto c => MockProtocolSpecific c SimplePraosRuleExt where
 -------------------------------------------------------------------------------}
 
 instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
-  forgeExt cfg _updateState () SimpleBlock{..} = do
-      let ext = SimplePraosRuleExt $ wlsConfigNodeId (configConsensus cfg)
-      return SimpleBlock {
-          simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-        , simpleBody   = simpleBody
-        }
-    where
-      SimpleHeader{..} = simpleHeader
-
   mockProtocolMagicId      = const constructMockProtocolMagicId
   mockEncodeConsensusState = const encode
   mockDecodeConsensusState = const decode
@@ -119,6 +109,28 @@ instance PraosCrypto PraosCryptoUnused where
   type PraosKES  PraosCryptoUnused = NeverKES
   type PraosVRF  PraosCryptoUnused = NeverVRF
   type PraosHash PraosCryptoUnused = NeverHash
+
+{-------------------------------------------------------------------------------
+  Forging
+-------------------------------------------------------------------------------}
+
+forgePraosRuleExt :: SimpleCrypto c
+                  => TopLevelConfig (SimplePraosRuleBlock c')
+                  -> SimpleBlock' c SimplePraosRuleExt ()
+                  -> SimplePraosRuleBlock c
+forgePraosRuleExt cfg SimpleBlock{..} =
+    SimpleBlock {
+        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+      , simpleBody   = simpleBody
+      }
+  where
+    ext = SimplePraosRuleExt $ wlsConfigNodeId (configConsensus cfg)
+    SimpleHeader{..} = simpleHeader
+
+instance SimpleCrypto c => CanForge (SimplePraosRuleBlock c) where
+  type ForgeState (SimplePraosRuleBlock c) = ()
+  forgeBlock = forgeSimple $ ForgeExt $ \cfg _update _isLeader ->
+      return . forgePraosRuleExt cfg
 
 {-------------------------------------------------------------------------------
   Serialisation

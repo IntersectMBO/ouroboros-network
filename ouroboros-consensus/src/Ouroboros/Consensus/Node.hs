@@ -50,6 +50,7 @@ import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
                      combineVersions, defaultMiniProtocolParameters,
                      nodeToNodeCodecCBORTerm)
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture,
@@ -65,7 +66,6 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Recovery
 import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.State
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -194,7 +194,7 @@ run runargs@RunNodeArgs{..} =
             mkNodeArgs
               registry
               cfg
-              initState
+              initForgeState
               rnTraceConsensus
               btime
               chainDB
@@ -216,9 +216,9 @@ run runargs@RunNodeArgs{..} =
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnNetworkMagic }
 
     ProtocolInfo
-      { pInfoConfig     = cfg
-      , pInfoInitLedger = initLedger
-      , pInfoInitState  = initState
+      { pInfoConfig         = cfg
+      , pInfoInitLedger     = initLedger
+      , pInfoInitForgeState = initForgeState
       } = rnProtocolInfo
 
     mkNodeToNodeApps
@@ -400,16 +400,16 @@ mkNodeArgs
   :: forall blk. RunNode blk
   => ResourceRegistry IO
   -> TopLevelConfig blk
-  -> NodeState blk
+  -> ForgeState blk
   -> Tracers IO RemoteConnectionId LocalConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
   -> NodeArgs IO RemoteConnectionId LocalConnectionId blk
-mkNodeArgs registry cfg initState tracers btime chainDB = NodeArgs
+mkNodeArgs registry cfg initForgeState tracers btime chainDB = NodeArgs
     { tracers
     , registry
     , cfg
-    , initState
+    , initForgeState
     , btime
     , chainDB
     , initChainDB            = nodeInitChainDB
@@ -424,7 +424,7 @@ mkNodeArgs registry cfg initState tracers btime chainDB = NodeArgs
     blockProduction
       | checkIfCanBeLeader (configConsensus cfg)
       = Just BlockProduction
-               { produceBlock       = \_lift' -> nodeForgeBlock cfg
+               { produceBlock       = \_lift' -> forgeBlock cfg
                , runMonadRandomDict = runMonadRandomIO
                }
       | otherwise

@@ -54,7 +54,7 @@ protocolInfoPraosRule numCoreNodes
         { ledgerState = genesisSimpleLedgerState addrDist
         , headerState = genesisHeaderState ()
         }
-    , pInfoInitState  = ()
+    , pInfoInitForgeState = ()
     }
   where
     addrDist = mkAddrDist numCoreNodes

@@ -1,17 +1,13 @@
-{-# LANGUAGE BangPatterns         #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | Transitional Praos.
 --
@@ -21,14 +17,13 @@ module Ouroboros.Consensus.Shelley.Protocol (
     TPraos
   , TPraosChainSelectView (..)
   , TPraosFields (..)
+  , forgeTPraosFields
   , TPraosToSign (..)
   , TPraosValidateView
-  , TPraosNodeState (..)
   , TPraosParams (..)
   , TPraosProof (..)
   , TPraosIsCoreNode (..)
   , TPraosIsCoreNodeOrNot (..)
-  , forgeTPraosFields
   , mkShelleyGlobals
     -- * Crypto
   , Crypto
@@ -44,13 +39,11 @@ import           Crypto.Random (MonadRandom)
 import           Data.Coerce (coerce)
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (..))
-import           Data.Typeable (typeRep)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.DSIGN.Class (VerKeyDSIGN)
-import           Cardano.Crypto.KES.Class (SignKeyKES, SignedKES, signedKES)
+import           Cardano.Crypto.KES.Class (SignedKES, signedKES)
 import qualified Cardano.Crypto.KES.Class as KES
 import           Cardano.Crypto.VRF.Class (CertifiedVRF, SignKeyVRF, VerKeyVRF,
                      deriveVerKeyVRF)
@@ -61,7 +54,6 @@ import           Cardano.Slotting.EpochInfo
 import           Ouroboros.Network.Block (BlockNo, pointSlot, unSlotNo)
 
 import           Ouroboros.Consensus.Ledger.Abstract
-import qualified Ouroboros.Consensus.Node.State as NodeState
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense
 
@@ -124,61 +116,24 @@ data TPraosToSign c = TPraosToSign {
 instance TPraosCrypto c => NoUnexpectedThunks (TPraosToSign c)
 deriving instance TPraosCrypto c => Show (TPraosToSign c)
 
--- | Because we are using the executable spec, rather than implementing the
--- protocol directly here, we have a fixed header type rather than an
--- abstraction. So our validate view is fixed to this.
-type TPraosValidateView c = SL.BHeader c
-
-{-------------------------------------------------------------------------------
-  Forging
--------------------------------------------------------------------------------}
-
-data TPraosNodeState c =
-    -- | The online KES key used to sign blocks is available at the given period
-    TPraosKeyAvailable !(HotKey c)
-
-    -- | The KES key is being evolved by another thread
-    --
-    -- Any thread that sees this value should back off and retry.
-  | TPraosKeyEvolving
-
-    -- | This node is not a core node, it doesn't have the capability to sign
-    -- blocks.
-    --
-    -- The 'NodeState' of such a node will always be 'TPraosNoKey'.
-  | TPraosNoKey
-  deriving (Generic)
-
--- We override 'showTypeOf' to make sure to show @c@
-instance TPraosCrypto c => NoUnexpectedThunks (TPraosNodeState c) where
-  showTypeOf _ = show $ typeRep (Proxy @(TPraosNodeState c))
-
-forgeTPraosFields :: ( MonadRandom m
-                     , TPraosCrypto c
+forgeTPraosFields :: ( TPraosCrypto c
                      , KES.Signable (KES c) toSign
                      )
-                  => NodeState.Update m (TPraosNodeState c)
+                  => HotKey c
                   -> IsLeader (TPraos c)
-                  -> SL.KESPeriod
                   -> (TPraosToSign c -> toSign)
-                  -> m (TPraosFields c toSign)
-forgeTPraosFields updateNodeState TPraosProof{..} kesPeriod mkToSign = do
-    hotKESKey <- evolveKESKeyIfNecessary updateNodeState (SL.KESPeriod kesEvolution)
-    let
-      signature = signedKES
-        ()
-        kesEvolution
-        (mkToSign signedFields)
-        hotKESKey
-    return TPraosFields {
+                  -> TPraosFields c toSign
+forgeTPraosFields (HotKey kesEvolution hotKESKey) TPraosProof{..} mkToSign =
+    TPraosFields {
         tpraosSignature = signature
       , tpraosToSign    = mkToSign signedFields
       }
   where
-    SL.KESPeriod kesPeriodNat = kesPeriod
-    SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
-
-    kesEvolution = if kesPeriodNat >= c0 then kesPeriodNat - c0 else 0
+    signature = signedKES
+      ()
+      kesEvolution
+      (mkToSign signedFields)
+      hotKESKey
 
     TPraosIsCoreNode{..} = tpraosIsCoreNode
 
@@ -192,59 +147,10 @@ forgeTPraosFields updateNodeState TPraosProof{..} kesPeriod mkToSign = do
       , tpraosToSignOCert    = tpraosIsCoreNodeOpCert
       }
 
--- | Get the KES key from the node state, evolve if its KES period doesn't
--- match the given one.
-evolveKESKeyIfNecessary
-  :: forall m c. (MonadRandom m, TPraosCrypto c)
-  => NodeState.Update m (TPraosNodeState c)
-  -> SL.KESPeriod -- ^ Relative KES period (to the start period of the OCert)
-  -> m (SignKeyKES (KES c))
-evolveKESKeyIfNecessary updateNodeState (SL.KESPeriod kesPeriod) = do
-    getOudatedKeyOrCurrentKey >>= \case
-      Right currentKey -> return currentKey
-      Left outdatedKey -> do
-        let newKey@(HotKey _ key) = evolveKey outdatedKey
-        saveNewKey newKey
-        return key
-  where
-    -- | Return either (@Left@) an outdated key with its current period (setting
-    -- the node state to 'TPraosKeyEvolving') or (@Right@) a key that's
-    -- up-to-date w.r.t. the current KES period (leaving the node state to
-    -- 'TPraosKeyAvailable').
-    getOudatedKeyOrCurrentKey
-      :: m (Either (HotKey c) (SignKeyKES (KES c)))
-    getOudatedKeyOrCurrentKey = NodeState.runUpdate updateNodeState $ \case
-      TPraosKeyEvolving ->
-        -- Another thread is currently evolving the key; wait
-        Nothing
-      TPraosKeyAvailable hk@(HotKey kesPeriodOfKey key)
-        | kesPeriodOfKey < kesPeriod
-          -- Must evolve key
-        -> return (TPraosKeyEvolving, Left hk)
-        | otherwise
-        -> return (TPraosKeyAvailable hk, Right key)
-      TPraosNoKey ->
-        error "no KES key available"
-
-    -- | Evolve the given key so that its KES period matches @kesPeriod@.
-    evolveKey :: HotKey c -> HotKey c
-    evolveKey (HotKey oldPeriod outdatedKey) = go outdatedKey oldPeriod kesPeriod
-      where
-        go !sk c t
-          | t < c
-          = error "Asked to evolve KES key to old period"
-          | c == t
-          = HotKey kesPeriod sk
-          | otherwise
-          = case KES.updateKES () sk c of
-              Nothing  -> error "Could not update KES key"
-              Just sk' -> go sk' (c + 1) t
-
-    -- | PRECONDITION: we're in the 'TPraosKeyEvolving' node state.
-    saveNewKey :: HotKey c -> m ()
-    saveNewKey newKey = NodeState.runUpdate updateNodeState $ \case
-      TPraosKeyEvolving -> Just (TPraosKeyAvailable newKey, ())
-      _                 -> error "must be in evolving state"
+-- | Because we are using the executable spec, rather than implementing the
+-- protocol directly here, we have a fixed header type rather than an
+-- abstraction. So our validate view is fixed to this.
+type TPraosValidateView c = SL.BHeader c
 
 {-------------------------------------------------------------------------------
   Protocol proper

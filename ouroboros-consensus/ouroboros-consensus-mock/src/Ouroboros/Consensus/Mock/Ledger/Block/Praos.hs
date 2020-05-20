@@ -23,6 +23,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (encodeListLen)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
+import           Crypto.Random (MonadRandom)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
@@ -37,10 +38,11 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.Block
+import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
-import           Ouroboros.Consensus.Node.State
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 
@@ -76,7 +78,6 @@ data SignedSimplePraos c c' = SignedSimplePraos {
     , signedPraosFields :: PraosExtraFields c'
     }
 
-type instance NodeState     (SimplePraosBlock c c') = PraosNodeState c'
 type instance BlockProtocol (SimplePraosBlock c c') = Praos c'
 
 -- | Sanity check that block and header type synonyms agree
@@ -120,25 +121,7 @@ instance PraosCrypto c' => Serialise (BlockInfo c') where
 
 instance ( SimpleCrypto c
          , PraosCrypto c'
-         , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => RunMockBlock c (SimplePraosExt c c') where
-  forgeExt cfg updateState isLeader SimpleBlock{..} = do
-      ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
-        forgePraosFields (configConsensus cfg)
-                         updateState
-                         isLeader
-                         $ \praosExtraFields ->
-          SignedSimplePraos {
-              signedSimplePraos = simpleHeaderStd
-            , signedPraosFields = praosExtraFields
-            }
-      return SimpleBlock {
-          simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-        , simpleBody   = simpleBody
-        }
-    where
-      SimpleHeader{..} = simpleHeader
-
   mockProtocolMagicId      = const constructMockProtocolMagicId
   mockEncodeConsensusState = const encode
   mockDecodeConsensusState = const decode
@@ -166,6 +149,47 @@ instance ( SimpleCrypto c
 -- the Shelley rules, we'll have a proper instance anyway.
 stakeDist :: LedgerConfig (SimplePraosBlock c c') -> StakeDist
 stakeDist = equalStakeDist . simpleMockLedgerConfig
+
+
+{-------------------------------------------------------------------------------
+  Forging
+-------------------------------------------------------------------------------}
+
+forgePraosExt :: forall c c' m.
+                 ( SimpleCrypto c
+                 , PraosCrypto c'
+                 , Signable (PraosKES c') (SignedSimplePraos c c')
+                 , MonadRandom m
+                 )
+              => TopLevelConfig (SimplePraosBlock c c')
+              -> Update m (PraosForgeState c')
+              -> IsLeader (BlockProtocol (SimplePraosBlock c c'))
+              -> SimpleBlock' c (SimplePraosExt c c') ()
+              -> m (SimplePraosBlock c c')
+forgePraosExt cfg updateState isLeader SimpleBlock{..} = do
+    ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
+      forgePraosFields (configConsensus cfg)
+                       updateState
+                       isLeader
+                       $ \praosExtraFields ->
+        SignedSimplePraos {
+            signedSimplePraos = simpleHeaderStd
+          , signedPraosFields = praosExtraFields
+          }
+    return SimpleBlock {
+        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+      , simpleBody   = simpleBody
+      }
+  where
+    SimpleHeader{..} = simpleHeader
+
+instance ( SimpleCrypto c
+         , PraosCrypto c'
+         , Signable (PraosKES c') (SignedSimplePraos c c')
+         )
+     => CanForge (SimplePraosBlock c c') where
+  type ForgeState (SimplePraosBlock c c') = PraosForgeState c'
+  forgeBlock = forgeSimple $ ForgeExt forgePraosExt
 
 {-------------------------------------------------------------------------------
   Serialisation

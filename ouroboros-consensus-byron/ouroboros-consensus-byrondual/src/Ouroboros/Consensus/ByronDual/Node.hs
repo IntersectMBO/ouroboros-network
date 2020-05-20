@@ -39,6 +39,7 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.HeaderValidation
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
@@ -89,7 +90,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
               , dualBlockConfigAux  = ByronSpecBlockConfig
               }
           }
-      , pInfoInitState =
+      , pInfoInitForgeState =
           ()
       , pInfoInitLedger = ExtLedgerState {
              ledgerState = DualLedgerState {
@@ -208,8 +209,6 @@ instance HasNetworkProtocolVersion DualByronBlock where
   nodeToClientProtocolVersion   _ = nodeToClientProtocolVersion   pb
 
 instance RunNode DualByronBlock where
-  nodeForgeBlock = forgeDualByronBlock
-
   -- Just like Byron, we need to start with an EBB
   nodeInitChainDB cfg chainDB = do
       empty <- InitChainDB.checkEmpty chainDB
