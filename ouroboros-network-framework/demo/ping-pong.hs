@@ -86,9 +86,9 @@ maximumMiniProtocolLimits =
 --
 
 demoProtocol0 :: RunMiniProtocol appType bytes m a b
-              -> OuroborosApplication appType bytes m a b
+              -> OuroborosApplication appType addr bytes m a b
 demoProtocol0 pingPong =
-    OuroborosApplication [
+    OuroborosApplication $ \_connectionId -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = maximumMiniProtocolLimits,
@@ -105,11 +105,11 @@ clientPingPong pipelined =
       unversionedHandshakeCodec
       cborTermVersionDataCodec
       nullNetworkConnectTracers
-      (unversionedProtocol (\_peerid -> app))
+      (unversionedProtocol app)
       Nothing
       defaultLocalSocketAddr
   where
-    app :: OuroborosApplication InitiatorApp LBS.ByteString IO () Void
+    app :: OuroborosApplication InitiatorApp addr LBS.ByteString IO () Void
     app = demoProtocol0 pingPongInitiator
 
     pingPongInitiator | pipelined =
@@ -145,12 +145,12 @@ serverPingPong =
       unversionedHandshakeCodec
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptableVersion)
-      (unversionedProtocol (\_peerid -> SomeResponderApplication app))
+      (unversionedProtocol (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    app :: OuroborosApplication ResponderApp LBS.ByteString IO Void ()
+    app :: OuroborosApplication ResponderApp addr LBS.ByteString IO Void ()
     app = demoProtocol0 pingPongResponder
 
     pingPongResponder =
@@ -176,9 +176,9 @@ pingPongServerStandard =
 
 demoProtocol1 :: RunMiniProtocol appType bytes m a b
               -> RunMiniProtocol appType bytes m a b
-              -> OuroborosApplication appType bytes m a b
+              -> OuroborosApplication appType addr bytes m a b
 demoProtocol1 pingPong pingPong' =
-    OuroborosApplication [
+    OuroborosApplication $ \_connectionId -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = maximumMiniProtocolLimits,
@@ -200,11 +200,11 @@ clientPingPong2 =
       unversionedHandshakeCodec
       cborTermVersionDataCodec
       nullNetworkConnectTracers
-      (unversionedProtocol (\_peerid -> app))
+      (unversionedProtocol app)
       Nothing
       defaultLocalSocketAddr
   where
-    app :: OuroborosApplication InitiatorApp LBS.ByteString IO  () Void
+    app :: OuroborosApplication InitiatorApp addr LBS.ByteString IO  () Void
     app = demoProtocol1 pingpong pingpong'
 
     pingpong =
@@ -253,12 +253,12 @@ serverPingPong2 =
       unversionedHandshakeCodec
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptableVersion)
-      (unversionedProtocol (\_peerid -> SomeResponderApplication app))
+      (unversionedProtocol (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    app :: OuroborosApplication ResponderApp LBS.ByteString IO Void ()
+    app :: OuroborosApplication ResponderApp addr LBS.ByteString IO Void ()
     app = demoProtocol1 pingpong pingpong'
 
     pingpong =
