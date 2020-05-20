@@ -31,7 +31,7 @@ import           Cardano.Binary (Annotator (..), FullByteString (..), fromCBOR,
 import           Cardano.Crypto.DSIGN.Mock (VerKeyDSIGN (..))
 
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
-                     HeaderHash, Point, SlotNo (..))
+                     HeaderHash, Point, SlotNo (..), mkSerialised)
 import           Ouroboros.Network.Point (WithOrigin (..), withOrigin)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
@@ -336,6 +336,8 @@ instance Arbitrary (Some (Query Block)) where
     , pure $ Some GetCurrentPParams
     , pure $ Some GetProposedPParamsUpdates
     , pure $ Some GetStakeDistribution
+    , pure $ Some GetCurrentLedgerState
+    , (\(Some q) -> Some (GetCBOR q)) <$> arbitrary
     ]
 
 instance Arbitrary SomeResult where
@@ -346,6 +348,10 @@ instance Arbitrary SomeResult where
     , SomeResult GetCurrentPParams <$> arbitrary
     , SomeResult GetProposedPParamsUpdates <$> arbitrary
     , SomeResult GetStakeDistribution <$> arbitrary
+    , SomeResult GetCurrentLedgerState <$> arbitrary
+    , (\(SomeResult q r) ->
+        SomeResult (GetCBOR q) (mkSerialised (encodeShelleyResult q) r)) <$>
+      arbitrary
     ]
 
 instance Arbitrary (NonMyopicMemberRewards TPraosMockCrypto) where
@@ -630,5 +636,10 @@ instance Eq (Some (Query Block)) where
   Some (GetFilteredUTxO _) == _ = False
   Some GetUTxO == Some GetUTxO = True
   Some GetUTxO == _            = False
+  Some GetCurrentLedgerState == Some GetCurrentLedgerState = True
+  Some GetCurrentLedgerState == _ = False
+  Some (GetCBOR query) == Some (GetCBOR query') =
+    Some query == Some query'
+  Some (GetCBOR _) == _ = False
 
 deriving instance Show (Some (Query Block))
