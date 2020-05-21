@@ -64,7 +64,6 @@ library
                        Ouroboros.Network.PeerSelection.Types
                        Ouroboros.Network.PeerSelection.KnownPeers
                        Ouroboros.Network.PeerSelection.RootPeersDNS
-                       Ouroboros.Network.PeerSelection.JobPool
                        Ouroboros.Network.PeerSelection.Governor
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.ClientPipelined
@@ -96,6 +95,12 @@ library
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
+  other-modules:       Ouroboros.Network.PeerSelection.Governor.ActivePeers
+                       Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
+                       Ouroboros.Network.PeerSelection.Governor.KnownPeers
+                       Ouroboros.Network.PeerSelection.Governor.Monitor
+                       Ouroboros.Network.PeerSelection.Governor.RootPeers
+                       Ouroboros.Network.PeerSelection.Governor.Types
 
   default-language:    Haskell2010
   other-extensions:    BangPatterns,

@@ -42,6 +42,7 @@ import qualified Data.Set as Set
 import           Data.Set (Set)
 
 import           Control.Applicative
+import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -57,7 +58,6 @@ import           Network.Mux.Egress  as Egress
 import           Network.Mux.Ingress as Ingress
 import           Network.Mux.Types
 import           Network.Mux.Trace
-import qualified Network.Mux.JobPool as JobPool
 
 
 -- | muxStart starts a mux bearer for the specified protocols corresponding to
