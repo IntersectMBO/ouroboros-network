@@ -33,6 +33,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API
 
+import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.BlockChain as SL
@@ -42,6 +43,7 @@ import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
+import qualified Shelley.Spec.Ledger.MetaData as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.Rewards as SL
@@ -342,6 +344,12 @@ instance Arbitrary a => Arbitrary (StrictSeq a) where
 instance Arbitrary SL.PoolMetaData where
   arbitrary = (`SL.PoolMetaData` "bytestring") <$> arbitrary
 
+instance Crypto c => Arbitrary (SL.MetaDataHash c) where
+  arbitrary = SL.MetaDataHash <$> genHash (Proxy @c)
+
+instance Crypto c => Arbitrary (SL.ScriptHash c) where
+  arbitrary = SL.ScriptHash <$> genHash (Proxy @c)
+
 instance Arbitrary SL.Port where
   arbitrary = fromIntegral @Word8 @SL.Port <$> arbitrary
 
@@ -404,10 +412,34 @@ instance Crypto c => Arbitrary (SL.LedgerView c) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 
+instance Arbitrary SL.Ptr where
+  arbitrary = genericArbitraryU
+  shrink    = genericShrink
+
+instance Crypto c => Arbitrary (SL.StakeReference c) where
+  arbitrary = genericArbitraryU
+  shrink    = genericShrink
+
+instance Crypto c => Arbitrary (SL.Addr c) where
+  arbitrary = oneof
+    [ SL.Addr <$> arbitrary <*> arbitrary
+    -- TODO generate Byron addresses too
+    -- SL.AddrBootstrap
+    ]
+
 instance Arbitrary (SL.Tx TPraosMockCrypto) where
   arbitrary = do
     (_ledgerState, _steps, _txfee, tx, _lv) <- hedgehog SL.genStateTx
     return tx
+
+instance Arbitrary (SL.TxIn TPraosMockCrypto) where
+  arbitrary = SL.TxIn
+    <$> (SL.TxId <$> genHash (Proxy @TPraosMockCrypto))
+    <*> arbitrary
+
+instance Arbitrary (SL.TxOut TPraosMockCrypto) where
+  arbitrary = genericArbitraryU
+  shrink    = genericShrink
 
 instance Arbitrary SL.ProtVer where
   arbitrary = genericArbitraryU

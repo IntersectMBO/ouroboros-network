@@ -22,6 +22,7 @@ import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (hashKeyVRF)
+import           Test.Shelley.Spec.Ledger.Orphans ()
 
 import           Ouroboros.Consensus.Shelley.Ledger
 
@@ -671,7 +672,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkInt 0
     , TkBytes "\144&R("
     , TkInt 99
-    , TkListLen 3
+    , TkListLen 4
     , TkMapLen 1
     , TkBytes "0P\247\158"
     , TkInt 10
@@ -695,6 +696,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkListLen 2
     , TkString "alice.pool"
     , TkBytes "{}"
+    , TkMapLen 0
     , TkMapLen 0
     , TkListLen 21
     , TkInt 0
@@ -1040,7 +1042,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkInt 0
     , TkBytes "\144&R("
     , TkInt 99
-    , TkListLen 3
+    , TkListLen 4
     , TkMapLen 1
     , TkBytes "0P\247\158"
     , TkInt 10
@@ -1064,6 +1066,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkListLen 2
     , TkString "alice.pool"
     , TkBytes "{}"
+    , TkMapLen 0
     , TkMapLen 0
     , TkListLen 21
     , TkInt 0
