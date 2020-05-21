@@ -3,56 +3,27 @@
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
-module Test.Consensus.Shelley.Ledger.Golden (
-    tests
-  , mkDummyHash
-  ) where
+module Test.Consensus.Shelley.Golden (tests) where
 
 import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..))
-import           Data.Coerce (coerce)
-import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (..))
 import qualified Data.Set as Set
-import           Data.Time (UTCTime (..), fromGregorian)
 
 import           Cardano.Binary (toCBOR)
-import           Cardano.Crypto (ProtocolMagicId (..))
-import           Cardano.Prelude (Natural)
-import           Cardano.Slotting.EpochInfo
 
-import           Ouroboros.Network.Block (Point (..), blockHash, genesisPoint)
-import           Ouroboros.Network.Magic (NetworkMagic (..))
+import           Ouroboros.Network.Block (Point (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Shelley.Spec.Ledger.BaseTypes (StrictMaybe (..))
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Credential as SL
-import qualified Shelley.Spec.Ledger.Crypto as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
-import qualified Shelley.Spec.Ledger.STS.Chain as STS
-import qualified Shelley.Spec.Ledger.STS.Ledger as STS
-import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
-import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (ConcreteCrypto,
-                     hashKeyVRF)
-import qualified Test.Shelley.Spec.Ledger.Examples as Examples
-import qualified Test.Shelley.Spec.Ledger.Utils as SL (testGlobals)
+import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (hashKeyVRF)
 
-import           Ouroboros.Consensus.Shelley.Genesis
 import           Ouroboros.Consensus.Shelley.Ledger
-import qualified Ouroboros.Consensus.Shelley.Ledger.History as History
-import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
-import qualified Ouroboros.Consensus.Shelley.Protocol.State as TPraosState
 
 import           Test.Tasty
 import           Test.Tasty.HUnit
@@ -62,7 +33,8 @@ import           Test.Util.Orphans.Arbitrary ()
 
 import           Test.Cardano.Crypto.VRF.Fake (VerKeyVRF (..))
 
-import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
+import           Test.Consensus.Shelley.Examples
+import           Test.Consensus.Shelley.MockCrypto
 
 tests :: TestTree
 tests = testGroup "Golden tests"
@@ -79,8 +51,6 @@ tests = testGroup "Golden tests"
     , testQueries
     , testResults
     ]
-
-type Block = ShelleyBlock TPraosMockCrypto
 
 testQueries :: TestTree
 testQueries = testGroup "Queries"
@@ -161,6 +131,8 @@ testResults = testGroup "Results"
         $ goldenTestResult GetStakeDistribution stakeDistribution stakeDistributionTerm
     ]
   where
+    -- TODO move to Test.Consensus.Shelley.Examples?
+
     nonMyopicMemberRewards :: (NonMyopicMemberRewards TPraosMockCrypto)
     nonMyopicMemberRewards = NonMyopicMemberRewards Map.empty
 
@@ -170,8 +142,8 @@ testResults = testGroup "Results"
     proposedPParamsUpdates :: SL.ProposedPPUpdates TPraosMockCrypto
     proposedPParamsUpdates = SL.ProposedPPUpdates $ Map.singleton
       (SL.hashKey 0)
-      (SL.PParams
-        { _minfeeA         = SNothing
+      (SL.PParams {
+          _minfeeA         = SNothing
         , _minfeeB         = SNothing
         , _maxBBSize       = SNothing
         , _maxTxSize       = SNothing
@@ -272,12 +244,6 @@ testResults = testGroup "Results"
     goldenTestResult :: Query Block result -> result -> FlatTerm -> Assertion
     goldenTestResult q = goldenTestCBOR (encodeShelleyResult q)
 
-exampleBlock :: Block
-exampleBlock = mkShelleyBlock Examples.blockEx3B
-
-exampleGenTx :: GenTx Block
-exampleGenTx = mkShelleyTx Examples.txEx2A
-
 test_golden_Block :: Assertion
 test_golden_Block = goldenTestCBOR
     toCBOR
@@ -360,7 +326,7 @@ test_golden_Block = goldenTestCBOR
 test_golden_Header :: Assertion
 test_golden_Header = goldenTestCBOR
     toCBOR
-    (getHeader exampleBlock)
+    exampleHeader
     [ TkListLen 2
     , TkListLen 15
     , TkInt 2
@@ -388,7 +354,7 @@ test_golden_Header = goldenTestCBOR
 test_golden_HeaderHash :: Assertion
 test_golden_HeaderHash = goldenTestCBOR
     toCBOR
-    (blockHash exampleBlock)
+    exampleHeaderHash
     [ TkBytes "\CAN\225\"\183"
     ]
 
@@ -500,7 +466,7 @@ test_golden_GenTx = goldenTestCBORInCBOR
 test_golden_GenTxId :: Assertion
 test_golden_GenTxId = goldenTestCBOR
     toCBOR
-    (txId exampleGenTx)
+    exampleGenTxId
     [ TkBytes "\245\v\196;"
     ]
 
@@ -517,16 +483,6 @@ test_golden_ApplyTxErr = goldenTestCBOR
     , TkBytes "\NUL\NUL\NUL\NUL\NUL\NUL\NUL\SOH"
     , TkBreak
     ]
-  where
-    -- TODO incomplete, this type has tons of constructors that can all
-    -- change.
-    exampleApplyTxErr :: ApplyTxErr Block
-    exampleApplyTxErr =
-        ApplyTxError
-      $ pure
-      $ STS.LedgerFailure
-      $ STS.UtxowFailure
-      $ STS.InvalidWitnessesUTXOW [SL.VKey 1]
 
 test_golden_ConsensusState :: Assertion
 test_golden_ConsensusState = goldenTestCBOR
@@ -580,22 +536,6 @@ test_golden_ConsensusState = goldenTestCBOR
     , TkInt 1
     , TkBytes "\219\193\180\201\NUL\255\228\141W[]\165\198\&8\EOT\SOH%\246]\176\254>$IKv\234\152dW\217\134"
     ]
-  where
-    exampleConsensusState :: ConsensusState (BlockProtocol Block)
-    exampleConsensusState =
-      TPraosState.append 2      (mkPrtclState 2) $
-      TPraosState.empty  (At 1) (mkPrtclState 1)
-
-    mkPrtclState :: Natural -> STS.PrtclState TPraosMockCrypto
-    mkPrtclState seed = STS.PrtclState
-      (Map.fromList
-       [ (SL.KeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 1), 1)
-       , (SL.KeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 2), 2)
-       ])
-      SL.NeutralNonce
-      (SL.mkNonce seed)
-      (SL.mkNonce seed)
-      (SL.mkNonce seed)
 
 test_golden_LedgerState :: Assertion
 test_golden_LedgerState = goldenTestCBOR
@@ -933,45 +873,6 @@ test_golden_LedgerState = goldenTestCBOR
     , TkBreak
     ]
 
-exampleLedgerState :: LedgerState Block
-exampleLedgerState = reapplyLedgerBlock
-    ledgerCfg
-    (mkShelleyBlock newBlock)
-    (Ticked 0 ShelleyLedgerState {
-        ledgerTip    = genesisPoint
-      , history      = History.empty
-      , shelleyState = STS.chainNes startState
-      })
-  where
-    Examples.CHAINExample { startState, newBlock } = Examples.ex2A
-    ledgerCfg = mkShelleyLedgerConfig testShelleyGenesis testEpochInfo
-
-testEpochInfo :: EpochInfo Identity
-testEpochInfo = SL.epochInfo SL.testGlobals
-
--- | These are dummy values.
-testShelleyGenesis :: ShelleyGenesis c
-testShelleyGenesis = ShelleyGenesis {
-      sgStartTime         = SystemStart $ UTCTime (fromGregorian 2020 5 14) 0
-    , sgNetworkMagic      = NetworkMagic 0
-    , sgProtocolMagicId   = ProtocolMagicId 0
-      -- Chosen to match SL.activeSlotCoeff
-    , sgActiveSlotsCoeff  = 0.9
-    , sgSecurityParam     = SecurityParam $ SL.securityParameter SL.testGlobals
-    , sgEpochLength       = runIdentity $ epochInfoSize testEpochInfo 0
-    , sgSlotsPerKESPeriod = SL.slotsPerKESPeriod SL.testGlobals
-    , sgMaxKESEvolutions  = SL.maxKESEvo SL.testGlobals
-      -- Not important
-    , sgSlotLength        = slotLengthFromSec 2
-    , sgUpdateQuorum      = SL.quorum  SL.testGlobals
-    , sgMaxMajorPV        = SL.maxMajorPV SL.testGlobals
-    , sgMaxLovelaceSupply = SL.maxLovelaceSupply SL.testGlobals
-    , sgProtocolParams    = SL.emptyPParams
-    , sgGenDelegs         = Map.empty
-    , sgInitialFunds      = Map.empty
-    , sgStaking           = emptyGenesisStaking
-    }
-
 test_golden_HeaderState :: Assertion
 test_golden_HeaderState = goldenTestCBOR
     encodeShelleyHeaderState
@@ -1004,21 +905,6 @@ test_golden_HeaderState = goldenTestCBOR
     , TkListLen 0
     , TkListLen 0
     ]
-
-exampleHeaderState :: HeaderState Block
-exampleHeaderState = genesisHeaderState st
-  where
-    prtclState :: STS.PrtclState TPraosMockCrypto
-    prtclState = STS.PrtclState
-      (Map.fromList
-        [(SL.KeyHash (mkDummyHash (Proxy @TPraosMockCrypto) 1), 1)])
-      SL.NeutralNonce
-      (SL.mkNonce 1)
-      SL.NeutralNonce
-      (SL.mkNonce 2)
-
-    st :: TPraosState ConcreteCrypto
-    st = TPraosState.empty (At 1) prtclState
 
 test_golden_ExtLedgerState :: Assertion
 test_golden_ExtLedgerState = goldenTestCBOR
@@ -1382,15 +1268,3 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkListLen 0
     , TkListLen 0
     ]
-  where
-    exampleExtLedgerState = ExtLedgerState
-      { ledgerState = exampleLedgerState
-      , headerState = exampleHeaderState
-      }
-
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
-mkDummyHash :: forall c a. Crypto c => Proxy c -> Int -> SL.Hash c a
-mkDummyHash _ = coerce . SL.hash @(SL.HASH c)

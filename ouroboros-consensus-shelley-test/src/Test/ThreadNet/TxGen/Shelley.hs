@@ -5,8 +5,11 @@
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE ViewPatterns             #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.ThreadNet.TxGen.Shelley
-  ( ShelleyTxGenExtra(..)
+module Test.ThreadNet.TxGen.Shelley (
+    ShelleyTxGenExtra(..)
+  , genTx
+  , mkGenEnv
+  , quickCheckAdapter
   ) where
 
 import           Control.Monad.Except (runExcept)
@@ -29,10 +32,13 @@ import           Test.QuickCheck.Random (mkQCGen)
 import           Test.ThreadNet.TxGen (TxGen (..))
 
 import qualified Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as CSL
+import qualified Test.Shelley.Spec.Ledger.Generator.Constants as Gen
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
+import qualified Test.Shelley.Spec.Ledger.Generator.Presets as Gen.Presets
 import qualified Test.Shelley.Spec.Ledger.Generator.Utxo as Gen
 
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
+import           Test.ThreadNet.Infra.Shelley
 
 data ShelleyTxGenExtra = ShelleyTxGenExtra
   { -- | Generator environment.
@@ -107,6 +113,25 @@ genTx _cfg Ticked { tickedSlotNo, tickedLedgerState } genEnv =
         SL._delegationState
       . SL.esLState
       $ epochState
+
+mkGenEnv :: [CoreNode TPraosMockCrypto] -> Gen.GenEnv
+mkGenEnv coreNodes = Gen.GenEnv keySpace constants
+  where
+    constants :: Gen.Constants
+    constants = Gen.defaultConstants
+      { Gen.frequencyMIRCert = 0
+      }
+
+    keySpace :: Gen.KeySpace
+    keySpace = Gen.KeySpace
+        (cnkiCoreNode <$> cn)
+        (ksKeyPairs <> (cnkiKeyPair <$> cn))
+        ksMSigScripts
+        ksVRFKeyPairs
+      where
+        cn = coreNodeKeys <$> coreNodes
+        Gen.KeySpace_ { ksKeyPairs, ksMSigScripts, ksVRFKeyPairs } =
+          Gen.Presets.keySpace constants
 
 {-------------------------------------------------------------------------------
   QuickCheck to MonadRandom adapter

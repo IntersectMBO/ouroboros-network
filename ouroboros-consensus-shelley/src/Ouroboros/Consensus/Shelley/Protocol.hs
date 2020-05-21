@@ -357,8 +357,8 @@ mkShelleyGlobals :: TPraosParams -> SL.Globals
 mkShelleyGlobals TPraosParams {..} = SL.Globals {
       epochInfo                     = tpraosEpochInfo
     , slotsPerKESPeriod             = tpraosSlotsPerKESPeriod
-    , stabilityWindow               = ceiling $ 3 * (toRational f / fromIntegral k)
-    , randomnessStabilisationWindow = ceiling $ 4 * (toRational f / fromIntegral k)
+    , stabilityWindow               = ceiling $ 3 * (f / fromIntegral k)
+    , randomnessStabilisationWindow = ceiling $ 4 * (f / fromIntegral k)
     , securityParameter             = k
     , maxKESEvo                     = tpraosMaxKESEvo
     , quorum                        = tpraosQuorum

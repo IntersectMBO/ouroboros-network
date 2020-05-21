@@ -1,14 +1,5 @@
-{-# LANGUAGE DataKinds                #-}
-{-# LANGUAGE DisambiguateRecordFields #-}
-{-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE NamedFieldPuns           #-}
-{-# LANGUAGE PatternSynonyms          #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE TypeApplications         #-}
-{-# LANGUAGE TypeFamilies             #-}
-module Test.ThreadNet.RealTPraos (
-    tests
-  ) where
+{-# LANGUAGE NamedFieldPuns #-}
+module Test.ThreadNet.RealTPraos (tests) where
 
 import           Control.Monad (replicateM)
 import           Data.List ((!!))
@@ -28,10 +19,6 @@ import           Ouroboros.Consensus.Util.Random
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Infra.Shelley
-import           Test.ThreadNet.Util.NodeJoinPlan
-import           Test.ThreadNet.Util.NodeRestarts
-import           Test.ThreadNet.Util.NodeTopology
-
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -40,10 +27,7 @@ import qualified Shelley.Spec.Ledger.OCert as SL
 import           Ouroboros.Consensus.Shelley.Node
 
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
-import qualified Test.Shelley.Spec.Ledger.Generator.Constants as Gen
-import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
-import qualified Test.Shelley.Spec.Ledger.Generator.Presets as Gen.Presets
-import           Test.ThreadNet.TxGen.Shelley (ShelleyTxGenExtra (..))
+import           Test.ThreadNet.TxGen.Shelley
 
 tests :: TestTree
 tests = testGroup "RealTPraos"
@@ -87,24 +71,8 @@ prop_simple_real_tpraos_convergence k d
                   genesisConfig
                   (coreNodes !! fromIntegral nid)
             , rekeying    = Nothing
-            , txGenExtra  = ShelleyTxGenExtra $ Gen.GenEnv keySpace constants
+            , txGenExtra  = ShelleyTxGenExtra $ mkGenEnv coreNodes
             }
-
-    constants :: Gen.Constants
-    constants = Gen.defaultConstants
-      { Gen.frequencyMIRCert = 0
-      }
-
-    keySpace :: Gen.KeySpace
-    keySpace = Gen.KeySpace
-        (cnkiCoreNode <$> cn)
-        (ksKeyPairs <> (cnkiKeyPair <$> cn))
-        ksMSigScripts
-        ksVRFKeyPairs
-      where
-        cn = coreNodeKeys <$> coreNodes
-        Gen.KeySpace_ { ksKeyPairs, ksMSigScripts, ksVRFKeyPairs } =
-          Gen.Presets.keySpace constants
 
     initialKESPeriod :: SL.KESPeriod
     initialKESPeriod = SL.KESPeriod 0
@@ -122,31 +90,3 @@ prop_simple_real_tpraos_convergence k d
 
     epochSize :: EpochSize
     epochSize = sgEpochLength genesisConfig
-
--------------------------------------------------------------------------
--- Test config
--------------------------------------------------------------------------
-
-genRealTPraosTestConfig :: SecurityParam -> Gen TestConfig
-genRealTPraosTestConfig _k = do
-    numCoreNodes <- arbitrary
-    numSlots     <- arbitrary
-
-    -- TODO generate more interesting scenarios
-    let nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
-        nodeTopology = meshNodeTopology numCoreNodes
-
-    initSeed <- arbitrary
-
-    pure TestConfig
-      { nodeJoinPlan
-      , nodeRestarts = noRestarts
-      , nodeTopology
-      , numCoreNodes
-      , numSlots
-      , slotLength = tpraosSlotLength
-      , initSeed
-      }
-
-shrinkRealTPraosTestConfig :: TestConfig -> [TestConfig]
-shrinkRealTPraosTestConfig _ = [] -- TODO
