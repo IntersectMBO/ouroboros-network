@@ -29,6 +29,7 @@ import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 import           Cardano.Slotting.Slot (SlotNo (..))
 
 import           Control.Monad.Class.MonadTime
+import qualified Control.Monad.Class.MonadTimer as Unused
 import           Control.Monad.IOSim
 
 import           Ouroboros.Consensus.BlockchainTime

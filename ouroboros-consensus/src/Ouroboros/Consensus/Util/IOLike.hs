@@ -33,7 +33,9 @@ module Ouroboros.Consensus.Util.IOLike (
   , addTime
   , diffTime
     -- *** MonadDelay
-  , MonadDelay(..)
+  , MonadDelay -- Opaque to favor the usage of 'threadDelay'
+    -- *** MonadDelay Wrappers
+  , threadDelay
     -- *** MonadEventlog
   , MonadEventlog(..)
     -- *** Cardano prelude
@@ -50,7 +52,8 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime hiding (MonadTime (..))
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer hiding (threadDelay)
+import qualified Control.Monad.Class.MonadTimer as MonadTimer
 
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -91,3 +94,21 @@ class ( MonadAsync              m
       ) => IOLike m where
 
 instance IOLike IO
+
+{-------------------------------------------------------------------------------
+  MonadDelay Wrappers
+-------------------------------------------------------------------------------}
+
+-- | In some cases, 'MonadTimer.threadDelay' can't be used for delays over
+-- ~35mins, because it uses an 'Int', which can overflow (see
+-- 'diffTimeToMicrosecondsAsInt' for more info). This can be safely used to
+-- sleep for longer periods of time, so we favor its usage in all cases.
+threadDelay :: MonadDelay m => DiffTime -> m ()
+threadDelay time
+    | time > maxDelay
+    = MonadTimer.threadDelay maxDelay *> threadDelay (time - maxDelay)
+    | otherwise
+    = MonadTimer.threadDelay time
+  where
+    maxDelay :: DiffTime
+    maxDelay = fromIntegral (maxBound :: Int)

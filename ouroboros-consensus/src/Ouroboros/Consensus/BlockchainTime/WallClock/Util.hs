@@ -17,10 +17,9 @@ import           Data.Time (NominalDiffTime, UTCTime, diffUTCTime)
 
 import           Cardano.Slotting.Slot
 
-import           Control.Monad.Class.MonadTimer (MonadDelay (..))
-
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Time
 
 {-------------------------------------------------------------------------------
