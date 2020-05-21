@@ -1,0 +1,82 @@
+{-# LANGUAGE DefaultSignatures    #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
+
+module Ouroboros.Consensus.HardFork.Combinator.PartialConfig (
+    HasPartialConsensusConfig(..)
+  , HasPartialLedgerConfig(..)
+    -- * Convenience re-exports
+  , EpochInfo(..)
+  , Identity(..)
+  ) where
+
+import           Data.Functor.Identity
+
+import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.EpochInfo
+
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Protocol.Abstract
+
+-- | Partial consensus config
+class ( ConsensusProtocol p
+      , NoUnexpectedThunks (PartialConsensusConfig p)
+      ) => HasPartialConsensusConfig p where
+  type PartialConsensusConfig p :: *
+  type PartialConsensusConfig p = ConsensusConfig p
+
+  -- | Construct 'ConsensusConfig' from 'PartialConsensusConfig'
+  --
+  -- See comments for 'completeLedgerConfig' for some details about the
+  -- 'EpochInfo'.
+  completeConsensusConfig :: proxy p
+                          -> EpochInfo Identity
+                          -> PartialConsensusConfig p -> ConsensusConfig p
+
+  default completeConsensusConfig :: (PartialConsensusConfig p ~ ConsensusConfig p)
+                                  => proxy p
+                                  -> EpochInfo Identity
+                                  -> PartialConsensusConfig p -> ConsensusConfig p
+  completeConsensusConfig _ _ = id
+
+  -- Some functions will not be reused from ConsensusProtocol directly:
+
+  -- | The 'ChainSelConfig' must be derivable from the partial config
+  partialChainSelConfig :: proxy p -> PartialConsensusConfig p -> ChainSelConfig p
+  default partialChainSelConfig :: (PartialConsensusConfig p ~ ConsensusConfig p)
+                                => proxy p
+                                -> PartialConsensusConfig p -> ChainSelConfig p
+  partialChainSelConfig _ = chainSelConfig
+
+  -- | Partial config must suffice to check if we can be a leader
+  partialCheckIfCanBeLeader :: proxy p -> PartialConsensusConfig p -> Bool
+  default partialCheckIfCanBeLeader :: (PartialConsensusConfig p ~ ConsensusConfig p)
+                                    => proxy p
+                                    -> PartialConsensusConfig p -> Bool
+  partialCheckIfCanBeLeader _ = checkIfCanBeLeader
+
+-- | Partial ledger config
+class ( UpdateLedger blk
+      , NoUnexpectedThunks (PartialLedgerConfig blk)
+      ) => HasPartialLedgerConfig blk where
+  type PartialLedgerConfig blk :: *
+  type PartialLedgerConfig blk = LedgerConfig blk
+
+  -- | Construct 'LedgerConfig' from 'PartialLedgerCfg'
+  --
+  -- NOTE: The 'EpochInfo' provided will have limited range, any attempt to
+  -- look past its horizon will result in a pure 'PastHorizonException'.
+  -- The horizon is determined by the tip of the ledger /state/ (not view)
+  -- from which the 'EpochInfo' is derived.
+  --
+  -- TODO: This should not be Identity;
+  -- see <https://github.com/input-output-hk/ouroboros-network/issues/2126>
+  completeLedgerConfig :: proxy blk
+                       -> EpochInfo Identity
+                       -> PartialLedgerConfig blk  -> LedgerConfig blk
+  default completeLedgerConfig :: (PartialLedgerConfig blk ~ LedgerConfig blk)
+                               => proxy blk
+                               -> EpochInfo Identity
+                               -> PartialLedgerConfig blk  -> LedgerConfig blk
+  completeLedgerConfig _ _ = id

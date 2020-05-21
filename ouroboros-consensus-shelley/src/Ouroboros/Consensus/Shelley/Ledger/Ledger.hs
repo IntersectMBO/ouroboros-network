@@ -274,14 +274,8 @@ instance TPraosCrypto c => LedgerSupportsProtocol (ShelleyBlock c) where
                 At s   -> SlotNo $ unSlotNo s + 1 + (2 * k)
 
 instance HasHardForkHistory (ShelleyBlock c) where
-  type HardForkIndices (ShelleyBlock c) = '[()]
-
-  hardForkShape _ cfg = HardFork.singletonShape $ shelleyLedgerEraParams cfg
-
-  -- TODO: This is wrong. We should look at the state of the ledger.
-  -- Once we actually start using the hard fork combinator, we should fix this.
-  -- <https://github.com/input-output-hk/ouroboros-network/issues/1786>
-  hardForkTransitions _ _ = HardFork.transitionsUnknown
+  type HardForkIndices (ShelleyBlock c) = '[ShelleyBlock c]
+  hardForkSummary = neverForksHardForkSummary shelleyLedgerEraParams
 
 {-------------------------------------------------------------------------------
   QueryLedger

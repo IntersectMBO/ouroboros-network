@@ -189,6 +189,7 @@ class (
       , Serialise (BridgeLedger m a)
       , Serialise (BridgeBlock  m a)
       , Serialise (BridgeTx     m a)
+      , Show      (BridgeTx     m a)
       ) => Bridge m a where
 
   -- | Additional information relating both ledgers
@@ -417,12 +418,9 @@ instance Bridge m a => LedgerSupportsProtocol (DualBlock m a) where
 instance Bridge m a => HasHardForkHistory (DualBlock m a) where
   type HardForkIndices (DualBlock m a) = HardForkIndices m
 
-  hardForkShape _ cfg =
-      hardForkShape (Proxy @m)
-        (dualLedgerConfigMain cfg)
-
-  hardForkTransitions cfg state =
-      hardForkTransitions
+  hardForkSummary start cfg state =
+      hardForkSummary
+        start
         (dualLedgerConfigMain cfg)
         (dualLedgerStateMain  state)
 
@@ -513,13 +511,8 @@ instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
 
   txId = DualGenTxId . txId . dualGenTxMain
 
-deriving instance ( Show (GenTx m)
-                  , Show (GenTx a)
-                  , Show (BridgeTx m a)
-                  ) => Show (GenTx (DualBlock m a))
-deriving instance ( Show (ApplyTxErr m)
-                  , Show (ApplyTxErr a)
-                  ) => Show (DualGenTxErr m a)
+deriving instance Bridge m a => Show (GenTx (DualBlock m a))
+deriving instance Bridge m a => Show (DualGenTxErr m a)
 
 deriving instance Show (GenTxId m) => Show (TxId (GenTx (DualBlock m a)))
 deriving instance Eq   (GenTxId m) => Eq   (TxId (GenTx (DualBlock m a)))

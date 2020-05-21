@@ -33,10 +33,15 @@ module Ouroboros.Consensus.HardFork.History (
   , transitionsUnknown
     -- * Summary
   , Summary(..)    -- Non-opaque only for the benefit of tests
+  , neverForksSummary
   , summarize
   , summaryBounds
   , summaryInit
   , summaryWithExactly
+    -- ** Low-level API for summary construction
+  , slotToEpochBound
+  , maxMaybeEpoch
+  , mkEraEnd
     -- * Queries
   , PastHorizonException(..)
   , Query -- Opaque
@@ -62,8 +67,6 @@ module Ouroboros.Consensus.HardFork.History (
   , boundTime
   , initBound
   , mkUpperBound
-  , mkEraEnd
-  , maxMaybeEpoch
     -- ** Summary
   , EraSummary(..)
   , EraEnd(..)
@@ -206,7 +209,7 @@ data EraParams = EraParams {
     , eraSlotLength :: !SlotLength
     , eraSafeZone   :: !SafeZone
     }
-  deriving stock    (Show, Generic)
+  deriving stock    (Show, Eq, Generic)
   deriving anyclass (NoUnexpectedThunks)
 
 -- | Default 'EraParams'
@@ -236,7 +239,7 @@ data SafeZone = SafeZone {
       -- | Optionally, an 'EpochNo' before which no hard fork can take place
     , safeBeforeEpoch :: !SafeBeforeEpoch
     }
-  deriving stock    (Show, Generic)
+  deriving stock    (Show, Eq, Generic)
   deriving anyclass (NoUnexpectedThunks)
 
 -- | Lower bound on when a transition can take place
@@ -279,7 +282,7 @@ data SafeBeforeEpoch =
     -- This constructor can be regarded as an " extreme " version of
     -- 'LowerBound', and can be used for similar reasons.
   | UnsafeUnbounded
-  deriving stock    (Show, Generic)
+  deriving stock    (Show, Eq, Generic)
   deriving anyclass (NoUnexpectedThunks)
 
 -- | The shape of the chain (old to new)
@@ -294,6 +297,7 @@ data SafeBeforeEpoch =
 -- most of consensus is indexed by block types).
 newtype Shape xs = Shape (Exactly xs EraParams)
   deriving (Show)
+  deriving NoUnexpectedThunks via UseIsNormalFormNamed "Shape" (Shape xs)
 
 -- | There is only one era
 singletonShape :: EraParams -> Shape '[x]
@@ -330,7 +334,8 @@ data Bound = Bound {
     , boundSlot  :: !SlotNo
     , boundEpoch :: !EpochNo
     }
-  deriving (Show, Eq)
+  deriving stock    (Show, Eq, Generic)
+  deriving anyclass (NoUnexpectedThunks)
 
 initBound :: SystemStart -> Bound
 initBound (SystemStart start) = Bound {
@@ -340,6 +345,9 @@ initBound (SystemStart start) = Bound {
     }
 
 -- | Version of 'mkUpperBound' when the upper bound may not be known
+--
+-- If passed 'Nothing', assumes 'EraUnbounded'. This is /NOT/
+-- suitable for eras where the transition is simply unknown.
 mkEraEnd :: EraParams
          -> Bound          -- ^ Lower bound
          -> Maybe EpochNo  -- ^ Upper bound
@@ -379,7 +387,8 @@ data EraSummary = EraSummary {
     , eraEnd    :: !EraEnd    -- ^ Exclusive upper bound
     , eraParams :: !EraParams -- ^ Active parameters
     }
-  deriving (Show)
+  deriving stock    (Show, Eq, Generic)
+  deriving anyclass (NoUnexpectedThunks)
 
 -- | Exclusive upper bound on the era
 data EraEnd =
@@ -390,7 +399,8 @@ data EraEnd =
     --
     -- This arises from the use of 'UnsafeUnbounded'.
   | EraUnbounded
-  deriving (Show)
+  deriving stock    (Show, Eq, Generic)
+  deriving anyclass (NoUnexpectedThunks)
 
 -- | Summary of the /confirmed/ part of the ledger
 --
@@ -404,6 +414,18 @@ newtype Summary xs = Summary (NonEmpty xs EraSummary)
 -- WHNF is sufficient, because the counting types are all strict
 deriving via UseIsNormalFormNamed "Summary" (Summary xs)
          instance NoUnexpectedThunks (Summary xs)
+
+{-------------------------------------------------------------------------------
+  Trivial summary
+-------------------------------------------------------------------------------}
+
+-- | 'Summary' for a ledger that never forks
+neverForksSummary :: SystemStart -> EraParams -> Summary '[x]
+neverForksSummary start params = Summary $ NonEmptyOne $ EraSummary {
+      eraStart  = initBound start
+    , eraEnd    = EraUnbounded
+    , eraParams = params
+    }
 
 {-------------------------------------------------------------------------------
   Basic API for 'Summary'
@@ -641,19 +663,19 @@ summarize systemStart ledgerTip = \(Shape shape) (Transitions transitions) ->
     next Origin = SlotNo 0
     next (At s) = succ s
 
-    -- Given the 'SlotNo' of the first /slot/ in which a transition could take
-    -- place, compute the first /epoch/ in which this could happen (since
-    -- transitions only take place at epoch boundaries). If the 'SlotNo' happens
-    -- to be the first slot in an epoch, it will be that 'EpochNo'; if it isn't,
-    -- however, it will be the /next/ epoch.
-    slotToEpochBound :: EraParams -> Bound -> SlotNo -> EpochNo
-    slotToEpochBound EraParams{eraEpochSize = EpochSize epochSize} lo hiSlot =
-        addEpochs
-          (if inEpoch == 0 then epochs else epochs + 1)
-          (boundEpoch lo)
-      where
-        slots             = countSlots hiSlot (boundSlot lo)
-        (epochs, inEpoch) = slots `divMod` epochSize
+-- Given the 'SlotNo' of the first /slot/ in which a transition could take
+-- place, compute the first /epoch/ in which this could happen (since
+-- transitions only take place at epoch boundaries). If the 'SlotNo' happens
+-- to be the first slot in an epoch, it will be that 'EpochNo'; if it isn't,
+-- however, it will be the /next/ epoch.
+slotToEpochBound :: EraParams -> Bound -> SlotNo -> EpochNo
+slotToEpochBound EraParams{eraEpochSize = EpochSize epochSize} lo hiSlot =
+    addEpochs
+      (if inEpoch == 0 then epochs else epochs + 1)
+      (boundEpoch lo)
+  where
+    slots             = countSlots hiSlot (boundSlot lo)
+    (epochs, inEpoch) = slots `divMod` epochSize
 
 maxMaybeEpoch :: SafeBeforeEpoch -> EpochNo -> Maybe EpochNo
 maxMaybeEpoch NoLowerBound    e = Just $ e

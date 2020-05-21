@@ -37,6 +37,8 @@ import           Ouroboros.Consensus.Util.IOLike
 
 class ( UpdateLedger blk
       , NoUnexpectedThunks (GenTx blk)
+      , Show (GenTx blk)
+      , Show (ApplyTxErr blk)
       ) => ApplyTx blk where
   -- | Generalized transaction
   --
@@ -74,7 +76,10 @@ class ( UpdateLedger blk
 --
 -- The mempool will use these to locate transactions, so two different
 -- transactions should have different identifiers.
-class (Ord (TxId tx), NoUnexpectedThunks (TxId tx)) => HasTxId tx where
+class ( Show               (TxId tx)
+      , Ord                (TxId tx)
+      , NoUnexpectedThunks (TxId tx)
+      ) => HasTxId tx where
   -- | A generalized transaction, 'GenTx', identifier.
   data family TxId tx :: *
 
@@ -91,6 +96,10 @@ class (Ord (TxId tx), NoUnexpectedThunks (TxId tx)) => HasTxId tx where
 -- | Shorthand: ID of a generalized transaction
 type GenTxId blk = TxId (GenTx blk)
 
+-- | Collect all transactions from a block
+--
+-- This is used for tooling only. We don't require it as part of RunNode
+-- (and cannot, because we cannot give an instance for the dual ledger).
 class HasTxs blk where
   -- | Return the transactions part of the given block in no particular order.
   extractTxs :: blk -> [GenTx blk]

@@ -27,6 +27,7 @@ module Ouroboros.Consensus.Util (
   , takeLast
   , dropLast
   , firstJust
+  , allEqual
     -- * Safe variants of existing base functions
   , lastMaybe
   , safeMaximum
@@ -151,6 +152,11 @@ dropLast n = reverse . drop (fromIntegral n) . reverse
 
 firstJust :: forall a b f. Foldable f => (a -> Maybe b) -> f a -> Maybe b
 firstJust f = asum . fmap f . toList
+
+allEqual :: Eq a => [a] -> Bool
+allEqual []       = True
+allEqual [_]      = True
+allEqual (x:y:zs) = x == y && allEqual (y:zs)
 
 {-------------------------------------------------------------------------------
   Safe variants of existing base functions

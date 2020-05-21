@@ -258,9 +258,8 @@ instance BlockHasCodecConfig (SimpleBlock c ext) where
   getCodecConfig = const SimpleCodecConfig
 
 instance HasHardForkHistory (SimpleBlock c ext) where
-  type HardForkIndices (SimpleBlock c ext) = '[()]
-  hardForkShape _         = HardFork.singletonShape . simpleLedgerEraParams
-  hardForkTransitions _ _ = HardFork.transitionsUnknown
+  type HardForkIndices (SimpleBlock c ext) = '[SimpleBlock c ext]
+  hardForkSummary = neverForksHardForkSummary simpleLedgerEraParams
 
 {-------------------------------------------------------------------------------
   Protocol specific constraints
