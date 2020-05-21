@@ -18,6 +18,7 @@ packages:
   - ./io-sim-classes
   - ./ntp-client
   - ./Win32-network
+  - ./cardano-client
 
 flags:
   io-sim-classes:
