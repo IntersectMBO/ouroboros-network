@@ -36,6 +36,7 @@ let
        io-sim
        io-sim-classes
        ntp-client
+       cardano-client
     ];
 
     # These programs will be available inside the nix-shell.
