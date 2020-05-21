@@ -21,10 +21,12 @@ module Ouroboros.Network.ConnectionManager.Types
   , AddressType (..)
     -- * 'ConnectionManager'
   , ConnectionManager (..)
+  , InboundConnectionManager (..)
   , IncludeOutboundConnection
   , includeOutboundConnection
   , IncludeInboundConnection
   , includeInboundConnection
+  , numberOfConnections
     -- * Exceptions
   , ExceptionInHandler (..)
     -- * Mux types
@@ -203,6 +205,19 @@ type IncludeInboundConnection  socket peerAddr muxPromise m
     = socket -> peerAddr -> m (STM m muxPromise)
 
 
+-- | Inbound connection manager.  For a server implementation we also need to
+-- know how many connections are now managed by the connection manager.
+--
+-- This type is an internal detail of 'Ouroboros.Network.ConnectionManager'
+--
+data InboundConnectionManager (muxMode :: MuxMode) socket peerAddr muxPromise m where
+    InboundConnectionManager
+      :: HasResponder muxMode ~ True
+      => { icmIncludeConnection   :: IncludeInboundConnection socket peerAddr muxPromise m
+         , icmNumberOfConnections :: STM m Int
+         }
+      -> InboundConnectionManager muxMode socket peerAddr muxPromise m
+
 -- | 'ConnectionManager'.
 --
 -- We identify resources (e.g. 'Network.Socket.Socket') by their address.   It
@@ -213,9 +228,13 @@ type IncludeInboundConnection  socket peerAddr muxPromise m
 --
 newtype ConnectionManager (muxMode :: MuxMode) socket peerAddr muxPromise m = ConnectionManager {
     runConnectionManager
-      :: WithMuxMode muxMode (IncludeOutboundConnection        peerAddr muxPromise m)
-                             (IncludeInboundConnection  socket peerAddr muxPromise m)
+      :: WithMuxMode muxMode (IncludeOutboundConnection                 peerAddr muxPromise m)
+                             (InboundConnectionManager  muxMode socket peerAddr muxPromise m)
   }
+
+--
+-- ConnectionManager API
+--
 
 -- | Include outbound connection into 'ConnectionManager'.
 --
@@ -227,10 +246,21 @@ includeOutboundConnection = withInitiatorMode . runConnectionManager
 -- | Include an inbound connection into 'ConnectionManager'.
 --
 includeInboundConnection :: HasResponder muxMode ~ True
-                          => ConnectionManager muxMode socket peerAddr muxPromise m
-                          -> IncludeInboundConnection  socket peerAddr muxPromise m
-includeInboundConnection = withResponderMode . runConnectionManager
+                         => ConnectionManager muxMode socket peerAddr muxPromise m
+                         -> IncludeInboundConnection  socket peerAddr muxPromise m
+includeInboundConnection =  icmIncludeConnection . withResponderMode . runConnectionManager
 
+-- | Number of currently included connections.
+--
+-- Note: we count all connection: both inbound and outbound.  In a future
+-- version we could count only inbound connections, but this will require
+-- tracking state inside mux if the responder side has started running (through
+-- on-demand interface).  This is currently not exposed by mux.
+--
+numberOfConnections :: HasResponder muxMode ~ True
+                    => ConnectionManager muxMode socket peerAddr muxPromise m
+                    -> STM m Int
+numberOfConnections = icmNumberOfConnections . withResponderMode . runConnectionManager
 
 --
 -- Tracing

@@ -110,13 +110,23 @@ withConnectionManager ConnectionManagerArguments {
             ConnectionHandler (WithResponderMode inboundHandler) ->
               ConnectionManager
                 (WithResponderMode
-                  (includeConnection stateVar inboundHandler Inbound))
+                  InboundConnectionManager {
+                      icmIncludeConnection =
+                        includeConnection stateVar inboundHandler Inbound,
+                      icmNumberOfConnections =
+                        countConnections stateVar
+                    })
 
             ConnectionHandler (WithInitiatorResponderMode outboundHandler inboundHandler) ->
               ConnectionManager
                 (WithInitiatorResponderMode
                   (connectAndInclude stateVar outboundHandler)
-                  (includeConnection stateVar inboundHandler Inbound))
+                  InboundConnectionManager {
+                      icmIncludeConnection =
+                        includeConnection stateVar inboundHandler Inbound,
+                      icmNumberOfConnections =
+                        countConnections stateVar
+                    })
 
     k connectionManager
       `finally` do
@@ -128,6 +138,9 @@ withConnectionManager ConnectionManagerArguments {
               >> close connectionSnocket chSocket )
           state
   where
+    countConnections :: StrictTMVar m (State peerAddr socket muxPromise m) -> STM m Int
+    countConnections stateVar = Map.size <$> readTMVar stateVar
+
     -- Include a connection in the 'State'; we use this for both inbound and
     -- outbound (via 'connectAndInclude' below) connections.
     --
