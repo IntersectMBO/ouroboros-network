@@ -912,6 +912,7 @@ prop_simple_real_pbft_convergence TestSetup
           NoEBBs      -> Nothing
           ProduceEBBs -> Just byronForgeEbbEnv
       , future       = singleEraFuture slotLength epochSize
+      , messageDelay = noCalcMessageDelay
       , nodeJoinPlan
       , nodeRestarts
       , txGenExtra   = ()

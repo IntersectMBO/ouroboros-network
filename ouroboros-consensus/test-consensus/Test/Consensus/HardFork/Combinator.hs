@@ -209,6 +209,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                      eraSizeA $
             EraFinal (eraSlotLength eraParamsB)
                      (eraEpochSize  eraParamsB)
+        , messageDelay = noCalcMessageDelay
         , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
         , nodeRestarts = noRestarts
         , txGenExtra   = ()

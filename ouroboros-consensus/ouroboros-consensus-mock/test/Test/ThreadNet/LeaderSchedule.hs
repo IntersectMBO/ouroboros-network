@@ -1,5 +1,5 @@
-{-# LANGUAGE NamedFieldPuns  #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE RecordWildCards  #-}
 
 module Test.ThreadNet.LeaderSchedule (
     tests
@@ -109,6 +109,7 @@ prop_simple_leader_schedule_convergence TestSetup
     testConfigB = TestConfigB
       { forgeEbbEnv  = Nothing
       , future       = singleEraFuture slotLength epochSize
+      , messageDelay = noCalcMessageDelay
       , nodeJoinPlan
       , nodeRestarts = noRestarts
       , txGenExtra   = ()

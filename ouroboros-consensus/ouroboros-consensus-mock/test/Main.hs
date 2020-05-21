@@ -14,6 +14,10 @@ main = defaultMain tests
 tests :: TestTree
 tests =
   testGroup "ouroboros-consensus"
+  [ Test.ThreadNet.Praos.tests
+  ]
+  `asTypeOf`
+  testGroup "ouroboros-consensus"
   [ Test.Consensus.Ledger.Mock.tests
   , Test.ThreadNet.BFT.tests
   , Test.ThreadNet.LeaderSchedule.tests

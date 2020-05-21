@@ -143,6 +143,7 @@ setupTestConfigB :: SetupDualPBft -> TestConfigB DualByronBlock
 setupTestConfigB SetupDualPBft{..} = TestConfigB
   { forgeEbbEnv  = Nothing -- spec does not model EBBs
   , future       = singleEraFuture setupSlotLength epochSize
+  , messageDelay = noCalcMessageDelay
   , nodeJoinPlan = setupNodeJoinPlan
   , nodeRestarts = setupNodeRestarts
   , txGenExtra   = ()

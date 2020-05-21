@@ -160,6 +160,7 @@ prop_simple_cardano_convergence TestSetup
           EraFinal setupSlotLengthShelley epochSizeShelley
           else
           EraFinal setupSlotLengthByron   epochSizeByron
+      , messageDelay = noCalcMessageDelay
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeRestarts = noRestarts
       , txGenExtra   = ()

@@ -32,6 +32,7 @@ module Ouroboros.Consensus.Cardano (
   ) where
 
 import           Data.Type.Equality
+import           Numeric.Natural (Natural)
 
 import           Cardano.Prelude (Natural)
 
@@ -112,6 +113,7 @@ data Protocol (m :: * -> *) blk p where
     -> CoreNodeId
     -> PraosParams
     -> HardFork.EraParams
+    -> Natural
     -> Protocol m MockPraosBlock ProtocolMockPraos
 
   -- | Run Praos against the mock ledger but with an explicit leader schedule
@@ -194,8 +196,8 @@ protocolInfo :: forall m blk p. IOLike m
 protocolInfo (ProtocolMockBFT nodes nid k paramsEra) =
     protocolInfoBft nodes nid k paramsEra
 
-protocolInfo (ProtocolMockPraos nodes nid paramsPraos paramsEra) =
-    protocolInfoPraos nodes nid paramsPraos paramsEra
+protocolInfo (ProtocolMockPraos nodes nid paramsPraos paramsEra eta0) =
+    protocolInfoPraos nodes nid paramsPraos paramsEra eta0
 
 protocolInfo (ProtocolLeaderSchedule nodes nid paramsPraos paramsEra schedule) =
     protocolInfoPraosRule nodes nid paramsPraos paramsEra schedule
