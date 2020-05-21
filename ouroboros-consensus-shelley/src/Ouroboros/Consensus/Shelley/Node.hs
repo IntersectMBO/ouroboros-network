@@ -97,7 +97,8 @@ initialFundsPseudoTxIn addr =
     case addr of
       SL.Addr (SL.KeyHashObj    (SL.KeyHash    h)) _sref -> pseudoTxIn h
       SL.Addr (SL.ScriptHashObj (SL.ScriptHash h)) _sref -> pseudoTxIn h
-      SL.AddrBootstrap          (SL.KeyHash    h)        -> pseudoTxIn h
+      SL.AddrBootstrap byronAddr -> error $
+        "Unsupported Byron address in the genesis UTxO: " <> show byronAddr
   where
     pseudoTxIn :: Crypto.Hash (HASH c) a -> SL.TxIn c
     pseudoTxIn h = SL.TxIn (pseudoTxId h) 0

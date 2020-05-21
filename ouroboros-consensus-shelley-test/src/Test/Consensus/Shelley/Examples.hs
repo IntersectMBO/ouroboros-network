@@ -49,6 +49,7 @@ import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as STS
 import qualified Shelley.Spec.Ledger.STS.Ledger as STS
+import qualified Shelley.Spec.Ledger.STS.Ledgers as STS
 import qualified Shelley.Spec.Ledger.STS.Prtcl as STS
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (ConcreteCrypto)
 import qualified Test.Shelley.Spec.Ledger.Examples as Examples
