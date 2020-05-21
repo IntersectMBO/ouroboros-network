@@ -11,6 +11,7 @@
 
 module Ouroboros.Consensus.Protocol.LeaderSchedule (
     LeaderSchedule (..)
+  , leaderScheduleFor
   , WithLeaderSchedule
   , ConsensusConfig (..)
   ) where
@@ -18,6 +19,7 @@ module Ouroboros.Consensus.Protocol.LeaderSchedule (
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
+import           Data.Set (Set)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -43,6 +45,13 @@ newtype LeaderSchedule = LeaderSchedule {
       }
     deriving stock    (Show, Eq, Ord, Generic)
     deriving anyclass (NoUnexpectedThunks)
+
+-- | The 'Slots' a given node is supposed to lead in
+leaderScheduleFor :: CoreNodeId -> LeaderSchedule -> Set SlotNo
+leaderScheduleFor nid =
+      Map.keysSet
+    . Map.filter (elem nid)
+    . getLeaderSchedule
 
 instance Semigroup LeaderSchedule where
     LeaderSchedule l <> LeaderSchedule r =

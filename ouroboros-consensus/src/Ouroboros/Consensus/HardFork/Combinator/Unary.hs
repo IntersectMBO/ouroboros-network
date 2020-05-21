@@ -371,8 +371,11 @@ projQuery :: Query (HardForkBlock '[b]) result
                -> Query b result'
                -> a)
           -> a
-projQuery (HardForkQuery (QZ qry)) k = k Refl qry
-projQuery (HardForkQuery (QS qry)) _ = case qry of {}
+projQuery qry k = getHardForkQuery qry $ \Refl -> k Refl . projHardForkQuery
+
+projHardForkQuery :: HardForkQuery '[b] result -> Query b result
+projHardForkQuery (QZ qry) = qry
+projHardForkQuery (QS qry) = case qry of {}
 
 injQuery :: Query b result
          -> Query (HardForkBlock '[b]) (HardForkQueryResult '[b] result)

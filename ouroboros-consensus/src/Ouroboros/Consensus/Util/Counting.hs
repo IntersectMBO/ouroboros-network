@@ -19,6 +19,7 @@ module Ouroboros.Consensus.Util.Counting (
   , NonEmpty(..)
     -- * Working with 'Exactly'
   , exactlyOne
+  , exactlyTwo
   , exactlyHead
   , exactlyTail
   , exactlyZip
@@ -83,6 +84,10 @@ deriving instance Traversable (NonEmpty xs)
 -- | Singleton
 exactlyOne :: a -> Exactly '[x] a
 exactlyOne a = ExactlyCons a ExactlyNil
+
+-- | From a pair
+exactlyTwo :: a -> a -> Exactly '[x, y] a
+exactlyTwo a1 a2 = ExactlyCons a1 $ ExactlyCons a2 $ ExactlyNil
 
 -- | Analogue of 'head'
 exactlyHead :: Exactly (x ': xs) a -> a

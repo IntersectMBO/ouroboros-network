@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
@@ -91,9 +92,13 @@ instance CanHardFork xs => QueryLedger (HardForkBlock xs) where
 
 deriving instance CanHardFork xs => Show (Query (HardForkBlock xs) result)
 
-getHardForkQuery :: Query (HardForkBlock xs) (HardForkQueryResult xs result)
-                 -> HardForkQuery xs result
-getHardForkQuery (HardForkQuery qry) = qry
+getHardForkQuery :: Query (HardForkBlock xs) result
+                 -> (forall result'.
+                          result :~: HardForkQueryResult xs result'
+                       -> HardForkQuery xs result'
+                       -> a)
+                 -> a
+getHardForkQuery (HardForkQuery qry) k = k Refl qry
 
 {-------------------------------------------------------------------------------
   Queries

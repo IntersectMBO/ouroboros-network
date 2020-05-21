@@ -352,7 +352,7 @@ prop_general ::
   -> TestOutput blk
   -> Property
 prop_general pga testOutput =
-    counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
+    label ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("nodeRestarts: " <> condense nodeRestarts) $
     counterexample ("nodeTopology: " <> condense nodeTopology) $

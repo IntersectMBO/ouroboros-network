@@ -59,6 +59,7 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Block
                        Ouroboros.Consensus.HardFork.Combinator.Degenerate
                        Ouroboros.Consensus.HardFork.Combinator.Forge
+                       Ouroboros.Consensus.HardFork.Combinator.HasBlockBody
                        Ouroboros.Consensus.HardFork.Combinator.Ledger
                        Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
                        Ouroboros.Consensus.HardFork.Combinator.Mempool
@@ -306,6 +307,10 @@ test-suite test-consensus
                        Test.Consensus.HardFork.History
                        Test.Consensus.HardFork.Infra
                        Test.Consensus.HardFork.Summary
+                       Test.Consensus.HardFork.Combinator
+                       Test.Consensus.HardFork.Combinator.A
+                       Test.Consensus.HardFork.Combinator.B
+                       Test.Consensus.HardFork.Combinator.Common
                        Test.Consensus.MiniProtocol.ChainSync.Client
                        Test.Consensus.MiniProtocol.LocalStateQuery.Server
                        Test.Consensus.Mempool
@@ -337,6 +342,7 @@ test-suite test-consensus
                        Test.Util.FS.Sim.Pure
                        Test.Util.FS.Sim.STM
                        Test.Util.LogicalClock
+                       Test.Util.MockChain
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoUnexpectedThunks
@@ -345,12 +351,25 @@ test-suite test-consensus
                        Test.Util.QuickCheck
                        Test.Util.Range
                        Test.Util.Roundtrip
+                       Test.Util.Shrink
                        Test.Util.SOP
                        Test.Util.Split
+                       Test.Util.Stream
                        Test.Util.TestBlock
                        Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WrappedClock
+
+                       -- ThreadNet (also from -infra) (for the HFC tests)
+                       Test.ThreadNet.General
+                       Test.ThreadNet.Network
+                       Test.ThreadNet.TxGen
+                       Test.ThreadNet.Util
+                       Test.ThreadNet.Util.Expectations
+                       Test.ThreadNet.Util.HasCreator
+                       Test.ThreadNet.Util.NodeJoinPlan
+                       Test.ThreadNet.Util.NodeRestarts
+                       Test.ThreadNet.Util.NodeTopology
 
   build-depends:       base
                      , cardano-binary
@@ -362,8 +381,10 @@ test-suite test-consensus
                      , containers
                      , contra-tracer
                      , directory
+                     , fgl
                      , filepath
                      , generics-sop
+                     , graphviz
                      , mtl
                      , QuickCheck
                      , quickcheck-state-machine

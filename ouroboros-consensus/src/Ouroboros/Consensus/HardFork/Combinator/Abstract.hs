@@ -25,6 +25,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract (
   , ProofNonEmpty(..)
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Data.Proxy
 import           Data.SOP.Strict
 import           Data.Text (Text)
@@ -53,7 +54,7 @@ data SingleEraInfo blk = SingleEraInfo {
       singleEraName :: !Text
     }
   deriving stock    (Generic, Eq, Show)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoUnexpectedThunks, Serialise)
 
 -- | Additional newtype wrapper around 'SingleEraInfo'
 --
@@ -63,7 +64,7 @@ newtype LedgerEraInfo blk = LedgerEraInfo {
       getLedgerEraInfo :: SingleEraInfo blk
     }
   deriving stock   (Eq, Show)
-  deriving newtype (NoUnexpectedThunks)
+  deriving newtype (NoUnexpectedThunks, Serialise)
 
 {-------------------------------------------------------------------------------
   SingleEraBlock

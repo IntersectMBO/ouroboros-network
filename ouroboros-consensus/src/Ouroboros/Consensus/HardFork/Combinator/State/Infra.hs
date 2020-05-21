@@ -23,6 +23,7 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Infra (
     -- * Types
     HardForkState_(..)
   , HardForkState
+  , initHardForkState
   , Past(..)
   , Snapshot(..)
   , Current(..)
@@ -47,6 +48,7 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Infra (
 
 import           Prelude hiding (sequence)
 
+import           Codec.Serialise
 import           Data.Functor.Identity
 import           Data.Functor.Product
 import           Data.SOP.Strict hiding (shape)
@@ -56,6 +58,7 @@ import           GHC.Generics (Generic)
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot
 
+import           Ouroboros.Consensus.BlockchainTime (SystemStart)
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
                      EraParams (..), EraSummary (..))
@@ -153,6 +156,16 @@ data Snapshot f blk =
 getSnapshot :: Snapshot f blk -> Maybe (f blk)
 getSnapshot (Snapshot _ st) = Just st
 getSnapshot NoSnapshot      = Nothing
+
+{-------------------------------------------------------------------------------
+  Initialization
+-------------------------------------------------------------------------------}
+
+initHardForkState :: SystemStart -> f x -> HardForkState f (x ': xs)
+initHardForkState start st = HardForkState $ TZ $ Current {
+      currentStart = History.initBound start
+    , currentState = st
+    }
 
 {-------------------------------------------------------------------------------
   Lifting functions on @f@ to @Current @f@
@@ -460,3 +473,13 @@ deriving via LiftNamedTelescope "HardForkState" (Past g) (Current f) xs
                   , forall blk. SingleEraBlock blk => NoUnexpectedThunks (f blk)
                   , forall blk. SingleEraBlock blk => NoUnexpectedThunks (g blk)
                   ) => NoUnexpectedThunks (HardForkState_ g f xs)
+
+{-------------------------------------------------------------------------------
+  Serialisation
+
+  This is primarily useful for tests.
+-------------------------------------------------------------------------------}
+
+deriving instance Serialise (f blk) => Serialise (Current  f blk)
+deriving instance Serialise (f blk) => Serialise (Past     f blk)
+deriving instance Serialise (f blk) => Serialise (Snapshot f blk)

@@ -24,6 +24,7 @@ module Ouroboros.Consensus.HardFork.History (
     EraParams(..)
   , SafeZone(..)
   , SafeBeforeEpoch(..)
+  , defaultSafeZone
   , defaultEraParams
     -- ** Shape
   , Shape(..)
@@ -82,6 +83,7 @@ module Ouroboros.Consensus.HardFork.History (
   , countSlots
   ) where
 
+import           Codec.Serialise
 import           Control.Exception (Exception (..), assert, throw)
 import           Control.Monad.Except
 import           Data.Bifunctor
@@ -224,7 +226,7 @@ defaultEraParams :: SecurityParam -> SlotLength -> EraParams
 defaultEraParams (SecurityParam k) slotLength = EraParams {
       eraEpochSize  = EpochSize (k * 10)
     , eraSlotLength = slotLength
-    , eraSafeZone   = SafeZone (k * 2) UnsafeUnbounded
+    , eraSafeZone   = defaultSafeZone (k * 2)
     }
 
 -- | Zone in which it is guaranteed that no hard fork can take place
@@ -240,6 +242,10 @@ data SafeZone = SafeZone {
     }
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (NoUnexpectedThunks)
+
+-- | Default safe zone with no 'safeBeforeEpoch\
+defaultSafeZone :: Word64 -> SafeZone
+defaultSafeZone n = SafeZone n NoLowerBound
 
 -- | Lower bound on when a transition can take place
 data SafeBeforeEpoch =
@@ -334,7 +340,7 @@ data Bound = Bound {
     , boundEpoch :: !EpochNo
     }
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (NoUnexpectedThunks)
+  deriving anyclass (NoUnexpectedThunks, Serialise)
 
 initBound :: SystemStart -> Bound
 initBound (SystemStart start) = Bound {

@@ -1,17 +1,18 @@
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE EmptyCase            #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE PolyKinds            #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE EmptyCase             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 -- | Strict variant of SOP
 --
@@ -32,8 +33,11 @@ module Data.SOP.Strict (
   , module Data.SOP.Constraint
   ) where
 
+import           Data.Coerce
+
 import           Data.SOP hiding (Injection, NP (..), NS (..), hd, injections,
                      shiftInjection, tl, unZ)
+import           Data.SOP.Classes (Same)
 import           Data.SOP.Constraint
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..),
@@ -51,6 +55,7 @@ infixr 5 :*
 
 type instance CollapseTo NP a = [a]
 type instance AllN       NP c = All c
+type instance AllZipN    NP c = AllZip c
 type instance Prod       NP   = NP
 type instance SListIN    NP   = SListI
 
@@ -104,6 +109,7 @@ type instance CollapseTo NS a = a
 type instance AllN       NS c = All c
 type instance Prod       NS   = NP
 type instance SListIN    NS   = SListI
+type instance Same       NS   = NS
 
 unZ :: NS f '[x] -> f x
 unZ (Z x) = x
@@ -145,6 +151,23 @@ ctraverse'_NS _ f = go
     go (Z x)  = Z <$> f x
     go (S xs) = S <$> go xs
 
+trans_NS :: forall proxy c f g xs ys. AllZip c xs ys
+         => proxy c
+         -> (forall x y . c x y => f x -> g y)
+         -> NS f xs -> NS g ys
+trans_NS _ t = go
+  where
+    go :: AllZip c xs' ys' => NS f xs' -> NS g ys'
+    go (Z x) = Z (t x)
+    go (S x) = S (go x)
+
+-- TODO: @sop-core@ defines this in terms of @unsafeCoerce@. Currently we
+-- don't make much use of this function, so I prefer this more strongly
+-- typed version.
+coerce_NS :: forall f g xs ys. AllZip (LiftedCoercible f g) xs ys
+          => NS f xs -> NS g ys
+coerce_NS = trans_NS (Proxy @(LiftedCoercible f g)) coerce
+
 instance HExpand NS where
   hexpand  = expand_NS
   hcexpand = cexpand_NS
@@ -155,10 +178,14 @@ instance HAp NS where
 instance HCollapse NS where
   hcollapse = collapse_NS
 
-instance HSequence NS  where
+instance HSequence NS where
   hctraverse' = ctraverse'_NS
   htraverse'  = hctraverse' (Proxy @Top)
   hsequence'  = htraverse' unComp
+
+instance HTrans NS NS where
+  htrans  = trans_NS
+  hcoerce = coerce_NS
 
 {-------------------------------------------------------------------------------
   Injections
