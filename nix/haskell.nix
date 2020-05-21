@@ -54,6 +54,7 @@ let
         packages.ouroboros-consensus-cardano.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-consensus-mock.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-consensus-shelley.configureFlags = [ "--ghc-option=-Werror" ];
+        packages.ouroboros-consensus-shelley-test.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-consensus-test-infra.configureFlags = [ "--ghc-option=-Werror" ];
         packages.prometheus.components.library.doExactConfig = true;
         enableLibraryProfiling = profiling;

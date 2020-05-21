@@ -68,53 +68,12 @@ library
 
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
-
-test-suite test
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test
-  main-is:             Main.hs
-  other-modules:
-                       Test.Consensus.Shelley.Ledger
-                       Test.Consensus.Shelley.Ledger.Golden
-                       Test.Consensus.Shelley.MockCrypto
-                       Test.ThreadNet.Infra.Shelley
-                       Test.ThreadNet.RealTPraos
-                       Test.ThreadNet.TxGen.Shelley
-
-  build-depends:       base
-                     , binary
-                     , bytestring
-                     , cardano-binary
-                     , cardano-crypto-class
-                     , cardano-crypto-wrapper
-                     , cardano-prelude
-                     , cardano-slotting
-                     , cborg
-                     , containers        >=0.5   && <0.7
-                     , cryptonite        >=0.25  && <0.26
-                     , generic-random
-                     , hedgehog-quickcheck
-                     , iproute
-                     , mtl
-                     , QuickCheck
-                     , time
-                     , tasty
-                     , tasty-hunit
-                     , tasty-quickcheck
-
-                       -- cardano-ledger-specs
-                     , shelley-spec-ledger
-                     , shelley-spec-ledger-test
-
-                     , ouroboros-network
-                     , ouroboros-consensus
-                     , ouroboros-consensus-test-infra
-                     , ouroboros-consensus-shelley
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wredundant-constraints
-                       -threaded
-                       -rtsopts
