@@ -391,7 +391,8 @@ instance Bridge m a => BasicEnvelopeValidation (DualBlock m a) where
   expectedNextBlockNo   _ = expectedNextBlockNo   (Proxy @m)
   minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @m)
   minimumNextSlotNo     _ = minimumNextSlotNo     (Proxy @m)
-  checkPrevHash         _ = checkPrevHash         (Proxy @m)
+
+  checkPrevHash = checkPrevHash . dualBlockConfigMain
 
 instance Bridge m a => ValidateEnvelope (DualBlock m a) where
   type OtherHeaderEnvelopeError (DualBlock m a) = OtherHeaderEnvelopeError m
