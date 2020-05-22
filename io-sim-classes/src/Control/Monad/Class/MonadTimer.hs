@@ -95,14 +95,21 @@ class (MonadSTM m, MonadDelay m) => MonadTimer m where
   registerDelay :: DiffTime -> m (TVar m Bool)
 
   default registerDelay :: MonadFork m => DiffTime -> m (TVar m Bool)
-  registerDelay d = do
+  registerDelay = defaultRegisterDelay
+
+  timeout :: DiffTime -> m a -> m (Maybe a)
+
+
+defaultRegisterDelay :: ( MonadTimer m
+                        , MonadFork  m
+                        )
+                     => DiffTime
+                     -> m (TVar m Bool)
+defaultRegisterDelay d = do
     v <- atomically $ newTVar False
     t <- newTimeout d
     _ <- fork $ atomically (awaitTimeout t >>= writeTVar v)
     return v
-
-  timeout :: DiffTime -> m a -> m (Maybe a)
-
 
 --
 -- Instances for IO
@@ -185,7 +192,16 @@ instance MonadTimer IO where
       when (not fired) $ STM.writeTVar cancelvar True
 #endif
 
-  registerDelay = STM.registerDelay . diffTimeToMicrosecondsAsInt
+  -- | For delays less (or equal) than @maxBound :: Int@ this is exactly the same as
+  -- 'STM.registerDaley'; for larger delays it will start a monitoring thread
+  -- whcih will update the 'TVar'.
+  registerDelay d
+      | d <= maxDelay =
+        STM.registerDelay (diffTimeToMicrosecondsAsInt d)
+      | otherwise =
+        defaultRegisterDelay d
+    where
+      maxDelay = fromIntegral (maxBound :: Int)
 
   timeout = IO.timeout . diffTimeToMicrosecondsAsInt
 
