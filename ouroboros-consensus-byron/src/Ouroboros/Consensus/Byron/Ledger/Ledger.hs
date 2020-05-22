@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Byron.Ledger.Ledger (
     LedgerState(..)
   , Query(..)
   , initByronLedgerState
+  , byronEraParams
     -- * Serialisation
   , encodeByronAnnTip
   , decodeByronAnnTip
@@ -240,8 +241,6 @@ instance LedgerSupportsProtocol ByronBlock where
       maxHi = case at of
                 Origin -> SlotNo $ 2 * k
                 At s   -> SlotNo $ unSlotNo s + 1 + (2 * k)
-
-
 
 byronEraParams :: Gen.Config -> HardFork.EraParams
 byronEraParams genesis = HardFork.EraParams {
