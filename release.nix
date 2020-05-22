@@ -82,6 +82,12 @@ let
     (collectTests jobs.x86_64-w64-mingw32.checks.tests)
     (collectTests jobs.native.checks)
     (collectTests jobs.native.benchmarks)
+    [
+      # Add cardano-client to the required jobs.
+      # It is not picked up automatically because it has no test-suite.
+      native.libs.cardano-client.x86_64-darwin
+      native.libs.cardano-client.x86_64-linux
+    ]
   ])) // {
     # This is used for testing the build on windows.
     ouroboros-network-tests-win64 = pkgs.callPackage ./nix/windows-testing-bundle.nix {
@@ -90,5 +96,5 @@ let
       benchmarks = collectTests jobs.x86_64-w64-mingw32.benchmarks;
     };
   };
-
 in jobs
+
