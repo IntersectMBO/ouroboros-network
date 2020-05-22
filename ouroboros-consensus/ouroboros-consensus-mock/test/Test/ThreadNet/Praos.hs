@@ -130,7 +130,6 @@ prop_simple_praos_convergence TestSetup
       { praosSecurityParam = k
       , praosSlotsPerEpoch = unEpochSize epochSize
       , praosLeaderF       = 0.5
-      , praosLifetimeKES   = 1000000
       }
 
     TestConfig{numCoreNodes} = testConfig
