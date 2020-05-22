@@ -138,7 +138,10 @@ protocolInfoShelley genesis protVer mbCredentials =
       }
 
     consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock c))
-    consensusConfig = TPraosConfig tpraosParams
+    consensusConfig = TPraosConfig {
+        tpraosParams
+      , tpraosEpochInfo = epochInfo
+      }
 
     ledgerConfig :: LedgerConfig (ShelleyBlock c)
     ledgerConfig = mkShelleyLedgerConfig genesis epochInfo
@@ -150,8 +153,7 @@ protocolInfoShelley genesis protVer mbCredentials =
 
     tpraosParams :: TPraosParams
     tpraosParams = TPraosParams {
-        tpraosEpochInfo         = epochInfo
-      , tpraosSlotsPerKESPeriod = sgSlotsPerKESPeriod genesis
+        tpraosSlotsPerKESPeriod = sgSlotsPerKESPeriod genesis
       , tpraosLeaderF           = sgActiveSlotCoeff   genesis
       , tpraosSecurityParam     = sgSecurityParam     genesis
       , tpraosMaxKESEvo         = sgMaxKESEvolutions  genesis
