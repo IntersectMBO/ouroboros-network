@@ -42,6 +42,7 @@ jobs:
           refreshenv
       - name: Print versions
         run: |
+          refreshenv
           ghc --version
           cabal --version
           cabal user-config init -a "http-transport: plain-http" -a "store-dir: C:\SR" -f -v3
