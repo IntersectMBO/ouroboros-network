@@ -29,7 +29,10 @@ library
                        Ouroboros.Consensus.Cardano.Block
 
   build-depends:       base              >=4.9   && <4.13
+
+                     , cardano-crypto-class
                      , cardano-ledger
+                     , shelley-spec-ledger
 
                      , ouroboros-consensus
                      , ouroboros-consensus-byron

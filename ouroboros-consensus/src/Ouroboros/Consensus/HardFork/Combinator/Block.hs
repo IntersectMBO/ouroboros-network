@@ -105,13 +105,16 @@ instance CanHardFork xs => HasAnnTip (HardForkBlock xs) where
       . getHardForkHeader
 
   tipInfoHash _ =
-        OneEraHash
-      . hcmap proxySingle aux
+        hcollapse
+      . hcmap proxySingle (K . tipInfoOne)
       . getOneEraTipInfo
     where
-      aux :: forall blk. SingleEraBlock blk
-          => SingleEraTipInfo blk -> SingleEraHash blk
-      aux = SingleEraHash . tipInfoHash (Proxy @blk) . getSingleEraTipInfo
+      tipInfoOne :: forall blk. SingleEraBlock blk
+                 => SingleEraTipInfo blk -> OneEraHash xs
+      tipInfoOne = OneEraHash
+                 . getRawHash  (Proxy @blk)
+                 . tipInfoHash (Proxy @blk)
+                 . getSingleEraTipInfo
 
 {-------------------------------------------------------------------------------
   BasicEnvelopeValidation

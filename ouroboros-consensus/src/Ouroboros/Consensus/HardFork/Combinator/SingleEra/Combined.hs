@@ -4,9 +4,11 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -40,8 +42,6 @@ module Ouroboros.Consensus.HardFork.Combinator.SingleEra.Combined (
   , mismatchOneEra
     -- * Utility
   , oneEraBlockHeader
-    -- * Distributive properties
-  , distribPoint
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -49,6 +49,7 @@ import           Codec.Serialise.Decoding (Decoder)
 import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Enc
+import qualified Data.ByteString as Strict
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.SOP.Strict hiding (shift)
 import           Data.Void
@@ -87,7 +88,6 @@ newtype PerEraForgeState      xs = PerEraForgeState      { getPerEraForgeState  
 
 newtype OneEraBlock         xs = OneEraBlock         { getOneEraBlock         :: NS I                        xs }
 newtype OneEraHeader        xs = OneEraHeader        { getOneEraHeader        :: NS Header                   xs }
-newtype OneEraHash          xs = OneEraHash          { getOneEraHash          :: NS SingleEraHash            xs }
 newtype OneEraTipInfo       xs = OneEraTipInfo       { getOneEraTipInfo       :: NS SingleEraTipInfo         xs }
 newtype OneEraEnvelopeErr   xs = OneEraEnvelopeErr   { getOneEraEnvelopeErr   :: NS SingleEraEnvelopeErr     xs }
 newtype OneEraValidationErr xs = OneEraValidationErr { getOneEraValidationErr :: NS SingleEraValidationErr   xs }
@@ -98,6 +98,20 @@ newtype OneEraIsLeader      xs = OneEraIsLeader      { getOneEraIsLeader      ::
 newtype OneEraGenTx         xs = OneEraGenTx         { getOneEraGenTx         :: NS GenTx                    xs }
 newtype OneEraGenTxId       xs = OneEraGenTxId       { getOneEraGenTxId       :: NS SingleEraGenTxId         xs }
 newtype OneEraApplyTxErr    xs = OneEraApplyTxErr    { getOneEraApplyTxErr    :: NS SingleEraApplyTxErr      xs }
+
+{-------------------------------------------------------------------------------
+  Hash
+-------------------------------------------------------------------------------}
+
+-- | The hash for an era
+--
+-- This type is special: we don't use an NS here, because the hash by itself
+-- should not allow us to differentiate between eras. If it did, the /size/
+-- of the hash would necessarily have to increase, and that leads to trouble.
+-- So, the type parameter @xs@ here is merely a phantom one, and we just store
+-- the underlying raw hash.
+newtype OneEraHash (xs :: [k]) = OneEraHash { getOneEraHash :: Strict.ByteString }
+  deriving newtype (Eq, Ord, Show, NoUnexpectedThunks, Serialise)
 
 {-------------------------------------------------------------------------------
   Value for two /different/ eras
@@ -136,12 +150,24 @@ instance CanHardFork xs => Measured BlockMeasure (OneEraHeader xs) where
   measure = blockMeasure
 
 instance CanHardFork xs => HasHeader (OneEraHeader xs) where
-  blockHash     = OneEraHash
-                . hcmap proxySingle (SingleEraHash . blockHash)
+  blockHash     = hcollapse
+                . hcmap proxySingle (K . getOneHash)
                 . getOneEraHeader
-  blockPrevHash = distribChainHash
-                . hcmap proxySingle (Comp . blockPrevHash)
+   where
+     getOneHash :: forall blk. SingleEraBlock blk
+                => Header blk -> OneEraHash xs
+     getOneHash = OneEraHash . getRawHash (Proxy @blk) . blockHash
+
+  blockPrevHash = hcollapse
+                . hcmap proxySingle (K . getOnePrev)
                 . getOneEraHeader
+    where
+      getOnePrev :: forall blk. SingleEraBlock blk
+                 => Header blk -> ChainHash (OneEraHeader xs)
+      getOnePrev hdr =
+          case blockPrevHash hdr of
+            GenesisHash -> GenesisHash
+            BlockHash h -> BlockHash (OneEraHash $ getRawHash (Proxy @blk) h)
 
   blockSlot = hcollapse . hcmap proxySingle (K . blockSlot) . getOneEraHeader
   blockNo   = hcollapse . hcmap proxySingle (K . blockNo)   . getOneEraHeader
@@ -167,37 +193,6 @@ instance CanHardFork xs => HasHeader (OneEraBlock xs) where
   blockInvariant = const True
 
 {-------------------------------------------------------------------------------
-  Distributive properties
--------------------------------------------------------------------------------}
-
-distribChainHash :: NS (ChainHash :.: Header) xs -> ChainHash (OneEraHeader xs)
-distribChainHash = go
-  where
-    go :: NS (ChainHash :.: Header) xs -> ChainHash (OneEraHeader xs)
-    go (Z (Comp GenesisHash))   = GenesisHash
-    go (Z (Comp (BlockHash h))) = BlockHash (OneEraHash (Z $ SingleEraHash h))
-    go (S h)                    = shiftChainHash $ go h
-
-distribPoint :: NS Point xs -> Point (OneEraBlock xs)
-distribPoint = go
-  where
-    go :: NS Point xs -> Point (OneEraBlock xs)
-    go (Z GenesisPoint)     = GenesisPoint
-    go (Z (BlockPoint s h)) = BlockPoint s (OneEraHash $ Z $ SingleEraHash h)
-    go (S p)                = shiftPoint (go p)
-
-shiftChainHash :: ChainHash (OneEraHeader xs) -> ChainHash (OneEraHeader (x ': xs))
-shiftChainHash GenesisHash   = GenesisHash
-shiftChainHash (BlockHash h) = BlockHash (shiftHash h)
-
-shiftPoint :: Point (OneEraBlock xs) -> Point (OneEraBlock (x ': xs))
-shiftPoint GenesisPoint     = GenesisPoint
-shiftPoint (BlockPoint s h) = BlockPoint s (shiftHash h)
-
-shiftHash :: OneEraHash xs -> OneEraHash (x ': xs)
-shiftHash (OneEraHash h) = OneEraHash (S h)
-
-{-------------------------------------------------------------------------------
   NoUnexpectedThunks instances
 -------------------------------------------------------------------------------}
 
@@ -218,9 +213,6 @@ deriving via LiftNamedNP "PerEraForgeState" SingleEraForgeState xs
 
 deriving via LiftNamedNS "OneEraHeader" Header xs
          instance CanHardFork xs => NoUnexpectedThunks (OneEraHeader xs)
-
-deriving via LiftNamedNS "OneEraHash" SingleEraHash xs
-         instance CanHardFork xs => NoUnexpectedThunks (OneEraHash xs)
 
 deriving via LiftNamedNS "OneEraEnvelopeErr" SingleEraEnvelopeErr xs
          instance CanHardFork xs => NoUnexpectedThunks (OneEraEnvelopeErr xs)
@@ -246,10 +238,6 @@ deriving via LiftNamedMismatch "MismatchEraInfo" SingleEraInfo LedgerEraInfo xs
 {-------------------------------------------------------------------------------
   Other instances
 -------------------------------------------------------------------------------}
-
-deriving via LiftNS SingleEraHash          xs instance CanHardFork xs => Eq   (OneEraHash xs)
-deriving via LiftNS SingleEraHash          xs instance CanHardFork xs => Ord  (OneEraHash xs)
-deriving via LiftNS SingleEraHash          xs instance CanHardFork xs => Show (OneEraHash xs)
 
 deriving via LiftNS SingleEraTipInfo       xs instance CanHardFork xs => Eq   (OneEraTipInfo xs)
 deriving via LiftNS SingleEraTipInfo       xs instance CanHardFork xs => Show (OneEraTipInfo xs)
@@ -278,17 +266,6 @@ deriving via LiftNS Header              xs instance CanHardFork xs => Show (OneE
 deriving via LiftNS GenTx               xs instance CanHardFork xs => Show (OneEraGenTx      xs)
 deriving via LiftNS SingleEraGenTxId    xs instance CanHardFork xs => Show (OneEraGenTxId    xs)
 deriving via LiftNS SingleEraApplyTxErr xs instance CanHardFork xs => Show (OneEraApplyTxErr xs)
-
-{-------------------------------------------------------------------------------
-  Serialisation
-
-  This is only required for the PBFT hack (see 'rewindConsensusState')
--------------------------------------------------------------------------------}
-
-deriving instance SingleEraBlock blk => Serialise (SingleEraHash blk)
-
-deriving via SerialiseOne SingleEraHash xs
-         instance CanHardFork xs => Serialise (OneEraHash xs)
 
 {-------------------------------------------------------------------------------
   Serialise support
