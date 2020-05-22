@@ -31,7 +31,7 @@ jobs:
       - name: Configure Chocolatey
         run: choco source add -n mistuke -s https://www.myget.org/F/mistuke/api/v2
       - name: Install msys2
-        run: choco install -y msys2 
+        run: choco install -y msys2
       - name: Install GHC
         run: choco install -y ghc --version 8.6.5 --allow-downgrade
       - name: Set PATH
