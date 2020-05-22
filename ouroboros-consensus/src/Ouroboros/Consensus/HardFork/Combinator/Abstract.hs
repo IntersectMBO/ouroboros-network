@@ -74,9 +74,7 @@ proxySingle :: Proxy SingleEraBlock
 proxySingle = Proxy
 
 class (All SingleEraBlock xs, Typeable xs, IsNonEmpty xs) => CanHardFork xs where
-  hardForkEraTranslation     :: EraTranslation     xs
-  hardForkEraTransitionCheck :: EraTransitionCheck xs
+  hardForkEraTranslation :: EraTranslation xs
 
 instance SingleEraBlock blk => CanHardFork '[blk] where
-  hardForkEraTranslation     = trivialEraTranslation
-  hardForkEraTransitionCheck = trivialEraTransitionCheck
+  hardForkEraTranslation = trivialEraTranslation

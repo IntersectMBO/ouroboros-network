@@ -175,9 +175,6 @@ instance SingleEraBlock b => BasicEnvelopeValidation (DegenFork b) where
   expectedNextBlockNo   _ = expectedNextBlockNo   (Proxy @b) `on` projTipInfo
   minimumNextSlotNo     _ = minimumNextSlotNo     (Proxy @b) `on` projTipInfo
 
-  checkPrevHash (DBCfg cfg) =
-      checkPrevHash (projBlockConfig cfg) `on` projHeaderHash
-
 instance SingleEraBlock b => ValidateEnvelope (DegenFork b) where
   type OtherHeaderEnvelopeError (DegenFork b) = OtherHeaderEnvelopeError (HardForkBlock '[b])
 
