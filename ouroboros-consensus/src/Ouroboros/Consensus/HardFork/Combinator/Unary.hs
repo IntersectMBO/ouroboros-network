@@ -18,11 +18,13 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
   , projCodecConfig
   , projConsensusConfig
   , projConsensusState
+  , projExtLedgerState
   , projForgeState
   , projGenTx
   , projGenTxId
   , projHeader
   , projHeaderHash
+  , projHeaderState
   , projInitChainDB
   , projIsLeader
   , projLedgerConfig
@@ -36,16 +38,25 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
   , injAnnTip
   , injApplyTxErr
   , injBlock
+  , injBlockConfig
+  , injCodecConfig
+  , injConsensusConfig
   , injConsensusState
   , injEnvelopeErr
+  , injExtLedgerState
   , injForgeState
   , injGenTx
   , injGenTxId
   , injHashInfo
   , injHeader
   , injHeaderHash
+  , injHeaderState
+  , injLedgerConfig
   , injLedgerState
+  , injProtocolInfo
+  , injProtocolClientInfo
   , injQuery
+  , injTopLevelConfig
   ) where
 
 import           Data.SOP.Strict
@@ -63,7 +74,9 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
@@ -132,8 +145,14 @@ injHeader = HardForkHeader . OneEraHeader . Z
 projBlockConfig :: BlockConfig (HardForkBlock '[b]) -> BlockConfig b
 projBlockConfig = hd . getPerEraBlockConfig . hardForkBlockConfigPerEra
 
+injBlockConfig :: BlockConfig b -> BlockConfig (HardForkBlock '[b])
+injBlockConfig = HardForkBlockConfig . PerEraBlockConfig . (:* Nil)
+
 projCodecConfig :: CodecConfig (HardForkBlock '[b]) -> CodecConfig b
 projCodecConfig = hd . getPerEraCodecConfig . hardForkCodecConfigPerEra
+
+injCodecConfig :: CodecConfig b -> CodecConfig (HardForkBlock '[b])
+injCodecConfig = HardForkCodecConfig . PerEraCodecConfig . (:* Nil)
 
 projLedgerConfig :: forall b. SingleEraBlock b
                  => LedgerConfig (HardForkBlock '[b])
@@ -152,6 +171,18 @@ projLedgerConfig =
         ei = fixedSizeEpochInfo $
                History.eraEpochSize (singleEraParams (Proxy @b) cfg)
 
+-- TODO generalise this function to no longer require this constraint
+injLedgerConfig :: PartialLedgerConfig b ~ LedgerConfig b
+                => SecurityParam
+                -> History.EraParams
+                -> LedgerConfig b
+                -> LedgerConfig (HardForkBlock '[b])
+injLedgerConfig k eraParams cfg = HardForkLedgerConfig {
+      hardForkLedgerConfigK      = k
+    , hardForkLedgerConfigShape  = History.singletonShape eraParams
+    , hardForkLedgerConfigPerEra = PerEraLedgerConfig (SingleEraLedgerConfig cfg :* Nil)
+    }
+
 projConsensusConfig :: forall b. SingleEraBlock b
                     => EpochInfo Identity
                     -> ConsensusConfig (BlockProtocol (HardForkBlock '[b]))
@@ -162,6 +193,21 @@ projConsensusConfig ei =
     . hd
     . getPerEraConsensusConfig
     . hardForkConsensusConfigPerEra
+
+injConsensusConfig :: forall b.
+                      ( SingleEraBlock b
+                        -- TODO generalise this function to no longer require
+                        -- this constraint
+                      , PartialConsensusConfig (BlockProtocol b) ~ ConsensusConfig (BlockProtocol b)
+                      )
+                   => History.EraParams
+                   -> ConsensusConfig (BlockProtocol b)
+                   -> ConsensusConfig (BlockProtocol (HardForkBlock '[b]))
+injConsensusConfig eraParams cfg = HardForkConsensusConfig {
+      hardForkConsensusConfigK      = protocolSecurityParam cfg
+    , hardForkConsensusConfigShape  = History.singletonShape eraParams
+    , hardForkConsensusConfigPerEra = PerEraConsensusConfig (SingleEraConsensusConfig cfg :* Nil)
+    }
 
 projLedgerState :: LedgerState (HardForkBlock '[b]) -> LedgerState b
 projLedgerState =
@@ -201,6 +247,37 @@ injConsensusState systemStart =
     . State.Current (History.initBound systemStart)
     . SingleEraConsensusState
 
+projHeaderState :: HeaderState (HardForkBlock '[b])
+                -> HeaderState b
+projHeaderState HeaderState{..} = HeaderState {
+      headerStateConsensus = projConsensusState headerStateConsensus
+    , headerStateTips      = projAnnTip <$> headerStateTips
+    , headerStateAnchor    = projAnnTip <$> headerStateAnchor
+    }
+
+injHeaderState :: SystemStart
+               -> HeaderState b
+               -> HeaderState (HardForkBlock '[b])
+injHeaderState systemStart HeaderState{..} = HeaderState {
+      headerStateConsensus = injConsensusState systemStart headerStateConsensus
+    , headerStateTips      = injAnnTip <$> headerStateTips
+    , headerStateAnchor    = injAnnTip <$> headerStateAnchor
+    }
+
+projExtLedgerState :: ExtLedgerState (HardForkBlock '[b]) -> ExtLedgerState b
+projExtLedgerState ExtLedgerState{..} = ExtLedgerState {
+      ledgerState = projLedgerState ledgerState
+    , headerState = projHeaderState headerState
+    }
+
+injExtLedgerState :: SystemStart
+                  -> ExtLedgerState b
+                  -> ExtLedgerState (HardForkBlock '[b])
+injExtLedgerState systemStart ExtLedgerState{..} = ExtLedgerState {
+      ledgerState = injLedgerState systemStart ledgerState
+    , headerState = injHeaderState systemStart headerState
+    }
+
 projTopLevelConfig :: forall b. SingleEraBlock b
                    => TopLevelConfig (HardForkBlock '[b]) -> TopLevelConfig b
 projTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
@@ -210,6 +287,23 @@ projTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
     }
   where
     (ei, configLedger') = projLedgerConfig configLedger
+
+injTopLevelConfig :: forall b.
+                     ( SingleEraBlock b
+                     , PartialConsensusConfig (BlockProtocol b) ~ ConsensusConfig (BlockProtocol b)
+                     , PartialLedgerConfig b ~ LedgerConfig b
+                     )
+                  => TopLevelConfig b -> TopLevelConfig (HardForkBlock '[b])
+injTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
+      configConsensus = injConsensusConfig eraParams configConsensus
+    , configLedger    = injLedgerConfig
+                          (protocolSecurityParam configConsensus)
+                          eraParams
+                          configLedger
+    , configBlock     = injBlockConfig configBlock
+    }
+  where
+    eraParams = singleEraParams (Proxy @b) configLedger
 
 projForgeState :: proxy b -> ForgeState (HardForkBlock '[b]) -> ForgeState b
 projForgeState _ = getSingleEraForgeState . hd . getPerEraForgeState
@@ -293,3 +387,27 @@ projUpdateForgeState = liftUpdate get set
 
     set :: ForgeState b -> PerEraForgeState '[b] -> PerEraForgeState '[b]
     set = const . injForgeState (Proxy @b)
+
+-- TODO generalise this function to no longer require the equality constraints
+injProtocolInfo :: forall b.
+                   ( SingleEraBlock b
+                   , PartialConsensusConfig (BlockProtocol b) ~ ConsensusConfig (BlockProtocol b)
+                   , PartialLedgerConfig b ~ LedgerConfig b
+                   )
+                => SystemStart
+                -> ProtocolInfo b
+                -> ProtocolInfo (HardForkBlock '[b])
+injProtocolInfo systemStart ProtocolInfo {..} = ProtocolInfo {
+      pInfoConfig         = injTopLevelConfig pInfoConfig
+    , pInfoInitForgeState = injForgeState
+                              (Proxy @b)
+                              pInfoInitForgeState
+    , pInfoInitLedger     = injExtLedgerState
+                              systemStart
+                              pInfoInitLedger
+    }
+
+injProtocolClientInfo :: ProtocolClientInfo b -> ProtocolClientInfo (HardForkBlock '[b])
+injProtocolClientInfo ProtocolClientInfo{..} = ProtocolClientInfo {
+      pClientInfoCodecConfig = injCodecConfig pClientInfoCodecConfig
+    }

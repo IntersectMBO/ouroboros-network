@@ -45,7 +45,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Consensus.Util.Time
 
-import           Test.Util.Orphans.Arbitrary (dawnOfTime)
+import           Test.Util.Time (dawnOfTime)
 
 {-------------------------------------------------------------------------------
   API

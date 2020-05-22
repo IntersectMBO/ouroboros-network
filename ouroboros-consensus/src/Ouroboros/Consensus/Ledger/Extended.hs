@@ -19,11 +19,14 @@ module Ouroboros.Consensus.Ledger.Extended (
     -- * Serialisation
   , encodeExtLedgerState
   , decodeExtLedgerState
+    -- * Casts
+  , castExtLedgerState
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
+import           Data.Coerce
 import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -208,3 +211,18 @@ decodeExtLedgerState decodeLedgerState
     decodeHeaderState' = decodeHeaderState
                            decodeConsensusState
                            decodeAnnTip
+
+{-------------------------------------------------------------------------------
+  Casts
+-------------------------------------------------------------------------------}
+
+castExtLedgerState
+  :: ( Coercible (LedgerState blk) (LedgerState blk')
+     , ConsensusState (BlockProtocol blk) ~ ConsensusState (BlockProtocol blk')
+     , TipInfo blk ~ TipInfo blk'
+     )
+  => ExtLedgerState blk -> ExtLedgerState blk'
+castExtLedgerState ExtLedgerState{..} = ExtLedgerState {
+      ledgerState = coerce ledgerState
+    , headerState = castHeaderState headerState
+    }

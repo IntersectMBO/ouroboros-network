@@ -22,8 +22,10 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.HardFork.History (ShiftTime (..))
 import qualified Ouroboros.Consensus.HardFork.History as HF
 
+import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Time (dawnOfTime)
+
 import           Test.Consensus.HardFork.Infra
-import           Test.Util.Orphans.Arbitrary
 
 tests :: TestTree
 tests = testGroup "HardForkHistory" [

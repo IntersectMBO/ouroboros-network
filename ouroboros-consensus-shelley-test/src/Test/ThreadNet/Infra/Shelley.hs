@@ -22,7 +22,6 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Sequence.Strict as Seq
 import qualified Data.Set as Set
-import           Data.Time (Day (..), UTCTime (..))
 import           Data.Word (Word64)
 
 import           Test.QuickCheck
@@ -45,6 +44,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Time (dawnOfTime)
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Util.NodeJoinPlan
@@ -159,7 +159,8 @@ mkGenesisConfig
   -> [CoreNode c]
   -> ShelleyGenesis c
 mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
-      sgStartTime             = SystemStart $ UTCTime (ModifiedJulianDay 0) 0
+      -- Matches the start of the ThreadNet tests
+      sgStartTime             = SystemStart dawnOfTime
     , sgNetworkMagic          = NetworkMagic 0
     , sgProtocolMagicId       = ProtocolMagicId 0
     , sgActiveSlotsCoeff      = 0.5 -- TODO 1 is not accepted by 'mkActiveSlotCoeff'

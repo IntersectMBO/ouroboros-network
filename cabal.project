@@ -76,6 +76,7 @@ package ouroboros-consensus-shelley-test
   tests: True
 
 package ouroboros-consensus-cardano
+  tests: True
   flags: +asserts
 
 package cardano-binary
