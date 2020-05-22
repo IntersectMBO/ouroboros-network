@@ -59,6 +59,7 @@ library
                        Test.Util.Split
                        Test.Util.Stream
                        Test.Util.TestBlock
+                       Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WithEq
                        Test.Util.WrappedClock

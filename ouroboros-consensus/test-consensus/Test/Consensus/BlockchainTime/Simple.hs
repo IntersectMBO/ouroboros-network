@@ -18,7 +18,6 @@ import           Control.Monad.Reader
 import           Control.Tracer
 import           Data.Fixed
 import           Data.Time (UTCTime)
-import           Data.Time.Calendar as Time
 import qualified Data.Time.Clock as Time
 import           Test.QuickCheck hiding (Fixed)
 import           Test.Tasty hiding (after)
@@ -39,6 +38,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Range
+import           Test.Util.Time
 
 tests :: TestTree
 tests = testGroup "WallClock" [
@@ -283,9 +283,6 @@ testOverrideDelay systemStart slotLength numSlots = do
       cancelCollection
       return $ reverse slots
     return result
-
-dawnOfTime :: UTCTime
-dawnOfTime = Time.UTCTime (Time.ModifiedJulianDay 0) 0
 
 {-------------------------------------------------------------------------------
   Test-programmable time
