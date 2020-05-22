@@ -33,8 +33,9 @@ import           Ouroboros.Consensus.Util (nTimes)
 import           Ouroboros.Consensus.Util.Counting
 
 import           Test.Consensus.HardFork.Infra
-import           Test.Util.Orphans.Arbitrary
+import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.QuickCheck
+import           Test.Util.Time (dawnOfTime)
 
 -- | Tests for 'summarize'
 --

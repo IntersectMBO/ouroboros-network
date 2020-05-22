@@ -10,7 +10,6 @@ module Test.Util.Orphans.Arbitrary
     , genSmallEpochNo
     , genSmallSlotNo
     , SmallDiffTime (..)
-    , dawnOfTime
     ) where
 
 import           Data.Time
@@ -28,6 +27,8 @@ import           Ouroboros.Consensus.Util.Random (Seed (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
+
+import           Test.Util.Time
 
 minNumCoreNodes :: Word64
 minNumCoreNodes = 2
@@ -188,9 +189,3 @@ daysPerYear = 365.2425
 -- | Seconds per day
 secondsPerDay :: Double
 secondsPerDay = 24 * 60 * 60
-
--- | Dawn of time
---
--- Everybody knows nothing happened before 2000-01-01 00:00:00
-dawnOfTime :: UTCTime
-dawnOfTime = UTCTime (fromGregorian 2000 01 01) 0

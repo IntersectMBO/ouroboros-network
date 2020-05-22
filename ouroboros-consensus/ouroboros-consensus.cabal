@@ -346,6 +346,7 @@ test-suite test-consensus
                        Test.Util.SOP
                        Test.Util.Split
                        Test.Util.TestBlock
+                       Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WrappedClock
 
@@ -451,6 +452,7 @@ test-suite test-storage
                        Test.Util.RefEnv
                        Test.Util.SOP
                        Test.Util.TestBlock
+                       Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WithEq
                        Test.Util.WrappedClock

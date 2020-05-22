@@ -33,7 +33,7 @@ import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 import           Test.QuickCheck
 
-import           Control.Monad.IOSim (runSimOrThrow)
+import           Control.Monad.IOSim (runSimOrThrow, setCurrentTime)
 
 import           Cardano.Slotting.Slot
 
@@ -74,6 +74,7 @@ import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.Range
 import           Test.Util.Shrink (andId, dropId)
 import           Test.Util.Stream
+import           Test.Util.Time (dawnOfTime)
 import           Test.Util.WrappedClock (NumSlots (..))
 
 {-------------------------------------------------------------------------------
@@ -233,6 +234,9 @@ runTestNetwork
   epochSize
   TestConfigBlock{forgeEbbEnv, nodeInfo, rekeying, txGenExtra}
   = runSimOrThrow $ do
+
+    setCurrentTime dawnOfTime
+
     let tna = ThreadNetworkArgs
           { tnaForgeEbbEnv    = forgeEbbEnv
           , tnaJoinPlan       = nodeJoinPlan
