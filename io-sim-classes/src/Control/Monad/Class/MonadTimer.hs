@@ -108,8 +108,19 @@ class (MonadSTM m, MonadDelay m) => MonadTimer m where
 -- Instances for IO
 --
 
+-- | With 'threadDelay' one can use arbitrary large 'DiffTime's, which is an
+-- advantage over 'IO.threadDelay'.
+--
 instance MonadDelay IO where
-  threadDelay d = IO.threadDelay (diffTimeToMicrosecondsAsInt d)
+  threadDelay = go
+    where
+      go d | d > maxDelay = do
+        IO.threadDelay (diffTimeToMicrosecondsAsInt d)
+        go (d - maxDelay)
+      go d = do
+        IO.threadDelay (diffTimeToMicrosecondsAsInt d)
+
+      maxDelay = fromIntegral (maxBound :: Int)
 
 #if defined(__GLASGOW_HASKELL__) && !defined(mingw32_HOST_OS) && !defined(__GHCJS__)
 instance MonadTimer IO where
