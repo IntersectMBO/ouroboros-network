@@ -27,6 +27,7 @@ module Ouroboros.Consensus.Protocol.PBFT.State (
   , countInWindow
   , countSignedBy
   , lastSignedSlot
+  , tipSlot
     -- * Support for tests
   , MaybeEbbInfo (..)
   , EbbInfo (..)
@@ -340,6 +341,14 @@ anchorSlot PBftState{..} =
     case preAnchor of
       _ :|> signer -> At (pbftSignerSlotNo signer)
       _otherwise   -> Origin
+
+-- | Return the most recent slot of the 'PBftState', the slot of the tip of
+-- the corresponding chain.
+--
+-- This will be 'lastSignedSlot', unless an EBB has been appended with a
+-- higher slot number.
+tipSlot :: PBftState c -> WithOrigin SlotNo
+tipSlot cs@PBftState{..} = lastSignedSlot cs `max` ebbsMax ebbs
 
 {-------------------------------------------------------------------------------
   Construction
