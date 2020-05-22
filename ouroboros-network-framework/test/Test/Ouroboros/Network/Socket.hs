@@ -13,6 +13,7 @@ module Test.Ouroboros.Network.Socket (tests) where
 
 import           Data.Void (Void)
 import           Data.List (mapAccumL)
+import           Data.Bifoldable (bitraverse_)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (UTCTime, getCurrentTime)
@@ -335,20 +336,22 @@ prop_socket_recv_error f rerr =
               -- accept a connection and start mux on it
               bracket
                 (runAccept $ accept snocket sd)
-                (\(sd', _, _) -> Socket.close sd')
-                $ \(sd', _, _) -> do
-                  remoteAddress <- Socket.getPeerName sd'
-                  let timeout = if rerr == RecvSDUTimeout then 0.10
-                                                          else (-1) -- No timeout
-                      bearer = Mx.socketAsMuxBearer timeout nullTracer sd'
-                      connectionId = ConnectionId {
-                          localAddress = Socket.addrAddress muxAddress,
-                          remoteAddress
-                        }
-                  _ <- async $ do
-                    threadDelay 0.1
-                    atomically $ putTMVar lock ()
-                  Mx.muxStart nullTracer (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app) bearer
+                (bitraverse_ Socket.close pure . fst)
+                $ \(accepted, _acceptNext) -> case accepted of
+                  AcceptFailure err -> throwIO err
+                  Accepted sd' _ -> do
+                    remoteAddress <- Socket.getPeerName sd'
+                    let timeout = if rerr == RecvSDUTimeout then 0.10
+                                                            else (-1) -- No timeout
+                        bearer = Mx.socketAsMuxBearer timeout nullTracer sd'
+                        connectionId = ConnectionId {
+                            localAddress = Socket.addrAddress muxAddress,
+                            remoteAddress
+                          }
+                    _ <- async $ do
+                      threadDelay 0.1
+                      atomically $ putTMVar lock ()
+                    Mx.muxStart nullTracer (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app) bearer
           )
           $ \muxAsync -> do
 
@@ -414,21 +417,20 @@ prop_socket_send_error rerr =
               -- accept a connection and start mux on it
               bracket
                 (runAccept $ accept snocket sd)
-                (\(sd', _, _) -> Socket.close sd')
-                (\(sd', _, _) ->
-                  let sduTimeout = if rerr == SendSDUTimeout then 0.10
-                                                             else (-1) -- No timeout
-                      bearer = Mx.socketAsMuxBearer sduTimeout nullTracer sd'
-                      blob = BL.pack $ replicate 0xffff 0xa5 in
-                  withTimeoutSerial $ \timeout ->
-                    -- send maximum mux sdus until we've filled the window.
-                    replicateM 100 $ do
-                      ((), Nothing) <$ write bearer timeout (wrap blob ResponderDir (MiniProtocolNum 0))
-                )
-
+                (bitraverse_ Socket.close pure . fst)
+                $ \(accepted, _acceptNext) -> case accepted of
+                  AcceptFailure err -> throwIO err
+                  Accepted sd' _ -> do
+                    let sduTimeout = if rerr == SendSDUTimeout then 0.10
+                                                               else (-1) -- No timeout
+                        bearer = Mx.socketAsMuxBearer sduTimeout nullTracer sd'
+                        blob = BL.pack $ replicate 0xffff 0xa5
+                    withTimeoutSerial $ \timeout ->
+                      -- send maximum mux sdus until we've filled the window.
+                      replicateM 100 $ do
+                        ((), Nothing) <$ write bearer timeout (wrap blob ResponderDir (MiniProtocolNum 0))
           )
           $ \muxAsync -> do
-
 
           sd' <- openToConnect snocket addr
           -- connect to muxAddress
