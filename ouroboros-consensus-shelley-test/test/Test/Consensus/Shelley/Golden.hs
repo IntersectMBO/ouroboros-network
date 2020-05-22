@@ -6,6 +6,8 @@
 module Test.Consensus.Shelley.Golden (tests) where
 
 import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..))
+import qualified Data.Binary.Put as Put
+import qualified Data.ByteString.Builder as Builder
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
@@ -15,6 +17,7 @@ import           Ouroboros.Network.Block (Point (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Storage.ImmutableDB.API (HashInfo (..))
 
 import           Shelley.Spec.Ledger.BaseTypes (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.Credential as SL
@@ -51,6 +54,7 @@ tests = testGroup "Golden tests"
     , testCase "ExtLedgerState" test_golden_ExtLedgerState
     , testQueries
     , testResults
+    , testCase "HashInfo"       test_golden_HashInfo
     ]
 
 testQueries :: TestTree
@@ -1271,3 +1275,13 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkListLen 0
     , TkListLen 0
     ]
+
+test_golden_HashInfo :: Assertion
+test_golden_HashInfo = goldenTestCBOR
+    encodeHashWithHashInfo
+    exampleHeaderHash
+    [ TkBytes "\CAN\225\"\183"
+    ]
+  where
+    encodeHashWithHashInfo =
+      toCBOR . Builder.toLazyByteString . Put.execPut . putHash shelleyHashInfo

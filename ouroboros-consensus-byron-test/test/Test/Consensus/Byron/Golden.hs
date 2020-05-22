@@ -5,6 +5,8 @@ module Test.Consensus.Byron.Golden (tests) where
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..))
 import           Codec.CBOR.Read (deserialiseFromBytes)
+import qualified Data.Binary.Put as Put
+import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -14,6 +16,8 @@ import qualified Cardano.Chain.Update as CC
 import qualified Cardano.Chain.Update.Validation.Endorsement as CC
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.Update.Validation.Registration as CC
+
+import           Ouroboros.Consensus.Storage.ImmutableDB.API (HashInfo (..))
 
 import           Ouroboros.Consensus.Byron.Ledger
 
@@ -44,6 +48,7 @@ tests = testGroup "Golden tests"
     , testCase "ExtLedgerState" test_golden_ExtLedgerState
     , testCase "Query"          test_golden_Query
     , testCase "Result"         test_golden_Result
+    , testCase "HashInfo"       test_golden_HashInfo
     ]
 
 test_golden_ConsensusState :: Assertion
@@ -1132,6 +1137,16 @@ test_golden_Result = goldenTestCBOR
       , TkBytes "r#\ESC\141\CAN\213_f7Y\FS-q\252G\164'\156\180f\250PY\210\235\188|\138\DC2 \250\236"
       , TkInt 0
       ]
+
+test_golden_HashInfo :: Assertion
+test_golden_HashInfo = goldenTestCBOR
+    encodeHashWithHashInfo
+    exampleHeaderHash
+    [ TkBytes "y\USBV\225Lg\185\ETX\\;\128\160\130j\223q\157\&66\193\142\239\SYN\201\139\132\184\&3r=Q"
+    ]
+  where
+    encodeHashWithHashInfo =
+      toCBOR . Builder.toLazyByteString . Put.execPut . putHash byronHashInfo
 
 -- | Check whether we can successfully decode the contents of the given file.
 -- This file will typically contain an older serialisation format.
