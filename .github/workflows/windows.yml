@@ -39,6 +39,7 @@ jobs:
           [Environment]::GetEnvironmentVariable("Path")
           Write-Host "::add-path::C:\ProgramData\chocolatey\lib\cabal\tools\cabal-3.0.0.0"
           Write-Host "::add-path::C:\ProgramData\chocolatey\lib\ghc\tools\ghc-8.6.5\bin"
+          refreshenv
       - name: Print versions
         run: |
           ghc --version
