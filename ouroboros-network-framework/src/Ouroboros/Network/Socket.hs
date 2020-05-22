@@ -422,11 +422,16 @@ fromSnocket tblVar sn sd = go (Snocket.accept sn sd)
   where
     go :: Snocket.Accept IO fd addr -> Server.Socket addr fd
     go (Snocket.Accept accept) = Server.Socket $ do
-      (sd', remoteAddr, next) <- accept
-      -- TOOD: we don't need to that on each accept
-      localAddr <- Snocket.getLocalAddr sn sd'
-      atomically $ addConnection tblVar remoteAddr localAddr Nothing
-      pure (remoteAddr, sd', close remoteAddr localAddr sd', go next)
+      (result, next) <- accept
+      case result of
+        Snocket.Accepted sd' remoteAddr -> do
+          -- TOOD: we don't need to that on each accept
+          localAddr <- Snocket.getLocalAddr sn sd'
+          atomically $ addConnection tblVar remoteAddr localAddr Nothing
+          pure (remoteAddr, sd', close remoteAddr localAddr sd', go next)
+        Snocket.AcceptFailure err ->
+          -- the is no way to construct 'Server.Socket'; This will be removed in a later commit!
+          throwIO err
 
     close remoteAddr localAddr sd' = do
         removeConnection tblVar remoteAddr localAddr

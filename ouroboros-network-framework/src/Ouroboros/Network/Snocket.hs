@@ -8,6 +8,7 @@
 module Ouroboros.Network.Snocket
   ( -- * Snocket Interface
     Accept (..)
+  , Accepted (..)
   , AddressFamily (..)
   , Snocket (..)
     -- ** Socket based Snocktes
@@ -32,6 +33,7 @@ import           Control.Monad (when)
 import           Control.Monad.Class.MonadTime (DiffTime)
 import           Control.Tracer (Tracer)
 import           Data.Bifunctor (Bifunctor (..))
+import           Data.Bifoldable (Bifoldable (..))
 import           Data.Hashable
 import           GHC.Generics (Generic)
 import           Quiet (Quiet (..))
@@ -96,13 +98,26 @@ import           Ouroboros.Network.IOManager
 -- descriptor by `createNamedPipe`, see 'namedPipeSnocket'.
 --
 newtype Accept m fd addr = Accept
-  { runAccept :: m (fd, addr, Accept m fd addr)
+  { runAccept :: m (Accepted fd addr, Accept m fd addr)
   }
 
 instance Functor m => Bifunctor (Accept m) where
-    bimap f g ac = Accept $ h <$> runAccept ac
+    bimap f g (Accept ac) = Accept (h <$> ac)
       where
-        h (fd, addr, next) = (f fd, g addr, bimap f g next)
+        h (accepted, next) = (bimap f g accepted, bimap f g next)
+
+
+data Accepted fd addr where
+    AcceptFailure :: !SomeException -> Accepted fd addr
+    Accepted      :: !fd -> !addr -> Accepted fd addr
+
+instance Bifunctor Accepted where
+    bimap f g (Accepted fd addr)  = Accepted (f fd) (g addr)
+    bimap _ _ (AcceptFailure err) = AcceptFailure err
+
+instance Bifoldable Accepted where
+    bifoldMap f g (Accepted fd addr) = f fd <> g addr
+    bifoldMap _ _ (AcceptFailure _) = mempty
 
 
 -- | BSD accept loop.
@@ -112,21 +127,35 @@ berkeleyAccept :: IOManager
                -> Accept IO Socket SockAddr
 berkeleyAccept ioManager sock = go
     where
-      go = Accept $ do
-        (sock', addr') <-
+      go = Accept (acceptOne `catch` handleException)
+
+      acceptOne
+        :: IO ( Accepted  Socket SockAddr
+              , Accept IO Socket SockAddr
+              )
+      acceptOne =
+        bracketOnError
 #if !defined(mingw32_HOST_OS)
-          Socket.accept sock
+          (Socket.accept sock)
 #else
-          Win32.Async.accept sock
+          (Win32.Async.accept sock)
 #endif
-        associateWithIOManager ioManager (Right sock')
-          `catch` \(e :: IOException) -> do
-            Socket.close sock'
-            throwIO e
-          `catch` \(SomeAsyncException _) -> do
-            Socket.close sock'
-            throwIO e
-        return (sock', addr', go)
+          (Socket.close . fst)
+          $ \(sock', addr') -> do
+            associateWithIOManager ioManager (Right sock')
+            return (Accepted sock' addr', go)
+
+      -- Only non-async exceptions will be caught and put into the
+      -- AcceptFailure variant.
+      handleException
+        :: SomeException
+        -> IO ( Accepted  Socket SockAddr
+              , Accept IO Socket SockAddr
+              )
+      handleException err =
+        case fromException err of
+          Just (SomeAsyncException _) -> throwIO err
+          Nothing                     -> pure (AcceptFailure err, go)
 
 -- | Local address, on Unix is associated with `Socket.AF_UNIX` family, on
 --
@@ -186,6 +215,9 @@ data Snocket m fd addr = Snocket {
   , bind          :: fd -> addr -> m ()
   , listen        :: fd -> m ()
 
+  -- SomeException is chosen here to avoid having to include it in the Snocket
+  -- type, and therefore refactoring a bunch of stuff.
+  -- FIXME probably a good idea to abstract it.
   , accept        :: fd -> Accept m fd addr
 
   , close         :: fd -> m ()
@@ -346,7 +378,7 @@ localSnocket ioManager path = Snocket {
 
     , accept   = \sock@(LocalSocket hpipe) -> Accept $ do
           Win32.Async.connectNamedPipe hpipe
-          return (sock, localAddress, acceptNext)
+          return (Accepted sock localAddress, acceptNext)
 
       -- Win32.closeHandle is not interrupible
     , close    = Win32.closeHandle . getLocalHandle
@@ -358,19 +390,40 @@ localSnocket ioManager path = Snocket {
     localAddress = LocalAddress path
 
     acceptNext :: Accept IO LocalSocket LocalAddress
-    acceptNext = Accept $ do
-      hpipe <- Win32.createNamedPipe
+    acceptNext = go
+      where
+        go = Accept (acceptOne `catch` handleIOException)
+
+        handleIOException
+          :: IOException
+          -> IO ( Accepted  LocalSocket LocalAddress
+                , Accept IO LocalSocket LocalAddress
+                )
+        handleIOException err =
+          pure ( AcceptFailure (toException err)
+               , go
+               )
+
+        acceptOne
+          :: IO ( Accepted  LocalSocket LocalAddress
+                , Accept IO LocalSocket LocalAddress
+                )
+        acceptOne =
+          bracketOnError
+            (Win32.createNamedPipe
                  path
                  (Win32.pIPE_ACCESS_DUPLEX .|. Win32.fILE_FLAG_OVERLAPPED)
                  (Win32.pIPE_TYPE_BYTE .|. Win32.pIPE_READMODE_BYTE)
                  Win32.pIPE_UNLIMITED_INSTANCES
-                 65536   -- outbound pipe size
-                 16384   -- inbound pipe size
-                 0       -- default timeout
-                 Nothing -- default security
-      associateWithIOManager ioManager (Left hpipe)
-      Win32.Async.connectNamedPipe hpipe
-      return (LocalSocket hpipe, localAddress, acceptNext)
+                 65536    -- outbound pipe size
+                 16384    -- inbound pipe size
+                 0        -- default timeout
+                 Nothing) -- default security
+             Win32.closeHandle
+             $ \hpipe -> do
+              associateWithIOManager ioManager (Left hpipe)
+              Win32.Async.connectNamedPipe hpipe
+              return (Accepted (LocalSocket hpipe) localAddress, go)
 
 -- local snocket on unix
 #else
