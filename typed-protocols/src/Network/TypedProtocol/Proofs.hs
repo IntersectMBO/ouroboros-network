@@ -139,7 +139,7 @@ connect = go
 -- 'connectPipelined' to return the states in which the peers terminated.
 --
 data TerminalStates ps where
-     TerminalStates :: forall (st :: ps).
+     TerminalStates :: forall ps (st :: ps).
                        NobodyHasAgency st
                     -> NobodyHasAgency st
                     -> TerminalStates ps
