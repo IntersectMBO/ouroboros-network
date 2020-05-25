@@ -1,43 +1,21 @@
-{-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
-{-# LANGUAGE TypeApplications  #-}
-{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
-module Test.Consensus.Byron.Ledger.Golden (tests) where
+module Test.Consensus.Byron.Golden (tests) where
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..))
 import           Codec.CBOR.Read (deserialiseFromBytes)
-import           Control.Monad.Except (runExcept)
 import qualified Data.ByteString.Lazy as Lazy
-import qualified Data.ByteString.Lazy.Char8 as Lazy8
 import qualified Data.Map as Map
-import qualified Data.Sequence.Strict as Seq
 import qualified Data.Set as Set
 
 import           Cardano.Binary (toCBOR)
-import qualified Cardano.Chain.Block as CC.Block
-import           Cardano.Chain.Byron.API as CC
-import qualified Cardano.Chain.Common as CC
-import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Update as CC
 import qualified Cardano.Chain.Update.Validation.Endorsement as CC
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.Update.Validation.Registration as CC
-import qualified Cardano.Chain.UTxO as CC
-
-import           Ouroboros.Network.Block (SlotNo)
-import           Ouroboros.Network.Point (WithOrigin (At))
-
-import           Ouroboros.Consensus.Block (BlockProtocol, IsEBB (..))
-import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Protocol.Abstract
-import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
-import           Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
 
 import           Ouroboros.Consensus.Byron.Ledger
-import qualified Ouroboros.Consensus.Byron.Ledger.DelegationHistory as DH
 
 import           Test.Tasty
 import           Test.Tasty.HUnit
@@ -47,7 +25,8 @@ import           Test.Util.Golden
 import qualified Test.Cardano.Chain.Common.Example as CC
 import qualified Test.Cardano.Chain.Genesis.Dummy as CC
 import qualified Test.Cardano.Chain.Update.Example as CC
-import qualified Test.Cardano.Chain.UTxO.Example as CC
+
+import           Test.Consensus.Byron.Examples
 
 tests :: TestTree
 tests = testGroup "Golden tests"
@@ -66,36 +45,6 @@ tests = testGroup "Golden tests"
     , testCase "Query"          test_golden_Query
     , testCase "Result"         test_golden_Result
     ]
-
--- | Note that we must use the same value for the 'SecurityParam' as for the
--- 'S.WindowSize', because 'decodeByronConsensusState' only takes the
--- 'SecurityParam' and uses it as the basis for the 'S.WindowSize'.
-secParam :: SecurityParam
-secParam = SecurityParam 2
-
-windowSize :: S.WindowSize
-windowSize = S.WindowSize 2
-
-exampleConsensusState :: ConsensusState (BlockProtocol ByronBlock)
-exampleConsensusState = withEBB
-  where
-    signers = map (`S.PBftSigner` CC.exampleKeyHash) [1..4]
-
-    withoutEBB = S.fromList
-      secParam
-      windowSize
-      (At 2, Seq.fromList signers, S.NothingEbbInfo)
-
-    -- info about an arbitrary hypothetical EBB
-    exampleEbbSlot            :: SlotNo
-    exampleEbbHeaderHashBytes :: HeaderHashBytes
-    exampleEbbSlot            = 6
-    exampleEbbHeaderHashBytes = mkHeaderHashBytesForTestingOnly
-                                  (Lazy8.pack "test_golden_ConsensusState6")
-
-    withEBB = S.appendEBB secParam windowSize
-                exampleEbbSlot exampleEbbHeaderHashBytes
-                withoutEBB
 
 test_golden_ConsensusState :: Assertion
 test_golden_ConsensusState = goldenTestCBOR
@@ -129,16 +78,6 @@ test_golden_ConsensusState = goldenTestCBOR
     , TkInt 1
     , TkInt 4
     ]
-
-exampleLedgerState :: LedgerState ByronBlock
-exampleLedgerState = ByronLedgerState
-    { byronLedgerState       = initState
-    , byronDelegationHistory = DH.empty
-    }
-  where
-    initState :: CC.Block.ChainValidationState
-    Right initState = runExcept $
-      CC.Block.initialChainValidationState CC.dummyConfig
 
 test_golden_LedgerState :: Assertion
 test_golden_LedgerState = goldenTestCBOR
@@ -519,19 +458,6 @@ test_golden_HeaderState = goldenTestCBOR
     , TkListLen 0
     ]
 
-exampleHeaderState :: HeaderState ByronBlock
-exampleHeaderState = (genesisHeaderState S.empty)
-    { headerStateTips = Seq.singleton annTip }
-  where
-    annTip = AnnTip {
-        annTipSlotNo  = 0
-      , annTipBlockNo = 0
-      , annTipInfo    = (exampleHeaderHash, IsNotEBB)
-      }
-
-exampleHeaderHash :: ByronHash
-exampleHeaderHash = ByronHash $ CC.Genesis.configGenesisHeaderHash CC.dummyConfig
-
 test_golden_ExtLedgerState :: Assertion
 test_golden_ExtLedgerState = goldenTestCBOR
     encodeByronExtLedgerState
@@ -903,11 +829,6 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkBreak
     , TkListLen 0
     ]
-  where
-    exampleExtLedgerState = ExtLedgerState
-      { ledgerState = exampleLedgerState
-      , headerState = exampleHeaderState
-      }
 
 test_golden_GenTxId :: Assertion
 test_golden_GenTxId = goldenTestCBOR
@@ -918,7 +839,6 @@ test_golden_GenTxId = goldenTestCBOR
     , TkBytes "K\168\&9\196 \179\210\189C\149\&0\248\145\202\233\165\212\196\216\DC2\EOTF0\218\199.\142\tb\254\238\204"
     ]
   where
-    exampleGenTxId = ByronTxId CC.exampleTxId
 
 test_golden_UPIState :: Assertion
 test_golden_UPIState = goldenTestCBOR
@@ -963,8 +883,6 @@ test_golden_UPIState = goldenTestCBOR
     , TkListLen 0
     , TkMapLen 0
     ]
-  where
-    exampleUPIState = CC.UPI.initialState CC.dummyConfig
 
 -- This gets embedded above, but it unclear because of the double serialisation.
 test_golden_TxSizeLinear :: Assertion
@@ -976,9 +894,6 @@ test_golden_TxSizeLinear = goldenTestCBOR
     , TkInt 43946000000
     ]
   where
-    exampleTxSizeLinear :: CC.TxSizeLinear
-    exampleTxSizeLinear = CC.TxSizeLinear (CC.mkKnownLovelace @155381)
-                                          (43.946 :: Rational)
 
 test_golden_HeaderHash :: Assertion
 test_golden_HeaderHash = goldenTestCBOR
@@ -990,7 +905,7 @@ test_golden_HeaderHash = goldenTestCBOR
 test_golden_GenTx :: Assertion
 test_golden_GenTx = goldenTestCBOR
     encodeByronGenTx
-    getTx
+    exampleGenTx
     [ TkListLen 2
     , TkInt 0
     , TkListLen 2
@@ -1016,9 +931,6 @@ test_golden_GenTx = goldenTestCBOR
     , TkTag 24
     , TkBytes "\130X@Kmyw4lDSE5S4fSH6etNouiXezCyEjKc3tG4ja0kFjO8qzai26ZMPUEJfEy15ox5kX@h\138\173\133{\199\255\&0\252hb\218\ESC\226\129\244 \198Rq\183j\177\151\130\255@\226\149Z\248\136\EM\195\142\\y\DC3\143(\a:\186\225R\200\130%\139D \160\193\201\253\210l\152\129&\151\252>\NUL"
     ]
-  where
-    getTx :: GenTx ByronBlock
-    getTx = ByronTx CC.exampleTxId (CC.annotateTxAux CC.exampleTxAux)
 
 test_golden_ApplyTxErr :: Assertion
 test_golden_ApplyTxErr = goldenTestCBOR
@@ -1035,12 +947,6 @@ test_golden_ApplyTxErr = goldenTestCBOR
     , TkInt 0
     , TkInt 0
     ]
-  where
-    exampleApplyTxErr =
-        CC.MempoolTxErr
-      $ CC.UTxOValidationTxValidationError
-      $ CC.TxValidationLovelaceError "a"
-      $ CC.LovelaceOverflow 0
 
 test_golden_Query :: Assertion
 test_golden_Query = goldenTestCBOR
@@ -1055,6 +961,8 @@ test_golden_Result = goldenTestCBOR
     state
     flatTerm
   where
+    -- TODO move to Test.Consensus.Byron.Examples?
+
     state :: CC.UPI.State
     state = CC.UPI.State
       { CC.UPI.currentEpoch                      = 0

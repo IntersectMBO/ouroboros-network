@@ -11,6 +11,7 @@ packages: ./typed-protocols
           ./ouroboros-consensus/ouroboros-consensus-test-infra
           ./ouroboros-consensus/ouroboros-consensus-mock
           ./ouroboros-consensus-byron
+          ./ouroboros-consensus-byron-test
           ./ouroboros-consensus-byronspec
           ./ouroboros-consensus-shelley
           ./ouroboros-consensus-shelley-test
@@ -66,8 +67,10 @@ package ouroboros-consensus-mock
   tests: True
 
 package ouroboros-consensus-byron
-  tests: True
   flags: +asserts
+
+package ouroboros-consensus-byron-test
+  tests: True
 
 package ouroboros-consensus-shelley
   flags: +asserts
