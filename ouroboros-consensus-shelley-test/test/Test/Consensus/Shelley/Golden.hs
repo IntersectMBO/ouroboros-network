@@ -406,9 +406,7 @@ test_golden_GenTx = goldenTestCBORInCBOR
     , TkListLen 2
     , TkInt 1
     , TkInt 10
-    , TkListLen 2
-    , TkInt 0
-    , TkBytes "0P\247\158"
+    , TkBytes "\224\&0P\247\158"
     , TkListLen 1
     , TkBytes "0P\247\158"
     , TkListLen 0
@@ -439,28 +437,28 @@ test_golden_GenTx = goldenTestCBORInCBOR
     , TkListLen 8
     , TkListLen 2
     , TkBytes "00000214"
-    , TkBytes "\237d}\FS00000214"
+    , TkBytes "\241w\159>00000214"
     , TkListLen 2
     , TkBytes "15485867"
-    , TkBytes "\237d}\FS15485867"
+    , TkBytes "\241w\159>15485867"
     , TkListLen 2
     , TkBytes "15640725"
-    , TkBytes "\237d}\FS15640725"
+    , TkBytes "\241w\159>15640725"
     , TkListLen 2
     , TkBytes "16260160"
-    , TkBytes "\237d}\FS16260160"
+    , TkBytes "\241w\159>16260160"
     , TkListLen 2
     , TkBytes "61943468"
-    , TkBytes "\237d}\FS61943468"
+    , TkBytes "\241w\159>61943468"
     , TkListLen 2
     , TkBytes "15950443"
-    , TkBytes "\237d}\FS15950443"
+    , TkBytes "\241w\159>15950443"
     , TkListLen 2
     , TkBytes "16105301"
-    , TkBytes "\237d}\FS16105301"
+    , TkBytes "\241w\159>16105301"
     , TkListLen 2
     , TkBytes "15795584"
-    , TkBytes "\237d}\FS15795584"
+    , TkBytes "\241w\159>15795584"
     , TkNull
     ]
 
@@ -468,7 +466,7 @@ test_golden_GenTxId :: Assertion
 test_golden_GenTxId = goldenTestCBOR
     toCBOR
     exampleGenTxId
-    [ TkBytes "\245\v\196;"
+    [ TkBytes "\179\"\STX~"
     ]
 
 test_golden_ApplyTxErr :: Assertion
@@ -547,7 +545,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkListLen 3
     , TkListLen 2
     , TkInt 10
-    , TkBytes "\180G,\222"
+    , TkBytes "K\242\144\a"
     , TkListLen 2
     , TkListLen 1
     , TkInt 0
@@ -584,7 +582,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkBytes "\NUL\131?\NAK\145\191\152\145\198"
     , TkInt 1000000000000000
     , TkListLen 2
-    , TkBytes "\245\v\196;"
+    , TkBytes "\179\"\STX~"
     , TkInt 0
     , TkListLen 2
     , TkBytes "\NUL\EOT\140\196$0P\247\158"
@@ -612,17 +610,11 @@ test_golden_LedgerState = goldenTestCBOR
     , TkBytes "\191\152\145\198"
     , TkInt 10
     , TkMapLen 3
-    , TkListLen 2
+    , TkBytes "\224\ACK7\193<"
     , TkInt 0
-    , TkBytes "\ACK7\193<"
+    , TkBytes "\224\&0P\247\158"
     , TkInt 0
-    , TkListLen 2
-    , TkInt 0
-    , TkBytes "0P\247\158"
-    , TkInt 0
-    , TkListLen 2
-    , TkInt 0
-    , TkBytes "\191\152\145\198"
+    , TkBytes "\224\191\152\145\198"
     , TkInt 0
     , TkMapLen 0
     , TkMapLen 3
@@ -687,9 +679,7 @@ test_golden_LedgerState = goldenTestCBOR
     , TkListLen 2
     , TkInt 1
     , TkInt 10
-    , TkListLen 2
-    , TkInt 0
-    , TkBytes "0P\247\158"
+    , TkBytes "\224\&0P\247\158"
     , TkListLen 1
     , TkBytes "0P\247\158"
     , TkListLen 0
@@ -917,7 +907,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkListLen 3
     , TkListLen 2
     , TkInt 10
-    , TkBytes "\180G,\222"
+    , TkBytes "K\242\144\a"
     , TkListLen 2
     , TkListLen 1
     , TkInt 0
@@ -954,7 +944,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkBytes "\NUL\131?\NAK\145\191\152\145\198"
     , TkInt 1000000000000000
     , TkListLen 2
-    , TkBytes "\245\v\196;"
+    , TkBytes "\179\"\STX~"
     , TkInt 0
     , TkListLen 2
     , TkBytes "\NUL\EOT\140\196$0P\247\158"
@@ -982,17 +972,11 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkBytes "\191\152\145\198"
     , TkInt 10
     , TkMapLen 3
-    , TkListLen 2
+    , TkBytes "\224\ACK7\193<"
     , TkInt 0
-    , TkBytes "\ACK7\193<"
+    , TkBytes "\224\&0P\247\158"
     , TkInt 0
-    , TkListLen 2
-    , TkInt 0
-    , TkBytes "0P\247\158"
-    , TkInt 0
-    , TkListLen 2
-    , TkInt 0
-    , TkBytes "\191\152\145\198"
+    , TkBytes "\224\191\152\145\198"
     , TkInt 0
     , TkMapLen 0
     , TkMapLen 3
@@ -1057,9 +1041,7 @@ test_golden_ExtLedgerState = goldenTestCBOR
     , TkListLen 2
     , TkInt 1
     , TkInt 10
-    , TkListLen 2
-    , TkInt 0
-    , TkBytes "0P\247\158"
+    , TkBytes "\224\&0P\247\158"
     , TkListLen 1
     , TkBytes "0P\247\158"
     , TkListLen 0

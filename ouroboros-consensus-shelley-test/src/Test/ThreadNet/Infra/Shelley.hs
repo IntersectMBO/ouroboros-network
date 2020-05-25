@@ -162,6 +162,7 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
       -- Matches the start of the ThreadNet tests
       sgStartTime             = SystemStart dawnOfTime
     , sgNetworkMagic          = NetworkMagic 0
+    , sgNetworkId             = networkId
     , sgProtocolMagicId       = ProtocolMagicId 0
     , sgActiveSlotsCoeff      = 0.5 -- TODO 1 is not accepted by 'mkActiveSlotCoeff'
     , sgSecurityParam         = k
@@ -178,6 +179,9 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
     , sgStaking               = initialStake
     }
   where
+    networkId :: SL.Network
+    networkId = SL.Testnet
+
     initialLovelacePerCoreNode :: Word64
     initialLovelacePerCoreNode = 1000
 
@@ -208,7 +212,8 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
     initialFunds = Map.fromList
       [ (addr, coin)
       | CoreNode { cnDelegateKey, cnStakingKey } <- coreNodes
-      , let addr = SL.Addr (mkCredential cnDelegateKey)
+      , let addr = SL.Addr networkId
+                           (mkCredential cnDelegateKey)
                            (SL.StakeRefBase (mkCredential cnStakingKey))
             coin = SL.Coin $ fromIntegral initialLovelacePerCoreNode
       ]
@@ -237,7 +242,7 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
                 , SL._poolMargin = SL.UnsafeUnitInterval 0
                   -- Reward accounts live in a separate "namespace" to other
                   -- accounts, so it should be fine to use the same address.
-                , SL._poolRAcnt = SL.RewardAcnt $ mkCredential cnDelegateKey
+                , SL._poolRAcnt = SL.RewardAcnt networkId $ mkCredential cnDelegateKey
                 , SL._poolOwners = Set.singleton $ SL.coerceKeyRole poolHash
                 , SL._poolRelays = Seq.empty
                 , SL._poolMD = SL.SNothing

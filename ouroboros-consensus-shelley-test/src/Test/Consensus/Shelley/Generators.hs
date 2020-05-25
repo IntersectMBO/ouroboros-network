@@ -299,7 +299,7 @@ instance Crypto c => Arbitrary (SL.Credential r c) where
     ]
 
 instance Crypto c => Arbitrary (SL.RewardAcnt c) where
-  arbitrary = SL.RewardAcnt <$> arbitrary
+  arbitrary = SL.RewardAcnt <$> arbitrary <*> arbitrary
 
 instance Crypto c => Arbitrary (SL.RewardUpdate c) where
   arbitrary = return SL.emptyRewardUpdate
@@ -420,9 +420,12 @@ instance Crypto c => Arbitrary (SL.StakeReference c) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 
+instance Arbitrary SL.Network where
+  arbitrary = elements [SL.Mainnet, SL.Testnet]
+
 instance Crypto c => Arbitrary (SL.Addr c) where
   arbitrary = oneof
-    [ SL.Addr <$> arbitrary <*> arbitrary
+    [ SL.Addr <$> arbitrary <*> arbitrary <*> arbitrary
     -- TODO generate Byron addresses too
     -- SL.AddrBootstrap
     ]

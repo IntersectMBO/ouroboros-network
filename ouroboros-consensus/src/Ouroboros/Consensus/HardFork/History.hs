@@ -901,9 +901,9 @@ summaryToEpochInfo =
   where
     go :: RunWithCachedSummary xs m -> EpochInfo (STM m)
     go run = EpochInfo {
-          epochInfoSize  = \e -> cachedRunQueryThrow run (snd <$> epochToSlot e)
-        , epochInfoFirst = \e -> cachedRunQueryThrow run (fst <$> epochToSlot e)
-        , epochInfoEpoch = \s -> cachedRunQueryThrow run (fst <$> slotToEpoch s)
+          epochInfoSize_  = \e -> cachedRunQueryThrow run (snd <$> epochToSlot e)
+        , epochInfoFirst_ = \e -> cachedRunQueryThrow run (fst <$> epochToSlot e)
+        , epochInfoEpoch_ = \s -> cachedRunQueryThrow run (fst <$> slotToEpoch s)
         }
 
 -- | Construct an 'EpochInfo' for a /snapshot/ of the ledger state
@@ -912,9 +912,9 @@ summaryToEpochInfo =
 -- error as a /pure/ exception. Such an exception would indicate a bug.
 snapshotEpochInfo :: forall xs. Summary xs -> EpochInfo Identity
 snapshotEpochInfo summary = EpochInfo {
-      epochInfoSize  = \e -> runQueryPure' (snd <$> epochToSlot e)
-    , epochInfoFirst = \e -> runQueryPure' (fst <$> epochToSlot e)
-    , epochInfoEpoch = \s -> runQueryPure' (fst <$> slotToEpoch s)
+      epochInfoSize_  = \e -> runQueryPure' (snd <$> epochToSlot e)
+    , epochInfoFirst_ = \e -> runQueryPure' (fst <$> epochToSlot e)
+    , epochInfoEpoch_ = \s -> runQueryPure' (fst <$> slotToEpoch s)
     }
   where
     runQueryPure' :: Query xs a -> Identity a

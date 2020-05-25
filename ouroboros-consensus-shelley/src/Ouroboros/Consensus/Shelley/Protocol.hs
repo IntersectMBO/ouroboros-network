@@ -181,6 +181,8 @@ data TPraosParams = TPraosParams {
       -- | Maximum number of lovelace in the system, see
       -- 'Globals.maxLovelaceSupply'.
     , tpraosMaxLovelaceSupply :: !Word64
+      -- | Testnet or mainnet?
+    , tpraosNetworkId         :: !SL.Network
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -365,6 +367,7 @@ mkShelleyGlobals TPraosParams {..} = SL.Globals {
     , maxMajorPV                    = tpraosMaxMajorPV
     , maxLovelaceSupply             = tpraosMaxLovelaceSupply
     , activeSlotCoeff               = tpraosLeaderF
+    , networkId                     = tpraosNetworkId
     }
   where
     SecurityParam k = tpraosSecurityParam
