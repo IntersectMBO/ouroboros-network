@@ -36,9 +36,6 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.SingleEra
-import           Ouroboros.Consensus.HardFork.Combinator.Translation
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
-                     (InPairs (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 
 {-------------------------------------------------------------------------------
@@ -108,13 +105,16 @@ instance CanHardFork xs => HasAnnTip (HardForkBlock xs) where
       . getHardForkHeader
 
   tipInfoHash _ =
-        OneEraHash
-      . hcmap proxySingle aux
+        hcollapse
+      . hcmap proxySingle (K . tipInfoOne)
       . getOneEraTipInfo
     where
-      aux :: forall blk. SingleEraBlock blk
-          => SingleEraTipInfo blk -> SingleEraHash blk
-      aux = SingleEraHash . tipInfoHash (Proxy @blk) . getSingleEraTipInfo
+      tipInfoOne :: forall blk. SingleEraBlock blk
+                 => SingleEraTipInfo blk -> OneEraHash xs
+      tipInfoOne = OneEraHash
+                 . getRawHash  (Proxy @blk)
+                 . tipInfoHash (Proxy @blk)
+                 . getSingleEraTipInfo
 
 {-------------------------------------------------------------------------------
   BasicEnvelopeValidation
@@ -156,39 +156,6 @@ instance CanHardFork xs => BasicEnvelopeValidation (HardForkBlock xs) where
           -> K SlotNo blk
       aux (Pair (SingleEraTipInfo old) (SingleEraTipInfo new)) = K $
           minimumNextSlotNo (Proxy @blk) old new s
-
-  checkPrevHash HardForkBlockConfig{..} =
-           go (getCheckEraTransition hardForkEraTransitionCheck) cfgs
-      `on` getOneEraHash
-    where
-      cfgs = getPerEraBlockConfig hardForkBlockConfigPerEra
-
-      -- This is a pretty straight-forward aligning of two NS, except we allow
-      -- the current tip to be /one/ era before the next block; in this case
-      -- the 'hardForkEraTransitionCheck' will do the check for us.
-      go :: All SingleEraBlock xs'
-         => InPairs CheckTransition xs'
-         -> NP BlockConfig xs'
-         -> NS SingleEraHash xs' -> NS SingleEraHash xs' -> Bool
-      go _            (c :* _)       (Z h) (Z h')     = aux c h h'
-      go (PCons _ fs) (_ :* cs)      (S h) (S h')     = go fs cs h h'
-      go (PCons f _)  (c :* c' :* _) (Z h) (S (Z h')) = checkOne f c c' h h'
-      go _            _              _     _          = False
-
-      checkOne :: CheckTransition blk blk'
-               -> BlockConfig blk
-               -> BlockConfig blk'
-               -> SingleEraHash blk
-               -> SingleEraHash blk'
-               -> Bool
-      checkOne f c c' h h' =
-          checkTransitionWith f c c'
-            (getSingleEraHash h)
-            (BlockHash $ getSingleEraHash h')
-
-      aux :: forall blk. SingleEraBlock blk
-          => BlockConfig blk -> SingleEraHash blk -> SingleEraHash blk -> Bool
-      aux cfg = checkPrevHash cfg `on` getSingleEraHash
 
 {-------------------------------------------------------------------------------
   Other instances (primarily for the benefit of tests)

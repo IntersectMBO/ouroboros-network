@@ -15,7 +15,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract (
   , ProofNonEmpty(..)
   ) where
 
-import           Codec.Serialise (Serialise)
+import qualified Data.ByteString as Strict
 import           Data.Proxy
 import           Data.SOP.Strict
 import           Data.Typeable
@@ -46,8 +46,6 @@ class ( LedgerSupportsProtocol blk
         -- Instances required to support testing
       , Show blk
       , Show (Header blk)
-        -- Only needed for the PBFT hack; see 'rewindConsensusState'
-      , Serialise (HeaderHash blk)
       ) => SingleEraBlock blk where
   -- | Era parameters
   --
@@ -70,13 +68,16 @@ class ( LedgerSupportsProtocol blk
   -- | Era information (for use in error messages)
   singleEraInfo       :: proxy blk -> SingleEraInfo blk
 
+  -- | Get the raw hash
+  --
+  -- See documentation of 'OneEraHash' for rationale.
+  getRawHash :: proxy blk -> HeaderHash blk -> Strict.ByteString
+
 proxySingle :: Proxy SingleEraBlock
 proxySingle = Proxy
 
 class (All SingleEraBlock xs, Typeable xs, IsNonEmpty xs) => CanHardFork xs where
-  hardForkEraTranslation     :: EraTranslation     xs
-  hardForkEraTransitionCheck :: EraTransitionCheck xs
+  hardForkEraTranslation :: EraTranslation xs
 
 instance SingleEraBlock blk => CanHardFork '[blk] where
-  hardForkEraTranslation     = trivialEraTranslation
-  hardForkEraTransitionCheck = trivialEraTransitionCheck
+  hardForkEraTranslation = trivialEraTranslation

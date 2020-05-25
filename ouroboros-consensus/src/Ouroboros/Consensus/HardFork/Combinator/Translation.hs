@@ -8,16 +8,10 @@ module Ouroboros.Consensus.HardFork.Combinator.Translation (
   , TranslateEraConsensusState(..)
   , EraTranslation(..)
   , trivialEraTranslation
-    -- * Check that eras line up
-  , CheckTransition(..)
-  , EraTransitionCheck(..)
-  , trivialEraTransitionCheck
   ) where
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 import           Cardano.Slotting.Slot
-
-import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -68,24 +62,3 @@ trivialEraTranslation = EraTranslation {
     , translateLedgerView     = PNil
     , translateConsensusState = PNil
     }
-
-{-------------------------------------------------------------------------------
-  Check that the transition lines up
--------------------------------------------------------------------------------}
-
-data CheckTransition blk blk' = CheckTransition {
-      -- | The hash of the last block in one era must line up with the prev-hash
-      -- hash of the first block in the next.
-      checkTransitionWith :: BlockConfig blk
-                          -> BlockConfig blk'
-                          -> HeaderHash blk
-                          -> ChainHash blk'
-                          -> Bool
-    }
-
-newtype EraTransitionCheck xs = EraTransitionCheck {
-      getCheckEraTransition :: InPairs CheckTransition xs
-    }
-
-trivialEraTransitionCheck :: EraTransitionCheck '[blk]
-trivialEraTransitionCheck = EraTransitionCheck PNil

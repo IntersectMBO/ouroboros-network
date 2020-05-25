@@ -175,9 +175,6 @@ instance SingleEraBlock b => BasicEnvelopeValidation (DegenFork b) where
   expectedNextBlockNo   _ = expectedNextBlockNo   (Proxy @b) `on` projTipInfo
   minimumNextSlotNo     _ = minimumNextSlotNo     (Proxy @b) `on` projTipInfo
 
-  checkPrevHash (DBCfg cfg) =
-      checkPrevHash (projBlockConfig cfg) `on` projHeaderHash
-
 instance SingleEraBlock b => ValidateEnvelope (DegenFork b) where
   type OtherHeaderEnvelopeError (DegenFork b) = OtherHeaderEnvelopeError (HardForkBlock '[b])
 
@@ -269,7 +266,7 @@ instance HasNetworkProtocolVersion b => HasNetworkProtocolVersion (DegenFork b) 
   nodeToNodeProtocolVersion     _ = nodeToNodeProtocolVersion     (Proxy @b)
   nodeToClientProtocolVersion   _ = nodeToClientProtocolVersion   (Proxy @b)
 
-instance (SingleEraBlock b, RunNode b) => RunNode (DegenFork b) where
+instance (SingleEraBlock b, FromRawHash b, RunNode b) => RunNode (DegenFork b) where
   nodeBlockMatchesHeader (DHdr hdr) (DBlk blk) = nodeBlockMatchesHeader (projHeader hdr) (projBlock blk)
   nodeBlockFetchSize     (DHdr hdr)            = nodeBlockFetchSize     (projHeader hdr)
   nodeIsEBB              (DHdr hdr)            = nodeIsEBB              (projHeader hdr)

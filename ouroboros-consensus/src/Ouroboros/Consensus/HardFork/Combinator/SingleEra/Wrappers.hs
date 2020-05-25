@@ -7,8 +7,7 @@
 -- | Newtype wrappers around type families
 module Ouroboros.Consensus.HardFork.Combinator.SingleEra.Wrappers (
     -- * Block based
-    SingleEraHash(..)
-  , SingleEraTipInfo(..)
+    SingleEraTipInfo(..)
   , SingleEraEnvelopeErr(..)
   , SingleEraLedgerConfig(..)
   , SingleEraLedgerError(..)
@@ -35,8 +34,6 @@ import           Data.Proxy
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Network.Block
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History (EraParams)
 import           Ouroboros.Consensus.HeaderValidation
@@ -54,7 +51,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.SingleEra.Info
   We need these because type families cannot be partially applied.
 -------------------------------------------------------------------------------}
 
-newtype SingleEraHash         blk = SingleEraHash         { getSingleEraHash         :: HeaderHash               blk }
 newtype SingleEraTipInfo      blk = SingleEraTipInfo      { getSingleEraTipInfo      :: TipInfo                  blk }
 newtype SingleEraEnvelopeErr  blk = SingleEraEnvelopeErr  { getSingleEraEnvelopeErr  :: OtherHeaderEnvelopeError blk }
 newtype SingleEraLedgerConfig blk = SingleEraLedgerConfig { getSingleEraLedgerConfig :: PartialLedgerConfig      blk }
@@ -90,11 +86,6 @@ singleEraTransition' = singleEraTransition . getSingleEraLedgerConfig
 {-------------------------------------------------------------------------------
   Instances
 -------------------------------------------------------------------------------}
-
-deriving newtype instance SingleEraBlock blk => Eq                 (SingleEraHash blk)
-deriving newtype instance SingleEraBlock blk => Ord                (SingleEraHash blk)
-deriving newtype instance SingleEraBlock blk => Show               (SingleEraHash blk)
-deriving newtype instance SingleEraBlock blk => NoUnexpectedThunks (SingleEraHash blk)
 
 deriving newtype instance SingleEraBlock blk => Eq                 (SingleEraTipInfo blk)
 deriving newtype instance SingleEraBlock blk => Show               (SingleEraTipInfo blk)

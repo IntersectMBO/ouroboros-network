@@ -131,11 +131,20 @@ instance CanHardFork xs
       ei   = State.epochInfoLedger ledgerCfg st
 
   ledgerTipPoint =
-        castPoint
-      . distribPoint
-      . hcmap proxySingle ledgerTipPoint
+        hcollapse
+      . hcmap proxySingle (K . getOne)
       . State.tip
       . getHardForkLedgerState
+    where
+      getOne :: forall blk. SingleEraBlock blk
+             => LedgerState blk -> Point (HardForkBlock xs)
+      getOne = injPoint . ledgerTipPoint' (Proxy @blk)
+
+      injPoint :: forall blk. SingleEraBlock blk
+               => Point blk -> Point (HardForkBlock xs)
+      injPoint GenesisPoint     = GenesisPoint
+      injPoint (BlockPoint s h) = BlockPoint s $ OneEraHash $
+                                    getRawHash (Proxy @blk) h
 
 apply :: SingleEraBlock blk
       => EpochInfo Identity

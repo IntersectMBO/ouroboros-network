@@ -298,13 +298,6 @@ class HasAnnTip blk => BasicEnvelopeValidation blk where
                     -> SlotNo -> SlotNo
   minimumNextSlotNo _ _ _ = succ
 
-  -- | Compare hashes
-  checkPrevHash :: BlockConfig blk
-                -> HeaderHash blk  -- ^ Old tip
-                -> HeaderHash blk  -- ^ Prev hash of new block
-                -> Bool
-  checkPrevHash _ = (==)
-
 -- | Validate header envelope
 class ( BasicEnvelopeValidation blk
       , Eq                 (OtherHeaderEnvelopeError blk)
@@ -344,7 +337,7 @@ validateEnvelope cfg ledgerView oldTip hdr = do
                    -> ChainHash blk
                    -> Bool
     checkPrevHash' Origin GenesisHash    = True
-    checkPrevHash' (At h) (BlockHash h') = checkPrevHash (configBlock cfg) h h'
+    checkPrevHash' (At h) (BlockHash h') = h == h'
     checkPrevHash' _      _              = False
 
     actualSlotNo   :: SlotNo
