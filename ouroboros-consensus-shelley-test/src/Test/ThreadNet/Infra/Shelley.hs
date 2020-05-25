@@ -4,6 +4,7 @@
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE PatternSynonyms          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TupleSections            #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 module Test.ThreadNet.Infra.Shelley (
@@ -13,9 +14,12 @@ module Test.ThreadNet.Infra.Shelley (
   , mkGenesisConfig
   , coreNodeKeys
   , mkProtocolRealTPraos
+  , ocertNodeRestarts
   , tpraosSlotLength
   ) where
 
+import           Control.Monad (forM, join)
+import           Data.List (unfoldr)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Sequence.Strict as Seq
@@ -30,17 +34,24 @@ import           Cardano.Crypto.KES.Class (SignKeyKES, deriveVerKeyKES,
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
 import           Cardano.Crypto.VRF.Class (SignKeyVRF, deriveVerKeyVRF,
                      genKeyVRF)
-import           Cardano.Slotting.Slot (EpochSize (..))
+import           Cardano.Slotting.Slot (EpochSize (..), SlotNo (..))
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Util.Random
 
+import           Test.QuickCheck (Gen)
+import qualified Test.QuickCheck.Gen as Gen
+import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeRestarts
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Time (dawnOfTime)
+
+import           Test.Util.WrappedClock (NumSlots (..))
 
 import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
@@ -268,3 +279,58 @@ mkProtocolRealTPraos genesis CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
         , tpraosIsCoreNodeSignKeyVRF = cnVRF
         }
       }
+
+{-------------------------------------------------------------------------------
+  Node restarts for operational certificates
+-------------------------------------------------------------------------------}
+
+-- | Generate a node restart schedule which cycles nodes in order to replace
+-- their operational certificates after the maximum number of KES periods.
+--
+ocertNodeRestarts
+  :: NodeJoinPlan
+  -> NumSlots         -- ^ Duration of the test. No replacements will be scheduled
+                      --   after this number of slots.
+  -> ShelleyGenesis c -- ^ Shelley genesis configuration. Needed to extract the
+                      --   slots per KES period and the maximum number of KES
+                      --   evolutions.
+  -> [CoreNode c]     -- ^ Core nodes, including all of their keys.
+  -> (Word64, Word64) -- ^ Permitted (eagerness, laziness) in replacing operational
+                      --   certificates - that is, nodes may replace them up to
+                      --   `eagerness` KES periods early, and up to `laziness`
+                      --   KES periods late.
+  -> Gen NodeRestarts
+ocertNodeRestarts
+  (NodeJoinPlan _m)
+  (NumSlots t)
+  ShelleyGenesis {sgSlotsPerKESPeriod, sgMaxKESEvolutions}
+  coreNodes
+  (eagerness, laziness)
+    | t < ocertRegenCadence = pure noRestarts
+    | otherwise =
+      fmap NodeRestarts $ do
+        slotCNPairs <- fmap join $ forM (zip coreNodes [0..]) $ \(cn, coreNodeIdx) -> do
+          offsets <- Gen.infiniteListOf $ Gen.choose (- eagerness, laziness)
+          let SL.KESPeriod firstKESPeriod = SL.ocertKESPeriod $ cnOCert cn
+              periods =
+                unfoldr
+                  ( \(startPeriod, ix) -> let
+                      np = fromIntegral startPeriod + sgMaxKESEvolutions + offsets !! ix
+                      in Just $
+                    ( fromIntegral np
+                    , (fromIntegral np, ix + 1)
+                    )
+                  )
+                  (firstKESPeriod, 0)
+          pure
+            [ (SlotNo slot, CoreNodeId coreNodeIdx)
+              | slot <- takeWhile (< t) ((kesPeriodStartSlots !!) <$> periods)
+            ]
+        pure
+          . Map.map (Map.fromList . fmap (,NodeRekey))
+          . Map.fromListWith (<>)
+          $ fmap (: []) <$> slotCNPairs
+    where
+      -- KES period i begins in slot kesPeriodStartSlots !! i
+      kesPeriodStartSlots = [i * sgSlotsPerKESPeriod | i <- [0 ..]]
+      ocertRegenCadence = sgSlotsPerKESPeriod * sgMaxKESEvolutions
