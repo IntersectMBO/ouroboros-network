@@ -22,27 +22,14 @@ jobs:
     name: "Windows GHC-8.6.5"
     runs-on: windows-latest
     steps:
-      #
-      # Provisioning:
-      # * install ghc-8.6.5, msys2, cabal-isntall
-      # * setup path
-      # * close the repository
-      #
-      - name: Configure Chocolatey
-        run: choco source add -n mistuke -s https://www.myget.org/F/mistuke/api/v2
-      - name: Install msys2
-        run: choco install -y msys2
       - name: Install GHC
-        run: choco install -y ghc --version 8.6.5
-      - name: Set PATH
         run: |
-          [Environment]::GetEnvironmentVariable("Path")
-          Write-Host "::add-path::C:\ProgramData\chocolatey\lib\cabal\tools\cabal-3.0.0.0"
-          Write-Host "::add-path::C:\ProgramData\chocolatey\lib\ghc\tools\ghc-8.6.5\bin"
-      - name: Print versions
+          choco install -y ghc --version 8.6.5 --allow-downgrade
+      - name: Print version
         run: |
-          ghc --version
           cabal --version
+      - name: Cabal config
+        run: |
           cabal user-config init -a "http-transport: plain-http" -a "store-dir: C:\SR" -f -v3
 
       # Cache cabal-store
