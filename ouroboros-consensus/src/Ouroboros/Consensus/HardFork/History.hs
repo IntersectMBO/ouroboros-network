@@ -382,6 +382,33 @@ mkUpperBound EraParams{..} lo hiEpoch = Bound {
 --
 -- The 'eraEnd' of the final era in the summary will be determined by the
 -- safe zone considerations discussed above.
+--
+-- Let the start of the summary be @(t, s, e)@ (time, slot epoch), and the
+-- end of the summary be @(t', s', e')@. We have one invariant relating
+-- epochs and slots:
+--
+-- > INV-1a  e' == e + ((s' - s) / epochSize)
+-- > INV-1b: s' == s + ((e' - e) * epochSize)
+--
+-- And another invariant relating time and slots:
+--
+-- > INV-2a: s' == s + ((t' - t) / slotLen)
+-- > INV-2b: t' == t + ((s' - s) * slotLen)
+--
+-- Note that these aren't really two sets of independent invariants. @INV-1a@
+-- follows from @INV-1b@:
+--
+-- >       s'                   == s + ((e' - e) * epochSize)
+-- >       s' - s               ==     ((e' - e) * epochSize)
+-- >      (s' - s) / epochSize  ==       e' - e
+-- > e + ((s' - s) / epochSize) ==       e'
+--
+-- Similarly, @INV-2a@ follows from @INV-2b@:
+--
+-- >       t'                 == t + ((s' - s) * slotLen)
+-- >       t' - t             ==     ((s' - s) * slotLen)
+-- >      (t' - t) / slotLen  ==       s' - s
+-- > s + ((t' - t) / slotLen) ==       s'
 data EraSummary = EraSummary {
       eraStart  :: !Bound     -- ^ Inclusive lower bound
     , eraEnd    :: !EraEnd    -- ^ Exclusive upper bound
@@ -547,6 +574,12 @@ invariantSummary = \(Summary summary) ->
             unless (null next) $
               throwError "Unbounded non-final era"
           EraEnd curEnd -> do
+            -- Check the invariants mentioned at 'EraSummary'
+            --
+            -- * @epochsInEra@ corresponds to @e' - e@
+            -- * @slotsInEra@ corresponds to @(e' - e) * epochSize)@
+            -- * @timeInEra@ corresponds to @((e' - e) * epochSize * slotLen@
+            --   which, if INV-1b holds, equals @(s' - s) * slotLen@
             let epochsInEra, slotsInEra :: Word64
                 epochsInEra = countEpochs (boundEpoch curEnd) (boundEpoch curStart)
                 slotsInEra  = epochsInEra * unEpochSize (eraEpochSize curParams)
@@ -575,12 +608,14 @@ invariantSummary = \(Summary summary) ->
               throwError $ mconcat [
                   "Invalid final boundSlot in "
                 , show curSummary
+                , " (INV-1b)"
                 ]
 
             unless (boundTime curEnd == addUTCTime timeInEra (boundTime curStart)) $
               throwError $ mconcat [
                   "Invalid final boundTime in "
                 , show curSummary
+                , " (INV-2b)"
                 ]
 
             go curEnd next
