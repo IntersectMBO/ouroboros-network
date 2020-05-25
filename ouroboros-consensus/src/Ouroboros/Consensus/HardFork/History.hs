@@ -727,6 +727,82 @@ data Condition =
   | ContainsEpoch EpochNo
   deriving (Show)
 
+-- | Check if this 'EraSummary' contains the specified time/slot/epoch
+--
+-- NOTE. The lower bound of every era is inclusive, while the upper bound is
+-- really exclusive, making the upper bound of every era equal to the lower
+-- bound of the next.
+--
+-- >         era A         era B         era C
+-- >        [.....) [...............) [..........)
+-- > epoch         e                 e'
+-- > slot          s                 s'
+-- > time          t                 t'
+--
+-- Now let's consider what happens when we do translations of the values at
+-- the boundary.
+--
+--  1. Slot-to-epoch translation. Using era C, we get
+--
+--     > e' + ((s' - s') / epochSizeC) == e'
+--
+--     Using era B (technically the wrong era to be using, since the upper bound
+--     is exclusive), we get
+--
+--     > e + ((s' - s) / epochSizeB)
+--
+--     These are equal by (INV-1a).
+--
+--  2. Epoch-to-slot translation. Using era C, we get
+--
+--     > s' + ((e' - e') * epochSizeC) == s'
+--
+--     Using era B, we'd get
+--
+--     > s + ((e' - e) * epochSizeB
+--
+--     These are equal by (INV-1b).
+--
+--  3. Slot to time translation. Using era C, we get
+--
+--     > t' + ((s' - s') * slotLenC) == t'
+--
+--     Using era C, we get
+--
+--     > t + ((s' - s) * slotLenB)
+--
+--     These are equal by (INV-2b)
+--
+--  4. Time to slot translation. Using era C, we get
+--
+--     > s' + ((t' - t') / slotLenC) == s'
+--
+--     Using era B, we get
+--
+--     > s + ((t' - t) / slotLenB)
+--
+--     These are equal by (INV-2a).
+--
+-- This means that for values at that boundary, it does not matter if we use
+-- this era or the next era for the translation. However, this is only true for
+-- these 4 translations. If we are returning the era parameters directly, then
+-- of course we can't use the era parameters from the wrong era.
+--
+-- There is however a benefit to using the current era: there might not /be/
+-- a next era, and so if we use the current era, we extend the period for which
+-- we do calculations just that tiny bit more. This might be important for
+-- ledger implementations. For example, suppose we want to know if a particular
+-- slot @s@ is far enough away from the next epoch boundary (e.g., to determine
+-- if an update proposal should take effect in this epoch or the next). One
+-- natural way to write this would be to translate @s@ to the corresponding
+-- epoch @e@, then translate @e + 1@ back to a slot @s'@, and check the
+-- distance @s' - s@. However, it is conceivable that the safe zone stops at
+-- that epoch boundary; if it does, this computation would result in a
+-- 'PastHorizonException', even if a different way to write the same computation
+-- (translating @s + delta@ to an epoch number, and then comparing that to @e@)
+-- might succeed. Rather than imposing an unnecessary limitation on the ledger,
+-- we therefore treat the upper bound as inclusive, so that both ways to do the
+-- check would succeed.
 eval :: Condition -> EraSummary -> Bool
 eval condition EraSummary{..} =
     case condition of
