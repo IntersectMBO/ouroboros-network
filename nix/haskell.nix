@@ -51,6 +51,7 @@ let
         packages.ouroboros-network.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-consensus.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-consensus-byron.configureFlags = [ "--ghc-option=-Werror" ];
+        packages.ouroboros-consensus-byron-test.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-consensus-byronspec.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-consensus-cardano.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-consensus-mock.configureFlags = [ "--ghc-option=-Werror" ];

@@ -28,6 +28,7 @@ let
        ouroboros-network-testing
        ouroboros-consensus
        ouroboros-consensus-byron
+       ouroboros-consensus-byron-test
        ouroboros-consensus-byronspec
        ouroboros-consensus-cardano
        ouroboros-consensus-mock

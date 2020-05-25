@@ -9,7 +9,7 @@ module Test.ThreadNet.DualPBFT (
     tests
   ) where
 
-import           Control.Monad.Trans.Except
+import           Control.Monad.Except
 import           Crypto.Number.Generate as Cryptonite
 import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
