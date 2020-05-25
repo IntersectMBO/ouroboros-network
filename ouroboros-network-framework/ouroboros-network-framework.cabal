@@ -45,6 +45,8 @@ library
                        Ouroboros.Network.ConnectionManager.Core
                        Ouroboros.Network.ConnectionManager.ConnectionHandler
                        Ouroboros.Network.ConnectionManager.RethrowPolicy
+                       Ouroboros.Network.ConnectionManager.Server
+                       Ouroboros.Network.ConnectionManager.Server.ControlChannel
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Server.RateLimiting
@@ -110,6 +112,7 @@ test-suite ouroboros-network-framework-tests
                        Network.TypedProtocol.ReqResp.Codec.CBOR
                        Test.Network.TypedProtocol.PingPong.Codec
                        Test.Network.TypedProtocol.ReqResp.Codec
+                       Test.Ouroboros.Network.ConnectionManager.Server
                        Test.Ouroboros.Network.Driver
                        Test.Ouroboros.Network.Orphans
                        Test.Ouroboros.Network.Socket
@@ -132,6 +135,7 @@ test-suite ouroboros-network-framework-tests
                      , tasty
                      , tasty-quickcheck
 
+                     , cardano-prelude
                      , contra-tracer
 
                      , io-sim

@@ -31,15 +31,12 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, contramap, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Functor (void)
-import           Data.Foldable (traverse_)
 import           Data.Typeable (Typeable)
 
 import           Network.Mux hiding (miniProtocolNum)
 
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Channel (fromChannel)
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.ConnectionManager.RethrowPolicy
 import           Ouroboros.Network.ConnectionManager.Types
@@ -167,9 +164,17 @@ makeConnectionHandler
     -> MiniProtocolBundle muxMode
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber extra m
                           (OuroborosBundle muxMode peerAddr ByteString m a b)
+    -> (MuxPromise muxMode peerAddr versionNumber ByteString m a b -> m ())
+    -- ^ This method allows to pass control over responders to the server (for
+    -- outbound connections), see
+    -- 'Ouroboros.Network.ConnectionManager.Server.ControlChannel.newOutboundConnection'.
     -> (ThreadId m, RethrowPolicy)
     -> MuxConnectionHandler muxMode peerAddr versionNumber ByteString m a b
-makeConnectionHandler muxTracer singMuxMode miniProtocolBundle handshakeArguments (mainThreadId, rethrowPolicy)=
+makeConnectionHandler muxTracer singMuxMode
+                      miniProtocolBundle
+                      handshakeArguments
+                      announceOutboundConnection
+                      (mainThreadId, rethrowPolicy) =
     ConnectionHandler $
       case singMuxMode of
         SInitiatorMode          -> WithInitiatorMode          outboundConnectionHandler
@@ -214,27 +219,19 @@ makeConnectionHandler muxTracer singMuxMode miniProtocolBundle handshakeArgument
                         (readTVar <$> scheduleStopVarBundle)
                         app
               !mux <- newMux miniProtocolBundle
-              atomically $ writeTVar muxPromiseVar
-                            (Promised
-                              (MuxRunning connectionId
-                                          mux
-                                          muxApp
-                                          scheduleStopVarBundle))
+              let muxPromise =
+                    MuxRunning
+                      connectionId mux
+                      muxApp scheduleStopVarBundle
+              atomically $ writeTVar muxPromiseVar (Promised muxPromise)
 
               -- For outbound connections we need to on demand start receivers.
               -- This is, in a sense, a no man land: the server will not act, as
               -- it's only reacting to inbound connections, and it also does not
               -- belong to initiator (peer-2-peer governor).
-              case (singMuxMode, muxApp) of
-                (SInitiatorResponderMode,
-                 Bundle (WithHot hotPtcls)
-                        (WithWarm warmPtcls)
-                        (WithEstablished establishedPtcls)) -> do
-                  -- TODO: #2221 restart responders
-                  traverse_ (runResponder mux) hotPtcls
-                  traverse_ (runResponder mux) warmPtcls
-                  traverse_ (runResponder mux) establishedPtcls
-
+              case singMuxMode of
+                SInitiatorResponderMode ->
+                  announceOutboundConnection muxPromise
                 _ -> pure ()
 
               runMux (WithMuxBearer connectionId `contramap` muxTracer)
@@ -319,22 +316,6 @@ makeConnectionHandler muxTracer singMuxMode miniProtocolBundle handshakeArgument
 
       -- if 'MuxError' was thrown by the conneciton handler, let the other side
       -- know.
-
-
-    runResponder :: Mux InitiatorResponderMode m
-                 -> MiniProtocol InitiatorResponderMode ByteString m a b -> m ()
-    runResponder mux MiniProtocol {
-                        miniProtocolNum,
-                        miniProtocolRun
-                      } =
-        case miniProtocolRun of
-          InitiatorAndResponderProtocol _ responder ->
-            void $
-              runMiniProtocol
-                mux miniProtocolNum
-                ResponderDirection
-                StartOnDemand
-                (runMuxPeer responder . fromChannel)
 
 
 --
