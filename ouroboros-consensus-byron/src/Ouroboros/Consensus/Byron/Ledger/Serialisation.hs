@@ -22,6 +22,9 @@ module Ouroboros.Consensus.Byron.Ledger.Serialisation (
   , DropEncodedSizeException(..)
     -- * Low-level API
   , fakeByronBlockSizeHint
+  , decodeByronRegularBlock
+  , decodeByronBoundaryBlock
+  , ebbEnvelope
   ) where
 
 import           Control.Exception (Exception (..), throw)
@@ -146,13 +149,43 @@ encodeByronBlock blk = mconcat [
 -- | Inverse of 'encodeByronBlock'
 decodeByronBlock :: CC.EpochSlots -> Decoder s (Lazy.ByteString -> ByronBlock)
 decodeByronBlock epochSlots =
-    fillInByteString <$> CC.fromCBORABlockOrBoundary epochSlots
-  where
-    fillInByteString :: CC.ABlockOrBoundary ByteSpan
-                     -> Lazy.ByteString
-                     -> ByronBlock
-    fillInByteString it theBytes = mkByronBlock epochSlots $
-      Lazy.toStrict . slice theBytes <$> it
+    flip (\bs -> mkByronBlock epochSlots
+               . annotationBytes bs)
+    <$> CC.fromCBORABlockOrBoundary epochSlots
+
+-- | Decoder for a regular (non-EBB) Byron block.
+--
+-- PRECONDITION: the 'Lazy.ByteString' given as argument to the decoder is the
+-- same as the one that is decoded.
+--
+-- This is a wrapper for 'CC.fromCBORABlock'.
+--
+-- Use 'decodeByronBlock' when you can, this function is provided for use by
+-- the hard-fork combinator.
+decodeByronRegularBlock :: CC.EpochSlots
+                        -> Decoder s (Lazy.ByteString -> ByronBlock)
+decodeByronRegularBlock epochSlots =
+    flip (\bs -> mkByronBlock epochSlots
+               . annotationBytes bs
+               . CC.ABOBBlock)
+    <$> CC.fromCBORABlock epochSlots
+
+-- | Decoder for a boundary Byron block.
+--
+-- PRECONDITION: the 'Lazy.ByteString' given as argument to the decoder is the
+-- same as the one that is decoded.
+--
+-- This is a wrapper for 'CC.fromCBORABoundaryBlock'.
+--
+-- Use 'decodeByronBlock' when you can, this function is provided for use by
+-- the hard-fork combinator.
+decodeByronBoundaryBlock :: CC.EpochSlots
+                         -> Decoder s (Lazy.ByteString -> ByronBlock)
+decodeByronBoundaryBlock epochSlots =
+    flip (\bs -> mkByronBlock epochSlots
+               . annotationBytes bs
+               . CC.ABOBBoundary)
+    <$> CC.fromCBORABoundaryBlock
 
 -- | Encode a header
 encodeByronHeader :: SerialisationVersion ByronBlock
@@ -238,7 +271,8 @@ decodeWrappedByronHeader = \case
 
 -- | When given the raw header bytes extracted from the block, i.e., the
 -- header annotation of 'CC.AHeader' or 'CC.ABoundaryHdr', we still need to
--- prepend some bytes so that we can use 'decodeByronHeader' to decode it:
+-- prepend some bytes so that we can use 'decodeByronHeader' (when expecting a
+-- size hint) to decode it:
 byronAddHeaderEnvelope
   :: IsEBB
   -> SizeInBytes  -- ^ Block size
@@ -246,14 +280,20 @@ byronAddHeaderEnvelope
 byronAddHeaderEnvelope isEBB blockSize bs =
     CBOR.toLazyByteString $
       encodeEncodedWithSize $
-        EncodedWithSize blockSize $ Serialised (tagEBB bs)
-  where
-    -- Add the tag distinguishing a regular block from an EBB
-    -- (the tag expected by 'CC.fromCBORABlockOrBoundaryHdr')
-    tagEBB :: Lazy.ByteString -> Lazy.ByteString
-    tagEBB = mappend $ case isEBB of
-               IsEBB    -> "\130\NUL"
-               IsNotEBB -> "\130\SOH"
+        EncodedWithSize blockSize $
+          -- Add the envelope containing the tag distinguishing a regular
+          -- block from an EBB (the envelope expected by
+          -- 'CC.fromCBORABlockOrBoundaryHdr')
+          Serialised (ebbEnvelope isEBB <> bs)
+
+-- | A 'CC.ABlockOrBoundary' is a CBOR 2-tuple of a 'Word' (0 = EBB, 1 =
+-- regular block) and block/ebb payload. This function returns the bytes that
+-- should be prepended to the payload, i.e., the byte indicating it's a CBOR
+-- 2-tuple and the 'Word' indicating whether its an EBB or regular block.
+ebbEnvelope :: IsEBB -> Lazy.ByteString
+ebbEnvelope = \case
+  IsEBB    -> "\130\NUL"
+  IsNotEBB -> "\130\SOH"
 
 {-------------------------------------------------------------------------------
   Sized header
