@@ -14,7 +14,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Ledger (
-    HardForkEnvelopeErr(..)
+    HardForkLedgerError(..)
+  , HardForkEnvelopeErr(..)
   ) where
 
 import           Control.Monad.Except
