@@ -31,8 +31,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
 
-import           Cardano.Binary (Annotator (..), FullByteString (..), fromCBOR,
-                     toCBOR)
+import           Cardano.Binary (fromCBOR, toCBOR)
 import qualified Cardano.Crypto.Hash.Class as Crypto (Hash (..))
 import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
@@ -364,7 +363,7 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeAddHeaderEnvelope _ _isEBB _blockSize = shelleyAddHeaderEnvelope
 
   nodeEncodeBlockWithInfo  = \_cfg -> encodeShelleyBlockWithInfo
-  nodeEncodeHeader         = \_cfg _version -> toCBOR
+  nodeEncodeHeader         = \_cfg _version -> encodeShelleyHeader
   nodeEncodeWrappedHeader  = \_cfg _version -> encode
   nodeEncodeGenTx          = toCBOR
   nodeEncodeGenTxId        = toCBOR
@@ -376,9 +375,9 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
   nodeEncodeQuery          = encodeShelleyQuery
   nodeEncodeResult         = encodeShelleyResult
 
-  nodeDecodeHeader         = \_cfg _version -> (. Full) . runAnnotator <$> fromCBOR
+  nodeDecodeBlock          = \_cfg -> decodeShelleyBlock
+  nodeDecodeHeader         = \_cfg _version -> decodeShelleyHeader
   nodeDecodeWrappedHeader  = \_cfg _version -> decode
-  nodeDecodeBlock          = \_cfg -> (. Full) . runAnnotator <$> fromCBOR
   nodeDecodeGenTx          = fromCBOR
   nodeDecodeGenTxId        = fromCBOR
   nodeDecodeHeaderHash     = \Proxy -> fromCBOR

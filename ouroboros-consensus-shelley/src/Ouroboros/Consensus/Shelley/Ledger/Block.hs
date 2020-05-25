@@ -18,8 +18,13 @@ module Ouroboros.Consensus.Shelley.Ledger.Block (
   , GetHeader (..)
   , Header (..)
   , mkShelleyHeader
+    -- * Serialisation
   , encodeShelleyBlockWithInfo
+  , encodeShelleyBlock
+  , decodeShelleyBlock
   , shelleyAddHeaderEnvelope
+  , encodeShelleyHeader
+  , decodeShelleyHeader
     -- * Conversion
   , fromShelleyPrevHash
   , toShelleyPrevHash
@@ -27,6 +32,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Block (
   , Crypto
   ) where
 
+import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (..))
 import           Data.Binary (Get, Put)
@@ -39,8 +45,8 @@ import           Data.Proxy (Proxy (..))
 import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (Annotator (..), FromCBOR (..), ToCBOR (..),
-                     serialize)
+import           Cardano.Binary (Annotator (..), FromCBOR (..),
+                     FullByteString (..), ToCBOR (..), serialize)
 import qualified Cardano.Crypto.Hash as Crypto
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
@@ -216,11 +222,23 @@ encodeShelleyBlockWithInfo blk = BinaryInfo {
     , headerSize   = fromIntegral $ Lazy.length (serialize (getHeader blk))
     }
 
+encodeShelleyBlock :: Crypto c => ShelleyBlock c -> Encoding
+encodeShelleyBlock = toCBOR
+
+decodeShelleyBlock :: Crypto c => Decoder s (Lazy.ByteString -> ShelleyBlock c)
+decodeShelleyBlock = (. Full) . runAnnotator <$> fromCBOR
+
 -- | When given the raw header bytes extracted from the block (see
 -- 'encodeShelleyBlockWithInfo'), we have a bytestring exactly corresponding
 -- to the header, no modifications needed.
 shelleyAddHeaderEnvelope :: Lazy.ByteString -> Lazy.ByteString
 shelleyAddHeaderEnvelope = id
+
+encodeShelleyHeader :: Crypto c => Header (ShelleyBlock c) -> Encoding
+encodeShelleyHeader = toCBOR
+
+decodeShelleyHeader :: Crypto c => Decoder s (Lazy.ByteString -> Header (ShelleyBlock c))
+decodeShelleyHeader = (. Full) . runAnnotator <$> fromCBOR
 
 {-------------------------------------------------------------------------------
   Condense

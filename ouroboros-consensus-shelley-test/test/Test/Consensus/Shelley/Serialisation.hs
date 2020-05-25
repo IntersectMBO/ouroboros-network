@@ -11,8 +11,7 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
 
-import           Cardano.Binary (Annotator (..), FullByteString (..), fromCBOR,
-                     serialize, toCBOR)
+import           Cardano.Binary (fromCBOR, toCBOR)
 
 import           Ouroboros.Network.Block (HeaderHash)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
@@ -76,10 +75,10 @@ tests = testGroup "Shelley"
 -------------------------------------------------------------------------------}
 
 prop_roundtrip_Block :: Block -> Property
-prop_roundtrip_Block = roundtrip' toCBOR ((. Full) . runAnnotator <$> fromCBOR)
+prop_roundtrip_Block = roundtrip' encodeShelleyBlock decodeShelleyBlock
 
 prop_roundtrip_Header :: Header Block -> Property
-prop_roundtrip_Header = roundtrip' toCBOR ((. Full) . runAnnotator <$> fromCBOR)
+prop_roundtrip_Header = roundtrip' encodeShelleyHeader decodeShelleyHeader
 
 prop_roundtrip_HeaderHash :: HeaderHash Block -> Property
 prop_roundtrip_HeaderHash = roundtrip toCBOR fromCBOR
@@ -133,7 +132,7 @@ prop_encodeShelleyBlockWithInfo blk =
         CBOR.toLazyByteString binaryBlob
 
     encodedHeader :: Lazy.ByteString
-    encodedHeader = serialize (getHeader blk)
+    encodedHeader = CBOR.toLazyByteString $ encodeShelleyHeader (getHeader blk)
 
 {-------------------------------------------------------------------------------
   HashInfo
@@ -184,14 +183,14 @@ prop_headerIntegrity = verifyHeaderIntegrity testTPraosSlotsPerKESPeriod
 prop_detectCorruption_Block :: Block -> Corruption -> Property
 prop_detectCorruption_Block =
     detectCorruption
-      toCBOR
-      ((. Full) . runAnnotator <$> fromCBOR)
+      encodeShelleyBlock
+      decodeShelleyBlock
       (verifyBlockIntegrity testTPraosSlotsPerKESPeriod)
 
 -- | Test that we can detect random bitflips in blocks.
 prop_detectCorruption_Header :: Header Block -> Corruption -> Property
 prop_detectCorruption_Header =
     detectCorruption
-      toCBOR
-      ((. Full) . runAnnotator <$> fromCBOR)
+      encodeShelleyHeader
+      decodeShelleyHeader
       (verifyHeaderIntegrity testTPraosSlotsPerKESPeriod)
