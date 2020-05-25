@@ -8,6 +8,7 @@ module Test.ThreadNet.Util.NodeTopology
   , edgesNodeTopology
   , genNodeTopology
   , shrinkNodeTopology
+  , linearNodeTopology
   , meshNodeTopology
   , minimumDegreeNodeTopology
   ) where
@@ -66,6 +67,18 @@ meshNodeTopology numCoreNodes =
     NodeTopology $
     Map.fromList $
     [ (nid, Set.fromList $ enumCoreNodes (NumCoreNodes i))
+    | nid@(CoreNodeId i) <- enumCoreNodes numCoreNodes ]
+
+-- | Only connect each node the next node
+--
+linearNodeTopology ::
+     NumCoreNodes
+     -- ^ PRECONDITION: non-negative
+  -> NodeTopology
+linearNodeTopology numCoreNodes@(NumCoreNodes n)=
+    NodeTopology $
+    Map.fromList $
+    [ (nid, Set.filter (< CoreNodeId n) $ Set.singleton $ CoreNodeId (succ i))
     | nid@(CoreNodeId i) <- enumCoreNodes numCoreNodes ]
 
 -- | Generate a 'NodeTopology' consistent with the given properties
