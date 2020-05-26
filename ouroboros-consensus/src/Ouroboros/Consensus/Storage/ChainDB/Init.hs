@@ -9,6 +9,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Init (
   ) where
 
 import           Data.Coerce
+import           Data.Functor.Contravariant
 
 import           Ouroboros.Network.Block
 
@@ -25,6 +26,12 @@ data InitChainDB m blk = InitChainDB {
     , addBlock   :: blk -> m ()
     }
 
+instance Contravariant (InitChainDB m) where
+  contramap f db = InitChainDB {
+        checkEmpty = checkEmpty db
+      , addBlock   = addBlock   db . f
+      }
+
 fromFull :: IOLike m => ChainDB m blk -> InitChainDB m blk
 fromFull db = InitChainDB {
       checkEmpty = do
@@ -37,7 +44,4 @@ fromFull db = InitChainDB {
     }
 
 cast :: Coercible blk blk' => InitChainDB m blk -> InitChainDB m blk'
-cast db = InitChainDB {
-      checkEmpty = checkEmpty db
-    , addBlock   = addBlock   db . coerce
-    }
+cast = contramap coerce
