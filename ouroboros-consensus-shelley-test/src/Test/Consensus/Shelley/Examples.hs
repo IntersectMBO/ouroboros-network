@@ -75,7 +75,7 @@ testEpochInfo = SL.epochInfo SL.testGlobals
 -- | These are dummy values.
 testShelleyGenesis :: ShelleyGenesis c
 testShelleyGenesis = ShelleyGenesis {
-      sgStartTime         = SystemStart $ UTCTime (fromGregorian 2020 5 14) 0
+      sgSystemStart       = SystemStart $ UTCTime (fromGregorian 2020 5 14) 0
     , sgNetworkMagic      = NetworkMagic 0
     , sgNetworkId         = SL.Testnet
     , sgProtocolMagicId   = ProtocolMagicId 0

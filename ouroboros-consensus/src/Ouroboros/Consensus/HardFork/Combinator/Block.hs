@@ -15,7 +15,6 @@
 module Ouroboros.Consensus.HardFork.Combinator.Block (
     -- * Type family instances
     BlockConfig(..)
-  , CodecConfig(..)
   , Header(..)
   ) where
 
@@ -38,22 +37,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
-
-{-------------------------------------------------------------------------------
-  CodecConfig
--------------------------------------------------------------------------------}
-
-newtype instance CodecConfig (HardForkBlock xs) = HardForkCodecConfig {
-      hardForkCodecConfigPerEra :: PerEraCodecConfig xs
-    }
-
-instance CanHardFork xs => BlockHasCodecConfig (HardForkBlock xs) where
-  getCodecConfig =
-        HardForkCodecConfig
-      . PerEraCodecConfig
-      . hcmap proxySingle getCodecConfig
-      . getPerEraBlockConfig
-      . hardForkBlockConfigPerEra
 
 {-------------------------------------------------------------------------------
   GetHeader

@@ -24,7 +24,6 @@ class ( GetHeader blk
       , ConsensusProtocol (BlockProtocol blk)
       , NoUnexpectedThunks (Header blk)
       , NoUnexpectedThunks (BlockConfig blk)
-      , BlockHasCodecConfig blk
       ) => BlockSupportsProtocol blk where
   validateView :: BlockConfig blk
                -> Header blk

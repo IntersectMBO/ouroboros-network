@@ -94,7 +94,3 @@ instance HasHeader ByronSpecHeader where
 -------------------------------------------------------------------------------}
 
 data instance BlockConfig ByronSpecBlock = ByronSpecBlockConfig
-data instance CodecConfig ByronSpecBlock = ByronSpecCodecConfig
-
-instance BlockHasCodecConfig ByronSpecBlock where
-  getCodecConfig = const ByronSpecCodecConfig

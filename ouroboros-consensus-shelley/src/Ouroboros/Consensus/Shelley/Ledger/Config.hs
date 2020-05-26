@@ -5,7 +5,6 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Ledger.Config (
     BlockConfig (..)
-  , CodecConfig (..)
   ) where
 
 import           GHC.Generics (Generic)
@@ -30,17 +29,9 @@ data instance BlockConfig (ShelleyBlock c) = ShelleyConfig {
       -- | The highest protocol version this node supports. It will be stored
       -- the headers of produced blocks.
       shelleyProtocolVersion :: !SL.ProtVer
-    , shelleyStartTime       :: !SystemStart
+    , shelleySystemStart     :: !SystemStart
     , shelleyNetworkMagic    :: !NetworkMagic
     , shelleyProtocolMagicId :: !ProtocolMagicId
     }
   deriving stock (Show, Generic)
   deriving anyclass NoUnexpectedThunks
-
--- | No particular codec configuration is needed for Shelley
-data instance CodecConfig (ShelleyBlock c) = ShelleyCodecConfig
-  deriving stock (Show, Generic)
-  deriving anyclass NoUnexpectedThunks
-
-instance BlockHasCodecConfig (ShelleyBlock c) where
-  getCodecConfig = const ShelleyCodecConfig

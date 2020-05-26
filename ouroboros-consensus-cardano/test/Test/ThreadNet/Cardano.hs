@@ -80,7 +80,7 @@ prop_simple_cardano_convergence k d
             , nodeInfo    = \(CoreNodeId nid) ->
               plainTestNodeInitialization @(CardanoBlock TPraosMockCrypto) $
                 castProtocolInfo $ injProtocolInfo
-                  (sgStartTime genesisConfig)
+                  (sgSystemStart genesisConfig)
                   (mkProtocolRealTPraos
                     genesisConfig
                     (coreNodes !! fromIntegral nid))

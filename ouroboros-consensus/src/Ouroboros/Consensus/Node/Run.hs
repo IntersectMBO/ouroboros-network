@@ -16,17 +16,15 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy)
 import           Data.Word (Word32)
 
-import           Cardano.Crypto (ProtocolMagicId)
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block (HeaderHash, Serialised)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
-import           Ouroboros.Network.Magic (NetworkMagic)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -52,6 +50,7 @@ class ( LedgerSupportsProtocol    blk
       , QueryLedger               blk
       , HasNetworkProtocolVersion blk
       , CanForge                  blk
+      , ConfigSupportsNode        blk
         -- TODO: Remove after reconsidering rewindConsensusState:
       , Serialise (HeaderHash blk)
       ) => RunNode blk where
@@ -60,10 +59,6 @@ class ( LedgerSupportsProtocol    blk
   nodeIsEBB               :: Header blk -> Maybe EpochNo
 
   nodeImmDbChunkInfo      :: TopLevelConfig blk -> ChunkInfo
-
-  nodeStartTime           :: BlockConfig blk -> SystemStart
-  nodeNetworkMagic        :: BlockConfig blk -> NetworkMagic
-  nodeProtocolMagicId     :: BlockConfig blk -> ProtocolMagicId
 
   -- | Hash serialisation
   nodeHashInfo :: Proxy blk -> HashInfo (HeaderHash blk)

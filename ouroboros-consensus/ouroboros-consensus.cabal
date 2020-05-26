@@ -44,6 +44,7 @@ library
                        Ouroboros.Consensus.BlockchainTime.WallClock.Types
                        Ouroboros.Consensus.BlockchainTime.WallClock.Util
                        Ouroboros.Consensus.Config
+                       Ouroboros.Consensus.Config.SupportsNode
                        Ouroboros.Consensus.Config.SecurityParam
                        Ouroboros.Consensus.Forecast
                        Ouroboros.Consensus.Fragment.Diff
@@ -61,6 +62,7 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Ledger
                        Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
                        Ouroboros.Consensus.HardFork.Combinator.Mempool
+                       Ouroboros.Consensus.HardFork.Combinator.Node
                        Ouroboros.Consensus.HardFork.Combinator.PartialConfig
                        Ouroboros.Consensus.HardFork.Combinator.Protocol
                        Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel

@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -20,6 +21,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation (defaultDecodeAnnTip,
                      defaultEncodeAnnTip)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -37,6 +39,20 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 instance HasNetworkProtocolVersion (SimpleBlock SimpleMockCrypto ext) where
   -- Use defaults
 
+instance RunMockBlock SimpleMockCrypto ext
+      => ConfigSupportsNode (SimpleBlock SimpleMockCrypto ext) where
+
+  -- | No additional codec information is required for simple blocks
+  data CodecConfig (SimpleBlock SimpleMockCrypto ext) = SimpleCodecConfig
+
+  getCodecConfig = const SimpleCodecConfig
+  getSystemStart = const $ SystemStart dummyDate
+    where
+      --  This doesn't matter much
+      dummyDate = UTCTime (fromGregorian 2019 8 13) 0
+  getNetworkMagic    = const $ NetworkMagic 0x0000ffff
+  getProtocolMagicId = mockProtocolMagicId
+
 instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
            -- The below constraint seems redundant but is not! When removed,
            -- some of the tests loop, but only when compiled with @-O2@ ; with
@@ -52,13 +68,6 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeIsEBB                 = const Nothing
   nodeImmDbChunkInfo        = \cfg -> simpleChunkInfo $
     EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
-  nodeStartTime             = \_cfg -> SystemStart dummyDate
-    where
-      --  This doesn't matter much
-      dummyDate = UTCTime (fromGregorian 2019 8 13) 0
-  nodeNetworkMagic          = \_ -> NetworkMagic 0x0000ffff
-
-  nodeProtocolMagicId       = mockProtocolMagicId
   nodeHashInfo              = const simpleBlockHashInfo
   nodeMaxBlockSize          = const 2000000 -- TODO
   nodeBlockEncodingOverhead = const 1000 -- TODO
