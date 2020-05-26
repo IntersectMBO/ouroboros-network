@@ -17,7 +17,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.State.Infra
                      (HardForkState_, TransitionOrTip (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State.Infra as State
@@ -45,7 +45,7 @@ deriving instance SingleEraBlock blk => Show (HardForkEraLedgerView blk)
 
 mkHardForkEraLedgerView :: SingleEraBlock blk
                         => EpochInfo Identity
-                        -> SingleEraLedgerConfig blk
+                        -> WrapPartialLedgerConfig blk
                         -> LedgerState blk
                         -> HardForkEraLedgerView blk
 mkHardForkEraLedgerView ei pcfg st = HardForkEraLedgerView {

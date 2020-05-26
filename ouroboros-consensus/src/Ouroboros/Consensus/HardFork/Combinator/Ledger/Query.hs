@@ -28,9 +28,10 @@ import           Data.Type.Equality
 import           Ouroboros.Consensus.Ledger.Abstract
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger ()
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
                      (Mismatch (..))
@@ -63,7 +64,7 @@ instance CanHardFork xs => QueryLedger (HardForkBlock xs) where
 
       go :: All SingleEraBlock xs'
          => HardForkQuery xs' result
-         -> NS (Product SingleEraLedgerConfig LedgerState) xs'
+         -> NS (Product WrapPartialLedgerConfig LedgerState) xs'
          -> HardForkQueryResult xs' result
       go (QZ qry) (Z (Pair cfg st)) =
           Right $ answerQuery (completeLedgerConfig' ei cfg) qry st
@@ -109,7 +110,7 @@ deriving instance All SingleEraBlock xs => Show (HardForkQuery xs result)
 -------------------------------------------------------------------------------}
 
 ledgerInfo :: forall blk. SingleEraBlock blk
-           => Product SingleEraLedgerConfig LedgerState blk
+           => Product WrapPartialLedgerConfig LedgerState blk
            -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 

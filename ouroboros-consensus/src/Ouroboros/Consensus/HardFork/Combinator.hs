@@ -6,6 +6,7 @@ module Ouroboros.Consensus.HardFork.Combinator (
   ) where
 
 -- Defines 'SingleEraBlock' and 'CanHardFork'
+-- Defines 'SingleEraInfo' and 'LedgerEraInfo'
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract as X
 
 -- Defines 'HardForkProtocol', 'HardForkBlock', and 'LedgerState',
@@ -34,9 +35,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query as X
 
 -- Instance for 'ChainSelection'
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel as X
-
--- Defines 'SingleEraInfo' and 'LedgerEraInfo'
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra.Info as X
 
 -- Defines the various translation types required for concrete HFC instances
 import           Ouroboros.Consensus.HardFork.Combinator.Translation as X

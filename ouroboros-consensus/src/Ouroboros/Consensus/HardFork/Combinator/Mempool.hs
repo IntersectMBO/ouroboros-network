@@ -31,11 +31,13 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger ()
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 
@@ -89,9 +91,9 @@ applyHelper apply
 
     applyCurrent
       :: forall blk. SingleEraBlock blk
-      => SingleEraLedgerConfig blk
-      -> Injection SingleEraApplyTxErr xs blk
-      -> Product GenTx (Ticked :.: LedgerState) blk
+      => WrapPartialLedgerConfig                                       blk
+      -> Injection WrapApplyTxErr xs                                   blk
+      -> Product GenTx (Ticked :.: LedgerState)                        blk
       -> (Except (HardForkApplyTxErr xs) :.: (Ticked :.: LedgerState)) blk
     applyCurrent cfg injectErr (Pair tx (Comp st)) = Comp $ fmap Comp $
       withExcept (injectApplyTxErr injectErr) $
@@ -104,7 +106,7 @@ instance CanHardFork xs => HasTxId (GenTx (HardForkBlock xs)) where
     deriving (Show, Eq, Ord, NoUnexpectedThunks)
 
   txId = HardForkGenTxId . OneEraGenTxId
-       . hcmap proxySingle (SingleEraGenTxId . txId)
+       . hcmap proxySingle (WrapGenTxId . txId)
        . getOneEraGenTx . getHardForkGenTx
 
 {-------------------------------------------------------------------------------
@@ -132,7 +134,7 @@ ledgerInfo :: forall blk. SingleEraBlock blk
            => State.Current (Ticked :.: LedgerState) blk -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
-injectApplyTxErr :: Injection SingleEraApplyTxErr xs blk
+injectApplyTxErr :: Injection WrapApplyTxErr xs blk
                  -> ApplyTxErr blk
                  -> HardForkApplyTxErr xs
 injectApplyTxErr inj =
@@ -140,4 +142,4 @@ injectApplyTxErr inj =
     . OneEraApplyTxErr
     . unK
     . apFn inj
-    . SingleEraApplyTxErr
+    . WrapApplyTxErr

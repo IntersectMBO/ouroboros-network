@@ -1,11 +1,16 @@
-{-# LANGUAGE DefaultSignatures    #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.PartialConfig (
     HasPartialConsensusConfig(..)
   , HasPartialLedgerConfig(..)
+    -- * Newtype wrappers
+  , WrapPartialLedgerConfig(..)
+  , WrapPartialConsensusConfig(..)
     -- * Convenience re-exports
   , EpochInfo(..)
   , Identity(..)
@@ -16,6 +21,7 @@ import           Data.Functor.Identity
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.EpochInfo
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 
@@ -80,3 +86,13 @@ class ( UpdateLedger blk
                                -> EpochInfo Identity
                                -> PartialLedgerConfig blk  -> LedgerConfig blk
   completeLedgerConfig _ _ = id
+
+{-------------------------------------------------------------------------------
+  Newtype wrappers
+-------------------------------------------------------------------------------}
+
+newtype WrapPartialLedgerConfig    blk = WrapPartialLedgerConfig    { unwrapPartialLedgerConfig    :: PartialLedgerConfig                   blk  }
+newtype WrapPartialConsensusConfig blk = WrapPartialConsensusConfig { unwrapPartialConsensusConfig :: PartialConsensusConfig (BlockProtocol blk) }
+
+deriving instance NoUnexpectedThunks (PartialLedgerConfig                   blk)  => NoUnexpectedThunks (WrapPartialLedgerConfig    blk)
+deriving instance NoUnexpectedThunks (PartialConsensusConfig (BlockProtocol blk)) => NoUnexpectedThunks (WrapPartialConsensusConfig blk)

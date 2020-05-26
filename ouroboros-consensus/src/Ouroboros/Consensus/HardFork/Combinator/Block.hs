@@ -30,12 +30,13 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 
 {-------------------------------------------------------------------------------
@@ -100,7 +101,7 @@ instance CanHardFork xs => HasAnnTip (HardForkBlock xs) where
 
   getTipInfo =
         OneEraTipInfo
-      . hcmap proxySingle (SingleEraTipInfo . getTipInfo)
+      . hcmap proxySingle (WrapTipInfo . getTipInfo)
       . getOneEraHeader
       . getHardForkHeader
 
@@ -110,11 +111,11 @@ instance CanHardFork xs => HasAnnTip (HardForkBlock xs) where
       . getOneEraTipInfo
     where
       tipInfoOne :: forall blk. SingleEraBlock blk
-                 => SingleEraTipInfo blk -> OneEraHash xs
+                 => WrapTipInfo blk -> OneEraHash xs
       tipInfoOne = OneEraHash
                  . getRawHash  (Proxy @blk)
                  . tipInfoHash (Proxy @blk)
-                 . getSingleEraTipInfo
+                 . unwrapTipInfo
 
 {-------------------------------------------------------------------------------
   BasicEnvelopeValidation
@@ -138,9 +139,9 @@ instance CanHardFork xs => BasicEnvelopeValidation (HardForkBlock xs) where
         Left _mismatch -> succ b
     where
       aux :: forall blk. SingleEraBlock blk
-          => Product SingleEraTipInfo SingleEraTipInfo blk
+          => Product WrapTipInfo WrapTipInfo blk
           -> K BlockNo blk
-      aux (Pair (SingleEraTipInfo old) (SingleEraTipInfo new)) = K $
+      aux (Pair (WrapTipInfo old) (WrapTipInfo new)) = K $
           expectedNextBlockNo (Proxy @blk) old new b
 
   -- TODO: If the block is from a different era as the current tip, we just
@@ -152,9 +153,9 @@ instance CanHardFork xs => BasicEnvelopeValidation (HardForkBlock xs) where
         Left _mismatch -> succ s
     where
       aux :: forall blk. SingleEraBlock blk
-          => Product SingleEraTipInfo SingleEraTipInfo blk
+          => Product WrapTipInfo WrapTipInfo blk
           -> K SlotNo blk
-      aux (Pair (SingleEraTipInfo old) (SingleEraTipInfo new)) = K $
+      aux (Pair (WrapTipInfo old) (WrapTipInfo new)) = K $
           minimumNextSlotNo (Proxy @blk) old new s
 
 {-------------------------------------------------------------------------------

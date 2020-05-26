@@ -20,12 +20,13 @@ import           Ouroboros.Consensus.Block.Forge
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol ()
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Util.SOP
 
@@ -64,9 +65,9 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
       matchedForgeBlock
         :: forall m blk. (MonadRandom m, CanForge blk)
         => TopLevelConfig blk
-        -> (Update m :.: SingleEraForgeState) blk
+        -> (Update m :.: WrapForgeState) blk
         -> ([] :.: GenTx) blk
-        -> Product SingleEraIsLeader LedgerState blk
+        -> Product WrapIsLeader LedgerState blk
         -> m blk
       matchedForgeBlock matchedCfg
                         (Comp matchedForgeState)
@@ -78,7 +79,7 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
             blockNo
             (Ticked tickedSlotNo matchedLedgerState)
             matchedTxs
-            (getSingleEraIsLeader matchedIsLeader)
+            (unwrapIsLeader matchedIsLeader)
 
 {-------------------------------------------------------------------------------
   Auxiliary
@@ -87,12 +88,12 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
 distribUpdateForgeState
   :: forall xs m. SListI xs
   => Update m (ForgeState (HardForkBlock xs))
-  -> NP (Update m :.: SingleEraForgeState) xs
+  -> NP (Update m :.: WrapForgeState) xs
 distribUpdateForgeState updateAll = hliftA (Comp . mkSingleEraUpdate) lenses_NP
   where
     mkSingleEraUpdate
-      :: Lens SingleEraForgeState xs blk
-      -> Update m (SingleEraForgeState blk)
+      :: Lens WrapForgeState xs blk
+      -> Update m (WrapForgeState blk)
     mkSingleEraUpdate Lens { getter, setter } =
         liftUpdate
           (getter . coerce)

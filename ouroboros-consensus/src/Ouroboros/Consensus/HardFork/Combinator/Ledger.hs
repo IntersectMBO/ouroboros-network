@@ -36,15 +36,17 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Block
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol ()
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
                      (HardForkEraLedgerView (..), HardForkLedgerView,
                      mkHardForkEraLedgerView)
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra
 import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
                      HardForkState_ (..), Past (..), Snapshot (..),
                      TransitionOrTip (..))
@@ -84,9 +86,9 @@ instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
 tickOne :: forall blk. SingleEraBlock blk
         => EpochInfo Identity
         -> SlotNo
-        -> SingleEraLedgerConfig      blk
-        -> LedgerState                blk
-        -> (Ticked :.: LedgerState)   blk
+        -> WrapPartialLedgerConfig  blk
+        -> LedgerState              blk
+        -> (Ticked :.: LedgerState) blk
 tickOne ei slot pcfg st = Comp $
     applyChainTick (completeLedgerConfig' ei pcfg) slot st
 
@@ -148,9 +150,9 @@ instance CanHardFork xs
 
 apply :: SingleEraBlock blk
       => EpochInfo Identity
-      -> SingleEraLedgerConfig blk
-      -> Injection SingleEraLedgerError xs blk
-      -> Product I (Ticked :.: LedgerState) blk
+      -> WrapPartialLedgerConfig                           blk
+      -> Injection WrapLedgerErr xs                        blk
+      -> Product I (Ticked :.: LedgerState)                blk
       -> (Except (HardForkLedgerError xs) :.: LedgerState) blk
 apply ei cfg injectErr (Pair (I block) (Comp st)) = Comp $
     withExcept (injectLedgerError injectErr) $
@@ -158,9 +160,9 @@ apply ei cfg injectErr (Pair (I block) (Comp st)) = Comp $
 
 reapply :: SingleEraBlock blk
         => EpochInfo Identity
-        -> SingleEraLedgerConfig blk
+        -> WrapPartialLedgerConfig            blk
         -> Product I (Ticked :.: LedgerState) blk
-        -> LedgerState blk
+        -> LedgerState                        blk
 reapply ei cfg (Pair (I block) (Comp st)) =
     reapplyLedgerBlock (completeLedgerConfig' ei cfg) block st
 
@@ -217,10 +219,10 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
       cfgs = distribTopLevelConfig ei tlc
 
       aux :: forall blk. SingleEraBlock blk
-          => TopLevelConfig blk
-          -> Injection SingleEraEnvelopeErr xs blk
+          => TopLevelConfig                                    blk
+          -> Injection WrapEnvelopeErr xs                      blk
           -> Product Header (Ticked :.: HardForkEraLedgerView) blk
-          -> K (Except (HardForkEnvelopeErr xs) ()) blk
+          -> K (Except (HardForkEnvelopeErr xs) ())            blk
       aux cfg injErr (Pair hdr (Comp view)) = K $
           withExcept injErr' $
             additionalEnvelopeChecks cfg (hardForkEraLedgerView <$> view) hdr
@@ -229,7 +231,7 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
           injErr' = HardForkEnvelopeErrFromEra
                   . OneEraEnvelopeErr
                   . unK . apFn injErr
-                  . SingleEraEnvelopeErr
+                  . WrapEnvelopeErr
 
 {-------------------------------------------------------------------------------
   LedgerSupportsProtocol
@@ -255,10 +257,10 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
 
       -- Change a telescope of a forecast into a forecast of a telescope
       mkForecast :: All SingleEraBlock xs'
-                 => InPairs TranslateEraLedgerView xs'
-                 -> NP SingleEraLedgerConfig xs'
+                 => InPairs TranslateEraLedgerView                                    xs'
+                 -> NP WrapPartialLedgerConfig                                        xs'
                  -> Telescope (Past g) (Current (Forecast :.: HardForkEraLedgerView)) xs'
-                 -> Forecast (HardForkLedgerView xs')
+                 -> Forecast (HardForkLedgerView                                      xs')
       mkForecast PNil _ (TZ (Current start (Comp f))) =
           forecastFinalEra start f
       mkForecast (PCons g _) (cfg :* cfg' :* _) (TZ (Current start f)) =
@@ -304,8 +306,8 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
       forecastNotFinal :: forall blk blk' blks.
                           (SingleEraBlock blk, SingleEraBlock blk')
                        => TranslateEraLedgerView blk blk'
-                       -> SingleEraLedgerConfig blk
-                       -> SingleEraLedgerConfig blk'
+                       -> WrapPartialLedgerConfig blk
+                       -> WrapPartialLedgerConfig blk'
                        -> History.Bound     -- Forecast era start
                        -> Forecast (HardForkEraLedgerView blk)
                        -> Forecast (HardForkLedgerView (blk ': blk' ': blks))
@@ -357,8 +359,8 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
 
       -- | Forecast of a single era, as well as the end of that era (if any)
       forecastOne :: SingleEraBlock blk
-                  => SingleEraLedgerConfig blk
-                  -> LedgerState blk
+                  => WrapPartialLedgerConfig                          blk
+                  -> LedgerState                                      blk
                   -> (Maybe :.: (Forecast :.: HardForkEraLedgerView)) blk
       forecastOne pcfg st' = Comp $
           (Comp . fmap mkView) <$>
@@ -388,7 +390,7 @@ ledgerViewInfo :: forall blk. SingleEraBlock blk
                => (Ticked :.: HardForkEraLedgerView) blk -> LedgerEraInfo blk
 ledgerViewInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
-injectLedgerError :: Injection SingleEraLedgerError xs blk
+injectLedgerError :: Injection WrapLedgerErr xs blk
                   -> LedgerError blk
                   -> HardForkLedgerError xs
 injectLedgerError inj =
@@ -396,4 +398,4 @@ injectLedgerError inj =
     . OneEraLedgerError
     . unK
     . apFn inj
-    . SingleEraLedgerError
+    . WrapLedgerErr

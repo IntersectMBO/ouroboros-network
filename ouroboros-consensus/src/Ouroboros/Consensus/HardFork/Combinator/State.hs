@@ -39,9 +39,10 @@ import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Counting
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra
 import           Ouroboros.Consensus.HardFork.Combinator.State.Infra
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
@@ -148,7 +149,7 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
   where
     -- Return the end of this era if we should transition to the next
     whenExtend :: SingleEraBlock              blk
-               => SingleEraLedgerConfig       blk
+               => WrapPartialLedgerConfig     blk
                -> Current LedgerState         blk
                -> (Maybe :.: K History.Bound) blk
     whenExtend pcfg cur = Comp $ K <$> do
@@ -162,8 +163,8 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
 
     howExtend :: (SingleEraBlock blk, SingleEraBlock blk')
               => TranslateEraLedgerState blk blk'
-              -> SingleEraLedgerConfig blk
-              -> SingleEraLedgerConfig blk'
+              -> WrapPartialLedgerConfig blk
+              -> WrapPartialLedgerConfig blk'
               -> History.Bound
               -> Current LedgerState blk
               -> (Past LedgerState blk, Current LedgerState blk')
@@ -183,7 +184,7 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
             }
         )
 
-    cfgs :: NP SingleEraLedgerConfig xs
+    cfgs :: NP WrapPartialLedgerConfig xs
     cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
 
     ei :: EpochInfo Identity
@@ -218,7 +219,7 @@ transitions HardForkLedgerConfig{..} (HardForkState st) =
 -- This associates each transition with the era it transitions /from/.
 -- See also 'shiftTransitions'.
 allTransitions :: CanHardFork                                xs
-               => NP SingleEraLedgerConfig                   xs
+               => NP WrapPartialLedgerConfig                 xs
                -> Telescope (Past f) (Current (LedgerState)) xs
                -> AtMost                                     xs EpochNo
 allTransitions cfgs st =
@@ -231,10 +232,10 @@ allTransitions cfgs st =
     past :: Past f blk -> K EpochNo blk
     past = K . History.boundEpoch . pastEnd
 
-    cur :: SingleEraBlock blk
-        => SingleEraLedgerConfig blk
-        -> Current LedgerState blk
-        -> K (Maybe EpochNo) blk
+    cur :: SingleEraBlock          blk
+        => WrapPartialLedgerConfig blk
+        -> Current LedgerState     blk
+        -> K (Maybe EpochNo)       blk
     cur cfg = K . singleEraTransition' cfg . currentState
 
 -- | Associate transitions with the era they transition /to/

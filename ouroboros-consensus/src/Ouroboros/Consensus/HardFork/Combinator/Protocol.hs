@@ -21,9 +21,11 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Block
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
@@ -35,7 +37,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.State
                      (HardForkConsensusState, HardForkValidationErr)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Protocol.State as ProtocolState
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra
 
 {-------------------------------------------------------------------------------
   ConsensusProtocol
@@ -67,9 +68,9 @@ instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
       . hardForkConsensusConfigPerEra
     where
       aux :: forall blk. SingleEraBlock blk
-          => SingleEraConsensusConfig blk -> Bool
+          => WrapPartialConsensusConfig blk -> Bool
       aux = partialCheckIfCanBeLeader (Proxy @(BlockProtocol blk))
-          . getSingleEraConsensusConfig
+          . unwrapPartialConsensusConfig
 
   -- Security parameter must be equal across /all/ eras
   protocolSecurityParam = hardForkConsensusConfigK
@@ -82,10 +83,11 @@ instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
       . hardForkConsensusConfigPerEra
     where
       aux :: forall blk. SingleEraBlock blk
-          => SingleEraConsensusConfig blk -> SingleEraChainSelConfig blk
-      aux = SingleEraChainSelConfig
+          => WrapPartialConsensusConfig blk
+          -> WrapChainSelConfig blk
+      aux = WrapChainSelConfig
           . partialChainSelConfig (Proxy @(BlockProtocol blk))
-          . getSingleEraConsensusConfig
+          . unwrapPartialConsensusConfig
 
 {-------------------------------------------------------------------------------
   BlockSupportsProtocol
@@ -94,7 +96,7 @@ instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
 instance CanHardFork xs => BlockSupportsProtocol (HardForkBlock xs) where
   validateView HardForkBlockConfig{..} =
         OneEraValidateView
-      . hczipWith proxySingle (SingleEraValidateView .: validateView) cfgs
+      . hczipWith proxySingle (WrapValidateView .: validateView) cfgs
       . getOneEraHeader
       . getHardForkHeader
     where
@@ -103,7 +105,7 @@ instance CanHardFork xs => BlockSupportsProtocol (HardForkBlock xs) where
   selectView HardForkBlockConfig{..} hdr =
         HardForkSelectView (blockNo hdr)
       . OneEraSelectView
-      . hczipWith proxySingle (SingleEraSelectView .: selectView) cfgs
+      . hczipWith proxySingle (WrapSelectView .: selectView) cfgs
       . getOneEraHeader
       $ getHardForkHeader hdr
     where
