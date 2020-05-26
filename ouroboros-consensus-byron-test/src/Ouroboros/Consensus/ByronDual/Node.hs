@@ -230,9 +230,9 @@ instance RunNode DualByronBlock where
 
   -- Node config is a consensus concern, determined by the main block only
   nodeImmDbChunkInfo  = nodeImmDbChunkInfo  . dualTopLevelConfigMain
-  nodeStartTime       = nodeStartTime       . dualTopLevelConfigMain
-  nodeNetworkMagic    = nodeNetworkMagic    . dualTopLevelConfigMain
-  nodeProtocolMagicId = nodeProtocolMagicId . dualTopLevelConfigMain
+  nodeStartTime       = nodeStartTime       . dualBlockConfigMain
+  nodeNetworkMagic    = nodeNetworkMagic    . dualBlockConfigMain
+  nodeProtocolMagicId = nodeProtocolMagicId . dualBlockConfigMain
 
   -- The max block size we set to the max block size of the /concrete/ block
   -- (Correspondingly, 'txSize' for the Byron spec returns 0)

@@ -202,6 +202,7 @@ instance RunNode ByronBlock where
                                 . kEpochSlots
                                 . Genesis.gdK
                                 . extractGenesisData
+                                . configBlock
                                 $ cfg
 
   nodeMaxBlockSize          = API.getMaxBlockSize . byronLedgerState
@@ -274,7 +275,6 @@ instance RunNode ByronBlock where
   nodeDecodeResult          = decodeByronResult
 
 
-extractGenesisData :: TopLevelConfig ByronBlock -> Genesis.GenesisData
+extractGenesisData :: BlockConfig ByronBlock -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData
                    . byronGenesisConfig
-                   . configBlock

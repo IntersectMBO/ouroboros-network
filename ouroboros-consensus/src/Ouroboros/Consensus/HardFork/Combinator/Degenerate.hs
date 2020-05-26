@@ -25,6 +25,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Control.Monad.Except
+import           Data.Coerce
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Function (on)
 import           Data.Proxy
@@ -254,6 +255,9 @@ instance HasTxs b => HasTxs (DegenFork b) where
 projCfg :: SingleEraBlock b => TopLevelConfig (DegenFork b) -> TopLevelConfig b
 projCfg = projTopLevelConfig . castTopLevelConfig
 
+projBlockCfg :: BlockConfig (DegenFork b) -> BlockConfig b
+projBlockCfg = projBlockConfig . coerce
+
 instance HasNetworkProtocolVersion b => HasNetworkProtocolVersion (DegenFork b) where
   type NodeToNodeVersion   (DegenFork b) = NodeToNodeVersion   b
   type NodeToClientVersion (DegenFork b) = NodeToClientVersion b
@@ -272,9 +276,9 @@ instance (SingleEraBlock b, FromRawHash b, RunNode b) => RunNode (DegenFork b) w
   nodeIsEBB              (DHdr hdr)            = nodeIsEBB              (projHeader hdr)
 
   nodeImmDbChunkInfo  cfg = nodeImmDbChunkInfo  (projCfg cfg)
-  nodeStartTime       cfg = nodeStartTime       (projCfg cfg)
-  nodeNetworkMagic    cfg = nodeNetworkMagic    (projCfg cfg)
-  nodeProtocolMagicId cfg = nodeProtocolMagicId (projCfg cfg)
+  nodeStartTime       cfg = nodeStartTime       (projBlockCfg cfg)
+  nodeNetworkMagic    cfg = nodeNetworkMagic    (projBlockCfg cfg)
+  nodeProtocolMagicId cfg = nodeProtocolMagicId (projBlockCfg cfg)
 
   nodeHashInfo          _ = injHashInfo (nodeHashInfo (Proxy @b))
   nodeAddHeaderEnvelope _ = nodeAddHeaderEnvelope (Proxy @b)
@@ -346,12 +350,12 @@ instance (SingleEraBlock b, FromRawHash b, RunNode b) => RunNode (DegenFork b) w
       injHeaderHash <$>
         nodeDecodeHeaderHash (Proxy @b)
   nodeDecodeLedgerState cfg =
-      (DLgr . injLedgerState (nodeStartTime cfg)) <$>
+      (DLgr . injLedgerState (nodeStartTime (configBlock cfg))) <$>
         nodeDecodeLedgerState cfg'
     where
       cfg' = projCfg cfg
   nodeDecodeConsensusState cfg =
-      injConsensusState (nodeStartTime cfg) <$>
+      injConsensusState (nodeStartTime (configBlock cfg)) <$>
         nodeDecodeConsensusState cfg'
     where
       cfg' = projCfg cfg

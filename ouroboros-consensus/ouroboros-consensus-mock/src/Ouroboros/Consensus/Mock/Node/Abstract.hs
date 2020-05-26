@@ -23,7 +23,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -- | Protocol specific functionality required to run consensus with mock blocks
 class MockProtocolSpecific c ext => RunMockBlock c ext where
   mockProtocolMagicId
-    :: TopLevelConfig (SimpleBlock c ext)
+    :: BlockConfig (SimpleBlock c ext)
     -> ProtocolMagicId
   mockEncodeConsensusState
     :: TopLevelConfig (SimpleBlock c ext)

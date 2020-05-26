@@ -323,9 +323,9 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
     . tpraosParams
     . configConsensus
 
-  nodeStartTime       = shelleyStartTime       . configBlock
-  nodeNetworkMagic    = shelleyNetworkMagic    . configBlock
-  nodeProtocolMagicId = shelleyProtocolMagicId . configBlock
+  nodeStartTime       = shelleyStartTime
+  nodeNetworkMagic    = shelleyNetworkMagic
+  nodeProtocolMagicId = shelleyProtocolMagicId
 
   nodeHashInfo = const shelleyHashInfo
 

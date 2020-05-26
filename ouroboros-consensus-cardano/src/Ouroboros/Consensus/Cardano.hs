@@ -36,6 +36,7 @@ import           Cardano.Chain.Slotting (EpochSlots)
 import qualified Cardano.Chain.Update as Update
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -189,7 +190,7 @@ protocolInfo (ProtocolRealTPraos genesis protVer mbLeaderCredentials) =
 protocolInfo (ProtocolCardano genesis protVer mbLeaderCredentials) =
     castProtocolInfo $
       injProtocolInfo
-        (nodeStartTime (pInfoConfig shelleyProtocolInfo))
+        (nodeStartTime (configBlock (pInfoConfig shelleyProtocolInfo)))
         shelleyProtocolInfo
   where
     shelleyProtocolInfo :: ProtocolInfo (ShelleyBlock TPraosStandardCrypto)
