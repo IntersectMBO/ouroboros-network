@@ -73,6 +73,7 @@ import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Term     as CBOR
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
+import           Data.Proxy (Proxy (..))
 import           Data.Void
 
 import qualified Network.Socket as Socket
@@ -236,7 +237,7 @@ connectToNode' sn handshakeCodec versionDataCodec NetworkConnectTracers {nctMuxT
 
          Right app -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             Mx.muxStart muxTracer (toApplication connectionId app) bearer
+             Mx.muxStart muxTracer (toApplication connectionId (neverStop (Proxy :: Proxy IO)) app) bearer
 
 
 -- Wraps a Socket inside a Snocket and calls connectToNode'
@@ -356,7 +357,7 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec versionDataCodec acc
 
              Right (SomeResponderApplication app) -> do
                  traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
-                 Mx.muxStart muxTracer' (toApplication connectionId app) bearer
+                 Mx.muxStart muxTracer' (toApplication connectionId (neverStop (Proxy :: Proxy IO)) app) bearer
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 
 mkListeningSocket

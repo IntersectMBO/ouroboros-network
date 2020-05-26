@@ -71,7 +71,7 @@ defaultMiniProtocolLimit = 3000000
 testProtocols1 :: RunMiniProtocol appType bytes m a b
                -> OuroborosApplication appType addr bytes m a b
 testProtocols1 chainSync =
-    OuroborosApplication $ \_connectionId -> [
+    OuroborosApplication $ \_connectionId _shouldStopSTM -> [
        MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = MiniProtocolLimits {
@@ -87,7 +87,7 @@ testProtocols1 chainSync =
 testProtocols2 :: RunMiniProtocol appType bytes m a b
                -> OuroborosApplication appType addr bytes m a b
 testProtocols2 reqResp =
-    OuroborosApplication $ \_connectionId -> [
+    OuroborosApplication $ \_connectionId _shouldStopSTM -> [
        MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 4,
         miniProtocolLimits = MiniProtocolLimits {

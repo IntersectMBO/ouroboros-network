@@ -1,6 +1,7 @@
-{-# LANGUAGE DataKinds      #-}
-{-# LANGUAGE GADTs          #-}
-{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Mux
@@ -12,6 +13,9 @@ module Ouroboros.Network.Mux
   , RunMiniProtocol (..)
   , MuxPeer (..)
   , toApplication
+  , RunOrStop (..)
+  , ScheduledStop
+  , neverStop
 
     -- * Re-exports
     -- | from "Network.Mux"
@@ -22,6 +26,7 @@ module Ouroboros.Network.Mux
   ) where
 
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Exception (Exception)
 import           Control.Tracer (Tracer)
@@ -44,11 +49,27 @@ import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 
 
+data RunOrStop = Run | Stop
+
+-- |  'ScheduleStop' should depend on `muxMode` (we only need to shedule stop
+-- for intiator side).  This is not done only because this would break tests,
+-- bue once the old api is removed it should be possible.
+type ScheduledStop m = STM m RunOrStop
+
+neverStop :: Applicative (STM m)
+          => proxy m
+          -> ScheduledStop m
+neverStop _ = pure Run
+
+
 -- |  Like 'MuxApplication' but using a 'MuxPeer' rather than a raw
 -- @Channel -> m a@ action.
 --
 newtype OuroborosApplication (mode :: MuxMode) addr bytes m a b =
-        OuroborosApplication (ConnectionId addr -> [MiniProtocol mode bytes m a b])
+        OuroborosApplication
+          (ConnectionId addr
+            -> STM m RunOrStop
+            -> [MiniProtocol mode bytes m a b])
 
 data MiniProtocol (mode :: MuxMode) bytes m a b =
      MiniProtocol {
@@ -91,16 +112,17 @@ data MuxPeer bytes m a where
 
 toApplication :: (MonadCatch m, MonadAsync m)
               => ConnectionId addr
+              -> ScheduledStop m
               -> OuroborosApplication mode addr LBS.ByteString m a b
               -> Mux.MuxApplication mode m a b
-toApplication connectionId (OuroborosApplication ptcls) =
+toApplication connectionId scheduleStop (OuroborosApplication ptcls) =
   Mux.MuxApplication
     [ Mux.MuxMiniProtocol {
         Mux.miniProtocolNum    = miniProtocolNum ptcl,
         Mux.miniProtocolLimits = miniProtocolLimits ptcl,
         Mux.miniProtocolRun    = toMuxRunMiniProtocol (miniProtocolRun ptcl)
       }
-    | ptcl <- ptcls connectionId ]
+    | ptcl <- ptcls connectionId scheduleStop ]
   where
 
 toMuxRunMiniProtocol :: forall mode m a b.

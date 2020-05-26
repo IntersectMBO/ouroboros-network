@@ -15,6 +15,7 @@ import           Data.Functor ((<$))
 import           Data.Void (Void)
 import           Data.List (mapAccumL)
 import qualified Data.ByteString.Lazy as BL
+import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (UTCTime, getCurrentTime)
 #ifndef mingw32_HOST_OS
 import           System.Directory (removeFile)
@@ -114,7 +115,7 @@ defaultMiniProtocolLimit = 3000000
 testProtocols2 :: RunMiniProtocol appType bytes m a b
                -> OuroborosApplication appType addr bytes m a b
 testProtocols2 reqResp =
-    OuroborosApplication $ \_connectionId -> [
+    OuroborosApplication $ \_connectionId _shouldStopSTM -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 4,
         miniProtocolLimits = MiniProtocolLimits {
@@ -334,7 +335,7 @@ prop_socket_recv_error f rerr =
                           localAddress = Socket.addrAddress muxAddress,
                           remoteAddress
                         }
-                  Mx.muxStart nullTracer (toApplication connectionId app) bearer
+                  Mx.muxStart nullTracer (toApplication connectionId (neverStop (Proxy :: Proxy IO)) app) bearer
           )
           $ \muxAsync -> do
 
