@@ -95,8 +95,8 @@ data TPraosLeaderCredentials c = TPraosLeaderCredentials {
 initialFundsPseudoTxIn :: forall c. SL.Addr c -> SL.TxIn c
 initialFundsPseudoTxIn addr =
     case addr of
-      SL.Addr (SL.KeyHashObj    (SL.KeyHash    h)) _sref -> pseudoTxIn h
-      SL.Addr (SL.ScriptHashObj (SL.ScriptHash h)) _sref -> pseudoTxIn h
+      SL.Addr _networkId (SL.KeyHashObj    (SL.KeyHash    h)) _sref -> pseudoTxIn h
+      SL.Addr _networkId (SL.ScriptHashObj (SL.ScriptHash h)) _sref -> pseudoTxIn h
       SL.AddrBootstrap byronAddr -> error $
         "Unsupported Byron address in the genesis UTxO: " <> show byronAddr
   where
@@ -154,6 +154,7 @@ protocolInfoShelley genesis protVer mbCredentials =
       , tpraosQuorum            = sgUpdateQuorum      genesis
       , tpraosMaxMajorPV        = sgMaxMajorPV        genesis
       , tpraosMaxLovelaceSupply = sgMaxLovelaceSupply genesis
+      , tpraosNetworkId         = sgNetworkId         genesis
       }
 
     initForgeState :: ForgeState (ShelleyBlock c)
@@ -288,7 +289,7 @@ protocolInfoShelley genesis protVer mbCredentials =
           }
           where
             addrStakeCred (SL.AddrBootstrap _) = Nothing
-            addrStakeCred (SL.Addr _ sr) = case sr of
+            addrStakeCred (SL.Addr _ _ sr) = case sr of
               SL.StakeRefBase sc -> Just sc
               SL.StakeRefPtr _ ->
                 error "Pointer stake addresses not allowed in initial snapshot"

@@ -74,6 +74,7 @@ emptyGenesisStaking = ShelleyGenesisStaking
 data ShelleyGenesis c = ShelleyGenesis {
       sgStartTime             :: !SystemStart
     , sgNetworkMagic          :: !NetworkMagic
+    , sgNetworkId             :: !SL.Network
     , sgProtocolMagicId       :: !ProtocolMagicId
     , sgActiveSlotsCoeff      :: !Double
     , sgSecurityParam         :: !SecurityParam

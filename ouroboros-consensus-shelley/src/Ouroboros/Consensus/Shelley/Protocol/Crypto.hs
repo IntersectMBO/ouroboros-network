@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense)
 
 import           Shelley.Spec.Ledger.BaseTypes (Seed)
 import           Shelley.Spec.Ledger.BlockChain (BHBody)
-import           Shelley.Spec.Ledger.Crypto (Crypto (..), Network (..))
+import           Shelley.Spec.Ledger.Crypto (Crypto (..))
 import           Shelley.Spec.Ledger.OCert (KESPeriod)
 import           Shelley.Spec.Ledger.TxData (TxBody)
 
@@ -59,10 +59,6 @@ instance Crypto TPraosStandardCrypto where
   type KES   TPraosStandardCrypto = Sum7KES Ed25519DSIGN Blake2b_256
   type VRF   TPraosStandardCrypto = SimpleVRF
   type HASH  TPraosStandardCrypto = Blake2b_256
-
-  -- TODO This is somewhat annoying, since we want it to be based upon a runtime
-  -- value.
-  networkMagicId = const Mainnet
 
 instance TPraosCrypto TPraosStandardCrypto
 

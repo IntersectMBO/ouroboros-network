@@ -154,6 +154,7 @@ mkShelleyLedgerConfig genesis epochInfo = ShelleyLedgerConfig {
         , maxMajorPV        = sgMaxMajorPV        genesis
         , maxLovelaceSupply = sgMaxLovelaceSupply genesis
         , activeSlotCoeff   = sgActiveSlotCoeff   genesis
+        , networkId         = sgNetworkId         genesis
         }
 
 type instance LedgerCfg (LedgerState (ShelleyBlock c)) = ShelleyLedgerConfig c

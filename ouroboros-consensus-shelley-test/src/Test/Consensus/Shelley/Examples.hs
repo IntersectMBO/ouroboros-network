@@ -77,6 +77,7 @@ testShelleyGenesis :: ShelleyGenesis c
 testShelleyGenesis = ShelleyGenesis {
       sgStartTime         = SystemStart $ UTCTime (fromGregorian 2020 5 14) 0
     , sgNetworkMagic      = NetworkMagic 0
+    , sgNetworkId         = SL.Testnet
     , sgProtocolMagicId   = ProtocolMagicId 0
       -- Chosen to match SL.activeSlotCoeff
     , sgActiveSlotsCoeff  = 0.9
