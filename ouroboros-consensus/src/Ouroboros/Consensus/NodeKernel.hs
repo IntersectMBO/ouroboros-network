@@ -278,7 +278,7 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                                   (configLedger cfg)
                                   mpCap
                                   (mempoolTracer tracers)
-                                  nodeTxInBlockSize
+                                  txInBlockSize
 
     fetchClientRegistry <- newFetchClientRegistry
 
@@ -296,7 +296,7 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
         NoMempoolCapacityBytesOverride   -> noOverride
         MempoolCapacityBytesOverride mcb -> mcb
       where
-        noOverride = MempoolCapacityBytes (nodeMaxTxCapacity ledger * 2)
+        noOverride = MempoolCapacityBytes (maxTxCapacity ledger * 2)
 
 initBlockFetchConsensusInterface
     :: forall m peer blk. (IOLike m, BlockSupportsProtocol blk)
@@ -460,7 +460,7 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
                                (ForgeInKnownSlot ticked)
         let txs = map fst $ snapshotTxsForSize
                               mempoolSnapshot
-                              (maxTxCapacity (tickedLedgerState ticked))
+                              (computeMaxTxCapacity (tickedLedgerState ticked))
 
         -- Actually produce the block
         newBlock <- lift $ runMonadRandom $ \lift' ->
@@ -515,12 +515,12 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
     -- it. This is important because any blocks exceeding the max block size
     -- are invalid according to the ledger and we want certainly don't want to
     -- forge invalid blocks.
-    maxTxCapacity :: LedgerState blk -> Word32
-    maxTxCapacity ledger = case maxTxCapacityOverride of
+    computeMaxTxCapacity :: LedgerState blk -> Word32
+    computeMaxTxCapacity ledger = case maxTxCapacityOverride of
           NoMaxTxCapacityOverride     -> noOverride
           MaxTxCapacityOverride txCap -> noOverride `min` txCap
       where
-        noOverride = nodeMaxTxCapacity ledger
+        noOverride = maxTxCapacity ledger
 
 -- | Context required to forge a block
 data BlockContext blk = BlockContext

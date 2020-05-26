@@ -212,6 +212,12 @@ instance SingleEraBlock b => LedgerSupportsMempool (DegenFork b) where
   reapplyTx cfg (DTx tx) (Ticked slot (DLgr lgr)) =
     fmap DLgr <$> reapplyTx cfg tx (Ticked slot lgr)
 
+  maxTxCapacity (DLgr lgr) = maxTxCapacity (projLedgerState lgr)
+  maxTxSize     (DLgr lgr) = maxTxSize     (projLedgerState lgr)
+
+  txInBlockSize (DTx tx) = txInBlockSize (projGenTx tx)
+
+
 instance SingleEraBlock b => HasTxId (GenTx (DegenFork b)) where
   newtype TxId (GenTx (DegenFork b)) = DTxId {
         unDTxId :: TxId (GenTx (HardForkBlock '[b]))
@@ -286,12 +292,7 @@ instance (SingleEraBlock b, FromRawHash b, RunNode b) => RunNode (DegenFork b) w
         (projCfg cfg)
         (projInitChainDB (InitChainDB.cast initDB))
 
-  nodeMaxTxCapacity (DLgr lgr) = nodeMaxTxCapacity (projLedgerState lgr)
-  nodeMaxTxSize     (DLgr lgr) = nodeMaxTxSize     (projLedgerState lgr)
-
   nodeCheckIntegrity cfg (DBlk blk) = nodeCheckIntegrity (projCfg cfg) (projBlock blk)
-
-  nodeTxInBlockSize (DTx tx) = nodeTxInBlockSize (projGenTx tx)
 
   -- Encoders
 

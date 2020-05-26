@@ -44,3 +44,8 @@ instance LedgerSupportsMempool ByronSpecBlock where
 
   -- Byron spec doesn't have multiple validation modes
   reapplyTx = applyTx
+
+  -- Dummy values, as these are not used in practice.
+  maxTxCapacity = const maxBound
+  maxTxSize     = const maxBound
+  txInBlockSize = const 0

@@ -30,18 +30,15 @@ module Ouroboros.Consensus.Byron.Node (
 
 import           Control.Exception (Exception (..))
 import           Control.Monad.Except
-import qualified Data.ByteString as Strict
 import           Data.Coerce (coerce)
 import           Data.Maybe
 
 import qualified Cardano.Chain.Block as Cardano.Block
-import qualified Cardano.Chain.Byron.API as API
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochSlots (..))
 import qualified Cardano.Chain.Update as Update
-import qualified Cardano.Chain.Update.Validation.Interface as Update
 import qualified Cardano.Crypto as Crypto
 import           Cardano.Slotting.Slot
 
@@ -238,20 +235,6 @@ instance RunNode ByronBlock where
                                 . extractGenesisData
                                 . configBlock
                                 $ cfg
-
-  nodeMaxTxCapacity         = \st ->
-                                  API.getMaxBlockSize (byronLedgerState st)
-                                - byronBlockEncodingOverhead
-  -- TODO cardano-ledger should expose API.getMaxTxSize
-  nodeMaxTxSize             = fromIntegral
-                            . Update.ppMaxBlockSize
-                            . Update.adoptedProtocolParameters
-                            . Cardano.Block.cvsUpdateState
-                            . byronLedgerState
-  nodeTxInBlockSize         = fromIntegral
-                            . Strict.length
-                            . API.mempoolPayloadRecoverBytes
-                            . toMempoolPayload
 
   -- If the current chain is empty, produce a genesis EBB and add it to the
   -- ChainDB. Only an EBB can have Genesis (= empty chain) as its predecessor.

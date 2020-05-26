@@ -501,6 +501,10 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
                                     dualLedgerStateBridge
         }
 
+  maxTxCapacity = maxTxCapacity . dualLedgerStateMain
+  maxTxSize     = maxTxSize     . dualLedgerStateMain
+  txInBlockSize = txInBlockSize . dualGenTxMain
+
 instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
   -- We don't need a pair of IDs, as long as we can unique ID the transaction
   newtype TxId (GenTx (DualBlock m a)) = DualGenTxId {

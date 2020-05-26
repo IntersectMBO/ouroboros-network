@@ -43,6 +43,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
+import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Maybe (maybeToList)
 import           Data.Word
@@ -60,6 +61,7 @@ import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.MempoolPayload as CC
 import qualified Cardano.Chain.Update as Update
+import qualified Cardano.Chain.Update.Validation.Interface as Update
 import qualified Cardano.Chain.UTxO as Utxo
 import qualified Cardano.Chain.ValidationMode as CC
 
@@ -71,6 +73,8 @@ import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Conversions (toByronSlotNo)
 import           Ouroboros.Consensus.Byron.Ledger.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
+import           Ouroboros.Consensus.Byron.Ledger.Serialisation
+                     (byronBlockEncodingOverhead)
 
 {-------------------------------------------------------------------------------
   Transactions
@@ -105,6 +109,23 @@ instance LedgerSupportsMempool ByronBlock where
   reapplyTx = applyByronGenTx validationMode
     where
       validationMode = CC.ValidationMode CC.NoBlockValidation Utxo.TxValidationNoCrypto
+
+  maxTxCapacity st =
+    CC.getMaxBlockSize (byronLedgerState st) - byronBlockEncodingOverhead
+
+  -- TODO cardano-ledger should expose API.getMaxTxSize
+  maxTxSize =
+      fromIntegral
+    . Update.ppMaxBlockSize
+    . Update.adoptedProtocolParameters
+    . CC.cvsUpdateState
+    . byronLedgerState
+
+  txInBlockSize =
+      fromIntegral
+    . Strict.length
+    . CC.mempoolPayloadRecoverBytes
+    . toMempoolPayload
 
 instance HasTxId (GenTx ByronBlock) where
   data TxId (GenTx ByronBlock)

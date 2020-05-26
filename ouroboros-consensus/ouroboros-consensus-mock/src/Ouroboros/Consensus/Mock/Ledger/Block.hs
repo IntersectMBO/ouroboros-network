@@ -343,6 +343,10 @@ instance MockProtocolSpecific c ext
   applyTx   = const updateSimpleUTxO
   reapplyTx = const updateSimpleUTxO
 
+  maxTxCapacity = const 2000000
+  maxTxSize     = const 2000000
+  txInBlockSize = txSize
+
 instance HasTxId (GenTx (SimpleBlock c ext)) where
   newtype TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId
     { unSimpleGenTxId :: Mock.TxId

@@ -7,7 +7,6 @@
 module Ouroboros.Consensus.Byron.Ledger.Forge (
     forgeByronBlock
   , forgeRegularBlock
-  , byronBlockEncodingOverhead
     -- * For testing purposes
   , forgeEBB
   ) where
@@ -15,7 +14,6 @@ module Ouroboros.Consensus.Byron.Ledger.Forge (
 import           Control.Monad (void)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
-import           Data.Word (Word32)
 import           GHC.Stack
 
 import           Cardano.Binary (Annotated (..), reAnnotate)
@@ -253,30 +251,3 @@ forgeRegularBlock cfg _updateState curNo tickedLedger txs isLeader =
 
         ann :: b -> Annotated b ()
         ann b = Annotated b ()
-
--- | The Byron block encoding overhead size in bytes.
---
--- This encompasses the overhead in bytes for everything that is encoded
--- within a Byron block, excluding the actual generalized transactions
--- (transactions, delegation certificates, update votes, and update
--- proposals).
-byronBlockEncodingOverhead :: Word32
-byronBlockEncodingOverhead =
-    blockHeaderOverhead + blockBodyOverhead + safetyMargin
-  where
-    -- The maximum block header size.
-    blockHeaderOverhead = 650
-
-    -- The block body overhead excluding the actual generalized transactions.
-    blockBodyOverhead = 1 {- ABody: encodeListLen 4 -}
-                      + 2 {- TxPayload: list -}
-                      + 1 {- SscPayload: encodeListLen 2 -}
-                      + 1 {- SscPayload: Word8 -}
-                      + 1 {- SscPayload: mempty :: Set () -}
-                      + 2 {- Delegation.Payload: list -}
-                      + 1 {- Update.Payload: encodeListLen 2 -}
-                      + 1 {- Update.Payload: Maybe AProposal -}
-                      + 2 {- Update.Payload: list of AVote -}
-
-    -- Just for safety.
-    safetyMargin = 1024

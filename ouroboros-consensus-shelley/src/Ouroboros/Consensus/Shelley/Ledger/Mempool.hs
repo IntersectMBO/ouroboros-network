@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE DisambiguateRecordFields   #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -19,6 +20,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Mempool (
   ) where
 
 import           Control.Monad.Except (Except)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Foldable (toList)
 import qualified Data.Sequence as Seq
 import           GHC.Generics (Generic)
@@ -35,6 +37,7 @@ import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.API as SL
 import           Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.Tx as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
@@ -60,6 +63,16 @@ instance TPraosCrypto c => LedgerSupportsMempool (ShelleyBlock c) where
   -- TODO actual reapplication:
   -- https://github.com/input-output-hk/cardano-ledger-specs/issues/1304
   reapplyTx = applyShelleyTx
+
+  maxTxCapacity (ShelleyLedgerState _ _ shelleyState) =
+      fromIntegral maxBlockBodySize
+    where
+      SL.PParams { _maxBBSize = maxBlockBodySize } = getPParams shelleyState
+
+  maxTxSize = fromIntegral . SL._maxTxSize . getPParams . shelleyState
+
+  txInBlockSize (ShelleyTx _ tx) =
+    fromIntegral . Lazy.length . SL.txFullBytes $ tx
 
 mkShelleyTx :: Crypto c => SL.Tx c -> GenTx (ShelleyBlock c)
 mkShelleyTx tx = ShelleyTx (SL.txid (SL._body tx)) tx

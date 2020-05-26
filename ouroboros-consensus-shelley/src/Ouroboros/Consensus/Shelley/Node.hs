@@ -22,7 +22,6 @@ module Ouroboros.Consensus.Shelley.Node (
 
 import           Codec.Serialise (decode, encode)
 import           Control.Monad.Reader (runReader)
-import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -342,16 +341,6 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
     . configConsensus
 
   nodeHashInfo = const shelleyHashInfo
-
-  nodeMaxTxCapacity (ShelleyLedgerState _ _ shelleyState) =
-      fromIntegral maxBlockBodySize
-    where
-      SL.PParams { _maxBBSize = maxBlockBodySize } = getPParams shelleyState
-
-  nodeMaxTxSize = fromIntegral . SL._maxTxSize . getPParams . shelleyState
-
-  nodeTxInBlockSize (ShelleyTx _ tx) =
-    fromIntegral . Lazy.length . SL.txFullBytes $ tx
 
   nodeCheckIntegrity cfg = verifyBlockIntegrity tpraosSlotsPerKESPeriod
     where

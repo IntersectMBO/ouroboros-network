@@ -62,6 +62,24 @@ instance CanHardFork xs => LedgerSupportsMempool (HardForkBlock xs) where
   applyTx   = applyHelper applyTx
   reapplyTx = applyHelper reapplyTx
 
+  maxTxCapacity =
+      hcollapse
+    . hcmap proxySingle (K . maxTxCapacity)
+    . State.tip
+    . getHardForkLedgerState
+
+  maxTxSize =
+      hcollapse
+    . hcmap proxySingle (K . maxTxSize)
+    . State.tip
+    . getHardForkLedgerState
+
+  txInBlockSize =
+      hcollapse
+    . hcmap proxySingle (K . txInBlockSize)
+    . getOneEraGenTx
+    . getHardForkGenTx
+
 applyHelper
   :: forall xs. CanHardFork xs
   => (    forall blk. (SingleEraBlock blk, HasCallStack)
