@@ -65,7 +65,6 @@ import           Ouroboros.Consensus.Util.Counting
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra
 import           Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
                      Requiring (..))

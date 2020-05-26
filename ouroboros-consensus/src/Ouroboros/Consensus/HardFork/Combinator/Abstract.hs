@@ -4,11 +4,17 @@
 {-# LANGUAGE DerivingStrategies      #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
+{-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Abstract (
+    -- * SingleEraBlock
     SingleEraBlock(..)
   , proxySingle
+  , singleEraParams'
+  , singleEraTransition'
+    -- * CanHardFork
   , CanHardFork(..)
     -- * Re-exports
   , IsNonEmpty(..)
@@ -34,6 +40,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.SingleEra.Info
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.SOP
+
+{-------------------------------------------------------------------------------
+  SingleEraBlock
+-------------------------------------------------------------------------------}
 
 -- | Blocks from which we can assemble a hard fork
 class ( LedgerSupportsProtocol blk
@@ -75,6 +85,19 @@ class ( LedgerSupportsProtocol blk
 
 proxySingle :: Proxy SingleEraBlock
 proxySingle = Proxy
+
+singleEraParams' :: forall blk. SingleEraBlock blk
+                 => WrapPartialLedgerConfig blk -> EraParams
+singleEraParams' = singleEraParams (Proxy @blk) . unwrapPartialLedgerConfig
+
+singleEraTransition' :: SingleEraBlock blk
+                     => WrapPartialLedgerConfig blk
+                     -> LedgerState blk -> Maybe EpochNo
+singleEraTransition' = singleEraTransition . unwrapPartialLedgerConfig
+
+{-------------------------------------------------------------------------------
+  CanHardFork
+-------------------------------------------------------------------------------}
 
 class (All SingleEraBlock xs, Typeable xs, IsNonEmpty xs) => CanHardFork xs where
   hardForkEraTranslation :: EraTranslation xs
