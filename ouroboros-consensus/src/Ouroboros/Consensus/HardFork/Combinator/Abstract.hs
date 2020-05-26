@@ -1,16 +1,20 @@
-{-# LANGUAGE DataKinds               #-}
-{-# LANGUAGE DeriveAnyClass          #-}
-{-# LANGUAGE DeriveGeneric           #-}
-{-# LANGUAGE DerivingStrategies      #-}
-{-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE FlexibleInstances       #-}
-{-# LANGUAGE ScopedTypeVariables     #-}
-{-# LANGUAGE TypeApplications        #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE UndecidableSuperClasses    #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Abstract (
+    -- * Era info
+    SingleEraInfo(..)
+  , LedgerEraInfo(..)
     -- * SingleEraBlock
-    SingleEraBlock(..)
+  , SingleEraBlock(..)
   , proxySingle
   , singleEraParams'
   , singleEraTransition'
@@ -24,8 +28,11 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract (
 import qualified Data.ByteString as Strict
 import           Data.Proxy
 import           Data.SOP.Strict
+import           Data.Text (Text)
 import           Data.Typeable
+import           GHC.Generics (Generic)
 
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block
@@ -37,9 +44,29 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
 
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra.Info
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import           Ouroboros.Consensus.HardFork.Combinator.Util.SOP
+
+{-------------------------------------------------------------------------------
+  Era info
+-------------------------------------------------------------------------------}
+
+-- | Information about an era (mostly for type errors)
+data SingleEraInfo blk = SingleEraInfo {
+      singleEraName :: !Text
+    }
+  deriving stock    (Generic, Eq, Show)
+  deriving anyclass (NoUnexpectedThunks)
+
+-- | Additional newtype wrapper around 'SingleEraInfo'
+--
+-- This is primarily useful for use in error messages: it marks which era
+-- info came from the ledger, and which came from a tx/block/header/etc.
+newtype LedgerEraInfo blk = LedgerEraInfo {
+      getLedgerEraInfo :: SingleEraInfo blk
+    }
+  deriving stock   (Eq, Show)
+  deriving newtype (NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   SingleEraBlock

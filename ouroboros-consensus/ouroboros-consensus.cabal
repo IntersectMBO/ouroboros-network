@@ -67,7 +67,6 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Protocol.State
                        Ouroboros.Consensus.HardFork.Combinator.SingleEra
                        Ouroboros.Consensus.HardFork.Combinator.SingleEra.Combined
-                       Ouroboros.Consensus.HardFork.Combinator.SingleEra.Info
                        Ouroboros.Consensus.HardFork.Combinator.State
                        Ouroboros.Consensus.HardFork.Combinator.State.Infra
                        Ouroboros.Consensus.HardFork.Combinator.Translation

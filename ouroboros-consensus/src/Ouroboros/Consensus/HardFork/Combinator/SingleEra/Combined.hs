@@ -65,7 +65,6 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra.Info
 import           Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
