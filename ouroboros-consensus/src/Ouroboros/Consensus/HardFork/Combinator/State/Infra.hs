@@ -350,7 +350,7 @@ data TransitionOrTip =
   deriving (Show)
 
 transitionOrTip :: SingleEraBlock blk
-                => SingleEraLedgerConfig blk
+                => WrapPartialLedgerConfig blk
                 -> LedgerState blk
                 -> TransitionOrTip
 transitionOrTip cfg st =

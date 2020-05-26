@@ -63,7 +63,7 @@ instance CanHardFork xs => QueryLedger (HardForkBlock xs) where
 
       go :: All SingleEraBlock xs'
          => HardForkQuery xs' result
-         -> NS (Product SingleEraLedgerConfig LedgerState) xs'
+         -> NS (Product WrapPartialLedgerConfig LedgerState) xs'
          -> HardForkQueryResult xs' result
       go (QZ qry) (Z (Pair cfg st)) =
           Right $ answerQuery (completeLedgerConfig' ei cfg) qry st
@@ -109,7 +109,7 @@ deriving instance All SingleEraBlock xs => Show (HardForkQuery xs result)
 -------------------------------------------------------------------------------}
 
 ledgerInfo :: forall blk. SingleEraBlock blk
-           => Product SingleEraLedgerConfig LedgerState blk
+           => Product WrapPartialLedgerConfig LedgerState blk
            -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 

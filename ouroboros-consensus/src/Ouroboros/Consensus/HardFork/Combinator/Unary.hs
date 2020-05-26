@@ -121,7 +121,7 @@ class FromRawHash blk where
 
 projIsLeader :: IsLeader (BlockProtocol (HardForkBlock '[b]))
              -> IsLeader (BlockProtocol b)
-projIsLeader = getSingleEraIsLeader . unZ . getOneEraIsLeader
+projIsLeader = unwrapIsLeader . unZ . getOneEraIsLeader
 
 projGenTx :: GenTx (HardForkBlock '[b]) -> GenTx b
 projGenTx = unZ . getOneEraGenTx . getHardForkGenTx
@@ -130,10 +130,10 @@ injGenTx :: GenTx b -> GenTx (HardForkBlock '[b])
 injGenTx = HardForkGenTx . OneEraGenTx . Z
 
 projGenTxId :: GenTxId (HardForkBlock '[b]) -> GenTxId b
-projGenTxId = getSingleEraGenTxId . unZ . getOneEraGenTxId . getHardForkGenTxId
+projGenTxId = unwrapGenTxId . unZ . getOneEraGenTxId . getHardForkGenTxId
 
 injGenTxId :: GenTxId b -> GenTxId (HardForkBlock '[b])
-injGenTxId = HardForkGenTxId . OneEraGenTxId . Z . SingleEraGenTxId
+injGenTxId = HardForkGenTxId . OneEraGenTxId . Z . WrapGenTxId
 
 projBlock :: HardForkBlock '[b] -> b
 projBlock = unI . unZ . getOneEraBlock . getHardForkBlock
@@ -178,7 +178,7 @@ projLedgerConfig :: forall b. SingleEraBlock b
                  -> (EpochInfo Identity, LedgerConfig b)
 projLedgerConfig =
       complete
-    . getSingleEraLedgerConfig
+    . unwrapPartialLedgerConfig
     . hd
     . getPerEraLedgerConfig
     . hardForkLedgerConfigPerEra
@@ -199,7 +199,7 @@ injLedgerConfig :: PartialLedgerConfig b ~ LedgerConfig b
 injLedgerConfig k eraParams cfg = HardForkLedgerConfig {
       hardForkLedgerConfigK      = k
     , hardForkLedgerConfigShape  = History.singletonShape eraParams
-    , hardForkLedgerConfigPerEra = PerEraLedgerConfig (SingleEraLedgerConfig cfg :* Nil)
+    , hardForkLedgerConfigPerEra = PerEraLedgerConfig (WrapPartialLedgerConfig cfg :* Nil)
     }
 
 projConsensusConfig :: forall b. SingleEraBlock b
@@ -208,7 +208,7 @@ projConsensusConfig :: forall b. SingleEraBlock b
                     -> ConsensusConfig (BlockProtocol b)
 projConsensusConfig ei =
       completeConsensusConfig (Proxy @(BlockProtocol b)) ei
-    . getSingleEraConsensusConfig
+    . unwrapPartialConsensusConfig
     . hd
     . getPerEraConsensusConfig
     . hardForkConsensusConfigPerEra
@@ -225,7 +225,7 @@ injConsensusConfig :: forall b.
 injConsensusConfig eraParams cfg = HardForkConsensusConfig {
       hardForkConsensusConfigK      = protocolSecurityParam cfg
     , hardForkConsensusConfigShape  = History.singletonShape eraParams
-    , hardForkConsensusConfigPerEra = PerEraConsensusConfig (SingleEraConsensusConfig cfg :* Nil)
+    , hardForkConsensusConfigPerEra = PerEraConsensusConfig (WrapPartialConsensusConfig cfg :* Nil)
     }
 
 projLedgerState :: LedgerState (HardForkBlock '[b]) -> LedgerState b
@@ -252,7 +252,7 @@ projLedgerView _ =
 projConsensusState :: ConsensusState (BlockProtocol (HardForkBlock '[b]))
                    -> ConsensusState (BlockProtocol b)
 projConsensusState =
-      getSingleEraConsensusState
+      unwrapConsensusState
     . State.currentState
     . Telescope.fromTZ
     . getHardForkState
@@ -264,7 +264,7 @@ injConsensusState systemStart =
       HardForkState
     . Telescope.TZ
     . State.Current (History.initBound systemStart)
-    . SingleEraConsensusState
+    . WrapConsensusState
 
 projHeaderState :: HeaderState (HardForkBlock '[b])
                 -> HeaderState b
@@ -325,10 +325,10 @@ injTopLevelConfig TopLevelConfig{..} = TopLevelConfig{
     eraParams = singleEraParams (Proxy @b) configLedger
 
 projForgeState :: proxy b -> ForgeState (HardForkBlock '[b]) -> ForgeState b
-projForgeState _ = getSingleEraForgeState . hd . getPerEraForgeState
+projForgeState _ = unwrapForgeState . hd . getPerEraForgeState
 
 injForgeState :: proxy b -> ForgeState b -> ForgeState (HardForkBlock '[b])
-injForgeState _ = PerEraForgeState . (:* Nil) . SingleEraForgeState
+injForgeState _ = PerEraForgeState . (:* Nil) . WrapForgeState
 
 injHashInfo :: (SingleEraBlock b, FromRawHash b)
             => HashInfo (HeaderHash b)
@@ -347,7 +347,7 @@ projInitChainDB initDB = InitChainDB.InitChainDB {
 
 projApplyTxErr :: ApplyTxErr (HardForkBlock '[b]) -> ApplyTxErr b
 projApplyTxErr (HardForkApplyTxErrFromEra err) =
-      getSingleEraApplyTxErr
+      unwrapApplyTxErr
     . unZ
     . getOneEraApplyTxErr
     $ err
@@ -361,11 +361,11 @@ injApplyTxErr =
       HardForkApplyTxErrFromEra
     . OneEraApplyTxErr
     . Z
-    . SingleEraApplyTxErr
+    . WrapApplyTxErr
 
 projTipInfo :: TipInfo (HardForkBlock '[b]) -> TipInfo b
 projTipInfo =
-      getSingleEraTipInfo
+      unwrapTipInfo
     . unZ
     . getOneEraTipInfo
 
@@ -374,7 +374,7 @@ projAnnTip (AnnTip s b nfo) = AnnTip s b (projTipInfo nfo)
 
 injAnnTip :: AnnTip b -> AnnTip (HardForkBlock '[b])
 injAnnTip (AnnTip s b nfo) =
-    AnnTip s b (OneEraTipInfo (Z (SingleEraTipInfo nfo)))
+    AnnTip s b (OneEraTipInfo (Z (WrapTipInfo nfo)))
 
 projQuery :: Query (HardForkBlock '[b]) result
           -> (forall result'.
@@ -395,7 +395,7 @@ injEnvelopeErr =
       HardForkEnvelopeErrFromEra
     . OneEraEnvelopeErr
     . Z
-    . SingleEraEnvelopeErr
+    . WrapEnvelopeErr
 
 projUpdateForgeState :: forall b m.
                         Update m (ForgeState (HardForkBlock '[b]))

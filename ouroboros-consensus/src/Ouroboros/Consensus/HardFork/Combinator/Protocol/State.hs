@@ -53,7 +53,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
   Types
 -------------------------------------------------------------------------------}
 
-type HardForkConsensusState xs = HardForkState SingleEraConsensusState xs
+type HardForkConsensusState xs = HardForkState WrapConsensusState xs
 
 data HardForkValidationErr xs =
     -- | Validation error from one of the eras
@@ -87,20 +87,20 @@ check cfg@HardForkConsensusConfig{..} (Ticked slot ledgerView) =
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
     ei   = State.epochInfoLedgerView hardForkConsensusConfigShape ledgerView
 
-    aux :: NS (Maybe :.: SingleEraIsLeader) xs -> Maybe (OneEraIsLeader xs)
+    aux :: NS (Maybe :.: WrapIsLeader) xs -> Maybe (OneEraIsLeader xs)
     aux ns = hcollapse (hzipWith (K .: injectProof) injections ns)
 
 checkOne :: (MonadRandom m, SingleEraBlock blk)
          => EpochInfo Identity
          -> SlotNo
-         -> SingleEraConsensusConfig            blk
-         -> HardForkEraLedgerView               blk
-         -> SingleEraConsensusState             blk
-         -> (m :.: Maybe :.: SingleEraIsLeader) blk
+         -> WrapPartialConsensusConfig     blk
+         -> HardForkEraLedgerView          blk
+         -> WrapConsensusState             blk
+         -> (m :.: Maybe :.: WrapIsLeader) blk
 checkOne ei slot cfg
          HardForkEraLedgerView{..}
-         (SingleEraConsensusState consensusState) = Comp . fmap Comp $
-     fmap (fmap SingleEraIsLeader) $
+         (WrapConsensusState consensusState) = Comp . fmap Comp $
+     fmap (fmap WrapIsLeader) $
        checkIsLeader
          (completeConsensusConfig' ei cfg)
          (Ticked slot hardForkEraLedgerView)
@@ -120,11 +120,11 @@ rewind k p =
         State.retractToSlot (pointSlot p)
     >=> (hsequence' . hcmap proxySingle rewindOne)
   where
-    rewindOne :: forall blk. SingleEraBlock          blk
-              => SingleEraConsensusState             blk
-              -> (Maybe :.: SingleEraConsensusState) blk
-    rewindOne (SingleEraConsensusState st) = Comp $
-        SingleEraConsensusState <$>
+    rewindOne :: forall blk. SingleEraBlock     blk
+              => WrapConsensusState             blk
+              -> (Maybe :.: WrapConsensusState) blk
+    rewindOne (WrapConsensusState st) = Comp $
+        WrapConsensusState <$>
           rewindConsensusState (Proxy @(BlockProtocol blk)) k p st
 
 update :: forall xs. CanHardFork xs
@@ -156,16 +156,16 @@ update cfg@HardForkConsensusConfig{..}
 updateEra :: forall xs blk. SingleEraBlock blk
           => EpochInfo Identity
           -> SlotNo
-          -> SingleEraConsensusConfig                                        blk
-          -> Injection SingleEraValidationErr xs                             blk
-          -> Product SingleEraValidateView HardForkEraLedgerView             blk
-          -> SingleEraConsensusState                                         blk
-          -> (Except (HardForkValidationErr xs) :.: SingleEraConsensusState) blk
+          -> WrapPartialConsensusConfig                                 blk
+          -> Injection WrapValidationErr xs                             blk
+          -> Product WrapValidateView HardForkEraLedgerView             blk
+          -> WrapConsensusState                                         blk
+          -> (Except (HardForkValidationErr xs) :.: WrapConsensusState) blk
 updateEra ei slot cfg injectErr
-          (Pair (SingleEraValidateView validateView) HardForkEraLedgerView{..})
-          (SingleEraConsensusState consensusState) = Comp $
+          (Pair (WrapValidateView validateView) HardForkEraLedgerView{..})
+          (WrapConsensusState consensusState) = Comp $
     withExcept (injectValidationErr injectErr) $
-      fmap SingleEraConsensusState $
+      fmap WrapConsensusState $
         updateConsensusState
           (completeConsensusConfig' ei cfg)
           (Ticked slot hardForkEraLedgerView)
@@ -183,7 +183,7 @@ ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 translateConsensus :: CanHardFork xs
                    => EpochInfo Identity
                    -> ConsensusConfig (HardForkProtocol xs)
-                   -> InPairs (Translate SingleEraConsensusState) xs
+                   -> InPairs (Translate WrapConsensusState) xs
 translateConsensus ei HardForkConsensusConfig{..} =
     InPairs.requiringBoth
       (getPerEraConsensusConfig hardForkConsensusConfigPerEra)
@@ -194,11 +194,11 @@ translateConsensus ei HardForkConsensusConfig{..} =
   where
     aux :: forall blk blk'. (SingleEraBlock blk, SingleEraBlock blk')
         => TranslateEraConsensusState blk blk'
-        -> SingleEraConsensusConfig blk
-        -> SingleEraConsensusConfig blk'
-        -> Translate SingleEraConsensusState blk blk'
-    aux f pcfg pcfg' = Translate $ \epoch (SingleEraConsensusState st) ->
-        SingleEraConsensusState $
+        -> WrapPartialConsensusConfig blk
+        -> WrapPartialConsensusConfig blk'
+        -> Translate WrapConsensusState blk blk'
+    aux f pcfg pcfg' = Translate $ \epoch (WrapConsensusState st) ->
+        WrapConsensusState $
           translateConsensusStateWith f cfg cfg' epoch st
       where
         cfg  :: ConsensusConfig (BlockProtocol blk)
@@ -206,7 +206,7 @@ translateConsensus ei HardForkConsensusConfig{..} =
         cfg  = completeConsensusConfig' ei pcfg
         cfg' = completeConsensusConfig' ei pcfg'
 
-injectValidationErr :: Injection SingleEraValidationErr xs blk
+injectValidationErr :: Injection WrapValidationErr xs blk
                     -> ValidationErr (BlockProtocol blk)
                     -> HardForkValidationErr xs
 injectValidationErr inj =
@@ -214,10 +214,10 @@ injectValidationErr inj =
     . OneEraValidationErr
     . unK
     . apFn inj
-    . SingleEraValidationErr
+    . WrapValidationErr
 
-injectProof :: Injection SingleEraIsLeader xs blk
-            -> (:.:) Maybe SingleEraIsLeader blk
+injectProof :: Injection WrapIsLeader xs blk
+            -> (:.:) Maybe WrapIsLeader blk
             -> Maybe (OneEraIsLeader xs)
 injectProof inj (Comp pf) = (OneEraIsLeader . unK . apFn inj) <$> pf
 

@@ -46,7 +46,7 @@ instance CanHardFork xs => ChainSelection (HardForkProtocol xs) where
       either (uncurry different) same .: matchView
     where
       -- If the two views are from the same era, just use 'compareCandidates'
-      same :: NS (Product SingleEraSelectView SingleEraSelectView) xs -> Ordering
+      same :: NS (Product WrapSelectView WrapSelectView) xs -> Ordering
       same = hcollapse . hczipWith proxySingle compareCandidates' cfgs
 
       -- If the two tips are in different eras, just compare chain length
@@ -58,18 +58,18 @@ instance CanHardFork xs => ChainSelection (HardForkProtocol xs) where
 -------------------------------------------------------------------------------}
 
 compareCandidates' :: forall blk. SingleEraBlock blk
-                   => SingleEraChainSelConfig blk
-                   -> Product SingleEraSelectView SingleEraSelectView blk
+                   => WrapChainSelConfig blk
+                   -> Product WrapSelectView WrapSelectView blk
                    -> K Ordering blk
-compareCandidates' (SingleEraChainSelConfig cfg)
-                   (Pair (SingleEraSelectView view1)
-                         (SingleEraSelectView view2)) = K $
+compareCandidates' (WrapChainSelConfig cfg)
+                   (Pair (WrapSelectView view1)
+                         (WrapSelectView view2)) = K $
     compareCandidates (Proxy @(BlockProtocol blk)) cfg view1 view2
 
 matchView :: HardForkSelectView xs
           -> HardForkSelectView xs
           -> Either (BlockNo, BlockNo)
-                    (NS (Product SingleEraSelectView SingleEraSelectView) xs)
+                    (NS (Product WrapSelectView WrapSelectView) xs)
 matchView cand1 cand2 =
     case matchNS (getOneEraSelectView $ hardForkSelectViewOneEra cand1)
                  (getOneEraSelectView $ hardForkSelectViewOneEra cand2) of

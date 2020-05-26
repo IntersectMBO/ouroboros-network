@@ -64,9 +64,9 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
       matchedForgeBlock
         :: forall m blk. (MonadRandom m, CanForge blk)
         => TopLevelConfig blk
-        -> (Update m :.: SingleEraForgeState) blk
+        -> (Update m :.: WrapForgeState) blk
         -> ([] :.: GenTx) blk
-        -> Product SingleEraIsLeader LedgerState blk
+        -> Product WrapIsLeader LedgerState blk
         -> m blk
       matchedForgeBlock matchedCfg
                         (Comp matchedForgeState)
@@ -78,7 +78,7 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
             blockNo
             (Ticked tickedSlotNo matchedLedgerState)
             matchedTxs
-            (getSingleEraIsLeader matchedIsLeader)
+            (unwrapIsLeader matchedIsLeader)
 
 {-------------------------------------------------------------------------------
   Auxiliary
@@ -87,12 +87,12 @@ instance (CanHardFork xs, All CanForge xs) => CanForge (HardForkBlock xs) where
 distribUpdateForgeState
   :: forall xs m. SListI xs
   => Update m (ForgeState (HardForkBlock xs))
-  -> NP (Update m :.: SingleEraForgeState) xs
+  -> NP (Update m :.: WrapForgeState) xs
 distribUpdateForgeState updateAll = hliftA (Comp . mkSingleEraUpdate) lenses_NP
   where
     mkSingleEraUpdate
-      :: Lens SingleEraForgeState xs blk
-      -> Update m (SingleEraForgeState blk)
+      :: Lens WrapForgeState xs blk
+      -> Update m (WrapForgeState blk)
     mkSingleEraUpdate Lens { getter, setter } =
         liftUpdate
           (getter . coerce)

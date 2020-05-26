@@ -45,7 +45,7 @@ deriving instance SingleEraBlock blk => Show (HardForkEraLedgerView blk)
 
 mkHardForkEraLedgerView :: SingleEraBlock blk
                         => EpochInfo Identity
-                        -> SingleEraLedgerConfig blk
+                        -> WrapPartialLedgerConfig blk
                         -> LedgerState blk
                         -> HardForkEraLedgerView blk
 mkHardForkEraLedgerView ei pcfg st = HardForkEraLedgerView {

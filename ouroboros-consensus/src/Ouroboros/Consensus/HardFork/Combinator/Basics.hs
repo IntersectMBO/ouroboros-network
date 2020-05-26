@@ -119,20 +119,20 @@ type instance LedgerCfg (LedgerState (HardForkBlock xs)) = HardForkLedgerConfig 
 completeLedgerConfig' :: forall blk.
                          HasPartialLedgerConfig blk
                       => EpochInfo Identity
-                      -> SingleEraLedgerConfig blk
+                      -> WrapPartialLedgerConfig blk
                       -> LedgerConfig blk
 completeLedgerConfig' ei =
       completeLedgerConfig (Proxy @blk) ei
-    . getSingleEraLedgerConfig
+    . unwrapPartialLedgerConfig
 
 completeConsensusConfig' :: forall blk.
                             HasPartialConsensusConfig (BlockProtocol blk)
                          => EpochInfo Identity
-                         -> SingleEraConsensusConfig blk
+                         -> WrapPartialConsensusConfig blk
                          -> ConsensusConfig (BlockProtocol blk)
 completeConsensusConfig' ei =
       completeConsensusConfig (Proxy @(BlockProtocol blk)) ei
-    . getSingleEraConsensusConfig
+    . unwrapPartialConsensusConfig
 
 distribTopLevelConfig :: CanHardFork xs
                       => EpochInfo Identity
