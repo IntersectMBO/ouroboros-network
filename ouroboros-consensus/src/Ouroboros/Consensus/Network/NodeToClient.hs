@@ -362,7 +362,7 @@ responder
   -> OuroborosApplication 'ResponderMode peer b m Void a
 responder version Apps {..} =
     nodeToClientProtocols
-      (\peer -> NodeToClientProtocols {
+      (\peer _shouldStopSTM -> NodeToClientProtocols {
           localChainSyncProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (aChainSyncServer peer))),
           localTxSubmissionProtocol =
