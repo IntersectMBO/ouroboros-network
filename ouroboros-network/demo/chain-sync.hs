@@ -140,7 +140,7 @@ demoProtocol2
   :: RunMiniProtocol appType bytes m a b -- ^ chainSync
   -> OuroborosApplication appType addr bytes m a b
 demoProtocol2 chainSync =
-    OuroborosApplication $ \_connectionId -> [
+    OuroborosApplication $ \_connectionId _shouldStopSTM -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = maximumMiniProtocolLimits,
@@ -236,7 +236,7 @@ demoProtocol3
   -> (ConnectionId addr -> RunMiniProtocol appType bytes m a b) -- ^ blockFetch
   -> OuroborosApplication appType addr bytes m a b
 demoProtocol3 chainSync blockFetch =
-    OuroborosApplication $ \connectionId -> [
+    OuroborosApplication $ \connectionId _shouldStopSTM -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = maximumMiniProtocolLimits,

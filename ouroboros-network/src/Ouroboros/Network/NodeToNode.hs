@@ -91,6 +91,7 @@ module Ouroboros.Network.NodeToNode (
   ) where
 
 import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
@@ -216,7 +217,7 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
 --
 nodeToNodeProtocols
   :: MiniProtocolParameters
-  -> (ConnectionId addr -> NodeToNodeProtocols appType bytes m a b)
+  -> (ConnectionId addr -> STM m RunOrStop -> NodeToNodeProtocols appType bytes m a b)
   -> OuroborosApplication appType addr bytes m a b
 nodeToNodeProtocols MiniProtocolParameters {
                         chainSyncPipeliningHighMark,
@@ -224,8 +225,8 @@ nodeToNodeProtocols MiniProtocolParameters {
                         txSubmissionMaxUnacked
                       }
                     protocols =
-  OuroborosApplication $ \connectionId ->
-    case protocols connectionId of
+  OuroborosApplication $ \connectionId shouldStopSTM ->
+    case protocols connectionId shouldStopSTM of
       NodeToNodeProtocols {
           chainSyncProtocol,
           blockFetchProtocol,
@@ -403,14 +404,13 @@ connectTo_V1 sn tracers versionData application localAddr remoteAddr =
 --   will be cancelled as well (by 'withAsync')
 --
 withServer
-  :: ( HasResponder mode ~ True )
-  => SocketSnocket
+  :: SocketSnocket
   -> NetworkServerTracers Socket.SockAddr NodeToNodeVersion
   -> NetworkMutableState Socket.SockAddr
   -> AcceptedConnectionsLimit
   -> Socket.Socket
   -> Versions NodeToNodeVersion DictVersion
-              (OuroborosApplication mode Socket.SockAddr BL.ByteString IO a b)
+              (OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolicies =
@@ -431,14 +431,13 @@ withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolic
 -- | Like 'withServer' but specific to 'NodeToNodeV_1'.
 --
 withServer_V1
-  :: ( HasResponder mode ~ True )
-  => SocketSnocket
+  :: SocketSnocket
   -> NetworkServerTracers Socket.SockAddr NodeToNodeVersion
   -> NetworkMutableState Socket.SockAddr
   -> AcceptedConnectionsLimit
   -> Socket.Socket
   -> NodeToNodeVersionData
-  -> OuroborosApplication mode Socket.SockAddr BL.ByteString IO x y
+  -> OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO x y
   -> ErrorPolicies
   -> IO Void
 withServer_V1 sn tracers networkState acceptedConnectionsLimit sd versionData application =

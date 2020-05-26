@@ -16,6 +16,7 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
+import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
@@ -79,7 +80,7 @@ defaultMiniProtocolLimit = 3000000
 demoProtocols :: RunMiniProtocol appType bytes m a b
               -> OuroborosApplication appType addr bytes m a b
 demoProtocols chainSync =
-    OuroborosApplication $ \_connectionId -> [
+    OuroborosApplication $ \_connectionId _shouldStopSTM -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = MiniProtocolLimits {
@@ -185,6 +186,7 @@ demo chain0 updates = do
                 activeTracer
                 (toApplication
                   (ConnectionId "producer" "consumer")
+                  (neverStop (Proxy :: Proxy IO))
                   producerApp)
                 clientBearer
         _ <- async $
@@ -192,6 +194,7 @@ demo chain0 updates = do
                 activeTracer
                 (toApplication
                   (ConnectionId "consumer" "producer")
+                  (neverStop (Proxy :: Proxy IO))
                   consumerApp)
                 serverBearer
 
