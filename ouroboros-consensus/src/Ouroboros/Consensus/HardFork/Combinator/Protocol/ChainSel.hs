@@ -19,6 +19,7 @@ import           Cardano.Slotting.Block
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract

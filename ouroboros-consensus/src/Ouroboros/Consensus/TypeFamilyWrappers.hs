@@ -33,23 +33,23 @@ import           Ouroboros.Consensus.Protocol.Abstract
   Block based
 -------------------------------------------------------------------------------}
 
-newtype WrapTipInfo      blk = WrapTipInfo      { getWrapTipInfo      :: TipInfo                  blk }
-newtype WrapEnvelopeErr  blk = WrapEnvelopeErr  { getWrapEnvelopeErr  :: OtherHeaderEnvelopeError blk }
-newtype WrapLedgerErr    blk = WrapLedgerError  { getWrapLedgerErr    :: LedgerErr                blk }
-newtype WrapGenTxId      blk = WrapGenTxId      { getWrapGenTxId      :: GenTxId                  blk }
-newtype WrapApplyTxErr   blk = WrapApplyTxErr   { getWrapApplyTxErr   :: ApplyTxErr               blk }
-newtype WrapForgeState   blk = WrapForgeState   { getWrapForgeState   :: ForgeState               blk }
+newtype WrapTipInfo      blk = WrapTipInfo      { unwrapTipInfo      :: TipInfo                  blk }
+newtype WrapEnvelopeErr  blk = WrapEnvelopeErr  { unwrapEnvelopeErr  :: OtherHeaderEnvelopeError blk }
+newtype WrapLedgerErr    blk = WrapLedgerErr    { unwrapLedgerErr    :: LedgerError              blk }
+newtype WrapGenTxId      blk = WrapGenTxId      { unwrapGenTxId      :: GenTxId                  blk }
+newtype WrapApplyTxErr   blk = WrapApplyTxErr   { unwrapApplyTxErr   :: ApplyTxErr               blk }
+newtype WrapForgeState   blk = WrapForgeState   { unwrapForgeState   :: ForgeState               blk }
 
 {-------------------------------------------------------------------------------
   Consensus based
 -------------------------------------------------------------------------------}
 
-newtype WrapConsensusState  blk = WrapConsensusState  { getWrapConsensusState  :: ConsensusState         (BlockProtocol blk) }
-newtype WrapChainSelConfig  blk = WrapChainSelConfig  { getWrapChainSelConfig  :: ChainSelConfig         (BlockProtocol blk) }
-newtype WrapIsLeader        blk = WrapIsLeader        { getWrapIsLeader        :: IsLeader               (BlockProtocol blk) }
-newtype WrapValidationErr   blk = WrapValidationErr   { getWrapValidationErr   :: ValidationErr          (BlockProtocol blk) }
-newtype WrapValidateView    blk = WrapValidateView    { getWrapValidateView    :: ValidateView           (BlockProtocol blk) }
-newtype WrapSelectView      blk = WrapSelectView      { getWrapSelectView      :: SelectView             (BlockProtocol blk) }
+newtype WrapConsensusState  blk = WrapConsensusState  { unwrapConsensusState  :: ConsensusState         (BlockProtocol blk) }
+newtype WrapChainSelConfig  blk = WrapChainSelConfig  { unwrapChainSelConfig  :: ChainSelConfig         (BlockProtocol blk) }
+newtype WrapIsLeader        blk = WrapIsLeader        { unwrapIsLeader        :: IsLeader               (BlockProtocol blk) }
+newtype WrapValidationErr   blk = WrapValidationErr   { unwrapValidationErr   :: ValidationErr          (BlockProtocol blk) }
+newtype WrapValidateView    blk = WrapValidateView    { unwrapValidateView    :: ValidateView           (BlockProtocol blk) }
+newtype WrapSelectView      blk = WrapSelectView      { unwrapSelectView      :: SelectView             (BlockProtocol blk) }
 
 {-------------------------------------------------------------------------------
   Instances
@@ -68,9 +68,9 @@ deriving instance Ord                (GenTxId blk)                  => Ord      
 deriving instance Show               (GenTxId blk)                  => Show               (WrapGenTxId blk)
 deriving instance NoUnexpectedThunks (GenTxId blk)                  => NoUnexpectedThunks (WrapGenTxId blk)
 
-deriving instance Eq                 (LedgerErr blk)                => Eq                 (WrapLedgerErr blk)
-deriving instance Show               (LedgerErr blk)                => Show               (WrapLedgerErr blk)
-deriving instance NoUnexpectedThunks (LedgerErr blk)                => NoUnexpectedThunks (WrapLedgerErr blk)
+deriving instance Eq                 (LedgerError blk)              => Eq                 (WrapLedgerErr blk)
+deriving instance Show               (LedgerError blk)              => Show               (WrapLedgerErr blk)
+deriving instance NoUnexpectedThunks (LedgerError blk)              => NoUnexpectedThunks (WrapLedgerErr blk)
 
 deriving instance NoUnexpectedThunks (ForgeState blk)               => NoUnexpectedThunks (WrapForgeState blk)
 
