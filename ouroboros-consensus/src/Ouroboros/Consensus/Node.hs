@@ -161,7 +161,7 @@ run runargs@RunNodeArgs{..} =
           inFuture = InFuture.reference
                        (configLedger cfg)
                        rnMaxClockSkew
-                       (defaultSystemTime $ nodeStartTime cfg)
+                       (defaultSystemTime $ nodeStartTime (configBlock cfg))
 
       let customiseChainDbArgs' args
             | lastShutDownWasClean
@@ -186,7 +186,7 @@ run runargs@RunNodeArgs{..} =
       btime <- hardForkBlockchainTime
                  registry
                  (blockchainTimeTracer rnTraceConsensus)
-                 (defaultSystemTime $ nodeStartTime cfg)
+                 (defaultSystemTime $ nodeStartTime (configBlock cfg))
                  (configLedger cfg)
                  (ledgerState <$> ChainDB.getCurrentLedger chainDB)
 
@@ -303,7 +303,7 @@ withDBChecks RunNodeArgs{..} body = do
     either throwM return =<< checkDbMarker
       hasFS
       mountPoint
-      (nodeProtocolMagicId pInfoConfig)
+      (nodeProtocolMagicId (configBlock pInfoConfig))
 
     -- Then create the lock file.
     withLockDB mountPoint $ do

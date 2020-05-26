@@ -73,8 +73,9 @@ versionedProtocols ::
 versionedProtocols blkProxy topLevelConfig p
   = foldMapVersions applyVersion $ supportedNodeToClientVersions blkProxy
   where
+    blockConfig = configBlock topLevelConfig
     applyVersion v =
       versionedNodeToClientProtocols
         (nodeToClientProtocolVersion blkProxy v)
-        (NodeToClientVersionData { networkMagic = nodeNetworkMagic topLevelConfig })
-        (p v $ clientCodecs ( getCodecConfig $ configBlock topLevelConfig) v)
+        (NodeToClientVersionData { networkMagic = nodeNetworkMagic blockConfig })
+        (p v $ clientCodecs (getCodecConfig blockConfig) v)

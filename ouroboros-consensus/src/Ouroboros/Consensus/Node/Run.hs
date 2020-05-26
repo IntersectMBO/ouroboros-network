@@ -60,9 +60,10 @@ class ( LedgerSupportsProtocol    blk
   nodeIsEBB               :: Header blk -> Maybe EpochNo
 
   nodeImmDbChunkInfo      :: TopLevelConfig blk -> ChunkInfo
-  nodeStartTime           :: TopLevelConfig blk -> SystemStart
-  nodeNetworkMagic        :: TopLevelConfig blk -> NetworkMagic
-  nodeProtocolMagicId     :: TopLevelConfig blk -> ProtocolMagicId
+
+  nodeStartTime           :: BlockConfig blk -> SystemStart
+  nodeNetworkMagic        :: BlockConfig blk -> NetworkMagic
+  nodeProtocolMagicId     :: BlockConfig blk -> ProtocolMagicId
 
   -- | Hash serialisation
   nodeHashInfo :: Proxy blk -> HashInfo (HeaderHash blk)
