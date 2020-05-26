@@ -44,7 +44,7 @@ module Ouroboros.Consensus.HardFork.History (
   , mkEraEnd
     -- * Queries
   , PastHorizonException(..)
-  , Query -- Opaque
+  , Qry -- Opaque
   , runQuery
   , runQueryThrow
   , runQueryPure
@@ -84,15 +84,14 @@ module Ouroboros.Consensus.HardFork.History (
 
 import           Control.Exception (Exception (..), assert, throw)
 import           Control.Monad.Except
-import           Control.Monad.Reader
 import           Data.Bifunctor
 import           Data.Fixed (divMod')
-import           Data.Foldable (toList)
+import           Data.Foldable (asum, toList)
 import           Data.Functor.Identity
-import qualified Data.List as List
 import           Data.Time
 import           Data.Word
 import           GHC.Generics (Generic)
+import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalFormNamed (..))
 import           Cardano.Slotting.EpochInfo.API
@@ -718,108 +717,8 @@ maxMaybeEpoch (LowerBound e') e = Just $ max e' e
 maxMaybeEpoch UnsafeUnbounded _ = Nothing
 
 {-------------------------------------------------------------------------------
-  Internal: looking up values in the history
+  PastHorizonException
 -------------------------------------------------------------------------------}
-
-data Condition =
-    ContainsTime  UTCTime
-  | ContainsSlot  SlotNo
-  | ContainsEpoch EpochNo
-  deriving (Show)
-
--- | Check if this 'EraSummary' contains the specified time/slot/epoch
---
--- NOTE. The lower bound of every era is inclusive, while the upper bound is
--- really exclusive, making the upper bound of every era equal to the lower
--- bound of the next.
---
--- >         era A         era B         era C
--- >        [.....) [...............) [..........)
--- > epoch         e                 e'
--- > slot          s                 s'
--- > time          t                 t'
---
--- Now let's consider what happens when we do translations of the values at
--- the boundary.
---
---  1. Slot-to-epoch translation. Using era C, we get
---
---     > e' + ((s' - s') / epochSizeC) == e'
---
---     Using era B (technically the wrong era to be using, since the upper bound
---     is exclusive), we get
---
---     > e + ((s' - s) / epochSizeB)
---
---     These are equal by (INV-1a).
---
---  2. Epoch-to-slot translation. Using era C, we get
---
---     > s' + ((e' - e') * epochSizeC) == s'
---
---     Using era B, we'd get
---
---     > s + ((e' - e) * epochSizeB
---
---     These are equal by (INV-1b).
---
---  3. Slot to time translation. Using era C, we get
---
---     > t' + ((s' - s') * slotLenC) == t'
---
---     Using era C, we get
---
---     > t + ((s' - s) * slotLenB)
---
---     These are equal by (INV-2b)
---
---  4. Time to slot translation. Using era C, we get
---
---     > s' + ((t' - t') / slotLenC) == s'
---
---     Using era B, we get
---
---     > s + ((t' - t) / slotLenB)
---
---     These are equal by (INV-2a).
---
--- This means that for values at that boundary, it does not matter if we use
--- this era or the next era for the translation. However, this is only true for
--- these 4 translations. If we are returning the era parameters directly, then
--- of course we can't use the era parameters from the wrong era.
---
--- There is however a benefit to using the current era: there might not /be/
--- a next era, and so if we use the current era, we extend the period for which
--- we do calculations just that tiny bit more. This might be important for
--- ledger implementations. For example, suppose we want to know if a particular
--- slot @s@ is far enough away from the next epoch boundary (e.g., to determine
--- if an update proposal should take effect in this epoch or the next). One
--- natural way to write this would be to translate @s@ to the corresponding
--- epoch @e@, then translate @e + 1@ back to a slot @s'@, and check the
--- distance @s' - s@. However, it is conceivable that the safe zone stops at
--- that epoch boundary; if it does, this computation would result in a
--- 'PastHorizonException', even if a different way to write the same computation
--- (translating @s + delta@ to an epoch number, and then comparing that to @e@)
--- might succeed. Rather than imposing an unnecessary limitation on the ledger,
--- we therefore treat the upper bound as inclusive, so that both ways to do the
--- check would succeed.
-eval :: Condition -> EraSummary -> Bool
-eval condition EraSummary{..} =
-    case condition of
-      ContainsTime  x -> boundTime  `contains` x
-      ContainsSlot  x -> boundSlot  `contains` x
-      ContainsEpoch x -> boundEpoch `contains` x
-  where
-    contains :: Ord a => (Bound -> a) -> a -> Bool
-    f `contains` x = case eraEnd of
-                       EraEnd end   -> f eraStart <= x && x < f end
-                       EraUnbounded -> f eraStart <= x
-
-find :: Summary xs -> Condition -> Except PastHorizonException EraSummary
-find summary@(Summary eras)  condition =
-    case List.find (eval condition) (toList eras) of
-      Nothing -> throwError $ PastHorizon (summaryBounds summary) condition
-      Just s  -> return s
 
 -- | We tried to convert something that is past the horizon
 --
@@ -828,36 +727,216 @@ find summary@(Summary eras)  condition =
 -- hard fork.
 --
 -- We record the condition we were looking for and the bounds on the summary.
-data PastHorizonException = PastHorizon (Bound, EraEnd) Condition
+data PastHorizonException = PastHorizon CallStack [EraSummary]
 
 deriving instance Show PastHorizonException
 instance Exception PastHorizonException
 
 {-------------------------------------------------------------------------------
+  Internal: reified queries
+
+  NOTE. The lower bound of every era is inclusive, while the upper bound is
+  really exclusive, making the upper bound of every era equal to the lower
+  bound of the next.
+
+  >         era A         era B         era C
+  >        [.....) [...............) [..........)
+  > epoch         e                 e'
+  > slot          s                 s'
+  > time          t                 t'
+
+  Now let's consider what happens when we do translations of the values at
+  the boundary.
+
+   1. Slot-to-epoch translation. Using era C, we get
+
+      > e' + ((s' - s') / epochSizeC) == e'
+
+      Using era B (technically the wrong era to be using, since the upper bound
+      is exclusive), we get
+
+      > e + ((s' - s) / epochSizeB)
+
+      These are equal by (INV-1a).
+
+   2. Epoch-to-slot translation. Using era C, we get
+
+      > s' + ((e' - e') * epochSizeC) == s'
+
+      Using era B, we'd get
+
+      > s + ((e' - e) * epochSizeB
+
+      These are equal by (INV-1b).
+
+   3. Slot to time translation. Using era C, we get
+
+      > t' + ((s' - s') * slotLenC) == t'
+
+      Using era C, we get
+
+      > t + ((s' - s) * slotLenB)
+
+      These are equal by (INV-2b)
+
+   4. Time to slot translation. Using era C, we get
+
+      > s' + ((t' - t') / slotLenC) == s'
+
+      Using era B, we get
+
+      > s + ((t' - t) / slotLenB)
+
+      These are equal by (INV-2a).
+
+  This means that for values at that boundary, it does not matter if we use
+  this era or the next era for the translation. However, this is only true for
+  these 4 translations. If we are returning the era parameters directly, then
+  of course we can't use the era parameters from the wrong era.
+
+  There is however a benefit to using the current era: there might not /be/
+  a next era, and so if we use the current era, we extend the period for which
+  we do calculations just that tiny bit more. This might be important for
+  ledger implementations. For example, suppose we want to know if a particular
+  slot @s@ is far enough away from the next epoch boundary (e.g., to determine
+  if an update proposal should take effect in this epoch or the next). One
+  natural way to write this would be to translate @s@ to the corresponding
+  epoch @e@, then translate @e + 1@ back to a slot @s'@, and check the
+  distance @s' - s@. However, it is conceivable that the safe zone stops at
+  that epoch boundary; if it does, this computation would result in a
+  'PastHorizonException', even if a different way to write the same computation
+  (translating @s + delta@ to an epoch number, and then comparing that to @e@)
+  might succeed. Rather than imposing an unnecessary limitation on the ledger,
+  we therefore treat the upper bound as inclusive, so that both ways to do the
+  check would succeed.
+-------------------------------------------------------------------------------}
+
+newtype TimeInEra   = TimeInEra   { getTimeInEra   :: NominalDiffTime }
+newtype TimeInSlot  = TimeInSlot  { getTimeInSlot  :: NominalDiffTime }
+newtype SlotInEra   = SlotInEra   { getSlotInEra   :: Word64 }
+newtype SlotInEpoch = SlotInEpoch { getSlotInEpoch :: Word64 }
+newtype EpochInEra  = EpochInEra  { getEpochInEra  :: Word64 }
+
+-- | Query
+--
+-- All " relative " values here are /era/ relative.
+data Qry :: * -> * where
+  QPure :: a -> Qry a
+  QBind :: Qry a -> (a -> Qry b) -> Qry b
+
+  -- Convert from absolute to era-relative
+
+  QAbsToRelTime  :: UTCTime -> Qry TimeInEra
+  QAbsToRelSlot  :: SlotNo  -> Qry SlotInEra
+  QAbsToRelEpoch :: EpochNo -> Qry EpochInEra
+
+  -- Convert from era-relative to absolute
+
+  QRelToAbsTime  :: TimeInEra                 -> Qry UTCTime
+  QRelToAbsSlot  :: (SlotInEra, TimeInSlot)   -> Qry SlotNo
+  QRelToAbsEpoch :: (EpochInEra, SlotInEpoch) -> Qry EpochNo
+
+  -- Convert between relative values
+
+  QRelTimeToSlot  :: TimeInEra  -> Qry (SlotInEra, TimeInSlot)
+  QRelSlotToTime  :: SlotInEra  -> Qry TimeInEra
+  QRelSlotToEpoch :: SlotInEra  -> Qry (EpochInEra, SlotInEpoch)
+  QRelEpochToSlot :: EpochInEra -> Qry SlotInEra
+
+  -- Get era parameters
+  -- The arguments are used for bound checks
+
+  QSlotLength :: SlotNo  -> Qry SlotLength
+  QEpochSize  :: EpochNo -> Qry EpochSize
+
+instance Functor Qry where
+  fmap = liftM
+
+instance Applicative Qry where
+  pure  = QPure
+  (<*>) = ap
+
+instance Monad Qry where
+  return = pure
+  (>>=)  = QBind
+
+evalQryInEra :: EraSummary -> Qry a -> Maybe a
+evalQryInEra EraSummary{..} = go
+  where
+    EraParams{..} = eraParams
+    slotLen   = getSlotLength eraSlotLength
+    epochSize = unEpochSize   eraEpochSize
+
+    guardEnd :: (Bound -> Bool) -> Maybe ()
+    guardEnd p =
+        case eraEnd of
+          EraUnbounded -> return ()
+          EraEnd b     -> guard $ p b
+
+    go :: Qry a -> Maybe a
+    go (QPure a) =
+        return a
+    go (QBind x f) = do
+        go x >>= go . f
+
+    go (QAbsToRelTime t) = do
+        guard (t >= boundTime eraStart)
+        return $ TimeInEra (t `diffUTCTime` boundTime eraStart)
+    go (QAbsToRelSlot s) = do
+        guard (s >= boundSlot eraStart)
+        return $ SlotInEra (countSlots s (boundSlot eraStart))
+    go (QAbsToRelEpoch e) = do
+        guard (e >= boundEpoch eraStart)
+        return $ EpochInEra (countEpochs e (boundEpoch eraStart))
+
+    go (QRelToAbsTime t) = do
+        let absTime = getTimeInEra t `addUTCTime` boundTime eraStart
+        guardEnd $ \end -> absTime < boundTime end
+        return absTime
+    go (QRelToAbsSlot (s, _t)) = do
+        let absSlot = addSlots (getSlotInEra s) (boundSlot eraStart)
+        guardEnd $ \end -> absSlot < boundSlot end
+        return absSlot
+    go (QRelToAbsEpoch (e, _s)) = do
+        let absEpoch = addEpochs (getEpochInEra e) (boundEpoch eraStart)
+        guardEnd $ \end -> absEpoch < boundEpoch end
+        return absEpoch
+
+    go (QRelTimeToSlot t) =
+        return $ bimap SlotInEra TimeInSlot (getTimeInEra t `divMod'` slotLen)
+    go (QRelSlotToTime s) =
+        return $ TimeInEra (fromIntegral (getSlotInEra s) * slotLen)
+    go (QRelSlotToEpoch s) =
+        return $ bimap EpochInEra SlotInEpoch $ getSlotInEra s `divMod` epochSize
+    go (QRelEpochToSlot e) =
+        return $ SlotInEra (getEpochInEra e * epochSize)
+
+    go (QSlotLength s) = do
+        guard    $ s >= boundSlot eraStart
+        guardEnd $ \end -> s < boundSlot end
+        return eraSlotLength
+    go (QEpochSize e) = do
+        guard    $ e >= boundEpoch eraStart
+        guardEnd $ \end -> e < boundEpoch end
+        return eraEpochSize
+
+{-------------------------------------------------------------------------------
   Very thin layer for dealing with Queries
 -------------------------------------------------------------------------------}
 
-newtype Query (xs :: [*]) a = Query {
-      unQuery :: ReaderT (Summary xs) (Except PastHorizonException) a
-    }
-  deriving newtype (
-      Functor
-    , Applicative
-    , Monad
-    , MonadReader (Summary xs)
-    , MonadError PastHorizonException
-    )
+runQuery :: HasCallStack => Qry a -> Summary xs -> Either PastHorizonException a
+runQuery qry (Summary summary) =
+    case asum $ map (flip evalQryInEra qry) eras of
+      Just answer -> Right answer
+      Nothing     -> Left $ PastHorizon callStack eras
+  where
+    eras :: [EraSummary]
+    eras = toList summary
 
-mkQuery :: (Summary xs -> Except PastHorizonException a) -> Query xs a
-mkQuery = Query . ReaderT
-
-runQuery :: Query xs a -> Summary xs -> Either PastHorizonException a
-runQuery = (runExcept .) . runReaderT . unQuery
-
-runQueryThrow :: MonadThrow m => Query xs a -> Summary xs -> m a
+runQueryThrow :: (HasCallStack, MonadThrow m )=> Qry a -> Summary xs -> m a
 runQueryThrow q = either throwM return . runQuery q
 
-runQueryPure :: Query xs a -> Summary xs -> a
+runQueryPure :: HasCallStack => Qry a -> Summary xs -> a
 runQueryPure q = either throw id . runQuery q
 
 {-------------------------------------------------------------------------------
@@ -867,44 +946,29 @@ runQueryPure q = either throw id . runQuery q
 -- | Translate 'UTCTime' to 'SlotNo'
 --
 -- Additionally returns the time spent and time left in this slot.
-wallclockToSlot :: UTCTime -> Query xs (SlotNo, NominalDiffTime, NominalDiffTime)
-wallclockToSlot time = mkQuery $ \summary ->
-    go <$> find summary (ContainsTime time)
-  where
-    go :: EraSummary -> (SlotNo, NominalDiffTime, NominalDiffTime)
-    go EraSummary{..} =
-        let (relSlot, timeSpent) = relTime `divMod'` slotLen
-        in (toAbsSlot relSlot, timeSpent, slotLen - timeSpent)
-      where
-        EraParams{..} = eraParams
-
-        toAbsSlot :: Word64 -> SlotNo
-        toAbsSlot relSlot = addSlots relSlot (boundSlot eraStart)
-
-        relTime, slotLen :: NominalDiffTime
-        relTime = time `diffUTCTime` (boundTime eraStart)
-        slotLen = getSlotLength eraSlotLength
+wallclockToSlot :: UTCTime -> Qry (SlotNo, NominalDiffTime, NominalDiffTime)
+wallclockToSlot absTime = do
+    relTime <- QAbsToRelTime  absTime
+    relSlot <- QRelTimeToSlot relTime
+    absSlot <- QRelToAbsSlot  relSlot
+    slotLen <- QSlotLength    absSlot
+    let timeInSlot = getTimeInSlot (snd relSlot)
+    return (
+        absSlot
+      , timeInSlot
+      , getSlotLength slotLen - timeInSlot
+      )
 
 -- | Translate 'SlotNo' to the 'UTCTime' at the start of that slot
 --
 -- Additionally returns the length of the slot.
-slotToWallclock :: SlotNo -> Query xs (UTCTime, SlotLength)
-slotToWallclock slot = mkQuery $ \summary ->
-    go <$> find summary (ContainsSlot slot)
-  where
-    go :: EraSummary -> (UTCTime, SlotLength)
-    go EraSummary{..} = (
-          addUTCTime (fromIntegral relSlot * slotLen) (boundTime eraStart)
-        , eraSlotLength
-        )
-      where
-        EraParams{..} = eraParams
-
-        relSlot :: Word64
-        relSlot = countSlots slot (boundSlot eraStart)
-
-        slotLen :: NominalDiffTime
-        slotLen = getSlotLength eraSlotLength
+slotToWallclock :: SlotNo -> Qry (UTCTime, SlotLength)
+slotToWallclock absSlot = do
+    relSlot <- QAbsToRelSlot  absSlot
+    relTime <- QRelSlotToTime relSlot
+    absTime <- QRelToAbsTime  relTime
+    slotLen <- QSlotLength    absSlot
+    return (absTime, slotLen)
 
 {-------------------------------------------------------------------------------
   Conversion between slots and epochs
@@ -912,48 +976,35 @@ slotToWallclock slot = mkQuery $ \summary ->
 
 -- | Translate 'SlotNo' to its corresponding 'EpochNo'
 --
--- Additionally returns the relative slot within this epoch
-slotToEpoch :: SlotNo -> Query xs (EpochNo, Word64)
-slotToEpoch slot = mkQuery $ \summary ->
-    go <$> find summary (ContainsSlot slot)
-  where
-    go :: EraSummary -> (EpochNo, Word64)
-    go EraSummary{..} = first toAbsEpoch $ relSlot `divMod` epochSize
-      where
-        EraParams{..} = eraParams
-
-        toAbsEpoch :: Word64 -> EpochNo
-        toAbsEpoch relEpoch = addEpochs relEpoch (boundEpoch eraStart)
-
-        relSlot, epochSize :: Word64
-        relSlot   = countSlots slot (boundSlot eraStart)
-        epochSize = unEpochSize eraEpochSize
+-- Additionally returns the relative slot within this epoch.
+slotToEpoch :: SlotNo -> Qry (EpochNo, Word64)
+slotToEpoch absSlot = do
+    relSlot   <- QAbsToRelSlot   absSlot
+    epochSlot <- QRelSlotToEpoch relSlot
+    absEpoch  <- QRelToAbsEpoch  epochSlot
+    let slotInEpoch = getSlotInEpoch (snd epochSlot)
+    return (
+        absEpoch
+      , slotInEpoch
+      )
 
 -- | Translate 'EpochNo' to the 'SlotNo' of the first slot in that epoch
 --
 -- Additionally returns the size of the epoch.
-epochToSlot :: EpochNo -> Query xs (SlotNo, EpochSize)
-epochToSlot epoch = mkQuery $ \summary ->
-    go <$> find summary (ContainsEpoch epoch)
-  where
-    go :: EraSummary -> (SlotNo, EpochSize)
-    go EraSummary{..} = (
-          addSlots (relEpoch * epochSize) (boundSlot eraStart)
-        , eraEpochSize
-        )
-      where
-        EraParams{..} = eraParams
-
-        relEpoch, epochSize :: Word64
-        relEpoch  = countEpochs epoch (boundEpoch eraStart)
-        epochSize = unEpochSize eraEpochSize
+epochToSlot :: EpochNo -> Qry (SlotNo, EpochSize)
+epochToSlot absEpoch = do
+    relEpoch  <- QAbsToRelEpoch  absEpoch
+    slotInEra <- QRelEpochToSlot relEpoch
+    absSlot   <- QRelToAbsSlot   (slotInEra, TimeInSlot 0)
+    epochSize <- QEpochSize      absEpoch
+    return (absSlot, epochSize)
 
 {-------------------------------------------------------------------------------
   Caching the summary
 -------------------------------------------------------------------------------}
 
 -- | Stateful abstraction to execute queries
-data RunWithCachedSummary xs m = RunWithCachedSummary {
+data RunWithCachedSummary (xs :: [*]) m = RunWithCachedSummary {
       -- | Run the specified query
       --
       -- If the query fails with a 'PastHorizonException', it will update its
@@ -961,7 +1012,7 @@ data RunWithCachedSummary xs m = RunWithCachedSummary {
       -- fails, the 'PastHorizonException' is returned.
       --
       -- See also 'cachedRunQueryThrow'.
-      cachedRunQuery :: forall a. Query xs a
+      cachedRunQuery :: forall a. Qry a
                      -> STM m (Either PastHorizonException a)
     }
 
@@ -970,7 +1021,7 @@ data RunWithCachedSummary xs m = RunWithCachedSummary {
 -- This is useful for callers who know that their queries should not be past
 -- the horizon (and it would be a bug if they were).
 cachedRunQueryThrow :: (MonadSTM m, MonadThrow (STM m))
-                    => RunWithCachedSummary xs m -> Query xs a -> STM m a
+                    => RunWithCachedSummary xs m -> Qry a -> STM m a
 cachedRunQueryThrow run qry = either throwM return =<< cachedRunQuery run qry
 
 -- | Construct 'RunWithCachedSummary' given action that computes the summary
@@ -986,7 +1037,7 @@ runWithCachedSummary getSummary = do
     return $ RunWithCachedSummary { cachedRunQuery = go var }
   where
     go :: StrictTVar m (Summary xs)
-       -> Query xs a -> STM m (Either PastHorizonException a)
+       -> Qry a -> STM m (Either PastHorizonException a)
     go var q = do
         summary <- readTVar var
         case runQuery q summary of
@@ -1028,7 +1079,7 @@ snapshotEpochInfo summary = EpochInfo {
     , epochInfoEpoch_ = \s -> runQueryPure' (fst <$> slotToEpoch s)
     }
   where
-    runQueryPure' :: Query xs a -> Identity a
+    runQueryPure' :: Qry a -> Identity a
     runQueryPure' = Identity . flip runQueryPure summary
 
 {-------------------------------------------------------------------------------

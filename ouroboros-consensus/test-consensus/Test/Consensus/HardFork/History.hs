@@ -109,7 +109,7 @@ summarizeInvariant ArbitraryChain{..} =
 
 testSkeleton :: Show a
              => ArbitraryChain
-             -> (forall xs. HF.Query xs a)
+             -> HF.Qry a
              -> (a -> Property)
              -> Property
 testSkeleton ArbitraryChain{..} q =

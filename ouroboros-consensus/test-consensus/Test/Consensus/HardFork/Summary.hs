@@ -51,7 +51,7 @@ tests = testGroup "HardForkHistory" [
 -------------------------------------------------------------------------------}
 
 noPastHorizonException :: ArbitrarySummary
-                       -> (forall xs. HF.Query xs Property)
+                       -> HF.Qry Property
                        -> Property
 noPastHorizonException ArbitrarySummary{..} p =
     case HF.runQuery p arbitrarySummary of
@@ -61,7 +61,7 @@ noPastHorizonException ArbitrarySummary{..} p =
 
 isPastHorizonException :: Show a
                        => ArbitrarySummary
-                       -> (forall xs. HF.Query xs a)
+                       -> HF.Qry a
                        -> Property
 isPastHorizonException ArbitrarySummary{..} ma =
     case HF.runQuery ma arbitrarySummary of
