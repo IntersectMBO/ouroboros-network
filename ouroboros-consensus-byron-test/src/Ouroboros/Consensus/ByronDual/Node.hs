@@ -53,7 +53,6 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 
 import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Ledger.Config (byronEpochSlots)
 import           Ouroboros.Consensus.Byron.Node
 import           Ouroboros.Consensus.Byron.Protocol
 
@@ -230,9 +229,6 @@ instance RunNode DualByronBlock where
 
   -- Node config is a consensus concern, determined by the main block only
   nodeImmDbChunkInfo  = nodeImmDbChunkInfo  . dualTopLevelConfigMain
-  nodeStartTime       = nodeStartTime       . dualBlockConfigMain
-  nodeNetworkMagic    = nodeNetworkMagic    . dualBlockConfigMain
-  nodeProtocolMagicId = nodeProtocolMagicId . dualBlockConfigMain
 
   -- The max block size we set to the max block size of the /concrete/ block
   -- (Correspondingly, 'txSize' for the Byron spec returns 0)
@@ -313,7 +309,7 @@ instance RunNode DualByronBlock where
   nodeDecodeResult         = \case {}
 
 extractEpochSlots :: CodecConfig DualByronBlock -> EpochSlots
-extractEpochSlots = byronEpochSlots . dualCodecConfigMain
+extractEpochSlots = getByronEpochSlots . dualCodecConfigMain
 
 {-------------------------------------------------------------------------------
   The headers for DualByronBlock and ByronBlock are identical, so we can

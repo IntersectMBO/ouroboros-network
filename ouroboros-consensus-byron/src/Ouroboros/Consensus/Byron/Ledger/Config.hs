@@ -8,10 +8,10 @@
 
 module Ouroboros.Consensus.Byron.Ledger.Config (
     BlockConfig(..)
-  , CodecConfig(..)
   , byronGenesisHash
   , byronProtocolMagicId
   , byronProtocolMagic
+  , byronEpochSlots
   ) where
 
 import           GHC.Generics (Generic)
@@ -24,6 +24,7 @@ import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.Block
+
 import           Ouroboros.Consensus.Byron.Ledger.Block
 
 -- | Extended configuration we need for Byron
@@ -45,16 +46,6 @@ data instance BlockConfig ByronBlock = ByronConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
-data instance CodecConfig ByronBlock = ByronCodecConfig {
-  byronEpochSlots :: CC.Slot.EpochSlots
-} deriving (Generic, NoUnexpectedThunks)
-
-instance BlockHasCodecConfig ByronBlock where
-  getCodecConfig ByronConfig { byronGenesisConfig }
-    = ByronCodecConfig
-      { byronEpochSlots = CC.Genesis.configEpochSlots byronGenesisConfig
-      }
-
 byronGenesisHash :: BlockConfig ByronBlock -> CC.Genesis.GenesisHash
 byronGenesisHash = CC.Genesis.configGenesisHash . byronGenesisConfig
 
@@ -63,3 +54,6 @@ byronProtocolMagicId = Crypto.getProtocolMagicId . byronProtocolMagic
 
 byronProtocolMagic :: BlockConfig ByronBlock -> Crypto.ProtocolMagic
 byronProtocolMagic = CC.Genesis.configProtocolMagic . byronGenesisConfig
+
+byronEpochSlots :: BlockConfig ByronBlock -> CC.Slot.EpochSlots
+byronEpochSlots = CC.Genesis.configEpochSlots . byronGenesisConfig

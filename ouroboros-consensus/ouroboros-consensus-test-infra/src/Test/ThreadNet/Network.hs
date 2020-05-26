@@ -71,6 +71,7 @@ import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -573,15 +574,15 @@ runThreadNetwork ThreadNetworkArgs
       nodeDBs _coreNodeId = ChainDbArgs
         { -- Decoders
           cdbDecodeHash           = nodeDecodeHeaderHash     (Proxy @blk)
-        , cdbDecodeBlock          = nodeDecodeBlock          bcfg
-        , cdbDecodeHeader         = nodeDecodeHeader         bcfg SerialisedToDisk
+        , cdbDecodeBlock          = nodeDecodeBlock          ccfg
+        , cdbDecodeHeader         = nodeDecodeHeader         ccfg SerialisedToDisk
         , cdbDecodeLedger         = nodeDecodeLedgerState    cfg
         , cdbDecodeConsensusState = nodeDecodeConsensusState cfg
         , cdbDecodeAnnTip         = nodeDecodeAnnTip         (Proxy @blk)
           -- Encoders
         , cdbEncodeHash           = nodeEncodeHeaderHash     (Proxy @blk)
-        , cdbEncodeBlock          = nodeEncodeBlockWithInfo  bcfg
-        , cdbEncodeHeader         = nodeEncodeHeader         bcfg SerialisedToDisk
+        , cdbEncodeBlock          = nodeEncodeBlockWithInfo  ccfg
+        , cdbEncodeHeader         = nodeEncodeHeader         ccfg SerialisedToDisk
         , cdbEncodeLedger         = nodeEncodeLedgerState    cfg
         , cdbEncodeConsensusState = nodeEncodeConsensusState cfg
         , cdbEncodeAnnTip         = nodeEncodeAnnTip         (Proxy @blk)
@@ -617,7 +618,7 @@ runThreadNetwork ThreadNetworkArgs
         , cdbBlocksToAddSize      = 2
         }
       where
-        bcfg = configCodec cfg
+        ccfg = getCodecConfig $ configBlock cfg
 
         -- prop_general relies on this tracer
         instrumentationTracer = Tracer $ \case
@@ -856,8 +857,10 @@ runThreadNetwork ThreadNetworkArgs
               NTN.cTxSubmissionCodec NTN.identityCodecs
         }
       where
-        binaryProtocolCodecs = NTN.defaultCodecs (configCodec cfg)
-                                 (mostRecentNodeToNodeVersion (Proxy @blk))
+        binaryProtocolCodecs =
+          NTN.defaultCodecs
+            (getCodecConfig (configBlock cfg))
+            (mostRecentNodeToNodeVersion (Proxy @blk))
 
 -- | Sum of 'CodecFailure' (from @identityCodecs@) and 'DeserialiseFailure'
 -- (from @defaultCodecs@).

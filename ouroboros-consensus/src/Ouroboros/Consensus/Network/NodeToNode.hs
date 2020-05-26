@@ -63,6 +63,7 @@ import           Ouroboros.Network.TxSubmission.Inbound
 import           Ouroboros.Network.TxSubmission.Outbound
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server

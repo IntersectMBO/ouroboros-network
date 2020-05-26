@@ -13,7 +13,7 @@ import           Ouroboros.Consensus.Config (TopLevelConfig, configBlock)
 import           Ouroboros.Consensus.Network.NodeToClient (clientCodecs, ClientCodecs)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion (
                     nodeToClientProtocolVersion , supportedNodeToClientVersions)
-import           Ouroboros.Consensus.Node.Run (RunNode, nodeNetworkMagic)
+import           Ouroboros.Consensus.Node.Run (RunNode)
 import           Ouroboros.Network.Mux (AppType (..), OuroborosApplication)
 import           Ouroboros.Network.NodeToClient (ClientSubscriptionParams (..),
                     ConnectionId, LocalAddress,
@@ -31,8 +31,8 @@ import qualified Ouroboros.Network.Snocket as Snocket
 import qualified Ouroboros.Network.NodeToClient (NodeToClientVersion)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Prelude
-import           Ouroboros.Consensus.Block.Abstract (getCodecConfig)
-  
+import           Ouroboros.Consensus.Config.SupportsNode (getCodecConfig, getNetworkMagic)
+
 subscribe ::
   ( RunNode blk , MonadST m )
   => Snocket.LocalSnocket
@@ -77,5 +77,5 @@ versionedProtocols blkProxy topLevelConfig p
     applyVersion v =
       versionedNodeToClientProtocols
         (nodeToClientProtocolVersion blkProxy v)
-        (NodeToClientVersionData { networkMagic = nodeNetworkMagic blockConfig })
+        (NodeToClientVersionData { networkMagic = getNetworkMagic blockConfig })
         (p v $ clientCodecs (getCodecConfig blockConfig) v)

@@ -160,7 +160,7 @@ mkGenesisConfig
   -> ShelleyGenesis c
 mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
       -- Matches the start of the ThreadNet tests
-      sgStartTime             = SystemStart dawnOfTime
+      sgSystemStart           = SystemStart dawnOfTime
     , sgNetworkMagic          = NetworkMagic 0
     , sgNetworkId             = networkId
     , sgProtocolMagicId       = ProtocolMagicId 0

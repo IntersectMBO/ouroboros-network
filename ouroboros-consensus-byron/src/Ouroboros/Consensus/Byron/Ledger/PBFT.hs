@@ -74,7 +74,7 @@ instance BlockSupportsProtocol ByronBlock where
                (CC.recoverSignedBytes epochSlots regular)
                (mkByronContextDSIGN cfg (pbftGenKey pbftFields))
     where
-      epochSlots = byronEpochSlots $ getCodecConfig cfg
+      epochSlots = byronEpochSlots cfg
 
   selectView _ hdr = (blockNo hdr, byronHeaderIsEBB hdr)
 

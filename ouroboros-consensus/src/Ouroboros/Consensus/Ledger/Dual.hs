@@ -68,6 +68,7 @@ import           Ouroboros.Consensus.Storage.Common
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -136,20 +137,6 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
     }
   deriving NoUnexpectedThunks via AllowThunk (BlockConfig (DualBlock m a))
 
-data instance CodecConfig (DualBlock m a) = DualCodecConfig {
-      dualCodecConfigMain :: CodecConfig m
-    , dualCodecConfigAux  :: CodecConfig a
-    }
-  deriving NoUnexpectedThunks via AllowThunk (CodecConfig (DualBlock m a))
-
-instance (BlockHasCodecConfig m, BlockHasCodecConfig a)
-  => BlockHasCodecConfig (DualBlock m a) where
-    getCodecConfig DualBlockConfig { .. }
-      = DualCodecConfig
-        { dualCodecConfigMain = getCodecConfig dualBlockConfigMain
-        , dualCodecConfigAux = getCodecConfig dualBlockConfigAux
-        }
-
 -- | This is only used for block production
 dualTopLevelConfigMain :: TopLevelConfig (DualBlock m a) -> TopLevelConfig m
 dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
@@ -157,6 +144,21 @@ dualTopLevelConfigMain TopLevelConfig{..} = TopLevelConfig{
     , configLedger    = dualLedgerConfigMain configLedger
     , configBlock     = dualBlockConfigMain  configBlock
     }
+
+instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
+
+  newtype CodecConfig (DualBlock m a) = DualCodecConfig {
+        dualCodecConfigMain :: CodecConfig m
+      }
+
+  getCodecConfig DualBlockConfig{..} = DualCodecConfig {
+        dualCodecConfigMain = getCodecConfig dualBlockConfigMain
+      }
+
+  getSystemStart     = getSystemStart     . dualBlockConfigMain
+  getNetworkMagic    = getNetworkMagic    . dualBlockConfigMain
+  getProtocolMagicId = getProtocolMagicId . dualBlockConfigMain
+
 
 {-------------------------------------------------------------------------------
   Bridge two ledgers
@@ -180,7 +182,6 @@ class (
       , UpdateLedger     a
       , ApplyTx          a
       , Show (ApplyTxErr a)
-      , BlockHasCodecConfig a
       , NoUnexpectedThunks (LedgerConfig a)
 
         -- Requirements on the various bridges

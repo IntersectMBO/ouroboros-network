@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -21,6 +22,8 @@ module Ouroboros.Consensus.Byron.Node (
   , PBftLeaderCredentialsError
   , mkPBftLeaderCredentials
   , pbftLeaderOrNot
+    -- * Type family instances
+  , CodecConfig(..)
     -- * For testing
   , plcCoreNodeId
   ) where
@@ -46,8 +49,9 @@ import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
                      SlotNo (..))
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
-import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.Exit (ExitReason (..))
@@ -150,9 +154,9 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     byronConfig = mkByronConfig genesisConfig pVer sVer
 
 protocolClientInfoByron :: EpochSlots -> ProtocolClientInfo ByronBlock
-protocolClientInfoByron byronEpochSlots =
+protocolClientInfoByron epochSlots =
     ProtocolClientInfo {
-      pClientInfoCodecConfig = ByronCodecConfig { byronEpochSlots }
+      pClientInfoCodecConfig = ByronCodecConfig epochSlots
     }
 
 byronPBftParams :: Genesis.Config -> Maybe PBftSignatureThreshold -> PBftParams
@@ -179,6 +183,36 @@ mkByronConfig genesisConfig pVer sVer = ByronConfig {
     , byronProtocolVersion = pVer
     , byronSoftwareVersion = sVer
     }
+
+{-------------------------------------------------------------------------------
+  ConfigSupportsNode instance
+-------------------------------------------------------------------------------}
+
+instance ConfigSupportsNode ByronBlock where
+
+  newtype CodecConfig ByronBlock = ByronCodecConfig {
+        getByronEpochSlots :: EpochSlots
+      }
+
+  getCodecConfig =
+      ByronCodecConfig
+    . byronEpochSlots
+
+  getSystemStart =
+      SystemStart
+    . Genesis.gdStartTime
+    . extractGenesisData
+
+  getNetworkMagic =
+      NetworkMagic
+    . Crypto.unProtocolMagicId
+    . Genesis.gdProtocolMagicId
+    . extractGenesisData
+
+  getProtocolMagicId = byronProtocolMagicId
+
+extractGenesisData :: BlockConfig ByronBlock -> Genesis.GenesisData
+extractGenesisData = Genesis.configGenesisData . byronGenesisConfig
 
 {-------------------------------------------------------------------------------
   RunNode instance
@@ -226,16 +260,6 @@ instance RunNode ByronBlock where
     where
       genesisEBB = forgeEBB cfg (SlotNo 0) (BlockNo 0) GenesisHash
 
-  -- Extract it from the 'Genesis.Config'
-  nodeStartTime             = SystemStart
-                            . Genesis.gdStartTime
-                            . extractGenesisData
-  nodeNetworkMagic          = NetworkMagic
-                            . Crypto.unProtocolMagicId
-                            . Genesis.gdProtocolMagicId
-                            . extractGenesisData
-  nodeProtocolMagicId       = Genesis.gdProtocolMagicId
-                            . extractGenesisData
   nodeHashInfo              = const byronHashInfo
   nodeCheckIntegrity        = verifyBlockIntegrity . configBlock
   nodeAddHeaderEnvelope     = const byronAddHeaderEnvelope
@@ -259,8 +283,8 @@ instance RunNode ByronBlock where
   nodeEncodeQuery           = encodeByronQuery
   nodeEncodeResult          = encodeByronResult
 
-  nodeDecodeBlock           = decodeByronBlock . byronEpochSlots
-  nodeDecodeHeader          = \ cfg -> decodeByronHeader (byronEpochSlots cfg)
+  nodeDecodeBlock           = decodeByronBlock . getByronEpochSlots
+  nodeDecodeHeader          = \ cfg -> decodeByronHeader (getByronEpochSlots cfg)
   nodeDecodeWrappedHeader   = \_cfg -> decodeWrappedByronHeader
   nodeDecodeGenTx           = decodeByronGenTx
   nodeDecodeGenTxId         = decodeByronGenTxId
@@ -273,8 +297,3 @@ instance RunNode ByronBlock where
   nodeDecodeAnnTip          = const decodeByronAnnTip
   nodeDecodeQuery           = decodeByronQuery
   nodeDecodeResult          = decodeByronResult
-
-
-extractGenesisData :: BlockConfig ByronBlock -> Genesis.GenesisData
-extractGenesisData = Genesis.configGenesisData
-                   . byronGenesisConfig

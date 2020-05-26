@@ -6,10 +6,12 @@
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Node (
     protocolInfoShelley
   , protocolClientInfoShelley
+  , CodecConfig (..)
   , ShelleyGenesis (..)
   , initialFundsPseudoTxIn
   , ShelleyGenesisStaking (..)
@@ -38,6 +40,7 @@ import           Ouroboros.Network.Block (genesisPoint)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -167,7 +170,7 @@ protocolInfoShelley genesis protVer mbCredentials =
     blockConfig :: BlockConfig (ShelleyBlock c)
     blockConfig = ShelleyConfig {
         shelleyProtocolVersion = protVer
-      , shelleyStartTime       = sgStartTime       genesis
+      , shelleySystemStart     = sgSystemStart     genesis
       , shelleyNetworkMagic    = sgNetworkMagic    genesis
       , shelleyProtocolMagicId = sgProtocolMagicId genesis
       }
@@ -302,6 +305,21 @@ protocolClientInfoShelley =
       pClientInfoCodecConfig = ShelleyCodecConfig
     }
 
+
+{-------------------------------------------------------------------------------
+  ConfigSupportsNode instance
+-------------------------------------------------------------------------------}
+
+instance ConfigSupportsNode (ShelleyBlock c) where
+
+  -- | No particular codec configuration is needed for Shelley
+  data CodecConfig (ShelleyBlock c) = ShelleyCodecConfig
+
+  getCodecConfig     = const ShelleyCodecConfig
+  getSystemStart     = shelleySystemStart
+  getNetworkMagic    = shelleyNetworkMagic
+  getProtocolMagicId = shelleyProtocolMagicId
+
 {-------------------------------------------------------------------------------
   RunNode instance
 -------------------------------------------------------------------------------}
@@ -322,10 +340,6 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
     . tpraosSecurityParam
     . tpraosParams
     . configConsensus
-
-  nodeStartTime       = shelleyStartTime
-  nodeNetworkMagic    = shelleyNetworkMagic
-  nodeProtocolMagicId = shelleyProtocolMagicId
 
   nodeHashInfo = const shelleyHashInfo
 

@@ -25,7 +25,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Control.Monad.Except
-import           Data.Coerce
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Function (on)
 import           Data.Proxy
@@ -37,6 +36,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -95,10 +95,6 @@ instance SingleEraBlock b => GetHeader (DegenFork b) where
 
   getHeader (DBlk b) = DHdr (getHeader b)
 
-newtype instance CodecConfig (DegenFork b) = DCCfg {
-      unDCCfg :: CodecConfig (HardForkBlock '[b])
-    }
-
 newtype instance BlockConfig (DegenFork b) = DBCfg {
       unDBCfg :: BlockConfig (HardForkBlock '[b])
     }
@@ -109,8 +105,15 @@ newtype instance LedgerState (DegenFork b) = DLgr {
     }
   deriving (Eq, Show, NoUnexpectedThunks)
 
-instance SingleEraBlock b => BlockHasCodecConfig (DegenFork b) where
-  getCodecConfig = DCCfg . getCodecConfig . unDBCfg
+instance ConfigSupportsNode b => ConfigSupportsNode (DegenFork b) where
+  newtype CodecConfig (DegenFork b) = DCCfg {
+        unDCCfg :: CodecConfig (HardForkBlock '[b])
+      }
+
+  getCodecConfig     = DCCfg . getCodecConfig     . unDBCfg
+  getSystemStart     =         getSystemStart     . unDBCfg
+  getNetworkMagic    =         getNetworkMagic    . unDBCfg
+  getProtocolMagicId =         getProtocolMagicId . unDBCfg
 
 {-------------------------------------------------------------------------------
   Forward HasHeader instances
@@ -255,9 +258,6 @@ instance HasTxs b => HasTxs (DegenFork b) where
 projCfg :: SingleEraBlock b => TopLevelConfig (DegenFork b) -> TopLevelConfig b
 projCfg = projTopLevelConfig . castTopLevelConfig
 
-projBlockCfg :: BlockConfig (DegenFork b) -> BlockConfig b
-projBlockCfg = projBlockConfig . coerce
-
 instance HasNetworkProtocolVersion b => HasNetworkProtocolVersion (DegenFork b) where
   type NodeToNodeVersion   (DegenFork b) = NodeToNodeVersion   b
   type NodeToClientVersion (DegenFork b) = NodeToClientVersion b
@@ -275,10 +275,7 @@ instance (SingleEraBlock b, FromRawHash b, RunNode b) => RunNode (DegenFork b) w
   nodeBlockFetchSize     (DHdr hdr)            = nodeBlockFetchSize     (projHeader hdr)
   nodeIsEBB              (DHdr hdr)            = nodeIsEBB              (projHeader hdr)
 
-  nodeImmDbChunkInfo  cfg = nodeImmDbChunkInfo  (projCfg cfg)
-  nodeStartTime       cfg = nodeStartTime       (projBlockCfg cfg)
-  nodeNetworkMagic    cfg = nodeNetworkMagic    (projBlockCfg cfg)
-  nodeProtocolMagicId cfg = nodeProtocolMagicId (projBlockCfg cfg)
+  nodeImmDbChunkInfo  cfg = nodeImmDbChunkInfo (projCfg cfg)
 
   nodeHashInfo          _ = injHashInfo (nodeHashInfo (Proxy @b))
   nodeAddHeaderEnvelope _ = nodeAddHeaderEnvelope (Proxy @b)
@@ -350,12 +347,12 @@ instance (SingleEraBlock b, FromRawHash b, RunNode b) => RunNode (DegenFork b) w
       injHeaderHash <$>
         nodeDecodeHeaderHash (Proxy @b)
   nodeDecodeLedgerState cfg =
-      (DLgr . injLedgerState (nodeStartTime (configBlock cfg))) <$>
+      (DLgr . injLedgerState (getSystemStart (configBlock cfg))) <$>
         nodeDecodeLedgerState cfg'
     where
       cfg' = projCfg cfg
   nodeDecodeConsensusState cfg =
-      injConsensusState (nodeStartTime (configBlock cfg)) <$>
+      injConsensusState (getSystemStart (configBlock cfg)) <$>
         nodeDecodeConsensusState cfg'
     where
       cfg' = projCfg cfg

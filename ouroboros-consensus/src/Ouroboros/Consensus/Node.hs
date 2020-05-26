@@ -51,8 +51,9 @@ import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
                      nodeToNodeCodecCBORTerm)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime hiding (SystemStart (..))
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture,
                      ClockSkew)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
@@ -161,7 +162,7 @@ run runargs@RunNodeArgs{..} =
           inFuture = InFuture.reference
                        (configLedger cfg)
                        rnMaxClockSkew
-                       (defaultSystemTime $ nodeStartTime (configBlock cfg))
+                       (defaultSystemTime $ getSystemStart (configBlock cfg))
 
       let customiseChainDbArgs' args
             | lastShutDownWasClean
@@ -186,7 +187,7 @@ run runargs@RunNodeArgs{..} =
       btime <- hardForkBlockchainTime
                  registry
                  (blockchainTimeTracer rnTraceConsensus)
-                 (defaultSystemTime $ nodeStartTime (configBlock cfg))
+                 (defaultSystemTime $ getSystemStart (configBlock cfg))
                  (configLedger cfg)
                  (ledgerState <$> ChainDB.getCurrentLedger chainDB)
 
@@ -221,6 +222,9 @@ run runargs@RunNodeArgs{..} =
       , pInfoInitForgeState = initForgeState
       } = rnProtocolInfo
 
+    codecConfig :: CodecConfig blk
+    codecConfig = getCodecConfig $ configBlock cfg
+
     mkNodeToNodeApps
       :: NodeArgs   IO RemoteConnectionId LocalConnectionId blk
       -> NodeKernel IO RemoteConnectionId LocalConnectionId blk
@@ -230,7 +234,7 @@ run runargs@RunNodeArgs{..} =
         NTN.mkApps
           nodeKernel
           rnTraceNTN
-          (NTN.defaultCodecs (configCodec (getTopLevelConfig nodeKernel)) version)
+          (NTN.defaultCodecs codecConfig version)
           (Just 70) -- timeout after waiting this long for the next header
                     -- 70s allows for 3 slots (3 * 20s)
           (NTN.mkHandlers nodeArgs nodeKernel)
@@ -243,7 +247,7 @@ run runargs@RunNodeArgs{..} =
     mkNodeToClientApps nodeArgs nodeKernel version =
         NTC.mkApps
           rnTraceNTC
-          (NTC.defaultCodecs (configCodec (getTopLevelConfig nodeKernel)) version)
+          (NTC.defaultCodecs codecConfig version)
           (NTC.mkHandlers nodeArgs nodeKernel)
 
     mkDiffusionApplications
@@ -303,7 +307,7 @@ withDBChecks RunNodeArgs{..} body = do
     either throwM return =<< checkDbMarker
       hasFS
       mountPoint
-      (nodeProtocolMagicId (configBlock pInfoConfig))
+      (getProtocolMagicId (configBlock pInfoConfig))
 
     -- Then create the lock file.
     withLockDB mountPoint $ do
@@ -393,7 +397,7 @@ mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
     }
   where
     k    = configSecurityParam cfg
-    ccfg = configCodec         cfg
+    ccfg = getCodecConfig $ configBlock cfg
     pb   = Proxy @blk
 
 mkNodeArgs

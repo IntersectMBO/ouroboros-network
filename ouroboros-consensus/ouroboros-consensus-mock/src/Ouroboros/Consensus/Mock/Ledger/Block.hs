@@ -250,13 +250,6 @@ instance (SimpleCrypto c, Typeable ext) => ValidateEnvelope (SimpleBlock c ext)
 data instance BlockConfig (SimpleBlock c ext) = SimpleBlockConfig
   deriving (Generic, NoUnexpectedThunks)
 
--- | No additional codec information is required for simple blocks
-data instance CodecConfig (SimpleBlock c ext) = SimpleCodecConfig
-  deriving (Generic, NoUnexpectedThunks)
-
-instance BlockHasCodecConfig (SimpleBlock c ext) where
-  getCodecConfig = const SimpleCodecConfig
-
 instance HasHardForkHistory (SimpleBlock c ext) where
   type HardForkIndices (SimpleBlock c ext) = '[SimpleBlock c ext]
   hardForkSummary = neverForksHardForkSummary simpleLedgerEraParams

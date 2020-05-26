@@ -72,7 +72,7 @@ emptyGenesisStaking = ShelleyGenesisStaking
 -- transition naturally from Byron, and thus will never have its own genesis
 -- information.
 data ShelleyGenesis c = ShelleyGenesis {
-      sgStartTime             :: !SystemStart
+      sgSystemStart           :: !SystemStart
     , sgNetworkMagic          :: !NetworkMagic
     , sgNetworkId             :: !SL.Network
     , sgProtocolMagicId       :: !ProtocolMagicId
