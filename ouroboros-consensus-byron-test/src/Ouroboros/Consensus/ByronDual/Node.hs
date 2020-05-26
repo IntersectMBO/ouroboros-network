@@ -230,10 +230,10 @@ instance RunNode DualByronBlock where
   -- Node config is a consensus concern, determined by the main block only
   nodeImmDbChunkInfo  = nodeImmDbChunkInfo  . dualTopLevelConfigMain
 
-  -- The max block size we set to the max block size of the /concrete/ block
-  -- (Correspondingly, 'txSize' for the Byron spec returns 0)
-  nodeMaxBlockSize          = nodeMaxBlockSize          . dualLedgerStateMain
-  nodeBlockEncodingOverhead = nodeBlockEncodingOverhead . dualLedgerStateMain
+  -- The max transaction capacity we set to the max transaction capacity of
+  -- the /concrete/ block (Correspondingly, 'txSize' for the Byron spec
+  -- returns 0)
+  nodeMaxTxCapacity = nodeMaxTxCapacity . dualLedgerStateMain
 
   -- We pretend the abstract transactions have no size, and let the size of
   -- the mempool be limited by concrete transactions only. This is ok, because

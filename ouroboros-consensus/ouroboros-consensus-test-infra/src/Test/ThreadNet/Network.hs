@@ -769,7 +769,7 @@ runThreadNetwork ThreadNetworkArgs
             , blockProduction        = Just blockProduction
             , blockFetchSize         = nodeBlockFetchSize
             , blockMatchesHeader     = nodeBlockMatchesHeader
-            , maxBlockSize           = NoOverride
+            , maxTxCapacityOverride  = NoMaxTxCapacityOverride
             , mempoolCap             = NoMempoolCapacityBytesOverride
             , miniProtocolParameters = MiniProtocolParameters {
                   chainSyncPipeliningHighMark = 4,

@@ -239,14 +239,15 @@ instance RunNode ByronBlock where
                                 . configBlock
                                 $ cfg
 
-  nodeMaxBlockSize          = API.getMaxBlockSize . byronLedgerState
+  nodeMaxTxCapacity         = \st ->
+                                  API.getMaxBlockSize (byronLedgerState st)
+                                - byronBlockEncodingOverhead
   -- TODO cardano-ledger should expose API.getMaxTxSize
   nodeMaxTxSize             = fromIntegral
                             . Update.ppMaxBlockSize
                             . Update.adoptedProtocolParameters
                             . Cardano.Block.cvsUpdateState
                             . byronLedgerState
-  nodeBlockEncodingOverhead = const byronBlockEncodingOverhead
   nodeTxInBlockSize         = fromIntegral
                             . Strict.length
                             . API.mempoolPayloadRecoverBytes

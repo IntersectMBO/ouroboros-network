@@ -343,19 +343,12 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
 
   nodeHashInfo = const shelleyHashInfo
 
-  nodeMaxBlockSize (ShelleyLedgerState _ _ shelleyState) =
-    fromIntegral $ maxBlockHeaderSize + maxBlockBodySize
+  nodeMaxTxCapacity (ShelleyLedgerState _ _ shelleyState) =
+      fromIntegral maxBlockBodySize
     where
-     SL.PParams {
-         _maxBBSize = maxBlockBodySize
-       , _maxBHSize = maxBlockHeaderSize
-       } = getPParams shelleyState
+      SL.PParams { _maxBBSize = maxBlockBodySize } = getPParams shelleyState
 
   nodeMaxTxSize = fromIntegral . SL._maxTxSize . getPParams . shelleyState
-
-  -- TODO
-  nodeBlockEncodingOverhead = const 1 -- Single list tag.
-  -- Check this isn't altered by the TxWits stuff
 
   nodeTxInBlockSize (ShelleyTx _ tx) =
     fromIntegral . Lazy.length . SL.txFullBytes $ tx

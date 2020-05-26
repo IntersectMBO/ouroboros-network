@@ -21,7 +21,7 @@ module Ouroboros.Consensus.Node
   , ChainDbArgs (..)
   , NodeArgs (..)
   , NodeKernel (..)
-  , MaxBlockSizeOverride (..)
+  , MaxTxCapacityOverride (..)
   , MempoolCapacityBytesOverride (..)
   , IPSubscriptionTarget (..)
   , DnsSubscriptionTarget (..)
@@ -420,7 +420,7 @@ mkNodeArgs registry cfg initForgeState tracers btime chainDB = NodeArgs
     , blockProduction
     , blockFetchSize         = nodeBlockFetchSize
     , blockMatchesHeader     = nodeBlockMatchesHeader
-    , maxBlockSize           = NoOverride
+    , maxTxCapacityOverride  = NoMaxTxCapacityOverride
     , mempoolCap             = NoMempoolCapacityBytesOverride
     , miniProtocolParameters = defaultMiniProtocolParameters
     }

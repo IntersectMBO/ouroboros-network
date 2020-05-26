@@ -286,9 +286,8 @@ instance (SingleEraBlock b, FromRawHash b, RunNode b) => RunNode (DegenFork b) w
         (projCfg cfg)
         (projInitChainDB (InitChainDB.cast initDB))
 
-  nodeMaxBlockSize          (DLgr lgr) = nodeMaxBlockSize          (projLedgerState lgr)
-  nodeBlockEncodingOverhead (DLgr lgr) = nodeBlockEncodingOverhead (projLedgerState lgr)
-  nodeMaxTxSize             (DLgr lgr) = nodeMaxTxSize             (projLedgerState lgr)
+  nodeMaxTxCapacity (DLgr lgr) = nodeMaxTxCapacity (projLedgerState lgr)
+  nodeMaxTxSize     (DLgr lgr) = nodeMaxTxSize     (projLedgerState lgr)
 
   nodeCheckIntegrity cfg (DBlk blk) = nodeCheckIntegrity (projCfg cfg) (projBlock blk)
 

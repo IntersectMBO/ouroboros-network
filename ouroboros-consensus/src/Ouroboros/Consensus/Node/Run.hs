@@ -63,21 +63,17 @@ class ( LedgerSupportsProtocol    blk
   -- | Hash serialisation
   nodeHashInfo :: Proxy blk -> HashInfo (HeaderHash blk)
 
-  -- | The maximum block size in bytes according to the currently adopted
-  -- protocol parameters of the ledger state.
-  nodeMaxBlockSize :: LedgerState blk -> Word32
+  -- | The maximum number of bytes worth of transactions that can be put into
+  -- a block according to the currently adopted protocol parameters of the
+  -- ledger state.
+  --
+  -- This is (conservatively) computed by subtracting the header size and any
+  -- other fixed overheads from the maximum block size.
+  nodeMaxTxCapacity :: LedgerState blk -> Word32
 
   -- | The maximum transaction size in bytes according to the currently
   -- adopted protocol parameters of the ledger state.
   nodeMaxTxSize :: LedgerState blk -> TxSizeInBytes
-
-  -- | The block encoding overhead size in bytes.
-  --
-  -- This encompasses the overhead in bytes for everything that is encoded
-  -- within a block, excluding the actual generalized transactions. Given
-  -- this, along with the 'nodeMaxBlockSize', it is possible to determine the
-  -- amount of generalized transactions that we can include in a block.
-  nodeBlockEncodingOverhead :: LedgerState blk -> Word32
 
   -- | Check the integrity of a block, i.e., that it has not been corrupted by
   -- a bitflip.
