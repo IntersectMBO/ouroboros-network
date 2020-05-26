@@ -119,6 +119,7 @@ library
                        Ouroboros.Consensus.Protocol.PBFT.State
                        Ouroboros.Consensus.Protocol.PBFT.State.HeaderHashBytes
                        Ouroboros.Consensus.Protocol.Signed
+                       Ouroboros.Consensus.TypeFamilyWrappers
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.AnchoredFragment
                        Ouroboros.Consensus.Util.Assert
