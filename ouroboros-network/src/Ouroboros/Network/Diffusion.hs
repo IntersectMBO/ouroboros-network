@@ -97,28 +97,25 @@ data DiffusionApplications = DiffusionApplications {
       daResponderApplication      :: Versions
                                        NodeToNodeVersion
                                        DictVersion
-                                       (ConnectionId SockAddr ->
-                                          OuroborosApplication
-                                            ResponderApp
-                                            ByteString IO Void ())
+                                       (OuroborosApplication
+                                         ResponderApp SockAddr
+                                         ByteString IO Void ())
       -- ^ NodeToNode reposnder application (server role)
 
     , daInitiatorApplication      :: Versions
                                        NodeToNodeVersion
                                        DictVersion 
-                                       (ConnectionId SockAddr ->
-                                          OuroborosApplication
-                                            InitiatorApp
-                                            ByteString IO () Void)
+                                       (OuroborosApplication
+                                         InitiatorApp SockAddr
+                                         ByteString IO () Void)
       -- ^ NodeToNode initiator application (client role)
 
     , daLocalResponderApplication :: Versions
                                        NodeToClientVersion
                                        DictVersion
-                                       (ConnectionId LocalAddress ->
-                                          OuroborosApplication
-                                            ResponderApp
-                                            ByteString IO Void ())
+                                       (OuroborosApplication
+                                         ResponderApp LocalAddress
+                                         ByteString IO Void ())
       -- ^ NodeToClient responder applicaton (server role)
 
     , daErrorPolicies :: ErrorPolicies

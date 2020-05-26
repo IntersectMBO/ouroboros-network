@@ -32,6 +32,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Block (Tip (..), decodeTip, encodeTip)
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
@@ -62,9 +63,9 @@ _sayTracer = Tracer say
 
 
 testProtocols :: RunMiniProtocol appType bytes m a b
-              -> OuroborosApplication appType bytes m a b
+              -> OuroborosApplication appType addr bytes m a b
 testProtocols chainSync =
-    OuroborosApplication [
+    OuroborosApplication $ \_connectionId -> [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = MiniProtocolLimits {
@@ -141,8 +142,16 @@ demo chain0 updates delay = do
     let clientBearer = Mx.queuesAsMuxBearer activeTracer client_w client_r sduLen
         serverBearer = Mx.queuesAsMuxBearer activeTracer server_w server_r sduLen
 
-    clientAsync <- async $ Mx.muxStart activeTracer (Mx.toApplication consumerApp) clientBearer
-    serverAsync <- async $ Mx.muxStart activeTracer (Mx.toApplication producerApp) serverBearer
+    clientAsync <- async $
+      Mx.muxStart
+        activeTracer
+        (Mx.toApplication (ConnectionId "client" "server") consumerApp)
+        clientBearer
+    serverAsync <- async $
+      Mx.muxStart
+        activeTracer
+        (Mx.toApplication (ConnectionId "server" "client") producerApp)
+        serverBearer
 
     updateAid <- async $ sequence_
         [ do
