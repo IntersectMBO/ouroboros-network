@@ -25,9 +25,11 @@ import           Ouroboros.Network.TxSubmission.Outbound
 import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Forecast (OutsideForecastRange)
+import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
+                     GenTxId)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTx, GenTxId,
-                     MempoolSize, TraceEventMempool)
+import           Ouroboros.Consensus.Mempool.API (MempoolSize,
+                     TraceEventMempool)
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (TraceBlockFetchServerEvent)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client

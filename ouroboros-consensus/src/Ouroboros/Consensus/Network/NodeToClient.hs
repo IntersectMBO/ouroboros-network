@@ -59,7 +59,7 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
 import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
 import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
@@ -91,7 +91,8 @@ data Handlers m peer blk = Handlers {
     }
 
 mkHandlers
-  :: forall m blk remotePeer localPeer. (IOLike m, ApplyTx blk, QueryLedger blk)
+  :: forall m blk remotePeer localPeer.
+     (IOLike m, LedgerSupportsMempool blk, QueryLedger blk)
   => NodeArgs   m remotePeer localPeer blk
   -> NodeKernel m remotePeer localPeer blk
   -> Handlers   m            localPeer blk

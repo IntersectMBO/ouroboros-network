@@ -38,6 +38,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      TxTicket (..), zeroTicketNo)
@@ -51,14 +52,19 @@ import           Ouroboros.Consensus.Util.STM (onEachChange)
   Top-level API
 -------------------------------------------------------------------------------}
 
-openMempool :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
-            => ResourceRegistry m
-            -> LedgerInterface m blk
-            -> LedgerConfig blk
-            -> MempoolCapacityBytes
-            -> Tracer m (TraceEventMempool blk)
-            -> (GenTx blk -> TxSizeInBytes)
-            -> m (Mempool m blk TicketNo)
+openMempool
+  :: ( IOLike m
+     , LedgerSupportsMempool blk
+     , HasTxId (GenTx blk)
+     , ValidateEnvelope blk
+     )
+  => ResourceRegistry m
+  -> LedgerInterface m blk
+  -> LedgerConfig blk
+  -> MempoolCapacityBytes
+  -> Tracer m (TraceEventMempool blk)
+  -> (GenTx blk -> TxSizeInBytes)
+  -> m (Mempool m blk TicketNo)
 openMempool registry ledger cfg capacity tracer txSize = do
     env <- initMempoolEnv ledger cfg capacity tracer txSize
     forkSyncStateOnTipPointChange registry env
@@ -69,7 +75,11 @@ openMempool registry ledger cfg capacity tracer txSize = do
 --
 -- Intended for testing purposes.
 openMempoolWithoutSyncThread
-  :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
+  :: ( IOLike m
+     , LedgerSupportsMempool blk
+     , HasTxId (GenTx blk)
+     , ValidateEnvelope blk
+     )
   => LedgerInterface m blk
   -> LedgerConfig blk
   -> MempoolCapacityBytes
@@ -79,8 +89,13 @@ openMempoolWithoutSyncThread
 openMempoolWithoutSyncThread ledger cfg capacity tracer txSize =
     mkMempool <$> initMempoolEnv ledger cfg capacity tracer txSize
 
-mkMempool :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
-          => MempoolEnv m blk -> Mempool m blk TicketNo
+mkMempool
+  :: ( IOLike m
+     , LedgerSupportsMempool blk
+     , HasTxId (GenTx blk)
+     , ValidateEnvelope blk
+     )
+  => MempoolEnv m blk -> Mempool m blk TicketNo
 mkMempool env = Mempool
     { tryAddTxs      = implTryAddTxs      env
     , removeTxs      = implRemoveTxs      env
@@ -182,7 +197,7 @@ initInternalState lastTicketNo st = IS {
 
 initMempoolEnv :: ( IOLike m
                   , NoUnexpectedThunks (GenTxId blk)
-                  , ApplyTx blk
+                  , LedgerSupportsMempool blk
                   , ValidateEnvelope blk
                   )
                => LedgerInterface m blk
@@ -208,7 +223,7 @@ initMempoolEnv ledgerInterface cfg capacity tracer txSize = do
 -- changes.
 forkSyncStateOnTipPointChange :: forall m blk. (
                                    IOLike m
-                                 , ApplyTx blk
+                                 , LedgerSupportsMempool blk
                                  , HasTxId (GenTx blk)
                                  , ValidateEnvelope blk
                                  )
@@ -252,7 +267,7 @@ forkSyncStateOnTipPointChange registry menv =
 -- > (processed, toProcess) <- implTryAddTxs mpEnv txs
 -- > map fst processed ++ toProcess == txs
 implTryAddTxs
-  :: forall m blk. (IOLike m, ApplyTx blk, HasTxId (GenTx blk))
+  :: forall m blk. (IOLike m, LedgerSupportsMempool blk, HasTxId (GenTx blk))
   => MempoolEnv m blk
   -> [GenTx blk]
   -> m ( [(GenTx blk, MempoolAddTxResult blk)]
@@ -326,7 +341,11 @@ implTryAddTxs mpEnv = go []
                       toAdd'
 
 implRemoveTxs
-  :: (IOLike m, ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
+  :: ( IOLike m
+     , LedgerSupportsMempool blk
+     , HasTxId (GenTx blk)
+     , ValidateEnvelope blk
+     )
   => MempoolEnv m blk
   -> [GenTxId blk]
   -> m ()
@@ -362,7 +381,7 @@ implRemoveTxs mpEnv txIds = do
     toRemove = Set.fromList txIds
 
 implSyncWithLedger :: ( IOLike m
-                      , ApplyTx blk
+                      , LedgerSupportsMempool blk
                       , HasTxId (GenTx blk)
                       , ValidateEnvelope blk
                       )
@@ -387,7 +406,7 @@ implGetSnapshot MempoolEnv{mpEnvStateVar} =
 
 implGetSnapshotFor :: forall m blk.
                       ( IOLike m
-                      , ApplyTx blk
+                      , LedgerSupportsMempool blk
                       , HasTxId (GenTx blk)
                       , ValidateEnvelope blk
                       )
@@ -560,7 +579,7 @@ validationResultFromIS is = ValidationResult {
 -- validated this transaction because, if we have, we can utilize 'reapplyTx'
 -- rather than 'applyTx' and, therefore, skip things like cryptographic
 -- signatures.
-extendVRPrevApplied :: (ApplyTx blk, HasTxId (GenTx blk))
+extendVRPrevApplied :: (LedgerSupportsMempool blk, HasTxId (GenTx blk))
                     => LedgerConfig blk
                     -> TxTicket (GenTx blk)
                     -> ValidationResult blk
@@ -583,7 +602,7 @@ extendVRPrevApplied cfg txTicket vr =
 -- PRECONDITION: 'vrNewValid' is 'Nothing'. In other words: new transactions
 -- should be validated one-by-one, not by calling 'extendVRNew' on its result
 -- again.
-extendVRNew :: (ApplyTx blk, HasTxId (GenTx blk))
+extendVRNew :: (LedgerSupportsMempool blk, HasTxId (GenTx blk))
             => LedgerConfig blk
             -> GenTx blk
             -> (GenTx blk -> TxSizeInBytes)
@@ -615,7 +634,7 @@ extendVRNew cfg tx txSize vr = assert (isNothing vrNewValid) $
 -- given 'BlockSlot', revalidating if necessary.
 validateIS :: forall m blk.
               ( IOLike m
-              , ApplyTx blk
+              , LedgerSupportsMempool blk
               , HasTxId (GenTx blk)
               , ValidateEnvelope blk
               )
@@ -636,7 +655,7 @@ validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} =
 -- When these don't match, the transaction in the internal state will be
 -- revalidated ('revalidateTxsFor').
 validateStateFor
-  :: forall blk. (ApplyTx blk, HasTxId (GenTx blk), ValidateEnvelope blk)
+  :: (LedgerSupportsMempool blk, HasTxId (GenTx blk), ValidateEnvelope blk)
   => LedgerConfig     blk
   -> ForgeLedgerState blk
   -> InternalState    blk
@@ -654,7 +673,7 @@ validateStateFor cfg blockLedgerState is
 -- | Revalidate the given transactions (@['TxTicket' ('GenTx' blk)]@) against
 -- the given ticked ledger state.
 revalidateTxsFor
-  :: forall blk. (ApplyTx blk, HasTxId (GenTx blk))
+  :: (LedgerSupportsMempool blk, HasTxId (GenTx blk))
   => LedgerConfig blk
   -> TickedLedgerState blk
   -> TicketNo

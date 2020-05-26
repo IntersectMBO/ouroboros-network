@@ -40,8 +40,8 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History (EraParams)
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Mempool.API
 
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
@@ -74,7 +74,7 @@ newtype LedgerEraInfo blk = LedgerEraInfo {
 
 -- | Blocks from which we can assemble a hard fork
 class ( LedgerSupportsProtocol blk
-      , ApplyTx blk
+      , LedgerSupportsMempool blk
       , HasTxId (GenTx blk)
       , QueryLedger blk
       , CanForge blk

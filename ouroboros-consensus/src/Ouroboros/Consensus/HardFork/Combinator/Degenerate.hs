@@ -39,8 +39,8 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
@@ -197,7 +197,7 @@ instance SingleEraBlock b => LedgerSupportsProtocol (DegenFork b) where
   protocolLedgerView   cfg (DLgr lgr) = protocolLedgerView   cfg lgr
   ledgerViewForecastAt cfg (DLgr lgr) = ledgerViewForecastAt cfg lgr
 
-instance SingleEraBlock b => ApplyTx (DegenFork b) where
+instance SingleEraBlock b => LedgerSupportsMempool (DegenFork b) where
   newtype GenTx (DegenFork b) = DTx {
         unDTx :: GenTx (HardForkBlock '[b])
       }

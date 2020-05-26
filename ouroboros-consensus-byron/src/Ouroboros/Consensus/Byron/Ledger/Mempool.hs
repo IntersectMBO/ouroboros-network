@@ -64,7 +64,7 @@ import qualified Cardano.Chain.UTxO as Utxo
 import qualified Cardano.Chain.ValidationMode as CC
 
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
@@ -76,7 +76,7 @@ import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
   Transactions
 -------------------------------------------------------------------------------}
 
-instance ApplyTx ByronBlock where
+instance LedgerSupportsMempool ByronBlock where
   -- | Generalized transactions in Byron
   --
   -- This is effectively the same as 'CC.AMempoolPayload' but we cache the

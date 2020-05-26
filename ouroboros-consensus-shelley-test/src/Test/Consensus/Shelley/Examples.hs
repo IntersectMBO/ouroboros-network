@@ -40,7 +40,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
 
 import qualified Shelley.Spec.Ledger.BaseTypes as SL

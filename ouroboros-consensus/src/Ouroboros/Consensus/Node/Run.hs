@@ -28,6 +28,7 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Exit (ExitReason)
@@ -45,7 +46,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
 
 class ( LedgerSupportsProtocol    blk
       , HasHardForkHistory        blk
-      , ApplyTx                   blk
+      , LedgerSupportsMempool     blk
       , HasTxId            (GenTx blk)
       , QueryLedger               blk
       , HasNetworkProtocolVersion blk

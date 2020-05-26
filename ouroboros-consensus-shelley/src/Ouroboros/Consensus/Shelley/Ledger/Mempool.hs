@@ -12,8 +12,7 @@
 
 -- | Shelley mempool integration
 module Ouroboros.Consensus.Shelley.Ledger.Mempool (
-    ApplyTx (..)
-  , SL.ApplyTxError (..)
+    SL.ApplyTxError (..)
   , GenTx (..)
   , TxId (..)
   , mkShelleyTx
@@ -31,7 +30,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..))
 import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.API as SL
@@ -46,7 +45,7 @@ import           Ouroboros.Consensus.Shelley.Protocol
 
 type ShelleyTxId c = SL.TxId c
 
-instance TPraosCrypto c => ApplyTx (ShelleyBlock c) where
+instance TPraosCrypto c => LedgerSupportsMempool (ShelleyBlock c) where
 
   data GenTx (ShelleyBlock c) = ShelleyTx !(ShelleyTxId c) !(SL.Tx c)
     deriving stock    (Eq, Generic)

@@ -19,6 +19,7 @@ import qualified Data.Sequence.Strict as Seq
 
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.STS.Ledger as STS

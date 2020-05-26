@@ -64,8 +64,8 @@ import           Ouroboros.Network.TxSubmission.Outbound
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SupportsNode
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
@@ -121,7 +121,7 @@ data Handlers m peer blk = Handlers {
 mkHandlers
   :: forall m blk remotePeer localPeer.
      ( IOLike m
-     , ApplyTx blk
+     , LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , LedgerSupportsProtocol blk
      , Serialise (HeaderHash blk)
