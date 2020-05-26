@@ -25,6 +25,7 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Block
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
@@ -36,7 +37,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.State
                      (HardForkConsensusState, HardForkValidationErr)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Protocol.State as ProtocolState
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra
 
 {-------------------------------------------------------------------------------
   ConsensusProtocol

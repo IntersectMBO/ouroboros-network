@@ -35,8 +35,8 @@ import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 
 {-------------------------------------------------------------------------------

@@ -88,6 +88,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 import           Ouroboros.Consensus.Storage.ImmutableDB (HashInfo (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Block
 import           Ouroboros.Consensus.HardFork.Combinator.Forge ()
@@ -97,7 +98,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
                      (HardForkEraLedgerView (..))
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra.Combined
 import           Ouroboros.Consensus.HardFork.Combinator.State
                      (HardForkState_ (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State

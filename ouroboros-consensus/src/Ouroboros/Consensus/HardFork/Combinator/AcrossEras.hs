@@ -15,7 +15,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.SingleEra.Combined (
+module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
     -- * Value for /each/ era
     PerEraConsensusConfig(..)
   , PerEraChainSelConfig(..)
