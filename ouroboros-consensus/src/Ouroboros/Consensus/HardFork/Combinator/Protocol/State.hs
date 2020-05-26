@@ -39,6 +39,7 @@ import           Ouroboros.Consensus.Util ((.:))
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
 import           Ouroboros.Consensus.HardFork.Combinator.SingleEra
 import           Ouroboros.Consensus.HardFork.Combinator.State (HardForkState,

@@ -98,7 +98,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
                      (HardForkEraLedgerView (..))
 import           Ouroboros.Consensus.HardFork.Combinator.SingleEra.Combined
-import           Ouroboros.Consensus.HardFork.Combinator.SingleEra.Wrappers
 import           Ouroboros.Consensus.HardFork.Combinator.State
                      (HardForkState_ (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State

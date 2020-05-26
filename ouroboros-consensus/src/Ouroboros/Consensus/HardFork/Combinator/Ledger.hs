@@ -41,6 +41,7 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Block
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol ()
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
                      (HardForkEraLedgerView (..), HardForkLedgerView,
