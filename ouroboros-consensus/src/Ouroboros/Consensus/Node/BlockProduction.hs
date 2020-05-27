@@ -61,12 +61,24 @@ blockProductionIO cfg = do
       , runMonadRandomDict = runMonadRandomIO
       }
 
-blockProductionIOLike :: (IOLike m, CanForge blk)
-                      => TopLevelConfig blk
-                      -> RunMonadRandom m
+blockProductionIOLike :: IOLike m
+                      => RunMonadRandom m
+                      -> ( forall n. MonadRandom n
+                                   => (forall a. m a -> n a)
+                                   -- Lift actions into @n@
+                                   --
+                                   -- This allows block production to execute arbitrary side
+                                   -- effects; this is primarily useful for tests.
+
+                                   -> Update n (ForgeState blk)
+                                   -> BlockNo               -- Current block number
+                                   -> TickedLedgerState blk -- Current ledger state
+                                   -> [GenTx blk]           -- Contents of the mempool
+                                   -> IsLeader (BlockProtocol blk) -- Proof we are leader
+                                   -> n blk)
                       -> m (BlockProduction m blk)
-blockProductionIOLike cfg simRnd = do
+blockProductionIOLike simRnd forge = do
     return $ BlockProduction {
-        produceBlock       = \_lift' -> forgeBlock cfg
+        produceBlock       = forge
       , runMonadRandomDict = simRnd
       }

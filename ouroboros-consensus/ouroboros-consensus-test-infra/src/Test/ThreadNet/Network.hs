@@ -80,6 +80,7 @@ import           Ouroboros.Consensus.Mempool
 import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.Server as BFServer
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
+import           Ouroboros.Consensus.Node.BlockProduction
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -672,77 +673,73 @@ runThreadNetwork ThreadNetworkArgs
       chainDB <- snd <$>
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
 
-      let blockProduction :: BlockProduction m blk
-          blockProduction = BlockProduction {
-              produceBlock       = \lift' upd currentBno tickedLdgSt txs prf -> do
-                let currentSlot = tickedSlotNo tickedLdgSt
+      blockProduction <- blockProductionIOLike (runMonadRandomWithTVar varRNG) $
+         \lift' upd currentBno tickedLdgSt txs prf -> do
+            let currentSlot = tickedSlotNo tickedLdgSt
 
-                -- the typical behavior, which doesn't add a Just-In-Time EBB
-                let forgeWithoutEBB =
-                      forgeBlock pInfoConfig upd
-                        currentBno tickedLdgSt txs prf
+            -- the typical behavior, which doesn't add a Just-In-Time EBB
+            let forgeWithoutEBB =
+                  forgeBlock pInfoConfig upd
+                    currentBno tickedLdgSt txs prf
 
-                case mbForgeEbbEnv of
-                  Nothing          -> forgeWithoutEBB
-                  Just forgeEbbEnv -> do
-                    let ebbSlot :: SlotNo
-                        ebbSlot =
-                            SlotNo $ denom * div numer denom
-                          where
-                            SlotNo numer    = currentSlot
-                            EpochSize denom = epochSize
+            case mbForgeEbbEnv of
+              Nothing          -> forgeWithoutEBB
+              Just forgeEbbEnv -> do
+                let ebbSlot :: SlotNo
+                    ebbSlot =
+                        SlotNo $ denom * div numer denom
+                      where
+                        SlotNo numer    = currentSlot
+                        EpochSize denom = epochSize
 
-                    let p = ledgerTipPoint $ tickedLedgerState tickedLdgSt
-                    let mSlot = pointSlot p
-                    if (At ebbSlot <= mSlot) then forgeWithoutEBB else do
-                      -- the EBB is needed
-                      --
-                      -- The EBB shares its BlockNo with its predecessor (if
-                      -- there is one)
-                      let ebbBno = case currentBno of
-                            -- We assume this invariant:
-                            --
-                            -- If forging of EBBs is enabled then the node
-                            -- initialization is responsible for producing any
-                            -- proper non-EBB blocks with block number 0.
-                            --
-                            -- So this case is unreachable.
-                            0 -> error "Error, only node initialization can forge non-EBB with block number 0."
-                            n -> pred n
-                      let ebb = forgeEBB forgeEbbEnv pInfoConfig
-                                  ebbSlot ebbBno (pointHash p)
+                let p = ledgerTipPoint $ tickedLedgerState tickedLdgSt
+                let mSlot = pointSlot p
+                if (At ebbSlot <= mSlot) then forgeWithoutEBB else do
+                  -- the EBB is needed
+                  --
+                  -- The EBB shares its BlockNo with its predecessor (if
+                  -- there is one)
+                  let ebbBno = case currentBno of
+                        -- We assume this invariant:
+                        --
+                        -- If forging of EBBs is enabled then the node
+                        -- initialization is responsible for producing any
+                        -- proper non-EBB blocks with block number 0.
+                        --
+                        -- So this case is unreachable.
+                        0 -> error "Error, only node initialization can forge non-EBB with block number 0."
+                        n -> pred n
+                  let ebb = forgeEBB forgeEbbEnv pInfoConfig
+                              ebbSlot ebbBno (pointHash p)
 
-                      -- fail if the EBB is invalid
-                      -- if it is valid, we retick to the /same/ slot
-                      let apply = applyLedgerBlock (configLedger pInfoConfig)
-                      tickedLdgSt' <- case Exc.runExcept $ apply ebb tickedLdgSt of
-                        Left e   -> Exn.throw $ JitEbbError @blk e
-                        Right st -> pure $ applyChainTick
-                                            (configLedger pInfoConfig)
-                                            currentSlot
-                                            st
+                  -- fail if the EBB is invalid
+                  -- if it is valid, we retick to the /same/ slot
+                  let apply = applyLedgerBlock (configLedger pInfoConfig)
+                  tickedLdgSt' <- case Exc.runExcept $ apply ebb tickedLdgSt of
+                    Left e   -> Exn.throw $ JitEbbError @blk e
+                    Right st -> pure $ applyChainTick
+                                        (configLedger pInfoConfig)
+                                        currentSlot
+                                        st
 
-                      -- forge the block usings the ledger state that includes
-                      -- the EBB
-                      blk <- forgeBlock pInfoConfig upd
-                        currentBno tickedLdgSt' txs prf
+                  -- forge the block usings the ledger state that includes
+                  -- the EBB
+                  blk <- forgeBlock pInfoConfig upd
+                    currentBno tickedLdgSt' txs prf
 
-                      -- /if the new block is valid/, add the EBB to the
-                      -- ChainDB
-                      --
-                      -- If the new block is invalid, then adding the EBB would
-                      -- be premature in some scenarios.
-                      case Exc.runExcept $ apply blk tickedLdgSt' of
-                        -- ASSUMPTION: If it's invalid with the EBB,
-                        -- it will be invalid without the EBB.
-                        Left{}  -> forgeWithoutEBB
-                        Right{} -> do
-                          -- TODO: We assume this succeeds; failure modes?
-                          void $ lift' $ ChainDB.addBlock chainDB ebb
-                          pure blk
-
-            , runMonadRandomDict = runMonadRandomWithTVar varRNG
-            }
+                  -- /if the new block is valid/, add the EBB to the
+                  -- ChainDB
+                  --
+                  -- If the new block is invalid, then adding the EBB would
+                  -- be premature in some scenarios.
+                  case Exc.runExcept $ apply blk tickedLdgSt' of
+                    -- ASSUMPTION: If it's invalid with the EBB,
+                    -- it will be invalid without the EBB.
+                    Left{}  -> forgeWithoutEBB
+                    Right{} -> do
+                      -- TODO: We assume this succeeds; failure modes?
+                      void $ lift' $ ChainDB.addBlock chainDB ebb
+                      pure blk
 
       let -- prop_general relies on these tracers
           instrumentationTracers = nullTracers
