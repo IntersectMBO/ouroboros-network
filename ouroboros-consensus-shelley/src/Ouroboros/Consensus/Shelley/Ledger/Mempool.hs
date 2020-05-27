@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE DisambiguateRecordFields   #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -12,14 +13,14 @@
 
 -- | Shelley mempool integration
 module Ouroboros.Consensus.Shelley.Ledger.Mempool (
-    ApplyTx (..)
-  , SL.ApplyTxError (..)
+    SL.ApplyTxError (..)
   , GenTx (..)
   , TxId (..)
   , mkShelleyTx
   ) where
 
 import           Control.Monad.Except (Except)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Foldable (toList)
 import qualified Data.Sequence as Seq
 import           GHC.Generics (Generic)
@@ -31,11 +32,12 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..))
 import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.API as SL
 import           Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.Tx as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL
 
@@ -46,7 +48,7 @@ import           Ouroboros.Consensus.Shelley.Protocol
 
 type ShelleyTxId c = SL.TxId c
 
-instance TPraosCrypto c => ApplyTx (ShelleyBlock c) where
+instance TPraosCrypto c => LedgerSupportsMempool (ShelleyBlock c) where
 
   data GenTx (ShelleyBlock c) = ShelleyTx !(ShelleyTxId c) !(SL.Tx c)
     deriving stock    (Eq, Generic)
@@ -61,6 +63,16 @@ instance TPraosCrypto c => ApplyTx (ShelleyBlock c) where
   -- TODO actual reapplication:
   -- https://github.com/input-output-hk/cardano-ledger-specs/issues/1304
   reapplyTx = applyShelleyTx
+
+  maxTxCapacity (Ticked _ (ShelleyLedgerState _ _ shelleyState)) =
+      fromIntegral maxBlockBodySize
+    where
+      SL.PParams { _maxBBSize = maxBlockBodySize } = getPParams shelleyState
+
+  maxTxSize = fromIntegral . SL._maxTxSize . getPParams . shelleyState
+
+  txInBlockSize (ShelleyTx _ tx) =
+    fromIntegral . Lazy.length . SL.txFullBytes $ tx
 
 mkShelleyTx :: Crypto c => SL.Tx c -> GenTx (ShelleyBlock c)
 mkShelleyTx tx = ShelleyTx (SL.txid (SL._body tx)) tx

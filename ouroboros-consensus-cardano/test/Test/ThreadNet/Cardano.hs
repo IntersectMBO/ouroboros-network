@@ -18,7 +18,7 @@ import           Test.Tasty.QuickCheck
 import           Cardano.Slotting.Slot (EpochSize (..))
 
 import           Ouroboros.Consensus.Config.SecurityParam
-import           Ouroboros.Consensus.Mempool.API (extractTxs)
+import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Util.Random

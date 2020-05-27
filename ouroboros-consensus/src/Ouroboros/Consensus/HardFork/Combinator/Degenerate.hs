@@ -39,8 +39,8 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
@@ -197,7 +197,7 @@ instance SingleEraBlock b => LedgerSupportsProtocol (DegenFork b) where
   protocolLedgerView   cfg (DLgr lgr) = protocolLedgerView   cfg lgr
   ledgerViewForecastAt cfg (DLgr lgr) = ledgerViewForecastAt cfg lgr
 
-instance SingleEraBlock b => ApplyTx (DegenFork b) where
+instance SingleEraBlock b => LedgerSupportsMempool (DegenFork b) where
   newtype GenTx (DegenFork b) = DTx {
         unDTx :: GenTx (HardForkBlock '[b])
       }
@@ -211,6 +211,14 @@ instance SingleEraBlock b => ApplyTx (DegenFork b) where
     fmap DLgr <$> applyTx cfg tx (Ticked slot lgr)
   reapplyTx cfg (DTx tx) (Ticked slot (DLgr lgr)) =
     fmap DLgr <$> reapplyTx cfg tx (Ticked slot lgr)
+
+  maxTxCapacity (Ticked slot (DLgr lgr)) =
+    maxTxCapacity (Ticked slot (projLedgerState lgr))
+
+  maxTxSize (DLgr lgr) = maxTxSize (projLedgerState lgr)
+
+  txInBlockSize (DTx tx) = txInBlockSize (projGenTx tx)
+
 
 instance SingleEraBlock b => HasTxId (GenTx (DegenFork b)) where
   newtype TxId (GenTx (DegenFork b)) = DTxId {
@@ -286,13 +294,7 @@ instance (SingleEraBlock b, FromRawHash b, RunNode b) => RunNode (DegenFork b) w
         (projCfg cfg)
         (projInitChainDB (InitChainDB.cast initDB))
 
-  nodeMaxBlockSize          (DLgr lgr) = nodeMaxBlockSize          (projLedgerState lgr)
-  nodeBlockEncodingOverhead (DLgr lgr) = nodeBlockEncodingOverhead (projLedgerState lgr)
-  nodeMaxTxSize             (DLgr lgr) = nodeMaxTxSize             (projLedgerState lgr)
-
   nodeCheckIntegrity cfg (DBlk blk) = nodeCheckIntegrity (projCfg cfg) (projBlock blk)
-
-  nodeTxInBlockSize (DTx tx) = nodeTxInBlockSize (projGenTx tx)
 
   -- Encoders
 

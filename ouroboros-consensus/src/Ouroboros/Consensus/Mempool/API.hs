@@ -1,11 +1,12 @@
-{-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE OverloadedStrings       #-}
-{-# LANGUAGE RankNTypes              #-}
-{-# LANGUAGE ScopedTypeVariables     #-}
-{-# LANGUAGE StandaloneDeriving      #-}
-{-# LANGUAGE TypeFamilies            #-}
-{-# LANGUAGE UndecidableInstances    #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE UndecidableSuperClasses    #-}
 
 module Ouroboros.Consensus.Mempool.API (
     Mempool(..)
@@ -13,96 +14,22 @@ module Ouroboros.Consensus.Mempool.API (
   , ForgeLedgerState(..)
   , MempoolCapacityBytes (..)
   , MempoolSnapshot(..)
-  , ApplyTx(..)
-  , HasTxId(..)
-  , GenTxId
   , MempoolAddTxResult (..)
   , isMempoolTxAdded
   , isMempoolTxRejected
   , MempoolSize (..)
   , TraceEventMempool(..)
-  , HasTxs(..)
     -- * Re-exports
   , TxSizeInBytes
   ) where
 
-import           Control.Monad.Except
 import           Data.Word (Word32)
-import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.IOLike
-
-class ( UpdateLedger blk
-      , NoUnexpectedThunks (GenTx blk)
-      , Show (GenTx blk)
-      , Show (ApplyTxErr blk)
-      ) => ApplyTx blk where
-  -- | Generalized transaction
-  --
-  -- The mempool (and, accordingly, blocks) consist of "generalized
-  -- transactions"; this could be "proper" transactions (transferring funds) but
-  -- also other kinds of things such as update proposals, delegations, etc.
-  data family GenTx blk :: *
-
-  -- | Check whether the internal invariants of the transaction hold.
-  txInvariant :: GenTx blk -> Bool
-  txInvariant = const True
-
-  -- | Updating the ledger with a single transaction may result in a different
-  -- error type as when updating it with a block
-  type family ApplyTxErr blk :: *
-
-  -- | Apply transaction we have not previously seen before
-  applyTx :: LedgerConfig blk
-          -> GenTx blk
-          -> TickedLedgerState blk
-          -> Except (ApplyTxErr blk) (TickedLedgerState blk)
-
-  -- | Re-apply a transaction
-  --
-  -- When we re-apply a transaction to a potentially different ledger state
-  -- expensive checks such as cryptographic hashes can be skipped, but other
-  -- checks (such as checking for double spending) must still be done.
-  reapplyTx :: HasCallStack
-            => LedgerConfig blk
-            -> GenTx blk
-            -> TickedLedgerState blk
-            -> Except (ApplyTxErr blk) (TickedLedgerState blk)
-
--- | Transactions with an identifier
---
--- The mempool will use these to locate transactions, so two different
--- transactions should have different identifiers.
-class ( Show               (TxId tx)
-      , Ord                (TxId tx)
-      , NoUnexpectedThunks (TxId tx)
-      ) => HasTxId tx where
-  -- | A generalized transaction, 'GenTx', identifier.
-  data family TxId tx :: *
-
-  -- | Return the 'TxId' of a 'GenTx'.
-  --
-  -- NOTE: a 'TxId' must be unique up to ledger rules, i.e., two 'GenTx's with
-  -- the same 'TxId' must be the same transaction /according to the ledger/.
-  -- However, we do not assume that a 'TxId' uniquely determines a 'GenTx':
-  -- two 'GenTx's with the same 'TxId' can differ in, e.g., witnesses.
-  --
-  -- Should be cheap as this will be called often.
-  txId :: tx -> TxId tx
-
--- | Shorthand: ID of a generalized transaction
-type GenTxId blk = TxId (GenTx blk)
-
--- | Collect all transactions from a block
---
--- This is used for tooling only. We don't require it as part of RunNode
--- (and cannot, because we cannot give an instance for the dual ledger).
-class HasTxs blk where
-  -- | Return the transactions part of the given block in no particular order.
-  extractTxs :: blk -> [GenTx blk]
 
 -- | Mempool
 --
@@ -227,6 +154,17 @@ data Mempool m blk idx = Mempool {
     , getSnapshotFor :: ForgeLedgerState blk -> STM m (MempoolSnapshot blk idx)
 
       -- | Get the mempool's capacity in bytes.
+      --
+      -- Note that the capacity of the Mempool, unless it is overridden with
+      -- 'MempoolCapacityBytesOverride', can dynamically change when the
+      -- ledger state is updated: it will be set to twice the current ledger's
+      -- maximum transaction capacity of a block.
+      --
+      -- When the capacity happens to shrink at some point, we /do not/ remove
+      -- transactions from the Mempool to satisfy this new lower limit.
+      -- Instead, we treat it the same way as a Mempool which is /at/
+      -- capacity, i.e., we won't admit new transactions until some have been
+      -- removed because they have become invalid.
     , getCapacity    :: STM m MempoolCapacityBytes
 
       -- | Return the post-serialisation size in bytes of a 'GenTx'.
@@ -324,8 +262,10 @@ data ForgeLedgerState blk =
 
 -- | Represents the maximum number of bytes worth of transactions that a
 -- 'Mempool' can contain.
-newtype MempoolCapacityBytes = MempoolCapacityBytes Word32
-  deriving (Eq, Show)
+newtype MempoolCapacityBytes = MempoolCapacityBytes {
+      getMempoolCapacityBytes :: Word32
+    }
+  deriving (Eq, Show, NoUnexpectedThunks)
 
 -- | A pure snapshot of the contents of the mempool. It allows fetching
 -- information about transactions in the mempool, and fetching individual

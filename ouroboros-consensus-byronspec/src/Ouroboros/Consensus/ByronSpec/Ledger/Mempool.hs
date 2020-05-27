@@ -16,7 +16,7 @@ import           GHC.Generics (Generic)
 import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Block
 import           Ouroboros.Consensus.ByronSpec.Ledger.GenTx
@@ -25,7 +25,7 @@ import qualified Ouroboros.Consensus.ByronSpec.Ledger.GenTx as GenTx
 import           Ouroboros.Consensus.ByronSpec.Ledger.Ledger
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
 
-instance ApplyTx ByronSpecBlock where
+instance LedgerSupportsMempool ByronSpecBlock where
   newtype GenTx ByronSpecBlock = ByronSpecGenTx {
         unByronSpecGenTx :: ByronSpecGenTx
       }
@@ -44,3 +44,8 @@ instance ApplyTx ByronSpecBlock where
 
   -- Byron spec doesn't have multiple validation modes
   reapplyTx = applyTx
+
+  -- Dummy values, as these are not used in practice.
+  maxTxCapacity = const maxBound
+  maxTxSize     = const maxBound
+  txInBlockSize = const 0

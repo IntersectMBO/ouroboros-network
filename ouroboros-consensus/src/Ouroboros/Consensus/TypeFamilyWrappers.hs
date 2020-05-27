@@ -26,7 +26,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
 
 {-------------------------------------------------------------------------------

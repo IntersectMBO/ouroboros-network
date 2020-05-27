@@ -9,7 +9,7 @@ import           Data.Kind (Type)
 
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Mempool.API (GenTx)
+import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTx)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Util.Random
 

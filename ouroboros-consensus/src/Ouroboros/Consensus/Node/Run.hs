@@ -14,7 +14,6 @@ import           Codec.Serialise (Serialise)
 import           Control.Exception (SomeException)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy)
-import           Data.Word (Word32)
 
 import           Cardano.Slotting.Slot
 
@@ -28,8 +27,8 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Exit (ExitReason)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -45,7 +44,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
 
 class ( LedgerSupportsProtocol    blk
       , HasHardForkHistory        blk
-      , ApplyTx                   blk
+      , LedgerSupportsMempool     blk
       , HasTxId            (GenTx blk)
       , QueryLedger               blk
       , HasNetworkProtocolVersion blk
@@ -62,22 +61,6 @@ class ( LedgerSupportsProtocol    blk
 
   -- | Hash serialisation
   nodeHashInfo :: Proxy blk -> HashInfo (HeaderHash blk)
-
-  -- | The maximum block size in bytes according to the currently adopted
-  -- protocol parameters of the ledger state.
-  nodeMaxBlockSize :: LedgerState blk -> Word32
-
-  -- | The maximum transaction size in bytes according to the currently
-  -- adopted protocol parameters of the ledger state.
-  nodeMaxTxSize :: LedgerState blk -> TxSizeInBytes
-
-  -- | The block encoding overhead size in bytes.
-  --
-  -- This encompasses the overhead in bytes for everything that is encoded
-  -- within a block, excluding the actual generalized transactions. Given
-  -- this, along with the 'nodeMaxBlockSize', it is possible to determine the
-  -- amount of generalized transactions that we can include in a block.
-  nodeBlockEncodingOverhead :: LedgerState blk -> Word32
 
   -- | Check the integrity of a block, i.e., that it has not been corrupted by
   -- a bitflip.
@@ -100,26 +83,6 @@ class ( LedgerSupportsProtocol    blk
                         -> SizeInBytes  -- ^ Block size
                         -> Lazy.ByteString -> Lazy.ByteString
   nodeAddHeaderEnvelope _ _ _ = id  -- Default to no envelope
-
-  -- | Return the post-serialisation size in bytes of a 'GenTx' /when it is
-  -- embedded in a block/. This size might differ from the size of the
-  -- serialisation used to send and receive the transaction across the
-  -- network.
-  --
-  -- This size is used to compute how many transaction we can put in a block
-  -- when forging one.
-  --
-  -- For example, CBOR-in-CBOR could be used when sending the transaction
-  -- across the network, requiring a few extra bytes compared to the actual
-  -- in-block serialisation. Another example is the transaction of the
-  -- hard-fork combinator which will include an envelope indicating its era
-  -- when sent across the network. However, when embedded in the respective
-  -- era's block, there is no need for such envelope.
-  --
-  -- Can be implemented by serialising the 'GenTx', but, ideally, this is
-  -- implement more efficiently. E.g., by returning the length of the
-  -- annotation.
-  nodeTxInBlockSize :: GenTx blk -> TxSizeInBytes
 
   -- | This function is called when starting up the node, right after the
   -- ChainDB was opened, and before we connect to other nodes and start block

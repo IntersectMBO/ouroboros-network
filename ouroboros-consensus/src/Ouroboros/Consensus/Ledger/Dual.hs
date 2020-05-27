@@ -73,8 +73,8 @@ import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -172,16 +172,16 @@ class (
       , HasHeader     (Header  m)
       , LedgerSupportsProtocol m
       , HasHardForkHistory     m
-      , ApplyTx                m
+      , LedgerSupportsMempool  m
       , HasTxId (GenTx         m)
       , Show (ApplyTxErr       m)
 
         -- Requirements on the auxiliary block
         -- No 'LedgerSupportsProtocol' for @a@!
-      , Typeable         a
-      , UpdateLedger     a
-      , ApplyTx          a
-      , Show (ApplyTxErr a)
+      , Typeable              a
+      , UpdateLedger          a
+      , LedgerSupportsMempool a
+      , Show (ApplyTxErr      a)
       , NoUnexpectedThunks (LedgerConfig a)
 
         -- Requirements on the various bridges
@@ -447,7 +447,7 @@ data DualGenTxErr m a = DualGenTxErr {
     , dualGenTxErrAux  :: ApplyTxErr a
     }
 
-instance Bridge m a => ApplyTx (DualBlock m a) where
+instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
   data GenTx (DualBlock m a) = DualGenTx {
         dualGenTxMain   :: GenTx m
       , dualGenTxAux    :: GenTx a
@@ -500,6 +500,12 @@ instance Bridge m a => ApplyTx (DualBlock m a) where
                                     tx
                                     dualLedgerStateBridge
         }
+
+  maxTxCapacity (Ticked slot DualLedgerState{..}) =
+      maxTxCapacity (Ticked slot dualLedgerStateMain)
+
+  maxTxSize     = maxTxSize     . dualLedgerStateMain
+  txInBlockSize = txInBlockSize . dualGenTxMain
 
 instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
   -- We don't need a pair of IDs, as long as we can unique ID the transaction

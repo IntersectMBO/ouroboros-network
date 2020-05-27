@@ -61,7 +61,7 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config.SupportsNode
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract

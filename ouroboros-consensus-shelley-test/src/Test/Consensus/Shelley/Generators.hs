@@ -31,7 +31,7 @@ import           Ouroboros.Network.Point (WithOrigin (..), withOrigin)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import qualified Shelley.Spec.Ledger.Address as SL
 import qualified Shelley.Spec.Ledger.API as SL

@@ -6,7 +6,8 @@
 
 module Ouroboros.Consensus.Byron.Ledger.Serialisation (
     -- * Serialisation
-    encodeByronBlockWithInfo
+    byronBlockEncodingOverhead
+  , encodeByronBlockWithInfo
   , encodeByronBlock
   , decodeByronBlock
   , encodeByronHeader
@@ -26,6 +27,7 @@ module Ouroboros.Consensus.Byron.Ledger.Serialisation (
 import           Control.Exception (Exception (..), throw)
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Word (Word32)
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
@@ -64,6 +66,33 @@ instance Serialise ByronHash where
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
+
+-- | The Byron block encoding overhead size in bytes.
+--
+-- This encompasses the overhead in bytes for everything that is encoded
+-- within a Byron block, excluding the actual generalized transactions
+-- (transactions, delegation certificates, update votes, and update
+-- proposals).
+byronBlockEncodingOverhead :: Word32
+byronBlockEncodingOverhead =
+    blockHeaderOverhead + blockBodyOverhead + safetyMargin
+  where
+    -- The maximum block header size.
+    blockHeaderOverhead = 650
+
+    -- The block body overhead excluding the actual generalized transactions.
+    blockBodyOverhead = 1 {- ABody: encodeListLen 4 -}
+                      + 2 {- TxPayload: list -}
+                      + 1 {- SscPayload: encodeListLen 2 -}
+                      + 1 {- SscPayload: Word8 -}
+                      + 1 {- SscPayload: mempty :: Set () -}
+                      + 2 {- Delegation.Payload: list -}
+                      + 1 {- Update.Payload: encodeListLen 2 -}
+                      + 1 {- Update.Payload: Maybe AProposal -}
+                      + 2 {- Update.Payload: list of AVote -}
+
+    -- Just for safety.
+    safetyMargin = 1024
 
 encodeByronHeaderHash :: HeaderHash ByronBlock -> Encoding
 encodeByronHeaderHash = toCBOR

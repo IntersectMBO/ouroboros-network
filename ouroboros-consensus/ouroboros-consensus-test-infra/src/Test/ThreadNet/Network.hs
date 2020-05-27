@@ -74,6 +74,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.Server as BFServer
@@ -761,17 +762,17 @@ runThreadNetwork ThreadNetworkArgs
       let nodeArgs = NodeArgs
             { tracers
             , registry
-            , cfg                    = pInfoConfig
-            , initForgeState         = pInfoInitForgeState
+            , cfg                     = pInfoConfig
+            , initForgeState          = pInfoInitForgeState
             , btime
             , chainDB
-            , initChainDB            = nodeInitChainDB
-            , blockProduction        = Just blockProduction
-            , blockFetchSize         = nodeBlockFetchSize
-            , blockMatchesHeader     = nodeBlockMatchesHeader
-            , maxBlockSize           = NoOverride
-            , mempoolCap             = NoMempoolCapacityBytesOverride
-            , miniProtocolParameters = MiniProtocolParameters {
+            , initChainDB             = nodeInitChainDB
+            , blockProduction         = Just blockProduction
+            , blockFetchSize          = nodeBlockFetchSize
+            , blockMatchesHeader      = nodeBlockMatchesHeader
+            , maxTxCapacityOverride   = NoMaxTxCapacityOverride
+            , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
+            , miniProtocolParameters  = MiniProtocolParameters {
                   chainSyncPipeliningHighMark = 4,
                   chainSyncPipeliningLowMark  = 2,
                   blockFetchPipeliningMax     = 10,

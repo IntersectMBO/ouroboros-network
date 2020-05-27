@@ -30,7 +30,7 @@ import           GHC.Stack (HasCallStack)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -51,7 +51,7 @@ data HardForkApplyTxErr xs =
 
 deriving stock instance CanHardFork xs => Show (HardForkApplyTxErr xs)
 
-instance CanHardFork xs => ApplyTx (HardForkBlock xs) where
+instance CanHardFork xs => LedgerSupportsMempool (HardForkBlock xs) where
   newtype GenTx (HardForkBlock xs) = HardForkGenTx {
         getHardForkGenTx :: OneEraGenTx xs
       }
@@ -61,6 +61,25 @@ instance CanHardFork xs => ApplyTx (HardForkBlock xs) where
 
   applyTx   = applyHelper applyTx
   reapplyTx = applyHelper reapplyTx
+
+  maxTxCapacity (Ticked slot st) =
+      hcollapse
+    . hcmap proxySingle (K . maxTxCapacity . Ticked slot)
+    . State.tip
+    . getHardForkLedgerState
+    $ st
+
+  maxTxSize =
+      hcollapse
+    . hcmap proxySingle (K . maxTxSize)
+    . State.tip
+    . getHardForkLedgerState
+
+  txInBlockSize =
+      hcollapse
+    . hcmap proxySingle (K . txInBlockSize)
+    . getOneEraGenTx
+    . getHardForkGenTx
 
 applyHelper
   :: forall xs. CanHardFork xs

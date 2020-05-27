@@ -69,10 +69,6 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
   nodeImmDbChunkInfo        = \cfg -> simpleChunkInfo $
     EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
   nodeHashInfo              = const simpleBlockHashInfo
-  nodeMaxBlockSize          = const 2000000 -- TODO
-  nodeBlockEncodingOverhead = const 1000 -- TODO
-  nodeMaxTxSize             = const 2000000 -- TODO
-  nodeTxInBlockSize         = txSize
   nodeCheckIntegrity        = \_ _ -> True
 
   nodeEncodeBlockWithInfo   = const simpleBlockBinaryInfo

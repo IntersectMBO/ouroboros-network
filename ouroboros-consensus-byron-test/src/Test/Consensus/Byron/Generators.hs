@@ -23,7 +23,7 @@ import           Cardano.Crypto (ProtocolMagicId (..))
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block (Header)
-import           Ouroboros.Consensus.Mempool.API (GenTxId)
+import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 
 import           Ouroboros.Consensus.Byron.Ledger

@@ -86,7 +86,7 @@ import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
@@ -330,7 +330,8 @@ genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
   Support for the mempool
 -------------------------------------------------------------------------------}
 
-instance MockProtocolSpecific c ext => ApplyTx (SimpleBlock c ext) where
+instance MockProtocolSpecific c ext
+      => LedgerSupportsMempool (SimpleBlock c ext) where
   data GenTx (SimpleBlock c ext) = SimpleGenTx
     { simpleGenTx   :: !Mock.Tx
     , simpleGenTxId :: !Mock.TxId
@@ -341,6 +342,12 @@ instance MockProtocolSpecific c ext => ApplyTx (SimpleBlock c ext) where
 
   applyTx   = const updateSimpleUTxO
   reapplyTx = const updateSimpleUTxO
+
+  -- Large value so that the Mempool tests never run out of capacity when they
+  -- don't override it.
+  maxTxCapacity = const 1000000000
+  maxTxSize     = const 2000000
+  txInBlockSize = txSize
 
 instance HasTxId (GenTx (SimpleBlock c ext)) where
   newtype TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId
@@ -374,7 +381,7 @@ mkSimpleGenTx tx = SimpleGenTx
     , simpleGenTxId = hash tx
     }
 
-txSize :: GenTx (SimpleBlock c ext) -> TxSizeInBytes
+txSize :: GenTx (SimpleBlock c ext) -> Word32
 txSize = fromIntegral . Lazy.length . serialise
 
 {-------------------------------------------------------------------------------

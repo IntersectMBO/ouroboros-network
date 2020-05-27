@@ -16,7 +16,7 @@ module Ouroboros.Consensus.NodeKernel (
     -- * Node kernel
     NodeKernel (..)
   , BlockProduction (..)
-  , MaxBlockSizeOverride (..)
+  , MaxTxCapacityOverride (..)
   , MempoolCapacityBytesOverride (..)
   , NodeArgs (..)
   , TraceForgeEvent (..)
@@ -55,6 +55,7 @@ import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
@@ -137,41 +138,36 @@ data BlockProduction m blk = BlockProduction {
     , runMonadRandomDict :: RunMonadRandom m
     }
 
--- | An override for the maximum block size from the protocol parameters in
--- the ledger.
-data MaxBlockSizeOverride
-  = NoOverride
-    -- ^ Use the maximum block size in bytes from the protocol parameters in
-    -- the ledger.
-  | MaxBlockSize !Word32
-    -- ^ Use the following maximum size in bytes for the whole block.
-  | MaxBlockBodySize !Word32
-    -- ^ Use the following maximum size in bytes for the block body.
-
--- | An override for the default 'MempoolCapacityBytes' which is 2x the
--- maximum block size from the protocol parameters in the ledger.
-data MempoolCapacityBytesOverride
-  = NoMempoolCapacityBytesOverride
-    -- ^ Use 2x the maximum block size from the protocol parameters in the
-    -- ledger.
-  | MempoolCapacityBytesOverride !MempoolCapacityBytes
-    -- ^ Use the following 'MempoolCapacityBytes'.
+-- | The maximum transaction capacity of a block is computed by taking the max
+-- block size from the protocol parameters in the current ledger state and
+-- subtracting the size of the header.
+--
+-- It is possible to override this maximum transaction capacity with a lower
+-- value. We ignore higher values than the ledger state's max block size. Such
+-- blocks would be rejected by the ledger anyway.
+data MaxTxCapacityOverride
+  = NoMaxTxCapacityOverride
+    -- ^ Don't override the maximum transaction capacity as computed from the
+    -- current ledger state.
+  | MaxTxCapacityOverride !Word32
+    -- ^ Use the following maximum size in bytes for the transaction capacity
+    -- of a block.
 
 -- | Arguments required when initializing a node
 data NodeArgs m remotePeer localPeer blk = NodeArgs {
-      tracers                :: Tracers m remotePeer localPeer blk
-    , registry               :: ResourceRegistry m
-    , cfg                    :: TopLevelConfig blk
-    , initForgeState         :: ForgeState blk
-    , btime                  :: BlockchainTime m
-    , chainDB                :: ChainDB m blk
-    , initChainDB            :: TopLevelConfig blk -> InitChainDB m blk -> m ()
-    , blockFetchSize         :: Header blk -> SizeInBytes
-    , blockProduction        :: Maybe (BlockProduction m blk)
-    , blockMatchesHeader     :: Header blk -> blk -> Bool
-    , maxBlockSize           :: MaxBlockSizeOverride
-    , mempoolCap             :: MempoolCapacityBytesOverride
-    , miniProtocolParameters :: MiniProtocolParameters
+      tracers                 :: Tracers m remotePeer localPeer blk
+    , registry                :: ResourceRegistry m
+    , cfg                     :: TopLevelConfig blk
+    , initForgeState          :: ForgeState blk
+    , btime                   :: BlockchainTime m
+    , chainDB                 :: ChainDB m blk
+    , initChainDB             :: TopLevelConfig blk -> InitChainDB m blk -> m ()
+    , blockFetchSize          :: Header blk -> SizeInBytes
+    , blockProduction         :: Maybe (BlockProduction m blk)
+    , blockMatchesHeader      :: Header blk -> blk -> Bool
+    , maxTxCapacityOverride   :: MaxTxCapacityOverride
+    , mempoolCapacityOverride :: MempoolCapacityBytesOverride
+    , miniProtocolParameters  :: MiniProtocolParameters
     }
 
 initNodeKernel
@@ -183,7 +179,7 @@ initNodeKernel
        )
     => NodeArgs m remotePeer localPeer blk
     -> m (NodeKernel m remotePeer localPeer blk)
-initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
+initNodeKernel args@NodeArgs { registry, cfg, tracers, maxTxCapacityOverride
                              , blockProduction, chainDB, initChainDB
                              , miniProtocolParameters } = do
 
@@ -191,7 +187,8 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
 
     st <- initInternalState args
 
-    whenJust blockProduction $ forkBlockProduction maxBlockSize st
+    whenJust blockProduction $
+      forkBlockProduction maxTxCapacityOverride st
 
     let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
              mempool } = st
@@ -252,27 +249,15 @@ initInternalState
     -> m (InternalState m remotePeer localPeer blk)
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              blockFetchSize, blockMatchesHeader, btime,
-                             initForgeState, mempoolCap } = do
+                             initForgeState, mempoolCapacityOverride } = do
     varCandidates  <- newTVarM mempty
     varForgeState  <- newTVarM initForgeState
-    mpCap          <- atomically $ do
-      -- If no override is provided, calculate the default mempool capacity as
-      -- 2x the current ledger's maximum block size.
-      --
-      -- It's worth noting that even though the ledger's maximum block size is
-      -- a dynamic value (it can be changed via an update proposal), we only
-      -- calculate the default mempool capacity once here. i.e. if the
-      -- ledger's maximum block size changes during runtime, the mempool
-      -- capacity /will not/ automatically adapt. The mempool capacity would
-      -- only be calculated again upon restarting the node.
-      ledger <- ledgerState <$> ChainDB.getCurrentLedger chainDB
-      pure (mempoolCapacity ledger)
     mempool        <- openMempool registry
                                   (chainDBLedgerInterface chainDB)
                                   (configLedger cfg)
-                                  mpCap
+                                  mempoolCapacityOverride
                                   (mempoolTracer tracers)
-                                  nodeTxInBlockSize
+                                  txInBlockSize
 
     fetchClientRegistry <- newFetchClientRegistry
 
@@ -284,13 +269,6 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
           cfg chainDB getCandidates blockFetchSize blockMatchesHeader btime
 
     return IS {..}
-  where
-    mempoolCapacity :: LedgerState blk -> MempoolCapacityBytes
-    mempoolCapacity ledger = case mempoolCap of
-        NoMempoolCapacityBytesOverride   -> noOverride
-        MempoolCapacityBytesOverride mcb -> mcb
-      where
-        noOverride = MempoolCapacityBytes (nodeMaxBlockSize ledger * 2)
 
 initBlockFetchConsensusInterface
     :: forall m peer blk. (IOLike m, BlockSupportsProtocol blk)
@@ -358,11 +336,11 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
 forkBlockProduction
     :: forall m remotePeer localPeer blk.
        (IOLike m, RunNode blk)
-    => MaxBlockSizeOverride
+    => MaxTxCapacityOverride
     -> InternalState m remotePeer localPeer blk
     -> BlockProduction m blk
     -> m ()
-forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
+forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
     void $ onKnownSlotChange registry btime "NodeKernel.blockProduction" $
       withEarlyExit_ . go
   where
@@ -454,7 +432,7 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
                                (ForgeInKnownSlot ticked)
         let txs = map fst $ snapshotTxsForSize
                               mempoolSnapshot
-                              (maxBlockBodySize $ tickedLedgerState ticked)
+                              (computeMaxTxCapacity ticked)
 
         -- Actually produce the block
         newBlock <- lift $ runMonadRandom $ \lift' ->
@@ -503,21 +481,18 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
     trace :: TraceForgeEvent blk (GenTx blk) -> WithEarlyExit m ()
     trace = lift . traceWith (forgeTracer tracers)
 
-    -- Compute maximum block size
+    -- Compute maximum block transaction capacity
     --
-    -- We allow the overrides to /reduce/ the maximum size, but not increase it.
-    -- This is important because the maximum block size could be reduced due to
-    -- a protocol update, in which case any local configuration should not be
-    -- allowed to increase it.
-    maxBlockBodySize :: LedgerState blk -> Word32
-    maxBlockBodySize ledger =
-        min noOverride $ case maxBlockSizeOverride of
-          NoOverride            -> noOverride
-          MaxBlockSize     mbs  -> mbs - blockEncOverhead
-          MaxBlockBodySize mbbs -> mbbs
+    -- We allow the override to /reduce/ the maximum size, but not increase
+    -- it. This is important because any blocks exceeding the max block size
+    -- are invalid according to the ledger and we want certainly don't want to
+    -- forge invalid blocks.
+    computeMaxTxCapacity :: TickedLedgerState blk -> Word32
+    computeMaxTxCapacity ledger = case maxTxCapacityOverride of
+          NoMaxTxCapacityOverride     -> noOverride
+          MaxTxCapacityOverride txCap -> noOverride `min` txCap
       where
-        blockEncOverhead = nodeBlockEncodingOverhead ledger
-        noOverride       = nodeMaxBlockSize ledger - blockEncOverhead
+        noOverride = maxTxCapacity ledger
 
 -- | Context required to forge a block
 data BlockContext blk = BlockContext

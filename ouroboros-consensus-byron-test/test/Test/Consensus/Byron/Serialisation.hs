@@ -27,7 +27,8 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTxId)
+import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
+                     GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
