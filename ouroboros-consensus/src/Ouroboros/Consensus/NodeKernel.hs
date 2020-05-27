@@ -120,7 +120,6 @@ data NodeArgs m remotePeer localPeer blk = NodeArgs {
       tracers                 :: Tracers m remotePeer localPeer blk
     , registry                :: ResourceRegistry m
     , cfg                     :: TopLevelConfig blk
-    , initForgeState          :: ForgeState blk
     , btime                   :: BlockchainTime m
     , chainDB                 :: ChainDB m blk
     , initChainDB             :: TopLevelConfig blk -> InitChainDB m blk -> m ()
@@ -195,7 +194,6 @@ data InternalState m remotePeer localPeer blk = IS {
     , blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
     , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
-    , varForgeState       :: StrictTVar m (ForgeState blk)
     , mempool             :: Mempool m blk TicketNo
     }
 
@@ -211,15 +209,14 @@ initInternalState
     -> m (InternalState m remotePeer localPeer blk)
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              blockFetchSize, blockMatchesHeader, btime,
-                             initForgeState, mempoolCapacityOverride } = do
-    varCandidates  <- newTVarM mempty
-    varForgeState  <- newTVarM initForgeState
-    mempool        <- openMempool registry
-                                  (chainDBLedgerInterface chainDB)
-                                  (configLedger cfg)
-                                  mempoolCapacityOverride
-                                  (mempoolTracer tracers)
-                                  txInBlockSize
+                             mempoolCapacityOverride } = do
+    varCandidates <- newTVarM mempty
+    mempool       <- openMempool registry
+                                 (chainDBLedgerInterface chainDB)
+                                 (configLedger cfg)
+                                 mempoolCapacityOverride
+                                 (mempoolTracer tracers)
+                                 txInBlockSize
 
     fetchClientRegistry <- newFetchClientRegistry
 
@@ -395,7 +392,6 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
         -- Actually produce the block
         newBlock <- lift $
           produceBlock
-            (updateFromTVar (castStrictTVar varForgeState))
             bcBlockNo
             ticked
             txs

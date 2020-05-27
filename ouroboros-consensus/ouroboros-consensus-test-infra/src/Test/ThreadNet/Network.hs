@@ -672,7 +672,7 @@ runThreadNetwork ThreadNetworkArgs
       chainDB <- snd <$>
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
 
-      blockProduction <- blockProductionIOLike pInfoConfig varRNG $
+      blockProduction <- blockProductionIOLike pInfoConfig pInfoInitForgeState varRNG $
          \upd currentBno tickedLdgSt txs prf -> do
             let currentSlot = tickedSlotNo tickedLdgSt
 
@@ -759,7 +759,6 @@ runThreadNetwork ThreadNetworkArgs
             { tracers
             , registry
             , cfg                     = pInfoConfig
-            , initForgeState          = pInfoInitForgeState
             , btime
             , chainDB
             , initChainDB             = nodeInitChainDB

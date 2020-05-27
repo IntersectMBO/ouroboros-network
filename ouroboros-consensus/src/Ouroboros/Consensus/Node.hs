@@ -410,13 +410,12 @@ mkNodeArgs
   -> IO (NodeArgs IO RemoteConnectionId LocalConnectionId blk)
 mkNodeArgs registry cfg initForgeState tracers btime chainDB = do
     blockProduction <- if checkIfCanBeLeader (configConsensus cfg)
-                         then Just <$> blockProductionIO cfg
+                         then Just <$> blockProductionIO cfg initForgeState
                          else return Nothing
     return NodeArgs
       { tracers
       , registry
       , cfg
-      , initForgeState
       , btime
       , chainDB
       , initChainDB            = nodeInitChainDB

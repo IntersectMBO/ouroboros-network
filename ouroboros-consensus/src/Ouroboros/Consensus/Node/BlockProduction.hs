@@ -37,8 +37,7 @@ data BlockProduction m blk = BlockProduction {
       -- Note that this function is not run in @m@, but in some monad @n@
       -- which only has the ability to produce random number and access to the
       -- 'ForgeState'.
-    , produceBlock :: Update m (ForgeState blk)
-                   -> BlockNo               -- Current block number
+    , produceBlock :: BlockNo               -- Current block number
                    -> TickedLedgerState blk -- Current ledger state
                    -> [GenTx blk]           -- Contents of the mempool
                    -> IsLeader (BlockProtocol blk) -- Proof we are leader
@@ -46,19 +45,23 @@ data BlockProduction m blk = BlockProduction {
     }
 
 blockProductionIO :: (BlockSupportsProtocol blk, CanForge blk)
-                  => TopLevelConfig blk -> IO (BlockProduction IO blk)
-blockProductionIO cfg = do
+                  => TopLevelConfig blk
+                  -> ForgeState blk
+                  -> IO (BlockProduction IO blk)
+blockProductionIO cfg initForgeState = do
+    varForgeState <- newTVarM initForgeState
     return $ BlockProduction {
         getLeaderProof = defaultGetLeaderProof cfg
-      , produceBlock   = forgeBlock cfg
+      , produceBlock   = forgeBlock cfg (updateFromTVar varForgeState)
       }
 
 -- | Block production in 'IOLike'
 --
 -- Unlike 'IO', 'IOLike' does not give us 'MonadRandom', and so we need to
 -- simulate it.
-blockProductionIOLike :: (IOLike m, BlockSupportsProtocol blk)
+blockProductionIOLike :: (IOLike m, BlockSupportsProtocol blk, CanForge blk)
                       => TopLevelConfig blk
+                      -> ForgeState blk
                       -> StrictTVar m ChaChaDRG
                       -> (   Update (ChaChaT m) (ForgeState blk)
                           -> BlockNo
@@ -67,14 +70,15 @@ blockProductionIOLike :: (IOLike m, BlockSupportsProtocol blk)
                           -> IsLeader (BlockProtocol blk)
                           -> ChaChaT m blk)
                       -> m (BlockProduction m blk)
-blockProductionIOLike cfg varRNG forge = do
+blockProductionIOLike cfg initForgeState varRNG forge = do
+    varForgeState <- newTVarM initForgeState
     return $ BlockProduction {
         getLeaderProof = \ledgerState consensusState ->
           simMonadRandom varRNG $
             defaultGetLeaderProof cfg ledgerState consensusState
-      , produceBlock   = \upd bno st txs proof ->
+      , produceBlock   = \bno st txs proof ->
           simMonadRandom varRNG $
-            forge (hoistUpdate lift upd) bno st txs proof
+            forge (hoistUpdate lift $ updateFromTVar varForgeState) bno st txs proof
       }
 
 {-------------------------------------------------------------------------------
