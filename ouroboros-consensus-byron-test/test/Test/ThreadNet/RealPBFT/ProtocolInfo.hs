@@ -31,7 +31,7 @@ mkProtocolRealPBFT :: HasCallStack
                    -> CoreNodeId
                    -> Genesis.Config
                    -> Genesis.GeneratedSecrets
-                   -> ProtocolInfo ByronBlock
+                   -> ProtocolInfo m ByronBlock
 mkProtocolRealPBFT params (CoreNodeId i)
                    genesisConfig genesisSecrets =
     protocolInfoByron

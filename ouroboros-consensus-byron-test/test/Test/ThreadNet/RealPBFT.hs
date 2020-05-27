@@ -617,7 +617,7 @@ prop_setup_coreNodeId numCoreNodes coreNodeId =
           counterexample "mkProtocolRealPBFT did not use protocolInfoByron" $
           property False
   where
-    protInfo :: ProtocolInfo ByronBlock
+    protInfo :: ProtocolInfo m ByronBlock
     protInfo = mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets
 
     params :: PBftParams
@@ -1235,10 +1235,10 @@ genNodeRekeys params nodeJoinPlan nodeTopology numSlots@(NumSlots t)
 mkRekeyUpd
   :: Genesis.Config
   -> Genesis.GeneratedSecrets
-  -> ProtocolInfo ByronBlock
+  -> ProtocolInfo m ByronBlock
   -> EpochNo
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-  -> Maybe (TestNodeInitialization ByronBlock)
+  -> Maybe (TestNodeInitialization m ByronBlock)
 mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
   case pbftIsLeader configConsensus of
     PBftIsNotALeader       -> Nothing

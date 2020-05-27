@@ -70,7 +70,7 @@ import           Ouroboros.Consensus.ByronDual.Ledger
 protocolInfoDualByron :: ByronSpecGenesis
                       -> PBftParams
                       -> Maybe CoreNodeId -- ^ Are we a core node?
-                      -> ProtocolInfo DualByronBlock
+                      -> ProtocolInfo m DualByronBlock
 protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
@@ -89,8 +89,8 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
               , dualBlockConfigAux  = ByronSpecBlockConfig
               }
           }
-      , pInfoInitForgeState =
-          ()
+      , pInfoMaintainForgeState =
+          defaultMaintainForgeState
       , pInfoInitLedger = ExtLedgerState {
              ledgerState = DualLedgerState {
                  dualLedgerStateMain   = initConcreteState

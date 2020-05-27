@@ -74,11 +74,11 @@ prop_simple_cardano_convergence k d
       }
       testOutput
   where
+    testOutput :: TestOutput (CardanoBlock TPraosMockCrypto)
     testOutput =
         runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = Nothing
-            , nodeInfo    = \(CoreNodeId nid) ->
-              plainTestNodeInitialization @(CardanoBlock TPraosMockCrypto) $
+            , nodeInfo    = \(CoreNodeId nid) -> plainTestNodeInitialization $
                 castProtocolInfo $ injProtocolInfo
                   (sgSystemStart genesisConfig)
                   (mkProtocolRealTPraos

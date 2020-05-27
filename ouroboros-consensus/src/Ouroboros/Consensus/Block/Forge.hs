@@ -1,8 +1,14 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE KindSignatures   #-}
 {-# LANGUAGE RankNTypes       #-}
 {-# LANGUAGE TypeFamilies     #-}
+
 module Ouroboros.Consensus.Block.Forge (
     CanForge (..)
+    -- * MaintainForgeState
+  , MaintainForgeState(..)
+  , defaultMaintainForgeState
+  , castMaintainForgeState
     -- * Infrastructure for dealing with state updates
   , Update(..)
   , updateFromTVar
@@ -47,6 +53,25 @@ class NoUnexpectedThunks (ForgeState blk) => CanForge blk where
     -> [GenTx blk]            -- ^ Txs to add in the block
     -> IsLeader (BlockProtocol blk)
     -> m blk
+
+{-------------------------------------------------------------------------------
+  Maintaining the 'ForgeState'
+-------------------------------------------------------------------------------}
+
+data MaintainForgeState (m :: * -> *) blk = MaintainForgeState {
+      initForgeState :: ForgeState blk
+    }
+
+defaultMaintainForgeState :: ForgeState blk ~ () => MaintainForgeState m blk
+defaultMaintainForgeState = MaintainForgeState {
+      initForgeState = ()
+    }
+
+castMaintainForgeState :: ForgeState blk ~ ForgeState blk'
+                       => MaintainForgeState m blk -> MaintainForgeState m blk'
+castMaintainForgeState maintainForgeState = MaintainForgeState {
+      initForgeState = initForgeState maintainForgeState
+    }
 
 {-------------------------------------------------------------------------------
   Updating the state

@@ -43,10 +43,10 @@ enumCoreNodes (NumCoreNodes numNodes) =
 -------------------------------------------------------------------------------}
 
 -- | Data required to run the specified protocol.
-data ProtocolInfo b = ProtocolInfo {
-        pInfoConfig         :: TopLevelConfig b
-      , pInfoInitForgeState :: ForgeState     b
-      , pInfoInitLedger     :: ExtLedgerState b -- ^ Genesis ledger state
+data ProtocolInfo m b = ProtocolInfo {
+        pInfoConfig             :: TopLevelConfig       b
+      , pInfoMaintainForgeState :: MaintainForgeState m b
+      , pInfoInitLedger         :: ExtLedgerState       b -- ^ At genesis
       }
 
 -- | Data required by clients of a node running the specified protocol.
@@ -68,12 +68,12 @@ castProtocolInfo
      , TipInfo blk ~ TipInfo blk'
      , ForgeState blk ~ ForgeState blk'
      )
-  => ProtocolInfo blk
-  -> ProtocolInfo blk'
+  => ProtocolInfo m blk
+  -> ProtocolInfo m blk'
 castProtocolInfo ProtocolInfo {..} = ProtocolInfo {
-      pInfoConfig         = castTopLevelConfig pInfoConfig
-    , pInfoInitForgeState = pInfoInitForgeState
-    , pInfoInitLedger     = castExtLedgerState pInfoInitLedger
+      pInfoConfig             = castTopLevelConfig     pInfoConfig
+    , pInfoMaintainForgeState = castMaintainForgeState pInfoMaintainForgeState
+    , pInfoInitLedger         = castExtLedgerState     pInfoInitLedger
     }
 
 castProtocolClientInfo :: Coercible (CodecConfig blk) (CodecConfig blk')

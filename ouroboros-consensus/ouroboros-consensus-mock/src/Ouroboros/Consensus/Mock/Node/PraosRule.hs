@@ -10,6 +10,7 @@ import qualified Data.Map as Map
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
@@ -27,7 +28,7 @@ protocolInfoPraosRule :: NumCoreNodes
                       -> PraosParams
                       -> HardFork.EraParams
                       -> LeaderSchedule
-                      -> ProtocolInfo MockPraosRuleBlock
+                      -> ProtocolInfo m MockPraosRuleBlock
 protocolInfoPraosRule numCoreNodes
                       nid
                       params
@@ -54,7 +55,7 @@ protocolInfoPraosRule numCoreNodes
         { ledgerState = genesisSimpleLedgerState addrDist
         , headerState = genesisHeaderState ()
         }
-    , pInfoInitForgeState = ()
+    , pInfoMaintainForgeState = defaultMaintainForgeState
     }
   where
     addrDist = mkAddrDist numCoreNodes

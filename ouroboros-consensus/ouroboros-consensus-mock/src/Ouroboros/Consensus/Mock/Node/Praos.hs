@@ -14,6 +14,7 @@ import qualified Data.Map as Map
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
@@ -29,7 +30,7 @@ protocolInfoPraos :: NumCoreNodes
                   -> CoreNodeId
                   -> PraosParams
                   -> HardFork.EraParams
-                  -> ProtocolInfo MockPraosBlock
+                  -> ProtocolInfo m MockPraosBlock
 protocolInfoPraos numCoreNodes nid params eraParams =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
@@ -48,9 +49,11 @@ protocolInfoPraos numCoreNodes nid params eraParams =
             ledgerState = genesisSimpleLedgerState addrDist
           , headerState = genesisHeaderState []
           }
-      , pInfoInitForgeState = PraosKeyAvailable $ SignKeyMockKES
-           (fst $ verKeys Map.! nid)   -- key ID
-           0                           -- KES initial slot
+      , pInfoMaintainForgeState = MaintainForgeState $
+           PraosKeyAvailable $
+             SignKeyMockKES
+               (fst $ verKeys Map.! nid)   -- key ID
+               0                           -- KES initial slot
       }
   where
     signKeyVRF :: CoreNodeId -> SignKeyVRF MockVRF

@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes       #-}
+{-# LANGUAGE RecordWildCards  #-}
 
 module Ouroboros.Consensus.Node.BlockProduction (
     BlockProduction(..)
@@ -50,9 +51,9 @@ data BlockProduction m blk = BlockProduction {
 
 blockProductionIO :: (BlockSupportsProtocol blk, CanForge blk)
                   => TopLevelConfig blk
-                  -> ForgeState blk
+                  -> MaintainForgeState IO blk
                   -> IO (BlockProduction IO blk)
-blockProductionIO cfg initForgeState = do
+blockProductionIO cfg MaintainForgeState{..} = do
     varForgeState <- newTVarM initForgeState
     return $ BlockProduction {
         getLeaderProof = defaultGetLeaderProof cfg
@@ -65,7 +66,7 @@ blockProductionIO cfg initForgeState = do
 -- simulate it.
 blockProductionIOLike :: (IOLike m, BlockSupportsProtocol blk, CanForge blk)
                       => TopLevelConfig blk
-                      -> ForgeState blk
+                      -> MaintainForgeState m blk
                       -> StrictTVar m ChaChaDRG
                       -> (   Update (ChaChaT m) (ForgeState blk)
                           -> BlockNo
@@ -74,7 +75,7 @@ blockProductionIOLike :: (IOLike m, BlockSupportsProtocol blk, CanForge blk)
                           -> IsLeader (BlockProtocol blk)
                           -> ChaChaT m blk)
                       -> m (BlockProduction m blk)
-blockProductionIOLike cfg initForgeState varRNG forge = do
+blockProductionIOLike cfg MaintainForgeState{..} varRNG forge = do
     varForgeState <- newTVarM initForgeState
     return $ BlockProduction {
         getLeaderProof = \tracer ledgerState consensusState ->

@@ -113,16 +113,16 @@ initialFundsPseudoTxIn addr =
     castHash (Crypto.UnsafeHash h) = Crypto.UnsafeHash h
 
 protocolInfoShelley
-  :: forall c.
+  :: forall m c.
      ShelleyGenesis c
   -> SL.ProtVer
   -> Maybe (TPraosLeaderCredentials c)
-  -> ProtocolInfo (ShelleyBlock c)
+  -> ProtocolInfo m (ShelleyBlock c)
 protocolInfoShelley genesis protVer mbCredentials =
     ProtocolInfo {
-        pInfoConfig         = topLevelConfig
-      , pInfoInitForgeState = initForgeState
-      , pInfoInitLedger     = initExtLedgerState
+        pInfoConfig             = topLevelConfig
+      , pInfoMaintainForgeState = MaintainForgeState initForgeState
+      , pInfoInitLedger         = initExtLedgerState
       }
   where
     topLevelConfig :: TopLevelConfig (ShelleyBlock c)

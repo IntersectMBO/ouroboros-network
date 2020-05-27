@@ -55,8 +55,9 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
   , injHeaderState
   , injLedgerConfig
   , injLedgerState
-  , injProtocolInfo
+  , injMaintainForgeState
   , injProtocolClientInfo
+  , injProtocolInfo
   , injQuery
   , injTopLevelConfig
   ) where
@@ -332,6 +333,13 @@ projForgeState _ = unwrapForgeState . hd . getPerEraForgeState
 injForgeState :: proxy b -> ForgeState b -> ForgeState (HardForkBlock '[b])
 injForgeState _ = PerEraForgeState . (:* Nil) . WrapForgeState
 
+injMaintainForgeState :: forall m b.
+                         MaintainForgeState m b
+                      -> MaintainForgeState m (HardForkBlock '[b])
+injMaintainForgeState maintainForgeState = MaintainForgeState {
+      initForgeState = injForgeState (Proxy @b) (initForgeState maintainForgeState)
+    }
+
 injHashInfo :: (SingleEraBlock b, FromRawHash b)
             => HashInfo (HeaderHash b)
             -> HashInfo (HeaderHash (HardForkBlock '[b]))
@@ -411,22 +419,20 @@ projUpdateForgeState = liftUpdate get set
     set = const . injForgeState (Proxy @b)
 
 -- TODO generalise this function to no longer require the equality constraints
-injProtocolInfo :: forall b.
+injProtocolInfo :: forall m b.
                    ( SingleEraBlock b
                    , PartialConsensusConfig (BlockProtocol b) ~ ConsensusConfig (BlockProtocol b)
                    , PartialLedgerConfig b ~ LedgerConfig b
                    )
                 => SystemStart
-                -> ProtocolInfo b
-                -> ProtocolInfo (HardForkBlock '[b])
+                -> ProtocolInfo m b
+                -> ProtocolInfo m (HardForkBlock '[b])
 injProtocolInfo systemStart ProtocolInfo {..} = ProtocolInfo {
-      pInfoConfig         = injTopLevelConfig pInfoConfig
-    , pInfoInitForgeState = injForgeState
-                              (Proxy @b)
-                              pInfoInitForgeState
-    , pInfoInitLedger     = injExtLedgerState
-                              systemStart
-                              pInfoInitLedger
+      pInfoConfig             = injTopLevelConfig     pInfoConfig
+    , pInfoMaintainForgeState = injMaintainForgeState pInfoMaintainForgeState
+    , pInfoInitLedger         = injExtLedgerState
+                                  systemStart
+                                  pInfoInitLedger
     }
 
 injProtocolClientInfo :: ProtocolClientInfo b -> ProtocolClientInfo (HardForkBlock '[b])

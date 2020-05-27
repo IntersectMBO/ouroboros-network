@@ -1,6 +1,7 @@
-{-# LANGUAGE DataKinds     #-}
-{-# LANGUAGE GADTs         #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DataKinds      #-}
+{-# LANGUAGE GADTs          #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TypeOperators  #-}
 
 module Ouroboros.Consensus.Cardano (
     -- * The block type of the Cardano block chain
@@ -93,14 +94,14 @@ type ProtocolCardano        = HardForkProtocol '[ShelleyBlock TPraosStandardCryp
 -------------------------------------------------------------------------------}
 
 -- | Consensus protocol to use
-data Protocol blk p where
+data Protocol (m :: * -> *) blk p where
   -- | Run BFT against the mock ledger
   ProtocolMockBFT
     :: NumCoreNodes
     -> CoreNodeId
     -> SecurityParam
     -> HardFork.EraParams
-    -> Protocol MockBftBlock ProtocolMockBFT
+    -> Protocol m MockBftBlock ProtocolMockBFT
 
   -- | Run Praos against the mock ledger
   ProtocolMockPraos
@@ -108,7 +109,7 @@ data Protocol blk p where
     -> CoreNodeId
     -> PraosParams
     -> HardFork.EraParams
-    -> Protocol MockPraosBlock ProtocolMockPraos
+    -> Protocol m MockPraosBlock ProtocolMockPraos
 
   -- | Run Praos against the mock ledger but with an explicit leader schedule
   ProtocolLeaderSchedule
@@ -117,14 +118,14 @@ data Protocol blk p where
     -> PraosParams
     -> HardFork.EraParams
     -> LeaderSchedule
-    -> Protocol MockPraosRuleBlock ProtocolLeaderSchedule
+    -> Protocol m MockPraosRuleBlock ProtocolLeaderSchedule
 
   -- | Run PBFT against the mock ledger
   ProtocolMockPBFT
     :: PBftParams
     -> HardFork.EraParams
     -> CoreNodeId
-    -> Protocol MockPBftBlock ProtocolMockPBFT
+    -> Protocol m MockPBftBlock ProtocolMockPBFT
 
   -- | Run PBFT against the real Byron ledger
   ProtocolRealPBFT
@@ -133,29 +134,23 @@ data Protocol blk p where
     -> Update.ProtocolVersion
     -> Update.SoftwareVersion
     -> Maybe PBftLeaderCredentials
-    -> Protocol
-         ByronBlock
-         ProtocolRealPBFT
+    -> Protocol m ByronBlock ProtocolRealPBFT
 
   -- | Run TPraos against the real Shelley ledger
   ProtocolRealTPraos
     :: ShelleyGenesis TPraosStandardCrypto
     -> ProtVer
     -> Maybe (TPraosLeaderCredentials TPraosStandardCrypto)
-    -> Protocol
-         (ShelleyBlock TPraosStandardCrypto)
-         ProtocolRealTPraos
+    -> Protocol m (ShelleyBlock TPraosStandardCrypto) ProtocolRealTPraos
 
   -- | Run the protocols of /the/ Cardano block
   ProtocolCardano
     :: ShelleyGenesis TPraosStandardCrypto
     -> ProtVer
     -> Maybe (TPraosLeaderCredentials TPraosStandardCrypto)
-    -> Protocol
-         (CardanoBlock TPraosStandardCrypto)
-         ProtocolCardano
+    -> Protocol m (CardanoBlock TPraosStandardCrypto) ProtocolCardano
 
-verifyProtocol :: Protocol blk p -> (p :~: BlockProtocol blk)
+verifyProtocol :: Protocol m blk p -> (p :~: BlockProtocol blk)
 verifyProtocol ProtocolMockBFT{}        = Refl
 verifyProtocol ProtocolMockPraos{}      = Refl
 verifyProtocol ProtocolLeaderSchedule{} = Refl
@@ -169,7 +164,7 @@ verifyProtocol ProtocolCardano{}        = Refl
 -------------------------------------------------------------------------------}
 
 -- | Data required to run the selected protocol
-protocolInfo :: Protocol blk p -> ProtocolInfo blk
+protocolInfo :: Protocol m blk p -> ProtocolInfo m blk
 protocolInfo (ProtocolMockBFT nodes nid k paramsEra) =
     protocolInfoBft nodes nid k paramsEra
 
@@ -194,14 +189,14 @@ protocolInfo (ProtocolCardano genesis protVer mbLeaderCredentials) =
         (getSystemStart (configBlock (pInfoConfig shelleyProtocolInfo)))
         shelleyProtocolInfo
   where
-    shelleyProtocolInfo :: ProtocolInfo (ShelleyBlock TPraosStandardCrypto)
+    shelleyProtocolInfo :: ProtocolInfo m (ShelleyBlock TPraosStandardCrypto)
     shelleyProtocolInfo = protocolInfoShelley genesis protVer mbLeaderCredentials
 
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols
 -------------------------------------------------------------------------------}
 
-runProtocol :: Protocol blk p -> Dict (RunNode blk)
+runProtocol :: Protocol m blk p -> Dict (RunNode blk)
 runProtocol ProtocolMockBFT{}        = Dict
 runProtocol ProtocolMockPraos{}      = Dict
 runProtocol ProtocolLeaderSchedule{} = Dict

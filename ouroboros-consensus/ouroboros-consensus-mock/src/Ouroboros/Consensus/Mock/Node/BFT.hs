@@ -7,6 +7,7 @@ import qualified Data.Map.Strict as Map
 
 import           Cardano.Crypto.DSIGN
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -23,7 +24,7 @@ protocolInfoBft :: NumCoreNodes
                 -> CoreNodeId
                 -> SecurityParam
                 -> HardFork.EraParams
-                -> ProtocolInfo MockBftBlock
+                -> ProtocolInfo m MockBftBlock
 protocolInfoBft numCoreNodes nid securityParam eraParams =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
@@ -44,7 +45,7 @@ protocolInfoBft numCoreNodes nid securityParam eraParams =
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState ())
-      , pInfoInitForgeState  = ()
+      , pInfoMaintainForgeState = defaultMaintainForgeState
       }
   where
     signKey :: CoreNodeId -> SignKeyDSIGN MockDSIGN

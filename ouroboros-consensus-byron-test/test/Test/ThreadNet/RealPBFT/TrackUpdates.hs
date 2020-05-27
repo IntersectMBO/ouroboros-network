@@ -373,7 +373,7 @@ mkProtocolRealPBftAndHardForkTxs
   -> CoreNodeId
   -> Genesis.Config
   -> Genesis.GeneratedSecrets
-  -> TestNodeInitialization ByronBlock
+  -> TestNodeInitialization m ByronBlock
 mkProtocolRealPBftAndHardForkTxs params cid genesisConfig genesisSecrets =
     TestNodeInitialization
       { tniCrucialTxs   = proposals ++ votes
@@ -383,7 +383,7 @@ mkProtocolRealPBftAndHardForkTxs params cid genesisConfig genesisSecrets =
     ProtocolInfo{pInfoConfig}                    = pInfo
     TopLevelConfig{configBlock, configConsensus} = pInfoConfig
 
-    pInfo :: ProtocolInfo ByronBlock
+    pInfo :: ProtocolInfo m ByronBlock
     pInfo = mkProtocolRealPBFT params cid genesisConfig genesisSecrets
 
     proposals :: [Byron.GenTx ByronBlock]
@@ -434,7 +434,7 @@ mkHardForkProposal params genesisConfig genesisSecrets =
       propBody
       (Crypto.noPassSafeSigner opKey)
   where
-    pInfo :: ProtocolInfo ByronBlock
+    pInfo :: ProtocolInfo m ByronBlock
     pInfo = mkProtocolRealPBFT params (CoreNodeId 0) genesisConfig genesisSecrets
 
     ProtocolInfo{pInfoConfig}                    = pInfo

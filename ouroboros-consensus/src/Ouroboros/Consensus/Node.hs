@@ -115,7 +115,7 @@ data RunNodeArgs blk = RunNodeArgs {
     , rnDatabasePath :: FilePath
 
       -- | Protocol info
-    , rnProtocolInfo :: ProtocolInfo blk
+    , rnProtocolInfo :: ProtocolInfo IO blk
 
       -- | Customise the 'ChainDbArgs'
     , rnCustomiseChainDbArgs :: ChainDbArgs IO blk -> ChainDbArgs IO blk
@@ -194,7 +194,7 @@ run runargs@RunNodeArgs{..} =
                       mkNodeArgs
                         registry
                         cfg
-                        initForgeState
+                        maintainForgeState
                         rnTraceConsensus
                         btime
                         chainDB
@@ -216,9 +216,9 @@ run runargs@RunNodeArgs{..} =
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnNetworkMagic }
 
     ProtocolInfo
-      { pInfoConfig         = cfg
-      , pInfoInitLedger     = initLedger
-      , pInfoInitForgeState = initForgeState
+      { pInfoConfig             = cfg
+      , pInfoInitLedger         = initLedger
+      , pInfoMaintainForgeState = maintainForgeState
       } = rnProtocolInfo
 
     codecConfig :: CodecConfig blk
@@ -403,14 +403,14 @@ mkNodeArgs
   :: forall blk. RunNode blk
   => ResourceRegistry IO
   -> TopLevelConfig blk
-  -> ForgeState blk
+  -> MaintainForgeState IO blk
   -> Tracers IO RemoteConnectionId LocalConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
   -> IO (NodeArgs IO RemoteConnectionId LocalConnectionId blk)
-mkNodeArgs registry cfg initForgeState tracers btime chainDB = do
+mkNodeArgs registry cfg maintainForgeState tracers btime chainDB = do
     blockProduction <- if checkIfCanBeLeader (configConsensus cfg)
-                         then Just <$> blockProductionIO cfg initForgeState
+                         then Just <$> blockProductionIO cfg maintainForgeState
                          else return Nothing
     return NodeArgs
       { tracers

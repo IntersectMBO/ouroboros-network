@@ -1,3 +1,4 @@
+
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -46,6 +47,7 @@ import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
                      SlotNo (..))
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
@@ -128,7 +130,7 @@ protocolInfoByron :: Genesis.Config
                   -> Update.ProtocolVersion
                   -> Update.SoftwareVersion
                   -> Maybe PBftLeaderCredentials
-                  -> ProtocolInfo ByronBlock
+                  -> ProtocolInfo m ByronBlock
 protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
@@ -145,7 +147,7 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
             ledgerState = initByronLedgerState genesisConfig Nothing
           , headerState = genesisHeaderState S.empty
           }
-      , pInfoInitForgeState  = ()
+      , pInfoMaintainForgeState = defaultMaintainForgeState
       }
   where
     byronConfig = mkByronConfig genesisConfig pVer sVer

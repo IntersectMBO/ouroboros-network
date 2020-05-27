@@ -137,26 +137,26 @@ data ForgeEbbEnv blk = ForgeEbbEnv
 -- will restart and use 'tnaRekeyM' to compute its new 'ProtocolInfo'.
 type RekeyM m blk =
      CoreNodeId
-  -> ProtocolInfo blk
+  -> ProtocolInfo m blk
   -> SlotNo
      -- ^ The slot in which the node is rekeying
   -> (SlotNo -> m EpochNo)
      -- ^ Which epoch the slot is in
-  -> m (TestNodeInitialization blk)
+  -> m (TestNodeInitialization m blk)
      -- ^ 'tniProtocolInfo' should include new delegation cert/operational key,
      -- and 'tniCrucialTxs' should include the new delegation certificate
      -- transaction
 
 -- | Data used when starting/restarting a node
-data TestNodeInitialization blk = TestNodeInitialization
+data TestNodeInitialization m blk = TestNodeInitialization
   { tniCrucialTxs   :: [GenTx blk]
     -- ^ these transactions are added immediately and repeatedly (whenever the
     -- 'ledgerTipSlot' changes)
-  , tniProtocolInfo :: ProtocolInfo blk
+  , tniProtocolInfo :: ProtocolInfo m blk
   }
 
 plainTestNodeInitialization
-  :: ProtocolInfo blk -> TestNodeInitialization blk
+  :: ProtocolInfo m blk -> TestNodeInitialization m blk
 plainTestNodeInitialization pInfo = TestNodeInitialization
     { tniCrucialTxs   = []
     , tniProtocolInfo = pInfo
@@ -167,7 +167,7 @@ plainTestNodeInitialization pInfo = TestNodeInitialization
 data ThreadNetworkArgs m blk = ThreadNetworkArgs
   { tnaForgeEbbEnv  :: Maybe (ForgeEbbEnv blk)
   , tnaJoinPlan     :: NodeJoinPlan
-  , tnaNodeInfo     :: CoreNodeId -> TestNodeInitialization blk
+  , tnaNodeInfo     :: CoreNodeId -> TestNodeInitialization m blk
   , tnaNumCoreNodes :: NumCoreNodes
   , tnaNumSlots     :: NumSlots
   , tnaRNG          :: ChaChaDRG
@@ -430,7 +430,7 @@ runThreadNetwork ThreadNetworkArgs
           where
             NodeRestarts m = nodeRestarts
 
-        loop :: SlotNo -> ProtocolInfo blk -> NodeRestart -> Map SlotNo NodeRestart -> m ()
+        loop :: SlotNo -> ProtocolInfo m blk -> NodeRestart -> Map SlotNo NodeRestart -> m ()
         loop s pInfo nr rs = do
           -- a registry solely for the resources of this specific node instance
           (again, finalChain, finalLdgr) <- withRegistry $ \nodeRegistry -> do
@@ -642,7 +642,7 @@ runThreadNetwork ThreadNetworkArgs
       -> StrictTVar m ChaChaDRG
       -> WrappedClock m
       -> ResourceRegistry m
-      -> ProtocolInfo blk
+      -> ProtocolInfo m blk
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
@@ -672,7 +672,7 @@ runThreadNetwork ThreadNetworkArgs
       chainDB <- snd <$>
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
 
-      blockProduction <- blockProductionIOLike pInfoConfig pInfoInitForgeState varRNG $
+      blockProduction <- blockProductionIOLike pInfoConfig pInfoMaintainForgeState varRNG $
          \upd currentBno tickedLdgSt txs prf -> do
             let currentSlot = tickedSlotNo tickedLdgSt
 
