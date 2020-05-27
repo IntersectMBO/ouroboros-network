@@ -45,14 +45,15 @@ with (import pkgs.iohkNix.release-lib) {
 with pkgs.lib;
 
 let
-  testsSupportedSystems = [ "x86_64-linux" "x86_64-darwin" ];
-  # Recurse through an attrset, returning all test derivations in a list.
-  collectTests' = ds: filter (d: elem d.system testsSupportedSystems) (collect isDerivation ds);
-  # Adds the package name to the test derivations for windows-testing-bundle.nix
+  # restrict supported systems to a subset where tests (if exist) are required to pass:
+  testsSupportedSystems = intersectLists supportedSystems [ "x86_64-linux" "x86_64-darwin" ];
+  # Recurse through an attrset, returning all derivations in a list matching test supported systems.
+  collectJobs' = ds: filter (d: elem d.system testsSupportedSystems) (collect isDerivation ds);
+  # Adds the package name to the derivations for windows-testing-bundle.nix
   # (passthru.identifier.name does not survive mapTestOn)
-  collectTests = ds: concatLists (
+  collectJobs = ds: concatLists (
     mapAttrsToList (packageName: package:
-      map (drv: drv // { inherit packageName; }) (collectTests' package)
+      map (drv: drv // { inherit packageName; }) (collectJobs' package)
     ) ds);
 
   disabledMingwW64Tests = recursiveUpdate (if withProblematicWindowsTests then {} else {
@@ -79,15 +80,16 @@ let
     # TODO: fix broken evals
     #musl64 = mapTestOnCross musl64 (packagePlatformsCross project);
   } // (mkRequiredJob (concatLists [
-    (collectTests jobs.x86_64-w64-mingw32.checks.tests)
-    (collectTests jobs.native.checks)
-    (collectTests jobs.native.benchmarks)
+    (collectJobs jobs.x86_64-w64-mingw32.checks.tests)
+    (collectJobs jobs.native.checks)
+    (collectJobs jobs.native.benchmarks)
+    (collectJobs jobs.native.haskellPackages.cardano-client)
   ])) // {
     # This is used for testing the build on windows.
     ouroboros-network-tests-win64 = pkgs.callPackage ./nix/windows-testing-bundle.nix {
       inherit project;
-      tests = collectTests jobs.x86_64-w64-mingw32.tests;
-      benchmarks = collectTests jobs.x86_64-w64-mingw32.benchmarks;
+      tests = collectJobs jobs.x86_64-w64-mingw32.tests;
+      benchmarks = collectJobs jobs.x86_64-w64-mingw32.benchmarks;
     };
   };
 
