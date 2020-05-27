@@ -12,6 +12,7 @@
 
 # Function arguments to pass to the project
 , projectArgs ? {
+    inherit sourcesOverride;
     config = { allowUnfree = false; inHydra = true; };
     gitrev = ouroboros-network.rev;
   }
@@ -80,16 +81,17 @@ let
     # TODO: fix broken evals
     #musl64 = mapTestOnCross musl64 (packagePlatformsCross project);
   } // (mkRequiredJob (concatLists [
-    (collectJobs jobs.x86_64-w64-mingw32.checks.tests)
+    (collectJobs jobs."${mingwW64.config}".checks.tests)
     (collectJobs jobs.native.checks)
     (collectJobs jobs.native.benchmarks)
-    (collectJobs jobs.native.haskellPackages.cardano-client)
+    (collectJobs jobs.native.libs)
+    (collectJobs jobs.native.exes)
   ])) // {
     # This is used for testing the build on windows.
     ouroboros-network-tests-win64 = pkgs.callPackage ./nix/windows-testing-bundle.nix {
       inherit project;
-      tests = collectJobs jobs.x86_64-w64-mingw32.tests;
-      benchmarks = collectJobs jobs.x86_64-w64-mingw32.benchmarks;
+      tests = collectJobs jobs."${mingwW64.config}".tests;
+      benchmarks = collectJobs jobs."${mingwW64.config}".benchmarks;
     };
   };
 

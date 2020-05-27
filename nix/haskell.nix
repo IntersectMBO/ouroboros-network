@@ -14,11 +14,19 @@
 }:
 let
 
+  src = haskell-nix.haskellLib.cleanGit {
+      name = "ouroboros-network-src";
+      src = ../.;
+  };
+
+  projectPackages = lib.attrNames (haskell-nix.haskellLib.selectProjectPackages
+    (haskell-nix.cabalProject { inherit src; }));
+
   # This creates the Haskell package set.
   # https://input-output-hk.github.io/haskell.nix/user-guide/projects/
   pkgSet = haskell-nix.cabalProject {
-    src = haskell-nix.haskellLib.cleanGit { src = ../.; };
-    ghc = buildPackages.haskell-nix.compiler.${compiler};
+    inherit src;
+    compiler-nix-name = compiler;
     modules = [
 
       # Allow reinstallation of Win32
@@ -37,28 +45,13 @@ let
           # "stm" "terminfo"
         ];
       }
+      # Compile all local packages with -Werror:
+      {
+        packages = lib.genAttrs projectPackages
+          (name: { configureFlags = [ "--ghc-option=-Werror" ]; });
+      }
       {
         packages.katip.components.library.doExactConfig = true;
-        packages.typed-protocols.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.typed-protocols-examples.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.io-sim.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.io-sim-classes.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.job-pool.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.Win32-network.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.network-mux.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.ntp-client.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.ouroboros-network-framework.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.ouroboros-network.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.ouroboros-consensus.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.ouroboros-consensus-byron.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.ouroboros-consensus-byron-test.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.ouroboros-consensus-byronspec.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.ouroboros-consensus-cardano.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.ouroboros-consensus-mock.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.ouroboros-consensus-shelley.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.ouroboros-consensus-shelley-test.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.ouroboros-consensus-test-infra.configureFlags = [ "--ghc-option=-Werror" ];
-        packages.cardano-client.configureFlags = [ "--ghc-option=-Werror" ];
         packages.prometheus.components.library.doExactConfig = true;
         enableLibraryProfiling = profiling;
       }
