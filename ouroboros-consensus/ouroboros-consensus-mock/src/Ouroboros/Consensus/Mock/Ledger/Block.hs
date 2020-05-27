@@ -343,7 +343,9 @@ instance MockProtocolSpecific c ext
   applyTx   = const updateSimpleUTxO
   reapplyTx = const updateSimpleUTxO
 
-  maxTxCapacity = const 2000000
+  -- Large value so that the Mempool tests never run out of capacity when they
+  -- don't override it.
+  maxTxCapacity = const 1000000000
   maxTxSize     = const 2000000
   txInBlockSize = txSize
 

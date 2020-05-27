@@ -1,11 +1,12 @@
-{-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE OverloadedStrings       #-}
-{-# LANGUAGE RankNTypes              #-}
-{-# LANGUAGE ScopedTypeVariables     #-}
-{-# LANGUAGE StandaloneDeriving      #-}
-{-# LANGUAGE TypeFamilies            #-}
-{-# LANGUAGE UndecidableInstances    #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE UndecidableSuperClasses    #-}
 
 module Ouroboros.Consensus.Mempool.API (
     Mempool(..)
@@ -153,6 +154,17 @@ data Mempool m blk idx = Mempool {
     , getSnapshotFor :: ForgeLedgerState blk -> STM m (MempoolSnapshot blk idx)
 
       -- | Get the mempool's capacity in bytes.
+      --
+      -- Note that the capacity of the Mempool, unless it is overridden with
+      -- 'MempoolCapacityBytesOverride', can dynamically change when the
+      -- ledger state is updated: it will be set to twice the current ledger's
+      -- maximum transaction capacity of a block.
+      --
+      -- When the capacity happens to shrink at some point, we /do not/ remove
+      -- transactions from the Mempool to satisfy this new lower limit.
+      -- Instead, we treat it the same way as a Mempool which is /at/
+      -- capacity, i.e., we won't admit new transactions until some have been
+      -- removed because they have become invalid.
     , getCapacity    :: STM m MempoolCapacityBytes
 
       -- | Return the post-serialisation size in bytes of a 'GenTx'.
@@ -250,8 +262,10 @@ data ForgeLedgerState blk =
 
 -- | Represents the maximum number of bytes worth of transactions that a
 -- 'Mempool' can contain.
-newtype MempoolCapacityBytes = MempoolCapacityBytes Word32
-  deriving (Eq, Show)
+newtype MempoolCapacityBytes = MempoolCapacityBytes {
+      getMempoolCapacityBytes :: Word32
+    }
+  deriving (Eq, Show, NoUnexpectedThunks)
 
 -- | A pure snapshot of the contents of the mempool. It allows fetching
 -- information about transactions in the mempool, and fetching individual

@@ -762,17 +762,17 @@ runThreadNetwork ThreadNetworkArgs
       let nodeArgs = NodeArgs
             { tracers
             , registry
-            , cfg                    = pInfoConfig
-            , initForgeState         = pInfoInitForgeState
+            , cfg                     = pInfoConfig
+            , initForgeState          = pInfoInitForgeState
             , btime
             , chainDB
-            , initChainDB            = nodeInitChainDB
-            , blockProduction        = Just blockProduction
-            , blockFetchSize         = nodeBlockFetchSize
-            , blockMatchesHeader     = nodeBlockMatchesHeader
-            , maxTxCapacityOverride  = NoMaxTxCapacityOverride
-            , mempoolCap             = NoMempoolCapacityBytesOverride
-            , miniProtocolParameters = MiniProtocolParameters {
+            , initChainDB             = nodeInitChainDB
+            , blockProduction         = Just blockProduction
+            , blockFetchSize          = nodeBlockFetchSize
+            , blockMatchesHeader      = nodeBlockMatchesHeader
+            , maxTxCapacityOverride   = NoMaxTxCapacityOverride
+            , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
+            , miniProtocolParameters  = MiniProtocolParameters {
                   chainSyncPipeliningHighMark = 4,
                   chainSyncPipeliningLowMark  = 2,
                   blockFetchPipeliningMax     = 10,

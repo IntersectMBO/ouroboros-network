@@ -416,13 +416,13 @@ mkNodeArgs registry cfg initForgeState tracers btime chainDB = NodeArgs
     , initForgeState
     , btime
     , chainDB
-    , initChainDB            = nodeInitChainDB
+    , initChainDB             = nodeInitChainDB
     , blockProduction
-    , blockFetchSize         = nodeBlockFetchSize
-    , blockMatchesHeader     = nodeBlockMatchesHeader
-    , maxTxCapacityOverride  = NoMaxTxCapacityOverride
-    , mempoolCap             = NoMempoolCapacityBytesOverride
-    , miniProtocolParameters = defaultMiniProtocolParameters
+    , blockFetchSize          = nodeBlockFetchSize
+    , blockMatchesHeader      = nodeBlockMatchesHeader
+    , maxTxCapacityOverride   = NoMaxTxCapacityOverride
+    , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
+    , miniProtocolParameters  = defaultMiniProtocolParameters
     }
   where
     blockProduction
