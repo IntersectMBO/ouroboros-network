@@ -62,11 +62,12 @@ instance CanHardFork xs => LedgerSupportsMempool (HardForkBlock xs) where
   applyTx   = applyHelper applyTx
   reapplyTx = applyHelper reapplyTx
 
-  maxTxCapacity =
+  maxTxCapacity (Ticked slot st) =
       hcollapse
-    . hcmap proxySingle (K . maxTxCapacity)
+    . hcmap proxySingle (K . maxTxCapacity . Ticked slot)
     . State.tip
     . getHardForkLedgerState
+    $ st
 
   maxTxSize =
       hcollapse

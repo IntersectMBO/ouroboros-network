@@ -57,7 +57,7 @@ class ( UpdateLedger blk
   --
   -- This is (conservatively) computed by subtracting the header size and any
   -- other fixed overheads from the maximum block size.
-  maxTxCapacity :: LedgerState blk -> Word32
+  maxTxCapacity :: TickedLedgerState blk -> Word32
 
   -- | The maximum transaction size in bytes according to the currently
   -- adopted protocol parameters of the ledger state.

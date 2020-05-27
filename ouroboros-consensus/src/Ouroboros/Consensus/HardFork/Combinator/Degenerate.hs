@@ -212,8 +212,10 @@ instance SingleEraBlock b => LedgerSupportsMempool (DegenFork b) where
   reapplyTx cfg (DTx tx) (Ticked slot (DLgr lgr)) =
     fmap DLgr <$> reapplyTx cfg tx (Ticked slot lgr)
 
-  maxTxCapacity (DLgr lgr) = maxTxCapacity (projLedgerState lgr)
-  maxTxSize     (DLgr lgr) = maxTxSize     (projLedgerState lgr)
+  maxTxCapacity (Ticked slot (DLgr lgr)) =
+    maxTxCapacity (Ticked slot (projLedgerState lgr))
+
+  maxTxSize (DLgr lgr) = maxTxSize (projLedgerState lgr)
 
   txInBlockSize (DTx tx) = txInBlockSize (projGenTx tx)
 

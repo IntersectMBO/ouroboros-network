@@ -267,7 +267,7 @@ computeMempoolCapacity st = \case
     NoMempoolCapacityBytesOverride        -> noOverride
     MempoolCapacityBytesOverride override -> override
   where
-    noOverride = MempoolCapacityBytes (maxTxCapacity (tickedLedgerState st) * 2)
+    noOverride = MempoolCapacityBytes (maxTxCapacity st * 2)
 
 -- | Spawn a thread which syncs the 'Mempool' state whenever the 'LedgerState'
 -- changes.

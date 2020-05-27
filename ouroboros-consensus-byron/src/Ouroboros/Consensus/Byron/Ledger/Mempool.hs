@@ -110,7 +110,7 @@ instance LedgerSupportsMempool ByronBlock where
     where
       validationMode = CC.ValidationMode CC.NoBlockValidation Utxo.TxValidationNoCrypto
 
-  maxTxCapacity st =
+  maxTxCapacity (Ticked _ st) =
     CC.getMaxBlockSize (byronLedgerState st) - byronBlockEncodingOverhead
 
   -- TODO cardano-ledger should expose API.getMaxTxSize

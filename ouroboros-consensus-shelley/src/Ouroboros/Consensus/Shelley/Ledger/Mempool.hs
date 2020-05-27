@@ -64,7 +64,7 @@ instance TPraosCrypto c => LedgerSupportsMempool (ShelleyBlock c) where
   -- https://github.com/input-output-hk/cardano-ledger-specs/issues/1304
   reapplyTx = applyShelleyTx
 
-  maxTxCapacity (ShelleyLedgerState _ _ shelleyState) =
+  maxTxCapacity (Ticked _ (ShelleyLedgerState _ _ shelleyState)) =
       fromIntegral maxBlockBodySize
     where
       SL.PParams { _maxBBSize = maxBlockBodySize } = getPParams shelleyState

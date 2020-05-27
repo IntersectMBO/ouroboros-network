@@ -432,7 +432,7 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
                                (ForgeInKnownSlot ticked)
         let txs = map fst $ snapshotTxsForSize
                               mempoolSnapshot
-                              (computeMaxTxCapacity (tickedLedgerState ticked))
+                              (computeMaxTxCapacity ticked)
 
         -- Actually produce the block
         newBlock <- lift $ runMonadRandom $ \lift' ->
@@ -487,7 +487,7 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
     -- it. This is important because any blocks exceeding the max block size
     -- are invalid according to the ledger and we want certainly don't want to
     -- forge invalid blocks.
-    computeMaxTxCapacity :: LedgerState blk -> Word32
+    computeMaxTxCapacity :: TickedLedgerState blk -> Word32
     computeMaxTxCapacity ledger = case maxTxCapacityOverride of
           NoMaxTxCapacityOverride     -> noOverride
           MaxTxCapacityOverride txCap -> noOverride `min` txCap

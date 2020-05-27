@@ -501,7 +501,9 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
                                     dualLedgerStateBridge
         }
 
-  maxTxCapacity = maxTxCapacity . dualLedgerStateMain
+  maxTxCapacity (Ticked slot DualLedgerState{..}) =
+      maxTxCapacity (Ticked slot dualLedgerStateMain)
+
   maxTxSize     = maxTxSize     . dualLedgerStateMain
   txInBlockSize = txInBlockSize . dualGenTxMain
 
