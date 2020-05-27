@@ -41,6 +41,7 @@ subscribe ::
   -> ClientSubscriptionParams ()
   -> (NodeToClientVersion blk
       -> ClientCodecs blk m
+      -> ConnectionId LocalAddress
       -> NodeToClientProtocols 'InitiatorApp BSL.ByteString IO x y)
   -> IO Void
 subscribe
@@ -64,12 +65,12 @@ versionedProtocols ::
   -> TopLevelConfig blk
   -> (NodeToClientVersion blk
       -> ClientCodecs blk m
+      -> ConnectionId LocalAddress
       -> NodeToClientProtocols appType bytes IO a b)
   -> Versions
        Ouroboros.Network.NodeToClient.NodeToClientVersion
        DictVersion
-       (ConnectionId LocalAddress
-          -> OuroborosApplication appType bytes IO a b)
+       (OuroborosApplication appType LocalAddress bytes IO a b)
 versionedProtocols blkProxy topLevelConfig p
   = foldMapVersions applyVersion $ supportedNodeToClientVersions blkProxy
   where
