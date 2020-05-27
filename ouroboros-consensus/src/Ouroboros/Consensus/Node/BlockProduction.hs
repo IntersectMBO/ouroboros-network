@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Node.BlockProduction (
   ) where
 
 import           Control.Monad.Trans (lift)
+import           Control.Tracer (Tracer, natTracer)
 
 import           Ouroboros.Network.Block
 
@@ -15,6 +16,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Random
@@ -22,7 +24,8 @@ import           Ouroboros.Consensus.Util.Random
 -- | Stateful wrapper around block production
 data BlockProduction m blk = BlockProduction {
       -- | Check if we should produce a block
-      getLeaderProof :: Ticked (LedgerView (BlockProtocol blk))
+      getLeaderProof :: Tracer m (TraceForgeEvent blk (GenTx blk))
+                     -> Ticked (LedgerView (BlockProtocol blk))
                      -> ConsensusState     (BlockProtocol blk)
                      -> m (Maybe (IsLeader (BlockProtocol blk)))
 
@@ -37,7 +40,8 @@ data BlockProduction m blk = BlockProduction {
       -- Note that this function is not run in @m@, but in some monad @n@
       -- which only has the ability to produce random number and access to the
       -- 'ForgeState'.
-    , produceBlock :: BlockNo               -- Current block number
+    , produceBlock :: Tracer m (TraceForgeEvent blk (GenTx blk))
+                   -> BlockNo               -- Current block number
                    -> TickedLedgerState blk -- Current ledger state
                    -> [GenTx blk]           -- Contents of the mempool
                    -> IsLeader (BlockProtocol blk) -- Proof we are leader
@@ -52,7 +56,7 @@ blockProductionIO cfg initForgeState = do
     varForgeState <- newTVarM initForgeState
     return $ BlockProduction {
         getLeaderProof = defaultGetLeaderProof cfg
-      , produceBlock   = forgeBlock cfg (updateFromTVar varForgeState)
+      , produceBlock   = \_tracer -> forgeBlock cfg (updateFromTVar varForgeState)
       }
 
 -- | Block production in 'IOLike'
@@ -73,10 +77,10 @@ blockProductionIOLike :: (IOLike m, BlockSupportsProtocol blk, CanForge blk)
 blockProductionIOLike cfg initForgeState varRNG forge = do
     varForgeState <- newTVarM initForgeState
     return $ BlockProduction {
-        getLeaderProof = \ledgerState consensusState ->
+        getLeaderProof = \tracer ledgerState consensusState ->
           simMonadRandom varRNG $
-            defaultGetLeaderProof cfg ledgerState consensusState
-      , produceBlock   = \bno st txs proof ->
+            defaultGetLeaderProof cfg (natTracer lift tracer) ledgerState consensusState
+      , produceBlock   = \_tracer bno st txs proof ->
           simMonadRandom varRNG $
             forge (hoistUpdate lift $ updateFromTVar varForgeState) bno st txs proof
       }
@@ -89,7 +93,8 @@ defaultGetLeaderProof :: ( MonadRandom m
                          , ConsensusProtocol (BlockProtocol blk)
                          )
                       => TopLevelConfig blk
+                      -> Tracer m (TraceForgeEvent blk (GenTx blk))
                       -> Ticked (LedgerView (BlockProtocol blk))
                       -> ConsensusState     (BlockProtocol blk)
                       -> m (Maybe (IsLeader (BlockProtocol blk)))
-defaultGetLeaderProof cfg = checkIsLeader (configConsensus cfg)
+defaultGetLeaderProof cfg _tracer = checkIsLeader (configConsensus cfg)

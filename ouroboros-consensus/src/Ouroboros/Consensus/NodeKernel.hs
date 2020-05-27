@@ -363,6 +363,7 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
         proof <- do
           mIsLeader <- lift $
             getLeaderProof
+              (forgeTracer tracers)
               (protocolLedgerView (configLedger cfg) <$> ticked)
               (headerStateConsensus (headerState extLedger))
           case mIsLeader of
@@ -392,6 +393,7 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
         -- Actually produce the block
         newBlock <- lift $
           produceBlock
+            (forgeTracer tracers)
             bcBlockNo
             ticked
             txs
