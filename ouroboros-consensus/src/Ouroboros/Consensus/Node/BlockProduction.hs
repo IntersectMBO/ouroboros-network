@@ -2,7 +2,8 @@
 
 module Ouroboros.Consensus.Node.BlockProduction (
     BlockProduction(..)
-  , defaultBlockProduction
+  , blockProductionIO
+  , blockProductionIOLike
   ) where
 
 import           Ouroboros.Network.Block
@@ -12,6 +13,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Random
 
 -- | Stateful wrapper around block production
@@ -51,10 +53,20 @@ data BlockProduction m blk = BlockProduction {
     , runMonadRandomDict :: RunMonadRandom m
     }
 
-defaultBlockProduction :: CanForge blk
-                       => TopLevelConfig blk -> IO (BlockProduction IO blk)
-defaultBlockProduction cfg = do
+blockProductionIO :: CanForge blk
+                  => TopLevelConfig blk -> IO (BlockProduction IO blk)
+blockProductionIO cfg = do
     return $ BlockProduction {
         produceBlock       = \_lift' -> forgeBlock cfg
       , runMonadRandomDict = runMonadRandomIO
+      }
+
+blockProductionIOLike :: (IOLike m, CanForge blk)
+                      => TopLevelConfig blk
+                      -> RunMonadRandom m
+                      -> m (BlockProduction m blk)
+blockProductionIOLike cfg simRnd = do
+    return $ BlockProduction {
+        produceBlock       = \_lift' -> forgeBlock cfg
+      , runMonadRandomDict = simRnd
       }
