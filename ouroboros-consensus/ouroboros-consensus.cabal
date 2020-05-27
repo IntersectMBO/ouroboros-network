@@ -104,6 +104,7 @@ library
                        Ouroboros.Consensus.Node.Exit
                        Ouroboros.Consensus.NodeId
                        Ouroboros.Consensus.NodeKernel
+                       Ouroboros.Consensus.Node.BlockProduction
                        Ouroboros.Consensus.Node.NetworkProtocolVersion
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.Recovery

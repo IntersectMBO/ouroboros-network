@@ -60,6 +60,7 @@ import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
+import           Ouroboros.Consensus.Node.BlockProduction
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
@@ -72,7 +73,6 @@ import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
@@ -427,9 +427,6 @@ mkNodeArgs registry cfg initForgeState tracers btime chainDB = NodeArgs
   where
     blockProduction
       | checkIfCanBeLeader (configConsensus cfg)
-      = Just BlockProduction
-               { produceBlock       = \_lift' -> forgeBlock cfg
-               , runMonadRandomDict = runMonadRandomIO
-               }
+      = Just $ defaultBlockProduction cfg
       | otherwise
       = Nothing
