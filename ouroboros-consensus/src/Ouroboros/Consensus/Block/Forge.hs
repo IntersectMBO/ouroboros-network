@@ -1,7 +1,8 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE KindSignatures   #-}
-{-# LANGUAGE RankNTypes       #-}
-{-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Consensus.Block.Forge (
     CanForge (..)
@@ -15,14 +16,17 @@ module Ouroboros.Consensus.Block.Forge (
   , liftUpdate
   , hoistUpdate
   , coerceUpdate
+  , traceUpdate
   ) where
 
+import           Control.Tracer (Tracer, traceWith)
 import           Crypto.Random (MonadRandom)
 import           Data.Bifunctor (first)
 import           Data.Coerce
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Block
+import           Cardano.Slotting.Slot
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
@@ -35,7 +39,9 @@ import           Ouroboros.Consensus.Util.IOLike
   CanForge
 -------------------------------------------------------------------------------}
 
-class NoUnexpectedThunks (ForgeState blk) => CanForge blk where
+class ( NoUnexpectedThunks (ForgeState blk)
+      , Show (ForgeState blk)
+      ) => CanForge blk where
 
   -- | (Chain-independent) state required to forge blocks
   type ForgeState blk :: *
@@ -44,10 +50,13 @@ class NoUnexpectedThunks (ForgeState blk) => CanForge blk where
   type ForgeState blk = ()
 
   -- | Forge a new block
+  --
+  -- TODO: This should be a pure function
+  -- <https://github.com/input-output-hk/ouroboros-network/issues/2058>
   forgeBlock
     :: MonadRandom m
     => TopLevelConfig blk
-    -> Update m (ForgeState blk)
+    -> ForgeState blk
     -> BlockNo                -- ^ Current block number
     -> TickedLedgerState blk  -- ^ Current ledger
     -> [GenTx blk]            -- ^ Txs to add in the block
@@ -59,18 +68,34 @@ class NoUnexpectedThunks (ForgeState blk) => CanForge blk where
 -------------------------------------------------------------------------------}
 
 data MaintainForgeState (m :: * -> *) blk = MaintainForgeState {
-      initForgeState :: ForgeState blk
+      -- | Initial forge state
+      initForgeState   :: ForgeState blk
+
+      -- | Update the forge state
+      --
+      -- This function is the reason that 'MaintainForgeState' is a record:
+      -- this function may have all kinds of things in its closure; for example,
+      -- we might need access to some external hardware crypto hardware
+      -- device.
+    , updateForgeState :: Update m (ForgeState blk)
+                       -- ^ Lens into the node's state
+                       -> SlotNo
+                       -- ^ Current slot
+                       -> m ()
     }
 
-defaultMaintainForgeState :: ForgeState blk ~ () => MaintainForgeState m blk
+defaultMaintainForgeState :: (Monad m, ForgeState blk ~ ())
+                          => MaintainForgeState m blk
 defaultMaintainForgeState = MaintainForgeState {
-      initForgeState = ()
+      initForgeState   = ()
+    , updateForgeState = \_ _ -> return ()
     }
 
 castMaintainForgeState :: ForgeState blk ~ ForgeState blk'
                        => MaintainForgeState m blk -> MaintainForgeState m blk'
 castMaintainForgeState maintainForgeState = MaintainForgeState {
-      initForgeState = initForgeState maintainForgeState
+      initForgeState   = initForgeState   maintainForgeState
+    , updateForgeState = updateForgeState maintainForgeState
     }
 
 {-------------------------------------------------------------------------------
@@ -107,3 +132,12 @@ liftUpdate get set (Update update) = Update $ \f ->
 
 coerceUpdate :: Coercible a b => Update m a -> Update m b
 coerceUpdate = liftUpdate coerce (\new _old -> coerce new)
+
+traceUpdate :: forall m a. Monad m => Tracer m a -> Update m a -> Update m a
+traceUpdate tracer upd = Update $ \(f :: a -> Maybe (a, b)) -> do
+    -- Wrap @f'@ so that we get the new value of the state back
+    let f' :: a -> Maybe (a, (a, b))
+        f' = fmap (\(a', b) -> (a', (a', b))) . f
+    (a', b) <- runUpdate upd f'
+    traceWith tracer a'
+    return b

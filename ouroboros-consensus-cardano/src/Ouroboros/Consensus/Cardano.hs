@@ -1,7 +1,8 @@
-{-# LANGUAGE DataKinds      #-}
-{-# LANGUAGE GADTs          #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE TypeOperators  #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Consensus.Cardano (
     -- * The block type of the Cardano block chain
@@ -30,6 +31,7 @@ module Ouroboros.Consensus.Cardano (
   , verifyProtocolClient
   ) where
 
+import           Crypto.Random (MonadRandom)
 import           Data.Type.Equality
 
 import qualified Cardano.Chain.Genesis as Genesis
@@ -164,7 +166,8 @@ verifyProtocol ProtocolCardano{}        = Refl
 -------------------------------------------------------------------------------}
 
 -- | Data required to run the selected protocol
-protocolInfo :: Protocol m blk p -> ProtocolInfo m blk
+protocolInfo :: forall m blk p. MonadRandom m
+             => Protocol m blk p -> ProtocolInfo m blk
 protocolInfo (ProtocolMockBFT nodes nid k paramsEra) =
     protocolInfoBft nodes nid k paramsEra
 

@@ -23,7 +23,8 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 
 type MockPBftBlock = SimplePBftBlock SimpleMockCrypto PBftMockCrypto
 
-protocolInfoMockPBFT :: PBftParams
+protocolInfoMockPBFT :: Monad m
+                     => PBftParams
                      -> HardFork.EraParams
                      -> CoreNodeId
                      -> ProtocolInfo m MockPBftBlock

@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Mock.Protocol.Praos (
   , PraosParams(..)
   , PraosForgeState(..)
   , forgePraosFields
+  , evolveKey
     -- * Tags
   , PraosCrypto(..)
   , PraosStandardCrypto
@@ -41,7 +42,6 @@ import           Codec.Serialise (Serialise (..))
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
 import           Control.Monad.Identity (runIdentity)
-import           Crypto.Random (MonadRandom)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
@@ -120,57 +120,53 @@ praosValidateView getFields hdr =
 -------------------------------------------------------------------------------}
 
 data PraosForgeState c =
-    -- | The KES key is available
-    PraosKeyAvailable !(SignKeyKES (PraosKES c))
-
-    -- | The KES key is being evolved by another thread
-    --
-    -- Any thread that sees this value should back off and retry.
-  | PraosKeyEvolving
+    -- | The KES key
+    PraosKey !(SignKeyKES (PraosKES c))
   deriving (Generic)
+
+deriving instance PraosCrypto c => Show (PraosForgeState c)
 
 -- We override 'showTypeOf' to make sure to show @c@
 instance PraosCrypto c => NoUnexpectedThunks (PraosForgeState c) where
   showTypeOf _ = show $ typeRep (Proxy @(PraosForgeState c))
 
-forgePraosFields :: ( MonadRandom m
+evolveKey :: PraosCrypto c => Update m (PraosForgeState c) -> SlotNo -> m ()
+evolveKey upd slotNo = runUpdate upd $ \(PraosKey oldKey) ->
+    let newKey = fromMaybe (error "mkOutoborosPayload: updateKES failed") $
+                 updateKES () oldKey kesPeriod
+    in Just (PraosKey newKey, ())
+  where
+   kesPeriod :: Period
+   kesPeriod = fromIntegral $ unSlotNo slotNo
+
+forgePraosFields :: ( Monad m
                     , PraosCrypto c
                     , Cardano.Crypto.KES.Class.Signable (PraosKES c) toSign
                     )
                  => ConsensusConfig (Praos c)
-                 -> Update m (PraosForgeState c)
+                 -> PraosForgeState c
                  -> PraosProof c
                  -> (PraosExtraFields c -> toSign)
                  -> m (PraosFields c toSign)
-forgePraosFields PraosConfig{..} updateState PraosProof{..} mkToSign = do
-    -- For the mock implementation, we consider the KES period to be the slot.
-    -- In reality, there will be some kind of constant slotsPerPeriod factor.
-    -- (Put another way, we consider slotsPerPeriod to be 1 here.)
-    let kesPeriod :: Period
-        kesPeriod = fromIntegral $ unSlotNo praosProofSlot
-
-    oldKey <- runUpdate updateState $ \case
-      PraosKeyEvolving ->
-        -- Another thread is currently evolving the key; wait
-        Nothing
-      PraosKeyAvailable oldKey ->
-        return (PraosKeyEvolving, oldKey)
-
-    -- Evolve the key
-    let newKey = fromMaybe (error "mkOutoborosPayload: updateKES failed") $
-                 updateKES () oldKey kesPeriod
-    runUpdate updateState $ \_ -> return (PraosKeyAvailable newKey, ())
-
-    let signedFields = PraosExtraFields {
-          praosCreator = praosLeader
-        , praosRho     = praosProofRho
-        , praosY       = praosProofY
-        }
-        signature = signedKES () kesPeriod (mkToSign signedFields) newKey
+forgePraosFields PraosConfig{..} (PraosKey key) PraosProof{..} mkToSign = do
     return $ PraosFields {
         praosSignature   = signature
       , praosExtraFields = signedFields
       }
+  where
+    signedFields = PraosExtraFields {
+        praosCreator = praosLeader
+      , praosRho     = praosProofRho
+      , praosY       = praosProofY
+      }
+
+    signature = signedKES () kesPeriod (mkToSign signedFields) key
+
+    -- For the mock implementation, we consider the KES period to be the slot.
+    -- In reality, there will be some kind of constant slotsPerPeriod factor.
+    -- (Put another way, we consider slotsPerPeriod to be 1 here.)
+    kesPeriod :: Period
+    kesPeriod = fromIntegral $ unSlotNo praosProofSlot
 
 {-------------------------------------------------------------------------------
   Praos specific types

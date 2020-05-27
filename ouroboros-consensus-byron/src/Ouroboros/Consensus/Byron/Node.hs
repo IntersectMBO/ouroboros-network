@@ -125,7 +125,8 @@ newtype PBftSignatureThreshold =
 defaultPBftSignatureThreshold :: PBftSignatureThreshold
 defaultPBftSignatureThreshold = PBftSignatureThreshold 0.22
 
-protocolInfoByron :: Genesis.Config
+protocolInfoByron :: forall m. Monad m
+                  => Genesis.Config
                   -> Maybe PBftSignatureThreshold
                   -> Update.ProtocolVersion
                   -> Update.SoftwareVersion

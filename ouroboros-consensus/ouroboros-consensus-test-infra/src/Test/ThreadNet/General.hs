@@ -187,7 +187,7 @@ data Rekeying m blk = forall opKey. Rekeying
     -- IE the first slot that will result in a block successfully being forged
     -- and diffused (eg no @PBftExceededSignThreshold@).
   , rekeyUpd ::
-         ProtocolInfo m blk
+         ProtocolInfo (ChaChaT m) blk
       -> EpochNo
       -> opKey
       -> Maybe (TestNodeInitialization m blk)

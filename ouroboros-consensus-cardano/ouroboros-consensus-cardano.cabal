@@ -29,6 +29,7 @@ library
                        Ouroboros.Consensus.Cardano.Block
 
   build-depends:       base              >=4.9   && <4.13
+                     , cryptonite
 
                      , cardano-crypto-class
                      , cardano-ledger

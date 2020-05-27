@@ -26,7 +26,7 @@ import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import           Ouroboros.Consensus.Byron.Node
 
-mkProtocolRealPBFT :: HasCallStack
+mkProtocolRealPBFT :: (Monad m, HasCallStack)
                    => PBftParams
                    -> CoreNodeId
                    -> Genesis.Config

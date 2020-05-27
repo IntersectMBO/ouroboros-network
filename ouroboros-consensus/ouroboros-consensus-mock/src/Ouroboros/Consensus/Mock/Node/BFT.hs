@@ -20,7 +20,8 @@ import           Ouroboros.Consensus.Protocol.BFT
 
 type MockBftBlock = SimpleBftBlock SimpleMockCrypto BftMockCrypto
 
-protocolInfoBft :: NumCoreNodes
+protocolInfoBft :: Monad m
+                => NumCoreNodes
                 -> CoreNodeId
                 -> SecurityParam
                 -> HardFork.EraParams

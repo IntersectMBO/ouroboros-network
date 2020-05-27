@@ -22,14 +22,13 @@ import           Ouroboros.Network.TxSubmission.Inbound
 import           Ouroboros.Network.TxSubmission.Outbound
                      (TraceTxSubmissionOutbound)
 
-import           Ouroboros.Consensus.Block (Header)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Forecast (OutsideForecastRange)
-import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
-                     GenTxId)
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Mempool.API (MempoolSize,
-                     TraceEventMempool)
+import           Ouroboros.Consensus.Mempool.API
+
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (TraceBlockFetchServerEvent)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
@@ -55,6 +54,7 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , localTxSubmissionServerTracer :: f (TraceLocalTxSubmissionServerEvent blk)
   , mempoolTracer                 :: f (TraceEventMempool blk)
   , forgeTracer                   :: f (TraceForgeEvent blk (GenTx blk))
+  , forgeStateTracer              :: f (ForgeState blk)
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
   }
 
@@ -72,6 +72,7 @@ instance (forall a. Semigroup (f a))
       , localTxSubmissionServerTracer = f localTxSubmissionServerTracer
       , mempoolTracer                 = f mempoolTracer
       , forgeTracer                   = f forgeTracer
+      , forgeStateTracer              = f forgeStateTracer
       , blockchainTimeTracer          = f blockchainTimeTracer
       }
     where
@@ -97,6 +98,7 @@ nullTracers = Tracers
     , localTxSubmissionServerTracer = nullTracer
     , mempoolTracer                 = nullTracer
     , forgeTracer                   = nullTracer
+    , forgeStateTracer              = nullTracer
     , blockchainTimeTracer          = nullTracer
     }
 
@@ -106,6 +108,7 @@ showTracers :: ( Show blk
                , Show (ApplyTxErr blk)
                , Show (Header blk)
                , Show remotePeer
+               , Show (ForgeState blk)
                , LedgerSupportsProtocol blk
                )
             => Tracer m String -> Tracers m remotePeer localPeer blk
@@ -121,6 +124,7 @@ showTracers tr = Tracers
     , localTxSubmissionServerTracer = showTracing tr
     , mempoolTracer                 = showTracing tr
     , forgeTracer                   = showTracing tr
+    , forgeStateTracer              = showTracing tr
     , blockchainTimeTracer          = showTracing tr
     }
 

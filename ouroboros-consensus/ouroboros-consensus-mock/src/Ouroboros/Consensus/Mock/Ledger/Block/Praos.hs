@@ -162,14 +162,14 @@ forgePraosExt :: forall c c' m.
                  , MonadRandom m
                  )
               => TopLevelConfig (SimplePraosBlock c c')
-              -> Update m (PraosForgeState c')
+              -> PraosForgeState c'
               -> IsLeader (BlockProtocol (SimplePraosBlock c c'))
               -> SimpleBlock' c (SimplePraosExt c c') ()
               -> m (SimplePraosBlock c c')
-forgePraosExt cfg updateState isLeader SimpleBlock{..} = do
+forgePraosExt cfg forgeState isLeader SimpleBlock{..} = do
     ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
       forgePraosFields (configConsensus cfg)
-                       updateState
+                       forgeState
                        isLeader
                        $ \praosExtraFields ->
         SignedSimplePraos {

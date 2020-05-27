@@ -7,14 +7,19 @@
 {-# LANGUAGE PatternSynonyms          #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module Ouroboros.Consensus.Shelley.Ledger.Forge (
     -- * ForgeState
     TPraosForgeState (..)
     -- * Forging
   , forgeShelleyBlock
+    -- * Updating the state
+  , evolveKESKeyIfNecessary
   ) where
 
 import           Control.Exception
@@ -27,7 +32,6 @@ import           GHC.Generics (Generic)
 import qualified Cardano.Crypto.KES.Class as KES
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block (castHash)
 
@@ -71,6 +75,8 @@ data TPraosForgeState c =
   | TPraosKeyEvolving
   deriving (Generic)
 
+deriving instance TPraosCrypto c => Show (TPraosForgeState c)
+
 -- We override 'showTypeOf' to make sure to show @c@
 instance TPraosCrypto c => NoUnexpectedThunks (TPraosForgeState c) where
   showTypeOf _ = show $ typeRep (Proxy @(TPraosForgeState c))
@@ -81,31 +87,28 @@ evolveKESKeyIfNecessary
   :: forall m c. (MonadRandom m, TPraosCrypto c)
   => Update m (TPraosForgeState c)
   -> SL.KESPeriod -- ^ Relative KES period (to the start period of the OCert)
-  -> m (HotKey c)
+  -> m ()
 evolveKESKeyIfNecessary updateForgeState (SL.KESPeriod kesPeriod) = do
-    getOutdatedKeyOrCurrentKey >>= \case
-      Right currentKey -> return currentKey
-      Left outdatedKey -> do
+    getOutdatedKey >>= \case
+      Nothing -> return ()
+      Just outdatedKey -> do
         let newKey = evolveKey outdatedKey
         saveNewKey newKey
-        return newKey
   where
-    -- | Return either (@Left@) an outdated key with its current period (setting
-    -- the node state to 'TPraosKeyEvolving') or (@Right@) a key that's
-    -- up-to-date w.r.t. the current KES period (leaving the node state to
-    -- 'TPraosKeyAvailable').
-    getOutdatedKeyOrCurrentKey
-      :: m (Either (HotKey c) (HotKey c))
-    getOutdatedKeyOrCurrentKey = runUpdate updateForgeState $ \case
+    -- | Return maybe (@Just@) an outdated key with its current period (setting
+    -- the node state to 'TPraosKeyEvolving') or (@Nothing@) if the key is
+    -- up-to-date w.r.t. the current KES period.
+    getOutdatedKey :: m (Maybe (HotKey c))
+    getOutdatedKey = runUpdate updateForgeState $ \case
       TPraosKeyEvolving ->
         -- Another thread is currently evolving the key; wait
         Nothing
       TPraosKeyAvailable hk@(HotKey kesPeriodOfKey _)
         | kesPeriodOfKey < kesPeriod
           -- Must evolve key
-        -> return (TPraosKeyEvolving, Left hk)
+        -> return (TPraosKeyEvolving, Just hk)
         | otherwise
-        -> return (TPraosKeyAvailable hk, Right hk)
+        -> return (TPraosKeyAvailable hk, Nothing)
 
     -- | Evolve the given key so that its KES period matches @kesPeriod@.
     evolveKey :: HotKey c -> HotKey c
@@ -134,33 +137,28 @@ evolveKESKeyIfNecessary updateForgeState (SL.KESPeriod kesPeriod) = do
 forgeShelleyBlock
   :: (MonadRandom m, TPraosCrypto c)
   => TopLevelConfig (ShelleyBlock c)
-  -> Update m (ForgeState (ShelleyBlock c))
+  -> ForgeState (ShelleyBlock c)
   -> BlockNo                             -- ^ Current block number
   -> TickedLedgerState (ShelleyBlock c)  -- ^ Current ledger
   -> [GenTx (ShelleyBlock c)]            -- ^ Txs to add in the block
   -> TPraosProof c                       -- ^ Leader proof ('IsLeader')
   -> m (ShelleyBlock c)
-forgeShelleyBlock cfg updateForgeState curNo tickedLedger txs isLeader = do
-    hotKESKey <-
-      evolveKESKeyIfNecessary updateForgeState (SL.KESPeriod kesEvolution)
-    let tpraosFields = forgeTPraosFields hotKESKey isLeader mkBhBody
-        blk = mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
+forgeShelleyBlock cfg forgeState curNo tickedLedger txs isLeader = do
     return $ assert (verifyBlockIntegrity tpraosSlotsPerKESPeriod blk) blk
 
   where
-    TPraosProof { tpraosIsCoreNode } = isLeader
-    TPraosIsCoreNode { tpraosIsCoreNodeOpCert } = tpraosIsCoreNode
-
-    -- The current KES period
-    kesPeriodNat = fromIntegral $ unSlotNo curSlot `div` tpraosSlotsPerKESPeriod
-    SL.OCert _ _ (SL.KESPeriod c0) _ = tpraosIsCoreNodeOpCert
-    kesEvolution = if kesPeriodNat >= c0 then kesPeriodNat - c0 else 0
-
     TPraosConfig { tpraosParams = TPraosParams { tpraosSlotsPerKESPeriod } } =
       configConsensus cfg
-    curSlot = tickedSlotNo tickedLedger
 
-    body = SL.TxSeq $ Seq.fromList $ (\(ShelleyTx _ tx) -> tx) <$> txs
+    -- TODO: If we use a StrictMVar for the key, can get rid of 'error'
+
+    curSlot      = tickedSlotNo tickedLedger
+    tpraosFields = forgeTPraosFields hotKESKey isLeader mkBhBody
+    blk          = mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
+    hotKESKey    = case forgeState of
+                     TPraosKeyAvailable key -> key
+                     _otherwise             -> error "forgeShelley: no key"
+    body         = SL.TxSeq $ Seq.fromList $ (\(ShelleyTx _ tx) -> tx) <$> txs
 
     mkHeader TPraosFields { tpraosSignature, tpraosToSign } =
       SL.BHeader tpraosToSign tpraosSignature

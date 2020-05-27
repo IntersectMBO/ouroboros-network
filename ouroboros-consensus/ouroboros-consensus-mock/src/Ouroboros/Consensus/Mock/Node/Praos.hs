@@ -50,11 +50,14 @@ protocolInfoPraos numCoreNodes nid params eraParams =
           }
       , pInfoLeaderCreds = Just (
             nid
-          , MaintainForgeState $
-              PraosKeyAvailable $
-                SignKeyMockKES
-                  (fst $ verKeys Map.! nid)   -- key ID
-                  0                           -- KES initial slot
+          , MaintainForgeState {
+                initForgeState =
+                  PraosKey $
+                    SignKeyMockKES
+                      (fst $ verKeys Map.! nid)   -- key ID
+                      0                           -- KES initial slot
+              , updateForgeState = evolveKey
+              }
           )
       }
   where

@@ -18,6 +18,7 @@ module Test.ThreadNet.RealPBFT (
 
 import           Control.Monad.Except (runExceptT)
 import           Data.Coerce (coerce)
+import           Data.Functor.Identity
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
@@ -617,7 +618,7 @@ prop_setup_coreNodeId numCoreNodes coreNodeId =
           counterexample "mkProtocolRealPBFT did not use protocolInfoByron" $
           property False
   where
-    protInfo :: ProtocolInfo m ByronBlock
+    protInfo :: ProtocolInfo Identity ByronBlock
     protInfo = mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets
 
     params :: PBftParams
@@ -1235,7 +1236,7 @@ genNodeRekeys params nodeJoinPlan nodeTopology numSlots@(NumSlots t)
 mkRekeyUpd
   :: Genesis.Config
   -> Genesis.GeneratedSecrets
-  -> ProtocolInfo m ByronBlock
+  -> ProtocolInfo (ChaChaT m) ByronBlock
   -> EpochNo
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
   -> Maybe (TestNodeInitialization m ByronBlock)

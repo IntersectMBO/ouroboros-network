@@ -1,9 +1,10 @@
-{-# LANGUAGE EmptyCase         #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE PatternSynonyms   #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE EmptyCase           #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -67,7 +68,8 @@ import           Ouroboros.Consensus.ByronDual.Ledger
   Partly modelled after 'applyTrace' in "Test.Cardano.Chain.Block.Model".
 -------------------------------------------------------------------------------}
 
-protocolInfoDualByron :: ByronSpecGenesis
+protocolInfoDualByron :: forall m. Monad m
+                      => ByronSpecGenesis
                       -> PBftParams
                       -> Maybe CoreNodeId -- ^ Are we a core node?
                       -> ProtocolInfo m DualByronBlock

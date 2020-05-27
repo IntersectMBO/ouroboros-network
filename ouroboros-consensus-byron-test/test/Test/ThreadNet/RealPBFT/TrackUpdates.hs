@@ -1,7 +1,8 @@
-{-# LANGUAGE BangPatterns   #-}
-{-# LANGUAGE LambdaCase     #-}
-{-# LANGUAGE MultiWayIf     #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE MultiWayIf          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.ThreadNet.RealPBFT.TrackUpdates (
   mkProtocolRealPBftAndHardForkTxs,
@@ -14,6 +15,7 @@ import           Control.Exception (assert)
 import           Control.Monad (guard)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
+import           Data.Functor.Identity
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
@@ -38,13 +40,13 @@ import qualified Cardano.Crypto.DSIGN as Crypto
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
-import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.Config (TopLevelConfig (..))
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
                      ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Util.Random
 
 import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
@@ -368,7 +370,7 @@ data ProposalState =
 --    reach the second epoch.
 --
 mkProtocolRealPBftAndHardForkTxs
-  :: HasCallStack
+  :: forall m. (Monad m, HasCallStack)
   => PBftParams
   -> CoreNodeId
   -> Genesis.Config
@@ -383,7 +385,7 @@ mkProtocolRealPBftAndHardForkTxs params cid genesisConfig genesisSecrets =
     ProtocolInfo{pInfoConfig}   = pInfo
     TopLevelConfig{configBlock} = pInfoConfig
 
-    pInfo :: ProtocolInfo m ByronBlock
+    pInfo :: ProtocolInfo (ChaChaT m) ByronBlock
     pInfo = mkProtocolRealPBFT params cid genesisConfig genesisSecrets
 
     proposals :: [Byron.GenTx ByronBlock]
@@ -434,7 +436,7 @@ mkHardForkProposal params genesisConfig genesisSecrets =
       propBody
       (Crypto.noPassSafeSigner opKey)
   where
-    pInfo :: ProtocolInfo m ByronBlock
+    pInfo :: ProtocolInfo Identity ByronBlock
     pInfo = mkProtocolRealPBFT params (CoreNodeId 0) genesisConfig genesisSecrets
 
     ProtocolInfo{pInfoConfig}   = pInfo

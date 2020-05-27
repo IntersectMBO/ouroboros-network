@@ -16,6 +16,7 @@ import           Codec.CBOR.Write (toLazyByteString)
 import qualified Data.Binary.Get as Get
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Functor.Identity
 
 import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
@@ -195,9 +196,13 @@ prop_detectCorruption_RegularBlock (RegularBlock blk) =
       blk
 
 testCfg :: TopLevelConfig ByronBlock
-testCfg = pInfoConfig $ protocolInfoByron
-    CC.dummyConfig
-    (Just (PBftSignatureThreshold 0.5))
-    (CC.Update.ProtocolVersion 1 0 0)
-    (CC.Update.SoftwareVersion (CC.Update.ApplicationName "Cardano Test") 2)
-    Nothing
+testCfg = pInfoConfig protocolInfo
+  where
+    protocolInfo :: ProtocolInfo Identity ByronBlock
+    protocolInfo =
+      protocolInfoByron
+        CC.dummyConfig
+        (Just (PBftSignatureThreshold 0.5))
+        (CC.Update.ProtocolVersion 1 0 0)
+        (CC.Update.SoftwareVersion (CC.Update.ApplicationName "Cardano Test") 2)
+        Nothing

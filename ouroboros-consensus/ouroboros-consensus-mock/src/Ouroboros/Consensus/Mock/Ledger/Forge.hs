@@ -33,7 +33,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 data ForgeExt c ext = ForgeExt {
       forgeExt :: forall m. MonadRandom m
                => TopLevelConfig          (SimpleBlock c ext)
-               -> Update m    (ForgeState (SimpleBlock c ext))
+               -> ForgeState              (SimpleBlock c ext)
                -> IsLeader (BlockProtocol (SimpleBlock c ext))
                -> SimpleBlock' c ext ()
                -> m (SimpleBlock c ext)
@@ -46,14 +46,14 @@ forgeSimple :: forall c m ext.
                )
             => ForgeExt c ext
             -> TopLevelConfig (SimpleBlock c ext)
-            -> Update m (ForgeState (SimpleBlock c ext))
+            -> ForgeState (SimpleBlock c ext)
             -> BlockNo                               -- ^ Current block number
             -> TickedLedgerState (SimpleBlock c ext) -- ^ Current ledger
             -> [GenTx (SimpleBlock c ext)]           -- ^ Txs to include
             -> IsLeader (BlockProtocol (SimpleBlock c ext))
             -> m (SimpleBlock c ext)
-forgeSimple ForgeExt { forgeExt } cfg updateState curBlock tickedLedger txs proof = do
-    forgeExt cfg updateState proof $ SimpleBlock {
+forgeSimple ForgeExt { forgeExt } cfg forgeState curBlock tickedLedger txs proof = do
+    forgeExt cfg forgeState proof $ SimpleBlock {
         simpleHeader = mkSimpleHeader encode stdHeader ()
       , simpleBody   = body
       }

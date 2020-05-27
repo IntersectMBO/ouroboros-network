@@ -23,7 +23,8 @@ import           Ouroboros.Consensus.Protocol.LeaderSchedule
 
 type MockPraosRuleBlock = SimplePraosRuleBlock SimpleMockCrypto
 
-protocolInfoPraosRule :: NumCoreNodes
+protocolInfoPraosRule :: Monad m
+                      => NumCoreNodes
                       -> CoreNodeId
                       -> PraosParams
                       -> HardFork.EraParams

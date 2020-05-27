@@ -50,7 +50,7 @@ instance CanForge ByronBlock where
 forgeByronBlock
   :: forall m. (Monad m, HasCallStack)
   => TopLevelConfig ByronBlock
-  -> Update m (ForgeState ByronBlock)
+  -> ForgeState ByronBlock
   -> BlockNo                         -- ^ Current block number
   -> TickedLedgerState ByronBlock    -- ^ Current ledger
   -> [GenTx ByronBlock]              -- ^ Txs to add in the block
@@ -128,13 +128,13 @@ initBlockPayloads = BlockPayloads
 forgeRegularBlock
   :: forall m. (Monad m, HasCallStack)
   => TopLevelConfig ByronBlock
-  -> Update m (ForgeState ByronBlock)
+  -> ForgeState ByronBlock
   -> BlockNo                           -- ^ Current block number
   -> TickedLedgerState ByronBlock      -- ^ Current ledger
   -> [GenTx ByronBlock]                -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
   -> m ByronBlock
-forgeRegularBlock cfg _updateState curNo tickedLedger txs isLeader =
+forgeRegularBlock cfg () curNo tickedLedger txs isLeader =
     let ouroborosPayload =
           forgePBftFields
             (mkByronContextDSIGN $ configBlock cfg)

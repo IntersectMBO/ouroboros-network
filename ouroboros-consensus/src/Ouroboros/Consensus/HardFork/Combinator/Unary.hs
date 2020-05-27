@@ -338,7 +338,10 @@ injMaintainForgeState :: forall m b.
                          MaintainForgeState m b
                       -> MaintainForgeState m (HardForkBlock '[b])
 injMaintainForgeState maintainForgeState = MaintainForgeState {
-      initForgeState = injForgeState (Proxy @b) (initForgeState maintainForgeState)
+      initForgeState   = injForgeState (Proxy @b)
+                       $ initForgeState maintainForgeState
+    , updateForgeState = updateForgeState maintainForgeState
+                       . projUpdateForgeState
     }
 
 injHashInfo :: (SingleEraBlock b, FromRawHash b)

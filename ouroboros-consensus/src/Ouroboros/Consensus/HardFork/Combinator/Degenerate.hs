@@ -247,7 +247,7 @@ instance SingleEraBlock b => CanForge (DegenFork b) where
       (DBlk . injBlock) <$>
         forgeBlock
           (projCfg cfg)
-          (projUpdateForgeState upd)
+          (projForgeState (Proxy @b) upd)
           block
           (Ticked slot (projLedgerState lgr))
           (map (projGenTx . unDTx) txs)

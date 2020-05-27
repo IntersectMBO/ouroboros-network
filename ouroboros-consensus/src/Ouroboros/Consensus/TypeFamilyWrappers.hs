@@ -78,6 +78,8 @@ deriving instance NoUnexpectedThunks (ForgeState blk)               => NoUnexpec
 
 deriving instance Show               (ApplyTxErr blk)               => Show               (WrapApplyTxErr blk)
 
+deriving instance Show               (ForgeState blk)               => Show               (WrapForgeState blk)
+
 {-------------------------------------------------------------------------------
   .. consensus based
 -------------------------------------------------------------------------------}

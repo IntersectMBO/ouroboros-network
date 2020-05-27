@@ -137,7 +137,7 @@ data ForgeEbbEnv blk = ForgeEbbEnv
 -- will restart and use 'tnaRekeyM' to compute its new 'ProtocolInfo'.
 type RekeyM m blk =
      CoreNodeId
-  -> ProtocolInfo m blk
+  -> ProtocolInfo (ChaChaT m) blk
   -> SlotNo
      -- ^ The slot in which the node is rekeying
   -> (SlotNo -> m EpochNo)
@@ -152,11 +152,11 @@ data TestNodeInitialization m blk = TestNodeInitialization
   { tniCrucialTxs   :: [GenTx blk]
     -- ^ these transactions are added immediately and repeatedly (whenever the
     -- 'ledgerTipSlot' changes)
-  , tniProtocolInfo :: ProtocolInfo m blk
+  , tniProtocolInfo :: ProtocolInfo (ChaChaT m) blk
   }
 
 plainTestNodeInitialization
-  :: ProtocolInfo m blk -> TestNodeInitialization m blk
+  :: ProtocolInfo (ChaChaT m) blk -> TestNodeInitialization m blk
 plainTestNodeInitialization pInfo = TestNodeInitialization
     { tniCrucialTxs   = []
     , tniProtocolInfo = pInfo
@@ -430,7 +430,10 @@ runThreadNetwork ThreadNetworkArgs
           where
             NodeRestarts m = nodeRestarts
 
-        loop :: SlotNo -> ProtocolInfo m blk -> NodeRestart -> Map SlotNo NodeRestart -> m ()
+        loop :: SlotNo
+             -> ProtocolInfo (ChaChaT m) blk
+             -> NodeRestart
+             -> Map SlotNo NodeRestart -> m ()
         loop s pInfo nr rs = do
           -- a registry solely for the resources of this specific node instance
           (again, finalChain, finalLdgr) <- withRegistry $ \nodeRegistry -> do
@@ -642,7 +645,7 @@ runThreadNetwork ThreadNetworkArgs
       -> StrictTVar m ChaChaDRG
       -> WrappedClock m
       -> ResourceRegistry m
-      -> ProtocolInfo m blk
+      -> ProtocolInfo (ChaChaT m) blk
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
@@ -1235,6 +1238,7 @@ type TracingConstraints blk =
   , Show (Header blk)
   , Show (GenTx blk)
   , Show (GenTxId blk)
+  , Show (ForgeState blk)
   , ShowQuery (Query blk)
   )
 
