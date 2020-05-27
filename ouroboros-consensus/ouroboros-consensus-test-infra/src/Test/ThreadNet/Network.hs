@@ -672,7 +672,12 @@ runThreadNetwork ThreadNetworkArgs
       chainDB <- snd <$>
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
 
-      blockProduction <- blockProductionIOLike pInfoConfig pInfoMaintainForgeState varRNG $
+      let (canBeLeader, maintainForgeState) =
+            case pInfoLeaderCreds of
+              Nothing    -> error "runThreadNetwork: cannot produce blocks"
+              Just creds -> creds
+
+      blockProduction <- blockProductionIOLike pInfoConfig canBeLeader maintainForgeState varRNG $
          \upd currentBno tickedLdgSt txs prf -> do
             let currentSlot = tickedSlotNo tickedLdgSt
 

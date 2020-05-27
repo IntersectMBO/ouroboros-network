@@ -55,13 +55,6 @@ class ( ConsensusProtocol p
                                 -> PartialConsensusConfig p -> ChainSelConfig p
   partialChainSelConfig _ = chainSelConfig
 
-  -- | Partial config must suffice to check if we can be a leader
-  partialCheckIfCanBeLeader :: proxy p -> PartialConsensusConfig p -> Bool
-  default partialCheckIfCanBeLeader :: (PartialConsensusConfig p ~ ConsensusConfig p)
-                                    => proxy p
-                                    -> PartialConsensusConfig p -> Bool
-  partialCheckIfCanBeLeader _ = checkIfCanBeLeader
-
 -- | Partial ledger config
 class ( UpdateLedger blk
       , NoUnexpectedThunks (PartialLedgerConfig blk)

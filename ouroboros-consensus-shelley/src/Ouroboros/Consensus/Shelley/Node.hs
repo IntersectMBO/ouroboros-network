@@ -120,9 +120,9 @@ protocolInfoShelley
   -> ProtocolInfo m (ShelleyBlock c)
 protocolInfoShelley genesis protVer mbCredentials =
     ProtocolInfo {
-        pInfoConfig             = topLevelConfig
-      , pInfoMaintainForgeState = MaintainForgeState initForgeState
-      , pInfoInitLedger         = initExtLedgerState
+        pInfoConfig      = topLevelConfig
+      , pInfoInitLedger  = initExtLedgerState
+      , pInfoLeaderCreds = mkLeaderCreds <$> mbCredentials
       }
   where
     topLevelConfig :: TopLevelConfig (ShelleyBlock c)
@@ -133,10 +133,7 @@ protocolInfoShelley genesis protVer mbCredentials =
       }
 
     consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock c))
-    consensusConfig = TPraosConfig {
-        tpraosParams
-      , tpraosIsCoreNodeOrNot
-      }
+    consensusConfig = TPraosConfig tpraosParams
 
     ledgerConfig :: LedgerConfig (ShelleyBlock c)
     ledgerConfig = mkShelleyLedgerConfig genesis epochInfo
@@ -159,12 +156,14 @@ protocolInfoShelley genesis protVer mbCredentials =
       , tpraosNetworkId         = sgNetworkId         genesis
       }
 
-    initForgeState :: ForgeState (ShelleyBlock c)
-    tpraosIsCoreNodeOrNot :: TPraosIsCoreNodeOrNot c
-    (initForgeState, tpraosIsCoreNodeOrNot) = case mbCredentials of
-      Nothing -> (TPraosNoKey, TPraosIsNotACoreNode)
-      Just (TPraosLeaderCredentials key isACoreNode) ->
-        (TPraosKeyAvailable key, TPraosIsACoreNode isACoreNode)
+    mkLeaderCreds :: TPraosLeaderCredentials c
+                  -> (TPraosIsCoreNode c, MaintainForgeState m (ShelleyBlock c))
+    mkLeaderCreds (TPraosLeaderCredentials key isACoreNode) = (
+          isACoreNode
+        , MaintainForgeState {
+              initForgeState = TPraosKeyAvailable key
+            }
+        )
 
     blockConfig :: BlockConfig (ShelleyBlock c)
     blockConfig = ShelleyConfig {

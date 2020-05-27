@@ -610,10 +610,10 @@ prop_setup_coreNodeId ::
   -> CoreNodeId
   -> Property
 prop_setup_coreNodeId numCoreNodes coreNodeId =
-    case pbftIsLeader $ configConsensus $ pInfoConfig protInfo of
-      PBftIsALeader isLeader ->
+    case pInfoLeaderCreds protInfo of
+      Just (isLeader, _) ->
           coreNodeId === pbftCoreNodeId isLeader
-      _ ->
+      Nothing ->
           counterexample "mkProtocolRealPBFT did not use protocolInfoByron" $
           property False
   where
@@ -1240,21 +1240,13 @@ mkRekeyUpd
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
   -> Maybe (TestNodeInitialization m ByronBlock)
 mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
-  case pbftIsLeader configConsensus of
-    PBftIsNotALeader       -> Nothing
-    PBftIsALeader isLeader ->
+  case pInfoLeaderCreds of
+    Nothing              -> Nothing
+    Just (isLeader, mfs) ->
       let PBftIsLeader{pbftCoreNodeId} = isLeader
           genSK = genesisSecretFor genesisConfig genesisSecrets pbftCoreNodeId
           isLeader' = updSignKey genSK configBlock isLeader (coerce eno) newSK
-          pInfo' = pInfo
-            { pInfoConfig = TopLevelConfig {
-                  configConsensus = configConsensus
-                    { pbftIsLeader = PBftIsALeader isLeader'
-                    }
-                , configLedger = configLedger
-                , configBlock  = configBlock
-                }
-            }
+          pInfo' = pInfo { pInfoLeaderCreds = Just (isLeader', mfs) }
 
           PBftIsLeader{pbftDlgCert} = isLeader'
       in Just TestNodeInitialization
@@ -1262,10 +1254,10 @@ mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
         , tniProtocolInfo = pInfo'
         }
   where
-    ProtocolInfo{pInfoConfig = TopLevelConfig{ configConsensus
-                                             , configLedger
-                                             , configBlock
-                                             }} = pInfo
+    ProtocolInfo{
+        pInfoConfig = TopLevelConfig{configBlock}
+      , pInfoLeaderCreds
+      } = pInfo
 
 -- | The secret key for a node index
 --

@@ -194,7 +194,7 @@ run runargs@RunNodeArgs{..} =
                       mkNodeArgs
                         registry
                         cfg
-                        maintainForgeState
+                        leaderCreds
                         rnTraceConsensus
                         btime
                         chainDB
@@ -216,9 +216,9 @@ run runargs@RunNodeArgs{..} =
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnNetworkMagic }
 
     ProtocolInfo
-      { pInfoConfig             = cfg
-      , pInfoInitLedger         = initLedger
-      , pInfoMaintainForgeState = maintainForgeState
+      { pInfoConfig      = cfg
+      , pInfoInitLedger  = initLedger
+      , pInfoLeaderCreds = leaderCreds
       } = rnProtocolInfo
 
     codecConfig :: CodecConfig blk
@@ -403,15 +403,16 @@ mkNodeArgs
   :: forall blk. RunNode blk
   => ResourceRegistry IO
   -> TopLevelConfig blk
-  -> MaintainForgeState IO blk
+  -> Maybe (CanBeLeader (BlockProtocol blk), MaintainForgeState IO blk)
   -> Tracers IO RemoteConnectionId LocalConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
   -> IO (NodeArgs IO RemoteConnectionId LocalConnectionId blk)
-mkNodeArgs registry cfg maintainForgeState tracers btime chainDB = do
-    blockProduction <- if checkIfCanBeLeader (configConsensus cfg)
-                         then Just <$> blockProductionIO cfg maintainForgeState
-                         else return Nothing
+mkNodeArgs registry cfg mIsLeader tracers btime chainDB = do
+    blockProduction <-
+      case mIsLeader of
+        Just (proof, mfs) -> Just <$> blockProductionIO cfg proof mfs
+        Nothing           -> return Nothing
     return NodeArgs
       { tracers
       , registry

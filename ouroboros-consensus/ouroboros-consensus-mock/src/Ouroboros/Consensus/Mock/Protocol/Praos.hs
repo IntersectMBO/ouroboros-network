@@ -71,7 +71,7 @@ import           Ouroboros.Network.Point (WithOrigin (At))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mock.Ledger.Stake
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -244,7 +244,6 @@ data instance ConsensusConfig (Praos c) = PraosConfig
   { praosParams       :: !PraosParams
   , praosInitialEta   :: !Natural
   , praosInitialStake :: !StakeDist
-  , praosNodeId       :: !NodeId
   , praosSignKeyVRF   :: !(SignKeyVRF (PraosVRF c))
   , praosVerKeys      :: !(Map CoreNodeId (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c)))
   }
@@ -261,27 +260,21 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   type ValidationErr  (Praos c) = PraosValidationError c
   type ValidateView   (Praos c) = PraosValidateView    c
   type ConsensusState (Praos c) = [BlockInfo c]
+  type CanBeLeader    (Praos c) = CoreNodeId
 
-  checkIfCanBeLeader PraosConfig{praosNodeId} =
-    case praosNodeId of
-        CoreId{}  -> True
-        RelayId{} -> False  -- Relays are never leaders
-
-  checkIsLeader cfg@PraosConfig{..} (Ticked slot _u) cs =
-    case praosNodeId of
-        RelayId _  -> return Nothing
-        CoreId nid -> do
-          let (rho', y', t) = rhoYT cfg cs slot nid
-          rho <- evalCertified () rho' praosSignKeyVRF
-          y   <- evalCertified () y'   praosSignKeyVRF
-          return $ if fromIntegral (certifiedNatural y) < t
-              then Just PraosProof {
-                       praosProofRho  = rho
-                     , praosProofY    = y
-                     , praosLeader    = nid
-                     , praosProofSlot = slot
-                     }
-              else Nothing
+  checkIsLeader cfg@PraosConfig{..} nid (Ticked slot _u) cs = do
+      rho <- evalCertified () rho' praosSignKeyVRF
+      y   <- evalCertified () y'   praosSignKeyVRF
+      return $ if fromIntegral (certifiedNatural y) < t
+          then Just PraosProof {
+                   praosProofRho  = rho
+                 , praosProofY    = y
+                 , praosLeader    = nid
+                 , praosProofSlot = slot
+                 }
+          else Nothing
+    where
+      (rho', y', t) = rhoYT cfg cs slot nid
 
   updateConsensusState cfg@PraosConfig{..}
                        (Ticked _ sd)

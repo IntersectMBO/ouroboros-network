@@ -33,7 +33,6 @@ protocolInfoBft numCoreNodes nid securityParam eraParams =
                                   bftNumNodes      = numCoreNodes
                                 , bftSecurityParam = securityParam
                                 }
-              , bftNodeId   = CoreId nid
               , bftSignKey  = signKey nid
               , bftVerKeys  = Map.fromList [
                     (CoreId n, verKey n)
@@ -45,7 +44,10 @@ protocolInfoBft numCoreNodes nid securityParam eraParams =
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState ())
-      , pInfoMaintainForgeState = defaultMaintainForgeState
+      , pInfoLeaderCreds = Just (
+            nid
+          , defaultMaintainForgeState
+          )
       }
   where
     signKey :: CoreNodeId -> SignKeyDSIGN MockDSIGN

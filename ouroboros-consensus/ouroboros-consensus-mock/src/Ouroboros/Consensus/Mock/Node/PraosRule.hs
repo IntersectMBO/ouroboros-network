@@ -18,7 +18,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 
 type MockPraosRuleBlock = SimplePraosRuleBlock SimpleMockCrypto
@@ -40,7 +40,6 @@ protocolInfoPraosRule numCoreNodes
               wlsConfigSchedule = schedule
             , wlsConfigP        = PraosConfig
                 { praosParams       = params
-                , praosNodeId       = CoreId nid
                 , praosSignKeyVRF   = NeverUsedSignKeyVRF
                 , praosInitialEta   = 0
                 , praosInitialStake = genesisStakeDist addrDist
@@ -55,7 +54,10 @@ protocolInfoPraosRule numCoreNodes
         { ledgerState = genesisSimpleLedgerState addrDist
         , headerState = genesisHeaderState ()
         }
-    , pInfoMaintainForgeState = defaultMaintainForgeState
+    , pInfoLeaderCreds = Just (
+          ()
+        , defaultMaintainForgeState
+        )
     }
   where
     addrDist = mkAddrDist numCoreNodes

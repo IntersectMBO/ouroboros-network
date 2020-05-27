@@ -84,13 +84,12 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
   type ValidationErr  (WithLeaderSchedule p) = ()
   type IsLeader       (WithLeaderSchedule p) = ()
   type ValidateView   (WithLeaderSchedule p) = ()
+  type CanBeLeader    (WithLeaderSchedule p) = ()
 
   protocolSecurityParam = protocolSecurityParam . wlsConfigP
   chainSelConfig        = chainSelConfig        . wlsConfigP
 
-  checkIfCanBeLeader _ = True -- Conservative approximation
-
-  checkIsLeader WLSConfig{..} (Ticked slot _) _ = return $
+  checkIsLeader WLSConfig{..} () (Ticked slot _) _ = return $
     case Map.lookup slot $ getLeaderSchedule wlsConfigSchedule of
         Nothing                           -> Nothing
         Just nids

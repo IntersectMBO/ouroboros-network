@@ -22,7 +22,7 @@ module Ouroboros.Consensus.Byron.Node (
   , PBftLeaderCredentials
   , PBftLeaderCredentialsError
   , mkPBftLeaderCredentials
-  , pbftLeaderOrNot
+  , mkPBftIsLeader
     -- * Type family instances
   , CodecConfig(..)
     -- * For testing
@@ -135,10 +135,7 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             configConsensus = PBftConfig {
-                pbftParams    = byronPBftParams genesisConfig mSigThresh
-              , pbftIsLeader  = case mLeader of
-                                  Nothing   -> PBftIsNotALeader
-                                  Just cred -> PBftIsALeader $ pbftLeaderOrNot cred
+                pbftParams = byronPBftParams genesisConfig mSigThresh
               }
           , configLedger = genesisConfig
           , configBlock  = byronConfig
@@ -147,10 +144,14 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
             ledgerState = initByronLedgerState genesisConfig Nothing
           , headerState = genesisHeaderState S.empty
           }
-      , pInfoMaintainForgeState = defaultMaintainForgeState
+      , pInfoLeaderCreds = mkCreds <$> mLeader
       }
   where
     byronConfig = mkByronConfig genesisConfig pVer sVer
+
+    mkCreds :: PBftLeaderCredentials
+            -> (PBftIsLeader PBftByronCrypto, MaintainForgeState m ByronBlock)
+    mkCreds cred = (mkPBftIsLeader cred, defaultMaintainForgeState)
 
 protocolClientInfoByron :: EpochSlots -> ProtocolClientInfo ByronBlock
 protocolClientInfoByron epochSlots =
@@ -166,8 +167,8 @@ byronPBftParams cfg threshold = PBftParams {
                              $ fromMaybe defaultPBftSignatureThreshold threshold
     }
 
-pbftLeaderOrNot :: PBftLeaderCredentials -> PBftIsLeader PBftByronCrypto
-pbftLeaderOrNot (PBftLeaderCredentials sk cert nid) = PBftIsLeader {
+mkPBftIsLeader :: PBftLeaderCredentials -> PBftIsLeader PBftByronCrypto
+mkPBftIsLeader (PBftLeaderCredentials sk cert nid) = PBftIsLeader {
       pbftCoreNodeId = nid
     , pbftSignKey    = SignKeyByronDSIGN sk
     , pbftDlgCert    = cert

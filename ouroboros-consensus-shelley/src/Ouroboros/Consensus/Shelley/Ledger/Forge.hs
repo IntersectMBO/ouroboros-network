@@ -69,12 +69,6 @@ data TPraosForgeState c =
     --
     -- Any thread that sees this value should back off and retry.
   | TPraosKeyEvolving
-
-    -- | This node is not a core node, it doesn't have the capability to sign
-    -- blocks.
-    --
-    -- The 'ForgeState' of such a node will always be 'ShelleyNoKey'.
-  | TPraosNoKey
   deriving (Generic)
 
 -- We override 'showTypeOf' to make sure to show @c@
@@ -89,7 +83,7 @@ evolveKESKeyIfNecessary
   -> SL.KESPeriod -- ^ Relative KES period (to the start period of the OCert)
   -> m (HotKey c)
 evolveKESKeyIfNecessary updateForgeState (SL.KESPeriod kesPeriod) = do
-    getOudatedKeyOrCurrentKey >>= \case
+    getOutdatedKeyOrCurrentKey >>= \case
       Right currentKey -> return currentKey
       Left outdatedKey -> do
         let newKey = evolveKey outdatedKey
@@ -100,9 +94,9 @@ evolveKESKeyIfNecessary updateForgeState (SL.KESPeriod kesPeriod) = do
     -- the node state to 'TPraosKeyEvolving') or (@Right@) a key that's
     -- up-to-date w.r.t. the current KES period (leaving the node state to
     -- 'TPraosKeyAvailable').
-    getOudatedKeyOrCurrentKey
+    getOutdatedKeyOrCurrentKey
       :: m (Either (HotKey c) (HotKey c))
-    getOudatedKeyOrCurrentKey = runUpdate updateForgeState $ \case
+    getOutdatedKeyOrCurrentKey = runUpdate updateForgeState $ \case
       TPraosKeyEvolving ->
         -- Another thread is currently evolving the key; wait
         Nothing
@@ -112,8 +106,6 @@ evolveKESKeyIfNecessary updateForgeState (SL.KESPeriod kesPeriod) = do
         -> return (TPraosKeyEvolving, Left hk)
         | otherwise
         -> return (TPraosKeyAvailable hk, Right hk)
-      TPraosNoKey ->
-        error "no KES key available"
 
     -- | Evolve the given key so that its KES period matches @kesPeriod@.
     evolveKey :: HotKey c -> HotKey c

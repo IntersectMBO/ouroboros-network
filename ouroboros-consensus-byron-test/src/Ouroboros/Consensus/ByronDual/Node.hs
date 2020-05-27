@@ -75,10 +75,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             configConsensus = PBftConfig {
-                pbftParams    = params
-              , pbftIsLeader  = case mLeader of
-                                  Nothing  -> PBftIsNotALeader
-                                  Just nid -> PBftIsALeader $ pbftIsLeader nid
+                pbftParams = params
               }
           , configLedger = DualLedgerConfig {
                 dualLedgerConfigMain = concreteGenesis
@@ -89,8 +86,6 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
               , dualBlockConfigAux  = ByronSpecBlockConfig
               }
           }
-      , pInfoMaintainForgeState =
-          defaultMaintainForgeState
       , pInfoInitLedger = ExtLedgerState {
              ledgerState = DualLedgerState {
                  dualLedgerStateMain   = initConcreteState
@@ -99,11 +94,18 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
                }
            , headerState = genesisHeaderState S.empty
            }
+      , pInfoLeaderCreds = mkCreds <$> mLeader
       }
   where
     initUtxo :: Impl.UTxO
     txIdMap  :: Map Spec.TxId Impl.TxId
     (initUtxo, txIdMap) = Spec.Test.elaborateInitialUTxO byronSpecGenesisInitUtxo
+
+    mkCreds :: CoreNodeId
+            -> (PBftIsLeader PBftByronCrypto
+               , MaintainForgeState m DualByronBlock
+               )
+    mkCreds nid = (pbftIsLeader nid, defaultMaintainForgeState)
 
     -- 'Spec.Test.abEnvToCfg' ignores the UTxO, because the Byron genesis
     -- data doesn't contain a UTxO, but only a 'UTxOConfiguration'.
@@ -157,7 +159,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     initBridge = initByronSpecBridge abstractGenesis txIdMap
 
     pbftIsLeader :: CoreNodeId -> PBftIsLeader PBftByronCrypto
-    pbftIsLeader nid = pbftLeaderOrNot $
+    pbftIsLeader nid = mkPBftIsLeader $
         fromRight (error "pbftIsLeader: failed to construct credentials") $
           mkPBftLeaderCredentials
             concreteGenesis

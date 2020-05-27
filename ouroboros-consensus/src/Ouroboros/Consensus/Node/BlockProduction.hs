@@ -51,12 +51,13 @@ data BlockProduction m blk = BlockProduction {
 
 blockProductionIO :: (BlockSupportsProtocol blk, CanForge blk)
                   => TopLevelConfig blk
+                  -> CanBeLeader (BlockProtocol blk)
                   -> MaintainForgeState IO blk
                   -> IO (BlockProduction IO blk)
-blockProductionIO cfg MaintainForgeState{..} = do
+blockProductionIO cfg canBeLeader MaintainForgeState{..} = do
     varForgeState <- newTVarM initForgeState
     return $ BlockProduction {
-        getLeaderProof = defaultGetLeaderProof cfg
+        getLeaderProof = \ tracer -> defaultGetLeaderProof cfg tracer canBeLeader
       , produceBlock   = \_tracer -> forgeBlock cfg (updateFromTVar varForgeState)
       }
 
@@ -66,6 +67,7 @@ blockProductionIO cfg MaintainForgeState{..} = do
 -- simulate it.
 blockProductionIOLike :: (IOLike m, BlockSupportsProtocol blk, CanForge blk)
                       => TopLevelConfig blk
+                      -> CanBeLeader (BlockProtocol blk)
                       -> MaintainForgeState m blk
                       -> StrictTVar m ChaChaDRG
                       -> (   Update (ChaChaT m) (ForgeState blk)
@@ -75,15 +77,25 @@ blockProductionIOLike :: (IOLike m, BlockSupportsProtocol blk, CanForge blk)
                           -> IsLeader (BlockProtocol blk)
                           -> ChaChaT m blk)
                       -> m (BlockProduction m blk)
-blockProductionIOLike cfg MaintainForgeState{..} varRNG forge = do
+blockProductionIOLike cfg canBeLeader MaintainForgeState{..} varRNG forge = do
     varForgeState <- newTVarM initForgeState
     return $ BlockProduction {
         getLeaderProof = \tracer ledgerState consensusState ->
           simMonadRandom varRNG $
-            defaultGetLeaderProof cfg (natTracer lift tracer) ledgerState consensusState
+            defaultGetLeaderProof
+              cfg
+              (natTracer lift tracer)
+              canBeLeader
+              ledgerState
+              consensusState
       , produceBlock   = \_tracer bno st txs proof ->
           simMonadRandom varRNG $
-            forge (hoistUpdate lift $ updateFromTVar varForgeState) bno st txs proof
+            forge
+              (hoistUpdate lift $ updateFromTVar varForgeState)
+              bno
+              st
+              txs
+              proof
       }
 
 {-------------------------------------------------------------------------------
@@ -95,6 +107,7 @@ defaultGetLeaderProof :: ( MonadRandom m
                          )
                       => TopLevelConfig blk
                       -> Tracer m (TraceForgeEvent blk (GenTx blk))
+                      -> CanBeLeader        (BlockProtocol blk)
                       -> Ticked (LedgerView (BlockProtocol blk))
                       -> ConsensusState     (BlockProtocol blk)
                       -> m (Maybe (IsLeader (BlockProtocol blk)))

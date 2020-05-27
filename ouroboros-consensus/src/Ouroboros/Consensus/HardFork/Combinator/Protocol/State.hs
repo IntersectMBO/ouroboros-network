@@ -13,6 +13,7 @@
 -- > import qualified Ouroboros.Consensus.HardFork.Combinator.Protocol.State as ProtocolState
 module Ouroboros.Consensus.HardFork.Combinator.Protocol.State (
     HardForkConsensusState
+  , HardForkCanBeLeader
   , HardForkValidationErr(..)
     -- * Update the state
   , check
@@ -57,6 +58,12 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 
 type HardForkConsensusState xs = HardForkState WrapConsensusState xs
 
+-- | CanBeLeader instance for 'HardForkProtocol'
+--
+-- We allow an optional 'CanBeLeader' proof /per era/, to make it possible to
+-- configure a node to, say, be able to produce Shelley but not Byron blocks
+type HardForkCanBeLeader xs = NP (Maybe :.: WrapCanBeLeader) xs
+
 data HardForkValidationErr xs =
     -- | Validation error from one of the eras
     HardForkValidationErrFromEra (OneEraValidationErr xs)
@@ -74,16 +81,17 @@ data HardForkValidationErr xs =
 
 check :: forall m xs. (MonadRandom m, CanHardFork xs)
       => ConsensusConfig (HardForkProtocol xs)
+      -> HardForkCanBeLeader xs
       -> Ticked (HardForkLedgerView xs)
       -> HardForkConsensusState xs
       -> m (Maybe (OneEraIsLeader xs))
-check cfg@HardForkConsensusConfig{..} (Ticked slot ledgerView) =
+check cfg@HardForkConsensusConfig{..} canBeLeader (Ticked slot ledgerView) =
       fmap aux
     . hsequence'
     . State.tip
     . State.align
         (translateConsensus ei cfg)
-        (hcmap proxySingle (fn_2 . checkOne ei slot) cfgs)
+        (hczipWith proxySingle (fn_2 .: checkOne ei slot) cfgs canBeLeader)
         ledgerView
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
@@ -96,17 +104,23 @@ checkOne :: (MonadRandom m, SingleEraBlock blk)
          => EpochInfo Identity
          -> SlotNo
          -> WrapPartialConsensusConfig     blk
+         -> (Maybe :.: WrapCanBeLeader)    blk
          -> HardForkEraLedgerView          blk
          -> WrapConsensusState             blk
          -> (m :.: Maybe :.: WrapIsLeader) blk
-checkOne ei slot cfg
+checkOne ei slot cfg (Comp mCanBeLeader)
          HardForkEraLedgerView{..}
          (WrapConsensusState consensusState) = Comp . fmap Comp $
-     fmap (fmap WrapIsLeader) $
-       checkIsLeader
-         (completeConsensusConfig' ei cfg)
-         (Ticked slot hardForkEraLedgerView)
-         consensusState
+     case mCanBeLeader of
+       Nothing ->
+         return Nothing
+       Just canBeLeader ->
+         fmap (fmap WrapIsLeader) $
+           checkIsLeader
+             (completeConsensusConfig' ei cfg)
+             (unwrapCanBeLeader canBeLeader)
+             (Ticked slot hardForkEraLedgerView)
+             consensusState
 
 {-------------------------------------------------------------------------------
   Rolling forward and backward

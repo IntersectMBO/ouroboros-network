@@ -62,6 +62,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
   , injTopLevelConfig
   ) where
 
+import           Data.Bifunctor
 import qualified Data.ByteString as Strict
 import           Data.SOP.Strict
 import           Data.Type.Equality
@@ -428,14 +429,21 @@ injProtocolInfo :: forall m b.
                 -> ProtocolInfo m b
                 -> ProtocolInfo m (HardForkBlock '[b])
 injProtocolInfo systemStart ProtocolInfo {..} = ProtocolInfo {
-      pInfoConfig             = injTopLevelConfig     pInfoConfig
-    , pInfoMaintainForgeState = injMaintainForgeState pInfoMaintainForgeState
-    , pInfoInitLedger         = injExtLedgerState
-                                  systemStart
-                                  pInfoInitLedger
+      pInfoConfig      = injTopLevelConfig
+                           pInfoConfig
+    , pInfoInitLedger  = injExtLedgerState
+                           systemStart
+                           pInfoInitLedger
+    , pInfoLeaderCreds = bimap (injCanBeLeader (Proxy @b)) injMaintainForgeState <$>
+                           pInfoLeaderCreds
     }
 
 injProtocolClientInfo :: ProtocolClientInfo b -> ProtocolClientInfo (HardForkBlock '[b])
 injProtocolClientInfo ProtocolClientInfo{..} = ProtocolClientInfo {
       pClientInfoCodecConfig = injCodecConfig pClientInfoCodecConfig
     }
+
+injCanBeLeader :: proxy b
+               -> CanBeLeader (BlockProtocol b)
+               -> CanBeLeader (BlockProtocol (HardForkBlock '[b]))
+injCanBeLeader _ proof = Comp (Just (WrapCanBeLeader proof)) :* Nil

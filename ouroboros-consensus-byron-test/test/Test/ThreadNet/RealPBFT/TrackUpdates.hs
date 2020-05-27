@@ -380,8 +380,8 @@ mkProtocolRealPBftAndHardForkTxs params cid genesisConfig genesisSecrets =
       , tniProtocolInfo = pInfo
       }
   where
-    ProtocolInfo{pInfoConfig}                    = pInfo
-    TopLevelConfig{configBlock, configConsensus} = pInfoConfig
+    ProtocolInfo{pInfoConfig}   = pInfo
+    TopLevelConfig{configBlock} = pInfoConfig
 
     pInfo :: ProtocolInfo m ByronBlock
     pInfo = mkProtocolRealPBFT params cid genesisConfig genesisSecrets
@@ -409,7 +409,7 @@ mkProtocolRealPBftAndHardForkTxs params cid genesisConfig genesisSecrets =
           True   -- the serialization hardwires this value anyway
           (Crypto.noPassSafeSigner opKey)
       where
-        Crypto.SignKeyByronDSIGN opKey = getOpKey configConsensus
+        Crypto.SignKeyByronDSIGN opKey = getOpKey pInfo
 
     proposal :: AProposal ByteString
     proposal =
@@ -437,10 +437,10 @@ mkHardForkProposal params genesisConfig genesisSecrets =
     pInfo :: ProtocolInfo m ByronBlock
     pInfo = mkProtocolRealPBFT params (CoreNodeId 0) genesisConfig genesisSecrets
 
-    ProtocolInfo{pInfoConfig}                    = pInfo
-    TopLevelConfig{configBlock, configConsensus} = pInfoConfig
+    ProtocolInfo{pInfoConfig}   = pInfo
+    TopLevelConfig{configBlock} = pInfoConfig
 
-    Crypto.SignKeyByronDSIGN opKey = getOpKey configConsensus
+    Crypto.SignKeyByronDSIGN opKey = getOpKey pInfo
 
     propBody :: Proposal.ProposalBody
     propBody = Proposal.ProposalBody
@@ -468,13 +468,12 @@ mkHardForkProposal params genesisConfig genesisSecrets =
 -- | Get the delegate's operational signing key
 --
 getOpKey
-  :: ConsensusConfig (BlockProtocol ByronBlock)
+  :: ProtocolInfo m ByronBlock
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-getOpKey cfgConsensus = case pbftIsLeader of
-    PBftIsALeader PBftIsLeader{pbftSignKey} -> pbftSignKey
-    PBftIsNotALeader                        -> error "impossible!"
-  where
-    PBftConfig{pbftIsLeader} = cfgConsensus
+getOpKey pInfo =
+    case pInfoLeaderCreds pInfo of
+      Just (PBftIsLeader{pbftSignKey}, _) -> pbftSignKey
+      Nothing                             -> error "impossible!"
 
 -- | Add the bytestring annotations that would be present if we were to
 -- serialize the argument, send it to ourselves, receive it, and deserialize it

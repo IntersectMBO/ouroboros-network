@@ -31,22 +31,27 @@ protocolInfoMockPBFT params eraParams nid =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             configConsensus = PBftConfig {
-                 pbftParams   = params
-               , pbftIsLeader = PBftIsALeader PBftIsLeader {
-                     pbftCoreNodeId = nid
-                   , pbftSignKey    = signKey nid
-                     -- For Mock PBFT, we use our key as the genesis key.
-                   , pbftDlgCert    = (verKey nid, verKey nid)
-                   }
-               }
+                pbftParams = params
+              }
           , configLedger = SimpleLedgerConfig ledgerView eraParams
           , configBlock  = SimpleBlockConfig
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState S.empty)
-      , pInfoMaintainForgeState = defaultMaintainForgeState
+      , pInfoLeaderCreds = Just (
+            canBeLeader
+          , defaultMaintainForgeState
+          )
       }
   where
+    canBeLeader :: PBftIsLeader PBftMockCrypto
+    canBeLeader = PBftIsLeader {
+          pbftCoreNodeId = nid
+        , pbftSignKey    = signKey nid
+          -- For Mock PBFT, we use our key as the genesis key.
+        , pbftDlgCert    = (verKey nid, verKey nid)
+        }
+
     ledgerView :: PBftLedgerView PBftMockCrypto
     ledgerView = PBftLedgerView $
         Bimap.fromList [ (verKey n, verKey n)
