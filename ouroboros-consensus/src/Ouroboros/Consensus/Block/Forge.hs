@@ -7,6 +7,7 @@ module Ouroboros.Consensus.Block.Forge (
   , Update(..)
   , updateFromTVar
   , liftUpdate
+  , hoistUpdate
   , coerceUpdate
   ) where
 
@@ -65,6 +66,11 @@ updateFromTVar var = Update $ \f -> atomically $ do
     case f a of
       Nothing      -> retry
       Just (a', b) -> writeTVar var a' >> return b
+
+hoistUpdate :: (forall x. m x -> n x) -> Update m a -> Update n a
+hoistUpdate hoist upd = Update {
+      runUpdate = hoist . runUpdate upd
+    }
 
 liftUpdate :: (large -> small)
            -> (small -> large -> large)

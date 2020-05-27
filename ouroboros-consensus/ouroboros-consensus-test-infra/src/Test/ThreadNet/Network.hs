@@ -113,7 +113,6 @@ import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
 import qualified Test.Util.LogicalClock as LogicalClock
-import           Test.Util.Random
 import           Test.Util.Tracer
 import           Test.Util.WrappedClock (NumSlots (..), WrappedClock (..))
 import qualified Test.Util.WrappedClock as WrappedClock
@@ -546,16 +545,16 @@ runThreadNetwork ThreadNetworkArgs
                    => ResourceRegistry m
                    -> WrappedClock m
                    -> TopLevelConfig blk
-                   -> RunMonadRandom m
+                   -> StrictTVar m ChaChaDRG
                    -> STM m (ExtLedgerState blk)
                       -- ^ How to get the current ledger state
                    -> Mempool m blk TicketNo
                    -> m ()
-    forkTxProducer registry clock cfg runMonadRandomDict getExtLedger mempool =
+    forkTxProducer registry clock cfg varRNG getExtLedger mempool =
       void $ WrappedClock.onSlotChange registry clock "txProducer" $ \curSlotNo -> do
         ledger <- atomically $ ledgerState <$> getExtLedger
-        txs    <- runMonadRandom runMonadRandomDict $ \_lift' ->
-          testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger
+        txs    <- simMonadRandom varRNG $
+                    testGenTxs numCoreNodes curSlotNo cfg txGenExtra ledger
         void $ addTxs mempool txs
 
     mkArgs :: WrappedClock m
@@ -673,8 +672,8 @@ runThreadNetwork ThreadNetworkArgs
       chainDB <- snd <$>
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
 
-      blockProduction <- blockProductionIOLike (runMonadRandomWithTVar varRNG) $
-         \lift' upd currentBno tickedLdgSt txs prf -> do
+      blockProduction <- blockProductionIOLike pInfoConfig varRNG $
+         \upd currentBno tickedLdgSt txs prf -> do
             let currentSlot = tickedSlotNo tickedLdgSt
 
             -- the typical behavior, which doesn't add a Just-In-Time EBB
@@ -738,7 +737,7 @@ runThreadNetwork ThreadNetworkArgs
                     Left{}  -> forgeWithoutEBB
                     Right{} -> do
                       -- TODO: We assume this succeeds; failure modes?
-                      void $ lift' $ ChainDB.addBlock chainDB ebb
+                      void $ lift $ ChainDB.addBlock chainDB ebb
                       pure blk
 
       let -- prop_general relies on these tracers
@@ -823,7 +822,7 @@ runThreadNetwork ThreadNetworkArgs
         pInfoConfig
         -- Uses the same varRNG as the block producer, but we split the RNG
         -- each time, so this is fine.
-        (runMonadRandomWithTVar varRNG)
+        varRNG
         (ChainDB.getCurrentLedger chainDB)
         mempool
 

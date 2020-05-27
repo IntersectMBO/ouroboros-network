@@ -62,13 +62,11 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import           Ouroboros.Consensus.Node.BlockProduction
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.EarlyExit
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 
@@ -308,8 +306,6 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
     void $ onKnownSlotChange registry btime "NodeKernel.blockProduction" $
       withEarlyExit_ . go
   where
-    RunMonadRandom{..} = runMonadRandomDict
-
     go :: SlotNo -> WithEarlyExit m ()
     go currentSlot = do
         trace $ TraceStartLeadershipCheck currentSlot
@@ -368,12 +364,10 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
 
         -- Check if we are the leader
         proof <- do
-          mIsLeader :: Maybe (IsLeader (BlockProtocol blk)) <- lift $
-            runMonadRandom $ \_lift' ->
-              checkIsLeader
-                (configConsensus cfg)
-                (protocolLedgerView (configLedger cfg) <$> ticked)
-                (headerStateConsensus (headerState extLedger))
+          mIsLeader <- lift $
+            getLeaderProof
+              (protocolLedgerView (configLedger cfg) <$> ticked)
+              (headerStateConsensus (headerState extLedger))
           case mIsLeader of
             Just p  -> return p
             Nothing -> do
@@ -399,9 +393,8 @@ forkBlockProduction maxTxCapacityOverride IS{..} BlockProduction{..} =
                               (computeMaxTxCapacity ticked)
 
         -- Actually produce the block
-        newBlock <- lift $ runMonadRandom $ \lift' ->
+        newBlock <- lift $
           produceBlock
-            lift'
             (updateFromTVar (castStrictTVar varForgeState))
             bcBlockNo
             ticked

@@ -14,24 +14,24 @@ module Ouroboros.Consensus.Util.Random (
       -- * Adding DRNG to a monad stack
     , ChaChaT -- opaque
     , runChaChaT
-      -- * Run MonadRandom computations
-    , RunMonadRandom (..)
-    , runMonadRandomIO
+    , simMonadRandom
       -- * Convenience re-exports
     , MonadRandom (..)
+    , MonadTrans(..)
     , ChaChaDRG
     )
     where
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad.State
+import           Control.Monad.Trans (MonadTrans (..))
 import           Crypto.Number.Generate (generateBetween)
 import           Crypto.Random (ChaChaDRG, MonadPseudoRandom, MonadRandom (..),
-                     drgNewTest, randomBytesGenerate, withDRG)
+                     drgNew, drgNewTest, randomBytesGenerate, withDRG)
 import           Data.List (genericLength)
 import           Data.Word (Word64)
 
-import           Control.Monad.Class.MonadSTM
+import           Ouroboros.Consensus.Util.IOLike
 
 {-------------------------------------------------------------------------------
   Producing values in MonadRandom
@@ -84,15 +84,37 @@ runChaChaT = runStateT  . unChaChaT
   Run MonadRandom computations
 -------------------------------------------------------------------------------}
 
-newtype RunMonadRandom m = RunMonadRandom
-  { runMonadRandom :: forall a. MonadSTM m
-                   => (forall n. (MonadRandom n, MonadSTM n, STM m ~ STM n)
-                              => (forall x. m x -> n x)
-                              -- escape hatch, for testing
-                              -> n a)
-                   -> m a
-  }
-
--- | Use the 'MonadRandom' instance for 'IO'.
-runMonadRandomIO :: RunMonadRandom IO
-runMonadRandomIO = RunMonadRandom $ \f -> f id
+-- | Simulate 'MonadRandom' when it's not actually available
+--
+-- We store a 'ChaChaDRG' in a TVar, and whenever we need to run a computation
+-- requiring 'MonadRandom', we split the 'ChaChaDRG', store a split half back
+-- in the TVar and run the computation using the other half. Each random
+-- computation will use a different DRG, even concurrent ones.
+--
+-- Remember that will only be used in the tests code, in the real
+-- implementation we will use 'runMonadRandomIO'.
+simMonadRandom
+  :: MonadSTM m
+  => StrictTVar m ChaChaDRG
+  -> ChaChaT m a
+  -> m a
+simMonadRandom varRNG n = do
+    -- We can't run @n@ atomically, so to make sure we never run
+    -- computations with the same RNG, we first split it,
+    -- /atomically/, and then run the computation with one half of
+    -- the RNG.
+    rng <- atomically $ do
+      rng <- readTVar varRNG
+      ((split1, split2), _rng') <- runChaChaT fakeSplitDRG rng
+      writeTVar varRNG split1
+      return split2
+    fst <$> runChaChaT n rng
+  where
+    -- The 'ChaChaDRG' is not splittable. We fake splitting it by using the
+    -- 'ChaChaT' 'MonadRandom' instance to generate two new 'ChaChaDRG's. If
+    -- this turns out to be problematic, there is actually no need to store a
+    -- 'ChaChaDRG' in the 'TVar'; we should instead use a splittable PRNG, and
+    -- then use in combination with 'drgNew' or 'drgNewTest' to produce a
+    -- 'ChaChaDRG'.
+    fakeSplitDRG :: MonadRandom m => m (ChaChaDRG, ChaChaDRG)
+    fakeSplitDRG = (,) <$> drgNew <*> drgNew
