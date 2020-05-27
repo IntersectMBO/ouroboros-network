@@ -52,8 +52,9 @@ data BlockProduction m blk = BlockProduction {
     }
 
 defaultBlockProduction :: CanForge blk
-                       => TopLevelConfig blk -> BlockProduction IO blk
-defaultBlockProduction cfg = BlockProduction {
-      produceBlock       = \_lift' -> forgeBlock cfg
-    , runMonadRandomDict = runMonadRandomIO
-    }
+                       => TopLevelConfig blk -> IO (BlockProduction IO blk)
+defaultBlockProduction cfg = do
+    return $ BlockProduction {
+        produceBlock       = \_lift' -> forgeBlock cfg
+      , runMonadRandomDict = runMonadRandomIO
+      }

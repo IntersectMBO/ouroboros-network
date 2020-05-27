@@ -184,21 +184,20 @@ run runargs@RunNodeArgs{..} =
           customiseChainDbArgs')
         ChainDB.closeDB
 
-      btime <- hardForkBlockchainTime
-                 registry
-                 (blockchainTimeTracer rnTraceConsensus)
-                 (defaultSystemTime $ getSystemStart (configBlock cfg))
-                 (configLedger cfg)
-                 (ledgerState <$> ChainDB.getCurrentLedger chainDB)
-
-      let nodeArgs = rnCustomiseNodeArgs $
-            mkNodeArgs
-              registry
-              cfg
-              initForgeState
-              rnTraceConsensus
-              btime
-              chainDB
+      btime      <- hardForkBlockchainTime
+                      registry
+                      (blockchainTimeTracer rnTraceConsensus)
+                      (defaultSystemTime $ getSystemStart (configBlock cfg))
+                      (configLedger cfg)
+                      (ledgerState <$> ChainDB.getCurrentLedger chainDB)
+      nodeArgs   <- rnCustomiseNodeArgs <$>
+                      mkNodeArgs
+                        registry
+                        cfg
+                        initForgeState
+                        rnTraceConsensus
+                        btime
+                        chainDB
       nodeKernel <- initNodeKernel nodeArgs
       rnNodeKernelHook registry nodeKernel
 
@@ -408,25 +407,23 @@ mkNodeArgs
   -> Tracers IO RemoteConnectionId LocalConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
-  -> NodeArgs IO RemoteConnectionId LocalConnectionId blk
-mkNodeArgs registry cfg initForgeState tracers btime chainDB = NodeArgs
-    { tracers
-    , registry
-    , cfg
-    , initForgeState
-    , btime
-    , chainDB
-    , initChainDB             = nodeInitChainDB
-    , blockProduction
-    , blockFetchSize          = nodeBlockFetchSize
-    , blockMatchesHeader      = nodeBlockMatchesHeader
-    , maxTxCapacityOverride   = NoMaxTxCapacityOverride
-    , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
-    , miniProtocolParameters  = defaultMiniProtocolParameters
-    }
-  where
-    blockProduction
-      | checkIfCanBeLeader (configConsensus cfg)
-      = Just $ defaultBlockProduction cfg
-      | otherwise
-      = Nothing
+  -> IO (NodeArgs IO RemoteConnectionId LocalConnectionId blk)
+mkNodeArgs registry cfg initForgeState tracers btime chainDB = do
+    blockProduction <- if checkIfCanBeLeader (configConsensus cfg)
+                         then Just <$> defaultBlockProduction cfg
+                         else return Nothing
+    return NodeArgs
+      { tracers
+      , registry
+      , cfg
+      , initForgeState
+      , btime
+      , chainDB
+      , initChainDB            = nodeInitChainDB
+      , blockProduction
+      , blockFetchSize         = nodeBlockFetchSize
+      , blockMatchesHeader     = nodeBlockMatchesHeader
+      , maxTxCapacityOverride   = NoMaxTxCapacityOverride
+      , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
+      , miniProtocolParameters = defaultMiniProtocolParameters
+      }
