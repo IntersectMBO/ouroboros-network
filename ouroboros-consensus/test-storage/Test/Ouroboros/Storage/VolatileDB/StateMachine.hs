@@ -36,12 +36,14 @@ import qualified Generics.SOP as SOP
 import           GHC.Generics
 import           GHC.Stack
 
+import           Cardano.Slotting.Slot (EpochNo (..))
+
 import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
                      MaxSlotNo (..), SlotNo (..), blockHash)
 import           Ouroboros.Network.Point (WithOrigin)
 import qualified Ouroboros.Network.Point as WithOrigin
 
-import           Ouroboros.Consensus.Block (IsEBB (..))
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -164,6 +166,7 @@ deriving instance Generic1        (At Resp)
 deriving instance Rank2.Foldable  (At Resp)
 deriving instance Show1 r => Show (Resp :@ r)
 
+deriving instance ToExpr EpochNo
 deriving instance ToExpr SlotNo
 deriving instance ToExpr FsPath
 deriving instance ToExpr MaxSlotNo
@@ -176,6 +179,7 @@ deriving instance ToExpr (Model r)
 deriving instance ToExpr (WithOrigin BlockId)
 deriving instance ToExpr TestHeaderHash
 deriving instance ToExpr TestBodyHash
+deriving instance ToExpr EBB
 deriving instance ToExpr TestHeader
 deriving instance ToExpr TestBody
 deriving instance ToExpr TestBlock
@@ -383,8 +387,8 @@ generatorCmdImpl Model {..} = frequency
       let body  = testBody b
           th    = testHeader b
           no    = thBlockNo th
-          isEBB = thIsEBB th
-      return $ mkBlock canContainEBB body (BlockHash prevHash) slot no isEBB
+          ebb   = blockIsEBB b
+      return $ mkBlock canContainEBB body (BlockHash prevHash) slot no ebb
 
     genRandomBlock :: Gen TestBlock
     genRandomBlock = do
@@ -396,8 +400,9 @@ generatorCmdImpl Model {..} = frequency
       slot     <- genSlotStartingFrom 0
       -- We don't care about block numbers in the VolatileDB
       no       <- BlockNo <$> arbitrary
-      isEBB    <- elements [IsEBB, IsNotEBB]
-      return $ mkBlock canContainEBB body prevHash slot no isEBB
+      -- We don't care about epoch numbers in the VolatileDB
+      ebb      <- arbitrary
+      return $ mkBlock canContainEBB body prevHash slot no ebb
 
     genBlockId :: Gen BlockId
     genBlockId = frequency
@@ -578,7 +583,7 @@ test cmds = do
     (tracer, getTrace) <- recordingTracerIORef
 
     let hasFS  = mkSimErrorHasFS varFs varErrors
-        parser = blockFileParser' hasFS testBlockIsEBB
+        parser = blockFileParser' hasFS
           testBlockToBinaryInfo (const <$> decode) testBlockIsValid
           ValidateAll
         args = VolatileDbArgs

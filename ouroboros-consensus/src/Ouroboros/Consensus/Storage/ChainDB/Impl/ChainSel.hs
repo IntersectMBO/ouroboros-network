@@ -254,7 +254,7 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
 
     -- ### Ignore
     if
-      | olderThanK hdr (cdbIsEBB hdr) immBlockNo -> do
+      | olderThanK hdr isEBB immBlockNo -> do
         trace $ IgnoreBlockOlderThanK (blockRealPoint b)
         deliverPromises False curTip
         chainSelectionForFutureBlocks cdb BlockCache.empty
@@ -272,7 +272,7 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
       -- The remaining cases
       | otherwise -> do
         VolDB.putBlock cdbVolDB b
-        trace $ AddedBlockToVolDB (blockRealPoint b) (blockNo b) (cdbIsEBB hdr)
+        trace $ AddedBlockToVolDB (blockRealPoint b) (blockNo b) isEBB
         atomically $ putTMVar varBlockWrittenToDisk True
 
         let blockCache = BlockCache.singleton b
@@ -288,6 +288,9 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
 
     hdr :: Header blk
     hdr = getHeader b
+
+    isEBB :: IsEBB
+    isEBB = headerToIsEBB hdr
 
     -- | Use the given 'Bool' and 'Point' to fill in the 'TMVar's
     -- corresponding to the block's 'AddBlockPromise'.
@@ -423,7 +426,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
     if
       -- The chain might have grown since we added the block such that the
       -- block is older than @k@.
-      | olderThanK hdr (cdbIsEBB hdr) immBlockNo -> do
+      | olderThanK hdr isEBB immBlockNo -> do
         trace $ IgnoreBlockOlderThanK p
         return tipPoint
 
@@ -457,6 +460,9 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
 
     p :: RealPoint blk
     p = headerRealPoint hdr
+
+    isEBB :: IsEBB
+    isEBB = headerToIsEBB hdr
 
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)

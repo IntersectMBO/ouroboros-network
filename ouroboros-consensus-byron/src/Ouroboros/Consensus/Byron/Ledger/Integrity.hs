@@ -1,7 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 module Ouroboros.Consensus.Byron.Ledger.Integrity
-  ( verifyBlockMatchesHeader
-  , verifyHeaderSignature
+  ( verifyHeaderSignature
   , verifyHeaderIntegrity
   , verifyBlockIntegrity
   ) where
@@ -9,7 +8,6 @@ module Ouroboros.Consensus.Byron.Ledger.Integrity
 import           Data.Either (isRight)
 
 import qualified Cardano.Chain.Block as CC
-import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Crypto.DSIGN.Class as CC.Crypto
 
 import           Ouroboros.Consensus.Block
@@ -18,14 +16,6 @@ import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.PBFT ()
-
--- | Check if a block matches its header
---
--- Note that we cannot check this for an EBB, as the EBB header doesn't store
--- a hash of the EBB body.
-verifyBlockMatchesHeader :: Header ByronBlock -> ByronBlock -> Bool
-verifyBlockMatchesHeader hdr blk =
-    CC.abobMatchesBody (byronHeaderRaw hdr) (byronBlockRaw blk)
 
 -- | Verify whether a header matches its signature.
 --
@@ -72,7 +62,7 @@ verifyHeaderIntegrity cfg hdr =
 -- anything for an EBB.
 verifyBlockIntegrity :: BlockConfig ByronBlock -> ByronBlock -> Bool
 verifyBlockIntegrity cfg blk =
-    verifyHeaderIntegrity    cfg hdr &&
-    verifyBlockMatchesHeader     hdr blk
+    verifyHeaderIntegrity cfg hdr &&
+    blockMatchesHeader        hdr blk
   where
     hdr = getHeader blk

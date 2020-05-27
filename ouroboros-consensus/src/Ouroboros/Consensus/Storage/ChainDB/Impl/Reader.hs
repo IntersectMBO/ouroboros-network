@@ -86,6 +86,7 @@ newReader
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
+     , GetHeader blk
      )
   => ChainDbHandle m blk
   -> (Header blk -> Encoding)
@@ -126,6 +127,7 @@ makeNewReader
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
+     , GetHeader blk
      )
   => ChainDbHandle m blk
   -> (Header blk -> Encoding)
@@ -205,6 +207,7 @@ instructionHelper
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
+     , GetHeader blk
      , Traversable f, Applicative f
      )
   => ResourceRegistry m
@@ -290,7 +293,7 @@ instructionHelper registry varReader blockComponent encodeHeader fromMaybeSTM CD
         GetRawHeader  -> return $ toLazyByteString $ encodeHeader hdr
         GetHash       -> return $ headerHash hdr
         GetSlot       -> return $ blockSlot hdr
-        GetIsEBB      -> return $ cdbIsEBB hdr
+        GetIsEBB      -> return $ headerToIsEBB hdr
         GetBlockSize  -> getBlockComponent GetBlockSize
         -- We could look up the header size in the index of the VolatileDB,
         -- but getting the serialisation is cheap because we keep the

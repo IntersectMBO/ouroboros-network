@@ -22,6 +22,7 @@ module Test.Ouroboros.Storage.TestBlock (
   , TestBodyHash(..)
   , Header(..)
   , BlockConfig(..)
+  , EBB(..)
     -- ** Construction
   , mkBlock
   , firstBlock
@@ -32,7 +33,6 @@ module Test.Ouroboros.Storage.TestBlock (
   , testBlockToBlockInfo
   , testBlockIsValid
   , testBlockIsEBB
-  , testHeaderEpochNoIfEBB
     -- ** Serialisation
   , testHashInfo
   , testBlockToBuilder
@@ -151,10 +151,21 @@ data TestHeader = TestHeader {
     , thBodyHash :: !TestBodyHash
     , thSlotNo   :: !SlotNo
     , thBlockNo  :: !BlockNo
-    , thIsEBB    :: !IsEBB
+    , thIsEBB    :: !EBB
     }
   deriving stock    (Eq, Show, Generic)
   deriving anyclass (NoUnexpectedThunks, Serialise)
+
+-- | Strict variant of @Maybe EpochNo@
+data EBB =
+    EBB !EpochNo
+  | RegularBlock
+  deriving stock    (Eq, Show, Generic)
+  deriving anyclass (NoUnexpectedThunks, Serialise)
+
+instance Hashable EBB where
+  hashWithSalt s (EBB epoch)  = hashWithSalt s (unEpochNo epoch)
+  hashWithSalt s RegularBlock = hashWithSalt s (0 :: Int)
 
 data TestBody = TestBody {
       tbForkNo  :: !Word
@@ -177,6 +188,13 @@ instance GetHeader TestBlock where
   newtype Header TestBlock = TestHeader' { unTestHeader :: TestHeader }
     deriving newtype (Eq, Show, NoUnexpectedThunks, Serialise)
   getHeader = TestHeader' . testHeader
+
+  blockMatchesHeader (TestHeader' hdr) blk =
+      thBodyHash hdr == hashBody (testBody blk)
+
+  headerIsEBB (TestHeader' hdr) = case thIsEBB hdr of
+    EBB epochNo  -> Just epochNo
+    RegularBlock -> Nothing
 
 instance StandardHash TestBlock
 instance StandardHash TestHeader
@@ -234,16 +252,7 @@ testHashInfo = HashInfo
     }
 
 testBlockIsEBB :: TestBlock -> IsEBB
-testBlockIsEBB = thIsEBB . testHeader
-
-testHeaderEpochNoIfEBB :: HasCallStack
-                       => ChunkInfo -> Header TestBlock -> Maybe EpochNo
-testHeaderEpochNoIfEBB chunkInfo (TestHeader' hdr) = case thIsEBB hdr of
-    IsNotEBB -> Nothing
-    IsEBB    -> Just $
-      case slotMightBeEBB chunkInfo (thSlotNo hdr) of
-        Just epochNo -> epochNo
-        Nothing      -> error "testHeaderEpochNoIfEBB: EBB in incorrect slot"
+testBlockIsEBB = headerToIsEBB . getHeader
 
 -- | Check whether the header matches its hash and whether the body matches
 -- its hash.
@@ -290,7 +299,7 @@ testBlockToBlockInfo tb = BlockInfo {
     , bpreBid       = case thPrevHash of
         GenesisHash -> Origin
         BlockHash h -> At h
-    , bisEBB        = thIsEBB
+    , bisEBB        = blockToIsEBB tb
     , bheaderOffset = testBlockHeaderOffset
     , bheaderSize   = testBlockHeaderSize tb
     }
@@ -313,11 +322,11 @@ mkBlock
   -- ^ Hash of previous header
   -> SlotNo
   -> BlockNo
-  -> IsEBB
+  -> Maybe EpochNo
   -> TestBlock
-mkBlock canContainEBB testBody thPrevHash thSlotNo thBlockNo thIsEBB =
-    case (canContainEBB thSlotNo, thIsEBB) of
-      (False, IsEBB) ->
+mkBlock canContainEBB testBody thPrevHash thSlotNo thBlockNo ebb =
+    case (canContainEBB thSlotNo, ebb) of
+      (False, Just _) ->
         error "mkBlock: EBB in invalid slot"
       _otherwise ->
         TestBlock { testHeader, testBody }
@@ -328,38 +337,40 @@ mkBlock canContainEBB testBody thPrevHash thSlotNo thBlockNo thIsEBB =
       , thBodyHash = hashBody testBody
       , thSlotNo
       , thBlockNo
-      , thIsEBB
+      , thIsEBB = case ebb of
+          Just epoch -> EBB epoch
+          Nothing    -> RegularBlock
       }
 
 -- | Note the first block need not be an EBB, see 'firstEBB'.
-firstBlock :: HasCallStack
-           => (SlotNo -> Bool)
-           -> SlotNo
-           -> TestBody
-           -> TestBlock
-firstBlock canContainEBB slotNo testBody = mkBlock canContainEBB
-    testBody
-    GenesisHash
-    slotNo
-    0
-    IsNotEBB
+firstBlock :: SlotNo -> TestBody -> TestBlock
+firstBlock slotNo testBody =
+    mkBlock
+      (const False)
+      testBody
+      GenesisHash
+      slotNo
+      0
+      Nothing
 
-mkNextBlock :: (SlotNo -> Bool)
-            -> TestBlock  -- ^ Previous block
+mkNextBlock :: TestBlock  -- ^ Previous block
             -> SlotNo
             -> TestBody
             -> TestBlock
-mkNextBlock canContainEBB prev slotNo testBody = mkBlock canContainEBB
-    testBody
-    (BlockHash (blockHash prev))
-    slotNo
-    (succ (blockNo prev))
-    IsNotEBB
+mkNextBlock prev slotNo testBody =
+    mkBlock
+      (const False)
+      testBody
+      (BlockHash (blockHash prev))
+      slotNo
+      (succ (blockNo prev))
+      Nothing
 
 firstEBB :: (SlotNo -> Bool)
          -> TestBody
          -> TestBlock
-firstEBB canContainEBB testBody = mkBlock canContainEBB testBody GenesisHash 0 0 IsEBB
+firstEBB canContainEBB testBody =
+    mkBlock canContainEBB testBody GenesisHash 0 0 (Just 0)
 
 -- | Note that in various places, e.g., the ImmutableDB, we rely on the fact
 -- that the @slotNo@ should correspond to the first slot number of the epoch,
@@ -367,15 +378,17 @@ firstEBB canContainEBB testBody = mkBlock canContainEBB testBody GenesisHash 0 0
 mkNextEBB :: (SlotNo -> Bool)
           -> TestBlock  -- ^ Previous block
           -> SlotNo     -- ^ @slotNo@
+          -> EpochNo
           -> TestBody
           -> TestBlock
-mkNextEBB canContainEBB prev slotNo testBody = mkBlock canContainEBB
-    testBody
-    (BlockHash (blockHash prev))
-    slotNo
-    (blockNo prev)
-    IsEBB
-
+mkNextEBB canContainEBB prev slotNo epochNo testBody =
+    mkBlock
+      canContainEBB
+      testBody
+      (BlockHash (blockHash prev))
+      slotNo
+      (blockNo prev)
+      (Just epochNo)
 
 {-------------------------------------------------------------------------------
   Test infrastructure: protocol
@@ -431,7 +444,7 @@ instance BlockSupportsProtocol TestBlock where
       signKey :: SlotNo -> SignKeyDSIGN MockDSIGN
       signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
 
-  selectView _ hdr = (blockNo hdr, thIsEBB (unTestHeader hdr))
+  selectView _ hdr = (blockNo hdr, headerToIsEBB hdr)
 
 data TestBlockError =
     -- | The hashes don't line up
@@ -478,7 +491,7 @@ instance UpdateLedger TestBlock
 instance HasAnnTip TestBlock where
   type TipInfo TestBlock = (HeaderHash TestBlock, IsEBB)
   tipInfoHash _ = fst
-  getTipInfo b  = (blockHash b, thIsEBB (unTestHeader b))
+  getTipInfo b  = (blockHash b, headerToIsEBB b)
 
 data TestBlockOtherHeaderEnvelopeError =
     UnexpectedEBBInSlot !SlotNo
@@ -513,7 +526,7 @@ instance ValidateEnvelope TestBlock where
       actualSlotNo = blockSlot hdr
 
       newIsEBB :: IsEBB
-      newIsEBB = thIsEBB (unTestHeader hdr)
+      newIsEBB = headerToIsEBB hdr
 
       canBeEBB :: SlotNo -> Bool
       canBeEBB (SlotNo s) = testBlockEBBsAllowed (configBlock cfg)

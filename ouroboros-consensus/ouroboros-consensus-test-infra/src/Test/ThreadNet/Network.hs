@@ -604,7 +604,6 @@ runThreadNetwork ThreadNetworkArgs
         , cdbTopLevelConfig       = cfg
         , cdbChunkInfo            = ImmDB.simpleChunkInfo epochSize
         , cdbHashInfo             = nodeHashInfo (Proxy @blk)
-        , cdbIsEBB                = nodeIsEBB
         , cdbCheckIntegrity       = nodeCheckIntegrity cfg
         , cdbGenesis              = return initLedger
         , cdbCheckInFuture        = LogicalClock.checkInFuture
@@ -772,7 +771,6 @@ runThreadNetwork ThreadNetworkArgs
             , initChainDB             = nodeInitChainDB
             , blockProduction         = Just blockProduction
             , blockFetchSize          = nodeBlockFetchSize
-            , blockMatchesHeader      = nodeBlockMatchesHeader
             , maxTxCapacityOverride   = NoMaxTxCapacityOverride
             , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
             , miniProtocolParameters  = MiniProtocolParameters {

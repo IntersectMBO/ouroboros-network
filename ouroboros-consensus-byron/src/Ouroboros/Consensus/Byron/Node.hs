@@ -33,7 +33,6 @@ import           Control.Monad.Except
 import           Data.Coerce (coerce)
 import           Data.Maybe
 
-import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
@@ -219,14 +218,7 @@ extractGenesisData = Genesis.configGenesisData . byronGenesisConfig
 -------------------------------------------------------------------------------}
 
 instance RunNode ByronBlock where
-  nodeBlockMatchesHeader    = verifyBlockMatchesHeader
   nodeBlockFetchSize        = byronHeaderBlockSizeHint
-  nodeIsEBB                 = \hdr -> case byronHeaderRaw hdr of
-    Cardano.Block.ABOBBlockHdr _       -> Nothing
-    Cardano.Block.ABOBBoundaryHdr bhdr -> Just
-                              . EpochNo
-                              . Cardano.Block.boundaryEpoch
-                              $ bhdr
 
   -- The epoch size is fixed and can be derived from @k@ by the ledger
   -- ('kEpochSlots').

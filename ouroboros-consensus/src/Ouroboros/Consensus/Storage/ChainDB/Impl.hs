@@ -31,14 +31,13 @@ import           Control.Monad (when)
 import           Control.Tracer
 import           Data.Functor ((<&>))
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (isJust)
 import           GHC.Stack (HasCallStack)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, Point, castPoint)
 
-import           Ouroboros.Consensus.Block (Header, toIsEBB)
+import           Ouroboros.Consensus.Block (Header)
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (whenJust)
@@ -149,7 +148,6 @@ openDBInternal args launchBgTasks = do
                   , cdbGcInterval      = Args.cdbGcInterval args
                   , cdbKillBgThreads   = varKillBgThreads
                   , cdbChunkInfo       = Args.cdbChunkInfo args
-                  , cdbIsEBB           = toIsEBB . isJust . Args.cdbIsEBB args
                   , cdbCheckIntegrity  = Args.cdbCheckIntegrity args
                   , cdbCheckInFuture   = Args.cdbCheckInFuture args
                   , cdbBlocksToAdd     = blocksToAdd

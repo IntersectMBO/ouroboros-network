@@ -239,9 +239,6 @@ instance RunNode DualByronBlock where
   nodeEncodeAnnTip = \_p -> nodeEncodeAnnTip pb . castAnnTip
   nodeDecodeAnnTip = \_p -> castAnnTip <$> nodeDecodeAnnTip pb
 
-  -- We can look at the concrete header to see if this is an EBB
-  nodeIsEBB = nodeIsEBB . dualHeaderMain
-
   -- For now the size of the block is just an estimate, and so we just reuse
   -- the estimate from the concrete header.
   nodeBlockFetchSize = nodeBlockFetchSize . dualHeaderMain
@@ -249,8 +246,7 @@ instance RunNode DualByronBlock where
   -- We don't really care too much about data loss or malicious behaviour for
   -- the dual ledger tests, so integrity and match checks can just use the
   -- concrete implementation
-  nodeBlockMatchesHeader hdr = nodeBlockMatchesHeader (dualHeaderMain         hdr) . dualBlockMain
-  nodeCheckIntegrity     cfg = nodeCheckIntegrity     (dualTopLevelConfigMain cfg) . dualBlockMain
+  nodeCheckIntegrity cfg = nodeCheckIntegrity (dualTopLevelConfigMain cfg) . dualBlockMain
 
   -- The header is just the concrete header, so we can just reuse the Byron def
   nodeAddHeaderEnvelope = \_ -> nodeAddHeaderEnvelope pb

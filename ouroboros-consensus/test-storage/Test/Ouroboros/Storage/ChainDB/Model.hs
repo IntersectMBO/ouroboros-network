@@ -58,7 +58,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , ledgerCursorState
   , ledgerCursorMove
     -- * ModelSupportsBlock
-  , ModelSupportsBlock (..)
+  , ModelSupportsBlock
     -- * Exported for testing purposes
   , between
   , blocks
@@ -337,14 +337,14 @@ advanceCurSlot
   -> Model blk -> Model blk
 advanceCurSlot curSlot m = m { currentSlot = curSlot `max` currentSlot m }
 
-addBlock :: forall blk. (LedgerSupportsProtocol blk, ModelSupportsBlock blk)
+addBlock :: forall blk. LedgerSupportsProtocol blk
          => TopLevelConfig blk
          -> blk
          -> Model blk -> Model blk
 addBlock cfg blk m
     -- If the block is as old as the tip of the ImmutableDB, i.e. older than
     -- @k@, we ignore it, as we can never switch to it.
-  | olderThanK hdr (isEBB hdr) immBlockNo
+  | olderThanK hdr (headerToIsEBB hdr) immBlockNo
   = m
     -- If it's an invalid block we've seen before, ignore it.
   | isKnownInvalid blk
@@ -404,7 +404,7 @@ addBlock cfg blk m
       . filter (extendsImmutableChain . fst)
       $ candidates
 
-addBlocks :: (LedgerSupportsProtocol blk, ModelSupportsBlock blk)
+addBlocks :: LedgerSupportsProtocol blk
           => TopLevelConfig blk
           -> [blk]
           -> Model blk -> Model blk
@@ -412,7 +412,7 @@ addBlocks cfg = repeatedly (addBlock cfg)
 
 -- | Wrapper around 'addBlock' that returns an 'AddBlockPromise'.
 addBlockPromise
-  :: forall m blk. (LedgerSupportsProtocol blk, ModelSupportsBlock blk, MonadSTM m)
+  :: forall m blk. (LedgerSupportsProtocol blk, MonadSTM m)
   => TopLevelConfig blk
   -> blk
   -> Model blk
@@ -477,7 +477,7 @@ getBlockComponent blk = \case
 
     GetHash       -> Block.blockHash blk
     GetSlot       -> Block.blockSlot blk
-    GetIsEBB      -> isEBB (getHeader blk)
+    GetIsEBB      -> headerToIsEBB (getHeader blk)
     GetBlockSize  -> fromIntegral $ Lazy.length $ serialise blk
     GetHeaderSize -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
 
@@ -600,8 +600,7 @@ class ( HasHeader blk
       , HasHeader (Header blk)
       , Serialise blk
       , Serialise (Header blk)
-      ) => ModelSupportsBlock blk where
-  isEBB :: Header blk -> IsEBB
+      ) => ModelSupportsBlock blk
 
 {-------------------------------------------------------------------------------
   Internal auxiliary

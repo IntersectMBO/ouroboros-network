@@ -62,13 +62,13 @@ import           Cardano.Prelude (AllowThunk (..), NoUnexpectedThunks)
 import           Cardano.Slotting.Slot hiding (At)
 import qualified Cardano.Slotting.Slot as S
 
-import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB, getHeader)
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
 import           Ouroboros.Network.Block (BlockNo (..), HasHeader (..),
                      HeaderHash, SlotNo (..))
 import qualified Ouroboros.Network.Block as Block
+
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
@@ -532,9 +532,7 @@ generateCmd Model {..} = At <$> frequency
               , (1, chooseSlot (inLaterChunk 1 lastSlot,
                                 inLaterChunk 4 lastSlot))
               ]
-            let block = (maybe (firstBlock  canContainEBB)
-                               (mkNextBlock canContainEBB)
-                               mbPrevBlock)
+            let block = (maybe firstBlock mkNextBlock mbPrevBlock)
                           slotNo
                           (TestBody 0 True)
             return $ AppendBlock slotNo (blockHash block) block)
@@ -548,7 +546,7 @@ generateCmd Model {..} = At <$> frequency
                   , (3, chooseEpoch (currentEpoch, currentEpoch + 5))
                   ]
                 let slotNo = slotNoOfEBB dbmChunkInfo epoch
-                return (epoch, mkNextEBB canContainEBB prevBlock slotNo (TestBody 0 True))
+                return (epoch, mkNextEBB canContainEBB prevBlock slotNo epoch (TestBody 0 True))
             return $ AppendEBB epoch (blockHash ebb) ebb)
     , (4, return StreamAll)
     , (4, frequency
@@ -1153,6 +1151,7 @@ instance (ToExpr a, ToExpr b, ToExpr c, ToExpr d, ToExpr e, ToExpr f, ToExpr g,
 instance ToExpr (IteratorResult AllComponents)
 instance ToExpr (IteratorModel Hash)
 instance ToExpr (HeaderHash h) => ToExpr (Block.ChainHash h)
+instance ToExpr EBB
 instance ToExpr IsEBB
 instance ToExpr TestHeaderHash
 instance ToExpr TestBodyHash
@@ -1216,8 +1215,8 @@ test cacheConfig chunkInfo cmds = do
     (tracer, getTrace) <- recordingTracerIORef
 
     let hasFS  = mkSimErrorHasFS fsVar varErrors
-        parser = chunkFileParser hasFS (const <$> decode) isEBB
-          getBinaryInfo testBlockIsValid
+        parser = chunkFileParser hasFS (const <$> decode) getBinaryInfo
+                   testBlockIsValid
     withRegistry $ \registry -> do
       let args = ImmutableDbArgs
             { registry
@@ -1262,7 +1261,6 @@ test cacheConfig chunkInfo cmds = do
 
       return (hist, prop)
   where
-    isEBB = testHeaderEpochNoIfEBB chunkInfo . getHeader
     getBinaryInfo = void . testBlockToBinaryInfo
 
     openHandlesProp fs model

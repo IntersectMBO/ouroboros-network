@@ -160,7 +160,7 @@ copyToImmDB CDB{..} = withCopyLock $ do
         -- When we found a corrupt block, shut down the node. This exception
         -- will make sure we restart with validation enabled.
         unless (cdbCheckIntegrity blk) $
-          let blockRef = BlockRef (blockPoint blk) (cdbIsEBB (getHeader blk))
+          let blockRef = BlockRef (blockPoint blk) (headerToIsEBB (getHeader blk))
           in throwM $ VolDbCorruptBlock blockRef
 
         -- We're the only one modifying the ImmutableDB, so the tip cannot

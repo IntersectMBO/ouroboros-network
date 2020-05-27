@@ -95,6 +95,11 @@ instance SingleEraBlock b => GetHeader (DegenFork b) where
 
   getHeader (DBlk b) = DHdr (getHeader b)
 
+  blockMatchesHeader (DHdr hdr) (DBlk blk) =
+      blockMatchesHeader (projHeader hdr) (projBlock blk)
+
+  headerIsEBB (DHdr hdr) = headerIsEBB (projHeader hdr)
+
 newtype instance BlockConfig (DegenFork b) = DBCfg {
       unDBCfg :: BlockConfig (HardForkBlock '[b])
     }
@@ -279,9 +284,7 @@ instance HasNetworkProtocolVersion b => HasNetworkProtocolVersion (DegenFork b) 
   nodeToClientProtocolVersion   _ = nodeToClientProtocolVersion   (Proxy @b)
 
 instance (SingleEraBlock b, FromRawHash b, RunNode b) => RunNode (DegenFork b) where
-  nodeBlockMatchesHeader (DHdr hdr) (DBlk blk) = nodeBlockMatchesHeader (projHeader hdr) (projBlock blk)
   nodeBlockFetchSize     (DHdr hdr)            = nodeBlockFetchSize     (projHeader hdr)
-  nodeIsEBB              (DHdr hdr)            = nodeIsEBB              (projHeader hdr)
 
   nodeImmDbChunkInfo  cfg = nodeImmDbChunkInfo (projCfg cfg)
 

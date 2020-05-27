@@ -340,11 +340,7 @@ instance ConfigSupportsNode (ShelleyBlock c) where
 -------------------------------------------------------------------------------}
 
 instance TPraosCrypto c => RunNode (ShelleyBlock c) where
-  nodeBlockMatchesHeader = verifyBlockMatchesHeader
-
   nodeBlockFetchSize = fromIntegral . SL.bsize . SL.bhbody . shelleyHeaderRaw
-
-  nodeIsEBB = const Nothing
 
   -- We fix the chunk size to 10k
   nodeImmDbChunkInfo =

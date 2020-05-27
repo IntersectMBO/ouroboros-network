@@ -44,7 +44,6 @@ import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Node.Run (nodeIsEBB)
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.Crypto as Crypto
@@ -937,7 +936,7 @@ hasAllEBBs k produceEBBs outcomes (nid, c) =
               hi = unSlotNo s `div` denom
               denom = unEpochSlots $ kEpochSlots $ coerce k
 
-    actual   = mapMaybe (nodeIsEBB . getHeader) $ Chain.toOldestFirst c
+    actual   = mapMaybe blockIsEBB $ Chain.toOldestFirst c
 
 {-------------------------------------------------------------------------------
   Generating the genesis configuration

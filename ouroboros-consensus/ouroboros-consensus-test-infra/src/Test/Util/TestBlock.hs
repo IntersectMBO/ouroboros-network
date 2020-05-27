@@ -211,6 +211,8 @@ instance GetHeader TestBlock where
     deriving stock   (Eq, Show)
     deriving newtype (NoUnexpectedThunks, Serialise)
   getHeader = TestHeader
+  blockMatchesHeader (TestHeader blk') blk = blk == blk'
+  headerIsEBB = const Nothing
 
 type instance HeaderHash TestBlock = TestHash
 

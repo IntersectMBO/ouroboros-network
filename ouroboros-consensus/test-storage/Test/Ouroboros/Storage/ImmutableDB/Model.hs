@@ -86,7 +86,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (parseDBFile,
                      validateIteratorRange)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Types
 
-import           Test.Ouroboros.Storage.TestBlock
+import           Test.Ouroboros.Storage.TestBlock hiding (EBB)
 
 data InSlot hash =
     -- | This slot contains only a regular block
