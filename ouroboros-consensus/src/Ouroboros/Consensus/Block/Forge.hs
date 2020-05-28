@@ -52,6 +52,9 @@ class ( NoUnexpectedThunks (ForgeState blk)
 
   -- | Forge a new block
   --
+  -- The forge state that is passed to `forgeBlock` will already have been
+  -- updated.
+  --
   -- TODO: This should be a pure function
   -- <https://github.com/input-output-hk/ouroboros-network/issues/2058>
   forgeBlock
@@ -78,10 +81,8 @@ data MaintainForgeState (m :: * -> *) blk = MaintainForgeState {
       -- this function may have all kinds of things in its closure; for example,
       -- we might need access to some external hardware crypto hardware
       -- device.
-    , updateForgeState :: Update m (ForgeState blk)
-                       -- ^ Lens into the node's state
-                       -> SlotNo
-                       -- ^ Current slot
+    , updateForgeState :: Update m (ForgeState blk) -- Lens into the node's state
+                       -> SlotNo                    -- Current slot
                        -> m ()
     }
 

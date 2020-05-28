@@ -419,11 +419,11 @@ mkNodeArgs registry cfg mIsLeader tracers btime chainDB = do
       , cfg
       , btime
       , chainDB
-      , initChainDB            = nodeInitChainDB
       , blockProduction
-      , blockFetchSize         = nodeBlockFetchSize
-      , blockMatchesHeader     = nodeBlockMatchesHeader
+      , initChainDB             = nodeInitChainDB
+      , blockFetchSize          = nodeBlockFetchSize
+      , blockMatchesHeader      = nodeBlockMatchesHeader
       , maxTxCapacityOverride   = NoMaxTxCapacityOverride
       , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
-      , miniProtocolParameters = defaultMiniProtocolParameters
+      , miniProtocolParameters  = defaultMiniProtocolParameters
       }

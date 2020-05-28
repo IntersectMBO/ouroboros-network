@@ -76,7 +76,6 @@ castProtocolInfo
   -> ProtocolInfo m blk'
 castProtocolInfo ProtocolInfo {..} = ProtocolInfo {
       pInfoConfig      = castTopLevelConfig     pInfoConfig
-    --, pInfoMaintainForgeState = castMaintainForgeState pInfoMaintainForgeState
     , pInfoInitLedger  = castExtLedgerState     pInfoInitLedger
     , pInfoLeaderCreds = second castMaintainForgeState <$> pInfoLeaderCreds
     }

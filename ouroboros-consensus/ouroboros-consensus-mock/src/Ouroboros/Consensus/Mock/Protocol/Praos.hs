@@ -133,7 +133,7 @@ instance PraosCrypto c => NoUnexpectedThunks (PraosForgeState c) where
 evolveKey :: (Monad m, PraosCrypto c)
           => Update m (PraosForgeState c) -> SlotNo -> m ()
 evolveKey upd slotNo = runUpdate_ upd $ \(PraosKey oldKey) -> do
-    let newKey = fromMaybe (error "mkOutoborosPayload: updateKES failed") $
+    let newKey = fromMaybe (error "evolveKey: updateKES failed") $
                  updateKES () oldKey kesPeriod
     return $ PraosKey newKey
   where

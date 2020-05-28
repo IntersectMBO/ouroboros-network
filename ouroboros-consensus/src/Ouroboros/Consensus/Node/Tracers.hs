@@ -54,8 +54,13 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , localTxSubmissionServerTracer :: f (TraceLocalTxSubmissionServerEvent blk)
   , mempoolTracer                 :: f (TraceEventMempool blk)
   , forgeTracer                   :: f (TraceForgeEvent blk (GenTx blk))
-  , forgeStateTracer              :: f (ForgeState blk)
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
+
+    -- | Called on every slot with the possibly updated 'ForgeState'
+    --
+    -- It is the responsibility of the tracer to only show (parts of) the
+    -- 'ForgeState' when it is changed (or possibly periodically).
+  , forgeStateTracer              :: f (ForgeState blk)
   }
 
 instance (forall a. Semigroup (f a))

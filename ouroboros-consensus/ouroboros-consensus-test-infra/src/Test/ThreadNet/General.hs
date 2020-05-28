@@ -240,7 +240,7 @@ runTestNetwork
     go TestConfigBlock{forgeEbbEnv, nodeInfo, rekeying, txGenExtra} = do
         setCurrentTime dawnOfTime
         case rekeying of
-          Nothing                                -> runThreadNetwork tna
+          Nothing -> runThreadNetwork tna
           Just Rekeying{rekeyFreshSKs, rekeyOracle, rekeyUpd} -> do
             rekeyVar <- uncheckedNewTVarM rekeyFreshSKs
             runThreadNetwork tna
