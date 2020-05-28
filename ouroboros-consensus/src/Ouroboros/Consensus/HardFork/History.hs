@@ -893,13 +893,15 @@ evalQryInEra EraSummary{..} = go
         let absTime = getTimeInEra t `addUTCTime` boundTime eraStart
         guardEnd $ \end -> absTime < boundTime end
         return absTime
-    go (QRelToAbsSlot (s, _t)) = do
+    go (QRelToAbsSlot (s, t)) = do
         let absSlot = addSlots (getSlotInEra s) (boundSlot eraStart)
-        guardEnd $ \end -> absSlot < boundSlot end
+        guardEnd $ \end -> absSlot <  boundSlot end
+                        || absSlot == boundSlot end && getTimeInSlot t == 0
         return absSlot
-    go (QRelToAbsEpoch (e, _s)) = do
+    go (QRelToAbsEpoch (e, s)) = do
         let absEpoch = addEpochs (getEpochInEra e) (boundEpoch eraStart)
-        guardEnd $ \end -> absEpoch < boundEpoch end
+        guardEnd $ \end -> absEpoch <  boundEpoch end
+                        || absEpoch == boundEpoch end && getSlotInEpoch s == 0
         return absEpoch
 
     go (QRelTimeToSlot t) =
@@ -972,6 +974,10 @@ slotToWallclock absSlot = do
 
 {-------------------------------------------------------------------------------
   Conversion between slots and epochs
+
+  The primed forms are the used in the 'EpochInfo' construction. Critically,
+  they do not ask for any of the era parameters. This means that their valid
+  range /includes/ the end bound.
 -------------------------------------------------------------------------------}
 
 -- | Convert 'SlotNo' to 'EpochNo' and the relative slot within the epoch
@@ -989,7 +995,7 @@ slotToEpoch' absSlot = do
 slotToEpoch :: SlotNo -> Qry (EpochNo, Word64, Word64)
 slotToEpoch absSlot = do
     (absEpoch, slotInEpoch) <- slotToEpoch' absSlot
-    epochSize <- QEpochSize absEpoch
+    epochSize               <- QEpochSize absEpoch
     return (absEpoch, slotInEpoch, unEpochSize epochSize - slotInEpoch)
 
 epochToSlot' :: EpochNo -> Qry SlotNo
