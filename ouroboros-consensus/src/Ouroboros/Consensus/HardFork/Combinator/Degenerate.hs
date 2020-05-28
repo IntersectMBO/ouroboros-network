@@ -26,7 +26,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Control.Monad.Except
 import           Data.FingerTree.Strict (Measured (..))
-import           Data.Function (on)
 import           Data.Proxy
 import           Data.Type.Equality
 import           Data.Void
@@ -179,10 +178,10 @@ instance SingleEraBlock b => HasAnnTip (DegenFork b) where
   getTipInfo (DHdr hdr) = getTipInfo hdr
 
 instance SingleEraBlock b => BasicEnvelopeValidation (DegenFork b) where
-  expectedFirstBlockNo  _ = expectedFirstBlockNo  (Proxy @b)
-  minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @b)
-  expectedNextBlockNo   _ = expectedNextBlockNo   (Proxy @b) `on` projTipInfo
-  minimumNextSlotNo     _ = minimumNextSlotNo     (Proxy @b) `on` projTipInfo
+  expectedFirstBlockNo  _ = expectedFirstBlockNo  (Proxy @(HardForkBlock '[b]))
+  minimumPossibleSlotNo _ = minimumPossibleSlotNo (Proxy @(HardForkBlock '[b]))
+  expectedNextBlockNo   _ = expectedNextBlockNo   (Proxy @(HardForkBlock '[b]))
+  minimumNextSlotNo     _ = minimumNextSlotNo     (Proxy @(HardForkBlock '[b]))
 
 instance SingleEraBlock b => ValidateEnvelope (DegenFork b) where
   type OtherHeaderEnvelopeError (DegenFork b) = OtherHeaderEnvelopeError (HardForkBlock '[b])
