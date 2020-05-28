@@ -11,7 +11,6 @@ import           Test.Tasty.HUnit
 
 import           Cardano.Slotting.Slot
 
-import           Ouroboros.Consensus.Block (getHeader)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -64,9 +63,8 @@ openTestDB registry hasFS =
       , parser
       }
   where
-    parser = chunkFileParser hasFS (const <$> S.decode) isEBB getBinaryInfo
+    parser = chunkFileParser hasFS (const <$> S.decode) getBinaryInfo
       testBlockIsValid
-    isEBB  = testHeaderEpochNoIfEBB fixedChunkInfo . getHeader
     getBinaryInfo = void . testBlockToBinaryInfo
 
 -- Shorthand

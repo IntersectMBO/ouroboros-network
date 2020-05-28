@@ -17,8 +17,6 @@ import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 
 import           Control.Tracer (Tracer, contramap)
 
-import           Cardano.Slotting.Slot
-
 import           Ouroboros.Network.Block (HeaderHash)
 
 import           Ouroboros.Consensus.Block
@@ -87,7 +85,6 @@ data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
     , cdbTopLevelConfig       :: TopLevelConfig blk
     , cdbChunkInfo            :: ChunkInfo
     , cdbHashInfo             :: HashInfo (HeaderHash blk)
-    , cdbIsEBB                :: Header blk -> Maybe EpochNo
     , cdbCheckIntegrity       :: blk -> Bool
     , cdbGenesis              :: m (ExtLedgerState blk)
     , cdbCheckInFuture        :: CheckInFuture m blk
@@ -183,8 +180,7 @@ defaultArgs fp = toChainDbArgs (ImmDB.defaultArgs fp)
 
 -- | Internal: split 'ChainDbArgs' into 'ImmDbArgs', 'VolDbArgs, 'LgrDbArgs',
 -- and 'ChainDbSpecificArgs'.
-fromChainDbArgs :: GetHeader blk
-                => ChainDbArgs m blk
+fromChainDbArgs :: ChainDbArgs m blk
                 -> ( ImmDB.ImmDbArgs     m blk
                    , VolDB.VolDbArgs     m blk
                    , LgrDB.LgrDbArgs     m blk
@@ -200,7 +196,6 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immChunkInfo        = cdbChunkInfo
         , immHashInfo         = cdbHashInfo
         , immValidation       = cdbImmValidation
-        , immIsEBB            = cdbIsEBB
         , immCheckIntegrity   = cdbCheckIntegrity
         , immHasFS            = cdbHasFSImmDb
         , immTracer           = contramap TraceImmDBEvent cdbTracer
@@ -218,9 +213,6 @@ fromChainDbArgs ChainDbArgs{..} = (
         , volAddHdrEnv        = cdbAddHdrEnv
         , volValidation       = cdbVolValidation
         , volTracer           = contramap TraceVolDBEvent cdbTracer
-        , volIsEBB            = \blk -> case cdbIsEBB (getHeader blk) of
-                                          Nothing -> IsNotEBB
-                                          Just _  -> IsEBB
         }
     , LgrDB.LgrDbArgs {
           lgrTopLevelConfig       = cdbTopLevelConfig
@@ -291,7 +283,6 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbTopLevelConfig       = lgrTopLevelConfig
     , cdbChunkInfo            = immChunkInfo
     , cdbHashInfo             = immHashInfo
-    , cdbIsEBB                = immIsEBB
     , cdbCheckIntegrity       = immCheckIntegrity
     , cdbGenesis              = lgrGenesis
     , cdbCheckInFuture        = cdbsCheckInFuture

@@ -1133,6 +1133,8 @@ deriving instance ( ToExpr blk
 
 -- Blk specific instances
 
+deriving instance ToExpr EpochNo
+deriving instance ToExpr EBB
 deriving instance ToExpr IsEBB
 deriving instance ToExpr TestHeader
 deriving instance ToExpr TestHeaderHash
@@ -1191,8 +1193,7 @@ deriving instance SOP.HasDatatypeInfo (VolDB.TraceEvent e hash)
 
 type Blk = TestBlock
 
-instance ModelSupportsBlock TestBlock where
-  isEBB = thIsEBB . unTestHeader
+instance ModelSupportsBlock TestBlock
 
 -- | Note that the 'Blk = TestBlock' is general enough to be used by both the
 -- ChainDB /and/ the ImmutableDB, its generators cannot. For example, in the
@@ -1263,10 +1264,10 @@ genBlk chunkInfo Model{..} = frequency
     genFirstBlock :: Gen TestBlock
     genFirstBlock = frequency
       [ ( 1
-        , firstBlock canContainEBB <$> chooseSlot 0 2 <*> genBody
+        , firstBlock <$> chooseSlot 0 2 <*> genBody
         )
       , ( if modelSupportsEBBs then 1 else 0
-        , firstEBB   canContainEBB <$> genBody
+        , firstEBB canContainEBB <$> genBody
         )
       ]
 
@@ -1278,7 +1279,7 @@ genBlk chunkInfo Model{..} = frequency
                   then chooseSlot (blockSlot b)     (blockSlot b + 2)
                   else chooseSlot (blockSlot b + 1) (blockSlot b + 3)
                 body   <- genBody
-                return $ mkNextBlock canContainEBB b slotNo body)
+                return $ mkNextBlock b slotNo body)
         -- An EBB is never followed directly by another EBB, otherwise they
         -- would have the same 'BlockNo', as the EBB has the same 'BlockNo' of
         -- the block before it.
@@ -1294,12 +1295,13 @@ genBlk chunkInfo Model{..} = frequency
                  nextNextEBB   = ImmDB.chunkSlotForBoundaryBlock
                                    chunkInfo
                                    (prevEpoch + 2)
-             slotNo <- (ImmDB.chunkSlotToSlot chunkInfo) <$> frequency
-               [ (7, return nextEBB)
-               , (1, return nextNextEBB)
-               ]
+             (slotNo, epoch) <-
+               first (ImmDB.chunkSlotToSlot chunkInfo) <$> frequency
+                 [ (7, return (nextEBB, prevEpoch + 1))
+                 , (1, return (nextNextEBB, prevEpoch + 2))
+                 ]
              body   <- genBody
-             return $ mkNextEBB canContainEBB b slotNo body
+             return $ mkNextEBB canContainEBB b slotNo epoch body
           )
         ]
 
@@ -1522,7 +1524,6 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
     , cdbTopLevelConfig       = cfg
     , cdbChunkInfo            = chunkInfo
     , cdbHashInfo             = testHashInfo
-    , cdbIsEBB                = testHeaderEpochNoIfEBB chunkInfo
     , cdbCheckIntegrity       = testBlockIsValid
     , cdbGenesis              = return initLedger
     , cdbCheckInFuture        = InFuture.miracle

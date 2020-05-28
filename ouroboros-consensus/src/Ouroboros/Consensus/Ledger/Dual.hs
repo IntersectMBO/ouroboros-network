@@ -123,6 +123,12 @@ instance GetHeader m => GetHeader (DualBlock m a) where
 
   getHeader = DualHeader . getHeader . dualBlockMain
 
+  blockMatchesHeader hdr =
+      blockMatchesHeader (dualHeaderMain hdr) . dualBlockMain
+
+  -- We can look at the concrete header to see if this is an EBB
+  headerIsEBB = headerIsEBB . dualHeaderMain
+
 type DualHeader m a = Header (DualBlock m a)
 
 deriving instance Show (Header m) => Show (DualHeader m a)

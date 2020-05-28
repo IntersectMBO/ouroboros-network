@@ -113,7 +113,6 @@ data VolDB m blk = VolDB {
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
     , encBlock  :: blk -> BinaryInfo Encoding
-    , isEBB     :: blk -> IsEBB
     , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     }
 
@@ -125,7 +124,6 @@ instance NoUnexpectedThunks (VolDB m blk) where
     , noUnexpectedThunks ctxt decHeader
     , noUnexpectedThunks ctxt decBlock
     , noUnexpectedThunks ctxt encBlock
-    , noUnexpectedThunks ctxt isEBB
     , noUnexpectedThunks ctxt addHdrEnv
     ]
 
@@ -144,7 +142,6 @@ data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
     , volDecodeHeader   :: forall s. Decoder s (Lazy.ByteString -> Header blk)
     , volDecodeBlock    :: forall s. Decoder s (Lazy.ByteString -> blk)
     , volEncodeBlock    :: blk -> BinaryInfo Encoding
-    , volIsEBB          :: blk -> IsEBB
     , volAddHdrEnv      :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
     , volValidation     :: VolDB.BlockValidationPolicy
     , volTracer         :: Tracer m (TraceEvent blk)
@@ -159,7 +156,6 @@ data VolDbArgs m blk = forall h. Eq h => VolDbArgs {
 -- * 'volDecodeHeader'
 -- * 'volDecodeBlock'
 -- * 'volEncodeBlock'
--- * 'volIsEBB'
 -- * 'volAddHdrEnv'
 -- * 'volValidation'
 defaultArgs :: FilePath -> VolDbArgs IO blk
@@ -172,12 +168,11 @@ defaultArgs fp = VolDbArgs {
     , volDecodeHeader   = error "no default for volDecodeHeader"
     , volDecodeBlock    = error "no default for volDecodeBlock"
     , volEncodeBlock    = error "no default for volEncodeBlock"
-    , volIsEBB          = error "no default for volIsEBB"
     , volAddHdrEnv      = error "no default for volAddHdrEnv"
     , volValidation     = error "no default for volValidation"
     }
 
-openDB :: forall m blk. (IOLike m, HasHeader blk)
+openDB :: forall m blk. (IOLike m, HasHeader blk, GetHeader blk)
        => VolDbArgs m blk -> m (VolDB m blk)
 openDB args@VolDbArgs{..} = do
     createDirectoryIfMissing volHasFS True (mkFsPath [])
@@ -188,7 +183,6 @@ openDB args@VolDbArgs{..} = do
       , decBlock  = volDecodeBlock
       , encBlock  = volEncodeBlock
       , addHdrEnv = volAddHdrEnv
-      , isEBB     = volIsEBB
       }
   where
     volatileDbArgs = VolDB.VolatileDbArgs
@@ -203,10 +197,9 @@ mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> Header blk))
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> BinaryInfo Encoding)
-        -> (blk -> IsEBB)
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> VolDB m blk
-mkVolDB volDB decHeader decBlock encBlock isEBB addHdrEnv = VolDB {..}
+mkVolDB volDB decHeader decBlock encBlock addHdrEnv = VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers
@@ -234,9 +227,11 @@ getMaxSlotNo :: VolDB m blk
              -> STM m MaxSlotNo
 getMaxSlotNo db = withSTM db VolDB.getMaxSlotNo
 
-putBlock :: (MonadCatch m, HasHeader blk) => VolDB m blk -> blk -> m ()
+putBlock
+  :: (MonadCatch m, HasHeader blk, GetHeader blk)
+  => VolDB m blk -> blk -> m ()
 putBlock db@VolDB{..} b = withDB db $ \vol ->
-    VolDB.putBlock vol (extractInfo isEBB binInfo b) binaryBlob
+    VolDB.putBlock vol (extractInfo binInfo b) binaryBlob
   where
     binInfo@BinaryInfo { binaryBlob } = CBOR.toBuilder <$> encBlock b
 
@@ -490,22 +485,21 @@ getBlockComponent db blockComponent hash = withDB db $ \vol ->
 type BlockFileParserError hash =
     VolDB.ParserError hash Util.CBOR.ReadIncrementalErr
 
-blockFileParser :: forall m blk. (IOLike m, HasHeader blk)
+blockFileParser :: forall m blk. (IOLike m, HasHeader blk, GetHeader blk)
                 => VolDbArgs m blk
                 -> VolDB.Parser
                      Util.CBOR.ReadIncrementalErr
                      m
                      (HeaderHash blk)
 blockFileParser VolDbArgs{..} =
-    blockFileParser' volHasFS volIsEBB volEncodeBlock volDecodeBlock
+    blockFileParser' volHasFS volEncodeBlock volDecodeBlock
       volCheckIntegrity volValidation
 
 -- | A version which is easier to use for tests, since it does not require
 -- the whole @VolDbArgs@.
 blockFileParser'
-  :: forall m blk h. (IOLike m, HasHeader blk)
+  :: forall m blk h. (IOLike m, HasHeader blk, GetHeader blk)
   => HasFS m h
-  -> (blk -> IsEBB)
   -> (blk -> BinaryInfo Encoding)
   -> (forall s. Decoder s (Lazy.ByteString -> blk))
   -> (blk -> Bool)
@@ -514,14 +508,14 @@ blockFileParser'
        Util.CBOR.ReadIncrementalErr
        m
        (HeaderHash blk)
-blockFileParser' hasFS isEBB encodeBlock decodeBlock isNotCorrupt validationPolicy =
+blockFileParser' hasFS encodeBlock decodeBlock isNotCorrupt validationPolicy =
     VolDB.Parser $ \fsPath -> Util.CBOR.withStreamIncrementalOffsets
       hasFS decodeBlock fsPath (checkEntries [])
   where
     -- It looks weird that we use an encoding function 'encodeBlock' during
     -- parsing, but this is quite cheap, since the encoding is already cached.
     extractInfo' :: blk -> VolDB.BlockInfo (HeaderHash blk)
-    extractInfo' blk = extractInfo isEBB (encodeBlock blk) blk
+    extractInfo' blk = extractInfo (encodeBlock blk) blk
 
     noValidation :: Bool
     noValidation = validationPolicy == VolDB.NoValidation
@@ -613,16 +607,15 @@ fromChainHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
 fromChainHash GenesisHash      = Origin
 fromChainHash (BlockHash hash) = At hash
 
-extractInfo :: HasHeader blk
-            => (blk -> IsEBB)
-            -> BinaryInfo a
+extractInfo :: (HasHeader blk, GetHeader blk)
+            => BinaryInfo a
             -> blk
             -> VolDB.BlockInfo (HeaderHash blk)
-extractInfo isEBB BinaryInfo{..} b = VolDB.BlockInfo {
+extractInfo BinaryInfo{..} b = VolDB.BlockInfo {
       bbid          = blockHash b
     , bslot         = blockSlot b
     , bpreBid       = fromChainHash (blockPrevHash b)
-    , bisEBB        = isEBB b
+    , bisEBB        = blockToIsEBB b
     , bheaderOffset = headerOffset
     , bheaderSize   = headerSize
     }

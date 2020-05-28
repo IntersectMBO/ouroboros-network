@@ -127,6 +127,16 @@ instance Crypto c => GetHeader (ShelleyBlock c) where
     , shelleyHeaderHash = hdrHash
     }
 
+  blockMatchesHeader hdr blk =
+      -- Compute the hash the body of the block (the transactions) and compare
+      -- that against the hash of the body stored in the header.
+      SL.bbHash txs == SL.bhash hdrBody
+    where
+      ShelleyHeader { shelleyHeaderRaw = SL.BHeader hdrBody _ } = hdr
+      ShelleyBlock  { shelleyBlockRaw  = SL.Block _ txs }       = blk
+
+  headerIsEBB = const Nothing
+
 mkShelleyHeader :: Crypto c => SL.BHeader c -> Header (ShelleyBlock c)
 mkShelleyHeader raw = ShelleyHeader {
       shelleyHeaderRaw  = raw

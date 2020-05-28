@@ -367,7 +367,6 @@ withImmDB fp cfg chunkInfo registry = ImmDB.withImmDB args
         , immChunkInfo      = chunkInfo
         , immHashInfo       = nodeHashInfo            pb
         , immValidation     = ValidateMostRecentChunk
-        , immIsEBB          = nodeIsEBB
         , immCheckIntegrity = nodeCheckIntegrity      cfg
         , immAddHdrEnv      = nodeAddHeaderEnvelope   pb
         , immRegistry       = registry

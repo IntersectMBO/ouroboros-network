@@ -114,7 +114,7 @@ data SimpleBlock' c ext ext' = SimpleBlock {
   deriving stock    (Generic, Show, Eq)
   deriving anyclass (Serialise)
 
-instance GetHeader (SimpleBlock' c ext ext') where
+instance SimpleCrypto c => GetHeader (SimpleBlock' c ext ext') where
   data Header (SimpleBlock' c ext ext') = SimpleHeader {
         -- | The header hash
         --
@@ -137,6 +137,10 @@ instance GetHeader (SimpleBlock' c ext ext') where
     deriving (Generic, Show, Eq, NoUnexpectedThunks)
 
   getHeader = simpleHeader
+
+  blockMatchesHeader = matchesSimpleHeader
+
+  headerIsEBB = const Nothing
 
 data SimpleStdHeader c ext = SimpleStdHeader {
       simplePrev      :: ChainHash (SimpleBlock c ext)

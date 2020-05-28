@@ -15,8 +15,6 @@ import           Control.Exception (SomeException)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy)
 
-import           Cardano.Slotting.Slot
-
 import           Ouroboros.Network.Block (HeaderHash, Serialised)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
@@ -53,9 +51,7 @@ class ( LedgerSupportsProtocol    blk
         -- TODO: Remove after reconsidering rewindConsensusState:
       , Serialise (HeaderHash blk)
       ) => RunNode blk where
-  nodeBlockMatchesHeader  :: Header blk -> blk -> Bool
   nodeBlockFetchSize      :: Header blk -> SizeInBytes
-  nodeIsEBB               :: Header blk -> Maybe EpochNo
 
   nodeImmDbChunkInfo      :: TopLevelConfig blk -> ChunkInfo
 

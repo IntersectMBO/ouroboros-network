@@ -33,6 +33,7 @@ import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
                      HeaderHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
+import           Ouroboros.Consensus.Block (GetHeader, blockIsEBB)
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -74,9 +75,9 @@ chunkFileParser'
   -> (blk -> BlockNo)
   -> (blk -> hash)
   -> (blk -> WithOrigin hash)  -- ^ Previous hash
+  -> (blk -> Maybe EpochNo)    -- ^ If an EBB, return the epoch number
   -> HasFS m h
   -> (forall s. Decoder s (BL.ByteString -> blk))
-  -> (blk -> Maybe EpochNo)    -- ^ If an EBB, return the epoch number
   -> (blk -> BinaryInfo ())
   -> (blk -> Bool)             -- ^ Check integrity of the block. 'False' =
                                -- corrupt.
@@ -85,7 +86,7 @@ chunkFileParser'
        m
        (BlockSummary hash)
        hash
-chunkFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEBB
+chunkFileParser' getSlotNo getBlockNo getHash getPrevHash isEBB hasFS decodeBlock
                  getBinaryInfo isNotCorrupt =
     ChunkFileParser $ \fsPath expectedChecksums k ->
       Util.CBOR.withStreamIncrementalOffsets hasFS decoder fsPath
@@ -191,10 +192,9 @@ chunkFileParser' getSlotNo getBlockNo getHash getPrevHash hasFS decodeBlock isEB
 
 -- | A version of 'chunkFileParser'' for blocks that implement 'HasHeader'.
 chunkFileParser
-  :: forall m blk h. (IOLike m, HasHeader blk)
+  :: forall m blk h. (IOLike m, HasHeader blk, GetHeader blk)
   => HasFS m h
   -> (forall s. Decoder s (BL.ByteString -> blk))
-  -> (blk -> Maybe EpochNo)  -- ^ If an EBB, return the epoch number
   -> (blk -> BinaryInfo ())
   -> (blk -> Bool)           -- ^ Check integrity of the block. 'False' =
                              -- corrupt.
@@ -204,7 +204,12 @@ chunkFileParser
        (BlockSummary (HeaderHash blk))
        (HeaderHash blk)
 chunkFileParser =
-    chunkFileParser' blockSlot blockNo blockHash (convertPrevHash . blockPrevHash)
+    chunkFileParser'
+      blockSlot
+      blockNo
+      blockHash
+      (convertPrevHash . blockPrevHash)
+      blockIsEBB
   where
     convertPrevHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
     convertPrevHash GenesisHash   = Origin

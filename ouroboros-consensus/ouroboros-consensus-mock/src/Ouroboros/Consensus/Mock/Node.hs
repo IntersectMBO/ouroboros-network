@@ -63,9 +63,7 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
          , Serialise ext
          , RunMockBlock SimpleMockCrypto ext
          ) => RunNode (SimpleBlock SimpleMockCrypto ext) where
-  nodeBlockMatchesHeader    = matchesSimpleHeader
   nodeBlockFetchSize        = fromIntegral . simpleBlockSize . simpleHeaderStd
-  nodeIsEBB                 = const Nothing
   nodeImmDbChunkInfo        = \cfg -> simpleChunkInfo $
     EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
   nodeHashInfo              = const simpleBlockHashInfo

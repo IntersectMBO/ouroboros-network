@@ -112,7 +112,6 @@ data ImmDB m blk = ImmDB {
       -- generics to derive the NoUnexpectedThunks instance.
     , encBlock  :: !(blk -> BinaryInfo Encoding)
     , chunkInfo :: !ChunkInfo
-    , isEBB     :: !(Header blk -> Maybe EpochNo)
     , addHdrEnv :: !(IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
     }
 
@@ -126,7 +125,6 @@ instance NoUnexpectedThunks (ImmDB m blk) where
     , noUnexpectedThunks ctxt decBlock
     , noUnexpectedThunks ctxt encBlock
     , noUnexpectedThunks ctxt chunkInfo
-    , noUnexpectedThunks ctxt isEBB
     , noUnexpectedThunks ctxt addHdrEnv
     ]
 
@@ -150,7 +148,6 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
     , immChunkInfo      :: ChunkInfo
     , immHashInfo       :: HashInfo (HeaderHash blk)
     , immValidation     :: ImmDB.ValidationPolicy
-    , immIsEBB          :: Header blk -> Maybe EpochNo
     , immCheckIntegrity :: blk -> Bool
     , immAddHdrEnv      :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
     , immHasFS          :: HasFS m h
@@ -171,7 +168,6 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
 -- * 'immChunkInfo'
 -- * 'immHashInfo'
 -- * 'immValidation'
--- * 'immIsEBB'
 -- * 'immCheckIntegrity'
 -- * 'immAddHdrEnv'
 -- * 'immRegistry'
@@ -189,7 +185,6 @@ defaultArgs fp = ImmDbArgs{
     , immChunkInfo      = error "no default for immChunkInfo"
     , immHashInfo       = error "no default for immHashInfo"
     , immValidation     = error "no default for immValidation"
-    , immIsEBB          = error "no default for immIsEBB"
     , immCheckIntegrity = error "no default for immCheckIntegrity"
     , immAddHdrEnv      = error "no default for immAddHdrEnv"
     , immRegistry       = error "no default for immRegistry"
@@ -225,7 +220,6 @@ openDB ImmDbArgs {..} = do
       , decBlock  = immDecodeBlock
       , encBlock  = immEncodeBlock
       , chunkInfo = immChunkInfo
-      , isEBB     = immIsEBB
       , addHdrEnv = immAddHdrEnv
       }
   where
@@ -239,7 +233,7 @@ openDB ImmDbArgs {..} = do
       , valPol      = immValidation
       , parser      = parser
       }
-    parser = ImmDB.chunkFileParser immHasFS immDecodeBlock (immIsEBB . getHeader)
+    parser = ImmDB.chunkFileParser immHasFS immDecodeBlock
       -- TODO a more efficient to accomplish this?
       (void . immEncodeBlock) immCheckIntegrity
 
@@ -249,10 +243,9 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> BinaryInfo Encoding)
         -> ChunkInfo
-        -> (Header blk -> Maybe EpochNo)
         -> (IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString)
         -> ImmDB m blk
-mkImmDB immDB decHeader decBlock encBlock chunkInfo isEBB addHdrEnv = ImmDB {..}
+mkImmDB immDB decHeader decBlock encBlock chunkInfo addHdrEnv = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
@@ -390,7 +383,7 @@ getBlockComponentWithPoint db blockComponent (RealPoint slot hash) =
 -- Does not check whether the block is in the past or not.
 appendBlock :: (MonadCatch m, HasHeader blk, GetHeader blk, HasCallStack)
             => ImmDB m blk -> blk -> m ()
-appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB (getHeader b) of
+appendBlock db@ImmDB{..} b = withDB db $ \imm -> case blockIsEBB b of
     Nothing      ->
       ImmDB.appendBlock imm slotNo  blockNr hash (CBOR.toBuilder <$> encBlock b)
     Just epochNo ->

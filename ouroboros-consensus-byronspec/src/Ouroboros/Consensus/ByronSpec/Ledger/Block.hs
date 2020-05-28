@@ -61,6 +61,13 @@ instance GetHeader ByronSpecBlock where
       , byronSpecHeaderHash = byronSpecBlockHash
       }
 
+  -- We don't care about integrity checks, so we don't bother checking whether
+  -- the hashes of the body are correct
+  blockMatchesHeader hdr blk = blockHash hdr == blockHash blk
+
+  -- No EBBs
+  headerIsEBB = const Nothing
+
 type ByronSpecHeader = Header ByronSpecBlock
 
 {-------------------------------------------------------------------------------

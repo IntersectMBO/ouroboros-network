@@ -27,7 +27,7 @@ import           Control.Tracer
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
-import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
+import           Ouroboros.Consensus.Block (getHeader)
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.HeaderValidation
@@ -61,7 +61,7 @@ import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.SOP
 import           Test.Util.TestBlock
 
-import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock (..))
+import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.ChainDB.StateMachine ()
 
@@ -274,7 +274,6 @@ mkArgs cfg chunkInfo initLedger tracer registry hashInfo
     , cdbTopLevelConfig       = cfg
     , cdbChunkInfo            = chunkInfo
     , cdbHashInfo             = hashInfo
-    , cdbIsEBB                = const Nothing
     , cdbCheckIntegrity       = const True
     , cdbCheckInFuture        = InFuture.dontCheck
     , cdbGenesis              = return initLedger
@@ -304,5 +303,4 @@ mkArgs cfg chunkInfo initLedger tracer registry hashInfo
   Orphan instances
 -------------------------------------------------------------------------------}
 
-instance ModelSupportsBlock TestBlock where
-  isEBB = const IsNotEBB
+instance ModelSupportsBlock TestBlock

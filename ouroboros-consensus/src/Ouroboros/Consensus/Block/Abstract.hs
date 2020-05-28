@@ -12,13 +12,21 @@ module Ouroboros.Consensus.Block.Abstract (
   , headerHash
   , headerPrevHash
   , headerPoint
+  , headerToIsEBB
+  , blockIsEBB
+  , blockToIsEBB
   ) where
 
 import           Data.FingerTree.Strict (Measured (..))
+import           Data.Maybe (isJust)
+
+import           Cardano.Slotting.Slot (EpochNo)
 
 -- TODO: Should we re-export (a subset of?) this module so that we don't need
 -- to import from ouroboros-network so often?
 import           Ouroboros.Network.Block
+
+import           Ouroboros.Consensus.Block.EBB
 
 {-------------------------------------------------------------------------------
   Protocol
@@ -40,7 +48,25 @@ data family BlockConfig blk :: *
 
 class GetHeader blk where
   data family Header blk :: *
-  getHeader :: blk -> Header blk
+  getHeader          :: blk -> Header blk
+  -- | Check whether the header is the header of the block.
+  --
+  -- For example, by checking whether the hash of the body stored in the
+  -- header matches that of the block.
+  blockMatchesHeader :: Header blk -> blk -> Bool
+
+  -- | When the given header is the header of an Epoch Boundary Block, returns
+  -- its epoch number.
+  headerIsEBB        :: Header blk -> Maybe EpochNo
+
+headerToIsEBB :: GetHeader blk => Header blk -> IsEBB
+headerToIsEBB = toIsEBB . isJust . headerIsEBB
+
+blockIsEBB :: GetHeader blk => blk -> Maybe EpochNo
+blockIsEBB = headerIsEBB . getHeader
+
+blockToIsEBB :: GetHeader blk => blk -> IsEBB
+blockToIsEBB = headerToIsEBB . getHeader
 
 type instance BlockProtocol (Header blk) = BlockProtocol blk
 

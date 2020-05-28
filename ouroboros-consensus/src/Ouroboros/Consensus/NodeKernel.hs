@@ -48,7 +48,8 @@ import           Ouroboros.Network.TxSubmission.Mempool.Reader
                      (TxSubmissionMempoolReader)
 import qualified Ouroboros.Network.TxSubmission.Mempool.Reader as MempoolReader
 
-import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Block hiding (blockMatchesHeader)
+import qualified Ouroboros.Consensus.Block as Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
@@ -125,7 +126,6 @@ data NodeArgs m remotePeer localPeer blk = NodeArgs {
     , initChainDB             :: TopLevelConfig blk -> InitChainDB m blk -> m ()
     , blockFetchSize          :: Header blk -> SizeInBytes
     , blockProduction         :: Maybe (BlockProduction m blk)
-    , blockMatchesHeader      :: Header blk -> blk -> Bool
     , maxTxCapacityOverride   :: MaxTxCapacityOverride
     , mempoolCapacityOverride :: MempoolCapacityBytesOverride
     , miniProtocolParameters  :: MiniProtocolParameters
@@ -208,7 +208,7 @@ initInternalState
     => NodeArgs m remotePeer localPeer blk
     -> m (InternalState m remotePeer localPeer blk)
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
-                             blockFetchSize, blockMatchesHeader, btime,
+                             blockFetchSize, btime,
                              mempoolCapacityOverride } = do
     varCandidates <- newTVarM mempty
     mempool       <- openMempool registry
@@ -225,7 +225,7 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
 
         blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
         blockFetchInterface = initBlockFetchConsensusInterface
-          cfg chainDB getCandidates blockFetchSize blockMatchesHeader btime
+          cfg chainDB getCandidates blockFetchSize btime
 
     return IS {..}
 
@@ -235,12 +235,14 @@ initBlockFetchConsensusInterface
     -> ChainDB m blk
     -> STM m (Map peer (AnchoredFragment (Header blk)))
     -> (Header blk -> SizeInBytes)
-    -> (Header blk -> blk -> Bool)
     -> BlockchainTime m
     -> BlockFetchConsensusInterface peer (Header blk) blk m
-initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
-    blockMatchesHeader btime = BlockFetchConsensusInterface {..}
+initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime =
+    BlockFetchConsensusInterface {..}
   where
+    blockMatchesHeader :: Header blk -> blk -> Bool
+    blockMatchesHeader = Block.blockMatchesHeader
+
     readCandidateChains :: STM m (Map peer (AnchoredFragment (Header blk)))
     readCandidateChains = getCandidates
 
@@ -528,7 +530,7 @@ mkCurrentBlockContext currentSlot c = case c of
 
       -- The block at the tip has the same slot as the block we're going to
       -- produce (@currentSlot@).
-      EQ -> Right $ if isJust (nodeIsEBB hdr)
+      EQ -> Right $ if isJust (headerIsEBB hdr)
         -- We allow forging a block that is the successor of an EBB in the
         -- same slot.
         then blockContextFromPrevHeader hdr

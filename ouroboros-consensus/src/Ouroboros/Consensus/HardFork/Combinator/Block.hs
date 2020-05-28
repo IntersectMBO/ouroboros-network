@@ -50,6 +50,23 @@ instance CanHardFork xs => GetHeader (HardForkBlock xs) where
 
   getHeader = HardForkHeader . oneEraBlockHeader . getHardForkBlock
 
+  blockMatchesHeader = \hdr blk ->
+      case Match.matchNS
+             (getOneEraHeader (getHardForkHeader hdr))
+             (getOneEraBlock  (getHardForkBlock  blk)) of
+        Left _          -> False
+        Right hdrAndBlk ->
+          hcollapse $ hcliftA proxySingle matchesSingle hdrAndBlk
+    where
+      matchesSingle :: GetHeader blk => Product Header I blk -> K Bool blk
+      matchesSingle (Pair hdr (I blk)) = K (blockMatchesHeader hdr blk)
+
+  headerIsEBB =
+        hcollapse
+      . hcmap proxySingle (K . headerIsEBB)
+      . getOneEraHeader
+      . getHardForkHeader
+
 {-------------------------------------------------------------------------------
   HasHeader
 -------------------------------------------------------------------------------}

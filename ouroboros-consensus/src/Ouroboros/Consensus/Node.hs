@@ -384,7 +384,6 @@ mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
     , ChainDB.cdbGenesis              = return initLedger
     , ChainDB.cdbAddHdrEnv            = nodeAddHeaderEnvelope    pb
     , ChainDB.cdbDiskPolicy           = defaultDiskPolicy k
-    , ChainDB.cdbIsEBB                = nodeIsEBB
     , ChainDB.cdbCheckIntegrity       = nodeCheckIntegrity       cfg
     , ChainDB.cdbParamsLgrDB          = ledgerDbDefaultParams k
     , ChainDB.cdbTopLevelConfig       = cfg
@@ -422,7 +421,6 @@ mkNodeArgs registry cfg mIsLeader tracers btime chainDB = do
       , blockProduction
       , initChainDB             = nodeInitChainDB
       , blockFetchSize          = nodeBlockFetchSize
-      , blockMatchesHeader      = nodeBlockMatchesHeader
       , maxTxCapacityOverride   = NoMaxTxCapacityOverride
       , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
       , miniProtocolParameters  = defaultMiniProtocolParameters

@@ -44,6 +44,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary
 import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           Cardano.Slotting.Slot (EpochNo (..))
 
 import qualified Crypto.Hash as Crypto
 
@@ -161,6 +162,20 @@ instance GetHeader ByronBlock where
             CC.ABOBBlock    blk -> CC.blockAnnotation blk
             CC.ABOBBoundary blk -> recoverBytes       blk
       }
+
+  -- Check if a block matches its header
+  --
+  -- Note that we cannot check this for an EBB, as the EBB header doesn't
+  -- store a hash of the EBB body.
+  blockMatchesHeader hdr blk =
+      CC.abobMatchesBody (byronHeaderRaw hdr) (byronBlockRaw blk)
+
+  headerIsEBB hdr = case byronHeaderRaw hdr of
+    CC.ABOBBlockHdr _       -> Nothing
+    CC.ABOBBoundaryHdr bhdr -> Just
+                              . EpochNo
+                              . CC.boundaryEpoch
+                              $ bhdr
 
 instance Condense (Header ByronBlock) where
   condense = CC.aBlockOrBoundaryHdr condense condense . byronHeaderRaw

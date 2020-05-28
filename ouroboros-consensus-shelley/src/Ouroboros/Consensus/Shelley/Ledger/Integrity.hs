@@ -1,8 +1,7 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 module Ouroboros.Consensus.Shelley.Ledger.Integrity (
-    verifyBlockMatchesHeader
-  , verifyHeaderIntegrity
+    verifyHeaderIntegrity
   , verifyBlockIntegrity
   ) where
 
@@ -19,19 +18,6 @@ import qualified Shelley.Spec.Ledger.OCert as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Protocol
-
--- | Check if a block matches its header by checking whether the recomputed
--- hash of the body matches the hash of the body stored in the header.
-verifyBlockMatchesHeader
-  :: Crypto c
-  => Header (ShelleyBlock c) -> ShelleyBlock c -> Bool
-verifyBlockMatchesHeader hdr blk =
-    -- Compute the hash the body of the block (the transactions) and compare
-    -- that against the hash of the body stored in the header.
-    SL.bbHash txs == SL.bhash hdrBody
-  where
-    ShelleyHeader { shelleyHeaderRaw = SL.BHeader hdrBody _ } = hdr
-    ShelleyBlock  { shelleyBlockRaw  = SL.Block _ txs }       = blk
 
 -- | Verify whether a header is not corrupted
 verifyHeaderIntegrity
@@ -64,4 +50,4 @@ verifyBlockIntegrity
   -> ShelleyBlock c -> Bool
 verifyBlockIntegrity slotsPerKESPeriod blk =
     verifyHeaderIntegrity slotsPerKESPeriod (getHeader blk) &&
-    verifyBlockMatchesHeader                (getHeader blk) blk
+    blockMatchesHeader                      (getHeader blk) blk
