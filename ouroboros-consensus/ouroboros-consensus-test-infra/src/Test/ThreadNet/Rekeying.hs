@@ -58,6 +58,6 @@ fromRekeyingToRekeyM Rekeying{rekeyFreshSKs, rekeyOracle, rekeyUpd} = do
         x <- atomically $ do
           x :< xs <- readTVar rekeyVar
           x <$ writeTVar rekeyVar xs
-        pure $ case rekeyUpd pInfo s' x of
+        pure $ case rekeyUpd cid pInfo s' x of
           Nothing  -> plainTestNodeInitialization pInfo
           Just tni -> tni

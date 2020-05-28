@@ -10,47 +10,64 @@
 module Test.ThreadNet.Infra.Shelley (
     CoreNode(..)
   , CoreNodeKeyInfo(..)
+  , ShelleyTestConfig(..)
+  , TestTuning(..)
+  , testTuning
   , genCoreNode
   , mkGenesisConfig
   , coreNodeKeys
   , mkProtocolRealTPraos
   , ocertNodeRestarts
+  , ocertRekeying
   , tpraosSlotLength
+  , genShelleyTestConfig
+  , shrinkShelleyTestConfig
   ) where
 
-import           Control.Monad (forM, join)
+import           Control.Monad (forM, join, replicateM)
+import           Data.Coerce (coerce)
 import           Data.List (unfoldr)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Proxy (Proxy (..))
 import qualified Data.Sequence.Strict as Seq
 import qualified Data.Set as Set
 import           Data.Word (Word64)
+import           Numeric.Natural (Natural)
 
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), SignKeyDSIGN,
                      signedDSIGN)
-import           Cardano.Crypto.KES.Class (SignKeyKES, deriveVerKeyKES,
+import           Cardano.Crypto.Hash (Hash (..), MD5, hash)
+import           Cardano.Crypto.KES.Class (Period, SignKeyKES, deriveVerKeyKES,
                      genKeyKES)
-import           Cardano.Crypto.Seed (mkSeedFromBytes)
+import           Cardano.Crypto.Seed (expandSeed, mkSeedFromBytes)
+import qualified Cardano.Crypto.Seed as Seed
 import           Cardano.Crypto.VRF.Class (SignKeyVRF, deriveVerKeyVRF,
                      genKeyVRF)
 import           Cardano.Slotting.Slot (EpochSize (..), SlotNo (..))
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
+import           Ouroboros.Consensus.Block.Forge
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Util.Random
 
-import           Test.QuickCheck (Gen)
+import           Test.QuickCheck (Gen, arbitrary)
 import qualified Test.QuickCheck.Gen as Gen
+import           Test.ThreadNet.Rekeying
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.Util.Orphans.Arbitrary ()
+import qualified Test.Util.Stream as Stream
 import           Test.Util.Time (dawnOfTime)
 
+import           Test.ThreadNet.General
+import           Test.ThreadNet.Network (TestNodeInitialization (..))
+import           Test.ThreadNet.Util.NodeTopology
 import           Test.Util.WrappedClock (NumSlots (..))
 
 import qualified Shelley.Spec.Ledger.Address as SL
@@ -64,10 +81,11 @@ import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.TxData as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
+import           Ouroboros.Consensus.Shelley.Ledger.Forge
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (DSIGN,
-                     HotKey (..))
+                     HotKey (..), KES)
 
 import           Test.Consensus.Shelley.MockCrypto (TPraosMockCrypto)
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
@@ -87,6 +105,7 @@ data CoreNode c = CoreNode {
     , cnKES         :: !(SignKeyKES   (SL.KES   c))
     , cnOCert       :: !(SL.OCert               c)
     }
+    deriving (Show)
 
 data CoreNodeKeyInfo = CoreNodeKeyInfo
   { cnkiKeyPair
@@ -129,16 +148,7 @@ genCoreNode startKESPeriod = do
     vrfKey <- withMRSeed 8 genKeyVRF
     kesKey <- withMRSeed 8 genKeyKES
     let kesPub = deriveVerKeyKES kesKey
-        sigma = signedDSIGN
-          ()
-          (kesPub, certificateIssueNumber, startKESPeriod)
-          delKey
-    let ocert = SL.OCert {
-            ocertVkHot     = kesPub
-          , ocertN         = certificateIssueNumber
-          , ocertKESPeriod = startKESPeriod
-          , ocertSigma     = sigma
-          }
+    let ocert = genOCert startKESPeriod certificateIssueNumber delKey kesPub
     return CoreNode {
         cnGenesisKey  = genKey
       , cnDelegateKey = delKey
@@ -153,14 +163,32 @@ genCoreNode startKESPeriod = do
       seed <- mkSeedFromBytes <$> getRandomBytes sz
       pure $ go seed
 
+genOCert
+  :: TPraosCrypto c
+  => SL.KESPeriod
+  -> Natural -- ^ Certificate issue number
+  -> SignKeyDSIGN (DSIGN c) -- ^ Signing cold key
+  -> SL.VerKeyKES c -- ^ KES public key
+  -> SL.OCert c
+genOCert startKESPeriod certificateIssueNumber delKey kesPub =
+  let sigma = signedDSIGN
+        ()
+        (kesPub, certificateIssueNumber, startKESPeriod)
+        delKey
+  in SL.OCert
+    { ocertVkHot     = kesPub
+    , ocertN         = certificateIssueNumber
+    , ocertKESPeriod = startKESPeriod
+    , ocertSigma     = sigma
+    }
+
 mkGenesisConfig
   :: forall c. TPraosCrypto c
   => SecurityParam
   -> Double -- ^ Decentralisation param
-  -> Word64  -- ^ Max KES evolutions
   -> [CoreNode c]
   -> ShelleyGenesis c
-mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
+mkGenesisConfig k d coreNodes = ShelleyGenesis {
       -- Matches the start of the ThreadNet tests
       sgSystemStart           = SystemStart dawnOfTime
     , sgNetworkMagic          = NetworkMagic 0
@@ -170,7 +198,7 @@ mkGenesisConfig k d maxKESEvolutions coreNodes = ShelleyGenesis {
     , sgSecurityParam         = k
     , sgEpochLength           = EpochSize (10 * maxRollbacks k)
     , sgSlotsPerKESPeriod     = 10 -- TODO
-    , sgMaxKESEvolutions      = maxKESEvolutions
+    , sgMaxKESEvolutions      = 100 -- TODO
     , sgSlotLength            = tpraosSlotLength
     , sgUpdateQuorum          = 1  -- TODO
     , sgMaxMajorPV            = 1000 -- TODO
@@ -281,6 +309,82 @@ mkProtocolRealTPraos genesis CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
       }
 
 {-------------------------------------------------------------------------------
+  Shelley test configuration
+-------------------------------------------------------------------------------}
+
+data ShelleyTestConfig = ShelleyTestConfig
+  { stcTestConfig   :: TestConfig
+  , stcGenesis      :: ShelleyGenesis TPraosMockCrypto
+  , stcCoreNodes    :: [CoreNode TPraosMockCrypto]
+  , stcNodeRestarts :: NodeRestarts
+  } deriving (Show)
+
+data TestTuning = TestTuning
+  { -- | Should KES keys be rotated on schedule?
+    rotateKESKeys :: Bool
+  }
+
+testTuning :: TestTuning
+testTuning = TestTuning
+  { rotateKESKeys = False }
+
+genShelleyTestConfig
+  :: TestTuning
+  -> Gen ShelleyTestConfig
+genShelleyTestConfig TestTuning {rotateKESKeys} = do
+    initSeed <- arbitrary
+    k <- SecurityParam <$> Gen.elements [5,10]
+    d <- Gen.elements [x / 10 | x <- [1..10]]
+    numCoreNodes@(NumCoreNodes n) <- arbitrary
+
+    -- TODO generate more interesting scenarios
+    let
+      nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
+      nodeTopology = meshNodeTopology numCoreNodes
+
+      initialKESPeriod :: SL.KESPeriod
+      initialKESPeriod = SL.KESPeriod 0
+
+      genesisConfig :: ShelleyGenesis TPraosMockCrypto
+      genesisConfig = (mkGenesisConfig k d coreNodes)
+        { sgMaxKESEvolutions = if rotateKESKeys then 2 else 100
+        , sgSlotsPerKESPeriod = if rotateKESKeys then 5 else 10
+        }
+
+      coreNodes :: [CoreNode TPraosMockCrypto]
+      coreNodes = withSeed initSeed $
+        replicateM (fromIntegral n) $
+        genCoreNode initialKESPeriod
+
+    numSlots     <-
+      if rotateKESKeys
+        then pure . NumSlots $ 30
+        else arbitrary
+
+    nodeRestarts <-
+      if rotateKESKeys
+        then ocertNodeRestarts nodeJoinPlan numSlots genesisConfig coreNodes (0,0)
+        else pure noRestarts
+
+    let
+      tc = TestConfig
+        { nodeTopology
+        , numCoreNodes
+        , numSlots
+        , initSeed
+        }
+
+    pure $ ShelleyTestConfig
+      { stcTestConfig = tc
+      , stcGenesis = genesisConfig
+      , stcCoreNodes = coreNodes
+      , stcNodeRestarts = nodeRestarts
+      }
+
+shrinkShelleyTestConfig :: ShelleyTestConfig -> [ShelleyTestConfig]
+shrinkShelleyTestConfig _ = [] -- TODO
+
+{-------------------------------------------------------------------------------
   Node restarts for operational certificates
 -------------------------------------------------------------------------------}
 
@@ -334,3 +438,64 @@ ocertNodeRestarts
       -- KES period i begins in slot kesPeriodStartSlots !! i
       kesPeriodStartSlots = [i * sgSlotsPerKESPeriod | i <- [0 ..]]
       ocertRegenCadence = sgSlotsPerKESPeriod * sgMaxKESEvolutions
+
+ocertRekeying
+  :: forall c m. (TPraosCrypto c)
+  => Seed
+  -> ShelleyGenesis c
+  -> [CoreNode c]
+  -> Rekeying m (ShelleyBlock c)
+ocertRekeying
+  initSeed
+  ShelleyGenesis {sgSlotsPerKESPeriod}
+  coreNodes
+  = Rekeying
+  { rekeyOracle = \_ sn -> Just sn
+  , rekeyUpd = \(CoreNodeId nodeIdx) oldProtocolInfo (SlotNo slotNo) kesKey ->
+      let
+        currentKESPeriod = fromIntegral $ slotNo `div` sgSlotsPerKESPeriod
+        CoreNode { cnDelegateKey } = coreNodes !! fromIntegral nodeIdx
+      in pure $ TestNodeInitialization
+        { tniCrucialTxs = []
+        , tniProtocolInfo = oldProtocolInfo
+          { pInfoLeaderCreds =
+              fmap
+                ( rekeyNode
+                  currentKESPeriod
+                  (deriveVerKeyKES kesKey)
+                  cnDelegateKey
+                  kesKey
+                )
+                $ pInfoLeaderCreds oldProtocolInfo
+          }
+        }
+  , rekeyFreshSKs = genKeyKES <$>
+      Stream.unfoldr (expandSeed (Proxy :: Proxy MD5)) (mkSeedFromOtherSeed initSeed)
+  }
+  where
+    rekeyNode
+      :: Period
+      -> SL.VerKeyKES c
+      -> SignKeyDSIGN (DSIGN c)
+      -> SignKeyKES (KES c)
+      -> (TPraosIsCoreNode c, MaintainForgeState (ChaChaT m) (ShelleyBlock c))
+      -> (TPraosIsCoreNode c, MaintainForgeState (ChaChaT m) (ShelleyBlock c))
+    rekeyNode currentKESPeriod kk coldKey kesKey (icn, mfs) =
+      ( icn
+        { tpraosIsCoreNodeOpCert = newOpCert }
+      , mfs
+        { initForgeState = TPraosForgeState $ HotKey currentKESPeriod kesKey }
+      )
+      where
+        newCertIssue = 1 + (SL.ocertN $ tpraosIsCoreNodeOpCert icn)
+        newOpCert = genOCert (SL.KESPeriod currentKESPeriod) newCertIssue coldKey kk
+
+    -- | Construct a seed from a bunch of Word64s
+    --
+    --   We multiply these words by some extra stuff to make sure they contain
+    --   enough bits for our seed.
+    mkSeedFromOtherSeed ::
+      Seed ->
+      Seed.Seed
+    mkSeedFromOtherSeed (Seed stuff) =
+      mkSeedFromBytes . coerce $ hash @MD5 stuff
