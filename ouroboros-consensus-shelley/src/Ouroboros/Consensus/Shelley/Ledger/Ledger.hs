@@ -51,7 +51,9 @@ import           Control.Monad.Except
 import           Data.Functor.Identity
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Type.Equality ((:~:) (Refl), apply)
 import           GHC.Generics (Generic)
 
@@ -289,6 +291,8 @@ newtype NonMyopicMemberRewards c = NonMyopicMemberRewards {
   deriving stock   (Show)
   deriving newtype (Eq)
 
+type Delegations c = Map (SL.Credential 'SL.Staking c) (SL.KeyHash 'SL.StakePool c)
+
 instance Crypto c => Serialise (NonMyopicMemberRewards c) where
   encode = toCBOR . unNonMyopicMemberRewards
   decode = NonMyopicMemberRewards <$> fromCBOR
@@ -336,6 +340,10 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
       :: Query (ShelleyBlock c) result
       -> Query (ShelleyBlock c) (Serialised result)
 
+    GetFilteredDelegationsAndRewardAccounts
+      :: Set (SL.Credential 'SL.Staking c)
+      -> Query (ShelleyBlock c) (Delegations c, SL.RewardAccounts c)
+
 
   answerQuery cfg query st = case query of
       GetLedgerTip -> ledgerTip st
@@ -350,6 +358,11 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
       GetCurrentLedgerState -> getCurrentLedgerState $ shelleyState st
       GetCBOR query' -> mkSerialised (encodeShelleyResult query') $
           answerQuery cfg query' st
+      GetFilteredDelegationsAndRewardAccounts creds ->
+        getFilteredDelegationsAndRewardAccounts
+          (shelleyLedgerGlobals cfg)
+          (shelleyState st)
+          creds
     where
       globals = shelleyLedgerGlobals cfg
 
@@ -399,21 +412,30 @@ instance TPraosCrypto c => QueryLedger (ShelleyBlock c) where
     = apply Refl <$> eqQuery q q'
   eqQuery (GetCBOR _) _
     = Nothing
+  eqQuery (GetFilteredDelegationsAndRewardAccounts creds)
+          (GetFilteredDelegationsAndRewardAccounts creds')
+    | creds == creds'
+    = Just Refl
+    | otherwise
+    = Nothing
+  eqQuery (GetFilteredDelegationsAndRewardAccounts _) _
+    = Nothing
 
 deriving instance Eq   (Query (ShelleyBlock c) result)
 deriving instance Show (Query (ShelleyBlock c) result)
 
 instance Crypto c => ShowQuery (Query (ShelleyBlock c)) where
-  showResult GetLedgerTip                   = show
-  showResult GetEpochNo                     = show
-  showResult (GetNonMyopicMemberRewards {}) = show
-  showResult GetCurrentPParams              = show
-  showResult GetProposedPParamsUpdates      = show
-  showResult GetStakeDistribution           = show
-  showResult (GetFilteredUTxO {})           = show
-  showResult GetUTxO                        = show
-  showResult GetCurrentLedgerState          = show
-  showResult (GetCBOR {})                   = show
+  showResult GetLedgerTip                                 = show
+  showResult GetEpochNo                                   = show
+  showResult (GetNonMyopicMemberRewards {})               = show
+  showResult GetCurrentPParams                            = show
+  showResult GetProposedPParamsUpdates                    = show
+  showResult GetStakeDistribution                         = show
+  showResult (GetFilteredUTxO {})                         = show
+  showResult GetUTxO                                      = show
+  showResult GetCurrentLedgerState                        = show
+  showResult (GetCBOR {})                                 = show
+  showResult (GetFilteredDelegationsAndRewardAccounts {}) = show
 
 {-------------------------------------------------------------------------------
   ValidateEnvelope
@@ -453,6 +475,22 @@ getCurrentLedgerState =
 
     nukeUtxOSet :: SL.UTxOState c -> SL.UTxOState c
     nukeUtxOSet us = us { SL._utxo = SL.UTxO mempty }
+
+getDState :: SL.ShelleyState c -> SL.DState c
+getDState = SL._dstate . SL._delegationState . SL.esLState . SL.nesEs
+
+getFilteredDelegationsAndRewardAccounts :: SL.Globals
+                                        -> SL.ShelleyState c
+                                        -> Set (SL.Credential 'SL.Staking c)
+                                        -> (Delegations c, SL.RewardAccounts c)
+getFilteredDelegationsAndRewardAccounts globals ss creds =
+    (filteredDelegations, filteredRwdAcnts)
+  where
+    network = SL.networkId globals
+    rwdAcnts = Set.map (SL.RewardAcnt network) creds
+    dstate = getDState ss
+    filteredDelegations = Map.restrictKeys (SL._delegations dstate) creds
+    filteredRwdAcnts = Map.restrictKeys (SL._rewards dstate) rwdAcnts
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -525,23 +563,26 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 8
     GetCBOR query' ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 9 <> encodeShelleyQuery query'
+    GetFilteredDelegationsAndRewardAccounts creds ->
+      CBOR.encodeListLen 2 <> CBOR.encodeWord8 10 <> toCBOR creds
 
 decodeShelleyQuery :: Crypto c => Decoder s (Some (Query (ShelleyBlock c)))
 decodeShelleyQuery = do
     len <- CBOR.decodeListLen
     tag <- CBOR.decodeWord8
     case (len, tag) of
-      (1, 0) -> return $ Some GetLedgerTip
-      (1, 1) -> return $ Some GetEpochNo
-      (2, 2) -> Some . GetNonMyopicMemberRewards <$> fromCBOR
-      (1, 3) -> return $ Some GetCurrentPParams
-      (1, 4) -> return $ Some GetProposedPParamsUpdates
-      (1, 5) -> return $ Some GetStakeDistribution
-      (2, 6) -> Some . GetFilteredUTxO <$> fromCBOR
-      (1, 7) -> return $ Some GetUTxO
-      (1, 8) -> return $ Some GetCurrentLedgerState
-      (2, 9) -> (\(Some q) -> Some (GetCBOR q)) <$> decodeShelleyQuery
-      _      -> fail $
+      (1, 0)  -> return $ Some GetLedgerTip
+      (1, 1)  -> return $ Some GetEpochNo
+      (2, 2)  -> Some . GetNonMyopicMemberRewards <$> fromCBOR
+      (1, 3)  -> return $ Some GetCurrentPParams
+      (1, 4)  -> return $ Some GetProposedPParamsUpdates
+      (1, 5)  -> return $ Some GetStakeDistribution
+      (2, 6)  -> Some . GetFilteredUTxO <$> fromCBOR
+      (1, 7)  -> return $ Some GetUTxO
+      (1, 8)  -> return $ Some GetCurrentLedgerState
+      (2, 9)  -> (\(Some q) -> Some (GetCBOR q)) <$> decodeShelleyQuery
+      (2, 10) -> Some . GetFilteredDelegationsAndRewardAccounts <$> fromCBOR
+      _       -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
 
@@ -549,29 +590,31 @@ encodeShelleyResult
   :: Crypto c
   => Query (ShelleyBlock c) result -> result -> Encoding
 encodeShelleyResult query = case query of
-    GetLedgerTip                 -> encodePoint encode
-    GetEpochNo                   -> encode
-    GetNonMyopicMemberRewards {} -> encode
-    GetCurrentPParams            -> toCBOR
-    GetProposedPParamsUpdates    -> toCBOR
-    GetStakeDistribution         -> toCBOR
-    GetFilteredUTxO {}           -> toCBOR
-    GetUTxO                      -> toCBOR
-    GetCurrentLedgerState        -> toCBOR
-    GetCBOR {}                   -> encode
+    GetLedgerTip                               -> encodePoint encode
+    GetEpochNo                                 -> encode
+    GetNonMyopicMemberRewards {}               -> encode
+    GetCurrentPParams                          -> toCBOR
+    GetProposedPParamsUpdates                  -> toCBOR
+    GetStakeDistribution                       -> toCBOR
+    GetFilteredUTxO {}                         -> toCBOR
+    GetUTxO                                    -> toCBOR
+    GetCurrentLedgerState                      -> toCBOR
+    GetCBOR {}                                 -> encode
+    GetFilteredDelegationsAndRewardAccounts {} -> toCBOR
 
 decodeShelleyResult
   :: Crypto c
   => Query (ShelleyBlock c) result
   -> forall s. Decoder s result
 decodeShelleyResult query = case query of
-    GetLedgerTip                 -> decodePoint decode
-    GetEpochNo                   -> decode
-    GetNonMyopicMemberRewards {} -> decode
-    GetCurrentPParams            -> fromCBOR
-    GetProposedPParamsUpdates    -> fromCBOR
-    GetStakeDistribution         -> fromCBOR
-    GetFilteredUTxO {}           -> fromCBOR
-    GetUTxO                      -> fromCBOR
-    GetCurrentLedgerState        -> fromCBOR
-    GetCBOR {}                   -> decode
+    GetLedgerTip                               -> decodePoint decode
+    GetEpochNo                                 -> decode
+    GetNonMyopicMemberRewards {}               -> decode
+    GetCurrentPParams                          -> fromCBOR
+    GetProposedPParamsUpdates                  -> fromCBOR
+    GetStakeDistribution                       -> fromCBOR
+    GetFilteredUTxO {}                         -> fromCBOR
+    GetUTxO                                    -> fromCBOR
+    GetCurrentLedgerState                      -> fromCBOR
+    GetCBOR {}                                 -> decode
+    GetFilteredDelegationsAndRewardAccounts {} -> fromCBOR
