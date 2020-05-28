@@ -301,7 +301,16 @@ monitor tracer jobpool egressQueue cmdQueue =
           throwM e
 
         EventControlCmd (CmdStartProtocolThread
-                           StartEagerly ptclState ptclAction) -> do
+                           StartEagerly
+                           ptclState@MiniProtocolState {
+                             miniProtocolInfo = MiniProtocolInfo {
+                               miniProtocolNum,
+                               miniProtocolDir
+                             }
+                           }
+                           ptclAction) -> do
+          traceWith tracer (MuxTraceStartEagerly miniProtocolNum
+                             (protocolDirEnum miniProtocolDir))
           JobPool.forkJob jobpool $
             miniProtocolJob
               tracer
@@ -311,14 +320,23 @@ monitor tracer jobpool egressQueue cmdQueue =
           go ptclsStartOnDemand
 
         EventControlCmd (CmdStartProtocolThread
-                           StartOnDemand ptclState ptclAction) -> do
+                           StartOnDemand
+                           ptclState@MiniProtocolState {
+                             miniProtocolInfo = MiniProtocolInfo {
+                               miniProtocolNum,
+                               miniProtocolDir
+                             }
+                           }
+                           ptclAction) -> do
           let ptclsStartOnDemand' = Map.insert (protocolKey ptclState)
                                                (ptclState, ptclAction)
                                                ptclsStartOnDemand
+          traceWith tracer (MuxTraceStartedOnDemand miniProtocolNum
+                             (protocolDirEnum miniProtocolDir))
           go ptclsStartOnDemand'
 
         EventControlCmd CmdShutdown ->
-          return ()
+          traceWith tracer MuxTraceShutdown
 
         -- Data has arrived on a channel for a mini-protocol for which we have
         -- an on-demand-start protocol thread. So we start it now.
@@ -330,6 +348,8 @@ monitor tracer jobpool egressQueue cmdQueue =
                              miniProtocolStatusVar
                            }
                            ptclAction -> do
+          traceWith tracer (MuxTraceStartOnDemand miniProtocolNum
+                             (protocolDirEnum miniProtocolDir))
           atomically $ writeTVar miniProtocolStatusVar StatusRunning
           JobPool.forkJob jobpool $
             miniProtocolJob
