@@ -3,6 +3,7 @@ module Main (main) where
 import           Test.Tasty
 
 import qualified Test.Consensus.BlockchainTime.Simple (tests)
+import qualified Test.Consensus.HardFork.Combinator (tests)
 import qualified Test.Consensus.HardFork.History (tests)
 import qualified Test.Consensus.HardFork.Summary (tests)
 import qualified Test.Consensus.Mempool (tests)
@@ -31,4 +32,5 @@ tests =
   , Test.Consensus.Util.Versioned.tests
   , Test.Consensus.HardFork.Summary.tests
   , Test.Consensus.HardFork.History.tests
+  , Test.Consensus.HardFork.Combinator.tests
   ]

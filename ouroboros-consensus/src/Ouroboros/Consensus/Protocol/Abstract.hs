@@ -36,7 +36,10 @@ import           Ouroboros.Consensus.Ledger.Abstract (Ticked)
 data family ConsensusConfig p :: *
 
 -- | Chain selection
-class NoUnexpectedThunks (ChainSelConfig p) => ChainSelection p where
+class ( NoUnexpectedThunks (ChainSelConfig p)
+        -- For the benefit of tests
+      , Show (SelectView p)
+      ) => ChainSelection p where
   -- | Configuration required for chain selection
   type family ChainSelConfig p :: *
   type ChainSelConfig p = ()

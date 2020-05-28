@@ -227,7 +227,7 @@ data TPraosChainSelectView c = ChainSelectView {
     csvChainLength :: BlockNo
   , csvIssuer      :: SL.VKey 'SL.BlockIssuer c
   , csvIssueNo     :: Natural
-  } deriving Eq
+  } deriving (Show, Eq)
 
 instance Crypto c => Ord (TPraosChainSelectView c) where
   compare (ChainSelectView l1 i1 in1) (ChainSelectView l2 i2 in2) =

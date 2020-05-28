@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -45,6 +46,8 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
     -- * Utility
   , oneEraBlockHeader
   , getSameValue
+    -- * Serialisation support
+  , SerialiseOne(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -60,6 +63,7 @@ import           Data.Void
 import           Data.Word
 import           GHC.Stack
 
+import           Cardano.Binary (enforceSize)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block
@@ -292,21 +296,34 @@ deriving via LiftNS Header         xs instance CanHardFork xs => Show (OneEraHea
 deriving via LiftNS GenTx          xs instance CanHardFork xs => Show (OneEraGenTx      xs)
 deriving via LiftNS WrapGenTxId    xs instance CanHardFork xs => Show (OneEraGenTxId    xs)
 deriving via LiftNS WrapApplyTxErr xs instance CanHardFork xs => Show (OneEraApplyTxErr xs)
+deriving via LiftNS WrapSelectView xs instance CanHardFork xs => Show (OneEraSelectView xs)
 
 {-------------------------------------------------------------------------------
   Serialise support
 -------------------------------------------------------------------------------}
 
-newtype SerialiseOne f xs = SerialiseOne (NS f xs)
+-- | Used for deriving via
+--
+-- Example
+--
+-- > deriving via SerialiseOne Header SomeEras
+-- >          instance Serialise (Header SomeBlock)
+newtype SerialiseOne f xs = SerialiseOne {
+      getSerialiseOne :: NS f xs
+    }
 
 instance ( All SingleEraBlock xs
-         , forall blk. SingleEraBlock blk => Serialise (f blk)
+         , All (Compose Serialise f) xs
          ) => Serialise (SerialiseOne f xs) where
   encode (SerialiseOne ns) =
-      hcollapse $ hczipWith proxySingle aux indices ns
+      hcollapse $ hczipWith (Proxy @(Compose Serialise f)) aux indices ns
     where
-      aux :: SingleEraBlock blk => K Word8 blk -> f blk -> K Encoding blk
-      aux (K i) x = K (Enc.encodeWord8 i <> encode x)
+      aux :: Compose Serialise f blk => K Word8 blk -> f blk -> K Encoding blk
+      aux (K i) x = K $ mconcat [
+            Enc.encodeListLen 2
+          , Enc.encodeWord8 i
+          , encode x
+          ]
 
       indices :: NP (K Word8) xs
       indices = go 0 sList
@@ -316,14 +333,15 @@ instance ( All SingleEraBlock xs
           go !i SCons = K i :* go (i + 1) sList
 
   decode = do
+      enforceSize "SerialiseOne" 2
       i <- fromIntegral <$> Dec.decodeWord8
       if i < length decoders
         then SerialiseOne <$> decoders !! i
         else fail "decode: invalid index"
     where
       decoders :: [Decoder s (NS f xs)]
-      decoders = hcollapse $ hcmap proxySingle aux injections
+      decoders = hcollapse $ hcmap (Proxy @(Compose Serialise f)) aux injections
 
-      aux :: SingleEraBlock blk
+      aux :: Compose Serialise f blk
           => Injection f xs blk -> K (Decoder s (NS f xs)) blk
       aux inj = K (unK . apFn inj <$> decode)

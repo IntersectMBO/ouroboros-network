@@ -14,7 +14,7 @@
 
 -- | Intended for qualified import
 --
--- > import Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch)
+-- > import Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch(..))
 -- > import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 module Ouroboros.Consensus.HardFork.Combinator.Util.Match (
     Mismatch(..)
@@ -22,6 +22,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.Match (
   , matchTelescope
     -- * Utilities
   , mismatchOne
+  , mismatchTwo
+  , mkMismatchTwo
     -- * SOP operators
   , bihap
   , bihmap
@@ -81,6 +83,16 @@ mismatchOne :: Mismatch f g '[x] -> Void
 mismatchOne (ML _ ns) = case ns of {}
 mismatchOne (MR ns _) = case ns of {}
 mismatchOne (MS m)    = case m  of {}
+
+-- | If we only have two eras, only two possibilities for a mismatch
+mismatchTwo :: Mismatch f g '[x, y] -> Either (f x, g y) (f y, g x)
+mismatchTwo (ML fx gy) = Left (fx, unZ gy)
+mismatchTwo (MR fy gx) = Right (unZ fy, gx)
+mismatchTwo (MS m)     = absurd $ mismatchOne m
+
+mkMismatchTwo :: Either (f x, g y) (f y, g x) -> Mismatch f g '[x, y]
+mkMismatchTwo (Left  (fx, gy)) = ML fx (Z gy)
+mkMismatchTwo (Right (fy, gx)) = MR (Z fy) gx
 
 {-------------------------------------------------------------------------------
   Subset of the (generalized) SOP operators

@@ -22,6 +22,8 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
   , WrapSelectView(..)
   ) where
 
+import           Codec.Serialise (Serialise)
+
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
@@ -92,4 +94,16 @@ deriving instance Eq                 (ValidationErr  (BlockProtocol blk)) => Eq 
 deriving instance Show               (ValidationErr  (BlockProtocol blk)) => Show               (WrapValidationErr blk)
 deriving instance NoUnexpectedThunks (ValidationErr  (BlockProtocol blk)) => NoUnexpectedThunks (WrapValidationErr blk)
 
+deriving instance Show               (SelectView     (BlockProtocol blk)) => Show               (WrapSelectView blk)
+
 deriving instance NoUnexpectedThunks (ChainSelConfig (BlockProtocol blk)) => NoUnexpectedThunks (WrapChainSelConfig blk)
+
+{-------------------------------------------------------------------------------
+  Serialise instances
+
+  These are primarily useful in testing.
+-------------------------------------------------------------------------------}
+
+deriving instance Serialise (GenTxId                       blk)  => Serialise (WrapGenTxId        blk)
+deriving instance Serialise (ConsensusState (BlockProtocol blk)) => Serialise (WrapConsensusState blk)
+deriving instance Serialise (TipInfo                       blk)  => Serialise (WrapTipInfo        blk)

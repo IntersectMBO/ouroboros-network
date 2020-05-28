@@ -31,6 +31,7 @@ data HardForkSelectView xs = HardForkSelectView {
       hardForkSelectViewBlockNo :: BlockNo
     , hardForkSelectViewOneEra  :: OneEraSelectView xs
     }
+  deriving (Show)
 
 -- | Chain selection across eras
 --

@@ -31,10 +31,23 @@ import           Ouroboros.Consensus.HardFork.Combinator.Mempool as X
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol as X
 
 -- Instances for 'ShowQuery' and 'QueryLedger'
+-- Definition of 'Query', required for serialisation code
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query as X
 
 -- Instance for 'ChainSelection'
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel as X
+
+-- Re-export only the types that are useful in RunNode instances for HFC blocks
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras as X
+                     (MismatchEraInfo (..), OneEraApplyTxErr (..),
+                     OneEraBlock (..), OneEraGenTx (..), OneEraGenTxId (..),
+                     OneEraHash (..), OneEraHeader (..), OneEraTipInfo (..),
+                     PerEraLedgerConfig (..), SerialiseOne (..))
+
+-- Re-export types required to initialize 'ProtocolInfo'
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras as X
+                     (PerEraBlockConfig (..), PerEraConsensusConfig (..),
+                     PerEraForgeState (..))
 
 -- Defines the various translation types required for concrete HFC instances
 import           Ouroboros.Consensus.HardFork.Combinator.Translation as X
@@ -42,13 +55,34 @@ import           Ouroboros.Consensus.HardFork.Combinator.Translation as X
 -- Instance for 'CanForge'
 import           Ouroboros.Consensus.HardFork.Combinator.Forge as X ()
 
+-- Instance for 'ConfigSupportsNode'
+import           Ouroboros.Consensus.HardFork.Combinator.Node as X
+
+-- Definition of InPairs (required to define translations)
+import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as X
+                     (InPairs (..))
+
+-- Definition of Telescope (required to define serialisation code)
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as X
+                     (Telescope (..))
+
+-- Definition of 'Mismatch' (required to define serialisation code)
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Match as X
+                     (Mismatch (..))
+
+-- Definition of HardForkState_ (required to define serialisation code)
+-- Also export functions required to define 'protocolInfo'.
+import           Ouroboros.Consensus.HardFork.Combinator.State as X
+                     (HardForkState, HardForkState_ (..), initHardForkState)
+
 -- Omitted from this export:
 --
 -- * "Ouroboros.Consensus.HardFork.Combinator.State"
 --   This defines 'HardForkState', a wrapper around a 'Telescope'. We use this
 --   to define 'HardForkLedgerState', 'HardForkLedgerView' as well as
 --   'HardForkConsensusState', but the type itself should mostly be internal
---   to the hard fork combinator.
+--   to the hard fork combinator. We do export the constructor for it, as this
+--   may be required for serialisation code.
 --
 -- * "module Ouroboros.Consensus.HardFork.Combinator.State.Infra"
 --   This module is only separate from @.State@ to avoid some cyclic module
@@ -79,4 +113,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Forge as X ()
 --   need to do it for other types.
 --
 -- * Ouroboros.Consensus.HardFork.Combinator.Util.*
---   Utility functions and types
+--   We omit most utility functions and types, which are for internal use. Some
+--   exceptions the defintion of InPairs, which will be required to define
+--   translations, and the definition of a Telescope, which might be needed to
+--   define serialisation code.
