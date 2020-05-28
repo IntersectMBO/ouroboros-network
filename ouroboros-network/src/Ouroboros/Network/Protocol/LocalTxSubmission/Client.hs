@@ -22,7 +22,7 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Client (
   , LocalTxClientStIdle (..)
 
     -- * The result from a transaction submission.
-  , SubmitResult
+  , SubmitResult (..)
 
     -- * Execution as a typed protocol
   , localTxSubmissionClientPeer
