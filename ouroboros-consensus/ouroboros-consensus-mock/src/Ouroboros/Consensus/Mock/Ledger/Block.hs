@@ -76,7 +76,8 @@ import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
-import           Cardano.Crypto.Hash hiding (castHash)
+import           Cardano.Crypto.Hash (Hash, HashAlgorithm, MD5, ShortHash)
+import qualified Cardano.Crypto.Hash as Hash
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Network.Block
@@ -169,7 +170,7 @@ mkSimpleHeader :: SimpleCrypto c
                -> Header (SimpleBlock' c ext ext')
 mkSimpleHeader encodeExt std ext =
     headerWithoutHash {
-        simpleHeaderHash = hashWithSerialiser
+        simpleHeaderHash = Hash.hashWithSerialiser
                              (encodeSimpleHeader encodeExt)
                              headerWithoutHash
       }
@@ -186,7 +187,7 @@ matchesSimpleHeader :: SimpleCrypto c
                     -> SimpleBlock'  c ext ext''
                     -> Bool
 matchesSimpleHeader SimpleHeader{..} SimpleBlock {..} =
-    simpleBodyHash == hash simpleBody
+    simpleBodyHash == Hash.hash simpleBody
   where
     SimpleStdHeader{..} = simpleHeaderStd
 
@@ -223,6 +224,10 @@ instance (SimpleCrypto c, Typeable ext) => HasHeader (SimpleBlock c ext) where
   blockInvariant = const True
 
 instance (SimpleCrypto c, Typeable ext) => StandardHash (SimpleBlock c ext)
+
+instance ConvertRawHash (SimpleBlock' c ext ext') where
+  toRawHash   _ = Hash.getHash
+  fromRawHash _ = Hash.UnsafeHash
 
 {-------------------------------------------------------------------------------
   HasMockTxs instance
@@ -382,7 +387,7 @@ instance Condense (GenTxId (SimpleBlock p c)) where
 mkSimpleGenTx :: Mock.Tx -> GenTx (SimpleBlock c ext)
 mkSimpleGenTx tx = SimpleGenTx
     { simpleGenTx   = tx
-    , simpleGenTxId = hash tx
+    , simpleGenTxId = Hash.hash tx
     }
 
 txSize :: GenTx (SimpleBlock c ext) -> Word32
@@ -511,4 +516,4 @@ simpleBlockHashInfo = HashInfo
     }
   where
     -- + 1 For the CBOR tag
-    hashSize = 1 + fromIntegral (sizeHash (Proxy @(SimpleHash c)))
+    hashSize = 1 + fromIntegral (Hash.sizeHash (Proxy @(SimpleHash c)))

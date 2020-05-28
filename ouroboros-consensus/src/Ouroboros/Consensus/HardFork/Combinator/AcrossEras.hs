@@ -157,7 +157,7 @@ instance CanHardFork xs => HasHeader (OneEraHeader xs) where
    where
      getOneHash :: forall blk. SingleEraBlock blk
                 => Header blk -> OneEraHash xs
-     getOneHash = OneEraHash . getRawHash (Proxy @blk) . blockHash
+     getOneHash = OneEraHash . toRawHash (Proxy @blk) . blockHash
 
   blockPrevHash = hcollapse
                 . hcmap proxySingle (K . getOnePrev)
@@ -168,7 +168,7 @@ instance CanHardFork xs => HasHeader (OneEraHeader xs) where
       getOnePrev hdr =
           case blockPrevHash hdr of
             GenesisHash -> GenesisHash
-            BlockHash h -> BlockHash (OneEraHash $ getRawHash (Proxy @blk) h)
+            BlockHash h -> BlockHash (OneEraHash $ toRawHash (Proxy @blk) h)
 
   blockSlot = hcollapse . hcmap proxySingle (K . blockSlot) . getOneEraHeader
   blockNo   = hcollapse . hcmap proxySingle (K . blockNo)   . getOneEraHeader

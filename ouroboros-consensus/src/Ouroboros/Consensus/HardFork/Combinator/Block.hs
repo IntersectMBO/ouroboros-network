@@ -113,7 +113,7 @@ instance CanHardFork xs => HasAnnTip (HardForkBlock xs) where
       tipInfoOne :: forall blk. SingleEraBlock blk
                  => WrapTipInfo blk -> OneEraHash xs
       tipInfoOne = OneEraHash
-                 . getRawHash  (Proxy @blk)
+                 . toRawHash   (Proxy @blk)
                  . tipInfoHash (Proxy @blk)
                  . unwrapTipInfo
 

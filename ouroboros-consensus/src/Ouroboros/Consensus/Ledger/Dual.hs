@@ -113,6 +113,10 @@ instance Condense m => Condense (DualBlock m a) where
 type instance HeaderHash (DualBlock m a) = HeaderHash m
 instance StandardHash m => StandardHash (DualBlock m a)
 
+instance ConvertRawHash m => ConvertRawHash (DualBlock m a) where
+  toRawHash   _ = toRawHash   (Proxy @m)
+  fromRawHash _ = fromRawHash (Proxy @m)
+
 {-------------------------------------------------------------------------------
   Header
 -------------------------------------------------------------------------------}

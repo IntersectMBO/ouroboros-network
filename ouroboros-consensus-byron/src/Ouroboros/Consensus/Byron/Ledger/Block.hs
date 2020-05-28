@@ -76,6 +76,10 @@ newtype ByronHash = ByronHash { unByronHash :: CC.HeaderHash }
 mkByronHash :: CC.ABlockOrBoundaryHdr ByteString -> ByronHash
 mkByronHash = ByronHash . CC.abobHdrHash
 
+instance ConvertRawHash ByronBlock where
+  toRawHash   _ = CC.hashToBytes . unByronHash
+  fromRawHash _ = ByronHash . CC.unsafeHashFromBytes
+
 byronHashInfo :: HashInfo ByronHash
 byronHashInfo = HashInfo { hashSize, getHash, putHash }
   where
@@ -86,12 +90,10 @@ byronHashInfo = HashInfo { hashSize, getHash, putHash }
     getHash :: Get ByronHash
     getHash = do
       bytes <- Get.getByteString (fromIntegral hashSize)
-      -- Ok to use unsafe version since we get the right size for the hash
-      return $! ByronHash (CC.unsafeHashFromBytes bytes)
+      return $! fromRawHash (Proxy @ByronBlock) bytes
 
     putHash :: ByronHash -> Put
-    putHash (ByronHash h) =
-      Put.putByteString $ CC.hashToBytes h
+    putHash = Put.putByteString . toRawHash (Proxy @ByronBlock)
 
 {-------------------------------------------------------------------------------
   Block

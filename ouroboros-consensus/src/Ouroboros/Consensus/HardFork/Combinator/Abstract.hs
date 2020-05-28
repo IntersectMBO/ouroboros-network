@@ -25,7 +25,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract (
   , ProofNonEmpty(..)
   ) where
 
-import qualified Data.ByteString as Strict
 import           Data.Proxy
 import           Data.SOP.Strict
 import           Data.Text (Text)
@@ -34,8 +33,6 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Cardano.Slotting.Slot
-
-import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History (EraParams)
@@ -80,6 +77,7 @@ class ( LedgerSupportsProtocol blk
       , CanForge blk
       , HasPartialConsensusConfig (BlockProtocol blk)
       , HasPartialLedgerConfig blk
+      , ConvertRawHash blk
         -- Instances required to support testing
       , Show blk
       , Show (Header blk)
@@ -104,11 +102,6 @@ class ( LedgerSupportsProtocol blk
 
   -- | Era information (for use in error messages)
   singleEraInfo       :: proxy blk -> SingleEraInfo blk
-
-  -- | Get the raw hash
-  --
-  -- See documentation of 'OneEraHash' for rationale.
-  getRawHash :: proxy blk -> HeaderHash blk -> Strict.ByteString
 
 proxySingle :: Proxy SingleEraBlock
 proxySingle = Proxy

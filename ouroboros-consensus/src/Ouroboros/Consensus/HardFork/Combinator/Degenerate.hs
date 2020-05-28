@@ -261,6 +261,10 @@ instance SingleEraBlock b => CanForge (DegenFork b) where
 instance HasTxs b => HasTxs (DegenFork b) where
   extractTxs = map DTx . extractTxs . unDBlk
 
+instance ConvertRawHash (DegenFork b) where
+  toRawHash   _ = getOneEraHash
+  fromRawHash _ = OneEraHash
+
 {-------------------------------------------------------------------------------
   RunNode instance
 
@@ -283,7 +287,7 @@ instance HasNetworkProtocolVersion b => HasNetworkProtocolVersion (DegenFork b) 
   nodeToNodeProtocolVersion     _ = nodeToNodeProtocolVersion     (Proxy @b)
   nodeToClientProtocolVersion   _ = nodeToClientProtocolVersion   (Proxy @b)
 
-instance (SingleEraBlock b, FromRawHash b, RunNode b) => RunNode (DegenFork b) where
+instance (SingleEraBlock b, RunNode b) => RunNode (DegenFork b) where
   nodeBlockFetchSize     (DHdr hdr)            = nodeBlockFetchSize     (projHeader hdr)
 
   nodeImmDbChunkInfo  cfg = nodeImmDbChunkInfo (projCfg cfg)

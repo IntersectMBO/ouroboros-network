@@ -10,9 +10,8 @@
 
 -- | Witness isomorphism between @b@ and @HardForkBlock '[b]@
 module Ouroboros.Consensus.HardFork.Combinator.Unary (
-    FromRawHash(..)
     -- * Projections
-  , projAnnTip
+    projAnnTip
   , projApplyTxErr
   , projBlock
   , projBlockConfig
@@ -63,7 +62,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
   ) where
 
 import           Data.Bifunctor
-import qualified Data.ByteString as Strict
 import           Data.SOP.Strict
 import           Data.Type.Equality
 import           Data.Void
@@ -108,18 +106,6 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 
 {-------------------------------------------------------------------------------
-  Addtional requirements
--------------------------------------------------------------------------------}
-
--- | Construct hash from the raw bytes
---
--- Consensus never needs to go this direction, but the projection
--- functions do. We make this a separate type class so that we can still
--- give a 'RunNode' instance.
-class FromRawHash blk where
-  fromRawHash :: proxy blk -> Strict.ByteString -> HeaderHash blk
-
-{-------------------------------------------------------------------------------
   Projections
 -------------------------------------------------------------------------------}
 
@@ -145,15 +131,15 @@ projBlock = unI . unZ . getOneEraBlock . getHardForkBlock
 injBlock :: b -> HardForkBlock '[b]
 injBlock = HardForkBlock . OneEraBlock . Z . I
 
-projHeaderHash :: forall b. FromRawHash b
+projHeaderHash :: forall b. ConvertRawHash b
                => HeaderHash (HardForkBlock '[b]) -> HeaderHash b
 projHeaderHash = fromRawHash (Proxy @b) . getOneEraHash
 
-injHeaderHash :: forall b. SingleEraBlock b
+injHeaderHash :: forall b. ConvertRawHash b
               => HeaderHash b -> HeaderHash (HardForkBlock '[b])
-injHeaderHash = OneEraHash . getRawHash (Proxy @b)
+injHeaderHash = OneEraHash . toRawHash (Proxy @b)
 
-projChainHash :: FromRawHash b
+projChainHash :: ConvertRawHash b
               => ChainHash (HardForkBlock '[b]) -> ChainHash b
 projChainHash = \case
     GenesisHash -> GenesisHash
@@ -344,7 +330,7 @@ injMaintainForgeState maintainForgeState = MaintainForgeState {
                        . projUpdateForgeState
     }
 
-injHashInfo :: (SingleEraBlock b, FromRawHash b)
+injHashInfo :: SingleEraBlock b
             => HashInfo (HeaderHash b)
             -> HashInfo (HeaderHash (HardForkBlock '[b]))
 injHashInfo info = HashInfo {

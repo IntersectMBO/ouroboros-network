@@ -82,6 +82,10 @@ instance Crypto c => Serialise (ShelleyHash c) where
 instance Condense (ShelleyHash c) where
   condense = show . unShelleyHash
 
+instance Crypto c => ConvertRawHash (ShelleyBlock c) where
+  toRawHash   _ = Crypto.getHash . SL.unHashHeader . unShelleyHash
+  fromRawHash _ = ShelleyHash . SL.HashHeader . Crypto.UnsafeHash
+
 shelleyHashInfo :: forall c. Crypto c => HashInfo (ShelleyHash c)
 shelleyHashInfo = HashInfo { hashSize, getHash, putHash }
   where
@@ -92,11 +96,10 @@ shelleyHashInfo = HashInfo { hashSize, getHash, putHash }
     getHash :: Get (ShelleyHash c)
     getHash = do
       bytes <- Get.getByteString (fromIntegral hashSize)
-      return . ShelleyHash . SL.HashHeader $ Crypto.UnsafeHash bytes
+      return $! fromRawHash (Proxy @(ShelleyBlock c)) bytes
 
     putHash :: ShelleyHash c -> Put
-    putHash (ShelleyHash (SL.HashHeader h)) =
-      Put.putByteString $ Crypto.getHash h
+    putHash = Put.putByteString . toRawHash (Proxy @(ShelleyBlock c))
 
 {-------------------------------------------------------------------------------
   Shelley blocks and headers
