@@ -123,6 +123,9 @@ instance Eq (Some (Query Block)) where
   Some (GetCBOR query) == Some (GetCBOR query') =
     Some query == Some query'
   Some (GetCBOR _) == _ = False
+  Some (GetFilteredDelegationsAndRewardAccounts creds) == Some (GetFilteredDelegationsAndRewardAccounts creds') =
+    creds == creds'
+  Some (GetFilteredDelegationsAndRewardAccounts _) == _ = False
 
 deriving instance Show (Some (Query Block))
 
@@ -190,6 +193,7 @@ instance Arbitrary (Some (Query Block)) where
     , pure $ Some GetStakeDistribution
     , pure $ Some GetCurrentLedgerState
     , (\(Some q) -> Some (GetCBOR q)) <$> arbitrary
+    , Some . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
     ]
 
 instance Arbitrary SomeResult where
@@ -204,6 +208,7 @@ instance Arbitrary SomeResult where
     , (\(SomeResult q r) ->
         SomeResult (GetCBOR q) (mkSerialised (encodeShelleyResult q) r)) <$>
       arbitrary
+    , SomeResult <$> (GetFilteredDelegationsAndRewardAccounts <$> arbitrary) <*> arbitrary
     ]
 
 instance Arbitrary (NonMyopicMemberRewards TPraosMockCrypto) where
@@ -265,6 +270,9 @@ instance Arbitrary Natural where
 {-------------------------------------------------------------------------------
   Generators for cardano-ledger-specs
 -------------------------------------------------------------------------------}
+
+instance Crypto c => Arbitrary (SL.StakeCreds c) where
+  arbitrary = SL.StakeCreds <$> arbitrary
 
 instance Arbitrary SL.Nonce where
   arbitrary = oneof
