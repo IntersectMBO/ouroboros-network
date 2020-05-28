@@ -1245,7 +1245,7 @@ mkRekeyUpd
   -> ProtocolInfo (ChaChaT m) ByronBlock
   -> SlotNo
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-  -> Maybe (TestNodeInitialization ByronBlock)
+  -> Maybe (TestNodeInitialization m ByronBlock)
 mkRekeyUpd genesisConfig genesisSecrets epochInfo _ pInfo sno newSK =
   case pInfoLeaderCreds of
     Nothing              -> Nothing

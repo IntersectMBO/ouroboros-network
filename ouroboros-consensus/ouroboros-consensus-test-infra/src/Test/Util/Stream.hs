@@ -3,6 +3,7 @@
 module Test.Util.Stream (
   Stream (..),
   nubOrdBy,
+  unfoldr
   ) where
 
 import qualified Data.Set as Set
@@ -16,3 +17,6 @@ nubOrdBy f = go
     go acc (x :< xs)
       | Set.member (f x) acc = go acc xs
       | otherwise            = x :< go (Set.insert (f x) acc) xs
+
+unfoldr :: (b -> (a,b)) -> b -> Stream a
+unfoldr f b0 = let (a, b') = f b0 in a :< unfoldr f b'
