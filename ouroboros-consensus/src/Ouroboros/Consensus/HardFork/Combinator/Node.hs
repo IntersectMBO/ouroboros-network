@@ -12,13 +12,11 @@ module Ouroboros.Consensus.HardFork.Combinator.Node (
     CodecConfig(..)
   ) where
 
-import           Control.Monad.Except (throwError)
 import           Data.Proxy
 import           Data.SOP.Strict
+import           GHC.Stack
 
 import           Ouroboros.Consensus.Config.SupportsNode
-import           Ouroboros.Consensus.Util (allEqual)
-import           Ouroboros.Consensus.Util.Assert
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -41,24 +39,21 @@ instance (All ConfigSupportsNode xs, IsNonEmpty xs)
       . getPerEraBlockConfig
       . hardForkBlockConfigPerEra
 
-  getSystemStart     = getSameValue "getSystemStart"     getSystemStart
-  getNetworkMagic    = getSameValue "getNetworkMagic"    getNetworkMagic
-  getProtocolMagicId = getSameValue "getProtocolMagicId" getProtocolMagicId
+  getSystemStart     = getSameConfigValue getSystemStart
+  getNetworkMagic    = getSameConfigValue getNetworkMagic
+  getProtocolMagicId = getSameConfigValue getProtocolMagicId
 
 {-------------------------------------------------------------------------------
   Auxiliary
 -------------------------------------------------------------------------------}
 
-getSameValue
-  :: forall xs a. (All ConfigSupportsNode xs, IsNonEmpty xs, Eq a)
-  => String
-  -> (forall blk. ConfigSupportsNode blk => BlockConfig blk -> a)
+getSameConfigValue
+  :: forall xs a.
+     (All ConfigSupportsNode xs, IsNonEmpty xs, Eq a, HasCallStack)
+  => (forall blk. ConfigSupportsNode blk => BlockConfig blk -> a)
   -> BlockConfig (HardForkBlock xs)
   -> a
-getSameValue label getValue blockConfig =
-    case isNonEmpty (Proxy @xs) of
-      ProofNonEmpty _ ->
-        assertWithMsg allEqualCheck (unK (hd values))
+getSameConfigValue getValue blockConfig = getSameValue values
   where
     values :: NP (K a) xs
     values =
@@ -66,10 +61,3 @@ getSameValue label getValue blockConfig =
         . getPerEraBlockConfig
         . hardForkBlockConfigPerEra
         $ blockConfig
-
-    allEqualCheck :: Either String ()
-    allEqualCheck
-        | allEqual (hcollapse values)
-        = return ()
-        | otherwise
-        = throwError $ "differing values for " <> label <> " across hard fork"

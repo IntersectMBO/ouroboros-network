@@ -12,14 +12,18 @@
 {-# LANGUAGE TypeFamilies               #-}
 module Ouroboros.Consensus.Shelley.Ledger.Block (
     ShelleyHash (..)
-  , shelleyHashInfo
   , ShelleyBlock (..)
   , mkShelleyBlock
   , GetHeader (..)
   , Header (..)
   , mkShelleyHeader
+    -- * Serialisation
   , encodeShelleyBlockWithInfo
+  , encodeShelleyBlock
+  , decodeShelleyBlock
   , shelleyAddHeaderEnvelope
+  , encodeShelleyHeader
+  , decodeShelleyHeader
     -- * Conversion
   , fromShelleyPrevHash
   , toShelleyPrevHash
@@ -27,20 +31,17 @@ module Ouroboros.Consensus.Shelley.Ledger.Block (
   , Crypto
   ) where
 
+import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (..))
-import           Data.Binary (Get, Put)
-import qualified Data.Binary.Get as Get
-import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (coerce)
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Proxy (Proxy (..))
-import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (Annotator (..), FromCBOR (..), ToCBOR (..),
-                     serialize)
+import           Cardano.Binary (Annotator (..), FromCBOR (..),
+                     FullByteString (..), ToCBOR (..), serialize)
 import qualified Cardano.Crypto.Hash as Crypto
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
@@ -50,8 +51,7 @@ import           Ouroboros.Network.Block (BlockMeasure, ChainHash (..),
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
-                     HashInfo (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.BlockChain as SL
@@ -76,21 +76,10 @@ instance Crypto c => Serialise (ShelleyHash c) where
 instance Condense (ShelleyHash c) where
   condense = show . unShelleyHash
 
-shelleyHashInfo :: forall c. Crypto c => HashInfo (ShelleyHash c)
-shelleyHashInfo = HashInfo { hashSize, getHash, putHash }
-  where
-    hashSize :: Word32
-    hashSize = fromIntegral $
-      Crypto.sizeHash (Proxy :: Proxy (HASH c))
-
-    getHash :: Get (ShelleyHash c)
-    getHash = do
-      bytes <- Get.getByteString (fromIntegral hashSize)
-      return . ShelleyHash . SL.HashHeader $ Crypto.UnsafeHash bytes
-
-    putHash :: ShelleyHash c -> Put
-    putHash (ShelleyHash (SL.HashHeader h)) =
-      Put.putByteString $ Crypto.getHash h
+instance Crypto c => ConvertRawHash (ShelleyBlock c) where
+  toRawHash   _ = Crypto.getHash . SL.unHashHeader . unShelleyHash
+  fromRawHash _ = ShelleyHash . SL.HashHeader . Crypto.UnsafeHash
+  hashSize    _ = fromIntegral $ Crypto.sizeHash (Proxy @(HASH c))
 
 {-------------------------------------------------------------------------------
   Shelley blocks and headers
@@ -216,11 +205,23 @@ encodeShelleyBlockWithInfo blk = BinaryInfo {
     , headerSize   = fromIntegral $ Lazy.length (serialize (getHeader blk))
     }
 
+encodeShelleyBlock :: Crypto c => ShelleyBlock c -> Encoding
+encodeShelleyBlock = toCBOR
+
+decodeShelleyBlock :: Crypto c => Decoder s (Lazy.ByteString -> ShelleyBlock c)
+decodeShelleyBlock = (. Full) . runAnnotator <$> fromCBOR
+
 -- | When given the raw header bytes extracted from the block (see
 -- 'encodeShelleyBlockWithInfo'), we have a bytestring exactly corresponding
 -- to the header, no modifications needed.
 shelleyAddHeaderEnvelope :: Lazy.ByteString -> Lazy.ByteString
 shelleyAddHeaderEnvelope = id
+
+encodeShelleyHeader :: Crypto c => Header (ShelleyBlock c) -> Encoding
+encodeShelleyHeader = toCBOR
+
+decodeShelleyHeader :: Crypto c => Decoder s (Lazy.ByteString -> Header (ShelleyBlock c))
+decodeShelleyHeader = (. Full) . runAnnotator <$> fromCBOR
 
 {-------------------------------------------------------------------------------
   Condense

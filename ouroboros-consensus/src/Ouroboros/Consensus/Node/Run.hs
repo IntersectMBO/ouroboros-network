@@ -34,7 +34,7 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
-                     ChunkInfo, HashInfo)
+                     ChunkInfo)
 
 {-------------------------------------------------------------------------------
   RunNode proper
@@ -48,15 +48,13 @@ class ( LedgerSupportsProtocol    blk
       , HasNetworkProtocolVersion blk
       , CanForge                  blk
       , ConfigSupportsNode        blk
+      , ConvertRawHash            blk
         -- TODO: Remove after reconsidering rewindConsensusState:
       , Serialise (HeaderHash blk)
       ) => RunNode blk where
   nodeBlockFetchSize      :: Header blk -> SizeInBytes
 
   nodeImmDbChunkInfo      :: TopLevelConfig blk -> ChunkInfo
-
-  -- | Hash serialisation
-  nodeHashInfo :: Proxy blk -> HashInfo (HeaderHash blk)
 
   -- | Check the integrity of a block, i.e., that it has not been corrupted by
   -- a bitflip.

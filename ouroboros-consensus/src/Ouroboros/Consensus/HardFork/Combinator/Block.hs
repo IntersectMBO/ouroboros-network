@@ -22,6 +22,7 @@ import           Data.FingerTree.Strict (Measured (..))
 import           Data.Function (on)
 import           Data.Functor.Product
 import           Data.SOP.Strict
+import           Data.Word (Word32)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -92,6 +93,22 @@ instance CanHardFork xs => HasHeader (Header (HardForkBlock xs)) where
   blockNo        =            blockNo       . getHardForkHeader
   blockInvariant = const True
 
+
+{-------------------------------------------------------------------------------
+  ConvertRawHash
+-------------------------------------------------------------------------------}
+
+instance CanHardFork xs => ConvertRawHash (HardForkBlock xs) where
+  toRawHash   _ = getOneEraHash
+  fromRawHash _ = OneEraHash
+  hashSize    _ = getSameValue hashSizes
+    where
+      hashSizes :: NP (K Word32) xs
+      hashSizes = hcpure proxySingle hashSizeOne
+
+      hashSizeOne :: forall blk. SingleEraBlock blk => K Word32 blk
+      hashSizeOne = K $ hashSize (Proxy @blk)
+
 {-------------------------------------------------------------------------------
   HasAnnTip
 -------------------------------------------------------------------------------}
@@ -113,7 +130,7 @@ instance CanHardFork xs => HasAnnTip (HardForkBlock xs) where
       tipInfoOne :: forall blk. SingleEraBlock blk
                  => WrapTipInfo blk -> OneEraHash xs
       tipInfoOne = OneEraHash
-                 . getRawHash  (Proxy @blk)
+                 . toRawHash   (Proxy @blk)
                  . tipInfoHash (Proxy @blk)
                  . unwrapTipInfo
 
@@ -177,3 +194,15 @@ instance All Eq xs => Eq (HardForkBlock xs) where
       aux (Left  _) = False
       aux (Right m) = hcollapse $
                         hcmap (Proxy @Eq) (\(Pair x y) -> K $ x == y) m
+
+instance All (Compose Eq Header) xs => Eq (Header (HardForkBlock xs)) where
+  (==) = (aux .: Match.matchNS) `on` (getOneEraHeader . getHardForkHeader)
+    where
+      aux :: Either (Match.Mismatch Header Header xs) (NS (Product Header Header) xs)
+          -> Bool
+      aux (Left  _) = False
+      aux (Right m) = hcollapse $
+                        hcmap
+                          (Proxy @(Compose Eq Header))
+                          (\(Pair x y) -> K $ x == y)
+                          m

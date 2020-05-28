@@ -10,9 +10,8 @@
 
 -- | Witness isomorphism between @b@ and @HardForkBlock '[b]@
 module Ouroboros.Consensus.HardFork.Combinator.Unary (
-    FromRawHash(..)
     -- * Projections
-  , projAnnTip
+    projAnnTip
   , projApplyTxErr
   , projBlock
   , projBlockConfig
@@ -49,7 +48,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
   , injForgeState
   , injGenTx
   , injGenTxId
-  , injHashInfo
   , injHeader
   , injHeaderHash
   , injHeaderState
@@ -63,7 +61,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
   ) where
 
 import           Data.Bifunctor
-import qualified Data.ByteString as Strict
 import           Data.SOP.Strict
 import           Data.Type.Equality
 import           Data.Void
@@ -88,7 +85,6 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
-import           Ouroboros.Consensus.Storage.ImmutableDB (HashInfo (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -106,18 +102,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.State
                      (HardForkState_ (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
-
-{-------------------------------------------------------------------------------
-  Addtional requirements
--------------------------------------------------------------------------------}
-
--- | Construct hash from the raw bytes
---
--- Consensus never needs to go this direction, but the projection
--- functions do. We make this a separate type class so that we can still
--- give a 'RunNode' instance.
-class FromRawHash blk where
-  fromRawHash :: proxy blk -> Strict.ByteString -> HeaderHash blk
 
 {-------------------------------------------------------------------------------
   Projections
@@ -145,15 +129,15 @@ projBlock = unI . unZ . getOneEraBlock . getHardForkBlock
 injBlock :: b -> HardForkBlock '[b]
 injBlock = HardForkBlock . OneEraBlock . Z . I
 
-projHeaderHash :: forall b. FromRawHash b
+projHeaderHash :: forall b. ConvertRawHash b
                => HeaderHash (HardForkBlock '[b]) -> HeaderHash b
 projHeaderHash = fromRawHash (Proxy @b) . getOneEraHash
 
-injHeaderHash :: forall b. SingleEraBlock b
+injHeaderHash :: forall b. ConvertRawHash b
               => HeaderHash b -> HeaderHash (HardForkBlock '[b])
-injHeaderHash = OneEraHash . getRawHash (Proxy @b)
+injHeaderHash = OneEraHash . toRawHash (Proxy @b)
 
-projChainHash :: FromRawHash b
+projChainHash :: ConvertRawHash b
               => ChainHash (HardForkBlock '[b]) -> ChainHash b
 projChainHash = \case
     GenesisHash -> GenesisHash
@@ -342,15 +326,6 @@ injMaintainForgeState maintainForgeState = MaintainForgeState {
                        $ initForgeState maintainForgeState
     , updateForgeState = updateForgeState maintainForgeState
                        . projUpdateForgeState
-    }
-
-injHashInfo :: (SingleEraBlock b, FromRawHash b)
-            => HashInfo (HeaderHash b)
-            -> HashInfo (HeaderHash (HardForkBlock '[b]))
-injHashInfo info = HashInfo {
-      hashSize = hashSize info
-    , getHash  = injHeaderHash <$> getHash info
-    , putHash  = putHash info . projHeaderHash
     }
 
 projInitChainDB :: InitChainDB m (HardForkBlock '[b]) -> InitChainDB m b

@@ -380,7 +380,6 @@ mkChainDbArgs tracer registry inFuture dbPath cfg initLedger
     , ChainDB.cdbEncodeLedger         = nodeEncodeLedgerState    cfg
     , ChainDB.cdbEncodeAnnTip         = nodeEncodeAnnTip         pb
     , ChainDB.cdbChunkInfo            = chunkInfo
-    , ChainDB.cdbHashInfo             = nodeHashInfo             pb
     , ChainDB.cdbGenesis              = return initLedger
     , ChainDB.cdbAddHdrEnv            = nodeAddHeaderEnvelope    pb
     , ChainDB.cdbDiskPolicy           = defaultDiskPolicy k

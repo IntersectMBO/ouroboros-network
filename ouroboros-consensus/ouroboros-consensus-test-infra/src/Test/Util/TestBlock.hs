@@ -23,7 +23,6 @@ module Test.Util.TestBlock (
     TestHash(TestHash)
   , unTestHash
   , testHashFromList
-  , testHashInfo
   , TestBlock(..)
   , TestBlockError(..)
   , Header(..)
@@ -56,13 +55,9 @@ module Test.Util.TestBlock (
 import           Codec.Serialise (Serialise)
 import           Control.DeepSeq (force)
 import           Control.Monad.Except (throwError)
-import           Data.Binary (get, put)
-import qualified Data.Binary.Put as Put
-import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
-import           Data.Function (on)
 import           Data.Int
-import           Data.List (maximumBy, transpose)
+import           Data.List (transpose)
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
@@ -86,7 +81,7 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..), Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
-import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Block hiding (hashSize)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -106,8 +101,6 @@ import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
-
-import           Ouroboros.Consensus.Storage.ImmutableDB (HashInfo (..))
 
 import           Test.Util.Orphans.ToExpr ()
 
@@ -165,25 +158,6 @@ pattern TestHash path <- UnsafeTestHash path where
 
 testHashFromList :: [Word64] -> TestHash
 testHashFromList = TestHash . NE.fromList . reverse
-
--- | 'TestHash' doesn't have a fixed size binary serialisation, which is
--- required for 'HashInfo'.
---
--- Fortunately, in most cases we know all the hashes upfront, so we can
--- compute the max size we'll need and use that as the size. Shorter
--- serialisations will be padded to the right size using 'maxBound'.
-testHashInfo :: [TestHash] -> HashInfo TestHash
-testHashInfo hashes = HashInfo
-    { hashSize
-    , getHash = TestHash . NE.fromList . takeWhile (/= maxBound) <$> get
-    , putHash = \(TestHash l) ->
-        let len = NE.length l
-        in put (NE.toList l <> replicate (longestHashLen - len) maxBound)
-    }
-  where
-    TestHash longestHash = maximumBy (compare `on` length . unTestHash) hashes
-    longestHashLen = length longestHash
-    hashSize       = fromIntegral $ Lazy.length $ Put.runPut $ put longestHash
 
 instance Show TestHash where
   show (TestHash h) = "(testHashFromList " <> show (reverse (NE.toList h)) <> ")"

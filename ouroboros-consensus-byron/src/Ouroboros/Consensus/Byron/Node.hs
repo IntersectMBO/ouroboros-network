@@ -239,7 +239,6 @@ instance RunNode ByronBlock where
     where
       genesisEBB = forgeEBB cfg (SlotNo 0) (BlockNo 0) GenesisHash
 
-  nodeHashInfo              = const byronHashInfo
   nodeCheckIntegrity        = verifyBlockIntegrity . configBlock
   nodeAddHeaderEnvelope     = const byronAddHeaderEnvelope
   nodeExceptionIsFatal _ e

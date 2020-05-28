@@ -5,18 +5,14 @@ module Ouroboros.Consensus.Cardano.Block (
     CardanoBlock
   ) where
 
-import qualified Cardano.Crypto.Hash.Class as CardanoCrypto
-import qualified Shelley.Spec.Ledger.BlockChain as Shelley
-
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Degenerate
-import           Ouroboros.Consensus.HardFork.Combinator.Unary
-                     (FromRawHash (..), projBlock)
+import           Ouroboros.Consensus.HardFork.Combinator.Unary (projBlock)
 
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
-                     ShelleyHash (..), ShelleyLedgerConfig (..))
+                     ShelleyLedgerConfig (..))
 import           Ouroboros.Consensus.Shelley.Protocol (TPraos, TPraosCrypto)
 
 {-------------------------------------------------------------------------------
@@ -48,11 +44,6 @@ instance TPraosCrypto c => SingleEraBlock (ShelleyBlock c) where
   singleEraInfo _ = SingleEraInfo {
       singleEraName = "Shelley"
     }
-
-  getRawHash _ = CardanoCrypto.getHash . Shelley.unHashHeader . unShelleyHash
-
-instance TPraosCrypto c => FromRawHash (ShelleyBlock c) where
-  fromRawHash _ = ShelleyHash . Shelley.HashHeader . CardanoCrypto.UnsafeHash
 
 instance TPraosCrypto c => Condense (CardanoBlock c) where
   condense = condense . projBlock . unDBlk

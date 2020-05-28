@@ -158,9 +158,8 @@ data TPraos c
 
 -- | TPraos parameters that are node independent
 data TPraosParams = TPraosParams {
-      tpraosEpochInfo         :: !(EpochInfo Identity)
       -- | See 'Globals.slotsPerKESPeriod'.
-    , tpraosSlotsPerKESPeriod :: !Word64
+      tpraosSlotsPerKESPeriod :: !Word64
       -- | Active slots coefficient. This parameter represents the proportion
       -- of slots in which blocks should be issued. This can be interpreted as
       -- the probability that a party holding all the stake will be elected as
@@ -209,7 +208,8 @@ instance TPraosCrypto c => NoUnexpectedThunks (TPraosProof c)
 
 -- | Static configuration
 data instance ConsensusConfig (TPraos c) = TPraosConfig {
-      tpraosParams :: !TPraosParams
+      tpraosParams    :: !TPraosParams
+    , tpraosEpochInfo :: !(EpochInfo Identity)
     }
   deriving (Generic)
 
@@ -319,14 +319,13 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
     where
       slot = SL.bheaderSlotNo $ SL.bhbody b
       prevHash = SL.bheaderPrev $ SL.bhbody b
-      epochInfo = tpraosEpochInfo tpraosParams
       SecurityParam k = tpraosSecurityParam tpraosParams
-      shelleyGlobals = mkShelleyGlobals tpraosParams
+      shelleyGlobals = mkShelleyGlobals tpraosEpochInfo tpraosParams
 
       prtclEnv :: STS.PrtclEnv c
       prtclEnv = SL.mkPrtclEnv
         lv
-        (isNewEpoch epochInfo slot (State.lastSlot cs))
+        (isNewEpoch tpraosEpochInfo slot (State.lastSlot cs))
         (SL.prevHashToNonce prevHash)
 
       prtclState :: STS.PrtclState c
@@ -338,9 +337,9 @@ instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
   -- filled; instead we roll back the the block just before it.
   rewindConsensusState _proxy _k = State.rewind . pointSlot
 
-mkShelleyGlobals :: TPraosParams -> SL.Globals
-mkShelleyGlobals TPraosParams {..} = SL.Globals {
-      epochInfo                     = tpraosEpochInfo
+mkShelleyGlobals :: EpochInfo Identity -> TPraosParams -> SL.Globals
+mkShelleyGlobals epochInfo TPraosParams {..} = SL.Globals {
+      epochInfo                     = epochInfo
     , slotsPerKESPeriod             = tpraosSlotsPerKESPeriod
     , stabilityWindow               = ceiling $ 3 * (f / fromIntegral k)
     , randomnessStabilisationWindow = ceiling $ 4 * (f / fromIntegral k)

@@ -603,7 +603,6 @@ runThreadNetwork ThreadNetworkArgs
           -- Integration
         , cdbTopLevelConfig       = cfg
         , cdbChunkInfo            = ImmDB.simpleChunkInfo epochSize
-        , cdbHashInfo             = nodeHashInfo (Proxy @blk)
         , cdbCheckIntegrity       = nodeCheckIntegrity cfg
         , cdbGenesis              = return initLedger
         , cdbCheckInFuture        = LogicalClock.checkInFuture

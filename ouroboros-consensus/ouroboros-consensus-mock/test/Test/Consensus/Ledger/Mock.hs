@@ -9,11 +9,9 @@ module Test.Consensus.Ledger.Mock (tests) where
 
 import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise (Serialise, encode)
-import qualified Data.Binary.Get as Get
-import qualified Data.Binary.Put as Put
+import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy
-import           Data.Typeable
 
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
 import qualified Cardano.Crypto.Hash as Hash
@@ -21,12 +19,11 @@ import qualified Cardano.Crypto.Hash as Hash
 import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
                      HeaderHash, SlotNo (..))
 
-import           Ouroboros.Consensus.Block (getHeader)
+import           Ouroboros.Consensus.Block (ConvertRawHash (..), getHeader)
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.UTxO
 
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
-                     HashInfo (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..))
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -45,10 +42,10 @@ tests = testGroup "Mock"
              )
           => proxy c -> String -> TestTree
     props _ title = testGroup title
-      [ testProperty "BinaryInfo sanity check"       (prop_simpleBlockBinaryInfo @c @())
-      , testGroup "HashInfo sanity check"
-          [ testProperty "putHash/getHash roundtrip" (prop_simpleBlockHashInfo_roundtrip @c @())
-          , testProperty "hashSize"                  (prop_simpleBlockHashInfo_hashSize @c @())
+      [ testProperty "BinaryInfo sanity check" (prop_simpleBlockBinaryInfo @c @())
+      , testGroup "ConvertRawHash sanity check"
+          [ testProperty "fromRawHash/toRawHash" (prop_simpleBlock_fromRawHash_toRawHash @c @())
+          , testProperty "hashSize sanity check" (prop_simpleBlock_hashSize @c @())
           ]
       ]
 
@@ -75,36 +72,24 @@ prop_simpleBlockBinaryInfo blk =
       encodeSimpleHeader encode (getHeader blk)
 
 {-------------------------------------------------------------------------------
-  HashInfo
+  ConvertRawHash
 -------------------------------------------------------------------------------}
 
-prop_simpleBlockHashInfo_roundtrip
-  :: (SimpleCrypto c, Typeable ext)
+prop_simpleBlock_fromRawHash_toRawHash
+  :: forall c ext. SimpleCrypto c
   => HeaderHash (SimpleBlock c ext) -> Property
-prop_simpleBlockHashInfo_roundtrip h =
-    case Get.runGetOrFail getHash serialisedHash of
-      Left (_, _, e)
-        -> counterexample e $ property False
-      Right (unconsumed, _, h')
-        | Lazy.null unconsumed
-        -> h === h'
-        | otherwise
-        -> counterexample ("unconsumed bytes: " <> show unconsumed) $
-           property False
+prop_simpleBlock_fromRawHash_toRawHash h =
+    h === fromRawHash p (toRawHash p h)
   where
-    HashInfo { getHash, putHash } = simpleBlockHashInfo
+    p = Proxy @(SimpleBlock c ext)
 
-    serialisedHash = Put.runPut (putHash h)
-
-prop_simpleBlockHashInfo_hashSize
-  :: (SimpleCrypto c, Typeable ext)
+prop_simpleBlock_hashSize
+  :: forall c ext. SimpleCrypto c
   => HeaderHash (SimpleBlock c ext) -> Property
-prop_simpleBlockHashInfo_hashSize h =
-    hashSize === fromIntegral (Lazy.length serialisedHash)
+prop_simpleBlock_hashSize h =
+    hashSize p === fromIntegral (Strict.length (toRawHash p h))
   where
-    HashInfo { hashSize, putHash } = simpleBlockHashInfo
-
-    serialisedHash = Put.runPut (putHash h)
+    p = Proxy @(SimpleBlock c ext)
 
 {-------------------------------------------------------------------------------
   Generators

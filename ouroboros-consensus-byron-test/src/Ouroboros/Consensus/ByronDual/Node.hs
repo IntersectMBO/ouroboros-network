@@ -235,7 +235,6 @@ instance RunNode DualByronBlock where
   nodeImmDbChunkInfo  = nodeImmDbChunkInfo  . dualTopLevelConfigMain
 
   -- Envelope
-  nodeHashInfo     = \_p -> nodeHashInfo     pb
   nodeEncodeAnnTip = \_p -> nodeEncodeAnnTip pb . castAnnTip
   nodeDecodeAnnTip = \_p -> castAnnTip <$> nodeDecodeAnnTip pb
 

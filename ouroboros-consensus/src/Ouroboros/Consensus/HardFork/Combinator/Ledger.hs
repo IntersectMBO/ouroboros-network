@@ -14,7 +14,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Ledger (
-    HardForkEnvelopeErr(..)
+    HardForkLedgerError(..)
+  , HardForkEnvelopeErr(..)
   ) where
 
 import           Control.Monad.Except
@@ -146,7 +147,7 @@ instance CanHardFork xs
                => Point blk -> Point (HardForkBlock xs)
       injPoint GenesisPoint     = GenesisPoint
       injPoint (BlockPoint s h) = BlockPoint s $ OneEraHash $
-                                    getRawHash (Proxy @blk) h
+                                    toRawHash (Proxy @blk) h
 
 apply :: SingleEraBlock blk
       => EpochInfo Identity

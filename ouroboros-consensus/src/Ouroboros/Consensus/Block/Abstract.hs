@@ -15,10 +15,14 @@ module Ouroboros.Consensus.Block.Abstract (
   , headerToIsEBB
   , blockIsEBB
   , blockToIsEBB
+    -- * Raw hash
+  , ConvertRawHash(..)
   ) where
 
+import qualified Data.ByteString as Strict
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Maybe (isJust)
+import           Data.Word (Word32)
 
 import           Cardano.Slotting.Slot (EpochNo)
 
@@ -101,3 +105,20 @@ headerPrevHash = castHash . blockPrevHash
 
 headerPoint :: HasHeader (Header blk) => Header blk -> Point blk
 headerPoint = castPoint . blockPoint
+
+{-------------------------------------------------------------------------------
+  Raw hash
+-------------------------------------------------------------------------------}
+
+-- | Convert a hash from/to raw bytes
+class ConvertRawHash blk where
+  -- | Get the raw bytes from a hash
+  toRawHash   :: proxy blk -> HeaderHash blk -> Strict.ByteString
+
+  -- | Construct the hash from a raw hash
+  --
+  -- PRECONDITION: the bytestring's size must match 'hashSize'
+  fromRawHash :: proxy blk -> Strict.ByteString -> HeaderHash blk
+
+  -- | The size of the hash in number of bytes
+  hashSize    :: proxy blk -> Word32

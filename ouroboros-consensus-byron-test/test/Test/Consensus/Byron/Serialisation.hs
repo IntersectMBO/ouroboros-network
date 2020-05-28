@@ -9,14 +9,15 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Byron.Serialisation (tests) where
 
 import           Codec.CBOR.Write (toLazyByteString)
-import qualified Data.Binary.Get as Get
-import qualified Data.Binary.Put as Put
+import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor.Identity
+import           Data.Proxy (Proxy (..))
 
 import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
@@ -26,15 +27,14 @@ import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import           Ouroboros.Network.Block (HeaderHash)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
-import           Ouroboros.Consensus.Block (Header)
+import           Ouroboros.Consensus.Block (ConvertRawHash (..), Header)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
-                     HashInfo (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..))
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node
@@ -67,9 +67,9 @@ tests = testGroup "Byron"
         -- TODO LedgerState
 
     , testProperty "BinaryInfo sanity check"   prop_encodeByronBlockWithInfo
-    , testGroup "HashInfo sanity check"
-        [ testProperty "putHash/getHash roundtrip" prop_byronHashInfo_roundtrip
-        , testProperty "hashSize"                  prop_byronHashInfo_hashSize
+    , testGroup "ConvertRawHashInfo sanity check"
+        [ testProperty "fromRawHash/toRawHash" prop_fromRawHash_toRawHash
+        , testProperty "hashSize sanity check" prop_hashSize
         ]
 
     , testGroup "Integrity"
@@ -151,33 +151,24 @@ prop_encodeByronBlockWithInfo blk =
       ABOBBoundary b -> CC.Block.boundaryHeaderAnnotation $ CC.Block.boundaryHeader b
       ABOBBlock    b -> CC.Block.headerAnnotation         $ CC.Block.blockHeader    b
 
+
 {-------------------------------------------------------------------------------
-  HashInfo
+  ConvertRawHash
 -------------------------------------------------------------------------------}
 
-prop_byronHashInfo_roundtrip :: ByronHash -> Property
-prop_byronHashInfo_roundtrip h =
-    case Get.runGetOrFail getHash serialisedHash of
-      Left (_, _, e)
-        -> counterexample e $ property False
-      Right (unconsumed, _, h')
-        | Lazy.null unconsumed
-        -> h === h'
-        | otherwise
-        -> counterexample ("unconsumed bytes: " <> show unconsumed) $
-           property False
+prop_fromRawHash_toRawHash
+  :: HeaderHash ByronBlock -> Property
+prop_fromRawHash_toRawHash h =
+    h === fromRawHash p (toRawHash p h)
   where
-    HashInfo { getHash, putHash } = byronHashInfo
+    p = Proxy @ByronBlock
 
-    serialisedHash = Put.runPut (putHash h)
-
-prop_byronHashInfo_hashSize :: ByronHash -> Property
-prop_byronHashInfo_hashSize h =
-    hashSize === fromIntegral (Lazy.length serialisedHash)
+prop_hashSize
+  :: HeaderHash ByronBlock -> Property
+prop_hashSize h =
+    hashSize p === fromIntegral (Strict.length (toRawHash p h))
   where
-    HashInfo { hashSize, putHash } = byronHashInfo
-
-    serialisedHash = Put.runPut (putHash h)
+    p = Proxy @ByronBlock
 
 {-------------------------------------------------------------------------------
   Integrity
