@@ -2,6 +2,7 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Consensus.Block.Forge (
@@ -12,9 +13,9 @@ module Ouroboros.Consensus.Block.Forge (
   , castMaintainForgeState
     -- * Infrastructure for dealing with state updates
   , Update(..)
-  , updateFromTVar
+  , runUpdate_
+  , updateFromMVar
   , liftUpdate
-  , hoistUpdate
   , coerceUpdate
   , traceUpdate
   ) where
@@ -105,24 +106,17 @@ castMaintainForgeState maintainForgeState = MaintainForgeState {
 -- | Update a stateful value
 newtype Update m a = Update {
       -- | Update the value, and produce a result
-      --
-      -- If 'Nothing', the action will be retried.
-      runUpdate :: forall b. (a -> Maybe (a, b)) -> m b
+      runUpdate :: forall b. (a -> m (a, b)) -> m b
     }
 
-updateFromTVar :: MonadSTM m => StrictTVar m a -> Update m a
-updateFromTVar var = Update $ \f -> atomically $ do
-    a <- readTVar var
-    case f a of
-      Nothing      -> retry
-      Just (a', b) -> writeTVar var a' >> return b
+runUpdate_ :: Functor m => Update m a -> (a -> m a) -> m ()
+runUpdate_ upd f = runUpdate upd (fmap (, ()) . f)
 
-hoistUpdate :: (forall x. m x -> n x) -> Update m a -> Update n a
-hoistUpdate hoist upd = Update {
-      runUpdate = hoist . runUpdate upd
-    }
+updateFromMVar :: (MonadSTM m, MonadCatch m) => StrictMVar m a -> Update m a
+updateFromMVar var = Update $ modifyMVar var
 
-liftUpdate :: (large -> small)
+liftUpdate :: Functor m
+           => (large -> small)
            -> (small -> large -> large)
            -> Update m large
            -> Update m small
@@ -130,14 +124,15 @@ liftUpdate get set (Update update) = Update $ \f ->
     update $ \large ->
       first (flip set large) <$> (f (get large))
 
-coerceUpdate :: Coercible a b => Update m a -> Update m b
+coerceUpdate :: (Functor m, Coercible a b) => Update m a -> Update m b
 coerceUpdate = liftUpdate coerce (\new _old -> coerce new)
 
 traceUpdate :: forall m a. Monad m => Tracer m a -> Update m a -> Update m a
-traceUpdate tracer upd = Update $ \(f :: a -> Maybe (a, b)) -> do
-    -- Wrap @f'@ so that we get the new value of the state back
-    let f' :: a -> Maybe (a, (a, b))
-        f' = fmap (\(a', b) -> (a', (a', b))) . f
-    (a', b) <- runUpdate upd f'
-    traceWith tracer a'
-    return b
+traceUpdate tracer upd = Update $ \f ->
+    runUpdate upd (aux f)
+  where
+    aux :: (a -> m (a, b)) -> a -> m (a, b)
+    aux f a = do
+        (a', b) <- f a
+        traceWith tracer a'
+        return (a', b)

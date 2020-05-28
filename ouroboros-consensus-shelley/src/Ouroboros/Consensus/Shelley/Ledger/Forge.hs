@@ -65,14 +65,10 @@ instance TPraosCrypto c => CanForge (ShelleyBlock c) where
 -- | This is the state containing the private key corresponding to the public
 -- key that Praos uses to verify headers. That is why we call it
 -- 'TPraosForgeState' instead of 'ShelleyForgeState'.
-data TPraosForgeState c =
-    -- | The online KES key used to sign blocks is available at the given period
-    TPraosKeyAvailable !(HotKey c)
-
-    -- | The KES key is being evolved by another thread
-    --
-    -- Any thread that sees this value should back off and retry.
-  | TPraosKeyEvolving
+data TPraosForgeState c = TPraosForgeState {
+      -- | The online KES key used to sign blocks
+      tpraosHotKey :: !(HotKey c)
+    }
   deriving (Generic)
 
 deriving instance TPraosCrypto c => Show (TPraosForgeState c)
@@ -89,27 +85,16 @@ evolveKESKeyIfNecessary
   -> SL.KESPeriod -- ^ Relative KES period (to the start period of the OCert)
   -> m ()
 evolveKESKeyIfNecessary updateForgeState (SL.KESPeriod kesPeriod) = do
-    getOutdatedKey >>= \case
-      Nothing -> return ()
-      Just outdatedKey -> do
-        let newKey = evolveKey outdatedKey
-        saveNewKey newKey
+    runUpdate_ updateForgeState $ \(TPraosForgeState hk@(HotKey kesPeriodOfKey _)) ->
+      if kesPeriodOfKey >= kesPeriod then
+        -- No need to evolve
+        return $ TPraosForgeState hk
+      else do
+        let hk' = evolveKey hk
+        -- Any stateful code (for instance, running finalizers to clear the
+        -- memory associated with the old key) would happen here
+        return $ TPraosForgeState hk'
   where
-    -- | Return maybe (@Just@) an outdated key with its current period (setting
-    -- the node state to 'TPraosKeyEvolving') or (@Nothing@) if the key is
-    -- up-to-date w.r.t. the current KES period.
-    getOutdatedKey :: m (Maybe (HotKey c))
-    getOutdatedKey = runUpdate updateForgeState $ \case
-      TPraosKeyEvolving ->
-        -- Another thread is currently evolving the key; wait
-        Nothing
-      TPraosKeyAvailable hk@(HotKey kesPeriodOfKey _)
-        | kesPeriodOfKey < kesPeriod
-          -- Must evolve key
-        -> return (TPraosKeyEvolving, Just hk)
-        | otherwise
-        -> return (TPraosKeyAvailable hk, Nothing)
-
     -- | Evolve the given key so that its KES period matches @kesPeriod@.
     evolveKey :: HotKey c -> HotKey c
     evolveKey (HotKey oldPeriod outdatedKey) = go outdatedKey oldPeriod kesPeriod
@@ -123,12 +108,6 @@ evolveKESKeyIfNecessary updateForgeState (SL.KESPeriod kesPeriod) = do
           = case KES.updateKES () sk c of
               Nothing  -> error "Could not update KES key"
               Just sk' -> go sk' (c + 1) t
-
-    -- | PRECONDITION: we're in the 'TPraosKeyEvolving' node state.
-    saveNewKey :: HotKey c -> m ()
-    saveNewKey newKey = runUpdate updateForgeState $ \case
-      TPraosKeyEvolving -> Just (TPraosKeyAvailable newKey, ())
-      _                 -> error "must be in evolving state"
 
 {-------------------------------------------------------------------------------
   Forging
@@ -150,14 +129,10 @@ forgeShelleyBlock cfg forgeState curNo tickedLedger txs isLeader = do
     TPraosConfig { tpraosParams = TPraosParams { tpraosSlotsPerKESPeriod } } =
       configConsensus cfg
 
-    -- TODO: If we use a StrictMVar for the key, can get rid of 'error'
-
     curSlot      = tickedSlotNo tickedLedger
     tpraosFields = forgeTPraosFields hotKESKey isLeader mkBhBody
     blk          = mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
-    hotKESKey    = case forgeState of
-                     TPraosKeyAvailable key -> key
-                     _otherwise             -> error "forgeShelley: no key"
+    hotKESKey    = tpraosHotKey forgeState
     body         = SL.TxSeq $ Seq.fromList $ (\(ShelleyTx _ tx) -> tx) <$> txs
 
     mkHeader TPraosFields { tpraosSignature, tpraosToSign } =

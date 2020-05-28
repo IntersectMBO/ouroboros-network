@@ -130,11 +130,12 @@ deriving instance PraosCrypto c => Show (PraosForgeState c)
 instance PraosCrypto c => NoUnexpectedThunks (PraosForgeState c) where
   showTypeOf _ = show $ typeRep (Proxy @(PraosForgeState c))
 
-evolveKey :: PraosCrypto c => Update m (PraosForgeState c) -> SlotNo -> m ()
-evolveKey upd slotNo = runUpdate upd $ \(PraosKey oldKey) ->
+evolveKey :: (Monad m, PraosCrypto c)
+          => Update m (PraosForgeState c) -> SlotNo -> m ()
+evolveKey upd slotNo = runUpdate_ upd $ \(PraosKey oldKey) -> do
     let newKey = fromMaybe (error "mkOutoborosPayload: updateKES failed") $
                  updateKES () oldKey kesPeriod
-    in Just (PraosKey newKey, ())
+    return $ PraosKey newKey
   where
    kesPeriod :: Period
    kesPeriod = fromIntegral $ unSlotNo slotNo

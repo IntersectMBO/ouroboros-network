@@ -166,7 +166,7 @@ protocolInfoShelley genesis protVer mbCredentials =
     mkLeaderCreds (TPraosLeaderCredentials key isACoreNode) = (
           isACoreNode
         , MaintainForgeState {
-              initForgeState   = TPraosKeyAvailable key
+              initForgeState   = TPraosForgeState key
             , updateForgeState = evolveKey isACoreNode
             }
         )

@@ -1,10 +1,13 @@
 {-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE TypeFamilies      #-}
 
 module Ouroboros.Consensus.Util.MonadSTM.StrictMVar (
     StrictMVar(..) -- constructors exported for benefit of tests
+  , castStrictMVar
   , newMVar
   , newMVarWithInvariant
   , newEmptyMVar
@@ -72,6 +75,12 @@ data StrictMVar m a = StrictMVar
     -- NOTE: We should always update the 'tmvar' before the 'tvar' so that if
     -- the update to the 'tmvar' fails, the 'tvar is left unchanged.
   }
+
+castStrictMVar :: ( Lazy.TMVar m ~ Lazy.TMVar n
+                  , Lazy.TVar  m ~ Lazy.TVar  n
+                  )
+               => StrictMVar m a -> StrictMVar n a
+castStrictMVar StrictMVar{..} = StrictMVar{..}
 
 newMVar :: MonadSTM m => a -> m (StrictMVar m a)
 newMVar = newMVarWithInvariant (const Nothing)

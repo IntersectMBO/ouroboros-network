@@ -54,9 +54,9 @@ blockProductionIO :: forall blk. (BlockSupportsProtocol blk, CanForge blk)
                   -> MaintainForgeState IO blk
                   -> IO (BlockProduction IO blk)
 blockProductionIO cfg canBeLeader mfs = do
-    varForgeState <- newTVarM (initForgeState mfs)
+    varForgeState <- newMVar (initForgeState mfs)
     let upd :: Update IO (ForgeState blk)
-        upd = updateFromTVar varForgeState
+        upd = updateFromMVar varForgeState
     return $ BlockProduction {
         getLeaderProof = \tracer ->
           defaultGetLeaderProof
@@ -65,7 +65,7 @@ blockProductionIO cfg canBeLeader mfs = do
             mfs
             (traceUpdate tracer upd)
       , produceBlock = \bno ledgerState txs proof -> do
-          forgeState <- atomically $ readTVar varForgeState
+          forgeState <- readMVar varForgeState
           forgeBlock cfg forgeState bno ledgerState txs proof
       }
 
@@ -87,9 +87,9 @@ blockProductionIOLike :: forall m blk.
                           -> ChaChaT m blk)
                       -> m (BlockProduction m blk)
 blockProductionIOLike cfg canBeLeader mfs varRNG forge = do
-    varForgeState <- newTVarM (initForgeState mfs)
+    varForgeState <- newMVar (initForgeState mfs)
     let upd :: Update (ChaChaT m) (ForgeState blk)
-        upd = hoistUpdate lift $ updateFromTVar varForgeState
+        upd = updateFromMVar (castStrictMVar varForgeState)
     return $ BlockProduction {
         getLeaderProof = \tracer ledgerState consensusState ->
           simMonadRandom varRNG $
@@ -101,7 +101,7 @@ blockProductionIOLike cfg canBeLeader mfs varRNG forge = do
               ledgerState
               consensusState
       , produceBlock = \bno ledgerState txs proof -> do
-          forgeState <- atomically $ readTVar varForgeState
+          forgeState <- readMVar varForgeState
           simMonadRandom varRNG $
             forge
               forgeState

@@ -1,7 +1,13 @@
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
+
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Util.Random (
       -- * Producing values in MonadRandom
@@ -23,13 +29,16 @@ module Ouroboros.Consensus.Util.Random (
     where
 
 import           Codec.Serialise (Serialise)
-import           Control.Monad.State
+import           Control.Monad.Reader
 import           Control.Monad.Trans (MonadTrans (..))
 import           Crypto.Number.Generate (generateBetween)
 import           Crypto.Random (ChaChaDRG, MonadPseudoRandom, MonadRandom (..),
-                     drgNew, drgNewTest, randomBytesGenerate, withDRG)
+                     drgNewTest, randomBytesGenerate, withDRG)
 import           Data.List (genericLength)
+import           Data.Tuple (swap)
 import           Data.Word (Word64)
+
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -63,12 +72,19 @@ nullSeed = Seed (0,0,0,0,0)
   Adding DRNG to a monad stack
 -------------------------------------------------------------------------------}
 
--- | Add DRNG to a monad stack
-newtype ChaChaT m a = ChaChaT { unChaChaT :: StateT ChaChaDRG m a }
-  deriving (Functor, Applicative, Monad, MonadTrans)
+deriving via OnlyCheckIsWHNF "ChaChaDRG" ChaChaDRG
+         instance NoUnexpectedThunks ChaChaDRG
 
-instance Monad m => MonadRandom (ChaChaT m) where
-  getRandomBytes = ChaChaT . state . randomBytesGenerate
+-- | Add DRNG to a monad stack
+newtype ChaChaT m a = ChaChaT (ReaderT (StrictTVar m ChaChaDRG) m a)
+  deriving (Functor, Applicative, Monad, MonadThrow, MonadCatch, MonadMask)
+
+instance MonadTrans ChaChaT where
+  lift = ChaChaT . lift
+
+instance MonadSTM m => MonadRandom (ChaChaT m) where
+  getRandomBytes n = ChaChaT $ ReaderT $ \varPRNG ->
+      atomically $ updateTVar varPRNG $ swap . randomBytesGenerate n
 
 instance MonadSTM m => MonadSTM (ChaChaT m) where
   type STM (ChaChaT m) = STM m
@@ -77,44 +93,12 @@ instance MonadSTM m => MonadSTM (ChaChaT m) where
 -- | Run the 'MonadPseudoRandomT' monad
 --
 -- This is the analogue of cryptonite's 'withDRG'.
-runChaChaT :: ChaChaT m a -> ChaChaDRG -> m (a, ChaChaDRG)
-runChaChaT = runStateT  . unChaChaT
+runChaChaT :: MonadSTM m => ChaChaT m a -> ChaChaDRG -> m (a, ChaChaDRG)
+runChaChaT ma prng = do
+    varPRNG <- newTVarM prng
+    a       <- simMonadRandom varPRNG ma
+    prng'   <- atomically $ readTVar varPRNG
+    return (a, prng')
 
-{-------------------------------------------------------------------------------
-  Run MonadRandom computations
--------------------------------------------------------------------------------}
-
--- | Simulate 'MonadRandom' when it's not actually available
---
--- We store a 'ChaChaDRG' in a TVar, and whenever we need to run a computation
--- requiring 'MonadRandom', we split the 'ChaChaDRG', store a split half back
--- in the TVar and run the computation using the other half. Each random
--- computation will use a different DRG, even concurrent ones.
---
--- Remember that will only be used in the tests code, in the real
--- implementation we will use 'runMonadRandomIO'.
-simMonadRandom
-  :: MonadSTM m
-  => StrictTVar m ChaChaDRG
-  -> ChaChaT m a
-  -> m a
-simMonadRandom varRNG n = do
-    -- We can't run @n@ atomically, so to make sure we never run
-    -- computations with the same RNG, we first split it,
-    -- /atomically/, and then run the computation with one half of
-    -- the RNG.
-    rng <- atomically $ do
-      rng <- readTVar varRNG
-      ((split1, split2), _rng') <- runChaChaT fakeSplitDRG rng
-      writeTVar varRNG split1
-      return split2
-    fst <$> runChaChaT n rng
-  where
-    -- The 'ChaChaDRG' is not splittable. We fake splitting it by using the
-    -- 'ChaChaT' 'MonadRandom' instance to generate two new 'ChaChaDRG's. If
-    -- this turns out to be problematic, there is actually no need to store a
-    -- 'ChaChaDRG' in the 'TVar'; we should instead use a splittable PRNG, and
-    -- then use in combination with 'drgNew' or 'drgNewTest' to produce a
-    -- 'ChaChaDRG'.
-    fakeSplitDRG :: MonadRandom m => m (ChaChaDRG, ChaChaDRG)
-    fakeSplitDRG = (,) <$> drgNew <*> drgNew
+simMonadRandom :: StrictTVar m ChaChaDRG -> ChaChaT m a -> m a
+simMonadRandom varPRNG (ChaChaT ma) = runReaderT ma varPRNG

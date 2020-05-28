@@ -26,7 +26,8 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 
 type MockPraosBlock = SimplePraosBlock SimpleMockCrypto PraosMockCrypto
 
-protocolInfoPraos :: NumCoreNodes
+protocolInfoPraos :: Monad m
+                  => NumCoreNodes
                   -> CoreNodeId
                   -> PraosParams
                   -> HardFork.EraParams

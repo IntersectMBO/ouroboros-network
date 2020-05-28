@@ -334,8 +334,8 @@ projForgeState _ = unwrapForgeState . hd . getPerEraForgeState
 injForgeState :: proxy b -> ForgeState b -> ForgeState (HardForkBlock '[b])
 injForgeState _ = PerEraForgeState . (:* Nil) . WrapForgeState
 
-injMaintainForgeState :: forall m b.
-                         MaintainForgeState m b
+injMaintainForgeState :: forall m b. Functor m
+                      => MaintainForgeState m b
                       -> MaintainForgeState m (HardForkBlock '[b])
 injMaintainForgeState maintainForgeState = MaintainForgeState {
       initForgeState   = injForgeState (Proxy @b)
@@ -411,8 +411,8 @@ injEnvelopeErr =
     . Z
     . WrapEnvelopeErr
 
-projUpdateForgeState :: forall b m.
-                        Update m (ForgeState (HardForkBlock '[b]))
+projUpdateForgeState :: forall b m. Functor m
+                     => Update m (ForgeState (HardForkBlock '[b]))
                      -> Update m (ForgeState b)
 projUpdateForgeState = liftUpdate get set
   where
@@ -424,7 +424,8 @@ projUpdateForgeState = liftUpdate get set
 
 -- TODO generalise this function to no longer require the equality constraints
 injProtocolInfo :: forall m b.
-                   ( SingleEraBlock b
+                   ( Functor m
+                   , SingleEraBlock b
                    , PartialConsensusConfig (BlockProtocol b) ~ ConsensusConfig (BlockProtocol b)
                    , PartialLedgerConfig b ~ LedgerConfig b
                    )
