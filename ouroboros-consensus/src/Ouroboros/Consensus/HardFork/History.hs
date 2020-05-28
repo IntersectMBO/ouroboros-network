@@ -575,9 +575,9 @@ invariantSummary = \(Summary summary) ->
           EraEnd curEnd -> do
             -- Check the invariants mentioned at 'EraSummary'
             --
-            -- * @epochsInEra@ corresponds to @e' - e@
-            -- * @slotsInEra@ corresponds to @(e' - e) * epochSize)@
-            -- * @timeInEra@ corresponds to @((e' - e) * epochSize * slotLen@
+            -- o @epochsInEra@ corresponds to @e' - e@
+            -- o @slotsInEra@ corresponds to @(e' - e) * epochSize)@
+            -- o @timeInEra@ corresponds to @((e' - e) * epochSize * slotLen@
             --   which, if INV-1b holds, equals @(s' - s) * slotLen@
             let epochsInEra, slotsInEra :: Word64
                 epochsInEra = countEpochs (boundEpoch curEnd) (boundEpoch curStart)
@@ -818,8 +818,6 @@ newtype SlotInEpoch = SlotInEpoch { getSlotInEpoch :: Word64 }
 newtype EpochInEra  = EpochInEra  { getEpochInEra  :: Word64 }
 
 -- | Query
---
--- All " relative " values here are /era/ relative.
 data Qry :: * -> * where
   QPure :: a -> Qry a
   QBind :: Qry a -> (a -> Qry b) -> Qry b
@@ -860,6 +858,9 @@ instance Monad Qry where
   return = pure
   (>>=)  = QBind
 
+-- | Evaluate a query in an era
+--
+-- Returns 'Nothing' if the query is out of bounds in this era.
 evalQryInEra :: EraSummary -> Qry a -> Maybe a
 evalQryInEra EraSummary{..} = go
   where
@@ -879,6 +880,10 @@ evalQryInEra EraSummary{..} = go
     go (QBind x f) = do
         go x >>= go . f
 
+    -- Convert absolute to relative
+    --
+    -- The guards here justify the subtractions.
+
     go (QAbsToRelTime t) = do
         guard (t >= boundTime eraStart)
         return $ TimeInEra (t `diffUTCTime` boundTime eraStart)
@@ -889,9 +894,14 @@ evalQryInEra EraSummary{..} = go
         guard (e >= boundEpoch eraStart)
         return $ EpochInEra (countEpochs e (boundEpoch eraStart))
 
+    -- Convert relative to absolute
+    --
+    -- As justified by the proof above, the guards treat the upper bound
+    -- as inclusive.
+
     go (QRelToAbsTime t) = do
         let absTime = getTimeInEra t `addUTCTime` boundTime eraStart
-        guardEnd $ \end -> absTime < boundTime end
+        guardEnd $ \end -> absTime <= boundTime end
         return absTime
     go (QRelToAbsSlot (s, t)) = do
         let absSlot = addSlots (getSlotInEra s) (boundSlot eraStart)
@@ -904,6 +914,10 @@ evalQryInEra EraSummary{..} = go
                         || absEpoch == boundEpoch end && getSlotInEpoch s == 0
         return absEpoch
 
+    -- Convert between relative values
+    --
+    -- No guards necessary
+
     go (QRelTimeToSlot t) =
         return $ bimap SlotInEra TimeInSlot (getTimeInEra t `divMod'` slotLen)
     go (QRelSlotToTime s) =
@@ -912,6 +926,11 @@ evalQryInEra EraSummary{..} = go
         return $ bimap EpochInEra SlotInEpoch $ getSlotInEra s `divMod` epochSize
     go (QRelEpochToSlot e) =
         return $ SlotInEra (getEpochInEra e * epochSize)
+
+    -- Get era parameters
+    --
+    -- Here the upper bound must definitely be exclusive, or we'd return the
+    -- era parameters from the wrong era.
 
     go (QSlotLength s) = do
         guard    $ s >= boundSlot eraStart
@@ -975,9 +994,9 @@ slotToWallclock absSlot = do
 {-------------------------------------------------------------------------------
   Conversion between slots and epochs
 
-  The primed forms are the used in the 'EpochInfo' construction. Critically,
-  they do not ask for any of the era parameters. This means that their valid
-  range /includes/ the end bound.
+  The primed forms are the ones used in the 'EpochInfo' construction.
+  Critically, they do not ask for any of the era parameters. This means that
+  their valid range /includes/ the end bound.
 -------------------------------------------------------------------------------}
 
 -- | Convert 'SlotNo' to 'EpochNo' and the relative slot within the epoch
@@ -1078,8 +1097,6 @@ summaryToEpochInfo =
           epochInfoSize_  = \e -> cachedRunQueryThrow run (QEpochSize   e)
         , epochInfoFirst_ = \e -> cachedRunQueryThrow run (epochToSlot' e)
         , epochInfoEpoch_ = \s -> cachedRunQueryThrow run (fst <$> slotToEpoch' s)
-
-        --((\(e, _, _) -> e) <$> slotToEpoch s)
         }
 
 -- | Construct an 'EpochInfo' for a /snapshot/ of the ledger state
