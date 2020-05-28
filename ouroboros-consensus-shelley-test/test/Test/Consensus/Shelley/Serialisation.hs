@@ -5,8 +5,7 @@
 module Test.Consensus.Shelley.Serialisation (tests) where
 
 import qualified Codec.CBOR.Write as CBOR
-import qualified Data.Binary.Get as Get
-import qualified Data.Binary.Put as Put
+import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
@@ -16,10 +15,10 @@ import           Cardano.Binary (fromCBOR, toCBOR)
 import           Ouroboros.Network.Block (HeaderHash)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
+import           Ouroboros.Consensus.Block (ConvertRawHash (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
-                     HashInfo (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..))
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Protocol
@@ -65,9 +64,9 @@ tests = testGroup "Shelley"
     ]
   where
     testHashInfo :: forall c. Crypto c => Proxy c -> String -> TestTree
-    testHashInfo _ name = testGroup ("HashInfo sanity check: " <> name)
-      [ testProperty "putHash/getHash roundtrip" (prop_shelleyHashInfo_roundtrip @c)
-      , testProperty "hashSize"                  (prop_shelleyHashInfo_hashSize  @c)
+    testHashInfo _ name = testGroup ("ConvertRawHash sanity check: " <> name)
+      [ testProperty "fromRawHash/toRawHash" (prop_fromRawHash_toRawHash @c)
+      , testProperty "hashSize"              (prop_hashSize  @c)
       ]
 
 {-------------------------------------------------------------------------------
@@ -135,32 +134,24 @@ prop_encodeShelleyBlockWithInfo blk =
     encodedHeader = CBOR.toLazyByteString $ encodeShelleyHeader (getHeader blk)
 
 {-------------------------------------------------------------------------------
-  HashInfo
+  ConvertRawHash
 -------------------------------------------------------------------------------}
 
-prop_shelleyHashInfo_roundtrip :: Crypto c => ShelleyHash c -> Property
-prop_shelleyHashInfo_roundtrip h =
-    case Get.runGetOrFail getHash serialisedHash of
-      Left (_, _, e)
-        -> counterexample e $ property False
-      Right (unconsumed, _, h')
-        | Lazy.null unconsumed
-        -> h === h'
-        | otherwise
-        -> counterexample ("unconsumed bytes: " <> show unconsumed) $
-           property False
+prop_fromRawHash_toRawHash
+  :: forall c. Crypto c
+  => HeaderHash (ShelleyBlock c) -> Property
+prop_fromRawHash_toRawHash h =
+    h === fromRawHash p (toRawHash p h)
   where
-    HashInfo { getHash, putHash } = shelleyHashInfo
+    p = Proxy @(ShelleyBlock c)
 
-    serialisedHash = Put.runPut (putHash h)
-
-prop_shelleyHashInfo_hashSize :: Crypto c => ShelleyHash c -> Property
-prop_shelleyHashInfo_hashSize h =
-    hashSize === fromIntegral (Lazy.length serialisedHash)
+prop_hashSize
+  :: forall c. Crypto c
+  => HeaderHash (ShelleyBlock c) -> Property
+prop_hashSize h =
+    hashSize p === fromIntegral (Strict.length (toRawHash p h))
   where
-    HashInfo { hashSize, putHash } = shelleyHashInfo
-
-    serialisedHash = Put.runPut (putHash h)
+    p = Proxy @(ShelleyBlock c)
 
 {-------------------------------------------------------------------------------
   Integrity

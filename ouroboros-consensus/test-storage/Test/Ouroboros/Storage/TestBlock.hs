@@ -60,7 +60,8 @@ import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (Serialise (decode, encode), serialise)
 import           Control.Monad (forM, when)
 import           Control.Monad.Except (throwError)
-import           Data.Binary (Binary (get, put))
+import           Data.Binary (Binary)
+import qualified Data.Binary as Binary
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
@@ -202,6 +203,11 @@ instance StandardHash TestHeader
 type instance HeaderHash TestBlock = TestHeaderHash
 type instance HeaderHash TestHeader = TestHeaderHash
 
+instance ConvertRawHash TestBlock where
+  toRawHash   _ = Lazy.toStrict . Binary.encode
+  fromRawHash _ = Binary.decode . Lazy.fromStrict
+  hashSize    _ = 8
+
 instance Measured BlockMeasure TestBlock where
   measure = blockMeasure
 
@@ -247,8 +253,8 @@ hashHeader (TestHeader _ a b c d e) = TestHeaderHash (hash (a, b, c, d, e))
 testHashInfo :: HashInfo TestHeaderHash
 testHashInfo = HashInfo
     { hashSize = 8
-    , getHash  = get
-    , putHash  = put
+    , getHash  = Binary.get
+    , putHash  = Binary.put
     }
 
 testBlockIsEBB :: TestBlock -> IsEBB

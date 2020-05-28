@@ -269,6 +269,7 @@ type TestConstraints blk =
   , Eq                       (Header  blk)
   , Show                     (Header  blk)
   , Serialise                (Header  blk)
+  , ConvertRawHash                    blk
   )
 
 deriving instance (TestConstraints blk, Eq   it, Eq   rdr)
@@ -305,7 +306,7 @@ data ChainDBEnv m blk = ChainDBEnv
   }
 
 open
-  :: (IOLike m, LedgerSupportsProtocol blk)
+  :: (IOLike m, LedgerSupportsProtocol blk, ConvertRawHash blk)
   => ChainDbArgs m blk -> m (ChainDBState m blk)
 open args = do
     (chainDB, internal) <- openDBInternal args False
@@ -315,7 +316,8 @@ open args = do
 
 -- PRECONDITION: the ChainDB is closed
 reopen
-  :: (IOLike m, LedgerSupportsProtocol blk) => ChainDBEnv m blk -> m ()
+  :: (IOLike m, LedgerSupportsProtocol blk, ConvertRawHash blk)
+  => ChainDBEnv m blk -> m ()
 reopen ChainDBEnv { varDB, args } = do
     chainDBState <- open args
     void $ swapMVar varDB chainDBState
@@ -325,7 +327,8 @@ close ChainDBState { chainDB, addBlockAsync } = do
     cancel addBlockAsync
     closeDB chainDB
 
-run :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
+run :: forall m blk.
+       (IOLike m, LedgerSupportsProtocol blk, ConvertRawHash blk)
     => ChainDBEnv m blk
     ->    Cmd     blk (TestIterator m blk) (TestReader m blk)
     -> m (Success blk (TestIterator m blk) (TestReader m blk))
@@ -558,7 +561,7 @@ runPure cfg = \case
     -- Executed whether the ChainDB is open or closed.
     openOrClosed f = first (Resp . Right . Unit) . f
 
-runIO :: LedgerSupportsProtocol blk
+runIO :: (LedgerSupportsProtocol blk, ConvertRawHash blk)
       => ChainDBEnv IO blk
       ->     Cmd  blk (TestIterator IO blk) (TestReader IO blk)
       -> IO (Resp blk (TestIterator IO blk) (TestReader IO blk))
@@ -1523,7 +1526,6 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
       -- Integration
     , cdbTopLevelConfig       = cfg
     , cdbChunkInfo            = chunkInfo
-    , cdbHashInfo             = testHashInfo
     , cdbCheckIntegrity       = testBlockIsValid
     , cdbGenesis              = return initLedger
     , cdbCheckInFuture        = InFuture.miracle

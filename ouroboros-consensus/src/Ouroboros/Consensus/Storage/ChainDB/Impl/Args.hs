@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB
-                     (BinaryInfo (..), ChunkInfo, HashInfo (..))
+                     (BinaryInfo (..), ChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
@@ -84,7 +84,6 @@ data ChainDbArgs m blk = forall h1 h2 h3. (Eq h1, Eq h2, Eq h3) => ChainDbArgs {
       -- Integration
     , cdbTopLevelConfig       :: TopLevelConfig blk
     , cdbChunkInfo            :: ChunkInfo
-    , cdbHashInfo             :: HashInfo (HeaderHash blk)
     , cdbCheckIntegrity       :: blk -> Bool
     , cdbGenesis              :: m (ExtLedgerState blk)
     , cdbCheckInFuture        :: CheckInFuture m blk
@@ -194,7 +193,6 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immEncodeHash       = cdbEncodeHash
         , immEncodeBlock      = cdbEncodeBlock
         , immChunkInfo        = cdbChunkInfo
-        , immHashInfo         = cdbHashInfo
         , immValidation       = cdbImmValidation
         , immCheckIntegrity   = cdbCheckIntegrity
         , immHasFS            = cdbHasFSImmDb
@@ -282,7 +280,6 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
       -- Integration
     , cdbTopLevelConfig       = lgrTopLevelConfig
     , cdbChunkInfo            = immChunkInfo
-    , cdbHashInfo             = immHashInfo
     , cdbCheckIntegrity       = immCheckIntegrity
     , cdbGenesis              = lgrGenesis
     , cdbCheckInFuture        = cdbsCheckInFuture

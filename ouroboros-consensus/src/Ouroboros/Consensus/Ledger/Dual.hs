@@ -116,6 +116,7 @@ instance StandardHash m => StandardHash (DualBlock m a)
 instance ConvertRawHash m => ConvertRawHash (DualBlock m a) where
   toRawHash   _ = toRawHash   (Proxy @m)
   fromRawHash _ = fromRawHash (Proxy @m)
+  hashSize    _ = hashSize    (Proxy @m)
 
 {-------------------------------------------------------------------------------
   Header

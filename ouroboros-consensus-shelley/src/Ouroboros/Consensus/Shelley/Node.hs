@@ -353,8 +353,6 @@ instance TPraosCrypto c => RunNode (ShelleyBlock c) where
     . tpraosParams
     . configConsensus
 
-  nodeHashInfo = const shelleyHashInfo
-
   nodeCheckIntegrity cfg = verifyBlockIntegrity tpraosSlotsPerKESPeriod
     where
       TPraosParams { tpraosSlotsPerKESPeriod } =

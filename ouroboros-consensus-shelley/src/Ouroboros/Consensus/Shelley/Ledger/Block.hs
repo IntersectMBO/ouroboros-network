@@ -12,7 +12,6 @@
 {-# LANGUAGE TypeFamilies               #-}
 module Ouroboros.Consensus.Shelley.Ledger.Block (
     ShelleyHash (..)
-  , shelleyHashInfo
   , ShelleyBlock (..)
   , mkShelleyBlock
   , GetHeader (..)
@@ -35,14 +34,10 @@ module Ouroboros.Consensus.Shelley.Ledger.Block (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (..))
-import           Data.Binary (Get, Put)
-import qualified Data.Binary.Get as Get
-import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (coerce)
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Proxy (Proxy (..))
-import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (Annotator (..), FromCBOR (..),
@@ -56,8 +51,7 @@ import           Ouroboros.Network.Block (BlockMeasure, ChainHash (..),
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..),
-                     HashInfo (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB (BinaryInfo (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.BlockChain as SL
@@ -85,21 +79,7 @@ instance Condense (ShelleyHash c) where
 instance Crypto c => ConvertRawHash (ShelleyBlock c) where
   toRawHash   _ = Crypto.getHash . SL.unHashHeader . unShelleyHash
   fromRawHash _ = ShelleyHash . SL.HashHeader . Crypto.UnsafeHash
-
-shelleyHashInfo :: forall c. Crypto c => HashInfo (ShelleyHash c)
-shelleyHashInfo = HashInfo { hashSize, getHash, putHash }
-  where
-    hashSize :: Word32
-    hashSize = fromIntegral $
-      Crypto.sizeHash (Proxy :: Proxy (HASH c))
-
-    getHash :: Get (ShelleyHash c)
-    getHash = do
-      bytes <- Get.getByteString (fromIntegral hashSize)
-      return $! fromRawHash (Proxy @(ShelleyBlock c)) bytes
-
-    putHash :: ShelleyHash c -> Put
-    putHash = Put.putByteString . toRawHash (Proxy @(ShelleyBlock c))
+  hashSize    _ = fromIntegral $ Crypto.sizeHash (Proxy @(HASH c))
 
 {-------------------------------------------------------------------------------
   Shelley blocks and headers

@@ -48,7 +48,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Unary (
   , injForgeState
   , injGenTx
   , injGenTxId
-  , injHashInfo
   , injHeader
   , injHeaderHash
   , injHeaderState
@@ -86,7 +85,6 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
-import           Ouroboros.Consensus.Storage.ImmutableDB (HashInfo (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -328,15 +326,6 @@ injMaintainForgeState maintainForgeState = MaintainForgeState {
                        $ initForgeState maintainForgeState
     , updateForgeState = updateForgeState maintainForgeState
                        . projUpdateForgeState
-    }
-
-injHashInfo :: SingleEraBlock b
-            => HashInfo (HeaderHash b)
-            -> HashInfo (HeaderHash (HardForkBlock '[b]))
-injHashInfo info = HashInfo {
-      hashSize = hashSize info
-    , getHash  = injHeaderHash <$> getHash info
-    , putHash  = putHash info . projHeaderHash
     }
 
 projInitChainDB :: InitChainDB m (HardForkBlock '[b]) -> InitChainDB m b

@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Block.Abstract (
 import qualified Data.ByteString as Strict
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Maybe (isJust)
+import           Data.Word (Word32)
 
 import           Cardano.Slotting.Slot (EpochNo)
 
@@ -115,4 +116,9 @@ class ConvertRawHash blk where
   toRawHash   :: proxy blk -> HeaderHash blk -> Strict.ByteString
 
   -- | Construct the hash from a raw hash
+  --
+  -- PRECONDITION: the bytestring's size must match 'hashSize'
   fromRawHash :: proxy blk -> Strict.ByteString -> HeaderHash blk
+
+  -- | The size of the hash in number of bytes
+  hashSize    :: proxy blk -> Word32

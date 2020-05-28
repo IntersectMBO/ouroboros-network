@@ -13,7 +13,6 @@ module Ouroboros.Consensus.Byron.Ledger.Block (
     -- * Hash
     ByronHash(..)
   , mkByronHash
-  , byronHashInfo
     -- * Block
   , ByronBlock(..)
   , mkByronBlock
@@ -31,15 +30,11 @@ module Ouroboros.Consensus.Byron.Ledger.Block (
   , joinSizeHint
   ) where
 
-import           Data.Binary (Get, Put)
-import qualified Data.Binary.Get as Get
-import qualified Data.Binary.Put as Put
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as Strict
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Proxy
 import           Data.Typeable
-import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary
@@ -59,8 +54,6 @@ import           Ouroboros.Network.DeltaQ (SizeInBytes)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.Condense
 
-import           Ouroboros.Consensus.Storage.ImmutableDB (HashInfo (..))
-
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 
@@ -79,21 +72,8 @@ mkByronHash = ByronHash . CC.abobHdrHash
 instance ConvertRawHash ByronBlock where
   toRawHash   _ = CC.hashToBytes . unByronHash
   fromRawHash _ = ByronHash . CC.unsafeHashFromBytes
-
-byronHashInfo :: HashInfo ByronHash
-byronHashInfo = HashInfo { hashSize, getHash, putHash }
-  where
-    hashSize :: Word32
-    hashSize = fromIntegral $ Crypto.hashDigestSize
-                                (error "proxy" :: Crypto.Blake2b_256)
-
-    getHash :: Get ByronHash
-    getHash = do
-      bytes <- Get.getByteString (fromIntegral hashSize)
-      return $! fromRawHash (Proxy @ByronBlock) bytes
-
-    putHash :: ByronHash -> Put
-    putHash = Put.putByteString . toRawHash (Proxy @ByronBlock)
+  hashSize    _ = fromIntegral $ Crypto.hashDigestSize
+                                   (error "proxy" :: Crypto.Blake2b_256)
 
 {-------------------------------------------------------------------------------
   Block

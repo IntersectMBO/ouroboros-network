@@ -261,9 +261,10 @@ instance SingleEraBlock b => CanForge (DegenFork b) where
 instance HasTxs b => HasTxs (DegenFork b) where
   extractTxs = map DTx . extractTxs . unDBlk
 
-instance ConvertRawHash (DegenFork b) where
+instance ConvertRawHash b => ConvertRawHash (DegenFork b) where
   toRawHash   _ = getOneEraHash
   fromRawHash _ = OneEraHash
+  hashSize    _ = hashSize (Proxy @b)
 
 {-------------------------------------------------------------------------------
   RunNode instance
@@ -292,7 +293,6 @@ instance (SingleEraBlock b, RunNode b) => RunNode (DegenFork b) where
 
   nodeImmDbChunkInfo  cfg = nodeImmDbChunkInfo (projCfg cfg)
 
-  nodeHashInfo          _ = injHashInfo (nodeHashInfo (Proxy @b))
   nodeAddHeaderEnvelope _ = nodeAddHeaderEnvelope (Proxy @b)
   nodeExceptionIsFatal  _ = nodeExceptionIsFatal  (Proxy @b)
 

@@ -1,11 +1,13 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE TypeApplications          #-}
 
 -- | Thin wrapper around the ImmutableDB
 module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
@@ -13,6 +15,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ImmDB (
     -- * Initialization
   , ImmDbArgs(..)
   , defaultArgs
+  , hashInfo
   , withImmDB
     -- * Getting and parsing blocks
   , hasBlock
@@ -65,8 +68,14 @@ import           Control.Monad
 import           Control.Monad.Except
 import           Control.Tracer (Tracer, nullTracer)
 import           Data.Bifunctor
+import           Data.Binary.Get (Get)
+import qualified Data.Binary.Get as Get
+import           Data.Binary.Put (Put)
+import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor ((<&>))
+import           Data.Proxy (Proxy (..))
+import           Data.Word (Word32)
 import           GHC.Stack
 import           System.FilePath ((</>))
 
@@ -80,7 +89,8 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
                      SlotNo, atSlot, pointSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Block hiding (hashSize)
+import qualified Ouroboros.Consensus.Block as Block
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
@@ -146,7 +156,6 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
     , immEncodeHash     :: HeaderHash blk -> Encoding
     , immEncodeBlock    :: blk -> BinaryInfo Encoding
     , immChunkInfo      :: ChunkInfo
-    , immHashInfo       :: HashInfo (HeaderHash blk)
     , immValidation     :: ImmDB.ValidationPolicy
     , immCheckIntegrity :: blk -> Bool
     , immAddHdrEnv      :: IsEBB -> SizeInBytes -> Lazy.ByteString -> Lazy.ByteString
@@ -166,7 +175,6 @@ data ImmDbArgs m blk = forall h. Eq h => ImmDbArgs {
 -- * 'immEncodeHash'
 -- * 'immEncodeBlock'
 -- * 'immChunkInfo'
--- * 'immHashInfo'
 -- * 'immValidation'
 -- * 'immCheckIntegrity'
 -- * 'immAddHdrEnv'
@@ -183,7 +191,6 @@ defaultArgs fp = ImmDbArgs{
     , immEncodeHash     = error "no default for immEncodeHash"
     , immEncodeBlock    = error "no default for immEncodeBlock"
     , immChunkInfo      = error "no default for immChunkInfo"
-    , immHashInfo       = error "no default for immHashInfo"
     , immValidation     = error "no default for immValidation"
     , immCheckIntegrity = error "no default for immCheckIntegrity"
     , immAddHdrEnv      = error "no default for immAddHdrEnv"
@@ -203,12 +210,30 @@ defaultArgs fp = ImmDbArgs{
       , expireUnusedAfter = 5 * 60 -- Expire after 1 minute
       }
 
-withImmDB :: (IOLike m, HasHeader blk, GetHeader blk)
+-- | Create a 'HashInfo' based on a 'ConvertRawHash' instance.
+hashInfo
+  :: forall blk. ConvertRawHash blk
+  => Proxy blk -> HashInfo (HeaderHash blk)
+hashInfo p = HashInfo { hashSize, getHash, putHash }
+  where
+    hashSize :: Word32
+    hashSize = Block.hashSize p
+
+    getHash :: Get (HeaderHash blk)
+    getHash = do
+      bytes <- Get.getByteString (fromIntegral hashSize)
+      return $! fromRawHash p bytes
+
+    putHash :: HeaderHash blk -> Put
+    putHash = Put.putByteString . toRawHash p
+
+withImmDB :: (IOLike m, HasHeader blk, GetHeader blk, ConvertRawHash blk)
           => ImmDbArgs m blk -> (ImmDB m blk -> m a) -> m a
 withImmDB args = bracket (openDB args) closeDB
 
 -- | For testing purposes
-openDB :: (IOLike m, HasHeader blk, GetHeader blk)
+openDB :: forall m blk.
+          (IOLike m, HasHeader blk, GetHeader blk, ConvertRawHash blk)
        => ImmDbArgs m blk
        -> m (ImmDB m blk)
 openDB ImmDbArgs {..} = do
@@ -227,7 +252,7 @@ openDB ImmDbArgs {..} = do
       { registry    = immRegistry
       , hasFS       = immHasFS
       , chunkInfo   = immChunkInfo
-      , hashInfo    = immHashInfo
+      , hashInfo    = hashInfo (Proxy @blk)
       , tracer      = immTracer
       , cacheConfig = immCacheConfig
       , valPol      = immValidation
