@@ -174,8 +174,8 @@ runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
       JobPool.forkJob jobpool demuxerJob
       traceWith tracer (MuxTraceState Mature)
 
-      -- Wait for the first job to terminate, successfully or otherwise.
-      -- All the other jobs are shut down Upon completion of withJobPool.
+      -- Wait for someone to shut us down by calling muxStop or an error.
+      -- Outstaning jobs are shut down Upon completion of withJobPool.
       monitor tracer jobpool egressQueue muxControlCmdQueue muxStatus
   where
     muxerJob egressQueue =
@@ -284,11 +284,10 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
               | (ptclState, ptclAction) <- Map.elems ptclsStartOnDemand ]
 
       case result of
-        -- For now we do not restart protocols, when any stop we terminate
-        -- and the whole bundle will get cleaned up.
+        -- Protocols that runs to completion are not automatically restarted.
         EventJobResult (MiniProtocolShutdown pnum pmode) -> do
-          traceWith tracer (MuxTraceState Dead)
           traceWith tracer (MuxTraceCleanExit pnum pmode)
+          go ptclsStartOnDemand
 
         EventJobResult (MiniProtocolException pnum pmode e) -> do
           traceWith tracer (MuxTraceState Dead)
