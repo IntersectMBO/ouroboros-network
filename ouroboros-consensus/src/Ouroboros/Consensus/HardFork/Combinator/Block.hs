@@ -177,3 +177,15 @@ instance All Eq xs => Eq (HardForkBlock xs) where
       aux (Left  _) = False
       aux (Right m) = hcollapse $
                         hcmap (Proxy @Eq) (\(Pair x y) -> K $ x == y) m
+
+instance All (Compose Eq Header) xs => Eq (Header (HardForkBlock xs)) where
+  (==) = (aux .: Match.matchNS) `on` (getOneEraHeader . getHardForkHeader)
+    where
+      aux :: Either (Match.Mismatch Header Header xs) (NS (Product Header Header) xs)
+          -> Bool
+      aux (Left  _) = False
+      aux (Right m) = hcollapse $
+                        hcmap
+                          (Proxy @(Compose Eq Header))
+                          (\(Pair x y) -> K $ x == y)
+                          m
