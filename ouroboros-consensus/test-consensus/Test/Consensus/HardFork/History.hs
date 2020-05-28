@@ -109,7 +109,7 @@ summarizeInvariant ArbitraryChain{..} =
 
 testSkeleton :: Show a
              => ArbitraryChain
-             -> (forall xs. HF.Query xs a)
+             -> HF.Qry a
              -> (a -> Property)
              -> Property
 testSkeleton ArbitraryChain{..} q =
@@ -121,9 +121,11 @@ testSkeleton ArbitraryChain{..} q =
 eventSlotToEpoch :: ArbitraryChain -> Property
 eventSlotToEpoch chain@ArbitraryChain{..} =
     testSkeleton chain (HF.slotToEpoch eventTimeSlot) $
-      \(epochNo, epochSlot) -> conjoin [
-          epochNo   === eventTimeEpochNo
-        , epochSlot === eventTimeEpochSlot
+      \(epochNo, epochSlot, slotsLeft) -> conjoin [
+          epochNo               === eventTimeEpochNo
+        , epochSlot             === eventTimeEpochSlot
+        , epochSlot + slotsLeft === (unEpochSize . HF.eraEpochSize $
+                                       eventEraParams arbitraryEvent)
         ]
   where
     EventTime{..} = eventTime arbitraryEvent
