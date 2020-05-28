@@ -8,18 +8,22 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 
 module Network.Mux.Types (
-      MiniProtocolLimits (..)
+      MiniProtocolBundle (..)
+    , MiniProtocolInfo (..)
     , MiniProtocolNum (..)
-    , MiniProtocolMode (..)
+    , MiniProtocolDirection (..)
+    , MiniProtocolLimits (..)
 
-    , AppType (..)
+    , MuxMode (..)
     , HasInitiator
     , HasResponder
-    , MuxApplication (..)
-    , MuxMiniProtocol (..)
-    , RunMiniProtocol (..)
 
+    , IngressQueue
     , MiniProtocolIx
+    , MiniProtocolDir (..)
+    , protocolDirEnum
+    , MiniProtocolState (..)
+    , MiniProtocolStatus (..)
     , MuxBearer (..)
     , muxBearerAsChannel
     , MuxSDU (..)
@@ -27,7 +31,7 @@ module Network.Mux.Types (
     , msTimestamp
     , setTimestamp
     , msNum
-    , msMode
+    , msDir
     , msLength
     , RemoteClockModel (..)
     , remoteClockPrecision
@@ -35,14 +39,13 @@ module Network.Mux.Types (
 
 import           Prelude hiding (read)
 
-import           Data.Void (Void)
 import           Data.Functor (void)
-import           Data.Int
 import           Data.Ix (Ix (..))
 import           Data.Word
 import qualified Data.ByteString.Lazy as BL
 
 import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
 
 import           Network.Mux.Channel (Channel(..))
 import           Network.Mux.Timeout (TimeoutFn)
@@ -75,7 +78,7 @@ data MiniProtocolLimits =
        -- | Limit on the maximum number of bytes that can be queued in the
        -- miniprotocol's ingress queue.
        --
-       maximumIngressQueue :: !Int64
+       maximumIngressQueue :: !Int
      }
 
 
@@ -90,20 +93,20 @@ data MiniProtocolLimits =
 --   a function that runs the mux layer on it.
 --
 
-data AppType where
-    InitiatorApp             :: AppType
-    ResponderApp             :: AppType
-    InitiatorAndResponderApp :: AppType
+data MuxMode where
+    InitiatorMode          :: MuxMode
+    ResponderMode          :: MuxMode
+    InitiatorResponderMode :: MuxMode
 
-type family HasInitiator (appType :: AppType) :: Bool where
-    HasInitiator InitiatorApp             = True
-    HasInitiator ResponderApp             = False
-    HasInitiator InitiatorAndResponderApp = True
+type family HasInitiator (mode :: MuxMode) :: Bool where
+    HasInitiator InitiatorMode          = True
+    HasInitiator ResponderMode          = False
+    HasInitiator InitiatorResponderMode = True
 
-type family HasResponder (appType :: AppType) :: Bool where
-    HasResponder InitiatorApp             = False
-    HasResponder ResponderApp             = True
-    HasResponder InitiatorAndResponderApp = True
+type family HasResponder (mode :: MuxMode) :: Bool where
+    HasResponder InitiatorMode          = False
+    HasResponder ResponderMode          = True
+    HasResponder InitiatorResponderMode = True
 
 -- | Application run by mux layer.
 --
@@ -118,53 +121,54 @@ type family HasResponder (appType :: AppType) :: Bool where
 --   serving downstream peers using server side of each protocol and getting
 --   updates from upstream peers using client side of each of the protocols.
 --
-newtype MuxApplication (appType :: AppType) m a b =
-        MuxApplication [MuxMiniProtocol appType m a b]
+newtype MiniProtocolBundle (mode :: MuxMode) =
+        MiniProtocolBundle [MiniProtocolInfo mode]
 
-data MuxMiniProtocol (appType :: AppType) m a b =
-     MuxMiniProtocol {
+data MiniProtocolInfo (mode :: MuxMode) =
+     MiniProtocolInfo {
        miniProtocolNum    :: !MiniProtocolNum,
-       miniProtocolLimits :: !MiniProtocolLimits,
-       miniProtocolRun    :: !(RunMiniProtocol appType m a b)
+       miniProtocolDir    :: !(MiniProtocolDirection mode),
+       miniProtocolLimits :: !MiniProtocolLimits
      }
 
-data RunMiniProtocol (appType :: AppType) m a b where
-  InitiatorProtocolOnly
-    -- Initiator application; most simple application will be @'runPeer'@ or
-    -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
-    -- @ptcl@.  But it allows to handle resources if just application of
-    -- @'runPeer'@ is not enough.  It will be run as @'ModeInitiator'@.
-    :: (Channel m -> m a)
-    -> RunMiniProtocol InitiatorApp m a Void
-
-  ResponderProtocolOnly
-    -- Responder application; similarly to the @'MuxInitiatorApplication'@ but it
-    -- will be run using @'ModeResponder'@.
-    :: (Channel m -> m b)
-    -> RunMiniProtocol ResponderApp m Void b
-
-  InitiatorAndResponderProtocol
-    -- Initiator and server applications.
-    :: (Channel m -> m a)
-    -> (Channel m -> m b)
-    -> RunMiniProtocol InitiatorAndResponderApp m a b
+data MiniProtocolDirection (mode :: MuxMode) where
+    InitiatorDirectionOnly :: MiniProtocolDirection InitiatorMode
+    ResponderDirectionOnly :: MiniProtocolDirection ResponderMode
+    InitiatorDirection     :: MiniProtocolDirection InitiatorResponderMode
+    ResponderDirection     :: MiniProtocolDirection InitiatorResponderMode
 
 --
 -- Mux internal types
 --
 
+type IngressQueue m = StrictTVar m BL.ByteString
+
 -- | The index of a protocol in a MuxApplication, used for array indicies
 newtype MiniProtocolIx = MiniProtocolIx Int
   deriving (Eq, Ord, Num, Enum, Ix, Show)
 
-data MiniProtocolMode = ModeInitiator | ModeResponder
+data MiniProtocolDir = InitiatorDir | ResponderDir
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
 
+protocolDirEnum :: MiniProtocolDirection mode -> MiniProtocolDir
+protocolDirEnum InitiatorDirectionOnly = InitiatorDir
+protocolDirEnum ResponderDirectionOnly = ResponderDir
+protocolDirEnum InitiatorDirection     = InitiatorDir
+protocolDirEnum ResponderDirection     = ResponderDir
+
+data MiniProtocolState mode m = MiniProtocolState {
+       miniProtocolInfo         :: MiniProtocolInfo mode,
+       miniProtocolIngressQueue :: IngressQueue m,
+       miniProtocolStatusVar    :: StrictTVar m MiniProtocolStatus
+     }
+
+data MiniProtocolStatus = StatusIdle | StatusStartOnDemand | StatusRunning
+  deriving Eq
 
 data MuxSDUHeader = MuxSDUHeader {
       mhTimestamp :: !RemoteClockModel
     , mhNum       :: !MiniProtocolNum
-    , mhMode      :: !MiniProtocolMode
+    , mhDir       :: !MiniProtocolDir
     , mhLength    :: !Word16
     }
 
@@ -184,8 +188,8 @@ setTimestamp sdu@MuxSDU { msHeader } mhTimestamp =
 msNum :: MuxSDU -> MiniProtocolNum
 msNum = mhNum . msHeader
 
-msMode :: MuxSDU -> MiniProtocolMode
-msMode = mhMode . msHeader
+msDir :: MuxSDU -> MiniProtocolDir
+msDir = mhDir . msHeader
 
 msLength :: MuxSDU -> Word16
 msLength = mhLength . msHeader
@@ -209,15 +213,15 @@ data MuxBearer m = MuxBearer {
 
 
 -- | A channel which wraps each message as an 'MuxSDU' using giving
--- 'MiniProtocolNum' and 'MiniProtocolMode'.
+-- 'MiniProtocolNum' and 'MiniProtocolDir'.
 --
 muxBearerAsChannel
   :: forall m. Functor m
   => MuxBearer m
   -> MiniProtocolNum
-  -> MiniProtocolMode
+  -> MiniProtocolDir
   -> Channel m
-muxBearerAsChannel bearer protocolNum mode =
+muxBearerAsChannel bearer ptclNum ptclDir =
       Channel {
         send = \blob -> void $ write bearer noTimeout (wrap blob),
         recv = Just . msBlob . fst <$> read bearer noTimeout
@@ -229,8 +233,8 @@ muxBearerAsChannel bearer protocolNum mode =
             -- it will be filled when the 'MuxSDU' is send by the 'bearer'
             msHeader = MuxSDUHeader {
                 mhTimestamp = RemoteClockModel 0,
-                mhNum       = protocolNum,
-                mhMode      = mode,
+                mhNum       = ptclNum,
+                mhDir       = ptclDir,
                 mhLength    = fromIntegral $ BL.length blob
               },
             msBlob = blob

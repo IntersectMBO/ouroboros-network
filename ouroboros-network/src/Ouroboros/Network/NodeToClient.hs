@@ -243,7 +243,7 @@ connectTo
   -> NetworkConnectTracers LocalAddress NodeToClientVersion
   -> Versions NodeToClientVersion
               DictVersion
-              (OuroborosApplication InitiatorApp LocalAddress BL.ByteString IO a b)
+              (OuroborosApplication InitiatorMode LocalAddress BL.ByteString IO a b)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
@@ -268,7 +268,7 @@ connectTo_V1
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> OuroborosApplication InitiatorApp LocalAddress BL.ByteString IO a b
+  -> OuroborosApplication InitiatorMode LocalAddress BL.ByteString IO a b
   -- ^ 'OuroborosInitiatorApplication' which is run on an established connection
   -- using a multiplexer after the initial handshake protocol suceeds.
   -> FilePath
@@ -296,11 +296,11 @@ connectTo_V2
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> OuroborosApplication InitiatorApp LocalAddress BL.ByteString IO a b
+  -> OuroborosApplication InitiatorMode LocalAddress BL.ByteString IO a b
   -- ^ 'NodeToClientV_1' version of 'OuroborosInitiatorApplication' which is
   -- run on an established connection using a multiplexer after the initial
   -- handshake protocol suceeds.
-  -> OuroborosApplication InitiatorApp LocalAddress BL.ByteString IO a b
+  -> OuroborosApplication InitiatorMode LocalAddress BL.ByteString IO a b
   -- ^ 'NodeToClientV_2' version of 'OuroborosInitiatorApplication' which is
   -- run on an established connection using a multiplexer after the initial
   -- handshake protocol suceeds. 'NodeToClientV_2' supports 'LocalStateQuery'
@@ -333,14 +333,14 @@ connectTo_V2 snocket tracers versionData application_V1 application_V2 =
 -- Comments to 'Ouroboros.Network.NodeToNode.withServer' apply here as well.
 --
 withServer
-  :: ( HasResponder appType ~ True
+  :: ( HasResponder mode ~ True
      )
   => LocalSnocket
   -> NetworkServerTracers LocalAddress NodeToClientVersion
   -> NetworkMutableState LocalAddress
   -> LocalFD
   -> Versions NodeToClientVersion DictVersion
-              (OuroborosApplication appType LocalAddress BL.ByteString IO a b)
+              (OuroborosApplication mode LocalAddress BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState sd versions errPolicies =
@@ -361,7 +361,7 @@ withServer sn tracers networkState sd versions errPolicies =
 -- 'NodeToClientV_1' version of the protocol.
 --
 withServer_V1
-  :: ( HasResponder appType ~ True
+  :: ( HasResponder mode ~ True
      )
   => LocalSnocket
   -> NetworkServerTracers LocalAddress NodeToClientVersion
@@ -370,7 +370,7 @@ withServer_V1
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> OuroborosApplication appType LocalAddress BL.ByteString IO a b
+  -> OuroborosApplication mode LocalAddress BL.ByteString IO a b
   -- ^ applications which has the reponder side, i.e.
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
@@ -435,8 +435,8 @@ type NetworkClientSubcriptionTracers
 -- established connection.
 --
 ncSubscriptionWorker
-    :: forall appType x y.
-       ( HasInitiator appType ~ True
+    :: forall mode x y.
+       ( HasInitiator mode ~ True
        )
     => LocalSnocket
     -> NetworkClientSubcriptionTracers
@@ -445,7 +445,7 @@ ncSubscriptionWorker
     -> Versions
         NodeToClientVersion
         DictVersion
-        (OuroborosApplication appType LocalAddress BL.ByteString IO x y)
+        (OuroborosApplication mode LocalAddress BL.ByteString IO x y)
     -> IO Void
 ncSubscriptionWorker
   sn
@@ -475,14 +475,14 @@ ncSubscriptionWorker
 -- | Like 'ncSubscriptionWorker' but specific to 'NodeToClientV_1'.
 --
 ncSubscriptionWorker_V1
-    :: forall appType x y.
-       ( HasInitiator appType ~ True )
+    :: forall mode x y.
+       ( HasInitiator mode ~ True )
     => LocalSnocket
     -> NetworkClientSubcriptionTracers
     -> NetworkMutableState LocalAddress
     -> ClientSubscriptionParams ()
     -> NodeToClientVersionData
-    -> OuroborosApplication appType LocalAddress BL.ByteString IO x y
+    -> OuroborosApplication mode LocalAddress BL.ByteString IO x y
     -> IO Void
 ncSubscriptionWorker_V1
   sn

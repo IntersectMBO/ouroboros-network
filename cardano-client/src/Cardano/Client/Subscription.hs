@@ -14,7 +14,7 @@ import           Ouroboros.Consensus.Network.NodeToClient (clientCodecs, ClientC
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion (
                     nodeToClientProtocolVersion , supportedNodeToClientVersions)
 import           Ouroboros.Consensus.Node.Run (RunNode)
-import           Ouroboros.Network.Mux (AppType (..), OuroborosApplication)
+import           Ouroboros.Network.Mux (MuxMode (..), OuroborosApplication)
 import           Ouroboros.Network.NodeToClient (ClientSubscriptionParams (..),
                     ConnectionId, LocalAddress,
                     NodeToClientProtocols (..),
@@ -42,7 +42,7 @@ subscribe ::
   -> (NodeToClientVersion blk
       -> ClientCodecs blk m
       -> ConnectionId LocalAddress
-      -> NodeToClientProtocols 'InitiatorApp BSL.ByteString IO x y)
+      -> NodeToClientProtocols 'InitiatorMode BSL.ByteString IO x y)
   -> IO Void
 subscribe
   sn

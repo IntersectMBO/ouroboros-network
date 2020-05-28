@@ -167,7 +167,7 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
         (localAddressFromPath sockPath)
 
   where
-    app :: OuroborosApplication InitiatorApp addr LBS.ByteString IO () Void
+    app :: OuroborosApplication InitiatorMode addr LBS.ByteString IO () Void
     app = demoProtocol2 chainSync
 
     chainSync =
@@ -202,7 +202,7 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
   where
     prng = mkSMGen 0
 
-    app :: OuroborosApplication ResponderApp addr LBS.ByteString IO Void ()
+    app :: OuroborosApplication ResponderMode addr LBS.ByteString IO Void ()
     app = demoProtocol2 chainSync
 
     chainSync =
@@ -258,11 +258,11 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
     candidateChainsVar <- newTVarIO Map.empty
     currentChainVar    <- newTVarIO genesisChainFragment
 
-    let app :: OuroborosApplication InitiatorApp LocalAddress LBS.ByteString IO () Void
+    let app :: OuroborosApplication InitiatorMode LocalAddress LBS.ByteString IO () Void
         app = demoProtocol3 chainSync blockFetch
 
         chainSync :: LocalConnectionId
-                  -> RunMiniProtocol InitiatorApp LBS.ByteString IO () Void
+                  -> RunMiniProtocol InitiatorMode LBS.ByteString IO () Void
         chainSync connectionId =
           InitiatorProtocolOnly $
           -- TODO: this currently needs MuxPeerRaw because of the resource
@@ -286,7 +286,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                                          (Map.delete connectionId)
 
         blockFetch :: LocalConnectionId
-                   -> RunMiniProtocol InitiatorApp LBS.ByteString IO () Void
+                   -> RunMiniProtocol InitiatorMode LBS.ByteString IO () Void
         blockFetch connectionId =
           InitiatorProtocolOnly $
           -- TODO: this currently needs MuxPeerRaw because of the resource
@@ -425,11 +425,11 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
   where
     prng = mkSMGen 0
 
-    app :: OuroborosApplication ResponderApp LocalAddress LBS.ByteString IO Void ()
+    app :: OuroborosApplication ResponderMode LocalAddress LBS.ByteString IO Void ()
     app = demoProtocol3 chainSync blockFetch
 
     chainSync :: LocalConnectionId
-              -> RunMiniProtocol ResponderApp LBS.ByteString IO Void ()
+              -> RunMiniProtocol ResponderMode LBS.ByteString IO Void ()
     chainSync _connectionId =
       ResponderProtocolOnly $
       MuxPeer
@@ -438,7 +438,7 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
         (ChainSync.chainSyncServerPeer (chainSyncServer prng))
 
     blockFetch :: LocalConnectionId
-               -> RunMiniProtocol ResponderApp LBS.ByteString IO Void ()
+               -> RunMiniProtocol ResponderMode LBS.ByteString IO Void ()
     blockFetch _connectionId =
       ResponderProtocolOnly $
       MuxPeer

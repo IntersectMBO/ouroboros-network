@@ -129,8 +129,8 @@ data MuxTrace =
     | MuxTraceSendStart !MuxSDUHeader
     | MuxTraceSendEnd
     | MuxTraceState !MuxBearerState
-    | MuxTraceCleanExit !MiniProtocolNum !MiniProtocolMode
-    | MuxTraceExceptionExit !MiniProtocolNum !MiniProtocolMode !SomeException
+    | MuxTraceCleanExit !MiniProtocolNum !MiniProtocolDir
+    | MuxTraceExceptionExit !MiniProtocolNum !MiniProtocolDir !SomeException
     | MuxTraceChannelRecvStart !MiniProtocolNum
     | MuxTraceChannelRecvEnd !MiniProtocolNum !Int
     | MuxTraceChannelSendStart !MiniProtocolNum !Int
@@ -145,16 +145,16 @@ data MuxTrace =
 
 instance Show MuxTrace where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
-    show (MuxTraceRecvHeaderEnd MuxSDUHeader { mhTimestamp, mhNum, mhMode, mhLength }) = printf "Bearer Receive Header End: ts: 0x%08x %s %s len %d"
-        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhMode) mhLength
+    show (MuxTraceRecvHeaderEnd MuxSDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Receive Header End: ts: 0x%08x %s %s len %d"
+        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhDir) mhLength
     show (MuxTraceRecvDeltaQObservation MuxSDUHeader { mhTimestamp, mhLength } ts) = printf "Bearer DeltaQ observation: remote ts %d local ts %s length %d"
         (unRemoteClockModel mhTimestamp) (show ts) mhLength
     show (MuxTraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) = printf "Bearer DeltaQ Sample: duration %.3e packets %d sumBytes %d DeltaQ_S %.3e DeltaQ_VMean %.3e DeltaQ_VVar %.3e DeltaQ_estR %.3e sizeDist %s"
          d sp so dqs dqvm dqvs estR sdud
     show (MuxTraceRecvStart len) = printf "Bearer Receive Start: length %d" len
     show (MuxTraceRecvEnd len) = printf "Bearer Receive End: length %d" len
-    show (MuxTraceSendStart MuxSDUHeader { mhTimestamp, mhNum, mhMode, mhLength }) = printf "Bearer Send Start: ts: 0x%08x %s %s length %d"
-        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhMode) mhLength
+    show (MuxTraceSendStart MuxSDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Send Start: ts: 0x%08x %s %s length %d"
+        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhDir) mhLength
     show MuxTraceSendEnd = printf "Bearer Send End"
     show (MuxTraceState new) = printf "State: %s" (show new)
     show (MuxTraceCleanExit mid dir) = printf "Miniprotocol %s %s terminated cleanly" (show mid) (show dir)

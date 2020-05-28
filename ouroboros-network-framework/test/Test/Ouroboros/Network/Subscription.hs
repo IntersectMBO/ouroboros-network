@@ -25,7 +25,6 @@ import           Control.Monad.IOSim (runSimStrictShutdown)
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (void)
-import           Data.Int
 import qualified Data.IP as IP
 import           Data.List as L
 import qualified Data.Map as M
@@ -66,7 +65,7 @@ import           Text.Printf
 import           Text.Show.Functions ()
 
 
-defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit :: Int
 defaultMiniProtocolLimit = 3000000
 
 testProtocols1 :: RunMiniProtocol appType bytes m a b
@@ -550,7 +549,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
     clientTbl <- newConnectionTable
 
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication ResponderApp Socket.SockAddr BL.ByteString IO Void ()
+        responderApp :: OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO Void ()
         responderApp = testProtocols2 reqRespResponder
 
         reqRespResponder =
@@ -564,7 +563,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
             waitSiblingSub siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication InitiatorApp Socket.SockAddr BL.ByteString IO () Void
+        initiatorApp :: OuroborosApplication InitiatorMode Socket.SockAddr BL.ByteString IO () Void
         initiatorApp = testProtocols2 reqRespInitiator
 
         reqRespInitiator =
@@ -694,7 +693,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
 
   where
 
-    appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp Socket.SockAddr BL.ByteString IO () ()
+    appX :: ReqRspCfg -> OuroborosApplication InitiatorResponderMode Socket.SockAddr BL.ByteString IO () ()
     appX cfg = testProtocols2 (reqResp cfg)
 
     reqResp ReqRspCfg {rrcTag, rrcServerVar, rrcClientVar, rrcSiblingVar} =

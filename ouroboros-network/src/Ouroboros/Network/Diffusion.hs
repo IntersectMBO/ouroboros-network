@@ -98,7 +98,7 @@ data DiffusionApplications = DiffusionApplications {
                                        NodeToNodeVersion
                                        DictVersion
                                        (OuroborosApplication
-                                         ResponderApp SockAddr
+                                         ResponderMode SockAddr
                                          ByteString IO Void ())
       -- ^ NodeToNode reposnder application (server role)
 
@@ -106,7 +106,7 @@ data DiffusionApplications = DiffusionApplications {
                                        NodeToNodeVersion
                                        DictVersion 
                                        (OuroborosApplication
-                                         InitiatorApp SockAddr
+                                         InitiatorMode SockAddr
                                          ByteString IO () Void)
       -- ^ NodeToNode initiator application (client role)
 
@@ -114,7 +114,7 @@ data DiffusionApplications = DiffusionApplications {
                                        NodeToClientVersion
                                        DictVersion
                                        (OuroborosApplication
-                                         ResponderApp LocalAddress
+                                         ResponderMode LocalAddress
                                          ByteString IO Void ())
       -- ^ NodeToClient responder applicaton (server role)
 

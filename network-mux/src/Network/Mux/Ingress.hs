@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -7,21 +8,16 @@
 
 module Network.Mux.Ingress (
     -- $ingress
-      demux
-
-      -- Temporary, until things using it are moved here
-    , DemuxState(..)
-    , MiniProtocolDispatch(..)
-    , MiniProtocolDispatchInfo(..)
+      demuxer
     ) where
 
-import           Data.Int
 import           Data.Array
-import           Control.Monad
+import           Data.List (nub)
 import qualified Data.ByteString.Lazy as BL
 import           GHC.Stack
 import           Text.Printf
 
+import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
@@ -34,9 +30,9 @@ import           Network.Mux.Trace
 import           Network.Mux.Types
 
 
-negMiniProtocolMode :: MiniProtocolMode -> MiniProtocolMode
-negMiniProtocolMode ModeInitiator = ModeResponder
-negMiniProtocolMode ModeResponder = ModeInitiator
+flipMiniProtocolDir :: MiniProtocolDir -> MiniProtocolDir
+flipMiniProtocolDir InitiatorDir = ResponderDir
+flipMiniProtocolDir ResponderDir = InitiatorDir
 
 -- $ingress
 -- = Ingress Path
@@ -87,57 +83,123 @@ negMiniProtocolMode ModeResponder = ModeInitiator
 -- protocols) and for dispatching incoming SDUs.  This is shared
 -- between the muxIngress and the bearerIngress processes.
 --
-data DemuxState m = DemuxState {
-       dispatchTable :: MiniProtocolDispatch m,
-       bearer        :: MuxBearer m
-     }
-
 data MiniProtocolDispatch m =
      MiniProtocolDispatch
        !(Array MiniProtocolNum (Maybe MiniProtocolIx))
-       !(Array (MiniProtocolIx, MiniProtocolMode)
+       !(Array (MiniProtocolIx, MiniProtocolDir)
                (MiniProtocolDispatchInfo m))
 
 data MiniProtocolDispatchInfo m =
      MiniProtocolDispatchInfo
-       !(StrictTVar m BL.ByteString)
-       !Int64
+       !(IngressQueue m)
+       !Int
+   | MiniProtocolDirUnused
 
 
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from
 -- the underlying Mux Bearer and forwards it to the matching ingress queue.
-demux :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-          MonadTimer m, MonadTime m, HasCallStack)
-      => DemuxState m -> m void
-demux DemuxState{dispatchTable, bearer} =
-
+demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
+            MonadTimer m, MonadTime m, HasCallStack)
+      => [MiniProtocolState mode m]
+      -> MuxBearer m
+      -> m void
+demuxer ptcls bearer =
+  let !dispatchTable = setupDispatchTable ptcls in
   withTimeoutSerial $ \timeout ->
   forever $ do
     (sdu, _) <- Network.Mux.Types.read bearer timeout
-    -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msMode sdu)
+    -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msDir sdu)
     --             (BL.length $ msBlob sdu)
     case lookupMiniProtocol dispatchTable (msNum sdu)
-                            -- Notice the mode reversal, ModeResponder is
-                            -- delivered to ModeInitiator and vice versa:
-                            (negMiniProtocolMode $ msMode sdu) of
+                            -- Notice the mode reversal, ResponderDir is
+                            -- delivered to InitiatorDir and vice versa:
+                            (flipMiniProtocolDir $ msDir sdu) of
       Nothing   -> throwM (MuxError MuxUnknownMiniProtocol
+                          ("id = " ++ show (msNum sdu)) callStack)
+      Just MiniProtocolDirUnused ->
+                   throwM (MuxError MuxInitiatorOnly
                           ("id = " ++ show (msNum sdu)) callStack)
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
           buf <- readTVar q
-          if BL.length buf + BL.length (msBlob sdu) <= qMax
+          if BL.length buf + BL.length (msBlob sdu) <= fromIntegral qMax
               then writeTVar q $ BL.append buf (msBlob sdu)
               else throwM $ MuxError MuxIngressQueueOverRun
                                 (printf "Ingress Queue overrun on %s %s"
-                                 (show $ msNum sdu) (show $ msMode sdu))
+                                 (show $ msNum sdu) (show $ msDir sdu))
                                 callStack
 
 lookupMiniProtocol :: MiniProtocolDispatch m
                    -> MiniProtocolNum
-                   -> MiniProtocolMode
+                   -> MiniProtocolDir
                    -> Maybe (MiniProtocolDispatchInfo m)
-lookupMiniProtocol (MiniProtocolDispatch codeTbl ptclTbl) code mode
-  | inRange (bounds codeTbl) code
-  , Just mpid <- codeTbl ! code = Just (ptclTbl ! (mpid, mode))
+lookupMiniProtocol (MiniProtocolDispatch pnumArray ptclArray) pnum pdir
+  | inRange (bounds pnumArray) pnum
+  , Just mpid <- pnumArray ! pnum = Just (ptclArray ! (mpid, pdir))
   | otherwise                   = Nothing
+
+-- | Construct the table that maps 'MiniProtocolNum' and 'MiniProtocolDir' to
+-- 'MiniProtocolDispatchInfo'. Use 'lookupMiniProtocol' to index it.
+--
+setupDispatchTable :: forall mode m.
+                      [MiniProtocolState mode m] -> MiniProtocolDispatch m
+setupDispatchTable ptcls =
+    MiniProtocolDispatch pnumArray ptclArray
+  where
+    -- The 'MiniProtocolNum' space is sparse but we don't want a huge single
+    -- table if we use large protocol numbers. So we use a two level mapping.
+    --
+    -- The first array maps 'MiniProtocolNum' to a dense space of intermediate
+    -- integer indexes. These indexes are meaningless outside of the context of
+    -- this table. Then we use the index and the 'MiniProtocolDir' for the
+    -- second table.
+    --
+    pnumArray :: Array MiniProtocolNum (Maybe MiniProtocolIx)
+    pnumArray =
+      array (minpnum, maxpnum) $
+            -- Fill in Nothing first to cover any unused ones.
+            [ (pnum, Nothing)    | pnum <- [minpnum..maxpnum] ]
+
+            -- And override with the ones actually used.
+         ++ [ (pnum, Just pix)   | (pix, pnum) <- zip [0..] pnums ]
+
+    ptclArray :: Array (MiniProtocolIx, MiniProtocolDir)
+                       (MiniProtocolDispatchInfo m)
+    ptclArray =
+      array ((minpix, InitiatorDir), (maxpix, ResponderDir)) $
+            -- Fill in MiniProtocolDirUnused first to cover any unused ones.
+            [ ((pix, dir), MiniProtocolDirUnused)
+            | (pix, dir) <- range ((minpix, InitiatorDir),
+                                   (maxpix, ResponderDir)) ]
+
+             -- And override with the ones actually used.
+         ++ [ ((pix, dir), MiniProtocolDispatchInfo q qMax)
+            | MiniProtocolState {
+                miniProtocolInfo =
+                  MiniProtocolInfo {
+                    miniProtocolNum,
+                    miniProtocolDir,
+                    miniProtocolLimits
+                  },
+                miniProtocolIngressQueue = q
+              } <- ptcls
+            , let Just pix = pnumArray ! miniProtocolNum
+                  dir      = protocolDirEnum miniProtocolDir
+                  qMax     = maximumIngressQueue miniProtocolLimits
+            ]
+
+    -- The protocol numbers actually used, in the order of the first use within
+    -- the 'ptcls' list. The order does not matter provided we do it
+    -- consistently between the two arrays.
+    pnums   = nub $ map (miniProtocolNum . miniProtocolInfo) ptcls
+
+    -- The dense range of indexes of used protocol numbers.
+    minpix, maxpix :: MiniProtocolIx
+    minpix  = 0
+    maxpix  = fromIntegral (length pnums - 1)
+
+    -- The sparse range of protocol numbers
+    minpnum, maxpnum :: MiniProtocolNum
+    minpnum = minimum pnums
+    maxpnum = maximum pnums
 

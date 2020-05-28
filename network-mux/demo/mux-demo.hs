@@ -1,52 +1,72 @@
+{-# LANGUAGE CPP                #-}
+{-# LANGUAGE BangPatterns       #-}
 {-# LANGUAGE DataKinds          #-}
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE NumericUnderscores #-}
 
--- | Demo application which for now is only using mux over named pipes on
--- Windows.
---
--- TODO: extend it to use unix sockets.
+{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
+
+-- | Demo application using mux over unix sockets or named pipes on Windows.
 --
 module Main (main) where
 
-import Control.Concurrent (forkIO, threadDelay)
-import Control.Exception (finally)
-import Control.Tracer (Tracer (..), nullTracer, showTracing)
-import Data.Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
-import Data.Void
 
-import qualified Network.Mux as Mx
-import qualified Network.Mux.Bearer.Pipe as Mx
-
-import Test.Mux.ReqResp
-
-import System.Win32
-import System.Win32.NamedPipes
-import qualified System.Win32.Async as Win32.Async
-import System.IOManager
+import Control.Monad
+import Control.Concurrent (forkIO)
+import Control.Concurrent.STM (atomically)
+import Control.Exception (finally)
+import Control.Tracer (Tracer (..), nullTracer, showTracing)
 
 import System.IO
 import System.Exit
 import System.Environment
 
+#if defined(mingw32_HOST_OS)
+import Data.Bits
+import System.Win32
+import System.Win32.NamedPipes
+import qualified System.Win32.Async as Win32.Async
+import System.IOManager
+#else
+import System.Directory
+import           Network.Socket ( Family (AF_UNIX)
+                                , SockAddr (..)
+                                )
+import qualified Network.Socket as Socket
+#endif
+
+import Network.Mux
+#if defined(mingw32_HOST_OS)
+import Network.Mux.Bearer.NamedPipe
+#else
+import Network.Mux.Bearer.Socket
+#endif
+
+import Test.Mux.ReqResp
+
+
 main :: IO ()
 main = do
     args <- getArgs
     case args of
-      ["server"]         -> echoServer
+      ["server"]         -> server
       ["client", n, msg] -> client (read n) msg
       _                  -> usage
 
 usage :: IO ()
 usage = do
-  hPutStr stderr $ "usage: mux-demo server\n"
-                 ++"       mux-demo client (n :: Int) (msg :: String)"
+  hPutStrLn stderr $ "usage: mux-demo server\n"
+                  ++ "       mux-demo client (n :: Int) (msg :: String)"
   exitFailure
 
 pipeName :: String
+#if defined(mingw32_HOST_OS)
 pipeName = "\\\\.\\pipe\\mux-demo"
+#else
+pipeName = "./mux-demo.sock"
+#endif
 
 putStrLn_ :: String -> IO ()
 putStrLn_ = BSC.putStrLn . BSC.pack
@@ -58,10 +78,10 @@ debugTracer = showTracing (Tracer putStrLn_)
 -- Protocols
 --
 
-defaultProtocolLimits :: Mx.MiniProtocolLimits
+defaultProtocolLimits :: MiniProtocolLimits
 defaultProtocolLimits =
-    Mx.MiniProtocolLimits {
-      Mx.maximumIngressQueue = 3_000_000
+    MiniProtocolLimits {
+      maximumIngressQueue = 64_000
     }
 
 --
@@ -71,59 +91,81 @@ defaultProtocolLimits =
 
 -- | Server accept loop.
 --
-echoServer :: IO ()
-echoServer = withIOManager $ \ioManager -> do
+server :: IO ()
+#if defined(mingw32_HOST_OS)
+server =
+  withIOManager $ \ioManager ->
+  forever $ do
     hpipe <- createNamedPipe pipeName
                              (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
                              (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
                              pIPE_UNLIMITED_INSTANCES
-                             1024
-                             1024
+                             4096 -- pipe buffer size
+                             4096 -- pipe buffer size
                              0
                              Nothing
     associateWithIOManager ioManager (Left hpipe)
     Win32.Async.connectNamedPipe hpipe
-    _ <- forkIO $ do
-           serverLoop hpipe
-             `finally` closeHandle hpipe
-    threadDelay 1
-    echoServer
+    void $ forkIO $
+      let bearer = namedPipeAsBearer nullTracer hpipe in
+      serverWorker bearer
+        `finally` closeHandle hpipe
+#else
+server = do
+    sock <- Socket.socket AF_UNIX Socket.Stream Socket.defaultProtocol
+    removeFile pipeName
+    Socket.bind sock (SockAddrUnix pipeName)
+    Socket.listen sock 1
+    forever $ do
+      (sock', _addr) <- Socket.accept sock
+      void $ forkIO $
+        let bearer = socketAsMuxBearer 1.0 nullTracer sock' in
+        serverWorker bearer
+          `finally` Socket.close sock'
+#endif
 
 
-serverLoop :: HANDLE
-           -> IO ()
-serverLoop h = do
-    let pipeChannel = Mx.pipeChannelFromNamedPipe h
-        bearer = Mx.pipeAsMuxBearer nullTracer pipeChannel
-    Mx.muxStart
-        nullTracer
-        app
-        bearer
+serverWorker :: MuxBearer IO -> IO ()
+serverWorker bearer = do
+    mux <- newMux ptcls
+
+    void $ forkIO $ do
+      awaitResult <-
+        runMiniProtocol mux (MiniProtocolNum 2)
+                             ResponderDirectionOnly
+                             StartOnDemand $ \channel ->
+          runServer debugTracer channel (echoServer 0)
+      result <- atomically awaitResult
+      putStrLn $ "Result: " ++ show result
+      stopMux mux
+
+    runMux nullTracer mux bearer
   where
-    app :: Mx.MuxApplication 'Mx.ResponderApp IO Void ()
-    app = Mx.MuxApplication
-      [ Mx.MuxMiniProtocol {
-          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-          Mx.miniProtocolLimits = defaultProtocolLimits,
-          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly
-            $ \channel -> runServer debugTracer channel serverApp
-        }
-      ]
+    ptcls ::  MiniProtocolBundle ResponderMode
+    ptcls = MiniProtocolBundle
+            [ MiniProtocolInfo {
+                miniProtocolNum    = MiniProtocolNum 2,
+                miniProtocolDir    = ResponderDirectionOnly,
+                miniProtocolLimits = defaultProtocolLimits
+              }
+            ]
 
-    serverApp :: ReqRespServer ByteString ByteString IO ()
-    serverApp = ReqRespServer {
-        recvMsgReq  = \req -> pure (req, serverApp),
-        recvMsgDone = pure ()
-      }
+echoServer :: Int -> ReqRespServer ByteString ByteString IO Int
+echoServer !n = ReqRespServer {
+    recvMsgReq  = \req -> pure (req, echoServer (n+1)),
+    recvMsgDone = pure n
+  }
 
 
 --
 -- client
 --
-    
+
 
 client :: Int -> String -> IO ()
-client n msg = withIOManager $ \ioManager -> do
+#if defined(mingw32_HOST_OS)
+client n msg =
+    withIOManager $ \ioManager -> do
     hpipe <- createFile pipeName
                         (gENERIC_READ .|. gENERIC_WRITE)
                         fILE_SHARE_NONE
@@ -132,25 +174,44 @@ client n msg = withIOManager $ \ioManager -> do
                         fILE_FLAG_OVERLAPPED
                         Nothing
     associateWithIOManager ioManager (Left hpipe)
-    let pipeChannel = Mx.pipeChannelFromNamedPipe hpipe
-        bearer = Mx.pipeAsMuxBearer nullTracer pipeChannel
-    Mx.muxStart
-        nullTracer
-        app
-        bearer
-  where
-    app :: Mx.MuxApplication 'Mx.InitiatorApp IO () Void
-    app = Mx.MuxApplication
-      [ Mx.MuxMiniProtocol {
-          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
-          Mx.miniProtocolLimits = defaultProtocolLimits,
-          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly
-            $ \channel -> runClient debugTracer channel (clientApp n (BSC.pack msg))
-        }
-      ]
+    let bearer = namedPipeAsBearer nullTracer hpipe
+    clientWorker bearer n msg
+#else
+client n msg = do
+    sock <- Socket.socket AF_UNIX Socket.Stream Socket.defaultProtocol
+    Socket.connect sock (SockAddrUnix pipeName)
+    let bearer = socketAsMuxBearer 1.0 nullTracer sock
+    clientWorker bearer n msg
+#endif
 
-    clientApp :: Int -> ByteString -> ReqRespClient ByteString ByteString IO ()
-    clientApp 0 _      = SendMsgDone (pure ())
-    clientApp m rawmsg = SendMsgReq rawmsg
-                                    (pure . clientApp (pred m)) -- send back request
-                             
+
+clientWorker :: MuxBearer IO -> Int -> String -> IO ()
+clientWorker bearer n msg = do
+    mux <- newMux ptcls
+
+    void $ forkIO $ do
+      awaitResult <-
+        runMiniProtocol mux (MiniProtocolNum 2)
+                             InitiatorDirectionOnly
+                             StartEagerly $ \channel ->
+          runClient debugTracer channel (echoClient 0 n (BSC.pack msg))
+      result <- atomically awaitResult
+      putStrLn $ "Result: " ++ show result
+      stopMux mux
+
+    runMux nullTracer mux bearer
+  where
+    ptcls :: MiniProtocolBundle InitiatorMode
+    ptcls = MiniProtocolBundle
+            [ MiniProtocolInfo {
+                miniProtocolNum    = MiniProtocolNum 2,
+                miniProtocolDir    = InitiatorDirectionOnly,
+                miniProtocolLimits = defaultProtocolLimits
+              }
+            ]
+
+echoClient :: Int -> Int -> ByteString
+           -> ReqRespClient ByteString ByteString IO Int
+echoClient !n 0 _      = SendMsgDone (pure n)
+echoClient !n m rawmsg = SendMsgReq rawmsg (pure . echoClient (n+1) (m-1))
+

@@ -12,7 +12,6 @@ module Test.Socket (tests) where
 
 import qualified Data.ByteString.Lazy as BL
 
-import           Data.Int (Int64)
 import           Data.Time.Clock (UTCTime, getCurrentTime)
 import           Data.Void (Void)
 import qualified Network.Socket as Socket
@@ -66,7 +65,7 @@ tests =
   ]
 
 
-defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit :: Int
 defaultMiniProtocolLimit = 3000000
 
 -- | The bundle of mini-protocols in our test protocol: only chain sync
@@ -115,7 +114,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         target = Chain.headPoint expectedChain
 
         initiatorApp
-          :: OuroborosApplication InitiatorApp Socket.SockAddr
+          :: OuroborosApplication InitiatorMode Socket.SockAddr
                                   BL.ByteString IO () Void
         initiatorApp = testProtocols1 chainSyncInitator
 
@@ -131,7 +130,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         server = ChainSync.chainSyncServerExample () producerVar
 
         responderApp
-          :: OuroborosApplication ResponderApp Socket.SockAddr
+          :: OuroborosApplication ResponderMode Socket.SockAddr
                                   BL.ByteString IO Void ()
         responderApp = testProtocols1 chainSyncResponder
 

@@ -12,7 +12,6 @@
 module Test.Ouroboros.Network.Socket (tests) where
 
 import           Data.Functor ((<$))
-import           Data.Int (Int64)
 import           Data.Void (Void)
 import           Data.List (mapAccumL)
 import qualified Data.ByteString.Lazy as BL
@@ -52,9 +51,10 @@ import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 -- TODO: remove Mx prefixes
 import           Ouroboros.Network.Mux
-import qualified Network.Mux as Mx (MuxError(..), MuxErrorType(..), muxStart)
+import qualified Network.Mux as Mx (MuxError(..), MuxErrorType(..))
+import qualified Network.Mux.Compat as Mx (muxStart)
 import qualified Network.Mux.Bearer.Socket as Mx (socketAsMuxBearer)
-import           Network.Mux.Types ( MiniProtocolMode (..) , MuxSDU (..), MuxSDUHeader (..)
+import           Network.Mux.Types ( MiniProtocolDir (..) , MuxSDU (..), MuxSDUHeader (..)
                                    , RemoteClockModel (..), write)
 import           Network.Mux.Timeout
 
@@ -105,7 +105,7 @@ activeMuxTracer :: Show a => Tracer IO a
 activeMuxTracer = nullTracer
 --activeMuxTracer = _verboseTracer -- Dump log messages to stdout.
 
-defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit :: Int
 defaultMiniProtocolLimit = 3000000
 
 -- |
@@ -199,7 +199,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
     siblingVar <- newTVarM 2
 
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication ResponderApp Socket.SockAddr BL.ByteString IO Void ()
+        responderApp :: OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO Void ()
         responderApp = testProtocols2 reqRespResponder
 
         reqRespResponder =
@@ -216,7 +216,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
             waitSibling siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication InitiatorApp Socket.SockAddr BL.ByteString IO () Void
+        initiatorApp :: OuroborosApplication InitiatorMode Socket.SockAddr BL.ByteString IO () Void
         initiatorApp = testProtocols2 reqRespInitiator
 
         reqRespInitiator =
@@ -291,7 +291,7 @@ prop_socket_recv_error f rerr =
 
     sv   <- newEmptyTMVarM
 
-    let app :: OuroborosApplication ResponderApp Socket.SockAddr BL.ByteString IO Void ()
+    let app :: OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO Void ()
         app = testProtocols2 reqRespResponder
 
         reqRespResponder =
@@ -407,7 +407,7 @@ prop_socket_send_error rerr =
                   withTimeoutSerial $ \timeout ->
                     -- send maximum mux sdus until we've filled the window.
                     replicateM 100 $ do
-                      void $ write bearer timeout (wrap blob ModeResponder (MiniProtocolNum 0))
+                      void $ write bearer timeout (wrap blob ResponderDir (MiniProtocolNum 0))
                 )
 
           )
@@ -443,13 +443,13 @@ prop_socket_send_error rerr =
           return result
   where
       -- wrap a 'ByteString' as 'MuxSDU'
-      wrap :: BL.ByteString -> MiniProtocolMode -> MiniProtocolNum -> MuxSDU
-      wrap blob mode protocolNum = MuxSDU {
+      wrap :: BL.ByteString -> MiniProtocolDir -> MiniProtocolNum -> MuxSDU
+      wrap blob ptclDir ptclNum = MuxSDU {
             -- it will be filled when the 'MuxSDU' is send by the 'bearer'
             msHeader = MuxSDUHeader {
                 mhTimestamp = RemoteClockModel 0,
-                mhNum       = protocolNum,
-                mhMode      = mode,
+                mhNum       = ptclNum,
+                mhDir       = ptclDir,
                 mhLength    = fromIntegral $ BL.length blob
               },
             msBlob = blob
@@ -466,7 +466,7 @@ prop_socket_client_connect_error _ xs =
 
     cv <- newEmptyTMVarM
 
-    let app :: OuroborosApplication InitiatorApp Socket.SockAddr BL.ByteString IO () Void
+    let app :: OuroborosApplication InitiatorMode Socket.SockAddr BL.ByteString IO () Void
         app = testProtocols2 reqRespInitiator
 
         reqRespInitiator =

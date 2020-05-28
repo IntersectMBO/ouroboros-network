@@ -16,7 +16,6 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
-import           Data.Int
 import           Data.Void (Void)
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
@@ -25,7 +24,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Tracer
 
-import qualified Network.Mux             as Mx (muxStart)
+import qualified Network.Mux.Compat      as Mx (muxStart)
 import qualified Network.Mux.Bearer.Pipe as Mx
 import           Ouroboros.Network.Mux
 
@@ -72,7 +71,7 @@ prop_pipe_demo :: TestBlockChainAndUpdates -> Property
 prop_pipe_demo (TestBlockChainAndUpdates chain updates) =
     ioProperty $ demo chain updates
 
-defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit :: Int
 defaultMiniProtocolLimit = 3000000
 
 -- | The bundle of mini-protocols in our demo protocol: only chain sync
@@ -151,7 +150,7 @@ demo chain0 updates = do
         let Just expectedChain = Chain.applyChainUpdates updates chain0
             target = Chain.headPoint expectedChain
 
-            consumerApp :: OuroborosApplication InitiatorApp String BL.ByteString IO () Void
+            consumerApp :: OuroborosApplication InitiatorMode String BL.ByteString IO () Void
             consumerApp = demoProtocols chainSyncInitator
 
             chainSyncInitator =
@@ -167,7 +166,7 @@ demo chain0 updates = do
             server :: ChainSyncServer block (Tip block) IO ()
             server = ChainSync.chainSyncServerExample () producerVar
 
-            producerApp ::OuroborosApplication ResponderApp String BL.ByteString IO Void ()
+            producerApp ::OuroborosApplication ResponderMode String BL.ByteString IO Void ()
             producerApp = demoProtocols chainSyncResponder
 
             chainSyncResponder =
