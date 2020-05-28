@@ -414,7 +414,6 @@ test-suite test-storage
   other-modules:
                        Test.Ouroboros.Storage
                        Test.Ouroboros.Storage.ChainDB
-                       Test.Ouroboros.Storage.ChainDB.AddBlock
                        Test.Ouroboros.Storage.ChainDB.Iterator
                        Test.Ouroboros.Storage.ChainDB.GcSchedule
                        Test.Ouroboros.Storage.ChainDB.Model
