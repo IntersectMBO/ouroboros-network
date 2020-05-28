@@ -57,6 +57,8 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   -- ^ thrown when reading of a single SDU takes too long
                   | MuxSDUWriteTimeout
                   -- ^ thrown when writing a single SDU takes too long
+                  | MuxShutdown
+                  -- ^ Result of runMiniProtocol's completionAction in case of an error.
                   deriving (Show, Eq)
 
 instance Exception MuxError where
