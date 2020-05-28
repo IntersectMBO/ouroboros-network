@@ -17,6 +17,7 @@ module Test.ThreadNet.RealPBFT (
   ) where
 
 import           Control.Monad.Except (runExceptT)
+import           Control.Monad.Identity (Identity (..))
 import           Data.Coerce (coerce)
 import           Data.Functor.Identity
 import qualified Data.Map.Strict as Map
@@ -31,6 +32,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Cardano.Crypto.Seed (mkSeedFromBytes)
+import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Slot
 
 import           Ouroboros.Network.Block (SlotNo (..))
@@ -749,6 +751,9 @@ prop_simple_real_pbft_convergence produceEBBs k
           conjoin (map (hasAllEBBs k produceEBBs outcomes) finalChains)
       _ -> property True
   where
+    epochInfo :: EpochInfo Identity
+    epochInfo = fixedSizeEpochInfo epochSize
+
     testOutput =
         runTestNetwork testConfig epochSize TestConfigBlock
             { forgeEbbEnv = case produceEBBs of
@@ -771,7 +776,7 @@ prop_simple_real_pbft_convergence produceEBBs k
                           ]
                         Ref.Nondeterministic{} -> Set.empty
                   in Set.lookupGT s nominalSlots
-              , rekeyUpd      = mkRekeyUpd genesisConfig genesisSecrets
+              , rekeyUpd      = mkRekeyUpd genesisConfig genesisSecrets epochInfo
               , rekeyFreshSKs =
                   let prj  = Crypto.hashVerKey . Crypto.deriveVerKeyDSIGN
                       acc0 =   -- the VKs of the operational keys at genesis
@@ -1235,15 +1240,18 @@ genNodeRekeys params nodeJoinPlan nodeTopology numSlots@(NumSlots t)
 mkRekeyUpd
   :: Genesis.Config
   -> Genesis.GeneratedSecrets
+  -> EpochInfo Identity
+  -> CoreNodeId
   -> ProtocolInfo (ChaChaT m) ByronBlock
-  -> EpochNo
+  -> SlotNo
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-  -> Maybe (TestNodeInitialization m ByronBlock)
-mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
+  -> Maybe (TestNodeInitialization ByronBlock)
+mkRekeyUpd genesisConfig genesisSecrets epochInfo _ pInfo sno newSK =
   case pInfoLeaderCreds of
     Nothing              -> Nothing
     Just (isLeader, mfs) ->
       let PBftIsLeader{pbftCoreNodeId} = isLeader
+          eno = runIdentity $ epochInfoEpoch epochInfo sno
           genSK = genesisSecretFor genesisConfig genesisSecrets pbftCoreNodeId
           isLeader' = updSignKey genSK configBlock isLeader (coerce eno) newSK
           pInfo' = pInfo { pInfoLeaderCreds = Just (isLeader', mfs) }
